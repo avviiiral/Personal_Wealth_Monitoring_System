@@ -1,0 +1,15 @@
+{
+  "include": ["."],
+  "exclude": [
+    "**/migrations",
+    "**/__pycache__",
+    ".venv",
+    "venv",
+    "node_modules"
+  ],
+  "venvPath": ".",
+  "venv": "venv",
+  "typeCheckingMode": "basic",
+  "reportMissingImports": "warning",
+  "reportMissingTypeStubs": "none"
+}

@@ -1,0 +1,274 @@
+# ============================================================
+# PWMS - Git Ignore
+# ============================================================
+
+# ------------------------------------------------------------
+# Python
+# ------------------------------------------------------------
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyo
+*.pyd
+.vscode/
+
+# Python virtual environments
+venv/
+.venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+
+# Python packaging
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+pip-wheel-metadata/
+*.whl
+
+# ------------------------------------------------------------
+# Django
+# ------------------------------------------------------------
+*.log
+*.sqlite3
+*.sqlite3-journal
+
+# Django generated files
+staticfiles/
+static_root/
+media/
+media_root/
+
+# Local Django settings
+local_settings.py
+
+# ------------------------------------------------------------
+# Environment / Secrets
+# ------------------------------------------------------------
+.env
+.env.*
+!.env.example
+
+*.secret
+secrets/
+secrets.json
+credentials.json
+service-account.json
+
+# API keys / certificates / private keys
+*.pem
+*.key
+*.p12
+*.pfx
+
+# ------------------------------------------------------------
+# Node / Angular
+# ------------------------------------------------------------
+node_modules/
+.npm/
+.npmrc
+
+# Angular build output
+dist/
+.angular/
+.angular/cache/
+
+# Angular temporary files
+.tmp/
+tmp/
+
+# ------------------------------------------------------------
+# Frontend environment files
+# ------------------------------------------------------------
+frontend/src/environments/environment.local.ts
+frontend/src/environments/environment.*.local.ts
+
+# ------------------------------------------------------------
+# Testing / Coverage
+# ------------------------------------------------------------
+.coverage
+.coverage.*
+htmlcov/
+.pytest_cache/
+.tox/
+.nox/
+.cache/
+pytestdebug.log
+coverage.xml
+*.cover
+
+# ------------------------------------------------------------
+# Type checking / linters
+# ------------------------------------------------------------
+.mypy_cache/
+.dmypy.json
+dmypy.json
+.pyre/
+.pytype/
+
+# ------------------------------------------------------------
+# Jupyter
+# ------------------------------------------------------------
+.ipynb_checkpoints/
+
+# ------------------------------------------------------------
+# IDE / Editors
+# ------------------------------------------------------------
+.vscode/
+.idea/
+*.swp
+*.swo
+*.swn
+*.iml
+
+# Visual Studio
+.vs/
+
+# ------------------------------------------------------------
+# Windows
+# ------------------------------------------------------------
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+ehthumbs_vista.db
+*.stackdump
+
+# Windows installer / temporary
+*.cab
+*.msi
+*.msix
+*.msm
+*.msp
+
+# ------------------------------------------------------------
+# macOS
+# ------------------------------------------------------------
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# ------------------------------------------------------------
+# Linux
+# ------------------------------------------------------------
+*~
+.nfs*
+
+# ------------------------------------------------------------
+# Logs
+# ------------------------------------------------------------
+logs/
+*.log
+log/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# ------------------------------------------------------------
+# Temporary files
+# ------------------------------------------------------------
+*.tmp
+*.temp
+*.bak
+*.backup
+*.old
+*.orig
+*.swp
+
+# ------------------------------------------------------------
+# Generated data
+# ------------------------------------------------------------
+*.csv
+*.xlsx
+*.xls
+*.jsonl
+
+# Ignore generated/output directories
+output/
+outputs/
+generated/
+exports/
+/reports/
+
+# ------------------------------------------------------------
+# AI / ML generated files
+# ------------------------------------------------------------
+*.pt
+*.pth
+*.onnx
+*.safetensors
+*.bin
+*.ckpt
+*.h5
+*.keras
+
+models/
+checkpoints/
+weights/
+
+# ------------------------------------------------------------
+# Camera / Video files
+# ------------------------------------------------------------
+*.mp4
+*.avi
+*.mov
+*.mkv
+*.webm
+*.mjpeg
+*.jpg
+*.jpeg
+*.png
+
+# Camera generated folders
+hls/
+streams/
+recordings/
+snapshots/
+
+# ------------------------------------------------------------
+# Redis / Celery
+# ------------------------------------------------------------
+celerybeat-schedule
+celerybeat.pid
+
+# ------------------------------------------------------------
+# Docker local files
+# ------------------------------------------------------------
+docker-compose.override.yml
+.docker/
+
+# ------------------------------------------------------------
+# Local development configuration
+# ------------------------------------------------------------
+*.local
+*.local.*
+config.local.*
+settings.local.*
+
+# ------------------------------------------------------------
+# Server / deployment generated files
+# ------------------------------------------------------------
+*.pid
+*.sock
+
+# ------------------------------------------------------------
+# Backup files
+# ------------------------------------------------------------
+*.tar
+*.tar.gz
+*.zip
+*.rar
+*.7z
+
+# ------------------------------------------------------------
+# Personal / temporary project files
+# ------------------------------------------------------------
+notes/
+scratch/
+temp/
+test_output/
+debug/

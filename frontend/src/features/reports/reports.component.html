@@ -1,0 +1,550 @@
+<div class="reports-page">
+  <div class="reports-header">
+    <div>
+      <h1>Reports</h1>
+      <p>Transaction history, drilled down to every underlying trade.</p>
+    </div>
+
+    <div class="reports-header-actions">
+      <button type="button" class="refresh-button" [disabled]="loading" (click)="refresh()">
+        <svg class="button-icon refresh-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+          <path d="M20 11A8 8 0 1 0 18.5 16" stroke-linecap="round" stroke-linejoin="round" />
+          <path d="M20 5v6h-6" stroke-linecap="round" stroke-linejoin="round" />
+        </svg>
+        Refresh
+      </button>
+
+      <!-- DOWNLOAD OPTION LEFT EXACTLY AS-IS -->
+      <div class="download-menu-wrapper">
+        <button
+          type="button"
+          class="download-button"
+          [disabled]="loading || !!error"
+          (click)="toggleDownloadMenu()"
+        >
+          Download
+          <span class="download-caret" [class.open]="downloadMenuOpen">▾</span>
+        </button>
+
+        <div class="download-menu" *ngIf="downloadMenuOpen">
+          <button type="button" class="download-menu-item" (click)="openSummaryFamilyModal()">
+            <span class="download-menu-item-title">Summary View</span>
+          </button>
+
+          <button type="button" class="download-menu-item" (click)="openDetailedRangeModal()">
+            <span class="download-menu-item-title">Detailed View</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==========================================================
+       SUMMARY VIEW - FAMILY MODAL (UNCHANGED)
+       ========================================================== -->
+  <div *ngIf="summaryFamilyModalOpen" class="modal-overlay" (click)="cancelSummaryFamilyModal()">
+    <div class="modal-card" (click)="$event.stopPropagation()">
+      <div class="modal-title">Summary View — Select Family</div>
+      <div class="modal-subtitle">Leave as "All Families" to include everyone.</div>
+
+      <div class="modal-field">
+        <label for="summary-family">Family</label>
+        <select id="summary-family" class="modal-select" [(ngModel)]="summaryFamily">
+          <option value="">All Families</option>
+          <option *ngFor="let family of familyOptions" [value]="family">
+            {{ family }}
+          </option>
+        </select>
+      </div>
+
+      <div class="modal-actions">
+        <button type="button" class="modal-button" (click)="cancelSummaryFamilyModal()">
+          Cancel
+        </button>
+        <button
+          type="button"
+          class="modal-button modal-button-primary"
+          (click)="confirmSummaryDownload()"
+        >
+          Download
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==========================================================
+       DETAILED VIEW - DATE RANGE MODAL (UNCHANGED)
+       ========================================================== -->
+  <div *ngIf="detailedRangeModalOpen" class="modal-overlay" (click)="cancelDetailedRangeModal()">
+    <div class="modal-card" (click)="$event.stopPropagation()">
+      <div class="modal-title">Detailed View — Select Date Range</div>
+      <div class="modal-subtitle">Only transactions within this range will be included.</div>
+
+      <div class="modal-field">
+        <label for="detailed-range-family">Family</label>
+        <select id="detailed-range-family" class="modal-select" [(ngModel)]="detailedRangeFamily">
+          <option value="">All Families</option>
+          <option *ngFor="let family of familyOptions" [value]="family">
+            {{ family }}
+          </option>
+        </select>
+      </div>
+
+      <div class="modal-field">
+        <label for="detailed-range-from">From</label>
+        <input
+          id="detailed-range-from"
+          type="date"
+          class="modal-date-input"
+          [(ngModel)]="detailedRangeFrom"
+        />
+      </div>
+
+      <div class="modal-field">
+        <label for="detailed-range-to">To</label>
+        <input
+          id="detailed-range-to"
+          type="date"
+          class="modal-date-input"
+          [(ngModel)]="detailedRangeTo"
+        />
+      </div>
+
+      <div *ngIf="detailedRangeError" class="modal-error">{{ detailedRangeError }}</div>
+
+      <div class="modal-actions">
+        <button type="button" class="modal-button" (click)="cancelDetailedRangeModal()">
+          Cancel
+        </button>
+        <button
+          type="button"
+          class="modal-button modal-button-primary"
+          (click)="confirmDetailedRangeDownload()"
+        >
+          Download
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==========================================================
+       FILTERS
+       Same layout/behavior as the Portfolio page's selection-area
+       (Family Name / Asset Class buttons).
+       ========================================================== -->
+  <div *ngIf="!loading && !error" class="selection-area">
+    <!-- FAMILY -->
+    <div class="selection-box">
+      <div class="selection-title">Family Name</div>
+
+      <div class="selection-buttons">
+        <button
+          type="button"
+          class="selection-button"
+          [class.active]="!selectedFamily"
+          (click)="clearFamily()"
+        >
+          All
+        </button>
+
+        <button
+          *ngFor="let family of familyOptions"
+          type="button"
+          class="selection-button"
+          [class.active]="isFamilySelected(family)"
+          (click)="selectFamily(family)"
+        >
+          {{ family }}
+        </button>
+      </div>
+    </div>
+
+    <!-- ASSET CLASS -->
+    <div class="selection-box">
+      <div class="selection-title">Asset Class</div>
+
+      <div class="selection-buttons">
+        <button
+          type="button"
+          class="selection-button"
+          [class.active]="!selectedAssetClass"
+          (click)="clearAssetClass()"
+        >
+          All
+        </button>
+
+        <button
+          *ngFor="let assetClass of assetClassOptions"
+          type="button"
+          class="selection-button"
+          [class.active]="isAssetClassSelected(assetClass)"
+          (click)="selectAssetClass(assetClass)"
+        >
+          {{ assetClass }}
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <div *ngIf="loading" class="loading-state">
+    <span class="loading-spinner"></span>
+    Loading reports...
+  </div>
+
+  <div *ngIf="!loading && error" class="error-state">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 8v5M12 16h.01" stroke-linecap="round" />
+    </svg>
+    {{ error }}
+  </div>
+
+  <!-- ==========================================================
+       LEVEL 1: SUB CLASS
+       Same table shell/behavior AND same financial columns
+       (Quantity / Invested Value / Current Value / Gain / XIRR)
+       as the Portfolio page's Level 1 (Sub Class) rows, plus a
+       Transactions count.
+       ========================================================== -->
+  <div *ngIf="!loading && !error" class="reports-table-card">
+    <div class="table-scroll">
+      <table class="reports-table">
+        <thead>
+          <tr>
+            <th class="sub-class-name">Sub Class</th>
+            <th>Quantity</th>
+            <th>Invested Value</th>
+            <th>Current Value</th>
+            <th>Gain</th>
+            <th>XIRR</th>
+            <th>Transactions</th>
+            <th class="arrow-column"></th>
+          </tr>
+        </thead>
+
+        <tbody>
+          <ng-container *ngFor="let summary of subClassGroups; trackBy: trackBySubClass">
+            <tr
+              class="sub-class-row"
+              [class.expanded]="expandedSubClass === summary.sub_class"
+              (click)="toggleSubClass(summary.sub_class)"
+            >
+              <td class="sub-class-name">
+                <span class="row-chevron" [class.open]="expandedSubClass === summary.sub_class">
+                  ›
+                </span>
+
+                {{ summary.sub_class }}
+              </td>
+
+              <td>{{ formatNumber(summary.quantity) }}</td>
+
+              <td>₹{{ formatCurrency(summary.invested_value) }}</td>
+
+              <td>₹{{ formatCurrency(summary.current_value) }}</td>
+
+              <td class="pnl-cell" [ngClass]="getPnlClass(summary.pnl)">
+                {{ summary.pnl >= 0 ? '+' : '-' }}₹{{ formatAbsoluteCurrency(summary.pnl) }}
+              </td>
+
+              <td
+                class="pnl-cell"
+                [ngClass]="summary.xirr === null ? 'neutral' : getPnlClass(summary.xirr)"
+              >
+                {{ formatPercentage(summary.xirr) }}
+              </td>
+
+              <td>{{ summary.transaction_count }}</td>
+
+              <td class="arrow-column">
+                <span
+                  class="row-chevron right"
+                  [class.open]="expandedSubClass === summary.sub_class"
+                >
+                  ›
+                </span>
+              </td>
+            </tr>
+
+            <!-- ======================================================
+                 LEVEL 2: ASSET NAME
+                 Same flex-row group pattern as the Portfolio page's
+                 Level 2 (Asset Name) groups, with the same financial
+                 columns, plus a Download action underneath.
+                 ====================================================== -->
+            <tr *ngIf="expandedSubClass === summary.sub_class" class="asset-detail-row">
+              <td colspan="8">
+                <div class="asset-detail-container">
+                  <div class="asset-detail-title">{{ summary.sub_class }} Assets</div>
+
+                  <div class="asset-group-columns-header">
+                    <span class="asset-group-name-header">Asset Name</span>
+                    <span class="asset-group-col">Quantity</span>
+                    <span class="asset-group-col">Invested Value</span>
+                    <span class="asset-group-col">Current Value</span>
+                    <span class="asset-group-col">Gain</span>
+                    <span class="asset-group-col">Underlyings</span>
+                    <span class="asset-group-col">Transactions</span>
+                  </div>
+
+                  <div class="asset-groups">
+                    <ng-container
+                      *ngFor="let assetGroup of summary.asset_names; trackBy: trackByAssetName"
+                    >
+                      <div class="asset-group">
+                        <div
+                          class="asset-group-header"
+                          [class.expanded]="
+                            expandedAssetName ===
+                            getAssetNameKey(summary.sub_class, assetGroup.asset_name)
+                          "
+                          (click)="
+                            toggleAssetName(
+                              getAssetNameKey(summary.sub_class, assetGroup.asset_name)
+                            )
+                          "
+                        >
+                          <span
+                            class="row-chevron"
+                            [class.open]="
+                              expandedAssetName ===
+                              getAssetNameKey(summary.sub_class, assetGroup.asset_name)
+                            "
+                          >
+                            ›
+                          </span>
+
+                          <span class="asset-group-name">
+                            {{ assetGroup.asset_name }}
+                          </span>
+
+                          <span class="asset-group-col asset-group-quantity">
+                            {{ formatNumber(assetGroup.quantity) }}
+                          </span>
+
+                          <span class="asset-group-col">
+                            ₹{{ formatCurrency(assetGroup.invested_value) }}
+                          </span>
+
+                          <span class="asset-group-col">
+                            ₹{{ formatCurrency(assetGroup.current_value) }}
+                          </span>
+
+                          <span
+                            class="asset-group-col pnl-cell"
+                            [ngClass]="getPnlClass(assetGroup.pnl)"
+                          >
+                            {{ assetGroup.pnl >= 0 ? '+' : '-' }}₹{{
+                              formatAbsoluteCurrency(assetGroup.pnl)
+                            }}
+                          </span>
+
+                          <span class="asset-group-col">
+                            {{ assetGroup.underlyings.length }}
+                          </span>
+
+                          <span class="asset-group-col">
+                            {{ assetGroup.transaction_count }}
+                          </span>
+                        </div>
+
+                        <!-- ================================================
+                             UNDER ASSET NAME: DOWNLOAD ACTION
+                             Sits directly beneath the Asset Name header,
+                             above its Underlying list. Downloads every
+                             transaction across all of this Asset Name's
+                             Underlyings.
+                             ================================================ -->
+                        <div
+                          *ngIf="
+                            expandedAssetName ===
+                            getAssetNameKey(summary.sub_class, assetGroup.asset_name)
+                          "
+                          class="asset-name-actions"
+                        >
+                          <button
+                            type="button"
+                            class="underlying-action-button underlying-action-download"
+                            (click)="downloadAssetNameTransactions($event, assetGroup)"
+                          >
+                            <svg class="button-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+                              <path d="M12 15V4M12 15 8.5 11.5M12 15l3.5-3.5" stroke-linecap="round" stroke-linejoin="round" />
+                              <path d="M4 16v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2" stroke-linecap="round" stroke-linejoin="round" />
+                            </svg>
+                            Download
+                          </button>
+                        </div>
+
+                        <!-- ================================================
+                             LEVEL 3 / FINAL: UNDERLYING
+                             Styled like the Portfolio page's final Underlying
+                             table. Unlike Portfolio, rows here ARE clickable -
+                             clicking one reveals that Underlying's own
+                             Transactions below it.
+                             ================================================ -->
+                        <div
+                          *ngIf="
+                            expandedAssetName ===
+                            getAssetNameKey(summary.sub_class, assetGroup.asset_name)
+                          "
+                          class="underlying-container"
+                        >
+                          <div class="underlying-table-scroll">
+                            <table class="asset-table">
+                              <thead>
+                                <tr>
+                                  <th>Underlying</th>
+                                  <th>ISIN</th>
+                                  <th>Transactions</th>
+                                  <th class="arrow-column"></th>
+                                </tr>
+                              </thead>
+
+                              <tbody>
+                                <ng-container
+                                  *ngFor="
+                                    let underlyingGroup of assetGroup.underlyings;
+                                    trackBy: trackByUnderlying
+                                  "
+                                >
+                                  <tr
+                                    class="underlying-row"
+                                    [class.expanded]="
+                                      expandedUnderlying ===
+                                      getUnderlyingKey(
+                                        summary.sub_class,
+                                        assetGroup.asset_name,
+                                        underlyingGroup.underlying
+                                      )
+                                    "
+                                    (click)="
+                                      toggleUnderlying(
+                                        getUnderlyingKey(
+                                          summary.sub_class,
+                                          assetGroup.asset_name,
+                                          underlyingGroup.underlying
+                                        )
+                                      )
+                                    "
+                                  >
+                                    <td class="asset-name">
+                                      <span
+                                        class="row-chevron"
+                                        [class.open]="
+                                          expandedUnderlying ===
+                                          getUnderlyingKey(
+                                            summary.sub_class,
+                                            assetGroup.asset_name,
+                                            underlyingGroup.underlying
+                                          )
+                                        "
+                                      >
+                                        ›
+                                      </span>
+
+                                      {{ underlyingGroup.underlying }}
+                                    </td>
+
+                                    <td class="isin">{{ underlyingGroup.isin }}</td>
+
+                                    <td>{{ underlyingGroup.transaction_count }}</td>
+
+                                    <td class="arrow-column">
+                                      <span
+                                        class="row-chevron right"
+                                        [class.open]="
+                                          expandedUnderlying ===
+                                          getUnderlyingKey(
+                                            summary.sub_class,
+                                            assetGroup.asset_name,
+                                            underlyingGroup.underlying
+                                          )
+                                        "
+                                      >
+                                        ›
+                                      </span>
+                                    </td>
+                                  </tr>
+
+                                  <!-- ==========================================
+                                       LEVEL 4 / FINAL: TRANSACTIONS FOR THIS
+                                       UNDERLYING
+                                       ========================================== -->
+                                  <tr
+                                    *ngIf="
+                                      expandedUnderlying ===
+                                      getUnderlyingKey(
+                                        summary.sub_class,
+                                        assetGroup.asset_name,
+                                        underlyingGroup.underlying
+                                      )
+                                    "
+                                    class="transactions-detail-row"
+                                  >
+                                    <td colspan="4">
+                                      <div class="transactions-container">
+                                        <div class="transactions-table-scroll">
+                                          <table class="transactions-table">
+                                            <thead>
+                                              <tr>
+                                                <th>Transaction Date</th>
+                                                <th>Type</th>
+                                                <th>ISIN</th>
+                                                <th>Quantity</th>
+                                                <th>Price</th>
+                                                <th>Amount</th>
+                                              </tr>
+                                            </thead>
+
+                                            <tbody>
+                                              <tr
+                                                *ngFor="
+                                                  let tx of underlyingGroup.transactions;
+                                                  trackBy: trackByTransaction
+                                                "
+                                              >
+                                                <td>{{ tx.transaction_date }}</td>
+                                                <td>
+                                                  {{
+                                                    tx.transaction_type_display ||
+                                                      tx.transaction_type
+                                                  }}
+                                                </td>
+                                                <td class="isin">{{ tx.isin || '-' }}</td>
+                                                <td>{{ formatNumber(tx.quantity) }}</td>
+                                                <td>₹{{ formatDecimal(tx.price_per_unit) }}</td>
+                                                <td>₹{{ formatCurrency(tx.amount) }}</td>
+                                              </tr>
+                                            </tbody>
+                                          </table>
+                                        </div>
+                                      </div>
+                                    </td>
+                                  </tr>
+                                </ng-container>
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+                      </div>
+                    </ng-container>
+                  </div>
+                </div>
+              </td>
+            </tr>
+          </ng-container>
+
+          <tr *ngIf="subClassGroups.length === 0">
+            <td colspan="8" class="empty-table">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
+                <rect x="3.5" y="4" width="17" height="16" rx="2" />
+                <path d="M7.5 9h9M7.5 13h6" stroke-linecap="round" />
+              </svg>
+              No transaction data available.
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>

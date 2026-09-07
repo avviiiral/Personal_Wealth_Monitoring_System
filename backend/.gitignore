@@ -1,0 +1,96 @@
+# ==============================
+# Python
+# ==============================
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyo
+*.pyd
+
+# ==============================
+# Virtual Environment
+# ==============================
+venv/
+.venv/
+env/
+ENV/
+
+# ==============================
+# Django
+# ==============================
+*.log
+db.sqlite3
+
+# SQLite temporary files
+*.sqlite3-shm
+*.sqlite3-wal
+
+db.sqlite3-journal
+
+staticfiles/
+media/
+
+# Daily refresh scheduler marker (see
+# market_data/services/daily_refresh_scheduler.py)
+data/.last_scheduled_refresh_date
+
+# Django local settings
+local_settings.py
+
+# ==============================
+# Environment Variables / Secrets
+# ==============================
+.env
+.env.*
+!.env.example
+
+# ==============================
+# IDE / Editors
+# ==============================
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# ==============================
+# OS
+# ==============================
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ==============================
+# Testing / Coverage
+# ==============================
+.pytest_cache/
+.coverage
+htmlcov/
+coverage.xml
+
+# ==============================
+# Type Checking
+# ==============================
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# ==============================
+# Jupyter
+# ==============================
+.ipynb_checkpoints/
+
+# ==============================
+# Temporary Files
+# ==============================
+*.tmp
+*.temp
+*.bak
+*.swp
+
+# ==============================
+# Build / Cache
+# ==============================
+*.egg-info/
+dist/
+build/
+.eggs/

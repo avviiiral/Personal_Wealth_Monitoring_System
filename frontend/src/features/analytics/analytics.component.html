@@ -1,0 +1,643 @@
+<div class="analytics-page">
+  <!-- ================================================== -->
+  <!-- HEADER -->
+  <!-- ================================================== -->
+
+  <div class="page-header">
+    <div>
+      <div class="eyebrow">PORTFOLIO INTELLIGENCE</div>
+
+      <h1>Analytics</h1>
+
+      <p>Understand performance, risk, allocation, and wealth growth.</p>
+    </div>
+
+    <div class="header-actions">
+      <select [value]="selectedDays" (change)="changePeriod(+$any($event.target).value)">
+        <option [value]="30">30 Days</option>
+
+        <option [value]="90">90 Days</option>
+
+        <option [value]="180">6 Months</option>
+
+        <option [value]="365">1 Year</option>
+      </select>
+
+      <button class="refresh-button" type="button" (click)="loadAnalytics()">Refresh</button>
+    </div>
+  </div>
+
+  <!-- ================================================== -->
+  <!-- LOADING -->
+  <!-- ================================================== -->
+
+  <div class="loading-card" *ngIf="loading">
+    <div class="loading-spinner"></div>
+
+    <span> Loading portfolio analytics... </span>
+  </div>
+
+  <!-- ================================================== -->
+  <!-- ERROR -->
+  <!-- ================================================== -->
+
+  <div class="error-card" *ngIf="error">
+    {{ error }}
+  </div>
+
+  <!-- ================================================== -->
+  <!-- ANALYTICS -->
+  <!-- ================================================== -->
+
+  <ng-container *ngIf="!loading">
+    <!-- ================================================== -->
+    <!-- PERFORMANCE SNAPSHOT -->
+    <!-- ================================================== -->
+
+    <section class="snapshot-section">
+      <div class="section-heading">
+        <div>
+          <span class="section-eyebrow"
+            ><i class="eyebrow-dot eyebrow-dot--ink"></i>PERFORMANCE</span
+          >
+
+          <h2>Portfolio Snapshot</h2>
+        </div>
+
+        <span class="period-badge"> {{ selectedDays }} day analysis </span>
+      </div>
+
+      <div class="snapshot-grid">
+        <div class="metric-card hero">
+          <span class="metric-label"> Current Wealth </span>
+
+          <strong>
+            {{ formatCurrency(summary?.total_current_value ?? summary?.total_wealth ?? 0) }}
+          </strong>
+
+          <div class="metric-footer">
+            <span class="metric-description"> Current portfolio value </span>
+
+            <span
+              class="trend-pill"
+              [class.negative]="periodValueChange < 0"
+              [class.positive]="periodValueChange >= 0"
+            >
+              {{ periodValueChange >= 0 ? '↑' : '↓' }}
+              {{ periodValueChange >= 0 ? '+' : '' }}{{ periodValueChange.toFixed(2) }}%
+              <small>&nbsp;/ {{ selectedDays }}d</small>
+            </span>
+          </div>
+        </div>
+
+        <div class="metric-card">
+          <span class="metric-label"> Capital Invested </span>
+
+          <strong>
+            {{ formatCurrency(summary?.total_invested ?? summary?.invested_value ?? 0) }}
+          </strong>
+
+          <span class="metric-description"> Total capital deployed </span>
+        </div>
+
+        <div class="metric-card">
+          <span class="metric-label"> Unrealized P&amp;L </span>
+
+          <strong
+            [class.negative]="(summary?.total_unrealized_pnl ?? 0) < 0"
+            [class.positive]="(summary?.total_unrealized_pnl ?? 0) >= 0"
+          >
+            {{ formatCurrency(summary?.total_unrealized_pnl ?? summary?.total_pnl ?? 0) }}
+          </strong>
+
+          <span class="metric-description"> Current unrealized gain or loss </span>
+        </div>
+
+        <div class="metric-card emphasis">
+          <span class="metric-label"> XIRR </span>
+
+          <strong> {{ xirr?.xirr_percentage ?? xirr?.xirr ?? 0 }}% </strong>
+
+          <span class="metric-description"> Annualized portfolio return </span>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================================================== -->
+    <!-- INSIGHTS -->
+    <!-- ================================================== -->
+
+    <section class="insights-grid">
+      <!-- BEST -->
+
+      <div class="insight-card insight-card--gain">
+        <div class="insight-icon positive-icon">↑</div>
+
+        <div class="insight-content">
+          <span class="insight-label"> Best Performer </span>
+
+          <strong>
+            {{ getBestPerformerName() }}
+          </strong>
+
+          <span class="insight-value positive"> +{{ getBestPerformerReturn().toFixed(2) }}% </span>
+        </div>
+      </div>
+
+      <!-- WORST -->
+
+      <div class="insight-card insight-card--loss">
+        <div class="insight-icon negative-icon">↓</div>
+
+        <div class="insight-content">
+          <span class="insight-label"> Weakest Performer </span>
+
+          <strong>
+            {{ getWorstPerformerName() }}
+          </strong>
+
+          <span
+            class="insight-value"
+            [class.negative]="getWorstPerformerReturn() < 0"
+            [class.positive]="getWorstPerformerReturn() >= 0"
+          >
+            {{ getWorstPerformerReturn().toFixed(2) }}%
+          </span>
+        </div>
+      </div>
+
+      <!-- LARGEST ALLOCATION -->
+
+      <div class="insight-card insight-card--accent">
+        <div class="insight-icon">◉</div>
+
+        <div class="insight-content">
+          <span class="insight-label"> Largest Allocation </span>
+
+          <strong>
+            {{ getLargestAllocationName() }}
+          </strong>
+
+          <span class="insight-value"> {{ getLargestAllocationPercentage().toFixed(2) }}% </span>
+        </div>
+      </div>
+
+      <!-- PERIOD CHANGE -->
+
+      <div
+        class="insight-card"
+        [class.insight-card--gain]="periodValueChange >= 0"
+        [class.insight-card--loss]="periodValueChange < 0"
+      >
+        <div class="insight-icon">↗</div>
+
+        <div class="insight-content">
+          <span class="insight-label"> Wealth Change </span>
+
+          <strong> {{ selectedDays }} Days </strong>
+
+          <span
+            class="insight-value"
+            [class.negative]="periodValueChange < 0"
+            [class.positive]="periodValueChange >= 0"
+          >
+            {{ periodValueChange >= 0 ? '+' : '' }}{{ periodValueChange.toFixed(2) }}%
+          </span>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================================================== -->
+    <!-- WEALTH GROWTH -->
+    <!-- ================================================== -->
+
+    <section class="analytics-card wealth-growth-card">
+      <div class="card-header">
+        <div>
+          <span class="section-eyebrow"
+            ><i class="eyebrow-dot eyebrow-dot--ink"></i>WEALTH TREND</span
+          >
+
+          <h2>Wealth Growth</h2>
+
+          <p>Portfolio value compared with capital invested.</p>
+        </div>
+
+        <span class="period-badge"> {{ selectedDays }} Days </span>
+      </div>
+
+      <div class="historical-chart-container">
+        <canvas #historicalChart></canvas>
+      </div>
+    </section>
+
+    <!-- ================================================== -->
+    <!-- ALLOCATION + ANALYSIS -->
+    <!-- ================================================== -->
+
+    <div class="analysis-grid">
+      <!-- ALLOCATION -->
+
+      <section class="analytics-card allocation-card">
+        <div class="card-header">
+          <div>
+            <span class="section-eyebrow"
+              ><i class="eyebrow-dot eyebrow-dot--brass"></i>ALLOCATION</span
+            >
+
+            <h2>Where Your Wealth Is</h2>
+
+            <p>Current distribution by asset category, from Investment Summary.</p>
+          </div>
+        </div>
+
+        <div class="allocation-content">
+          <div class="allocation-chart-container">
+            <canvas #allocationChart></canvas>
+          </div>
+
+          <div class="allocation-list">
+            <div class="allocation-row" *ngFor="let item of allocation?.results; let i = index">
+              <span class="allocation-label">
+                <i class="swatch-dot" [style.background]="swatchColor(i)"></i>
+                {{ formatCategory(item.category) }}
+              </span>
+
+              <div class="allocation-value">
+                <strong>
+                  {{ formatAxisCurrency(item.value) }}
+                </strong>
+
+                <small> {{ item.percentage | number: '1.1-2' }}% </small>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- PORTFOLIO PROFILE -->
+
+      <section class="analytics-card profile-card">
+        <div class="card-header">
+          <div>
+            <span class="section-eyebrow"
+              ><i class="eyebrow-dot eyebrow-dot--brass"></i>PORTFOLIO PROFILE</span
+            >
+
+            <h2>Portfolio Structure</h2>
+
+            <p>Key characteristics of your investments.</p>
+          </div>
+        </div>
+
+        <div class="profile-list">
+          <div class="profile-row">
+            <div>
+              <span> Holdings </span>
+
+              <small> Active investment positions </small>
+            </div>
+
+            <strong>
+              {{ summary?.number_of_holdings ?? 0 }}
+            </strong>
+          </div>
+
+          <div class="profile-row">
+            <div>
+              <span> Largest Allocation </span>
+
+              <small> Dominant asset category </small>
+            </div>
+
+            <strong>
+              {{ getLargestAllocationName() }}
+            </strong>
+          </div>
+
+          <div class="profile-row">
+            <div>
+              <span> Portfolio Return </span>
+
+              <small> Unrealized return </small>
+            </div>
+
+            <strong
+              [class.negative]="(summary?.pnl_percentage ?? 0) < 0"
+              [class.positive]="(summary?.pnl_percentage ?? 0) >= 0"
+            >
+              {{ summary?.pnl_percentage ?? summary?.return_percentage ?? 0 }}%
+            </strong>
+          </div>
+
+          <div class="profile-row">
+            <div>
+              <span> Annualized Return </span>
+
+              <small> XIRR </small>
+            </div>
+
+            <strong> {{ xirr?.xirr_percentage ?? xirr?.xirr ?? 0 }}% </strong>
+          </div>
+
+          <div class="profile-row">
+            <div>
+              <span> Analysis Period </span>
+
+              <small> Historical data range </small>
+            </div>
+
+            <strong> {{ selectedDays }} days </strong>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <!-- ================================================== -->
+    <!-- MARKET CAP & HOLDING TYPE BREAKDOWN -->
+    <!-- ================================================== -->
+
+    <div class="analysis-grid breakdown-grid">
+      <!-- MARKET CAP ALLOCATION -->
+
+      <section class="analytics-card">
+        <div class="card-header">
+          <div>
+            <span class="section-eyebrow"
+              ><i class="eyebrow-dot eyebrow-dot--brass"></i>MARKET CAP</span
+            >
+
+            <h2>Allocation</h2>
+
+            <p>Holdings by market capitalisation.</p>
+          </div>
+        </div>
+
+        <div class="loading-card" *ngIf="!marketCapAllocationError && !marketCapAllocation">
+          <div class="loading-spinner"></div>
+
+          <span> Loading market cap allocation... </span>
+        </div>
+
+        <div class="empty-state" *ngIf="marketCapAllocationError">
+          {{ marketCapAllocationError }}
+        </div>
+
+        <ng-container *ngIf="!marketCapAllocationError && marketCapAllocation">
+          <div class="empty-state" *ngIf="marketCapAllocation.results?.length === 0">
+            <span class="empty-state-icon">◌</span>
+            No market cap data available.
+          </div>
+
+          <div class="allocation-chart-container" *ngIf="marketCapAllocation.results?.length > 0">
+            <canvas #marketCapChart></canvas>
+          </div>
+        </ng-container>
+      </section>
+
+      <!-- NON-STOCK HOLDING TYPES -->
+
+      <section class="analytics-card">
+        <div class="card-header">
+          <div>
+            <span class="section-eyebrow"
+              ><i class="eyebrow-dot eyebrow-dot--brass"></i>HOLDING TYPES</span
+            >
+
+            <h2>Non-Stock Holding Types</h2>
+
+            <p>What's inside the funds, bonds &amp; alternatives.</p>
+          </div>
+        </div>
+
+        <div class="loading-card" *ngIf="!nonStockHoldingTypesError && !nonStockHoldingTypes">
+          <div class="loading-spinner"></div>
+
+          <span> Loading holding type breakdown... </span>
+        </div>
+
+        <div class="empty-state" *ngIf="nonStockHoldingTypesError">
+          {{ nonStockHoldingTypesError }}
+        </div>
+
+        <ng-container *ngIf="!nonStockHoldingTypesError && nonStockHoldingTypes">
+          <div class="empty-state" *ngIf="nonStockHoldingTypes.results?.length === 0">
+            <span class="empty-state-icon">◌</span>
+            No non-stock holdings found.
+          </div>
+
+          <div class="allocation-chart-container" *ngIf="nonStockHoldingTypes.results?.length > 0">
+            <canvas #nonStockHoldingTypesChart></canvas>
+          </div>
+        </ng-container>
+      </section>
+    </div>
+
+    <!-- ================================================== -->
+    <!-- SECTOR ALLOCATION -->
+    <!-- ================================================== -->
+
+    <section class="analytics-card allocation-card sector-allocation-card">
+      <div class="card-header">
+        <div>
+          <span class="section-eyebrow"><i class="eyebrow-dot eyebrow-dot--brass"></i>SECTOR</span>
+
+          <h2>Sector Allocation</h2>
+
+          <p>Current value distribution across sectors, for direct equity holdings.</p>
+        </div>
+      </div>
+
+      <div class="loading-card" *ngIf="!sectorAllocationError && !sectorAllocation">
+        <div class="loading-spinner"></div>
+
+        <span> Loading sector allocation... </span>
+      </div>
+
+      <div class="empty-state" *ngIf="sectorAllocationError">
+        {{ sectorAllocationError }}
+      </div>
+
+      <ng-container *ngIf="!sectorAllocationError && sectorAllocation">
+        <div class="allocation-content" *ngIf="sectorAllocation?.results?.length">
+          <div class="allocation-chart-container">
+            <canvas #sectorChart></canvas>
+          </div>
+
+          <div class="allocation-list">
+            <div
+              class="allocation-row"
+              *ngFor="let item of sectorAllocation?.results; let i = index"
+            >
+              <span class="allocation-label">
+                <i class="swatch-dot" [style.background]="swatchColor(i)"></i>
+                {{ item.sector }}
+              </span>
+
+              <div class="allocation-value">
+                <strong>
+                  {{ formatAxisCurrency(item.current_value) }}
+                </strong>
+
+                <small> {{ item.percentage | number: '1.1-2' }}% </small>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="empty-state" *ngIf="!sectorAllocation?.results?.length">
+          <span class="empty-state-icon">◌</span>
+          No sector data available.
+        </div>
+      </ng-container>
+    </section>
+
+    <!-- ================================================== -->
+    <!-- INVESTMENT PERFORMANCE -->
+    <!-- ================================================== -->
+
+    <section class="analytics-card performance-card">
+      <div class="card-header">
+        <div>
+          <span class="section-eyebrow"
+            ><i class="eyebrow-dot eyebrow-dot--ink"></i>PERFORMANCE RANKING</span
+          >
+
+          <h2>Investment Performance</h2>
+
+          <p>Compare the return generated by each asset sub class.</p>
+        </div>
+      </div>
+
+      <div class="performance-chart-container" *ngIf="performance?.results?.length">
+        <canvas #performanceChart></canvas>
+      </div>
+
+      <div
+        class="empty-state"
+        *ngIf="!performance || !performance.results || !performance.results.length"
+      >
+        <span class="empty-state-icon">◌</span>
+        No performance data yet — add holdings to see returns by sub class.
+      </div>
+    </section>
+
+    <!-- ================================================== -->
+    <!-- ALLOCATION BY ADVISOR -->
+    <!-- ================================================== -->
+
+    <section class="analytics-card allocation-card advisor-allocation-card">
+      <div class="card-header">
+        <div>
+          <span class="section-eyebrow"><i class="eyebrow-dot eyebrow-dot--teal"></i>ADVISOR</span>
+
+          <h2>Allocation by Advisor</h2>
+
+          <p>Current value distribution across advisors.</p>
+        </div>
+      </div>
+
+      <div class="allocation-content" *ngIf="advisorAllocation?.results?.length">
+        <div class="allocation-chart-container">
+          <canvas #advisorChart></canvas>
+        </div>
+
+        <div class="allocation-list">
+          <div class="allocation-row" *ngFor="let item of advisorAllocation?.results">
+            <span class="allocation-label">
+              <i class="advisor-avatar" [style.background]="advisorColor(item.advisor)">{{
+                advisorInitials(item.advisor)
+              }}</i>
+              {{ item.advisor }}
+            </span>
+
+            <div class="allocation-value">
+              <strong>
+                {{ formatAxisCurrency(item.value) }}
+              </strong>
+
+              <small> {{ item.percentage | number: '1.1-2' }}% </small>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="empty-state" *ngIf="!advisorAllocation?.results?.length">
+        <span class="empty-state-icon">◌</span>
+        No advisor data yet — assign advisors to your holdings to see this.
+      </div>
+    </section>
+
+    <!-- ================================================== -->
+    <!-- ADVISOR PERFORMANCE -->
+    <!-- ================================================== -->
+
+    <section class="analytics-card performance-card">
+      <div class="card-header">
+        <div>
+          <span class="section-eyebrow"><i class="eyebrow-dot eyebrow-dot--teal"></i>ADVISOR</span>
+
+          <h2>Advisor Performance</h2>
+
+          <p>Return generated on the value each advisor manages.</p>
+        </div>
+      </div>
+
+      <div class="performance-chart-container" *ngIf="advisorPerformance?.results?.length">
+        <canvas #advisorPerformanceChart></canvas>
+      </div>
+
+      <div
+        class="empty-state"
+        *ngIf="
+          !advisorPerformance || !advisorPerformance.results || !advisorPerformance.results.length
+        "
+      >
+        <span class="empty-state-icon">◌</span>
+        No advisor performance data yet — assign advisors to your holdings to see this.
+      </div>
+    </section>
+
+    <!-- ================================================== -->
+    <!-- PERIOD DETAILS -->
+    <!-- ================================================== -->
+
+    <section class="period-card">
+      <div>
+        <span class="section-eyebrow"
+          ><i class="eyebrow-dot eyebrow-dot--ink"></i>ANALYSIS WINDOW</span
+        >
+
+        <h2>{{ selectedDays }} Day Analysis</h2>
+
+        <p>Historical wealth data used for the current analysis.</p>
+      </div>
+
+      <div class="period-details">
+        <div>
+          <span> Start Date </span>
+
+          <strong>
+            {{ historical?.start_date ?? '-' }}
+          </strong>
+        </div>
+
+        <div>
+          <span> End Date </span>
+
+          <strong>
+            {{ historical?.end_date ?? '-' }}
+          </strong>
+        </div>
+
+        <div>
+          <span> Data Points </span>
+
+          <strong>
+            {{ historical?.results?.length ?? 0 }}
+          </strong>
+        </div>
+      </div>
+    </section>
+  </ng-container>
+</div>

@@ -1,0 +1,584 @@
+<div class="portfolio-page">
+  <div class="portfolio-header">
+    <div>
+      <h1>Portfolio</h1>
+      <p>Your holdings, drilled down from sub class to underlying asset.</p>
+    </div>
+
+    <div class="portfolio-header-actions">
+      <input
+        #transactionFileInput
+        type="file"
+        accept=".xlsx,.csv"
+        class="upload-input-hidden"
+        (change)="onTransactionFileSelected($event)"
+      />
+
+      <button
+        type="button"
+        class="upload-button"
+        [disabled]="uploadingTransactions"
+        (click)="transactionFileInput.click()"
+      >
+        <svg
+          *ngIf="!uploadingTransactions"
+          class="button-icon"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.8"
+          aria-hidden="true"
+        >
+          <path d="M12 16V4M12 4 7.5 8.5M12 4l4.5 4.5" stroke-linecap="round" stroke-linejoin="round" />
+          <path d="M4 16v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2" stroke-linecap="round" stroke-linejoin="round" />
+        </svg>
+
+        <span class="button-spinner" *ngIf="uploadingTransactions"></span>
+
+        {{ uploadingTransactions ? 'Uploading…' : 'Upload Transactions' }}
+      </button>
+
+      <button type="button" class="refresh-button" [disabled]="loading" (click)="refresh()">
+        <svg class="button-icon refresh-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+          <path d="M20 11A8 8 0 1 0 18.5 16" stroke-linecap="round" stroke-linejoin="round" />
+          <path d="M20 5v6h-6" stroke-linecap="round" stroke-linejoin="round" />
+        </svg>
+        Refresh
+      </button>
+    </div>
+  </div>
+
+  <!-- FILTERS -->
+  <div *ngIf="!loading && !error" class="selection-area">
+    <!-- FAMILY -->
+    <div class="selection-box">
+      <div class="selection-title">Family Name</div>
+
+      <div class="selection-buttons">
+        <button
+          type="button"
+          class="selection-button"
+          [class.active]="!selectedFamily"
+          (click)="clearFamily()"
+        >
+          All
+        </button>
+
+        <button
+          *ngFor="let family of familyOptions"
+          type="button"
+          class="selection-button"
+          [class.active]="isFamilySelected(family)"
+          (click)="selectFamily(family)"
+        >
+          {{ family }}
+        </button>
+      </div>
+    </div>
+
+    <!-- ASSET CLASS -->
+    <div class="selection-box">
+      <div class="selection-title">Asset Class</div>
+
+      <div class="selection-buttons">
+        <button
+          type="button"
+          class="selection-button"
+          [class.active]="!selectedAssetClass"
+          (click)="clearAssetClass()"
+        >
+          All
+        </button>
+
+        <button
+          *ngFor="let assetClass of assetClassOptions"
+          type="button"
+          class="selection-button"
+          [class.active]="isAssetClassSelected(assetClass)"
+          (click)="selectAssetClass(assetClass)"
+        >
+          {{ assetClass }}
+        </button>
+      </div>
+    </div>
+
+    <!-- ADVISORS -->
+    <div class="selection-box">
+      <div class="selection-title">Advisors</div>
+
+      <div class="selection-buttons">
+        <button
+          type="button"
+          class="selection-button"
+          [class.active]="!selectedAdvisor"
+          (click)="clearAdvisor()"
+        >
+          All
+        </button>
+
+        <button
+          *ngFor="let advisor of advisorOptions"
+          type="button"
+          class="selection-button"
+          [class.active]="isAdvisorSelected(advisor)"
+          (click)="selectAdvisor(advisor)"
+        >
+          {{ advisor }}
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <div *ngIf="loading" class="loading-state">
+    <span class="loading-spinner"></span>
+    Loading portfolio...
+  </div>
+
+  <div *ngIf="!loading && error" class="error-state">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 8v5M12 16h.01" stroke-linecap="round" />
+    </svg>
+    {{ error }}
+  </div>
+
+  <div *ngIf="!loading && !error" class="portfolio-table-card">
+    <div class="table-scroll">
+      <table class="portfolio-table">
+        <thead>
+          <tr>
+            <th class="sub-class-name">Sub Class</th>
+
+            <th>Quantity</th>
+
+            <th>Invested Value</th>
+
+            <th>Current Value</th>
+
+            <th>Gain</th>
+
+            <th>XIRR</th>
+
+            <th class="arrow-column"></th>
+          </tr>
+        </thead>
+
+        <tbody>
+          <!-- =====================================================
+               LEVEL 1: SUB CLASS
+               ===================================================== -->
+          <ng-container *ngFor="let summary of subClassSummaries; trackBy: trackBySubClass">
+            <tr
+              class="sub-class-row"
+              [class.expanded]="expandedSubClass === summary.sub_class"
+              (click)="toggleSubClass(summary.sub_class)"
+            >
+              <td class="sub-class-name">
+                <span class="row-chevron" [class.open]="expandedSubClass === summary.sub_class">
+                  ›
+                </span>
+
+                {{ summary.sub_class }}
+              </td>
+
+              <td>
+                {{ formatNumber(summary.quantity) }}
+              </td>
+
+              <td>₹{{ formatCurrency(summary.invested_value) }}</td>
+
+              <td>
+                <span
+                  class="value-pill"
+                  [class.manual-price-cell]="subClassHasManualPrice(summary)"
+                >
+                  ₹{{ formatCurrency(summary.current_value) }}
+                </span>
+              </td>
+
+              <td class="pnl-cell" [ngClass]="getPnlClass(summary.pnl)">
+                {{ summary.pnl >= 0 ? '+' : '-' }}₹{{ formatAbsoluteCurrency(summary.pnl) }}
+              </td>
+
+              <td
+                class="pnl-cell"
+                [ngClass]="summary.xirr === null ? 'neutral' : getPnlClass(summary.xirr)"
+              >
+                {{ formatPercentage(summary.xirr) }}
+              </td>
+
+              <td class="arrow-column">
+                <span
+                  class="row-chevron right"
+                  [class.open]="expandedSubClass === summary.sub_class"
+                >
+                  ›
+                </span>
+              </td>
+            </tr>
+
+            <!-- =================================================
+                 LEVEL 2: ASSET NAME
+                 ================================================= -->
+            <tr *ngIf="expandedSubClass === summary.sub_class" class="asset-detail-row">
+              <td colspan="7">
+                <div class="asset-detail-container">
+                  <div class="asset-detail-title">
+                    {{ summary.sub_class }}
+                    Assets
+                  </div>
+
+                  <div class="asset-group-columns-header">
+                    <span class="asset-group-name-header">Asset Name</span>
+                    <span class="asset-group-col">Quantity</span>
+                    <span class="asset-group-col">Invested Value</span>
+                    <span class="asset-group-col">Current Value</span>
+                    <span class="asset-group-col">Gain</span>
+                  </div>
+
+                  <div class="asset-groups">
+                    <ng-container
+                      *ngFor="
+                        let assetGroup of getAssetGroups(summary.assets);
+                        trackBy: trackByAssetGroup
+                      "
+                    >
+                      <!-- ASSET NAME IS CLICKABLE -->
+                      <div class="asset-group">
+                        <div
+                          class="asset-group-header"
+                          [class.expanded]="
+                            expandedAsset === getAssetKey(summary.sub_class, assetGroup.asset_name)
+                          "
+                          (click)="
+                            toggleAsset(getAssetKey(summary.sub_class, assetGroup.asset_name))
+                          "
+                        >
+                          <span
+                            class="row-chevron"
+                            [class.open]="
+                              expandedAsset ===
+                              getAssetKey(summary.sub_class, assetGroup.asset_name)
+                            "
+                          >
+                            ›
+                          </span>
+
+                          <span class="asset-group-name">
+                            {{ assetGroup.asset_name }}
+                          </span>
+
+                          <span class="asset-group-col asset-group-quantity">
+                            {{ formatNumber(assetGroup.quantity) }}
+                          </span>
+
+                          <span class="asset-group-col">
+                            ₹{{ formatCurrency(assetGroup.invested_value) }}
+                          </span>
+
+                          <span
+                            class="asset-group-col"
+                            [class.manual-price-cell]="assetGroupHasManualPrice(assetGroup)"
+                          >
+                            ₹{{ formatCurrency(assetGroup.current_value) }}
+                          </span>
+
+                          <span
+                            class="asset-group-col pnl-cell"
+                            [ngClass]="getPnlClass(assetGroup.pnl)"
+                          >
+                            {{ assetGroup.pnl >= 0 ? '+' : '-' }}₹{{
+                              formatAbsoluteCurrency(assetGroup.pnl)
+                            }}
+                          </span>
+                        </div>
+
+                        <!-- =====================================
+                             LEVEL 3 / FINAL:
+                             UNDERLYING + DETAILS
+                             ===================================== -->
+                        <div
+                          *ngIf="
+                            expandedAsset === getAssetKey(summary.sub_class, assetGroup.asset_name)
+                          "
+                          class="underlying-container"
+                        >
+                          <div class="underlying-table-scroll">
+                            <table class="asset-table">
+                              <thead>
+                                <tr>
+                                  <th>Underlying</th>
+
+                                  <th>Family</th>
+
+                                  <th>ISIN</th>
+
+                                  <th>Quantity</th>
+
+                                  <th>Invested</th>
+
+                                  <th>Current Price / NAV</th>
+
+                                  <th>Current Value</th>
+
+                                  <th>Gain</th>
+
+                                  <th>XIRR</th>
+
+                                  <th>Details</th>
+                                </tr>
+                              </thead>
+
+                              <tbody>
+                                <ng-container
+                                  *ngFor="let asset of assetGroup.assets; trackBy: trackByAssetId"
+                                >
+                                <tr
+                                  class="underlying-row"
+                                >
+                                  <!-- FINAL NAME
+                                       NO CLICK
+                                       NO ARROW -->
+                                  <td class="asset-name final-underlying">
+                                    {{ getUnderlyingName(asset) }}
+                                  </td>
+
+                                  <td class="family-name">
+                                    {{ asset.family_name || '-' }}
+                                  </td>
+
+                                  <td class="isin">
+                                    {{ asset.isin || '-' }}
+                                  </td>
+
+                                  <td>
+                                    {{ formatNumber(asset.quantity) }}
+                                  </td>
+
+                                  <td>₹{{ formatCurrency(getUnderlyingInvested(asset)) }}</td>
+
+                                  <!-- CURRENT PRICE / NAV -->
+                                  <td
+                                    class="price-cell"
+                                    [class.manual-price-cell]="isManualPrice(asset)"
+                                  >
+                                    <!-- NORMAL DISPLAY -->
+                                    <ng-container *ngIf="!isEditingPrice(asset)">
+                                      <div class="current-price">
+                                        {{
+                                          asset.current_price !== null &&
+                                          asset.current_price !== undefined
+                                            ? '₹' + formatDecimal(asset.current_price)
+                                            : '-'
+                                        }}
+                                      </div>
+
+                                      <small *ngIf="hasPriceDate(asset)" class="price-update-date">
+                                        Updated
+                                        {{ formatPriceDate(getPriceDate(asset)) }}
+                                      </small>
+
+                                      <button
+                                        type="button"
+                                        class="manual-price-edit"
+                                        *ngIf="rbac.canEditPrices()"
+                                        (click)="onManualPriceEdit($event, asset)"
+                                      >
+                                        Edit
+                                      </button>
+                                    </ng-container>
+
+                                    <!-- EDIT MODE -->
+                                    <ng-container *ngIf="isEditingPrice(asset)">
+                                      <div
+                                        class="manual-price-container"
+                                        (click)="$event.stopPropagation()"
+                                      >
+                                        <input
+                                          type="number"
+                                          class="manual-price-input"
+                                          [(ngModel)]="manualPriceInput"
+                                          min="0"
+                                          step="0.0001"
+                                          placeholder="Price"
+                                          [disabled]="isSavingManualPrice(asset)"
+                                        />
+
+                                        <div class="manual-price-actions">
+                                          <button
+                                            type="button"
+                                            class="manual-price-button manual-price-save"
+                                            [disabled]="isSavingManualPrice(asset)"
+                                            (click)="saveManualPrice(asset)"
+                                          >
+                                            {{ isSavingManualPrice(asset) ? 'Saving...' : 'Save' }}
+                                          </button>
+
+                                          <button
+                                            type="button"
+                                            class="manual-price-button"
+                                            [disabled]="isSavingManualPrice(asset)"
+                                            (click)="cancelEditingPrice(asset)"
+                                          >
+                                            Cancel
+                                          </button>
+                                        </div>
+                                      </div>
+
+                                      <small
+                                        *ngIf="getManualPriceError(asset)"
+                                        class="manual-price-error"
+                                      >
+                                        {{ getManualPriceError(asset) }}
+                                      </small>
+                                    </ng-container>
+                                  </td>
+
+                                  <td>₹{{ formatCurrency(asset.current_value) }}</td>
+
+                                  <td class="pnl-cell" [ngClass]="getPnlClass(asset.pnl)">
+                                    {{ asset.pnl >= 0 ? '+' : '-' }}₹{{
+                                      formatAbsoluteCurrency(asset.pnl)
+                                    }}
+                                  </td>
+
+                                  <td
+                                    class="pnl-cell"
+                                    [ngClass]="
+                                      asset.xirr === null || asset.xirr === undefined
+                                        ? 'neutral'
+                                        : getPnlClass(asset.xirr)
+                                    "
+                                  >
+                                    {{
+                                      asset.xirr === null || asset.xirr === undefined
+                                        ? '-'
+                                        : formatPercentage(asset.xirr)
+                                    }}
+                                  </td>
+
+                                  <td class="quant-toggle-cell">
+                                    <button
+                                      *ngIf="hasQuantDetails(asset)"
+                                      type="button"
+                                      class="quant-toggle-button"
+                                      (click)="toggleQuantDetails(asset)"
+                                    >
+                                      {{ isQuantDetailsExpanded(asset) ? 'Hide' : 'Details' }}
+                                    </button>
+                                  </td>
+                                </tr>
+
+                                <!--
+                                  QUANT DETAILS — SecurityMaster-sourced fields
+                                  (Sector / Cap Type / AMC / Credit Rating /
+                                  P/E / P/B / ROE / YTM / Modified Duration /
+                                  Average Maturity). Only individual chips
+                                  with a non-null value render — nothing is
+                                  padded with a placeholder for missing data.
+                                -->
+                                <tr
+                                  *ngIf="isQuantDetailsExpanded(asset)"
+                                  class="quant-details-row nx-report-theme"
+                                >
+                                  <td colspan="10">
+                                    <div class="quant-details">
+                                      <div class="quant-chip" *ngIf="asset.sector">
+                                        <span class="quant-chip-label">Sector</span>
+                                        <span class="quant-chip-value">{{ asset.sector }}</span>
+                                      </div>
+
+                                      <div class="quant-chip" *ngIf="asset.cap_type">
+                                        <span class="quant-chip-label">Cap Type</span>
+                                        <span class="quant-chip-value">{{ asset.cap_type }}</span>
+                                      </div>
+
+                                      <div class="quant-chip" *ngIf="asset.amc_name">
+                                        <span class="quant-chip-label">AMC</span>
+                                        <span class="quant-chip-value">{{ asset.amc_name }}</span>
+                                      </div>
+
+                                      <div class="quant-chip" *ngIf="asset.credit_rating">
+                                        <span class="quant-chip-label">Credit Rating</span>
+                                        <span class="quant-chip-value">{{
+                                          asset.credit_rating
+                                        }}</span>
+                                      </div>
+
+                                      <div class="quant-chip" *ngIf="asset.pe_ratio !== null">
+                                        <span class="quant-chip-label">P/E</span>
+                                        <span class="quant-chip-value">{{
+                                          formatDecimal(asset.pe_ratio)
+                                        }}</span>
+                                      </div>
+
+                                      <div class="quant-chip" *ngIf="asset.pb_ratio !== null">
+                                        <span class="quant-chip-label">P/B</span>
+                                        <span class="quant-chip-value">{{
+                                          formatDecimal(asset.pb_ratio)
+                                        }}</span>
+                                      </div>
+
+                                      <div class="quant-chip" *ngIf="asset.roe !== null">
+                                        <span class="quant-chip-label">ROE</span>
+                                        <span class="quant-chip-value"
+                                          >{{ formatDecimal(asset.roe) }}%</span
+                                        >
+                                      </div>
+
+                                      <div class="quant-chip" *ngIf="asset.ytm !== null">
+                                        <span class="quant-chip-label">YTM</span>
+                                        <span class="quant-chip-value"
+                                          >{{ formatDecimal(asset.ytm) }}%</span
+                                        >
+                                      </div>
+
+                                      <div
+                                        class="quant-chip"
+                                        *ngIf="asset.modified_duration !== null"
+                                      >
+                                        <span class="quant-chip-label">Mod. Duration</span>
+                                        <span class="quant-chip-value">{{
+                                          formatDecimal(asset.modified_duration)
+                                        }}</span>
+                                      </div>
+
+                                      <div
+                                        class="quant-chip"
+                                        *ngIf="asset.average_maturity !== null"
+                                      >
+                                        <span class="quant-chip-label">Avg. Maturity</span>
+                                        <span class="quant-chip-value"
+                                          >{{ formatDecimal(asset.average_maturity) }} yrs</span
+                                        >
+                                      </div>
+                                    </div>
+                                  </td>
+                                </tr>
+                                </ng-container>
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+                      </div>
+                    </ng-container>
+                  </div>
+                </div>
+              </td>
+            </tr>
+          </ng-container>
+
+          <tr *ngIf="subClassSummaries.length === 0">
+            <td colspan="7" class="empty-table">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
+                <rect x="3.5" y="4" width="17" height="16" rx="2" />
+                <path d="M7.5 9h9M7.5 13h6" stroke-linecap="round" />
+              </svg>
+              No portfolio data available.
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>

@@ -1,0 +1,88 @@
+:host {
+  display: block;
+  min-height: 100vh;
+}
+
+.app-shell {
+  min-height: 100vh;
+  background: #f6f7f9;
+}
+
+/*
+ * The sidebar is fixed to the left side of the viewport.
+ * This keeps it visible while the page content scrolls.
+ */
+app-sidebar {
+  position: fixed;
+  top: 0;
+  left: 0;
+
+  width: 248px;
+  height: 100vh;
+
+  z-index: 1000;
+}
+
+/*
+ * Main content starts after the fixed sidebar.
+ */
+.main-area {
+  min-width: 0;
+  min-height: 100vh;
+
+  margin-left: 248px;
+
+  display: flex;
+  flex-direction: column;
+}
+
+/*
+ * Header remains fixed at the top while the page scrolls.
+ */
+app-header {
+  position: sticky;
+  top: 0;
+
+  z-index: 900;
+}
+
+/*
+ * Only the page content is allowed to scroll horizontally.
+ * Vertical scrolling remains on the document.
+ */
+.page-content {
+  flex: 1;
+
+  padding: 32px;
+
+  min-width: 0;
+  overflow-x: hidden;
+}
+
+/* --------------------------------------------------
+   RESPONSIVE — mirrors sidebar.component.scss's own
+   900px breakpoint, where the sidebar collapses to a
+   72px icon-only rail. main-area's margin-left has to
+   shrink to match, or content would either overlap the
+   sidebar or leave a large empty gap.
+-------------------------------------------------- */
+
+@media (max-width: 900px) {
+  app-sidebar {
+    width: 72px;
+  }
+
+  .main-area {
+    margin-left: 72px;
+  }
+
+  .page-content {
+    padding: 20px;
+  }
+}
+
+@media (max-width: 560px) {
+  .page-content {
+    padding: 14px;
+  }
+}

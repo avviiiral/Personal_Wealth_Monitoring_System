@@ -1,0 +1,84 @@
+<div class="family-management">
+  <div class="card-header">
+    <div>
+      <h2>Family Management</h2>
+      <p>Create families and manage which users belong to each one. Visible to System Owner only.</p>
+    </div>
+  </div>
+
+  <div class="new-family-row">
+    <input
+      type="text"
+      placeholder="New family name (e.g. Sharma Family)"
+      [(ngModel)]="newFamilyName"
+      (keydown.enter)="createFamily()"
+    />
+    <button
+      type="button"
+      class="primary-button"
+      (click)="createFamily()"
+      [disabled]="creatingFamily"
+    >
+      {{ creatingFamily ? 'Creating...' : '+ Create Family' }}
+    </button>
+  </div>
+
+  <div class="loading-row" *ngIf="loading">
+    <div class="loading-spinner"></div>
+    <span>Loading families...</span>
+  </div>
+
+  <div class="error-message" *ngIf="!loading && error">
+    {{ error }}
+  </div>
+
+  <div class="families-grid" *ngIf="!loading && !error">
+    <div class="family-card" *ngFor="let family of families">
+      <div class="family-card-header">
+        <ng-container *ngIf="renamingFamilyId !== family.id">
+          <strong>{{ family.name }}</strong>
+          <span class="member-count">{{ family.members.length }} member{{ family.members.length === 1 ? '' : 's' }}</span>
+          <button type="button" class="link-button" (click)="startRename(family)">Rename</button>
+          <button type="button" class="link-button danger-link" (click)="deleteFamily(family)">
+            Delete
+          </button>
+        </ng-container>
+
+        <ng-container *ngIf="renamingFamilyId === family.id">
+          <input type="text" [(ngModel)]="renameFamilyText" class="rename-input" (keydown.enter)="saveRename(family)" />
+          <button type="button" class="link-button" (click)="saveRename(family)">Save</button>
+          <button type="button" class="link-button" (click)="cancelRename()">Cancel</button>
+        </ng-container>
+      </div>
+
+      <div class="member-list">
+        <div class="member-row" *ngFor="let member of family.members">
+          <span class="member-name">{{ member.username }}</span>
+          <span class="role-badge" [class]="'role-' + member.role.toLowerCase()">
+            {{ roleLabels[member.role] }}
+          </span>
+          <span class="also-in" *ngIf="otherFamiliesFor(member.id, family.id).length > 0">
+            also in {{ otherFamiliesFor(member.id, family.id).join(', ') }}
+          </span>
+          <button type="button" class="remove-button" (click)="removeMember(family, member.id)" title="Remove from this family">
+            ×
+          </button>
+        </div>
+
+        <p class="no-members" *ngIf="family.members.length === 0">No members yet.</p>
+      </div>
+
+      <div class="add-member-row" *ngIf="usersNotInFamily(family).length > 0">
+        <select [(ngModel)]="addMemberSelection[family.id]">
+          <option [ngValue]="null">Add a member...</option>
+          <option *ngFor="let user of usersNotInFamily(family)" [ngValue]="user.id">
+            {{ user.username }} ({{ roleLabels[user.role] }})
+          </option>
+        </select>
+        <button type="button" class="link-button" (click)="addMember(family)">Add</button>
+      </div>
+    </div>
+
+    <p class="no-members" *ngIf="families.length === 0">No families yet. Create one above.</p>
+  </div>
+</div>

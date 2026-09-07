@@ -1,0 +1,101 @@
+<div class="manual-prices">
+  <div class="card-header">
+    <div>
+      <h2>Manual Price Management</h2>
+
+      <p>View and override current prices for your assets.</p>
+    </div>
+  </div>
+
+  <div class="loading-row" *ngIf="loading">
+    <div class="loading-spinner"></div>
+    <span>Loading prices...</span>
+  </div>
+
+  <div class="error-message" *ngIf="!loading && error">
+    {{ error }}
+  </div>
+
+  <div class="table-wrapper" *ngIf="!loading && !error">
+    <table class="prices-table">
+      <thead>
+        <tr>
+          <th>Asset</th>
+          <th>Category</th>
+          <th>Price</th>
+          <th>Source</th>
+          <th>Updated By</th>
+          <th>Updated</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+
+      <tbody>
+        <tr *ngFor="let row of rows">
+          <td>{{ row.asset_name }}</td>
+          <td>{{ row.category }}</td>
+
+          <td>
+            <ng-container *ngIf="editingAssetId !== row.asset_id">
+              {{ row.price !== null ? '₹' + row.price : '-' }}
+            </ng-container>
+
+            <input
+              *ngIf="editingAssetId === row.asset_id"
+              type="number"
+              class="price-input"
+              [(ngModel)]="priceInput"
+              min="0"
+              step="0.01"
+            />
+          </td>
+
+          <td>
+            <span
+              class="source-badge"
+              [class.source-manual]="row.manual_override_enabled"
+              [class.source-auto]="!row.manual_override_enabled"
+            >
+              {{ row.manual_override_enabled ? 'Manual Override' : (row.price_source || 'Unavailable') }}
+            </span>
+          </td>
+
+          <td>{{ row.updated_by || '-' }}</td>
+          <td>{{ formatDate(row.updated_at) }}</td>
+
+          <td class="actions-cell">
+            <ng-container *ngIf="editingAssetId !== row.asset_id">
+              <button type="button" class="link-button" (click)="startEdit(row)">Edit</button>
+
+              <button
+                type="button"
+                class="link-button"
+                *ngIf="row.manual_override_enabled"
+                (click)="restoreAutomatic(row)"
+              >
+                Restore Automatic
+              </button>
+            </ng-container>
+
+            <ng-container *ngIf="editingAssetId === row.asset_id">
+              <button
+                type="button"
+                class="link-button"
+                (click)="saveEdit(row)"
+                [class.disabled-link]="saving"
+              >
+                Save
+              </button>
+
+              <button type="button" class="link-button" (click)="cancelEdit()">Cancel</button>
+            </ng-container>
+          </td>
+        </tr>
+
+        <tr *ngIf="rows.length === 0">
+          <td colspan="7" class="empty-row">No assets found.</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>

@@ -1,0 +1,198 @@
+<section class="portfolio-news-page">
+  <div class="page-heading">
+    <div class="page-heading-icon" aria-hidden="true">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
+        <path d="M4 5.5A1.5 1.5 0 0 1 5.5 4H15l5 5v9.5a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 4 18.5Z" stroke-linejoin="round" />
+        <path d="M15 4v4.5a1 1 0 0 0 1 1H20" stroke-linejoin="round" />
+        <path d="M8 13h8M8 16.5h5" stroke-linecap="round" />
+      </svg>
+    </div>
+    <div>
+      <h1>Portfolio News</h1>
+      <p>AI-assessed news specifically matched to the holdings you actually own.</p>
+    </div>
+  </div>
+
+  <div class="view-mode-toggle">
+    <button
+      type="button"
+      class="view-mode-button"
+      [class.active]="viewMode === 'feed'"
+      (click)="setViewMode('feed')"
+    >
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+        <path d="M4 6h16M4 12h16M4 18h10" stroke-linecap="round" />
+      </svg>
+      Feed
+    </button>
+    <button
+      type="button"
+      class="view-mode-button"
+      [class.active]="viewMode === 'digest'"
+      (click)="setViewMode('digest')"
+    >
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+        <path d="M4 4.5A1.5 1.5 0 0 1 5.5 3h9L19 8v12.5a1.5 1.5 0 0 1-1.5 1.5h-12A1.5 1.5 0 0 1 4 20.5Z" stroke-linejoin="round" />
+        <path d="M8 12h8M8 16h5" stroke-linecap="round" />
+      </svg>
+      Today's Digest
+    </button>
+  </div>
+
+  <ng-container *ngIf="viewMode === 'feed'">
+    <div class="tier-filters">
+      <button
+        type="button"
+        *ngFor="let tier of tiers"
+        class="tier-filter-button"
+        [class.active]="activeTier === tier.value"
+        (click)="selectTier(tier.value)"
+      >
+        {{ tier.label }}
+      </button>
+    </div>
+
+    <div class="secondary-filters">
+      <div class="filter-group">
+        <span class="filter-group-label">Sentiment</span>
+        <button
+          type="button"
+          *ngFor="let sentiment of sentiments"
+          class="secondary-filter-button"
+          [class.active]="activeSentiment === sentiment.value"
+          (click)="selectSentiment(sentiment.value)"
+        >
+          {{ sentiment.label }}
+        </button>
+      </div>
+
+      <div class="filter-group">
+        <span class="filter-group-label">Date</span>
+        <button
+          type="button"
+          *ngFor="let range of dateRanges"
+          class="secondary-filter-button"
+          [class.active]="activeDateRange === range.value"
+          (click)="selectDateRange(range.value)"
+        >
+          {{ range.label }}
+        </button>
+      </div>
+    </div>
+
+    <div class="news-loading" *ngIf="loading">
+      <span class="loading-spinner"></span>
+      Loading your portfolio news...
+    </div>
+
+    <div class="news-error" *ngIf="error && !loading">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+        <circle cx="12" cy="12" r="9" />
+        <path d="M12 8v5M12 16h.01" stroke-linecap="round" />
+      </svg>
+      {{ error }}
+    </div>
+
+    <div class="news-empty" *ngIf="!loading && !error && items.length === 0">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
+        <path d="M4 5.5A1.5 1.5 0 0 1 5.5 4H15l5 5v9.5a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 4 18.5Z" stroke-linejoin="round" />
+        <path d="M15 4v4.5a1 1 0 0 0 1 1H20" stroke-linejoin="round" />
+      </svg>
+      No portfolio news yet. As soon as something material happens with your holdings, it will show
+      up here.
+    </div>
+
+    <div class="news-list" *ngIf="!loading && !error && items.length > 0">
+      <button
+        type="button"
+        class="news-card"
+        *ngFor="let item of items"
+        [class.unread]="!item.is_read"
+        (click)="openItem(item)"
+      >
+        <span [class]="impactDotClass(item)"></span>
+
+        <div class="news-card-body">
+          <div class="news-card-top">
+            <strong>{{ item.holding_display_name }}</strong>
+            <span class="news-card-category">{{ item.category }}</span>
+            <span [class]="materialityBadgeClass(item.materiality)">{{ item.materiality }}</span>
+          </div>
+
+          <span class="news-card-title">{{ item.article_title }}</span>
+
+          <div class="news-card-meta">
+            <span>{{ item.article_source }}</span>
+            <span class="dot-sep">&middot;</span>
+            <span>{{ timeAgo(item.article_published_at) }}</span>
+            <span class="dot-sep">&middot;</span>
+            <span class="sentiment sentiment--{{ item.sentiment }}">{{ item.sentiment }}</span>
+            <ng-container *ngIf="sourceCountLabel(item) as sourcesLabel">
+              <span class="dot-sep">&middot;</span>
+              <span class="source-count-label">{{ sourcesLabel }}</span>
+            </ng-container>
+          </div>
+        </div>
+
+        <div class="news-card-impact">
+          <span class="impact-label">{{ item.impact.replace('_', ' ') }}</span>
+        </div>
+      </button>
+    </div>
+  </ng-container>
+
+  <ng-container *ngIf="viewMode === 'digest'">
+    <div class="news-loading" *ngIf="digestLoading">
+      <span class="loading-spinner"></span>
+      Loading today's digest...
+    </div>
+
+    <div class="news-error" *ngIf="digestError && !digestLoading">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+        <circle cx="12" cy="12" r="9" />
+        <path d="M12 8v5M12 16h.01" stroke-linecap="round" />
+      </svg>
+      {{ digestError }}
+    </div>
+
+    <ng-container *ngIf="!digestLoading && !digestError && digest as d">
+      <div class="digest-heading">
+        <h2>Portfolio News Digest</h2>
+        <span class="digest-date">{{ d.digest_date }}</span>
+        <span class="digest-count">{{ d.item_count }} important development{{ d.item_count === 1 ? '' : 's' }}</span>
+      </div>
+
+      <div class="news-empty" *ngIf="d.item_count === 0">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
+          <path d="M4 4.5A1.5 1.5 0 0 1 5.5 3h9L19 8v12.5a1.5 1.5 0 0 1-1.5 1.5h-12A1.5 1.5 0 0 1 4 20.5Z" stroke-linejoin="round" />
+          <path d="M8 12h8M8 16h5" stroke-linecap="round" />
+        </svg>
+        Nothing notable to summarize for this date yet.
+      </div>
+
+      <div class="digest-list" *ngIf="d.item_count > 0">
+        <button
+          type="button"
+          class="digest-item"
+          *ngFor="let item of d.items; let i = index"
+          (click)="openDigestItem(item.alert_id)"
+        >
+          <span class="digest-item-index">{{ i + 1 }}</span>
+
+          <div class="digest-item-body">
+            <div class="digest-item-top">
+              <strong>{{ item.holding_display_name }}</strong>
+              <span [class]="materialityBadgeClass(item.materiality)">{{ item.materiality }}</span>
+            </div>
+            <span class="digest-item-summary">{{ item.summary }}</span>
+            <span class="digest-item-sources" *ngIf="item.source_count > 1">
+              Reported by {{ item.source_count }} sources
+            </span>
+          </div>
+
+          <span class="impact-label">{{ item.impact.replace('_', ' ') }}</span>
+        </button>
+      </div>
+    </ng-container>
+  </ng-container>
+</section>

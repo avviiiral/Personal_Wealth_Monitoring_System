@@ -1,0 +1,1157 @@
+/* -----------------------------
+   DESIGN TOKENS
+
+   One considered accent (emerald, for growth/positive signal)
+   layered onto the existing ink-black anchor - not the generic
+   fintech-blue default. Red for negative stays as-is (already
+   correct semantically).
+----------------------------- */
+
+:host {
+  --ink: #111827;
+  --ink-soft: #1f2937;
+
+  --canvas-from: #f8f9fc;
+  --canvas-to: #eef1f7;
+
+  --surface: #ffffff;
+  --surface-line: #e8eaef;
+
+  --muted: #7a8495;
+  --muted-soft: #9aa2af;
+
+  --accent: #0f7a5c;
+  --accent-soft: #e6f4ef;
+  --accent-line: #bfe3d5;
+
+  --negative: #b42318;
+  --negative-soft: #fdeeed;
+
+  --shadow-sm: 0 1px 2px rgba(17, 24, 39, 0.04), 0 1px 1px rgba(17, 24, 39, 0.03);
+  --shadow-md: 0 6px 20px -8px rgba(17, 24, 39, 0.14), 0 2px 6px -2px rgba(17, 24, 39, 0.06);
+  --shadow-lift: 0 14px 32px -12px rgba(17, 24, 39, 0.2), 0 4px 10px -4px rgba(17, 24, 39, 0.08);
+
+  --radius-lg: 16px;
+  --radius-md: 12px;
+  --radius-sm: 8px;
+}
+
+.dashboard-page {
+  padding: 34px;
+
+  background: linear-gradient(180deg, var(--canvas-from) 0%, var(--canvas-to) 100%);
+  background-attachment: fixed;
+
+  min-height: calc(100vh - 80px);
+}
+
+.page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 28px;
+  flex-wrap: wrap;
+  gap: 16px;
+
+  h1 {
+    margin: 0;
+    font-size: 30px;
+    font-weight: 750;
+    letter-spacing: -0.01em;
+    color: var(--ink);
+  }
+
+  p {
+    margin: 7px 0 0;
+    color: var(--muted);
+    font-size: 14px;
+  }
+}
+
+.page-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.refresh-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: var(--ink);
+  color: white;
+  padding: 10px 18px;
+  font-size: 14px;
+  font-weight: 550;
+  cursor: pointer;
+  transition:
+    background-color 0.2s ease,
+    box-shadow 0.2s ease,
+    transform 0.15s ease;
+  white-space: nowrap;
+
+  box-shadow: var(--shadow-sm);
+
+  &:hover {
+    background: var(--ink-soft);
+    box-shadow: var(--shadow-md);
+  }
+
+  &:active {
+    transform: translateY(1px);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+}
+
+.refresh-icon {
+  width: 15px;
+  height: 15px;
+
+  flex-shrink: 0;
+
+  transition: transform 0.4s ease;
+}
+
+.refresh-button:hover .refresh-icon {
+  transform: rotate(150deg);
+}
+
+.download-report-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-sm);
+  background: var(--accent-soft, #e6f4ef);
+  color: var(--accent);
+  padding: 10px 18px;
+  font-size: 14px;
+  font-weight: 550;
+  cursor: pointer;
+  transition:
+    background-color 0.2s ease,
+    box-shadow 0.2s ease,
+    transform 0.15s ease;
+  white-space: nowrap;
+
+  &:hover:not(:disabled) {
+    background: var(--accent);
+    color: #ffffff;
+    box-shadow: var(--shadow-md);
+  }
+
+  &:active:not(:disabled) {
+    transform: translateY(1px);
+  }
+
+  &:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+}
+
+.download-report-button .button-icon {
+  width: 15px;
+  height: 15px;
+  flex-shrink: 0;
+}
+
+/* -----------------------------
+   FAMILY FILTER
+   Bordered box next to the Refresh button, label above the
+   buttons - same look/pattern as the Portfolio and Reports pages'
+   Family Name filter box, just sized to sit in the header.
+----------------------------- */
+
+.family-filter-inline {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: var(--surface);
+  border: 1px solid var(--surface-line);
+  border-radius: var(--radius-sm);
+  padding: 10px 14px;
+
+  box-shadow: var(--shadow-sm);
+}
+
+.family-filter-label {
+  font-size: 12px;
+  font-weight: 700;
+  color: #344054;
+  white-space: nowrap;
+}
+
+.family-filter-buttons {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.family-filter-button {
+  border: 1px solid #d9dee7;
+  background: #ffffff;
+  border-radius: 6px;
+  padding: 8px 14px;
+  font-size: 13px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: 0.15s ease;
+
+  &:hover {
+    background: #f5f7fa;
+  }
+
+  &.active {
+    background: var(--ink);
+    color: #ffffff;
+    border-color: var(--ink);
+  }
+}
+
+/* -----------------------------
+   LOADING
+----------------------------- */
+
+.loading-card {
+  background: var(--surface);
+  border: 1px solid var(--surface-line);
+  border-radius: var(--radius-lg);
+  padding: 40px;
+  margin-bottom: 24px;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+
+  color: #667085;
+  font-size: 14px;
+
+  box-shadow: var(--shadow-sm);
+}
+
+.loading-spinner {
+  width: 18px;
+  height: 18px;
+
+  border: 2px solid #e5e7eb;
+  border-top-color: var(--ink);
+
+  border-radius: 50%;
+
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* -----------------------------
+   ERROR
+----------------------------- */
+
+.error-card {
+  background: var(--negative-soft);
+  border: 1px solid #fecaca;
+  border-radius: var(--radius-lg);
+
+  padding: 20px;
+
+  margin-bottom: 24px;
+
+  color: var(--negative);
+  font-size: 14px;
+}
+
+/* -----------------------------
+   KPI
+----------------------------- */
+
+.kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+
+  gap: 18px;
+
+  margin-bottom: 24px;
+}
+
+.kpi-card {
+  position: relative;
+
+  background: var(--surface);
+
+  border: 1px solid var(--surface-line);
+  border-radius: var(--radius-lg);
+
+  padding: 22px 22px 20px;
+
+  display: flex;
+  flex-direction: column;
+
+  gap: 8px;
+
+  min-width: 0;
+
+  overflow: hidden;
+
+  box-shadow: var(--shadow-sm);
+
+  transition:
+    box-shadow 0.2s ease,
+    transform 0.2s ease;
+
+  &::before {
+    content: '';
+
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+
+    height: 3px;
+
+    background: var(--kpi-accent, var(--ink));
+  }
+
+  &:hover {
+    box-shadow: var(--shadow-lift);
+    transform: translateY(-2px);
+  }
+
+  strong {
+    font-size: 27px;
+    color: var(--ink);
+    font-weight: 750;
+    letter-spacing: -0.01em;
+
+    word-break: break-word;
+    font-variant-numeric: tabular-nums;
+
+    &.positive {
+      color: var(--accent);
+    }
+
+    &.negative {
+      color: var(--negative);
+    }
+  }
+}
+
+.kpi-card--wealth {
+  --kpi-accent: #111827;
+}
+
+.kpi-card--invested {
+  --kpi-accent: #6b7280;
+}
+
+.kpi-card--pnl.is-positive {
+  --kpi-accent: var(--accent);
+}
+
+.kpi-card--pnl.is-negative {
+  --kpi-accent: var(--negative);
+}
+
+.kpi-card--xirr {
+  --kpi-accent: #b45309;
+}
+
+.kpi-card-top {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.kpi-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+
+  width: 30px;
+  height: 30px;
+  flex-shrink: 0;
+
+  border-radius: 9px;
+
+  background: color-mix(in srgb, var(--kpi-accent, var(--ink)) 12%, white);
+  color: var(--kpi-accent, var(--ink));
+
+  svg {
+    width: 16px;
+    height: 16px;
+  }
+}
+
+.kpi-label {
+  color: var(--muted);
+
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.kpi-subtitle {
+  color: var(--muted-soft);
+
+  font-size: 12px;
+}
+
+/* -----------------------------
+   GRID
+----------------------------- */
+
+.section-grid {
+  display: grid;
+
+  grid-template-columns: 2fr 1fr;
+
+  gap: 24px;
+
+  margin-bottom: 24px;
+}
+
+/* -----------------------------
+   CARDS
+----------------------------- */
+
+.dashboard-card {
+  background: var(--surface);
+
+  border: 1px solid var(--surface-line);
+
+  border-radius: var(--radius-lg);
+
+  padding: 24px;
+
+  margin-bottom: 24px;
+
+  min-width: 0;
+
+  box-shadow: var(--shadow-sm);
+
+  transition: box-shadow 0.2s ease;
+
+  &:hover {
+    box-shadow: var(--shadow-md);
+  }
+}
+
+.large-card {
+  min-height: 430px;
+}
+
+/* -----------------------------
+   CARD HEADER
+----------------------------- */
+
+.card-header {
+  display: flex;
+
+  justify-content: space-between;
+
+  align-items: flex-start;
+
+  gap: 20px;
+
+  margin-bottom: 20px;
+
+  h2 {
+    margin: 0;
+
+    font-size: 18px;
+
+    font-weight: 650;
+
+    color: var(--ink);
+  }
+
+  p {
+    margin: 5px 0 0;
+
+    color: #8a93a3;
+
+    font-size: 13px;
+  }
+}
+
+.card-header-title {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+
+  min-width: 0;
+}
+
+.card-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+
+  width: 34px;
+  height: 34px;
+  flex-shrink: 0;
+
+  margin-top: 1px;
+
+  border-radius: 10px;
+
+  background: var(--accent-soft);
+  color: var(--accent);
+
+  svg {
+    width: 17px;
+    height: 17px;
+  }
+}
+
+.period-badge {
+  display: inline-flex;
+
+  align-items: center;
+
+  padding: 6px 10px;
+
+  border-radius: 20px;
+
+  background: #f3f4f6;
+
+  color: #667085;
+
+  font-size: 11px;
+
+  font-weight: 600;
+
+  white-space: nowrap;
+}
+
+/* -----------------------------
+   CHART CONTAINERS
+----------------------------- */
+
+.chart-container {
+  position: relative;
+
+  width: 100%;
+
+  height: 320px;
+}
+
+.large-card .chart-container {
+  height: 330px;
+}
+
+.allocation-chart-container {
+  position: relative;
+
+  width: 100%;
+
+  height: 330px;
+}
+
+/* -----------------------------
+   INVESTMENT SUMMARY
+----------------------------- */
+
+.investment-summary-card {
+  .loading-card,
+  .error-card {
+    margin-bottom: 0;
+  }
+}
+
+.investment-summary-table-wrapper {
+  overflow-x: auto;
+}
+
+.investment-summary-table {
+  width: 100%;
+  border-collapse: collapse;
+
+  font-size: 13px;
+
+  th {
+    text-align: left;
+
+    padding: 10px 12px;
+
+    color: var(--muted);
+
+    font-size: 12px;
+    font-weight: 600;
+
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+
+    border-bottom: 1px solid var(--surface-line);
+
+    white-space: nowrap;
+  }
+
+  td {
+    padding: 12px;
+
+    color: var(--ink);
+
+    border-bottom: 1px solid #f1f2f5;
+
+    vertical-align: middle;
+  }
+
+  tr:last-child td {
+    border-bottom: 0;
+  }
+
+  .category-cell {
+    color: var(--ink);
+    font-weight: 650;
+
+    background: #fafbfc;
+
+    border-right: 1px solid var(--surface-line);
+  }
+
+  .align-right {
+    text-align: right;
+
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+/* -----------------------------
+   INVESTMENT SUMMARY TREE
+----------------------------- */
+
+.investment-category-row {
+  cursor: pointer;
+
+  transition: background-color 0.15s ease;
+
+  &:hover {
+    background: var(--accent-soft);
+  }
+
+  &.expanded {
+    background: var(--accent-soft);
+  }
+
+  td {
+    font-weight: 600;
+  }
+}
+
+.row-chevron {
+  display: inline-flex;
+
+  align-items: center;
+  justify-content: center;
+
+  width: 20px;
+  height: 20px;
+
+  margin-right: 6px;
+
+  font-size: 18px;
+
+  color: var(--muted);
+
+  transition: transform 0.15s ease;
+
+  &.open {
+    transform: rotate(90deg);
+    color: var(--accent);
+  }
+
+  &.right {
+    margin-right: 0;
+  }
+}
+
+.asset-class-detail-row {
+  background: #fafbfc;
+
+  td {
+    padding: 0;
+  }
+}
+
+.asset-class-detail-container {
+  padding: 14px 20px 16px 42px;
+
+  border-top: 1px solid var(--surface-line);
+  border-bottom: 1px solid var(--surface-line);
+
+  /*
+   * The nested Asset Class table sits inside a colspan cell of
+   * the already-scrollable outer Investment Summary table. Without
+   * its own scoped overflow-x, this nested table forces the WHOLE
+   * outer table (including the Asset Category / Current Value /
+   * % columns) to widen and scroll together whenever the nested
+   * content is wide — meaning the category name could scroll out
+   * of view along with it. Scoping the scroll here keeps the outer
+   * table's key columns always visible; only this detail panel
+   * scrolls independently on narrow screens.
+   */
+  overflow-x: auto;
+}
+
+.asset-class-detail-title {
+  margin-bottom: 10px;
+
+  color: #667085;
+
+  font-size: 12px;
+  font-weight: 600;
+
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.asset-class-table {
+  width: 100%;
+
+  border-collapse: collapse;
+
+  font-size: 13px;
+
+  th {
+    padding: 8px 12px;
+
+    color: #8a93a3;
+
+    font-size: 11px;
+    font-weight: 600;
+
+    text-align: left;
+
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+
+    border-bottom: 1px solid #e5e7eb;
+  }
+
+  td {
+    padding: 11px 12px;
+
+    color: var(--ink);
+
+    border-bottom: 1px solid #f1f2f5;
+  }
+
+  tr:last-child td {
+    border-bottom: 0;
+  }
+
+  .align-right {
+    text-align: right;
+
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+.asset-class-detail-item {
+  &:hover {
+    background: #ffffff;
+  }
+}
+
+/* -----------------------------
+   XIRR PERFORMANCE
+----------------------------- */
+
+.xirr-performance-card {
+  margin-top: 0;
+}
+
+.xirr-category-selector {
+  display: flex;
+
+  align-items: center;
+  justify-content: center;
+
+  gap: 20px;
+
+  margin: 4px 0 24px;
+
+  padding: 14px 0;
+}
+
+.xirr-category-arrow {
+  width: 38px;
+  height: 38px;
+
+  display: inline-flex;
+
+  align-items: center;
+  justify-content: center;
+
+  border: 1px solid var(--surface-line);
+
+  border-radius: 50%;
+
+  background: #ffffff;
+
+  color: var(--ink);
+
+  font-size: 21px;
+
+  line-height: 1;
+
+  cursor: pointer;
+
+  transition:
+    background-color 0.15s ease,
+    border-color 0.15s ease,
+    color 0.15s ease,
+    transform 0.15s ease;
+
+  &:hover {
+    background: var(--accent-soft);
+
+    border-color: var(--accent-line);
+
+    color: var(--accent);
+  }
+
+  &:active {
+    transform: scale(0.96);
+  }
+}
+
+.xirr-category-name {
+  min-width: 180px;
+
+  text-align: center;
+
+  color: var(--ink);
+
+  font-size: 16px;
+
+  font-weight: 700;
+
+  text-transform: uppercase;
+
+  letter-spacing: 0.04em;
+}
+
+.xirr-ranking-grid {
+  display: grid;
+
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+
+  gap: 24px;
+}
+
+.xirr-ranking-panel {
+  min-width: 0;
+
+  border: 1px solid var(--surface-line);
+
+  border-radius: var(--radius-md);
+
+  overflow: hidden;
+
+  background: #ffffff;
+}
+
+.xirr-ranking-header {
+  display: flex;
+
+  justify-content: space-between;
+
+  align-items: center;
+
+  gap: 15px;
+
+  padding: 16px 18px;
+
+  background: #fafbfc;
+
+  border-bottom: 1px solid var(--surface-line);
+
+  h3 {
+    margin: 0;
+
+    color: var(--ink);
+
+    font-size: 14px;
+
+    font-weight: 650;
+  }
+
+  span {
+    color: #8a93a3;
+
+    font-size: 11px;
+
+    font-weight: 500;
+
+    white-space: nowrap;
+  }
+}
+
+.xirr-ranking-table-wrapper {
+  overflow-x: auto;
+}
+
+.xirr-ranking-table {
+  width: 100%;
+
+  border-collapse: collapse;
+
+  font-size: 13px;
+
+  th {
+    padding: 10px 14px;
+
+    color: #8a93a3;
+
+    font-size: 11px;
+
+    font-weight: 600;
+
+    text-align: left;
+
+    text-transform: uppercase;
+
+    letter-spacing: 0.03em;
+
+    border-bottom: 1px solid var(--surface-line);
+  }
+
+  td {
+    padding: 12px 14px;
+
+    color: var(--ink);
+
+    border-bottom: 1px solid #f1f2f5;
+
+    vertical-align: middle;
+  }
+
+  tbody tr {
+    transition: background-color 0.15s ease;
+
+    &:hover {
+      background: #fafbfc;
+    }
+  }
+
+  tbody tr:last-child td {
+    border-bottom: 0;
+  }
+
+  .align-right {
+    text-align: right;
+
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+.xirr-underlying-name {
+  color: var(--ink);
+
+  font-weight: 600;
+
+  line-height: 1.35;
+}
+
+.xirr-asset-class {
+  margin-top: 3px;
+
+  color: #98a2b3;
+
+  font-size: 11px;
+}
+
+.xirr-positive {
+  color: var(--accent) !important;
+
+  font-weight: 700;
+
+  white-space: nowrap;
+}
+
+.xirr-negative {
+  color: var(--negative) !important;
+
+  font-weight: 700;
+
+  white-space: nowrap;
+}
+
+.xirr-neutral {
+  color: #667085 !important;
+
+  font-weight: 700;
+
+  white-space: nowrap;
+}
+
+.xirr-empty-state {
+  height: 180px;
+
+  margin-top: 8px;
+}
+
+/* -----------------------------
+   EMPTY
+----------------------------- */
+
+.empty-state {
+  height: 300px;
+
+  display: flex;
+
+  align-items: center;
+
+  justify-content: center;
+
+  color: var(--muted-soft);
+
+  background: #fafbfc;
+
+  border-radius: 10px;
+
+  font-size: 14px;
+}
+
+/* -----------------------------
+   RESPONSIVE
+----------------------------- */
+
+@media (max-width: 1200px) {
+  .kpi-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .section-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 900px) {
+  .xirr-ranking-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 700px) {
+  .dashboard-page {
+    padding: 20px;
+  }
+
+  .kpi-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .page-header {
+    flex-direction: column;
+
+    gap: 15px;
+  }
+
+  .page-header-actions {
+    width: 100%;
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .family-filter-inline {
+    flex-direction: column;
+    align-items: flex-start;
+    width: 100%;
+  }
+
+  .family-filter-buttons {
+    width: 100%;
+  }
+
+  .refresh-button {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .download-report-button {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .dashboard-card {
+    padding: 18px;
+  }
+
+  .large-card {
+    min-height: 380px;
+  }
+
+  .chart-container,
+  .large-card .chart-container {
+    height: 260px;
+  }
+
+  .allocation-chart-container {
+    height: 280px;
+  }
+
+  .investment-summary-table {
+    font-size: 12px;
+
+    th,
+    td {
+      padding: 8px;
+    }
+  }
+
+  .card-header {
+    flex-direction: column;
+
+    gap: 10px;
+  }
+
+  .asset-class-detail-container {
+    padding-left: 20px;
+  }
+
+  .xirr-category-selector {
+    gap: 12px;
+  }
+
+  .xirr-category-name {
+    min-width: 140px;
+
+    font-size: 14px;
+  }
+
+  .xirr-category-arrow {
+    width: 34px;
+    height: 34px;
+
+    font-size: 18px;
+  }
+
+  .xirr-ranking-header {
+    align-items: flex-start;
+
+    flex-direction: column;
+
+    gap: 4px;
+  }
+}

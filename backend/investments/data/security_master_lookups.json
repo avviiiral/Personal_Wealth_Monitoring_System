@@ -1,0 +1,1013 @@
+{
+  "_comment": "Real, web-searched market data for SecurityMaster.  Each entry keyed by ISIN.  Sources listed per entry. Ratios (pe_ratio/pb_ratio/roe) are dated snapshots as noted per entry -- they will drift; sector and cap_type are far more stable and less urgent to refresh. Loaded via `python manage.py load_security_master_data`.",
+  "entries": {
+    "INE397D01024": {
+      "asset_name": "Bharti Airtel",
+      "sector": "Telecommunications",
+      "cap_type": "Large Cap",
+      "pe_ratio": 35.0,
+      "pb_ratio": 7.2,
+      "roe": 23.5,
+      "as_of": "2026-07-17",
+      "sources": [
+        "screener.in",
+        "valueresearchonline.com",
+        "scanx.trade"
+      ]
+    },
+    "INE121E01018": {
+      "asset_name": "JSW Energy",
+      "sector": "Power Generation/Distribution",
+      "cap_type": "Mid Cap",
+      "pe_ratio": 47.0,
+      "pb_ratio": 3.0,
+      "roe": 7.8,
+      "as_of": "2026-07-17",
+      "sources": [
+        "screener.in",
+        "valueresearchonline.com",
+        "stockanalysis.com"
+      ]
+    },
+    "INE154A01025": {
+      "asset_name": "ITC Limited",
+      "sector": "FMCG (Diversified)",
+      "cap_type": "Large Cap",
+      "pe_ratio": 28.25,
+      "pb_ratio": null,
+      "roe": 35.2,
+      "as_of": "2026-08-03",
+      "sources": [
+        "screener.in",
+        "valueresearchonline.com",
+        "tradingview.com"
+      ]
+    },
+    "INE245A01021": {
+      "asset_name": "Tata Power",
+      "sector": "Power Generation/Distribution",
+      "cap_type": "Large Cap",
+      "pe_ratio": 30.1,
+      "pb_ratio": null,
+      "roe": 11.2,
+      "as_of": "2026-08-10",
+      "sources": [
+        "screener.in",
+        "valueresearchonline.com",
+        "stockanalysis.com",
+        "simplywall.st"
+      ]
+    },
+    "INE296A01032": {
+      "asset_name": "Bajaj Finance",
+      "sector": "NBFC / Financial Services",
+      "cap_type": "Large Cap",
+      "pe_ratio": 33.43,
+      "pb_ratio": 5.58,
+      "roe": null,
+      "as_of": "2026-07-01",
+      "sources": [
+        "screener.in",
+        "valueresearchonline.com"
+      ]
+    },
+    "INE090A01021": {
+      "asset_name": "ICICI Bank",
+      "sector": "Bank - Private",
+      "cap_type": "Large Cap",
+      "pe_ratio": 17.94,
+      "pb_ratio": 2.74,
+      "roe": 18.04,
+      "as_of": "2026-08-27",
+      "sources": [
+        "screener.in",
+        "valueresearchonline.com",
+        "equitypandit.com",
+        "tradingview.com"
+      ]
+    },
+    "INE238A01034": {
+      "asset_name": "AXIS Bank",
+      "sector": null,
+      "cap_type": "Large Cap",
+      "pe_ratio": null,
+      "pb_ratio": null,
+      "roe": null,
+      "as_of": "2026-06-30",
+      "sources": [
+        "amfiindia.com (official AMFI stock categorisation, six months ended 30 Jun 2026)"
+      ]
+    },
+    "INE674K01013": {
+      "asset_name": "Aditya Birla Capital",
+      "sector": null,
+      "cap_type": "Mid Cap",
+      "pe_ratio": null,
+      "pb_ratio": null,
+      "roe": null,
+      "as_of": "2026-06-30",
+      "sources": [
+        "amfiindia.com (official AMFI stock categorisation, six months ended 30 Jun 2026)"
+      ]
+    },
+    "INE128X01021": {
+      "asset_name": "Archean Chemical Industries",
+      "sector": null,
+      "cap_type": "Small Cap",
+      "pe_ratio": null,
+      "pb_ratio": null,
+      "roe": null,
+      "as_of": "2026-06-30",
+      "sources": [
+        "amfiindia.com (official AMFI stock categorisation, six months ended 30 Jun 2026)"
+      ]
+    },
+    "INE406A01037": {
+      "asset_name": "Aurobindo Pharma",
+      "sector": null,
+      "cap_type": "Mid Cap",
+      "pe_ratio": null,
+      "pb_ratio": null,
+      "roe": null,
+      "as_of": "2026-06-30",
+      "sources": [
+        "amfiindia.com (official AMFI stock categorisation, six months ended 30 Jun 2026)"
+      ]
+    },
+    "INE917I01010": {
+      "asset_name": "Bajaj Auto",
+      "sector": null,
+      "cap_type": "Large Cap",
+      "pe_ratio": null,
+      "pb_ratio": null,
+      "roe": null,
+      "as_of": "2026-06-30",
+      "sources": [
+        "amfiindia.com (official AMFI stock categorisation, six months ended 30 Jun 2026)"
+      ]
+    },
+    "INE545U01014": {
+      "asset_name": "Bandhan Bank",
+      "sector": null,
+      "cap_type": "Small Cap",
+      "pe_ratio": null,
+      "pb_ratio": null,
+      "roe": null,
+      "as_of": "2026-06-30",
+      "sources": [
+        "amfiindia.com (official AMFI stock categorisation, six months ended 30 Jun 2026)"
+      ]
+    },
+    "INE376G01013": {
+      "asset_name": "Biocon Limited",
+      "sector": null,
+      "cap_type": "Mid Cap",
+      "pe_ratio": null,
+      "pb_ratio": null,
+      "roe": null,
+      "as_of": "2026-06-30",
+      "sources": [
+        "amfiindia.com (official AMFI stock categorisation, six months ended 30 Jun 2026)"
+      ]
+    },
+    "INE216A01030": {
+      "asset_name": "Britannia Industries",
+      "sector": null,
+      "cap_type": "Large Cap",
+      "pe_ratio": null,
+      "pb_ratio": null,
+      "roe": null,
+      "as_of": "2026-06-30",
+      "sources": [
+        "amfiindia.com (official AMFI stock categorisation, six months ended 30 Jun 2026)"
+      ]
+    },
+    "INE476A01022": {
+      "asset_name": "Canara Bank",
+      "sector": null,
+      "cap_type": "Large Cap",
+      "pe_ratio": null,
+      "pb_ratio": null,
+      "roe": null,
+      "as_of": "2026-06-30",
+      "sources": [
+        "amfiindia.com (official AMFI stock categorisation, six months ended 30 Jun 2026)"
+      ]
+    },
+    "INE136B01020": {
+      "asset_name": "Cyient Limited",
+      "sector": null,
+      "cap_type": "Small Cap",
+      "pe_ratio": null,
+      "pb_ratio": null,
+      "roe": null,
+      "as_of": "2026-06-30",
+      "sources": [
+        "amfiindia.com (official AMFI stock categorisation, six months ended 30 Jun 2026)"
+      ]
+    },
+    "INE00R701025": {
+      "asset_name": "Dalmia Bharat",
+      "sector": null,
+      "cap_type": "Mid Cap",
+      "pe_ratio": null,
+      "pb_ratio": null,
+      "roe": null,
+      "as_of": "2026-06-30",
+      "sources": [
+        "amfiindia.com (official AMFI stock categorisation, six months ended 30 Jun 2026)"
+      ]
+    },
+    "INE148O01028": {
+      "asset_name": "Delhivery",
+      "sector": null,
+      "cap_type": "Small Cap",
+      "pe_ratio": null,
+      "pb_ratio": null,
+      "roe": null,
+      "as_of": "2026-06-30",
+      "sources": [
+        "amfiindia.com (official AMFI stock categorisation, six months ended 30 Jun 2026)"
+      ]
+    },
+    "INE917M01012": {
+      "asset_name": "Dilip Buildcon",
+      "sector": null,
+      "cap_type": "Small Cap",
+      "pe_ratio": null,
+      "pb_ratio": null,
+      "roe": null,
+      "as_of": "2026-06-30",
+      "sources": [
+        "amfiindia.com (official AMFI stock categorisation, six months ended 30 Jun 2026)"
+      ]
+    },
+    "INE361B01024": {
+      "asset_name": "Divi's Laboratories",
+      "sector": null,
+      "cap_type": "Large Cap",
+      "pe_ratio": null,
+      "pb_ratio": null,
+      "roe": null,
+      "as_of": "2026-06-30",
+      "sources": [
+        "amfiindia.com (official AMFI stock categorisation, six months ended 30 Jun 2026)"
+      ]
+    },
+    "INE600L01024": {
+      "asset_name": "Dr Lal Pathlabs",
+      "sector": null,
+      "cap_type": "Small Cap",
+      "pe_ratio": null,
+      "pb_ratio": null,
+      "roe": null,
+      "as_of": "2026-06-30",
+      "sources": [
+        "amfiindia.com (official AMFI stock categorisation, six months ended 30 Jun 2026)"
+      ]
+    },
+    "INE089A01031": {
+      "asset_name": "Dr. Reddy's Laboratories",
+      "sector": null,
+      "cap_type": "Mid Cap",
+      "pe_ratio": null,
+      "pb_ratio": null,
+      "roe": null,
+      "as_of": "2026-06-30",
+      "sources": [
+        "amfiindia.com (official AMFI stock categorisation, six months ended 30 Jun 2026)"
+      ]
+    },
+    "INE913H01037": {
+      "asset_name": "Endurance Technologies",
+      "sector": null,
+      "cap_type": "Mid Cap",
+      "pe_ratio": null,
+      "pb_ratio": null,
+      "roe": null,
+      "as_of": "2026-06-30",
+      "sources": [
+        "amfiindia.com (official AMFI stock categorisation, six months ended 30 Jun 2026)"
+      ]
+    },
+    "INE068V01023": {
+      "asset_name": "Gland Pharma",
+      "sector": null,
+      "cap_type": "Small Cap",
+      "pe_ratio": null,
+      "pb_ratio": null,
+      "roe": null,
+      "as_of": "2026-06-30",
+      "sources": [
+        "amfiindia.com (official AMFI stock categorisation, six months ended 30 Jun 2026)"
+      ]
+    },
+    "INE159A01016": {
+      "asset_name": "GlaxoSmithkline Pharmaceuticals",
+      "sector": null,
+      "cap_type": "Mid Cap",
+      "pe_ratio": null,
+      "pb_ratio": null,
+      "roe": null,
+      "as_of": "2026-06-30",
+      "sources": [
+        "amfiindia.com (official AMFI stock categorisation, six months ended 30 Jun 2026)"
+      ]
+    },
+    "INE935A01035": {
+      "asset_name": "Glenmark Pharmaceuticals",
+      "sector": null,
+      "cap_type": "Mid Cap",
+      "pe_ratio": null,
+      "pb_ratio": null,
+      "roe": null,
+      "as_of": "2026-06-30",
+      "sources": [
+        "amfiindia.com (official AMFI stock categorisation, six months ended 30 Jun 2026)"
+      ]
+    },
+    "INE101D01020": {
+      "asset_name": "Granules India",
+      "sector": null,
+      "cap_type": "Small Cap",
+      "pe_ratio": null,
+      "pb_ratio": null,
+      "roe": null,
+      "as_of": "2026-06-30",
+      "sources": [
+        "amfiindia.com (official AMFI stock categorisation, six months ended 30 Jun 2026)"
+      ]
+    },
+    "INE860A01027": {
+      "asset_name": "HCL Technologies",
+      "sector": null,
+      "cap_type": "Large Cap",
+      "pe_ratio": null,
+      "pb_ratio": null,
+      "roe": null,
+      "as_of": "2026-06-30",
+      "sources": [
+        "amfiindia.com (official AMFI stock categorisation, six months ended 30 Jun 2026)"
+      ]
+    },
+    "INE795G01014": {
+      "asset_name": "HDFC Life Insurance Company",
+      "sector": null,
+      "cap_type": "Large Cap",
+      "pe_ratio": null,
+      "pb_ratio": null,
+      "roe": null,
+      "as_of": "2026-06-30",
+      "sources": [
+        "amfiindia.com (official AMFI stock categorisation, six months ended 30 Jun 2026)"
+      ]
+    },
+    "INE030A01027": {
+      "asset_name": "Hindustan Unilever",
+      "sector": null,
+      "cap_type": "Large Cap",
+      "pe_ratio": null,
+      "pb_ratio": null,
+      "roe": null,
+      "as_of": "2026-06-30",
+      "sources": [
+        "amfiindia.com (official AMFI stock categorisation, six months ended 30 Jun 2026)"
+      ]
+    },
+    "INE0V6F01027": {
+      "asset_name": "Hyundai Motor India",
+      "sector": null,
+      "cap_type": "Large Cap",
+      "pe_ratio": null,
+      "pb_ratio": null,
+      "roe": null,
+      "as_of": "2026-06-30",
+      "sources": [
+        "amfiindia.com (official AMFI stock categorisation, six months ended 30 Jun 2026)"
+      ]
+    },
+    "INE765G01017": {
+      "asset_name": "ICICI Lombard General Insurance Company",
+      "sector": null,
+      "cap_type": "Mid Cap",
+      "pe_ratio": null,
+      "pb_ratio": null,
+      "roe": null,
+      "as_of": "2026-06-30",
+      "sources": [
+        "amfiindia.com (official AMFI stock categorisation, six months ended 30 Jun 2026)"
+      ]
+    },
+    "INE379A01028": {
+      "asset_name": "ITC Hotels",
+      "sector": null,
+      "cap_type": "Mid Cap",
+      "pe_ratio": null,
+      "pb_ratio": null,
+      "roe": null,
+      "as_of": "2026-06-30",
+      "sources": [
+        "amfiindia.com (official AMFI stock categorisation, six months ended 30 Jun 2026)"
+      ]
+    },
+    "INE121J01017": {
+      "asset_name": "Indus Towers",
+      "sector": null,
+      "cap_type": "Large Cap",
+      "pe_ratio": null,
+      "pb_ratio": null,
+      "roe": null,
+      "as_of": "2026-06-30",
+      "sources": [
+        "amfiindia.com (official AMFI stock categorisation, six months ended 30 Jun 2026)"
+      ]
+    },
+    "INE009A01021": {
+      "asset_name": "Infosys",
+      "sector": null,
+      "cap_type": "Large Cap",
+      "pe_ratio": null,
+      "pb_ratio": null,
+      "roe": null,
+      "as_of": "2026-06-30",
+      "sources": [
+        "amfiindia.com (official AMFI stock categorisation, six months ended 30 Jun 2026)"
+      ]
+    },
+    "INE646L01027": {
+      "asset_name": "Interglobe Aviation",
+      "sector": null,
+      "cap_type": "Large Cap",
+      "pe_ratio": null,
+      "pb_ratio": null,
+      "roe": null,
+      "as_of": "2026-06-30",
+      "sources": [
+        "amfiindia.com (official AMFI stock categorisation, six months ended 30 Jun 2026)"
+      ]
+    },
+    "INE880J01026": {
+      "asset_name": "JSW Infrastructure",
+      "sector": null,
+      "cap_type": "Mid Cap",
+      "pe_ratio": null,
+      "pb_ratio": null,
+      "roe": null,
+      "as_of": "2026-06-30",
+      "sources": [
+        "amfiindia.com (official AMFI stock categorisation, six months ended 30 Jun 2026)"
+      ]
+    },
+    "INE220G01021": {
+      "asset_name": "Jindal Stainless",
+      "sector": null,
+      "cap_type": "Mid Cap",
+      "pe_ratio": null,
+      "pb_ratio": null,
+      "roe": null,
+      "as_of": "2026-06-30",
+      "sources": [
+        "amfiindia.com (official AMFI stock categorisation, six months ended 30 Jun 2026)"
+      ]
+    },
+    "INE303R01014": {
+      "asset_name": "Kalyan Jewellers India",
+      "sector": null,
+      "cap_type": "Mid Cap",
+      "pe_ratio": null,
+      "pb_ratio": null,
+      "roe": null,
+      "as_of": "2026-06-30",
+      "sources": [
+        "amfiindia.com (official AMFI stock categorisation, six months ended 30 Jun 2026)"
+      ]
+    },
+    "INE918Z01012": {
+      "asset_name": "Kaynes Technology India",
+      "sector": null,
+      "cap_type": "Small Cap",
+      "pe_ratio": null,
+      "pb_ratio": null,
+      "roe": null,
+      "as_of": "2026-06-30",
+      "sources": [
+        "amfiindia.com (official AMFI stock categorisation, six months ended 30 Jun 2026)"
+      ]
+    },
+    "INE237A01036": {
+      "asset_name": "Kotak Mahindra Bank",
+      "sector": null,
+      "cap_type": "Large Cap",
+      "pe_ratio": null,
+      "pb_ratio": null,
+      "roe": null,
+      "as_of": "2026-06-30",
+      "sources": [
+        "amfiindia.com (official AMFI stock categorisation, six months ended 30 Jun 2026)"
+      ]
+    },
+    "INE010V01017": {
+      "asset_name": "L&T Technology Services",
+      "sector": null,
+      "cap_type": "Mid Cap",
+      "pe_ratio": null,
+      "pb_ratio": null,
+      "roe": null,
+      "as_of": "2026-06-30",
+      "sources": [
+        "amfiindia.com (official AMFI stock categorisation, six months ended 30 Jun 2026)"
+      ]
+    },
+    "INE324D01010": {
+      "asset_name": "LG Electronics India",
+      "sector": null,
+      "cap_type": "Mid Cap",
+      "pe_ratio": null,
+      "pb_ratio": null,
+      "roe": null,
+      "as_of": "2026-06-30",
+      "sources": [
+        "amfiindia.com (official AMFI stock categorisation, six months ended 30 Jun 2026)"
+      ]
+    },
+    "INE214T01019": {
+      "asset_name": "LTM Limited",
+      "sector": null,
+      "cap_type": "Large Cap",
+      "pe_ratio": null,
+      "pb_ratio": null,
+      "roe": null,
+      "as_of": "2026-06-30",
+      "sources": [
+        "amfiindia.com (official AMFI stock categorisation, six months ended 30 Jun 2026)"
+      ]
+    },
+    "INE018A01030": {
+      "asset_name": "Larsen & Toubro",
+      "sector": null,
+      "cap_type": "Large Cap",
+      "pe_ratio": null,
+      "pb_ratio": null,
+      "roe": null,
+      "as_of": "2026-06-30",
+      "sources": [
+        "amfiindia.com (official AMFI stock categorisation, six months ended 30 Jun 2026)"
+      ]
+    },
+    "INE585B01010": {
+      "asset_name": "Maruti Suzuki",
+      "sector": null,
+      "cap_type": "Large Cap",
+      "pe_ratio": null,
+      "pb_ratio": null,
+      "roe": null,
+      "as_of": "2026-06-30",
+      "sources": [
+        "amfiindia.com (official AMFI stock categorisation, six months ended 30 Jun 2026)"
+      ]
+    },
+    "INE180A01020": {
+      "asset_name": "Max Financial Services",
+      "sector": null,
+      "cap_type": "Mid Cap",
+      "pe_ratio": null,
+      "pb_ratio": null,
+      "roe": null,
+      "as_of": "2026-06-30",
+      "sources": [
+        "amfiindia.com (official AMFI stock categorisation, six months ended 30 Jun 2026)"
+      ]
+    },
+    "INE048G01026": {
+      "asset_name": "Navin Fluorine International",
+      "sector": null,
+      "cap_type": "Small Cap",
+      "pe_ratio": null,
+      "pb_ratio": null,
+      "roe": null,
+      "as_of": "2026-06-30",
+      "sources": [
+        "amfiindia.com (official AMFI stock categorisation, six months ended 30 Jun 2026)"
+      ]
+    },
+    "INE982J01020": {
+      "asset_name": "One 97 Communications",
+      "sector": null,
+      "cap_type": "Mid Cap",
+      "pe_ratio": null,
+      "pb_ratio": null,
+      "roe": null,
+      "as_of": "2026-06-30",
+      "sources": [
+        "amfiindia.com (official AMFI stock categorisation, six months ended 30 Jun 2026)"
+      ]
+    },
+    "INE761H01022": {
+      "asset_name": "Page Industries",
+      "sector": null,
+      "cap_type": "Mid Cap",
+      "pe_ratio": null,
+      "pb_ratio": null,
+      "roe": null,
+      "as_of": "2026-06-30",
+      "sources": [
+        "amfiindia.com (official AMFI stock categorisation, six months ended 30 Jun 2026)"
+      ]
+    },
+    "INE262H01021": {
+      "asset_name": "Persistent Systems",
+      "sector": null,
+      "cap_type": "Mid Cap",
+      "pe_ratio": null,
+      "pb_ratio": null,
+      "roe": null,
+      "as_of": "2026-06-30",
+      "sources": [
+        "amfiindia.com (official AMFI stock categorisation, six months ended 30 Jun 2026)"
+      ]
+    },
+    "INE318A01026": {
+      "asset_name": "Pidilite Industries",
+      "sector": null,
+      "cap_type": "Large Cap",
+      "pe_ratio": null,
+      "pb_ratio": null,
+      "roe": null,
+      "as_of": "2026-06-30",
+      "sources": [
+        "amfiindia.com (official AMFI stock categorisation, six months ended 30 Jun 2026)"
+      ]
+    },
+    "INE205C01021": {
+      "asset_name": "Poly Medicure",
+      "sector": null,
+      "cap_type": "Small Cap",
+      "pe_ratio": null,
+      "pb_ratio": null,
+      "roe": null,
+      "as_of": "2026-06-30",
+      "sources": [
+        "amfiindia.com (official AMFI stock categorisation, six months ended 30 Jun 2026)"
+      ]
+    },
+    "INE160A01022": {
+      "asset_name": "Punjab National Bank",
+      "sector": null,
+      "cap_type": "Large Cap",
+      "pe_ratio": null,
+      "pb_ratio": null,
+      "roe": null,
+      "as_of": "2026-06-30",
+      "sources": [
+        "amfiindia.com (official AMFI stock categorisation, six months ended 30 Jun 2026)"
+      ]
+    },
+    "INE399G01023": {
+      "asset_name": "Ramkrishna Forgings",
+      "sector": null,
+      "cap_type": "Small Cap",
+      "pe_ratio": null,
+      "pb_ratio": null,
+      "roe": null,
+      "as_of": "2026-06-30",
+      "sources": [
+        "amfiindia.com (official AMFI stock categorisation, six months ended 30 Jun 2026)"
+      ]
+    },
+    "INE423Y01016": {
+      "asset_name": "SBFC Finance",
+      "sector": null,
+      "cap_type": "Small Cap",
+      "pe_ratio": null,
+      "pb_ratio": null,
+      "roe": null,
+      "as_of": "2026-06-30",
+      "sources": [
+        "amfiindia.com (official AMFI stock categorisation, six months ended 30 Jun 2026)"
+      ]
+    },
+    "INE721A01047": {
+      "asset_name": "Shriram Finance",
+      "sector": null,
+      "cap_type": "Large Cap",
+      "pe_ratio": null,
+      "pb_ratio": null,
+      "roe": null,
+      "as_of": "2026-06-30",
+      "sources": [
+        "amfiindia.com (official AMFI stock categorisation, six months ended 30 Jun 2026)"
+      ]
+    },
+    "INE575P01011": {
+      "asset_name": "Star Health & Allied Insurance Company",
+      "sector": null,
+      "cap_type": "Small Cap",
+      "pe_ratio": null,
+      "pb_ratio": null,
+      "roe": null,
+      "as_of": "2026-06-30",
+      "sources": [
+        "amfiindia.com (official AMFI stock categorisation, six months ended 30 Jun 2026)"
+      ]
+    },
+    "INE062A01020": {
+      "asset_name": "State Bank Of India",
+      "sector": null,
+      "cap_type": "Large Cap",
+      "pe_ratio": null,
+      "pb_ratio": null,
+      "roe": null,
+      "as_of": "2026-06-30",
+      "sources": [
+        "amfiindia.com (official AMFI stock categorisation, six months ended 30 Jun 2026)"
+      ]
+    },
+    "INE044A01036": {
+      "asset_name": "Sun Pharmaceutical",
+      "sector": null,
+      "cap_type": "Large Cap",
+      "pe_ratio": null,
+      "pb_ratio": null,
+      "roe": null,
+      "as_of": "2026-06-30",
+      "sources": [
+        "amfiindia.com (official AMFI stock categorisation, six months ended 30 Jun 2026)"
+      ]
+    },
+    "INE195A01028": {
+      "asset_name": "Supreme Industries",
+      "sector": null,
+      "cap_type": "Mid Cap",
+      "pe_ratio": null,
+      "pb_ratio": null,
+      "roe": null,
+      "as_of": "2026-06-30",
+      "sources": [
+        "amfiindia.com (official AMFI stock categorisation, six months ended 30 Jun 2026)"
+      ]
+    },
+    "INE1TAE01010": {
+      "asset_name": "Tata Motors",
+      "sector": null,
+      "cap_type": "Large Cap",
+      "pe_ratio": null,
+      "pb_ratio": null,
+      "roe": null,
+      "as_of": "2026-06-30",
+      "sources": [
+        "amfiindia.com (official AMFI stock categorisation, six months ended 30 Jun 2026)"
+      ]
+    },
+    "INE155A01022": {
+      "asset_name": "Tata Motors Passenger Vehicles",
+      "sector": null,
+      "cap_type": "Large Cap",
+      "pe_ratio": null,
+      "pb_ratio": null,
+      "roe": null,
+      "as_of": "2026-06-30",
+      "sources": [
+        "amfiindia.com (official AMFI stock categorisation, six months ended 30 Jun 2026)"
+      ]
+    },
+    "INE142M01025": {
+      "asset_name": "Tata Technologies",
+      "sector": null,
+      "cap_type": "Small Cap",
+      "pe_ratio": null,
+      "pb_ratio": null,
+      "roe": null,
+      "as_of": "2026-06-30",
+      "sources": [
+        "amfiindia.com (official AMFI stock categorisation, six months ended 30 Jun 2026)"
+      ]
+    },
+    "INE669C01036": {
+      "asset_name": "Tech Mahindra",
+      "sector": null,
+      "cap_type": "Large Cap",
+      "pe_ratio": null,
+      "pb_ratio": null,
+      "roe": null,
+      "as_of": "2026-06-30",
+      "sources": [
+        "amfiindia.com (official AMFI stock categorisation, six months ended 30 Jun 2026)"
+      ]
+    },
+    "INE280A01028": {
+      "asset_name": "Titan Company",
+      "sector": null,
+      "cap_type": "Large Cap",
+      "pe_ratio": null,
+      "pb_ratio": null,
+      "roe": null,
+      "as_of": "2026-06-30",
+      "sources": [
+        "amfiindia.com (official AMFI stock categorisation, six months ended 30 Jun 2026)"
+      ]
+    },
+    "INE849A01020": {
+      "asset_name": "Trent Limited",
+      "sector": null,
+      "cap_type": "Large Cap",
+      "pe_ratio": null,
+      "pb_ratio": null,
+      "roe": null,
+      "as_of": "2026-06-30",
+      "sources": [
+        "amfiindia.com (official AMFI stock categorisation, six months ended 30 Jun 2026)"
+      ]
+    },
+    "INE481G01011": {
+      "asset_name": "UltraTech Cement",
+      "sector": null,
+      "cap_type": "Large Cap",
+      "pe_ratio": null,
+      "pb_ratio": null,
+      "roe": null,
+      "as_of": "2026-06-30",
+      "sources": [
+        "amfiindia.com (official AMFI stock categorisation, six months ended 30 Jun 2026)"
+      ]
+    },
+    "INE854D01024": {
+      "asset_name": "United Spirits",
+      "sector": null,
+      "cap_type": "Mid Cap",
+      "pe_ratio": null,
+      "pb_ratio": null,
+      "roe": null,
+      "as_of": "2026-06-30",
+      "sources": [
+        "amfiindia.com (official AMFI stock categorisation, six months ended 30 Jun 2026)"
+      ]
+    },
+    "INE054A01027": {
+      "asset_name": "VIP Industries",
+      "sector": null,
+      "cap_type": "Small Cap",
+      "pe_ratio": null,
+      "pb_ratio": null,
+      "roe": null,
+      "as_of": "2026-06-30",
+      "sources": [
+        "amfiindia.com (official AMFI stock categorisation, six months ended 30 Jun 2026)"
+      ]
+    },
+    "INE665L01035": {
+      "asset_name": "Varroc Engineering",
+      "sector": null,
+      "cap_type": "Small Cap",
+      "pe_ratio": null,
+      "pb_ratio": null,
+      "roe": null,
+      "as_of": "2026-06-30",
+      "sources": [
+        "amfiindia.com (official AMFI stock categorisation, six months ended 30 Jun 2026)"
+      ]
+    },
+    "INE200M01039": {
+      "asset_name": "Varun Beverages",
+      "sector": null,
+      "cap_type": "Large Cap",
+      "pe_ratio": null,
+      "pb_ratio": null,
+      "roe": null,
+      "as_of": "2026-06-30",
+      "sources": [
+        "amfiindia.com (official AMFI stock categorisation, six months ended 30 Jun 2026)"
+      ]
+    },
+    "INE1CDF01017": {
+      "asset_name": "Vedanta Aluminium Metal",
+      "sector": null,
+      "cap_type": "Large Cap",
+      "pe_ratio": null,
+      "pb_ratio": null,
+      "roe": null,
+      "as_of": "2026-06-30",
+      "sources": [
+        "amfiindia.com (official AMFI stock categorisation, six months ended 30 Jun 2026)"
+      ]
+    },
+    "INF194K01N63": {
+      "asset_name": "BANDHAN Dynamic Bond Fund-Direct Plan-Growth",
+      "sector": null,
+      "cap_type": null,
+      "pe_ratio": null,
+      "pb_ratio": null,
+      "roe": null,
+      "amc_name": "Bandhan Mutual Fund",
+      "credit_rating": null,
+      "ytm": null,
+      "modified_duration": null,
+      "average_maturity": null,
+      "as_of": "2026-08-29",
+      "sources": [
+        "fund's own registered name (AMC is the mandatory brand prefix in every Indian mutual fund name)"
+      ]
+    },
+    "INF179K01VK7": {
+      "asset_name": "HDFC Focused Fund - Growth Option - Direct Plan",
+      "sector": null,
+      "cap_type": null,
+      "pe_ratio": null,
+      "pb_ratio": null,
+      "roe": null,
+      "amc_name": "HDFC Mutual Fund",
+      "credit_rating": null,
+      "ytm": null,
+      "modified_duration": null,
+      "average_maturity": null,
+      "as_of": "2026-08-29",
+      "sources": [
+        "fund's own registered name (AMC is the mandatory brand prefix in every Indian mutual fund name)"
+      ]
+    },
+    "INF109K01Q49": {
+      "asset_name": "ICICI Prudential Liquid Fund - Direct Plan - Growth",
+      "sector": null,
+      "cap_type": null,
+      "pe_ratio": null,
+      "pb_ratio": null,
+      "roe": null,
+      "amc_name": "ICICI Prudential Mutual Fund",
+      "credit_rating": null,
+      "ytm": null,
+      "modified_duration": null,
+      "average_maturity": null,
+      "as_of": "2026-08-29",
+      "sources": [
+        "fund's own registered name (AMC is the mandatory brand prefix in every Indian mutual fund name)"
+      ]
+    },
+    "INF174K01NE8": {
+      "asset_name": "Kotak Liquid - Growth - Direct",
+      "sector": null,
+      "cap_type": null,
+      "pe_ratio": null,
+      "pb_ratio": null,
+      "roe": null,
+      "amc_name": "Kotak Mahindra Mutual Fund",
+      "credit_rating": null,
+      "ytm": null,
+      "modified_duration": null,
+      "average_maturity": null,
+      "as_of": "2026-08-29",
+      "sources": [
+        "fund's own registered name (AMC is the mandatory brand prefix in every Indian mutual fund name)"
+      ]
+    },
+    "INF109K016O4": {
+      "asset_name": "ICICI Prudential Arbitrage Fund - Direct Plan - Growth",
+      "sector": null,
+      "cap_type": null,
+      "pe_ratio": null,
+      "pb_ratio": null,
+      "roe": null,
+      "amc_name": "ICICI Prudential Mutual Fund",
+      "credit_rating": null,
+      "ytm": null,
+      "modified_duration": null,
+      "average_maturity": null,
+      "as_of": "2026-08-29",
+      "sources": [
+        "fund's own registered name (AMC is the mandatory brand prefix in every Indian mutual fund name)"
+      ]
+    },
+    "INF109KC1Y56": {
+      "asset_name": "ICICI Prudential Silver ETF",
+      "sector": null,
+      "cap_type": null,
+      "pe_ratio": null,
+      "pb_ratio": null,
+      "roe": null,
+      "amc_name": "ICICI Prudential Mutual Fund",
+      "credit_rating": null,
+      "ytm": null,
+      "modified_duration": null,
+      "average_maturity": null,
+      "as_of": "2026-08-29",
+      "sources": [
+        "fund's own registered name (AMC is the mandatory brand prefix in every Indian mutual fund name)"
+      ]
+    },
+    "IN0020210061": {
+      "asset_name": "Sovereign Gold Bond 2.50% JUN 2029 SR-II 2021-22",
+      "sector": null,
+      "cap_type": null,
+      "pe_ratio": null,
+      "pb_ratio": null,
+      "roe": null,
+      "amc_name": null,
+      "credit_rating": "SOVEREIGN",
+      "ytm": null,
+      "modified_duration": null,
+      "average_maturity": 2.84,
+      "as_of": "2026-08-29",
+      "sources": [
+        "instrument terms (RBI/Government of India issuance; maturity date stated in the instrument's own name)"
+      ]
+    }
+  }
+}

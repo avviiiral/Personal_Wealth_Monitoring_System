@@ -1,0 +1,298 @@
+<header class="header">
+  <div class="header-left">
+    <div class="page-context">
+      <span class="context-label">Bagla Group</span>
+      <span class="context-title">Financial Overview</span>
+    </div>
+  </div>
+
+  <div class="header-right">
+    <!-- SEARCH -->
+    <button
+      type="button"
+      class="header-icon-button"
+      aria-label="Search"
+      (click)="toggleSearch($event)"
+    >
+      <span class="search-icon">⌕</span>
+    </button>
+
+    <!-- AI CHAT -->
+    <button
+      type="button"
+      class="header-icon-button ai-button"
+      aria-label="AI Assistant"
+      (click)="toggleChat($event)"
+    >
+      <span>AI</span>
+    </button>
+
+    <!-- NOTIFICATIONS -->
+    <button
+      type="button"
+      class="header-icon-button notification-button"
+      aria-label="Notifications"
+      (click)="toggleNotifications($event)"
+    >
+      <span class="bell-icon">♧</span>
+      <span class="notification-count" *ngIf="unreadCount > 0">{{
+        unreadCount > 9 ? '9+' : unreadCount
+      }}</span>
+    </button>
+
+    <!-- USER -->
+    <div class="user-profile-wrapper" (click)="$event.stopPropagation()">
+      <button
+        type="button"
+        class="user-profile"
+        [class.active]="profileMenuOpen"
+        (click)="toggleProfileMenu($event)"
+      >
+        <div class="avatar">
+          {{ (currentUser?.username || 'A').charAt(0).toUpperCase() }}
+        </div>
+
+        <div class="user-details">
+          <span class="user-name">
+            {{ currentUser?.username || 'Aviral' }}
+          </span>
+
+          <span class="user-role"> {{ rbac.roleLabel() }} </span>
+        </div>
+
+        <span class="dropdown-arrow">
+          {{ profileMenuOpen ? '▲' : '▼' }}
+        </span>
+      </button>
+
+      <!-- ACCOUNT MENU -->
+      <div class="profile-menu" *ngIf="profileMenuOpen">
+        <div class="profile-menu-user">
+          <div class="menu-avatar">
+            {{ (currentUser?.username || 'A').charAt(0).toUpperCase() }}
+          </div>
+
+          <div class="menu-user-info">
+            <strong>
+              {{ currentUser?.username || 'Aviral' }}
+            </strong>
+
+            <span>
+              {{ currentUser?.email || '' }}
+            </span>
+          </div>
+        </div>
+
+        <div class="menu-divider"></div>
+
+        <!-- FAMILY SWITCHER (only when the user has more than one family) -->
+        <ng-container *ngIf="rbac.hasMultipleFamilies()">
+          <div class="menu-section-label">Viewing family</div>
+
+          <button
+            type="button"
+            class="profile-menu-item family-menu-item"
+            *ngFor="let family of rbac.families()"
+            [class.family-menu-item-active]="family.id === rbac.activeFamily()?.id"
+            [disabled]="switchingFamily"
+            (click)="switchFamily(family)"
+          >
+            <span class="menu-item-icon">{{ family.id === rbac.activeFamily()?.id ? '●' : '○' }}</span>
+            <span>{{ family.name }}</span>
+          </button>
+
+          <div class="menu-divider"></div>
+        </ng-container>
+
+        <!-- SETTINGS -->
+        <button type="button" class="profile-menu-item" (click)="openSettings()">
+          <span class="menu-item-icon">⚙</span>
+          <span>Settings</span>
+        </button>
+
+        <!-- LOGOUT -->
+        <button
+          type="button"
+          class="profile-menu-item logout-item"
+          [disabled]="loggingOut"
+          (click)="logout()"
+        >
+          <span class="menu-item-icon">↪</span>
+
+          <span>
+            {{ loggingOut ? 'Logging out...' : 'Logout' }}
+          </span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- SEARCH PANEL -->
+  <div class="header-search-panel" *ngIf="searchOpen" (click)="$event.stopPropagation()">
+    <div class="search-panel-header">
+      <span>Search</span>
+
+      <button type="button" class="panel-close-button" (click)="closeSearch()">×</button>
+    </div>
+
+    <input
+      type="text"
+      class="header-search-input"
+      placeholder="Search your portfolio..."
+      [(ngModel)]="searchText"
+      autofocus
+    />
+
+    <div class="search-empty">
+      Search your portfolio holdings, stocks, mutual funds and other investments.
+    </div>
+  </div>
+
+  <!-- NOTIFICATIONS PANEL -->
+  <div class="notifications-panel" *ngIf="notificationsOpen" (click)="$event.stopPropagation()">
+    <div class="notifications-panel-header">
+      <span>Notifications</span>
+
+      <button
+        type="button"
+        class="mark-all-read-button"
+        *ngIf="unreadCount > 0"
+        (click)="markAllNotificationsRead($event)"
+      >
+        Mark all read
+      </button>
+    </div>
+
+    <div class="notifications-list">
+      <button
+        type="button"
+        class="notification-item"
+        *ngFor="let item of notifications"
+        [class.unread]="!item.is_read"
+        (click)="openNotification(item)"
+      >
+        <span [class]="impactDotClass(item)"></span>
+
+        <div class="notification-item-body">
+          <strong>{{ item.holding_display_name }}</strong>
+          <span class="notification-item-title">{{ item.article_title }}</span>
+          <span class="notification-item-time">{{ timeAgo(item.created_at) }}</span>
+        </div>
+      </button>
+
+      <div class="notifications-empty" *ngIf="notifications.length === 0">
+        No new high-impact news on your holdings right now.
+      </div>
+    </div>
+
+    <a class="notifications-view-all" routerLink="/portfolio-news" (click)="closeNotifications()">
+      View all portfolio news
+    </a>
+  </div>
+
+  <!-- AI CHAT PANEL -->
+  <div
+    class="ai-chat-panel"
+    [class.ai-chat-panel--expanded]="chatExpanded"
+    *ngIf="chatOpen"
+    (click)="$event.stopPropagation()"
+  >
+    <div class="ai-chat-header">
+      <div class="ai-chat-header-info">
+        <strong>Bagla Group AI Assistant</strong>
+        <span>Ask about your portfolio</span>
+      </div>
+
+      <div class="ai-chat-header-actions">
+        <button
+          type="button"
+          class="panel-expand-button"
+          [attr.aria-label]="chatExpanded ? 'Collapse' : 'Expand'"
+          [title]="chatExpanded ? 'Collapse' : 'Expand'"
+          (click)="toggleChatExpand($event)"
+        >
+          <svg
+            *ngIf="!chatExpanded"
+            width="14"
+            height="14"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          >
+            <polyline points="15 3 21 3 21 9"></polyline>
+            <polyline points="9 21 3 21 3 15"></polyline>
+            <line x1="21" y1="3" x2="14" y2="10"></line>
+            <line x1="3" y1="21" x2="10" y2="14"></line>
+          </svg>
+
+          <svg
+            *ngIf="chatExpanded"
+            width="14"
+            height="14"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          >
+            <polyline points="4 14 10 14 10 20"></polyline>
+            <polyline points="20 10 14 10 14 4"></polyline>
+            <line x1="14" y1="10" x2="21" y2="3"></line>
+            <line x1="3" y1="21" x2="10" y2="14"></line>
+          </svg>
+        </button>
+
+        <button type="button" class="panel-close-button" (click)="closeChat()">×</button>
+      </div>
+    </div>
+
+    <div class="ai-chat-messages">
+      <div class="ai-welcome" *ngIf="chatMessages.length === 0">
+        <strong>How can I help?</strong>
+
+        <span>
+          Ask me about your holdings, investments, returns, allocation, performance or other
+          portfolio information.
+        </span>
+      </div>
+
+      <div
+        *ngFor="let message of chatMessages"
+        class="chat-message"
+        [class.user-message]="message.role === 'user'"
+        [class.assistant-message]="message.role === 'assistant'"
+      >
+        <div class="chat-message-bubble">
+          {{ message.text }}
+        </div>
+      </div>
+
+      <div class="chat-message assistant-message" *ngIf="chatLoading">
+        <div class="chat-message-bubble">Thinking...</div>
+      </div>
+    </div>
+
+    <div class="ai-chat-input-area">
+      <textarea
+        [(ngModel)]="chatMessage"
+        (keydown)="handleChatKeydown($event)"
+        placeholder="Ask about your portfolio..."
+        rows="2"
+        [disabled]="chatLoading"
+      ></textarea>
+
+      <button
+        type="button"
+        class="chat-send-button"
+        [disabled]="chatLoading || !chatMessage.trim()"
+        (click)="sendChatMessage()"
+      >
+        Send
+      </button>
+    </div>
+  </div>
+</header>

@@ -1,0 +1,118 @@
+<div class="ai-chat-page" [class.ai-chat-page--expanded]="expanded">
+  <!-- ================================================== -->
+  <!-- HEADER -->
+  <!-- ================================================== -->
+
+  <header class="page-header">
+    <div>
+      <h1>AI Portfolio Assistant</h1>
+
+      <p>Ask questions about your PWMS holdings, SIPs, and performance.</p>
+    </div>
+
+    <div class="header-actions">
+      <button
+        type="button"
+        class="icon-button"
+        (click)="toggleExpand()"
+        [attr.aria-label]="expanded ? 'Collapse chat' : 'Expand chat'"
+        [title]="expanded ? 'Collapse chat' : 'Expand chat'"
+      >
+        <svg
+          *ngIf="!expanded"
+          width="16"
+          height="16"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        >
+          <polyline points="15 3 21 3 21 9"></polyline>
+          <polyline points="9 21 3 21 3 15"></polyline>
+          <line x1="21" y1="3" x2="14" y2="10"></line>
+          <line x1="3" y1="21" x2="10" y2="14"></line>
+        </svg>
+
+        <svg
+          *ngIf="expanded"
+          width="16"
+          height="16"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        >
+          <polyline points="4 14 10 14 10 20"></polyline>
+          <polyline points="20 10 14 10 14 4"></polyline>
+          <line x1="14" y1="10" x2="21" y2="3"></line>
+          <line x1="3" y1="21" x2="10" y2="14"></line>
+        </svg>
+      </button>
+
+      <button type="button" class="refresh-button" (click)="clearChat()" [disabled]="sending">
+        Clear Chat
+      </button>
+    </div>
+  </header>
+
+  <!-- ================================================== -->
+  <!-- CHAT CARD -->
+  <!-- ================================================== -->
+
+  <section class="chat-card">
+    <div class="message-list" #messageList>
+      <div class="empty-state" *ngIf="messages.length === 0">
+        <span> Ask about your portfolio, e.g. "What is my current net worth?" </span>
+      </div>
+
+      <div
+        class="message-row"
+        *ngFor="let message of messages"
+        [class.message-row--user]="message.role === 'user'"
+      >
+        <div class="message-bubble" [class.message-bubble--user]="message.role === 'user'">
+          {{ message.text }}
+        </div>
+      </div>
+
+      <div class="message-row" *ngIf="sending">
+        <div class="message-bubble message-bubble--thinking">
+          <span class="thinking-dot"></span>
+
+          <span class="thinking-dot"></span>
+
+          <span class="thinking-dot"></span>
+        </div>
+      </div>
+    </div>
+
+    <div class="error-message" *ngIf="error">
+      {{ error }}
+    </div>
+
+    <div class="input-row">
+      <textarea
+        [(ngModel)]="draft"
+        (keydown)="onInputKeydown($event)"
+        placeholder="Ask about your portfolio..."
+        rows="1"
+        [disabled]="sending"
+      ></textarea>
+
+      <button
+        type="button"
+        class="primary-button"
+        (click)="sendMessage()"
+        [disabled]="sending || !draft.trim()"
+      >
+        <span *ngIf="!sending"> Send </span>
+
+        <span *ngIf="sending"> Sending... </span>
+      </button>
+    </div>
+  </section>
+</div>

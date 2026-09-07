@@ -1,0 +1,285 @@
+<div class="user-management">
+  <div class="card-header">
+    <div>
+      <h2>User Management</h2>
+
+      <p>Add, edit, and manage access for PWMS users.</p>
+    </div>
+
+    <div class="header-actions">
+      <button type="button" class="primary-button" (click)="openAddUser()">+ Add User</button>
+    </div>
+  </div>
+
+  <div class="loading-row" *ngIf="loading">
+    <div class="loading-spinner"></div>
+    <span>Loading users...</span>
+  </div>
+
+  <div class="error-message" *ngIf="!loading && error">
+    {{ error }}
+  </div>
+
+  <div class="table-wrapper" *ngIf="!loading && !error">
+    <table class="users-table">
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Email</th>
+          <th>Username</th>
+          <th>Role</th>
+          <th>Status</th>
+          <th>Families</th>
+          <th>Last Login</th>
+          <th>Created</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+
+      <tbody>
+        <tr *ngFor="let user of users">
+          <td>{{ user.first_name || user.last_name ? (user.first_name + ' ' + user.last_name) : '-' }}</td>
+          <td>{{ user.email }}</td>
+          <td>{{ user.username }}</td>
+          <td>
+            <span class="role-badge" [class]="'role-' + user.role.toLowerCase()">
+              {{ roleLabels[user.role] }}
+            </span>
+          </td>
+          <td>
+            <span class="status-badge" [class.status-active]="user.is_active" [class.status-inactive]="!user.is_active">
+              {{ user.status }}
+            </span>
+          </td>
+          <td>{{ familyNames(user) }}</td>
+          <td>{{ formatDate(user.last_login) }}</td>
+          <td>{{ formatDate(user.date_joined) }}</td>
+          <td class="actions-cell">
+            <button type="button" class="link-button" (click)="openEditUser(user)">Edit</button>
+
+            <button type="button" class="link-button" (click)="openResetPassword(user)">
+              Reset Password
+            </button>
+
+            <button
+              type="button"
+              class="link-button"
+              [class.danger-link]="user.is_active"
+              *ngIf="user.id !== currentUserId()"
+              (click)="toggleActive(user)"
+            >
+              {{ user.is_active ? 'Deactivate' : 'Activate' }}
+            </button>
+
+            <button
+              type="button"
+              class="link-button danger-link"
+              *ngIf="user.id !== currentUserId()"
+              (click)="openDeleteUser(user)"
+            >
+              Delete
+            </button>
+          </td>
+        </tr>
+
+        <tr *ngIf="users.length === 0">
+          <td colspan="9" class="empty-row">No users found.</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- ================================================== -->
+  <!-- ADD / EDIT MODAL -->
+  <!-- ================================================== -->
+
+  <div class="modal-backdrop" *ngIf="modalMode" (click)="closeModal()">
+    <div class="modal-panel" (click)="$event.stopPropagation()">
+      <div class="modal-header">
+        <h3>{{ modalMode === 'add' ? 'Add User' : 'Edit User' }}</h3>
+        <button type="button" class="modal-close" (click)="closeModal()">×</button>
+      </div>
+
+      <div class="modal-body">
+        <div class="form-grid">
+          <div class="form-field">
+            <label>First Name</label>
+            <input type="text" [(ngModel)]="form.first_name" />
+          </div>
+
+          <div class="form-field">
+            <label>Last Name</label>
+            <input type="text" [(ngModel)]="form.last_name" />
+          </div>
+
+          <div class="form-field">
+            <label>Username</label>
+            <input type="text" [(ngModel)]="form.username" />
+            <span class="field-error" *ngIf="formErrors['username']">{{ formErrors['username'] }}</span>
+          </div>
+
+          <div class="form-field">
+            <label>Email</label>
+            <input type="email" [(ngModel)]="form.email" />
+            <span class="field-error" *ngIf="formErrors['email']">{{ formErrors['email'] }}</span>
+          </div>
+
+          <div class="form-field" *ngIf="modalMode === 'add'">
+            <label>Password</label>
+            <input type="password" [(ngModel)]="form.password" autocomplete="new-password" />
+            <span class="field-error" *ngIf="formErrors['password']">{{ formErrors['password'] }}</span>
+          </div>
+
+          <div class="form-field" *ngIf="modalMode === 'add'">
+            <label>Confirm Password</label>
+            <input
+              type="password"
+              [(ngModel)]="form.confirm_password"
+              autocomplete="new-password"
+            />
+            <span class="field-error" *ngIf="formErrors['confirm_password']">
+              {{ formErrors['confirm_password'] }}
+            </span>
+          </div>
+
+          <div class="form-field" *ngIf="canShowRoleField()">
+            <label>Role</label>
+            <select [(ngModel)]="form.role">
+              <option *ngFor="let role of assignableRoles()" [ngValue]="role">
+                {{ roleLabels[role] }}
+              </option>
+            </select>
+            <span class="field-error" *ngIf="formErrors['role']">{{ formErrors['role'] }}</span>
+          </div>
+
+          <div class="form-field" *ngIf="modalMode === 'edit' && !canShowRoleField()">
+            <label>Role</label>
+            <input type="text" [value]="roleLabels[form.role]" disabled />
+          </div>
+
+          <!-- Family assignment: System Owner only. Every other -->
+          <!-- role never even sees this control. -->
+          <div class="form-field family-select-field" *ngIf="canManageFamilies()">
+            <label>Families</label>
+            <div class="family-checklist">
+              <label class="family-checkbox-row" *ngFor="let family of families">
+                <input
+                  type="checkbox"
+                  [checked]="isFamilySelected(family.id)"
+                  (change)="toggleFamilySelection(family.id)"
+                />
+                {{ family.name }}
+              </label>
+
+              <p class="no-members" *ngIf="families.length === 0">
+                No families exist yet - create one in Family Management first.
+              </p>
+            </div>
+            <span class="field-help">
+              A user may belong to more than one family at the same time.
+            </span>
+            <span class="field-error" *ngIf="formErrors['family_ids']">{{ formErrors['family_ids'] }}</span>
+          </div>
+
+          <div class="form-field checkbox-field" *ngIf="modalMode === 'add' || editingUserId !== currentUserId()">
+            <label>
+              <input type="checkbox" [(ngModel)]="form.is_active" />
+              Active
+            </label>
+          </div>
+        </div>
+      </div>
+
+      <div class="modal-footer">
+        <button type="button" class="secondary-button" (click)="closeModal()">Cancel</button>
+
+        <button type="button" class="primary-button" (click)="submitForm()" [disabled]="saving">
+          <span *ngIf="!saving">{{ modalMode === 'add' ? 'Create User' : 'Save Changes' }}</span>
+          <span *ngIf="saving">Saving...</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================================================== -->
+  <!-- RESET PASSWORD MODAL -->
+  <!-- ================================================== -->
+
+  <div class="modal-backdrop" *ngIf="resetPasswordUserId !== null" (click)="closeResetPassword()">
+    <div class="modal-panel modal-panel-small" (click)="$event.stopPropagation()">
+      <div class="modal-header">
+        <h3>Reset Password</h3>
+        <button type="button" class="modal-close" (click)="closeResetPassword()">×</button>
+      </div>
+
+      <div class="modal-body">
+        <div class="form-field">
+          <label>New Password</label>
+          <input type="password" [(ngModel)]="resetPasswordValue" autocomplete="new-password" />
+        </div>
+
+        <div class="form-field">
+          <label>Confirm New Password</label>
+          <input type="password" [(ngModel)]="resetPasswordConfirm" autocomplete="new-password" />
+        </div>
+      </div>
+
+      <div class="modal-footer">
+        <button type="button" class="secondary-button" (click)="closeResetPassword()">
+          Cancel
+        </button>
+
+        <button
+          type="button"
+          class="primary-button"
+          (click)="submitResetPassword()"
+          [disabled]="resettingPassword"
+        >
+          <span *ngIf="!resettingPassword">Reset Password</span>
+          <span *ngIf="resettingPassword">Resetting...</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================================================== -->
+  <!-- DELETE USER MODAL -->
+  <!-- ================================================== -->
+
+  <div class="modal-backdrop" *ngIf="deletingUser" (click)="closeDeleteUser()">
+    <div class="modal-panel modal-panel-small" (click)="$event.stopPropagation()">
+      <div class="modal-header">
+        <h3>Delete User</h3>
+        <button type="button" class="modal-close" (click)="closeDeleteUser()">×</button>
+      </div>
+
+      <div class="modal-body">
+        <p class="delete-warning">
+          This will permanently delete <strong>{{ deletingUser!.username }}</strong> and all of
+          their portfolio data (holdings, transactions, SIPs). This cannot be undone.
+        </p>
+
+        <div class="form-field">
+          <label>
+            Type <strong>{{ deletingUser!.username }}</strong> to confirm
+          </label>
+          <input type="text" [(ngModel)]="deleteConfirmText" autocomplete="off" />
+        </div>
+      </div>
+
+      <div class="modal-footer">
+        <button type="button" class="secondary-button" (click)="closeDeleteUser()">Cancel</button>
+
+        <button
+          type="button"
+          class="danger-button"
+          (click)="confirmDeleteUser()"
+          [disabled]="!canConfirmDelete() || deleting"
+        >
+          <span *ngIf="!deleting">Delete User</span>
+          <span *ngIf="deleting">Deleting...</span>
+        </button>
+      </div>
+    </div>
+  </div>
+</div>

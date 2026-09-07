@@ -1,0 +1,175 @@
+<section class="news-detail-page">
+  <button type="button" class="back-button" (click)="goBack()">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+      <path d="M15 5 8 12l7 7" stroke-linecap="round" stroke-linejoin="round" />
+    </svg>
+    Back to Portfolio News
+  </button>
+
+  <div class="detail-loading" *ngIf="loading">
+    <span class="loading-spinner"></span>
+    Loading...
+  </div>
+
+  <div class="detail-error" *ngIf="error && !loading">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 8v5M12 16h.01" stroke-linecap="round" />
+    </svg>
+    {{ error }}
+  </div>
+
+  <ng-container *ngIf="!loading && !error && alert as a">
+    <div class="detail-header">
+      <span class="impact-pill impact-pill--{{ a.notification_tier }}">
+        {{ a.impact.replace('_', ' ') }} impact
+      </span>
+
+      <span class="category-pill">{{ a.category }}</span>
+    </div>
+
+    <h1 class="detail-holding-name">{{ a.holding_display_name }}</h1>
+
+    <h2 class="detail-headline">{{ a.article_title }}</h2>
+
+    <div class="detail-meta">
+      <span>{{ a.article_source }}</span>
+      <span class="dot-sep">&middot;</span>
+      <span>{{ formattedPublishedAt() }}</span>
+    </div>
+
+    <a class="read-original-button" [href]="a.article_url" target="_blank" rel="noopener noreferrer">
+      Read Original Article
+      <span class="sr-only">(opens in new tab)</span>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+        <path d="M7 17 17 7M9 7h8v8" stroke-linecap="round" stroke-linejoin="round" />
+      </svg>
+    </a>
+
+    <!-- WHY THIS MATTERS TO YOU -->
+    <div class="why-matters-card">
+      <h3>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+          <path d="M12 3 4 7v5c0 4.5 3.2 8 8 9 4.8-1 8-4.5 8-9V7Z" stroke-linejoin="round" />
+        </svg>
+        Why this matters to you
+      </h3>
+
+      <p>
+        <strong>{{ a.holding_display_name }}</strong> represents about
+        <strong>{{ a.portfolio_weight_at_alert | number: '1.1-2' }}%</strong>
+        of your portfolio.
+      </p>
+
+      <p>{{ a.reason }}</p>
+
+      <p>
+        The AI assessment classifies the potential impact as
+        <strong>{{ a.impact.replace('_', ' ') }}</strong>
+        with <strong>{{ confidencePercent() }}%</strong> confidence.
+      </p>
+    </div>
+
+    <!-- AI SUMMARY -->
+    <div class="detail-section">
+      <h3>AI Summary</h3>
+      <p>{{ a.summary }}</p>
+    </div>
+
+    <!-- FACTS / INTERPRETATION / UNCERTAINTY -->
+    <div class="detail-section fact-interpretation-section" *ngIf="a.key_facts || a.interpretation || a.uncertainty_notes">
+      <div class="fact-block" *ngIf="a.key_facts">
+        <h4 class="fact-block-label fact-block-label--facts">What the source reports</h4>
+        <p>{{ a.key_facts }}</p>
+      </div>
+
+      <div class="fact-block" *ngIf="a.interpretation">
+        <h4 class="fact-block-label fact-block-label--interpretation">What this could mean</h4>
+        <p>{{ a.interpretation }}</p>
+        <p class="disclaimer">Speculative AI interpretation, not a confirmed outcome.</p>
+      </div>
+
+      <div class="fact-block" *ngIf="a.uncertainty_notes">
+        <h4 class="fact-block-label fact-block-label--uncertainty">What's not yet known</h4>
+        <p>{{ a.uncertainty_notes }}</p>
+      </div>
+    </div>
+
+    <!-- PORTFOLIO IMPLICATION -->
+    <div class="detail-section">
+      <h3>Potential Portfolio Implication</h3>
+      <p>{{ a.portfolio_implication }}</p>
+      <p class="disclaimer">
+        This is an AI-generated assessment based on the available article, not investment advice or
+        a prediction of future returns.
+      </p>
+    </div>
+
+    <!-- SOURCES -->
+    <div class="detail-section" *ngIf="a.sources && a.sources.length > 1">
+      <h3>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+          <circle cx="6" cy="12" r="2.5" />
+          <circle cx="18" cy="6" r="2.5" />
+          <circle cx="18" cy="18" r="2.5" />
+          <path d="m8.2 10.8 7.6-3.6M8.2 13.2l7.6 3.6" stroke-linecap="round" />
+        </svg>
+        Reported by {{ a.sources.length }} sources
+      </h3>
+      <ul class="sources-list">
+        <li *ngFor="let source of a.sources">
+          <a [href]="source.url" target="_blank" rel="noopener noreferrer">{{ source.publisher_name }}</a>
+          <span class="source-tier source-tier--{{ source.quality_tier }}">{{ source.quality_tier.replace('_', ' ') }}</span>
+        </li>
+      </ul>
+    </div>
+
+    <!-- METRICS GRID -->
+    <div class="metrics-grid">
+      <div class="metric">
+        <span class="metric-label">Sentiment</span>
+        <span class="metric-value sentiment--{{ a.sentiment }}">{{ a.sentiment }}</span>
+      </div>
+
+      <div class="metric">
+        <span class="metric-label">Impact</span>
+        <span class="metric-value">{{ a.impact.replace('_', ' ') }}</span>
+      </div>
+
+      <div class="metric">
+        <span class="metric-label">Materiality</span>
+        <span class="metric-value">{{ a.materiality }}</span>
+      </div>
+
+      <div class="metric">
+        <span class="metric-label">Impact Score</span>
+        <span class="metric-value">{{ a.impact_score }} / 100</span>
+      </div>
+
+      <div class="metric">
+        <span class="metric-label">Relevance Score</span>
+        <span class="metric-value">{{ a.relevance_score }} / 100</span>
+      </div>
+
+      <div class="metric">
+        <span class="metric-label">Portfolio Weight</span>
+        <span class="metric-value">{{ a.portfolio_weight_at_alert | number: '1.1-2' }}%</span>
+      </div>
+
+      <div class="metric">
+        <span class="metric-label">AI Confidence</span>
+        <span class="metric-value">{{ confidencePercent() }}%</span>
+      </div>
+
+      <div class="metric">
+        <span class="metric-label">Time Horizon</span>
+        <span class="metric-value">{{ a.time_horizon.replace('_', ' ') }}</span>
+      </div>
+
+      <div class="metric">
+        <span class="metric-label">Internal Alert Priority</span>
+        <span class="metric-value">{{ a.alert_score }} / 100</span>
+      </div>
+    </div>
+  </ng-container>
+</section>

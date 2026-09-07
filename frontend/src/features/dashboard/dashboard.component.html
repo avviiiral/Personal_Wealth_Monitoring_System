@@ -1,0 +1,541 @@
+<div class="dashboard-page">
+  <!-- HEADER -->
+  <div class="page-header">
+    <div>
+      <h1>Dashboard</h1>
+      <p>Overview of your personal wealth and investments.</p>
+    </div>
+
+    <div class="page-header-actions">
+      <div class="family-filter-inline" *ngIf="familyOptions.length > 0">
+        <span class="family-filter-label">Family Name</span>
+
+        <div class="family-filter-buttons">
+          <button
+            type="button"
+            class="family-filter-button"
+            [class.active]="!selectedFamily"
+            (click)="clearFamily()"
+          >
+            All
+          </button>
+
+          <button
+            *ngFor="let family of familyOptions"
+            type="button"
+            class="family-filter-button"
+            [class.active]="isFamilySelected(family)"
+            (click)="selectFamily(family)"
+          >
+            {{ family }}
+          </button>
+        </div>
+      </div>
+
+      <button class="refresh-button" type="button" (click)="loadDashboard()">
+        <svg
+          class="refresh-icon"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.8"
+          aria-hidden="true"
+        >
+          <path d="M20 11A8 8 0 1 0 18.5 16" stroke-linecap="round" stroke-linejoin="round" />
+          <path d="M20 5v6h-6" stroke-linecap="round" stroke-linejoin="round" />
+        </svg>
+        Refresh
+      </button>
+
+      <button
+        class="download-report-button"
+        type="button"
+        [disabled]="loading || generatingReport"
+        (click)="downloadPortfolioReview()"
+      >
+        <svg
+          class="button-icon"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.8"
+          aria-hidden="true"
+        >
+          <path
+            d="M12 15V4M12 15 8.5 11.5M12 15l3.5-3.5"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          />
+          <path
+            d="M4 16v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          />
+        </svg>
+        {{ generatingReport ? 'Generating…' : 'Download Report' }}
+      </button>
+    </div>
+  </div>
+
+  <!-- LOADING -->
+  <div class="loading-card" *ngIf="loading">
+    <div class="loading-spinner"></div>
+
+    <span> Loading your wealth data... </span>
+  </div>
+
+  <!-- ERROR -->
+  <div class="error-card" *ngIf="error">
+    {{ error }}
+  </div>
+
+  <!-- DASHBOARD -->
+  <ng-container *ngIf="!loading">
+    <!-- KPI CARDS -->
+    <div class="kpi-grid">
+      <!-- TOTAL WEALTH -->
+      <div class="kpi-card kpi-card--wealth">
+        <div class="kpi-card-top">
+          <span class="kpi-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
+              <path
+                d="M3 7a2 2 0 0 1 2-2h13a1 1 0 0 1 1 1v2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              />
+              <path
+                d="M3 7v11a2 2 0 0 0 2 2h14a1 1 0 0 0 1-1v-8a1 1 0 0 0-1-1H8a2 2 0 0 1 0-4h11"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              />
+              <circle cx="16.5" cy="14.5" r="1.4" />
+            </svg>
+          </span>
+          <span class="kpi-label">Total Wealth</span>
+        </div>
+
+        <strong>
+          {{ formatCurrency(summary?.total_current_value ?? summary?.total_wealth ?? 0) }}
+        </strong>
+
+        <span class="kpi-subtitle"> Current portfolio value </span>
+      </div>
+
+      <!-- INVESTED VALUE -->
+      <div class="kpi-card kpi-card--invested">
+        <div class="kpi-card-top">
+          <span class="kpi-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
+              <path
+                d="M12 21c-4-2.6-7-6-7-10a7 7 0 0 1 14 0c0 4-3 7.4-7 10Z"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              />
+              <path d="M12 7v7M9 11.5 12 14l3-2.5" stroke-linecap="round" stroke-linejoin="round" />
+            </svg>
+          </span>
+          <span class="kpi-label">Invested Value</span>
+        </div>
+
+        <strong>
+          {{ formatCurrency(summary?.total_invested ?? summary?.invested_value ?? 0) }}
+        </strong>
+
+        <span class="kpi-subtitle"> Total invested </span>
+      </div>
+
+      <!-- PROFIT / LOSS -->
+      <div
+        class="kpi-card kpi-card--pnl"
+        [class.is-positive]="(summary?.total_pnl ?? summary?.pnl ?? 0) >= 0"
+        [class.is-negative]="(summary?.total_pnl ?? summary?.pnl ?? 0) < 0"
+      >
+        <div class="kpi-card-top">
+          <span class="kpi-icon" aria-hidden="true">
+            <svg
+              *ngIf="(summary?.total_pnl ?? summary?.pnl ?? 0) >= 0"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.6"
+            >
+              <path d="M4 16 10 10l3.5 3.5L20 6" stroke-linecap="round" stroke-linejoin="round" />
+              <path d="M14 6h6v6" stroke-linecap="round" stroke-linejoin="round" />
+            </svg>
+
+            <svg
+              *ngIf="(summary?.total_pnl ?? summary?.pnl ?? 0) < 0"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.6"
+            >
+              <path d="M4 8 10 14l3.5-3.5L20 18" stroke-linecap="round" stroke-linejoin="round" />
+              <path d="M14 18h6v-6" stroke-linecap="round" stroke-linejoin="round" />
+            </svg>
+          </span>
+          <span class="kpi-label">Profit / Loss</span>
+        </div>
+
+        <strong
+          [class.positive]="(summary?.total_pnl ?? summary?.pnl ?? 0) >= 0"
+          [class.negative]="(summary?.total_pnl ?? summary?.pnl ?? 0) < 0"
+        >
+          {{ formatCurrency(summary?.total_pnl ?? summary?.pnl ?? 0) }}
+        </strong>
+
+        <span class="kpi-subtitle"> Overall P&amp;L </span>
+      </div>
+
+      <!-- XIRR -->
+      <div class="kpi-card kpi-card--xirr">
+        <div class="kpi-card-top">
+          <span class="kpi-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
+              <circle cx="12" cy="12" r="8.5" />
+              <circle cx="12" cy="12" r="4.2" />
+              <circle cx="12" cy="12" r="0.9" fill="currentColor" stroke="none" />
+            </svg>
+          </span>
+          <span class="kpi-label">XIRR</span>
+        </div>
+
+        <strong>
+          {{ xirr?.xirr_percentage ?? xirr?.xirr ?? summary?.xirr_percentage ?? 0 }}%
+        </strong>
+
+        <span class="kpi-subtitle"> Annualized return </span>
+      </div>
+    </div>
+
+    <!-- WEALTH + ALLOCATION -->
+    <div class="section-grid">
+      <!-- WEALTH HISTORY -->
+      <div class="dashboard-card large-card">
+        <div class="card-header">
+          <div class="card-header-title">
+            <span class="card-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
+                <path d="M4 18 9 11l4 3 7-9" stroke-linecap="round" stroke-linejoin="round" />
+                <path d="M15 5h5v5" stroke-linecap="round" stroke-linejoin="round" />
+              </svg>
+            </span>
+            <div>
+              <h2>Wealth Overview</h2>
+
+              <p>Portfolio value vs invested value</p>
+            </div>
+          </div>
+
+          <span class="period-badge"> Last 30 days </span>
+        </div>
+
+        <div class="chart-container">
+          <canvas #wealthChart></canvas>
+        </div>
+      </div>
+
+      <!-- ALLOCATION -->
+      <div class="dashboard-card">
+        <div class="card-header">
+          <div class="card-header-title">
+            <span class="card-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
+                <path d="M12 3v9l7.5 4.3" stroke-linecap="round" stroke-linejoin="round" />
+                <circle cx="12" cy="12" r="9" />
+              </svg>
+            </span>
+            <div>
+              <h2>Allocation</h2>
+
+              <p>Portfolio distribution</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="allocation-chart-container">
+          <canvas #allocationChart></canvas>
+        </div>
+      </div>
+    </div>
+
+    <!-- INVESTMENT SUMMARY -->
+    <div class="dashboard-card investment-summary-card">
+      <div class="card-header">
+        <div class="card-header-title">
+          <span class="card-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
+              <rect x="3.5" y="4" width="17" height="16" rx="2" />
+              <path d="M7.5 9h9M7.5 13h9M7.5 17h5" stroke-linecap="round" />
+            </svg>
+          </span>
+          <div>
+            <h2>Investment Summary</h2>
+
+            <p>Current value by asset category and asset class</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- INVESTMENT SUMMARY ERROR -->
+      <div class="error-card" *ngIf="investmentSummaryError">
+        {{ investmentSummaryError }}
+      </div>
+
+      <!-- INVESTMENT SUMMARY LOADING -->
+      <div class="loading-card" *ngIf="!investmentSummaryError && !investmentSummary">
+        <div class="loading-spinner"></div>
+
+        <span> Loading investment summary... </span>
+      </div>
+
+      <!-- INVESTMENT SUMMARY TABLE -->
+      <div
+        class="investment-summary-table-wrapper"
+        *ngIf="!investmentSummaryError && investmentSummary"
+      >
+        <div class="empty-state" *ngIf="investmentSummaryGroups.length === 0">
+          No investment summary data available.
+        </div>
+
+        <table class="investment-summary-table" *ngIf="investmentSummaryGroups.length > 0">
+          <thead>
+            <tr>
+              <th>Asset Category</th>
+
+              <th class="align-right">Current Value</th>
+
+              <th class="align-right">% of Total Investment</th>
+
+              <th class="arrow-column"></th>
+            </tr>
+          </thead>
+
+          <tbody>
+            <!-- LEVEL 1: ASSET CATEGORY -->
+            <ng-container
+              *ngFor="let group of investmentSummaryGroups; trackBy: trackByInvestmentCategory"
+            >
+              <tr
+                class="investment-category-row"
+                [class.expanded]="expandedInvestmentCategory === group.asset_category"
+                (click)="toggleInvestmentCategory(group.asset_category)"
+              >
+                <td class="category-cell">
+                  <span
+                    class="row-chevron"
+                    [class.open]="expandedInvestmentCategory === group.asset_category"
+                  >
+                    ›
+                  </span>
+
+                  {{ group.asset_category }}
+                </td>
+
+                <td class="align-right">
+                  {{ formatCurrency(group.current_value) }}
+                </td>
+
+                <td class="align-right">
+                  {{ formatPercentage(group.percentage_of_total) }}
+                </td>
+
+                <td class="arrow-column">
+                  <span
+                    class="row-chevron right"
+                    [class.open]="expandedInvestmentCategory === group.asset_category"
+                  >
+                    ›
+                  </span>
+                </td>
+              </tr>
+
+              <!-- LEVEL 2: ASSET CLASS -->
+              <tr
+                *ngIf="expandedInvestmentCategory === group.asset_category"
+                class="asset-class-detail-row"
+              >
+                <td colspan="4">
+                  <div class="asset-class-detail-container">
+                    <table class="asset-class-table">
+                      <thead>
+                        <tr>
+                          <th>Asset Class</th>
+
+                          <th class="align-right">Current Value</th>
+
+                          <th class="align-right">% of Total Investment</th>
+                        </tr>
+                      </thead>
+
+                      <tbody>
+                        <tr
+                          *ngFor="
+                            let assetClass of group.asset_classes;
+                            trackBy: trackByInvestmentAssetClass
+                          "
+                          class="asset-class-detail-item"
+                        >
+                          <td>
+                            {{ assetClass.asset_class }}
+                          </td>
+
+                          <td class="align-right">
+                            {{ formatCurrency(assetClass.current_value) }}
+                          </td>
+
+                          <td class="align-right">
+                            {{ formatPercentage(assetClass.percentage_of_total) }}
+                          </td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </td>
+              </tr>
+            </ng-container>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- =========================================================
+         XIRR PERFORMANCE
+         ========================================================= -->
+    <div class="dashboard-card xirr-performance-card" *ngIf="xirrPerformanceCategories.length > 0">
+      <div class="card-header">
+        <div class="card-header-title">
+          <span class="card-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
+              <path
+                d="M4 19V9M10 19V5M16 19v-7M20 19H4"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              />
+            </svg>
+          </span>
+          <div>
+            <h2>XIRR Performance</h2>
+
+            <p>Top and bottom underlying investments by XIRR</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- ASSET CATEGORY SELECTOR -->
+      <div class="xirr-category-selector">
+        <button
+          type="button"
+          class="xirr-category-arrow"
+          aria-label="Previous asset category"
+          (click)="previousXirrAssetCategory()"
+        >
+          ←
+        </button>
+
+        <div class="xirr-category-name">
+          {{ selectedXirrAssetCategory }}
+        </div>
+
+        <button
+          type="button"
+          class="xirr-category-arrow"
+          aria-label="Next asset category"
+          (click)="nextXirrAssetCategory()"
+        >
+          →
+        </button>
+      </div>
+
+      <!-- TOP / BOTTOM -->
+      <div class="xirr-ranking-grid" *ngIf="topXirrRows.length > 0 || bottomXirrRows.length > 0">
+        <!-- TOP 5 -->
+        <div class="xirr-ranking-panel">
+          <div class="xirr-ranking-header">
+            <h3>Top 5 Underlying</h3>
+
+            <span> Highest XIRR </span>
+          </div>
+
+          <div class="xirr-ranking-table-wrapper">
+            <table class="xirr-ranking-table">
+              <thead>
+                <tr>
+                  <th>Underlying</th>
+
+                  <th class="align-right">XIRR</th>
+                </tr>
+              </thead>
+
+              <tbody>
+                <tr *ngFor="let row of topXirrRows; trackBy: trackByXirrUnderlying">
+                  <td>
+                    <div class="xirr-underlying-name">
+                      {{ row.underlying }}
+                    </div>
+
+                    <div class="xirr-asset-class">
+                      {{ row.assetClass }}
+                    </div>
+                  </td>
+
+                  <td class="align-right" [ngClass]="getXirrClass(row.xirr)">
+                    {{ formatXirr(row.xirr) }}
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- BOTTOM 5 -->
+        <div class="xirr-ranking-panel">
+          <div class="xirr-ranking-header">
+            <h3>Bottom 5 Underlying</h3>
+
+            <span> Lowest XIRR </span>
+          </div>
+
+          <div class="xirr-ranking-table-wrapper">
+            <table class="xirr-ranking-table">
+              <thead>
+                <tr>
+                  <th>Underlying</th>
+
+                  <th class="align-right">XIRR</th>
+                </tr>
+              </thead>
+
+              <tbody>
+                <tr *ngFor="let row of bottomXirrRows; trackBy: trackByXirrUnderlying">
+                  <td>
+                    <div class="xirr-underlying-name">
+                      {{ row.underlying }}
+                    </div>
+
+                    <div class="xirr-asset-class">
+                      {{ row.assetClass }}
+                    </div>
+                  </td>
+
+                  <td class="align-right" [ngClass]="getXirrClass(row.xirr)">
+                    {{ formatXirr(row.xirr) }}
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- NO XIRR -->
+      <div
+        class="empty-state xirr-empty-state"
+        *ngIf="topXirrRows.length === 0 && bottomXirrRows.length === 0"
+      >
+        No XIRR data available for
+        {{ selectedXirrAssetCategory }}.
+      </div>
+    </div>
+  </ng-container>
+</div>

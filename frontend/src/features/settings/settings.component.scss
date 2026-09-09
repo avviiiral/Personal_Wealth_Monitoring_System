@@ -572,3 +572,223 @@
     }
   }
 }
+
+/* ==========================================================
+   DARK MODE - SETTINGS PAGE
+   ========================================================== */
+
+:host-context(html.dark-theme) .settings-page {
+  background: #0f1117;
+  color: #e5e7eb;
+}
+
+/* ==========================================================
+   HEADER
+   ========================================================== */
+
+:host-context(html.dark-theme) .page-header h1 {
+  color: #f3f4f6;
+}
+
+:host-context(html.dark-theme) .page-header p {
+  color: #8a93a6;
+}
+
+:host-context(html.dark-theme) .refresh-button {
+  background: #1b1f27;
+  border-color: #3a414e;
+  color: #e5e7eb;
+}
+
+:host-context(html.dark-theme) .refresh-button:hover {
+  background: #222834;
+}
+
+/* ==========================================================
+   TABS
+   ========================================================== */
+
+:host-context(html.dark-theme) .settings-tabs {
+  border-bottom-color: #2a2e38;
+}
+
+:host-context(html.dark-theme) .tab-button {
+  color: #8a93a6;
+}
+
+:host-context(html.dark-theme) .tab-button:hover {
+  color: #e5e7eb;
+}
+
+:host-context(html.dark-theme) .tab-active {
+  color: #f3f4f6;
+  border-bottom-color: #e5e7eb;
+}
+
+/* ==========================================================
+   LOADING
+   ========================================================== */
+
+:host-context(html.dark-theme) .loading-card {
+  background: #171a21;
+  border-color: #2a2e38;
+  color: #aeb7c6;
+}
+
+:host-context(html.dark-theme) .loading-spinner {
+  border-color: #3a414e;
+  border-top-color: #e5e7eb;
+}
+
+/* ==========================================================
+   ERROR
+   ========================================================== */
+
+:host-context(html.dark-theme) .error-card {
+  background: #291719;
+  border-color: #5b2a2d;
+  color: #fca5a5;
+}
+
+/* ==========================================================
+   SETTINGS CARDS
+   ========================================================== */
+
+:host-context(html.dark-theme) .settings-card {
+  background: #171a21;
+  border-color: #2a2e38;
+}
+
+:host-context(html.dark-theme) .card-header h2 {
+  color: #f3f4f6;
+}
+
+:host-context(html.dark-theme) .card-header p {
+  color: #8a93a6;
+}
+
+:host-context(html.dark-theme) .section-badge {
+  background: #1b1f27;
+  color: #aeb7c6;
+}
+
+/* ==========================================================
+   FORM
+   ========================================================== */
+
+:host-context(html.dark-theme) .form-field label {
+  color: #cbd5e1;
+}
+
+:host-context(html.dark-theme) .form-field input,
+:host-context(html.dark-theme) .form-field select {
+  background: #12151c;
+  border-color: #3a414e;
+  color: #e5e7eb;
+}
+
+:host-context(html.dark-theme) .form-field input::placeholder {
+  color: #6f7888;
+}
+
+:host-context(html.dark-theme) .form-field input:focus,
+:host-context(html.dark-theme) .form-field select:focus {
+  border-color: #6b7280;
+  box-shadow: 0 0 0 3px rgba(148, 163, 184, 0.12);
+}
+
+:host-context(html.dark-theme) .form-field input:disabled {
+  background: #1b1f27;
+  color: #9ca3af;
+  border-color: #2a2e38;
+}
+
+:host-context(html.dark-theme) .form-field select option {
+  background: #171a21;
+  color: #e5e7eb;
+}
+
+:host-context(html.dark-theme) .field-help {
+  color: #7f899b;
+}
+
+/* ==========================================================
+   ACTIONS
+   ========================================================== */
+
+:host-context(html.dark-theme) .primary-button {
+  background: #e5e7eb;
+  color: #111827;
+}
+
+:host-context(html.dark-theme) .primary-button:hover {
+  background: #ffffff;
+}
+
+:host-context(html.dark-theme) .secondary-button {
+  background: #1b1f27;
+  border-color: #3a414e;
+  color: #e5e7eb;
+}
+
+:host-context(html.dark-theme) .secondary-button:hover {
+  background: #222834;
+}
+
+/* ==========================================================
+   SUCCESS / ERROR MESSAGES
+   ========================================================== */
+
+:host-context(html.dark-theme) .success-message {
+  background: #10251d;
+  border-color: #1f4d3d;
+  color: #6ee7b7;
+}
+
+:host-context(html.dark-theme) .error-message {
+  background: #291719;
+  border-color: #5b2a2d;
+  color: #fca5a5;
+}
+
+/* ==========================================================
+   SYSTEM INFORMATION
+   ========================================================== */
+
+:host-context(html.dark-theme) .system-row {
+  border-bottom-color: #2a2e38;
+}
+
+:host-context(html.dark-theme) .system-row span {
+  color: #8a93a6;
+}
+
+:host-context(html.dark-theme) .system-row strong {
+  color: #e5e7eb;
+}
+
+/* ==========================================================
+   DANGER / SESSION
+   ========================================================== */
+
+:host-context(html.dark-theme) .danger-card {
+  border-color: #5b2a2d;
+}
+
+:host-context(html.dark-theme) .danger-content strong {
+  color: #f3f4f6;
+}
+
+:host-context(html.dark-theme) .danger-content p {
+  color: #8a93a6;
+}
+
+:host-context(html.dark-theme) .danger-button {
+  background: #291719;
+  border-color: #7f3438;
+  color: #fca5a5;
+}
+
+:host-context(html.dark-theme) .danger-button:hover {
+  background: #3a1d20;
+}

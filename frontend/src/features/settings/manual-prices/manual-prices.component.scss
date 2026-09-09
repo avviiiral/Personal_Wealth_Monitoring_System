@@ -56,6 +56,7 @@
   width: 100%;
   border-collapse: collapse;
   font-size: 13px;
+  white-space: nowrap;
 
   th {
     text-align: left;
@@ -204,4 +205,31 @@
 
 :host-context(html.dark-theme) .disabled-link {
   color: #6f7888;
+}
+
+/* ==========================================================
+   MANUAL PRICES - PREVENT TABLE CONTENT WRAPPING
+   ========================================================== */
+
+.prices-table {
+  min-width: 1100px;
+  table-layout: auto;
+}
+
+.prices-table .actions-cell {
+  display: table-cell;
+  min-width: 190px;
+  width: 190px;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
+.prices-table .actions-cell .link-button {
+  display: inline-block;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
+.prices-table .actions-cell .link-button + .link-button {
+  margin-left: 14px;
 }

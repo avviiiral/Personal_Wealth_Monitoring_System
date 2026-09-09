@@ -22,14 +22,14 @@
 
     <form [formGroup]="loginForm" (ngSubmit)="submit()">
       <div class="form-group">
-        <label for="username"> Username </label>
+        <label for="username"> Username or Email </label>
 
         <input
           id="username"
           type="text"
           formControlName="username"
           autocomplete="username"
-          placeholder="Enter your username"
+          placeholder="Enter your username or email"
         />
 
         @if (loginForm.controls.username.touched && loginForm.controls.username.invalid) {

@@ -1293,3 +1293,111 @@
 :host-context(html.dark-theme) .refresh-button:hover {
   background: #ffffff;
 }
+
+/* ==========================================================
+   DARK MODE
+   ========================================================== */
+
+:host-context(html.dark-theme) {
+  --ink: #e5e7eb;
+  --ink-soft: #cbd5e1;
+
+  --canvas-from: #12151c;
+  --canvas-to: #0b0d12;
+
+  --surface: #171a21;
+  --surface-line: #2a2e38;
+
+  --muted: #a1aaba;
+  --muted-soft: #7d8798;
+
+  --accent: #2fbf8f;
+  --accent-soft: #123329;
+  --accent-line: #1f4d3d;
+
+  --negative: #f2685c;
+  --negative-soft: #3a1a17;
+}
+
+:host-context(html.dark-theme) .dashboard-page {
+  background: linear-gradient(180deg, var(--canvas-from) 0%, var(--canvas-to) 100%);
+}
+
+:host-context(html.dark-theme) .family-filter-inline,
+:host-context(html.dark-theme) .kpi-card,
+:host-context(html.dark-theme) .dashboard-card,
+:host-context(html.dark-theme) .investment-summary-card {
+  background: var(--surface);
+  border-color: var(--surface-line);
+}
+
+:host-context(html.dark-theme) .family-filter-label,
+:host-context(html.dark-theme) .card-header h2,
+:host-context(html.dark-theme) .kpi-card strong {
+  color: var(--ink);
+}
+
+:host-context(html.dark-theme) .card-header p,
+:host-context(html.dark-theme) .kpi-label,
+:host-context(html.dark-theme) .kpi-subtitle {
+  color: var(--muted);
+}
+
+:host-context(html.dark-theme) .family-filter-button {
+  background: #1b1f27;
+  border-color: #3a414e;
+  color: #e5e7eb;
+}
+
+:host-context(html.dark-theme) .family-filter-button:hover {
+  background: var(--accent-soft);
+}
+
+:host-context(html.dark-theme) .family-filter-button.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #07140f;
+}
+
+:host-context(html.dark-theme) .investment-summary-table th {
+  background: #1b1f27;
+  color: #aeb7c6;
+  border-color: var(--surface-line);
+}
+
+:host-context(html.dark-theme) .investment-summary-table td {
+  color: var(--ink);
+  border-color: var(--surface-line);
+}
+
+:host-context(html.dark-theme) .investment-summary-table .category-cell {
+  background: #1b1f27;
+  color: var(--ink);
+  border-color: var(--surface-line);
+}
+
+:host-context(html.dark-theme) .period-badge {
+  background: #242832;
+  color: var(--muted);
+}
+
+:host-context(html.dark-theme) .loading-card {
+  background: var(--surface);
+  border-color: var(--surface-line);
+  color: var(--muted);
+}
+
+:host-context(html.dark-theme) .loading-spinner {
+  border-color: var(--surface-line);
+  border-top-color: var(--accent);
+}
+
+:host-context(html.dark-theme) .refresh-button {
+  background: #e5e7eb;
+  color: #111827;
+}
+
+:host-context(html.dark-theme) .download-report-button {
+  background: var(--accent-soft);
+  color: var(--accent);
+}

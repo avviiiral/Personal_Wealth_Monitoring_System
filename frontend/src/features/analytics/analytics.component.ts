@@ -24,7 +24,7 @@ Chart.register(...registerables);
 // swatches, and the advisor initials chips. Keeping one palette used
 // everywhere means a color always means the same category or advisor
 // across every chart and list on the page.
-const CATEGORY_PALETTE = [
+const CATEGORY_PALETTE_LIGHT = [
   '#111827', // ink
   '#9c6b1f', // brass
   '#0f6f66', // teal
@@ -33,6 +33,17 @@ const CATEGORY_PALETTE = [
   '#8a5a3b', // umber
   '#4b5563', // graphite
   '#7a3742', // deep wine
+];
+
+const CATEGORY_PALETTE_DARK = [
+  '#2fbf8f', // emerald
+  '#e0a458', // gold
+  '#5fa8d3', // blue
+  '#94a3b8', // slate
+  '#c084b8', // plum
+  '#d69b70', // umber
+  '#aeb7c6', // graphite
+  '#e77b86', // wine
 ];
 
 const GAIN_COLOR = '#157347';
@@ -221,9 +232,11 @@ export class AnalyticsComponent implements OnInit, AfterViewInit, OnDestroy {
           this.performance = data.performance;
           this.advisorAllocation = data.advisorAllocation;
           this.advisorPerformance = data.advisorPerformance;
+
           this.xirr = {
             xirr_percentage: this.summary?.xirr_percentage ?? null,
           };
+
           this.historical = data.historical;
 
           console.log('Analytics summary:', this.summary);
@@ -302,6 +315,7 @@ export class AnalyticsComponent implements OnInit, AfterViewInit, OnDestroy {
     const results = this.investmentSummary?.results ?? [];
 
     const order: string[] = [];
+
     const totals = new Map<
       string,
       {
@@ -432,8 +446,11 @@ export class AnalyticsComponent implements OnInit, AfterViewInit, OnDestroy {
             label: 'Portfolio Value',
             data: portfolioValues,
 
-            borderColor: '#111827',
-            backgroundColor: 'rgba(17, 24, 39, 0.07)',
+            borderColor: this.isDarkTheme() ? '#2fbf8f' : '#111827',
+
+            backgroundColor: this.isDarkTheme()
+              ? 'rgba(47, 191, 143, 0.10)'
+              : 'rgba(17, 24, 39, 0.07)',
 
             borderWidth: 2,
             fill: true,
@@ -447,7 +464,8 @@ export class AnalyticsComponent implements OnInit, AfterViewInit, OnDestroy {
             label: 'Invested Capital',
             data: investedValues,
 
-            borderColor: '#9ca3af',
+            borderColor: this.isDarkTheme() ? '#94a3b8' : '#9ca3af',
+
             backgroundColor: 'transparent',
 
             borderWidth: 2,
@@ -475,6 +493,10 @@ export class AnalyticsComponent implements OnInit, AfterViewInit, OnDestroy {
           legend: {
             position: 'top',
             align: 'end',
+
+            labels: {
+              color: this.chartTextColor(),
+            },
           },
 
           tooltip: {
@@ -496,13 +518,20 @@ export class AnalyticsComponent implements OnInit, AfterViewInit, OnDestroy {
 
             ticks: {
               maxTicksLimit: 10,
+              color: this.chartMutedColor(),
             },
           },
 
           y: {
             beginAtZero: false,
 
+            grid: {
+              color: this.chartGridColor(),
+            },
+
             ticks: {
+              color: this.chartMutedColor(),
+
               callback: (value) => this.formatAxisCurrency(Number(value)),
             },
           },
@@ -546,12 +575,10 @@ export class AnalyticsComponent implements OnInit, AfterViewInit, OnDestroy {
           {
             data: values,
 
-            backgroundColor: results.map((_: any, index: number) =>
-              this.swatchColor(index),
-            ),
+            backgroundColor: results.map((_: any, index: number) => this.swatchColor(index)),
 
             borderWidth: 2,
-            borderColor: '#ffffff',
+            borderColor: this.chartBorderColor(),
           },
         ],
       },
@@ -567,6 +594,7 @@ export class AnalyticsComponent implements OnInit, AfterViewInit, OnDestroy {
             position: 'bottom',
 
             labels: {
+              color: this.chartTextColor(),
               usePointStyle: true,
               padding: 14,
             },
@@ -615,7 +643,12 @@ export class AnalyticsComponent implements OnInit, AfterViewInit, OnDestroy {
 
     const labels = sortedResults.map(
       (item: any) =>
-        item.asset_class || item.symbol || item.asset_name || item.scheme_name || item.name || 'Unknown',
+        item.asset_class ||
+        item.symbol ||
+        item.asset_name ||
+        item.scheme_name ||
+        item.name ||
+        'Unknown',
     );
 
     const values = sortedResults.map((item: any) => this.toNumber(item.pnl_percentage));
@@ -662,15 +695,21 @@ export class AnalyticsComponent implements OnInit, AfterViewInit, OnDestroy {
         scales: {
           x: {
             ticks: {
+              color: this.chartMutedColor(),
+
               callback: (value) => `${Number(value).toFixed(0)}%`,
             },
 
             grid: {
-              color: '#eef0f3',
+              color: this.chartGridColor(),
             },
           },
 
           y: {
+            ticks: {
+              color: this.chartMutedColor(),
+            },
+
             grid: {
               display: false,
             },
@@ -720,7 +759,7 @@ export class AnalyticsComponent implements OnInit, AfterViewInit, OnDestroy {
             ),
 
             borderWidth: 2,
-            borderColor: '#ffffff',
+            borderColor: this.chartBorderColor(),
           },
         ],
       },
@@ -734,6 +773,7 @@ export class AnalyticsComponent implements OnInit, AfterViewInit, OnDestroy {
             position: 'bottom',
 
             labels: {
+              color: this.chartTextColor(),
               usePointStyle: true,
               padding: 14,
             },
@@ -826,15 +866,21 @@ export class AnalyticsComponent implements OnInit, AfterViewInit, OnDestroy {
         scales: {
           x: {
             ticks: {
+              color: this.chartMutedColor(),
+
               callback: (value) => `${Number(value).toFixed(0)}%`,
             },
 
             grid: {
-              color: '#eef0f3',
+              color: this.chartGridColor(),
             },
           },
 
           y: {
+            ticks: {
+              color: this.chartMutedColor(),
+            },
+
             grid: {
               display: false,
             },
@@ -879,12 +925,10 @@ export class AnalyticsComponent implements OnInit, AfterViewInit, OnDestroy {
           {
             data: values,
 
-            backgroundColor: results.map((_: any, index: number) =>
-              this.swatchColor(index),
-            ),
+            backgroundColor: results.map((_: any, index: number) => this.swatchColor(index)),
 
             borderWidth: 2,
-            borderColor: '#ffffff',
+            borderColor: this.chartBorderColor(),
           },
         ],
       },
@@ -900,6 +944,7 @@ export class AnalyticsComponent implements OnInit, AfterViewInit, OnDestroy {
             position: 'bottom',
 
             labels: {
+              color: this.chartTextColor(),
               usePointStyle: true,
               padding: 16,
             },
@@ -973,7 +1018,7 @@ export class AnalyticsComponent implements OnInit, AfterViewInit, OnDestroy {
             ],
 
             borderWidth: 2,
-            borderColor: '#ffffff',
+            borderColor: this.chartBorderColor(),
           },
         ],
       },
@@ -989,6 +1034,7 @@ export class AnalyticsComponent implements OnInit, AfterViewInit, OnDestroy {
             position: 'bottom',
 
             labels: {
+              color: this.chartTextColor(),
               usePointStyle: true,
               padding: 16,
             },
@@ -1046,12 +1092,10 @@ export class AnalyticsComponent implements OnInit, AfterViewInit, OnDestroy {
           {
             data: values,
 
-            backgroundColor: results.map((_: any, index: number) =>
-              this.swatchColor(index),
-            ),
+            backgroundColor: results.map((_: any, index: number) => this.swatchColor(index)),
 
             borderWidth: 2,
-            borderColor: '#ffffff',
+            borderColor: this.chartBorderColor(),
           },
         ],
       },
@@ -1067,6 +1111,7 @@ export class AnalyticsComponent implements OnInit, AfterViewInit, OnDestroy {
             position: 'bottom',
 
             labels: {
+              color: this.chartTextColor(),
               usePointStyle: true,
               padding: 14,
             },
@@ -1121,6 +1166,36 @@ export class AnalyticsComponent implements OnInit, AfterViewInit, OnDestroy {
     return Number.isFinite(number) ? number : 0;
   }
 
+  /*
+   * ------------------------------------------------------------
+   * DARK MODE CHART HELPERS
+   * ------------------------------------------------------------
+   */
+
+  private isDarkTheme(): boolean {
+    return document.documentElement.classList.contains('dark-theme');
+  }
+
+  private chartTextColor(): string {
+    return this.isDarkTheme() ? '#cbd5e1' : '#475467';
+  }
+
+  private chartMutedColor(): string {
+    return this.isDarkTheme() ? '#8a93a6' : '#667085';
+  }
+
+  private chartGridColor(): string {
+    return this.isDarkTheme() ? '#2a2e38' : '#e5e7eb';
+  }
+
+  private chartBorderColor(): string {
+    return this.isDarkTheme() ? '#cbd5e1' : '#ffffff';
+  }
+
+  private categoryPalette(): string[] {
+    return this.isDarkTheme() ? CATEGORY_PALETTE_DARK : CATEGORY_PALETTE_LIGHT;
+  }
+
   formatCurrency(value: number): string {
     return `₹${value.toLocaleString('en-IN', {
       maximumFractionDigits: 0,
@@ -1133,7 +1208,9 @@ export class AnalyticsComponent implements OnInit, AfterViewInit, OnDestroy {
    * segment and its matching row swatch are always the same color.
    */
   swatchColor(index: number): string {
-    return CATEGORY_PALETTE[index % CATEGORY_PALETTE.length];
+    const palette = this.categoryPalette();
+
+    return palette[index % palette.length];
   }
 
   /**
@@ -1153,7 +1230,9 @@ export class AnalyticsComponent implements OnInit, AfterViewInit, OnDestroy {
       hash = (hash * 31 + value.charCodeAt(i)) >>> 0;
     }
 
-    return CATEGORY_PALETTE[hash % CATEGORY_PALETTE.length];
+    const palette = this.categoryPalette();
+
+    return palette[hash % palette.length];
   }
 
   /**

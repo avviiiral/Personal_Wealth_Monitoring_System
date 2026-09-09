@@ -1094,3 +1094,129 @@
   color: #e5e7eb;
   border-color: #2a2e38;
 }
+
+/* ==========================================================
+   DARK MODE
+   ========================================================== */
+
+:host-context(html.dark-theme) .reports-page {
+  background: linear-gradient(180deg, #12151c 0%, #0b0d12 100%);
+}
+
+:host-context(html.dark-theme) .reports-header h1 {
+  color: #e5e7eb;
+}
+
+:host-context(html.dark-theme) .reports-header p {
+  color: #8a93a6;
+}
+
+:host-context(html.dark-theme) .selection-box,
+:host-context(html.dark-theme) .reports-table-card {
+  background: #171a21;
+  border-color: #2a2e38;
+}
+
+:host-context(html.dark-theme) .selection-title {
+  color: #cbd5e1;
+}
+
+:host-context(html.dark-theme) .selection-button {
+  background: #171a21;
+  border-color: #3a414e;
+  color: #e5e7eb;
+}
+
+:host-context(html.dark-theme) .selection-button.active {
+  background: #2fbf8f;
+  border-color: #2fbf8f;
+  color: #07140f;
+}
+
+:host-context(html.dark-theme) .reports-table th {
+  background: #1b1f27;
+  color: #aeb7c6;
+  border-color: #2a2e38;
+}
+
+:host-context(html.dark-theme) .reports-table td {
+  background: #171a21;
+  color: #e5e7eb;
+  border-color: #2a2e38;
+}
+
+:host-context(html.dark-theme) .asset-detail-row,
+:host-context(html.dark-theme) .asset-detail-container {
+  background: #12151c;
+}
+
+:host-context(html.dark-theme) .asset-groups {
+  background: #171a21;
+}
+
+:host-context(html.dark-theme) .asset-group-columns-header {
+  background: #1b1f27;
+  color: #8a93a6;
+  border-color: #2a2e38;
+}
+
+:host-context(html.dark-theme) .asset-group {
+  border-color: #2a2e38;
+}
+
+:host-context(html.dark-theme) .asset-group-header {
+  background: #171a21;
+  color: #e5e7eb;
+}
+
+:host-context(html.dark-theme) .asset-group-header.expanded {
+  background: #123329;
+}
+
+:host-context(html.dark-theme) .underlying-container {
+  background: #171a21;
+}
+
+:host-context(html.dark-theme) .underlying-row {
+  background: #171a21;
+}
+
+:host-context(html.dark-theme) .underlying-table th {
+  background: #1b1f27;
+  color: #aeb7c6;
+  border-color: #2a2e38;
+}
+
+:host-context(html.dark-theme) .underlying-table td {
+  color: #e5e7eb;
+  border-color: #2a2e38;
+}
+
+:host-context(html.dark-theme) .refresh-button {
+  background: #e5e7eb;
+  color: #111827;
+}
+
+/* Download dropdown */
+:host-context(html.dark-theme) .download-menu {
+  background: #171a21;
+  border-color: #2a2e38;
+}
+
+:host-context(html.dark-theme) .download-menu-item {
+  background: #171a21;
+  color: #e5e7eb;
+  border-color: #2a2e38;
+}
+
+:host-context(html.dark-theme) .download-menu-item:hover {
+  background: #123329;
+}
+
+:host-context(html.dark-theme) .download-menu-item-title {
+  color: #e5e7eb;
+}
+
+:host-context(html.dark-theme) .download-menu-item-subtitle {
+  color: #8a93a6;
+}

@@ -130,7 +130,7 @@ html.dark-theme {
     color: #cbd5e1 !important;
   }
 
-  ..notifications-view-all {
+  .notifications-view-all {
     background: #171a21 !important;
     border-top-color: #2a2e38 !important;
     color: #e5e7eb !important;
@@ -169,8 +169,6 @@ html.dark-theme {
     color: #cbd5e1;
   }
 
-  /* Catch common AI chat content surfaces without changing
-     component dimensions or behavior. */
   .ai-chat-panel [class*='message'],
   .ai-chat-panel [class*='messages'],
   .ai-chat-panel [class*='input'] {
@@ -205,7 +203,6 @@ html.dark-theme {
     color: #e5e7eb !important;
   }
 
-  /* Generic nested detail rows inside the investment summary. */
   .investment-summary-table tr[class*='detail'] {
     background: #12151c !important;
     color: #e5e7eb !important;
@@ -217,7 +214,6 @@ html.dark-theme {
     border-color: #2a2e38 !important;
   }
 
-  /* Remove accidental light backgrounds from expanded wrappers. */
   .investment-summary-card .investment-summary-table-wrapper,
   .investment-summary-card .investment-summary-table {
     background: #171a21;

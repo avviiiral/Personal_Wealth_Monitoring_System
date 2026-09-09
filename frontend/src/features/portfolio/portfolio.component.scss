@@ -713,7 +713,6 @@
   }
 }
 
-
 /* ==============================================================
    QUANT DETAILS
    SecurityMaster-sourced fields (Sector / Cap Type / AMC /
@@ -791,4 +790,165 @@
   font-size: 13px;
   font-weight: 600;
   color: var(--nx-navy);
+}
+
+/* ==========================================================
+   DARK MODE OVERRIDES
+   ========================================================== */
+
+:host-context(html.dark-theme) .portfolio-page {
+  background: linear-gradient(180deg, #12151c 0%, #0b0d12 100%);
+}
+
+/* Header */
+:host-context(html.dark-theme) .portfolio-header h1 {
+  color: #e5e7eb;
+}
+
+:host-context(html.dark-theme) .portfolio-header p {
+  color: #8a93a6;
+}
+
+/* Filter boxes */
+:host-context(html.dark-theme) .selection-box {
+  background: #171a21;
+  border-color: #2a2e38;
+}
+
+:host-context(html.dark-theme) .selection-title {
+  color: #cbd5e1;
+}
+
+:host-context(html.dark-theme) .selection-button {
+  background: #171a21;
+  border-color: #2a2e38;
+  color: #e5e7eb;
+}
+
+:host-context(html.dark-theme) .selection-button:hover {
+  background: #123329;
+  border-color: #1f4d3d;
+}
+
+:host-context(html.dark-theme) .selection-button.active {
+  background: #2fbf8f;
+  border-color: #2fbf8f;
+  color: #07140f;
+}
+
+/* Main table */
+:host-context(html.dark-theme) .portfolio-table-card {
+  background: #171a21;
+  border-color: #2a2e38;
+}
+
+:host-context(html.dark-theme) .portfolio-table th {
+  background: #1b1f27;
+  color: #aeb7c6;
+  border-color: #2a2e38;
+}
+
+:host-context(html.dark-theme) .portfolio-table td {
+  background: #171a21;
+  color: #e5e7eb;
+  border-color: #2a2e38;
+}
+
+/* Expanded asset area */
+:host-context(html.dark-theme) .asset-detail-row,
+:host-context(html.dark-theme) .asset-detail-container {
+  background: #12151c;
+}
+
+:host-context(html.dark-theme) .asset-detail-container {
+  border-color: #2a2e38;
+}
+
+/* Asset groups */
+:host-context(html.dark-theme) .asset-groups {
+  background: #171a21;
+}
+
+:host-context(html.dark-theme) .asset-group-columns-header {
+  background: #1b1f27;
+  color: #8a93a6;
+  border-color: #2a2e38;
+}
+
+:host-context(html.dark-theme) .asset-group {
+  border-color: #2a2e38;
+}
+
+:host-context(html.dark-theme) .asset-group-header {
+  color: #e5e7eb;
+  background: #171a21;
+}
+
+:host-context(html.dark-theme) .asset-group-header:hover,
+:host-context(html.dark-theme) .asset-group-header.expanded {
+  background: #123329;
+}
+
+/* Underlying */
+:host-context(html.dark-theme) .underlying-container {
+  background: #171a21;
+}
+
+:host-context(html.dark-theme) .underlying-table-scroll {
+  border-color: #2a2e38;
+}
+
+:host-context(html.dark-theme) .underlying-row {
+  background: #171a21;
+}
+
+:host-context(html.dark-theme) .underlying-row:hover {
+  background: #1d232b;
+}
+
+:host-context(html.dark-theme) .asset-table th {
+  background: #1b1f27;
+  color: #aeb7c6;
+  border-color: #2a2e38;
+}
+
+:host-context(html.dark-theme) .asset-table td {
+  color: #e5e7eb;
+  border-color: #2a2e38;
+}
+
+/* Text */
+:host-context(html.dark-theme) .current-price,
+:host-context(html.dark-theme) .asset-name {
+  color: #e5e7eb;
+}
+
+:host-context(html.dark-theme) .isin {
+  color: #8a93a6;
+}
+
+:host-context(html.dark-theme) .price-update-date {
+  color: #7d8798;
+}
+
+/* Manual price */
+:host-context(html.dark-theme) .manual-price-input {
+  background: #11151c;
+  color: #e5e7eb;
+  border-color: #3a414e;
+}
+
+:host-context(html.dark-theme) .manual-price-button {
+  background: #171a21;
+  color: #e5e7eb;
+  border-color: #3a414e;
+}
+
+:host-context(html.dark-theme) .manual-price-button:hover:not(:disabled) {
+  background: #242832;
+}
+
+/* Empty state */
+:host-context(html.dark-theme) .empty-table {
+  color: #8a93a6 !important;
 }

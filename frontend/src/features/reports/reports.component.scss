@@ -1220,3 +1220,170 @@
 :host-context(html.dark-theme) .download-menu-item-subtitle {
   color: #8a93a6;
 }
+
+/* ==========================================================
+   DARK MODE - EXPANDED PORTFOLIO DETAILS
+   ========================================================== */
+
+:host-context(.dark-theme) {
+  .portfolio-table {
+    th {
+      background: #1a1e27;
+      color: #94a3b8;
+    }
+
+    td {
+      color: #e2e8f0;
+      border-bottom-color: #2a2e38;
+    }
+  }
+
+  .asset-detail-row {
+    background: #11141b;
+  }
+
+  .asset-detail-container {
+    background: #11141b;
+  }
+
+  .asset-groups {
+    background: #161a22;
+  }
+
+  .asset-group {
+    border-bottom-color: #2a2e38;
+  }
+
+  .asset-group-header {
+    color: #e2e8f0;
+  }
+
+  .underlying-container {
+    background: #161a22;
+  }
+
+  .underlying-row {
+    background: #161a22;
+
+    &:hover {
+      background: #1c222d;
+    }
+  }
+
+  .asset-table {
+    th {
+      background: #1a1e27;
+      color: #94a3b8;
+    }
+
+    td {
+      color: #e2e8f0;
+      border-bottom-color: #2a2e38;
+    }
+  }
+
+  .current-price {
+    color: #e2e8f0;
+  }
+
+  .manual-price-button {
+    background: #1a1e27;
+    border-color: #3a4150;
+    color: #e2e8f0;
+
+    &:hover:not(:disabled) {
+      background: #222834;
+    }
+  }
+
+  .manual-price-input {
+    background: #161a22;
+    border-color: #3a4150;
+    color: #e2e8f0;
+  }
+
+  .price-update-date {
+    color: #8a93a6;
+  }
+
+  .selection-title {
+    color: #cbd5e1;
+  }
+
+  .selection-button {
+    background: #161a22;
+    border-color: #3a4150;
+    color: #cbd5e1;
+  }
+
+  .empty-table svg {
+    color: #64748b;
+  }
+}
+
+/* ==========================================================
+   DARK MODE - REPORT DETAIL / DOWNLOAD / TRANSACTIONS
+   ========================================================== */
+
+:host-context(html.dark-theme) .asset-name-actions {
+  background: #12151c;
+  border-color: #2a2e38;
+}
+
+:host-context(html.dark-theme) .underlying-action-button {
+  background: #1b1f27;
+  border-color: #3a414e;
+  color: #e5e7eb;
+}
+
+:host-context(html.dark-theme) .underlying-action-button:hover {
+  background: #222834;
+}
+
+:host-context(html.dark-theme) .underlying-action-download {
+  background: #e5e7eb;
+  border-color: #e5e7eb;
+  color: #111827;
+}
+
+:host-context(html.dark-theme) .underlying-action-download:hover {
+  background: #ffffff;
+  border-color: #ffffff;
+  color: #111827;
+}
+
+/* Transaction detail area */
+
+:host-context(html.dark-theme) .transactions-detail-row {
+  background: #12151c;
+}
+
+:host-context(html.dark-theme) .transactions-detail-row > td {
+  background: #12151c;
+  border-color: #2a2e38;
+}
+
+:host-context(html.dark-theme) .transactions-container {
+  background: #12151c;
+}
+
+:host-context(html.dark-theme) .transactions-table-scroll {
+  background: #171a21;
+  border-color: #2a2e38;
+}
+
+:host-context(html.dark-theme) .transactions-table {
+  background: #171a21;
+}
+
+:host-context(html.dark-theme) .transactions-table th {
+  background: #1b1f27;
+  color: #aeb7c6;
+  border-color: #2a2e38;
+}
+
+:host-context(html.dark-theme) .transactions-table td {
+  background: #171a21;
+  color: #e5e7eb;
+  border-color: #2a2e38;
+}

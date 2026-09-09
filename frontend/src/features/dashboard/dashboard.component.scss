@@ -1401,3 +1401,78 @@
   background: var(--accent-soft);
   color: var(--accent);
 }
+
+/* ==========================================================
+   DARK MODE - XIRR PERFORMANCE
+   ========================================================== */
+
+:host-context(html.dark-theme) .xirr-category-arrow {
+  background: #1b1f27;
+  border-color: #3a414e;
+  color: #e5e7eb;
+}
+
+:host-context(html.dark-theme) .xirr-category-arrow:hover {
+  background: #123329;
+  border-color: #1f4d3d;
+  color: #2fbf8f;
+}
+
+:host-context(html.dark-theme) .xirr-category-name {
+  color: #e5e7eb;
+}
+
+:host-context(html.dark-theme) .xirr-ranking-panel {
+  background: #171a21;
+  border-color: #2a2e38;
+}
+
+:host-context(html.dark-theme) .xirr-ranking-header {
+  background: #1b1f27;
+  border-color: #2a2e38;
+}
+
+:host-context(html.dark-theme) .xirr-ranking-header h3 {
+  color: #e5e7eb;
+}
+
+:host-context(html.dark-theme) .xirr-ranking-header span {
+  color: #8a93a6;
+}
+
+:host-context(html.dark-theme) .xirr-ranking-table {
+  background: #171a21;
+}
+
+:host-context(html.dark-theme) .xirr-ranking-table th {
+  background: #1b1f27;
+  color: #aeb7c6;
+  border-color: #2a2e38;
+}
+
+:host-context(html.dark-theme) .xirr-ranking-table td {
+  background: #171a21;
+  color: #e5e7eb;
+  border-color: #2a2e38;
+}
+
+:host-context(html.dark-theme) .xirr-ranking-table tbody tr:hover {
+  background: #1d232b;
+}
+
+:host-context(html.dark-theme) .xirr-underlying-name {
+  color: #e5e7eb;
+}
+
+:host-context(html.dark-theme) .xirr-asset-class {
+  color: #8a93a6;
+}
+
+:host-context(html.dark-theme) .xirr-neutral {
+  color: #aeb7c6 !important;
+}
+
+:host-context(html.dark-theme) .xirr-empty-state {
+  background: #171a21;
+  color: #8a93a6;
+}

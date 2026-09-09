@@ -552,24 +552,29 @@
 }
 
 /* ==========================================================
-   USER MANAGEMENT - PREVENT TABLE CONTENT WRAPPING
+   TABLE LAYOUT - KEEP ACTIONS ON ONE LINE
    ========================================================== */
 
 .users-table {
-  white-space: nowrap;
-}
-
-.users-table th,
-.users-table td {
-  white-space: nowrap;
+  width: 100%;
+  min-width: 1100px;
+  table-layout: auto;
 }
 
 .users-table .actions-cell {
+  display: table-cell;
   white-space: nowrap;
   min-width: 180px;
+  width: 180px;
+  vertical-align: middle;
 }
 
 .users-table .actions-cell .link-button {
-  white-space: nowrap;
   display: inline-block;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
+.users-table .actions-cell .link-button + .link-button {
+  margin-left: 14px;
 }

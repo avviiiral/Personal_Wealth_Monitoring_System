@@ -17,6 +17,16 @@
       <span class="search-icon">⌕</span>
     </button>
 
+    <!-- THEME TOGGLE -->
+    <button
+      type="button"
+      class="header-icon-button"
+      [attr.aria-label]="theme.isDark() ? 'Switch to light mode' : 'Switch to dark mode'"
+      (click)="toggleTheme($event)"
+    >
+      <span>{{ theme.isDark() ? '☀' : '☾' }}</span>
+    </button>
+
     <!-- AI CHAT -->
     <button
       type="button"

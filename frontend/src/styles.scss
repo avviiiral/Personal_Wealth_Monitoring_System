@@ -17,8 +17,12 @@ body {
     'Segoe UI',
     sans-serif;
 
-  background: #f6f7f9;
-  color: #161b26;
+  background: var(--canvas-to);
+  color: var(--ink);
+
+  transition:
+    background 150ms ease,
+    color 150ms ease;
 }
 
 /* -----------------------------
@@ -104,4 +108,76 @@ body {
   --nx-radius-md: 8px;
 
   --nx-border: 1px solid rgba(5, 18, 51, 0.12);
+}
+
+/* -----------------------------
+   DARK THEME
+
+   Overrides the shared design tokens above when `.dark-theme` is
+   present on <html> (toggled by ThemeService / the inline script
+   in index.html). Feature pages that already consume these
+   tokens (Dashboard, Portfolio, Analytics, Reports, Portfolio
+   News) re-theme automatically. The app chrome below (shell,
+   header, sidebar) predates the token system and hardcodes its
+   own colors, so it's re-themed explicitly here instead.
+----------------------------- */
+
+html.dark-theme {
+  --ink: #e5e7eb;
+  --ink-soft: #cbd5e1;
+
+  --canvas-from: #12151c;
+  --canvas-to: #0b0d12;
+
+  --surface: #171a21;
+  --surface-line: #2a2e38;
+
+  --muted: #8a93a6;
+  --muted-soft: #6b7386;
+
+  --accent: #2fbf8f;
+  --accent-soft: #123329;
+  --accent-line: #1f4d3d;
+
+  --negative: #f2685c;
+  --negative-soft: #3a1a17;
+
+  --warning: #e0a458;
+  --warning-soft: #3a2c14;
+}
+
+html.dark-theme .app-shell {
+  background: var(--canvas-to);
+}
+
+html.dark-theme .header {
+  background: var(--surface);
+  border-bottom-color: var(--surface-line);
+}
+
+html.dark-theme .context-label,
+html.dark-theme .section-title,
+html.dark-theme .brand-subtitle {
+  color: var(--muted);
+}
+
+html.dark-theme .context-title,
+html.dark-theme .brand-name {
+  color: var(--ink);
+}
+
+html.dark-theme .sidebar {
+  background: var(--surface);
+  border-right-color: var(--surface-line);
+}
+
+html.dark-theme .nav-item {
+  color: var(--muted);
+}
+
+html.dark-theme .nav-item:hover,
+html.dark-theme .nav-item.active,
+html.dark-theme .add-investment-item {
+  background: var(--accent-soft);
+  color: var(--ink);
 }

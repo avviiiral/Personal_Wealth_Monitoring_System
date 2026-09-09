@@ -373,8 +373,13 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
           {
             label: 'Portfolio Value',
             data: portfolioValues,
-            borderColor: '#111827',
-            backgroundColor: 'rgba(17, 24, 39, 0.08)',
+            borderColor: document.documentElement.classList.contains('dark-theme')
+              ? '#2fbf8f'
+              : '#111827',
+
+            backgroundColor: document.documentElement.classList.contains('dark-theme')
+              ? 'rgba(47, 191, 143, 0.10)'
+              : 'rgba(17, 24, 39, 0.08)',
             borderWidth: 2,
             fill: true,
             tension: 0.35,
@@ -385,7 +390,9 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
           {
             label: 'Invested Value',
             data: investedValues,
-            borderColor: '#8b95a7',
+            borderColor: document.documentElement.classList.contains('dark-theme')
+              ? '#94a3b8'
+              : '#8b95a7',
             backgroundColor: 'transparent',
             borderWidth: 2,
             borderDash: [6, 5],
@@ -410,6 +417,12 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
           legend: {
             position: 'top',
             align: 'end',
+
+            labels: {
+              color: document.documentElement.classList.contains('dark-theme')
+                ? '#cbd5e1'
+                : '#475467',
+            },
           },
 
           tooltip: {
@@ -431,13 +444,26 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
 
             ticks: {
               maxTicksLimit: 8,
+              color: document.documentElement.classList.contains('dark-theme')
+                ? '#8a93a6'
+                : '#667085',
             },
           },
 
           y: {
             beginAtZero: false,
 
+            grid: {
+              color: document.documentElement.classList.contains('dark-theme')
+                ? '#2a2e38'
+                : '#e5e7eb',
+            },
+
             ticks: {
+              color: document.documentElement.classList.contains('dark-theme')
+                ? '#8a93a6'
+                : '#667085',
+
               callback: (value) => this.formatAxisCurrency(Number(value)),
             },
           },

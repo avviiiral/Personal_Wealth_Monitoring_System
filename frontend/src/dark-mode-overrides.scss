@@ -1,0 +1,277 @@
+/* ==========================================================
+   GLOBAL DARK MODE OVERRIDES
+   Header overlays and nested dashboard/table surfaces
+   ========================================================== */
+
+html.dark-theme {
+  /* --------------------------------------------------------
+     HEADER / PROFILE MENU
+     -------------------------------------------------------- */
+
+  .profile-menu,
+  .header-search-panel,
+  .notifications-panel,
+  .ai-chat-panel {
+    background: #171a21 !important;
+    border-color: #2a2e38 !important;
+    color: #e5e7eb;
+  }
+
+  .profile-menu-user,
+  .menu-user-info,
+  .search-panel-header,
+  .notifications-panel-header,
+  .ai-chat-header,
+  .ai-chat-header-info {
+    color: #e5e7eb;
+  }
+
+  .menu-user-info strong,
+  .search-panel-header,
+  .notifications-panel-header,
+  .ai-chat-header-info strong {
+    color: #f3f4f6 !important;
+  }
+
+  .menu-user-info span,
+  .search-empty,
+  .notifications-empty,
+  .notification-item-time,
+  .ai-chat-header-info span {
+    color: #8a93a6 !important;
+  }
+
+  .menu-divider,
+  .notifications-panel-header,
+  .ai-chat-header {
+    border-color: #2a2e38 !important;
+    background-color: transparent;
+  }
+
+  .profile-menu-item {
+    color: #cbd5e1 !important;
+    background: transparent !important;
+  }
+
+  .profile-menu-item:hover {
+    background: #222834 !important;
+    color: #f3f4f6 !important;
+  }
+
+  .family-menu-item-active {
+    color: #f3f4f6 !important;
+  }
+
+  .menu-section-label {
+    color: #8a93a6 !important;
+  }
+
+  .logout-item,
+  .logout-item:hover {
+    color: #fca5a5 !important;
+  }
+
+  .logout-item:hover {
+    background: #3a1d20 !important;
+  }
+
+  .menu-avatar {
+    background: #e5e7eb !important;
+    color: #111827 !important;
+  }
+
+  /* --------------------------------------------------------
+     SEARCH
+     -------------------------------------------------------- */
+
+  .header-search-input {
+    background: #12151c !important;
+    border-color: #3a414e !important;
+    color: #e5e7eb !important;
+  }
+
+  .header-search-input::placeholder {
+    color: #6f7888 !important;
+  }
+
+  .header-search-input:focus {
+    border-color: #6b7280 !important;
+  }
+
+  .panel-close-button,
+  .panel-expand-button {
+    color: #aeb7c6 !important;
+  }
+
+  .panel-close-button:hover,
+  .panel-expand-button:hover {
+    background: #222834 !important;
+  }
+
+  /* --------------------------------------------------------
+     NOTIFICATIONS
+     -------------------------------------------------------- */
+
+  .notification-item,
+  .notification-item.unread {
+    background: #171a21 !important;
+    border-bottom-color: #2a2e38 !important;
+  }
+
+  .notification-item:hover {
+    background: #222834 !important;
+  }
+
+  .notification-item-body strong {
+    color: #f3f4f6 !important;
+  }
+
+  .notification-item-title {
+    color: #cbd5e1 !important;
+  }
+
+  .notifications-view-all {
+    background: #171a21 !important;
+    border-top-color: #2a2e38 !important;
+    color: #e5e7eb !important;
+  }
+
+  .notifications-view-all:hover {
+    background: #222834 !important;
+  }
+
+  /* --------------------------------------------------------
+     AI CHAT
+     -------------------------------------------------------- */
+
+  .ai-chat-panel {
+    background: #171a21 !important;
+  }
+
+  .ai-chat-header {
+    background: #171a21 !important;
+    border-bottom-color: #2a2e38 !important;
+  }
+
+  .ai-chat-messages {
+    background: #12151c !important;
+    color: #e5e7eb !important;
+  }
+
+  .ai-welcome {
+    background: #171a21 !important;
+    border-color: #2a2e38 !important;
+    color: #e5e7eb !important;
+  }
+
+  .ai-welcome strong {
+    color: #f3f4f6 !important;
+  }
+
+  .ai-welcome span {
+    color: #aeb7c6 !important;
+  }
+
+  .chat-message-bubble {
+    color: #e5e7eb !important;
+    background: #1b1f27 !important;
+    border-color: #3a414e !important;
+  }
+
+  .user-message .chat-message-bubble {
+    background: #123329 !important;
+    border-color: #1f4d3d !important;
+    color: #d1fae5 !important;
+  }
+
+  .assistant-message .chat-message-bubble {
+    background: #1b1f27 !important;
+    border-color: #3a414e !important;
+    color: #e5e7eb !important;
+  }
+
+  .ai-chat-input-area {
+    background: #171a21 !important;
+    border-top-color: #2a2e38 !important;
+  }
+
+  .ai-chat-panel input,
+  .ai-chat-panel textarea {
+    background: #12151c !important;
+    border-color: #3a414e !important;
+    color: #e5e7eb !important;
+  }
+
+  .ai-chat-panel input::placeholder,
+  .ai-chat-panel textarea::placeholder {
+    color: #6f7888 !important;
+  }
+
+  .chat-send-button {
+    background: #e5e7eb !important;
+    color: #111827 !important;
+  }
+
+  .chat-send-button:hover:not(:disabled) {
+    background: #ffffff !important;
+  }
+
+  .chat-send-button:disabled {
+    background: #3a414e !important;
+    color: #8a93a6 !important;
+  }
+
+  .ai-chat-panel button {
+    color: #cbd5e1;
+  }
+
+  .ai-chat-panel [class*='message'],
+  .ai-chat-panel [class*='messages'],
+  .ai-chat-panel [class*='input'] {
+    border-color: #2a2e38;
+  }
+
+  /* --------------------------------------------------------
+     DASHBOARD - INVESTMENT SUMMARY EXPANDED ROW
+     -------------------------------------------------------- */
+
+  .investment-summary-table .asset-class-detail-row,
+  .investment-summary-table .asset-class-detail-row > td {
+    background: #12151c !important;
+    color: #e5e7eb !important;
+    border-color: #2a2e38 !important;
+  }
+
+  .investment-summary-table .asset-class-detail-row th {
+    background: #1b1f27 !important;
+    color: #aeb7c6 !important;
+    border-color: #2a2e38 !important;
+  }
+
+  .investment-summary-table .asset-class-detail-row td {
+    background: #12151c !important;
+    color: #e5e7eb !important;
+    border-color: #2a2e38 !important;
+  }
+
+  .investment-summary-table .asset-class-detail-row .asset-class-name,
+  .investment-summary-table .asset-class-detail-row .align-right {
+    color: #e5e7eb !important;
+  }
+
+  .investment-summary-table tr[class*='detail'] {
+    background: #12151c !important;
+    color: #e5e7eb !important;
+  }
+
+  .investment-summary-table tr[class*='detail'] td {
+    background: #12151c !important;
+    color: #e5e7eb !important;
+    border-color: #2a2e38 !important;
+  }
+
+  .investment-summary-card .investment-summary-table-wrapper,
+  .investment-summary-card .investment-summary-table {
+    background: #171a21;
+  }
+}

@@ -56,6 +56,7 @@
   width: 100%;
   border-collapse: collapse;
   font-size: 13px;
+  white-space: nowrap;
 
   th {
     text-align: left;
@@ -132,4 +133,103 @@
 .disabled-link {
   opacity: 0.6;
   pointer-events: none;
+}
+
+/* ==========================================================
+   DARK MODE - MANUAL PRICES
+   ========================================================== */
+
+:host-context(html.dark-theme) .card-header h2 {
+  color: #f3f4f6;
+}
+
+:host-context(html.dark-theme) .card-header p {
+  color: #8a93a6;
+}
+
+:host-context(html.dark-theme) .loading-row {
+  color: #8a93a6;
+}
+
+:host-context(html.dark-theme) .loading-spinner {
+  border-color: #3a414e;
+  border-top-color: #e5e7eb;
+}
+
+:host-context(html.dark-theme) .error-message {
+  background: #291719;
+  border-color: #5b2a2d;
+  color: #fca5a5;
+}
+
+/* Table */
+
+:host-context(html.dark-theme) .prices-table {
+  background: #171a21;
+}
+
+:host-context(html.dark-theme) .prices-table th {
+  color: #aeb7c6;
+  border-bottom-color: #3a414e;
+  background: #1b1f27;
+}
+
+:host-context(html.dark-theme) .prices-table td {
+  color: #e5e7eb;
+  border-bottom-color: #2a2e38;
+  background: #171a21;
+}
+
+:host-context(html.dark-theme) .empty-row {
+  color: #8a93a6;
+}
+
+/* Price editing */
+
+:host-context(html.dark-theme) .price-input {
+  background: #12151c;
+  border-color: #3a414e;
+  color: #e5e7eb;
+}
+
+:host-context(html.dark-theme) .price-input:focus {
+  border-color: #6b7280;
+  outline: none;
+}
+
+/* Links */
+
+:host-context(html.dark-theme) .link-button {
+  color: #60a5fa;
+}
+
+:host-context(html.dark-theme) .disabled-link {
+  color: #6f7888;
+}
+
+/* ==========================================================
+   MANUAL PRICES - PREVENT TABLE CONTENT WRAPPING
+   ========================================================== */
+
+.prices-table {
+  min-width: 1100px;
+  table-layout: auto;
+}
+
+.prices-table .actions-cell {
+  display: table-cell;
+  min-width: 190px;
+  width: 190px;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
+.prices-table .actions-cell .link-button {
+  display: inline-block;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
+.prices-table .actions-cell .link-button + .link-button {
+  margin-left: 14px;
 }

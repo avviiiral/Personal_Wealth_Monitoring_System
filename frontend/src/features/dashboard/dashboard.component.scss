@@ -1155,3 +1155,324 @@
     gap: 4px;
   }
 }
+/* ==========================================================
+   DARK MODE OVERRIDES
+   ========================================================== */
+
+:host-context(html.dark-theme) {
+  --ink: #e5e7eb;
+  --ink-soft: #cbd5e1;
+
+  --canvas-from: #12151c;
+  --canvas-to: #0b0d12;
+
+  --surface: #171a21;
+  --surface-line: #2a2e38;
+
+  --muted: #8a93a6;
+  --muted-soft: #6b7386;
+
+  --accent: #2fbf8f;
+  --accent-soft: #123329;
+  --accent-line: #1f4d3d;
+
+  --negative: #f2685c;
+  --negative-soft: #3a1a17;
+
+  --warning: #e0a458;
+  --warning-soft: #3a2c14;
+}
+
+/* Page */
+:host-context(html.dark-theme) .dashboard-page {
+  background: linear-gradient(180deg, var(--canvas-from) 0%, var(--canvas-to) 100%);
+}
+
+/* Header */
+:host-context(html.dark-theme) .page-header h1 {
+  color: var(--ink);
+}
+
+:host-context(html.dark-theme) .page-header p {
+  color: var(--muted);
+}
+
+/* Family filter */
+:host-context(html.dark-theme) .family-filter-label {
+  color: var(--ink-soft);
+}
+
+:host-context(html.dark-theme) .family-filter-button {
+  background: var(--surface);
+  border-color: var(--surface-line);
+  color: var(--ink);
+}
+
+:host-context(html.dark-theme) .family-filter-button:hover {
+  background: var(--accent-soft);
+}
+
+:host-context(html.dark-theme) .family-filter-button.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #ffffff;
+}
+
+/* Cards */
+:host-context(html.dark-theme) .kpi-card,
+:host-context(html.dark-theme) .dashboard-card,
+:host-context(html.dark-theme) .family-filter-inline,
+:host-context(html.dark-theme) .loading-card {
+  background: var(--surface);
+  border-color: var(--surface-line);
+}
+
+/* Card text */
+:host-context(html.dark-theme) .card-header h2,
+:host-context(html.dark-theme) .kpi-card strong {
+  color: var(--ink);
+}
+
+:host-context(html.dark-theme) .card-header p {
+  color: var(--muted);
+}
+
+:host-context(html.dark-theme) .kpi-label {
+  color: var(--muted);
+}
+
+:host-context(html.dark-theme) .kpi-subtitle {
+  color: var(--muted-soft);
+}
+
+/* Period badge */
+:host-context(html.dark-theme) .period-badge {
+  background: #242832;
+  color: var(--muted);
+}
+
+/* Investment summary */
+:host-context(html.dark-theme) .investment-summary-table th {
+  background: var(--surface);
+  color: var(--muted);
+  border-color: var(--surface-line);
+}
+
+:host-context(html.dark-theme) .investment-summary-table td {
+  color: var(--ink);
+  border-color: var(--surface-line);
+}
+
+:host-context(html.dark-theme) .investment-summary-table .category-cell {
+  background: #1b1f27;
+  color: var(--ink);
+  border-color: var(--surface-line);
+}
+
+/* Loading */
+:host-context(html.dark-theme) .loading-card {
+  color: var(--muted);
+}
+
+:host-context(html.dark-theme) .loading-spinner {
+  border-color: var(--surface-line);
+  border-top-color: var(--accent);
+}
+
+/* Error */
+:host-context(html.dark-theme) .error-card {
+  border-color: #5a2925;
+}
+
+/* Buttons */
+:host-context(html.dark-theme) .refresh-button {
+  background: #e5e7eb;
+  color: #111827;
+}
+
+:host-context(html.dark-theme) .refresh-button:hover {
+  background: #ffffff;
+}
+
+/* ==========================================================
+   DARK MODE
+   ========================================================== */
+
+:host-context(html.dark-theme) {
+  --ink: #e5e7eb;
+  --ink-soft: #cbd5e1;
+
+  --canvas-from: #12151c;
+  --canvas-to: #0b0d12;
+
+  --surface: #171a21;
+  --surface-line: #2a2e38;
+
+  --muted: #a1aaba;
+  --muted-soft: #7d8798;
+
+  --accent: #2fbf8f;
+  --accent-soft: #123329;
+  --accent-line: #1f4d3d;
+
+  --negative: #f2685c;
+  --negative-soft: #3a1a17;
+}
+
+:host-context(html.dark-theme) .dashboard-page {
+  background: linear-gradient(180deg, var(--canvas-from) 0%, var(--canvas-to) 100%);
+}
+
+:host-context(html.dark-theme) .family-filter-inline,
+:host-context(html.dark-theme) .kpi-card,
+:host-context(html.dark-theme) .dashboard-card,
+:host-context(html.dark-theme) .investment-summary-card {
+  background: var(--surface);
+  border-color: var(--surface-line);
+}
+
+:host-context(html.dark-theme) .family-filter-label,
+:host-context(html.dark-theme) .card-header h2,
+:host-context(html.dark-theme) .kpi-card strong {
+  color: var(--ink);
+}
+
+:host-context(html.dark-theme) .card-header p,
+:host-context(html.dark-theme) .kpi-label,
+:host-context(html.dark-theme) .kpi-subtitle {
+  color: var(--muted);
+}
+
+:host-context(html.dark-theme) .family-filter-button {
+  background: #1b1f27;
+  border-color: #3a414e;
+  color: #e5e7eb;
+}
+
+:host-context(html.dark-theme) .family-filter-button:hover {
+  background: var(--accent-soft);
+}
+
+:host-context(html.dark-theme) .family-filter-button.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #07140f;
+}
+
+:host-context(html.dark-theme) .investment-summary-table th {
+  background: #1b1f27;
+  color: #aeb7c6;
+  border-color: var(--surface-line);
+}
+
+:host-context(html.dark-theme) .investment-summary-table td {
+  color: var(--ink);
+  border-color: var(--surface-line);
+}
+
+:host-context(html.dark-theme) .investment-summary-table .category-cell {
+  background: #1b1f27;
+  color: var(--ink);
+  border-color: var(--surface-line);
+}
+
+:host-context(html.dark-theme) .period-badge {
+  background: #242832;
+  color: var(--muted);
+}
+
+:host-context(html.dark-theme) .loading-card {
+  background: var(--surface);
+  border-color: var(--surface-line);
+  color: var(--muted);
+}
+
+:host-context(html.dark-theme) .loading-spinner {
+  border-color: var(--surface-line);
+  border-top-color: var(--accent);
+}
+
+:host-context(html.dark-theme) .refresh-button {
+  background: #e5e7eb;
+  color: #111827;
+}
+
+:host-context(html.dark-theme) .download-report-button {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+/* ==========================================================
+   DARK MODE - XIRR PERFORMANCE
+   ========================================================== */
+
+:host-context(html.dark-theme) .xirr-category-arrow {
+  background: #1b1f27;
+  border-color: #3a414e;
+  color: #e5e7eb;
+}
+
+:host-context(html.dark-theme) .xirr-category-arrow:hover {
+  background: #123329;
+  border-color: #1f4d3d;
+  color: #2fbf8f;
+}
+
+:host-context(html.dark-theme) .xirr-category-name {
+  color: #e5e7eb;
+}
+
+:host-context(html.dark-theme) .xirr-ranking-panel {
+  background: #171a21;
+  border-color: #2a2e38;
+}
+
+:host-context(html.dark-theme) .xirr-ranking-header {
+  background: #1b1f27;
+  border-color: #2a2e38;
+}
+
+:host-context(html.dark-theme) .xirr-ranking-header h3 {
+  color: #e5e7eb;
+}
+
+:host-context(html.dark-theme) .xirr-ranking-header span {
+  color: #8a93a6;
+}
+
+:host-context(html.dark-theme) .xirr-ranking-table {
+  background: #171a21;
+}
+
+:host-context(html.dark-theme) .xirr-ranking-table th {
+  background: #1b1f27;
+  color: #aeb7c6;
+  border-color: #2a2e38;
+}
+
+:host-context(html.dark-theme) .xirr-ranking-table td {
+  background: #171a21;
+  color: #e5e7eb;
+  border-color: #2a2e38;
+}
+
+:host-context(html.dark-theme) .xirr-ranking-table tbody tr:hover {
+  background: #1d232b;
+}
+
+:host-context(html.dark-theme) .xirr-underlying-name {
+  color: #e5e7eb;
+}
+
+:host-context(html.dark-theme) .xirr-asset-class {
+  color: #8a93a6;
+}
+
+:host-context(html.dark-theme) .xirr-neutral {
+  color: #aeb7c6 !important;
+}
+
+:host-context(html.dark-theme) .xirr-empty-state {
+  background: #171a21;
+  color: #8a93a6;
+}

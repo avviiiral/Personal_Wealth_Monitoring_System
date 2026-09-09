@@ -399,3 +399,182 @@
     cursor: pointer;
   }
 }
+
+/* ==========================================================
+   DARK MODE - USER MANAGEMENT
+   ========================================================== */
+
+:host-context(html.dark-theme) .card-header h2 {
+  color: #f3f4f6;
+}
+
+:host-context(html.dark-theme) .card-header p {
+  color: #8a93a6;
+}
+
+:host-context(html.dark-theme) .primary-button {
+  background: #e5e7eb;
+  color: #111827;
+}
+
+:host-context(html.dark-theme) .primary-button:hover {
+  background: #ffffff;
+}
+
+:host-context(html.dark-theme) .secondary-button {
+  background: #1b1f27;
+  border-color: #3a414e;
+  color: #e5e7eb;
+}
+
+:host-context(html.dark-theme) .secondary-button:hover {
+  background: #222834;
+}
+
+:host-context(html.dark-theme) .loading-row {
+  color: #8a93a6;
+}
+
+:host-context(html.dark-theme) .loading-spinner {
+  border-color: #3a414e;
+  border-top-color: #e5e7eb;
+}
+
+:host-context(html.dark-theme) .error-message {
+  background: #291719;
+  border-color: #5b2a2d;
+  color: #fca5a5;
+}
+
+/* Table */
+
+:host-context(html.dark-theme) .users-table {
+  background: #171a21;
+}
+
+:host-context(html.dark-theme) .users-table th {
+  color: #aeb7c6;
+  border-bottom-color: #3a414e;
+  background: #1b1f27;
+}
+
+:host-context(html.dark-theme) .users-table td {
+  color: #e5e7eb;
+  border-bottom-color: #2a2e38;
+  background: #171a21;
+}
+
+:host-context(html.dark-theme) .empty-row {
+  color: #8a93a6;
+}
+
+/* Action links */
+
+:host-context(html.dark-theme) .link-button {
+  color: #60a5fa;
+}
+
+:host-context(html.dark-theme) .danger-link {
+  color: #fca5a5;
+}
+
+/* Modal */
+
+:host-context(html.dark-theme) .modal-backdrop {
+  background: rgba(0, 0, 0, 0.65);
+}
+
+:host-context(html.dark-theme) .modal-panel {
+  background: #171a21;
+  border: 1px solid #2a2e38;
+}
+
+:host-context(html.dark-theme) .modal-header {
+  border-bottom-color: #2a2e38;
+}
+
+:host-context(html.dark-theme) .modal-header h3 {
+  color: #f3f4f6;
+}
+
+:host-context(html.dark-theme) .modal-close {
+  color: #8a93a6;
+}
+
+:host-context(html.dark-theme) .modal-close:hover {
+  color: #e5e7eb;
+}
+
+:host-context(html.dark-theme) .modal-body {
+  background: #171a21;
+}
+
+:host-context(html.dark-theme) .modal-footer {
+  border-top-color: #2a2e38;
+}
+
+/* Modal form */
+
+:host-context(html.dark-theme) .form-field label {
+  color: #cbd5e1;
+}
+
+:host-context(html.dark-theme) .form-field input,
+:host-context(html.dark-theme) .form-field select {
+  background: #12151c;
+  border-color: #3a414e;
+  color: #e5e7eb;
+}
+
+:host-context(html.dark-theme) .form-field input::placeholder {
+  color: #6f7888;
+}
+
+:host-context(html.dark-theme) .field-help {
+  color: #7f899b;
+}
+
+:host-context(html.dark-theme) .field-error {
+  color: #fca5a5;
+}
+
+:host-context(html.dark-theme) .delete-warning {
+  color: #fca5a5;
+}
+
+:host-context(html.dark-theme) .family-checklist {
+  background: #12151c;
+  border-color: #3a414e;
+}
+
+:host-context(html.dark-theme) .family-checkbox-row {
+  color: #cbd5e1;
+}
+
+/* ==========================================================
+   TABLE LAYOUT - KEEP ACTIONS ON ONE LINE
+   ========================================================== */
+
+.users-table {
+  width: 100%;
+  min-width: 1100px;
+  table-layout: auto;
+}
+
+.users-table .actions-cell {
+  display: table-cell;
+  white-space: nowrap;
+  min-width: 180px;
+  width: 180px;
+  vertical-align: middle;
+}
+
+.users-table .actions-cell .link-button {
+  display: inline-block;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
+.users-table .actions-cell .link-button + .link-button {
+  margin-left: 14px;
+}

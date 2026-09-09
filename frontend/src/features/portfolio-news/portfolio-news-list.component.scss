@@ -94,7 +94,9 @@
 
   cursor: pointer;
 
-  transition: background-color 0.15s ease, color 0.15s ease;
+  transition:
+    background-color 0.15s ease,
+    color 0.15s ease;
 
   svg {
     width: 14px;
@@ -136,7 +138,9 @@
 
   cursor: pointer;
 
-  transition: background-color 0.15s ease, border-color 0.15s ease;
+  transition:
+    background-color 0.15s ease,
+    border-color 0.15s ease;
 }
 
 .tier-filter-button:hover {
@@ -193,7 +197,9 @@
 
   cursor: pointer;
 
-  transition: background-color 0.15s ease, border-color 0.15s ease;
+  transition:
+    background-color 0.15s ease,
+    border-color 0.15s ease;
 }
 
 .secondary-filter-button:hover {
@@ -303,12 +309,19 @@
   cursor: pointer;
   text-align: left;
 
-  transition: box-shadow 0.15s ease, border-color 0.15s ease, transform 0.15s ease;
+  transition:
+    box-shadow 0.15s ease,
+    border-color 0.15s ease,
+    transform 0.15s ease;
 }
 
 .news-card:hover {
   border-color: #d0d5dd;
-  box-shadow: var(--shadow-md, 0 6px 20px -8px rgba(17, 24, 39, 0.14), 0 2px 6px -2px rgba(17, 24, 39, 0.06));
+  box-shadow: var(
+    --shadow-md,
+    0 6px 20px -8px rgba(17, 24, 39, 0.14),
+    0 2px 6px -2px rgba(17, 24, 39, 0.06)
+  );
   transform: translateY(-1px);
 }
 
@@ -543,12 +556,19 @@
   cursor: pointer;
   text-align: left;
 
-  transition: box-shadow 0.15s ease, border-color 0.15s ease, transform 0.15s ease;
+  transition:
+    box-shadow 0.15s ease,
+    border-color 0.15s ease,
+    transform 0.15s ease;
 }
 
 .digest-item:hover {
   border-color: #d0d5dd;
-  box-shadow: var(--shadow-md, 0 6px 20px -8px rgba(17, 24, 39, 0.14), 0 2px 6px -2px rgba(17, 24, 39, 0.06));
+  box-shadow: var(
+    --shadow-md,
+    0 6px 20px -8px rgba(17, 24, 39, 0.14),
+    0 2px 6px -2px rgba(17, 24, 39, 0.06)
+  );
   transform: translateY(-1px);
 }
 
@@ -605,3 +625,95 @@
   color: #6b7280;
 }
 
+/* ==========================================================
+   DARK MODE
+   ========================================================== */
+
+:host-context(html.dark-theme) .portfolio-news-page {
+  color: #e5e7eb;
+}
+
+:host-context(html.dark-theme) .page-heading h1 {
+  color: #e5e7eb;
+}
+
+:host-context(html.dark-theme) .page-heading p {
+  color: #8a93a6;
+}
+
+:host-context(html.dark-theme) .view-mode-toggle {
+  background: #1b1f27;
+}
+
+:host-context(html.dark-theme) .view-mode-button {
+  color: #aeb7c6;
+}
+
+:host-context(html.dark-theme) .view-mode-button.active {
+  background: #242832;
+  color: #e5e7eb;
+}
+
+:host-context(html.dark-theme) .tier-filter-button,
+:host-context(html.dark-theme) .secondary-filter-button {
+  background: #171a21;
+  border-color: #3a414e;
+  color: #e5e7eb;
+}
+
+:host-context(html.dark-theme) .tier-filter-button:hover,
+:host-context(html.dark-theme) .secondary-filter-button:hover {
+  background: #123329;
+}
+
+:host-context(html.dark-theme) .tier-filter-button.active,
+:host-context(html.dark-theme) .secondary-filter-button.active {
+  background: #2fbf8f;
+  border-color: #2fbf8f;
+  color: #07140f;
+}
+
+:host-context(html.dark-theme) .news-loading,
+:host-context(html.dark-theme) .news-error,
+:host-context(html.dark-theme) .news-empty {
+  background: #171a21;
+  border-color: #2a2e38;
+  color: #aeb7c6;
+}
+
+:host-context(html.dark-theme) .news-card,
+:host-context(html.dark-theme) .digest-item {
+  background: #171a21;
+  border-color: #2a2e38;
+}
+
+:host-context(html.dark-theme) .news-card.unread {
+  background: #1b1f27;
+  border-color: #3a414e;
+}
+
+:host-context(html.dark-theme) .news-card-top strong,
+:host-context(html.dark-theme) .digest-item-top strong {
+  color: #e5e7eb;
+}
+
+:host-context(html.dark-theme) .news-card-title,
+:host-context(html.dark-theme) .digest-item-summary {
+  color: #cbd5e1;
+}
+
+:host-context(html.dark-theme) .news-card-category,
+:host-context(html.dark-theme) .impact-label,
+:host-context(html.dark-theme) .digest-count {
+  background: #242832;
+  color: #aeb7c6;
+}
+
+:host-context(html.dark-theme) .news-card-meta,
+:host-context(html.dark-theme) .digest-item-sources {
+  color: #7d8798;
+}
+
+:host-context(html.dark-theme) .digest-heading h2 {
+  color: #e5e7eb;
+}

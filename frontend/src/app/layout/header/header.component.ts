@@ -12,6 +12,7 @@ import {
   PortfolioNewsAlertListItem,
 } from '../../../core/services/news-api.service';
 import { BrowserNotificationService } from '../../../core/services/browser-notification.service';
+import { ThemeService } from '../../../core/services/theme.service';
 
 interface ChatMessage {
   role: 'user' | 'assistant';
@@ -32,6 +33,7 @@ export class HeaderComponent implements OnInit, OnDestroy {
   private readonly newsApi = inject(NewsApiService);
   private readonly browserNotifications = inject(BrowserNotificationService);
   private readonly router = inject(Router);
+  readonly theme = inject(ThemeService);
 
   readonly roleLabels = ROLE_LABELS;
 
@@ -143,6 +145,11 @@ export class HeaderComponent implements OnInit, OnDestroy {
       this.searchOpen = false;
       this.chatOpen = false;
     }
+  }
+
+  toggleTheme(event: MouseEvent): void {
+    event.stopPropagation();
+    this.theme.toggle();
   }
 
   openSettings(): void {

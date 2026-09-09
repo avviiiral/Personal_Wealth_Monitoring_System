@@ -1,23 +1,30 @@
 import { Injectable, inject } from '@angular/core';
+
 import { HttpClient, HttpHeaders } from '@angular/common/http';
 
 import { Observable } from 'rxjs';
+
 import { environment } from '../../environments/environment';
 
 export interface SettingsProfile {
   id: number;
+
   username: string;
+
   email: string;
 }
 
 export interface SettingsPreferences {
   currency: string;
+
   date_format: string;
+
   default_analytics_period: number;
 }
 
 export interface SettingsResponse {
   profile: SettingsProfile;
+
   preferences: SettingsPreferences;
 }
 
@@ -26,6 +33,32 @@ export interface UpdateSettingsResponse extends SettingsResponse {
 }
 
 export interface ChangePasswordResponse {
+  message: string;
+}
+
+// ==========================================================
+// TWO-FACTOR AUTHENTICATION
+// ==========================================================
+
+export interface TwoFactorStatusResponse {
+  enabled: boolean;
+}
+
+export interface TwoFactorSetupResponse {
+  secret: string;
+
+  provisioning_uri: string;
+}
+
+export interface TwoFactorEnableResponse {
+  enabled: boolean;
+
+  message: string;
+}
+
+export interface TwoFactorDisableResponse {
+  enabled: boolean;
+
   message: string;
 }
 
@@ -99,7 +132,9 @@ export class SettingsApiService {
 
   changePassword(
     currentPassword: string,
+
     newPassword: string,
+
     confirmPassword: string,
   ): Observable<ChangePasswordResponse> {
     const csrfToken = this.readCsrfToken();
@@ -119,6 +154,86 @@ export class SettingsApiService {
         new_password: newPassword,
 
         confirm_password: confirmPassword,
+      },
+      {
+        withCredentials: true,
+        headers,
+      },
+    );
+  }
+
+  // ======================================================
+  // TWO-FACTOR AUTHENTICATION
+  // ======================================================
+
+  getTwoFactorStatus(): Observable<TwoFactorStatusResponse> {
+    return this.http.get<TwoFactorStatusResponse>(
+      `${this.baseUrl}/settings/me/2fa/status/`,
+      this.requestOptions,
+    );
+  }
+
+  setupTwoFactor(): Observable<TwoFactorSetupResponse> {
+    const csrfToken = this.readCsrfToken();
+
+    const headers = csrfToken
+      ? new HttpHeaders({
+          'X-CSRFToken': csrfToken,
+          'Content-Type': 'application/json',
+        })
+      : undefined;
+
+    return this.http.post<TwoFactorSetupResponse>(
+      `${this.baseUrl}/settings/me/2fa/setup/`,
+      {},
+      {
+        withCredentials: true,
+        headers,
+      },
+    );
+  }
+
+  enableTwoFactor(code: string): Observable<TwoFactorEnableResponse> {
+    const csrfToken = this.readCsrfToken();
+
+    const headers = csrfToken
+      ? new HttpHeaders({
+          'X-CSRFToken': csrfToken,
+          'Content-Type': 'application/json',
+        })
+      : undefined;
+
+    return this.http.post<TwoFactorEnableResponse>(
+      `${this.baseUrl}/settings/me/2fa/enable/`,
+      {
+        code,
+      },
+      {
+        withCredentials: true,
+        headers,
+      },
+    );
+  }
+
+  disableTwoFactor(
+    password: string,
+
+    code: string,
+  ): Observable<TwoFactorDisableResponse> {
+    const csrfToken = this.readCsrfToken();
+
+    const headers = csrfToken
+      ? new HttpHeaders({
+          'X-CSRFToken': csrfToken,
+          'Content-Type': 'application/json',
+        })
+      : undefined;
+
+    return this.http.post<TwoFactorDisableResponse>(
+      `${this.baseUrl}/settings/me/2fa/disable/`,
+      {
+        password,
+        code,
       },
       {
         withCredentials: true,

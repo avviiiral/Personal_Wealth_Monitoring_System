@@ -3,6 +3,7 @@ from django.urls import path
 from .views import (
     health_check,
     login_view,
+    verify_two_factor_login,
     logout_view,
     current_user,
     settings_view,
@@ -31,6 +32,12 @@ urlpatterns = [
         "auth/login/",
         login_view,
         name="login",
+    ),
+    
+    path(
+        "auth/2fa/verify/",
+        verify_two_factor_login,
+        name="auth-2fa-verify",
     ),
 
     path(

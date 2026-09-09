@@ -151,6 +151,30 @@ class UserProfile(models.Model):
         choices=Role.choices,
         default=Role.VIEWER,
     )
+    
+    # --------------------------------------------------------
+    # TWO-FACTOR AUTHENTICATION
+    # --------------------------------------------------------
+    #
+    # TOTP secret used by authenticator applications such as
+    # Google Authenticator / Microsoft Authenticator.
+    #
+    # The secret is only meaningful when two_factor_enabled
+    # is True.
+    #
+    # The secret is stored server-side and must never be
+    # returned through normal user serializers.
+    # --------------------------------------------------------
+
+    two_factor_enabled = models.BooleanField(
+        default=False,
+    )
+
+    two_factor_secret = models.CharField(
+        max_length=64,
+        blank=True,
+        default="",
+    )
 
     # --------------------------------------------------------
     # FAMILY MEMBERSHIP (many-to-many)

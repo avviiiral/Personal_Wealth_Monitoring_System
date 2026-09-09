@@ -3,6 +3,11 @@ from django.urls import path
 from .api_views import (
     activate_user,
     current_user_settings,
+    two_factor_disable,
+    two_factor_enable,
+    two_factor_setup,
+    two_factor_status,
+    verify_two_factor_login,    
     deactivate_user,
     group_add_member,
     group_detail,
@@ -28,6 +33,36 @@ urlpatterns = [
         "me/",
         current_user_settings,
         name="settings-me",
+    ),
+    
+    path(
+        "auth/2fa/verify/",
+        verify_two_factor_login,
+        name="auth-2fa-verify",
+    ),
+    
+    path(
+        "me/2fa/status/",
+        two_factor_status,
+        name="settings-me-2fa-status",
+    ),
+
+    path(
+        "me/2fa/setup/",
+        two_factor_setup,
+        name="settings-me-2fa-setup",
+    ),
+
+    path(
+        "me/2fa/enable/",
+        two_factor_enable,
+        name="settings-me-2fa-enable",
+    ),
+
+    path(
+        "me/2fa/disable/",
+        two_factor_disable,
+        name="settings-me-2fa-disable",
     ),
 
     path(

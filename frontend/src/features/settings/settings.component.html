@@ -150,7 +150,10 @@
         <div class="form-field" *ngIf="rbac.hasMultipleFamilies()">
           <label> Currently Viewing </label>
 
-          <select [ngModel]="rbac.activeFamily()?.id" (ngModelChange)="onActiveFamilyChange($event)">
+          <select
+            [ngModel]="rbac.activeFamily()?.id"
+            (ngModelChange)="onActiveFamilyChange($event)"
+          >
             <option *ngFor="let family of rbac.families()" [ngValue]="family.id">
               {{ family.name }}
             </option>
@@ -188,6 +191,149 @@
 
           <span *ngIf="saving"> Saving... </span>
         </button>
+      </div>
+      <!-- ================================================== -->
+      <!-- TWO-FACTOR AUTHENTICATION -->
+      <!-- ================================================== -->
+
+      <hr />
+
+      <div class="two-factor-section">
+        <div class="card-header">
+          <div>
+            <h2>Two-Factor Authentication</h2>
+
+            <p>
+              Add an authenticator app as an additional layer of security for your PWMS account.
+            </p>
+          </div>
+
+          <span class="section-badge">
+            {{ twoFactorEnabled ? 'Enabled' : 'Disabled' }}
+          </span>
+        </div>
+
+        <!-- ================================================== -->
+        <!-- DISABLED -->
+        <!-- ================================================== -->
+
+        <div *ngIf="!twoFactorEnabled">
+          <!-- START SETUP -->
+
+          <div *ngIf="!twoFactorProvisioningUri">
+            <p>Two-factor authentication is currently disabled.</p>
+
+            <button
+              type="button"
+              class="secondary-button"
+              (click)="setupTwoFactor()"
+              [disabled]="twoFactorLoading"
+            >
+              <span *ngIf="!twoFactorLoading"> Set Up Two-Factor Authentication </span>
+
+              <span *ngIf="twoFactorLoading"> Setting Up... </span>
+            </button>
+          </div>
+
+          <!-- ================================================== -->
+          <!-- SETUP -->
+          <!-- ================================================== -->
+
+          <div *ngIf="twoFactorProvisioningUri">
+            <p>Open your authenticator app and scan the QR code or enter the secret manually.</p>
+
+            <div class="two-factor-secret">
+              <strong> Secret: </strong>
+
+              {{ twoFactorSecret }}
+            </div>
+
+            <div class="qr-placeholder">QR code will be added here.</div>
+
+            <div class="form-field">
+              <label> Authentication Code </label>
+
+              <input
+                type="text"
+                inputmode="numeric"
+                maxlength="6"
+                autocomplete="one-time-code"
+                [value]="twoFactorCode"
+                (input)="twoFactorCode = $any($event.target).value"
+                placeholder="Enter 6-digit code"
+              />
+            </div>
+
+            <div class="card-actions">
+              <button
+                type="button"
+                class="primary-button"
+                (click)="enableTwoFactor()"
+                [disabled]="twoFactorLoading"
+              >
+                <span *ngIf="!twoFactorLoading"> Verify & Enable </span>
+
+                <span *ngIf="twoFactorLoading"> Verifying... </span>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- ================================================== -->
+        <!-- ENABLED -->
+        <!-- ================================================== -->
+
+        <div *ngIf="twoFactorEnabled">
+          <p>Two-factor authentication is currently enabled.</p>
+
+          <div class="form-grid">
+            <div class="form-field">
+              <label> Current Password </label>
+
+              <input
+                type="password"
+                [(ngModel)]="disableTwoFactorPassword"
+                autocomplete="current-password"
+              />
+            </div>
+
+            <div class="form-field">
+              <label> Authenticator Code </label>
+
+              <input
+                type="text"
+                inputmode="numeric"
+                maxlength="6"
+                [(ngModel)]="disableTwoFactorCode"
+                autocomplete="one-time-code"
+                placeholder="Enter 6-digit code"
+              />
+            </div>
+          </div>
+
+          <div class="card-actions">
+            <button
+              type="button"
+              class="danger-button"
+              (click)="disableTwoFactor()"
+              [disabled]="twoFactorLoading"
+            >
+              Disable Two-Factor Authentication
+            </button>
+          </div>
+        </div>
+
+        <!-- ================================================== -->
+        <!-- MESSAGES -->
+        <!-- ================================================== -->
+
+        <div class="error-message" *ngIf="twoFactorError">
+          {{ twoFactorError }}
+        </div>
+
+        <div class="success-message" *ngIf="twoFactorMessage">
+          {{ twoFactorMessage }}
+        </div>
       </div>
     </section>
 

@@ -39,21 +39,17 @@ class PortfolioTreeService:
 
     @classmethod
     def _get_transactions(cls, family_group_id=None, owner_ids=None) -> QuerySet:
-        transactions = Transaction.objects.all()
+        queryset = Transaction.objects.all()
 
         if family_group_id is not None:
-            transactions = transactions.filter(
-                family_group_id=family_group_id,
-            )
+            queryset = queryset.filter(family_group_id=family_group_id)
         elif owner_ids is not None:
-            transactions = transactions.filter(
-                owner_id__in=owner_ids,
-            )
+            queryset = queryset.filter(owner_id__in=owner_ids)
         else:
-            transactions = transactions.none()
+            queryset = queryset.none()
 
         return (
-            transactions
+            queryset
             .select_related(
                 "owner",
                 "asset",
@@ -389,9 +385,7 @@ class PortfolioTreeService:
         elif owner is not None:
             owner_ids = [owner.pk] if hasattr(owner, "pk") else list(owner)
             transactions = list(
-                cls._get_transactions(
-                    owner_ids=owner_ids,
-                )
+                cls._get_transactions(owner_ids=owner_ids)
             )
         else:
             transactions = []
@@ -415,8 +409,9 @@ class PortfolioTreeService:
             )
             grouped.setdefault(group_key, []).append(tx)
 
-            # Preserve the old XIRR grouping: owner + family +
-            # portfolio + asset, intentionally without sub_class.
+            # Preserve the old XIRR grouping: family + portfolio +
+            # asset, intentionally without sub_class. Owner remains
+            # part of the key only for legacy owner-based callers.
             xirr_key = (
                 tx.owner_id,
                 family,

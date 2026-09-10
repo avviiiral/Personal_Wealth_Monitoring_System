@@ -9,7 +9,8 @@ from investments.services.amc_name_resolver import resolve_amc_name
 
 class SecurityMasterService:
     """
-    Creates and retrieves Security Master records.
+    Creates and retrieves Security Master records within a
+    family ownership boundary.
 
     ISIN is the primary security identifier whenever
     an ISIN is available.
@@ -34,7 +35,23 @@ class SecurityMasterService:
     def get_or_create(
         owner,
         asset,
+        family_group_id=None,
     ):
+        """
+        Get/create the Security Master record for an asset.
+
+        When family_group_id is supplied, the lookup and creation
+        are strictly family-scoped. The owner is retained only as
+        the existing audit/uploader field during the ownership
+        migration.
+        """
+
+        if family_group_id is None:
+            raise ValueError(
+                "family_group_id is required for Security Master "
+                "operations."
+            )
+
         isin = (
             asset.isin.strip()
             if asset.isin
@@ -45,7 +62,7 @@ class SecurityMasterService:
             security = (
                 SecurityMaster.objects
                 .filter(
-                    owner=owner,
+                    family_group_id=family_group_id,
                     isin=isin,
                 )
                 .first()
@@ -83,6 +100,7 @@ class SecurityMasterService:
 
             return SecurityMaster.objects.create(
                 owner=owner,
+                family_group_id=family_group_id,
                 isin=isin,
                 asset_name=asset.name,
                 amc_name=(
@@ -94,7 +112,7 @@ class SecurityMasterService:
         security = (
             SecurityMaster.objects
             .filter(
-                owner=owner,
+                family_group_id=family_group_id,
                 isin__isnull=True,
                 asset_name=asset.name,
             )
@@ -106,6 +124,7 @@ class SecurityMasterService:
 
         return SecurityMaster.objects.create(
             owner=owner,
+            family_group_id=family_group_id,
             isin=None,
             asset_name=asset.name,
             amc_name=(
@@ -118,7 +137,16 @@ class SecurityMasterService:
     def get_for_asset(
         owner,
         asset,
+        family_group_id=None,
     ):
+        """Return the Security Master record for an asset's family."""
+
+        if family_group_id is None:
+            raise ValueError(
+                "family_group_id is required for Security Master "
+                "operations."
+            )
+
         isin = (
             asset.isin.strip()
             if asset.isin
@@ -129,7 +157,7 @@ class SecurityMasterService:
             return (
                 SecurityMaster.objects
                 .filter(
-                    owner=owner,
+                    family_group_id=family_group_id,
                     isin=isin,
                 )
                 .first()
@@ -138,7 +166,7 @@ class SecurityMasterService:
         return (
             SecurityMaster.objects
             .filter(
-                owner=owner,
+                family_group_id=family_group_id,
                 isin__isnull=True,
                 asset_name=asset.name,
             )
@@ -151,12 +179,21 @@ class SecurityMasterService:
         security_id,
         sector=None,
         cap_type=None,
+        family_group_id=None,
     ):
+        """Update classification only inside the active family."""
+
+        if family_group_id is None:
+            raise ValueError(
+                "family_group_id is required for Security Master "
+                "operations."
+            )
+
         security = (
             SecurityMaster.objects
             .filter(
                 id=security_id,
-                owner=owner,
+                family_group_id=family_group_id,
             )
             .first()
         )
@@ -179,4 +216,3 @@ class SecurityMasterService:
         security.save()
 
         return security
-

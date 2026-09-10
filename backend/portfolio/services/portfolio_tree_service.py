@@ -409,15 +409,23 @@ class PortfolioTreeService:
             )
             grouped.setdefault(group_key, []).append(tx)
 
-            # Preserve the old XIRR grouping: family + portfolio +
-            # asset, intentionally without sub_class. Owner remains
-            # part of the key only for legacy owner-based callers.
-            xirr_key = (
-                tx.owner_id,
-                family,
-                portfolio,
-                tx.asset_id,
-            )
+            # Family-scoped trees must calculate XIRR across the whole
+            # active family, not only the owner who uploaded a transaction.
+            # Legacy owner-based callers retain the historical owner key.
+            if family_group_id is not None:
+                xirr_key = (
+                    family,
+                    portfolio,
+                    tx.asset_id,
+                )
+            else:
+                xirr_key = (
+                    tx.owner_id,
+                    family,
+                    portfolio,
+                    tx.asset_id,
+                )
+
             xirr_grouped.setdefault(xirr_key, []).append(tx)
 
         asset_ids = {tx.asset_id for tx in transactions}
@@ -431,12 +439,20 @@ class PortfolioTreeService:
             asset_id,
         ), asset_transactions in grouped.items():
             first = asset_transactions[0]
-            xirr_key = (
-                first.owner_id,
-                family,
-                portfolio,
-                asset_id,
-            )
+
+            if family_group_id is not None:
+                xirr_key = (
+                    family,
+                    portfolio,
+                    asset_id,
+                )
+            else:
+                xirr_key = (
+                    first.owner_id,
+                    family,
+                    portfolio,
+                    asset_id,
+                )
 
             asset_data = cls._build_asset(
                 transactions=asset_transactions,

@@ -278,8 +278,8 @@ def portfolio_transactions(request):
             transaction_obj.asset
         )
 
-        PortfolioPositionEngine.rebuild_all_for_user(
-            request.user
+        PortfolioPositionEngine.rebuild_all_for_family(
+            family_id
         )
 
     return Response(
@@ -343,8 +343,8 @@ def portfolio_transaction_detail(
                 old_asset
             )
 
-            PortfolioPositionEngine.rebuild_all_for_user(
-                request.user
+            PortfolioPositionEngine.rebuild_all_for_family(
+                family_id
             )
 
         return Response(
@@ -389,8 +389,8 @@ def portfolio_transaction_detail(
                 new_asset
             )
 
-        PortfolioPositionEngine.rebuild_all_for_user(
-            request.user
+        PortfolioPositionEngine.rebuild_all_for_family(
+            family_id
         )
 
     return Response(

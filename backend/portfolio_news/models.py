@@ -27,9 +27,8 @@ class NewsArticle(models.Model):
         max_length=64,
         db_index=True,
         help_text=(
-            "Hash of normalized_title + published date bucket. "
-            "Used to detect the same event reported by multiple "
-            "sources on the same day."
+            "Hash of normalized_title + published date bucket. Used to detect "
+            "the same event reported by multiple sources on the same day."
         ),
     )
     matched_query = models.CharField(
@@ -41,10 +40,7 @@ class NewsArticle(models.Model):
         max_length=20,
         choices=SourceQualityTier.choices,
         default=SourceQualityTier.TIER_3,
-        help_text=(
-            "Best (highest) SourceQualityTier among all NewsArticleSource "
-            "rows for this event."
-        ),
+        help_text="Best source-quality tier among all sources for this event.",
     )
     source_count = models.PositiveSmallIntegerField(
         default=1,
@@ -107,9 +103,7 @@ class PortfolioNewsAlert(models.Model):
     A news article's impact on one user's holding.
 
     `family_group` is the financial-data ownership boundary.
-    `user` remains the notification/recipient identity and audit
-    trail. Both are retained so multiple family members can receive
-    alerts for the same family portfolio without mixing families.
+    `user` remains the notification/recipient identity and audit trail.
     """
 
     user = models.ForeignKey(
@@ -139,14 +133,12 @@ class PortfolioNewsAlert(models.Model):
 
     holding_id = models.PositiveIntegerField(
         help_text=(
-            "Primary key of the Asset (equity) or MutualFundScheme this "
-            "alert is about. Not a database FK because it can point to "
-            "either model."
+            "Primary key of the Asset (equity) or MutualFundScheme this alert "
+            "is about. Not a database FK because it can point to either model."
         ),
     )
 
     holding_display_name = models.CharField(max_length=300)
-
     relevant = models.BooleanField(default=True)
     category = models.CharField(max_length=30, choices=NewsCategory.choices)
     sentiment = models.CharField(max_length=20, choices=Sentiment.choices)
@@ -155,33 +147,27 @@ class PortfolioNewsAlert(models.Model):
     impact = models.CharField(max_length=20, choices=ImpactLevel.choices)
     impact_score = models.PositiveSmallIntegerField()
     confidence = models.FloatField()
-
     portfolio_weight_at_alert = models.FloatField(
         help_text="Snapshot of the holding's portfolio weight percentage at alert creation time."
     )
-
     alert_score = models.FloatField(
         help_text=(
             "Internal alert-priority score (impact_score x portfolio weight "
             "x confidence, 0-100). NOT a prediction of future returns."
         )
     )
-
     notification_tier = models.CharField(
         max_length=20,
         choices=NotificationTier.choices,
     )
-
     summary = models.TextField()
     portfolio_implication = models.TextField()
     reason = models.TextField()
-
     materiality = models.CharField(
         max_length=20,
         choices=Materiality.choices,
         default=Materiality.MODERATE,
     )
-
     key_facts = models.TextField(blank=True)
     interpretation = models.TextField(blank=True)
     uncertainty_notes = models.TextField(blank=True)
@@ -206,15 +192,15 @@ class PortfolioNewsAlert(models.Model):
         indexes = [
             models.Index(
                 fields=["user", "family_group", "-created_at"],
-                name="news_alert_user_family_created_idx",
+                name="news_alert_usr_fam_created",
             ),
             models.Index(
                 fields=["user", "family_group", "is_read"],
-                name="news_alert_user_family_unread_idx",
+                name="news_alert_usr_fam_unread",
             ),
             models.Index(
                 fields=["user", "family_group", "notification_tier"],
-                name="news_alert_user_family_tier_idx",
+                name="news_alert_usr_fam_tier",
             ),
             models.Index(
                 fields=["family_group", "-created_at"],

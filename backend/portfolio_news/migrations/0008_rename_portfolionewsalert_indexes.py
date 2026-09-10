@@ -8,34 +8,19 @@ class Migration(migrations.Migration):
     ]
 
     operations = [
-        migrations.RunSQL(
-            sql=[
-                (
-                    "ALTER INDEX news_alert_user_family_created_idx "
-                    "RENAME TO news_alert_usr_fam_created"
-                ),
-                (
-                    "ALTER INDEX news_alert_user_family_unread_idx "
-                    "RENAME TO news_alert_usr_fam_unread"
-                ),
-                (
-                    "ALTER INDEX news_alert_user_family_tier_idx "
-                    "RENAME TO news_alert_usr_fam_tier"
-                ),
-            ],
-            reverse_sql=[
-                (
-                    "ALTER INDEX news_alert_usr_fam_created "
-                    "RENAME TO news_alert_user_family_created_idx"
-                ),
-                (
-                    "ALTER INDEX news_alert_usr_fam_unread "
-                    "RENAME TO news_alert_user_family_unread_idx"
-                ),
-                (
-                    "ALTER INDEX news_alert_usr_fam_tier "
-                    "RENAME TO news_alert_user_family_tier_idx"
-                ),
-            ],
+        migrations.RenameIndex(
+            model_name="portfolionewsalert",
+            old_name="news_alert_user_family_created_idx",
+            new_name="news_alert_usr_fam_created",
+        ),
+        migrations.RenameIndex(
+            model_name="portfolionewsalert",
+            old_name="news_alert_user_family_unread_idx",
+            new_name="news_alert_usr_fam_unread",
+        ),
+        migrations.RenameIndex(
+            model_name="portfolionewsalert",
+            old_name="news_alert_user_family_tier_idx",
+            new_name="news_alert_usr_fam_tier",
         ),
     ]

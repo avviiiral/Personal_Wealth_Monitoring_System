@@ -15,7 +15,6 @@ from rest_framework.response import Response
 from users.models import UserPreference
 from users.serializers import CurrentUserSerializer
 
-
 # ==========================================================
 # HEALTH / CSRF
 # ==========================================================
@@ -58,22 +57,61 @@ def login_view(request):
     SessionAuthentication to reject the login request with 403.
     """
 
-    username = request.data.get("username")
+    login_identifier = request.data.get("username")
     password = request.data.get("password")
 
-    if not username or not password:
+    if not login_identifier or not password:
         return Response(
             {
                 "detail": (
-                    "Username and password are required."
+                    "Username/email and password are required."
                 )
             },
             status=400,
         )
 
+    # ----------------------------------------------------------
+    # LOGIN BY USERNAME OR EMAIL
+    # ----------------------------------------------------------
+    #
+    # Username and email are both case-insensitive.
+    # Password remains case-sensitive because the final
+    # authentication is still handled by Django's authenticate().
+    
+    # ----------------------------------------------------------
+
+    from django.contrib.auth import get_user_model
+
+    User = get_user_model()
+
+    matching_user = User.objects.filter(
+        username__iexact=login_identifier.strip()
+    ).first()
+
+    if matching_user is None:
+        matching_user = User.objects.filter(
+            email__iexact=login_identifier.strip()
+        ).first()
+
+    if matching_user is None:
+        return Response(
+            {
+                "detail": (
+                    "Invalid username/email or password."
+                )
+            },
+            status=401,
+        )
+
+    # Authenticate using the user's actual stored username.
+    #
+    # IMPORTANT:
+    # We do NOT modify/lowercase the password.
+    # Django therefore continues to perform normal
+    # case-sensitive password verification.
     user = authenticate(
         request=request,
-        username=username,
+        username=getattr(matching_user, "username", ""),
         password=password,
     )
 
@@ -81,11 +119,15 @@ def login_view(request):
         return Response(
             {
                 "detail": (
-                    "Invalid username or password."
+                    "Invalid username/email or password."
                 )
             },
             status=401,
         )
+
+    # ----------------------------------------------------------
+    # NORMAL LOGIN
+    # ----------------------------------------------------------
 
     login(request, user)
 
@@ -93,7 +135,6 @@ def login_view(request):
         "authenticated": True,
         "user": CurrentUserSerializer(user).data,
     })
-
 
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])

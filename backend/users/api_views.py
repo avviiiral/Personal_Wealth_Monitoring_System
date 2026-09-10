@@ -80,7 +80,6 @@ def current_user_settings(request):
 
     return Response(serializer.data)
 
-
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def set_active_family(request):
@@ -265,7 +264,12 @@ def _delete_user(request, target_user):
     username = target_user.username
 
     with transaction.atomic():
-        _log(request.user, target_user, UserAuditLog.Action.DELETED, old_value=target_role)
+        _log(
+            request.user,
+            target_user,
+            UserAuditLog.Action.DELETED,
+            old_value=target_role or "",
+        )
 
         target_user.delete()
 
@@ -491,7 +495,13 @@ def group_add_member(request, group_id):
     if target_user is None:
         return Response({"detail": "User not found."}, status=status.HTTP_404_NOT_FOUND)
 
-    profile = target_user.profile
+    profile = getattr(target_user, "profile", None)
+
+    if profile is None:
+        return Response(
+            {"detail": "User profile not found."},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
     profile.family_groups.add(group)
 
     _log(request.user, target_user, UserAuditLog.Action.FAMILY_ADDED, new_value=group.name)
@@ -518,7 +528,13 @@ def group_remove_member(request, group_id, user_id):
     if target_user is None:
         return Response({"detail": "User not found."}, status=status.HTTP_404_NOT_FOUND)
 
-    profile = target_user.profile
+    profile = getattr(target_user, "profile", None)
+
+    if profile is None:
+        return Response(
+            {"detail": "User profile not found."},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
 
     if not profile.family_groups.filter(pk=group.pk).exists():
         return Response(

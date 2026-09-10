@@ -150,7 +150,10 @@
         <div class="form-field" *ngIf="rbac.hasMultipleFamilies()">
           <label> Currently Viewing </label>
 
-          <select [ngModel]="rbac.activeFamily()?.id" (ngModelChange)="onActiveFamilyChange($event)">
+          <select
+            [ngModel]="rbac.activeFamily()?.id"
+            (ngModelChange)="onActiveFamilyChange($event)"
+          >
             <option *ngFor="let family of rbac.families()" [ngValue]="family.id">
               {{ family.name }}
             </option>

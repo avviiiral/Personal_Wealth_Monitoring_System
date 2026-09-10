@@ -1,23 +1,30 @@
 import { Injectable, inject } from '@angular/core';
+
 import { HttpClient, HttpHeaders } from '@angular/common/http';
 
 import { Observable } from 'rxjs';
+
 import { environment } from '../../environments/environment';
 
 export interface SettingsProfile {
   id: number;
+
   username: string;
+
   email: string;
 }
 
 export interface SettingsPreferences {
   currency: string;
+
   date_format: string;
+
   default_analytics_period: number;
 }
 
 export interface SettingsResponse {
   profile: SettingsProfile;
+
   preferences: SettingsPreferences;
 }
 
@@ -99,7 +106,9 @@ export class SettingsApiService {
 
   changePassword(
     currentPassword: string,
+
     newPassword: string,
+
     confirmPassword: string,
   ): Observable<ChangePasswordResponse> {
     const csrfToken = this.readCsrfToken();

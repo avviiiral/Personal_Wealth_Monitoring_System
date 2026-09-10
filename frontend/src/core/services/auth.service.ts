@@ -1,23 +1,31 @@
 import { Injectable, inject } from '@angular/core';
+
 import { HttpClient } from '@angular/common/http';
 
 import { Observable, BehaviorSubject, tap, catchError, of } from 'rxjs';
 
 import { RbacService, CurrentUser } from './rbac.service';
+
 import { environment } from '../../environments/environment';
 
 /**
  * The authenticated user's identity AND role/permission/family
  * state, as returned by `/api/auth/login/` and `/api/auth/me/`.
- * This is a superset of the old minimal `{id, username, email}`
- * shape - see users.serializers.CurrentUserSerializer on the
- * backend for the authoritative field list.
+ *
+ * This is a superset of the old minimal
+ * `{id, username, email}` shape.
  */
 export type AuthUser = CurrentUser;
 
 export interface LoginResponse {
   authenticated: boolean;
-  user: AuthUser;
+
+  /**
+   * Present after a fully authenticated login.
+   */
+  user?: AuthUser;
+
+  detail?: string;
 }
 
 @Injectable({
@@ -58,9 +66,13 @@ export class AuthService {
       )
       .pipe(
         tap((response) => {
+          // --------------------------------------------------
+          // NORMAL FULL LOGIN
+          // --------------------------------------------------
+
           this.authenticatedSubject.next(response.authenticated);
 
-          this.userSubject.next(response.user);
+          this.userSubject.next(response.user ?? null);
 
           this.authenticationChecked = true;
 
@@ -80,13 +92,15 @@ export class AuthService {
       if (this.authenticatedSubject.value) {
         return of({
           authenticated: true,
+
           user: this.userSubject.value!,
         });
       }
 
       return of({
         authenticated: false,
-        user: null as any,
+
+        user: undefined,
       });
     }
 
@@ -98,7 +112,7 @@ export class AuthService {
         tap((response) => {
           this.authenticatedSubject.next(response.authenticated);
 
-          this.userSubject.next(response.user);
+          this.userSubject.next(response.user ?? null);
 
           this.authenticationChecked = true;
 
@@ -109,6 +123,7 @@ export class AuthService {
 
         catchError((error) => {
           this.authenticatedSubject.next(false);
+
           this.userSubject.next(null);
 
           this.authenticationChecked = true;
@@ -134,6 +149,7 @@ export class AuthService {
       .pipe(
         tap(() => {
           this.authenticatedSubject.next(false);
+
           this.userSubject.next(null);
 
           this.authenticationChecked = true;

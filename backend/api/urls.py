@@ -24,25 +24,25 @@ urlpatterns = [
     ),
 
     # ------------------------------------------------------
-    # AUTH
+    # AUTHENTICATION
     # ------------------------------------------------------
 
     path(
         "auth/login/",
         login_view,
-        name="login",
+        name="auth-login",
     ),
 
     path(
         "auth/logout/",
         logout_view,
-        name="logout",
+        name="auth-logout",
     ),
 
     path(
         "auth/me/",
         current_user,
-        name="current-user",
+        name="auth-me",
     ),
 
     # ------------------------------------------------------

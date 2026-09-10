@@ -151,7 +151,7 @@ class UserProfile(models.Model):
         choices=Role.choices,
         default=Role.VIEWER,
     )
-
+    
     # --------------------------------------------------------
     # FAMILY MEMBERSHIP (many-to-many)
     # --------------------------------------------------------

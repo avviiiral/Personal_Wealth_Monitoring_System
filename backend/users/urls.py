@@ -2,7 +2,7 @@ from django.urls import path
 
 from .api_views import (
     activate_user,
-    current_user_settings,
+    current_user_settings, 
     deactivate_user,
     group_add_member,
     group_detail,
@@ -29,7 +29,7 @@ urlpatterns = [
         current_user_settings,
         name="settings-me",
     ),
-
+    
     path(
         "me/active-family/",
         set_active_family,

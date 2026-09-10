@@ -82,9 +82,8 @@ export class SettingsComponent implements OnInit {
     this.loadSettings();
 
     // The RBAC role is normally loaded by the auth guard before this
-    // component is ever reached; this is a safety net in case the
-    // page was rendered without a fresh navigation (e.g. resumed
-    // from a cached state).
+    // component is reached. This is a safety net in case the page
+    // is rendered without a fresh navigation.
     if (!this.rbac.isLoaded()) {
       this.rbac.load().subscribe({
         next: () => this.cdr.detectChanges(),
@@ -92,7 +91,6 @@ export class SettingsComponent implements OnInit {
       });
     }
   }
-
   // ======================================================
   // TABS
   // ======================================================

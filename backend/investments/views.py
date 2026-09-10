@@ -20,14 +20,15 @@ from .services.auto_price_refresh import (
     refresh_assets_async,
 )
 
-from users.permissions import get_visible_owner_ids
+from users.permissions import get_active_family_group_id
 
 
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def import_transactions(request):
     """
-    Import transaction data from an Excel or CSV file.
+    Import transaction data from an Excel or CSV file into the
+    authenticated user's active family.
 
     Expected multipart/form-data field:
         file
@@ -42,6 +43,21 @@ def import_transactions(request):
                 "message": (
                     "Please upload an Excel or CSV "
                     "file using the 'file' field."
+                ),
+            },
+            status=400,
+        )
+
+    family_id = get_active_family_group_id(request.user)
+
+    if family_id is None:
+        return Response(
+            {
+                "success": False,
+                "message": (
+                    "No valid active family is selected. "
+                    "Select an active family before importing "
+                    "financial data."
                 ),
             },
             status=400,
@@ -67,6 +83,7 @@ def import_transactions(request):
         result = TransactionImporter.import_file(
             file=uploaded_file,
             owner=request.user,
+            family_group_id=family_id,
         )
 
     except TransactionImportError as exc:
@@ -114,13 +131,24 @@ def import_transactions(request):
 @permission_classes([IsAuthenticated])
 def security_master_list(request):
     """
-    Return Security Master records belonging to
-    the authenticated user.
+    Return Security Master records belonging to the user's
+    active family.
     """
+
+    family_id = get_active_family_group_id(request.user)
+
+    if family_id is None:
+        return Response(
+            {
+                "success": False,
+                "message": "No valid active family is selected.",
+            },
+            status=400,
+        )
 
     securities = (
         SecurityMaster.objects
-        .filter(owner_id__in=get_visible_owner_ids(request.user))
+        .filter(family_group_id=family_id)
         .order_by("asset_name")
     )
 
@@ -161,15 +189,26 @@ def security_master_detail(
     security_id,
 ):
     """
-    Retrieve or update a user's Security Master
+    Retrieve or update the active family's Security Master
     classification.
     """
+
+    family_id = get_active_family_group_id(request.user)
+
+    if family_id is None:
+        return Response(
+            {
+                "success": False,
+                "message": "No valid active family is selected.",
+            },
+            status=400,
+        )
 
     security = (
         SecurityMaster.objects
         .filter(
             id=security_id,
-            owner=request.user,
+            family_group_id=family_id,
         )
         .first()
     )

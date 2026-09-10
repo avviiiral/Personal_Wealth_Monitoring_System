@@ -17,7 +17,7 @@ class PortfolioPositionEngine:
 
     @staticmethod
     def get_transactions(
-        owner,
+        family_group_id,
         family_name,
         portfolio,
         asset,
@@ -25,7 +25,7 @@ class PortfolioPositionEngine:
         return (
             Transaction.objects
             .filter(
-                owner=owner,
+                family_group_id=family_group_id,
                 family_name=family_name,
                 portfolio=portfolio,
                 asset=asset,
@@ -40,7 +40,7 @@ class PortfolioPositionEngine:
     @classmethod
     def calculate_position(
         cls,
-        owner,
+        family_group_id,
         family_name,
         portfolio,
         asset,
@@ -49,7 +49,7 @@ class PortfolioPositionEngine:
         invested_value = cls.ZERO
 
         transactions = cls.get_transactions(
-            owner=owner,
+            family_group_id=family_group_id,
             family_name=family_name,
             portfolio=portfolio,
             asset=asset,
@@ -136,13 +136,13 @@ class PortfolioPositionEngine:
     @transaction.atomic
     def rebuild_position(
         cls,
-        owner,
+        family_group_id,
         family_name,
         portfolio,
         asset,
     ):
         position = cls.calculate_position(
-            owner=owner,
+            family_group_id=family_group_id,
             family_name=family_name,
             portfolio=portfolio,
             asset=asset,
@@ -171,11 +171,12 @@ class PortfolioPositionEngine:
         portfolio_position, _ = (
             PortfolioPosition.objects
             .update_or_create(
-                owner=owner,
+                family_group_id=family_group_id,
                 family_name=family_name,
                 portfolio=portfolio,
                 asset=asset,
                 defaults={
+                    "owner": asset.owner,
                     "quantity": quantity,
                     "average_cost": average_cost,
                     "invested_value": invested_value,
@@ -189,10 +190,10 @@ class PortfolioPositionEngine:
         return portfolio_position
 
     @classmethod
-    def rebuild_all_for_user(cls, owner):
+    def rebuild_all_for_family(cls, family_group_id):
         combinations = (
             Transaction.objects
-            .filter(owner=owner)
+            .filter(family_group_id=family_group_id)
             .values(
                 "family_name",
                 "portfolio",
@@ -210,7 +211,7 @@ class PortfolioPositionEngine:
             )
 
             position = cls.rebuild_position(
-                owner=owner,
+                family_group_id=family_group_id,
                 family_name=combination[
                     "family_name"
                 ],
@@ -223,3 +224,24 @@ class PortfolioPositionEngine:
             positions.append(position)
 
         return positions
+
+    @classmethod
+    def rebuild_all_for_user(cls, owner):
+        """
+        Legacy compatibility wrapper.
+
+        New family-scoped callers should use
+        rebuild_all_for_family().
+        """
+        family_group_id = getattr(
+            getattr(owner, "profile", None),
+            "active_family_group_id",
+            None,
+        )
+
+        if family_group_id is None:
+            return []
+
+        return cls.rebuild_all_for_family(
+            family_group_id
+        )

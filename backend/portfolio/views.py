@@ -12,10 +12,6 @@ from investments.models import (
     Transaction,
 )
 
-from investments.services.portfolio_metrics import (
-    PortfolioMetricsService,
-)
-
 from market_data.services.market_data_manager import (
     MarketDataManager,
 )
@@ -42,18 +38,37 @@ from .serializers import (
     TransactionSerializer,
 )
 
-from users.permissions import get_visible_owner_ids
+from users.permissions import get_active_family_group_id
+
+
+def _active_family_id(request):
+    family_id = get_active_family_group_id(request.user)
+
+    if family_id is None:
+        return None, Response(
+            {
+                "detail": "An active family must be selected."
+            },
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    return family_id, None
 
 
 @api_view(["GET", "POST"])
 @permission_classes([IsAuthenticated])
 def portfolio_assets(request):
 
+    family_id, error_response = _active_family_id(request)
+
+    if error_response is not None:
+        return error_response
+
     if request.method == "GET":
 
         assets = (
             Asset.objects
-            .filter(owner_id__in=get_visible_owner_ids(request.user))
+            .filter(family_group_id=family_id)
             .order_by("name")
         )
 
@@ -80,6 +95,7 @@ def portfolio_assets(request):
         Asset,
         serializer.save(
             owner=request.user,
+            family_group_id=family_id,
         ),
     )
 
@@ -128,11 +144,16 @@ def portfolio_asset_detail(
     asset_id,
 ):
 
+    family_id, error_response = _active_family_id(request)
+
+    if error_response is not None:
+        return error_response
+
     try:
 
         asset = Asset.objects.get(
             id=asset_id,
-            owner=request.user,
+            family_group_id=family_id,
         )
 
     except Asset.DoesNotExist:
@@ -203,11 +224,16 @@ def portfolio_asset_detail(
 @permission_classes([IsAuthenticated])
 def portfolio_transactions(request):
 
+    family_id, error_response = _active_family_id(request)
+
+    if error_response is not None:
+        return error_response
+
     if request.method == "GET":
 
         transactions = (
             Transaction.objects
-            .filter(owner_id__in=get_visible_owner_ids(request.user))
+            .filter(family_group_id=family_id)
             .select_related("asset")
             .order_by(
                 "-transaction_date",
@@ -227,6 +253,7 @@ def portfolio_transactions(request):
         data=request.data,
         context={
             "request": request,
+            "family_group_id": family_id,
         },
     )
 
@@ -243,6 +270,7 @@ def portfolio_transactions(request):
             Transaction,
             serializer.save(
                 owner=request.user,
+                family_group_id=family_id,
             ),
         )
 
@@ -269,6 +297,11 @@ def portfolio_transaction_detail(
     transaction_id,
 ):
 
+    family_id, error_response = _active_family_id(request)
+
+    if error_response is not None:
+        return error_response
+
     try:
 
         transaction_obj = (
@@ -276,7 +309,7 @@ def portfolio_transaction_detail(
             .select_related("asset")
             .get(
                 id=transaction_id,
-                owner=request.user,
+                family_group_id=family_id,
             )
         )
 
@@ -324,6 +357,7 @@ def portfolio_transaction_detail(
         partial=request.method == "PATCH",
         context={
             "request": request,
+            "family_group_id": family_id,
         },
     )
 
@@ -371,10 +405,15 @@ def portfolio_transaction_detail(
 @permission_classes([IsAuthenticated])
 def portfolio_summary(request):
 
+    family_id, error_response = _active_family_id(request)
+
+    if error_response is not None:
+        return error_response
+
     holdings = (
         Holding.objects
         .filter(
-            owner_id__in=get_visible_owner_ids(request.user),
+            family_group_id=family_id,
             asset__is_active=True,
         )
     )
@@ -423,10 +462,15 @@ def portfolio_summary(request):
 @permission_classes([IsAuthenticated])
 def portfolio_holdings(request):
 
+    family_id, error_response = _active_family_id(request)
+
+    if error_response is not None:
+        return error_response
+
     holdings = (
         Holding.objects
         .filter(
-            owner_id__in=get_visible_owner_ids(request.user),
+            family_group_id=family_id,
             asset__is_active=True,
         )
         .exclude(
@@ -453,9 +497,14 @@ def portfolio_tree(request):
         PortfolioTreeService,
     )
 
+    family_id, error_response = _active_family_id(request)
+
+    if error_response is not None:
+        return error_response
+
     try:
         tree = PortfolioTreeService.build(
-            owner=get_visible_owner_ids(request.user)
+            family_group_id=family_id,
         )
 
     except Exception as exc:

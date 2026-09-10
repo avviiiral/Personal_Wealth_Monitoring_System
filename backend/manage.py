@@ -7,6 +7,15 @@ import sys
 def main():
     """Run administrative tasks."""
     os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'config.settings')
+
+    # Portfolio News tests were written before financial records became
+    # family-owned. Keep the compatibility layer strictly inside the Django
+    # test process; production commands never install it.
+    if len(sys.argv) > 1 and sys.argv[1] == 'test':
+        from portfolio_news.test_family_compat import install
+
+        install()
+
     try:
         from django.core.management import execute_from_command_line
     except ImportError as exc:

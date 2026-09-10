@@ -141,16 +141,27 @@ def install():
             and hasattr(analyzer, "analyze")
         ):
             def analyze_batch(items, user=None):
-                results = []
+                results = {}
                 for item in items:
                     if isinstance(item, dict):
                         article = item.get("article")
                         holding = item.get("holding")
                     else:
                         article, holding = item
-                    results.append(
-                        analyzer.analyze(article, holding, user=user)
+
+                    analysis = analyzer.analyze(
+                        article,
+                        holding,
+                        user=user,
                     )
+
+                    key = (
+                        article.id,
+                        holding.holding_type,
+                        holding.holding_id,
+                    )
+                    results[key] = analysis
+
                 return results
 
             analyzer.analyze_batch = analyze_batch

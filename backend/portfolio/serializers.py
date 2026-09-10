@@ -289,6 +289,18 @@ class TransactionSerializer(
         if request is None:
             return asset
 
+        family_group_id = self.context.get(
+            "family_group_id"
+        )
+
+        if family_group_id is not None:
+            if asset.family_group_id != family_group_id:
+                raise serializers.ValidationError(
+                    "Invalid asset."
+                )
+
+            return asset
+
         if asset.owner_id != request.user.id:
             raise serializers.ValidationError(
                 "Invalid asset."

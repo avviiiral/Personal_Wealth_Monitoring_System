@@ -38,10 +38,22 @@ class PortfolioTreeService:
         return float(value)
 
     @classmethod
-    def _get_transactions(cls, owner_ids) -> QuerySet:
+    def _get_transactions(cls, family_group_id=None, owner_ids=None) -> QuerySet:
+        transactions = Transaction.objects.all()
+
+        if family_group_id is not None:
+            transactions = transactions.filter(
+                family_group_id=family_group_id,
+            )
+        elif owner_ids is not None:
+            transactions = transactions.filter(
+                owner_id__in=owner_ids,
+            )
+        else:
+            transactions = transactions.none()
+
         return (
-            Transaction.objects
-            .filter(owner_id__in=owner_ids)
+            transactions
             .select_related(
                 "owner",
                 "asset",
@@ -367,9 +379,22 @@ class PortfolioTreeService:
         }
 
     @classmethod
-    def build(cls, owner):
-        owner_ids = [owner.pk] if hasattr(owner, "pk") else list(owner)
-        transactions = list(cls._get_transactions(owner_ids))
+    def build(cls, owner=None, family_group_id=None):
+        if family_group_id is not None:
+            transactions = list(
+                cls._get_transactions(
+                    family_group_id=family_group_id,
+                )
+            )
+        elif owner is not None:
+            owner_ids = [owner.pk] if hasattr(owner, "pk") else list(owner)
+            transactions = list(
+                cls._get_transactions(
+                    owner_ids=owner_ids,
+                )
+            )
+        else:
+            transactions = []
 
         tree = {}
         grouped = {}

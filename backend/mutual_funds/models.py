@@ -14,6 +14,14 @@ class MutualFundScheme(models.Model):
         on_delete=models.CASCADE,
         related_name="mutual_fund_schemes",
     )
+    
+    family_group = models.ForeignKey(
+        "users.FamilyGroup",
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="mutual_fund_schemes",
+    )
 
     scheme_name = models.CharField(
         max_length=300,
@@ -182,6 +190,14 @@ class MutualFundTransaction(models.Model):
         on_delete=models.CASCADE,
         related_name="mutual_fund_transactions",
     )
+    
+    family_group = models.ForeignKey(
+        "users.FamilyGroup",
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="mutual_fund_transactions",
+    )
 
     family_name = models.CharField(
         max_length=255,
@@ -279,6 +295,14 @@ class SIP(models.Model):
         on_delete=models.CASCADE,
         related_name="sips",
     )
+    
+    family_group = models.ForeignKey(
+        "users.FamilyGroup",
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="mutual_fund_sips",
+    )
 
     scheme = models.ForeignKey(
         MutualFundScheme,
@@ -343,6 +367,14 @@ class MutualFundHolding(models.Model):
     owner = models.ForeignKey(
         User,
         on_delete=models.CASCADE,
+        related_name="mutual_fund_holdings",
+    )
+    
+    family_group = models.ForeignKey(
+        "users.FamilyGroup",
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
         related_name="mutual_fund_holdings",
     )
 

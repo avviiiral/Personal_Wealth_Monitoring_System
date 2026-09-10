@@ -31,6 +31,14 @@ class Asset(models.Model):
         on_delete=models.CASCADE,
         related_name="assets",
     )
+    
+    family_group = models.ForeignKey(
+        "users.FamilyGroup",
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="investment_assets",
+    )
 
     name = models.CharField(
         max_length=255,
@@ -135,6 +143,14 @@ class Transaction(models.Model):
         User,
         on_delete=models.CASCADE,
         related_name="transactions",
+    )
+    
+    family_group = models.ForeignKey(
+        "users.FamilyGroup",
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="investment_transactions",
     )
 
     family_name = models.CharField(
@@ -322,6 +338,14 @@ class Holding(models.Model):
         on_delete=models.CASCADE,
         related_name="holdings",
     )
+    
+    family_group = models.ForeignKey(
+        "users.FamilyGroup",
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="investment_holdings",
+    )
 
     asset = models.OneToOneField(
         Asset,
@@ -391,6 +415,14 @@ class PortfolioPosition(models.Model):
         User,
         on_delete=models.CASCADE,
         related_name="portfolio_positions",
+    )
+    
+    family_group = models.ForeignKey(
+        "users.FamilyGroup",
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="investment_portfolio_positions",
     )
 
     family_name = models.CharField(
@@ -487,6 +519,14 @@ class SecurityMaster(models.Model):
         User,
         on_delete=models.CASCADE,
         related_name="security_masters",
+    )
+    
+    family_group = models.ForeignKey(
+        "users.FamilyGroup",
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="investment_security_masters",
     )
 
     isin = models.CharField(

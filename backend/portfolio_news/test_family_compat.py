@@ -98,3 +98,63 @@ def install():
         return original_manager_create(manager, *args, **kwargs)
 
     models.Manager.create = create_with_test_family
+
+    # The legacy digest unit tests call build_daily_digest(user) without the
+    # newly required family_group_id. Keep this compatibility strictly inside
+    # the test process; production callers still have to pass an explicit
+    # family through the normal active-family resolver.
+    from portfolio_news.services import digest as digest_service
+
+    original_build_daily_digest = digest_service.build_daily_digest
+
+    @wraps(original_build_daily_digest)
+    def build_daily_digest_with_test_family(
+        user, family_group_id=None, for_date=None
+    ):
+        if family_group_id is None:
+            family_group_id = _ensure_test_family(user).id
+        return original_build_daily_digest(
+            user,
+            family_group_id=family_group_id,
+            for_date=for_date,
+        )
+
+    digest_service.build_daily_digest = build_daily_digest_with_test_family
+
+    # The production pipeline now uses the batch analyzer API. A few legacy
+    # pipeline tests inject a small fake analyzer that only implements the old
+    # analyze() method. Add the batch-shaped adapter only when such a fake is
+    # passed, and only in the Django test process.
+    from portfolio_news.services import pipeline as pipeline_service
+
+    original_run_monitor = pipeline_service.run_portfolio_news_monitor
+
+    @wraps(original_run_monitor)
+    def run_monitor_with_legacy_analyzer(*args, **kwargs):
+        analyzer = kwargs.get("analyzer")
+        if analyzer is None and len(args) >= 2:
+            analyzer = args[1]
+
+        if (
+            analyzer is not None
+            and not hasattr(analyzer, "analyze_batch")
+            and hasattr(analyzer, "analyze")
+        ):
+            def analyze_batch(items, user=None):
+                results = []
+                for item in items:
+                    if isinstance(item, dict):
+                        article = item.get("article")
+                        holding = item.get("holding")
+                    else:
+                        article, holding = item
+                    results.append(
+                        analyzer.analyze(article, holding, user=user)
+                    )
+                return results
+
+            analyzer.analyze_batch = analyze_batch
+
+        return original_run_monitor(*args, **kwargs)
+
+    pipeline_service.run_portfolio_news_monitor = run_monitor_with_legacy_analyzer

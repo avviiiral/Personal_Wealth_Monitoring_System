@@ -23,6 +23,7 @@ class AssetSerializer(
         read_only_fields = (
             "id",
             "owner",
+            "family_group",
             "created_at",
             "updated_at",
         )

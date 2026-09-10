@@ -10,8 +10,6 @@ import { AuthService } from '../../core/services/auth.service';
 
 import { RbacService } from '../../core/services/rbac.service';
 
-import { QRCodeComponent } from 'angularx-qrcode';
-
 import {
   SettingsApiService,
   SettingsProfile,
@@ -30,7 +28,6 @@ type SettingsTab = 'account' | 'preferences' | 'security' | 'users' | 'families'
   imports: [
     CommonModule,
     FormsModule,
-    QRCodeComponent,
     UserManagementComponent,
     FamilyManagementComponent,
     ManualPricesComponent,
@@ -84,12 +81,9 @@ export class SettingsComponent implements OnInit {
   ngOnInit(): void {
     this.loadSettings();
 
-    this.loadTwoFactorStatus();
-
     // The RBAC role is normally loaded by the auth guard before this
-    // component is ever reached; this is a safety net in case the
-    // page was rendered without a fresh navigation (e.g. resumed
-    // from a cached state).
+    // component is reached. This is a safety net in case the page
+    // is rendered without a fresh navigation.
     if (!this.rbac.isLoaded()) {
       this.rbac.load().subscribe({
         next: () => this.cdr.detectChanges(),
@@ -97,7 +91,6 @@ export class SettingsComponent implements OnInit {
       });
     }
   }
-
   // ======================================================
   // TABS
   // ======================================================
@@ -297,157 +290,6 @@ export class SettingsComponent implements OnInit {
   }
 
   // ======================================================
-  // TWO-FACTOR AUTHENTICATION
-  // ======================================================
-
-  loadTwoFactorStatus(): void {
-    this.settingsApi.getTwoFactorStatus().subscribe({
-      next: (response) => {
-        this.twoFactorEnabled = response.enabled;
-
-        this.cdr.detectChanges();
-      },
-
-      error: (error) => {
-        console.error('2FA status error:', error);
-      },
-    });
-  }
-
-  setupTwoFactor(): void {
-    if (this.twoFactorLoading) {
-      return;
-    }
-
-    this.twoFactorLoading = true;
-
-    this.twoFactorError = '';
-
-    this.twoFactorMessage = '';
-
-    this.settingsApi.setupTwoFactor().subscribe({
-      next: (response) => {
-        this.twoFactorLoading = false;
-
-        this.twoFactorSecret = response.secret;
-
-        this.twoFactorProvisioningUri = response.provisioning_uri;
-
-        this.twoFactorMessage =
-          'Scan the QR code with your authenticator app, then enter the generated code.';
-
-        this.cdr.detectChanges();
-      },
-
-      error: (error) => {
-        this.twoFactorLoading = false;
-
-        this.twoFactorError =
-          error?.error?.detail || 'Unable to start two-factor authentication setup.';
-
-        this.cdr.detectChanges();
-      },
-    });
-  }
-
-  enableTwoFactor(): void {
-    if (this.twoFactorLoading) {
-      return;
-    }
-
-    const code = this.twoFactorCode.trim();
-
-    if (!/^\d{6}$/.test(code)) {
-      this.twoFactorError = 'Enter the 6-digit authenticator code.';
-
-      return;
-    }
-
-    this.twoFactorLoading = true;
-
-    this.twoFactorError = '';
-
-    this.twoFactorMessage = '';
-
-    this.settingsApi.enableTwoFactor(code).subscribe({
-      next: () => {
-        this.twoFactorLoading = false;
-
-        this.twoFactorEnabled = true;
-
-        this.twoFactorCode = '';
-
-        this.twoFactorSecret = '';
-
-        this.twoFactorProvisioningUri = '';
-
-        this.twoFactorMessage = 'Two-factor authentication enabled successfully.';
-
-        this.cdr.detectChanges();
-      },
-
-      error: (error) => {
-        this.twoFactorLoading = false;
-
-        this.twoFactorError = error?.error?.detail || 'Invalid authentication code.';
-
-        this.cdr.detectChanges();
-      },
-    });
-  }
-
-  disableTwoFactor(): void {
-    if (this.twoFactorLoading) {
-      return;
-    }
-
-    if (!this.disableTwoFactorPassword) {
-      this.twoFactorError = 'Enter your current password.';
-
-      return;
-    }
-
-    const code = this.disableTwoFactorCode.trim();
-
-    if (!/^\d{6}$/.test(code)) {
-      this.twoFactorError = 'Enter your current authenticator code.';
-
-      return;
-    }
-
-    this.twoFactorLoading = true;
-
-    this.twoFactorError = '';
-
-    this.twoFactorMessage = '';
-
-    this.settingsApi.disableTwoFactor(this.disableTwoFactorPassword, code).subscribe({
-      next: () => {
-        this.twoFactorLoading = false;
-
-        this.twoFactorEnabled = false;
-
-        this.disableTwoFactorPassword = '';
-
-        this.disableTwoFactorCode = '';
-
-        this.twoFactorMessage = 'Two-factor authentication disabled successfully.';
-
-        this.cdr.detectChanges();
-      },
-
-      error: (error) => {
-        this.twoFactorLoading = false;
-
-        this.twoFactorError =
-          error?.error?.detail || 'Unable to disable two-factor authentication.';
-
-        this.cdr.detectChanges();
-      },
-    });
-  }
-
-  // ======================================================
   // LOGOUT
   // ======================================================
 
@@ -493,26 +335,4 @@ export class SettingsComponent implements OnInit {
 
     this.rbac.load().subscribe();
   }
-
-  // ======================================================
-  // TWO-FACTOR AUTHENTICATION
-  // ======================================================
-
-  twoFactorEnabled = false;
-
-  twoFactorSecret = '';
-
-  twoFactorProvisioningUri = '';
-
-  twoFactorCode = '';
-
-  twoFactorLoading = false;
-
-  twoFactorMessage = '';
-
-  twoFactorError = '';
-
-  disableTwoFactorPassword = '';
-
-  disableTwoFactorCode = '';
 }

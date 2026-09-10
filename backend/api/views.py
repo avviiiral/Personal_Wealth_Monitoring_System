@@ -15,8 +15,6 @@ from rest_framework.response import Response
 from users.models import UserPreference
 from users.serializers import CurrentUserSerializer
 
-import pyotp
-
 # ==========================================================
 # HEALTH / CSRF
 # ==========================================================
@@ -128,29 +126,6 @@ def login_view(request):
         )
 
     # ----------------------------------------------------------
-    # TWO-FACTOR AUTHENTICATION
-    # ----------------------------------------------------------
-
-    profile = getattr(user, "profile", None)
-
-    if profile is not None and profile.two_factor_enabled:
-
-        # Password is correct, but the user must complete
-        # the second authentication factor before a Django
-        # session is created.
-        return Response(
-            {
-                "authenticated": False,
-                "requires_2fa": True,
-                "user_id": user.pk,
-                "detail": (
-                    "Two-factor authentication code required."
-                ),
-            },
-            status=200,
-        )
-
-    # ----------------------------------------------------------
     # NORMAL LOGIN
     # ----------------------------------------------------------
 
@@ -158,92 +133,6 @@ def login_view(request):
 
     return Response({
         "authenticated": True,
-        "requires_2fa": False,
-        "user": CurrentUserSerializer(user).data,
-    })
-
-@csrf_exempt
-@api_view(["POST"])
-@authentication_classes([])
-@permission_classes([AllowAny])
-def verify_two_factor_login(request):
-    """
-    POST /api/auth/2fa/verify/
-
-    Complete login after the username/email + password have
-    already been verified.
-
-    The Django session is created ONLY after the TOTP code
-    is successfully verified.
-    """
-
-    user_id = request.data.get("user_id")
-    code = str(request.data.get("code", "")).strip()
-
-    if not user_id or not code:
-        return Response(
-            {
-                "detail": (
-                    "User ID and authentication code are required."
-                )
-            },
-            status=400,
-        )
-
-    from django.contrib.auth import get_user_model
-
-    User = get_user_model()
-
-    try:
-        user = User.objects.select_related("profile").get(
-            pk=user_id,
-            is_active=True,
-        )
-    except User.DoesNotExist:
-        return Response(
-            {
-                "detail": "Invalid authentication request."
-            },
-            status=401,
-        )
-
-    profile = getattr(user, "profile", None)
-
-    if profile is None or not profile.two_factor_enabled:
-        return Response(
-            {
-                "detail": (
-                    "Two-factor authentication is not enabled."
-                )
-            },
-            status=400,
-        )
-
-    if not profile.two_factor_secret:
-        return Response(
-            {
-                "detail": (
-                    "Two-factor authentication is not configured."
-                )
-            },
-            status=400,
-        )
-
-    totp = pyotp.TOTP(profile.two_factor_secret)
-
-    if not totp.verify(code):
-        return Response(
-            {
-                "detail": "Invalid authentication code."
-            },
-            status=401,
-        )
-
-    login(request, user)
-
-    return Response({
-        "authenticated": True,
-        "requires_2fa": False,
         "user": CurrentUserSerializer(user).data,
     })
 

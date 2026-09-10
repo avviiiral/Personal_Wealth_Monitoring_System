@@ -25,18 +25,6 @@ export interface LoginResponse {
    */
   user?: AuthUser;
 
-  /**
-   * True when password authentication succeeded but
-   * TOTP verification is still required.
-   */
-  requires_2fa?: boolean;
-
-  /**
-   * Temporary identifier used by the current 2FA flow
-   * to complete authentication.
-   */
-  user_id?: number;
-
   detail?: string;
 }
 
@@ -79,28 +67,6 @@ export class AuthService {
       .pipe(
         tap((response) => {
           // --------------------------------------------------
-          // 2FA IS REQUIRED
-          // --------------------------------------------------
-
-          if (response.requires_2fa) {
-            /*
-             * IMPORTANT:
-             *
-             * Do NOT mark the user as authenticated here.
-             *
-             * The backend has verified the password but has
-             * deliberately NOT created the Django session yet.
-             */
-            this.authenticatedSubject.next(false);
-
-            this.userSubject.next(null);
-
-            this.authenticationChecked = false;
-
-            return;
-          }
-
-          // --------------------------------------------------
           // NORMAL FULL LOGIN
           // --------------------------------------------------
 
@@ -111,37 +77,6 @@ export class AuthService {
           this.authenticationChecked = true;
 
           if (response.user) {
-            this.rbacService.hydrate(response.user);
-          }
-        }),
-      );
-  }
-
-  // ----------------------------------------------------------
-  // VERIFY TWO-FACTOR LOGIN
-  // ----------------------------------------------------------
-
-  verifyTwoFactor(userId: number, code: string): Observable<LoginResponse> {
-    return this.http
-      .post<LoginResponse>(
-        `${this.baseUrl}/2fa/verify/`,
-        {
-          user_id: userId,
-          code,
-        },
-        {
-          withCredentials: true,
-        },
-      )
-      .pipe(
-        tap((response) => {
-          if (response.authenticated && response.user) {
-            this.authenticatedSubject.next(true);
-
-            this.userSubject.next(response.user);
-
-            this.authenticationChecked = true;
-
             this.rbacService.hydrate(response.user);
           }
         }),

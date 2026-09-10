@@ -36,32 +36,6 @@ export interface ChangePasswordResponse {
   message: string;
 }
 
-// ==========================================================
-// TWO-FACTOR AUTHENTICATION
-// ==========================================================
-
-export interface TwoFactorStatusResponse {
-  enabled: boolean;
-}
-
-export interface TwoFactorSetupResponse {
-  secret: string;
-
-  provisioning_uri: string;
-}
-
-export interface TwoFactorEnableResponse {
-  enabled: boolean;
-
-  message: string;
-}
-
-export interface TwoFactorDisableResponse {
-  enabled: boolean;
-
-  message: string;
-}
-
 interface CsrfResponse {
   csrfToken?: string;
 }
@@ -154,86 +128,6 @@ export class SettingsApiService {
         new_password: newPassword,
 
         confirm_password: confirmPassword,
-      },
-      {
-        withCredentials: true,
-        headers,
-      },
-    );
-  }
-
-  // ======================================================
-  // TWO-FACTOR AUTHENTICATION
-  // ======================================================
-
-  getTwoFactorStatus(): Observable<TwoFactorStatusResponse> {
-    return this.http.get<TwoFactorStatusResponse>(
-      `${this.baseUrl}/settings/me/2fa/status/`,
-      this.requestOptions,
-    );
-  }
-
-  setupTwoFactor(): Observable<TwoFactorSetupResponse> {
-    const csrfToken = this.readCsrfToken();
-
-    const headers = csrfToken
-      ? new HttpHeaders({
-          'X-CSRFToken': csrfToken,
-          'Content-Type': 'application/json',
-        })
-      : undefined;
-
-    return this.http.post<TwoFactorSetupResponse>(
-      `${this.baseUrl}/settings/me/2fa/setup/`,
-      {},
-      {
-        withCredentials: true,
-        headers,
-      },
-    );
-  }
-
-  enableTwoFactor(code: string): Observable<TwoFactorEnableResponse> {
-    const csrfToken = this.readCsrfToken();
-
-    const headers = csrfToken
-      ? new HttpHeaders({
-          'X-CSRFToken': csrfToken,
-          'Content-Type': 'application/json',
-        })
-      : undefined;
-
-    return this.http.post<TwoFactorEnableResponse>(
-      `${this.baseUrl}/settings/me/2fa/enable/`,
-      {
-        code,
-      },
-      {
-        withCredentials: true,
-        headers,
-      },
-    );
-  }
-
-  disableTwoFactor(
-    password: string,
-
-    code: string,
-  ): Observable<TwoFactorDisableResponse> {
-    const csrfToken = this.readCsrfToken();
-
-    const headers = csrfToken
-      ? new HttpHeaders({
-          'X-CSRFToken': csrfToken,
-          'Content-Type': 'application/json',
-        })
-      : undefined;
-
-    return this.http.post<TwoFactorDisableResponse>(
-      `${this.baseUrl}/settings/me/2fa/disable/`,
-      {
-        password,
-        code,
       },
       {
         withCredentials: true,

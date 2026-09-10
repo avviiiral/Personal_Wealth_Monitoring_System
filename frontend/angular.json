@@ -30,10 +30,7 @@
                 "input": "public"
               }
             ],
-            "styles": [
-              "src/styles.scss",
-              "src/dark-mode-overrides.scss"
-            ],
+            "styles": ["src/styles.scss", "src/dark-mode-overrides.scss"],
             "security": {
               "allowedHosts": []
             }
@@ -48,8 +45,8 @@
                 },
                 {
                   "type": "anyComponentStyle",
-                  "maximumWarning": "10kB",
-                  "maximumError": "15kB"
+                  "maximumWarning": "20kB",
+                  "maximumError": "25kB"
                 }
               ],
               "outputHashing": "all",

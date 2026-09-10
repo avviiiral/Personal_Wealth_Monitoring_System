@@ -334,6 +334,7 @@ class HoldingCalculationEngine:
                 asset=asset,
                 defaults={
                     "owner": asset.owner,
+                    "family_group": asset.family_group,
                     "quantity": quantity,
                     "average_cost": average_cost,
                     "invested_value": invested_value,
@@ -351,12 +352,12 @@ class HoldingCalculationEngine:
     # ==========================================================
 
     @staticmethod
-    def rebuild_all_for_user(user):
+    def rebuild_all_for_family(family_group_id):
 
         assets = (
             Asset.objects
             .filter(
-                owner=user,
+                family_group_id=family_group_id,
                 is_active=True,
             )
         )
@@ -377,3 +378,24 @@ class HoldingCalculationEngine:
             )
 
         return holdings
+
+    @staticmethod
+    def rebuild_all_for_user(user):
+        """
+        Legacy compatibility wrapper.
+
+        New family-scoped callers should use
+        rebuild_all_for_family().
+        """
+        family_group_id = getattr(
+            getattr(user, "profile", None),
+            "active_family_group_id",
+            None,
+        )
+
+        if family_group_id is None:
+            return []
+
+        return HoldingCalculationEngine.rebuild_all_for_family(
+            family_group_id
+        )

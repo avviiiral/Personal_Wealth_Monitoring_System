@@ -70,48 +70,54 @@
 <!-- TWO-FACTOR AUTHENTICATION -->
 <!-- ================================================== -->
 
-<div class="two-factor-section" *ngIf="requiresTwoFactor">
-  <h2>Two-Factor Authentication</h2>
+@if (requiresTwoFactor) {
+  <div class="two-factor-section">
+    <h2>Two-Factor Authentication</h2>
 
-  <p>Enter the 6-digit code from your authenticator app.</p>
+    <p>Enter the 6-digit code from your authenticator app.</p>
 
-  <div class="form-field">
-    <label for="twoFactorCode"> Authentication Code </label>
+    <div class="form-field">
+      <label for="twoFactorCode">Authentication Code</label>
 
-    <input
-      id="twoFactorCode"
-      type="text"
-      inputmode="numeric"
-      maxlength="6"
-      autocomplete="one-time-code"
-      [value]="twoFactorCode"
-      (input)="twoFactorCode = $any($event.target).value"
-      (keyup.enter)="verifyTwoFactor()"
-      placeholder="Enter 6-digit code"
-    />
+      <input
+        id="twoFactorCode"
+        type="text"
+        inputmode="numeric"
+        maxlength="6"
+        autocomplete="one-time-code"
+        [value]="twoFactorCode"
+        (input)="twoFactorCode = $any($event.target).value"
+        (keyup.enter)="verifyTwoFactor()"
+        placeholder="Enter 6-digit code"
+      />
+    </div>
+
+    @if (twoFactorError) {
+      <div class="error-message">
+        {{ twoFactorError }}
+      </div>
+    }
+
+    <button
+      type="button"
+      class="primary-button"
+      (click)="verifyTwoFactor()"
+      [disabled]="verifyingTwoFactor"
+    >
+      @if (verifyingTwoFactor) {
+        Verifying...
+      } @else {
+        Verify
+      }
+    </button>
+
+    <button
+      type="button"
+      class="secondary-button"
+      (click)="backToLogin()"
+      [disabled]="verifyingTwoFactor"
+    >
+      Back to Login
+    </button>
   </div>
-
-  <div class="error-message" *ngIf="twoFactorError">
-    {{ twoFactorError }}
-  </div>
-
-  <button
-    type="button"
-    class="primary-button"
-    (click)="verifyTwoFactor()"
-    [disabled]="verifyingTwoFactor"
-  >
-    <span *ngIf="!verifyingTwoFactor"> Verify </span>
-
-    <span *ngIf="verifyingTwoFactor"> Verifying... </span>
-  </button>
-
-  <button
-    type="button"
-    class="secondary-button"
-    (click)="backToLogin()"
-    [disabled]="verifyingTwoFactor"
-  >
-    Back to Login
-  </button>
-</div>
+}

@@ -248,7 +248,17 @@
               {{ twoFactorSecret }}
             </div>
 
-            <div class="qr-placeholder">QR code will be added here.</div>
+            <div class="qr-code-container">
+              <qrcode
+                [qrdata]="twoFactorProvisioningUri"
+                [width]="220"
+                [errorCorrectionLevel]="'M'"
+                [elementType]="'canvas'"
+                [margin]="4"
+                [alt]="'Two-factor authentication QR code'"
+                [ariaLabel]="'Two-factor authentication QR code'"
+              ></qrcode>
+            </div>
 
             <div class="form-field">
               <label> Authentication Code </label>

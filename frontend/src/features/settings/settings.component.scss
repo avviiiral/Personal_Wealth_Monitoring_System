@@ -792,3 +792,18 @@
 :host-context(html.dark-theme) .danger-button:hover {
   background: #3a1d20;
 }
+
+.qr-code-container {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: fit-content;
+  padding: 16px;
+  margin: 16px 0;
+  background: #ffffff;
+  border-radius: 8px;
+}
+
+.qr-code-container qrcode {
+  display: block;
+}

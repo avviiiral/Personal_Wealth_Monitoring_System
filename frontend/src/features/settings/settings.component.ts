@@ -10,6 +10,8 @@ import { AuthService } from '../../core/services/auth.service';
 
 import { RbacService } from '../../core/services/rbac.service';
 
+import { QRCodeComponent } from 'angularx-qrcode';
+
 import {
   SettingsApiService,
   SettingsProfile,
@@ -28,6 +30,7 @@ type SettingsTab = 'account' | 'preferences' | 'security' | 'users' | 'families'
   imports: [
     CommonModule,
     FormsModule,
+    QRCodeComponent,
     UserManagementComponent,
     FamilyManagementComponent,
     ManualPricesComponent,

@@ -212,8 +212,16 @@ class PortfolioTreeAPITests(TestCase):
             user=self.user
         )
 
+        self.family_group = FamilyGroup.objects.create(
+            name="Portfolio API Family"
+        )
+        self.user.profile.family_groups.add(self.family_group)
+        self.user.profile.active_family_group = self.family_group
+        self.user.profile.save(update_fields=["active_family_group"])
+
         self.asset = Asset.objects.create(
             owner=self.user,
+            family_group=self.family_group,
             name="API Test Equity",
             category="STOCK",
             isin="INE000TEST003",
@@ -222,6 +230,7 @@ class PortfolioTreeAPITests(TestCase):
         Transaction.objects.create(
             owner=self.user,
             asset=self.asset,
+            family_group=self.family_group,
             family_name="Family API",
             portfolio="Portfolio API",
             asset_class="Equity",
@@ -334,14 +343,9 @@ class PortfolioTreeAPITests(TestCase):
             [401, 403],
         )
 
+
 # ======================================================================
 # SHARED-VISIBILITY GROUP TESTS (multi-owner tree correctness)
-#
-# These specifically guard against the bug found and fixed while
-# building family/group data sharing: PortfolioTreeService used to
-# pass the "viewing user" into per-node metric lookups instead of
-# each node's own actual owner, which silently produced missing/
-# wrong XIRR for every node that didn't belong to the viewer.
 # ======================================================================
 
 from market_data.models import DataSource, MarketPrice
@@ -365,11 +369,16 @@ class PortfolioTreeMultiOwnerTests(TestCase):
         group = FamilyGroup.objects.create(name="Multi Owner Test Family")
 
         self.owner_a.profile.family_groups.add(group)
+        self.owner_a.profile.active_family_group = group
+        self.owner_a.profile.save(update_fields=["active_family_group"])
 
         self.owner_b.profile.family_groups.add(group)
+        self.owner_b.profile.active_family_group = group
+        self.owner_b.profile.save(update_fields=["active_family_group"])
 
         self.asset_a = Asset.objects.create(
             owner=self.owner_a,
+            family_group=group,
             name="Owner A Stock",
             category="STOCK",
             isin="INE000MULTIA1",
@@ -377,6 +386,7 @@ class PortfolioTreeMultiOwnerTests(TestCase):
 
         self.asset_b = Asset.objects.create(
             owner=self.owner_b,
+            family_group=group,
             name="Owner B Stock",
             category="STOCK",
             isin="INE000MULTIB1",
@@ -385,6 +395,7 @@ class PortfolioTreeMultiOwnerTests(TestCase):
         Transaction.objects.create(
             owner=self.owner_a,
             asset=self.asset_a,
+            family_group=group,
             family_name="Family A",
             portfolio="Portfolio A",
             asset_class="Equity",
@@ -401,6 +412,7 @@ class PortfolioTreeMultiOwnerTests(TestCase):
         Transaction.objects.create(
             owner=self.owner_b,
             asset=self.asset_b,
+            family_group=group,
             family_name="Family B",
             portfolio="Portfolio B",
             asset_class="Equity",
@@ -439,9 +451,6 @@ class PortfolioTreeMultiOwnerTests(TestCase):
         return None
 
     def test_single_owner_tree_unaffected(self):
-        """Baseline: building for a single User instance (not a
-        list) still works exactly as before - backward compat."""
-
         result = PortfolioTreeService.build(self.owner_a)
 
         self.assertEqual(result["count"], 1)
@@ -475,10 +484,6 @@ class PortfolioTreeMultiOwnerTests(TestCase):
         self.assertEqual(node_b["invested_value"], 1000.0)
 
     def test_combined_tree_current_price_correct_per_owner(self):
-        """Regression: current_price/current_value must reflect
-        each node's own asset, not be dropped or mismatched when
-        combining owners."""
-
         result = PortfolioTreeService.build([self.owner_a.id, self.owner_b.id])
 
         node_a = self._find_asset_node(result, "INE000MULTIA1")
@@ -491,20 +496,6 @@ class PortfolioTreeMultiOwnerTests(TestCase):
         self.assertEqual(node_b["current_value"], 1250.0)
 
     def test_combined_tree_xirr_is_computed_for_both_owners(self):
-        """
-        This is the direct regression test for the bug: before the
-        fix, _build_asset always used the outer `owner` argument
-        (whichever owner built() was originally called with as the
-        "current viewer") when computing each node's XIRR. In a
-        combined multi-owner tree, that meant every node NOT
-        belonging to that one outer owner searched for transactions
-        under the wrong owner and silently got xirr=None.
-
-        With the fix (using each node's own real transaction owner),
-        every node - regardless of which owner in the group it
-        belongs to - must get a real, non-None XIRR figure.
-        """
-
         result = PortfolioTreeService.build([self.owner_a.id, self.owner_b.id])
 
         node_a = self._find_asset_node(result, "INE000MULTIA1")
@@ -516,15 +507,15 @@ class PortfolioTreeMultiOwnerTests(TestCase):
         )
         self.assertIsNotNone(
             node_b["xirr"],
-            "Owner B's node lost its XIRR when combined into a multi-owner tree "
-            "(this is exactly the bug: it was silently computed using the wrong "
-            "owner's transactions)",
+            "Owner B's node lost its XIRR when combined into a multi-owner tree",
         )
 
-    def test_ungrouped_owner_only_sees_own_tree(self):
-        """An owner NOT in a group must still only see their own
-        data via the real view-layer flow (get_visible_owner_ids)."""
+    def test_ungrouped_owner_has_no_implicit_portfolio_access(self):
+        """An ungrouped user must not receive implicit personal visibility.
 
+        The new family-ownership model requires an explicit active family;
+        there is intentionally no owner-based fallback.
+        """
         solo = get_user_model().objects.create_user(
             username="tree_multi_owner_solo",
             password="test-password",
@@ -534,20 +525,14 @@ class PortfolioTreeMultiOwnerTests(TestCase):
 
         owner_ids = get_visible_owner_ids(solo)
 
-        self.assertEqual(owner_ids, [solo.id])
+        self.assertEqual(owner_ids, [])
 
-        # And the grouped pair should see each other, proven via the
-        # same helper the real views call.
         grouped_ids = set(get_visible_owner_ids(self.owner_a))
 
         self.assertEqual(grouped_ids, {self.owner_a.id, self.owner_b.id})
 
 
 class PortfolioSummaryMultiOwnerTests(TestCase):
-    """Confirms the simple Sum()-based endpoints (summary, holdings)
-    correctly combine group members' Holding rows - the safe,
-    mechanical case (no per-item owner re-derivation needed)."""
-
     def setUp(self):
         User = get_user_model()
 
@@ -564,13 +549,18 @@ class PortfolioSummaryMultiOwnerTests(TestCase):
         group = FamilyGroup.objects.create(name="Summary Test Family")
 
         self.owner_a.profile.family_groups.add(group)
+        self.owner_a.profile.active_family_group = group
+        self.owner_a.profile.save(update_fields=["active_family_group"])
 
         self.owner_b.profile.family_groups.add(group)
+        self.owner_b.profile.active_family_group = group
+        self.owner_b.profile.save(update_fields=["active_family_group"])
 
         from investments.models import Holding
 
         asset_a = Asset.objects.create(
             owner=self.owner_a,
+            family_group=group,
             name="Summary Owner A Stock",
             category="STOCK",
             isin="INE000SUMA001",
@@ -578,6 +568,7 @@ class PortfolioSummaryMultiOwnerTests(TestCase):
 
         asset_b = Asset.objects.create(
             owner=self.owner_b,
+            family_group=group,
             name="Summary Owner B Stock",
             category="STOCK",
             isin="INE000SUMB001",
@@ -585,6 +576,7 @@ class PortfolioSummaryMultiOwnerTests(TestCase):
 
         Holding.objects.create(
             owner=self.owner_a,
+            family_group=group,
             asset=asset_a,
             invested_value=Decimal("1000"),
             current_value=Decimal("1200"),
@@ -593,6 +585,7 @@ class PortfolioSummaryMultiOwnerTests(TestCase):
 
         Holding.objects.create(
             owner=self.owner_b,
+            family_group=group,
             asset=asset_b,
             invested_value=Decimal("2000"),
             current_value=Decimal("1800"),
@@ -619,7 +612,7 @@ class PortfolioSummaryMultiOwnerTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data["count"], 2)
 
-    def test_solo_owner_sees_only_their_own_summary(self):
+    def test_solo_owner_without_active_family_is_rejected(self):
         outsider = get_user_model().objects.create_user(
             username="summary_multi_owner_outsider",
             password="test-password",
@@ -647,6 +640,8 @@ class PortfolioSummaryMultiOwnerTests(TestCase):
 
         response = client.get("/api/portfolio/summary/")
 
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(Decimal(str(response.data["total_invested"])), Decimal("500"))
-        self.assertEqual(response.data["number_of_holdings"], 1)
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(
+            response.data["detail"],
+            "An active family must be selected.",
+        )

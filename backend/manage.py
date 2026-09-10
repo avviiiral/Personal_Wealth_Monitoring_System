@@ -12,6 +12,10 @@ def main():
     # family-owned. Keep the compatibility layer strictly inside the Django
     # test process; production commands never install it.
     if len(sys.argv) > 1 and sys.argv[1] == 'test':
+        import django
+
+        django.setup()
+
         from portfolio_news.test_family_compat import install
 
         install()

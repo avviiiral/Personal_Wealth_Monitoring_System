@@ -394,6 +394,54 @@
           </div>
         </ng-container>
       </section>
+
+      <!-- ================================================== -->
+      <!-- ALLOCATION BY ADVISOR -->
+      <!-- ================================================== -->
+
+      <section class="analytics-card allocation-card advisor-allocation-card">
+        <div class="card-header">
+          <div>
+            <span class="section-eyebrow"
+              ><i class="eyebrow-dot eyebrow-dot--teal"></i>ADVISOR</span
+            >
+
+            <h2>Allocation by Advisor</h2>
+
+            <p>Current value distribution across advisors.</p>
+          </div>
+        </div>
+
+        <div class="allocation-content" *ngIf="advisorAllocation?.results?.length">
+          <div class="allocation-chart-container">
+            <canvas #advisorChart></canvas>
+          </div>
+
+          <div class="allocation-list">
+            <div class="allocation-row" *ngFor="let item of advisorAllocation?.results">
+              <span class="allocation-label">
+                <i class="advisor-avatar" [style.background]="advisorColor(item.advisor)">{{
+                  advisorInitials(item.advisor)
+                }}</i>
+                {{ item.advisor }}
+              </span>
+
+              <div class="allocation-value">
+                <strong>
+                  {{ formatAxisCurrency(item.value) }}
+                </strong>
+
+                <small> {{ item.percentage | number: '1.1-2' }}% </small>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="empty-state" *ngIf="!advisorAllocation?.results?.length">
+          <span class="empty-state-icon">◌</span>
+          No advisor data yet — assign advisors to your holdings to see this.
+        </div>
+      </section>
     </div>
 
     <!-- ================================================== -->
@@ -482,52 +530,6 @@
       >
         <span class="empty-state-icon">◌</span>
         No performance data yet — add holdings to see returns by sub class.
-      </div>
-    </section>
-
-    <!-- ================================================== -->
-    <!-- ALLOCATION BY ADVISOR -->
-    <!-- ================================================== -->
-
-    <section class="analytics-card allocation-card advisor-allocation-card">
-      <div class="card-header">
-        <div>
-          <span class="section-eyebrow"><i class="eyebrow-dot eyebrow-dot--teal"></i>ADVISOR</span>
-
-          <h2>Allocation by Advisor</h2>
-
-          <p>Current value distribution across advisors.</p>
-        </div>
-      </div>
-
-      <div class="allocation-content" *ngIf="advisorAllocation?.results?.length">
-        <div class="allocation-chart-container">
-          <canvas #advisorChart></canvas>
-        </div>
-
-        <div class="allocation-list">
-          <div class="allocation-row" *ngFor="let item of advisorAllocation?.results">
-            <span class="allocation-label">
-              <i class="advisor-avatar" [style.background]="advisorColor(item.advisor)">{{
-                advisorInitials(item.advisor)
-              }}</i>
-              {{ item.advisor }}
-            </span>
-
-            <div class="allocation-value">
-              <strong>
-                {{ formatAxisCurrency(item.value) }}
-              </strong>
-
-              <small> {{ item.percentage | number: '1.1-2' }}% </small>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div class="empty-state" *ngIf="!advisorAllocation?.results?.length">
-        <span class="empty-state-icon">◌</span>
-        No advisor data yet — assign advisors to your holdings to see this.
       </div>
     </section>
 

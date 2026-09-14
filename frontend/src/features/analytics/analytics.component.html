@@ -394,43 +394,6 @@
           </div>
         </ng-container>
       </section>
-
-      <!-- NON-STOCK HOLDING TYPES -->
-
-      <section class="analytics-card">
-        <div class="card-header">
-          <div>
-            <span class="section-eyebrow"
-              ><i class="eyebrow-dot eyebrow-dot--brass"></i>HOLDING TYPES</span
-            >
-
-            <h2>Non-Stock Holding Types</h2>
-
-            <p>What's inside the funds, bonds &amp; alternatives.</p>
-          </div>
-        </div>
-
-        <div class="loading-card" *ngIf="!nonStockHoldingTypesError && !nonStockHoldingTypes">
-          <div class="loading-spinner"></div>
-
-          <span> Loading holding type breakdown... </span>
-        </div>
-
-        <div class="empty-state" *ngIf="nonStockHoldingTypesError">
-          {{ nonStockHoldingTypesError }}
-        </div>
-
-        <ng-container *ngIf="!nonStockHoldingTypesError && nonStockHoldingTypes">
-          <div class="empty-state" *ngIf="nonStockHoldingTypes.results?.length === 0">
-            <span class="empty-state-icon">◌</span>
-            No non-stock holdings found.
-          </div>
-
-          <div class="allocation-chart-container" *ngIf="nonStockHoldingTypes.results?.length > 0">
-            <canvas #nonStockHoldingTypesChart></canvas>
-          </div>
-        </ng-container>
-      </section>
     </div>
 
     <!-- ================================================== -->

@@ -78,9 +78,6 @@ export class AnalyticsComponent implements OnInit, AfterViewInit, OnDestroy {
   @ViewChild('marketCapChart')
   marketCapChartRef?: ElementRef<HTMLCanvasElement>;
 
-  @ViewChild('nonStockHoldingTypesChart')
-  nonStockHoldingTypesChartRef?: ElementRef<HTMLCanvasElement>;
-
   @ViewChild('sectorChart')
   sectorChartRef?: ElementRef<HTMLCanvasElement>;
 
@@ -99,9 +96,6 @@ export class AnalyticsComponent implements OnInit, AfterViewInit, OnDestroy {
   marketCapAllocation: any = null;
   marketCapAllocationError = '';
 
-  nonStockHoldingTypes: any = null;
-  nonStockHoldingTypesError = '';
-
   sectorAllocation: any = null;
   sectorAllocationError = '';
 
@@ -119,7 +113,6 @@ export class AnalyticsComponent implements OnInit, AfterViewInit, OnDestroy {
   private advisorChart?: Chart;
   private advisorPerformanceChart?: Chart;
   private marketCapChart?: Chart;
-  private nonStockHoldingTypesChart?: Chart;
   private sectorChart?: Chart;
 
   ngOnInit(): void {
@@ -159,31 +152,6 @@ export class AnalyticsComponent implements OnInit, AfterViewInit, OnDestroy {
         console.error('MARKET CAP ALLOCATION API ERROR:', error);
 
         this.marketCapAllocationError = 'Unable to load market cap allocation.';
-
-        this.cdr.markForCheck();
-      },
-    });
-
-    // NON-STOCK HOLDING TYPES
-    this.nonStockHoldingTypes = null;
-    this.nonStockHoldingTypesError = '';
-
-    this.wealthApi.getNonStockHoldingTypes().subscribe({
-      next: (data) => {
-        this.nonStockHoldingTypes = data;
-
-        this.cdr.markForCheck();
-
-        setTimeout(() => {
-          this.renderNonStockHoldingTypesChart();
-          this.cdr.markForCheck();
-        });
-      },
-
-      error: (error) => {
-        console.error('NON-STOCK HOLDING TYPES API ERROR:', error);
-
-        this.nonStockHoldingTypesError = 'Unable to load holding type breakdown.';
 
         this.cdr.markForCheck();
       },
@@ -408,7 +376,6 @@ export class AnalyticsComponent implements OnInit, AfterViewInit, OnDestroy {
     this.renderAdvisorChart();
     this.renderAdvisorPerformanceChart();
     this.renderMarketCapChart();
-    this.renderNonStockHoldingTypesChart();
     this.renderSectorChart();
   }
 
@@ -969,96 +936,6 @@ export class AnalyticsComponent implements OnInit, AfterViewInit, OnDestroy {
     this.marketCapChart = new Chart(canvas, config);
   }
 
-  private renderNonStockHoldingTypesChart(): void {
-    const canvas = this.nonStockHoldingTypesChartRef?.nativeElement;
-
-    if (!canvas) {
-      console.warn('Non-stock holding types chart canvas not available.');
-      return;
-    }
-
-    this.nonStockHoldingTypesChart?.destroy();
-
-    const results = this.nonStockHoldingTypes?.results ?? [];
-
-    if (!results.length) {
-      console.warn('No non-stock holding type data available.');
-      return;
-    }
-
-    const labels = results.map((item: any) => item.holding_type);
-
-    const values = results.map((item: any) => Number(item.current_value));
-
-    const percentages = results.map((item: any) => Number(item.percentage));
-
-    const config: ChartConfiguration<'doughnut'> = {
-      type: 'doughnut',
-
-      data: {
-        labels,
-
-        datasets: [
-          {
-            data: values,
-
-            backgroundColor: [
-              '#085888',
-              '#fd7740',
-              '#cc9f53',
-              '#0f7a5c',
-              '#7c3aed',
-              '#dc2626',
-              '#0891b2',
-              '#65a30d',
-              '#c026d3',
-              '#475569',
-              '#e2e8f0',
-              '#94a3b8',
-            ],
-
-            borderWidth: 2,
-            borderColor: this.chartBorderColor(),
-          },
-        ],
-      },
-
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-
-        cutout: '68%',
-
-        plugins: {
-          legend: {
-            position: 'bottom',
-
-            labels: {
-              color: this.chartTextColor(),
-              usePointStyle: true,
-              padding: 16,
-            },
-          },
-
-          tooltip: {
-            callbacks: {
-              label: (context) => {
-                const index = context.dataIndex;
-                const percentage = percentages[index] ?? 0;
-
-                return `${context.label}: ${this.formatCurrency(
-                  Number(context.raw),
-                )} (${percentage.toFixed(2)}%)`;
-              },
-            },
-          },
-        },
-      },
-    };
-
-    this.nonStockHoldingTypesChart = new Chart(canvas, config);
-  }
-
   private renderSectorChart(): void {
     const canvas = this.sectorChartRef?.nativeElement;
 
@@ -1143,7 +1020,6 @@ export class AnalyticsComponent implements OnInit, AfterViewInit, OnDestroy {
     this.advisorChart?.destroy();
     this.advisorPerformanceChart?.destroy();
     this.marketCapChart?.destroy();
-    this.nonStockHoldingTypesChart?.destroy();
     this.sectorChart?.destroy();
 
     this.historicalChart = undefined;
@@ -1152,7 +1028,6 @@ export class AnalyticsComponent implements OnInit, AfterViewInit, OnDestroy {
     this.advisorChart = undefined;
     this.advisorPerformanceChart = undefined;
     this.marketCapChart = undefined;
-    this.nonStockHoldingTypesChart = undefined;
     this.sectorChart = undefined;
   }
 

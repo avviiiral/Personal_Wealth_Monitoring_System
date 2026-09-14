@@ -1,0 +1,9 @@
+.investment-summary-card .asset-class-table thead th:first-child {
+  font-size: 0;
+}
+
+.investment-summary-card .asset-class-table thead th:first-child::after {
+  content: 'Sub Class';
+  font-size: 0.75rem;
+  font-weight: 600;
+}

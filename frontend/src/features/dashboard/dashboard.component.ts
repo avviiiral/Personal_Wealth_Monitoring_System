@@ -6,6 +6,7 @@ import {
   OnDestroy,
   OnInit,
   ViewChild,
+  effect,
   inject,
 } from '@angular/core';
 
@@ -14,6 +15,7 @@ import { CommonModule } from '@angular/common';
 import { Chart, ChartConfiguration, registerables } from 'chart.js';
 
 import { WealthApiService } from '../../core/services/wealth-api.service';
+import { ThemeService } from '../../core/services/theme.service';
 
 import {
   PortfolioApiService,
@@ -38,7 +40,20 @@ Chart.register(...registerables);
 export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
   private readonly wealthApi = inject(WealthApiService);
   private readonly portfolioApi = inject(PortfolioApiService);
+  private readonly themeService = inject(ThemeService);
   private readonly cdr = inject(ChangeDetectorRef);
+  private readonly themeEffect = effect(() => {
+    this.themeService.mode();
+
+    if (!this.viewReady || this.loading || !this.historical) {
+      return;
+    }
+
+    setTimeout(() => {
+      this.renderWealthChart();
+      this.cdr.markForCheck();
+    });
+  });
   private readonly reportPdf = new PortfolioReportPdfService();
 
   @ViewChild('wealthChart')
@@ -373,13 +388,11 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
           {
             label: 'Portfolio Value',
             data: portfolioValues,
-            borderColor: document.documentElement.classList.contains('dark-theme')
-              ? '#2fbf8f'
-              : '#111827',
+            borderColor: this.themeService.isDark() ? '#2fbf8f' : '#2563EB',
 
-            backgroundColor: document.documentElement.classList.contains('dark-theme')
+            backgroundColor: this.themeService.isDark()
               ? 'rgba(47, 191, 143, 0.10)'
-              : 'rgba(17, 24, 39, 0.08)',
+              : 'rgba(37, 99, 235, 0.10)',
             borderWidth: 2,
             fill: true,
             tension: 0.35,
@@ -390,9 +403,7 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
           {
             label: 'Invested Value',
             data: investedValues,
-            borderColor: document.documentElement.classList.contains('dark-theme')
-              ? '#94a3b8'
-              : '#8b95a7',
+            borderColor: this.themeService.isDark() ? '#94a3b8' : '#64748B',
             backgroundColor: 'transparent',
             borderWidth: 2,
             borderDash: [6, 5],

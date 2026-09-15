@@ -14,6 +14,7 @@ interface HoldingRow {
 interface HoldingGroup {
   key: string;
   asset_name: string;
+  asset: PortfolioAssetNode;
   holdings: HoldingRow[];
   quantity: number;
   invested_value: number;
@@ -30,6 +31,28 @@ interface SubClassGroup {
   current_value: number;
   pnl: number;
   xirr: number | null;
+}
+
+interface HoldingExportRow {
+  family_name: string;
+  portfolio: string;
+  asset_class: string;
+  sub_class: string;
+  asset_name: string;
+  underlying: string;
+  isin: string;
+  advisors: string;
+  quantity: number;
+  average_cost: number;
+  invested_value: number;
+  current_price: number;
+  current_value: number;
+  gain: number;
+  pnl_percentage: number;
+  xirr: number | null;
+  sector: string;
+  cap_type: string;
+  amc_name: string;
 }
 
 const UNASSIGNED = 'Unassigned';
@@ -190,6 +213,7 @@ export class HoldingReportsComponent implements OnInit {
         return {
           key,
           asset_name: this.clean(asset.asset_name),
+          asset,
           holdings: holdingRows,
           quantity: this.toNumber(asset.quantity),
           invested_value: this.toNumber(asset.invested_value),
@@ -374,7 +398,7 @@ export class HoldingReportsComponent implements OnInit {
 
         const gainCell = row.getCell('gain');
         gainCell.font = {
-          color: Number(rowData.gain) >= 0 ? 'FF16A34A' : 'FFDC2626',
+          color: { argb: Number(rowData.gain) >= 0 ? 'FF16A34A' : 'FFDC2626' },
           bold: true,
         };
       });
@@ -403,8 +427,8 @@ export class HoldingReportsComponent implements OnInit {
     }
   }
 
-  private flattenFilteredHoldings(): Record<string, unknown>[] {
-    const rows: Record<string, unknown>[] = [];
+  private flattenFilteredHoldings(): HoldingExportRow[] {
+    const rows: HoldingExportRow[] = [];
 
     for (const family of this.filteredFamilies) {
       for (const portfolio of family.portfolios) {
@@ -444,11 +468,11 @@ export class HoldingReportsComponent implements OnInit {
     }
 
     return rows.sort(
-      (a, b) => String(a.family_name).localeCompare(String(b.family_name)) ||
-        String(a.portfolio).localeCompare(String(b.portfolio)) ||
-        String(a.asset_class).localeCompare(String(b.asset_class)) ||
-        String(a.sub_class).localeCompare(String(b.sub_class)) ||
-        String(a.asset_name).localeCompare(String(b.asset_name)),
+      (a, b) => a.family_name.localeCompare(b.family_name) ||
+        a.portfolio.localeCompare(b.portfolio) ||
+        a.asset_class.localeCompare(b.asset_class) ||
+        a.sub_class.localeCompare(b.sub_class) ||
+        a.asset_name.localeCompare(b.asset_name),
     );
   }
 

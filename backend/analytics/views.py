@@ -8,13 +8,10 @@ from .services.investment_summary import InvestmentSummaryService
 from .services.portfolio_analytics import PortfolioAnalytics
 from .services.unified_wealth import UnifiedWealthAnalytics
 from .services.equity_analysis import EquityAnalysisService
+from .services.mutual_fund_lookthrough import MutualFundLookThroughService
 
 from users.permissions import get_visible_owner_ids
 
-
-# ==========================================================
-# EXISTING ANALYTICS ENDPOINTS
-# ==========================================================
 
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
@@ -26,7 +23,9 @@ def analytics_summary(request):
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def analytics_allocation(request):
-    data = PortfolioAnalytics.calculate_allocation(get_visible_owner_ids(request.user))
+    owner_ids = get_visible_owner_ids(request.user)
+    direct_holdings = list(PortfolioAnalytics.get_holdings(owner_ids))
+    data = MutualFundLookThroughService.allocation(owner_ids, direct_holdings)
     return Response({"results": data})
 
 
@@ -40,7 +39,6 @@ def analytics_performance(request):
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def analytics_historical(request):
-    """Return historical portfolio values."""
     try:
         days = int(request.GET.get("days", 30))
     except (TypeError, ValueError):
@@ -70,10 +68,6 @@ def analytics_historical(request):
         "results": results,
     })
 
-
-# ==========================================================
-# UNIFIED WEALTH ANALYTICS
-# ==========================================================
 
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
@@ -185,8 +179,16 @@ def wealth_composition_by_amc(request):
 
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
+def wealth_performance_by_subclass(request):
+    data = InvestmentSummaryService.calculate_performance_by_subclass(
+        get_visible_owner_ids(request.user)
+    )
+    return Response({"results": data})
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
 def wealth_equity_analysis(request):
-    """Return equity valuation metrics including value-weighted PEG."""
     data = EquityAnalysisService.calculate(get_visible_owner_ids(request.user))
     return Response(data)
 
@@ -203,8 +205,17 @@ def wealth_fixed_income_analysis(request):
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def wealth_sector_allocation(request):
-    data = InvestmentSummaryService.calculate_sector_allocation(
-        get_visible_owner_ids(request.user)
+    owner_ids = get_visible_owner_ids(request.user)
+    direct_holdings = list(UnifiedWealthAnalytics.get_equity_holdings(owner_ids))
+    equity_asset_ids = {
+        holding.asset_id
+        for holding in direct_holdings
+        if getattr(holding.asset, "category", None) == "STOCK"
+    }
+    data = MutualFundLookThroughService.sector_allocation(
+        owner_ids,
+        direct_holdings,
+        equity_asset_ids,
     )
     return Response(data)
 

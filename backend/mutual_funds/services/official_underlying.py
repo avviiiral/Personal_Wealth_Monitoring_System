@@ -21,12 +21,10 @@ class OfficialMutualFundUnderlyingService(MutualFundUnderlyingService):
         value_col = cls._find_column(dataframe.columns, "market_value")
         pct_col = cls._find_column(dataframe.columns, "percentage_of_nav")
         sector_col = next(
-            (
-                column for column in dataframe.columns
-                if any(token in cls.normalize_column(column) for token in ("industry", "sector"))
-            ),
+            (column for column in dataframe.columns if any(token in cls.normalize_column(column) for token in ("industry", "sector"))),
             None,
         )
+        value_is_lakhs = value_col and any(token in cls.normalize_column(value_col) for token in ("lakh", "lac"))
 
         rows = []
         for _, row in dataframe.iterrows():
@@ -39,6 +37,8 @@ class OfficialMutualFundUnderlyingService(MutualFundUnderlyingService):
             isin = cls.normalize_text(row.get(isin_col)) if isin_col else None
             quantity = cls._decimal(row.get(quantity_col)) if quantity_col else None
             market_value = cls._decimal(row.get(value_col)) if value_col else None
+            if market_value is not None and value_is_lakhs:
+                market_value *= 100000
             percentage = cls._decimal(row.get(pct_col)) if pct_col else None
             if percentage is None or percentage < 0 or percentage > 100:
                 continue
@@ -67,11 +67,7 @@ class OfficialMutualFundUnderlyingService(MutualFundUnderlyingService):
         if portfolio_date is None:
             raise ValueError(f"Could not determine portfolio date for {filename}.")
 
-        existing_count = MutualFundUnderlying.objects.filter(
-            scheme=scheme,
-            portfolio_date=portfolio_date,
-            source=cls.SOURCE,
-        ).count()
+        existing_count = MutualFundUnderlying.objects.filter(scheme=scheme, portfolio_date=portfolio_date, source=cls.SOURCE).count()
         if existing_count:
             return {"status": "already_imported", "portfolio_date": portfolio_date, "records": existing_count}
 

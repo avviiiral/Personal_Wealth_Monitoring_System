@@ -1,21 +1,23 @@
 name: Apply Report Download Update
 
 on:
-  push:
+  pull_request:
+    types: [opened, synchronize]
     branches:
-      - updates-req
+      - main
 
 permissions:
   contents: write
 
 jobs:
   apply-change:
-    if: "!contains(github.event.head_commit.message, 'Add Sub Class report download')"
+    if: "!contains(github.event.pull_request.head.sha, '') && !contains(github.event.pull_request.title, '[completed]')"
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
+          ref: updates-req
           fetch-depth: 0
 
       - name: Apply report download changes
@@ -42,16 +44,8 @@ jobs:
                         stroke-width="1.8"
                         aria-hidden="true"
                       >
-                        <path
-                          d="M12 15V4M12 15 8.5 11.5M12 15l3.5-3.5"
-                          stroke-linecap="round"
-                          stroke-linejoin="round"
-                        />
-                        <path
-                          d="M4 16v2a2 2 0 0 1 2 2v0h12a2 2 0 0 0 2-2v-2"
-                          stroke-linecap="round"
-                          stroke-linejoin="round"
-                        />
+                        <path d="M12 15V4M12 15 8.5 11.5M12 15l3.5-3.5" stroke-linecap="round" stroke-linejoin="round" />
+                        <path d="M4 16v2a2 2 0 0 1 2 2v0h12a2 2 0 0 0 2-2v-2" stroke-linecap="round" stroke-linejoin="round" />
                       </svg>
                       Download All Assets
                     </button>
@@ -67,10 +61,7 @@ jobs:
     event: MouseEvent,
     assetGroup: AssetNameGroup,
   ): Promise<void> {'''
-          method = '''  async downloadSubClassAssets(
-    event: MouseEvent,
-    summary: SubClassGroup,
-  ): Promise<void> {
+          method = '''  async downloadSubClassAssets(event: MouseEvent, summary: SubClassGroup): Promise<void> {
     event.stopPropagation();
 
     const rows: Record<string, unknown>[] = [];
@@ -103,15 +94,13 @@ jobs:
       return dateB - dateA;
     });
 
-    const familyNames = Array.from(
-      new Set(
-        summary.asset_names.flatMap((assetGroup) =>
-          assetGroup.underlyings.flatMap((underlyingGroup) =>
-            underlyingGroup.transactions.map((tx) => this.clean(tx.family_name)),
-          ),
+    const familyNames = Array.from(new Set(
+      summary.asset_names.flatMap((assetGroup) =>
+        assetGroup.underlyings.flatMap((underlyingGroup) =>
+          underlyingGroup.transactions.map((tx) => this.clean(tx.family_name)),
         ),
       ),
-    );
+    ));
     const familyLabel = familyNames.length === 1 ? familyNames[0] : 'All Families';
 
     await this.exportWorkbook({
@@ -146,20 +135,15 @@ jobs:
 
     const lookup = this.assetLookup;
     const assets: PortfolioAssetNode[] = [];
-
     for (const id of assetIds) {
       const asset = lookup.get(id);
-      if (asset) {
-        assets.push(asset);
-      }
+      if (asset) assets.push(asset);
     }
 
-    return this.weightedXirr(
-      assets.map((asset) => ({
-        invested_value: this.toNumber(asset.invested_value),
-        xirr: asset.xirr,
-      })),
-    );
+    return this.weightedXirr(assets.map((asset) => ({
+      invested_value: this.toNumber(asset.invested_value),
+      xirr: asset.xirr,
+    })));
   }
 
 '''
@@ -171,10 +155,7 @@ jobs:
           scss_path = Path("frontend/src/features/reports/reports.component.scss")
           scss = scss_path.read_text(encoding="utf-8")
           if ".sub-class-download-action" not in scss:
-              scss_path.write_text(
-                  scss.rstrip() + "\n\n.sub-class-download-action {\n  display: flex;\n  justify-content: flex-end;\n  margin-bottom: 12px;\n}\n",
-                  encoding="utf-8",
-              )
+              scss_path.write_text(scss.rstrip() + "\n\n.sub-class-download-action {\n  display: flex;\n  justify-content: flex-end;\n  margin-bottom: 12px;\n}\n", encoding="utf-8")
 
       - name: Validate diff
         run: git diff --check
@@ -186,4 +167,4 @@ jobs:
           git add frontend/src/features/reports/reports.component.html frontend/src/features/reports/reports.component.ts frontend/src/features/reports/reports.component.scss
           git rm .github/workflows/apply_report_download_change.yml
           git commit -m "Add Sub Class report download"
-          git push
+          git push origin updates-req

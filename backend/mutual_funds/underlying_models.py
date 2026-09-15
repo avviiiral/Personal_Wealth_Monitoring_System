@@ -15,29 +15,18 @@ class MutualFundUnderlying(models.Model):
         max_length=320,
         help_text="Normalized ISIN or security name used for deduplication.",
     )
-    quantity = models.DecimalField(
-        max_digits=24,
-        decimal_places=6,
+    quantity = models.DecimalField(max_digits=24, decimal_places=6, blank=True, null=True)
+    market_value = models.DecimalField(max_digits=24, decimal_places=2, blank=True, null=True)
+    percentage_of_nav = models.DecimalField(max_digits=10, decimal_places=4)
+    sector = models.CharField(
+        max_length=150,
         blank=True,
         null=True,
-    )
-    market_value = models.DecimalField(
-        max_digits=24,
-        decimal_places=2,
-        blank=True,
-        null=True,
-    )
-    percentage_of_nav = models.DecimalField(
-        max_digits=10,
-        decimal_places=4,
+        help_text="Industry/sector exactly as disclosed by the official source, when available.",
     )
     portfolio_date = models.DateField()
     source = models.CharField(max_length=20, default="AMFI")
-    source_reference = models.CharField(
-        max_length=500,
-        blank=True,
-        null=True,
-    )
+    source_reference = models.CharField(max_length=500, blank=True, null=True)
     fetched_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -49,18 +38,9 @@ class MutualFundUnderlying(models.Model):
             )
         ]
         indexes = [
-            models.Index(
-                fields=["scheme", "-portfolio_date"],
-                name="mf_underlying_scheme_date_idx",
-            ),
-            models.Index(
-                fields=["isin"],
-                name="mf_underlying_isin_idx",
-            ),
-            models.Index(
-                fields=["security_key"],
-                name="mf_underlying_security_key_idx",
-            ),
+            models.Index(fields=["scheme", "-portfolio_date"], name="mf_underlying_scheme_date_idx"),
+            models.Index(fields=["isin"], name="mf_underlying_isin_idx"),
+            models.Index(fields=["security_key"], name="mf_underlying_security_key_idx"),
         ]
 
     def __str__(self):

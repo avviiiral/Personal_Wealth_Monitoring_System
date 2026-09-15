@@ -1,0 +1,36 @@
+.investment-summary-card .asset-class-table thead th:first-child {
+  font-size: 0;
+}
+
+.investment-summary-card .asset-class-table thead th:first-child::after {
+  content: 'Sub Class';
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+/* XIRR Performance: show Asset Name instead of Underlying. */
+.xirr-performance-card .xirr-ranking-header h3 {
+  font-size: 0;
+}
+
+.xirr-performance-card .xirr-ranking-header h3::after {
+  font-size: 1rem;
+}
+
+.xirr-performance-card .xirr-ranking-header h3:first-child::after {
+  content: 'Top 5 Asset Name';
+}
+
+.xirr-performance-card .xirr-ranking-panel:nth-child(2) .xirr-ranking-header h3::after {
+  content: 'Bottom 5 Asset Name';
+}
+
+.xirr-performance-card .xirr-ranking-table thead th:first-child {
+  font-size: 0;
+}
+
+.xirr-performance-card .xirr-ranking-table thead th:first-child::after {
+  content: 'Asset Name';
+  font-size: 0.75rem;
+  font-weight: 600;
+}

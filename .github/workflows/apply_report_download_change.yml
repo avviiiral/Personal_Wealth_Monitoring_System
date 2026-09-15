@@ -4,14 +4,13 @@ on:
   push:
     branches:
       - updates-req
-    paths:
-      - .github/workflows/apply_report_download_change.yml
 
 permissions:
   contents: write
 
 jobs:
   apply-change:
+    if: "!contains(github.event.head_commit.message, 'Add Sub Class report download')"
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -26,7 +25,6 @@ jobs:
 
           html_path = Path("frontend/src/features/reports/reports.component.html")
           html = html_path.read_text(encoding="utf-8")
-
           anchor = '<div class="asset-detail-title">{{ summary.sub_class }} Assets</div>'
           addition = '''
 
@@ -50,7 +48,7 @@ jobs:
                           stroke-linejoin="round"
                         />
                         <path
-                          d="M4 16v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"
+                          d="M4 16v2a2 2 0 0 1 2 2v0h12a2 2 0 0 0 2-2v-2"
                           stroke-linecap="round"
                           stroke-linejoin="round"
                         />
@@ -58,21 +56,17 @@ jobs:
                       Download All Assets
                     </button>
                   </div>'''
-
           if "downloadSubClassAssets($event, summary)" not in html:
               if anchor not in html:
                   raise SystemExit("HTML anchor not found")
-              html = html.replace(anchor, anchor + addition, 1)
-              html_path.write_text(html, encoding="utf-8")
+              html_path.write_text(html.replace(anchor, anchor + addition, 1), encoding="utf-8")
 
           ts_path = Path("frontend/src/features/reports/reports.component.ts")
           ts = ts_path.read_text(encoding="utf-8")
-
           marker = '''  async downloadAssetNameTransactions(
     event: MouseEvent,
     assetGroup: AssetNameGroup,
   ): Promise<void> {'''
-
           method = '''  async downloadSubClassAssets(
     event: MouseEvent,
     summary: SubClassGroup,
@@ -82,10 +76,7 @@ jobs:
     const rows: Record<string, unknown>[] = [];
 
     for (const assetGroup of summary.asset_names) {
-      const assetXirr = this.getAssetNameXirr(
-        summary.sub_class,
-        assetGroup.asset_name,
-      );
+      const assetXirr = this.getAssetNameXirr(summary.sub_class, assetGroup.asset_name);
 
       for (const underlyingGroup of assetGroup.underlyings) {
         for (const tx of underlyingGroup.transactions) {
@@ -96,8 +87,7 @@ jobs:
             underlying: this.getUnderlyingName(tx),
             isin: tx.isin || '-',
             transaction_date: new Date(tx.transaction_date),
-            transaction_type:
-              tx.transaction_type_display || tx.transaction_type,
+            transaction_type: tx.transaction_type_display || tx.transaction_type,
             quantity: this.toNumber(tx.quantity),
             price_per_unit: this.toNumber(tx.price_per_unit),
             amount: this.toNumber(tx.amount),
@@ -108,12 +98,8 @@ jobs:
     }
 
     rows.sort((a, b) => {
-      const dateA = a.transaction_date instanceof Date
-        ? a.transaction_date.getTime()
-        : 0;
-      const dateB = b.transaction_date instanceof Date
-        ? b.transaction_date.getTime()
-        : 0;
+      const dateA = a.transaction_date instanceof Date ? a.transaction_date.getTime() : 0;
+      const dateB = b.transaction_date instanceof Date ? b.transaction_date.getTime() : 0;
       return dateB - dateA;
     });
 
@@ -126,7 +112,6 @@ jobs:
         ),
       ),
     );
-
     const familyLabel = familyNames.length === 1 ? familyNames[0] : 'All Families';
 
     await this.exportWorkbook({
@@ -146,24 +131,15 @@ jobs:
         { header: 'XIRR (%)', key: 'xirr', width: 14, numFmt: '0.00"%"' },
       ],
       rows,
-      filename:
-        `${this.slugify(familyLabel)}_` +
-        `${this.slugify(summary.sub_class)}_all_assets_` +
-        `${this.todayStamp()}.xlsx`,
+      filename: `${this.slugify(familyLabel)}_${this.slugify(summary.sub_class)}_all_assets_${this.todayStamp()}.xlsx`,
     });
   }
 
-  private getAssetNameXirr(
-    subClass: string,
-    assetName: string,
-  ): number | null {
+  private getAssetNameXirr(subClass: string, assetName: string): number | null {
     const assetIds = new Set<number>();
 
     for (const tx of this.transactions) {
-      if (
-        this.clean(tx.sub_class) === subClass &&
-        this.getAssetName(tx) === assetName
-      ) {
+      if (this.clean(tx.sub_class) === subClass && this.getAssetName(tx) === assetName) {
         assetIds.add(tx.asset);
       }
     }
@@ -187,25 +163,18 @@ jobs:
   }
 
 '''
-
           if "async downloadSubClassAssets(" not in ts:
               if marker not in ts:
                   raise SystemExit("TypeScript insertion marker not found")
-              ts = ts.replace(marker, method + marker, 1)
-              ts_path.write_text(ts, encoding="utf-8")
+              ts_path.write_text(ts.replace(marker, method + marker, 1), encoding="utf-8")
 
           scss_path = Path("frontend/src/features/reports/reports.component.scss")
           scss = scss_path.read_text(encoding="utf-8")
-          css = '''
-
-.sub-class-download-action {
-  display: flex;
-  justify-content: flex-end;
-  margin-bottom: 12px;
-}
-'''
           if ".sub-class-download-action" not in scss:
-              scss_path.write_text(scss.rstrip() + css, encoding="utf-8")
+              scss_path.write_text(
+                  scss.rstrip() + "\n\n.sub-class-download-action {\n  display: flex;\n  justify-content: flex-end;\n  margin-bottom: 12px;\n}\n",
+                  encoding="utf-8",
+              )
 
       - name: Validate diff
         run: git diff --check

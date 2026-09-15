@@ -144,7 +144,12 @@ def wealth_fixed_income_analysis(request):
 def wealth_sector_allocation(request):
     owner_ids = get_visible_owner_ids(request.user)
     direct_holdings = list(UnifiedWealthAnalytics.get_equity_holdings(owner_ids))
-    equity_asset_ids = {holding.asset_id for holding in direct_holdings if getattr(holding.asset, "category", None) == "STOCK"}
+    asset_class_by_asset_id = InvestmentSummaryService._equity_asset_class_by_asset_id(owner_ids)
+    equity_asset_ids = {
+        asset_id
+        for asset_id, raw_class in asset_class_by_asset_id.items()
+        if InvestmentSummaryService._normalize_asset_class(raw_class) in InvestmentSummaryService.EQUITY_ASSET_CLASSES
+    }
     data = MutualFundLookThroughService.sector_allocation(owner_ids, direct_holdings, equity_asset_ids)
     return Response(data)
 

@@ -103,13 +103,14 @@ class OfficialMutualFundUnderlyingService(MutualFundUnderlyingService):
         for document_url in documents:
             try:
                 response = cls._fetch(document_url)
-                filename = document_url.rstrip("/").rsplit("/", 1)[-1] or "portfolio.xlsx"
+                filename = document_url.rstrip("/").rsplit("/", 1)[-1] or "portfolio.html"
+                fallback_date = cls._extract_date(response.text)
                 result = cls.import_document(
                     scheme,
                     response.content,
                     filename,
                     document_url,
-                    fallback_date=None,
+                    fallback_date=fallback_date,
                 )
                 return result
             except Exception as exc:

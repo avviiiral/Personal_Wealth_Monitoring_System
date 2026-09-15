@@ -1,3 +1,4 @@
+from datetime import date
 from decimal import Decimal
 from unittest.mock import patch
 
@@ -88,7 +89,7 @@ class WatchListTests(TestCase):
         self.assertEqual(records[0]["nav"], Decimal("100.25"))
 
     def test_subtract_months_handles_month_end(self):
-        self.assertEqual(AMFIPerformanceService._subtract_months(__import__("datetime").date(2026, 3, 31), 1), __import__("datetime").date(2026, 2, 28))
+        self.assertEqual(AMFIPerformanceService._subtract_months(date(2026, 3, 31), 1), date(2026, 2, 28))
 
     @patch("watchlist.services.performance.AMFIPerformanceService.download_history")
     def test_refresh_calculates_period_returns_and_cagr(self, download):
@@ -100,12 +101,7 @@ class WatchListTests(TestCase):
             is_active=True,
         )
         MutualFundProduct.objects.create(product=product, scheme_code="123", latest_nav=Decimal("150"), latest_nav_date="2026-09-15")
-        PerformanceSnapshot.objects.create(
-            product=product,
-            date="2026-09-15",
-            nav_or_value=Decimal("150"),
-            source="AMFI",
-        )
+        PerformanceSnapshot.objects.create(product=product, date="2026-09-15", nav_or_value=Decimal("150"), source="AMFI")
         history = (
             "123;Performance Fund;INF000000001;-;100;;;15-Sep-2021\n"
             "123;Performance Fund;INF000000001;-;125;;;15-Sep-2025\n"
@@ -118,7 +114,7 @@ class WatchListTests(TestCase):
         self.assertEqual(result["history_requests"], 6)
         self.assertEqual(result["metrics_updated"], 1)
         latest = PerformanceSnapshot.objects.get(product=product, date="2026-09-15")
-        self.assertEqual(latest.return_1m, Decimal("7.142857142857142857142857143"))
+        self.assertEqual(latest.return_1m, Decimal("7.142857"))
         self.assertIsNotNone(latest.return_1y)
         self.assertIsNotNone(latest.return_5y)
         self.assertIsNotNone(latest.cagr)

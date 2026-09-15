@@ -1,38 +1,27 @@
+import csv
+import io
+import os
 import re
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 
 import requests
 from django.db import transaction
 from django.utils import timezone
 
-from watchlist.models import (
-    DiscoveryRun,
-    InvestmentProduct,
-    MutualFundProduct,
-    PerformanceSnapshot,
-    ProductType,
-)
+from watchlist.models import DiscoveryRun, InvestmentProduct, MutualFundProduct, PerformanceSnapshot, PMSProduct, ProductType
 
 
 class AMFIUniverseService:
-    """Discover Indian mutual-fund products from AMFI's authoritative NAV feed.
-
-    AMFI's feed is intentionally used as the discovery boundary: it gives the
-    application a complete, data-driven Indian MF universe without maintaining
-    AMC/fund mappings in source code. Metadata not present in the feed remains
-    null rather than being guessed.
-    """
-
     NAV_URL = "https://www.amfiindia.com/spages/NAVAll.txt"
     SOURCE = "AMFI"
 
     @staticmethod
     def _headers():
-        return {"User-Agent": "PWMS/WatchList (+https://github.com/avviiiral/Personal_Wealth_Monitoring_System)"}
+        return {"User-Agent": "PWMS-WatchList/1.0"}
 
-    @classmethod
-    def _decimal(cls, value):
+    @staticmethod
+    def _decimal(value):
         if value in (None, "", "-"):
             return None
         try:
@@ -46,7 +35,6 @@ class AMFIUniverseService:
 
     @classmethod
     def parse_latest_feed(cls, text):
-        """Parse the semicolon-delimited AMFI feed and retain generic AMC groups."""
         provider = None
         records = []
         for raw_line in text.splitlines():
@@ -66,34 +54,19 @@ class AMFIUniverseService:
             if nav is None:
                 continue
             try:
-                nav_date = date.fromisoformat(
-                    timezone.datetime.strptime(parts[7], "%d-%b-%Y").date().isoformat()
-                )
+                nav_date = datetime.strptime(parts[7], "%d-%b-%Y").date()
             except (ValueError, TypeError):
                 continue
             name = parts[3]
-            plan = parts[4] or None
-            option = parts[5] or None
             isin1 = parts[1] if parts[1] not in {"-", ""} else None
             isin2 = parts[2] if parts[2] not in {"-", ""} else None
             growth_isin = isin1 if "growth" in name.lower() and "idcw" not in name.lower() else None
-            dividend_isin = isin1 if growth_isin is None else None
-            if dividend_isin is None and isin2:
-                dividend_isin = isin2
-            records.append(
-                {
-                    "scheme_code": parts[0],
-                    "name": name,
-                    "provider": provider,
-                    "plan": plan,
-                    "option": option,
-                    "isin": growth_isin or dividend_isin,
-                    "isin_growth": growth_isin,
-                    "isin_dividend": dividend_isin,
-                    "nav": nav,
-                    "date": nav_date,
-                }
-            )
+            selected_isin = growth_isin or isin1 or isin2
+            records.append({
+                "scheme_code": parts[0], "name": name, "provider": provider,
+                "plan": parts[4] or None, "option": parts[5] or None,
+                "isin": selected_isin, "nav": nav, "date": nav_date,
+            })
         return records
 
     @classmethod
@@ -117,49 +90,29 @@ class AMFIUniverseService:
             records = cls.parse_latest_feed(cls.download_latest())
             for record in records:
                 try:
-                    identity = cls.identity(record)
                     product, created = InvestmentProduct.objects.update_or_create(
-                        identity_key=identity,
+                        identity_key=cls.identity(record),
                         defaults={
                             "product_type": ProductType.MUTUAL_FUND,
-                            "name": record["name"],
-                            "provider": record.get("provider"),
-                            "country": "India",
-                            "isin": record.get("isin"),
-                            "external_identifier": record.get("scheme_code"),
-                            "currency": "INR",
-                            "source": cls.SOURCE,
-                            "source_reference": cls.NAV_URL,
-                            "source_date": record["date"],
-                            "is_active": True,
+                            "name": record["name"], "provider": record.get("provider"), "country": "India",
+                            "isin": record.get("isin"), "external_identifier": record.get("scheme_code"),
+                            "currency": "INR", "source": cls.SOURCE, "source_reference": cls.NAV_URL,
+                            "source_date": record["date"], "is_active": True,
                         },
                     )
                     MutualFundProduct.objects.update_or_create(
                         product=product,
-                        defaults={
-                            "scheme_code": record["scheme_code"],
-                            "plan": record.get("plan"),
-                            "option": record.get("option"),
-                            "latest_nav": record["nav"],
-                            "latest_nav_date": record["date"],
-                        },
+                        defaults={"scheme_code": record["scheme_code"], "plan": record.get("plan"), "option": record.get("option"), "latest_nav": record["nav"], "latest_nav_date": record["date"]},
                     )
                     PerformanceSnapshot.objects.update_or_create(
-                        product=product,
-                        date=record["date"],
-                        source=cls.SOURCE,
-                        defaults={
-                            "nav_or_value": record["nav"],
-                            "source_reference": cls.NAV_URL,
-                        },
+                        product=product, date=record["date"], source=cls.SOURCE,
+                        defaults={"nav_or_value": record["nav"], "source_reference": cls.NAV_URL},
                     )
                     discovered += 1
                     updated += int(not created)
                 except Exception:
                     failed += 1
-            run.discovered = discovered
-            run.updated = updated
-            run.failed = failed
+            run.discovered, run.updated, run.failed = discovered, updated, failed
             run.details = {"source_reference": cls.NAV_URL}
             run.finished_at = timezone.now()
             run.save(update_fields=["discovered", "updated", "failed", "details", "finished_at"])
@@ -171,54 +124,88 @@ class AMFIUniverseService:
             run.save(update_fields=["failed", "details", "finished_at"])
             raise
 
-    @classmethod
-    def calculate_returns(cls, product):
-        """Calculate product returns only from stored NAV observations."""
-        latest = product.performance_snapshots.order_by("-date").first()
-        if not latest or latest.nav_or_value is None:
-            return {}
-        target_days = {"return_1d": 1, "return_1w": 7, "return_1m": 30, "return_3m": 90, "return_6m": 180, "return_1y": 365, "return_3y": 1095, "return_5y": 1825}
-        snapshots = list(product.performance_snapshots.order_by("date"))
-        values = {item.date: item.nav_or_value for item in snapshots if item.nav_or_value is not None}
-        result = {}
-        for field, days in target_days.items():
-            target = latest.date - timedelta(days=days)
-            candidates = [d for d in values if d <= target]
-            if not candidates:
-                continue
-            base_date = max(candidates)
-            base = values[base_date]
-            if base in (None, 0):
-                continue
-            result[field] = ((latest.nav_or_value / base) - 1) * Decimal("100")
-        if "return_1y" in result:
-            result["cagr"] = result["return_1y"]
-        PerformanceSnapshot.objects.filter(pk=latest.pk).update(**result)
-        return result
-
 
 class PMSDiscoveryService:
-    """Provider-neutral PMS discovery hook.
+    """Generic JSON/CSV adapter for authoritative PMS source endpoints.
 
-    PMS data is not standardized like AMFI's MF NAV feed. PWMS therefore does
-    not invent a provider list. Deployments can supply authoritative source
-    endpoints through WATCHLIST_PMS_SOURCE_URLS and implement a parser for the
-    returned schema without changing the product model or ownership logic.
+    Source URLs are deployment configuration, not code-level provider mappings.
+    The adapter accepts records using the conceptual PMS fields in the Watch
+    List model and ignores unknown fields. Missing fields remain null.
     """
 
     SOURCE = "PMS_CONFIGURED_SOURCE"
 
     @classmethod
     def configured_sources(cls):
-        import os
         return [u.strip() for u in os.getenv("WATCHLIST_PMS_SOURCE_URLS", "").split(",") if u.strip()]
+
+    @staticmethod
+    def _records(response):
+        content_type = response.headers.get("Content-Type", "").lower()
+        if "json" in content_type or response.text.lstrip().startswith(("[", "{")):
+            payload = response.json()
+            if isinstance(payload, dict):
+                payload = payload.get("results") or payload.get("data") or []
+            return payload if isinstance(payload, list) else []
+        return list(csv.DictReader(io.StringIO(response.text)))
 
     @classmethod
     def refresh(cls):
-        return {
-            "discovered": 0,
-            "updated": 0,
-            "failed": 0,
-            "configured_sources": cls.configured_sources(),
-            "message": "No PMS provider was imported because no authoritative source adapter is configured.",
-        }
+        sources = cls.configured_sources()
+        if not sources:
+            return {"discovered": 0, "updated": 0, "failed": 0, "configured_sources": [], "message": "No authoritative PMS source configured; no PMS values were fabricated."}
+        discovered = updated = failed = 0
+        for source_url in sources:
+            run = DiscoveryRun.objects.create(source=cls.SOURCE)
+            try:
+                response = requests.get(source_url, headers={"User-Agent": "PWMS-WatchList/1.0"}, timeout=60)
+                response.raise_for_status()
+                for row in cls._records(response):
+                    try:
+                        name = str(row.get("pms_name") or row.get("name") or row.get("strategy_name") or "").strip()
+                        if not name:
+                            continue
+                        identifier = str(row.get("external_identifier") or row.get("strategy_id") or name).strip()
+                        product, created = InvestmentProduct.objects.update_or_create(
+                            identity_key=f"PMS:{identifier.upper()}",
+                            defaults={
+                                "product_type": ProductType.PMS, "name": name,
+                                "provider": row.get("provider") or row.get("pms_provider"),
+                                "country": row.get("country"), "category": row.get("category"),
+                                "sub_category": row.get("sub_category"), "external_identifier": identifier,
+                                "currency": row.get("currency") or "INR", "source": cls.SOURCE,
+                                "source_reference": source_url, "official_website": row.get("official_website"),
+                            },
+                        )
+                        PMSProduct.objects.update_or_create(
+                            product=product,
+                            defaults={
+                                "strategy_name": row.get("strategy_name") or name, "strategy_type": row.get("strategy_type"),
+                                "asset_class": row.get("asset_class"), "benchmark": row.get("benchmark"),
+                                "aum": cls._decimal(row.get("aum")), "minimum_investment": cls._decimal(row.get("minimum_investment")),
+                                "latest_value": cls._decimal(row.get("latest_value")), "risk_information": row.get("risk_information"),
+                            },
+                        )
+                        source_date = None
+                        raw_date = row.get("source_date") or row.get("date")
+                        if raw_date:
+                            try:
+                                source_date = datetime.fromisoformat(str(raw_date)[:10]).date()
+                            except ValueError:
+                                source_date = None
+                        if source_date:
+                            product.source_date = source_date
+                            product.save(update_fields=["source_date", "updated_at"])
+                        discovered += 1
+                        updated += int(not created)
+                    except Exception:
+                        failed += 1
+                run.details = {"source_reference": source_url}
+            except Exception as exc:
+                failed += 1
+                run.details = {"source_reference": source_url, "error": str(exc)}
+            finally:
+                run.discovered, run.updated, run.failed = discovered, updated, failed
+                run.finished_at = timezone.now()
+                run.save(update_fields=["discovered", "updated", "failed", "details", "finished_at"])
+        return {"discovered": discovered, "updated": updated, "failed": failed, "configured_sources": sources}

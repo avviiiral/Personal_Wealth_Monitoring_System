@@ -13,12 +13,13 @@
 .filters input, .filters select { min-width: 0; border: 1px solid var(--border, #e5e7eb); border-radius: 8px; padding: 9px 11px; background: var(--surface, white); color: inherit; }
 .apply-button { background: var(--surface-strong, #111827); color: white; }
 .table-wrap { overflow: auto; border: 1px solid var(--border, #e5e7eb); border-radius: 10px; background: var(--surface, white); }
-table { width: 100%; min-width: 1100px; border-collapse: collapse; }
+table { width: 100%; min-width: 1250px; border-collapse: collapse; }
 th, td { padding: 12px 14px; border-bottom: 1px solid var(--border, #e5e7eb); text-align: right; white-space: nowrap; }
-th:first-child, td:first-child, th:nth-child(2), td:nth-child(2), th:nth-child(3), td:nth-child(3) { text-align: left; }
+th:first-child, td:first-child, th:nth-child(2), td:nth-child(2), th:nth-child(3), td:nth-child(3), th:nth-child(4), td:nth-child(4) { text-align: left; }
 th { font-size: 12px; color: var(--text-secondary, #6b7280); font-weight: 600; }
 .product-name { font-weight: 600; }
 .secondary { margin-top: 3px; font-size: 11px; color: var(--text-secondary, #6b7280); }
+.ownership-row { min-width: 210px; margin-bottom: 4px; }
 .status { display: inline-block; padding: 4px 8px; border-radius: 999px; font-size: 11px; background: #f3f4f6; color: #4b5563; }
 .status.owned { background: #e8f5e9; color: #166534; }
 .state, .empty, .error { padding: 24px; text-align: center; }

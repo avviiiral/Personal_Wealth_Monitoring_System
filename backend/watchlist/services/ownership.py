@@ -24,13 +24,6 @@ class OwnershipService:
         assets = cls._asset_queryset(product)
         if product.product_type == ProductType.MUTUAL_FUND:
             assets = assets.filter(category=AssetCategory.MUTUAL_FUND)
-        else:
-            # PMS holdings are not a separate AssetCategory in the existing
-            # schema. Match only existing product identity/institution/name;
-            # transaction-level PMS labels are intentionally not copied into a
-            # second ownership table.
-            assets = assets.filter(Q(name__icontains=product.name) | Q(institution__icontains=product.provider or "\u0000"))
-
         positions = PortfolioPosition.objects.filter(owner=user, asset__in=assets).select_related("asset")
         rows = []
         for position in positions:

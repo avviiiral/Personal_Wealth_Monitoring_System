@@ -10,6 +10,7 @@ from .views import (
     portfolio_holdings,
     portfolio_tree,
 )
+from .holding_report_views import holding_report
 
 from .manual_price_views import (
     manual_asset_price,
@@ -57,6 +58,12 @@ urlpatterns = [
         "holdings/",
         portfolio_holdings,
         name="portfolio-holdings",
+    ),
+
+    path(
+        "holding-report/",
+        holding_report,
+        name="holding-report",
     ),
 
     path(

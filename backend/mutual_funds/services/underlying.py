@@ -100,7 +100,8 @@ class MutualFundUnderlyingService:
         if isin and isin not in {"-", "NA", "N/A"}:
             return f"ISIN:{isin}"
         name = re.sub(r"[^A-Z0-9]+", " ", cls.normalize_text(security_name).upper())
-        return f"NAME:{re.sub(r'\s+', ' ', name).strip()}"
+        normalized_name = re.sub(r"\s+", " ", name).strip()
+        return f"NAME:{normalized_name}"
 
     @classmethod
     def _extract_date(cls, text):
@@ -231,26 +232,6 @@ class MutualFundUnderlyingService:
         return urls[: cls.MAX_SEARCH_RESULTS]
 
     @classmethod
-    def _discover_amc_domains_from_amfi(cls, scheme):
-        domains = []
-        pages = []
-        for url in (cls.AMFI_DISCLOSURE_URL, cls.AMFI_SCHEME_DETAILS_URL):
-            try:
-                response = cls._fetch(url)
-                pages.append((url, response.text))
-            except Exception:
-                logger.debug("Unable to inspect AMFI page: %s", url, exc_info=True)
-
-        for page_url, html in pages:
-            for link in cls._official_links(html, page_url):
-                parsed = urlparse(link)
-                if not parsed.netloc:
-                    continue
-                if cls._host_looks_like_amc(parsed.netloc, scheme):
-                    domains.append(f"{parsed.scheme}://{parsed.netloc}")
-        return list(dict.fromkeys(domains))
-
-    @classmethod
     def _search_official_pages(cls, scheme):
         scheme_name = cls.normalize_text(scheme.scheme_name)
         amc_name = cls.normalize_text(getattr(scheme, "amc_name", ""))
@@ -284,11 +265,12 @@ class MutualFundUnderlyingService:
                     response = cls._fetch(url)
                 except Exception:
                     continue
-                if not (cls._matches_scheme(response.text, scheme) or cls._matches_scheme(url, scheme)):
+                body = response.text
+                if not (cls._matches_scheme(body, scheme) or cls._matches_scheme(url, scheme)):
                     continue
-                if not re.search(r"portfolio|holding|disclosure|investment|scheme", response.text, re.I):
+                if not re.search(r"portfolio|holding|disclosure|investment|scheme", body, re.I):
                     continue
-                pages.append((url, response.text))
+                pages.append((url, body))
         return pages
 
     @classmethod
@@ -300,10 +282,24 @@ class MutualFundUnderlyingService:
         ]
 
     @classmethod
+    def _discover_amc_domains_from_amfi(cls, scheme):
+        domains = []
+        for url in (cls.AMFI_DISCLOSURE_URL, cls.AMFI_SCHEME_DETAILS_URL):
+            try:
+                response = cls._fetch(url)
+            except Exception:
+                logger.debug("Unable to inspect AMFI page: %s", url, exc_info=True)
+                continue
+            for link in cls._official_links(response.text, url):
+                parsed = urlparse(link)
+                if parsed.netloc and cls._host_looks_like_amc(parsed.netloc, scheme):
+                    domains.append(f"{parsed.scheme}://{parsed.netloc}")
+        return list(dict.fromkeys(domains))
+
+    @classmethod
     def discover_documents(cls, scheme):
         candidates = []
 
-        # AMFI index itself.
         try:
             response = cls._fetch(cls.AMFI_DISCLOSURE_URL)
             for link in cls._official_links(response.text, cls.AMFI_DISCLOSURE_URL):
@@ -312,12 +308,8 @@ class MutualFundUnderlyingService:
         except Exception:
             logger.debug("Unable to inspect AMFI portfolio disclosure page", exc_info=True)
 
-        # Discover official AMC domain dynamically from AMFI where possible.
         dynamic_domains = cls._discover_amc_domains_from_amfi(scheme)
         pages = cls._search_official_pages(scheme)
-
-        # Also inspect the dynamically discovered AMC homepages. This is useful
-        # when the disclosure page is not indexed by search engines.
         existing_hosts = {urlparse(url).netloc.lower() for url, _ in pages}
         for domain in dynamic_domains:
             if urlparse(domain).netloc.lower() in existing_hosts:
@@ -345,6 +337,7 @@ class MutualFundUnderlyingService:
                 candidates.append(page_url)
 
             host = urlparse(page_url).netloc.lower()
+            child_links = []
             for child in cls._official_links(html, page_url):
                 child_lower = child.lower()
                 child_host = urlparse(child).netloc.lower()
@@ -353,24 +346,33 @@ class MutualFundUnderlyingService:
                 if child_lower.endswith((".xlsx", ".xls", ".csv", ".pdf")):
                     candidates.append(child)
                     continue
-                if child in visited or len(queue) >= cls.MAX_CRAWL_PAGES:
+                if child in visited:
                     continue
                 if cls._matches_scheme(child, scheme) or re.search(
                     r"portfolio|holding|disclosure|download|factsheet|monthly|half.?yearly|scheme",
                     child_lower,
                     re.I,
                 ):
-                    try:
-                        response = cls._fetch(child, referer=page_url)
-                    except Exception:
-                        continue
-                    queue.append((child, response.text))
+                    child_links.append(child)
+
+            for child in child_links[: cls.MAX_DETAIL_LINKS]:
+                if len(visited) + len(queue) >= cls.MAX_CRAWL_PAGES:
+                    break
+                try:
+                    response = cls._fetch(child, referer=page_url)
+                except Exception:
+                    continue
+                queue.append((child, response.text))
 
         return list(dict.fromkeys(candidates))
 
     @classmethod
+    @transaction.atomic
+    def import_document(cls, scheme, content, filename, source_reference, fallback_date=None):
+        raise NotImplementedError
+
+    @classmethod
     def _portfolio_scheme_pairs(cls, owner_ids=None):
-        """Return only MF schemes represented by the user's live portfolio."""
         holdings = Holding.objects.select_related("asset").filter(
             asset__category=AssetCategory.MUTUAL_FUND,
             quantity__gt=0,
@@ -390,22 +392,31 @@ class MutualFundUnderlyingService:
 
             scheme = None
             if asset.isin:
-                scheme = schemes.filter(isin_growth__iexact=asset.isin).first() or schemes.filter(isin_dividend__iexact=asset.isin).first()
+                scheme = schemes.filter(isin_growth__iexact=asset.isin).first()
+                if scheme is None:
+                    scheme = schemes.filter(isin_dividend__iexact=asset.isin).first()
             if scheme is None:
-                asset_name = cls.normalize_text(asset.name).lower()
+                normalized_asset = cls.normalize_text(asset.name).lower()
                 for candidate in schemes.order_by("id"):
                     candidate_name = cls.normalize_text(candidate.scheme_name).lower()
-                    if asset_name == candidate_name or asset_name in candidate_name or candidate_name in asset_name:
+                    if normalized_asset == candidate_name or normalized_asset in candidate_name or candidate_name in normalized_asset:
                         scheme = candidate
                         break
-            if scheme is not None and (holding.owner_id, scheme.id) not in seen:
-                seen.add((holding.owner_id, scheme.id))
+            if scheme is None:
+                logger.warning("No MutualFundScheme matched live portfolio asset %s (%s)", asset.id, asset.name)
+                continue
+
+            key = (holding.owner_id, scheme.id)
+            if key not in seen:
+                seen.add(key)
                 pairs.append((holding.owner_id, scheme))
         return pairs
 
     @classmethod
     def fetch_scheme(cls, scheme):
-        raise NotImplementedError
+        raise NotImplementedError(
+            "fetch_scheme must be implemented by a MutualFundUnderlyingService subclass."
+        )
 
     @classmethod
     def fetch_all_active(cls, owner_ids=None):
@@ -415,7 +426,10 @@ class MutualFundUnderlyingService:
             results["schemes"] += 1
             try:
                 result = cls.fetch_scheme(scheme)
-                results["imported" if result["status"] == "imported" else "already_imported"] += 1
+                if result["status"] == "imported":
+                    results["imported"] += 1
+                else:
+                    results["already_imported"] += 1
             except Exception as exc:
                 results["failed"] += 1
                 results["errors"].append({

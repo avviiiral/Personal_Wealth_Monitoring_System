@@ -472,7 +472,8 @@
 :host-context(html.dark-theme) .holding-table th,
 :host-context(html.dark-theme) .asset-columns-header,
 :host-context(html.dark-theme) .holding-detail,
-:host-context(html.dark-theme) .detail-row {
+:host-context(html.dark-theme) .detail-row,
+:host-context(html.dark-theme) .detail-container {
   background: #12151c;
 }
 
@@ -480,7 +481,8 @@
 :host-context(html.dark-theme) .holding-table th,
 :host-context(html.dark-theme) .asset-columns-header,
 :host-context(html.dark-theme) .holding-group + .holding-group,
-:host-context(html.dark-theme) .holding-detail {
+:host-context(html.dark-theme) .holding-detail,
+:host-context(html.dark-theme) .detail-container {
   border-color: #2a2e38;
 }
 

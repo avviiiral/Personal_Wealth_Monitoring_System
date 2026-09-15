@@ -21,51 +21,101 @@ logger = logging.getLogger(__name__)
 
 
 DEFAULT_LOOKBACK_DAYS = 3
+
+# Gemini calls are now made in batches rather than once per article.
+# Keep this at zero by default because batching already provides the
+# request-rate reduction that the old per-article delay was intended to
+# provide.
 DEFAULT_AI_CALL_DELAY_SECONDS = 0.0
+
+# Cost control: even after the deterministic HoldingMatcher filter, a
+# single holding can surface many candidate articles. This caps how many
+# articles for a holding are selected for AI analysis in one monitoring
+# run. Remaining candidates are deferred to the next run.
 DEFAULT_MAX_ARTICLES_PER_HOLDING = 15
+
+# Safety limit for Gemini request size. Multiple holdings are combined
+# into batches, but a single request should not contain an unbounded
+# number of articles.
 DEFAULT_MAX_BATCH_ARTICLES = 50
+
+# Deterministic floor below which an AI-judged relevance_score is treated
+# as noise. The alert row is still created for idempotency but marked
+# not relevant so it does not appear in the user's feed.
 DEFAULT_MIN_RELEVANCE_SCORE = 30
+
+# Same idea, but against the final composite alert_score.
 DEFAULT_MIN_ALERT_SCORE = 2.0
 
 
 def _get_ai_call_delay_seconds() -> float:
     try:
-        return float(os.environ.get("NEWS_MONITOR_AI_CALL_DELAY_SECONDS", DEFAULT_AI_CALL_DELAY_SECONDS))
+        return float(
+            os.environ.get(
+                "NEWS_MONITOR_AI_CALL_DELAY_SECONDS",
+                DEFAULT_AI_CALL_DELAY_SECONDS,
+            )
+        )
     except (TypeError, ValueError):
         return DEFAULT_AI_CALL_DELAY_SECONDS
 
 
 def _get_lookback_days() -> int:
     try:
-        return int(os.environ.get("NEWS_MONITOR_LOOKBACK_DAYS", DEFAULT_LOOKBACK_DAYS))
+        return int(
+            os.environ.get(
+                "NEWS_MONITOR_LOOKBACK_DAYS",
+                DEFAULT_LOOKBACK_DAYS,
+            )
+        )
     except (TypeError, ValueError):
         return DEFAULT_LOOKBACK_DAYS
 
 
 def _get_max_articles_per_holding() -> int:
     try:
-        return int(os.environ.get("NEWS_MONITOR_MAX_ARTICLES_PER_HOLDING", DEFAULT_MAX_ARTICLES_PER_HOLDING))
+        return int(
+            os.environ.get(
+                "NEWS_MONITOR_MAX_ARTICLES_PER_HOLDING",
+                DEFAULT_MAX_ARTICLES_PER_HOLDING,
+            )
+        )
     except (TypeError, ValueError):
         return DEFAULT_MAX_ARTICLES_PER_HOLDING
 
 
 def _get_max_batch_articles() -> int:
     try:
-        return int(os.environ.get("NEWS_MONITOR_MAX_BATCH_ARTICLES", DEFAULT_MAX_BATCH_ARTICLES))
+        return int(
+            os.environ.get(
+                "NEWS_MONITOR_MAX_BATCH_ARTICLES",
+                DEFAULT_MAX_BATCH_ARTICLES,
+            )
+        )
     except (TypeError, ValueError):
         return DEFAULT_MAX_BATCH_ARTICLES
 
 
 def _get_min_relevance_score() -> int:
     try:
-        return int(os.environ.get("NEWS_MONITOR_MIN_RELEVANCE_SCORE", DEFAULT_MIN_RELEVANCE_SCORE))
+        return int(
+            os.environ.get(
+                "NEWS_MONITOR_MIN_RELEVANCE_SCORE",
+                DEFAULT_MIN_RELEVANCE_SCORE,
+            )
+        )
     except (TypeError, ValueError):
         return DEFAULT_MIN_RELEVANCE_SCORE
 
 
 def _get_min_alert_score() -> float:
     try:
-        return float(os.environ.get("NEWS_MONITOR_MIN_ALERT_SCORE", DEFAULT_MIN_ALERT_SCORE))
+        return float(
+            os.environ.get(
+                "NEWS_MONITOR_MIN_ALERT_SCORE",
+                DEFAULT_MIN_ALERT_SCORE,
+            )
+        )
     except (TypeError, ValueError):
         return DEFAULT_MIN_ALERT_SCORE
 
@@ -100,7 +150,18 @@ def _process_holding(
     min_relevance_score: Optional[int] = None,
     min_alert_score: Optional[float] = None,
 ) -> list:
-    """Fetch, filter, store and select news articles for one holding."""
+    """
+    Fetch, filter, store and select news articles for one holding.
+
+    Gemini analysis is intentionally NOT performed here anymore. The
+    selected (article, holding) pairs are returned to the user-level
+    pipeline so multiple holdings can be analyzed in the same Gemini
+    request.
+
+    The analyzer and AI-related threshold arguments remain in the
+    signature for compatibility with existing callers/tests. AI work
+    is performed centrally by run_portfolio_news_monitor().
+    """
     from ..models import PortfolioNewsAlert
 
     resolved_max_articles = (
@@ -120,6 +181,7 @@ def _process_holding(
         return []
 
     stats["queries_run"] += len(queries)
+
     candidates = []
     seen_urls = set()
 
@@ -129,16 +191,19 @@ def _process_holding(
         except Exception:
             stats["provider_failures"] += 1
             logger.warning(
-                "Provider search raised for query=%r holding=%r: continuing with remaining queries",
+                "Provider search raised for query=%r holding=%r: "
+                "continuing with remaining queries",
                 query,
                 holding.display_name,
             )
             continue
 
         stats["articles_retrieved"] += len(results)
+
         for result in results:
             if result.url in seen_urls:
                 continue
+
             seen_urls.add(result.url)
             candidates.append(result)
 
@@ -179,6 +244,8 @@ def _process_holding(
         else:
             stats["duplicates_skipped"] += 1
 
+        # Never re-analyze an article already processed for this exact
+        # (user, holding) pair, regardless of the previous relevance.
         already_processed = PortfolioNewsAlert.objects.filter(
             user=user,
             article=article,
@@ -194,7 +261,8 @@ def _process_holding(
             and articles_selected_this_holding >= resolved_max_articles
         ):
             logger.info(
-                "user_id=%s holding=%r reached max_articles_per_holding=%s, deferring remaining candidates to next run",
+                "user_id=%s holding=%r reached max_articles_per_holding=%s, "
+                "deferring remaining candidates to next run",
                 user.id,
                 holding.display_name,
                 resolved_max_articles,
@@ -208,8 +276,13 @@ def _process_holding(
     return selected_pairs
 
 
-def _analyze_one_pair_compatibly(analyzer, article, holding, user=None):
-    """Use the batch API when available, otherwise preserve legacy analyzers."""
+def _analyze_one_pair_compatibly(
+    analyzer,
+    article,
+    holding,
+    user=None,
+):
+    """Use batch analysis when available, otherwise use the legacy API."""
     analyze_batch = getattr(analyzer, "analyze_batch", None)
     if callable(analyze_batch):
         results = analyze_batch([(article, holding)], user=user) or {}
@@ -230,7 +303,14 @@ def _analyze_batches_for_user(
     max_batch_articles: int,
     stats: dict,
 ) -> dict:
-    """Analyze all selected article/holding pairs in bounded batches."""
+    """
+    Analyze all selected article/holding pairs for a user in bounded
+    Gemini batches.
+
+    Returns a mapping keyed by:
+        (article_id, holding_type, holding_id)
+    to ArticleAnalysis.
+    """
     if not article_holding_pairs:
         return {}
 
@@ -240,10 +320,13 @@ def _analyze_batches_for_user(
     analyses = {}
 
     for start in range(0, len(article_holding_pairs), max_batch_articles):
-        batch = article_holding_pairs[start : start + max_batch_articles]
+        batch = article_holding_pairs[
+            start : start + max_batch_articles
+        ]
 
         logger.info(
-            "Running Gemini batch analysis for user_id=%s batch=%d-%d of %d article/holding pairs",
+            "Running Gemini batch analysis for user_id=%s batch=%d-%d "
+            "of %d article/holding pairs",
             user.id,
             start + 1,
             start + len(batch),
@@ -252,20 +335,33 @@ def _analyze_batches_for_user(
 
         try:
             if callable(getattr(analyzer, "analyze_batch", None)):
-                batch_results = analyzer.analyze_batch(batch, user=user) or {}
+                batch_results = analyzer.analyze_batch(
+                    batch,
+                    user=user,
+                )
             else:
                 batch_results = {}
                 for article, holding in batch:
                     analysis = _analyze_one_pair_compatibly(
-                        analyzer, article, holding, user=user
+                        analyzer,
+                        article,
+                        holding,
+                        user=user,
                     )
                     if analysis is not None:
                         batch_results[
-                            (article.id, holding.holding_type, holding.holding_id)
+                            (
+                                article.id,
+                                holding.holding_type,
+                                holding.holding_id,
+                            )
                         ] = analysis
         except Exception:
+            # Keep the whole monitoring run alive even if a custom
+            # analyzer implementation unexpectedly raises.
             logger.exception(
-                "Gemini batch analyzer raised for user_id=%s batch_start=%s batch_size=%s",
+                "Gemini batch analyzer raised for user_id=%s "
+                "batch_start=%s batch_size=%s",
                 user.id,
                 start,
                 len(batch),
@@ -293,10 +389,17 @@ def _create_alerts_from_analyses(
 ) -> None:
     """Create the existing PortfolioNewsAlert rows from batch results."""
     for article, holding in article_holding_pairs:
-        key = (article.id, holding.holding_type, holding.holding_id)
+        key = (
+            article.id,
+            holding.holding_type,
+            holding.holding_id,
+        )
+
         analysis = analyses.get(key)
 
         if analysis is None:
+            # Missing result means Gemini did not return a usable
+            # analysis for this pair. Do not manufacture an alert.
             continue
 
         if analysis.relevance_score < min_relevance_score:
@@ -311,7 +414,8 @@ def _create_alerts_from_analyses(
             )
         except Exception:
             logger.exception(
-                "Failed to create alert for article id=%s holding=%r user_id=%s",
+                "Failed to create alert for article id=%s holding=%r "
+                "user_id=%s",
                 article.id,
                 holding.display_name,
                 user.id,
@@ -323,10 +427,21 @@ def _create_alerts_from_analyses(
 
         stats["alerts_created"] += 1
 
-        if alert.relevant and alert.alert_score < min_alert_score:
+        # Apply the deterministic final alert-score floor exactly as
+        # before. The alert row remains for idempotency but is hidden
+        # from the feed and cannot trigger a notification.
+        if (
+            alert.relevant
+            and alert.alert_score < min_alert_score
+        ):
             alert.relevant = False
             alert.notification_sent = False
-            alert.save(update_fields=["relevant", "notification_sent"])
+            alert.save(
+                update_fields=[
+                    "relevant",
+                    "notification_sent",
+                ]
+            )
 
         if alert.notification_sent:
             stats["notifications_sent"] += 1
@@ -341,40 +456,84 @@ def run_portfolio_news_monitor(
     min_relevance_score: Optional[int] = None,
     min_alert_score: Optional[float] = None,
 ) -> dict:
-    """Run portfolio news monitoring with bounded batch AI analysis."""
+    """
+    Runs the full portfolio news monitoring pipeline for every active
+    user: load holdings -> generate queries -> retrieve news ->
+    deterministic relevance filter -> deduplicate -> select articles ->
+    batch AI analysis -> portfolio-weighted alert creation.
+
+    Gemini analysis is performed in bounded batches across ALL holdings
+    belonging to the same user. This avoids one Gemini request per
+    article/holding pair and substantially reduces request-per-minute
+    pressure.
+
+    Safe to run repeatedly: deduplication and the
+    (user, article, holding) uniqueness constraint mean re-runs never
+    create duplicate alerts or duplicate articles.
+
+    Every operational threshold is configurable via environment
+    variable (falling back to a documented default when unset or
+    invalid):
+
+        NEWS_MONITOR_LOOKBACK_DAYS (default 3)
+        NEWS_MONITOR_AI_CALL_DELAY_SECONDS (default 0.0)
+        NEWS_MONITOR_MAX_ARTICLES_PER_HOLDING (default 15)
+        NEWS_MONITOR_MAX_BATCH_ARTICLES (default 50)
+        NEWS_MONITOR_MIN_RELEVANCE_SCORE (default 30)
+        NEWS_MONITOR_MIN_ALERT_SCORE (default 2.0)
+
+    NEWS_MONITOR_INTERVAL, the delay between runs when using
+    `monitor_portfolio_news --loop`, is read by the management command.
+    """
     provider = provider or GoogleNewsRSSProvider()
     analyzer = analyzer or GeminiArticleAnalyzer()
 
     resolved_lookback_days = (
-        lookback_days if lookback_days is not None else _get_lookback_days()
+        lookback_days
+        if lookback_days is not None
+        else _get_lookback_days()
     )
+
+    # Kept as a configurable argument for backwards compatibility.
+    # Batching means there is no per-article sleep anymore. A positive
+    # value is applied once before each Gemini batch request.
     resolved_ai_call_delay_seconds = (
         ai_call_delay_seconds
         if ai_call_delay_seconds is not None
         else _get_ai_call_delay_seconds()
     )
+
     resolved_max_articles_per_holding = (
         max_articles_per_holding
         if max_articles_per_holding is not None
         else _get_max_articles_per_holding()
     )
+
     resolved_max_batch_articles = _get_max_batch_articles()
+
     resolved_min_relevance_score = (
         min_relevance_score
         if min_relevance_score is not None
         else _get_min_relevance_score()
     )
+
     resolved_min_alert_score = (
         min_alert_score
         if min_alert_score is not None
         else _get_min_alert_score()
     )
 
-    from_date = timezone.now() - timedelta(days=resolved_lookback_days)
+    from_date = timezone.now() - timedelta(
+        days=resolved_lookback_days
+    )
+
     stats = _empty_stats()
 
     logger.info(
-        "Portfolio news monitoring started (lookback_days=%s, ai_call_delay_seconds=%s, max_articles_per_holding=%s, max_batch_articles=%s, min_relevance_score=%s, min_alert_score=%s)",
+        "Portfolio news monitoring started (lookback_days=%s, "
+        "ai_call_delay_seconds=%s, max_articles_per_holding=%s, "
+        "max_batch_articles=%s, min_relevance_score=%s, "
+        "min_alert_score=%s)",
         resolved_lookback_days,
         resolved_ai_call_delay_seconds,
         resolved_max_articles_per_holding,
@@ -389,23 +548,30 @@ def run_portfolio_news_monitor(
         try:
             holdings = get_monitored_holdings(user)
         except Exception:
-            logger.exception("Failed to load holdings for user_id=%s", user.id)
+            logger.exception(
+                "Failed to load holdings for user_id=%s", user.id
+            )
             continue
 
         if not holdings:
             continue
 
         stats["users_processed"] += 1
+
         logger.info(
             "Processing user_id=%s with %d holdings",
             user.id,
             len(holdings),
         )
 
+        # First collect articles across ALL holdings. Gemini is called
+        # only after the entire user's deterministic filtering stage is
+        # complete, allowing different holdings to share a request.
         user_article_holding_pairs = []
 
         for holding in holdings:
             stats["holdings_processed"] += 1
+
             holding_pairs = _process_holding(
                 user,
                 holding,
@@ -418,6 +584,7 @@ def run_portfolio_news_monitor(
                 min_relevance_score=resolved_min_relevance_score,
                 min_alert_score=resolved_min_alert_score,
             )
+
             if holding_pairs:
                 user_article_holding_pairs.extend(holding_pairs)
 
@@ -425,37 +592,58 @@ def run_portfolio_news_monitor(
             continue
 
         logger.info(
-            "user_id=%s selected %d article/holding pairs for Gemini batch analysis",
+            "user_id=%s selected %d article/holding pairs for Gemini batch "
+            "analysis",
             user.id,
             len(user_article_holding_pairs),
         )
 
+        # Apply the old delay, if explicitly configured, once per batch
+        # instead of once per article. The default is zero because the
+        # batching itself is the request-rate optimization.
         if resolved_ai_call_delay_seconds > 0:
             import time
 
             analyses = {}
-            batch_size = max(1, resolved_max_batch_articles)
 
-            for start in range(0, len(user_article_holding_pairs), batch_size):
-                batch = user_article_holding_pairs[start : start + batch_size]
+            for start in range(
+                0,
+                len(user_article_holding_pairs),
+                max(1, resolved_max_batch_articles),
+            ):
+                batch = user_article_holding_pairs[
+                    start : start + max(1, resolved_max_batch_articles)
+                ]
+
                 time.sleep(resolved_ai_call_delay_seconds)
 
                 try:
                     if callable(getattr(analyzer, "analyze_batch", None)):
-                        batch_results = analyzer.analyze_batch(batch, user=user) or {}
+                        batch_results = analyzer.analyze_batch(
+                            batch,
+                            user=user,
+                        )
                     else:
                         batch_results = {}
                         for article, holding in batch:
                             analysis = _analyze_one_pair_compatibly(
-                                analyzer, article, holding, user=user
+                                analyzer,
+                                article,
+                                holding,
+                                user=user,
                             )
                             if analysis is not None:
                                 batch_results[
-                                    (article.id, holding.holding_type, holding.holding_id)
+                                    (
+                                        article.id,
+                                        holding.holding_type,
+                                        holding.holding_id,
+                                    )
                                 ] = analysis
                 except Exception:
                     logger.exception(
-                        "Gemini batch analyzer raised for user_id=%s batch_start=%s batch_size=%s",
+                        "Gemini batch analyzer raised for user_id=%s "
+                        "batch_start=%s batch_size=%s",
                         user.id,
                         start,
                         len(batch),
@@ -463,6 +651,7 @@ def run_portfolio_news_monitor(
                     batch_results = {}
 
                 stats["ai_batch_requests"] += 1
+
                 if not batch_results:
                     stats["ai_failures"] += len(batch)
                 else:
@@ -486,4 +675,5 @@ def run_portfolio_news_monitor(
         )
 
     logger.info("Portfolio news monitoring finished: %s", stats)
+
     return stats

@@ -1,26 +1,12 @@
 import { CommonModule } from '@angular/common';
 import { Component, OnInit, inject } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { PortfolioApiService, FamilyNode, PortfolioAssetNode } from '../../core/services/portfolio-api.service';
-
-interface HoldingRow {
-  family_name: string;
-  portfolio: string;
-  asset_class: string;
-  sub_class: string;
-  asset: PortfolioAssetNode;
-}
+import { HoldingReportRow, PortfolioApiService } from '../../core/services/portfolio-api.service';
 
 interface HoldingGroup {
   key: string;
   asset_name: string;
-  asset: PortfolioAssetNode;
-  holdings: HoldingRow[];
-  quantity: number;
-  invested_value: number;
-  current_value: number;
-  pnl: number;
-  xirr: number | null;
+  row: HoldingReportRow;
 }
 
 interface SubClassGroup {
@@ -67,7 +53,7 @@ const UNASSIGNED = 'Unassigned';
 export class HoldingReportsComponent implements OnInit {
   private readonly portfolioApi = inject(PortfolioApiService);
 
-  portfolioTree: FamilyNode[] = [];
+  holdingRows: HoldingReportRow[] = [];
   loading = true;
   error = '';
 
@@ -85,9 +71,9 @@ export class HoldingReportsComponent implements OnInit {
     this.loading = true;
     this.error = '';
 
-    this.portfolioApi.getPortfolioTree().subscribe({
+    this.portfolioApi.getHoldingReport().subscribe({
       next: (response) => {
-        this.portfolioTree = response.families ?? [];
+        this.holdingRows = response.results ?? [];
         this.validateSelections();
         this.loading = false;
       },
@@ -105,124 +91,69 @@ export class HoldingReportsComponent implements OnInit {
     this.loadHoldings();
   }
 
-  private clean(value: string | null | undefined): string {
+  private clean(value: string | null | undefined, fallback = UNASSIGNED): string {
     const trimmed = value?.trim();
-    return trimmed || UNASSIGNED;
+    return trimmed || fallback;
   }
 
   get familyOptions(): string[] {
-    return Array.from(new Set(this.portfolioTree.map((family) => this.clean(family.family_name))))
+    return Array.from(new Set(this.holdingRows.map((row) => this.clean(row.family_name))))
       .sort((a, b) => a.localeCompare(b));
   }
 
   get assetClassOptions(): string[] {
-    const classes = new Set<string>();
-
-    for (const family of this.filteredFamilies) {
-      for (const portfolio of family.portfolios) {
-        for (const assetClass of portfolio.asset_classes) {
-          classes.add(this.clean(assetClass.asset_class));
-        }
-      }
-    }
-
-    return Array.from(classes).sort((a, b) => a.localeCompare(b));
+    return Array.from(new Set(this.filteredRows.map((row) => this.clean(row.asset_class))))
+      .sort((a, b) => a.localeCompare(b));
   }
 
-  private get filteredFamilies(): FamilyNode[] {
-    if (!this.selectedFamily) {
-      return this.portfolioTree;
-    }
-
-    return this.portfolioTree.filter(
-      (family) => this.clean(family.family_name) === this.selectedFamily,
-    );
+  private get filteredRows(): HoldingReportRow[] {
+    return this.holdingRows.filter((row) => {
+      const familyMatches = !this.selectedFamily || this.clean(row.family_name) === this.selectedFamily;
+      const classMatches = !this.selectedAssetClass || this.clean(row.asset_class) === this.selectedAssetClass;
+      return familyMatches && classMatches;
+    });
   }
 
   get subClassGroups(): SubClassGroup[] {
-    const groups = new Map<string, HoldingRow[]>();
+    const groups = new Map<string, HoldingReportRow[]>();
 
-    for (const family of this.filteredFamilies) {
-      for (const portfolio of family.portfolios) {
-        for (const assetClass of portfolio.asset_classes) {
-          const assetClassName = this.clean(assetClass.asset_class);
-
-          if (this.selectedAssetClass && assetClassName !== this.selectedAssetClass) {
-            continue;
-          }
-
-          for (const subClass of assetClass.sub_classes) {
-            const subClassName = this.clean(subClass.sub_class);
-
-            if (!groups.has(subClassName)) {
-              groups.set(subClassName, []);
-            }
-
-            for (const asset of subClass.assets) {
-              groups.get(subClassName)!.push({
-                family_name: this.clean(family.family_name),
-                portfolio: this.clean(portfolio.portfolio),
-                asset_class: assetClassName,
-                sub_class: subClassName,
-                asset,
-              });
-            }
-          }
-        }
+    for (const row of this.filteredRows) {
+      const subClass = this.clean(row.sub_class);
+      if (!groups.has(subClass)) {
+        groups.set(subClass, []);
       }
+      groups.get(subClass)!.push(row);
     }
 
     return Array.from(groups.entries())
       .map(([sub_class, rows]) => {
-        const holdings = this.buildHoldingGroups(rows);
-        const invested_value = holdings.reduce((sum, group) => sum + group.invested_value, 0);
-        const current_value = holdings.reduce((sum, group) => sum + group.current_value, 0);
-        const pnl = holdings.reduce((sum, group) => sum + group.pnl, 0);
+        const holdings = rows
+          .map((row) => ({
+            key: `${row.owner_id}::${row.family_name}::${row.portfolio}::${row.asset_class}::${row.asset_id}`,
+            asset_name: this.clean(row.asset_name),
+            row,
+          }))
+          .sort((a, b) => a.asset_name.localeCompare(b.asset_name));
+
+        const invested_value = rows.reduce((sum, row) => sum + this.toNumber(row.invested_value), 0);
+        const current_value = rows.reduce((sum, row) => sum + this.toNumber(row.current_value), 0);
+        const pnl = rows.reduce((sum, row) => sum + this.toNumber(row.gain), 0);
 
         return {
           sub_class,
           holdings,
-          quantity: holdings.reduce((sum, group) => sum + group.quantity, 0),
+          quantity: rows.reduce((sum, row) => sum + this.toNumber(row.quantity), 0),
           invested_value,
           current_value,
           pnl,
-          xirr: this.weightedXirr(holdings),
+          xirr: null,
         };
       })
       .sort((a, b) => a.sub_class.localeCompare(b.sub_class));
   }
 
   get holdingCount(): number {
-    return this.flattenFilteredHoldings().length;
-  }
-
-  private buildHoldingGroups(rows: HoldingRow[]): HoldingGroup[] {
-    const groups = new Map<string, HoldingRow[]>();
-
-    for (const row of rows) {
-      const key = `${row.family_name}::${row.portfolio}::${row.asset_class}::${row.sub_class}::${row.asset.id}`;
-      if (!groups.has(key)) {
-        groups.set(key, []);
-      }
-      groups.get(key)!.push(row);
-    }
-
-    return Array.from(groups.entries())
-      .map(([key, holdingRows]) => {
-        const asset = holdingRows[0].asset;
-        return {
-          key,
-          asset_name: this.clean(asset.asset_name),
-          asset,
-          holdings: holdingRows,
-          quantity: this.toNumber(asset.quantity),
-          invested_value: this.toNumber(asset.invested_value),
-          current_value: this.toNumber(asset.current_value),
-          pnl: this.toNumber(asset.pnl),
-          xirr: asset.xirr,
-        };
-      })
-      .sort((a, b) => a.asset_name.localeCompare(b.asset_name));
+    return this.filteredRows.length;
   }
 
   selectFamily(family: string): void {
@@ -312,7 +243,6 @@ export class HoldingReportsComponent implements OnInit {
     }
 
     const rows = this.flattenFilteredHoldings();
-
     if (!rows.length) {
       this.error = 'There are no holdings available for the selected filters.';
       return;
@@ -368,12 +298,6 @@ export class HoldingReportsComponent implements OnInit {
         cell.value = column.header;
         cell.font = { bold: true, color: { argb: 'FF101828' } };
         cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF8FAFC' } };
-        cell.border = {
-          top: { style: 'thin', color: { argb: 'FFE5E7EB' } },
-          bottom: { style: 'thin', color: { argb: 'FFE5E7EB' } },
-          left: { style: 'thin', color: { argb: 'FFE5E7EB' } },
-          right: { style: 'thin', color: { argb: 'FFE5E7EB' } },
-        };
       });
 
       sheet.columns = columns.map((column) => ({
@@ -385,19 +309,12 @@ export class HoldingReportsComponent implements OnInit {
       rows.forEach((rowData, index) => {
         const row = sheet.addRow(rowData);
         row.eachCell((cell) => {
-          cell.border = {
-            top: { style: 'thin', color: { argb: 'FFEEF0F3' } },
-            bottom: { style: 'thin', color: { argb: 'FFEEF0F3' } },
-            left: { style: 'thin', color: { argb: 'FFEEF0F3' } },
-            right: { style: 'thin', color: { argb: 'FFEEF0F3' } },
-          };
           if (index % 2 === 1) {
             cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF8FAFC' } };
           }
         });
 
-        const gainCell = row.getCell('gain');
-        gainCell.font = {
+        row.getCell('gain').font = {
           color: { argb: Number(rowData.gain) >= 0 ? 'FF16A34A' : 'FFDC2626' },
           bold: true,
         };
@@ -412,7 +329,6 @@ export class HoldingReportsComponent implements OnInit {
       const blob = new Blob([buffer], {
         type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
       });
-
       const url = URL.createObjectURL(blob);
       const anchor = document.createElement('a');
       anchor.href = url;
@@ -428,64 +344,35 @@ export class HoldingReportsComponent implements OnInit {
   }
 
   private flattenFilteredHoldings(): HoldingExportRow[] {
-    const rows: HoldingExportRow[] = [];
-
-    for (const family of this.filteredFamilies) {
-      for (const portfolio of family.portfolios) {
-        for (const assetClass of portfolio.asset_classes) {
-          const assetClassName = this.clean(assetClass.asset_class);
-          if (this.selectedAssetClass && assetClassName !== this.selectedAssetClass) {
-            continue;
-          }
-
-          for (const subClass of assetClass.sub_classes) {
-            for (const asset of subClass.assets) {
-              rows.push({
-                family_name: this.clean(family.family_name),
-                portfolio: this.clean(portfolio.portfolio),
-                asset_class: assetClassName,
-                sub_class: this.clean(subClass.sub_class),
-                asset_name: this.clean(asset.asset_name),
-                underlying: this.clean(asset.underlying || asset.asset_name),
-                isin: asset.isin || '-',
-                advisors: asset.advisors || '-',
-                quantity: this.toNumber(asset.quantity),
-                average_cost: this.toNumber(asset.average_cost),
-                invested_value: this.toNumber(asset.invested_value),
-                current_price: this.toNumber(asset.current_price),
-                current_value: this.toNumber(asset.current_value),
-                gain: this.toNumber(asset.pnl),
-                pnl_percentage: this.toNumber(asset.pnl_percentage),
-                xirr: asset.xirr,
-                sector: asset.sector || '-',
-                cap_type: asset.cap_type || '-',
-                amc_name: asset.amc_name || '-',
-              });
-            }
-          }
-        }
-      }
-    }
-
-    return rows.sort(
-      (a, b) => a.family_name.localeCompare(b.family_name) ||
+    return this.filteredRows
+      .map((row) => ({
+        family_name: this.clean(row.family_name),
+        portfolio: this.clean(row.portfolio),
+        asset_class: this.clean(row.asset_class),
+        sub_class: this.clean(row.sub_class),
+        asset_name: this.clean(row.asset_name),
+        underlying: this.clean(row.underlying, ''),
+        isin: row.isin || '-',
+        advisors: this.clean(row.advisors, ''),
+        quantity: this.toNumber(row.quantity),
+        average_cost: this.toNumber(row.average_cost),
+        invested_value: this.toNumber(row.invested_value),
+        current_price: this.toNumber(row.current_price),
+        current_value: this.toNumber(row.current_value),
+        gain: this.toNumber(row.gain),
+        pnl_percentage: this.toNumber(row.gain_percentage),
+        xirr: row.xirr,
+        sector: row.sector || '-',
+        cap_type: row.cap_type || '-',
+        amc_name: row.amc_name || '-',
+      }))
+      .sort((a, b) =>
+        a.family_name.localeCompare(b.family_name) ||
         a.portfolio.localeCompare(b.portfolio) ||
         a.asset_class.localeCompare(b.asset_class) ||
         a.sub_class.localeCompare(b.sub_class) ||
         a.asset_name.localeCompare(b.asset_name),
-    );
-  }
-
-  private weightedXirr(groups: HoldingGroup[]): number | null {
-    const valid = groups.filter((group) => group.xirr !== null && group.invested_value > 0);
-    if (!valid.length) {
-      return null;
-    }
-
-    const totalInvested = valid.reduce((sum, group) => sum + group.invested_value, 0);
-    return totalInvested
-      ? valid.reduce((sum, group) => sum + (group.xirr as number) * group.invested_value, 0) / totalInvested
-      : null;
+      );
   }
 
   private validateSelections(): void {

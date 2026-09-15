@@ -1,6 +1,7 @@
 from django.db.models import Q
 
 from investments.models import Asset, AssetCategory, PortfolioPosition
+from users.permissions import get_visible_owner_ids
 from watchlist.models import InvestmentProduct, ProductType
 
 
@@ -8,8 +9,8 @@ class OwnershipService:
     """Derive ownership from existing PWMS portfolio positions."""
 
     @staticmethod
-    def _asset_queryset(product):
-        qs = Asset.objects.all()
+    def _asset_queryset(product, owner_ids):
+        qs = Asset.objects.filter(owner_id__in=owner_ids)
         if product.isin:
             qs = qs.filter(isin__iexact=product.isin)
             if product.product_type == ProductType.MUTUAL_FUND:
@@ -21,10 +22,11 @@ class OwnershipService:
 
     @classmethod
     def ownership_rows(cls, product, user):
-        assets = cls._asset_queryset(product)
+        owner_ids = get_visible_owner_ids(user)
+        assets = cls._asset_queryset(product, owner_ids)
         if product.product_type == ProductType.MUTUAL_FUND:
             assets = assets.filter(category=AssetCategory.MUTUAL_FUND)
-        positions = PortfolioPosition.objects.filter(owner=user, asset__in=assets).select_related("asset")
+        positions = PortfolioPosition.objects.filter(owner_id__in=owner_ids, asset__in=assets).select_related("asset")
         rows = []
         for position in positions:
             if position.quantity <= 0 and position.current_value <= 0:

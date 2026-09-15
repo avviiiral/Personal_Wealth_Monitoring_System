@@ -41,7 +41,6 @@ export interface Transaction {
   fees: number;
   notes: string | null;
   created_at: string;
-
   family_name?: string | null;
   portfolio?: string | null;
   asset_class?: string | null;
@@ -107,15 +106,6 @@ export interface UpdateTransactionRequest {
   notes?: string | null;
 }
 
-/* ==========================================================
-   PORTFOLIO TREE
-   Family
-      Portfolio
-         Asset Class
-            Sub Class
-               Asset
-   ========================================================== */
-
 export interface PortfolioAssetNode {
   id: number;
   family_name: string;
@@ -123,21 +113,16 @@ export interface PortfolioAssetNode {
   underlying: string;
   isin: string | null;
   advisors: string;
-
   quantity: number;
   average_cost: number;
   invested_value: number;
-
   current_price: number;
   current_value: number;
-
   pnl: number;
   pnl_percentage: number;
   xirr: number | null;
-
   sector: string | null;
   cap_type: string | null;
-
   amc_name: string | null;
   pe_ratio: number | null;
   pb_ratio: number | null;
@@ -147,7 +132,6 @@ export interface PortfolioAssetNode {
   ytm: number | null;
   modified_duration: number | null;
   average_maturity: number | null;
-
   price_source: string | null;
 }
 
@@ -181,24 +165,48 @@ export interface PortfolioTreeResponse {
   families: FamilyNode[];
 }
 
+export interface HoldingReportRow {
+  id: number;
+  owner_id: number;
+  family_name: string;
+  portfolio: string;
+  asset_class: string;
+  sub_class: string;
+  asset_id: number;
+  asset_name: string;
+  underlying: string;
+  isin: string | null;
+  advisors: string;
+  quantity: number;
+  average_cost: number;
+  invested_value: number;
+  current_price: number;
+  current_value: number;
+  gain: number;
+  gain_percentage: number;
+  xirr: number | null;
+  sector: string | null;
+  cap_type: string | null;
+  amc_name: string | null;
+}
+
+export interface HoldingReportResponse {
+  success: boolean;
+  count: number;
+  results: HoldingReportRow[];
+}
+
 @Injectable({
   providedIn: 'root',
 })
 export class PortfolioApiService {
   private readonly http = inject(HttpClient);
-
   private readonly baseUrl = `${environment.apiUrl}/api/portfolio`;
-
   private readonly csrfUrl = `${environment.apiUrl}/api/health/`;
-
-  private readonly requestOptions = {
-    withCredentials: true,
-  };
+  private readonly requestOptions = { withCredentials: true };
 
   private getCsrfToken(): Observable<any> {
-    return this.http.get(this.csrfUrl, {
-      withCredentials: true,
-    });
+    return this.http.get(this.csrfUrl, { withCredentials: true });
   }
 
   private readCsrfToken(): string {
@@ -206,7 +214,6 @@ export class PortfolioApiService {
 
     for (const cookie of cookies) {
       const trimmedCookie = cookie.trim();
-
       if (trimmedCookie.startsWith('csrftoken=')) {
         return decodeURIComponent(trimmedCookie.substring('csrftoken='.length));
       }
@@ -217,7 +224,6 @@ export class PortfolioApiService {
 
   private getCsrfHeaders(): HttpHeaders {
     const csrfToken = this.readCsrfToken();
-
     let headers = new HttpHeaders();
 
     if (csrfToken) {
@@ -232,28 +238,23 @@ export class PortfolioApiService {
   }
 
   getHoldings(): Observable<ApiListResponse<Holding>> {
-    return this.http.get<ApiListResponse<Holding>>(
-      `${this.baseUrl}/holdings/`,
-      this.requestOptions,
-    );
+    return this.http.get<ApiListResponse<Holding>>(`${this.baseUrl}/holdings/`, this.requestOptions);
   }
 
   getTransactions(): Observable<ApiListResponse<Transaction>> {
-    return this.http.get<ApiListResponse<Transaction>>(
-      `${this.baseUrl}/transactions/`,
-      this.requestOptions,
-    );
+    return this.http.get<ApiListResponse<Transaction>>(`${this.baseUrl}/transactions/`, this.requestOptions);
   }
 
   getAssets(): Observable<ApiListResponse<PortfolioAsset>> {
-    return this.http.get<ApiListResponse<PortfolioAsset>>(
-      `${this.baseUrl}/assets/`,
-      this.requestOptions,
-    );
+    return this.http.get<ApiListResponse<PortfolioAsset>>(`${this.baseUrl}/assets/`, this.requestOptions);
   }
 
   getPortfolioTree(): Observable<PortfolioTreeResponse> {
     return this.http.get<PortfolioTreeResponse>(`${this.baseUrl}/tree/`, this.requestOptions);
+  }
+
+  getHoldingReport(): Observable<HoldingReportResponse> {
+    return this.http.get<HoldingReportResponse>(`${this.baseUrl}/holding-report/`, this.requestOptions);
   }
 
   createAsset(payload: CreateAssetRequest): Observable<PortfolioAsset> {
@@ -284,14 +285,10 @@ export class PortfolioApiService {
   ): Observable<Transaction> {
     return this.getCsrfToken().pipe(
       switchMap(() =>
-        this.http.patch<Transaction>(
-          `${this.baseUrl}/transactions/${transactionId}/`,
-          payload,
-          {
-            headers: this.getCsrfHeaders(),
-            withCredentials: true,
-          },
-        ),
+        this.http.patch<Transaction>(`${this.baseUrl}/transactions/${transactionId}/`, payload, {
+          headers: this.getCsrfHeaders(),
+          withCredentials: true,
+        }),
       ),
     );
   }

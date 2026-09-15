@@ -1,0 +1,63 @@
+name: Apply Sub Class Report Download
+
+on:
+  push:
+    branches:
+      - updates-req
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: "!contains(github.event.head_commit.message, 'Add Sub Class report download')"
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@v4
+        with:
+          ref: updates-req
+          fetch-depth: 0
+
+      - name: Update Reports files
+        shell: python
+        run: |
+          from pathlib import Path
+
+          ts_path = Path('frontend/src/features/reports/reports.component.ts')
+          ts = ts_path.read_text(encoding='utf-8')
+          marker = '''  async downloadAssetNameTransactions(\n    event: MouseEvent,\n    assetGroup: AssetNameGroup,\n  ): Promise<void> {'''
+          method = '''  async downloadSubClassAssets(\n    event: MouseEvent,\n    summary: SubClassGroup,\n  ): Promise<void> {\n    event.stopPropagation();\n\n    const rows: Record<string, unknown>[] = [];\n\n    for (const assetGroup of summary.asset_names) {\n      const assetXirr = this.getAssetNameXirr(summary.sub_class, assetGroup.asset_name);\n\n      for (const underlyingGroup of assetGroup.underlyings) {\n        for (const tx of underlyingGroup.transactions) {\n          rows.push({\n            family_name: this.clean(tx.family_name),\n            sub_class: this.clean(tx.sub_class),\n            asset_name: assetGroup.asset_name,\n            underlying: this.getUnderlyingName(tx),\n            isin: tx.isin || '-',\n            transaction_date: new Date(tx.transaction_date),\n            transaction_type: tx.transaction_type_display || tx.transaction_type,\n            quantity: this.toNumber(tx.quantity),\n            price_per_unit: this.toNumber(tx.price_per_unit),\n            amount: this.toNumber(tx.amount),\n            xirr: assetXirr,\n          });\n        }\n      }\n    }\n\n    rows.sort((a, b) => {\n      const dateA = a.transaction_date instanceof Date ? a.transaction_date.getTime() : 0;\n      const dateB = b.transaction_date instanceof Date ? b.transaction_date.getTime() : 0;\n      return dateB - dateA;\n    });\n\n    const familyNames = Array.from(new Set(\n      summary.asset_names.flatMap((assetGroup) =>\n        assetGroup.underlyings.flatMap((underlyingGroup) =>\n          underlyingGroup.transactions.map((tx) => this.clean(tx.family_name)),\n        ),\n      ),\n    ));\n    const familyLabel = familyNames.length === 1 ? familyNames[0] : 'All Families';\n\n    await this.exportWorkbook({\n      sheetName: 'Sub Class',\n      title: `${summary.sub_class} — All Assets (as of ${this.todayLabel()})`,\n      columns: [\n        { header: 'Family Name', key: 'family_name', width: 24 },\n        { header: 'Sub Class', key: 'sub_class', width: 22 },\n        { header: 'Asset Name', key: 'asset_name', width: 30 },\n        { header: 'Underlying', key: 'underlying', width: 28 },\n        { header: 'ISIN', key: 'isin', width: 16 },\n        { header: 'Transaction Date', key: 'transaction_date', width: 18, numFmt: 'dd-mmm-yyyy' },\n        { header: 'Transaction Type', key: 'transaction_type', width: 18 },\n        { header: 'Quantity', key: 'quantity', width: 14, numFmt: '#,##,##0.00' },\n        { header: 'Price', key: 'price_per_unit', width: 16, numFmt: '\"₹\"#,##,##0.00' },\n        { header: 'Amount', key: 'amount', width: 18, numFmt: '\"₹\"#,##,##0' },\n        { header: 'XIRR (%)', key: 'xirr', width: 14, numFmt: '0.00\"%\"' },\n      ],\n      rows,\n      filename: `${this.slugify(familyLabel)}_${this.slugify(summary.sub_class)}_all_assets_${this.todayStamp()}.xlsx`,\n    });\n  }\n\n  private getAssetNameXirr(subClass: string, assetName: string): number | null {\n    const assetIds = new Set<number>();\n\n    for (const tx of this.transactions) {\n      if (this.clean(tx.sub_class) === subClass && this.getAssetName(tx) === assetName) {\n        assetIds.add(tx.asset);\n      }\n    }\n\n    const lookup = this.assetLookup;\n    const assets: PortfolioAssetNode[] = [];\n\n    for (const id of assetIds) {\n      const asset = lookup.get(id);\n      if (asset) {\n        assets.push(asset);\n      }\n    }\n\n    return this.weightedXirr(\n      assets.map((asset) => ({\n        invested_value: this.toNumber(asset.invested_value),\n        xirr: asset.xirr,\n      })),\n    );\n  }\n\n'''
+          if 'async downloadSubClassAssets(' not in ts:
+              if marker not in ts:
+                  raise SystemExit('TypeScript insertion marker not found')
+              ts_path.write_text(ts.replace(marker, method + marker, 1), encoding='utf-8')
+
+          html_path = Path('frontend/src/features/reports/reports.component.html')
+          html = html_path.read_text(encoding='utf-8')
+          anchor = '<div class="asset-detail-title">{{ summary.sub_class }} Assets</div>'
+          addition = '''\n\n                  <div class="sub-class-download-action">\n                    <button\n                      type="button"\n                      class="underlying-action-button underlying-action-download"\n                      (click)="downloadSubClassAssets($event, summary)"\n                    >\n                      <svg\n                        class="button-icon"\n                        viewBox="0 0 24 24"\n                        fill="none"\n                        stroke="currentColor"\n                        stroke-width="1.8"\n                        aria-hidden="true"\n                      >\n                        <path\n                          d="M12 15V4M12 15 8.5 11.5M12 15l3.5-3.5"\n                          stroke-linecap="round"\n                          stroke-linejoin="round"\n                        />\n                        <path\n                          d="M4 16v2a2 2 0 0 1 2 2v0h12a2 2 0 0 1 2-2v-2"\n                          stroke-linecap="round"\n                          stroke-linejoin="round"\n                        />\n                      </svg>\n                      Download All Assets\n                    </button>\n                  </div>'''
+          if 'downloadSubClassAssets($event, summary)' not in html:
+              if anchor not in html:
+                  raise SystemExit('HTML anchor not found')
+              html_path.write_text(html.replace(anchor, anchor + addition, 1), encoding='utf-8')
+
+          scss_path = Path('frontend/src/features/reports/reports.component.scss')
+          scss = scss_path.read_text(encoding='utf-8')
+          if '.sub-class-download-action' not in scss:
+              scss_path.write_text(scss.rstrip() + '''\n\n.sub-class-download-action {\n  display: flex;\n  justify-content: flex-end;\n  margin-bottom: 12px;\n}\n''', encoding='utf-8')
+
+      - name: Validate
+        run: git diff --check
+
+      - name: Commit update and remove workflow
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add frontend/src/features/reports/reports.component.ts frontend/src/features/reports/reports.component.html frontend/src/features/reports/reports.component.scss
+          git commit -m "Add Sub Class report download"
+          git push origin updates-req
+          git rm .github/workflows/apply_subclass_report_download.yml
+          git commit -m "chore: remove temporary report workflow"
+          git push origin updates-req

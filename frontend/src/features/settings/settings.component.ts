@@ -47,7 +47,6 @@ export class SettingsComponent implements OnInit {
   private readonly cdr = inject(ChangeDetectorRef);
 
   activeTab: SettingsTab = 'account';
-
   profile: SettingsProfile | null = null;
 
   preferences: SettingsPreferences = {
@@ -240,6 +239,10 @@ export class SettingsComponent implements OnInit {
   toggleHistory(historyId: number): void {
     this.expandedHistoryId =
       this.expandedHistoryId === historyId ? null : historyId;
+  }
+
+  formatChangedFields(history: TransactionEditHistory): string {
+    return history.changed_fields.map((field) => this.formatHistoryField(field)).join(', ');
   }
 
   formatHistoryField(field: string): string {

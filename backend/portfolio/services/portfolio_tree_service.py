@@ -331,6 +331,13 @@ class PortfolioTreeService:
                 if security_master
                 else None
             ),
+            "peg_ratio": (
+                cls._optional_float(
+                    getattr(security_master, "peg_ratio", None)
+                )
+                if security_master
+                else None
+            ),
             "roe": (
                 cls._optional_float(
                     getattr(security_master, "roe", None)

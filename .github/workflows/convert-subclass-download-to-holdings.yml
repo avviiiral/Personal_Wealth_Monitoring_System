@@ -1,0 +1,54 @@
+name: Convert Sub Class Download To Holdings
+
+on:
+  push:
+    branches:
+      - feature/report-transaction-edit
+
+permissions:
+  contents: write
+
+jobs:
+  convert-report:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@v4
+        with:
+          ref: feature/report-transaction-edit
+          fetch-depth: 0
+
+      - name: Convert Download All Assets to holding based export
+        shell: python
+        run: |
+          from pathlib import Path
+          import subprocess
+
+          path = Path('frontend/src/features/reports/reports.component.ts')
+          text = path.read_text(encoding='utf-8')
+
+          start_marker = "  async downloadSubClassAssets(\n"
+          end_marker = "\n  private getAssetNameXirr("
+
+          start = text.index(start_marker)
+          end = text.index(end_marker, start)
+
+          replacement = '''  async downloadSubClassAssets(\n    event: MouseEvent,\n    summary: SubClassGroup,\n  ): Promise<void> {\n    event.stopPropagation();\n\n    /*\n     * Download All Assets is intentionally holding-based.\n     * Each holding/asset appears once, using the same live portfolio\n     * values shown on the Report/Portfolio hierarchy instead of one\n     * row per underlying transaction.\n     */\n    const rows: Record<string, unknown>[] = [];\n    const lookup = this.assetLookup;\n    const assetIds = new Set<number>();\n\n    for (const assetGroup of summary.asset_names) {\n      for (const underlyingGroup of assetGroup.underlyings) {\n        for (const tx of underlyingGroup.transactions) {\n          assetIds.add(tx.asset);\n        }\n      }\n    }\n\n    for (const assetId of assetIds) {\n      const asset = lookup.get(assetId);\n\n      if (!asset) {\n        continue;\n      }\n\n      rows.push({\n        family_name: this.clean(asset.family_name),\n        sub_class: this.clean(summary.sub_class),\n        asset_name: this.clean(asset.asset_name),\n        underlying: this.clean(asset.underlying || asset.asset_name),\n        isin: asset.isin || '-',\n        advisors: asset.advisors || '-',\n        quantity: this.toNumber(asset.quantity),\n        average_cost: this.toNumber(asset.average_cost),\n        invested_value: this.toNumber(asset.invested_value),\n        current_price: this.toNumber(asset.current_price),\n        current_value: this.toNumber(asset.current_value),\n        gain: this.toNumber(asset.pnl),\n        xirr: asset.xirr,\n      });\n    }\n\n    rows.sort((a, b) =>\n      String(a['asset_name']).localeCompare(String(b['asset_name'])) ||\n      String(a['underlying']).localeCompare(String(b['underlying'])),\n    );\n\n    const familyNames = Array.from(\n      new Set(rows.map((row) => String(row['family_name']))),\n    );\n    const familyLabel = familyNames.length === 1 ? familyNames[0] : 'All Families';\n\n    await this.exportWorkbook({\n      sheetName: 'Holdings',\n      title: `${summary.sub_class} — Holdings (as of ${this.todayLabel()})`,\n      columns: [\n        { header: 'Family Name', key: 'family_name', width: 24 },\n        { header: 'Sub Class', key: 'sub_class', width: 22 },\n        { header: 'Asset Name', key: 'asset_name', width: 30 },\n        { header: 'Underlying', key: 'underlying', width: 28 },\n        { header: 'ISIN', key: 'isin', width: 16 },\n        { header: 'Advisor', key: 'advisors', width: 24 },\n        { header: 'Quantity', key: 'quantity', width: 14, numFmt: '#,##,##0.00' },\n        { header: 'Average Cost', key: 'average_cost', width: 16, numFmt: '"₹"#,##,##0.00' },\n        { header: 'Invested Value', key: 'invested_value', width: 18, numFmt: '"₹"#,##,##0' },\n        { header: 'Current Price', key: 'current_price', width: 16, numFmt: '"₹"#,##,##0.00' },\n        { header: 'Current Value', key: 'current_value', width: 18, numFmt: '"₹"#,##,##0' },\n        { header: 'Gain', key: 'gain', width: 18, numFmt: '"₹"#,##,##0' },\n        { header: 'XIRR (%)', key: 'xirr', width: 14, numFmt: '0.00"%"' },\n      ],\n      rows,\n      gainKey: 'gain',\n      filename: `${this.slugify(familyLabel)}_${this.slugify(summary.sub_class)}_holdings_${this.todayStamp()}.xlsx`,\n    });\n  }\n'''
+
+          path.write_text(text[:start] + replacement + text[end:], encoding='utf-8')
+
+          subprocess.run(['git', 'config', 'user.name', 'github-actions[bot]'], check=True)
+          subprocess.run(['git', 'config', 'user.email', '41898282+github-actions[bot]@users.noreply.github.com'], check=True)
+          subprocess.run(['git', 'add', str(path)], check=True)
+          subprocess.run(['git', 'commit', '-m', 'Make Download All Assets holding based'], check=True)
+          subprocess.run(['git', 'push', 'origin', 'HEAD:feature/report-transaction-edit'], check=True)
+
+      - name: Remove temporary workflow
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/convert-subclass-download-to-holdings.yml
+          git commit -m "Remove temporary report conversion workflow"
+          git push origin HEAD:feature/report-transaction-edit

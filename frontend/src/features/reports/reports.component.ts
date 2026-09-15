@@ -575,6 +575,103 @@ export class ReportsComponent implements OnInit {
      styled-workbook exporter the top Download menu already uses.
      ============================================================ */
 
+  async downloadSubClassAssets(
+    event: MouseEvent,
+    summary: SubClassGroup,
+  ): Promise<void> {
+    event.stopPropagation();
+
+    const rows: Record<string, unknown>[] = [];
+
+    for (const assetGroup of summary.asset_names) {
+      const assetXirr = this.getAssetNameXirr(summary.sub_class, assetGroup.asset_name);
+
+      for (const underlyingGroup of assetGroup.underlyings) {
+        for (const tx of underlyingGroup.transactions) {
+          rows.push({
+            family_name: this.clean(tx.family_name),
+            sub_class: this.clean(tx.sub_class),
+            asset_name: assetGroup.asset_name,
+            underlying: this.getUnderlyingName(tx),
+            isin: tx.isin || '-',
+            transaction_date: new Date(tx.transaction_date),
+            transaction_type: tx.transaction_type_display || tx.transaction_type,
+            quantity: this.toNumber(tx.quantity),
+            price_per_unit: this.toNumber(tx.price_per_unit),
+            amount: this.toNumber(tx.amount),
+            xirr: assetXirr,
+          });
+        }
+      }
+    }
+
+    rows.sort((a, b) => {
+      const transactionDateA = a['transaction_date'];
+      const transactionDateB = b['transaction_date'];
+      const dateA = transactionDateA instanceof Date ? transactionDateA.getTime() : 0;
+      const dateB = transactionDateB instanceof Date ? transactionDateB.getTime() : 0;
+      return dateB - dateA;
+    });
+
+    const familyNames = Array.from(
+      new Set(
+        summary.asset_names.flatMap((assetGroup) =>
+          assetGroup.underlyings.flatMap((underlyingGroup) =>
+            underlyingGroup.transactions.map((tx) => this.clean(tx.family_name)),
+          ),
+        ),
+      ),
+    );
+    const familyLabel = familyNames.length === 1 ? familyNames[0] : 'All Families';
+
+    await this.exportWorkbook({
+      sheetName: 'Sub Class',
+      title: `${summary.sub_class} — All Assets (as of ${this.todayLabel()})`,
+      columns: [
+        { header: 'Family Name', key: 'family_name', width: 24 },
+        { header: 'Sub Class', key: 'sub_class', width: 22 },
+        { header: 'Asset Name', key: 'asset_name', width: 30 },
+        { header: 'Underlying', key: 'underlying', width: 28 },
+        { header: 'ISIN', key: 'isin', width: 16 },
+        { header: 'Transaction Date', key: 'transaction_date', width: 18, numFmt: 'dd-mmm-yyyy' },
+        { header: 'Transaction Type', key: 'transaction_type', width: 18 },
+        { header: 'Quantity', key: 'quantity', width: 14, numFmt: '#,##,##0.00' },
+        { header: 'Price', key: 'price_per_unit', width: 16, numFmt: '"₹"#,##,##0.00' },
+        { header: 'Amount', key: 'amount', width: 18, numFmt: '"₹"#,##,##0' },
+        { header: 'XIRR (%)', key: 'xirr', width: 14, numFmt: '0.00"%"' },
+      ],
+      rows,
+      filename: `${this.slugify(familyLabel)}_${this.slugify(summary.sub_class)}_all_assets_${this.todayStamp()}.xlsx`,
+    });
+  }
+
+  private getAssetNameXirr(subClass: string, assetName: string): number | null {
+    const assetIds = new Set<number>();
+
+    for (const tx of this.transactions) {
+      if (this.clean(tx.sub_class) === subClass && this.getAssetName(tx) === assetName) {
+        assetIds.add(tx.asset);
+      }
+    }
+
+    const lookup = this.assetLookup;
+    const assets: PortfolioAssetNode[] = [];
+
+    for (const id of assetIds) {
+      const asset = lookup.get(id);
+      if (asset) {
+        assets.push(asset);
+      }
+    }
+
+    return this.weightedXirr(
+      assets.map((asset) => ({
+        invested_value: this.toNumber(asset.invested_value),
+        xirr: asset.xirr,
+      })),
+    );
+  }
+
   async downloadAssetNameTransactions(
     event: MouseEvent,
     assetGroup: AssetNameGroup,
@@ -591,6 +688,7 @@ export class ReportsComponent implements OnInit {
       .slice()
       .sort((a, b) => b.transaction_date.localeCompare(a.transaction_date))
       .map((tx) => ({
+        family_name: this.clean(tx.family_name),
         underlying: this.getUnderlyingName(tx),
         transaction_date: new Date(tx.transaction_date),
         transaction_type: tx.transaction_type_display || tx.transaction_type,
@@ -604,6 +702,7 @@ export class ReportsComponent implements OnInit {
       sheetName: 'Transactions',
       title: `${assetGroup.asset_name} — Transactions (as of ${this.todayLabel()})`,
       columns: [
+        { header: 'Family Name', key: 'family_name', width: 24 },
         { header: 'Underlying', key: 'underlying', width: 24 },
         { header: 'Transaction Date', key: 'transaction_date', width: 18, numFmt: 'dd-mmm-yyyy' },
         { header: 'Type', key: 'transaction_type', width: 16 },

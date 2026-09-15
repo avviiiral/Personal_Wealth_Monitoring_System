@@ -688,6 +688,7 @@ export class ReportsComponent implements OnInit {
       .slice()
       .sort((a, b) => b.transaction_date.localeCompare(a.transaction_date))
       .map((tx) => ({
+        family_name: this.clean(tx.family_name),
         underlying: this.getUnderlyingName(tx),
         transaction_date: new Date(tx.transaction_date),
         transaction_type: tx.transaction_type_display || tx.transaction_type,
@@ -701,6 +702,7 @@ export class ReportsComponent implements OnInit {
       sheetName: 'Transactions',
       title: `${assetGroup.asset_name} — Transactions (as of ${this.todayLabel()})`,
       columns: [
+        { header: 'Family Name', key: 'family_name', width: 24 },
         { header: 'Underlying', key: 'underlying', width: 24 },
         { header: 'Transaction Date', key: 'transaction_date', width: 18, numFmt: 'dd-mmm-yyyy' },
         { header: 'Type', key: 'transaction_type', width: 16 },

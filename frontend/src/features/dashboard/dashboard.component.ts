@@ -126,21 +126,43 @@ export class DashboardComponent extends BaseDashboardComponent {
   }
 
   /**
-   * Allocation chart uses exactly the same Asset Category totals
-   * displayed in Investment Summary.
+   * Allocation chart uses the current Asset Category values from
+   * Investment Summary directly. The Investment Summary Asset Category
+   * is the Portfolio page Asset Class classification.
    */
   override get allocationByCategory(): Array<{
     category: string;
     value: number;
     percentage: number;
   }> {
-    return this.investmentSummaryGroups
-      .filter((group) => group.current_value > 0)
-      .map((group) => ({
-        category: group.asset_category,
-        value: group.current_value,
-        percentage: group.percentage_of_total,
-      }));
+    const results = this.investmentSummary?.results ?? [];
+    const order: string[] = [];
+    const totals = new Map<string, { value: number; percentage: number }>();
+
+    for (const row of results) {
+      const category = (row.asset_category || 'Unassigned').trim() || 'Unassigned';
+
+      if (!totals.has(category)) {
+        totals.set(category, { value: 0, percentage: 0 });
+        order.push(category);
+      }
+
+      const entry = totals.get(category)!;
+      entry.value += Number(row.current_value) || 0;
+      entry.percentage += Number(row.percentage_of_total) || 0;
+    }
+
+    return order
+      .map((category) => {
+        const entry = totals.get(category)!;
+
+        return {
+          category,
+          value: entry.value,
+          percentage: Math.round(entry.percentage * 100) / 100,
+        };
+      })
+      .filter((entry) => entry.value > 0);
   }
 
   /**

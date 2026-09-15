@@ -1,7 +1,8 @@
 from datetime import date
 from decimal import Decimal
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
+import pandas as pd
 from django.contrib.auth.models import User
 from django.test import TestCase
 
@@ -78,8 +79,6 @@ class MutualFundUnderlyingServiceTests(TestCase):
             )
 
     def test_parse_standard_disclosure_columns(self):
-        import pandas as pd
-
         frame = pd.DataFrame([
             {
                 "Name of the Instrument": "HDFC Bank Limited",
@@ -94,6 +93,85 @@ class MutualFundUnderlyingServiceTests(TestCase):
         self.assertEqual(len(rows), 1)
         self.assertEqual(rows[0]["isin"], "INE040A01034")
         self.assertEqual(rows[0]["percentage_of_nav"], Decimal("8.20"))
+
+    def test_discovery_uses_amc_name_without_amc_url_mapping(self):
+        self.scheme.amc_name = "Example Asset Management Company Limited"
+        self.scheme.scheme_name = "Example Growth Fund - Direct Plan - Growth"
+        self.scheme.scheme_code = "123456"
+        self.scheme.isin_growth = "INF123456789"
+        self.scheme.save()
+
+        page_url = "https://exampleamc.com/mutual-funds/example-growth-fund"
+        html = """
+            <html>
+              <title>Example Growth Fund portfolio disclosure</title>
+              <body>
+                Example Growth Fund - Direct Plan - Growth
+                ISIN INF123456789
+                Portfolio as on 31 August 2026
+              </body>
+            </html>
+        """
+        response = Mock(text=html, content=html.encode(), status_code=200)
+        response.raise_for_status.return_value = None
+
+        with patch.object(MutualFundUnderlyingService, "_search_urls", return_value=[page_url]), \
+             patch.object(MutualFundUnderlyingService, "_fetch", return_value=response):
+            pages = MutualFundUnderlyingService._search_official_pages(self.scheme)
+
+        self.assertEqual(len(pages), 1)
+        self.assertEqual(pages[0][0], page_url)
+        self.assertNotIn("OFFICIAL_AMC_DISCLOSURE_URLS", MutualFundUnderlyingService.__dict__)
+
+    def test_discovery_finds_dynamic_official_page_and_download(self):
+        page_url = "https://exampleamc.com/disclosures"
+        file_url = "https://exampleamc.com/files/example-growth-fund-31-Aug-2026.xlsx"
+        html = f"""
+            <a href=\"{file_url}\">Example Growth Fund portfolio 31 August 2026</a>
+            Example Growth Fund - Direct Plan - Growth
+            INF000000001
+        """
+        response = Mock(text=html, content=html.encode(), status_code=200)
+        response.raise_for_status.return_value = None
+
+        with patch.object(MutualFundUnderlyingService, "_fetch", return_value=response), \
+             patch.object(MutualFundUnderlyingService, "_search_official_pages", return_value=[(page_url, html)]):
+            documents = MutualFundUnderlyingService.discover_documents(self.scheme)
+
+        self.assertIn(page_url, documents)
+        self.assertIn(file_url, documents)
+
+    def test_html_portfolio_page_can_be_imported(self):
+        html = """
+        <table>
+          <tr>
+            <th>Name of the Instrument</th>
+            <th>ISIN</th>
+            <th>Industry</th>
+            <th>Quantity</th>
+            <th>Market Value(Rs.in Lakhs)</th>
+            <th>% to NAV</th>
+          </tr>
+          <tr>
+            <td>HDFC Bank Limited</td>
+            <td>INE040A01034</td>
+            <td>Banks</td>
+            <td>100</td>
+            <td>1250.50</td>
+            <td>8.20</td>
+          </tr>
+        </table>
+        """
+        result = OfficialMutualFundUnderlyingService.import_document(
+            self.scheme,
+            html.encode(),
+            "portfolio.html",
+            "https://exampleamc.com/portfolio",
+            fallback_date=date(2026, 8, 31),
+        )
+        self.assertEqual(result["status"], "imported")
+        self.assertEqual(MutualFundUnderlying.objects.count(), 1)
+        self.assertEqual(MutualFundUnderlying.objects.first().sector, "Banks")
 
     @patch.object(OfficialMutualFundUnderlyingService, "fetch_scheme")
     def test_fetch_all_active_uses_live_portfolio_holdings_only(self, mock_fetch):

@@ -126,47 +126,25 @@ export class DashboardComponent extends BaseDashboardComponent {
   }
 
   /**
-   * Allocation chart uses Asset Category and % of Total Investment
-   * directly from the Investment Summary API.
+   * Allocation chart uses the exact Asset Category and % of Total
+   * Investment shown in the Dashboard Investment Summary table.
    *
-   * The Investment Summary Asset Category is the Portfolio page
-   * Asset Class classification. The chart value is the same
-   * percentage shown in the Investment Summary table.
+   * This intentionally uses investmentSummaryGroups rather than the
+   * backend Investment Summary API category names, because the visible
+   * Dashboard table is the source of truth for the displayed hierarchy.
    */
   override get allocationByCategory(): Array<{
     category: string;
     value: number;
     percentage: number;
   }> {
-    const results = this.investmentSummary?.results ?? [];
-    const order: string[] = [];
-    const totals = new Map<string, { value: number; percentage: number }>();
-
-    for (const row of results) {
-      const category = (row.asset_category || 'Unassigned').trim() || 'Unassigned';
-
-      if (!totals.has(category)) {
-        totals.set(category, { value: 0, percentage: 0 });
-        order.push(category);
-      }
-
-      const entry = totals.get(category)!;
-      entry.value += Number(row.current_value) || 0;
-      entry.percentage += Number(row.percentage_of_total) || 0;
-    }
-
-    return order
-      .map((category) => {
-        const entry = totals.get(category)!;
-        const percentage = Math.round(entry.percentage * 100) / 100;
-
-        return {
-          category,
-          value: percentage,
-          percentage,
-        };
-      })
-      .filter((entry) => entry.value > 0);
+    return this.investmentSummaryGroups
+      .filter((group) => group.current_value > 0)
+      .map((group) => ({
+        category: group.asset_category,
+        value: group.percentage_of_total,
+        percentage: group.percentage_of_total,
+      }));
   }
 
   /**

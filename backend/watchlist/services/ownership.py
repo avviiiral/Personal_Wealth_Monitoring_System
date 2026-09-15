@@ -1,8 +1,12 @@
+from datetime import date
+from decimal import Decimal
+
 from django.db.models import Q
 
-from investments.models import Asset, AssetCategory, PortfolioPosition
+from investments.models import Asset, AssetCategory, PortfolioPosition, Transaction, TransactionType
 from users.permissions import get_visible_owner_ids
 from watchlist.models import InvestmentProduct, ProductType
+from analytics.services.xirr import XIRRCalculator
 
 
 class OwnershipService:
@@ -19,6 +23,29 @@ class OwnershipService:
         if product.external_identifier:
             return qs.filter(Q(symbol__iexact=product.external_identifier) | Q(name__iexact=product.name))
         return qs.filter(name__iexact=product.name)
+
+    @staticmethod
+    def _position_xirr(position):
+        flows = []
+        transactions = Transaction.objects.filter(
+            owner=position.owner,
+            asset=position.asset,
+            family_name=position.family_name,
+            portfolio=position.portfolio,
+        ).order_by("transaction_date", "created_at", "id")
+        for tx in transactions:
+            amount = tx.amount or Decimal("0")
+            fees = tx.fees or Decimal("0")
+            if tx.transaction_type in (TransactionType.BUY, TransactionType.SIP):
+                flows.append((tx.transaction_date, -(amount + fees)))
+            elif tx.transaction_type in (TransactionType.SELL, TransactionType.DIVIDEND, TransactionType.INTEREST):
+                flows.append((tx.transaction_date, amount - fees))
+        if position.current_value and position.current_value > 0:
+            flows.append((date.today(), position.current_value))
+        if len(flows) < 2:
+            return None
+        value = XIRRCalculator.calculate(flows)
+        return round(value * 100, 2) if value is not None else None
 
     @classmethod
     def ownership_rows(cls, product, user):
@@ -42,6 +69,7 @@ class OwnershipService:
                     ((position.current_value / position.invested_value) - 1) * 100
                     if position.invested_value else None
                 ),
+                "xirr": cls._position_xirr(position),
                 "holding_status": "OWNED",
             })
         return rows

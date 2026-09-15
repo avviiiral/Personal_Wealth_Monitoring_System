@@ -76,6 +76,12 @@ export class SettingsComponent implements OnInit {
   transactionHistoryError = '';
   expandedHistoryId: number | null = null;
 
+  historySearch = '';
+  historyEditorFilter = '';
+  historyDateFilter = '';
+  historyPage = 1;
+  historyPageSize = 10;
+
   ngOnInit(): void {
     this.loadSettings();
 
@@ -153,6 +159,8 @@ export class SettingsComponent implements OnInit {
       next: (response) => {
         this.transactionHistory = response.results || [];
         this.transactionHistoryLoading = false;
+        this.historyPage = 1;
+        this.expandedHistoryId = null;
         this.cdr.detectChanges();
       },
       error: (error) => {
@@ -163,6 +171,70 @@ export class SettingsComponent implements OnInit {
         this.cdr.detectChanges();
       },
     });
+  }
+
+  get filteredTransactionHistory(): TransactionEditHistory[] {
+    const search = this.historySearch.trim().toLowerCase();
+
+    return this.transactionHistory.filter((history) => {
+      const matchesSearch = !search || [
+        history.transaction_id?.toString() || '',
+        history.asset_name || '',
+        history.edited_by_username || '',
+        ...history.changed_fields,
+      ].some((value) => value.toLowerCase().includes(search));
+
+      const matchesEditor =
+        !this.historyEditorFilter || history.edited_by_username === this.historyEditorFilter;
+
+      const matchesDate =
+        !this.historyDateFilter || history.edited_at.slice(0, 10) === this.historyDateFilter;
+
+      return matchesSearch && matchesEditor && matchesDate;
+    });
+  }
+
+  get historyEditors(): string[] {
+    return Array.from(
+      new Set(this.transactionHistory.map((history) => history.edited_by_username)),
+    ).sort((a, b) => a.localeCompare(b));
+  }
+
+  get historyPageCount(): number {
+    return Math.max(1, Math.ceil(this.filteredTransactionHistory.length / this.historyPageSize));
+  }
+
+  get pagedTransactionHistory(): TransactionEditHistory[] {
+    const maxPage = this.historyPageCount;
+    if (this.historyPage > maxPage) {
+      this.historyPage = maxPage;
+    }
+
+    const start = (this.historyPage - 1) * this.historyPageSize;
+    return this.filteredTransactionHistory.slice(start, start + this.historyPageSize);
+  }
+
+  get historyPageNumbers(): number[] {
+    return Array.from({ length: this.historyPageCount }, (_, index) => index + 1);
+  }
+
+  applyHistoryFilters(): void {
+    this.historyPage = 1;
+    this.expandedHistoryId = null;
+  }
+
+  clearHistoryFilters(): void {
+    this.historySearch = '';
+    this.historyEditorFilter = '';
+    this.historyDateFilter = '';
+    this.historyPage = 1;
+    this.expandedHistoryId = null;
+  }
+
+  changeHistoryPage(page: number): void {
+    if (page < 1 || page > this.historyPageCount) return;
+    this.historyPage = page;
+    this.expandedHistoryId = null;
   }
 
   toggleHistory(historyId: number): void {

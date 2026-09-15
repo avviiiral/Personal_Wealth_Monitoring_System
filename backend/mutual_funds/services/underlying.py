@@ -10,6 +10,7 @@ import requests
 from django.db import transaction
 from django.utils import timezone
 
+from investments.models import Asset, AssetCategory, Holding
 from mutual_funds.models import MutualFundScheme, MutualFundUnderlying
 
 logger = logging.getLogger(__name__)
@@ -28,6 +29,16 @@ class MutualFundUnderlyingService:
     AMFI_DISCLOSURE_URL = "https://www.amfiindia.com/online-center/portfolio-disclosure"
     SOURCE = "AMFI"
     TIMEOUT_SECONDS = 60
+
+    # Official AMC disclosure landing pages used as a fallback when AMFI's
+    # portfolio page is rendered dynamically and therefore exposes no file
+    # links to a normal HTTP client. Only official AMC domains are allowed.
+    OFFICIAL_AMC_DISCLOSURE_URLS = {
+        "bandhan": "https://bandhanmutual.com/statutory-disclosures/scheme-portfolios/fortnightly",
+        "hdfc": "https://www.hdfcfund.com/statutory-disclosure/portfolio",
+        "icici": "https://www.icicipruamc.com/news-and-media/downloads?currentTabFilter=Other+SchemeDisclosures&subCatTabFilter=Monthly%20Portfolio%20Disclosures",
+        "kotak": "https://www.kotakmf.com/Information/Statutory-Disclosures/Portfolio-Disclosures",
+    }
 
     COLUMN_ALIASES = {
         "security_name": {
@@ -83,7 +94,7 @@ class MutualFundUnderlyingService:
             if alias_norm in normalized:
                 return normalized[alias_norm]
         for normalized_column, original in normalized.items():
-            if any(alias in normalized_column for alias in aliases):
+            if any(cls.normalize_column(alias) in normalized_column for alias in aliases):
                 return original
         return None
 
@@ -92,7 +103,7 @@ class MutualFundUnderlyingService:
         if value is None or (isinstance(value, float) and pd.isna(value)):
             return None
         text = cls.normalize_text(value)
-        if not text or text in {"-", "--", "n.a.", "na", "n/a"}:
+        if not text or text.lower() in {"-", "--", "n.a.", "na", "n/a"}:
             return None
         text = text.replace(",", "").replace("₹", "").replace("%", "")
         text = re.sub(r"[^0-9.\-()]+", "", text)
@@ -171,9 +182,7 @@ class MutualFundUnderlyingService:
             quantity = cls._decimal(row.get(quantity_col)) if quantity_col else None
             market_value = cls._decimal(row.get(value_col)) if value_col else None
             percentage = cls._decimal(row.get(pct_col)) if pct_col else None
-            if percentage is None:
-                continue
-            if percentage < 0 or percentage > 100:
+            if percentage is None or percentage < 0 or percentage > 100:
                 continue
 
             rows.append({
@@ -245,29 +254,79 @@ class MutualFundUnderlyingService:
         return response
 
     @classmethod
-    def discover_documents(cls, scheme):
-        """Discover downloadable portfolio files from official sources only."""
-        index_response = cls._fetch(cls.AMFI_DISCLOSURE_URL)
-        links = cls._official_links(index_response.text, cls.AMFI_DISCLOSURE_URL)
+    def _amc_key(cls, scheme):
+        text = cls.normalize_text(getattr(scheme, "amc_name", "")).lower()
+        if not text:
+            return None
+        for key in cls.OFFICIAL_AMC_DISCLOSURE_URLS:
+            if key in text:
+                return key
+        return None
 
+    @classmethod
+    def _candidate_pages(cls, scheme):
+        urls = []
+        amc_key = cls._amc_key(scheme)
+        if amc_key:
+            urls.append(cls.OFFICIAL_AMC_DISCLOSURE_URLS[amc_key])
+        return urls
+
+    @classmethod
+    def _find_download_links(cls, page_url, html, scheme):
         candidates = []
-        for link in links:
+        for link in cls._official_links(html, page_url):
             lower = link.lower()
-            if lower.endswith((".xlsx", ".xls", ".csv")):
-                if cls._matches_scheme(link, scheme):
-                    candidates.append(link)
+            if not lower.endswith((".xlsx", ".xls", ".csv", ".xlsb", ".zip", ".pdf")):
                 continue
-            if cls._matches_scheme(link, scheme) or (
-                scheme.amc_name and cls.normalize_text(scheme.amc_name).lower() in lower
-            ):
+            if cls._matches_scheme(link, scheme):
+                candidates.append(link)
+        return candidates
+
+    @classmethod
+    def discover_documents(cls, scheme):
+        """Discover portfolio files from official AMFI/AMC pages only."""
+        candidates = []
+
+        # AMFI's current portfolio page is client-rendered, so a requests
+        # GET can return only the selector shell. Keep AMFI as the primary
+        # source, but use the official AMC disclosure page when no links are
+        # present in the static HTML.
+        try:
+            index_response = cls._fetch(cls.AMFI_DISCLOSURE_URL)
+            links = cls._official_links(index_response.text, cls.AMFI_DISCLOSURE_URL)
+            for link in links:
+                lower = link.lower()
+                if lower.endswith((".xlsx", ".xls", ".csv")) and cls._matches_scheme(link, scheme):
+                    candidates.append(link)
+                elif cls._matches_scheme(link, scheme):
+                    try:
+                        page = cls._fetch(link)
+                        candidates.extend(cls._find_download_links(link, page.text, scheme))
+                    except requests.RequestException:
+                        continue
+        except requests.RequestException:
+            logger.warning("Unable to access AMFI portfolio disclosure page", exc_info=True)
+
+        # Official AMC fallback. This is important for current holdings because
+        # AMFI's page is dynamic and may not expose its download URLs to HTTP.
+        for page_url in cls._candidate_pages(scheme):
+            try:
+                page = cls._fetch(page_url)
+            except requests.RequestException:
+                continue
+            candidates.extend(cls._find_download_links(page_url, page.text, scheme))
+
+            # Some AMC pages use a detail/article link before the actual file.
+            for child in cls._official_links(page.text, page_url):
+                if child.lower().endswith((".xlsx", ".xls", ".csv", ".pdf")):
+                    continue
+                if not cls._matches_scheme(child, scheme):
+                    continue
                 try:
-                    page = cls._fetch(link)
+                    detail = cls._fetch(child)
                 except requests.RequestException:
                     continue
-                for child in cls._official_links(page.text, link):
-                    child_lower = child.lower()
-                    if child_lower.endswith((".xlsx", ".xls", ".csv", ".pdf")) and cls._matches_scheme(child, scheme):
-                        candidates.append(child)
+                candidates.extend(cls._find_download_links(child, detail.text, scheme))
 
         return list(dict.fromkeys(candidates))
 
@@ -313,46 +372,55 @@ class MutualFundUnderlyingService:
         return {"status": "imported", "portfolio_date": portfolio_date, "records": len(objects)}
 
     @classmethod
-    def fetch_scheme(cls, scheme):
-        documents = cls.discover_documents(scheme)
-        if not documents:
-            raise ValueError(
-                f"No official AMFI/AMC portfolio disclosure was found for {scheme.scheme_name} "
-                f"(scheme code={scheme.scheme_code}, ISIN={scheme.isin_growth or scheme.isin_dividend})."
-            )
+    def _portfolio_scheme_pairs(cls, owner_ids=None):
+        """Return only MF schemes represented by the user's live portfolio."""
+        holdings = Holding.objects.select_related("asset").filter(
+            asset__category=AssetCategory.MUTUAL_FUND,
+            quantity__gt=0,
+        )
+        if owner_ids is not None:
+            holdings = holdings.filter(owner_id__in=list(owner_ids))
 
-        last_error = None
-        for document_url in documents:
-            try:
-                response = cls._fetch(document_url)
-                filename = urlparse(document_url).path.rsplit("/", 1)[-1] or "portfolio.xlsx"
-                result = cls.import_document(
-                    scheme,
-                    response.content,
-                    filename,
-                    document_url,
-                    fallback_date=timezone.localdate(),
-                )
-                return result
-            except Exception as exc:
-                last_error = exc
-                logger.warning(
-                    "Portfolio import failed for %s from %s: %s",
-                    scheme.scheme_name,
-                    document_url,
-                    exc,
-                )
+        pairs = []
+        seen = set()
+        for holding in holdings:
+            asset = holding.asset
+            schemes = MutualFundScheme.objects.filter(is_active=True)
+            if holding.owner_id is not None:
+                owner_scoped = schemes.filter(owner_id=holding.owner_id)
+                if owner_scoped.exists():
+                    schemes = owner_scoped
 
-        raise ValueError(f"All official portfolio disclosures failed for {scheme.scheme_name}: {last_error}")
+            scheme = None
+            if asset.isin:
+                scheme = schemes.filter(isin_growth__iexact=asset.isin).first()
+                if scheme is None:
+                    scheme = schemes.filter(isin_dividend__iexact=asset.isin).first()
+            if scheme is None:
+                normalized_asset = cls.normalize_text(asset.name).lower()
+                for candidate in schemes.order_by("id"):
+                    candidate_name = cls.normalize_text(candidate.scheme_name).lower()
+                    if normalized_asset == candidate_name or normalized_asset in candidate_name or candidate_name in normalized_asset:
+                        scheme = candidate
+                        break
+            if scheme is None:
+                logger.warning("No MutualFundScheme matched live portfolio asset %s (%s)", asset.id, asset.name)
+                continue
+
+            key = (holding.owner_id, scheme.id)
+            if key not in seen:
+                seen.add(key)
+                pairs.append((holding.owner_id, scheme))
+        return pairs
 
     @classmethod
     def fetch_all_active(cls, owner_ids=None):
-        queryset = MutualFundScheme.objects.filter(is_active=True).order_by("id")
-        if owner_ids is not None:
-            queryset = queryset.filter(owner_id__in=list(owner_ids))
-
+        # Do not iterate over the entire MutualFundScheme master list. The
+        # master contains many schemes that the user does not own, while the
+        # actual portfolio is represented by investments.Holding.
+        pairs = cls._portfolio_scheme_pairs(owner_ids=owner_ids)
         results = {"schemes": 0, "imported": 0, "already_imported": 0, "failed": 0, "errors": []}
-        for scheme in queryset:
+        for owner_id, scheme in pairs:
             results["schemes"] += 1
             try:
                 result = cls.fetch_scheme(scheme)
@@ -362,5 +430,5 @@ class MutualFundUnderlyingService:
                     results["already_imported"] += 1
             except Exception as exc:
                 results["failed"] += 1
-                results["errors"].append({"scheme_id": scheme.id, "scheme_name": scheme.scheme_name, "error": str(exc)})
+                results["errors"].append({"owner_id": owner_id, "scheme_id": scheme.id, "scheme_name": scheme.scheme_name, "error": str(exc)})
         return results

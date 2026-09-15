@@ -1,26 +1,30 @@
 import { ChangeDetectorRef, Component, OnInit, inject } from '@angular/core';
 
 import { CommonModule } from '@angular/common';
-
 import { FormsModule } from '@angular/forms';
-
 import { Router } from '@angular/router';
-
 import { AuthService } from '../../core/services/auth.service';
-
 import { RbacService } from '../../core/services/rbac.service';
 
 import {
   SettingsApiService,
   SettingsProfile,
   SettingsPreferences,
+  TransactionEditHistory,
 } from '../../core/services/settings-api.service';
 
 import { UserManagementComponent } from './user-management/user-management.component';
 import { FamilyManagementComponent } from './family-management/family-management.component';
 import { ManualPricesComponent } from './manual-prices/manual-prices.component';
 
-type SettingsTab = 'account' | 'preferences' | 'security' | 'users' | 'families' | 'prices';
+type SettingsTab =
+  | 'account'
+  | 'preferences'
+  | 'security'
+  | 'users'
+  | 'families'
+  | 'prices'
+  | 'transaction-history';
 
 @Component({
   selector: 'app-settings',
@@ -37,13 +41,9 @@ type SettingsTab = 'account' | 'preferences' | 'security' | 'users' | 'families'
 })
 export class SettingsComponent implements OnInit {
   private readonly settingsApi = inject(SettingsApiService);
-
   private readonly authService = inject(AuthService);
-
   readonly rbac = inject(RbacService);
-
   private readonly router = inject(Router);
-
   private readonly cdr = inject(ChangeDetectorRef);
 
   activeTab: SettingsTab = 'account';
@@ -57,33 +57,28 @@ export class SettingsComponent implements OnInit {
   };
 
   email = '';
-
   currentPassword = '';
   newPassword = '';
   confirmPassword = '';
 
   loading = true;
-
   saving = false;
-
   changingPassword = false;
-
   loggingOut = false;
 
   error = '';
-
   profileMessage = '';
-
   passwordMessage = '';
-
   passwordError = '';
+
+  transactionHistory: TransactionEditHistory[] = [];
+  transactionHistoryLoading = false;
+  transactionHistoryError = '';
+  expandedHistoryId: number | null = null;
 
   ngOnInit(): void {
     this.loadSettings();
 
-    // The RBAC role is normally loaded by the auth guard before this
-    // component is reached. This is a safety net in case the page
-    // is rendered without a fresh navigation.
     if (!this.rbac.isLoaded()) {
       this.rbac.load().subscribe({
         next: () => this.cdr.detectChanges(),
@@ -91,12 +86,13 @@ export class SettingsComponent implements OnInit {
       });
     }
   }
-  // ======================================================
-  // TABS
-  // ======================================================
 
   setTab(tab: SettingsTab): void {
     this.activeTab = tab;
+
+    if (tab === 'transaction-history' && !this.transactionHistory.length) {
+      this.loadTransactionHistory();
+    }
   }
 
   canManageUsers(): boolean {
@@ -112,10 +108,7 @@ export class SettingsComponent implements OnInit {
   }
 
   familyNamesText(): string {
-    return this.rbac
-      .families()
-      .map((f) => f.name)
-      .join(', ');
+    return this.rbac.families().map((f) => f.name).join(', ');
   }
 
   onActiveFamilyChange(familyId: number): void {
@@ -131,178 +124,168 @@ export class SettingsComponent implements OnInit {
     });
   }
 
-  // ======================================================
-  // LOAD
-  // ======================================================
-
   loadSettings(): void {
     this.loading = true;
-
     this.error = '';
 
     this.settingsApi.getSettings().subscribe({
       next: (response) => {
         this.profile = response.profile;
-
-        this.preferences = {
-          ...response.preferences,
-        };
-
+        this.preferences = { ...response.preferences };
         this.email = response.profile.email;
-
         this.loading = false;
-
         this.cdr.detectChanges();
       },
-
       error: (error) => {
         console.error('Settings loading error:', error);
-
         this.loading = false;
-
         this.error = error?.error?.detail || 'Unable to load settings.';
-
         this.cdr.detectChanges();
       },
     });
   }
 
-  // ======================================================
-  // SAVE SETTINGS
-  // ======================================================
+  loadTransactionHistory(): void {
+    this.transactionHistoryLoading = true;
+    this.transactionHistoryError = '';
 
-  saveSettings(): void {
-    if (this.saving) {
-      return;
-    }
-
-    this.saving = true;
-
-    this.profileMessage = '';
-
-    this.error = '';
-
-    this.settingsApi
-      .updateSettings({
-        email: this.email,
-
-        currency: this.preferences.currency,
-
-        date_format: this.preferences.date_format,
-
-        default_analytics_period: this.preferences.default_analytics_period,
-      })
-      .subscribe({
-        next: (response) => {
-          this.profile = response.profile;
-
-          this.preferences = {
-            ...response.preferences,
-          };
-
-          this.email = response.profile.email;
-
-          this.saving = false;
-
-          this.profileMessage = 'Settings saved successfully.';
-
-          this.cdr.detectChanges();
-        },
-
-        error: (error) => {
-          console.error('Settings save error:', error);
-
-          this.saving = false;
-
-          this.error = error?.error?.detail || 'Unable to save settings.';
-
-          this.cdr.detectChanges();
-        },
-      });
+    this.settingsApi.getTransactionEditHistory().subscribe({
+      next: (response) => {
+        this.transactionHistory = response.results || [];
+        this.transactionHistoryLoading = false;
+        this.cdr.detectChanges();
+      },
+      error: (error) => {
+        console.error('Transaction edit history loading error:', error);
+        this.transactionHistoryLoading = false;
+        this.transactionHistoryError =
+          error?.error?.detail || 'Unable to load transaction edit history.';
+        this.cdr.detectChanges();
+      },
+    });
   }
 
-  // ======================================================
-  // CHANGE PASSWORD
-  // ======================================================
+  toggleHistory(historyId: number): void {
+    this.expandedHistoryId =
+      this.expandedHistoryId === historyId ? null : historyId;
+  }
 
-  changePassword(): void {
-    if (this.changingPassword) {
-      return;
+  formatHistoryField(field: string): string {
+    const labels: Record<string, string> = {
+      family_name: 'Family Name',
+      portfolio: 'Portfolio',
+      asset_class: 'Asset Class',
+      sub_class: 'Sub Class',
+      asset_name: 'Asset Name',
+      underlying: 'Underlying',
+      advisors: 'Advisor',
+      transaction_date: 'Transaction Date',
+      transaction_type: 'Transaction Type',
+      quantity: 'Quantity',
+      price_per_unit: 'Price / Unit',
+      amount: 'Amount',
+      fees: 'Fees',
+      notes: 'Notes',
+      source: 'Source',
+      source_key: 'Source Key',
+      asset_id: 'Asset ID',
+      isin: 'ISIN',
+    };
+
+    return labels[field] || field;
+  }
+
+  formatHistoryValue(value: string | number | null | undefined): string {
+    if (value === null || value === undefined || value === '') {
+      return '—';
     }
 
-    this.passwordError = '';
+    return String(value);
+  }
 
+  saveSettings(): void {
+    if (this.saving) return;
+
+    this.saving = true;
+    this.profileMessage = '';
+    this.error = '';
+
+    this.settingsApi.updateSettings({
+      email: this.email,
+      currency: this.preferences.currency,
+      date_format: this.preferences.date_format,
+      default_analytics_period: this.preferences.default_analytics_period,
+    }).subscribe({
+      next: (response) => {
+        this.profile = response.profile;
+        this.preferences = { ...response.preferences };
+        this.email = response.profile.email;
+        this.saving = false;
+        this.profileMessage = 'Settings saved successfully.';
+        this.cdr.detectChanges();
+      },
+      error: (error) => {
+        console.error('Settings save error:', error);
+        this.saving = false;
+        this.error = error?.error?.detail || 'Unable to save settings.';
+        this.cdr.detectChanges();
+      },
+    });
+  }
+
+  changePassword(): void {
+    if (this.changingPassword) return;
+
+    this.passwordError = '';
     this.passwordMessage = '';
 
     if (!this.currentPassword) {
       this.passwordError = 'Enter your current password.';
-
       return;
     }
 
     if (!this.newPassword) {
       this.passwordError = 'Enter a new password.';
-
       return;
     }
 
     if (this.newPassword !== this.confirmPassword) {
       this.passwordError = 'New passwords do not match.';
-
       return;
     }
 
     this.changingPassword = true;
 
-    this.settingsApi
-      .changePassword(this.currentPassword, this.newPassword, this.confirmPassword)
-      .subscribe({
-        next: () => {
-          this.changingPassword = false;
-
-          this.currentPassword = '';
-
-          this.newPassword = '';
-
-          this.confirmPassword = '';
-
-          this.passwordMessage = 'Password changed successfully.';
-
-          this.cdr.detectChanges();
-        },
-
-        error: (error) => {
-          console.error('Password change error:', error);
-
-          this.changingPassword = false;
-
-          const detail = error?.error?.detail;
-
-          if (Array.isArray(detail)) {
-            this.passwordError = detail.join(' ');
-          } else {
-            this.passwordError = detail || 'Unable to change password.';
-          }
-
-          this.cdr.detectChanges();
-        },
-      });
+    this.settingsApi.changePassword(
+      this.currentPassword,
+      this.newPassword,
+      this.confirmPassword,
+    ).subscribe({
+      next: () => {
+        this.changingPassword = false;
+        this.currentPassword = '';
+        this.newPassword = '';
+        this.confirmPassword = '';
+        this.passwordMessage = 'Password changed successfully.';
+        this.cdr.detectChanges();
+      },
+      error: (error) => {
+        console.error('Password change error:', error);
+        this.changingPassword = false;
+        const detail = error?.error?.detail;
+        this.passwordError = Array.isArray(detail)
+          ? detail.join(' ')
+          : detail || 'Unable to change password.';
+        this.cdr.detectChanges();
+      },
+    });
   }
 
-  // ======================================================
-  // LOGOUT
-  // ======================================================
-
   logout(): void {
-    if (this.loggingOut) {
-      return;
-    }
+    if (this.loggingOut) return;
 
     const confirmed = window.confirm('Are you sure you want to log out?');
-
-    if (!confirmed) {
-      return;
-    }
+    if (!confirmed) return;
 
     this.loggingOut = true;
     this.error = '';
@@ -310,21 +293,11 @@ export class SettingsComponent implements OnInit {
     this.authService.logout().subscribe({
       next: () => {
         this.loggingOut = false;
-
         this.router.navigate(['/login']);
       },
-
       error: (error) => {
         console.error('Settings logout error:', error);
-
-        /*
-         * The AuthService clears the local authentication
-         * state even when the backend logout request fails.
-         *
-         * Therefore we still redirect to login here.
-         */
         this.loggingOut = false;
-
         this.router.navigate(['/login']);
       },
     });
@@ -332,7 +305,10 @@ export class SettingsComponent implements OnInit {
 
   refresh(): void {
     this.loadSettings();
-
     this.rbac.load().subscribe();
+
+    if (this.activeTab === 'transaction-history') {
+      this.loadTransactionHistory();
+    }
   }
 }

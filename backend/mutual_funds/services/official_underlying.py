@@ -1,5 +1,4 @@
-from io import StringIO
-from urllib.parse import urljoin
+from io import BytesIO, StringIO
 
 import pandas as pd
 from django.db import transaction
@@ -9,39 +8,26 @@ from mutual_funds.models import MutualFundUnderlying
 
 
 class OfficialMutualFundUnderlyingService(MutualFundUnderlyingService):
-    """AMFI/AMC importer that also preserves the disclosed industry/sector."""
-
-    # Official AMC disclosure landing pages are fallbacks only. The importer
-    # still validates the requested scheme by scheme code, ISIN or name before
-    # accepting a document. These pages are not fund-specific.
-    OFFICIAL_AMC_PAGES = {
-        "bandhan": (
-            "https://cmsnew.bandhanmutual.com/category/scheme-portfolios/page/3/",
-            "https://bandhanmutual.com/statutory-disclosures/scheme-portfolios/fortnightly",
-        ),
-        "hdfc": (
-            "https://www.hdfcfund.com/statutory-disclosure/portfolio/fortnightly-portfolio",
-            "https://www.hdfcfund.com/statutory-disclosure/portfolio/monthly-portfolio",
-        ),
-        "icici": (
-            "https://www.icicipruamc.com/news-and-media/downloads?currentTabFilter=Other+SchemeDisclosures&subCatTabFilter=Monthly%20Portfolio%20Disclosures",
-        ),
-        "kotak": (
-            "https://www.kotakmf.com/Information/statutory-disclosure",
-        ),
-    }
+    """Import official mutual-fund portfolio disclosures and preserve sector."""
 
     @classmethod
     def _parse_dataframe(cls, dataframe, fallback_date=None):
         dataframe = dataframe.dropna(how="all").copy()
-
         if dataframe.empty:
             return []
 
-        dataframe.columns = [
-            cls.normalize_text(column)
-            for column in dataframe.columns
-        ]
+        # Flatten MultiIndex headers produced by some AMC HTML tables.
+        if isinstance(dataframe.columns, pd.MultiIndex):
+            dataframe.columns = [
+                " ".join(
+                    cls.normalize_text(part)
+                    for part in column
+                    if cls.normalize_text(part) and cls.normalize_text(part).lower() != "nan"
+                )
+                for column in dataframe.columns
+            ]
+        else:
+            dataframe.columns = [cls.normalize_text(column) for column in dataframe.columns]
 
         def find_column(*aliases):
             normalized_columns = {
@@ -49,18 +35,21 @@ class OfficialMutualFundUnderlyingService(MutualFundUnderlyingService):
                 for column in dataframe.columns
             }
 
-            for alias in aliases:
-                normalized_alias = cls.normalize_column(alias)
+            normalized_aliases = [cls.normalize_column(alias) for alias in aliases]
+
+            # Exact normalized match.
+            for alias in normalized_aliases:
                 for column, normalized_column in normalized_columns.items():
-                    if normalized_column == normalized_alias:
+                    if normalized_column == alias:
                         return column
 
-            for alias in aliases:
-                normalized_alias = cls.normalize_column(alias)
-                if not normalized_alias:
+            # Partial match for AMC variants such as
+            # "Market Value(Rs.in Lakhs)".
+            for alias in normalized_aliases:
+                if not alias:
                     continue
                 for column, normalized_column in normalized_columns.items():
-                    if normalized_alias in normalized_column:
+                    if alias in normalized_column:
                         return column
 
             return None
@@ -72,13 +61,19 @@ class OfficialMutualFundUnderlyingService(MutualFundUnderlyingService):
             "security name",
             "instrument name",
             "instrument",
+            "scrip name",
         )
         if not name_col:
             return []
 
         isin_col = find_column("isin", "isin code", "isin no", "isin number")
         quantity_col = find_column(
-            "quantity", "qty", "units", "no of shares", "number of shares", "shares"
+            "quantity",
+            "qty",
+            "units",
+            "no of shares",
+            "number of shares",
+            "shares",
         )
         value_col = find_column(
             "market_value",
@@ -103,10 +98,7 @@ class OfficialMutualFundUnderlyingService(MutualFundUnderlyingService):
             "portfolio (%)",
             "percentage",
         )
-        sector_col = find_column(
-            "industry",
-            "sector",
-        )
+        sector_col = find_column("industry", "sector")
 
         value_is_lakhs = False
         if value_col:
@@ -138,7 +130,6 @@ class OfficialMutualFundUnderlyingService(MutualFundUnderlyingService):
             isin = cls.normalize_text(row.get(isin_col)) if isin_col else None
             quantity = cls._decimal(row.get(quantity_col)) if quantity_col else None
             market_value = cls._decimal(row.get(value_col)) if value_col else None
-
             if market_value is not None and value_is_lakhs:
                 market_value *= 100000
 
@@ -167,64 +158,43 @@ class OfficialMutualFundUnderlyingService(MutualFundUnderlyingService):
 
     @classmethod
     def parse_document(cls, content, filename, fallback_date=None):
-        """Parse spreadsheet/CSV/HTML using StringIO for pandas HTML support."""
+        """Parse Excel, CSV, or HTML portfolio disclosures."""
         portfolio_date = cls._extract_date(filename) or fallback_date
         lower_name = filename.lower()
         frames = []
 
         if lower_name.endswith((".xlsx", ".xls")):
             workbook = pd.ExcelFile(
-                content if hasattr(content, "read") else __import__("io").BytesIO(content)
+                content if hasattr(content, "read") else BytesIO(content)
             )
             for sheet in workbook.sheet_names:
                 try:
                     frames.append(pd.read_excel(workbook, sheet_name=sheet, header=0))
                 except Exception:
                     continue
+
         elif lower_name.endswith(".csv"):
-            frames.append(pd.read_csv(__import__("io").BytesIO(content)))
+            frames.append(pd.read_csv(BytesIO(content)))
+
         else:
-            html = (
-                content.decode("utf-8", errors="ignore")
-                if isinstance(content, bytes)
-                else str(content)
-            )
-            try:
-                frames.extend(pd.read_html(StringIO(html)))
-            except (ValueError, ImportError):
-                frames = []
+            html = content.decode("utf-8", errors="ignore") if isinstance(content, bytes) else str(content)
+
+            # Explicitly provide header=0. This avoids parser-dependent header
+            # inference on AMC HTML tables.
+            for header in (0, None):
+                try:
+                    parsed = pd.read_html(StringIO(html), header=header)
+                except (ValueError, ImportError):
+                    continue
+                frames.extend(parsed)
+                if parsed:
+                    break
 
         records = []
         for frame in frames:
             records.extend(cls._parse_dataframe(frame, portfolio_date))
+
         return records
-
-    @classmethod
-    def _fallback_pages_for_scheme(cls, scheme):
-        amc = cls.normalize_text(getattr(scheme, "amc_name", "")).lower()
-        pages = []
-        for key, urls in cls.OFFICIAL_AMC_PAGES.items():
-            if key in amc:
-                pages.extend(urls)
-        return pages
-
-    @classmethod
-    def _collect_official_candidates(cls, scheme):
-        candidates = list(cls.discover_documents(scheme))
-        for page_url in cls._fallback_pages_for_scheme(scheme):
-            try:
-                response = cls._fetch(page_url)
-            except Exception:
-                continue
-            html = response.text
-            if cls._matches_scheme(html, scheme):
-                candidates.append(page_url)
-            for child in cls._official_links(html, page_url):
-                if cls._matches_scheme(child, scheme):
-                    candidates.append(child)
-                if child.lower().endswith((".xlsx", ".xls", ".csv")) and cls._matches_scheme(child, scheme):
-                    candidates.append(child)
-        return list(dict.fromkeys(candidates))
 
     @classmethod
     @transaction.atomic
@@ -281,7 +251,7 @@ class OfficialMutualFundUnderlyingService(MutualFundUnderlyingService):
 
     @classmethod
     def fetch_scheme(cls, scheme):
-        documents = cls._collect_official_candidates(scheme)
+        documents = cls.discover_documents(scheme)
         if not documents:
             raise ValueError(
                 f"No official AMFI/AMC portfolio disclosure was found for {scheme.scheme_name} "
@@ -295,17 +265,15 @@ class OfficialMutualFundUnderlyingService(MutualFundUnderlyingService):
                 path_name = document_url.rstrip("/").rsplit("/", 1)[-1]
                 filename = path_name if "." in path_name else "portfolio.html"
                 fallback_date = cls._extract_date(response.text)
-                result = cls.import_document(
+                return cls.import_document(
                     scheme,
                     response.content,
                     filename,
                     document_url,
                     fallback_date=fallback_date,
                 )
-                return result
             except Exception as exc:
                 last_error = exc
-                continue
 
         raise ValueError(
             f"All official portfolio disclosures failed for {scheme.scheme_name}: {last_error}"

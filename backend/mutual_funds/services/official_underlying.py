@@ -89,3 +89,31 @@ class OfficialMutualFundUnderlyingService(MutualFundUnderlyingService):
         ]
         MutualFundUnderlying.objects.bulk_create(objects, ignore_conflicts=True, batch_size=500)
         return {"status": "imported", "portfolio_date": portfolio_date, "records": len(objects)}
+
+    @classmethod
+    def fetch_scheme(cls, scheme):
+        documents = cls.discover_documents(scheme)
+        if not documents:
+            raise ValueError(
+                f"No official AMFI/AMC portfolio disclosure was found for {scheme.scheme_name} "
+                f"(scheme code={scheme.scheme_code}, ISIN={scheme.isin_growth or scheme.isin_dividend})."
+            )
+
+        last_error = None
+        for document_url in documents:
+            try:
+                response = cls._fetch(document_url)
+                filename = document_url.rstrip("/").rsplit("/", 1)[-1] or "portfolio.xlsx"
+                result = cls.import_document(
+                    scheme,
+                    response.content,
+                    filename,
+                    document_url,
+                    fallback_date=None,
+                )
+                return result
+            except Exception as exc:
+                last_error = exc
+                continue
+
+        raise ValueError(f"All official portfolio disclosures failed for {scheme.scheme_name}: {last_error}")

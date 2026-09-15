@@ -22,7 +22,7 @@ class MutualFundUnderlyingService:
 
     The service deliberately stores the disclosed portfolio date separately
     from fetched_at. A newly fetched copy for an existing portfolio date is
-    idempotent; an older portfolio date is never overwritten.
+    an idempotent upsert; an older portfolio date is never overwritten.
     """
 
     AMFI_DISCLOSURE_URL = "https://www.amfiindia.com/online-center/portfolio-disclosure"
@@ -83,7 +83,7 @@ class MutualFundUnderlyingService:
             if alias_norm in normalized:
                 return normalized[alias_norm]
         for normalized_column, original in normalized.items():
-            if any(cls.normalize_column(alias) in normalized_column for alias in aliases):
+            if any(alias in normalized_column for alias in aliases):
                 return original
         return None
 
@@ -92,7 +92,7 @@ class MutualFundUnderlyingService:
         if value is None or (isinstance(value, float) and pd.isna(value)):
             return None
         text = cls.normalize_text(value)
-        if not text or text.lower() in {"-", "--", "n.a.", "na", "n/a"}:
+        if not text or text in {"-", "--", "n.a.", "na", "n/a"}:
             return None
         text = text.replace(",", "").replace("₹", "").replace("%", "")
         text = re.sub(r"[^0-9.\-()]+", "", text)
@@ -110,8 +110,6 @@ class MutualFundUnderlyingService:
             return f"ISIN:{isin}"
         name = cls.normalize_text(security_name).upper()
         name = re.sub(r"[^A-Z0-9]+", " ", name)
-        # Keep the regex out of the f-string expression. Python 3.11 rejects
-        # backslashes in f-string expression parts even when inside a regex.
         normalized_name = re.sub(r"\s+", " ", name).strip()
         return f"NAME:{normalized_name}"
 
@@ -131,70 +129,24 @@ class MutualFundUnderlyingService:
                 groups = match.groupdict()
                 if groups["m"].isdigit():
                     return date(int(groups["y"]), int(groups["m"]), int(groups["d"]))
+                return datetime.strptime(
+                    f"{groups['d']} {groups['m']} {groups['y']}", "%d %B %Y"
+                ).date()
+            except ValueError:
                 try:
-                    return datetime.strptime(
-                        f"{groups['d']} {groups['m']} {groups['y']}", "%d %B %Y"
-                    ).date()
-                except ValueError:
                     return datetime.strptime(
                         f"{groups['d']} {groups['m']} {groups['y']}", "%d %b %Y"
                     ).date()
-            except ValueError:
-                continue
+                except ValueError:
+                    continue
         return None
-
-    @classmethod
-    def _response_content(cls, response):
-        response.raise_for_status()
-        return response.content
-
-    @classmethod
-    def _candidate_urls(cls, scheme):
-        """Return official disclosure URLs discovered from the AMFI portal."""
-        # The public AMFI portfolio-disclosure page is the authoritative index.
-        # AMC-specific discovery is intentionally handled by parsing links from
-        # that page rather than hard-coding unstable third-party endpoints.
-        return [cls.AMFI_DISCLOSURE_URL]
-
-    @classmethod
-    def _get(cls, url):
-        return requests.get(
-            url,
-            headers=cls._headers(),
-            timeout=cls.TIMEOUT_SECONDS,
-        )
-
-    @classmethod
-    def _parse_html_tables(cls, content, fallback_date=None):
-        try:
-            tables = pd.read_html(io.BytesIO(content))
-        except (ValueError, ImportError):
-            return []
-        records = []
-        for dataframe in tables:
-            records.extend(cls._parse_dataframe(dataframe, fallback_date=fallback_date))
-        return records
-
-    @classmethod
-    def parse_document(cls, content, filename, fallback_date=None):
-        filename_lower = filename.lower()
-        if filename_lower.endswith((".xls", ".xlsx")):
-            tables = pd.read_excel(io.BytesIO(content), sheet_name=None)
-            records = []
-            for dataframe in tables.values():
-                records.extend(cls._parse_dataframe(dataframe, fallback_date=fallback_date))
-            return records
-        if filename_lower.endswith(".csv"):
-            return cls._parse_dataframe(
-                pd.read_csv(io.BytesIO(content)), fallback_date=fallback_date
-            )
-        return cls._parse_html_tables(content, fallback_date=fallback_date)
 
     @classmethod
     def _parse_dataframe(cls, dataframe, fallback_date=None):
         dataframe = dataframe.dropna(how="all").copy()
         if dataframe.empty:
             return []
+
         dataframe.columns = [cls.normalize_text(column) for column in dataframe.columns]
         name_col = cls._find_column(dataframe.columns, "security_name")
         if not name_col:
@@ -212,12 +164,18 @@ class MutualFundUnderlyingService:
             lower = security_name.lower()
             if lower in {"total", "grand total", "total investments"} or lower.startswith("total "):
                 continue
+            if security_name.isdigit():
+                continue
+
             isin = cls.normalize_text(row.get(isin_col)) if isin_col else None
             quantity = cls._decimal(row.get(quantity_col)) if quantity_col else None
             market_value = cls._decimal(row.get(value_col)) if value_col else None
             percentage = cls._decimal(row.get(pct_col)) if pct_col else None
-            if percentage is None or percentage < 0 or percentage > 100:
+            if percentage is None:
                 continue
+            if percentage < 0 or percentage > 100:
+                continue
+
             rows.append({
                 "security_name": security_name,
                 "isin": isin or None,
@@ -230,11 +188,96 @@ class MutualFundUnderlyingService:
         return rows
 
     @classmethod
+    def parse_document(cls, content, filename, fallback_date=None):
+        portfolio_date = cls._extract_date(filename) or fallback_date
+        lower_name = filename.lower()
+        frames = []
+
+        if lower_name.endswith((".xlsx", ".xls")):
+            workbook = pd.ExcelFile(io.BytesIO(content))
+            for sheet in workbook.sheet_names:
+                try:
+                    frames.append(pd.read_excel(workbook, sheet_name=sheet, header=0))
+                except Exception:
+                    logger.debug("Unable to parse portfolio sheet %s", sheet, exc_info=True)
+        elif lower_name.endswith(".csv"):
+            frames.append(pd.read_csv(io.BytesIO(content)))
+        else:
+            try:
+                frames.extend(pd.read_html(io.BytesIO(content)))
+            except (ValueError, ImportError):
+                try:
+                    frames.extend(pd.read_html(content.decode("utf-8", errors="ignore")))
+                except (ValueError, ImportError):
+                    frames = []
+
+        records = []
+        for frame in frames:
+            records.extend(cls._parse_dataframe(frame, portfolio_date))
+        return records
+
+    @classmethod
+    def _official_links(cls, html, base_url):
+        links = []
+        for href in re.findall(r"(?:href|data-href)=[\"']([^\"']+)[\"']", html, re.I):
+            absolute = urljoin(base_url, href.strip())
+            parsed = urlparse(absolute)
+            if parsed.scheme not in {"http", "https"}:
+                continue
+            links.append(absolute)
+        return list(dict.fromkeys(links))
+
+    @classmethod
+    def _matches_scheme(cls, url, scheme):
+        haystack = cls.normalize_text(url).lower()
+        candidates = [scheme.scheme_code, scheme.isin_growth, scheme.isin_dividend, scheme.scheme_name]
+        for candidate in candidates:
+            candidate = cls.normalize_text(candidate).lower() if candidate else ""
+            if candidate and len(candidate) >= 4 and candidate in haystack:
+                return True
+        tokens = [token for token in re.split(r"[^a-z0-9]+", scheme.scheme_name.lower()) if len(token) >= 5]
+        return len(tokens) >= 2 and sum(token in haystack for token in tokens) >= min(3, len(tokens))
+
+    @classmethod
+    def _fetch(cls, url):
+        response = requests.get(url, headers=cls._headers(), timeout=cls.TIMEOUT_SECONDS)
+        response.raise_for_status()
+        return response
+
+    @classmethod
+    def discover_documents(cls, scheme):
+        """Discover downloadable portfolio files from official sources only."""
+        index_response = cls._fetch(cls.AMFI_DISCLOSURE_URL)
+        links = cls._official_links(index_response.text, cls.AMFI_DISCLOSURE_URL)
+
+        candidates = []
+        for link in links:
+            lower = link.lower()
+            if lower.endswith((".xlsx", ".xls", ".csv")):
+                if cls._matches_scheme(link, scheme):
+                    candidates.append(link)
+                continue
+            if cls._matches_scheme(link, scheme) or (
+                scheme.amc_name and cls.normalize_text(scheme.amc_name).lower() in lower
+            ):
+                try:
+                    page = cls._fetch(link)
+                except requests.RequestException:
+                    continue
+                for child in cls._official_links(page.text, link):
+                    child_lower = child.lower()
+                    if child_lower.endswith((".xlsx", ".xls", ".csv", ".pdf")) and cls._matches_scheme(child, scheme):
+                        candidates.append(child)
+
+        return list(dict.fromkeys(candidates))
+
+    @classmethod
     @transaction.atomic
     def import_document(cls, scheme, content, filename, source_reference, fallback_date=None):
         records = cls.parse_document(content, filename, fallback_date=fallback_date)
         if not records:
             raise ValueError(f"No valid portfolio rows found in {filename}.")
+
         portfolio_date = next((row["portfolio_date"] for row in records if row["portfolio_date"]), None)
         if portfolio_date is None:
             raise ValueError(f"Could not determine portfolio date for {filename}.")
@@ -245,11 +288,7 @@ class MutualFundUnderlyingService:
             source=cls.SOURCE,
         ).count()
         if existing_count:
-            return {
-                "status": "already_imported",
-                "portfolio_date": portfolio_date,
-                "records": existing_count,
-            }
+            return {"status": "already_imported", "portfolio_date": portfolio_date, "records": existing_count}
 
         objects = [
             MutualFundUnderlying(
@@ -271,33 +310,57 @@ class MutualFundUnderlyingService:
             ignore_conflicts=True,
             batch_size=500,
         )
-        return {
-            "status": "imported",
-            "portfolio_date": portfolio_date,
-            "records": len(objects),
-        }
+        return {"status": "imported", "portfolio_date": portfolio_date, "records": len(objects)}
 
     @classmethod
     def fetch_scheme(cls, scheme):
-        """Fetch the latest official disclosure for one scheme.
+        documents = cls.discover_documents(scheme)
+        if not documents:
+            raise ValueError(
+                f"No official AMFI/AMC portfolio disclosure was found for {scheme.scheme_name} "
+                f"(scheme code={scheme.scheme_code}, ISIN={scheme.isin_growth or scheme.isin_dividend})."
+            )
 
-        The actual discovery/parsing implementation is delegated to the
-        official-source adapter so the common persistence rules remain stable.
-        """
-        from .official_underlying import OfficialMutualFundUnderlyingService
-        return OfficialMutualFundUnderlyingService.fetch_scheme(scheme)
+        last_error = None
+        for document_url in documents:
+            try:
+                response = cls._fetch(document_url)
+                filename = urlparse(document_url).path.rsplit("/", 1)[-1] or "portfolio.xlsx"
+                result = cls.import_document(
+                    scheme,
+                    response.content,
+                    filename,
+                    document_url,
+                    fallback_date=timezone.localdate(),
+                )
+                return result
+            except Exception as exc:
+                last_error = exc
+                logger.warning(
+                    "Portfolio import failed for %s from %s: %s",
+                    scheme.scheme_name,
+                    document_url,
+                    exc,
+                )
+
+        raise ValueError(f"All official portfolio disclosures failed for {scheme.scheme_name}: {last_error}")
 
     @classmethod
     def fetch_all_active(cls, owner_ids=None):
-        filters = {"is_active": True}
+        queryset = MutualFundScheme.objects.filter(is_active=True).order_by("id")
         if owner_ids is not None:
-            filters["owner_id__in"] = owner_ids
-        schemes = MutualFundScheme.objects.filter(**filters)
-        results = []
-        for scheme in schemes.iterator():
+            queryset = queryset.filter(owner_id__in=list(owner_ids))
+
+        results = {"schemes": 0, "imported": 0, "already_imported": 0, "failed": 0, "errors": []}
+        for scheme in queryset:
+            results["schemes"] += 1
             try:
-                results.append(cls.fetch_scheme(scheme))
+                result = cls.fetch_scheme(scheme)
+                if result["status"] == "imported":
+                    results["imported"] += 1
+                else:
+                    results["already_imported"] += 1
             except Exception as exc:
-                logger.exception("MF underlying fetch failed for scheme %s", scheme.pk)
-                results.append({"status": "error", "scheme_id": scheme.pk, "error": str(exc)})
+                results["failed"] += 1
+                results["errors"].append({"scheme_id": scheme.id, "scheme_name": scheme.scheme_name, "error": str(exc)})
         return results

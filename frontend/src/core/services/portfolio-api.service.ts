@@ -42,18 +42,12 @@ export interface Transaction {
   notes: string | null;
   created_at: string;
 
-  /* ========================================================
-     HIERARCHY / CLASSIFICATION
-     Already returned by the existing TransactionSerializer
-     (backend/portfolio/serializers.py); added here so the
-     Reports page can group by Family -> Sub Class -> Underlying
-     without any backend change.
-     ======================================================== */
   family_name?: string | null;
   portfolio?: string | null;
   asset_class?: string | null;
   sub_class?: string | null;
   underlying?: string | null;
+  advisors?: string | null;
   isin?: string | null;
 }
 
@@ -96,6 +90,23 @@ export interface CreateTransactionRequest {
   notes?: string | null;
 }
 
+export interface UpdateTransactionRequest {
+  family_name?: string | null;
+  portfolio?: string | null;
+  asset_class?: string | null;
+  sub_class?: string | null;
+  asset_name?: string | null;
+  underlying?: string | null;
+  advisors?: string | null;
+  transaction_date?: string;
+  transaction_type?: string;
+  quantity?: number;
+  price_per_unit?: number;
+  amount?: number;
+  fees?: number;
+  notes?: string | null;
+}
+
 /* ==========================================================
    PORTFOLIO TREE
    Family
@@ -127,14 +138,6 @@ export interface PortfolioAssetNode {
   sector: string | null;
   cap_type: string | null;
 
-  /* ============================================================
-     Added alongside the SecurityMaster schema extension
-     (investments/migrations/0007_...). All null whenever no
-     SecurityMaster row exists for the asset yet, or the specific
-     field hasn't been filled in via Django admin — never
-     defaulted/fabricated on the backend, so treat null as
-     "unknown", not zero.
-     ============================================================ */
   amc_name: string | null;
   pe_ratio: number | null;
   pb_ratio: number | null;
@@ -271,6 +274,24 @@ export class PortfolioApiService {
           headers: this.getCsrfHeaders(),
           withCredentials: true,
         }),
+      ),
+    );
+  }
+
+  updateTransaction(
+    transactionId: number,
+    payload: UpdateTransactionRequest,
+  ): Observable<Transaction> {
+    return this.getCsrfToken().pipe(
+      switchMap(() =>
+        this.http.patch<Transaction>(
+          `${this.baseUrl}/transactions/${transactionId}/`,
+          payload,
+          {
+            headers: this.getCsrfHeaders(),
+            withCredentials: true,
+          },
+        ),
       ),
     );
   }

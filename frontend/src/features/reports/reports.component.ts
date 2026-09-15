@@ -15,6 +15,7 @@ import {
   FamilyNode,
   PortfolioAssetNode,
   Transaction,
+  UpdateTransactionRequest,
 } from '../../core/services/portfolio-api.service';
 
 /* ==============================================================
@@ -133,6 +134,11 @@ export class ReportsComponent implements OnInit {
 
   downloadMenuOpen = false;
 
+  /* Transaction editor used by the final Transactions table. */
+  editingTransaction: Transaction | null = null;
+  editTransactionError = '';
+  editTransactionSaving = false;
+
   ngOnInit(): void {
     this.loadReports();
   }
@@ -191,6 +197,97 @@ export class ReportsComponent implements OnInit {
 
   refresh(): void {
     this.loadReports();
+  }
+
+  openEditTransaction(tx: Transaction): void {
+    this.editTransactionError = '';
+    this.editingTransaction = { ...tx };
+  }
+
+  cancelEditTransaction(): void {
+    if (this.editTransactionSaving) {
+      return;
+    }
+
+    this.editingTransaction = null;
+    this.editTransactionError = '';
+  }
+
+  saveEditTransaction(): void {
+    const tx = this.editingTransaction;
+
+    if (!tx) {
+      return;
+    }
+
+    const quantity = Number(tx.quantity);
+    const pricePerUnit = Number(tx.price_per_unit);
+    const amount = Number(tx.amount);
+    const fees = Number(tx.fees);
+
+    if (!tx.transaction_date) {
+      this.editTransactionError = 'Transaction date is required.';
+      return;
+    }
+
+    if (!tx.transaction_type) {
+      this.editTransactionError = 'Transaction type is required.';
+      return;
+    }
+
+    if (![quantity, pricePerUnit, amount, fees].every((value) => Number.isFinite(value))) {
+      this.editTransactionError = 'Quantity, price, amount and fees must be valid numbers.';
+      return;
+    }
+
+    const payload: UpdateTransactionRequest = {
+      family_name: tx.family_name ?? '',
+      portfolio: tx.portfolio ?? '',
+      asset_class: tx.asset_class ?? '',
+      sub_class: tx.sub_class ?? '',
+      asset_name: tx.asset_name ?? '',
+      underlying: tx.underlying ?? '',
+      advisors: tx.advisors ?? '',
+      transaction_date: tx.transaction_date,
+      transaction_type: tx.transaction_type,
+      quantity,
+      price_per_unit: pricePerUnit,
+      amount,
+      fees,
+      notes: tx.notes ?? null,
+    };
+
+    this.editTransactionSaving = true;
+    this.editTransactionError = '';
+
+    this.portfolioApi.updateTransaction(tx.id, payload).subscribe({
+      next: () => {
+        this.editTransactionSaving = false;
+        this.editingTransaction = null;
+
+        /* Reload both transactions and the portfolio tree so the
+           Report hierarchy, quantities, invested value, current
+           value, gain and XIRR all reflect the database change. */
+        this.loadReports();
+      },
+      error: (error) => {
+        console.error('Transaction update API error:', error);
+        this.editTransactionSaving = false;
+
+        if (error?.status === 401 || error?.status === 403) {
+          this.editTransactionError = 'You are not authorized to edit this transaction.';
+        } else if (error?.status === 400) {
+          this.editTransactionError =
+            error?.error?.detail ||
+            error?.error?.message ||
+            'The transaction could not be updated. Please check the entered values.';
+        } else {
+          this.editTransactionError = 'Unable to update the transaction. Please try again.';
+        }
+
+        this.cdr.detectChanges();
+      },
+    });
   }
 
   /* ============================================================

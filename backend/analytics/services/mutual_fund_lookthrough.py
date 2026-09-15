@@ -17,14 +17,13 @@ class MutualFundLookThroughService:
     @classmethod
     def latest_underlyings(cls, user):
         owner_ids = cls.owner_ids(user)
-        schemes = MutualFundHolding.objects.filter(
+        holdings = MutualFundHolding.objects.filter(
             owner_id__in=owner_ids,
             scheme__is_active=True,
             current_value__gt=0,
         ).select_related("scheme")
-
         result = {}
-        for holding in schemes:
+        for holding in holdings:
             rows = MutualFundUnderlying.objects.filter(scheme=holding.scheme)
             latest_date = rows.order_by("-portfolio_date").values_list("portfolio_date", flat=True).first()
             if latest_date is None:
@@ -38,12 +37,10 @@ class MutualFundLookThroughService:
 
     @classmethod
     def _classification_maps(cls, user):
-        owner_ids = cls.owner_ids(user)
         assets = Asset.objects.filter(
-            owner_id__in=owner_ids,
+            owner_id__in=cls.owner_ids(user),
             is_active=True,
         ).select_related("security_master")
-
         by_isin = {}
         by_name = {}
         for asset in assets:
@@ -66,62 +63,60 @@ class MutualFundLookThroughService:
             asset_class = asset.category
             if asset.security_master and not sector:
                 sector = (asset.security_master.sector or "").strip() or None
-
         return asset_class, sector
 
     @classmethod
     def allocation(cls, user, direct_holdings):
-        """Return existing allocation shape, replacing disclosed MF rows with look-through exposure."""
+        """Preserve the existing allocation response while replacing disclosed MF exposure with look-through exposure."""
         totals = {}
-        total_value = cls.ZERO
         by_isin, by_name = cls._classification_maps(user)
         lookthrough = cls.latest_underlyings(user)
 
         for holding in direct_holdings:
             value = holding.current_value or cls.ZERO
-            if value <= 0:
-                continue
-            totals[holding.asset.category] = totals.get(holding.asset.category, cls.ZERO) + value
-            total_value += value
+            if value > 0:
+                totals[holding.asset.category] = totals.get(holding.asset.category, cls.ZERO) + value
 
-        # Remove each MF's own bucket only when a usable disclosure exists.
-        for scheme_id, data in lookthrough.items():
+        # Mutual funds are not part of PortfolioAnalytics.get_holdings().
+        # Add them here only when no usable disclosure exists; otherwise their
+        # value is represented exclusively by their underlying exposures.
+        all_mf_holdings = MutualFundHolding.objects.filter(
+            owner_id__in=cls.owner_ids(user),
+            scheme__is_active=True,
+            current_value__gt=0,
+        ).select_related("scheme")
+        for mf_holding in all_mf_holdings:
+            if mf_holding.scheme_id in lookthrough:
+                continue
+            value = mf_holding.current_value or cls.ZERO
+            totals["MUTUAL_FUND"] = totals.get("MUTUAL_FUND", cls.ZERO) + value
+
+        for data in lookthrough.values():
             mf_value = data["holding"].current_value or cls.ZERO
             if mf_value <= 0:
                 continue
-            totals["MUTUAL_FUND"] = totals.get("MUTUAL_FUND", cls.ZERO) - mf_value
-            if totals["MUTUAL_FUND"] <= 0:
-                totals.pop("MUTUAL_FUND", None)
-
-            classified_value = cls.ZERO
+            disclosed_total = cls.ZERO
             for row in data["rows"]:
                 pct = row.percentage_of_nav or cls.ZERO
                 exposure = mf_value * pct / Decimal("100")
+                disclosed_total += exposure
                 asset_class, sector = cls.classify(row, by_isin, by_name)
                 if asset_class:
                     bucket = asset_class
                 elif sector:
-                    # A disclosed industry/sector is sufficient to identify
-                    # an equity-style exposure for allocation purposes.
                     bucket = "STOCK"
                 else:
                     bucket = cls.UNCLASSIFIED
                 totals[bucket] = totals.get(bucket, cls.ZERO) + exposure
-                if bucket != cls.UNCLASSIFIED:
-                    classified_value += exposure
 
-            # Keep the portfolio total mathematically consistent. The
-            # undisclosed/residual portion is genuinely unclassified rather
-            # than being assigned to a guessed asset class.
-            residual = mf_value - sum(
-                (mf_value * (row.percentage_of_nav or cls.ZERO) / Decimal("100") for row in data["rows"]),
-                cls.ZERO,
-            )
+            # Preserve total portfolio value without guessing the class of
+            # the residual cash/derivative/other disclosure rows.
+            residual = mf_value - disclosed_total
             if residual > 0:
                 totals[cls.UNCLASSIFIED] = totals.get(cls.UNCLASSIFIED, cls.ZERO) + residual
 
-        results = []
         grand_total = sum((value for value in totals.values() if value > 0), cls.ZERO)
+        results = []
         for category, value in sorted(totals.items(), key=lambda item: item[1], reverse=True):
             if value <= 0:
                 continue
@@ -146,15 +141,12 @@ class MutualFundLookThroughService:
             sector = None
             if holding.asset.security_master:
                 sector = (holding.asset.security_master.sector or "").strip() or None
-            sector = sector or cls.UNCLASSIFIED
-            totals[sector] = totals.get(sector, cls.ZERO) + value
+            totals[sector or cls.UNCLASSIFIED] = totals.get(sector or cls.UNCLASSIFIED, cls.ZERO) + value
 
         for data in cls.latest_underlyings(user).values():
             mf_value = data["holding"].current_value or cls.ZERO
             for row in data["rows"]:
                 asset_class, sector = cls.classify(row, by_isin, by_name)
-                # Sector Allocation is intentionally Equity-only. A disclosed
-                # sector is the strongest available classification signal.
                 if not sector and asset_class not in {"STOCK", "ETF"}:
                     continue
                 exposure = mf_value * (row.percentage_of_nav or cls.ZERO) / Decimal("100")

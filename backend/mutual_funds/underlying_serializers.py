@@ -19,6 +19,7 @@ class MutualFundUnderlyingSerializer(serializers.ModelSerializer):
             "quantity",
             "market_value",
             "percentage_of_nav",
+            "sector",
             "portfolio_date",
             "source",
             "source_reference",

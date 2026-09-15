@@ -9,12 +9,12 @@ from market_data.services.security_resolver import SecurityResolver
 class Command(BaseCommand):
     """
     Refresh the LIVE-tracked SecurityMaster fields — sector,
-    pe_ratio, pb_ratio, roe — from Yahoo Finance, for every
+    pe_ratio, pb_ratio, peg_ratio, roe — from Yahoo Finance, for every
     SecurityMaster row that can be resolved to a Yahoo ticker.
 
     Unlike link_security_master and load_security_master_data
     (which only ever fill an EMPTY field, protecting anything
-    already set), this command ALWAYS overwrites those four
+    already set), this command ALWAYS overwrites those five
     fields on every successful run — that's the point of it: it's
     meant to run unattended (e.g. nightly, via Task Scheduler /
     cron) and keep them current without a human re-running a batch
@@ -46,7 +46,7 @@ class Command(BaseCommand):
     """
 
     help = (
-        "Refresh SecurityMaster sector/pe_ratio/pb_ratio/roe from "
+        "Refresh SecurityMaster sector/pe_ratio/pb_ratio/peg_ratio/roe from "
         "Yahoo Finance for every resolvable security. Dry-run by "
         "default; pass --apply to write. Intended to run nightly "
         "via a scheduled task."
@@ -131,6 +131,7 @@ class Command(BaseCommand):
             sector = info.get("sector")
             pe_ratio = info.get("trailingPE")
             pb_ratio = info.get("priceToBook")
+            peg_ratio = info.get("pegRatio")
 
             # yfinance reports ROE as a fraction (0.234), not a
             # percentage — SecurityMaster.roe is stored as a
@@ -149,6 +150,9 @@ class Command(BaseCommand):
 
             if pb_ratio is not None and pb_ratio != security_master.pb_ratio:
                 changes["pb_ratio"] = (security_master.pb_ratio, round(pb_ratio, 2))
+
+            if peg_ratio is not None and peg_ratio != security_master.peg_ratio:
+                changes["peg_ratio"] = (security_master.peg_ratio, round(peg_ratio, 2))
 
             if roe is not None and roe != security_master.roe:
                 changes["roe"] = (security_master.roe, roe)

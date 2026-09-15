@@ -1,11 +1,11 @@
-from django.db.models import Q, Sum
+from django.db.models import Q
 
-from investments.models import Asset, AssetCategory, Holding, PortfolioPosition
+from investments.models import Asset, AssetCategory, PortfolioPosition
 from watchlist.models import InvestmentProduct, ProductType
 
 
 class OwnershipService:
-    """Derive ownership from PWMS holdings; never stores a second ownership flag."""
+    """Derive ownership from existing PWMS portfolio positions."""
 
     @staticmethod
     def _asset_queryset(product):
@@ -16,8 +16,7 @@ class OwnershipService:
                 qs = qs.filter(category=AssetCategory.MUTUAL_FUND)
             return qs
         if product.external_identifier:
-            qs = qs.filter(Q(symbol__iexact=product.external_identifier) | Q(name__icontains=product.name))
-            return qs
+            return qs.filter(Q(symbol__iexact=product.external_identifier) | Q(name__iexact=product.name))
         return qs.filter(name__iexact=product.name)
 
     @classmethod
@@ -26,33 +25,30 @@ class OwnershipService:
         if product.product_type == ProductType.MUTUAL_FUND:
             assets = assets.filter(category=AssetCategory.MUTUAL_FUND)
         else:
-            assets = assets.filter(
-                Q(asset_class__icontains="pms")
-                | Q(sub_class__icontains="pms")
-                | Q(name__icontains="pms")
-            )
+            # PMS holdings are not a separate AssetCategory in the existing
+            # schema. Match only existing product identity/institution/name;
+            # transaction-level PMS labels are intentionally not copied into a
+            # second ownership table.
+            assets = assets.filter(Q(name__icontains=product.name) | Q(institution__icontains=product.provider or "\u0000"))
 
         positions = PortfolioPosition.objects.filter(owner=user, asset__in=assets).select_related("asset")
         rows = []
         for position in positions:
             if position.quantity <= 0 and position.current_value <= 0:
                 continue
-            rows.append(
-                {
-                    "family": position.family_name,
-                    "portfolio": position.portfolio,
-                    "current_value": position.current_value,
-                    "invested_value": position.invested_value,
-                    "quantity": position.quantity,
-                    "current_value_per_unit": position.current_price,
-                    "return_percent": (
-                        ((position.current_value / position.invested_value) - 1) * 100
-                        if position.invested_value
-                        else None
-                    ),
-                    "holding_status": "OWNED",
-                }
-            )
+            rows.append({
+                "family": position.family_name,
+                "portfolio": position.portfolio,
+                "current_value": position.current_value,
+                "invested_value": position.invested_value,
+                "quantity": position.quantity,
+                "current_value_per_unit": position.current_price,
+                "return_percent": (
+                    ((position.current_value / position.invested_value) - 1) * 100
+                    if position.invested_value else None
+                ),
+                "holding_status": "OWNED",
+            })
         return rows
 
     @classmethod

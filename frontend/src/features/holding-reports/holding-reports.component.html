@@ -1,0 +1,155 @@
+<div class="holding-reports-page">
+  <header class="holding-reports-header">
+    <div>
+      <div class="breadcrumb">Reports / Holding Reports</div>
+      <h1>Holding Reports</h1>
+      <p>Current holdings, grouped like the Reports page and downloaded one row per holding.</p>
+    </div>
+
+    <div class="header-actions">
+      <button type="button" class="secondary-button" [disabled]="loading" (click)="refresh()">
+        Refresh
+      </button>
+      <button type="button" class="primary-button" [disabled]="loading || downloading" (click)="downloadHoldingReport()">
+        {{ downloading ? 'Preparing...' : 'Download Holding Report' }}
+      </button>
+    </div>
+  </header>
+
+  <div *ngIf="!loading && !error" class="selection-area">
+    <div class="selection-box">
+      <div class="selection-title">Family Name</div>
+      <div class="selection-buttons">
+        <button type="button" class="selection-button" [class.active]="!selectedFamily" (click)="clearFamily()">All</button>
+        <button *ngFor="let family of familyOptions" type="button" class="selection-button" [class.active]="isFamilySelected(family)" (click)="selectFamily(family)">
+          {{ family }}
+        </button>
+      </div>
+    </div>
+
+    <div class="selection-box">
+      <div class="selection-title">Asset Class</div>
+      <div class="selection-buttons">
+        <button type="button" class="selection-button" [class.active]="!selectedAssetClass" (click)="clearAssetClass()">All</button>
+        <button *ngFor="let assetClass of assetClassOptions" type="button" class="selection-button" [class.active]="isAssetClassSelected(assetClass)" (click)="selectAssetClass(assetClass)">
+          {{ assetClass }}
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <div *ngIf="loading" class="state-card">
+    <span class="loading-spinner"></span>
+    Loading holding reports...
+  </div>
+
+  <div *ngIf="!loading && error" class="state-card error-state">
+    {{ error }}
+  </div>
+
+  <section *ngIf="!loading && !error" class="report-card">
+    <div class="card-header">
+      <div>
+        <h2>Holdings</h2>
+        <p>One current-position row per holding. No transaction rows are used in this report.</p>
+      </div>
+      <span class="count-badge">{{ flattenFilteredHoldings().length }} Holdings</span>
+    </div>
+
+    <div class="table-scroll">
+      <table class="holding-table">
+        <thead>
+          <tr>
+            <th>Sub Class</th>
+            <th>Quantity</th>
+            <th>Invested Value</th>
+            <th>Current Value</th>
+            <th>Gain</th>
+            <th>XIRR</th>
+            <th>Holdings</th>
+            <th class="arrow-column"></th>
+          </tr>
+        </thead>
+        <tbody>
+          <ng-container *ngFor="let group of subClassGroups; trackBy: trackBySubClass">
+            <tr class="sub-class-row" [class.expanded]="expandedSubClass === group.sub_class" (click)="toggleSubClass(group.sub_class)">
+              <td class="sub-class-name">
+                <span class="row-chevron" [class.open]="expandedSubClass === group.sub_class">›</span>
+                {{ group.sub_class }}
+              </td>
+              <td>{{ formatNumber(group.quantity) }}</td>
+              <td>₹{{ formatCurrency(group.invested_value) }}</td>
+              <td>₹{{ formatCurrency(group.current_value) }}</td>
+              <td class="pnl-cell" [ngClass]="getPnlClass(group.pnl)">
+                {{ group.pnl >= 0 ? '+' : '-' }}₹{{ formatCurrency(Math.abs(group.pnl)) }}
+              </td>
+              <td class="pnl-cell" [ngClass]="group.xirr === null ? 'neutral' : getPnlClass(group.xirr)">
+                {{ formatPercentage(group.xirr) }}
+              </td>
+              <td>{{ group.holdings.length }}</td>
+              <td class="arrow-column"><span class="row-chevron right" [class.open]="expandedSubClass === group.sub_class">›</span></td>
+            </tr>
+
+            <tr *ngIf="expandedSubClass === group.sub_class" class="detail-row">
+              <td colspan="8">
+                <div class="detail-container">
+                  <div class="detail-title">{{ group.sub_class }} Holdings</div>
+
+                  <div class="asset-columns-header">
+                    <span class="asset-name-header">Asset Name</span>
+                    <span>Family</span>
+                    <span>Portfolio</span>
+                    <span>Asset Class</span>
+                    <span>Quantity</span>
+                    <span>Invested Value</span>
+                    <span>Current Value</span>
+                    <span>Gain</span>
+                  </div>
+
+                  <div class="holding-groups">
+                    <ng-container *ngFor="let holding of group.holdings; trackBy: trackByHolding">
+                      <div class="holding-group">
+                        <button type="button" class="holding-header" [class.expanded]="expandedAssetName === getAssetKey(group.sub_class, holding.asset_name)" (click)="toggleAssetName(getAssetKey(group.sub_class, holding.asset_name))">
+                          <span class="row-chevron" [class.open]="expandedAssetName === getAssetKey(group.sub_class, holding.asset_name)">›</span>
+                          <span class="asset-name">{{ holding.asset_name }}</span>
+                          <span>{{ holding.holdings[0].family_name }}</span>
+                          <span>{{ holding.holdings[0].portfolio }}</span>
+                          <span>{{ holding.holdings[0].asset_class }}</span>
+                          <span>{{ formatNumber(holding.quantity) }}</span>
+                          <span>₹{{ formatCurrency(holding.invested_value) }}</span>
+                          <span>₹{{ formatCurrency(holding.current_value) }}</span>
+                          <span class="pnl-cell" [ngClass]="getPnlClass(holding.pnl)">
+                            {{ holding.pnl >= 0 ? '+' : '-' }}₹{{ formatCurrency(Math.abs(holding.pnl)) }}
+                          </span>
+                        </button>
+
+                        <div *ngIf="expandedAssetName === getAssetKey(group.sub_class, holding.asset_name)" class="holding-detail">
+                          <div class="holding-detail-grid">
+                            <div><span>Underlying</span><strong>{{ holding.asset.underlying || holding.asset.asset_name }}</strong></div>
+                            <div><span>ISIN</span><strong>{{ holding.asset.isin || '-' }}</strong></div>
+                            <div><span>Advisor</span><strong>{{ holding.asset.advisors || '-' }}</strong></div>
+                            <div><span>Average Cost</span><strong>₹{{ formatDecimal(holding.asset.average_cost) }}</strong></div>
+                            <div><span>Current Price / NAV</span><strong>₹{{ formatDecimal(holding.asset.current_price) }}</strong></div>
+                            <div><span>Gain %</span><strong>{{ formatPercentage(holding.asset.pnl_percentage) }}</strong></div>
+                            <div><span>XIRR</span><strong>{{ formatPercentage(holding.asset.xirr) }}</strong></div>
+                            <div><span>Sector</span><strong>{{ holding.asset.sector || '-' }}</strong></div>
+                            <div><span>Cap Type</span><strong>{{ holding.asset.cap_type || '-' }}</strong></div>
+                            <div><span>AMC</span><strong>{{ holding.asset.amc_name || '-' }}</strong></div>
+                          </div>
+                        </div>
+                      </div>
+                    </ng-container>
+                  </div>
+                </div>
+              </td>
+            </tr>
+          </ng-container>
+
+          <tr *ngIf="!subClassGroups.length">
+            <td colspan="8" class="empty-state">No holdings match the selected filters.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+</div>

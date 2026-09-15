@@ -1,4 +1,4 @@
-from django.core.management.base import BaseCommand
+from django.core.management.base import BaseCommand, CommandError
 
 from mutual_funds.services.official_underlying import OfficialMutualFundUnderlyingService
 
@@ -18,16 +18,14 @@ class Command(BaseCommand):
             from mutual_funds.models import MutualFundScheme
             scheme = MutualFundScheme.objects.filter(id=scheme_id, is_active=True).first()
             if scheme is None:
-                self.stderr.write(self.style.ERROR("Scheme not found or inactive."))
-                return
-            try:
-                result = OfficialMutualFundUnderlyingService.fetch_scheme(scheme)
-            except Exception as exc:
-                self.stderr.write(self.style.ERROR(str(exc)))
-                return
+                raise CommandError("Scheme not found or inactive.")
+            result = OfficialMutualFundUnderlyingService.fetch_scheme(scheme)
             self.stdout.write(self.style.SUCCESS(str(result)))
             return
 
         owner_ids = [owner_id] if owner_id else None
         result = OfficialMutualFundUnderlyingService.fetch_all_active(owner_ids=owner_ids)
-        self.stdout.write(self.style.SUCCESS(str(result)))
+        if result["failed"]:
+            self.stderr.write(self.style.WARNING(str(result)))
+        else:
+            self.stdout.write(self.style.SUCCESS(str(result)))

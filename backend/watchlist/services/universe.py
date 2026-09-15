@@ -10,6 +10,7 @@ from django.db import transaction
 from django.utils import timezone
 
 from watchlist.models import DiscoveryRun, InvestmentProduct, MutualFundProduct, PerformanceSnapshot, PMSProduct, ProductType
+from watchlist.services.performance import AMFIPerformanceService
 
 
 class AMFIUniverseService:
@@ -112,11 +113,12 @@ class AMFIUniverseService:
                     updated += int(not created)
                 except Exception:
                     failed += 1
+            performance = AMFIPerformanceService.refresh()
             run.discovered, run.updated, run.failed = discovered, updated, failed
-            run.details = {"source_reference": cls.NAV_URL}
+            run.details = {"source_reference": cls.NAV_URL, "performance": performance}
             run.finished_at = timezone.now()
             run.save(update_fields=["discovered", "updated", "failed", "details", "finished_at"])
-            return {"discovered": discovered, "updated": updated, "failed": failed}
+            return {"discovered": discovered, "updated": updated, "failed": failed, "performance": performance}
         except Exception as exc:
             run.failed = 1
             run.details = {"error": str(exc)}

@@ -8,23 +8,18 @@ import { environment } from '../../environments/environment';
 
 export interface SettingsProfile {
   id: number;
-
   username: string;
-
   email: string;
 }
 
 export interface SettingsPreferences {
   currency: string;
-
   date_format: string;
-
   default_analytics_period: number;
 }
 
 export interface SettingsResponse {
   profile: SettingsProfile;
-
   preferences: SettingsPreferences;
 }
 
@@ -36,6 +31,22 @@ export interface ChangePasswordResponse {
   message: string;
 }
 
+export interface TransactionEditHistory {
+  id: number;
+  transaction_id: number | null;
+  edited_by_username: string;
+  edited_at: string;
+  asset_name: string;
+  old_values: Record<string, string | number | null>;
+  new_values: Record<string, string | number | null>;
+  changed_fields: string[];
+}
+
+export interface TransactionEditHistoryResponse {
+  count: number;
+  results: TransactionEditHistory[];
+}
+
 interface CsrfResponse {
   csrfToken?: string;
 }
@@ -45,16 +56,8 @@ interface CsrfResponse {
 })
 export class SettingsApiService {
   private readonly http = inject(HttpClient);
-
   private readonly baseUrl = `${environment.apiUrl}/api`;
-
-  private readonly requestOptions = {
-    withCredentials: true,
-  };
-
-  // ======================================================
-  // CSRF
-  // ======================================================
+  private readonly requestOptions = { withCredentials: true };
 
   private getCsrfToken(): Observable<CsrfResponse> {
     return this.http.get<CsrfResponse>(`${this.baseUrl}/health/`, {
@@ -76,18 +79,19 @@ export class SettingsApiService {
     return null;
   }
 
-  // ======================================================
-  // SETTINGS
-  // ======================================================
-
   getSettings(): Observable<SettingsResponse> {
     return this.http.get<SettingsResponse>(`${this.baseUrl}/settings/`, this.requestOptions);
   }
 
+  getTransactionEditHistory(): Observable<TransactionEditHistoryResponse> {
+    return this.http.get<TransactionEditHistoryResponse>(
+      `${environment.apiUrl}/api/portfolio/transactions/edit-history/`,
+      this.requestOptions,
+    );
+  }
+
   updateSettings(
-    data: Partial<SettingsPreferences> & {
-      email?: string;
-    },
+    data: Partial<SettingsPreferences> & { email?: string },
   ): Observable<UpdateSettingsResponse> {
     const csrfToken = this.readCsrfToken();
 
@@ -106,9 +110,7 @@ export class SettingsApiService {
 
   changePassword(
     currentPassword: string,
-
     newPassword: string,
-
     confirmPassword: string,
   ): Observable<ChangePasswordResponse> {
     const csrfToken = this.readCsrfToken();
@@ -124,9 +126,7 @@ export class SettingsApiService {
       `${this.baseUrl}/settings/change-password/`,
       {
         current_password: currentPassword,
-
         new_password: newPassword,
-
         confirm_password: confirmPassword,
       },
       {

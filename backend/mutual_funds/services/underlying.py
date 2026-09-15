@@ -218,13 +218,11 @@ class MutualFundUnderlyingService:
         elif lower_name.endswith(".csv"):
             frames.append(pd.read_csv(io.BytesIO(content)))
         else:
+            html_text = content.decode("utf-8", errors="ignore") if isinstance(content, bytes) else str(content)
             try:
-                frames.extend(pd.read_html(io.BytesIO(content)))
+                frames.extend(pd.read_html(io.StringIO(html_text)))
             except (ValueError, ImportError):
-                try:
-                    frames.extend(pd.read_html(content.decode("utf-8", errors="ignore")))
-                except (ValueError, ImportError):
-                    frames = []
+                frames = []
 
         records = []
         for frame in frames:
@@ -479,6 +477,18 @@ class MutualFundUnderlyingService:
                 seen.add(key)
                 pairs.append((holding.owner_id, scheme))
         return pairs
+
+    @classmethod
+    def fetch_scheme(cls, scheme):
+        """Discover and import the latest official disclosure for one scheme.
+
+        Implemented by subclasses (see ``OfficialMutualFundUnderlyingService``).
+        Declared here so ``fetch_all_active`` has a documented contract to
+        call polymorphically via ``cls.fetch_scheme``.
+        """
+        raise NotImplementedError(
+            "fetch_scheme must be implemented by a MutualFundUnderlyingService subclass."
+        )
 
     @classmethod
     def fetch_all_active(cls, owner_ids=None):

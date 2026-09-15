@@ -181,14 +181,28 @@ class OfficialMutualFundUnderlyingService(MutualFundUnderlyingService):
 
             # Explicitly provide header=0. This avoids parser-dependent header
             # inference on AMC HTML tables.
+            missing_parser_error = None
             for header in (0, None):
                 try:
                     parsed = pd.read_html(StringIO(html), header=header)
-                except (ValueError, ImportError):
+                except ImportError as exc:
+                    # pandas.read_html needs an HTML parser backend (lxml or
+                    # html5lib + beautifulsoup4). Surface this distinctly
+                    # from "no tables found" so it isn't mistaken for a bad
+                    # disclosure page.
+                    missing_parser_error = exc
+                    continue
+                except ValueError:
                     continue
                 frames.extend(parsed)
                 if parsed:
                     break
+            if not frames and missing_parser_error is not None:
+                raise ImportError(
+                    "Parsing HTML portfolio disclosures requires the 'lxml' "
+                    "or 'html5lib' package to be installed (pip install lxml). "
+                    f"Original error: {missing_parser_error}"
+                ) from missing_parser_error
 
         records = []
         for frame in frames:

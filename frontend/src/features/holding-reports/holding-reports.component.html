@@ -51,7 +51,7 @@
     <div class="card-header">
       <div>
         <h2>Holdings</h2>
-        <p>One current-position row per holding. No transaction rows are used in this report.</p>
+        <p>One current-position row per holding. Values come from stored portfolio positions, not transaction rows.</p>
       </div>
       <span class="count-badge">{{ holdingCount }} Holdings</span>
     </div>
@@ -83,9 +83,7 @@
               <td class="pnl-cell" [ngClass]="getPnlClass(group.pnl)">
                 {{ group.pnl >= 0 ? '+' : '-' }}₹{{ formatAbsoluteCurrency(group.pnl) }}
               </td>
-              <td class="pnl-cell" [ngClass]="group.xirr === null ? 'neutral' : getPnlClass(group.xirr)">
-                {{ formatPercentage(group.xirr) }}
-              </td>
+              <td class="pnl-cell neutral">-</td>
               <td>{{ group.holdings.length }}</td>
               <td class="arrow-column"><span class="row-chevron right" [class.open]="expandedSubClass === group.sub_class">›</span></td>
             </tr>
@@ -112,29 +110,29 @@
                         <button type="button" class="holding-header" [class.expanded]="expandedAssetName === getAssetKey(group.sub_class, holding)" (click)="toggleAssetName(getAssetKey(group.sub_class, holding))">
                           <span class="row-chevron" [class.open]="expandedAssetName === getAssetKey(group.sub_class, holding)">›</span>
                           <span class="asset-name">{{ holding.asset_name }}</span>
-                          <span>{{ holding.holdings[0].family_name }}</span>
-                          <span>{{ holding.holdings[0].portfolio }}</span>
-                          <span>{{ holding.holdings[0].asset_class }}</span>
-                          <span>{{ formatNumber(holding.quantity) }}</span>
-                          <span>₹{{ formatCurrency(holding.invested_value) }}</span>
-                          <span>₹{{ formatCurrency(holding.current_value) }}</span>
-                          <span class="pnl-cell" [ngClass]="getPnlClass(holding.pnl)">
-                            {{ holding.pnl >= 0 ? '+' : '-' }}₹{{ formatAbsoluteCurrency(holding.pnl) }}
+                          <span>{{ holding.row.family_name }}</span>
+                          <span>{{ holding.row.portfolio }}</span>
+                          <span>{{ holding.row.asset_class }}</span>
+                          <span>{{ formatNumber(holding.row.quantity) }}</span>
+                          <span>₹{{ formatCurrency(holding.row.invested_value) }}</span>
+                          <span>₹{{ formatCurrency(holding.row.current_value) }}</span>
+                          <span class="pnl-cell" [ngClass]="getPnlClass(holding.row.gain)">
+                            {{ holding.row.gain >= 0 ? '+' : '-' }}₹{{ formatAbsoluteCurrency(holding.row.gain) }}
                           </span>
                         </button>
 
                         <div *ngIf="expandedAssetName === getAssetKey(group.sub_class, holding)" class="holding-detail">
                           <div class="holding-detail-grid">
-                            <div><span>Underlying</span><strong>{{ holding.asset.underlying || holding.asset.asset_name }}</strong></div>
-                            <div><span>ISIN</span><strong>{{ holding.asset.isin || '-' }}</strong></div>
-                            <div><span>Advisor</span><strong>{{ holding.asset.advisors || '-' }}</strong></div>
-                            <div><span>Average Cost</span><strong>₹{{ formatDecimal(holding.asset.average_cost) }}</strong></div>
-                            <div><span>Current Price / NAV</span><strong>₹{{ formatDecimal(holding.asset.current_price) }}</strong></div>
-                            <div><span>Gain %</span><strong>{{ formatPercentage(holding.asset.pnl_percentage) }}</strong></div>
-                            <div><span>XIRR</span><strong>{{ formatPercentage(holding.asset.xirr) }}</strong></div>
-                            <div><span>Sector</span><strong>{{ holding.asset.sector || '-' }}</strong></div>
-                            <div><span>Cap Type</span><strong>{{ holding.asset.cap_type || '-' }}</strong></div>
-                            <div><span>AMC</span><strong>{{ holding.asset.amc_name || '-' }}</strong></div>
+                            <div><span>Underlying</span><strong>{{ holding.row.underlying || holding.row.asset_name }}</strong></div>
+                            <div><span>ISIN</span><strong>{{ holding.row.isin || '-' }}</strong></div>
+                            <div><span>Advisor</span><strong>{{ holding.row.advisors || '-' }}</strong></div>
+                            <div><span>Average Cost</span><strong>₹{{ formatDecimal(holding.row.average_cost) }}</strong></div>
+                            <div><span>Current Price / NAV</span><strong>₹{{ formatDecimal(holding.row.current_price) }}</strong></div>
+                            <div><span>Gain %</span><strong>{{ formatPercentage(holding.row.gain_percentage) }}</strong></div>
+                            <div><span>XIRR</span><strong>{{ formatPercentage(holding.row.xirr) }}</strong></div>
+                            <div><span>Sector</span><strong>{{ holding.row.sector || '-' }}</strong></div>
+                            <div><span>Cap Type</span><strong>{{ holding.row.cap_type || '-' }}</strong></div>
+                            <div><span>AMC</span><strong>{{ holding.row.amc_name || '-' }}</strong></div>
                           </div>
                         </div>
                       </div>

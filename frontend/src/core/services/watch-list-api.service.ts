@@ -28,6 +28,7 @@ export interface WatchListProduct {
     quantity: number;
     current_value_per_unit: number;
     return_percent: number | null;
+    xirr: number | null;
     holding_status: string;
   }>;
   performance: any[];
@@ -51,20 +52,13 @@ export class WatchListApiService {
   getProducts(filters: Record<string, string | number | undefined>): Observable<WatchListResponse> {
     let params = new HttpParams();
     Object.entries(filters).forEach(([key, value]) => {
-      if (value !== undefined && value !== null && value !== '') {
-        params = params.set(key, String(value));
-      }
+      if (value !== undefined && value !== null && value !== '') params = params.set(key, String(value));
     });
-    return this.http.get<WatchListResponse>(`${this.baseUrl}/products/`, {
-      params,
-      withCredentials: true,
-    });
+    return this.http.get<WatchListResponse>(`${this.baseUrl}/products/`, { params, withCredentials: true });
   }
 
   getPerformance(productId: number): Observable<any> {
-    return this.http.get(`${this.baseUrl}/products/${productId}/performance/`, {
-      withCredentials: true,
-    });
+    return this.http.get(`${this.baseUrl}/products/${productId}/performance/`, { withCredentials: true });
   }
 
   refresh(): Observable<any> {

@@ -606,8 +606,10 @@ export class ReportsComponent implements OnInit {
     }
 
     rows.sort((a, b) => {
-      const dateA = a.transaction_date instanceof Date ? a.transaction_date.getTime() : 0;
-      const dateB = b.transaction_date instanceof Date ? b.transaction_date.getTime() : 0;
+      const transactionDateA = a['transaction_date'];
+      const transactionDateB = b['transaction_date'];
+      const dateA = transactionDateA instanceof Date ? transactionDateA.getTime() : 0;
+      const dateB = transactionDateB instanceof Date ? transactionDateB.getTime() : 0;
       return dateB - dateA;
     });
 

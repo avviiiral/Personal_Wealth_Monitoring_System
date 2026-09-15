@@ -99,6 +99,41 @@ class Transaction(models.Model):
         return f"{self.asset.name} - {self.transaction_type} - {self.amount}"
 
 
+class TransactionEditHistory(models.Model):
+    transaction = models.ForeignKey(
+        Transaction,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="edit_history",
+    )
+    owner = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name="transaction_edit_history",
+    )
+    edited_by = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name="transaction_edits_made",
+    )
+    edited_at = models.DateTimeField(auto_now_add=True)
+    old_values = models.JSONField(default=dict)
+    new_values = models.JSONField(default=dict)
+    changed_fields = models.JSONField(default=list)
+
+    class Meta:
+        ordering = ["-edited_at"]
+        indexes = [
+            models.Index(fields=["owner", "-edited_at"], name="tx_edit_owner_date_idx"),
+            models.Index(fields=["transaction", "-edited_at"], name="tx_edit_transaction_date_idx"),
+        ]
+
+    def __str__(self):
+        transaction_id = self.transaction_id or "deleted"
+        return f"Transaction {transaction_id} edited by {self.edited_by.username}"
+
+
 class Holding(models.Model):
     owner = models.ForeignKey(User, on_delete=models.CASCADE, related_name="holdings")
     asset = models.OneToOneField(Asset, on_delete=models.CASCADE, related_name="holding")

@@ -4,12 +4,11 @@ import re
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 from html import unescape
-from urllib.parse import parse_qs, quote_plus, unquote, urljoin, urlparse
+from urllib.parse import parse_qs, unquote, urljoin, urlparse
 
 import pandas as pd
-import requests
+from curl_cffi import requests as curl_requests
 from django.db import transaction
-from django.utils import timezone
 
 from investments.models import Asset, AssetCategory, Holding
 from mutual_funds.models import MutualFundScheme, MutualFundUnderlying
@@ -32,24 +31,14 @@ class MutualFundUnderlyingService:
     SOURCE = "AMFI"
     TIMEOUT_SECONDS = 60
     SEARCH_TIMEOUT_SECONDS = 20
-    MAX_SEARCH_RESULTS = 8
+    MAX_SEARCH_RESULTS = 10
     MAX_DETAIL_LINKS = 12
 
     COLUMN_ALIASES = {
         "security_name": {
-            "name",
-            "name of instrument",
-            "name of the instrument",
-            "security",
-            "security name",
-            "instrument",
-            "instrument name",
-            "issuer",
-            "company",
-            "company name",
-            "stock",
-            "scheme name",
-            "scrip name",
+            "name", "name of instrument", "name of the instrument", "security",
+            "security name", "instrument", "instrument name", "issuer",
+            "company", "company name", "stock", "scheme name", "scrip name",
         },
         "isin": {"isin", "isin code", "isin no", "isin number"},
         "quantity": {
@@ -70,12 +59,9 @@ class MutualFundUnderlyingService:
     @classmethod
     def _headers(cls):
         return {
-            "User-Agent": (
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                "AppleWebKit/537.36 (KHTML, like Gecko) "
-                "Chrome/153.0 Safari/537.36"
-            ),
             "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "Accept-Language": "en-US,en;q=0.9",
+            "Referer": "https://www.google.com/",
         }
 
     @staticmethod
@@ -252,7 +238,11 @@ class MutualFundUnderlyingService:
         for candidate in candidates[:3]:
             if len(candidate) >= 4 and candidate in haystack:
                 return True
-        tokens = [token for token in re.split(r"[^a-z0-9]+", scheme.scheme_name.lower()) if len(token) >= 5]
+
+        tokens = [
+            token for token in re.split(r"[^a-z0-9]+", scheme.scheme_name.lower())
+            if len(token) >= 5
+        ]
         if len(tokens) < 2:
             return False
         return sum(token in haystack for token in tokens) >= min(3, len(tokens))
@@ -260,7 +250,11 @@ class MutualFundUnderlyingService:
     @classmethod
     def _amc_tokens(cls, scheme):
         text = cls.normalize_text(getattr(scheme, "amc_name", "")).lower()
-        text = re.sub(r"\b(asset management company|asset management|mutual fund|mutual funds|amc|limited|ltd|private|pvt)\b", " ", text)
+        text = re.sub(
+            r"\b(asset management company|asset management|mutual fund|mutual funds|amc|limited|ltd|private|pvt)\b",
+            " ",
+            text,
+        )
         return [token for token in re.split(r"[^a-z0-9]+", text) if len(token) >= 4]
 
     @classmethod
@@ -271,77 +265,128 @@ class MutualFundUnderlyingService:
 
     @classmethod
     def _fetch(cls, url):
-        response = requests.get(url, headers=cls._headers(), timeout=cls.TIMEOUT_SECONDS)
+        response = curl_requests.get(
+            url,
+            headers=cls._headers(),
+            timeout=cls.TIMEOUT_SECONDS,
+            impersonate="chrome",
+            allow_redirects=True,
+        )
         response.raise_for_status()
         return response
 
     @classmethod
+    def _extract_search_result_urls(cls, html):
+        urls = []
+        for raw_href in re.findall(r"(?:href|data-href)=[\"']([^\"']+)[\"']", html, re.I):
+            href = unescape(raw_href)
+            parsed = urlparse(href)
+            if parsed.path in {"/url", "/l/", "/link"}:
+                target = (
+                    parse_qs(parsed.query).get("q", [None])[0]
+                    or parse_qs(parsed.query).get("uddg", [None])[0]
+                    or parse_qs(parsed.query).get("url", [None])[0]
+                )
+                if target:
+                    href = unquote(target)
+            parsed = urlparse(href)
+            if parsed.scheme not in {"http", "https"}:
+                continue
+            host = parsed.netloc.lower()
+            if any(search_host in host for search_host in ("google.", "duckduckgo.com", "bing.com")):
+                continue
+            urls.append(href)
+        return list(dict.fromkeys(urls))
+
+    @classmethod
     def _search_urls(cls, query):
-        """Return search-result URLs; search is used only to discover official pages."""
+        """Discover URLs through public search engines using browser-like HTTP."""
         urls = []
         endpoints = (
             "https://www.google.com/search",
+            "https://www.bing.com/search",
             "https://html.duckduckgo.com/html/",
         )
+
         for endpoint in endpoints:
             try:
-                response = requests.get(
+                response = curl_requests.get(
                     endpoint,
-                    params={"q": query, "num": cls.MAX_SEARCH_RESULTS, "hl": "en"},
+                    params={"q": query, "num": cls.MAX_SEARCH_RESULTS, "count": cls.MAX_SEARCH_RESULTS, "hl": "en"},
                     headers=cls._headers(),
                     timeout=cls.SEARCH_TIMEOUT_SECONDS,
+                    impersonate="chrome",
+                    allow_redirects=True,
                 )
                 response.raise_for_status()
-            except requests.RequestException:
+            except Exception as exc:
+                logger.debug("Search endpoint failed: %s", endpoint, exc_info=exc)
                 continue
 
-            for raw_href in re.findall(r"href=[\"']([^\"']+)[\"']", response.text, re.I):
-                href = unescape(raw_href)
-                parsed = urlparse(href)
-                if parsed.path in {"/url", "/l/"}:
-                    target = parse_qs(parsed.query).get("q", [None])[0] or parse_qs(parsed.query).get("uddg", [None])[0]
-                    if target:
-                        href = unquote(target)
-                parsed = urlparse(href)
-                if parsed.scheme in {"http", "https"}:
-                    host = parsed.netloc.lower()
-                    if any(search_host in host for search_host in ("google.", "duckduckgo.com", "bing.com")):
-                        continue
-                    urls.append(href)
+            urls.extend(cls._extract_search_result_urls(response.text))
+            urls = list(dict.fromkeys(urls))
             if urls:
                 break
-        return list(dict.fromkeys(urls))[: cls.MAX_SEARCH_RESULTS]
+
+        return urls[: cls.MAX_SEARCH_RESULTS]
 
     @classmethod
     def _search_official_pages(cls, scheme):
         identifiers = cls._scheme_identifiers(scheme)
         scheme_name = cls.normalize_text(scheme.scheme_name)
         amc_name = cls.normalize_text(getattr(scheme, "amc_name", ""))
+        isin = scheme.isin_growth or scheme.isin_dividend or ""
+        scheme_code = scheme.scheme_code or ""
+
         queries = [
-            f'"{scheme_name}" "portfolio" "{identifiers[1] if len(identifiers) > 1 else identifiers[0]}"',
-            f'"{amc_name}" "{scheme_name}" "portfolio disclosure"',
+            f'"{scheme_name}" "{isin}" portfolio',
+            f'"{scheme_name}" "{scheme_code}" portfolio',
+            f'"{scheme_name}" "portfolio disclosure"',
+            f'"{amc_name}" "{scheme_name}" holdings',
         ]
+        if isin:
+            queries.append(f'"{isin}" "portfolio" mutual fund')
+        if scheme_code:
+            queries.append(f'"{scheme_code}" "portfolio" mutual fund')
+        queries.append(f'site:amfiindia.com "{scheme_name}" "{isin}"')
 
         pages = []
+        seen_urls = set()
         seen_hosts = set()
+
         for query in queries:
             for url in cls._search_urls(query):
+                if url in seen_urls:
+                    continue
+                seen_urls.add(url)
+
                 parsed = urlparse(url)
                 host = parsed.netloc.lower()
-                if not cls._host_looks_like_amc(host, scheme):
+                if not cls._host_looks_like_amc(host, scheme) and "amfiindia.com" not in host:
                     continue
+
+                lower_url = url.lower()
+                is_document = lower_url.endswith((".xlsx", ".xls", ".csv", ".pdf"))
+                if is_document and cls._matches_scheme(url, scheme):
+                    pages.append((url, ""))
+                    continue
+
                 if host in seen_hosts:
                     continue
                 try:
                     response = cls._fetch(url)
-                except requests.RequestException:
+                except Exception:
                     continue
-                if not cls._matches_scheme(response.text, scheme):
+
+                body = response.text
+                if not cls._matches_scheme(body, scheme):
                     continue
-                if not re.search(r"portfolio|holding|disclosure", response.text, re.I):
+                if not re.search(r"portfolio|holding|disclosure|investment", body, re.I):
                     continue
-                pages.append((url, response.text))
+
+                pages.append((url, body))
                 seen_hosts.add(host)
+
         return pages
 
     @classmethod
@@ -349,7 +394,7 @@ class MutualFundUnderlyingService:
         candidates = []
         for link in cls._official_links(html, page_url):
             lower = link.lower()
-            if not lower.endswith((".xlsx", ".xls", ".csv")):
+            if not lower.endswith((".xlsx", ".xls", ".csv", ".pdf")):
                 continue
             if cls._matches_scheme(link, scheme) or cls._matches_scheme(html, scheme):
                 candidates.append(link)
@@ -360,16 +405,24 @@ class MutualFundUnderlyingService:
         """Discover the latest official AMFI/AMC portfolio page or file."""
         candidates = []
 
+        # First inspect the AMFI disclosure index. This remains the preferred
+        # official source and does not assume any AMC URL structure.
         try:
             amfi_response = cls._fetch(cls.AMFI_DISCLOSURE_URL)
             amfi_links = cls._official_links(amfi_response.text, cls.AMFI_DISCLOSURE_URL)
             for link in amfi_links:
                 if cls._matches_scheme(link, scheme):
                     candidates.append(link)
-        except requests.RequestException:
+        except Exception:
             logger.warning("Unable to access AMFI portfolio disclosure page", exc_info=True)
 
+        # Runtime search discovers the official AMC host from the stored AMC
+        # name. No individual AMC domain or fund URL is encoded in the code.
         for page_url, html in cls._search_official_pages(scheme):
+            if page_url.lower().endswith((".xlsx", ".xls", ".csv", ".pdf")):
+                candidates.append(page_url)
+                continue
+
             candidates.extend(cls._find_download_links(page_url, html, scheme))
             candidates.append(page_url)
 
@@ -378,15 +431,16 @@ class MutualFundUnderlyingService:
                 parsed = urlparse(child)
                 if parsed.netloc.lower() != urlparse(page_url).netloc.lower():
                     continue
-                if child.lower().endswith((".xlsx", ".xls", ".csv")):
+                if child.lower().endswith((".xlsx", ".xls", ".csv", ".pdf")):
                     candidates.append(child)
                     continue
                 if cls._matches_scheme(child, scheme):
                     detail_links.append(child)
+
             for child in detail_links[: cls.MAX_DETAIL_LINKS]:
                 try:
                     detail = cls._fetch(child)
-                except requests.RequestException:
+                except Exception:
                     continue
                 if not cls._matches_scheme(detail.text, scheme):
                     continue
@@ -429,11 +483,7 @@ class MutualFundUnderlyingService:
             )
             for row in records
         ]
-        MutualFundUnderlying.objects.bulk_create(
-            objects,
-            ignore_conflicts=True,
-            batch_size=500,
-        )
+        MutualFundUnderlying.objects.bulk_create(objects, ignore_conflicts=True, batch_size=500)
         return {"status": "imported", "portfolio_date": portfolio_date, "records": len(objects)}
 
     @classmethod
@@ -480,12 +530,7 @@ class MutualFundUnderlyingService:
 
     @classmethod
     def fetch_scheme(cls, scheme):
-        """Discover and import the latest official disclosure for one scheme.
-
-        Implemented by subclasses (see ``OfficialMutualFundUnderlyingService``).
-        Declared here so ``fetch_all_active`` has a documented contract to
-        call polymorphically via ``cls.fetch_scheme``.
-        """
+        """Discover and import the latest official disclosure for one scheme."""
         raise NotImplementedError(
             "fetch_scheme must be implemented by a MutualFundUnderlyingService subclass."
         )
@@ -504,5 +549,10 @@ class MutualFundUnderlyingService:
                     results["already_imported"] += 1
             except Exception as exc:
                 results["failed"] += 1
-                results["errors"].append({"owner_id": owner_id, "scheme_id": scheme.id, "scheme_name": scheme.scheme_name, "error": str(exc)})
+                results["errors"].append({
+                    "owner_id": owner_id,
+                    "scheme_id": scheme.id,
+                    "scheme_name": scheme.scheme_name,
+                    "error": str(exc),
+                })
         return results

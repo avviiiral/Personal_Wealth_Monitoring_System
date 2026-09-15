@@ -1,0 +1,76 @@
+name: Apply Family Name to Asset Download
+
+on:
+  push:
+    branches:
+      - updates-req
+
+permissions:
+  contents: write
+
+jobs:
+  update-report-download:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Update asset download export
+        shell: python
+        run: |
+          from pathlib import Path
+
+          path = Path('frontend/src/features/reports/reports.component.ts')
+          text = path.read_text(encoding='utf-8')
+
+          old = """      .map((tx) => ({
+        underlying: this.getUnderlyingName(tx),
+        transaction_date: new Date(tx.transaction_date),
+        transaction_type: tx.transaction_type_display || tx.transaction_type,
+        isin: tx.isin || '-',
+        quantity: this.toNumber(tx.quantity),
+        price_per_unit: this.toNumber(tx.price_per_unit),
+        amount: this.toNumber(tx.amount),
+      }));"""
+
+          new = """      .map((tx) => ({
+        family_name: this.clean(tx.family_name),
+        underlying: this.getUnderlyingName(tx),
+        transaction_date: new Date(tx.transaction_date),
+        transaction_type: tx.transaction_type_display || tx.transaction_type,
+        isin: tx.isin || '-',
+        quantity: this.toNumber(tx.quantity),
+        price_per_unit: this.toNumber(tx.price_per_unit),
+        amount: this.toNumber(tx.amount),
+      }));"""
+
+          if old not in text:
+              raise SystemExit('Target transaction mapping was not found; no changes made.')
+
+          text = text.replace(old, new, 1)
+
+          old_columns = """      columns: [
+        { header: 'Underlying', key: 'underlying', width: 24 },"""
+
+          new_columns = """      columns: [
+        { header: 'Family Name', key: 'family_name', width: 24 },
+        { header: 'Underlying', key: 'underlying', width: 24 },"""
+
+          if old_columns not in text:
+              raise SystemExit('Target transaction columns were not found; no changes made.')
+
+          text = text.replace(old_columns, new_columns, 1)
+          path.write_text(text, encoding='utf-8')
+
+      - name: Commit report change and remove temporary workflow
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/add-family-name-asset-download.yml
+          git add frontend/src/features/reports/reports.component.ts
+          git diff --cached --check
+          git commit -m "feat: add family name to asset transaction download"
+          git push origin updates-req

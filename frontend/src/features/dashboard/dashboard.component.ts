@@ -126,13 +126,26 @@ export class DashboardComponent extends BaseDashboardComponent {
   }
 
   /**
+   * Allocation chart uses exactly the same Asset Category totals
+   * displayed in Investment Summary.
+   */
+  override get allocationByCategory(): Array<{
+    category: string;
+    value: number;
+    percentage: number;
+  }> {
+    return this.investmentSummaryGroups
+      .filter((group) => group.current_value > 0)
+      .map((group) => ({
+        category: group.asset_category,
+        value: group.current_value,
+        percentage: group.percentage_of_total,
+      }));
+  }
+
+  /**
    * XIRR Performance uses the same Investment Summary groups shown
    * immediately above it on the Dashboard.
-   *
-   * Asset Category comes from the Portfolio Asset Class and each
-   * category's XIRR rows are taken from the Portfolio Tree assets
-   * belonging to the Sub Classes contained in that Investment Summary
-   * category. No separate backend category mapping is used.
    */
   override get xirrPerformanceCategories(): string[] {
     return this.investmentSummaryGroups
@@ -144,6 +157,7 @@ export class DashboardComponent extends BaseDashboardComponent {
 
   /**
    * XIRR rows for the selected Investment Summary Asset Category.
+   * The displayed investment name is Asset Name, not Underlying.
    */
   override get selectedXirrRows(): Array<{
     underlying: string;
@@ -194,8 +208,7 @@ export class DashboardComponent extends BaseDashboardComponent {
               }
 
               rows.push({
-                underlying:
-                  asset.underlying?.trim() || asset.asset_name?.trim() || 'Unnamed Underlying',
+                underlying: asset.asset_name?.trim() || 'Unnamed Asset',
                 xirr,
                 assetClass: subClass.sub_class,
               });

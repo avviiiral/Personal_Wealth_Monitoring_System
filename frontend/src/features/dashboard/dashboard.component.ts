@@ -14,6 +14,8 @@ import { DashboardComponent as BaseDashboardComponent } from './dashboard.compon
   ],
 })
 export class DashboardComponent extends BaseDashboardComponent {
+  private allocationRenderRequest = 0;
+
   /**
    * Dashboard Investment Summary hierarchy:
    *
@@ -126,8 +128,12 @@ export class DashboardComponent extends BaseDashboardComponent {
   }
 
   /**
-   * Allocation chart uses exactly the same Asset Category totals
-   * displayed in Investment Summary.
+   * Allocation chart uses the exact Asset Category and % of Total
+   * Investment shown in the Dashboard Investment Summary table.
+   *
+   * This intentionally uses investmentSummaryGroups rather than the
+   * backend Investment Summary API category names, because the visible
+   * Dashboard table is the source of truth for the displayed hierarchy.
    */
   override get allocationByCategory(): Array<{
     category: string;
@@ -138,9 +144,40 @@ export class DashboardComponent extends BaseDashboardComponent {
       .filter((group) => group.current_value > 0)
       .map((group) => ({
         category: group.asset_category,
-        value: group.current_value,
+        value: group.percentage_of_total,
         percentage: group.percentage_of_total,
       }));
+  }
+
+  /**
+   * The base Dashboard loads Investment Summary and Portfolio Tree
+   * independently. Allocation uses the Portfolio Tree-backed groups,
+   * so retry rendering until both sources are ready. This keeps the
+   * chart fully dynamic without hardcoding any Asset Categories.
+   */
+  override loadDashboard(): void {
+    const request = ++this.allocationRenderRequest;
+
+    super.loadDashboard();
+
+    const renderWhenReady = (attempt: number): void => {
+      if (request !== this.allocationRenderRequest) {
+        return;
+      }
+
+      if (!this.loading && this.investmentSummary && this.portfolioTree) {
+        (this as any).renderAllocationChart();
+        return;
+      }
+
+      if (attempt >= 100) {
+        return;
+      }
+
+      setTimeout(() => renderWhenReady(attempt + 1), 100);
+    };
+
+    setTimeout(() => renderWhenReady(0));
   }
 
   /**

@@ -138,6 +138,7 @@ export interface PortfolioAssetNode {
   amc_name: string | null;
   pe_ratio: number | null;
   pb_ratio: number | null;
+  peg_ratio: number | null;
   roe: number | null;
   credit_rating: string | null;
   ytm: number | null;

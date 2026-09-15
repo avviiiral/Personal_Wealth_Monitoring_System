@@ -5,6 +5,7 @@ from .views import (
     portfolio_asset_detail,
     portfolio_transactions,
     portfolio_transaction_detail,
+    portfolio_transaction_edit_history,
     portfolio_summary,
     portfolio_holdings,
     portfolio_tree,
@@ -38,6 +39,12 @@ urlpatterns = [
         "transactions/<int:transaction_id>/",
         portfolio_transaction_detail,
         name="portfolio-transaction-detail",
+    ),
+
+    path(
+        "transactions/edit-history/",
+        portfolio_transaction_edit_history,
+        name="portfolio-transaction-edit-history",
     ),
 
     path(

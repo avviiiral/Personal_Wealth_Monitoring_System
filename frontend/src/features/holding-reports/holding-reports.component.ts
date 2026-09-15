@@ -1,5 +1,5 @@
 import { CommonModule } from '@angular/common';
-import { Component, OnInit, inject } from '@angular/core';
+import { ChangeDetectorRef, Component, OnInit, inject } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { HoldingReportRow, PortfolioApiService } from '../../core/services/portfolio-api.service';
 
@@ -52,6 +52,7 @@ const UNASSIGNED = 'Unassigned';
 })
 export class HoldingReportsComponent implements OnInit {
   private readonly portfolioApi = inject(PortfolioApiService);
+  private readonly changeDetectorRef = inject(ChangeDetectorRef);
 
   holdingRows: HoldingReportRow[] = [];
   loading = true;
@@ -70,12 +71,14 @@ export class HoldingReportsComponent implements OnInit {
   loadHoldings(): void {
     this.loading = true;
     this.error = '';
+    this.changeDetectorRef.detectChanges();
 
     this.portfolioApi.getHoldingReport().subscribe({
       next: (response) => {
         this.holdingRows = response.results ?? [];
         this.validateSelections();
         this.loading = false;
+        this.changeDetectorRef.detectChanges();
       },
       error: (error) => {
         console.error('Holding report API error:', error);
@@ -83,6 +86,7 @@ export class HoldingReportsComponent implements OnInit {
         this.error = error?.status === 401 || error?.status === 403
           ? 'Authentication failed. Please log in again.'
           : 'Unable to load holding report data.';
+        this.changeDetectorRef.detectChanges();
       },
     });
   }

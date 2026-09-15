@@ -126,9 +126,12 @@ export class DashboardComponent extends BaseDashboardComponent {
   }
 
   /**
-   * Allocation chart uses the current Asset Category values from
-   * Investment Summary directly. The Investment Summary Asset Category
-   * is the Portfolio page Asset Class classification.
+   * Allocation chart uses Asset Category and % of Total Investment
+   * directly from the Investment Summary API.
+   *
+   * The Investment Summary Asset Category is the Portfolio page
+   * Asset Class classification. The chart value is the same
+   * percentage shown in the Investment Summary table.
    */
   override get allocationByCategory(): Array<{
     category: string;
@@ -155,11 +158,12 @@ export class DashboardComponent extends BaseDashboardComponent {
     return order
       .map((category) => {
         const entry = totals.get(category)!;
+        const percentage = Math.round(entry.percentage * 100) / 100;
 
         return {
           category,
-          value: entry.value,
-          percentage: Math.round(entry.percentage * 100) / 100,
+          value: percentage,
+          percentage,
         };
       })
       .filter((entry) => entry.value > 0);

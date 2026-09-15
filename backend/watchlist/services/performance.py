@@ -107,14 +107,19 @@ class AMFIPerformanceService:
     def _load_required_history(cls, products, latest_date):
         codes = {str(product.external_identifier) for product in products if product.external_identifier}
         if not codes:
-            return {}
+            return {}, 0
 
         selected = {code: {} for code in codes}
+        failed = 0
         for field, months in cls.PERIODS:
             target = cls._subtract_months(latest_date, months)
             start = target - timedelta(days=cls.WINDOW_DAYS)
             end = target + timedelta(days=cls.WINDOW_DAYS)
-            records = cls.parse_history(cls.download_history(start, end))
+            try:
+                records = cls.parse_history(cls.download_history(start, end))
+            except Exception:
+                failed += 1
+                continue
             grouped = {}
             for record in records:
                 if record["scheme_code"] in codes:
@@ -123,7 +128,7 @@ class AMFIPerformanceService:
                 chosen = cls._nearest_on_or_before(rows, target)
                 if chosen:
                     selected[code][field] = chosen
-        return selected
+        return selected, failed
 
     @classmethod
     def _return_percent(cls, latest_nav, historical_nav):
@@ -157,7 +162,7 @@ class AMFIPerformanceService:
             return {"products": len(products), "history_requests": 0, "snapshots": 0, "metrics_updated": 0, "failed": 0}
 
         latest_date = max(snapshot.date for snapshot in latest_snapshots.values())
-        history = cls._load_required_history(products_needing_history, latest_date)
+        history, failed = cls._load_required_history(products_needing_history, latest_date)
         snapshots_written = 0
         metrics_updated = 0
 
@@ -207,5 +212,5 @@ class AMFIPerformanceService:
             "history_requests": len(cls.PERIODS),
             "snapshots": snapshots_written,
             "metrics_updated": metrics_updated,
-            "failed": 0,
+            "failed": failed,
         }

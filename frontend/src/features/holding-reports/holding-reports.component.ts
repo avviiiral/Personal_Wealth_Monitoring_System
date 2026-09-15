@@ -12,6 +12,7 @@ interface HoldingRow {
 }
 
 interface HoldingGroup {
+  key: string;
   asset_name: string;
   holdings: HoldingRow[];
   quantity: number;
@@ -129,14 +130,13 @@ export class HoldingReportsComponent implements OnInit {
 
           for (const subClass of assetClass.sub_classes) {
             const subClassName = this.clean(subClass.sub_class);
-            const key = subClassName;
 
-            if (!groups.has(key)) {
-              groups.set(key, []);
+            if (!groups.has(subClassName)) {
+              groups.set(subClassName, []);
             }
 
             for (const asset of subClass.assets) {
-              groups.get(key)!.push({
+              groups.get(subClassName)!.push({
                 family_name: this.clean(family.family_name),
                 portfolio: this.clean(portfolio.portfolio),
                 asset_class: assetClassName,
@@ -169,21 +169,26 @@ export class HoldingReportsComponent implements OnInit {
       .sort((a, b) => a.sub_class.localeCompare(b.sub_class));
   }
 
+  get holdingCount(): number {
+    return this.flattenFilteredHoldings().length;
+  }
+
   private buildHoldingGroups(rows: HoldingRow[]): HoldingGroup[] {
     const groups = new Map<string, HoldingRow[]>();
 
     for (const row of rows) {
-      const key = `${row.asset.id}::${this.clean(row.asset.asset_name)}`;
+      const key = `${row.family_name}::${row.portfolio}::${row.asset_class}::${row.sub_class}::${row.asset.id}`;
       if (!groups.has(key)) {
         groups.set(key, []);
       }
       groups.get(key)!.push(row);
     }
 
-    return Array.from(groups.values())
-      .map((holdingRows) => {
+    return Array.from(groups.entries())
+      .map(([key, holdingRows]) => {
         const asset = holdingRows[0].asset;
         return {
+          key,
           asset_name: this.clean(asset.asset_name),
           holdings: holdingRows,
           quantity: this.toNumber(asset.quantity),
@@ -235,8 +240,8 @@ export class HoldingReportsComponent implements OnInit {
     this.expandedAssetName = this.expandedAssetName === key ? '' : key;
   }
 
-  getAssetKey(subClass: string, assetName: string): string {
-    return `${subClass}::${assetName}`;
+  getAssetKey(subClass: string, holding: HoldingGroup): string {
+    return `${subClass}::${holding.key}`;
   }
 
   trackBySubClass(_index: number, group: SubClassGroup): string {
@@ -244,15 +249,15 @@ export class HoldingReportsComponent implements OnInit {
   }
 
   trackByHolding(_index: number, group: HoldingGroup): string {
-    return group.asset_name;
-  }
-
-  trackByHoldingRow(_index: number, row: HoldingRow): string {
-    return `${row.family_name}::${row.portfolio}::${row.asset.id}`;
+    return group.key;
   }
 
   formatCurrency(value: number): string {
     return new Intl.NumberFormat('en-IN', { maximumFractionDigits: 0 }).format(this.toNumber(value));
+  }
+
+  formatAbsoluteCurrency(value: number): string {
+    return this.formatCurrency(Math.abs(this.toNumber(value)));
   }
 
   formatNumber(value: number): string {

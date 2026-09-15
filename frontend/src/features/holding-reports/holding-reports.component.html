@@ -53,7 +53,7 @@
         <h2>Holdings</h2>
         <p>One current-position row per holding. No transaction rows are used in this report.</p>
       </div>
-      <span class="count-badge">{{ flattenFilteredHoldings().length }} Holdings</span>
+      <span class="count-badge">{{ holdingCount }} Holdings</span>
     </div>
 
     <div class="table-scroll">
@@ -109,8 +109,8 @@
                   <div class="holding-groups">
                     <ng-container *ngFor="let holding of group.holdings; trackBy: trackByHolding">
                       <div class="holding-group">
-                        <button type="button" class="holding-header" [class.expanded]="expandedAssetName === getAssetKey(group.sub_class, holding.asset_name)" (click)="toggleAssetName(getAssetKey(group.sub_class, holding.asset_name))">
-                          <span class="row-chevron" [class.open]="expandedAssetName === getAssetKey(group.sub_class, holding.asset_name)">›</span>
+                        <button type="button" class="holding-header" [class.expanded]="expandedAssetName === getAssetKey(group.sub_class, holding)" (click)="toggleAssetName(getAssetKey(group.sub_class, holding))">
+                          <span class="row-chevron" [class.open]="expandedAssetName === getAssetKey(group.sub_class, holding)">›</span>
                           <span class="asset-name">{{ holding.asset_name }}</span>
                           <span>{{ holding.holdings[0].family_name }}</span>
                           <span>{{ holding.holdings[0].portfolio }}</span>
@@ -123,7 +123,7 @@
                           </span>
                         </button>
 
-                        <div *ngIf="expandedAssetName === getAssetKey(group.sub_class, holding.asset_name)" class="holding-detail">
+                        <div *ngIf="expandedAssetName === getAssetKey(group.sub_class, holding)" class="holding-detail">
                           <div class="holding-detail-grid">
                             <div><span>Underlying</span><strong>{{ holding.asset.underlying || holding.asset.asset_name }}</strong></div>
                             <div><span>ISIN</span><strong>{{ holding.asset.isin || '-' }}</strong></div>

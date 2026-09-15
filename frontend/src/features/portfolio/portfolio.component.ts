@@ -27,10 +27,12 @@ interface SubClassSummary {
 
 interface AssetGroup {
   asset_name: string;
+  family_name: string;
   quantity: number;
   invested_value: number;
   current_value: number;
   pnl: number;
+  xirr: number | null;
   assets: PortfolioAssetNode[];
 }
 
@@ -359,14 +361,26 @@ export class PortfolioComponent implements OnInit, OnDestroy {
     }
 
     return Array.from(groups.entries())
-      .map(([asset_name, groupedAssets]) => ({
-        asset_name,
-        quantity: this.getAssetsQuantity(groupedAssets),
-        invested_value: this.getAssetsInvestedValue(groupedAssets),
-        current_value: this.getAssetsCurrentValue(groupedAssets),
-        pnl: this.getAssetsPnl(groupedAssets),
-        assets: groupedAssets,
-      }))
+      .map(([asset_name, groupedAssets]) => {
+        const familyNames = Array.from(
+          new Set(
+            groupedAssets
+              .map((asset) => asset.family_name?.trim())
+              .filter((family): family is string => Boolean(family)),
+          ),
+        ).sort((a, b) => a.localeCompare(b));
+
+        return {
+          asset_name,
+          family_name: familyNames.length ? familyNames.join(', ') : '-',
+          quantity: this.getAssetsQuantity(groupedAssets),
+          invested_value: this.getAssetsInvestedValue(groupedAssets),
+          current_value: this.getAssetsCurrentValue(groupedAssets),
+          pnl: this.getAssetsPnl(groupedAssets),
+          xirr: this.calculateXirr(groupedAssets),
+          assets: groupedAssets,
+        };
+      })
       .sort((a, b) => a.asset_name.localeCompare(b.asset_name));
   }
 

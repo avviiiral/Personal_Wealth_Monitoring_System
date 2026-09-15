@@ -230,10 +230,12 @@
 
                   <div class="asset-group-columns-header">
                     <span class="asset-group-name-header">Asset Name</span>
+                    <span class="asset-group-col">Family Name</span>
                     <span class="asset-group-col">Quantity</span>
                     <span class="asset-group-col">Invested Value</span>
                     <span class="asset-group-col">Current Value</span>
                     <span class="asset-group-col">Gain</span>
+                    <span class="asset-group-col">XIRR</span>
                   </div>
 
                   <div class="asset-groups">
@@ -268,6 +270,10 @@
                             {{ assetGroup.asset_name }}
                           </span>
 
+                          <span class="asset-group-col">
+                            {{ assetGroup.family_name }}
+                          </span>
+
                           <span class="asset-group-col asset-group-quantity">
                             {{ formatNumber(assetGroup.quantity) }}
                           </span>
@@ -290,6 +296,15 @@
                             {{ assetGroup.pnl >= 0 ? '+' : '-' }}₹{{
                               formatAbsoluteCurrency(assetGroup.pnl)
                             }}
+                          </span>
+
+                          <span
+                            class="asset-group-col pnl-cell"
+                            [ngClass]="
+                              assetGroup.xirr === null ? 'neutral' : getPnlClass(assetGroup.xirr)
+                            "
+                          >
+                            {{ formatPercentage(assetGroup.xirr) }}
                           </span>
                         </div>
 

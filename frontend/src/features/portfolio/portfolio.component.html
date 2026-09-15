@@ -487,7 +487,7 @@
                                 <!--
                                   QUANT DETAILS — SecurityMaster-sourced fields
                                   (Sector / Cap Type / AMC / Credit Rating /
-                                  P/E / P/B / ROE / YTM / Modified Duration /
+                                  P/E / P/B / PEG / ROE / YTM / Modified Duration /
                                   Average Maturity). Only individual chips
                                   with a non-null value render — nothing is
                                   padded with a placeholder for missing data.
@@ -531,6 +531,13 @@
                                         <span class="quant-chip-label">P/B</span>
                                         <span class="quant-chip-value">{{
                                           formatDecimal(asset.pb_ratio)
+                                        }}</span>
+                                      </div>
+
+                                      <div class="quant-chip" *ngIf="asset.peg_ratio !== null">
+                                        <span class="quant-chip-label">PEG</span>
+                                        <span class="quant-chip-value">{{
+                                          formatDecimal(asset.peg_ratio)
                                         }}</span>
                                       </div>
 

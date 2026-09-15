@@ -89,7 +89,7 @@ class MutualFundUnderlyingServiceTests(TestCase):
                 "% to NAV": 8.20,
             }
         ])
-        rows = MutualFundUnderlyingService._parse_dataframe(frame, date(2026, 8, 31))
+        rows = OfficialMutualFundUnderlyingService._parse_dataframe(frame, date(2026, 8, 31))
         self.assertEqual(len(rows), 1)
         self.assertEqual(rows[0]["isin"], "INE040A01034")
         self.assertEqual(rows[0]["percentage_of_nav"], Decimal("8.20"))

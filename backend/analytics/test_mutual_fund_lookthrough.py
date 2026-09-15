@@ -69,7 +69,12 @@ class MutualFundLookThroughTests(TestCase):
         results = MutualFundLookThroughService.allocation(self.user, direct)
         total = sum((row["value"] for row in results), Decimal("0"))
         self.assertEqual(total, Decimal("15000"))
-        self.assertTrue(any(row["category"] == "STOCK" and row["value"] == Decimal("820") for row in results))
+
+        # The direct HDFC Bank holding (₹5,000) and the mutual-fund
+        # look-through exposure (₹820) are intentionally aggregated into the
+        # same STOCK bucket: ₹5,820 total stock exposure.
+        stock = next(row for row in results if row["category"] == "STOCK")
+        self.assertEqual(stock["value"], Decimal("5820"))
         self.assertFalse(any(row["category"] == "MUTUAL_FUND" for row in results))
 
     def test_sector_allocation_includes_mutual_fund_exposure(self):

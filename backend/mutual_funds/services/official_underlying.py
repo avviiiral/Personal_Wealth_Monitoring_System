@@ -1,5 +1,3 @@
-from decimal import Decimal
-
 from django.db import transaction
 
 from .underlying import MutualFundUnderlyingService
@@ -22,10 +20,13 @@ class OfficialMutualFundUnderlyingService(MutualFundUnderlyingService):
         quantity_col = cls._find_column(dataframe.columns, "quantity")
         value_col = cls._find_column(dataframe.columns, "market_value")
         pct_col = cls._find_column(dataframe.columns, "percentage_of_nav")
-        sector_col = cls._find_column(
-            dataframe.columns,
-            "sector",
-        ) if "sector" in cls.COLUMN_ALIASES else None
+        sector_col = next(
+            (
+                column for column in dataframe.columns
+                if any(token in cls.normalize_column(column) for token in ("industry", "sector"))
+            ),
+            None,
+        )
 
         rows = []
         for _, row in dataframe.iterrows():

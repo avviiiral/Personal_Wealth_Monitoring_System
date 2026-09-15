@@ -11,7 +11,7 @@ permissions:
 
 jobs:
   apply-change:
-    if: "!contains(github.event.pull_request.head.sha, '') && !contains(github.event.pull_request.title, '[completed]')"
+    if: github.event.pull_request.head.ref == 'updates-req'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout

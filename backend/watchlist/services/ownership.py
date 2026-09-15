@@ -1,0 +1,66 @@
+from django.db.models import Q, Sum
+
+from investments.models import Asset, AssetCategory, Holding, PortfolioPosition
+from watchlist.models import InvestmentProduct, ProductType
+
+
+class OwnershipService:
+    """Derive ownership from PWMS holdings; never stores a second ownership flag."""
+
+    @staticmethod
+    def _asset_queryset(product):
+        qs = Asset.objects.all()
+        if product.isin:
+            qs = qs.filter(isin__iexact=product.isin)
+            if product.product_type == ProductType.MUTUAL_FUND:
+                qs = qs.filter(category=AssetCategory.MUTUAL_FUND)
+            return qs
+        if product.external_identifier:
+            qs = qs.filter(Q(symbol__iexact=product.external_identifier) | Q(name__icontains=product.name))
+            return qs
+        return qs.filter(name__iexact=product.name)
+
+    @classmethod
+    def ownership_rows(cls, product, user):
+        assets = cls._asset_queryset(product)
+        if product.product_type == ProductType.MUTUAL_FUND:
+            assets = assets.filter(category=AssetCategory.MUTUAL_FUND)
+        else:
+            assets = assets.filter(
+                Q(asset_class__icontains="pms")
+                | Q(sub_class__icontains="pms")
+                | Q(name__icontains="pms")
+            )
+
+        positions = PortfolioPosition.objects.filter(owner=user, asset__in=assets).select_related("asset")
+        rows = []
+        for position in positions:
+            if position.quantity <= 0 and position.current_value <= 0:
+                continue
+            rows.append(
+                {
+                    "family": position.family_name,
+                    "portfolio": position.portfolio,
+                    "current_value": position.current_value,
+                    "invested_value": position.invested_value,
+                    "quantity": position.quantity,
+                    "current_value_per_unit": position.current_price,
+                    "return_percent": (
+                        ((position.current_value / position.invested_value) - 1) * 100
+                        if position.invested_value
+                        else None
+                    ),
+                    "holding_status": "OWNED",
+                }
+            )
+        return rows
+
+    @classmethod
+    def enrich(cls, product, user):
+        rows = cls.ownership_rows(product, user)
+        return {
+            "status": "OWNED" if rows else "UNIVERSAL",
+            "ownership": rows,
+            "owned_current_value": sum((row["current_value"] for row in rows), 0),
+            "owned_invested_value": sum((row["invested_value"] for row in rows), 0),
+        }

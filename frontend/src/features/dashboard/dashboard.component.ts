@@ -126,15 +126,117 @@ export class DashboardComponent extends BaseDashboardComponent {
   }
 
   /**
-   * Keep the existing XIRR Performance selector based on the
-   * Investment Summary API categories. The Investment Summary table
-   * itself is intentionally driven by the Portfolio Tree hierarchy.
+   * XIRR Performance uses the same Investment Summary groups shown
+   * immediately above it on the Dashboard.
+   *
+   * Asset Category comes from the Portfolio Asset Class and each
+   * category's XIRR rows are taken from the Portfolio Tree assets
+   * belonging to the Sub Classes contained in that Investment Summary
+   * category. No separate backend category mapping is used.
    */
   override get xirrPerformanceCategories(): string[] {
-    const categories = this.investmentSummary?.results?.map(
-      (row: any) => row.asset_category,
-    ) ?? [];
+    return this.investmentSummaryGroups
+      .filter((group) =>
+        group.asset_classes.some((subClass) => this.hasXirrForSubClass(subClass.asset_class)),
+      )
+      .map((group) => group.asset_category);
+  }
 
-    return Array.from(new Set(categories.filter(Boolean)));
+  /**
+   * XIRR rows for the selected Investment Summary Asset Category.
+   */
+  override get selectedXirrRows(): Array<{
+    underlying: string;
+    xirr: number;
+    assetClass: string;
+  }> {
+    const category = this.selectedXirrAssetCategory;
+
+    if (!category || !this.portfolioTree) {
+      return [];
+    }
+
+    const group = this.investmentSummaryGroups.find(
+      (item) => item.asset_category === category,
+    );
+
+    if (!group) {
+      return [];
+    }
+
+    const subClasses = new Set(
+      group.asset_classes.map((item) => item.asset_class.trim()),
+    );
+
+    const rows: Array<{
+      underlying: string;
+      xirr: number;
+      assetClass: string;
+    }> = [];
+
+    for (const family of this.portfolioTree.families ?? []) {
+      if (this.selectedFamily && family.family_name !== this.selectedFamily) {
+        continue;
+      }
+
+      for (const portfolio of family.portfolios ?? []) {
+        for (const assetClass of portfolio.asset_classes ?? []) {
+          for (const subClass of assetClass.sub_classes ?? []) {
+            if (!subClasses.has((subClass.sub_class || '').trim())) {
+              continue;
+            }
+
+            for (const asset of subClass.assets ?? []) {
+              const xirr = Number(asset.xirr);
+
+              if (!Number.isFinite(xirr)) {
+                continue;
+              }
+
+              rows.push({
+                underlying:
+                  asset.underlying?.trim() || asset.asset_name?.trim() || 'Unnamed Underlying',
+                xirr,
+                assetClass: subClass.sub_class,
+              });
+            }
+          }
+        }
+      }
+    }
+
+    return rows.sort((a, b) => b.xirr - a.xirr);
+  }
+
+  private hasXirrForSubClass(subClassName: string): boolean {
+    const target = subClassName.trim();
+
+    if (!target || !this.portfolioTree) {
+      return false;
+    }
+
+    for (const family of this.portfolioTree.families ?? []) {
+      if (this.selectedFamily && family.family_name !== this.selectedFamily) {
+        continue;
+      }
+
+      for (const portfolio of family.portfolios ?? []) {
+        for (const assetClass of portfolio.asset_classes ?? []) {
+          for (const subClass of assetClass.sub_classes ?? []) {
+            if ((subClass.sub_class || '').trim() !== target) {
+              continue;
+            }
+
+            if (
+              (subClass.assets ?? []).some((asset) => Number.isFinite(Number(asset.xirr)))
+            ) {
+              return true;
+            }
+          }
+        }
+      }
+    }
+
+    return false;
   }
 }

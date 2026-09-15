@@ -81,7 +81,7 @@
               <td>₹{{ formatCurrency(group.invested_value) }}</td>
               <td>₹{{ formatCurrency(group.current_value) }}</td>
               <td class="pnl-cell" [ngClass]="getPnlClass(group.pnl)">
-                {{ group.pnl >= 0 ? '+' : '-' }}₹{{ formatCurrency(Math.abs(group.pnl)) }}
+                {{ group.pnl >= 0 ? '+' : '-' }}₹{{ formatAbsoluteCurrency(group.pnl) }}
               </td>
               <td class="pnl-cell" [ngClass]="group.xirr === null ? 'neutral' : getPnlClass(group.xirr)">
                 {{ formatPercentage(group.xirr) }}
@@ -119,7 +119,7 @@
                           <span>₹{{ formatCurrency(holding.invested_value) }}</span>
                           <span>₹{{ formatCurrency(holding.current_value) }}</span>
                           <span class="pnl-cell" [ngClass]="getPnlClass(holding.pnl)">
-                            {{ holding.pnl >= 0 ? '+' : '-' }}₹{{ formatCurrency(Math.abs(holding.pnl)) }}
+                            {{ holding.pnl >= 0 ? '+' : '-' }}₹{{ formatAbsoluteCurrency(holding.pnl) }}
                           </span>
                         </button>
 

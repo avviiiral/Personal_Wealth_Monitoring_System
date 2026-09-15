@@ -1,3 +1,7 @@
+from io import StringIO
+from urllib.parse import urljoin
+
+import pandas as pd
 from django.db import transaction
 
 from .underlying import MutualFundUnderlyingService
@@ -6,6 +10,26 @@ from mutual_funds.models import MutualFundUnderlying
 
 class OfficialMutualFundUnderlyingService(MutualFundUnderlyingService):
     """AMFI/AMC importer that also preserves the disclosed industry/sector."""
+
+    # Official AMC disclosure landing pages are fallbacks only. The importer
+    # still validates the requested scheme by scheme code, ISIN or name before
+    # accepting a document. These pages are not fund-specific.
+    OFFICIAL_AMC_PAGES = {
+        "bandhan": (
+            "https://cmsnew.bandhanmutual.com/category/scheme-portfolios/page/3/",
+            "https://bandhanmutual.com/statutory-disclosures/scheme-portfolios/fortnightly",
+        ),
+        "hdfc": (
+            "https://www.hdfcfund.com/statutory-disclosure/portfolio/fortnightly-portfolio",
+            "https://www.hdfcfund.com/statutory-disclosure/portfolio/monthly-portfolio",
+        ),
+        "icici": (
+            "https://www.icicipruamc.com/news-and-media/downloads?currentTabFilter=Other+SchemeDisclosures&subCatTabFilter=Monthly%20Portfolio%20Disclosures",
+        ),
+        "kotak": (
+            "https://www.kotakmf.com/Information/statutory-disclosure",
+        ),
+    }
 
     @classmethod
     def _parse_dataframe(cls, dataframe, fallback_date=None):
@@ -21,10 +45,15 @@ class OfficialMutualFundUnderlyingService(MutualFundUnderlyingService):
         value_col = cls._find_column(dataframe.columns, "market_value")
         pct_col = cls._find_column(dataframe.columns, "percentage_of_nav")
         sector_col = next(
-            (column for column in dataframe.columns if any(token in cls.normalize_column(column) for token in ("industry", "sector"))),
+            (
+                column for column in dataframe.columns
+                if any(token in cls.normalize_column(column) for token in ("industry", "sector"))
+            ),
             None,
         )
-        value_is_lakhs = value_col and any(token in cls.normalize_column(value_col) for token in ("lakh", "lac"))
+        value_is_lakhs = value_col and any(
+            token in cls.normalize_column(value_col) for token in ("lakh", "lac")
+        )
 
         rows = []
         for _, row in dataframe.iterrows():
@@ -58,6 +87,61 @@ class OfficialMutualFundUnderlyingService(MutualFundUnderlyingService):
         return rows
 
     @classmethod
+    def parse_document(cls, content, filename, fallback_date=None):
+        """Parse spreadsheet/CSV/HTML using StringIO for pandas HTML support."""
+        portfolio_date = cls._extract_date(filename) or fallback_date
+        lower_name = filename.lower()
+        frames = []
+        if lower_name.endswith((".xlsx", ".xls")):
+            workbook = pd.ExcelFile(content if hasattr(content, "read") else __import__("io").BytesIO(content))
+            for sheet in workbook.sheet_names:
+                try:
+                    frames.append(pd.read_excel(workbook, sheet_name=sheet, header=0))
+                except Exception:
+                    continue
+        elif lower_name.endswith(".csv"):
+            frames.append(pd.read_csv(__import__("io").BytesIO(content)))
+        else:
+            html = content.decode("utf-8", errors="ignore") if isinstance(content, bytes) else str(content)
+            try:
+                frames.extend(pd.read_html(StringIO(html)))
+            except (ValueError, ImportError):
+                frames = []
+
+        records = []
+        for frame in frames:
+            records.extend(cls._parse_dataframe(frame, portfolio_date))
+        return records
+
+    @classmethod
+    def _fallback_pages_for_scheme(cls, scheme):
+        amc = cls.normalize_text(getattr(scheme, "amc_name", "")).lower()
+        pages = []
+        for key, urls in cls.OFFICIAL_AMC_PAGES.items():
+            if key in amc:
+                pages.extend(urls)
+        return pages
+
+    @classmethod
+    def _collect_official_candidates(cls, scheme):
+        candidates = list(cls.discover_documents(scheme))
+        for page_url in cls._fallback_pages_for_scheme(scheme):
+            try:
+                response = cls._fetch(page_url)
+            except Exception:
+                continue
+            html = response.text
+            # Accept the page itself only when it contains the requested fund.
+            if cls._matches_scheme(html, scheme):
+                candidates.append(page_url)
+            for child in cls._official_links(html, page_url):
+                if cls._matches_scheme(child, scheme):
+                    candidates.append(child)
+                if child.lower().endswith((".xlsx", ".xls", ".csv")) and cls._matches_scheme(child, scheme):
+                    candidates.append(child)
+        return list(dict.fromkeys(candidates))
+
+    @classmethod
     @transaction.atomic
     def import_document(cls, scheme, content, filename, source_reference, fallback_date=None):
         records = cls.parse_document(content, filename, fallback_date=fallback_date)
@@ -67,7 +151,9 @@ class OfficialMutualFundUnderlyingService(MutualFundUnderlyingService):
         if portfolio_date is None:
             raise ValueError(f"Could not determine portfolio date for {filename}.")
 
-        existing_count = MutualFundUnderlying.objects.filter(scheme=scheme, portfolio_date=portfolio_date, source=cls.SOURCE).count()
+        existing_count = MutualFundUnderlying.objects.filter(
+            scheme=scheme, portfolio_date=portfolio_date, source=cls.SOURCE
+        ).count()
         if existing_count:
             return {"status": "already_imported", "portfolio_date": portfolio_date, "records": existing_count}
 
@@ -92,7 +178,7 @@ class OfficialMutualFundUnderlyingService(MutualFundUnderlyingService):
 
     @classmethod
     def fetch_scheme(cls, scheme):
-        documents = cls.discover_documents(scheme)
+        documents = cls._collect_official_candidates(scheme)
         if not documents:
             raise ValueError(
                 f"No official AMFI/AMC portfolio disclosure was found for {scheme.scheme_name} "
@@ -103,7 +189,8 @@ class OfficialMutualFundUnderlyingService(MutualFundUnderlyingService):
         for document_url in documents:
             try:
                 response = cls._fetch(document_url)
-                filename = document_url.rstrip("/").rsplit("/", 1)[-1] or "portfolio.html"
+                path_name = document_url.rstrip("/").rsplit("/", 1)[-1]
+                filename = path_name if "." in path_name else "portfolio.html"
                 fallback_date = cls._extract_date(response.text)
                 result = cls.import_document(
                     scheme,

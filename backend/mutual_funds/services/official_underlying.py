@@ -34,56 +34,135 @@ class OfficialMutualFundUnderlyingService(MutualFundUnderlyingService):
     @classmethod
     def _parse_dataframe(cls, dataframe, fallback_date=None):
         dataframe = dataframe.dropna(how="all").copy()
+
         if dataframe.empty:
             return []
-        dataframe.columns = [cls.normalize_text(column) for column in dataframe.columns]
-        name_col = cls._find_column(dataframe.columns, "security_name")
+
+        dataframe.columns = [
+            cls.normalize_text(column)
+            for column in dataframe.columns
+        ]
+
+        def find_column(*aliases):
+            normalized_columns = {
+                column: cls.normalize_column(column)
+                for column in dataframe.columns
+            }
+
+            for alias in aliases:
+                normalized_alias = cls.normalize_column(alias)
+                for column, normalized_column in normalized_columns.items():
+                    if normalized_column == normalized_alias:
+                        return column
+
+            for alias in aliases:
+                normalized_alias = cls.normalize_column(alias)
+                if not normalized_alias:
+                    continue
+                for column, normalized_column in normalized_columns.items():
+                    if normalized_alias in normalized_column:
+                        return column
+
+            return None
+
+        name_col = find_column(
+            "security_name",
+            "name of the instrument",
+            "name of instrument",
+            "security name",
+            "instrument name",
+            "instrument",
+        )
         if not name_col:
             return []
-        isin_col = cls._find_column(dataframe.columns, "isin")
-        quantity_col = cls._find_column(dataframe.columns, "quantity")
-        value_col = cls._find_column(dataframe.columns, "market_value")
-        pct_col = cls._find_column(dataframe.columns, "percentage_of_nav")
-        sector_col = next(
-            (
-                column for column in dataframe.columns
-                if any(token in cls.normalize_column(column) for token in ("industry", "sector"))
-            ),
-            None,
+
+        isin_col = find_column("isin", "isin code", "isin no", "isin number")
+        quantity_col = find_column(
+            "quantity", "qty", "units", "no of shares", "number of shares", "shares"
         )
-        value_is_lakhs = value_col and any(
-            token in cls.normalize_column(value_col) for token in ("lakh", "lac")
+        value_col = find_column(
+            "market_value",
+            "market value",
+            "market value (rs.)",
+            "market value (in rs.)",
+            "market value rs",
+            "fair value",
+            "valuation",
+            "value",
         )
+        pct_col = find_column(
+            "percentage_of_nav",
+            "% to nav",
+            "% of nav",
+            "percent of nav",
+            "percentage of nav",
+            "% nav",
+            "nav (%)",
+            "weight",
+            "weight (%)",
+            "portfolio (%)",
+            "percentage",
+        )
+        sector_col = find_column(
+            "industry",
+            "sector",
+        )
+
+        value_is_lakhs = False
+        if value_col:
+            normalized_value_column = cls.normalize_column(value_col)
+            value_is_lakhs = any(
+                token in normalized_value_column
+                for token in ("lakh", "lakhs", "lac", "lacs")
+            )
 
         rows = []
         for _, row in dataframe.iterrows():
             security_name = cls.normalize_text(row.get(name_col))
             if not security_name:
                 continue
-            lower = security_name.lower()
-            if lower in {"total", "grand total", "total investments"} or lower.startswith("total "):
+
+            lower_name = security_name.lower().strip()
+            if (
+                lower_name in {
+                    "total",
+                    "grand total",
+                    "total investments",
+                    "net investments",
+                }
+                or lower_name.startswith("total ")
+                or security_name.isdigit()
+            ):
                 continue
+
             isin = cls.normalize_text(row.get(isin_col)) if isin_col else None
             quantity = cls._decimal(row.get(quantity_col)) if quantity_col else None
             market_value = cls._decimal(row.get(value_col)) if value_col else None
+
             if market_value is not None and value_is_lakhs:
                 market_value *= 100000
+
             percentage = cls._decimal(row.get(pct_col)) if pct_col else None
             if percentage is None or percentage < 0 or percentage > 100:
                 continue
+
             sector = cls.normalize_text(row.get(sector_col)) if sector_col else None
-            if sector in {"-", "N.A.", "NA", "N/A"}:
+            if sector in {"-", "N.A.", "NA", "N/A", ""}:
                 sector = None
-            rows.append({
-                "security_name": security_name,
-                "isin": isin or None,
-                "security_key": cls.normalize_security_key(security_name, isin),
-                "quantity": quantity,
-                "market_value": market_value,
-                "percentage_of_nav": percentage,
-                "sector": sector,
-                "portfolio_date": fallback_date,
-            })
+
+            rows.append(
+                {
+                    "security_name": security_name,
+                    "isin": isin or None,
+                    "security_key": cls.normalize_security_key(security_name, isin),
+                    "quantity": quantity,
+                    "market_value": market_value,
+                    "percentage_of_nav": percentage,
+                    "sector": sector,
+                    "portfolio_date": fallback_date,
+                }
+            )
+
         return rows
 
     @classmethod
@@ -92,8 +171,11 @@ class OfficialMutualFundUnderlyingService(MutualFundUnderlyingService):
         portfolio_date = cls._extract_date(filename) or fallback_date
         lower_name = filename.lower()
         frames = []
+
         if lower_name.endswith((".xlsx", ".xls")):
-            workbook = pd.ExcelFile(content if hasattr(content, "read") else __import__("io").BytesIO(content))
+            workbook = pd.ExcelFile(
+                content if hasattr(content, "read") else __import__("io").BytesIO(content)
+            )
             for sheet in workbook.sheet_names:
                 try:
                     frames.append(pd.read_excel(workbook, sheet_name=sheet, header=0))
@@ -102,7 +184,11 @@ class OfficialMutualFundUnderlyingService(MutualFundUnderlyingService):
         elif lower_name.endswith(".csv"):
             frames.append(pd.read_csv(__import__("io").BytesIO(content)))
         else:
-            html = content.decode("utf-8", errors="ignore") if isinstance(content, bytes) else str(content)
+            html = (
+                content.decode("utf-8", errors="ignore")
+                if isinstance(content, bytes)
+                else str(content)
+            )
             try:
                 frames.extend(pd.read_html(StringIO(html)))
             except (ValueError, ImportError):
@@ -131,7 +217,6 @@ class OfficialMutualFundUnderlyingService(MutualFundUnderlyingService):
             except Exception:
                 continue
             html = response.text
-            # Accept the page itself only when it contains the requested fund.
             if cls._matches_scheme(html, scheme):
                 candidates.append(page_url)
             for child in cls._official_links(html, page_url):
@@ -147,15 +232,25 @@ class OfficialMutualFundUnderlyingService(MutualFundUnderlyingService):
         records = cls.parse_document(content, filename, fallback_date=fallback_date)
         if not records:
             raise ValueError(f"No valid portfolio rows found in {filename}.")
-        portfolio_date = next((row["portfolio_date"] for row in records if row["portfolio_date"]), None)
+
+        portfolio_date = next(
+            (row["portfolio_date"] for row in records if row["portfolio_date"]),
+            None,
+        )
         if portfolio_date is None:
             raise ValueError(f"Could not determine portfolio date for {filename}.")
 
         existing_count = MutualFundUnderlying.objects.filter(
-            scheme=scheme, portfolio_date=portfolio_date, source=cls.SOURCE
+            scheme=scheme,
+            portfolio_date=portfolio_date,
+            source=cls.SOURCE,
         ).count()
         if existing_count:
-            return {"status": "already_imported", "portfolio_date": portfolio_date, "records": existing_count}
+            return {
+                "status": "already_imported",
+                "portfolio_date": portfolio_date,
+                "records": existing_count,
+            }
 
         objects = [
             MutualFundUnderlying(
@@ -173,8 +268,16 @@ class OfficialMutualFundUnderlyingService(MutualFundUnderlyingService):
             )
             for row in records
         ]
-        MutualFundUnderlying.objects.bulk_create(objects, ignore_conflicts=True, batch_size=500)
-        return {"status": "imported", "portfolio_date": portfolio_date, "records": len(objects)}
+        MutualFundUnderlying.objects.bulk_create(
+            objects,
+            ignore_conflicts=True,
+            batch_size=500,
+        )
+        return {
+            "status": "imported",
+            "portfolio_date": portfolio_date,
+            "records": len(objects),
+        }
 
     @classmethod
     def fetch_scheme(cls, scheme):
@@ -204,4 +307,6 @@ class OfficialMutualFundUnderlyingService(MutualFundUnderlyingService):
                 last_error = exc
                 continue
 
-        raise ValueError(f"All official portfolio disclosures failed for {scheme.scheme_name}: {last_error}")
+        raise ValueError(
+            f"All official portfolio disclosures failed for {scheme.scheme_name}: {last_error}"
+        )

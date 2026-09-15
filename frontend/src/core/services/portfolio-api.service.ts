@@ -41,19 +41,12 @@ export interface Transaction {
   fees: number;
   notes: string | null;
   created_at: string;
-
-  /* ========================================================
-     HIERARCHY / CLASSIFICATION
-     Already returned by the existing TransactionSerializer
-     (backend/portfolio/serializers.py); added here so the
-     Reports page can group by Family -> Sub Class -> Underlying
-     without any backend change.
-     ======================================================== */
   family_name?: string | null;
   portfolio?: string | null;
   asset_class?: string | null;
   sub_class?: string | null;
   underlying?: string | null;
+  advisors?: string | null;
   isin?: string | null;
 }
 
@@ -96,14 +89,22 @@ export interface CreateTransactionRequest {
   notes?: string | null;
 }
 
-/* ==========================================================
-   PORTFOLIO TREE
-   Family
-      Portfolio
-         Asset Class
-            Sub Class
-               Asset
-   ========================================================== */
+export interface UpdateTransactionRequest {
+  family_name?: string | null;
+  portfolio?: string | null;
+  asset_class?: string | null;
+  sub_class?: string | null;
+  asset_name?: string | null;
+  underlying?: string | null;
+  advisors?: string | null;
+  transaction_date?: string;
+  transaction_type?: string;
+  quantity?: number;
+  price_per_unit?: number;
+  amount?: number;
+  fees?: number;
+  notes?: string | null;
+}
 
 export interface PortfolioAssetNode {
   id: number;
@@ -112,29 +113,16 @@ export interface PortfolioAssetNode {
   underlying: string;
   isin: string | null;
   advisors: string;
-
   quantity: number;
   average_cost: number;
   invested_value: number;
-
   current_price: number;
   current_value: number;
-
   pnl: number;
   pnl_percentage: number;
   xirr: number | null;
-
   sector: string | null;
   cap_type: string | null;
-
-  /* ============================================================
-     Added alongside the SecurityMaster schema extension
-     (investments/migrations/0007_...). All null whenever no
-     SecurityMaster row exists for the asset yet, or the specific
-     field hasn't been filled in via Django admin — never
-     defaulted/fabricated on the backend, so treat null as
-     "unknown", not zero.
-     ============================================================ */
   amc_name: string | null;
   pe_ratio: number | null;
   pb_ratio: number | null;
@@ -144,7 +132,6 @@ export interface PortfolioAssetNode {
   ytm: number | null;
   modified_duration: number | null;
   average_maturity: number | null;
-
   price_source: string | null;
 }
 
@@ -178,24 +165,48 @@ export interface PortfolioTreeResponse {
   families: FamilyNode[];
 }
 
+export interface HoldingReportRow {
+  id: number;
+  owner_id: number;
+  family_name: string;
+  portfolio: string;
+  asset_class: string;
+  sub_class: string;
+  asset_id: number;
+  asset_name: string;
+  underlying: string;
+  isin: string | null;
+  advisors: string;
+  quantity: number;
+  average_cost: number;
+  invested_value: number;
+  current_price: number;
+  current_value: number;
+  gain: number;
+  gain_percentage: number;
+  xirr: number | null;
+  sector: string | null;
+  cap_type: string | null;
+  amc_name: string | null;
+}
+
+export interface HoldingReportResponse {
+  success: boolean;
+  count: number;
+  results: HoldingReportRow[];
+}
+
 @Injectable({
   providedIn: 'root',
 })
 export class PortfolioApiService {
   private readonly http = inject(HttpClient);
-
   private readonly baseUrl = `${environment.apiUrl}/api/portfolio`;
-
   private readonly csrfUrl = `${environment.apiUrl}/api/health/`;
-
-  private readonly requestOptions = {
-    withCredentials: true,
-  };
+  private readonly requestOptions = { withCredentials: true };
 
   private getCsrfToken(): Observable<any> {
-    return this.http.get(this.csrfUrl, {
-      withCredentials: true,
-    });
+    return this.http.get(this.csrfUrl, { withCredentials: true });
   }
 
   private readCsrfToken(): string {
@@ -203,7 +214,6 @@ export class PortfolioApiService {
 
     for (const cookie of cookies) {
       const trimmedCookie = cookie.trim();
-
       if (trimmedCookie.startsWith('csrftoken=')) {
         return decodeURIComponent(trimmedCookie.substring('csrftoken='.length));
       }
@@ -214,7 +224,6 @@ export class PortfolioApiService {
 
   private getCsrfHeaders(): HttpHeaders {
     const csrfToken = this.readCsrfToken();
-
     let headers = new HttpHeaders();
 
     if (csrfToken) {
@@ -229,28 +238,23 @@ export class PortfolioApiService {
   }
 
   getHoldings(): Observable<ApiListResponse<Holding>> {
-    return this.http.get<ApiListResponse<Holding>>(
-      `${this.baseUrl}/holdings/`,
-      this.requestOptions,
-    );
+    return this.http.get<ApiListResponse<Holding>>(`${this.baseUrl}/holdings/`, this.requestOptions);
   }
 
   getTransactions(): Observable<ApiListResponse<Transaction>> {
-    return this.http.get<ApiListResponse<Transaction>>(
-      `${this.baseUrl}/transactions/`,
-      this.requestOptions,
-    );
+    return this.http.get<ApiListResponse<Transaction>>(`${this.baseUrl}/transactions/`, this.requestOptions);
   }
 
   getAssets(): Observable<ApiListResponse<PortfolioAsset>> {
-    return this.http.get<ApiListResponse<PortfolioAsset>>(
-      `${this.baseUrl}/assets/`,
-      this.requestOptions,
-    );
+    return this.http.get<ApiListResponse<PortfolioAsset>>(`${this.baseUrl}/assets/`, this.requestOptions);
   }
 
   getPortfolioTree(): Observable<PortfolioTreeResponse> {
     return this.http.get<PortfolioTreeResponse>(`${this.baseUrl}/tree/`, this.requestOptions);
+  }
+
+  getHoldingReport(): Observable<HoldingReportResponse> {
+    return this.http.get<HoldingReportResponse>(`${this.baseUrl}/holding-report/`, this.requestOptions);
   }
 
   createAsset(payload: CreateAssetRequest): Observable<PortfolioAsset> {
@@ -268,6 +272,20 @@ export class PortfolioApiService {
     return this.getCsrfToken().pipe(
       switchMap(() =>
         this.http.post<Transaction>(`${this.baseUrl}/transactions/`, payload, {
+          headers: this.getCsrfHeaders(),
+          withCredentials: true,
+        }),
+      ),
+    );
+  }
+
+  updateTransaction(
+    transactionId: number,
+    payload: UpdateTransactionRequest,
+  ): Observable<Transaction> {
+    return this.getCsrfToken().pipe(
+      switchMap(() =>
+        this.http.patch<Transaction>(`${this.baseUrl}/transactions/${transactionId}/`, payload, {
           headers: this.getCsrfHeaders(),
           withCredentials: true,
         }),

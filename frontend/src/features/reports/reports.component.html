@@ -127,6 +127,112 @@
     </div>
   </div>
 
+  <!-- TRANSACTION EDITOR -->
+  <div
+    *ngIf="editingTransaction"
+    class="modal-overlay"
+    (click)="cancelEditTransaction()"
+  >
+    <div class="transaction-edit-modal" (click)="$event.stopPropagation()">
+      <div class="modal-title">Edit Transaction</div>
+      <div class="modal-subtitle">Changes are saved directly to the database and the report is recalculated after saving.</div>
+
+      <div class="transaction-edit-grid">
+        <div class="modal-field">
+          <label>Family Name</label>
+          <input class="modal-text-input" [(ngModel)]="editingTransaction.family_name" />
+        </div>
+
+        <div class="modal-field">
+          <label>Portfolio</label>
+          <input class="modal-text-input" [(ngModel)]="editingTransaction.portfolio" />
+        </div>
+
+        <div class="modal-field">
+          <label>Asset Class</label>
+          <input class="modal-text-input" [(ngModel)]="editingTransaction.asset_class" />
+        </div>
+
+        <div class="modal-field">
+          <label>Sub Class</label>
+          <input class="modal-text-input" [(ngModel)]="editingTransaction.sub_class" />
+        </div>
+
+        <div class="modal-field">
+          <label>Asset Name</label>
+          <input class="modal-text-input" [(ngModel)]="editingTransaction.asset_name" />
+        </div>
+
+        <div class="modal-field">
+          <label>Underlying</label>
+          <input class="modal-text-input" [(ngModel)]="editingTransaction.underlying" />
+        </div>
+
+        <div class="modal-field">
+          <label>Advisor</label>
+          <input class="modal-text-input" [(ngModel)]="editingTransaction.advisors" />
+        </div>
+
+        <div class="modal-field">
+          <label>Transaction Date</label>
+          <input type="date" class="modal-date-input" [(ngModel)]="editingTransaction.transaction_date" />
+        </div>
+
+        <div class="modal-field">
+          <label>Transaction Type</label>
+          <select class="modal-select" [(ngModel)]="editingTransaction.transaction_type">
+            <option value="BUY">Buy</option>
+            <option value="SELL">Sell</option>
+            <option value="SIP">SIP</option>
+            <option value="DIVIDEND">Dividend</option>
+            <option value="INTEREST">Interest</option>
+            <option value="DEPOSIT">Deposit</option>
+            <option value="WITHDRAWAL">Withdrawal</option>
+            <option value="BONUS">Bonus</option>
+            <option value="SPLIT">Split</option>
+            <option value="OTHER">Other</option>
+          </select>
+        </div>
+
+        <div class="modal-field">
+          <label>Quantity</label>
+          <input type="number" step="any" class="modal-text-input" [(ngModel)]="editingTransaction.quantity" />
+        </div>
+
+        <div class="modal-field">
+          <label>Price Per Unit</label>
+          <input type="number" step="any" class="modal-text-input" [(ngModel)]="editingTransaction.price_per_unit" />
+        </div>
+
+        <div class="modal-field">
+          <label>Amount</label>
+          <input type="number" step="any" class="modal-text-input" [(ngModel)]="editingTransaction.amount" />
+        </div>
+
+        <div class="modal-field">
+          <label>Fees</label>
+          <input type="number" step="any" class="modal-text-input" [(ngModel)]="editingTransaction.fees" />
+        </div>
+
+        <div class="modal-field transaction-edit-notes">
+          <label>Notes</label>
+          <textarea class="modal-textarea" rows="3" [(ngModel)]="editingTransaction.notes"></textarea>
+        </div>
+      </div>
+
+      <div *ngIf="editTransactionError" class="modal-error">{{ editTransactionError }}</div>
+
+      <div class="modal-actions">
+        <button type="button" class="modal-button" [disabled]="editTransactionSaving" (click)="cancelEditTransaction()">
+          Cancel
+        </button>
+        <button type="button" class="modal-button modal-button-primary" [disabled]="editTransactionSaving" (click)="saveEditTransaction()">
+          {{ editTransactionSaving ? 'Saving...' : 'Save Changes' }}
+        </button>
+      </div>
+    </div>
+  </div>
+
   <!-- ==========================================================
        FILTERS
        Same layout/behavior as the Portfolio page's selection-area
@@ -522,6 +628,7 @@
                                                 <th>Quantity</th>
                                                 <th>Price</th>
                                                 <th>Amount</th>
+                                                <th>Actions</th>
                                               </tr>
                                             </thead>
 
@@ -543,6 +650,15 @@
                                                 <td>{{ formatNumber(tx.quantity) }}</td>
                                                 <td>₹{{ formatDecimal(tx.price_per_unit) }}</td>
                                                 <td>₹{{ formatCurrency(tx.amount) }}</td>
+                                                <td>
+                                                  <button
+                                                    type="button"
+                                                    class="transaction-edit-button"
+                                                    (click)="openEditTransaction(tx); $event.stopPropagation()"
+                                                  >
+                                                    Edit
+                                                  </button>
+                                                </td>
                                               </tr>
                                             </tbody>
                                           </table>

@@ -1394,3 +1394,105 @@
   justify-content: flex-end;
   margin-bottom: 12px;
 }
+
+
+/* ==========================================================
+   TRANSACTION EDITOR
+   ========================================================== */
+
+.transaction-edit-modal {
+  width: min(760px, calc(100vw - 32px));
+  max-height: calc(100vh - 40px);
+  overflow-y: auto;
+  background: #ffffff;
+  border-radius: 10px;
+  padding: 20px;
+  box-sizing: border-box;
+  box-shadow: 0 12px 32px rgba(16, 24, 40, 0.2);
+}
+
+.transaction-edit-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  column-gap: 14px;
+}
+
+.transaction-edit-notes {
+  grid-column: 1 / -1;
+}
+
+.modal-text-input,
+.modal-textarea {
+  width: 100%;
+  border: 1px solid #d0d5dd;
+  border-radius: 6px;
+  padding: 8px 10px;
+  font-size: 13px;
+  color: #101828;
+  background: #ffffff;
+  box-sizing: border-box;
+  outline: none;
+  font-family: inherit;
+}
+
+.modal-text-input:focus,
+.modal-textarea:focus {
+  border-color: #667085;
+  box-shadow: 0 0 0 2px rgba(16, 24, 40, 0.06);
+}
+
+.modal-textarea {
+  resize: vertical;
+}
+
+.transaction-edit-button {
+  border: 1px solid #d0d5dd;
+  background: #ffffff;
+  color: #344054;
+  border-radius: 6px;
+  padding: 5px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.transaction-edit-button:hover {
+  background: #f5f7fa;
+}
+
+.modal-button:disabled,
+.transaction-edit-button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+@media (max-width: 650px) {
+  .transaction-edit-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .transaction-edit-notes {
+    grid-column: auto;
+  }
+}
+
+:host-context(html.dark-theme) .transaction-edit-modal {
+  background: #171a21;
+}
+
+:host-context(html.dark-theme) .modal-text-input,
+:host-context(html.dark-theme) .modal-textarea {
+  background: #12151c;
+  border-color: #3a414e;
+  color: #e5e7eb;
+}
+
+:host-context(html.dark-theme) .transaction-edit-button {
+  background: #1b1f27;
+  border-color: #3a414e;
+  color: #e5e7eb;
+}
+
+:host-context(html.dark-theme) .transaction-edit-button:hover {
+  background: #222834;
+}

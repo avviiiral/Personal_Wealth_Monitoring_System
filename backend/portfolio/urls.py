@@ -5,10 +5,12 @@ from .views import (
     portfolio_asset_detail,
     portfolio_transactions,
     portfolio_transaction_detail,
+    portfolio_transaction_edit_history,
     portfolio_summary,
     portfolio_holdings,
     portfolio_tree,
 )
+from .holding_report_views import holding_report
 
 from .manual_price_views import (
     manual_asset_price,
@@ -41,6 +43,12 @@ urlpatterns = [
     ),
 
     path(
+        "transactions/edit-history/",
+        portfolio_transaction_edit_history,
+        name="portfolio-transaction-edit-history",
+    ),
+
+    path(
         "summary/",
         portfolio_summary,
         name="portfolio-summary",
@@ -50,6 +58,12 @@ urlpatterns = [
         "holdings/",
         portfolio_holdings,
         name="portfolio-holdings",
+    ),
+
+    path(
+        "holding-report/",
+        holding_report,
+        name="holding-report",
     ),
 
     path(

@@ -15,6 +15,7 @@ import {
   FamilyNode,
   PortfolioAssetNode,
   Transaction,
+  UpdateTransactionRequest,
 } from '../../core/services/portfolio-api.service';
 
 /* ==============================================================
@@ -133,6 +134,11 @@ export class ReportsComponent implements OnInit {
 
   downloadMenuOpen = false;
 
+  /* Transaction editor used by the final Transactions table. */
+  editingTransaction: Transaction | null = null;
+  editTransactionError = '';
+  editTransactionSaving = false;
+
   ngOnInit(): void {
     this.loadReports();
   }
@@ -191,6 +197,97 @@ export class ReportsComponent implements OnInit {
 
   refresh(): void {
     this.loadReports();
+  }
+
+  openEditTransaction(tx: Transaction): void {
+    this.editTransactionError = '';
+    this.editingTransaction = { ...tx };
+  }
+
+  cancelEditTransaction(): void {
+    if (this.editTransactionSaving) {
+      return;
+    }
+
+    this.editingTransaction = null;
+    this.editTransactionError = '';
+  }
+
+  saveEditTransaction(): void {
+    const tx = this.editingTransaction;
+
+    if (!tx) {
+      return;
+    }
+
+    const quantity = Number(tx.quantity);
+    const pricePerUnit = Number(tx.price_per_unit);
+    const amount = Number(tx.amount);
+    const fees = Number(tx.fees);
+
+    if (!tx.transaction_date) {
+      this.editTransactionError = 'Transaction date is required.';
+      return;
+    }
+
+    if (!tx.transaction_type) {
+      this.editTransactionError = 'Transaction type is required.';
+      return;
+    }
+
+    if (![quantity, pricePerUnit, amount, fees].every((value) => Number.isFinite(value))) {
+      this.editTransactionError = 'Quantity, price, amount and fees must be valid numbers.';
+      return;
+    }
+
+    const payload: UpdateTransactionRequest = {
+      family_name: tx.family_name ?? '',
+      portfolio: tx.portfolio ?? '',
+      asset_class: tx.asset_class ?? '',
+      sub_class: tx.sub_class ?? '',
+      asset_name: tx.asset_name ?? '',
+      underlying: tx.underlying ?? '',
+      advisors: tx.advisors ?? '',
+      transaction_date: tx.transaction_date,
+      transaction_type: tx.transaction_type,
+      quantity,
+      price_per_unit: pricePerUnit,
+      amount,
+      fees,
+      notes: tx.notes ?? null,
+    };
+
+    this.editTransactionSaving = true;
+    this.editTransactionError = '';
+
+    this.portfolioApi.updateTransaction(tx.id, payload).subscribe({
+      next: () => {
+        this.editTransactionSaving = false;
+        this.editingTransaction = null;
+
+        /* Reload both transactions and the portfolio tree so the
+           Report hierarchy, quantities, invested value, current
+           value, gain and XIRR all reflect the database change. */
+        this.loadReports();
+      },
+      error: (error) => {
+        console.error('Transaction update API error:', error);
+        this.editTransactionSaving = false;
+
+        if (error?.status === 401 || error?.status === 403) {
+          this.editTransactionError = 'You are not authorized to edit this transaction.';
+        } else if (error?.status === 400) {
+          this.editTransactionError =
+            error?.error?.detail ||
+            error?.error?.message ||
+            'The transaction could not be updated. Please check the entered values.';
+        } else {
+          this.editTransactionError = 'Unable to update the transaction. Please try again.';
+        }
+
+        this.cdr.detectChanges();
+      },
+    });
   }
 
   /* ============================================================
@@ -581,67 +678,79 @@ export class ReportsComponent implements OnInit {
   ): Promise<void> {
     event.stopPropagation();
 
+    /*
+     * Download All Assets is intentionally holding-based.
+     * Each holding/asset appears once, using the same live portfolio
+     * values shown on the Report/Portfolio hierarchy instead of one
+     * row per underlying transaction.
+     */
     const rows: Record<string, unknown>[] = [];
+    const lookup = this.assetLookup;
+    const assetIds = new Set<number>();
 
     for (const assetGroup of summary.asset_names) {
-      const assetXirr = this.getAssetNameXirr(summary.sub_class, assetGroup.asset_name);
-
       for (const underlyingGroup of assetGroup.underlyings) {
         for (const tx of underlyingGroup.transactions) {
-          rows.push({
-            family_name: this.clean(tx.family_name),
-            sub_class: this.clean(tx.sub_class),
-            asset_name: assetGroup.asset_name,
-            underlying: this.getUnderlyingName(tx),
-            isin: tx.isin || '-',
-            transaction_date: new Date(tx.transaction_date),
-            transaction_type: tx.transaction_type_display || tx.transaction_type,
-            quantity: this.toNumber(tx.quantity),
-            price_per_unit: this.toNumber(tx.price_per_unit),
-            amount: this.toNumber(tx.amount),
-            xirr: assetXirr,
-          });
+          assetIds.add(tx.asset);
         }
       }
     }
 
-    rows.sort((a, b) => {
-      const transactionDateA = a['transaction_date'];
-      const transactionDateB = b['transaction_date'];
-      const dateA = transactionDateA instanceof Date ? transactionDateA.getTime() : 0;
-      const dateB = transactionDateB instanceof Date ? transactionDateB.getTime() : 0;
-      return dateB - dateA;
-    });
+    for (const assetId of assetIds) {
+      const asset = lookup.get(assetId);
+
+      if (!asset) {
+        continue;
+      }
+
+      rows.push({
+        family_name: this.clean(asset.family_name),
+        sub_class: this.clean(summary.sub_class),
+        asset_name: this.clean(asset.asset_name),
+        underlying: this.clean(asset.underlying || asset.asset_name),
+        isin: asset.isin || '-',
+        advisors: asset.advisors || '-',
+        quantity: this.toNumber(asset.quantity),
+        average_cost: this.toNumber(asset.average_cost),
+        invested_value: this.toNumber(asset.invested_value),
+        current_price: this.toNumber(asset.current_price),
+        current_value: this.toNumber(asset.current_value),
+        gain: this.toNumber(asset.pnl),
+        xirr: asset.xirr,
+      });
+    }
+
+    rows.sort((a, b) =>
+      String(a['asset_name']).localeCompare(String(b['asset_name'])) ||
+      String(a['underlying']).localeCompare(String(b['underlying'])),
+    );
 
     const familyNames = Array.from(
-      new Set(
-        summary.asset_names.flatMap((assetGroup) =>
-          assetGroup.underlyings.flatMap((underlyingGroup) =>
-            underlyingGroup.transactions.map((tx) => this.clean(tx.family_name)),
-          ),
-        ),
-      ),
+      new Set(rows.map((row) => String(row['family_name']))),
     );
     const familyLabel = familyNames.length === 1 ? familyNames[0] : 'All Families';
 
     await this.exportWorkbook({
-      sheetName: 'Sub Class',
-      title: `${summary.sub_class} — All Assets (as of ${this.todayLabel()})`,
+      sheetName: 'Holdings',
+      title: `${summary.sub_class} — Holdings (as of ${this.todayLabel()})`,
       columns: [
         { header: 'Family Name', key: 'family_name', width: 24 },
         { header: 'Sub Class', key: 'sub_class', width: 22 },
         { header: 'Asset Name', key: 'asset_name', width: 30 },
         { header: 'Underlying', key: 'underlying', width: 28 },
         { header: 'ISIN', key: 'isin', width: 16 },
-        { header: 'Transaction Date', key: 'transaction_date', width: 18, numFmt: 'dd-mmm-yyyy' },
-        { header: 'Transaction Type', key: 'transaction_type', width: 18 },
+        { header: 'Advisor', key: 'advisors', width: 24 },
         { header: 'Quantity', key: 'quantity', width: 14, numFmt: '#,##,##0.00' },
-        { header: 'Price', key: 'price_per_unit', width: 16, numFmt: '"₹"#,##,##0.00' },
-        { header: 'Amount', key: 'amount', width: 18, numFmt: '"₹"#,##,##0' },
+        { header: 'Average Cost', key: 'average_cost', width: 16, numFmt: '"₹"#,##,##0.00' },
+        { header: 'Invested Value', key: 'invested_value', width: 18, numFmt: '"₹"#,##,##0' },
+        { header: 'Current Price', key: 'current_price', width: 16, numFmt: '"₹"#,##,##0.00' },
+        { header: 'Current Value', key: 'current_value', width: 18, numFmt: '"₹"#,##,##0' },
+        { header: 'Gain', key: 'gain', width: 18, numFmt: '"₹"#,##,##0' },
         { header: 'XIRR (%)', key: 'xirr', width: 14, numFmt: '0.00"%"' },
       ],
       rows,
-      filename: `${this.slugify(familyLabel)}_${this.slugify(summary.sub_class)}_all_assets_${this.todayStamp()}.xlsx`,
+      gainKey: 'gain',
+      filename: `${this.slugify(familyLabel)}_${this.slugify(summary.sub_class)}_holdings_${this.todayStamp()}.xlsx`,
     });
   }
 

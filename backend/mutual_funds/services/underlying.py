@@ -37,8 +37,19 @@ class MutualFundUnderlyingService:
 
     COLUMN_ALIASES = {
         "security_name": {
-            "name", "security", "security name", "instrument", "issuer",
-            "company", "company name", "stock", "scheme name", "scrip name",
+            "name",
+            "name of instrument",
+            "name of the instrument",
+            "security",
+            "security name",
+            "instrument",
+            "instrument name",
+            "issuer",
+            "company",
+            "company name",
+            "stock",
+            "scheme name",
+            "scrip name",
         },
         "isin": {"isin", "isin code", "isin no", "isin number"},
         "quantity": {
@@ -351,8 +362,6 @@ class MutualFundUnderlyingService:
         """Discover the latest official AMFI/AMC portfolio page or file."""
         candidates = []
 
-        # AMFI remains the authoritative first source. Its portfolio page is
-        # currently client-rendered, so static HTML may expose no file links.
         try:
             amfi_response = cls._fetch(cls.AMFI_DISCLOSURE_URL)
             amfi_links = cls._official_links(amfi_response.text, cls.AMFI_DISCLOSURE_URL)
@@ -362,16 +371,10 @@ class MutualFundUnderlyingService:
         except requests.RequestException:
             logger.warning("Unable to access AMFI portfolio disclosure page", exc_info=True)
 
-        # Discover the AMC site from the scheme's stored AMC name instead of
-        # maintaining a permanent AMC-to-URL mapping.
         for page_url, html in cls._search_official_pages(scheme):
             candidates.extend(cls._find_download_links(page_url, html, scheme))
-            # The page itself can be the portfolio disclosure (e.g. an AMC
-            # scheme page with a server-rendered holdings table).
             candidates.append(page_url)
 
-            # Follow one level of official detail/article links. This handles
-            # CMS-style disclosure pages without knowing their URL structure.
             detail_links = []
             for child in cls._official_links(html, page_url):
                 parsed = urlparse(child)
@@ -392,9 +395,6 @@ class MutualFundUnderlyingService:
                 candidates.extend(cls._find_download_links(child, detail.text, scheme))
                 candidates.append(child)
 
-        # Only official AMFI pages or dynamically discovered AMC domains are
-        # returned. Preserve order because the search engine generally returns
-        # the most relevant/latest disclosure first.
         return list(dict.fromkeys(candidates))
 
     @classmethod

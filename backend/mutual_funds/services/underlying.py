@@ -3,7 +3,8 @@ import logging
 import re
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
-from urllib.parse import urljoin, urlparse
+from html import unescape
+from urllib.parse import parse_qs, quote_plus, unquote, urljoin, urlparse
 
 import pandas as pd
 import requests
@@ -21,24 +22,18 @@ class MutualFundUnderlyingService:
     Import monthly/fortnightly mutual-fund portfolio disclosures from
     official AMFI/AMC sources.
 
-    The service deliberately stores the disclosed portfolio date separately
-    from fetched_at. A newly fetched copy for an existing portfolio date is
-    an idempotent upsert; an older portfolio date is never overwritten.
+    Discovery is deliberately data-driven. It uses the AMC name, scheme code,
+    ISIN and scheme name already stored in MutualFundScheme and discovers the
+    official AMC page at runtime. No individual AMC, scheme, ISIN or AMC URL is
+    hard-coded here.
     """
 
     AMFI_DISCLOSURE_URL = "https://www.amfiindia.com/online-center/portfolio-disclosure"
     SOURCE = "AMFI"
     TIMEOUT_SECONDS = 60
-
-    # Official AMC disclosure landing pages used as a fallback when AMFI's
-    # portfolio page is rendered dynamically and therefore exposes no file
-    # links to a normal HTTP client. Only official AMC domains are allowed.
-    OFFICIAL_AMC_DISCLOSURE_URLS = {
-        "bandhan": "https://bandhanmutual.com/statutory-disclosures/scheme-portfolios/fortnightly",
-        "hdfc": "https://www.hdfcfund.com/statutory-disclosure/portfolio",
-        "icici": "https://www.icicipruamc.com/news-and-media/downloads?currentTabFilter=Other+SchemeDisclosures&subCatTabFilter=Monthly%20Portfolio%20Disclosures",
-        "kotak": "https://www.kotakmf.com/Information/Statutory-Disclosures/Portfolio-Disclosures",
-    }
+    SEARCH_TIMEOUT_SECONDS = 20
+    MAX_SEARCH_RESULTS = 8
+    MAX_DETAIL_LINKS = 12
 
     COLUMN_ALIASES = {
         "security_name": {
@@ -229,7 +224,7 @@ class MutualFundUnderlyingService:
     def _official_links(cls, html, base_url):
         links = []
         for href in re.findall(r"(?:href|data-href)=[\"']([^\"']+)[\"']", html, re.I):
-            absolute = urljoin(base_url, href.strip())
+            absolute = urljoin(base_url, unescape(href.strip()))
             parsed = urlparse(absolute)
             if parsed.scheme not in {"http", "https"}:
                 continue
@@ -237,15 +232,33 @@ class MutualFundUnderlyingService:
         return list(dict.fromkeys(links))
 
     @classmethod
-    def _matches_scheme(cls, url, scheme):
-        haystack = cls.normalize_text(url).lower()
-        candidates = [scheme.scheme_code, scheme.isin_growth, scheme.isin_dividend, scheme.scheme_name]
-        for candidate in candidates:
-            candidate = cls.normalize_text(candidate).lower() if candidate else ""
-            if candidate and len(candidate) >= 4 and candidate in haystack:
+    def _scheme_identifiers(cls, scheme):
+        values = [scheme.scheme_code, scheme.isin_growth, scheme.isin_dividend, scheme.scheme_name]
+        return [cls.normalize_text(value).lower() for value in values if cls.normalize_text(value)]
+
+    @classmethod
+    def _matches_scheme(cls, text, scheme):
+        haystack = cls.normalize_text(text).lower()
+        candidates = cls._scheme_identifiers(scheme)
+        for candidate in candidates[:3]:
+            if len(candidate) >= 4 and candidate in haystack:
                 return True
         tokens = [token for token in re.split(r"[^a-z0-9]+", scheme.scheme_name.lower()) if len(token) >= 5]
-        return len(tokens) >= 2 and sum(token in haystack for token in tokens) >= min(3, len(tokens))
+        if len(tokens) < 2:
+            return False
+        return sum(token in haystack for token in tokens) >= min(3, len(tokens))
+
+    @classmethod
+    def _amc_tokens(cls, scheme):
+        text = cls.normalize_text(getattr(scheme, "amc_name", "")).lower()
+        text = re.sub(r"\b(asset management company|asset management|mutual fund|mutual funds|amc|limited|ltd|private|pvt)\b", " ", text)
+        return [token for token in re.split(r"[^a-z0-9]+", text) if len(token) >= 4]
+
+    @classmethod
+    def _host_looks_like_amc(cls, host, scheme):
+        host = host.lower().split(":", 1)[0]
+        tokens = cls._amc_tokens(scheme)
+        return any(token in host for token in tokens)
 
     @classmethod
     def _fetch(cls, url):
@@ -254,80 +267,134 @@ class MutualFundUnderlyingService:
         return response
 
     @classmethod
-    def _amc_key(cls, scheme):
-        text = cls.normalize_text(getattr(scheme, "amc_name", "")).lower()
-        if not text:
-            return None
-        for key in cls.OFFICIAL_AMC_DISCLOSURE_URLS:
-            if key in text:
-                return key
-        return None
+    def _search_urls(cls, query):
+        """Return search-result URLs; search is used only to discover official pages."""
+        urls = []
+        endpoints = (
+            "https://www.google.com/search",
+            "https://html.duckduckgo.com/html/",
+        )
+        for endpoint in endpoints:
+            try:
+                response = requests.get(
+                    endpoint,
+                    params={"q": query, "num": cls.MAX_SEARCH_RESULTS, "hl": "en"},
+                    headers=cls._headers(),
+                    timeout=cls.SEARCH_TIMEOUT_SECONDS,
+                )
+                response.raise_for_status()
+            except requests.RequestException:
+                continue
+
+            for raw_href in re.findall(r"href=[\"']([^\"']+)[\"']", response.text, re.I):
+                href = unescape(raw_href)
+                parsed = urlparse(href)
+                if parsed.path in {"/url", "/l/"}:
+                    target = parse_qs(parsed.query).get("q", [None])[0] or parse_qs(parsed.query).get("uddg", [None])[0]
+                    if target:
+                        href = unquote(target)
+                parsed = urlparse(href)
+                if parsed.scheme in {"http", "https"}:
+                    host = parsed.netloc.lower()
+                    if any(search_host in host for search_host in ("google.", "duckduckgo.com", "bing.com")):
+                        continue
+                    urls.append(href)
+            if urls:
+                break
+        return list(dict.fromkeys(urls))[: cls.MAX_SEARCH_RESULTS]
 
     @classmethod
-    def _candidate_pages(cls, scheme):
-        urls = []
-        amc_key = cls._amc_key(scheme)
-        if amc_key:
-            urls.append(cls.OFFICIAL_AMC_DISCLOSURE_URLS[amc_key])
-        return urls
+    def _search_official_pages(cls, scheme):
+        identifiers = cls._scheme_identifiers(scheme)
+        scheme_name = cls.normalize_text(scheme.scheme_name)
+        amc_name = cls.normalize_text(getattr(scheme, "amc_name", ""))
+        queries = [
+            f'"{scheme_name}" "portfolio" "{identifiers[1] if len(identifiers) > 1 else identifiers[0]}"',
+            f'"{amc_name}" "{scheme_name}" "portfolio disclosure"',
+        ]
+
+        pages = []
+        seen_hosts = set()
+        for query in queries:
+            for url in cls._search_urls(query):
+                parsed = urlparse(url)
+                host = parsed.netloc.lower()
+                if not cls._host_looks_like_amc(host, scheme):
+                    continue
+                if host in seen_hosts:
+                    continue
+                try:
+                    response = cls._fetch(url)
+                except requests.RequestException:
+                    continue
+                if not cls._matches_scheme(response.text, scheme):
+                    continue
+                if not re.search(r"portfolio|holding|disclosure", response.text, re.I):
+                    continue
+                pages.append((url, response.text))
+                seen_hosts.add(host)
+        return pages
 
     @classmethod
     def _find_download_links(cls, page_url, html, scheme):
         candidates = []
         for link in cls._official_links(html, page_url):
             lower = link.lower()
-            if not lower.endswith((".xlsx", ".xls", ".csv", ".xlsb", ".zip", ".pdf")):
+            if not lower.endswith((".xlsx", ".xls", ".csv")):
                 continue
-            if cls._matches_scheme(link, scheme):
+            if cls._matches_scheme(link, scheme) or cls._matches_scheme(html, scheme):
                 candidates.append(link)
         return candidates
 
     @classmethod
     def discover_documents(cls, scheme):
-        """Discover portfolio files from official AMFI/AMC pages only."""
+        """Discover the latest official AMFI/AMC portfolio page or file."""
         candidates = []
 
-        # AMFI's current portfolio page is client-rendered, so a requests
-        # GET can return only the selector shell. Keep AMFI as the primary
-        # source, but use the official AMC disclosure page when no links are
-        # present in the static HTML.
+        # AMFI remains the authoritative first source. Its portfolio page is
+        # currently client-rendered, so static HTML may expose no file links.
         try:
-            index_response = cls._fetch(cls.AMFI_DISCLOSURE_URL)
-            links = cls._official_links(index_response.text, cls.AMFI_DISCLOSURE_URL)
-            for link in links:
-                lower = link.lower()
-                if lower.endswith((".xlsx", ".xls", ".csv")) and cls._matches_scheme(link, scheme):
+            amfi_response = cls._fetch(cls.AMFI_DISCLOSURE_URL)
+            amfi_links = cls._official_links(amfi_response.text, cls.AMFI_DISCLOSURE_URL)
+            for link in amfi_links:
+                if cls._matches_scheme(link, scheme):
                     candidates.append(link)
-                elif cls._matches_scheme(link, scheme):
-                    try:
-                        page = cls._fetch(link)
-                        candidates.extend(cls._find_download_links(link, page.text, scheme))
-                    except requests.RequestException:
-                        continue
         except requests.RequestException:
             logger.warning("Unable to access AMFI portfolio disclosure page", exc_info=True)
 
-        # Official AMC fallback. This is important for current holdings because
-        # AMFI's page is dynamic and may not expose its download URLs to HTTP.
-        for page_url in cls._candidate_pages(scheme):
-            try:
-                page = cls._fetch(page_url)
-            except requests.RequestException:
-                continue
-            candidates.extend(cls._find_download_links(page_url, page.text, scheme))
+        # Discover the AMC site from the scheme's stored AMC name instead of
+        # maintaining a permanent AMC-to-URL mapping.
+        for page_url, html in cls._search_official_pages(scheme):
+            candidates.extend(cls._find_download_links(page_url, html, scheme))
+            # The page itself can be the portfolio disclosure (e.g. an AMC
+            # scheme page with a server-rendered holdings table).
+            candidates.append(page_url)
 
-            # Some AMC pages use a detail/article link before the actual file.
-            for child in cls._official_links(page.text, page_url):
-                if child.lower().endswith((".xlsx", ".xls", ".csv", ".pdf")):
+            # Follow one level of official detail/article links. This handles
+            # CMS-style disclosure pages without knowing their URL structure.
+            detail_links = []
+            for child in cls._official_links(html, page_url):
+                parsed = urlparse(child)
+                if parsed.netloc.lower() != urlparse(page_url).netloc.lower():
                     continue
-                if not cls._matches_scheme(child, scheme):
+                if child.lower().endswith((".xlsx", ".xls", ".csv")):
+                    candidates.append(child)
                     continue
+                if cls._matches_scheme(child, scheme):
+                    detail_links.append(child)
+            for child in detail_links[: cls.MAX_DETAIL_LINKS]:
                 try:
                     detail = cls._fetch(child)
                 except requests.RequestException:
                     continue
+                if not cls._matches_scheme(detail.text, scheme):
+                    continue
                 candidates.extend(cls._find_download_links(child, detail.text, scheme))
+                candidates.append(child)
 
+        # Only official AMFI pages or dynamically discovered AMC domains are
+        # returned. Preserve order because the search engine generally returns
+        # the most relevant/latest disclosure first.
         return list(dict.fromkeys(candidates))
 
     @classmethod
@@ -415,9 +482,6 @@ class MutualFundUnderlyingService:
 
     @classmethod
     def fetch_all_active(cls, owner_ids=None):
-        # Do not iterate over the entire MutualFundScheme master list. The
-        # master contains many schemes that the user does not own, while the
-        # actual portfolio is represented by investments.Holding.
         pairs = cls._portfolio_scheme_pairs(owner_ids=owner_ids)
         results = {"schemes": 0, "imported": 0, "already_imported": 0, "failed": 0, "errors": []}
         for owner_id, scheme in pairs:

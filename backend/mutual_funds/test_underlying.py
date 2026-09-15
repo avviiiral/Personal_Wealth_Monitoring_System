@@ -7,6 +7,7 @@ from django.test import TestCase
 
 from investments.models import Asset, AssetCategory, Holding
 from mutual_funds.models import MutualFundScheme, MutualFundUnderlying
+from mutual_funds.services.official_underlying import OfficialMutualFundUnderlyingService
 from mutual_funds.services.underlying import MutualFundUnderlyingService
 
 
@@ -94,7 +95,7 @@ class MutualFundUnderlyingServiceTests(TestCase):
         self.assertEqual(rows[0]["isin"], "INE040A01034")
         self.assertEqual(rows[0]["percentage_of_nav"], Decimal("8.20"))
 
-    @patch.object(MutualFundUnderlyingService, "fetch_scheme")
+    @patch.object(OfficialMutualFundUnderlyingService, "fetch_scheme")
     def test_fetch_all_active_uses_live_portfolio_holdings_only(self, mock_fetch):
         asset = Asset.objects.create(
             owner=self.user,
@@ -112,7 +113,6 @@ class MutualFundUnderlyingServiceTests(TestCase):
             current_value=Decimal("1200"),
         )
 
-        # An active scheme without a live Holding must not be fetched.
         MutualFundScheme.objects.create(
             owner=self.user,
             scheme_name="Unused Fund - Direct Plan - Growth",
@@ -127,7 +127,7 @@ class MutualFundUnderlyingServiceTests(TestCase):
             "records": 10,
         }
 
-        result = MutualFundUnderlyingService.fetch_all_active(owner_ids=[self.user.id])
+        result = OfficialMutualFundUnderlyingService.fetch_all_active(owner_ids=[self.user.id])
 
         self.assertEqual(result["schemes"], 1)
         self.assertEqual(mock_fetch.call_count, 1)

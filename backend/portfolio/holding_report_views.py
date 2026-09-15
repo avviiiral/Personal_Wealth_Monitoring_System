@@ -1,3 +1,5 @@
+from django.db.models import OuterRef, Subquery
+
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
@@ -10,16 +12,21 @@ from users.permissions import get_visible_owner_ids
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def holding_report(request):
-    """
-    Return current portfolio positions for the holding report.
-
-    This endpoint is deliberately based on PortfolioPosition rather than
-    rebuilding the transaction-driven portfolio tree. That keeps the report
-    fast and makes the downloaded report one row per current holding.
-    """
+    """Return current portfolio positions with the latest transaction metadata."""
     owner_ids = get_visible_owner_ids(request.user)
 
-    positions = list(
+    latest_transaction = (
+        Transaction.objects
+        .filter(
+            owner_id=OuterRef("owner_id"),
+            asset_id=OuterRef("asset_id"),
+            family_name=OuterRef("family_name"),
+            portfolio=OuterRef("portfolio"),
+        )
+        .order_by("-transaction_date", "-id")
+    )
+
+    positions = (
         PortfolioPosition.objects
         .filter(
             owner_id__in=owner_ids,
@@ -27,40 +34,15 @@ def holding_report(request):
             quantity__gt=0,
         )
         .select_related("asset", "asset__security_master")
+        .annotate(
+            latest_asset_class=Subquery(latest_transaction.values("asset_class")[:1]),
+            latest_sub_class=Subquery(latest_transaction.values("sub_class")[:1]),
+            latest_asset_name=Subquery(latest_transaction.values("asset_name")[:1]),
+            latest_underlying=Subquery(latest_transaction.values("underlying")[:1]),
+            latest_advisors=Subquery(latest_transaction.values("advisors")[:1]),
+        )
         .order_by("family_name", "portfolio", "asset__name")
     )
-
-    asset_ids = {position.asset_id for position in positions}
-    owner_id_set = {position.owner_id for position in positions}
-
-    transactions = (
-        Transaction.objects
-        .filter(owner_id__in=owner_id_set, asset_id__in=asset_ids)
-        .only(
-            "owner_id",
-            "asset_id",
-            "family_name",
-            "portfolio",
-            "asset_class",
-            "sub_class",
-            "asset_name",
-            "underlying",
-            "advisors",
-            "transaction_date",
-            "id",
-        )
-        .order_by("owner_id", "asset_id", "family_name", "portfolio", "-transaction_date", "-id")
-    )
-
-    latest_metadata = {}
-    for tx in transactions:
-        key = (
-            tx.owner_id,
-            tx.asset_id,
-            (tx.family_name or "").strip(),
-            (tx.portfolio or "").strip(),
-        )
-        latest_metadata.setdefault(key, tx)
 
     def clean(value, default="Unassigned"):
         value = str(value or "").strip()
@@ -71,37 +53,28 @@ def holding_report(request):
     for position in positions:
         asset = position.asset
         security_master = getattr(asset, "security_master", None)
-        key_prefix = (
-            position.owner_id,
-            position.asset_id,
-            (position.family_name or "").strip(),
-            (position.portfolio or "").strip(),
-        )
-        metadata = latest_metadata.get(key_prefix)
+        invested_value = float(position.invested_value or 0)
+        gain = float(position.gain or 0)
 
         results.append({
             "id": position.id,
             "owner_id": position.owner_id,
             "family_name": clean(position.family_name),
             "portfolio": clean(position.portfolio),
-            "asset_class": clean(metadata.asset_class if metadata else None),
-            "sub_class": clean(metadata.sub_class if metadata else None),
+            "asset_class": clean(position.latest_asset_class),
+            "sub_class": clean(position.latest_sub_class),
             "asset_id": asset.id,
-            "asset_name": clean(metadata.asset_name if metadata else asset.name),
-            "underlying": clean(metadata.underlying if metadata else None, ""),
+            "asset_name": clean(position.latest_asset_name, asset.name),
+            "underlying": clean(position.latest_underlying, ""),
             "isin": asset.isin,
-            "advisors": clean(metadata.advisors if metadata else None, ""),
+            "advisors": clean(position.latest_advisors, ""),
             "quantity": float(position.quantity or 0),
             "average_cost": float(position.average_cost or 0),
-            "invested_value": float(position.invested_value or 0),
+            "invested_value": invested_value,
             "current_price": float(position.current_price or 0),
             "current_value": float(position.current_value or 0),
-            "gain": float(position.gain or 0),
-            "gain_percentage": (
-                round(float(position.gain / position.invested_value * 100), 2)
-                if position.invested_value
-                else 0
-            ),
+            "gain": gain,
+            "gain_percentage": round(gain / invested_value * 100, 2) if invested_value else 0,
             "xirr": None,
             "sector": security_master.sector if security_master else None,
             "cap_type": security_master.cap_type if security_master else None,

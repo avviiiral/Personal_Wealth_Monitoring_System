@@ -47,18 +47,25 @@ export interface WatchListResponse {
 @Injectable({ providedIn: 'root' })
 export class WatchListApiService {
   private readonly http = inject(HttpClient);
-  private readonly baseUrl = `${environment.apiUrl}/watch-list`;
+  private readonly baseUrl = `${environment.apiUrl}/api/watch-list`;
 
   getProducts(filters: Record<string, string | number | undefined>): Observable<WatchListResponse> {
     let params = new HttpParams();
     Object.entries(filters).forEach(([key, value]) => {
-      if (value !== undefined && value !== null && value !== '') params = params.set(key, String(value));
+      if (value !== undefined && value !== null && value !== '') {
+        params = params.set(key, String(value));
+      }
     });
-    return this.http.get<WatchListResponse>(`${this.baseUrl}/products/`, { params, withCredentials: true });
+    return this.http.get<WatchListResponse>(`${this.baseUrl}/products/`, {
+      params,
+      withCredentials: true,
+    });
   }
 
   getPerformance(productId: number): Observable<any> {
-    return this.http.get(`${this.baseUrl}/products/${productId}/performance/`, { withCredentials: true });
+    return this.http.get(`${this.baseUrl}/products/${productId}/performance/`, {
+      withCredentials: true,
+    });
   }
 
   refresh(): Observable<any> {

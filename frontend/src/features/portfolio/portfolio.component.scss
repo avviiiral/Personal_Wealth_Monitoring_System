@@ -2,10 +2,8 @@
   width: 100%;
   padding: 28px 34px;
   box-sizing: border-box;
-
   background: linear-gradient(180deg, var(--canvas-from) 0%, var(--canvas-to) 100%);
   background-attachment: fixed;
-
   min-height: calc(100vh - 80px);
 }
 
@@ -24,7 +22,6 @@
     letter-spacing: -0.01em;
     color: var(--ink);
   }
-
   p {
     margin: 7px 0 0;
     color: var(--muted);
@@ -38,25 +35,19 @@
   gap: 10px;
   flex-wrap: wrap;
 }
-
 .button-icon {
   width: 15px;
   height: 15px;
   flex-shrink: 0;
 }
-
 .button-spinner {
   width: 13px;
   height: 13px;
-
   border: 2px solid rgba(255, 255, 255, 0.35);
-  border-top-color: #ffffff;
-
+  border-top-color: #fff;
   border-radius: 50%;
-
   animation: spin 0.8s linear infinite;
 }
-
 @keyframes spin {
   to {
     transform: rotate(360deg);
@@ -68,18 +59,15 @@
   display: inline-flex;
   align-items: center;
   gap: 8px;
-
   border: 1px solid var(--surface-line);
-  background: #ffffff;
+  background: #fff;
   border-radius: var(--radius-sm);
   padding: 9px 16px;
   font-size: 13px;
   font-weight: 600;
   cursor: pointer;
   white-space: nowrap;
-
   box-shadow: var(--shadow-sm);
-
   transition:
     background-color 0.15s ease,
     box-shadow 0.15s ease,
@@ -89,40 +77,32 @@
     background: #f5f7fa;
     box-shadow: var(--shadow-md);
   }
-
   &:active:not(:disabled) {
     transform: translateY(1px);
   }
-
   &:disabled {
     opacity: 0.6;
     cursor: not-allowed;
   }
-
   &:focus-visible {
     outline: 2px solid var(--accent);
     outline-offset: 2px;
   }
 }
-
 .refresh-button:hover:not(:disabled) .refresh-icon {
   transform: rotate(150deg);
 }
-
 .refresh-icon {
   transition: transform 0.4s ease;
 }
-
 .upload-button {
-  color: #ffffff;
+  color: #fff;
   background: var(--ink);
   border-color: var(--ink);
-
   &:hover:not(:disabled) {
     background: var(--ink-soft);
   }
 }
-
 .upload-input-hidden {
   display: none;
 }
@@ -133,32 +113,27 @@
   margin-bottom: 22px;
   flex-wrap: wrap;
 }
-
 .selection-box {
   background: var(--surface);
   border: 1px solid var(--surface-line);
   border-radius: var(--radius-sm);
   padding: 12px 16px;
-
   box-shadow: var(--shadow-sm);
 }
-
 .selection-title {
   font-size: 12px;
   font-weight: 700;
   margin-bottom: 8px;
   color: #344054;
 }
-
 .selection-buttons {
   display: flex;
   gap: 8px;
   flex-wrap: wrap;
 }
-
 .selection-button {
   border: 1px solid #d9dee7;
-  background: #ffffff;
+  background: #fff;
   border-radius: 6px;
   padding: 6px 12px;
   font-size: 12px;
@@ -167,15 +142,13 @@
     background-color 0.15s ease,
     border-color 0.15s ease,
     color 0.15s ease;
-
   &:hover {
     background: var(--accent-soft);
     border-color: var(--accent-line);
   }
-
   &.active {
     background: var(--ink);
-    color: #ffffff;
+    color: #fff;
     border-color: var(--ink);
   }
 }
@@ -186,36 +159,27 @@
   align-items: center;
   justify-content: center;
   gap: 10px;
-
   padding: 32px;
   text-align: center;
   border: 1px solid var(--surface-line);
   border-radius: var(--radius-lg);
   background: var(--surface);
-
   box-shadow: var(--shadow-sm);
-
   font-size: 14px;
   color: var(--muted);
 }
-
 .loading-spinner {
   width: 17px;
   height: 17px;
-
   border: 2px solid var(--surface-line);
   border-top-color: var(--ink);
-
   border-radius: 50%;
-
   animation: spin 0.8s linear infinite;
 }
-
 .error-state {
   color: var(--negative);
   background: var(--negative-soft);
   border-color: #fecaca;
-
   svg {
     width: 18px;
     height: 18px;
@@ -229,20 +193,16 @@
   border: 1px solid var(--surface-line);
   border-radius: var(--radius-lg);
   overflow: hidden;
-
   box-shadow: var(--shadow-sm);
 }
-
 .table-scroll {
   width: 100%;
   overflow-x: auto;
 }
-
 .portfolio-table {
   width: 100%;
   border-collapse: collapse;
   min-width: 900px;
-
   th {
     background: #fafbfc;
     color: #344054;
@@ -255,7 +215,6 @@
     border-bottom: 1px solid var(--surface-line);
     white-space: nowrap;
   }
-
   td {
     padding: 14px 16px;
     font-size: 13px;
@@ -265,23 +224,72 @@
   }
 }
 
+/* ==========================================================
+   SORTABLE VALUE HEADERS
+   Single click = ascending, double click = descending,
+   next single click = normal/default order.
+   ========================================================== */
+.portfolio-table > thead > tr > th:nth-child(2),
+.portfolio-table > thead > tr > th:nth-child(3),
+.portfolio-table > thead > tr > th:nth-child(4),
+.portfolio-table > thead > tr > th:nth-child(5),
+.portfolio-table > thead > tr > th:nth-child(6) {
+  cursor: pointer;
+  user-select: none;
+  transition:
+    color 0.15s ease,
+    background-color 0.15s ease;
+}
+
+.portfolio-table > thead > tr > th:nth-child(2):hover,
+.portfolio-table > thead > tr > th:nth-child(3):hover,
+.portfolio-table > thead > tr > th:nth-child(4):hover,
+.portfolio-table > thead > tr > th:nth-child(5):hover,
+.portfolio-table > thead > tr > th:nth-child(6):hover {
+  background: var(--accent-soft);
+  color: var(--ink);
+}
+
+.portfolio-table > thead > tr > th:nth-child(2)::after,
+.portfolio-table > thead > tr > th:nth-child(3)::after,
+.portfolio-table > thead > tr > th:nth-child(4)::after,
+.portfolio-table > thead > tr > th:nth-child(5)::after,
+.portfolio-table > thead > tr > th:nth-child(6)::after {
+  content: '↕';
+  display: inline-block;
+  margin-left: 7px;
+  font-size: 12px;
+  opacity: 0.45;
+}
+
+.portfolio-table > thead > tr > th[data-sort-state='asc']::after {
+  content: '↑';
+  opacity: 1;
+  color: var(--accent);
+}
+.portfolio-table > thead > tr > th[data-sort-state='desc']::after {
+  content: '↓';
+  opacity: 1;
+  color: var(--accent);
+}
+.portfolio-table > thead > tr > th[data-sort-state='normal']::after {
+  content: '↕';
+  opacity: 0.35;
+}
+
 .sub-class-row {
   cursor: pointer;
   transition: background-color 0.15s ease;
-
   &:hover {
     background: var(--accent-soft);
   }
-
   &.expanded {
     background: var(--accent-soft);
   }
 }
-
 .sub-class-name {
   font-weight: 700;
 }
-
 .row-chevron {
   display: inline-flex;
   width: 18px;
@@ -296,38 +304,30 @@
   transition:
     transform 0.15s ease,
     color 0.15s ease;
-
   &.open {
     transform: rotate(90deg);
     color: var(--accent);
   }
-
   &.right {
     margin-right: 0;
   }
 }
-
 .arrow-column {
   width: 30px;
   text-align: center !important;
 }
-
 .asset-detail-row {
   background: #fafbfc;
-
   > td {
     padding: 0;
   }
 }
-
 .asset-detail-container {
   padding: 18px;
   background: #fafbfc;
-
   border-top: 1px solid var(--surface-line);
   border-bottom: 1px solid var(--surface-line);
 }
-
 .asset-detail-title {
   font-size: 13px;
   font-weight: 700;
@@ -337,19 +337,12 @@
   letter-spacing: 0.03em;
 }
 
-/* ==========================================================
-   LEVEL 2 - ASSET NAME
-   ========================================================== */
-
 .asset-groups {
   width: 100%;
-
   background: var(--surface);
   border-radius: var(--radius-sm);
-
   box-shadow: var(--shadow-sm);
 }
-
 .asset-group-columns-header {
   display: flex;
   align-items: center;
@@ -363,23 +356,19 @@
   letter-spacing: 0.03em;
   border-bottom: 1px solid var(--surface-line);
 }
-
 .asset-group-name-header {
   flex: 1 1 auto;
   min-width: 220px;
   padding-left: 23px;
   box-sizing: border-box;
 }
-
 .asset-group {
   width: 100%;
   border-bottom: 1px solid #f1f2f5;
-
   &:last-child {
     border-bottom: none;
   }
 }
-
 .asset-group-header {
   display: flex;
   align-items: center;
@@ -390,42 +379,34 @@
   font-size: 13px;
   color: #101828;
   transition: background-color 0.15s ease;
-
   &:hover {
     background: var(--accent-soft);
   }
-
   &.expanded {
     background: var(--accent-soft);
   }
 }
-
 .asset-group-name {
   flex: 1 1 auto;
   min-width: 220px;
   font-weight: 600;
 }
-
 .asset-group-col {
   flex: 0 0 160px;
   box-sizing: border-box;
   padding-right: 16px;
   font-weight: 600;
 }
-
 .asset-group-quantity {
   font-weight: 400;
 }
-
 .asset-group-col.manual-price-cell {
   border-radius: 4px;
   padding: 4px 8px;
   margin-right: 8px;
 }
-
 .value-pill {
   display: inline-block;
-
   &.manual-price-cell {
     border-radius: 4px;
     padding: 4px 8px;
@@ -433,49 +414,33 @@
   }
 }
 
-/* ==========================================================
-   LEVEL 3 - FINAL UNDERLYING / DETAILS
-   ========================================================== */
-
 .underlying-container {
   width: 100%;
   box-sizing: border-box;
   padding: 0 14px 14px 37px;
   background: var(--surface);
 }
-
 .underlying-table-scroll {
   width: 100%;
   overflow-x: auto;
-
   border: 1px solid var(--surface-line);
   border-radius: var(--radius-sm);
 }
-
 .underlying-row {
-  background: #ffffff;
-
+  background: #fff;
   transition: background-color 0.15s ease;
-
   &:hover {
     background: #fafbfc;
   }
 }
-
-/*
- * IMPORTANT:
- * Final Underlying rows have no cursor and no click behavior.
- */
 .final-underlying {
   cursor: default;
   font-weight: 600;
 }
-
 .asset-table {
   width: 100%;
   min-width: 1200px;
   border-collapse: collapse;
-
   th {
     background: #fafbfc;
     color: #344054;
@@ -488,7 +453,6 @@
     border-bottom: 1px solid var(--surface-line);
     white-space: nowrap;
   }
-
   td {
     padding: 13px 14px;
     font-size: 13px;
@@ -496,45 +460,36 @@
     white-space: nowrap;
     vertical-align: middle;
   }
-
   tbody tr:last-child td {
     border-bottom: none;
   }
 }
-
 .asset-name {
   font-weight: 600;
   min-width: 260px;
 }
-
 .isin {
   color: var(--muted);
   font-family: 'SF Mono', 'JetBrains Mono', monospace;
   font-size: 12px;
 }
-
 .pnl-cell {
   font-weight: 700;
   font-variant-numeric: tabular-nums;
 }
-
 .positive {
   color: var(--accent) !important;
 }
-
 .negative {
   color: var(--negative) !important;
 }
-
 .neutral {
   color: var(--muted) !important;
 }
-
 .empty-table {
   text-align: center !important;
   color: var(--muted-soft) !important;
   padding: 44px !important;
-
   svg {
     display: block;
     width: 32px;
@@ -544,24 +499,17 @@
   }
 }
 
-/* ==========================================================
-   CURRENT PRICE / NAV
-   ========================================================== */
-
 .price-cell {
   min-width: 150px;
 }
-
 .manual-price-cell {
   background-color: var(--warning-soft);
 }
-
 .current-price {
   font-weight: 600;
   color: #101828;
   font-variant-numeric: tabular-nums;
 }
-
 .price-update-date {
   display: block;
   margin-top: 3px;
@@ -570,21 +518,15 @@
   color: #98a2b3;
   font-weight: 400;
 }
-
 .price-update-date.manual {
   color: var(--warning);
 }
-
-/* ==========================================================
-   MANUAL PRICE
-   ========================================================== */
 
 .manual-price-container {
   display: flex;
   align-items: center;
   gap: 7px;
 }
-
 .manual-price-input {
   width: 110px;
   height: 32px;
@@ -594,54 +536,44 @@
   font-size: 12px;
   outline: none;
   box-sizing: border-box;
-
   transition:
     border-color 0.15s ease,
     box-shadow 0.15s ease;
-
   &:focus {
     border-color: var(--accent);
     box-shadow: 0 0 0 3px var(--accent-soft);
   }
 }
-
 .manual-price-actions {
   display: flex;
   align-items: center;
   gap: 5px;
 }
-
 .manual-price-button {
   border: 1px solid #d0d5dd;
-  background: #ffffff;
+  background: #fff;
   border-radius: 6px;
   padding: 5px 9px;
   font-size: 11px;
   font-weight: 600;
   cursor: pointer;
-
   transition: background-color 0.15s ease;
-
   &:hover:not(:disabled) {
     background: #f8fafc;
   }
-
   &:disabled {
     opacity: 0.5;
     cursor: not-allowed;
   }
 }
-
 .manual-price-save {
-  color: #ffffff;
+  color: #fff;
   background: var(--ink);
   border-color: var(--ink);
-
   &:hover:not(:disabled) {
     background: var(--ink-soft);
   }
 }
-
 .manual-price-edit {
   margin-top: 4px;
   border: none;
@@ -653,12 +585,10 @@
   cursor: pointer;
   text-decoration: underline;
   text-underline-offset: 2px;
-
   &:hover {
     color: var(--ink);
   }
 }
-
 .manual-price-error {
   display: block;
   margin-top: 5px;
@@ -666,7 +596,6 @@
   font-size: 10px;
   line-height: 1.3;
 }
-
 .manual-price-label {
   display: block;
   margin-top: 3px;
@@ -674,40 +603,28 @@
   color: var(--muted);
 }
 
-/* ==========================================================
-   RESPONSIVE
-   ========================================================== */
-
 @media (max-width: 900px) {
   .portfolio-page {
     padding: 12px;
   }
-
-  .portfolio-header {
-    h1 {
-      font-size: 20px;
-    }
+  .portfolio-header h1 {
+    font-size: 20px;
   }
-
   .portfolio-header-actions {
     width: 100%;
   }
-
   .refresh-button,
   .upload-button {
     flex: 1 1 auto;
     justify-content: center;
   }
-
   .selection-area {
     flex-direction: column;
   }
-
   .selection-box {
     width: 100%;
     box-sizing: border-box;
   }
-
   .underlying-container {
     padding-left: 14px;
   }
@@ -715,19 +632,11 @@
 
 /* ==============================================================
    QUANT DETAILS
-   SecurityMaster-sourced fields (Sector / Cap Type / AMC /
-   Credit Rating / P/E / P/B / ROE / YTM / Modified Duration /
-   Average Maturity), shown as an expandable row per underlying
-   asset. Uses the --nx-* report tokens (see styles.scss) for a
-   deliberately distinct, institutional treatment against the
-   rest of the app's --ink/--accent palette.
    ============================================================== */
-
 .quant-toggle-cell {
   text-align: right;
   white-space: nowrap;
 }
-
 .quant-toggle-button {
   border: 1px solid var(--surface-line);
   background: var(--surface);
@@ -741,18 +650,15 @@
   transition:
     color 0.15s ease,
     border-color 0.15s ease;
-
   &:hover {
     color: var(--ink);
     border-color: var(--muted-soft);
   }
 }
-
 .quant-details-row td {
   padding: 0;
   border-bottom: 1px solid var(--surface-line);
 }
-
 .quant-details {
   display: flex;
   flex-wrap: wrap;
@@ -761,7 +667,6 @@
   background: var(--nx-ice);
   border-left: 3px solid var(--nx-navy);
 }
-
 .quant-chip {
   display: flex;
   flex-direction: column;
@@ -772,12 +677,10 @@
   border-radius: var(--nx-radius-sm);
   min-width: 84px;
 }
-
 .quant-chip-label,
 .quant-chip-value {
   font-family: var(--nx-font-body);
 }
-
 .quant-chip-label {
   font-size: 10px;
   font-weight: 600;
@@ -785,7 +688,6 @@
   text-transform: uppercase;
   color: var(--nx-blue);
 }
-
 .quant-chip-value {
   font-size: 13px;
   font-weight: 600;
@@ -795,316 +697,123 @@
 /* ==========================================================
    DARK MODE OVERRIDES
    ========================================================== */
-
 :host-context(html.dark-theme) .portfolio-page {
   background: linear-gradient(180deg, #12151c 0%, #0b0d12 100%);
 }
-
-/* Header */
 :host-context(html.dark-theme) .portfolio-header h1 {
   color: #e5e7eb;
 }
-
 :host-context(html.dark-theme) .portfolio-header p {
   color: #8a93a6;
 }
-
-/* Filter boxes */
 :host-context(html.dark-theme) .selection-box {
   background: #171a21;
   border-color: #2a2e38;
 }
-
 :host-context(html.dark-theme) .selection-title {
   color: #cbd5e1;
 }
-
 :host-context(html.dark-theme) .selection-button {
   background: #171a21;
   border-color: #2a2e38;
   color: #e5e7eb;
 }
-
 :host-context(html.dark-theme) .selection-button:hover {
   background: #123329;
   border-color: #1f4d3d;
 }
-
 :host-context(html.dark-theme) .selection-button.active {
   background: #2fbf8f;
   border-color: #2fbf8f;
   color: #07140f;
 }
-
-/* Main table */
 :host-context(html.dark-theme) .portfolio-table-card {
   background: #171a21;
   border-color: #2a2e38;
 }
-
 :host-context(html.dark-theme) .portfolio-table th {
   background: #1b1f27;
   color: #aeb7c6;
   border-color: #2a2e38;
 }
-
 :host-context(html.dark-theme) .portfolio-table td {
   background: #171a21;
   color: #e5e7eb;
   border-color: #2a2e38;
 }
-
-/* Expanded asset area */
 :host-context(html.dark-theme) .asset-detail-row,
 :host-context(html.dark-theme) .asset-detail-container {
   background: #12151c;
 }
-
 :host-context(html.dark-theme) .asset-detail-container {
   border-color: #2a2e38;
 }
-
-/* Asset groups */
 :host-context(html.dark-theme) .asset-groups {
   background: #171a21;
 }
-
 :host-context(html.dark-theme) .asset-group-columns-header {
   background: #1b1f27;
   color: #8a93a6;
   border-color: #2a2e38;
 }
-
 :host-context(html.dark-theme) .asset-group {
   border-color: #2a2e38;
 }
-
 :host-context(html.dark-theme) .asset-group-header {
   color: #e5e7eb;
   background: #171a21;
 }
-
 :host-context(html.dark-theme) .asset-group-header:hover,
 :host-context(html.dark-theme) .asset-group-header.expanded {
   background: #123329;
 }
-
-/* Underlying */
 :host-context(html.dark-theme) .underlying-container {
   background: #171a21;
 }
-
 :host-context(html.dark-theme) .underlying-table-scroll {
   border-color: #2a2e38;
 }
-
 :host-context(html.dark-theme) .underlying-row {
   background: #171a21;
 }
-
 :host-context(html.dark-theme) .underlying-row:hover {
   background: #1d232b;
 }
-
 :host-context(html.dark-theme) .asset-table th {
   background: #1b1f27;
   color: #aeb7c6;
   border-color: #2a2e38;
 }
-
 :host-context(html.dark-theme) .asset-table td {
   color: #e5e7eb;
   border-color: #2a2e38;
 }
-
-/* Text */
 :host-context(html.dark-theme) .current-price,
 :host-context(html.dark-theme) .asset-name {
   color: #e5e7eb;
 }
-
 :host-context(html.dark-theme) .isin {
   color: #8a93a6;
 }
-
 :host-context(html.dark-theme) .price-update-date {
   color: #7d8798;
 }
-
-/* Manual price */
 :host-context(html.dark-theme) .manual-price-input {
   background: #11151c;
   color: #e5e7eb;
   border-color: #3a414e;
 }
-
 :host-context(html.dark-theme) .manual-price-button {
   background: #171a21;
   color: #e5e7eb;
   border-color: #3a414e;
 }
-
 :host-context(html.dark-theme) .manual-price-button:hover:not(:disabled) {
   background: #242832;
 }
-
-/* Empty state */
 :host-context(html.dark-theme) .empty-table {
   color: #8a93a6 !important;
 }
-
-/* ==========================================================
-   DARK MODE
-   ========================================================== */
-
-:host-context(html.dark-theme) .portfolio-page {
-  background: linear-gradient(180deg, #12151c 0%, #0b0d12 100%);
-}
-
-:host-context(html.dark-theme) .portfolio-header h1 {
-  color: #e5e7eb;
-}
-
-:host-context(html.dark-theme) .portfolio-header p {
-  color: #8a93a6;
-}
-
-:host-context(html.dark-theme) .selection-box,
-:host-context(html.dark-theme) .portfolio-table-card {
-  background: #171a21;
-  border-color: #2a2e38;
-}
-
-:host-context(html.dark-theme) .selection-title {
-  color: #cbd5e1;
-}
-
-:host-context(html.dark-theme) .selection-button {
-  background: #171a21;
-  border-color: #3a414e;
-  color: #e5e7eb;
-}
-
-:host-context(html.dark-theme) .selection-button:hover {
-  background: #123329;
-  border-color: #1f4d3d;
-}
-
-:host-context(html.dark-theme) .selection-button.active {
-  background: #2fbf8f;
-  border-color: #2fbf8f;
-  color: #07140f;
-}
-
-:host-context(html.dark-theme) .portfolio-table th {
-  background: #1b1f27;
-  color: #aeb7c6;
-  border-color: #2a2e38;
-}
-
-:host-context(html.dark-theme) .portfolio-table td {
-  background: #171a21;
-  color: #e5e7eb;
-  border-color: #2a2e38;
-}
-
-:host-context(html.dark-theme) .asset-detail-row,
-:host-context(html.dark-theme) .asset-detail-container {
-  background: #12151c;
-}
-
-:host-context(html.dark-theme) .asset-detail-container {
-  border-color: #2a2e38;
-}
-
-:host-context(html.dark-theme) .asset-groups {
-  background: #171a21;
-}
-
-:host-context(html.dark-theme) .asset-group {
-  border-color: #2a2e38;
-}
-
-:host-context(html.dark-theme) .asset-group-columns-header {
-  background: #1b1f27;
-  color: #8a93a6;
-  border-color: #2a2e38;
-}
-
-:host-context(html.dark-theme) .asset-group-header {
-  background: #171a21;
-  color: #e5e7eb;
-}
-
-:host-context(html.dark-theme) .asset-group-header:hover,
-:host-context(html.dark-theme) .asset-group-header.expanded {
-  background: #123329;
-}
-
-:host-context(html.dark-theme) .underlying-container {
-  background: #171a21;
-}
-
-:host-context(html.dark-theme) .underlying-table-scroll {
-  border-color: #2a2e38;
-}
-
-:host-context(html.dark-theme) .underlying-row {
-  background: #171a21;
-}
-
-:host-context(html.dark-theme) .underlying-row:hover {
-  background: #1d232b;
-}
-
-:host-context(html.dark-theme) .asset-table th {
-  background: #1b1f27;
-  color: #aeb7c6;
-  border-color: #2a2e38;
-}
-
-:host-context(html.dark-theme) .asset-table td {
-  color: #e5e7eb;
-  border-color: #2a2e38;
-}
-
-:host-context(html.dark-theme) .current-price {
-  color: #e5e7eb;
-}
-
-:host-context(html.dark-theme) .price-update-date {
-  color: #8a93a6;
-}
-
-:host-context(html.dark-theme) .manual-price-input {
-  background: #11151c;
-  color: #e5e7eb;
-  border-color: #3a414e;
-}
-
-:host-context(html.dark-theme) .manual-price-button {
-  background: #171a21;
-  color: #e5e7eb;
-  border-color: #3a414e;
-}
-
-:host-context(html.dark-theme) .manual-price-button:hover:not(:disabled) {
-  background: #242832;
-}
-
-:host-context(html.dark-theme) .refresh-button {
-  background: #e5e7eb;
-  color: #111827;
-}
-
-:host-context(html.dark-theme) .upload-button {
-  background: #e5e7eb;
-  color: #111827;
-}
-
-/* ==========================================================
-   DARK MODE - EXPANDED PORTFOLIO DETAILS
-   ========================================================== */
 
 :host-context(.dark-theme) {
   .portfolio-table {
@@ -1112,124 +821,110 @@
       background: #1a1e27;
       color: #94a3b8;
     }
-
     td {
       color: #e2e8f0;
       border-bottom-color: #2a2e38;
     }
   }
-
-  .asset-detail-row {
-    background: #11141b;
-  }
-
+  .asset-detail-row,
   .asset-detail-container {
     background: #11141b;
   }
-
   .asset-groups {
     background: #161a22;
   }
-
   .asset-group {
     border-bottom-color: #2a2e38;
   }
-
   .asset-group-header {
     color: #e2e8f0;
   }
-
   .underlying-container {
     background: #161a22;
   }
-
   .underlying-row {
     background: #161a22;
-
     &:hover {
       background: #1c222d;
     }
   }
-
   .asset-table {
     th {
       background: #1a1e27;
       color: #94a3b8;
     }
-
     td {
       color: #e2e8f0;
       border-bottom-color: #2a2e38;
     }
   }
-
   .current-price {
     color: #e2e8f0;
   }
-
   .manual-price-button {
     background: #1a1e27;
     border-color: #3a4150;
     color: #e2e8f0;
-
     &:hover:not(:disabled) {
       background: #222834;
     }
   }
-
   .manual-price-input {
     background: #161a22;
     border-color: #3a4150;
     color: #e2e8f0;
   }
-
   .price-update-date {
     color: #8a93a6;
   }
-
   .selection-title {
     color: #cbd5e1;
   }
-
   .selection-button {
     background: #161a22;
     border-color: #3a4150;
     color: #cbd5e1;
   }
-
   .empty-table svg {
     color: #64748b;
   }
 }
 
-/* ==========================================================
-   DARK MODE - SECURITY / QUANT DETAILS
-   ========================================================== */
-
 :host-context(html.dark-theme) .quant-details-row {
   background: #12151c !important;
 }
-
 :host-context(html.dark-theme) .quant-details-row > td {
   background: #12151c !important;
   border-color: #2a2e38 !important;
 }
-
 :host-context(html.dark-theme) .quant-details {
   background: #12151c !important;
   color: #e5e7eb !important;
 }
-
 :host-context(html.dark-theme) .quant-chip {
   background: #1b1f27 !important;
   border-color: #3a414e !important;
   color: #e5e7eb !important;
 }
-
 :host-context(html.dark-theme) .quant-chip-label {
   color: #8a93a6 !important;
 }
-
 :host-context(html.dark-theme) .quant-chip-value {
   color: #e5e7eb !important;
+}
+
+.sortable-header {
+  cursor: pointer;
+  user-select: none;
+}
+
+.sortable-header:hover {
+  text-decoration: underline;
+}
+
+.sort-indicator {
+  display: inline-block;
+  min-width: 14px;
+  margin-left: 4px;
+  font-weight: 700;
 }

@@ -20,6 +20,7 @@ export interface WatchListProduct {
   source_date: string | null;
   official_website: string | null;
   status: 'OWNED' | 'UNIVERSAL';
+  is_watchlisted: boolean;
   ownership: Array<{
     family: string;
     portfolio: string;
@@ -82,5 +83,13 @@ export class WatchListApiService {
 
   refresh(): Observable<any> {
     return this.http.post(`${this.baseUrl}/refresh/`, {}, { withCredentials: true });
+  }
+
+  toggleWatch(productId: number): Observable<{ id: number; is_watchlisted: boolean }> {
+    return this.http.post<{ id: number; is_watchlisted: boolean }>(
+      `${this.baseUrl}/products/${productId}/toggle/`,
+      {},
+      { withCredentials: true },
+    );
   }
 }

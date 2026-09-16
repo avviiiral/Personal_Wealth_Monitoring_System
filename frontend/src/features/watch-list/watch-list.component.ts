@@ -1,11 +1,13 @@
 import { CommonModule } from '@angular/common';
-import { Component, OnInit, inject } from '@angular/core';
+import { Component, OnDestroy, OnInit, inject } from '@angular/core';
 import { FormsModule } from '@angular/forms';
+import { Subject } from 'rxjs';
+import { debounceTime, distinctUntilChanged } from 'rxjs/operators';
 
 import { WatchListApiService, WatchListProduct, WatchListResponse } from '../../core/services/watch-list-api.service';
 
 type ProductTab = 'MUTUAL_FUND' | 'PMS';
-type StatusTab = 'ALL' | 'OWNED' | 'UNIVERSAL';
+type StatusTab = 'ALL' | 'OWNED' | 'UNIVERSAL' | 'WATCHLIST';
 type PageItem = number | 'ellipsis';
 
 @Component({
@@ -15,15 +17,17 @@ type PageItem = number | 'ellipsis';
   templateUrl: './watch-list.component.html',
   styleUrl: './watch-list.component.scss',
 })
-export class WatchListComponent implements OnInit {
+export class WatchListComponent implements OnInit, OnDestroy {
   private readonly api = inject(WatchListApiService);
   private readonly cachePrefix = 'pwms.watch-list.';
   private autoRefreshAttempted = false;
+  private readonly searchInput$ = new Subject<string>();
 
   products: WatchListProduct[] = [];
   loading = true;
   error = '';
   search = '';
+  private readonly togglingIds = new Set<number>();
   provider = '';
   category = '';
   providers: string[] = [];
@@ -47,6 +51,18 @@ export class WatchListComponent implements OnInit {
   ngOnInit(): void {
     this.loadFilters();
     this.load();
+    this.searchInput$.pipe(debounceTime(350), distinctUntilChanged()).subscribe(() => this.applyFilters());
+  }
+
+  ngOnDestroy(): void {
+    this.searchInput$.complete();
+  }
+
+  onSearchInput(): void {
+    // Debounced live search: fires ~350ms after the user stops typing, in
+    // addition to the existing Enter/Apply triggers, so search no longer
+    // silently requires the exact right key press to actually run.
+    this.searchInput$.next(this.search);
   }
 
   get totalPages(): number {
@@ -186,6 +202,33 @@ export class WatchListComponent implements OnInit {
       this.page = 1;
       this.load();
     }
+  }
+
+  isToggling(productId: number): boolean {
+    return this.togglingIds.has(productId);
+  }
+
+  toggleWatch(product: WatchListProduct, event: Event): void {
+    event.stopPropagation();
+    if (this.togglingIds.has(product.id)) return;
+    this.togglingIds.add(product.id);
+    const previous = product.is_watchlisted;
+    product.is_watchlisted = !previous;
+    this.api.toggleWatch(product.id).subscribe({
+      next: response => {
+        product.is_watchlisted = response.is_watchlisted;
+        this.togglingIds.delete(product.id);
+        if (this.status === 'WATCHLIST' && !response.is_watchlisted) {
+          this.products = this.products.filter(item => item.id !== product.id);
+          this.count = Math.max(0, this.count - 1);
+        }
+      },
+      error: error => {
+        console.error('Failed to update Watch List entry:', error);
+        product.is_watchlisted = previous;
+        this.togglingIds.delete(product.id);
+      },
+    });
   }
 
   refreshUniverse(auto = false): void {

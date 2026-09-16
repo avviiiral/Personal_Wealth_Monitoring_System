@@ -78,74 +78,74 @@
       <div class="error-card" *ngIf="!transactionHistoryLoading && transactionHistoryError">{{ transactionHistoryError }}</div>
 
       <ng-container *ngIf="!transactionHistoryLoading && !transactionHistoryError">
-        <div style="display:flex;gap:12px;align-items:end;flex-wrap:wrap;margin-bottom:20px;padding:16px;border:1px solid #e5e7eb;border-radius:10px;background:#fafafa;">
-          <div style="display:flex;flex-direction:column;gap:6px;min-width:240px;flex:1;">
-            <label style="font-size:12px;font-weight:600;color:#374151;">Search</label>
-            <input type="text" [(ngModel)]="historySearch" (ngModelChange)="applyHistoryFilters()" placeholder="Transaction ID, asset, editor, field..." style="padding:10px 12px;border:1px solid #d1d5db;border-radius:8px;background:white;" />
+        <div class="tx-history-filters">
+          <div class="tx-history-field" style="min-width:240px;flex:1;">
+            <label class="tx-history-label">Search</label>
+            <input type="text" class="tx-history-input" [(ngModel)]="historySearch" (ngModelChange)="applyHistoryFilters()" placeholder="Transaction ID, asset, editor, field..." />
           </div>
-          <div style="display:flex;flex-direction:column;gap:6px;min-width:170px;">
-            <label style="font-size:12px;font-weight:600;color:#374151;">Edited By</label>
-            <select [(ngModel)]="historyEditorFilter" (ngModelChange)="applyHistoryFilters()" style="padding:10px 12px;border:1px solid #d1d5db;border-radius:8px;background:white;">
+          <div class="tx-history-field" style="min-width:170px;">
+            <label class="tx-history-label">Edited By</label>
+            <select class="tx-history-input" [(ngModel)]="historyEditorFilter" (ngModelChange)="applyHistoryFilters()">
               <option value="">All Editors</option>
               <option *ngFor="let editor of historyEditors" [value]="editor">{{ editor }}</option>
             </select>
           </div>
-          <div style="display:flex;flex-direction:column;gap:6px;min-width:160px;">
-            <label style="font-size:12px;font-weight:600;color:#374151;">Edited Date</label>
-            <input type="date" [(ngModel)]="historyDateFilter" (ngModelChange)="applyHistoryFilters()" style="padding:10px 12px;border:1px solid #d1d5db;border-radius:8px;background:white;" />
+          <div class="tx-history-field" style="min-width:160px;">
+            <label class="tx-history-label">Edited Date</label>
+            <input type="date" class="tx-history-input" [(ngModel)]="historyDateFilter" (ngModelChange)="applyHistoryFilters()" />
           </div>
           <button type="button" class="secondary-button" (click)="clearHistoryFilters()">Clear</button>
         </div>
 
-        <div *ngIf="!filteredTransactionHistory.length" style="padding:40px;text-align:center;border:1px solid #e5e7eb;border-radius:10px;color:#667085;">No transaction edits match the selected filters.</div>
+        <div *ngIf="!filteredTransactionHistory.length" class="tx-history-empty">No transaction edits match the selected filters.</div>
 
-        <div *ngIf="filteredTransactionHistory.length" style="overflow-x:auto;border:1px solid #e5e7eb;border-radius:10px;">
-          <table style="width:100%;border-collapse:collapse;min-width:1050px;font-size:13px;">
+        <div *ngIf="filteredTransactionHistory.length" class="tx-history-table-wrap">
+          <table class="tx-history-table">
             <thead>
-              <tr style="background:#f9fafb;border-bottom:1px solid #e5e7eb;text-align:left;">
-                <th style="padding:13px 14px;font-weight:600;color:#374151;">Edited At</th>
-                <th style="padding:13px 14px;font-weight:600;color:#374151;">Edited By</th>
-                <th style="padding:13px 14px;font-weight:600;color:#374151;">Transaction ID</th>
-                <th style="padding:13px 14px;font-weight:600;color:#374151;">Asset</th>
-                <th style="padding:13px 14px;font-weight:600;color:#374151;">Transaction Date</th>
-                <th style="padding:13px 14px;font-weight:600;color:#374151;">Type</th>
-                <th style="padding:13px 14px;font-weight:600;color:#374151;">Changed Fields</th>
-                <th style="padding:13px 14px;font-weight:600;color:#374151;">Actions</th>
+              <tr class="tx-history-head-row">
+                <th class="tx-history-th">Edited At</th>
+                <th class="tx-history-th">Edited By</th>
+                <th class="tx-history-th">Transaction ID</th>
+                <th class="tx-history-th">Asset</th>
+                <th class="tx-history-th">Transaction Date</th>
+                <th class="tx-history-th">Type</th>
+                <th class="tx-history-th">Changed Fields</th>
+                <th class="tx-history-th">Actions</th>
               </tr>
             </thead>
             <tbody>
               <ng-container *ngFor="let history of pagedTransactionHistory">
-                <tr style="border-bottom:1px solid #eef0f3;">
-                  <td style="padding:13px 14px;white-space:nowrap;">{{ history.edited_at | date:'dd MMM yyyy, hh:mm a' }}</td>
-                  <td style="padding:13px 14px;">{{ history.edited_by_username }}</td>
-                  <td style="padding:13px 14px;font-weight:600;">#{{ history.transaction_id || 'Deleted' }}</td>
-                  <td style="padding:13px 14px;font-weight:600;">{{ history.asset_name || '—' }}</td>
-                  <td style="padding:13px 14px;">{{ history.new_values['transaction_date'] || history.old_values['transaction_date'] || '—' }}</td>
-                  <td style="padding:13px 14px;">{{ history.new_values['transaction_type'] || history.old_values['transaction_type'] || '—' }}</td>
-                  <td style="padding:13px 14px;">{{ history.changed_fields.map(formatHistoryField).join(', ') }}</td>
-                  <td style="padding:13px 14px;">
+                <tr class="tx-history-row">
+                  <td class="tx-history-td tx-history-td-nowrap">{{ history.edited_at | date:'dd MMM yyyy, hh:mm a' }}</td>
+                  <td class="tx-history-td">{{ history.edited_by_username }}</td>
+                  <td class="tx-history-td tx-history-td-strong">#{{ history.transaction_id || 'Deleted' }}</td>
+                  <td class="tx-history-td tx-history-td-strong">{{ history.asset_name || '—' }}</td>
+                  <td class="tx-history-td">{{ history.new_values['transaction_date'] || history.old_values['transaction_date'] || '—' }}</td>
+                  <td class="tx-history-td">{{ history.new_values['transaction_type'] || history.old_values['transaction_type'] || '—' }}</td>
+                  <td class="tx-history-td">{{ history.changed_fields.map(formatHistoryField).join(', ') }}</td>
+                  <td class="tx-history-td">
                     <button type="button" class="secondary-button" style="padding:7px 12px;font-size:12px;" (click)="toggleHistory(history.id)">
                       {{ expandedHistoryId === history.id ? 'Hide' : 'View' }}
                     </button>
                   </td>
                 </tr>
-                <tr *ngIf="expandedHistoryId === history.id">
-                  <td colspan="8" style="padding:0;background:#fafafa;border-bottom:1px solid #e5e7eb;">
-                    <div style="padding:18px 20px;">
-                      <div style="font-size:13px;font-weight:600;color:#374151;margin-bottom:10px;">Edit Details</div>
-                      <table style="width:100%;border-collapse:collapse;font-size:13px;">
+                <tr *ngIf="expandedHistoryId === history.id" class="tx-history-detail-row">
+                  <td colspan="8" class="tx-history-detail-cell">
+                    <div class="tx-history-detail">
+                      <div class="tx-history-detail-title">Edit Details</div>
+                      <table class="tx-history-detail-table">
                         <thead>
-                          <tr style="border-bottom:1px solid #e5e7eb;text-align:left;">
-                            <th style="padding:9px 10px;font-weight:600;">Field</th>
-                            <th style="padding:9px 10px;font-weight:600;">Previous Value</th>
-                            <th style="padding:9px 10px;font-weight:600;">New Value</th>
+                          <tr class="tx-history-detail-head-row">
+                            <th class="tx-history-detail-th">Field</th>
+                            <th class="tx-history-detail-th">Previous Value</th>
+                            <th class="tx-history-detail-th">New Value</th>
                           </tr>
                         </thead>
                         <tbody>
-                          <tr *ngFor="let field of history.changed_fields" style="border-bottom:1px solid #eef0f3;">
-                            <td style="padding:9px 10px;font-weight:600;">{{ formatHistoryField(field) }}</td>
-                            <td style="padding:9px 10px;">{{ formatHistoryValue(history.old_values[field]) }}</td>
-                            <td style="padding:9px 10px;">{{ formatHistoryValue(history.new_values[field]) }}</td>
+                          <tr *ngFor="let field of history.changed_fields" class="tx-history-detail-body-row">
+                            <td class="tx-history-detail-td tx-history-detail-td-strong">{{ formatHistoryField(field) }}</td>
+                            <td class="tx-history-detail-td">{{ formatHistoryValue(history.old_values[field]) }}</td>
+                            <td class="tx-history-detail-td">{{ formatHistoryValue(history.new_values[field]) }}</td>
                           </tr>
                         </tbody>
                       </table>
@@ -157,11 +157,11 @@
           </table>
         </div>
 
-        <div *ngIf="filteredTransactionHistory.length" style="display:flex;justify-content:space-between;align-items:center;gap:12px;margin-top:16px;flex-wrap:wrap;">
-          <span style="font-size:12px;color:#667085;">Page {{ historyPage }} of {{ historyPageCount }}</span>
+        <div *ngIf="filteredTransactionHistory.length" class="tx-history-pagination">
+          <span class="tx-history-page-info">Page {{ historyPage }} of {{ historyPageCount }}</span>
           <div style="display:flex;gap:5px;align-items:center;">
             <button type="button" class="secondary-button" style="padding:7px 11px;" [disabled]="historyPage === 1" (click)="changeHistoryPage(historyPage - 1)">Previous</button>
-            <button *ngFor="let page of historyPageNumbers" type="button" class="secondary-button" style="padding:7px 10px;" [style.background]="page === historyPage ? '#111827' : 'white'" [style.color]="page === historyPage ? 'white' : '#374151'" (click)="changeHistoryPage(page)">{{ page }}</button>
+            <button *ngFor="let page of historyPageNumbers" type="button" class="secondary-button tx-history-page-btn" [class.active]="page === historyPage" style="padding:7px 10px;" (click)="changeHistoryPage(page)">{{ page }}</button>
             <button type="button" class="secondary-button" style="padding:7px 11px;" [disabled]="historyPage === historyPageCount" (click)="changeHistoryPage(historyPage + 1)">Next</button>
           </div>
         </div>

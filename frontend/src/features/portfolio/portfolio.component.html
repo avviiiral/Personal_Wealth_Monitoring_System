@@ -29,8 +29,16 @@
           stroke-width="1.8"
           aria-hidden="true"
         >
-          <path d="M12 16V4M12 4 7.5 8.5M12 4l4.5 4.5" stroke-linecap="round" stroke-linejoin="round" />
-          <path d="M4 16v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2" stroke-linecap="round" stroke-linejoin="round" />
+          <path
+            d="M12 16V4M12 4 7.5 8.5M12 4l4.5 4.5"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          />
+          <path
+            d="M4 16v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          />
         </svg>
 
         <span class="button-spinner" *ngIf="uploadingTransactions"></span>
@@ -39,7 +47,14 @@
       </button>
 
       <button type="button" class="refresh-button" [disabled]="loading" (click)="refresh()">
-        <svg class="button-icon refresh-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+        <svg
+          class="button-icon refresh-icon"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.8"
+          aria-hidden="true"
+        >
           <path d="M20 11A8 8 0 1 0 18.5 16" stroke-linecap="round" stroke-linejoin="round" />
           <path d="M20 5v6h-6" stroke-linecap="round" stroke-linejoin="round" />
         </svg>
@@ -135,7 +150,13 @@
   </div>
 
   <div *ngIf="!loading && error" class="error-state">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="1.8"
+      aria-hidden="true"
+    >
       <circle cx="12" cy="12" r="9" />
       <path d="M12 8v5M12 16h.01" stroke-linecap="round" />
     </svg>
@@ -147,17 +168,47 @@
       <table class="portfolio-table">
         <thead>
           <tr>
-            <th class="sub-class-name">Sub Class</th>
+            <th class="sub-class-name sortable-header" (click)="cycleSort('subclass', 'sub_class')">
+              Sub Class
+              <span class="sort-indicator">
+                {{ getSortIndicator('subclass', 'sub_class') }}
+              </span>
+            </th>
 
-            <th>Quantity</th>
+            <th class="sortable-header" (click)="cycleSort('subclass', 'quantity')">
+              Quantity
+              <span class="sort-indicator">
+                {{ getSortIndicator('subclass', 'quantity') }}
+              </span>
+            </th>
 
-            <th>Invested Value</th>
+            <th class="sortable-header" (click)="cycleSort('subclass', 'invested_value')">
+              Invested Value
+              <span class="sort-indicator">
+                {{ getSortIndicator('subclass', 'invested_value') }}
+              </span>
+            </th>
 
-            <th>Current Value</th>
+            <th class="sortable-header" (click)="cycleSort('subclass', 'current_value')">
+              Current Value
+              <span class="sort-indicator">
+                {{ getSortIndicator('subclass', 'current_value') }}
+              </span>
+            </th>
 
-            <th>Gain</th>
+            <th class="sortable-header" (click)="cycleSort('subclass', 'pnl')">
+              Gain
+              <span class="sort-indicator">
+                {{ getSortIndicator('subclass', 'pnl') }}
+              </span>
+            </th>
 
-            <th>XIRR</th>
+            <th class="sortable-header" (click)="cycleSort('subclass', 'xirr')">
+              XIRR
+              <span class="sort-indicator">
+                {{ getSortIndicator('subclass', 'xirr') }}
+              </span>
+            </th>
 
             <th class="arrow-column"></th>
           </tr>
@@ -229,13 +280,75 @@
                   </div>
 
                   <div class="asset-group-columns-header">
-                    <span class="asset-group-name-header">Asset Name</span>
-                    <span class="asset-group-col">Family Name</span>
-                    <span class="asset-group-col">Quantity</span>
-                    <span class="asset-group-col">Invested Value</span>
-                    <span class="asset-group-col">Current Value</span>
-                    <span class="asset-group-col">Gain</span>
-                    <span class="asset-group-col">XIRR</span>
+                    <span
+                      class="asset-group-name-header sortable-header"
+                      (click)="cycleSort('asset', 'asset_name', summary.sub_class)"
+                    >
+                      Asset Name
+                      <span class="sort-indicator">
+                        {{ getSortIndicator('asset', 'asset_name', summary.sub_class) }}
+                      </span>
+                    </span>
+
+                    <span
+                      class="asset-group-col sortable-header"
+                      (click)="cycleSort('asset', 'family_name', summary.sub_class)"
+                    >
+                      Family Name
+                      <span class="sort-indicator">
+                        {{ getSortIndicator('asset', 'family_name', summary.sub_class) }}
+                      </span>
+                    </span>
+
+                    <span
+                      class="asset-group-col sortable-header"
+                      (click)="cycleSort('asset', 'quantity', summary.sub_class)"
+                    >
+                      Quantity
+                      <span class="sort-indicator">
+                        {{ getSortIndicator('asset', 'quantity', summary.sub_class) }}
+                      </span>
+                    </span>
+
+                    <span
+                      class="asset-group-col sortable-header"
+                      (click)="cycleSort('asset', 'invested_value', summary.sub_class)"
+                    >
+                      Invested Value
+                      <span class="sort-indicator">
+                        {{ getSortIndicator('asset', 'invested_value', summary.sub_class) }}
+                      </span>
+                    </span>
+
+                    <span
+                      class="asset-group-col sortable-header"
+                      (click)="cycleSort('asset', 'current_value', summary.sub_class)"
+                    >
+                      Current Value
+                      <span class="sort-indicator">
+                        {{ getSortIndicator('asset', 'current_value', summary.sub_class) }}
+                      </span>
+                    </span>
+
+                    <span
+                      class="asset-group-col sortable-header"
+                      (click)="cycleSort('asset', 'pnl', summary.sub_class)"
+                    >
+                      Gain
+                      <span class="sort-indicator">
+                        {{ getSortIndicator('asset', 'pnl', summary.sub_class) }}
+                      </span>
+                    </span>
+
+                    <span
+                      class="asset-group-col sortable-header"
+                      (click)="cycleSort('asset', 'xirr', summary.sub_class)"
+                    >
+                      XIRR
+                      <span class="sort-indicator">
+                        {{ getSortIndicator('asset', 'xirr', summary.sub_class) }}
+                      </span>
+                    </span>
                   </div>
 
                   <div class="asset-groups">
@@ -322,23 +435,203 @@
                             <table class="asset-table">
                               <thead>
                                 <tr>
-                                  <th>Underlying</th>
+                                  <th
+                                    class="sortable-header"
+                                    (click)="
+                                      cycleSort(
+                                        'underlying',
+                                        'underlying',
+                                        getAssetKey(summary.sub_class, assetGroup.asset_name)
+                                      )
+                                    "
+                                  >
+                                    Underlying
+                                    <span class="sort-indicator">
+                                      {{
+                                        getSortIndicator(
+                                          'underlying',
+                                          'underlying',
+                                          getAssetKey(summary.sub_class, assetGroup.asset_name)
+                                        )
+                                      }}
+                                    </span>
+                                  </th>
 
-                                  <th>Family</th>
+                                  <th
+                                    class="sortable-header"
+                                    (click)="
+                                      cycleSort(
+                                        'underlying',
+                                        'family',
+                                        getAssetKey(summary.sub_class, assetGroup.asset_name)
+                                      )
+                                    "
+                                  >
+                                    Family
+                                    <span class="sort-indicator">
+                                      {{
+                                        getSortIndicator(
+                                          'underlying',
+                                          'family',
+                                          getAssetKey(summary.sub_class, assetGroup.asset_name)
+                                        )
+                                      }}
+                                    </span>
+                                  </th>
 
-                                  <th>ISIN</th>
+                                  <th
+                                    class="sortable-header"
+                                    (click)="
+                                      cycleSort(
+                                        'underlying',
+                                        'isin',
+                                        getAssetKey(summary.sub_class, assetGroup.asset_name)
+                                      )
+                                    "
+                                  >
+                                    ISIN
+                                    <span class="sort-indicator">
+                                      {{
+                                        getSortIndicator(
+                                          'underlying',
+                                          'isin',
+                                          getAssetKey(summary.sub_class, assetGroup.asset_name)
+                                        )
+                                      }}
+                                    </span>
+                                  </th>
 
-                                  <th>Quantity</th>
+                                  <th
+                                    class="sortable-header"
+                                    (click)="
+                                      cycleSort(
+                                        'underlying',
+                                        'quantity',
+                                        getAssetKey(summary.sub_class, assetGroup.asset_name)
+                                      )
+                                    "
+                                  >
+                                    Quantity
+                                    <span class="sort-indicator">
+                                      {{
+                                        getSortIndicator(
+                                          'underlying',
+                                          'quantity',
+                                          getAssetKey(summary.sub_class, assetGroup.asset_name)
+                                        )
+                                      }}
+                                    </span>
+                                  </th>
 
-                                  <th>Invested</th>
+                                  <th
+                                    class="sortable-header"
+                                    (click)="
+                                      cycleSort(
+                                        'underlying',
+                                        'invested',
+                                        getAssetKey(summary.sub_class, assetGroup.asset_name)
+                                      )
+                                    "
+                                  >
+                                    Invested
+                                    <span class="sort-indicator">
+                                      {{
+                                        getSortIndicator(
+                                          'underlying',
+                                          'invested',
+                                          getAssetKey(summary.sub_class, assetGroup.asset_name)
+                                        )
+                                      }}
+                                    </span>
+                                  </th>
 
-                                  <th>Current Price / NAV</th>
+                                  <th
+                                    class="sortable-header"
+                                    (click)="
+                                      cycleSort(
+                                        'underlying',
+                                        'current_price',
+                                        getAssetKey(summary.sub_class, assetGroup.asset_name)
+                                      )
+                                    "
+                                  >
+                                    Current Price / NAV
+                                    <span class="sort-indicator">
+                                      {{
+                                        getSortIndicator(
+                                          'underlying',
+                                          'current_price',
+                                          getAssetKey(summary.sub_class, assetGroup.asset_name)
+                                        )
+                                      }}
+                                    </span>
+                                  </th>
 
-                                  <th>Current Value</th>
+                                  <th
+                                    class="sortable-header"
+                                    (click)="
+                                      cycleSort(
+                                        'underlying',
+                                        'current_value',
+                                        getAssetKey(summary.sub_class, assetGroup.asset_name)
+                                      )
+                                    "
+                                  >
+                                    Current Value
+                                    <span class="sort-indicator">
+                                      {{
+                                        getSortIndicator(
+                                          'underlying',
+                                          'current_value',
+                                          getAssetKey(summary.sub_class, assetGroup.asset_name)
+                                        )
+                                      }}
+                                    </span>
+                                  </th>
 
-                                  <th>Gain</th>
+                                  <th
+                                    class="sortable-header"
+                                    (click)="
+                                      cycleSort(
+                                        'underlying',
+                                        'pnl',
+                                        getAssetKey(summary.sub_class, assetGroup.asset_name)
+                                      )
+                                    "
+                                  >
+                                    Gain
+                                    <span class="sort-indicator">
+                                      {{
+                                        getSortIndicator(
+                                          'underlying',
+                                          'pnl',
+                                          getAssetKey(summary.sub_class, assetGroup.asset_name)
+                                        )
+                                      }}
+                                    </span>
+                                  </th>
 
-                                  <th>XIRR</th>
+                                  <th
+                                    class="sortable-header"
+                                    (click)="
+                                      cycleSort(
+                                        'underlying',
+                                        'xirr',
+                                        getAssetKey(summary.sub_class, assetGroup.asset_name)
+                                      )
+                                    "
+                                  >
+                                    XIRR
+                                    <span class="sort-indicator">
+                                      {{
+                                        getSortIndicator(
+                                          'underlying',
+                                          'xirr',
+                                          getAssetKey(summary.sub_class, assetGroup.asset_name)
+                                        )
+                                      }}
+                                    </span>
+                                  </th>
 
                                   <th>Details</th>
                                 </tr>
@@ -346,145 +639,151 @@
 
                               <tbody>
                                 <ng-container
-                                  *ngFor="let asset of assetGroup.assets; trackBy: trackByAssetId"
+                                  *ngFor="
+                                    let asset of getSortedUnderlyingAssets(assetGroup.assets);
+                                    trackBy: trackByAssetId
+                                  "
                                 >
-                                <tr
-                                  class="underlying-row"
-                                >
-                                  <!-- FINAL NAME
+                                  <tr class="underlying-row">
+                                    <!-- FINAL NAME
                                        NO CLICK
                                        NO ARROW -->
-                                  <td class="asset-name final-underlying">
-                                    {{ getUnderlyingName(asset) }}
-                                  </td>
+                                    <td class="asset-name final-underlying">
+                                      {{ getUnderlyingName(asset) }}
+                                    </td>
 
-                                  <td class="family-name">
-                                    {{ asset.family_name || '-' }}
-                                  </td>
+                                    <td class="family-name">
+                                      {{ asset.family_name || '-' }}
+                                    </td>
 
-                                  <td class="isin">
-                                    {{ asset.isin || '-' }}
-                                  </td>
+                                    <td class="isin">
+                                      {{ asset.isin || '-' }}
+                                    </td>
 
-                                  <td>
-                                    {{ formatNumber(asset.quantity) }}
-                                  </td>
+                                    <td>
+                                      {{ formatNumber(asset.quantity) }}
+                                    </td>
 
-                                  <td>₹{{ formatCurrency(getUnderlyingInvested(asset)) }}</td>
+                                    <td>₹{{ formatCurrency(getUnderlyingInvested(asset)) }}</td>
 
-                                  <!-- CURRENT PRICE / NAV -->
-                                  <td
-                                    class="price-cell"
-                                    [class.manual-price-cell]="isManualPrice(asset)"
-                                  >
-                                    <!-- NORMAL DISPLAY -->
-                                    <ng-container *ngIf="!isEditingPrice(asset)">
-                                      <div class="current-price">
-                                        {{
-                                          asset.current_price !== null &&
-                                          asset.current_price !== undefined
-                                            ? '₹' + formatDecimal(asset.current_price)
-                                            : '-'
-                                        }}
-                                      </div>
-
-                                      <small *ngIf="hasPriceDate(asset)" class="price-update-date">
-                                        Updated
-                                        {{ formatPriceDate(getPriceDate(asset)) }}
-                                      </small>
-
-                                      <button
-                                        type="button"
-                                        class="manual-price-edit"
-                                        *ngIf="rbac.canEditPrices()"
-                                        (click)="onManualPriceEdit($event, asset)"
-                                      >
-                                        Edit
-                                      </button>
-                                    </ng-container>
-
-                                    <!-- EDIT MODE -->
-                                    <ng-container *ngIf="isEditingPrice(asset)">
-                                      <div
-                                        class="manual-price-container"
-                                        (click)="$event.stopPropagation()"
-                                      >
-                                        <input
-                                          type="number"
-                                          class="manual-price-input"
-                                          [(ngModel)]="manualPriceInput"
-                                          min="0"
-                                          step="0.0001"
-                                          placeholder="Price"
-                                          [disabled]="isSavingManualPrice(asset)"
-                                        />
-
-                                        <div class="manual-price-actions">
-                                          <button
-                                            type="button"
-                                            class="manual-price-button manual-price-save"
-                                            [disabled]="isSavingManualPrice(asset)"
-                                            (click)="saveManualPrice(asset)"
-                                          >
-                                            {{ isSavingManualPrice(asset) ? 'Saving...' : 'Save' }}
-                                          </button>
-
-                                          <button
-                                            type="button"
-                                            class="manual-price-button"
-                                            [disabled]="isSavingManualPrice(asset)"
-                                            (click)="cancelEditingPrice(asset)"
-                                          >
-                                            Cancel
-                                          </button>
-                                        </div>
-                                      </div>
-
-                                      <small
-                                        *ngIf="getManualPriceError(asset)"
-                                        class="manual-price-error"
-                                      >
-                                        {{ getManualPriceError(asset) }}
-                                      </small>
-                                    </ng-container>
-                                  </td>
-
-                                  <td>₹{{ formatCurrency(asset.current_value) }}</td>
-
-                                  <td class="pnl-cell" [ngClass]="getPnlClass(asset.pnl)">
-                                    {{ asset.pnl >= 0 ? '+' : '-' }}₹{{
-                                      formatAbsoluteCurrency(asset.pnl)
-                                    }}
-                                  </td>
-
-                                  <td
-                                    class="pnl-cell"
-                                    [ngClass]="
-                                      asset.xirr === null || asset.xirr === undefined
-                                        ? 'neutral'
-                                        : getPnlClass(asset.xirr)
-                                    "
-                                  >
-                                    {{
-                                      asset.xirr === null || asset.xirr === undefined
-                                        ? '-'
-                                        : formatPercentage(asset.xirr)
-                                    }}
-                                  </td>
-
-                                  <td class="quant-toggle-cell">
-                                    <button
-                                      *ngIf="hasQuantDetails(asset)"
-                                      type="button"
-                                      class="quant-toggle-button"
-                                      (click)="toggleQuantDetails(asset)"
+                                    <!-- CURRENT PRICE / NAV -->
+                                    <td
+                                      class="price-cell"
+                                      [class.manual-price-cell]="isManualPrice(asset)"
                                     >
-                                      {{ isQuantDetailsExpanded(asset) ? 'Hide' : 'Details' }}
-                                    </button>
-                                  </td>
-                                </tr>
+                                      <!-- NORMAL DISPLAY -->
+                                      <ng-container *ngIf="!isEditingPrice(asset)">
+                                        <div class="current-price">
+                                          {{
+                                            asset.current_price !== null &&
+                                            asset.current_price !== undefined
+                                              ? '₹' + formatDecimal(asset.current_price)
+                                              : '-'
+                                          }}
+                                        </div>
 
-                                <!--
+                                        <small
+                                          *ngIf="hasPriceDate(asset)"
+                                          class="price-update-date"
+                                        >
+                                          Updated
+                                          {{ formatPriceDate(getPriceDate(asset)) }}
+                                        </small>
+
+                                        <button
+                                          type="button"
+                                          class="manual-price-edit"
+                                          *ngIf="rbac.canEditPrices()"
+                                          (click)="onManualPriceEdit($event, asset)"
+                                        >
+                                          Edit
+                                        </button>
+                                      </ng-container>
+
+                                      <!-- EDIT MODE -->
+                                      <ng-container *ngIf="isEditingPrice(asset)">
+                                        <div
+                                          class="manual-price-container"
+                                          (click)="$event.stopPropagation()"
+                                        >
+                                          <input
+                                            type="number"
+                                            class="manual-price-input"
+                                            [(ngModel)]="manualPriceInput"
+                                            min="0"
+                                            step="0.0001"
+                                            placeholder="Price"
+                                            [disabled]="isSavingManualPrice(asset)"
+                                          />
+
+                                          <div class="manual-price-actions">
+                                            <button
+                                              type="button"
+                                              class="manual-price-button manual-price-save"
+                                              [disabled]="isSavingManualPrice(asset)"
+                                              (click)="saveManualPrice(asset)"
+                                            >
+                                              {{
+                                                isSavingManualPrice(asset) ? 'Saving...' : 'Save'
+                                              }}
+                                            </button>
+
+                                            <button
+                                              type="button"
+                                              class="manual-price-button"
+                                              [disabled]="isSavingManualPrice(asset)"
+                                              (click)="cancelEditingPrice(asset)"
+                                            >
+                                              Cancel
+                                            </button>
+                                          </div>
+                                        </div>
+
+                                        <small
+                                          *ngIf="getManualPriceError(asset)"
+                                          class="manual-price-error"
+                                        >
+                                          {{ getManualPriceError(asset) }}
+                                        </small>
+                                      </ng-container>
+                                    </td>
+
+                                    <td>₹{{ formatCurrency(asset.current_value) }}</td>
+
+                                    <td class="pnl-cell" [ngClass]="getPnlClass(asset.pnl)">
+                                      {{ asset.pnl >= 0 ? '+' : '-' }}₹{{
+                                        formatAbsoluteCurrency(asset.pnl)
+                                      }}
+                                    </td>
+
+                                    <td
+                                      class="pnl-cell"
+                                      [ngClass]="
+                                        asset.xirr === null || asset.xirr === undefined
+                                          ? 'neutral'
+                                          : getPnlClass(asset.xirr)
+                                      "
+                                    >
+                                      {{
+                                        asset.xirr === null || asset.xirr === undefined
+                                          ? '-'
+                                          : formatPercentage(asset.xirr)
+                                      }}
+                                    </td>
+
+                                    <td class="quant-toggle-cell">
+                                      <button
+                                        *ngIf="hasQuantDetails(asset)"
+                                        type="button"
+                                        class="quant-toggle-button"
+                                        (click)="toggleQuantDetails(asset)"
+                                      >
+                                        {{ isQuantDetailsExpanded(asset) ? 'Hide' : 'Details' }}
+                                      </button>
+                                    </td>
+                                  </tr>
+
+                                  <!--
                                   QUANT DETAILS — SecurityMaster-sourced fields
                                   (Sector / Cap Type / AMC / Credit Rating /
                                   P/E / P/B / PEG / ROE / YTM / Modified Duration /
@@ -492,91 +791,91 @@
                                   with a non-null value render — nothing is
                                   padded with a placeholder for missing data.
                                 -->
-                                <tr
-                                  *ngIf="isQuantDetailsExpanded(asset)"
-                                  class="quant-details-row nx-report-theme"
-                                >
-                                  <td colspan="10">
-                                    <div class="quant-details">
-                                      <div class="quant-chip" *ngIf="asset.sector">
-                                        <span class="quant-chip-label">Sector</span>
-                                        <span class="quant-chip-value">{{ asset.sector }}</span>
-                                      </div>
+                                  <tr
+                                    *ngIf="isQuantDetailsExpanded(asset)"
+                                    class="quant-details-row nx-report-theme"
+                                  >
+                                    <td colspan="10">
+                                      <div class="quant-details">
+                                        <div class="quant-chip" *ngIf="asset.sector">
+                                          <span class="quant-chip-label">Sector</span>
+                                          <span class="quant-chip-value">{{ asset.sector }}</span>
+                                        </div>
 
-                                      <div class="quant-chip" *ngIf="asset.cap_type">
-                                        <span class="quant-chip-label">Cap Type</span>
-                                        <span class="quant-chip-value">{{ asset.cap_type }}</span>
-                                      </div>
+                                        <div class="quant-chip" *ngIf="asset.cap_type">
+                                          <span class="quant-chip-label">Cap Type</span>
+                                          <span class="quant-chip-value">{{ asset.cap_type }}</span>
+                                        </div>
 
-                                      <div class="quant-chip" *ngIf="asset.amc_name">
-                                        <span class="quant-chip-label">AMC</span>
-                                        <span class="quant-chip-value">{{ asset.amc_name }}</span>
-                                      </div>
+                                        <div class="quant-chip" *ngIf="asset.amc_name">
+                                          <span class="quant-chip-label">AMC</span>
+                                          <span class="quant-chip-value">{{ asset.amc_name }}</span>
+                                        </div>
 
-                                      <div class="quant-chip" *ngIf="asset.credit_rating">
-                                        <span class="quant-chip-label">Credit Rating</span>
-                                        <span class="quant-chip-value">{{
-                                          asset.credit_rating
-                                        }}</span>
-                                      </div>
+                                        <div class="quant-chip" *ngIf="asset.credit_rating">
+                                          <span class="quant-chip-label">Credit Rating</span>
+                                          <span class="quant-chip-value">{{
+                                            asset.credit_rating
+                                          }}</span>
+                                        </div>
 
-                                      <div class="quant-chip" *ngIf="asset.pe_ratio !== null">
-                                        <span class="quant-chip-label">P/E</span>
-                                        <span class="quant-chip-value">{{
-                                          formatDecimal(asset.pe_ratio)
-                                        }}</span>
-                                      </div>
+                                        <div class="quant-chip" *ngIf="asset.pe_ratio !== null">
+                                          <span class="quant-chip-label">P/E</span>
+                                          <span class="quant-chip-value">{{
+                                            formatDecimal(asset.pe_ratio)
+                                          }}</span>
+                                        </div>
 
-                                      <div class="quant-chip" *ngIf="asset.pb_ratio !== null">
-                                        <span class="quant-chip-label">P/B</span>
-                                        <span class="quant-chip-value">{{
-                                          formatDecimal(asset.pb_ratio)
-                                        }}</span>
-                                      </div>
+                                        <div class="quant-chip" *ngIf="asset.pb_ratio !== null">
+                                          <span class="quant-chip-label">P/B</span>
+                                          <span class="quant-chip-value">{{
+                                            formatDecimal(asset.pb_ratio)
+                                          }}</span>
+                                        </div>
 
-                                      <div class="quant-chip" *ngIf="asset.peg_ratio !== null">
-                                        <span class="quant-chip-label">PEG</span>
-                                        <span class="quant-chip-value">{{
-                                          formatDecimal(asset.peg_ratio)
-                                        }}</span>
-                                      </div>
+                                        <div class="quant-chip" *ngIf="asset.peg_ratio !== null">
+                                          <span class="quant-chip-label">PEG</span>
+                                          <span class="quant-chip-value">{{
+                                            formatDecimal(asset.peg_ratio)
+                                          }}</span>
+                                        </div>
 
-                                      <div class="quant-chip" *ngIf="asset.roe !== null">
-                                        <span class="quant-chip-label">ROE</span>
-                                        <span class="quant-chip-value"
-                                          >{{ formatDecimal(asset.roe) }}%</span
+                                        <div class="quant-chip" *ngIf="asset.roe !== null">
+                                          <span class="quant-chip-label">ROE</span>
+                                          <span class="quant-chip-value"
+                                            >{{ formatDecimal(asset.roe) }}%</span
+                                          >
+                                        </div>
+
+                                        <div class="quant-chip" *ngIf="asset.ytm !== null">
+                                          <span class="quant-chip-label">YTM</span>
+                                          <span class="quant-chip-value"
+                                            >{{ formatDecimal(asset.ytm) }}%</span
+                                          >
+                                        </div>
+
+                                        <div
+                                          class="quant-chip"
+                                          *ngIf="asset.modified_duration !== null"
                                         >
-                                      </div>
+                                          <span class="quant-chip-label">Mod. Duration</span>
+                                          <span class="quant-chip-value">{{
+                                            formatDecimal(asset.modified_duration)
+                                          }}</span>
+                                        </div>
 
-                                      <div class="quant-chip" *ngIf="asset.ytm !== null">
-                                        <span class="quant-chip-label">YTM</span>
-                                        <span class="quant-chip-value"
-                                          >{{ formatDecimal(asset.ytm) }}%</span
+                                        <div
+                                          class="quant-chip"
+                                          *ngIf="asset.average_maturity !== null"
                                         >
+                                          <span class="quant-chip-label">Avg. Maturity</span>
+                                          <span class="quant-chip-value"
+                                            >{{ formatDecimal(asset.average_maturity) }} yrs</span
+                                          >
+                                        </div>
                                       </div>
-
-                                      <div
-                                        class="quant-chip"
-                                        *ngIf="asset.modified_duration !== null"
-                                      >
-                                        <span class="quant-chip-label">Mod. Duration</span>
-                                        <span class="quant-chip-value">{{
-                                          formatDecimal(asset.modified_duration)
-                                        }}</span>
-                                      </div>
-
-                                      <div
-                                        class="quant-chip"
-                                        *ngIf="asset.average_maturity !== null"
-                                      >
-                                        <span class="quant-chip-label">Avg. Maturity</span>
-                                        <span class="quant-chip-value"
-                                          >{{ formatDecimal(asset.average_maturity) }} yrs</span
-                                        >
-                                      </div>
-                                    </div>
-                                  </td>
-                                </tr>
+                                    </td>
+                                  </tr>
                                 </ng-container>
                               </tbody>
                             </table>
@@ -592,7 +891,13 @@
 
           <tr *ngIf="subClassSummaries.length === 0">
             <td colspan="7" class="empty-table">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.6"
+                aria-hidden="true"
+              >
                 <rect x="3.5" y="4" width="17" height="16" rx="2" />
                 <path d="M7.5 9h9M7.5 13h6" stroke-linecap="round" />
               </svg>

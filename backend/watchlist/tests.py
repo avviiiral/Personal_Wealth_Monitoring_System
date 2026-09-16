@@ -7,7 +7,7 @@ from django.test import TestCase
 from rest_framework.test import APIClient
 
 from investments.models import Asset, AssetCategory, PortfolioPosition, Transaction, TransactionType
-from watchlist.models import InvestmentProduct, MutualFundProduct, PerformanceSnapshot, ProductType
+from watchlist.models import InvestmentProduct, MutualFundProduct, PerformanceSnapshot, ProductType, WatchListEntry
 from watchlist.services.ownership import OwnershipService
 from watchlist.services.performance import AMFIPerformanceService
 from watchlist.services.universe import AMFIUniverseService
@@ -338,3 +338,95 @@ class WatchListTests(TestCase):
             result = AMFIPerformanceService.refresh()
         download.assert_not_called()
         self.assertEqual(result["history_requests"], 0)
+
+    def test_amfi_parser_extracts_category_header_separately_from_provider(self):
+        feed = (
+            "Open Ended Schemes (Overnight Fund)\n"
+            "Provider One\n"
+            "1;INF000000001;-;Generic Overnight Fund;Direct Plan;Growth;100.25;15-Sep-2026\n"
+            "Open Ended Schemes (Liquid Fund)\n"
+            "Provider Two\n"
+            "2;INF000000002;-;Another Liquid Fund;Regular Plan;IDCW;50.10;15-Sep-2026\n"
+        )
+        records = AMFIUniverseService.parse_latest_feed(feed)
+        self.assertEqual(len(records), 2)
+        self.assertEqual(records[0]["provider"], "Provider One")
+        self.assertEqual(records[0]["category"], "Overnight Fund")
+        self.assertEqual(records[1]["provider"], "Provider Two")
+        self.assertEqual(records[1]["category"], "Liquid Fund")
+
+    def test_discovery_saves_category_from_amfi_feed(self):
+        feed = (
+            "Open Ended Schemes (Overnight Fund)\n"
+            "Provider One\n"
+            "1;INF000000001;-;Generic Overnight Fund;Direct Plan;Growth;100.25;15-Sep-2026\n"
+        )
+        with patch.object(AMFIUniverseService, "download_latest", return_value=feed):
+            AMFIUniverseService.refresh()
+        product = InvestmentProduct.objects.get(isin="INF000000001")
+        self.assertEqual(product.category, "Overnight Fund")
+        self.assertEqual(product.mutual_fund.fund_type, "Overnight Fund")
+
+    def test_search_matches_category(self):
+        product = InvestmentProduct.objects.create(
+            product_type=ProductType.MUTUAL_FUND,
+            name="Some Debt Fund",
+            provider="Some AMC",
+            category="Liquid Fund",
+            isin="INF000000009",
+            identity_key="MUTUAL_FUND:ISIN:INF000000009",
+            source="AMFI",
+        )
+        MutualFundProduct.objects.create(product=product, scheme_code="9009")
+
+        response = self.client.get("/api/watch-list/products/?product_type=MUTUAL_FUND&search=Liquid&page_size=50")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["count"], 1)
+        self.assertEqual(response.data["results"][0]["id"], product.id)
+
+    def test_toggle_watch_list_membership(self):
+        product = InvestmentProduct.objects.create(
+            product_type=ProductType.MUTUAL_FUND,
+            name="Toggle Fund",
+            identity_key="MUTUAL_FUND:SCHEME:TOGGLE",
+            external_identifier="TOGGLE",
+            is_active=True,
+        )
+        MutualFundProduct.objects.create(product=product, scheme_code="TOGGLE")
+
+        add = self.client.post(f"/api/watch-list/products/{product.id}/toggle/")
+        self.assertEqual(add.status_code, 200)
+        self.assertTrue(add.data["is_watchlisted"])
+        self.assertTrue(WatchListEntry.objects.filter(user=self.user, product=product).exists())
+
+        detail = self.client.get(f"/api/watch-list/products/{product.id}/")
+        self.assertTrue(detail.data["is_watchlisted"])
+
+        remove = self.client.post(f"/api/watch-list/products/{product.id}/toggle/")
+        self.assertEqual(remove.status_code, 200)
+        self.assertFalse(remove.data["is_watchlisted"])
+        self.assertFalse(WatchListEntry.objects.filter(user=self.user, product=product).exists())
+
+    def test_watchlist_status_filter_only_returns_starred_products(self):
+        starred = InvestmentProduct.objects.create(
+            product_type=ProductType.MUTUAL_FUND,
+            name="Starred Fund",
+            identity_key="MUTUAL_FUND:SCHEME:STARRED",
+            external_identifier="STARRED",
+            is_active=True,
+        )
+        MutualFundProduct.objects.create(product=starred, scheme_code="STARRED")
+        unstarred = InvestmentProduct.objects.create(
+            product_type=ProductType.MUTUAL_FUND,
+            name="Unstarred Fund",
+            identity_key="MUTUAL_FUND:SCHEME:UNSTARRED",
+            external_identifier="UNSTARRED",
+            is_active=True,
+        )
+        MutualFundProduct.objects.create(product=unstarred, scheme_code="UNSTARRED")
+        WatchListEntry.objects.create(user=self.user, product=starred)
+
+        response = self.client.get("/api/watch-list/products/?product_type=MUTUAL_FUND&status=WATCHLIST&page_size=50")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["count"], 1)
+        self.assertEqual(response.data["results"][0]["id"], starred.id)

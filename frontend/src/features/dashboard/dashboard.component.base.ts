@@ -550,6 +550,9 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
             labels: {
               usePointStyle: true,
               padding: 16,
+              color: document.documentElement.classList.contains('dark-theme')
+                ? '#cbd5e1'
+                : '#475467',
             },
           },
 
@@ -1019,7 +1022,7 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
    *
    * so this avoids changing the backend Portfolio Tree.
    */
-  private getAssetCategoryForTreeAssetClass(treeSubClass: string): string | null {
+  protected getAssetCategoryForTreeAssetClass(treeSubClass: string): string | null {
     const cleaned = (treeSubClass || '').trim();
 
     if (!cleaned) {

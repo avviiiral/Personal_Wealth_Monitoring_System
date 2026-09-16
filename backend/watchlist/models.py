@@ -1,3 +1,4 @@
+from django.conf import settings
 from django.db import models
 
 
@@ -97,6 +98,20 @@ class PerformanceSnapshot(models.Model):
             models.UniqueConstraint(fields=["product", "date", "source"], name="unique_watchlist_performance_snapshot")
         ]
         indexes = [models.Index(fields=["product", "-date"]), models.Index(fields=["date"]) ]
+
+
+class WatchListEntry(models.Model):
+    """A user's personal, hand-picked Watch List (the checkmark/star toggle)."""
+
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="watchlist_entries")
+    product = models.ForeignKey(InvestmentProduct, on_delete=models.CASCADE, related_name="watchlist_entries")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["user", "product"], name="unique_user_watchlist_entry")
+        ]
+        indexes = [models.Index(fields=["user", "product"])]
 
 
 class DiscoveryRun(models.Model):

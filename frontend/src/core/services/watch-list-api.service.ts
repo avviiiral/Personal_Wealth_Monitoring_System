@@ -92,4 +92,16 @@ export class WatchListApiService {
       { withCredentials: true },
     );
   }
+
+  bulkAddToWatchList(productIds: number[]): Observable<{
+    selected: number;
+    added: number;
+    already_watchlisted: number;
+  }> {
+    return this.http.post<{
+      selected: number;
+      added: number;
+      already_watchlisted: number;
+    }>(`${this.baseUrl}/bulk-add/`, { product_ids: productIds }, { withCredentials: true });
+  }
 }

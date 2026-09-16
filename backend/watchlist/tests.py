@@ -75,6 +75,45 @@ class WatchListTests(TestCase):
         self.assertEqual(len(response.data["results"]), 2)
         self.assertEqual(response.data["count"], 3)
 
+    def test_watch_list_uses_latest_snapshot_for_metrics_and_performance(self):
+        product = InvestmentProduct.objects.create(
+            product_type=ProductType.MUTUAL_FUND,
+            name="Snapshot Fund",
+            identity_key="MUTUAL_FUND:SCHEME:SNAPSHOT",
+            source="AMFI",
+        )
+        MutualFundProduct.objects.create(product=product, scheme_code="SNAPSHOT")
+        PerformanceSnapshot.objects.create(
+            product=product,
+            date="2026-09-14",
+            nav_or_value=Decimal("10"),
+            return_1m=Decimal("1"),
+            source="AMFI",
+        )
+        PerformanceSnapshot.objects.create(
+            product=product,
+            date="2026-09-15",
+            nav_or_value=Decimal("11"),
+            return_1m=Decimal("2.5"),
+            return_1y=Decimal("12.5"),
+            cagr=Decimal("3.75"),
+            source="AMFI",
+        )
+
+        response = self.client.get(
+            "/api/watch-list/products/?product_type=MUTUAL_FUND&search=Snapshot%20Fund&page_size=5"
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.data["results"]), 1)
+        result = response.data["results"][0]
+        self.assertEqual(result["metrics"]["1M"], Decimal("2.5"))
+        self.assertEqual(result["metrics"]["1Y"], Decimal("12.5"))
+        self.assertEqual(result["metrics"]["CAGR"], Decimal("3.75"))
+        self.assertEqual(len(result["performance"]), 1)
+        self.assertEqual(result["performance"][0]["date"], "2026-09-15")
+        self.assertEqual(result["performance"][0]["nav_or_value"], Decimal("11"))
+
     @patch("watchlist.services.universe.AMFIUniverseService.download_latest")
     def test_discovery_creates_products(self, download):
         download.return_value = "AMC\n1;INF000000001;-;Fund One;Direct;Growth;10.00;15-Sep-2026\n"

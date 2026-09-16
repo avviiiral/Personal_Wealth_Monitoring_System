@@ -100,6 +100,19 @@ def _filtered_products(request, product_type=None):
             Q(asset__symbol__iexact=OuterRef("external_identifier"))
             | Q(asset__name__iexact=OuterRef("name"))
         )
+
+        # PMS ownership is based on the portfolio Asset name matching the
+        # canonical APMI strategy name. APMI IAID is a research identifier and
+        # is not expected to exist on the user's portfolio Asset.
+        if product_type == ProductType.PMS:
+            pms_name_positions = PortfolioPosition.objects.filter(
+                owner_id__in=owner_ids,
+            ).filter(active_position).filter(
+                asset__name__iexact=OuterRef("pms__strategy_name")
+            )
+        else:
+            pms_name_positions = PortfolioPosition.objects.none()
+
         if product_type == ProductType.MUTUAL_FUND:
             isin_positions = isin_positions.filter(asset__category=AssetCategory.MUTUAL_FUND)
             fallback_positions = fallback_positions.filter(asset__category=AssetCategory.MUTUAL_FUND)
@@ -107,10 +120,12 @@ def _filtered_products(request, product_type=None):
         owned_expression = (
             (~Q(isin__isnull=True) & ~Q(isin="") & Q(has_owned_isin=True))
             | (Q(isin__isnull=True) | Q(isin="")) & Q(has_owned_fallback=True)
+            | (Q(product_type=ProductType.PMS) & Q(has_owned_pms_name=True))
         )
         queryset = queryset.annotate(
             has_owned_isin=Exists(isin_positions),
             has_owned_fallback=Exists(fallback_positions),
+            has_owned_pms_name=Exists(pms_name_positions),
         ).filter(owned_expression if status == "OWNED" else ~owned_expression)
     return queryset
 

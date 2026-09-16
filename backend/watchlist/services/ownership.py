@@ -54,12 +54,12 @@ class OwnershipService:
         return round(value * 100, 2) if value is not None else None
 
     @classmethod
-    def _build_rows(cls, positions, transactions_by_position=None):
+    def _build_rows(cls, matched_positions, transactions_by_position=None):
         rows_by_product = {}
-        for position in positions:
+        for position, product_id in matched_positions:
             if position.quantity <= 0 and position.current_value <= 0:
                 continue
-            rows_by_product.setdefault(position._watchlist_product_id, []).append({
+            rows_by_product.setdefault(product_id, []).append({
                 "family": position.family_name,
                 "portfolio": position.portfolio,
                 "current_value": position.current_value,
@@ -92,20 +92,16 @@ class OwnershipService:
         product_by_id = {product.id: product for product in products}
 
         identifier_query = Q()
-        has_identifier = False
         for product in products:
             if product.isin:
                 identifier_query |= Q(isin__iexact=product.isin)
-                has_identifier = True
             elif product.external_identifier:
                 identifier_query |= Q(symbol__iexact=product.external_identifier) | Q(name__iexact=product.name)
-                has_identifier = True
             else:
                 identifier_query |= Q(name__iexact=product.name)
-                has_identifier = True
 
         assets_qs = Asset.objects.filter(owner_id__in=owner_ids).filter(identifier_query)
-        if any(product.product_type == ProductType.MUTUAL_FUND for product in products):
+        if products and all(product.product_type == ProductType.MUTUAL_FUND for product in products):
             assets_qs = assets_qs.filter(category=AssetCategory.MUTUAL_FUND)
         assets = list(assets_qs.only("id", "owner_id", "name", "symbol", "isin", "category"))
 
@@ -135,7 +131,15 @@ class OwnershipService:
 
         all_asset_ids = {asset_id for ids in product_asset_ids.values() for asset_id in ids}
         if not all_asset_ids:
-            return {product.id: {"status": "UNIVERSAL", "ownership": [], "owned_current_value": 0, "owned_invested_value": 0} for product in products}
+            return {
+                product.id: {
+                    "status": "UNIVERSAL",
+                    "ownership": [],
+                    "owned_current_value": Decimal("0"),
+                    "owned_invested_value": Decimal("0"),
+                }
+                for product in products
+            }
 
         positions = list(
             PortfolioPosition.objects.filter(owner_id__in=owner_ids, asset_id__in=all_asset_ids)
@@ -146,15 +150,15 @@ class OwnershipService:
             for asset_id in asset_ids:
                 product_for_asset.setdefault(asset_id, []).append(product_id)
 
-        matched_positions = []
-        for position in positions:
-            for product_id in product_for_asset.get(position.asset_id, []):
-                position._watchlist_product_id = product_id
-                matched_positions.append(position)
+        matched_positions = [
+            (position, product_id)
+            for position in positions
+            for product_id in product_for_asset.get(position.asset_id, [])
+        ]
 
         position_keys = {
             (position.owner_id, position.asset_id, position.family_name, position.portfolio)
-            for position in matched_positions
+            for position, _ in matched_positions
             if position.quantity > 0 or position.current_value > 0
         }
         transactions_by_position = {key: [] for key in position_keys}
@@ -170,7 +174,7 @@ class OwnershipService:
 
         rows_by_product = cls._build_rows(matched_positions, transactions_by_position)
         result = {}
-        for product_id, product in product_by_id.items():
+        for product_id in product_by_id:
             rows = rows_by_product.get(product_id, [])
             result[product_id] = {
                 "status": "OWNED" if rows else "UNIVERSAL",

@@ -59,9 +59,6 @@ export class WatchListComponent implements OnInit, OnDestroy {
   }
 
   onSearchInput(): void {
-    // Debounced live search: fires ~350ms after the user stops typing, in
-    // addition to the existing Enter/Apply triggers, so search no longer
-    // silently requires the exact right key press to actually run.
     this.searchInput$.next(this.search);
   }
 
@@ -82,6 +79,16 @@ export class WatchListComponent implements OnInit, OnDestroy {
     if (end < total - 1) items.push('ellipsis');
     items.push(total);
     return items;
+  }
+
+  /** Return each owning family only once, regardless of transaction/position count. */
+  ownershipFamilies(product: WatchListProduct): string[] {
+    const families = new Set<string>();
+    for (const item of product.ownership || []) {
+      const family = String(item.family || '').trim();
+      if (family) families.add(family);
+    }
+    return Array.from(families);
   }
 
   loadFilters(): void {
@@ -118,7 +125,6 @@ export class WatchListComponent implements OnInit, OnDestroy {
     try {
       localStorage.setItem(this.cacheKey(), JSON.stringify(response));
     } catch (error) {
-      // A full/disabled browser storage should never block Watch List loading.
       console.warn('Failed to cache Watch List page:', error);
     }
   }

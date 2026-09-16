@@ -35,6 +35,9 @@
       <option *ngFor="let option of orderings" [value]="option.value">{{ option.label }}</option>
     </select>
     <button type="button" class="apply-button" (click)="applyFilters()">Apply</button>
+    <button type="button" class="apply-button" [disabled]="selectedCount === 0 || movingToWatchList" (click)="moveSelectedToWatchList()">
+      {{ movingToWatchList ? 'Moving…' : 'Move to Watch List' }}<span *ngIf="selectedCount > 0"> ({{ selectedCount }})</span>
+    </button>
   </div>
 
   <div *ngIf="error" class="error">{{ error }}</div>
@@ -44,32 +47,25 @@
     <table>
       <thead>
         <tr>
+          <th class="select-column"><input type="checkbox" [checked]="allVisibleSelected" (change)="toggleSelectAll($event)" aria-label="Select all visible products" /></th>
           <th class="watch-column"></th><th>Product</th><th>Provider</th><th>Status</th><th>Ownership</th>
           <th>1M</th><th>3M</th><th>6M</th><th>1Y</th><th>3Y</th><th>5Y</th><th>CAGR</th><th>AUM</th>
         </tr>
       </thead>
       <tbody>
         <tr *ngFor="let product of products">
+          <td class="select-column">
+            <input type="checkbox" [checked]="isSelected(product.id)" [disabled]="product.is_watchlisted" (change)="toggleSelection(product.id, $event)" [attr.aria-label]="'Select ' + product.name" />
+          </td>
           <td class="watch-column">
-            <button
-              type="button"
-              class="watch-toggle"
-              [class.active]="product.is_watchlisted"
-              [disabled]="isToggling(product.id)"
-              (click)="toggleWatch(product, $event)"
-              [attr.aria-pressed]="product.is_watchlisted"
-              [attr.aria-label]="product.is_watchlisted ? 'Remove from Watch List' : 'Add to Watch List'"
-              title="{{ product.is_watchlisted ? 'Remove from Watch List' : 'Add to Watch List' }}"
-            >✓</button>
+            <button type="button" class="watch-toggle" [class.active]="product.is_watchlisted" [disabled]="isToggling(product.id)" (click)="toggleWatch(product, $event)" [attr.aria-pressed]="product.is_watchlisted" [attr.aria-label]="product.is_watchlisted ? 'Remove from Watch List' : 'Add to Watch List'" title="{{ product.is_watchlisted ? 'Remove from Watch List' : 'Add to Watch List' }}">✓</button>
           </td>
           <td><div class="product-name">{{ product.name }}</div><div class="secondary">{{ product.isin || product.external_identifier || 'Identifier unavailable' }}</div></td>
           <td>{{ product.provider || '—' }}</td>
           <td><span class="status" [class.owned]="product.status === 'OWNED'">{{ product.status }}</span></td>
           <td>
             <ng-container *ngIf="ownershipFamilies(product).length; else universalOwnership">
-              <div *ngFor="let family of ownershipFamilies(product)" class="ownership-row">
-                <strong>{{ family }}</strong>
-              </div>
+              <div *ngFor="let family of ownershipFamilies(product)" class="ownership-row"><strong>{{ family }}</strong></div>
             </ng-container>
             <ng-template #universalOwnership>—</ng-template>
           </td>
@@ -82,7 +78,7 @@
           <td [class.positive-value]="metric(product, 'CAGR') !== null && metric(product, 'CAGR')! > 0" [class.negative-value]="metric(product, 'CAGR') !== null && metric(product, 'CAGR')! < 0">{{ formatPercent(metric(product, 'CAGR')) }}</td>
           <td>{{ product.mutual_fund?.aum ? formatAmount(product.mutual_fund.aum) : (product.pms?.aum ? formatAmount(product.pms.aum) : '—') }}</td>
         </tr>
-        <tr *ngIf="products.length === 0"><td colspan="13" class="empty">No products match the current filters.</td></tr>
+        <tr *ngIf="products.length === 0"><td colspan="14" class="empty">No products match the current filters.</td></tr>
       </tbody>
     </table>
   </div>
@@ -96,7 +92,5 @@
     <button type="button" class="page-button" (click)="goToPage(page + 1)" [disabled]="page === totalPages">Next</button>
   </div>
 
-  <div class="count" *ngIf="!loading">
-    Showing {{ ((page - 1) * pageSize) + (products.length ? 1 : 0) }}–{{ ((page - 1) * pageSize) + products.length }} of {{ count | number }} products
-  </div>
+  <div class="count" *ngIf="!loading">Showing {{ ((page - 1) * pageSize) + (products.length ? 1 : 0) }}–{{ ((page - 1) * pageSize) + products.length }} of {{ count | number }} products</div>
 </section>

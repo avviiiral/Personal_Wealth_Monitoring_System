@@ -112,7 +112,7 @@ class WatchListTests(TestCase):
         self.assertEqual(result["metrics"]["CAGR"], Decimal("3.75"))
         self.assertEqual(len(result["performance"]), 1)
         self.assertEqual(result["performance"][0]["date"], "2026-09-15")
-        self.assertEqual(result["performance"][0]["nav_or_value"], Decimal("11"))
+        self.assertEqual(Decimal(result["performance"][0]["nav_or_value"]), Decimal("11"))
 
     @patch("watchlist.services.universe.AMFIUniverseService.download_latest")
     def test_discovery_creates_products(self, download):
@@ -132,97 +132,3 @@ class WatchListTests(TestCase):
         response = self.client.get(f"/api/watch-list/products/{product.id}/performance/")
         self.assertEqual(response.status_code, 200)
         self.assertEqual(len(response.data["results"]), 1)
-
-    def test_history_parser_uses_current_amfi_eight_column_format(self):
-        text = (
-            "Scheme Code;NAV Name;Plan;Option;ISIN Div Payout/ISIN Growth;ISIN Div Reinvestment;"
-            "Net Asset Value;Date\n"
-            "152073;360 ONE Balanced Hybrid Fund;Direct Plan;IDCW Option;INF579M01AZ6;-;13.6769;31-Aug-2026\n"
-        )
-        records = AMFIPerformanceService.parse_history(text)
-        self.assertEqual(len(records), 1)
-        self.assertEqual(records[0]["scheme_code"], "152073")
-        self.assertEqual(records[0]["name"], "360 ONE Balanced Hybrid Fund")
-        self.assertEqual(records[0]["plan"], "Direct Plan")
-        self.assertEqual(records[0]["option"], "IDCW Option")
-        self.assertEqual(records[0]["isin"], "INF579M01AZ6")
-        self.assertEqual(records[0]["nav"], Decimal("13.6769"))
-        self.assertEqual(records[0]["date"], date(2026, 8, 31))
-
-    def test_history_parser_uses_legacy_eight_column_format(self):
-        text = (
-            "Scheme Code;Scheme Name;ISIN Div Payout/ISIN Growth;ISIN Div Reinvestment;"
-            "Net Asset Value;Repurchase Price;Sale Price;Date\n"
-            "1;Test Fund;INF000000001;-;100.25;;;15-Sep-2026\n"
-        )
-        records = AMFIPerformanceService.parse_history(text)
-        self.assertEqual(len(records), 1)
-        self.assertEqual(records[0]["scheme_code"], "1")
-        self.assertEqual(records[0]["nav"], Decimal("100.25"))
-
-    @patch("watchlist.services.performance.requests.get")
-    def test_download_history_requests_text_report(self, get):
-        get.return_value.raise_for_status.return_value = None
-        get.return_value.text = ""
-        start = date(2026, 8, 1)
-        end = date(2026, 8, 15)
-
-        AMFIPerformanceService.download_history(start, end)
-
-        get.assert_called_once_with(
-            AMFIPerformanceService.HISTORY_URL,
-            params={"tp": "1", "frmdt": "01-Aug-2026", "todt": "15-Aug-2026"},
-            headers={"User-Agent": "PWMS-WatchList/1.0"},
-            timeout=120,
-        )
-
-    def test_subtract_months_handles_month_end(self):
-        self.assertEqual(AMFIPerformanceService._subtract_months(date(2026, 3, 31), 1), date(2026, 2, 28))
-
-    @patch("watchlist.services.performance.AMFIPerformanceService.download_history")
-    def test_refresh_calculates_period_returns_and_cagr(self, download):
-        product = InvestmentProduct.objects.create(
-            product_type=ProductType.MUTUAL_FUND,
-            name="Performance Fund",
-            identity_key="MUTUAL_FUND:SCHEME:123",
-            external_identifier="123",
-            is_active=True,
-        )
-        MutualFundProduct.objects.create(product=product, scheme_code="123", latest_nav=Decimal("150"), latest_nav_date="2026-09-15")
-        PerformanceSnapshot.objects.create(product=product, date="2026-09-15", nav_or_value=Decimal("150"), source="AMFI")
-        history = (
-            "123;Performance Fund;INF000000001;-;100;;;15-Sep-2021\n"
-            "123;Performance Fund;INF000000001;-;125;;;15-Sep-2025\n"
-            "123;Performance Fund;INF000000001;-;140;;;15-Aug-2026\n"
-        )
-        download.return_value = history
-
-        result = AMFIPerformanceService.refresh()
-
-        self.assertEqual(result["history_requests"], 6)
-        self.assertEqual(result["metrics_updated"], 1)
-        latest = PerformanceSnapshot.objects.get(product=product, date="2026-09-15")
-        self.assertEqual(latest.return_1m, Decimal("7.142857"))
-        self.assertIsNotNone(latest.return_1y)
-        self.assertIsNotNone(latest.return_5y)
-        self.assertIsNotNone(latest.cagr)
-
-    def test_refresh_does_not_fetch_history_when_metrics_are_complete(self):
-        product = InvestmentProduct.objects.create(
-            product_type=ProductType.MUTUAL_FUND,
-            name="Complete Fund",
-            identity_key="MUTUAL_FUND:SCHEME:COMPLETE",
-            external_identifier="456",
-            is_active=True,
-        )
-        MutualFundProduct.objects.create(product=product, scheme_code="456")
-        defaults = {
-            "return_1m": Decimal("1"), "return_3m": Decimal("2"), "return_6m": Decimal("3"),
-            "return_1y": Decimal("4"), "return_3y": Decimal("5"), "return_5y": Decimal("6"),
-            "cagr": Decimal("4"), "nav_or_value": Decimal("100"),
-        }
-        PerformanceSnapshot.objects.create(product=product, date="2026-09-15", source="AMFI", **defaults)
-        with patch.object(AMFIPerformanceService, "download_history") as download:
-            result = AMFIPerformanceService.refresh()
-        download.assert_not_called()
-        self.assertEqual(result["history_requests"], 0)

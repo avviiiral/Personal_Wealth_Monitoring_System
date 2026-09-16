@@ -139,7 +139,7 @@ class WatchListTests(TestCase):
         self.assertEqual(response.data["count"], 1)
         self.assertEqual(response.data["results"][0]["name"], "Owned Fund")
 
-    def test_universal_status_excludes_owned_mutual_fund(self):
+    def test_universal_status_filter_excludes_owned_mutual_fund(self):
         product = InvestmentProduct.objects.create(
             product_type=ProductType.MUTUAL_FUND,
             name="Owned Fund",

@@ -20,6 +20,13 @@ export class DashboardComponent extends BaseDashboardComponent {
   private readonly allocationThemeService = inject(ThemeService);
   private readonly dashboardWealthApi = inject(WealthApiService);
 
+  private xirrAssetClassRows: Array<{
+    asset_category: string;
+    asset_class: string;
+    xirr: number;
+    current_value: number;
+  }> = [];
+
   override standardAllocations: Record<string, number> = {};
   override standardAllocationDraft: Record<string, number> = {};
   override standardAllocationEditing = false;
@@ -181,6 +188,7 @@ export class DashboardComponent extends BaseDashboardComponent {
 
     super.loadDashboard();
     this.loadStandardAllocations();
+    this.loadXirrByAssetClass();
 
     const renderWhenReady = (attempt: number): void => {
       if (request !== this.allocationRenderRequest) {
@@ -217,6 +225,39 @@ export class DashboardComponent extends BaseDashboardComponent {
         this.standardAllocationDraft = {};
       },
     });
+  }
+
+  private loadXirrByAssetClass(): void {
+    this.xirrAssetClassRows = [];
+
+    this.dashboardWealthApi
+      .getXirrByAssetClass(this.selectedFamily || undefined)
+      .subscribe({
+        next: (data) => {
+          const rows = Array.isArray(data?.results) ? data.results : [];
+
+          this.xirrAssetClassRows = rows
+            .map((row: any) => ({
+              asset_category: String(row?.asset_category ?? '').trim(),
+              asset_class: String(row?.asset_class ?? '').trim(),
+              xirr: Number(row?.xirr),
+              current_value: Number(row?.current_value ?? 0),
+            }))
+            .filter(
+              (row) =>
+                !!row.asset_category &&
+                !!row.asset_class &&
+                Number.isFinite(row.xirr),
+            );
+
+          this.ensureValidXirrCategoryIndex();
+        },
+        error: (error) => {
+          console.error('XIRR BY ASSET CLASS API ERROR:', error);
+          this.xirrAssetClassRows = [];
+          this.ensureValidXirrCategoryIndex();
+        },
+      });
   }
 
   override startStandardAllocationEdit(): void {
@@ -351,22 +392,14 @@ export class DashboardComponent extends BaseDashboardComponent {
     return result;
   }
 
-  /**
-   * XIRR Performance uses the same Investment Summary groups shown
-   * immediately above it on the Dashboard.
-   */
+  /** XIRR Performance is grouped by Asset Class, not Underlying. */
   override get xirrPerformanceCategories(): string[] {
-    return this.investmentSummaryGroups
-      .filter((group) =>
-        group.asset_classes.some((subClass) => this.hasXirrForSubClass(subClass.asset_class)),
-      )
-      .map((group) => group.asset_category);
+    return Array.from(
+      new Set(this.xirrAssetClassRows.map((row) => row.asset_category)),
+    ).filter((category) => this.xirrAssetClassRows.some((row) => row.asset_category === category));
   }
 
-  /**
-   * XIRR rows for the selected Investment Summary Asset Category.
-   * The displayed investment name is Asset Name, not Underlying.
-   */
+  /** XIRR rows for the selected Asset Category; one row per Asset Class. */
   override get selectedXirrRows(): Array<{
     underlying: string;
     xirr: number;
@@ -374,90 +407,17 @@ export class DashboardComponent extends BaseDashboardComponent {
   }> {
     const category = this.selectedXirrAssetCategory;
 
-    if (!category || !this.portfolioTree) {
+    if (!category) {
       return [];
     }
 
-    const group = this.investmentSummaryGroups.find(
-      (item) => item.asset_category === category,
-    );
-
-    if (!group) {
-      return [];
-    }
-
-    const subClasses = new Set(
-      group.asset_classes.map((item) => item.asset_class.trim()),
-    );
-
-    const rows: Array<{
-      underlying: string;
-      xirr: number;
-      assetClass: string;
-    }> = [];
-
-    for (const family of this.portfolioTree.families ?? []) {
-      if (this.selectedFamily && family.family_name !== this.selectedFamily) {
-        continue;
-      }
-
-      for (const portfolio of family.portfolios ?? []) {
-        for (const assetClass of portfolio.asset_classes ?? []) {
-          for (const subClass of assetClass.sub_classes ?? []) {
-            if (!subClasses.has((subClass.sub_class || '').trim())) {
-              continue;
-            }
-
-            for (const asset of subClass.assets ?? []) {
-              const xirr = Number(asset.xirr);
-
-              if (!Number.isFinite(xirr)) {
-                continue;
-              }
-
-              rows.push({
-                underlying: asset.asset_name?.trim() || 'Unnamed Asset',
-                xirr,
-                assetClass: subClass.sub_class,
-              });
-            }
-          }
-        }
-      }
-    }
-
-    return rows.sort((a, b) => b.xirr - a.xirr);
-  }
-
-  private hasXirrForSubClass(subClassName: string): boolean {
-    const target = subClassName.trim();
-
-    if (!target || !this.portfolioTree) {
-      return false;
-    }
-
-    for (const family of this.portfolioTree.families ?? []) {
-      if (this.selectedFamily && family.family_name !== this.selectedFamily) {
-        continue;
-      }
-
-      for (const portfolio of family.portfolios ?? []) {
-        for (const assetClass of portfolio.asset_classes ?? []) {
-          for (const subClass of assetClass.sub_classes ?? []) {
-            if ((subClass.sub_class || '').trim() !== target) {
-              continue;
-            }
-
-            if (
-              (subClass.assets ?? []).some((asset) => Number.isFinite(Number(asset.xirr)))
-            ) {
-              return true;
-            }
-          }
-        }
-      }
-    }
-
-    return false;
+    return this.xirrAssetClassRows
+      .filter((row) => row.asset_category === category)
+      .sort((a, b) => b.xirr - a.xirr)
+      .map((row) => ({
+        underlying: row.asset_class,
+        xirr: row.xirr,
+        assetClass: row.asset_class,
+      }));
   }
 }

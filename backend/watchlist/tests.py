@@ -6,8 +6,9 @@ from django.contrib.auth.models import User
 from django.test import TestCase
 from rest_framework.test import APIClient
 
-from investments.models import Asset, AssetCategory, PortfolioPosition
+from investments.models import Asset, AssetCategory, PortfolioPosition, Transaction, TransactionType
 from watchlist.models import InvestmentProduct, MutualFundProduct, PerformanceSnapshot, ProductType
+from watchlist.services.ownership import OwnershipService
 from watchlist.services.performance import AMFIPerformanceService
 from watchlist.services.universe import AMFIUniverseService
 
@@ -178,6 +179,52 @@ class WatchListTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data["providers"], ["AMC Alpha", "AMC Beta"])
         self.assertEqual(response.data["categories"], ["Debt", "Equity"])
+
+    def test_bulk_ownership_enrichment(self):
+        product = InvestmentProduct.objects.create(
+            product_type=ProductType.MUTUAL_FUND,
+            name="Bulk Owned Fund",
+            provider="Bulk AMC",
+            isin="INF000000099",
+            identity_key="MUTUAL_FUND:ISIN:INF000000099",
+            source="AMFI",
+        )
+        MutualFundProduct.objects.create(product=product, scheme_code="1099")
+        asset = Asset.objects.create(
+            owner=self.user,
+            name="Bulk Owned Fund",
+            category=AssetCategory.MUTUAL_FUND,
+            isin="INF000000099",
+            symbol="1099",
+        )
+        PortfolioPosition.objects.create(
+            owner=self.user,
+            family_name="My Family",
+            portfolio="My Portfolio",
+            asset=asset,
+            quantity=10,
+            invested_value=900,
+            current_value=1000,
+            current_price=100,
+        )
+        Transaction.objects.create(
+            owner=self.user,
+            family_name="My Family",
+            portfolio="My Portfolio",
+            asset=asset,
+            transaction_type=TransactionType.BUY,
+            transaction_date=date(2025, 9, 15),
+            quantity=10,
+            price_per_unit=90,
+            amount=900,
+        )
+
+        result = OwnershipService.bulk_enrich([product], self.user)
+
+        self.assertEqual(result[product.id]["status"], "OWNED")
+        self.assertEqual(len(result[product.id]["ownership"]), 1)
+        self.assertEqual(result[product.id]["ownership"][0]["current_value"], Decimal("1000"))
+        self.assertEqual(result[product.id]["owned_invested_value"], Decimal("900"))
 
     @patch("watchlist.services.universe.AMFIUniverseService.download_latest")
     def test_discovery_creates_products(self, download):

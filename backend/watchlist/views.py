@@ -9,7 +9,6 @@ from investments.models import AssetCategory, PortfolioPosition
 from users.permissions import get_visible_owner_ids
 from watchlist.models import InvestmentProduct, PerformanceSnapshot, ProductType
 from watchlist.serializers import PerformanceSnapshotSerializer, WatchListProductSerializer
-from watchlist.services.ownership import OwnershipService
 from watchlist.services.universe import AMFIUniverseService, PMSDiscoveryService
 
 
@@ -17,38 +16,6 @@ class WatchListPagination(PageNumberPagination):
     page_size = 25
     page_size_query_param = "page_size"
     max_page_size = 100
-
-
-def _ownership_exists_expression(owner_ids):
-    """Return a correlated DB expression for a product having an active owned position."""
-    product = InvestmentProduct.objects.filter(pk=OuterRef("pk"), is_active=True).values("pk")
-    matching_assets = Q(asset__isin__iexact=OuterRef("isin")) & Q(asset__owner_id__in=owner_ids)
-    matching_external = (
-        Q(asset__symbol__iexact=OuterRef("external_identifier"))
-        | Q(asset__name__iexact=OuterRef("name"))
-    ) & Q(asset__owner_id__in=owner_ids)
-    position_filter = (
-        (matching_assets & Q(asset__category=AssetCategory.MUTUAL_FUND))
-        if False
-        else matching_assets
-    )
-    # Mutual funds require the MF asset category, matching OwnershipService semantics.
-    position_filter = Q(asset__owner_id__in=owner_ids) & (
-        Q(asset__isin__iexact=OuterRef("isin"))
-        | (
-            Q(asset__symbol__iexact=OuterRef("external_identifier"))
-            | Q(asset__name__iexact=OuterRef("name"))
-        )
-    )
-    return Exists(
-        PortfolioPosition.objects.filter(
-            owner_id__in=owner_ids,
-            quantity__gt=0,
-        ).filter(position_filter).filter(
-            Q(asset__category=AssetCategory.MUTUAL_FUND)
-            | ~Q(asset__category=AssetCategory.MUTUAL_FUND)
-        ).filter(product)
-    )
 
 
 def _filtered_products(request, product_type=None):
@@ -71,8 +38,6 @@ def _filtered_products(request, product_type=None):
         if value and product_type == ProductType.MUTUAL_FUND:
             queryset = queryset.filter(**{f"{model_field}__icontains": value})
 
-    # Performance sorting is correlated to the latest snapshot instead of joining
-    # every historical snapshot and then calling DISTINCT across the whole universe.
     latest_snapshot = PerformanceSnapshot.objects.filter(
         product_id=OuterRef("pk")
     ).order_by("-date", "-id")
@@ -104,17 +69,19 @@ def _filtered_products(request, product_type=None):
     status = params.get("status", "").upper()
     if status in {"OWNED", "UNIVERSAL"}:
         owner_ids = get_visible_owner_ids(request.user)
-        # The expensive per-product Python loop is deliberately avoided here.
-        # Use a single correlated EXISTS query so filtering happens before pagination.
-        owned_assets = Q(asset__owner_id__in=owner_ids) & (
-            Q(asset__isin__iexact=OuterRef("isin"))
-            | Q(asset__symbol__iexact=OuterRef("external_identifier"))
-            | Q(asset__name__iexact=OuterRef("name"))
+        # Match OwnershipService semantics: use ISIN when the product has one;
+        # otherwise fall back to external identifier/name.
+        has_isin_match = Q(asset__isin__iexact=OuterRef("isin")) & ~Q(isin__isnull=True) & ~Q(isin="")
+        fallback_match = (Q(asset__symbol__iexact=OuterRef("external_identifier")) | Q(asset__name__iexact=OuterRef("name"))) & (
+            Q(isin__isnull=True) | Q(isin="")
         )
         owned_positions = PortfolioPosition.objects.filter(
             owner_id__in=owner_ids,
-            quantity__gt=0,
-        ).filter(owned_assets)
+        ).filter(
+            Q(quantity__gt=0) | Q(current_value__gt=0),
+        ).filter(
+            has_isin_match | fallback_match,
+        )
         if product_type == ProductType.MUTUAL_FUND:
             owned_positions = owned_positions.filter(asset__category=AssetCategory.MUTUAL_FUND)
         queryset = queryset.annotate(has_owned_position=Exists(owned_positions))

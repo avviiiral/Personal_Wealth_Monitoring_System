@@ -1,5 +1,5 @@
 import { Injectable, inject } from '@angular/core';
-import { HttpClient, HttpParams } from '@angular/common/http';
+import { HttpClient, HttpHeaders, HttpParams } from '@angular/common/http';
 
 import { Observable } from 'rxjs';
 import { environment } from '../../environments/environment';
@@ -50,11 +50,38 @@ export class WealthApiService {
   ): Observable<any> {
     let params = new HttpParams();
     if (family) params = params.set('family', family);
+
+    const csrfToken = this.getCookie('csrftoken');
+    const headers = csrfToken
+      ? new HttpHeaders({ 'X-CSRFToken': csrfToken })
+      : undefined;
+
     return this.http.put<any>(
       `${this.baseUrl}/standard-allocations/update/`,
       { allocations },
-      { params, withCredentials: true },
+      { params, headers, withCredentials: true },
     );
+  }
+
+  private getCookie(name: string): string | null {
+    if (typeof document === 'undefined') {
+      return null;
+    }
+
+    const encodedName = `${name}=`;
+    const cookies = document.cookie.split(';');
+
+    for (const cookie of cookies) {
+      const value = cookie.trim();
+
+      if (!value.startsWith(encodedName)) {
+        continue;
+      }
+
+      return decodeURIComponent(value.substring(encodedName.length));
+    }
+
+    return null;
   }
 
   getPerformanceBySubclass(): Observable<any> {

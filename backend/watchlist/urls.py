@@ -1,6 +1,7 @@
 from django.urls import path
 
 from watchlist.views import (
+    watch_list_filters,
     watch_list_performance,
     watch_list_product_detail,
     watch_list_products,
@@ -8,6 +9,7 @@ from watchlist.views import (
 )
 
 urlpatterns = [
+    path("filters/", watch_list_filters, name="watch-list-filters"),
     path("products/", watch_list_products, name="watch-list-products"),
     path("products/<int:product_id>/", watch_list_product_detail, name="watch-list-product-detail"),
     path("products/<int:product_id>/performance/", watch_list_performance, name="watch-list-performance"),

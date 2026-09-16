@@ -44,6 +44,11 @@ export interface WatchListResponse {
   results: WatchListProduct[];
 }
 
+export interface WatchListFilterOptions {
+  providers: string[];
+  categories: string[];
+}
+
 @Injectable({ providedIn: 'root' })
 export class WatchListApiService {
   private readonly http = inject(HttpClient);
@@ -58,6 +63,13 @@ export class WatchListApiService {
     });
     return this.http.get<WatchListResponse>(`${this.baseUrl}/products/`, {
       params,
+      withCredentials: true,
+    });
+  }
+
+  getFilters(productType: 'MUTUAL_FUND' | 'PMS'): Observable<WatchListFilterOptions> {
+    return this.http.get<WatchListFilterOptions>(`${this.baseUrl}/filters/`, {
+      params: new HttpParams().set('product_type', productType),
       withCredentials: true,
     });
   }

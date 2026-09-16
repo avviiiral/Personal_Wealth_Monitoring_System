@@ -94,7 +94,23 @@ class WatchListTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(len(response.data["results"]), 1)
 
-    def test_history_parser_uses_amfi_eight_column_format(self):
+    def test_history_parser_uses_current_amfi_eight_column_format(self):
+        text = (
+            "Scheme Code;NAV Name;Plan;Option;ISIN Div Payout/ISIN Growth;ISIN Div Reinvestment;"
+            "Net Asset Value;Date\n"
+            "152073;360 ONE Balanced Hybrid Fund;Direct Plan;IDCW Option;INF579M01AZ6;-;13.6769;31-Aug-2026\n"
+        )
+        records = AMFIPerformanceService.parse_history(text)
+        self.assertEqual(len(records), 1)
+        self.assertEqual(records[0]["scheme_code"], "152073")
+        self.assertEqual(records[0]["name"], "360 ONE Balanced Hybrid Fund")
+        self.assertEqual(records[0]["plan"], "Direct Plan")
+        self.assertEqual(records[0]["option"], "IDCW Option")
+        self.assertEqual(records[0]["isin"], "INF579M01AZ6")
+        self.assertEqual(records[0]["nav"], Decimal("13.6769"))
+        self.assertEqual(records[0]["date"], date(2026, 8, 31))
+
+    def test_history_parser_uses_legacy_eight_column_format(self):
         text = (
             "Scheme Code;Scheme Name;ISIN Div Payout/ISIN Growth;ISIN Div Reinvestment;"
             "Net Asset Value;Repurchase Price;Sale Price;Date\n"

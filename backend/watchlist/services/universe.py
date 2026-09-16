@@ -36,6 +36,14 @@ class AMFIUniverseService:
 
     @classmethod
     def parse_latest_feed(cls, text):
+        """Parse both AMFI NAVAll formats currently encountered in the wild.
+
+        AMFI historically published six data columns:
+        scheme code, two ISIN fields, scheme name, NAV, date.
+        It also introduced an eight-column variant with Plan and Option
+        inserted before NAV. The parser must accept both so a feed-format
+        transition cannot silently produce an empty universe.
+        """
         provider = None
         records = []
         for raw_line in text.splitlines():
@@ -43,19 +51,41 @@ class AMFIUniverseService:
             if not line:
                 continue
             parts = [cls._normalize(part) for part in line.split(";")]
-            if len(parts) < 8:
-                if line and not line.startswith("Scheme Code"):
-                    provider = cls._normalize(line)
-                continue
             if not parts[0].isdigit():
                 if parts[0].lower() != "scheme code":
                     provider = parts[0]
                 continue
-            nav = cls._decimal(parts[6])
+            if len(parts) < 6:
+                continue
+
+            # Eight-column format:
+            # code;isin1;isin2;name;plan;option;nav;date
+            if len(parts) >= 8:
+                nav = cls._decimal(parts[6])
+                try:
+                    nav_date = datetime.strptime(parts[7], "%d-%b-%Y").date()
+                except (ValueError, TypeError):
+                    nav = None
+                if nav is not None and nav_date is not None:
+                    name = parts[3]
+                    isin1 = parts[1] if parts[1] not in {"-", ""} else None
+                    isin2 = parts[2] if parts[2] not in {"-", ""} else None
+                    growth_isin = isin1 if "growth" in name.lower() and "idcw" not in name.lower() else None
+                    selected_isin = growth_isin or isin1 or isin2
+                    records.append({
+                        "scheme_code": parts[0], "name": name, "provider": provider,
+                        "plan": parts[4] or None, "option": parts[5] or None,
+                        "isin": selected_isin, "nav": nav, "date": nav_date,
+                    })
+                    continue
+
+            # Six-column format:
+            # code;isin1;isin2;name;nav;date
+            nav = cls._decimal(parts[4])
             if nav is None:
                 continue
             try:
-                nav_date = datetime.strptime(parts[7], "%d-%b-%Y").date()
+                nav_date = datetime.strptime(parts[5], "%d-%b-%Y").date()
             except (ValueError, TypeError):
                 continue
             name = parts[3]
@@ -65,7 +95,7 @@ class AMFIUniverseService:
             selected_isin = growth_isin or isin1 or isin2
             records.append({
                 "scheme_code": parts[0], "name": name, "provider": provider,
-                "plan": parts[4] or None, "option": parts[5] or None,
+                "plan": None, "option": None,
                 "isin": selected_isin, "nav": nav, "date": nav_date,
             })
         return records

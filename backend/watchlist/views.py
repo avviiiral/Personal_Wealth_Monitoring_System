@@ -39,9 +39,6 @@ def _filtered_products(request, product_type=None):
         if value and product_type == ProductType.MUTUAL_FUND:
             queryset = queryset.filter(**{f"{model_field}__icontains": value})
 
-    latest_snapshot = PerformanceSnapshot.objects.filter(
-        product_id=OuterRef("pk")
-    ).order_by("-date", "-id")
     ordering_fields = {
         "name": "name",
         "aum": "mutual_fund__aum",
@@ -53,19 +50,24 @@ def _filtered_products(request, product_type=None):
         "5Y": "latest_return_5y",
         "cagr": "latest_cagr",
     }
-    queryset = queryset.annotate(
-        latest_return_1m=Subquery(latest_snapshot.values("return_1m")[:1]),
-        latest_return_3m=Subquery(latest_snapshot.values("return_3m")[:1]),
-        latest_return_6m=Subquery(latest_snapshot.values("return_6m")[:1]),
-        latest_return_1y=Subquery(latest_snapshot.values("return_1y")[:1]),
-        latest_return_3y=Subquery(latest_snapshot.values("return_3y")[:1]),
-        latest_return_5y=Subquery(latest_snapshot.values("return_5y")[:1]),
-        latest_cagr=Subquery(latest_snapshot.values("cagr")[:1]),
-    )
     ordering = params.get("ordering", "name")
     prefix = "-" if ordering.startswith("-") else ""
     key = ordering[1:] if prefix else ordering
-    queryset = queryset.order_by(prefix + ordering_fields.get(key, "name"), "id")
+
+    # Only calculate a correlated snapshot subquery when the user is
+    # actually sorting by a performance metric. Normal search/filter/name
+    # sorting no longer pays for seven snapshot subqueries per product.
+    ordering_field = ordering_fields.get(key, "name")
+    if ordering_field.startswith("latest_"):
+        latest_snapshot = PerformanceSnapshot.objects.filter(
+            product_id=OuterRef("pk")
+        ).order_by("-date", "-id")
+        metric_field = ordering_field.removeprefix("latest_")
+        queryset = queryset.annotate(
+            **{ordering_field: Subquery(latest_snapshot.values(metric_field)[:1])}
+        )
+
+    queryset = queryset.order_by(prefix + ordering_field, "id")
 
     status = params.get("status", "").upper()
     if status in {"OWNED", "UNIVERSAL"}:

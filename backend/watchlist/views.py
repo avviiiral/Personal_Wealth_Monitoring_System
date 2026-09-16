@@ -73,20 +73,17 @@ def _filtered_products(request, product_type=None):
         # matched by ISIN; products without an ISIN fall back to scheme
         # identifier/name. Both checks stay in SQL so status filtering does
         # not iterate the full product universe in Python.
+        active_position = Q(quantity__gt=0) | Q(current_value__gt=0)
         isin_positions = PortfolioPosition.objects.filter(
             owner_id__in=owner_ids,
-            asset__isin__iexact=OuterRef("isin"),
-            quantity__gt=0,
-        ) | PortfolioPosition.objects.filter(
-            owner_id__in=owner_ids,
-            asset__isin__iexact=OuterRef("isin"),
-            current_value__gt=0,
+            active_position if False else Q(),
         )
+        isin_positions = PortfolioPosition.objects.filter(
+            owner_id__in=owner_ids,
+        ).filter(active_position).filter(asset__isin__iexact=OuterRef("isin"))
         fallback_positions = PortfolioPosition.objects.filter(
             owner_id__in=owner_ids,
-        ).filter(
-            Q(quantity__gt=0) | Q(current_value__gt=0),
-        ).filter(
+        ).filter(active_position).filter(
             Q(asset__symbol__iexact=OuterRef("external_identifier"))
             | Q(asset__name__iexact=OuterRef("name"))
         )
@@ -94,22 +91,14 @@ def _filtered_products(request, product_type=None):
             isin_positions = isin_positions.filter(asset__category=AssetCategory.MUTUAL_FUND)
             fallback_positions = fallback_positions.filter(asset__category=AssetCategory.MUTUAL_FUND)
 
+        owned_expression = (
+            (~Q(isin__isnull=True) & ~Q(isin="") & Q(has_owned_isin=True))
+            | (Q(isin__isnull=True) | Q(isin="")) & Q(has_owned_fallback=True)
+        )
         queryset = queryset.annotate(
             has_owned_isin=Exists(isin_positions),
             has_owned_fallback=Exists(fallback_positions),
-        ).filter(
-            (
-                (~Q(isin__isnull=True) & ~Q(isin="") & Q(has_owned_isin=True))
-                | (Q(isin__isnull=True) | Q(isin="")) & Q(has_owned_fallback=True)
-            )
-            if status == "OWNED"
-            else (
-                ~(
-                    (~Q(isin__isnull=True) & ~Q(isin="") & Q(has_owned_isin=True))
-                    | (Q(isin__isnull=True) | Q(isin="")) & Q(has_owned_fallback=True)
-                )
-            )
-        )
+        ).filter(owned_expression if status == "OWNED" else ~owned_expression)
     return queryset
 
 

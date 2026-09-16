@@ -1,0 +1,146 @@
+name: Fix Portfolio Sorting
+
+on:
+  push:
+    branches:
+      - feature/personal-wealth-updates
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    if: ${{ !contains(github.event.head_commit.message, 'feat: fix portfolio sorting compile errors') && !contains(github.event.head_commit.message, 'chore: remove temporary portfolio sorting fix workflow') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Patch portfolio files
+        shell: python
+        run: |
+          from pathlib import Path
+          import re
+
+          ts_path = Path('frontend/src/features/portfolio/portfolio.component.ts')
+          html_path = Path('frontend/src/features/portfolio/portfolio.component.html')
+          ts = ts_path.read_text(encoding='utf-8')
+          html = html_path.read_text(encoding='utf-8')
+
+          # Fix the exhaustive return error in the existing Level-1 helper.
+          old = """      case 'xirr':
+        return summary.xirr === null || summary.xirr === undefined
+          ? null
+          : this.toNumber(summary.xirr);
+    }
+  }
+"""
+          new = """      case 'xirr':
+        return summary.xirr === null || summary.xirr === undefined
+          ? null
+          : this.toNumber(summary.xirr);
+      default:
+        return null;
+    }
+  }
+"""
+          if old in ts:
+              ts = ts.replace(old, new, 1)
+
+          # Remove the invalid references to sub_class from PortfolioAssetNode.
+          ts = ts.replace("const parentKey = assets[0] ? `${assets[0].sub_class || 'Unassigned'}` : 'empty';", "const parentKey = '';" )
+          ts = ts.replace("? `${first.sub_class || 'Unassigned'}::${first.asset_name || 'Unnamed Asset'}` : 'empty';", "? `${first.asset_name || 'Unnamed Asset'}` : 'empty';")
+
+          # The nested sort parent keys must come from the hierarchy above,
+          # not from PortfolioAssetNode (which has no sub_class field).
+          ts = ts.replace(
+              "getAssetGroups(assets: PortfolioAssetNode[]): AssetGroup[] {",
+              "getAssetGroups(assets: PortfolioAssetNode[], parentKey = ''): AssetGroup[] {",
+              1,
+          )
+          ts = ts.replace(
+              "getSortedUnderlyingAssets(assets: PortfolioAssetNode[]): PortfolioAssetNode[] {",
+              "getSortedUnderlyingAssets(assets: PortfolioAssetNode[], parentKey = ''): PortfolioAssetNode[] {",
+              1,
+          )
+
+          # If the previous generated implementation derives local keys, replace
+          # those assignments with the supplied hierarchy key.
+          ts = re.sub(
+              r"\n\s*const parentKey = assets\[0\] \? `[^\n]+` : 'empty';",
+              "",
+              ts,
+              count=1,
+          )
+          ts = re.sub(
+              r"\n\s*const parentKey = first\n\s*\? `[^\n]+`\n\s*: 'empty';",
+              "",
+              ts,
+              count=1,
+          )
+
+          # Ensure nested sort calls use the supplied parent key.
+          # Replace only calls whose first argument is the current collection.
+          ts = ts.replace(
+              "this.getSortState('asset', this.getAssetGroupsSortKey(assets))",
+              "this.getSortState('asset', parentKey)",
+          )
+          ts = ts.replace(
+              "this.getSortState('underlying', this.getUnderlyingSortKey(assets))",
+              "this.getSortState('underlying', parentKey)",
+          )
+
+          # If helper methods were created solely to inspect sub_class, remove them.
+          ts = re.sub(
+              r"\n  private getAssetGroupsSortKey\(assets: PortfolioAssetNode\[\]\): string \{.*?\n  \}\n",
+              "\n",
+              ts,
+              flags=re.S,
+          )
+          ts = re.sub(
+              r"\n  private getUnderlyingSortKey\(assets: PortfolioAssetNode\[\]\): string \{.*?\n  \}\n",
+              "\n",
+              ts,
+              flags=re.S,
+          )
+
+          # Make the Level-2 function call pass the current Sub Class key.
+          html = html.replace(
+              "let assetGroup of getAssetGroups(summary.assets);",
+              "let assetGroup of getAssetGroups(summary.assets, summary.sub_class);",
+              1,
+          )
+
+          # Make the Level-3 function call pass the current Sub Class + Asset key.
+          html = html.replace(
+              "*ngFor=\"let asset of assetGroup.assets; trackBy: trackByAssetId\"",
+              "*ngFor=\"let asset of getSortedUnderlyingAssets(assetGroup.assets, getAssetKey(summary.sub_class, assetGroup.asset_name)); trackBy: trackByAssetId\"",
+              1,
+          )
+
+          ts_path.write_text(ts, encoding='utf-8')
+          html_path.write_text(html, encoding='utf-8')
+
+      - name: Verify Angular compile
+        working-directory: frontend
+        run: |
+          npm ci
+          npx ng build --configuration development
+
+      - name: Commit fixed files
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add frontend/src/features/portfolio/portfolio.component.ts frontend/src/features/portfolio/portfolio.component.html
+          git diff --cached --check
+          git commit -m "feat: fix portfolio sorting compile errors"
+          git push
+
+      - name: Remove temporary workflow
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/fix-portfolio-sorting.yml
+          git commit -m "chore: remove temporary portfolio sorting fix workflow"
+          git push

@@ -69,31 +69,47 @@ def _filtered_products(request, product_type=None):
     status = params.get("status", "").upper()
     if status in {"OWNED", "UNIVERSAL"}:
         owner_ids = get_visible_owner_ids(request.user)
-        # Match OwnershipService semantics using the product's identifiers.
-        # Keep the outer-product null/empty checks explicit; unqualified
-        # `isin` here would incorrectly refer to PortfolioPosition/Asset.
-        has_isin_match = (
-            Q(asset__isin__iexact=OuterRef("isin"))
-            & ~Q(asset__isin__isnull=True)
-            & ~Q(asset__isin="")
-            & ~Q(isin__isnull=True)
-            & ~Q(isin="")
+        # Match OwnershipService semantics: products with an ISIN are
+        # matched by ISIN; products without an ISIN fall back to scheme
+        # identifier/name. Both checks stay in SQL so status filtering does
+        # not iterate the full product universe in Python.
+        isin_positions = PortfolioPosition.objects.filter(
+            owner_id__in=owner_ids,
+            asset__isin__iexact=OuterRef("isin"),
+            quantity__gt=0,
+        ) | PortfolioPosition.objects.filter(
+            owner_id__in=owner_ids,
+            asset__isin__iexact=OuterRef("isin"),
+            current_value__gt=0,
         )
-        fallback_match = (
-            (Q(asset__symbol__iexact=OuterRef("external_identifier")) | Q(asset__name__iexact=OuterRef("name")))
-            & (Q(isin__isnull=True) | Q(isin=""))
-        )
-        owned_positions = PortfolioPosition.objects.filter(
+        fallback_positions = PortfolioPosition.objects.filter(
             owner_id__in=owner_ids,
         ).filter(
             Q(quantity__gt=0) | Q(current_value__gt=0),
         ).filter(
-            has_isin_match | fallback_match,
+            Q(asset__symbol__iexact=OuterRef("external_identifier"))
+            | Q(asset__name__iexact=OuterRef("name"))
         )
         if product_type == ProductType.MUTUAL_FUND:
-            owned_positions = owned_positions.filter(asset__category=AssetCategory.MUTUAL_FUND)
-        queryset = queryset.annotate(has_owned_position=Exists(owned_positions))
-        queryset = queryset.filter(has_owned_position=(status == "OWNED"))
+            isin_positions = isin_positions.filter(asset__category=AssetCategory.MUTUAL_FUND)
+            fallback_positions = fallback_positions.filter(asset__category=AssetCategory.MUTUAL_FUND)
+
+        queryset = queryset.annotate(
+            has_owned_isin=Exists(isin_positions),
+            has_owned_fallback=Exists(fallback_positions),
+        ).filter(
+            (
+                (~Q(isin__isnull=True) & ~Q(isin="") & Q(has_owned_isin=True))
+                | (Q(isin__isnull=True) | Q(isin="")) & Q(has_owned_fallback=True)
+            )
+            if status == "OWNED"
+            else (
+                ~(
+                    (~Q(isin__isnull=True) & ~Q(isin="") & Q(has_owned_isin=True))
+                    | (Q(isin__isnull=True) | Q(isin="")) & Q(has_owned_fallback=True)
+                )
+            )
+        )
     return queryset
 
 

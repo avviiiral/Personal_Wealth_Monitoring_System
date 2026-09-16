@@ -276,6 +276,26 @@ def _process_holding(
     return selected_pairs
 
 
+def _analyze_one_pair_compatibly(
+    analyzer,
+    article,
+    holding,
+    user=None,
+):
+    """Use batch analysis when available, otherwise use the legacy API."""
+    analyze_batch = getattr(analyzer, "analyze_batch", None)
+    if callable(analyze_batch):
+        results = analyze_batch([(article, holding)], user=user) or {}
+        key = (article.id, holding.holding_type, holding.holding_id)
+        return results.get(key)
+
+    analyze = getattr(analyzer, "analyze", None)
+    if callable(analyze):
+        return analyze(article, holding, user=user)
+
+    return None
+
+
 def _analyze_batches_for_user(
     user,
     article_holding_pairs,
@@ -314,10 +334,28 @@ def _analyze_batches_for_user(
         )
 
         try:
-            batch_results = analyzer.analyze_batch(
-                batch,
-                user=user,
-            )
+            if callable(getattr(analyzer, "analyze_batch", None)):
+                batch_results = analyzer.analyze_batch(
+                    batch,
+                    user=user,
+                )
+            else:
+                batch_results = {}
+                for article, holding in batch:
+                    analysis = _analyze_one_pair_compatibly(
+                        analyzer,
+                        article,
+                        holding,
+                        user=user,
+                    )
+                    if analysis is not None:
+                        batch_results[
+                            (
+                                article.id,
+                                holding.holding_type,
+                                holding.holding_id,
+                            )
+                        ] = analysis
         except Exception:
             # Keep the whole monitoring run alive even if a custom
             # analyzer implementation unexpectedly raises.
@@ -580,10 +618,28 @@ def run_portfolio_news_monitor(
                 time.sleep(resolved_ai_call_delay_seconds)
 
                 try:
-                    batch_results = analyzer.analyze_batch(
-                        batch,
-                        user=user,
-                    )
+                    if callable(getattr(analyzer, "analyze_batch", None)):
+                        batch_results = analyzer.analyze_batch(
+                            batch,
+                            user=user,
+                        )
+                    else:
+                        batch_results = {}
+                        for article, holding in batch:
+                            analysis = _analyze_one_pair_compatibly(
+                                analyzer,
+                                article,
+                                holding,
+                                user=user,
+                            )
+                            if analysis is not None:
+                                batch_results[
+                                    (
+                                        article.id,
+                                        holding.holding_type,
+                                        holding.holding_id,
+                                    )
+                                ] = analysis
                 except Exception:
                     logger.exception(
                         "Gemini batch analyzer raised for user_id=%s "

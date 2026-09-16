@@ -13,6 +13,7 @@ import { SettingsComponent } from '../features/settings/settings.component';
 import { AiChatComponent } from '../features/ai-chat/ai-chat.component';
 import { PortfolioNewsListComponent } from '../features/portfolio-news/portfolio-news-list.component';
 import { PortfolioNewsDetailComponent } from '../features/portfolio-news/portfolio-news-detail.component';
+import { WatchListComponent } from '../features/watch-list/watch-list.component';
 
 import { PagePlaceholderComponent } from '../shared/components/page-placeholder.component';
 
@@ -68,6 +69,10 @@ export const routes: Routes = [
       {
         path: 'portfolio-news/:id',
         component: PortfolioNewsDetailComponent,
+      },
+      {
+        path: 'watch-list',
+        component: WatchListComponent,
       },
     ],
   },

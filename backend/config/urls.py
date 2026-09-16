@@ -59,4 +59,10 @@ urlpatterns = [
         "api/investments/",
         include("investments.urls"),
     ),
+
+    # Watch List / investment research universe
+    path(
+        "api/watch-list/",
+        include("watchlist.urls"),
+    ),
 ]

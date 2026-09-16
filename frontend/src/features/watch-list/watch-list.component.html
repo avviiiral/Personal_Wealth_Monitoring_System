@@ -56,14 +56,18 @@
             <ng-container *ngIf="product.ownership.length; else universalOwnership">
               <div *ngFor="let item of product.ownership" class="ownership-row">
                 <strong>{{ item.family || '—' }}</strong> · {{ item.portfolio || '—' }}
-                <span class="secondary">Value {{ formatAmount(item.current_value) }} · XIRR {{ item.xirr === null ? '—' : formatPercent(item.xirr) }}</span>
+                <span class="secondary">Value {{ formatAmount(item.current_value) }} · XIRR <span [class.positive-value]="item.xirr !== null && item.xirr > 0" [class.negative-value]="item.xirr !== null && item.xirr < 0">{{ item.xirr === null ? '—' : formatPercent(item.xirr) }}</span></span>
               </div>
             </ng-container>
             <ng-template #universalOwnership>—</ng-template>
           </td>
-          <td>{{ formatPercent(metric(product, '1M')) }}</td><td>{{ formatPercent(metric(product, '3M')) }}</td><td>{{ formatPercent(metric(product, '6M')) }}</td>
-          <td>{{ formatPercent(metric(product, '1Y')) }}</td><td>{{ formatPercent(metric(product, '3Y')) }}</td><td>{{ formatPercent(metric(product, '5Y')) }}</td>
-          <td>{{ formatPercent(metric(product, 'CAGR')) }}</td>
+          <td [class.positive-value]="metric(product, '1M') !== null && metric(product, '1M')! > 0" [class.negative-value]="metric(product, '1M') !== null && metric(product, '1M')! < 0">{{ formatPercent(metric(product, '1M')) }}</td>
+          <td [class.positive-value]="metric(product, '3M') !== null && metric(product, '3M')! > 0" [class.negative-value]="metric(product, '3M') !== null && metric(product, '3M')! < 0">{{ formatPercent(metric(product, '3M')) }}</td>
+          <td [class.positive-value]="metric(product, '6M') !== null && metric(product, '6M')! > 0" [class.negative-value]="metric(product, '6M') !== null && metric(product, '6M')! < 0">{{ formatPercent(metric(product, '6M')) }}</td>
+          <td [class.positive-value]="metric(product, '1Y') !== null && metric(product, '1Y')! > 0" [class.negative-value]="metric(product, '1Y') !== null && metric(product, '1Y')! < 0">{{ formatPercent(metric(product, '1Y')) }}</td>
+          <td [class.positive-value]="metric(product, '3Y') !== null && metric(product, '3Y')! > 0" [class.negative-value]="metric(product, '3Y') !== null && metric(product, '3Y')! < 0">{{ formatPercent(metric(product, '3Y')) }}</td>
+          <td [class.positive-value]="metric(product, '5Y') !== null && metric(product, '5Y')! > 0" [class.negative-value]="metric(product, '5Y') !== null && metric(product, '5Y')! < 0">{{ formatPercent(metric(product, '5Y')) }}</td>
+          <td [class.positive-value]="metric(product, 'CAGR') !== null && metric(product, 'CAGR')! > 0" [class.negative-value]="metric(product, 'CAGR') !== null && metric(product, 'CAGR')! < 0">{{ formatPercent(metric(product, 'CAGR')) }}</td>
           <td>{{ product.mutual_fund?.aum ? formatAmount(product.mutual_fund.aum) : (product.pms?.aum ? formatAmount(product.pms.aum) : '—') }}</td>
         </tr>
         <tr *ngIf="products.length === 0"><td colspan="12" class="empty">No products match the current filters.</td></tr>

@@ -112,7 +112,7 @@ class WatchListTests(TestCase):
         self.assertEqual(result["metrics"]["CAGR"], Decimal("3.75"))
         self.assertEqual(len(result["performance"]), 1)
         self.assertEqual(result["performance"][0]["date"], "2026-09-15")
-        self.assertEqual(result["performance"][0]["nav_or_value"], Decimal("11"))
+        self.assertEqual(Decimal(result["performance"][0]["nav_or_value"]), Decimal("11"))
 
     @patch("watchlist.services.universe.AMFIUniverseService.download_latest")
     def test_discovery_creates_products(self, download):

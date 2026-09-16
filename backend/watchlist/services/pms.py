@@ -4,6 +4,7 @@ from decimal import Decimal, InvalidOperation
 
 import pandas as pd
 import requests
+from bs4 import BeautifulSoup
 from django.utils import timezone
 
 from watchlist.models import DiscoveryRun, InvestmentProduct, PerformanceSnapshot, PMSProduct, ProductType
@@ -41,7 +42,8 @@ class APMIPMSDiscoveryService:
 
     @classmethod
     def _report_date(cls, html):
-        match = re.search(r"As on(?: Month-Year)?[^0-9]{0,80}(\d{2}/\d{2}/\d{4})", html, re.IGNORECASE)
+        visible_text = BeautifulSoup(html, "html.parser").get_text(" ", strip=True)
+        match = re.search(r"As on(?: Month-Year)?[^0-9]{0,80}(\d{2}/\d{2}/\d{4})", visible_text, re.IGNORECASE)
         if match:
             try:
                 return datetime.strptime(match.group(1), "%d/%m/%Y").date()

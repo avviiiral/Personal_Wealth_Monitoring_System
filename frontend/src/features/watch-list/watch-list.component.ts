@@ -2,7 +2,7 @@ import { CommonModule } from '@angular/common';
 import { Component, OnInit, inject } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 
-import { WatchListApiService, WatchListProduct } from '../../core/services/watch-list-api.service';
+import { WatchListApiService, WatchListProduct, WatchListResponse } from '../../core/services/watch-list-api.service';
 
 type ProductTab = 'MUTUAL_FUND' | 'PMS';
 type StatusTab = 'ALL' | 'OWNED' | 'UNIVERSAL';
@@ -17,6 +17,9 @@ type PageItem = number | 'ellipsis';
 })
 export class WatchListComponent implements OnInit {
   private readonly api = inject(WatchListApiService);
+  private readonly cachePrefix = 'pwms.watch-list.';
+  private autoRefreshAttempted = false;
+
   products: WatchListProduct[] = [];
   loading = true;
   error = '';
@@ -77,9 +80,38 @@ export class WatchListComponent implements OnInit {
     });
   }
 
+  private cacheKey(): string {
+    return `${this.cachePrefix}${this.productTab}.${this.status}.${this.page}.${this.ordering}.${this.provider}.${this.category}.${this.search.trim()}`;
+  }
+
+  private restoreCachedPage(): void {
+    try {
+      const raw = localStorage.getItem(this.cacheKey());
+      if (!raw) return;
+      const cached = JSON.parse(raw) as WatchListResponse;
+      if (!cached || !Array.isArray(cached.results)) return;
+      this.products = cached.results;
+      this.count = Number(cached.count) || cached.results.length;
+      this.loading = false;
+    } catch (error) {
+      console.warn('Failed to restore Watch List cache:', error);
+    }
+  }
+
+  private cachePage(response: WatchListResponse): void {
+    try {
+      localStorage.setItem(this.cacheKey(), JSON.stringify(response));
+    } catch (error) {
+      // A full/disabled browser storage should never block Watch List loading.
+      console.warn('Failed to cache Watch List page:', error);
+    }
+  }
+
   load(): void {
-    this.loading = true;
+    this.restoreCachedPage();
+    this.loading = this.products.length === 0;
     this.error = '';
+
     this.api.getProducts({
       product_type: this.productTab,
       status: this.status === 'ALL' ? undefined : this.status,
@@ -91,8 +123,15 @@ export class WatchListComponent implements OnInit {
       page_size: this.pageSize,
     }).subscribe({
       next: response => {
+        if (response.count === 0 && !this.autoRefreshAttempted && !this.refreshing) {
+          this.autoRefreshAttempted = true;
+          this.refreshUniverse(true);
+          return;
+        }
+
         this.products = response.results;
         this.count = response.count;
+        this.cachePage(response);
         if (this.page > this.totalPages) {
           this.page = this.totalPages;
           this.load();
@@ -138,9 +177,10 @@ export class WatchListComponent implements OnInit {
     }
   }
 
-  refreshUniverse(): void {
+  refreshUniverse(auto = false): void {
     if (this.refreshing) return;
     this.refreshing = true;
+    if (!auto) this.error = '';
     this.api.refresh().subscribe({
       next: () => {
         this.refreshing = false;
@@ -152,6 +192,7 @@ export class WatchListComponent implements OnInit {
         console.error('Watch List refresh failed:', error);
         this.refreshing = false;
         this.error = 'Universe refresh failed. Existing data was not changed.';
+        this.loading = false;
       },
     });
   }

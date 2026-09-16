@@ -101,14 +101,14 @@ def _filtered_products(request, product_type=None):
             | Q(asset__name__iexact=OuterRef("name"))
         )
 
-        # PMS ownership is based on the portfolio Asset name matching the
-        # canonical APMI strategy name. APMI IAID is a research identifier and
-        # is not expected to exist on the user's portfolio Asset.
+        # PMS ownership is dynamic: match the portfolio Asset name against
+        # the InvestmentProduct name populated from the APMI PMS strategy.
+        # No PMS names are hardcoded and IAID is not used for ownership.
         if product_type == ProductType.PMS:
             pms_name_positions = PortfolioPosition.objects.filter(
                 owner_id__in=owner_ids,
             ).filter(active_position).filter(
-                asset__name__iexact=OuterRef("pms__strategy_name")
+                asset__name__iexact=OuterRef("name")
             )
         else:
             pms_name_positions = PortfolioPosition.objects.none()

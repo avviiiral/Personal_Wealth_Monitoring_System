@@ -33,6 +33,24 @@ th { font-size: 12px; color: var(--muted); font-weight: 600; }
 .page-ellipsis { padding: 0 3px; color: var(--muted); }
 .count { margin-top: 10px; color: var(--muted); font-size: 12px; text-align: center; }
 
+.positive-value {
+  color: #16803c;
+  font-weight: 600;
+}
+
+.negative-value {
+  color: #c62828;
+  font-weight: 600;
+}
+
+html.dark-theme .watch-list-page .positive-value {
+  color: #4ade80;
+}
+
+html.dark-theme .watch-list-page .negative-value {
+  color: #f87171;
+}
+
 html.dark-theme .watch-list-page .status {
   background: #252a33;
   color: #cbd5e1;

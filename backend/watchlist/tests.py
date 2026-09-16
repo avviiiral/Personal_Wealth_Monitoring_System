@@ -10,6 +10,7 @@ from investments.models import Asset, AssetCategory, PortfolioPosition, Transact
 from watchlist.models import InvestmentProduct, MutualFundProduct, PerformanceSnapshot, ProductType, WatchListEntry
 from watchlist.services.ownership import OwnershipService
 from watchlist.services.performance import AMFIPerformanceService
+from watchlist.services.pms import APMIPMSDiscoveryService
 from watchlist.services.universe import AMFIUniverseService
 
 
@@ -85,27 +86,9 @@ class WatchListTests(TestCase):
             source="AMFI",
         )
         MutualFundProduct.objects.create(product=product, scheme_code="SNAPSHOT")
-        PerformanceSnapshot.objects.create(
-            product=product,
-            date="2026-09-14",
-            nav_or_value=Decimal("10"),
-            return_1m=Decimal("1"),
-            source="AMFI",
-        )
-        PerformanceSnapshot.objects.create(
-            product=product,
-            date="2026-09-15",
-            nav_or_value=Decimal("11"),
-            return_1m=Decimal("2.5"),
-            return_1y=Decimal("12.5"),
-            cagr=Decimal("3.75"),
-            source="AMFI",
-        )
-
-        response = self.client.get(
-            "/api/watch-list/products/?product_type=MUTUAL_FUND&search=Snapshot%20Fund&page_size=5"
-        )
-
+        PerformanceSnapshot.objects.create(product=product, date="2026-09-14", nav_or_value=Decimal("10"), return_1m=Decimal("1"), source="AMFI")
+        PerformanceSnapshot.objects.create(product=product, date="2026-09-15", nav_or_value=Decimal("11"), return_1m=Decimal("2.5"), return_1y=Decimal("12.5"), cagr=Decimal("3.75"), source="AMFI")
+        response = self.client.get("/api/watch-list/products/?product_type=MUTUAL_FUND&search=Snapshot%20Fund&page_size=5")
         self.assertEqual(response.status_code, 200)
         self.assertEqual(len(response.data["results"]), 1)
         result = response.data["results"][0]
@@ -117,21 +100,9 @@ class WatchListTests(TestCase):
         self.assertEqual(Decimal(result["performance"][0]["nav_or_value"]), Decimal("11"))
 
     def test_owned_status_filter_matches_owned_mutual_fund(self):
-        product = InvestmentProduct.objects.create(
-            product_type=ProductType.MUTUAL_FUND,
-            name="Owned Fund",
-            isin="INFOWNED",
-            identity_key="MUTUAL_FUND:ISIN:INFOWNED",
-            source="AMFI",
-        )
+        product = InvestmentProduct.objects.create(product_type=ProductType.MUTUAL_FUND, name="Owned Fund", isin="INFOWNED", identity_key="MUTUAL_FUND:ISIN:INFOWNED", source="AMFI")
         MutualFundProduct.objects.create(product=product, scheme_code="OWNED")
-        asset = Asset.objects.create(
-            owner=self.user,
-            name="Owned Asset",
-            symbol="OWNED",
-            isin="INFOWNED",
-            category=AssetCategory.MUTUAL_FUND,
-        )
+        asset = Asset.objects.create(owner=self.user, name="Owned Asset", symbol="OWNED", isin="INFOWNED", category=AssetCategory.MUTUAL_FUND)
         PortfolioPosition.objects.create(owner=self.user, asset=asset, quantity=1, current_value=100)
         response = self.client.get("/api/watch-list/products/?product_type=MUTUAL_FUND&status=OWNED")
         self.assertEqual(response.status_code, 200)
@@ -139,51 +110,27 @@ class WatchListTests(TestCase):
         self.assertEqual(response.data["results"][0]["name"], "Owned Fund")
 
     def test_universal_status_filter_excludes_owned_mutual_fund(self):
-        product = InvestmentProduct.objects.create(
-            product_type=ProductType.MUTUAL_FUND,
-            name="Owned Fund",
-            isin="INFOWNED",
-            identity_key="MUTUAL_FUND:ISIN:INFOWNED",
-            source="AMFI",
-        )
+        product = InvestmentProduct.objects.create(product_type=ProductType.MUTUAL_FUND, name="Owned Fund", isin="INFOWNED", identity_key="MUTUAL_FUND:ISIN:INFOWNED", source="AMFI")
         MutualFundProduct.objects.create(product=product, scheme_code="OWNED")
-        asset = Asset.objects.create(
-            owner=self.user,
-            name="Owned Asset",
-            symbol="OWNED",
-            isin="INFOWNED",
-            category=AssetCategory.MUTUAL_FUND,
-        )
+        asset = Asset.objects.create(owner=self.user, name="Owned Asset", symbol="OWNED", isin="INFOWNED", category=AssetCategory.MUTUAL_FUND)
         PortfolioPosition.objects.create(owner=self.user, asset=asset, quantity=1, current_value=100)
         response = self.client.get("/api/watch-list/products/?product_type=MUTUAL_FUND&status=UNIVERSAL")
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data["count"], 0)
 
     def test_watchlist_toggle(self):
-        product = InvestmentProduct.objects.create(
-            product_type=ProductType.MUTUAL_FUND,
-            name="Toggle Fund",
-            identity_key="MUTUAL_FUND:SCHEME:TOGGLE",
-            source="AMFI",
-        )
+        product = InvestmentProduct.objects.create(product_type=ProductType.MUTUAL_FUND, name="Toggle Fund", identity_key="MUTUAL_FUND:SCHEME:TOGGLE", source="AMFI")
         response = self.client.post(f"/api/watch-list/products/{product.id}/toggle/")
         self.assertEqual(response.status_code, 200)
         self.assertTrue(response.data["is_watchlisted"])
         self.assertEqual(WatchListEntry.objects.filter(user=self.user, product=product).count(), 1)
-
         response = self.client.post(f"/api/watch-list/products/{product.id}/toggle/")
         self.assertEqual(response.status_code, 200)
         self.assertFalse(response.data["is_watchlisted"])
         self.assertFalse(WatchListEntry.objects.filter(user=self.user, product=product).exists())
 
     def test_amfi_performance_service_updates_snapshot(self):
-        product = InvestmentProduct.objects.create(
-            product_type=ProductType.MUTUAL_FUND,
-            name="Performance Fund",
-            isin="INFPERF",
-            identity_key="MUTUAL_FUND:ISIN:INFPERF",
-            source="AMFI",
-        )
+        product = InvestmentProduct.objects.create(product_type=ProductType.MUTUAL_FUND, name="Performance Fund", isin="INFPERF", identity_key="MUTUAL_FUND:ISIN:INFPERF", source="AMFI")
         MutualFundProduct.objects.create(product=product, scheme_code="PERF")
         feed = "Scheme Code;ISIN Div Payout/ISIN Growth;ISIN Div Reinvestment;Scheme Name;Net Asset Value;Date\n1;INFPERF;-;Performance Fund;100;15-Sep-2026\n"
         with patch("watchlist.services.performance.requests.get") as mocked_get:
@@ -191,3 +138,49 @@ class WatchListTests(TestCase):
             mocked_get.return_value.raise_for_status.return_value = None
             AMFIPerformanceService.refresh()
         self.assertTrue(PerformanceSnapshot.objects.filter(product=product, source="AMFI").exists())
+
+
+class APMIPMSDiscoveryTests(TestCase):
+    SAMPLE_HTML = """
+    <html><body>
+      <h4>Investment Approach Wise Performance As on 31/08/2026</h4>
+      <table>
+        <tr><th>PMS Provider Name</th><th>IA Name</th><th>AUM (in INR Cr.)</th><th>1 Month</th><th>3 Months</th><th>6 Months</th><th>1 Year</th><th>2 Years</th><th>3 Years</th><th>4 Years</th><th>5 Years</th><th>Since Inception</th></tr>
+        <tr><td>ICICI Prudential Asset Management Company Ltd</td><td><a href="IaInsight.htm?IAID=2595">ICICI Prudential PMS Small and Midcap FPI Strategy</a></td><td>₹75.38</td><td>NA</td><td>NA</td><td>NA</td><td>NA</td><td>NA</td><td>NA</td><td>NA</td><td>NA</td><td>0.06</td></tr>
+      </table>
+    </body></html>
+    """
+
+    def test_apmi_parser_reads_html_rows(self):
+        records = APMIPMSDiscoveryService._records(self.SAMPLE_HTML)
+        self.assertEqual(len(records), 1)
+        self.assertEqual(records[0]["provider"], "ICICI Prudential Asset Management Company Ltd")
+        self.assertEqual(records[0]["name"], "ICICI Prudential PMS Small and Midcap FPI Strategy")
+        self.assertEqual(records[0]["iaid"], "2595")
+        self.assertEqual(records[0]["aum"], Decimal("75.38"))
+        self.assertIsNone(records[0]["performance"]["1m"])
+        self.assertEqual(records[0]["performance"]["si"], Decimal("0.06"))
+
+    @patch("watchlist.services.pms.requests.get")
+    def test_apmi_refresh_upserts_product_and_snapshot(self, mocked_get):
+        mocked_get.return_value.text = self.SAMPLE_HTML
+        mocked_get.return_value.raise_for_status.return_value = None
+        result = APMIPMSDiscoveryService.refresh()
+        self.assertEqual(result["discovered"], 1)
+        self.assertEqual(result["failed"], 0)
+        product = InvestmentProduct.objects.get(product_type=ProductType.PMS)
+        self.assertEqual(product.external_identifier, "2595")
+        self.assertEqual(product.provider, "ICICI Prudential Asset Management Company Ltd")
+        self.assertEqual(product.pms.aum, Decimal("75.38"))
+        snapshot = PerformanceSnapshot.objects.get(product=product, source="APMI")
+        self.assertEqual(snapshot.aum, Decimal("75.38"))
+        self.assertEqual(snapshot.return_since_inception, Decimal("0.06"))
+
+    @patch("watchlist.services.pms.requests.get")
+    def test_apmi_refresh_is_idempotent(self, mocked_get):
+        mocked_get.return_value.text = self.SAMPLE_HTML
+        mocked_get.return_value.raise_for_status.return_value = None
+        APMIPMSDiscoveryService.refresh()
+        APMIPMSDiscoveryService.refresh()
+        self.assertEqual(InvestmentProduct.objects.filter(product_type=ProductType.PMS).count(), 1)
+        self.assertEqual(PerformanceSnapshot.objects.filter(source="APMI").count(), 1)

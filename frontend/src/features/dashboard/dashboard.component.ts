@@ -3,6 +3,7 @@ import { CommonModule } from '@angular/common';
 
 import { DashboardComponent as BaseDashboardComponent } from './dashboard.component.base';
 import { ThemeService } from '../../core/services/theme.service';
+import { WealthApiService } from '../../core/services/wealth-api.service';
 
 @Component({
   selector: 'app-dashboard',
@@ -17,6 +18,13 @@ import { ThemeService } from '../../core/services/theme.service';
 export class DashboardComponent extends BaseDashboardComponent {
   private allocationRenderRequest = 0;
   private readonly allocationThemeService = inject(ThemeService);
+  private readonly dashboardWealthApi = inject(WealthApiService);
+
+  standardAllocations: Record<string, number> = {};
+  standardAllocationDraft: Record<string, number> = {};
+  standardAllocationEditing = false;
+  standardAllocationSaving = false;
+  standardAllocationError = '';
 
   /**
    * Re-render the canvas-based Allocation chart whenever the theme
@@ -148,10 +156,6 @@ export class DashboardComponent extends BaseDashboardComponent {
   /**
    * Allocation chart uses the exact Asset Category and % of Total
    * Investment shown in the Dashboard Investment Summary table.
-   *
-   * This intentionally uses investmentSummaryGroups rather than the
-   * backend Investment Summary API category names, because the visible
-   * Dashboard table is the source of truth for the displayed hierarchy.
    */
   override get allocationByCategory(): Array<{
     category: string;
@@ -170,13 +174,13 @@ export class DashboardComponent extends BaseDashboardComponent {
   /**
    * The base Dashboard loads Investment Summary and Portfolio Tree
    * independently. Allocation uses the Portfolio Tree-backed groups,
-   * so retry rendering until both sources are ready. This keeps the
-   * chart fully dynamic without hardcoding any Asset Categories.
+   * so retry rendering until both sources are ready.
    */
   override loadDashboard(): void {
     const request = ++this.allocationRenderRequest;
 
     super.loadDashboard();
+    this.loadStandardAllocations();
 
     const renderWhenReady = (attempt: number): void => {
       if (request !== this.allocationRenderRequest) {
@@ -196,6 +200,155 @@ export class DashboardComponent extends BaseDashboardComponent {
     };
 
     setTimeout(() => renderWhenReady(0));
+  }
+
+  private loadStandardAllocations(): void {
+    this.standardAllocationError = '';
+
+    this.dashboardWealthApi.getStandardAllocations(this.selectedFamily || undefined).subscribe({
+      next: (data) => {
+        this.standardAllocations = this.normalizeAllocationMap(data?.allocations);
+        this.standardAllocationDraft = { ...this.standardAllocations };
+      },
+      error: (error) => {
+        console.error('STANDARD ALLOCATION API ERROR:', error);
+        this.standardAllocationError = 'Unable to load Standard Allocation.';
+        this.standardAllocations = {};
+        this.standardAllocationDraft = {};
+      },
+    });
+  }
+
+  startStandardAllocationEdit(): void {
+    this.standardAllocationDraft = {};
+
+    for (const group of this.investmentSummaryGroups) {
+      this.standardAllocationDraft[group.asset_category] = this.getStandardAllocation(group.asset_category);
+    }
+
+    this.standardAllocationEditing = true;
+    this.standardAllocationError = '';
+  }
+
+  cancelStandardAllocationEdit(): void {
+    this.standardAllocationDraft = { ...this.standardAllocations };
+    this.standardAllocationEditing = false;
+    this.standardAllocationError = '';
+  }
+
+  updateStandardAllocation(category: string, rawValue: string): void {
+    const parsed = Number(rawValue);
+    this.standardAllocationDraft[category] = Number.isFinite(parsed)
+      ? Math.max(0, Math.min(100, parsed))
+      : 0;
+  }
+
+  getStandardAllocation(category: string): number {
+    const value = Number(
+      this.standardAllocationEditing
+        ? this.standardAllocationDraft[category]
+        : this.standardAllocations[category],
+    );
+
+    return Number.isFinite(value) ? value : 0;
+  }
+
+  getStandardAllocationDraftTotal(): number {
+    return Math.round(
+      this.investmentSummaryGroups.reduce(
+        (total, group) => total + this.getStandardAllocation(group.asset_category),
+        0,
+      ) * 100,
+    ) / 100;
+  }
+
+  getStandardAllocationTotalClass(): string {
+    const total = this.getStandardAllocationDraftTotal();
+
+    if (total === 100) {
+      return 'is-valid';
+    }
+
+    return 'is-invalid';
+  }
+
+  saveStandardAllocations(): void {
+    const allocations: Record<string, number> = {};
+
+    for (const group of this.investmentSummaryGroups) {
+      allocations[group.asset_category] = this.getStandardAllocation(group.asset_category);
+    }
+
+    const total = Math.round(
+      Object.values(allocations).reduce((sum, value) => sum + value, 0) * 100,
+    ) / 100;
+
+    if (total !== 100) {
+      this.standardAllocationError = `Standard Allocation must total exactly 100%. Current total is ${total}%.`;
+      return;
+    }
+
+    this.standardAllocationSaving = true;
+    this.standardAllocationError = '';
+
+    this.dashboardWealthApi
+      .saveStandardAllocations(allocations, this.selectedFamily || undefined)
+      .subscribe({
+        next: (data) => {
+          this.standardAllocations = this.normalizeAllocationMap(data?.allocations);
+          this.standardAllocationDraft = { ...this.standardAllocations };
+          this.standardAllocationEditing = false;
+          this.standardAllocationSaving = false;
+        },
+        error: (error) => {
+          console.error('STANDARD ALLOCATION SAVE ERROR:', error);
+          this.standardAllocationSaving = false;
+          this.standardAllocationError =
+            error?.error?.detail || 'Unable to save Standard Allocation.';
+        },
+      });
+  }
+
+  getAllocationComment(group: { asset_category: string; percentage_of_total: number }): string {
+    const actual = Number(group.percentage_of_total);
+    const standard = this.getStandardAllocation(group.asset_category);
+    const difference = actual - standard;
+
+    if (Math.abs(difference) <= 2) {
+      return 'Neutral';
+    }
+
+    return difference > 2
+      ? 'Invest Less in Other Asset Category'
+      : 'Invest More in this Category';
+  }
+
+  getAllocationCommentClass(group: { asset_category: string; percentage_of_total: number }): string {
+    const comment = this.getAllocationComment(group);
+
+    if (comment === 'Neutral') {
+      return 'is-neutral';
+    }
+
+    return comment === 'Invest More in this Category' ? 'is-underweight' : 'is-overweight';
+  }
+
+  private normalizeAllocationMap(value: unknown): Record<string, number> {
+    if (!value || typeof value !== 'object') {
+      return {};
+    }
+
+    const result: Record<string, number> = {};
+
+    for (const [category, rawValue] of Object.entries(value as Record<string, unknown>)) {
+      const numberValue = Number(rawValue);
+
+      if (Number.isFinite(numberValue)) {
+        result[category] = numberValue;
+      }
+    }
+
+    return result;
   }
 
   /**

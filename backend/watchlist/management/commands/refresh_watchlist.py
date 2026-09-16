@@ -1,6 +1,7 @@
 from django.core.management.base import BaseCommand
 
-from watchlist.services.universe import AMFIUniverseService, PMSDiscoveryService
+from watchlist.services.pms import APMIPMSDiscoveryService
+from watchlist.services.universe import AMFIUniverseService
 
 
 class Command(BaseCommand):
@@ -8,6 +9,6 @@ class Command(BaseCommand):
 
     def handle(self, *args, **options):
         mf = AMFIUniverseService.refresh()
-        pms = PMSDiscoveryService.refresh()
+        pms = APMIPMSDiscoveryService.refresh()
         self.stdout.write(self.style.SUCCESS(f"Mutual funds: {mf}"))
         self.stdout.write(self.style.SUCCESS(f"PMS: {pms}"))

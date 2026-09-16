@@ -22,6 +22,8 @@ export class WatchListComponent implements OnInit {
   search = '';
   provider = '';
   category = '';
+  providers: string[] = [];
+  categories: string[] = [];
   status: StatusTab = 'ALL';
   productTab: ProductTab = 'MUTUAL_FUND';
   ordering = 'name';
@@ -36,7 +38,22 @@ export class WatchListComponent implements OnInit {
     { value: 'aum', label: 'AUM' },
   ];
 
-  ngOnInit(): void { this.load(); }
+  ngOnInit(): void {
+    this.loadFilters();
+    this.load();
+  }
+
+  loadFilters(): void {
+    this.api.getFilters(this.productTab).subscribe({
+      next: response => {
+        this.providers = response.providers;
+        this.categories = response.categories;
+        if (this.provider && !this.providers.includes(this.provider)) this.provider = '';
+        if (this.category && !this.categories.includes(this.category)) this.category = '';
+      },
+      error: error => console.error('Failed to load Watch List filter options:', error),
+    });
+  }
 
   load(): void {
     this.loading = true;
@@ -45,8 +62,8 @@ export class WatchListComponent implements OnInit {
       product_type: this.productTab,
       status: this.status === 'ALL' ? undefined : this.status,
       search: this.search.trim() || undefined,
-      provider: this.provider.trim() || undefined,
-      category: this.category.trim() || undefined,
+      provider: this.provider || undefined,
+      category: this.category || undefined,
       ordering: this.ordering,
       page_size: 50,
     }).subscribe({
@@ -55,14 +72,23 @@ export class WatchListComponent implements OnInit {
     });
   }
 
-  setProductTab(tab: ProductTab): void { if (this.productTab !== tab) { this.productTab = tab; this.load(); } }
+  setProductTab(tab: ProductTab): void {
+    if (this.productTab !== tab) {
+      this.productTab = tab;
+      this.provider = '';
+      this.category = '';
+      this.loadFilters();
+      this.load();
+    }
+  }
+
   setStatus(status: StatusTab): void { if (this.status !== status) { this.status = status; this.load(); } }
 
   refreshUniverse(): void {
     if (this.refreshing) return;
     this.refreshing = true;
     this.api.refresh().subscribe({
-      next: () => { this.refreshing = false; this.load(); },
+      next: () => { this.refreshing = false; this.loadFilters(); this.load(); },
       error: error => { console.error('Watch List refresh failed:', error); this.refreshing = false; this.error = 'Universe refresh failed. Existing data was not changed.'; },
     });
   }

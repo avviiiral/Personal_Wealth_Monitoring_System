@@ -605,11 +605,7 @@ export class PortfolioComponent implements OnInit, OnDestroy {
   }
 
   getSortedUnderlyingAssets(assets: PortfolioAssetNode[]): PortfolioAssetNode[] {
-    const first = assets[0];
-
-    const parentKey = first
-      ? `${first.sub_class || 'Unassigned'}::${first.asset_name || 'Unnamed Asset'}`
-      : 'empty';
+    const parentKey = this.expandedAsset || 'empty';
 
     return this.sortRows(
       assets,

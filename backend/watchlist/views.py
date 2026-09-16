@@ -86,11 +86,6 @@ def _filtered_products(request, product_type=None):
         active_position = Q(quantity__gt=0) | Q(current_value__gt=0)
 
         if product_type == ProductType.PMS:
-            # PMS holdings are represented by underlying stock Assets. The
-            # transaction's asset_name stores the PMS strategy name, while
-            # Transaction.asset points to the underlying stock. Therefore
-            # ownership must be derived from Transaction.asset_name rather
-            # than Asset.name. No PMS names are hardcoded.
             pms_transactions = Transaction.objects.filter(
                 owner_id__in=owner_ids,
                 asset_name__iexact=OuterRef("name"),
@@ -131,7 +126,6 @@ def _filtered_products(request, product_type=None):
 
 
 def _latest_snapshots(products):
-    """Load one latest performance snapshot per page product in a single query."""
     product_ids = [product.id for product in products]
     if not product_ids:
         return {}
@@ -256,7 +250,7 @@ def watch_list_performance(request, product_id):
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def watch_list_toggle(request, product_id):
-    """Add or remove a product from the caller's personal Watch List (the checkmark toggle)."""
+    """Add or remove a product from the caller's personal Watch List."""
     product = get_object_or_404(InvestmentProduct, pk=product_id, is_active=True)
     entry = WatchListEntry.objects.filter(user=request.user, product=product).first()
     if entry:
@@ -264,6 +258,46 @@ def watch_list_toggle(request, product_id):
         return Response({"id": product.id, "is_watchlisted": False})
     WatchListEntry.objects.create(user=request.user, product=product)
     return Response({"id": product.id, "is_watchlisted": True})
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def watch_list_bulk_add(request):
+    """Add multiple active mutual-fund/PMS products to the caller's Watch List."""
+    product_ids = request.data.get("product_ids", [])
+    if not isinstance(product_ids, list) or not product_ids:
+        return Response({"detail": "product_ids must be a non-empty list."}, status=400)
+
+    try:
+        product_ids = list({int(product_id) for product_id in product_ids})
+    except (TypeError, ValueError):
+        return Response({"detail": "product_ids must contain valid product IDs."}, status=400)
+
+    products = InvestmentProduct.objects.filter(
+        id__in=product_ids,
+        is_active=True,
+        product_type__in=[ProductType.MUTUAL_FUND, ProductType.PMS],
+    )
+    valid_ids = set(products.values_list("id", flat=True))
+    if not valid_ids:
+        return Response({"detail": "No valid products were selected."}, status=400)
+
+    existing_ids = set(
+        WatchListEntry.objects.filter(user=request.user, product_id__in=valid_ids)
+        .values_list("product_id", flat=True)
+    )
+    WatchListEntry.objects.bulk_create(
+        [
+            WatchListEntry(user=request.user, product_id=product_id)
+            for product_id in valid_ids - existing_ids
+        ],
+        ignore_conflicts=True,
+    )
+    return Response({
+        "selected": len(valid_ids),
+        "added": len(valid_ids - existing_ids),
+        "already_watchlisted": len(existing_ids),
+    })
 
 
 @api_view(["POST"])

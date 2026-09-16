@@ -1,6 +1,7 @@
 from datetime import date, timedelta
 from decimal import Decimal, InvalidOperation
 
+from django.views.decorators.csrf import ensure_csrf_cookie
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
@@ -91,6 +92,7 @@ def wealth_investment_summary(request):
     return Response(InvestmentSummaryService.calculate(get_visible_owner_ids(request.user), family_name=family_name))
 
 
+@ensure_csrf_cookie
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def wealth_standard_allocations(request):

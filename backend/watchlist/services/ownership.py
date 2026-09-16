@@ -14,7 +14,7 @@ class OwnershipService:
 
     @staticmethod
     def _product_name(product):
-        """Return the canonical name that should be matched to a portfolio Asset."""
+        """Return the canonical name that should be matched to a portfolio source."""
         if product.product_type == ProductType.PMS and getattr(product, "pms", None):
             return product.pms.strategy_name or product.name
         return product.name
@@ -23,15 +23,24 @@ class OwnershipService:
     def _asset_queryset(cls, product, owner_ids):
         qs = Asset.objects.filter(owner_id__in=owner_ids)
         match_name = cls._product_name(product)
+
+        # PMS holdings are stored as underlying-stock Assets. The PMS strategy
+        # name is preserved on Transaction.asset_name, so use that field to
+        # discover the underlying Assets dynamically instead of expecting the
+        # PMS strategy itself to exist as an Asset.
+        if product.product_type == ProductType.PMS:
+            asset_ids = Transaction.objects.filter(
+                owner_id__in=owner_ids,
+                asset_name__iexact=match_name,
+            ).values_list("asset_id", flat=True).distinct()
+            return qs.filter(id__in=asset_ids)
+
         if product.isin:
             qs = qs.filter(isin__iexact=product.isin)
             if product.product_type == ProductType.MUTUAL_FUND:
                 qs = qs.filter(category=AssetCategory.MUTUAL_FUND)
             return qs
         if product.external_identifier:
-            # PMS products have an APMI IAID, but portfolio Assets are keyed by
-            # the human-readable PMS strategy name. Always include the name
-            # comparison so the IAID is never required for ownership matching.
             return qs.filter(Q(symbol__iexact=product.external_identifier) | Q(name__iexact=match_name))
         return qs.filter(name__iexact=match_name)
 
@@ -88,67 +97,87 @@ class OwnershipService:
 
     @classmethod
     def bulk_enrich(cls, products, user):
-        """Enrich a page of products with a bounded number of DB queries.
-
-        The previous serializer path called `enrich()` once per product and
-        `_position_xirr()` once per owned position. This method resolves all
-        page-product assets, positions, and transactions in bulk, then runs
-        the XIRR calculations in memory. API output remains unchanged.
-        """
+        """Enrich a page of products with a bounded number of DB queries."""
         products = list(products)
         if not products:
             return {}
 
         owner_ids = get_visible_owner_ids(user)
         product_by_id = {product.id: product for product in products}
+        product_match_names = {
+            product.id: cls._product_name(product)
+            for product in products
+        }
+        product_asset_ids = {product.id: set() for product in products}
 
-        identifier_query = Q()
-        product_match_names = {}
-        for product in products:
-            match_name = cls._product_name(product)
-            product_match_names[product.id] = match_name
-            if product.isin:
-                identifier_query |= Q(isin__iexact=product.isin)
-            elif product.external_identifier:
-                identifier_query |= (
-                    Q(symbol__iexact=product.external_identifier)
-                    | Q(name__iexact=match_name)
-                )
-            else:
-                identifier_query |= Q(name__iexact=match_name)
+        if all(product.product_type == ProductType.PMS for product in products):
+            # PMS portfolio imports retain the strategy name on each
+            # Transaction.asset_name while Transaction.asset points to the
+            # underlying stock Asset. Resolve that relationship dynamically.
+            name_query = Q()
+            for product in products:
+                name_query |= Q(asset_name__iexact=product_match_names[product.id])
 
-        assets_qs = Asset.objects.filter(owner_id__in=owner_ids).filter(identifier_query)
-        if products and all(product.product_type == ProductType.MUTUAL_FUND for product in products):
-            assets_qs = assets_qs.filter(category=AssetCategory.MUTUAL_FUND)
-        assets = list(assets_qs.only("id", "owner_id", "name", "symbol", "isin", "category"))
+            pms_transactions = Transaction.objects.filter(
+                owner_id__in=owner_ids,
+            ).filter(name_query).values("asset_id", "asset_name")
 
-        def norm(value):
-            return str(value or "").strip().casefold()
+            products_by_name = {}
+            for product in products:
+                products_by_name.setdefault(
+                    str(product_match_names[product.id] or "").strip().casefold(),
+                    [],
+                ).append(product.id)
 
-        assets_by_isin = {}
-        assets_by_symbol = {}
-        assets_by_name = {}
-        for asset in assets:
-            if asset.isin:
-                assets_by_isin.setdefault(norm(asset.isin), []).append(asset)
-            if asset.symbol:
-                assets_by_symbol.setdefault(norm(asset.symbol), []).append(asset)
-            if asset.name:
-                assets_by_name.setdefault(norm(asset.name), []).append(asset)
+            for transaction in pms_transactions:
+                name_key = str(transaction["asset_name"] or "").strip().casefold()
+                for product_id in products_by_name.get(name_key, []):
+                    product_asset_ids[product_id].add(transaction["asset_id"])
+        else:
+            identifier_query = Q()
+            for product in products:
+                match_name = product_match_names[product.id]
+                if product.isin:
+                    identifier_query |= Q(isin__iexact=product.isin)
+                elif product.external_identifier:
+                    identifier_query |= (
+                        Q(symbol__iexact=product.external_identifier)
+                        | Q(name__iexact=match_name)
+                    )
+                else:
+                    identifier_query |= Q(name__iexact=match_name)
 
-        product_asset_ids = {}
-        for product in products:
-            match_name = product_match_names[product.id]
-            if product.isin:
-                matches = assets_by_isin.get(norm(product.isin), [])
-            elif product.external_identifier:
-                matches = (
-                    assets_by_symbol.get(norm(product.external_identifier), [])
-                    + assets_by_name.get(norm(match_name), [])
-                )
-            else:
-                matches = assets_by_name.get(norm(match_name), [])
-            product_asset_ids[product.id] = {asset.id for asset in matches}
+            assets_qs = Asset.objects.filter(owner_id__in=owner_ids).filter(identifier_query)
+            if products and all(product.product_type == ProductType.MUTUAL_FUND for product in products):
+                assets_qs = assets_qs.filter(category=AssetCategory.MUTUAL_FUND)
+            assets = list(assets_qs.only("id", "owner_id", "name", "symbol", "isin", "category"))
+
+            def norm(value):
+                return str(value or "").strip().casefold()
+
+            assets_by_isin = {}
+            assets_by_symbol = {}
+            assets_by_name = {}
+            for asset in assets:
+                if asset.isin:
+                    assets_by_isin.setdefault(norm(asset.isin), []).append(asset)
+                if asset.symbol:
+                    assets_by_symbol.setdefault(norm(asset.symbol), []).append(asset)
+                if asset.name:
+                    assets_by_name.setdefault(norm(asset.name), []).append(asset)
+
+            for product in products:
+                match_name = product_match_names[product.id]
+                if product.isin:
+                    matches = assets_by_isin.get(norm(product.isin), [])
+                elif product.external_identifier:
+                    matches = (
+                        assets_by_symbol.get(norm(product.external_identifier), [])
+                        + assets_by_name.get(norm(match_name), [])
+                    )
+                else:
+                    matches = assets_by_name.get(norm(match_name), [])
+                product_asset_ids[product.id] = {asset.id for asset in matches}
 
         all_asset_ids = {asset_id for ids in product_asset_ids.values() for asset_id in ids}
         if not all_asset_ids:

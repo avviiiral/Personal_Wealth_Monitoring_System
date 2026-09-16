@@ -570,7 +570,7 @@ export class PortfolioComponent implements OnInit, OnDestroy {
           invested_value: this.getAssetsInvestedValue(groupedAssets),
           current_value: this.getAssetsCurrentValue(groupedAssets),
           pnl: this.getAssetsPnl(groupedAssets),
-          xirr: this.calculateXirr(groupedAssets),
+          xirr: this.getAssetNameXirr(groupedAssets),
           assets: groupedAssets,
         };
       },
@@ -961,6 +961,28 @@ export class PortfolioComponent implements OnInit, OnDestroy {
 
   private getSubClassQuantity(subClass: SubClassNode): number {
     return this.getAssetsQuantity(subClass.assets);
+  }
+
+  /**
+   * Asset Name XIRR comes directly from the backend aggregate.
+   * The backend solves XIRR once using all cash flows for the same
+   * displayed Asset Name while intentionally ignoring underlying
+   * and asset-id boundaries. It also uses the combined current value
+   * as the terminal cash flow, so this is not a weighted average.
+   */
+  private getAssetNameXirr(assets: PortfolioAssetNode[]): number | null {
+    const values = assets
+      .map(
+        (asset) =>
+          (
+            asset as PortfolioAssetNode & {
+              asset_name_xirr?: number | null;
+            }
+          ).asset_name_xirr,
+      )
+      .filter((value): value is number => value !== null && value !== undefined);
+
+    return values.length ? values[0] : null;
   }
 
   private calculateXirr(assets: PortfolioAssetNode[]): number | null {

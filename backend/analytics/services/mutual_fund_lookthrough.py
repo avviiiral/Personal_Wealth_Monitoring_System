@@ -107,9 +107,6 @@ class MutualFundLookThroughService:
         if not sector and master is not None:
             sector = (master.sector or "").strip() or None
 
-        if asset_class is None and sector:
-            asset_class = "STOCK"
-
         return asset_class, sector
 
     @classmethod

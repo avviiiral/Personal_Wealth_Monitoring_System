@@ -9,6 +9,7 @@ from investments.models import AssetCategory, PortfolioPosition
 from users.permissions import get_visible_owner_ids
 from watchlist.models import InvestmentProduct, PerformanceSnapshot, ProductType
 from watchlist.serializers import PerformanceSnapshotSerializer, WatchListProductSerializer
+from watchlist.services.ownership import OwnershipService
 from watchlist.services.universe import AMFIUniverseService, PMSDiscoveryService
 
 
@@ -69,10 +70,6 @@ def _filtered_products(request, product_type=None):
     status = params.get("status", "").upper()
     if status in {"OWNED", "UNIVERSAL"}:
         owner_ids = get_visible_owner_ids(request.user)
-        # Match OwnershipService semantics: products with an ISIN are
-        # matched by ISIN; products without an ISIN fall back to scheme
-        # identifier/name. Both checks stay in SQL so status filtering does
-        # not iterate the full product universe in Python.
         active_position = Q(quantity__gt=0) | Q(current_value__gt=0)
         isin_positions = PortfolioPosition.objects.filter(
             owner_id__in=owner_ids,
@@ -147,11 +144,17 @@ def watch_list_products(request):
     queryset = _filtered_products(request, product_type if product_type in ProductType.values else None)
     paginator = WatchListPagination()
     page = paginator.paginate_queryset(queryset, request)
+    page = list(page)
     latest_snapshots = _latest_snapshots(page)
+    ownership_cache = OwnershipService.bulk_enrich(page, request.user)
     serializer = WatchListProductSerializer(
         page,
         many=True,
-        context={"request": request, "latest_snapshots": latest_snapshots},
+        context={
+            "request": request,
+            "latest_snapshots": latest_snapshots,
+            "ownership_cache": ownership_cache,
+        },
     )
     return paginator.get_paginated_response(serializer.data)
 
@@ -165,10 +168,15 @@ def watch_list_product_detail(request, product_id):
         is_active=True,
     )
     latest_snapshots = _latest_snapshots([product])
+    ownership_cache = OwnershipService.bulk_enrich([product], request.user)
     return Response(
         WatchListProductSerializer(
             product,
-            context={"request": request, "latest_snapshots": latest_snapshots},
+            context={
+                "request": request,
+                "latest_snapshots": latest_snapshots,
+                "ownership_cache": ownership_cache,
+            },
         ).data
     )
 

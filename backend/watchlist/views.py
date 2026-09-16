@@ -56,6 +56,21 @@ def _filtered_products(request, product_type=None):
     return queryset
 
 
+def _latest_snapshots(products):
+    """Load one latest performance snapshot per page product in a single query."""
+    product_ids = [product.id for product in products]
+    if not product_ids:
+        return {}
+    snapshots = (
+        PerformanceSnapshot.objects.filter(product_id__in=product_ids)
+        .order_by("product_id", "-date", "-id")
+    )
+    latest = {}
+    for snapshot in snapshots:
+        latest.setdefault(snapshot.product_id, snapshot)
+    return latest
+
+
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def watch_list_products(request):
@@ -65,7 +80,12 @@ def watch_list_products(request):
     queryset = _filtered_products(request, product_type if product_type in ProductType.values else None)
     paginator = WatchListPagination()
     page = paginator.paginate_queryset(queryset, request)
-    serializer = WatchListProductSerializer(page, many=True, context={"request": request})
+    latest_snapshots = _latest_snapshots(page)
+    serializer = WatchListProductSerializer(
+        page,
+        many=True,
+        context={"request": request, "latest_snapshots": latest_snapshots},
+    )
     return paginator.get_paginated_response(serializer.data)
 
 
@@ -77,7 +97,13 @@ def watch_list_product_detail(request, product_id):
         pk=product_id,
         is_active=True,
     )
-    return Response(WatchListProductSerializer(product, context={"request": request}).data)
+    latest_snapshots = _latest_snapshots([product])
+    return Response(
+        WatchListProductSerializer(
+            product,
+            context={"request": request, "latest_snapshots": latest_snapshots},
+        ).data
+    )
 
 
 @api_view(["GET"])

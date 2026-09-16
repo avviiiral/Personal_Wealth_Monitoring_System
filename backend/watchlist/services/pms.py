@@ -2,7 +2,6 @@ import re
 from datetime import datetime
 from decimal import Decimal, InvalidOperation
 
-import pandas as pd
 import requests
 from bs4 import BeautifulSoup
 from django.utils import timezone
@@ -13,14 +12,15 @@ from watchlist.models import DiscoveryRun, InvestmentProduct, PerformanceSnapsho
 class APMIPMSDiscoveryService:
     """Refresh the public PMS investment-approach universe from APMI.
 
-    APMI publishes the investment-approach level PMS data submitted by
-    portfolio managers, including provider, approach name, AUM and periodic
-    performance. This keeps PMS discovery on the same automatic-universe
-    pattern as the existing AMFI mutual-fund refresh without inventing data.
+    APMI publishes investment-approach level PMS data, including provider,
+    approach name, AUM and periodic performance. The report is HTML and its
+    table headers can change shape when parsed by pandas, so rows are parsed
+    directly from the APMI table markup instead.
     """
 
     SOURCE = "APMI"
     REPORT_URL = "https://www.apmiindia.org/apmi/welcomeiaperformance.htm?action=PMSmenu"
+    PERFORMANCE_PERIODS = ("1m", "3m", "6m", "1y", "2y", "3y", "4y", "5y", "si")
 
     @staticmethod
     def _headers():
@@ -43,48 +43,65 @@ class APMIPMSDiscoveryService:
     @classmethod
     def _report_date(cls, html):
         visible_text = BeautifulSoup(html, "html.parser").get_text(" ", strip=True)
-        match = re.search(r"As on(?: Month-Year)?[^0-9]{0,80}(\d{2}/\d{2}/\d{4})", visible_text, re.IGNORECASE)
-        if match:
-            try:
-                return datetime.strptime(match.group(1), "%d/%m/%Y").date()
-            except ValueError:
-                pass
+        patterns = (
+            r"Investment Approach Wise Performance As on\s+(\d{2}/\d{2}/\d{4})",
+            r"As on(?: Month-Year)?[^0-9]{0,80}(\d{2}/\d{2}/\d{4})",
+            r"Investment Approach Wise Performance As on\s+(\d{2}/\d{2}/\d{4})",
+        )
+        for pattern in patterns:
+            match = re.search(pattern, visible_text, re.IGNORECASE)
+            if match:
+                try:
+                    return datetime.strptime(match.group(1), "%d/%m/%Y").date()
+                except ValueError:
+                    continue
         return timezone.now().date()
 
     @classmethod
-    def _tables(cls, html):
-        try:
-            return pd.read_html(html)
-        except (ValueError, ImportError):
-            return []
-
-    @classmethod
     def _records(cls, html):
+        """Parse APMI PMS rows without depending on pandas header inference."""
+        soup = BeautifulSoup(html, "html.parser")
         records = []
-        for table in cls._tables(html):
-            columns = [cls._text(c).lower() for c in table.columns]
-            joined = " | ".join(columns)
-            if "pms provider name" not in joined or "ia name" not in joined:
+        seen = set()
+
+        for row in soup.find_all("tr"):
+            cells = row.find_all("td")
+            if len(cells) < 3:
                 continue
-            for _, row in table.iterrows():
-                values = list(row.tolist())
-                if len(values) < 3:
-                    continue
-                provider = cls._text(values[0])
-                ia_name = cls._text(values[1])
-                aum = cls._decimal(values[2])
-                if not provider or not ia_name or provider.lower() == "nan" or ia_name.lower() == "nan":
-                    continue
-                performance = {}
-                for index, period in enumerate(("1m", "3m", "6m", "1y", "2y", "3y", "4y", "5y", "si"), start=3):
-                    if index < len(values):
-                        performance[period] = cls._decimal(values[index])
-                records.append({
+
+            ia_link = row.find("a", href=re.compile(r"IaInsight\.htm\?IAID=", re.IGNORECASE))
+            if ia_link is None:
+                continue
+
+            values = [cls._text(cell.get_text(" ", strip=True)) for cell in cells]
+            provider = values[0]
+            ia_name = cls._text(ia_link.get_text(" ", strip=True)) or values[1]
+            aum = cls._decimal(values[2])
+
+            if not provider or not ia_name or provider.lower() == "nan" or ia_name.lower() == "nan":
+                continue
+
+            iaid_match = re.search(r"IAID=([^&#\"']+)", ia_link.get("href", ""), re.IGNORECASE)
+            iaid = iaid_match.group(1) if iaid_match else None
+            identity = (provider.upper(), iaid or ia_name.upper())
+            if identity in seen:
+                continue
+            seen.add(identity)
+
+            performance = {}
+            for index, period in enumerate(cls.PERFORMANCE_PERIODS, start=3):
+                if index < len(values):
+                    performance[period] = cls._decimal(values[index])
+
+            records.append(
+                {
                     "provider": provider,
                     "name": ia_name,
+                    "iaid": iaid,
                     "aum": aum,
                     "performance": performance,
-                })
+                }
+            )
         return records
 
     @classmethod
@@ -96,14 +113,11 @@ class APMIPMSDiscoveryService:
             response.raise_for_status()
             report_date = cls._report_date(response.text)
             records = cls._records(response.text)
-            seen = set()
 
             for record in records:
                 try:
-                    identity = f"PMS:APMI:{record['provider'].upper()}:{record['name'].upper()}"
-                    if identity in seen:
-                        continue
-                    seen.add(identity)
+                    identity_suffix = record["iaid"] or record["name"].upper()
+                    identity = f"PMS:APMI:{record['provider'].upper()}:{identity_suffix}"
 
                     product, created = InvestmentProduct.objects.update_or_create(
                         identity_key=identity,
@@ -114,6 +128,7 @@ class APMIPMSDiscoveryService:
                             "country": "India",
                             "category": "PMS",
                             "sub_category": "Investment Approach",
+                            "external_identifier": record["iaid"],
                             "currency": "INR",
                             "source": cls.SOURCE,
                             "source_reference": cls.REPORT_URL,
@@ -121,6 +136,7 @@ class APMIPMSDiscoveryService:
                             "is_active": True,
                         },
                     )
+
                     PMSProduct.objects.update_or_create(
                         product=product,
                         defaults={
@@ -131,6 +147,7 @@ class APMIPMSDiscoveryService:
                             "latest_value": record["aum"],
                         },
                     )
+
                     PerformanceSnapshot.objects.update_or_create(
                         product=product,
                         date=report_date,

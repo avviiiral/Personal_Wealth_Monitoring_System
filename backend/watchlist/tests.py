@@ -24,6 +24,23 @@ class WatchListTests(TestCase):
         self.assertEqual(records[0]["provider"], "Provider One")
         self.assertEqual(records[1]["provider"], "Provider Two")
 
+    def test_amfi_parser_supports_six_column_legacy_format(self):
+        feed = (
+            "Scheme Code;ISIN Div Payout/ ISIN Growth;ISIN Div Reinvestment;Scheme Name;Net Asset Value;Date\n"
+            "Provider One\n"
+            "1;INF000000001;-;Generic Equity Fund;100.25;15-Sep-2026\n"
+        )
+        records = AMFIUniverseService.parse_latest_feed(feed)
+        self.assertEqual(len(records), 1)
+        self.assertEqual(records[0]["scheme_code"], "1")
+        self.assertEqual(records[0]["isin"], "INF000000001")
+        self.assertEqual(records[0]["name"], "Generic Equity Fund")
+        self.assertEqual(records[0]["provider"], "Provider One")
+        self.assertIsNone(records[0]["plan"])
+        self.assertIsNone(records[0]["option"])
+        self.assertEqual(records[0]["nav"], Decimal("100.25"))
+        self.assertEqual(records[0]["date"], date(2026, 9, 15))
+
     def test_identity_prefers_isin(self):
         identity = AMFIUniverseService.identity({"isin": "inf123", "scheme_code": "9"})
         self.assertEqual(identity, "MUTUAL_FUND:ISIN:INF123")

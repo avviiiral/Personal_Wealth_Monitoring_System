@@ -32,6 +32,15 @@ export class WealthApiService {
     return this.http.get<any>(`${this.baseUrl}/xirr/`, { params, withCredentials: true });
   }
 
+  getXirrByAssetClass(family?: string): Observable<any> {
+    let params = new HttpParams();
+    if (family) params = params.set('family', family);
+    return this.http.get<any>(`${this.baseUrl}/performance-by-subclass/`, {
+      params,
+      withCredentials: true,
+    });
+  }
+
   getInvestmentSummary(family?: string): Observable<any> {
     let params = new HttpParams();
     if (family) params = params.set('family', family);

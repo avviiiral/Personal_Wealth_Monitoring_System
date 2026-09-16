@@ -38,6 +38,25 @@ export class WealthApiService {
     return this.http.get<any>(`${this.baseUrl}/investment-summary/`, { params, withCredentials: true });
   }
 
+  getStandardAllocations(family?: string): Observable<any> {
+    let params = new HttpParams();
+    if (family) params = params.set('family', family);
+    return this.http.get<any>(`${this.baseUrl}/standard-allocations/`, { params, withCredentials: true });
+  }
+
+  saveStandardAllocations(
+    allocations: Record<string, number>,
+    family?: string,
+  ): Observable<any> {
+    let params = new HttpParams();
+    if (family) params = params.set('family', family);
+    return this.http.put<any>(
+      `${this.baseUrl}/standard-allocations/update/`,
+      { allocations },
+      { params, withCredentials: true },
+    );
+  }
+
   getPerformanceBySubclass(): Observable<any> {
     return this.http.get<any>(`${this.baseUrl}/performance-by-subclass/`, { withCredentials: true });
   }

@@ -32,6 +32,7 @@ class InvestmentProduct(models.Model):
         indexes = [
             models.Index(fields=["product_type", "name"]),
             models.Index(fields=["product_type", "provider"]),
+            models.Index(fields=["product_type", "category"], name="watch_product_category_idx"),
             models.Index(fields=["isin"]),
             models.Index(fields=["external_identifier"]),
         ]

@@ -76,10 +76,6 @@ def _filtered_products(request, product_type=None):
         active_position = Q(quantity__gt=0) | Q(current_value__gt=0)
         isin_positions = PortfolioPosition.objects.filter(
             owner_id__in=owner_ids,
-            active_position if False else Q(),
-        )
-        isin_positions = PortfolioPosition.objects.filter(
-            owner_id__in=owner_ids,
         ).filter(active_position).filter(asset__isin__iexact=OuterRef("isin"))
         fallback_positions = PortfolioPosition.objects.filter(
             owner_id__in=owner_ids,

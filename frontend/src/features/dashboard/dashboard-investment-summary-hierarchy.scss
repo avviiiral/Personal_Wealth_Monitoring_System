@@ -34,3 +34,228 @@
   font-size: 0.75rem;
   font-weight: 600;
 }
+
+/* ==========================================================
+   INVESTMENT SUMMARY - STANDARD ALLOCATION
+   ========================================================== */
+
+.standard-allocation-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  margin: 0 0 16px;
+  padding: 14px 16px;
+  border: 1px solid var(--surface-line);
+  border-radius: 10px;
+  background: #fafbfc;
+}
+
+.standard-allocation-toolbar-info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.standard-allocation-toolbar-info strong {
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.standard-allocation-toolbar-info > span:not(.standard-allocation-total) {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.standard-allocation-total {
+  padding: 4px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.standard-allocation-total.is-valid {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.standard-allocation-total.is-invalid {
+  background: var(--negative-soft);
+  color: var(--negative);
+}
+
+.standard-allocation-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.standard-allocation-edit-button,
+.standard-allocation-cancel-button,
+.standard-allocation-save-button {
+  border-radius: 7px;
+  padding: 8px 12px;
+  font-size: 12px;
+  font-weight: 650;
+  cursor: pointer;
+  transition: 0.15s ease;
+  white-space: nowrap;
+}
+
+.standard-allocation-edit-button {
+  border: 1px solid var(--surface-line);
+  background: var(--surface);
+  color: var(--ink);
+}
+
+.standard-allocation-edit-button:hover {
+  border-color: var(--accent-line);
+  color: var(--accent);
+}
+
+.standard-allocation-cancel-button {
+  border: 1px solid var(--surface-line);
+  background: var(--surface);
+  color: var(--muted);
+}
+
+.standard-allocation-cancel-button:hover:not(:disabled) {
+  color: var(--ink);
+}
+
+.standard-allocation-save-button {
+  border: 1px solid var(--accent);
+  background: var(--accent);
+  color: #ffffff;
+}
+
+.standard-allocation-save-button:hover:not(:disabled) {
+  filter: brightness(0.95);
+}
+
+.standard-allocation-save-button:disabled,
+.standard-allocation-cancel-button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.standard-allocation-error {
+  margin-bottom: 16px !important;
+}
+
+.standard-allocation-cell {
+  min-width: 150px;
+}
+
+.standard-allocation-input {
+  width: 88px;
+  box-sizing: border-box;
+  padding: 6px 8px;
+  border: 1px solid var(--surface-line);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--ink);
+  text-align: right;
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+}
+
+.standard-allocation-input:focus {
+  outline: 2px solid var(--accent-line);
+  outline-offset: 1px;
+  border-color: var(--accent);
+}
+
+.allocation-comment-cell {
+  min-width: 250px;
+}
+
+.allocation-comment {
+  display: inline-flex;
+  align-items: center;
+  padding: 5px 9px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 650;
+  line-height: 1.25;
+  white-space: nowrap;
+}
+
+.allocation-comment.is-neutral {
+  background: #f2f4f7;
+  color: #475467;
+}
+
+.allocation-comment.is-overweight {
+  background: #fff4e5;
+  color: #9a5b00;
+}
+
+.allocation-comment.is-underweight {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+@media (max-width: 700px) {
+  .standard-allocation-toolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .standard-allocation-actions {
+    justify-content: flex-end;
+  }
+
+  .allocation-comment-cell {
+    min-width: 220px;
+  }
+}
+
+/* Dark mode */
+:host-context(html.dark-theme) .standard-allocation-toolbar {
+  background: #1b1f27;
+  border-color: #2a2e38;
+}
+
+:host-context(html.dark-theme) .standard-allocation-toolbar-info strong {
+  color: #e5e7eb;
+}
+
+:host-context(html.dark-theme) .standard-allocation-toolbar-info > span:not(.standard-allocation-total) {
+  color: #8a93a6;
+}
+
+:host-context(html.dark-theme) .standard-allocation-total.is-invalid {
+  background: #3a1a17;
+  color: #f2685c;
+}
+
+:host-context(html.dark-theme) .standard-allocation-edit-button,
+:host-context(html.dark-theme) .standard-allocation-cancel-button,
+:host-context(html.dark-theme) .standard-allocation-input {
+  background: #171a21;
+  border-color: #3a414e;
+  color: #e5e7eb;
+}
+
+:host-context(html.dark-theme) .standard-allocation-edit-button:hover,
+:host-context(html.dark-theme) .standard-allocation-cancel-button:hover:not(:disabled) {
+  background: #123329;
+  border-color: #1f4d3d;
+  color: #2fbf8f;
+}
+
+:host-context(html.dark-theme) .allocation-comment.is-neutral {
+  background: #242832;
+  color: #aeb7c6;
+}
+
+:host-context(html.dark-theme) .allocation-comment.is-overweight {
+  background: #3a2c14;
+  color: #e0a458;
+}

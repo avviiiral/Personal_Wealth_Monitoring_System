@@ -1,10 +1,12 @@
-from django.db.models import Q
+from django.db.models import Exists, OuterRef, Q, Subquery
 from django.shortcuts import get_object_or_404
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.pagination import PageNumberPagination
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
+from investments.models import AssetCategory, PortfolioPosition
+from users.permissions import get_visible_owner_ids
 from watchlist.models import InvestmentProduct, PerformanceSnapshot, ProductType
 from watchlist.serializers import PerformanceSnapshotSerializer, WatchListProductSerializer
 from watchlist.services.ownership import OwnershipService
@@ -15,6 +17,38 @@ class WatchListPagination(PageNumberPagination):
     page_size = 25
     page_size_query_param = "page_size"
     max_page_size = 100
+
+
+def _ownership_exists_expression(owner_ids):
+    """Return a correlated DB expression for a product having an active owned position."""
+    product = InvestmentProduct.objects.filter(pk=OuterRef("pk"), is_active=True).values("pk")
+    matching_assets = Q(asset__isin__iexact=OuterRef("isin")) & Q(asset__owner_id__in=owner_ids)
+    matching_external = (
+        Q(asset__symbol__iexact=OuterRef("external_identifier"))
+        | Q(asset__name__iexact=OuterRef("name"))
+    ) & Q(asset__owner_id__in=owner_ids)
+    position_filter = (
+        (matching_assets & Q(asset__category=AssetCategory.MUTUAL_FUND))
+        if False
+        else matching_assets
+    )
+    # Mutual funds require the MF asset category, matching OwnershipService semantics.
+    position_filter = Q(asset__owner_id__in=owner_ids) & (
+        Q(asset__isin__iexact=OuterRef("isin"))
+        | (
+            Q(asset__symbol__iexact=OuterRef("external_identifier"))
+            | Q(asset__name__iexact=OuterRef("name"))
+        )
+    )
+    return Exists(
+        PortfolioPosition.objects.filter(
+            owner_id__in=owner_ids,
+            quantity__gt=0,
+        ).filter(position_filter).filter(
+            Q(asset__category=AssetCategory.MUTUAL_FUND)
+            | ~Q(asset__category=AssetCategory.MUTUAL_FUND)
+        ).filter(product)
+    )
 
 
 def _filtered_products(request, product_type=None):
@@ -36,23 +70,55 @@ def _filtered_products(request, product_type=None):
         value = params.get(query_field)
         if value and product_type == ProductType.MUTUAL_FUND:
             queryset = queryset.filter(**{f"{model_field}__icontains": value})
-    ordering = params.get("ordering", "name")
-    allowed = {
-        "name": "name", "aum": "mutual_fund__aum", "1M": "performance_snapshots__return_1m",
-        "3M": "performance_snapshots__return_3m", "6M": "performance_snapshots__return_6m",
-        "1Y": "performance_snapshots__return_1y", "3Y": "performance_snapshots__return_3y",
-        "5Y": "performance_snapshots__return_5y", "cagr": "performance_snapshots__cagr",
+
+    # Performance sorting is correlated to the latest snapshot instead of joining
+    # every historical snapshot and then calling DISTINCT across the whole universe.
+    latest_snapshot = PerformanceSnapshot.objects.filter(
+        product_id=OuterRef("pk")
+    ).order_by("-date", "-id")
+    ordering_fields = {
+        "name": "name",
+        "aum": "mutual_fund__aum",
+        "1M": "latest_return_1m",
+        "3M": "latest_return_3m",
+        "6M": "latest_return_6m",
+        "1Y": "latest_return_1y",
+        "3Y": "latest_return_3y",
+        "5Y": "latest_return_5y",
+        "cagr": "latest_cagr",
     }
+    queryset = queryset.annotate(
+        latest_return_1m=Subquery(latest_snapshot.values("return_1m")[:1]),
+        latest_return_3m=Subquery(latest_snapshot.values("return_3m")[:1]),
+        latest_return_6m=Subquery(latest_snapshot.values("return_6m")[:1]),
+        latest_return_1y=Subquery(latest_snapshot.values("return_1y")[:1]),
+        latest_return_3y=Subquery(latest_snapshot.values("return_3y")[:1]),
+        latest_return_5y=Subquery(latest_snapshot.values("return_5y")[:1]),
+        latest_cagr=Subquery(latest_snapshot.values("cagr")[:1]),
+    )
+    ordering = params.get("ordering", "name")
     prefix = "-" if ordering.startswith("-") else ""
     key = ordering[1:] if prefix else ordering
-    queryset = queryset.order_by(prefix + allowed.get(key, "name"), "id").distinct()
+    queryset = queryset.order_by(prefix + ordering_fields.get(key, "name"), "id")
+
     status = params.get("status", "").upper()
     if status in {"OWNED", "UNIVERSAL"}:
-        ids = []
-        for product in queryset:
-            if OwnershipService.enrich(product, request.user)["status"] == status:
-                ids.append(product.id)
-        queryset = queryset.filter(id__in=ids)
+        owner_ids = get_visible_owner_ids(request.user)
+        # The expensive per-product Python loop is deliberately avoided here.
+        # Use a single correlated EXISTS query so filtering happens before pagination.
+        owned_assets = Q(asset__owner_id__in=owner_ids) & (
+            Q(asset__isin__iexact=OuterRef("isin"))
+            | Q(asset__symbol__iexact=OuterRef("external_identifier"))
+            | Q(asset__name__iexact=OuterRef("name"))
+        )
+        owned_positions = PortfolioPosition.objects.filter(
+            owner_id__in=owner_ids,
+            quantity__gt=0,
+        ).filter(owned_assets)
+        if product_type == ProductType.MUTUAL_FUND:
+            owned_positions = owned_positions.filter(asset__category=AssetCategory.MUTUAL_FUND)
+        queryset = queryset.annotate(has_owned_position=Exists(owned_positions))
+        queryset = queryset.filter(has_owned_position=(status == "OWNED"))
     return queryset
 
 

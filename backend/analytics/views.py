@@ -1,9 +1,12 @@
 from datetime import date, timedelta
+from decimal import Decimal, InvalidOperation
 
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
+from rest_framework import status
 
+from .models import StandardAllocation
 from .services.investment_summary import InvestmentSummaryService
 from .services.portfolio_analytics import PortfolioAnalytics
 from .services.unified_wealth import UnifiedWealthAnalytics
@@ -86,6 +89,77 @@ def wealth_xirr(request):
 def wealth_investment_summary(request):
     family_name = request.GET.get("family") or None
     return Response(InvestmentSummaryService.calculate(get_visible_owner_ids(request.user), family_name=family_name))
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def wealth_standard_allocations(request):
+    family_name = request.GET.get("family") or ""
+    rows = StandardAllocation.objects.filter(
+        user=request.user,
+        family_name=family_name,
+    )
+    return Response({
+        "family": family_name,
+        "allocations": {
+            row.asset_category: float(row.allocation_percent)
+            for row in rows
+        },
+    })
+
+
+@api_view(["PUT"])
+@permission_classes([IsAuthenticated])
+def wealth_standard_allocations_update(request):
+    family_name = request.GET.get("family") or ""
+    raw_allocations = request.data.get("allocations")
+
+    if not isinstance(raw_allocations, dict) or not raw_allocations:
+        return Response(
+            {"detail": "Allocations must be a non-empty object."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    allocations = {}
+    try:
+        for category, raw_value in raw_allocations.items():
+            category = str(category).strip()
+            value = Decimal(str(raw_value))
+            if not category or value < 0 or value > 100:
+                raise ValueError
+            allocations[category] = value.quantize(Decimal("0.01"))
+    except (InvalidOperation, TypeError, ValueError):
+        return Response(
+            {"detail": "Each Standard Allocation must be a number between 0 and 100."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    total = sum(allocations.values(), Decimal("0"))
+    if total != Decimal("100.00"):
+        return Response(
+            {"detail": f"Standard Allocation must total exactly 100%. Current total is {total}%."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    StandardAllocation.objects.filter(
+        user=request.user,
+        family_name=family_name,
+    ).delete()
+
+    StandardAllocation.objects.bulk_create([
+        StandardAllocation(
+            user=request.user,
+            family_name=family_name,
+            asset_category=category,
+            allocation_percent=value,
+        )
+        for category, value in allocations.items()
+    ])
+
+    return Response({
+        "family": family_name,
+        "allocations": {category: float(value) for category, value in allocations.items()},
+    })
 
 
 @api_view(["GET"])

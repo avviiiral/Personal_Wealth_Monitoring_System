@@ -20,11 +20,11 @@ export class DashboardComponent extends BaseDashboardComponent {
   private readonly allocationThemeService = inject(ThemeService);
   private readonly dashboardWealthApi = inject(WealthApiService);
 
-  standardAllocations: Record<string, number> = {};
-  standardAllocationDraft: Record<string, number> = {};
-  standardAllocationEditing = false;
-  standardAllocationSaving = false;
-  standardAllocationError = '';
+  override standardAllocations: Record<string, number> = {};
+  override standardAllocationDraft: Record<string, number> = {};
+  override standardAllocationEditing = false;
+  override standardAllocationSaving = false;
+  override standardAllocationError = '';
 
   /**
    * Re-render the canvas-based Allocation chart whenever the theme
@@ -219,7 +219,7 @@ export class DashboardComponent extends BaseDashboardComponent {
     });
   }
 
-  startStandardAllocationEdit(): void {
+  override startStandardAllocationEdit(): void {
     this.standardAllocationDraft = {};
 
     for (const group of this.investmentSummaryGroups) {
@@ -230,20 +230,20 @@ export class DashboardComponent extends BaseDashboardComponent {
     this.standardAllocationError = '';
   }
 
-  cancelStandardAllocationEdit(): void {
+  override cancelStandardAllocationEdit(): void {
     this.standardAllocationDraft = { ...this.standardAllocations };
     this.standardAllocationEditing = false;
     this.standardAllocationError = '';
   }
 
-  updateStandardAllocation(category: string, rawValue: string): void {
+  override updateStandardAllocation(category: string, rawValue: string): void {
     const parsed = Number(rawValue);
     this.standardAllocationDraft[category] = Number.isFinite(parsed)
       ? Math.max(0, Math.min(100, parsed))
       : 0;
   }
 
-  getStandardAllocation(category: string): number {
+  override getStandardAllocation(category: string): number {
     const value = Number(
       this.standardAllocationEditing
         ? this.standardAllocationDraft[category]
@@ -253,7 +253,7 @@ export class DashboardComponent extends BaseDashboardComponent {
     return Number.isFinite(value) ? value : 0;
   }
 
-  getStandardAllocationDraftTotal(): number {
+  override getStandardAllocationDraftTotal(): number {
     return Math.round(
       this.investmentSummaryGroups.reduce(
         (total, group) => total + this.getStandardAllocation(group.asset_category),
@@ -262,7 +262,7 @@ export class DashboardComponent extends BaseDashboardComponent {
     ) / 100;
   }
 
-  getStandardAllocationTotalClass(): string {
+  override getStandardAllocationTotalClass(): string {
     const total = this.getStandardAllocationDraftTotal();
 
     if (total === 100) {
@@ -272,7 +272,7 @@ export class DashboardComponent extends BaseDashboardComponent {
     return 'is-invalid';
   }
 
-  saveStandardAllocations(): void {
+  override saveStandardAllocations(): void {
     const allocations: Record<string, number> = {};
 
     for (const group of this.investmentSummaryGroups) {
@@ -309,7 +309,7 @@ export class DashboardComponent extends BaseDashboardComponent {
       });
   }
 
-  getAllocationComment(group: { asset_category: string; percentage_of_total: number }): string {
+  override getAllocationComment(group: { asset_category: string; percentage_of_total: number }): string {
     const actual = Number(group.percentage_of_total);
     const standard = this.getStandardAllocation(group.asset_category);
     const difference = actual - standard;
@@ -323,7 +323,7 @@ export class DashboardComponent extends BaseDashboardComponent {
       : 'Invest More in this Category';
   }
 
-  getAllocationCommentClass(group: { asset_category: string; percentage_of_total: number }): string {
+  override getAllocationCommentClass(group: { asset_category: string; percentage_of_total: number }): string {
     const comment = this.getAllocationComment(group);
 
     if (comment === 'Neutral') {

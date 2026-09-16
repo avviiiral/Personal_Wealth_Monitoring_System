@@ -140,37 +140,84 @@
       <div class="transaction-edit-grid">
         <div class="modal-field">
           <label>Family Name</label>
-          <input class="modal-text-input" [(ngModel)]="editingTransaction.family_name" />
+          <select class="modal-select" [(ngModel)]="editingTransaction.family_name">
+            <option value="">Unassigned</option>
+            <option *ngFor="let family of familyOptions" [value]="family">
+              {{ family }}
+            </option>
+          </select>
         </div>
 
         <div class="modal-field">
           <label>Portfolio</label>
-          <input class="modal-text-input" [(ngModel)]="editingTransaction.portfolio" />
+          <input
+            class="modal-text-input"
+            list="report-portfolio-options"
+            [(ngModel)]="editingTransaction.portfolio"
+            autocomplete="off"
+          />
+          <datalist id="report-portfolio-options">
+            <option *ngFor="let tx of transactions; trackBy: trackByTransaction" [value]="tx.portfolio"></option>
+          </datalist>
         </div>
 
         <div class="modal-field">
           <label>Asset Class</label>
-          <input class="modal-text-input" [(ngModel)]="editingTransaction.asset_class" />
+          <select class="modal-select" [(ngModel)]="editingTransaction.asset_class">
+            <option value="">Unassigned</option>
+            <option *ngFor="let assetClass of assetClassOptions" [value]="assetClass">
+              {{ assetClass }}
+            </option>
+          </select>
         </div>
 
         <div class="modal-field">
           <label>Sub Class</label>
-          <input class="modal-text-input" [(ngModel)]="editingTransaction.sub_class" />
+          <select class="modal-select" [(ngModel)]="editingTransaction.sub_class">
+            <option value="">Unassigned</option>
+            <option *ngFor="let group of subClassGroups" [value]="group.sub_class">
+              {{ group.sub_class }}
+            </option>
+          </select>
         </div>
 
         <div class="modal-field">
           <label>Asset Name</label>
-          <input class="modal-text-input" [(ngModel)]="editingTransaction.asset_name" />
+          <select class="modal-select" [(ngModel)]="editingTransaction.asset_name">
+            <option value="">Unassigned</option>
+            <ng-container *ngFor="let group of subClassGroups">
+              <option *ngFor="let assetGroup of group.asset_names" [value]="assetGroup.asset_name">
+                {{ assetGroup.asset_name }}
+              </option>
+            </ng-container>
+          </select>
         </div>
 
         <div class="modal-field">
           <label>Underlying</label>
-          <input class="modal-text-input" [(ngModel)]="editingTransaction.underlying" />
+          <select class="modal-select" [(ngModel)]="editingTransaction.underlying">
+            <option value="">Unassigned</option>
+            <ng-container *ngFor="let group of subClassGroups">
+              <ng-container *ngFor="let assetGroup of group.asset_names">
+                <option *ngFor="let underlyingGroup of assetGroup.underlyings" [value]="underlyingGroup.underlying">
+                  {{ underlyingGroup.underlying }}
+                </option>
+              </ng-container>
+            </ng-container>
+          </select>
         </div>
 
         <div class="modal-field">
           <label>Advisor</label>
-          <input class="modal-text-input" [(ngModel)]="editingTransaction.advisors" />
+          <input
+            class="modal-text-input"
+            list="report-advisor-options"
+            [(ngModel)]="editingTransaction.advisors"
+            autocomplete="off"
+          />
+          <datalist id="report-advisor-options">
+            <option *ngFor="let tx of transactions; trackBy: trackByTransaction" [value]="tx.advisors"></option>
+          </datalist>
         </div>
 
         <div class="modal-field">

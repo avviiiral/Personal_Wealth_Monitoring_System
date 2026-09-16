@@ -16,7 +16,7 @@ import { ThemeService } from '../../core/services/theme.service';
 })
 export class DashboardComponent extends BaseDashboardComponent {
   private allocationRenderRequest = 0;
-  private readonly themeService = inject(ThemeService);
+  private readonly allocationThemeService = inject(ThemeService);
 
   /**
    * Re-render the canvas-based Allocation chart whenever the theme
@@ -25,7 +25,7 @@ export class DashboardComponent extends BaseDashboardComponent {
    * to the HTML dark-theme class by itself.
    */
   private readonly allocationThemeEffect = effect(() => {
-    this.themeService.mode();
+    this.allocationThemeService.mode();
 
     if (!this.loading && this.investmentSummary && this.portfolioTree) {
       setTimeout(() => {

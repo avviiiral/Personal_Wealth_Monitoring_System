@@ -62,7 +62,9 @@ def wealth_summary(request):
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def wealth_allocation(request):
-    return Response({"results": UnifiedWealthAnalytics.calculate_allocation(get_visible_owner_ids(request.user))})
+    owner_ids = get_visible_owner_ids(request.user)
+    direct_holdings = list(PortfolioAnalytics.get_holdings(owner_ids))
+    return Response({"results": MutualFundLookThroughService.allocation(owner_ids, direct_holdings)})
 
 
 @api_view(["GET"])

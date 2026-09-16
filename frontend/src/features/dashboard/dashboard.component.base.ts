@@ -550,6 +550,9 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
             labels: {
               usePointStyle: true,
               padding: 16,
+              color: document.documentElement.classList.contains('dark-theme')
+                ? '#cbd5e1'
+                : '#475467',
             },
           },
 

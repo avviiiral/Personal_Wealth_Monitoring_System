@@ -15,7 +15,6 @@ from .views import (
     wealth_non_stock_holding_types,
     wealth_performance,
     wealth_performance_by_advisor,
-    wealth_performance_by_subclass,
     wealth_sector_allocation,
     wealth_standard_allocations,
     wealth_standard_allocations_update,
@@ -23,6 +22,7 @@ from .views import (
     wealth_xirr,
     wealth_historical,
 )
+from .xirr_by_asset_class_views import wealth_xirr_by_asset_class
 
 
 urlpatterns = [
@@ -40,7 +40,7 @@ urlpatterns = [
     path("wealth/investment-summary/", wealth_investment_summary, name="wealth-investment-summary"),
     path("wealth/standard-allocations/", wealth_standard_allocations, name="wealth-standard-allocations"),
     path("wealth/standard-allocations/update/", wealth_standard_allocations_update, name="wealth-standard-allocations-update"),
-    path("wealth/performance-by-subclass/", wealth_performance_by_subclass, name="wealth-performance-by-subclass"),
+    path("wealth/performance-by-subclass/", wealth_xirr_by_asset_class, name="wealth-xirr-by-asset-class"),
     path("wealth/allocation-by-advisor/", wealth_allocation_by_advisor, name="wealth-allocation-by-advisor"),
     path("wealth/composition-by-amc/", wealth_composition_by_amc, name="wealth-composition-by-amc"),
     path("wealth/equity-analysis/", wealth_equity_analysis, name="wealth-equity-analysis"),

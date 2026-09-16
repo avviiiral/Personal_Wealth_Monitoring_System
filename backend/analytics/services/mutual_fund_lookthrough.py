@@ -70,10 +70,6 @@ class MutualFundLookThroughService:
                 if master_name:
                     security_by_name[master_name] = master
 
-        # Include SecurityMaster records that are not currently linked to an
-        # Asset. This is important for MF look-through because an underlying
-        # security may be new to the portfolio but already classified in the
-        # security master by ISIN/name.
         for master in security_masters:
             isin_key = cls._normalize_key(master.isin)
             name_key = cls._normalize_key(master.asset_name)
@@ -94,19 +90,15 @@ class MutualFundLookThroughService:
         isin_key = cls._normalize_key(underlying.isin)
         name_key = cls._normalize_key(underlying.security_name)
 
-        # Portfolio Asset remains the strongest source for allocation class.
         if isin_key:
             asset = by_isin.get(isin_key)
+        if asset is None and isin_key:
+            master = security_by_isin.get(isin_key)
         if asset is None and name_key:
             asset = by_name.get(name_key)
-
-        # Fall back to SecurityMaster when the underlying security has no
-        # corresponding portfolio Asset. This supplies sector classification
-        # without inventing an Asset or changing portfolio ownership.
-        if isin_key:
-            master = security_by_isin.get(isin_key)
-        if master is None and name_key:
+        if asset is None and name_key:
             master = security_by_name.get(name_key)
+
         if master is None and asset is not None:
             master = asset.security_master
 
@@ -115,9 +107,6 @@ class MutualFundLookThroughService:
         if not sector and master is not None:
             sector = (master.sector or "").strip() or None
 
-        # A SecurityMaster match with a sector is an equity-like security for
-        # the purpose of the existing allocation fallback. We deliberately do
-        # not create a broader asset-class guess when sector is absent.
         if asset_class is None and sector:
             asset_class = "STOCK"
 
@@ -135,9 +124,6 @@ class MutualFundLookThroughService:
             if value > 0:
                 totals[holding.asset.category] = totals.get(holding.asset.category, cls.ZERO) + value
 
-        # Mutual funds are not part of PortfolioAnalytics.get_holdings().
-        # Add them here only when no usable disclosure exists; otherwise their
-        # value is represented exclusively by their underlying exposures.
         all_mf_holdings = MutualFundHolding.objects.filter(
             owner_id__in=cls.owner_ids(user),
             scheme__is_active=True,
@@ -173,8 +159,6 @@ class MutualFundLookThroughService:
                     bucket = cls.UNCLASSIFIED
                 totals[bucket] = totals.get(bucket, cls.ZERO) + exposure
 
-            # Preserve total portfolio value without guessing the class of
-            # the residual cash/derivative/other disclosure rows.
             residual = mf_value - disclosed_total
             if residual > 0:
                 totals[cls.UNCLASSIFIED] = totals.get(cls.UNCLASSIFIED, cls.ZERO) + residual

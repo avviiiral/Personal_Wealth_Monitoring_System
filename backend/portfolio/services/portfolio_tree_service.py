@@ -24,15 +24,11 @@ class PortfolioTreeService:
 
     @staticmethod
     def _decimal_to_float(value):
-        if value is None:
-            return 0.0
-        return float(value)
+        return 0.0 if value is None else float(value)
 
     @staticmethod
     def _optional_float(value):
-        if value is None:
-            return None
-        return float(value)
+        return None if value is None else float(value)
 
     @classmethod
     def _get_transactions(cls, owner_ids) -> QuerySet:
@@ -45,6 +41,16 @@ class PortfolioTreeService:
                 "asset_name", "transaction_date", "id",
             )
         )
+
+    @classmethod
+    def _matches_xirr_filters(cls, tx, filters):
+        if filters.get("family") and cls._clean(tx.family_name) != filters["family"]:
+            return False
+        if filters.get("asset_class") and cls._clean(tx.asset_class) != filters["asset_class"]:
+            return False
+        if filters.get("advisor") and cls._clean(tx.advisors, "") != filters["advisor"]:
+            return False
+        return True
 
     @staticmethod
     def _calculate_position(transactions):
@@ -166,14 +172,18 @@ class PortfolioTreeService:
         }
 
     @classmethod
-    def build(cls, owner):
+    def build(cls, owner, xirr_filters=None):
         owner_ids = [owner.pk] if hasattr(owner, "pk") else list(owner)
         transactions = list(cls._get_transactions(owner_ids))
+        filters = {key: str(value).strip() for key, value in (xirr_filters or {}).items() if value}
+        xirr_transactions = [tx for tx in transactions if cls._matches_xirr_filters(tx, filters)]
+
         tree = {}
         grouped = {}
         xirr_grouped = {}
         asset_name_xirr_grouped = {}
         sub_class_xirr_grouped = {}
+
         for tx in transactions:
             family = cls._clean(tx.family_name)
             portfolio = cls._clean(tx.portfolio)
@@ -182,57 +192,68 @@ class PortfolioTreeService:
             asset_name = cls._clean(tx.asset_name, getattr(tx.asset, "name", "Unassigned"))
             group_key = (family, portfolio, asset_class, sub_class, tx.asset_id)
             grouped.setdefault(group_key, []).append(tx)
-            xirr_key = (tx.owner_id, family, portfolio, tx.asset_id)
-            xirr_grouped.setdefault(xirr_key, []).append(tx)
-            asset_name_xirr_key = (tx.owner_id, family, portfolio, asset_class, sub_class, asset_name)
-            asset_name_xirr_grouped.setdefault(asset_name_xirr_key, []).append(tx)
-            sub_class_xirr_key = (tx.owner_id, sub_class)
-            sub_class_xirr_grouped.setdefault(sub_class_xirr_key, []).append(tx)
+
+        filtered_grouped = {}
+        for tx in xirr_transactions:
+            family = cls._clean(tx.family_name)
+            portfolio = cls._clean(tx.portfolio)
+            asset_class = cls._clean(tx.asset_class)
+            sub_class = cls._clean(tx.sub_class)
+            asset_name = cls._clean(tx.asset_name, getattr(tx.asset, "name", "Unassigned"))
+            group_key = (family, portfolio, asset_class, sub_class, tx.asset_id)
+            filtered_grouped.setdefault(group_key, []).append(tx)
+
+            # Underlying XIRR follows the exact Portfolio holding hierarchy.
+            xirr_grouped.setdefault((tx.owner_id, family, portfolio, asset_class, sub_class, tx.asset_id), []).append(tx)
+            # Asset Name XIRR intentionally ignores family/portfolio/asset-class boundaries.
+            asset_name_xirr_grouped.setdefault((tx.owner_id, sub_class, asset_name), []).append(tx)
+            sub_class_xirr_grouped.setdefault((tx.owner_id, sub_class), []).append(tx)
+
         asset_ids = {tx.asset_id for tx in transactions}
         price_cache = cls._load_price_cache(asset_ids)
 
         asset_name_terminal_values = {}
         asset_name_quantities = {}
-        for (family, portfolio, asset_class, sub_class, asset_id), asset_transactions in grouped.items():
-            first = asset_transactions[0]
-            asset_name = cls._clean(first.asset_name, getattr(first.asset, "name", "Unassigned"))
-            key = (first.owner_id, family, portfolio, asset_class, sub_class, asset_name)
-            position = cls._calculate_position(asset_transactions)
-            asset_name_quantities[key] = asset_name_quantities.get(key, Decimal("0")) + position["quantity"]
-            current_price = price_cache.get(asset_id, {}).get("current_price")
-            if current_price is not None and position["quantity"] > 0:
-                current_value = position["quantity"] * Decimal(str(current_price))
-                asset_name_terminal_values[key] = asset_name_terminal_values.get(key, Decimal("0")) + current_value
-        asset_name_xirr_values = {
-            key: cls._calculate_xirr(txs, asset_name_quantities.get(key, Decimal("0")), asset_name_terminal_values.get(key))
-            for key, txs in asset_name_xirr_grouped.items()
-        }
-
-        # Aggregate Sub Class XIRR once from every cash flow in the Sub Class.
-        # This deliberately ignores family, portfolio, asset class, asset name,
-        # underlying and asset id boundaries because the UI currently presents
-        # Sub Class as the top-level grouping.
         sub_class_terminal_values = {}
         sub_class_quantities = {}
-        for (family, portfolio, asset_class, sub_class, asset_id), asset_transactions in grouped.items():
+
+        for (family, portfolio, asset_class, sub_class, asset_id), asset_transactions in filtered_grouped.items():
             first = asset_transactions[0]
-            key = (first.owner_id, sub_class)
+            asset_name = cls._clean(first.asset_name, getattr(first.asset, "name", "Unassigned"))
+            asset_name_key = (first.owner_id, sub_class, asset_name)
+            sub_class_key = (first.owner_id, sub_class)
             position = cls._calculate_position(asset_transactions)
-            sub_class_quantities[key] = sub_class_quantities.get(key, Decimal("0")) + position["quantity"]
+            quantity = position["quantity"]
+            asset_name_quantities[asset_name_key] = asset_name_quantities.get(asset_name_key, Decimal("0")) + quantity
+            sub_class_quantities[sub_class_key] = sub_class_quantities.get(sub_class_key, Decimal("0")) + quantity
             current_price = price_cache.get(asset_id, {}).get("current_price")
-            if current_price is not None and position["quantity"] > 0:
-                current_value = position["quantity"] * Decimal(str(current_price))
-                sub_class_terminal_values[key] = sub_class_terminal_values.get(key, Decimal("0")) + current_value
+            if current_price is not None and quantity > 0:
+                current_value = quantity * Decimal(str(current_price))
+                asset_name_terminal_values[asset_name_key] = asset_name_terminal_values.get(asset_name_key, Decimal("0")) + current_value
+                sub_class_terminal_values[sub_class_key] = sub_class_terminal_values.get(sub_class_key, Decimal("0")) + current_value
+
+        asset_name_xirr_values = {
+            key: cls._calculate_xirr(
+                txs,
+                asset_name_quantities.get(key, Decimal("0")),
+                asset_name_terminal_values.get(key),
+            )
+            for key, txs in asset_name_xirr_grouped.items()
+        }
         sub_class_xirr_values = {
-            key: cls._calculate_xirr(txs, sub_class_quantities.get(key, Decimal("0")), sub_class_terminal_values.get(key))
+            key: cls._calculate_xirr(
+                txs,
+                sub_class_quantities.get(key, Decimal("0")),
+                sub_class_terminal_values.get(key),
+            )
             for key, txs in sub_class_xirr_grouped.items()
         }
 
         for (family, portfolio, asset_class, sub_class, asset_id), asset_transactions in grouped.items():
             first = asset_transactions[0]
-            xirr_key = (first.owner_id, family, portfolio, asset_id)
+            xirr_key = (first.owner_id, family, portfolio, asset_class, sub_class, asset_id)
             asset_name = cls._clean(first.asset_name, getattr(first.asset, "name", "Unassigned"))
-            asset_name_key = (first.owner_id, family, portfolio, asset_class, sub_class, asset_name)
+            asset_name_key = (first.owner_id, sub_class, asset_name)
             sub_class_key = (first.owner_id, sub_class)
             asset_data = cls._build_asset(
                 transactions=asset_transactions,

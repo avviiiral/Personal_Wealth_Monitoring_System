@@ -86,6 +86,11 @@ class AMFIPerformanceService:
         response = requests.get(
             cls.HISTORY_URL,
             params={
+                # tp=1 selects AMFI's downloadable text report. Without it,
+                # the endpoint can return the WebForms page with HTTP 200,
+                # which previously looked like a successful request but
+                # contained no parseable NAV rows.
+                "tp": "1",
                 "frmdt": start_date.strftime("%d-%b-%Y"),
                 "todt": end_date.strftime("%d-%b-%Y"),
             },

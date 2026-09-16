@@ -1,7 +1,8 @@
-import { Component } from '@angular/core';
+import { Component, effect, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 
 import { DashboardComponent as BaseDashboardComponent } from './dashboard.component.base';
+import { ThemeService } from '../../core/services/theme.service';
 
 @Component({
   selector: 'app-dashboard',
@@ -15,6 +16,23 @@ import { DashboardComponent as BaseDashboardComponent } from './dashboard.compon
 })
 export class DashboardComponent extends BaseDashboardComponent {
   private allocationRenderRequest = 0;
+  private readonly themeService = inject(ThemeService);
+
+  /**
+   * Re-render the canvas-based Allocation chart whenever the theme
+   * changes. Chart.js renders legend text inside the canvas, so the
+   * legend color is fixed when the chart is created and does not react
+   * to the HTML dark-theme class by itself.
+   */
+  private readonly allocationThemeEffect = effect(() => {
+    this.themeService.mode();
+
+    if (!this.loading && this.investmentSummary && this.portfolioTree) {
+      setTimeout(() => {
+        (this as any).renderAllocationChart();
+      });
+    }
+  });
 
   /**
    * Dashboard Investment Summary hierarchy:

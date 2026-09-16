@@ -30,21 +30,35 @@ class WatchListProductSerializer(serializers.ModelSerializer):
             "official_website", "status", "ownership", "performance", "metrics", "mutual_fund", "pms",
         ]
 
+    def _ownership(self, obj):
+        cache = self.context.setdefault("ownership_cache", {})
+        if obj.id not in cache:
+            request = self.context.get("request")
+            cache[obj.id] = (
+                OwnershipService.enrich(obj, request.user)
+                if request and request.user.is_authenticated
+                else {"status": "UNIVERSAL", "ownership": []}
+            )
+        return cache[obj.id]
+
+    def _latest_snapshot(self, obj):
+        snapshots = self.context.get("latest_snapshots", {})
+        if obj.id in snapshots:
+            return snapshots[obj.id]
+        return obj.performance_snapshots.order_by("-date", "-id").first()
+
     def get_status(self, obj):
-        request = self.context.get("request")
-        return OwnershipService.enrich(obj, request.user)["status"] if request and request.user.is_authenticated else "UNIVERSAL"
+        return self._ownership(obj)["status"]
 
     def get_ownership(self, obj):
-        request = self.context.get("request")
-        if not request or not request.user.is_authenticated:
-            return []
-        return OwnershipService.ownership_rows(obj, request.user)
+        return self._ownership(obj)["ownership"]
 
     def get_performance(self, obj):
-        return PerformanceSnapshotSerializer(obj.performance_snapshots.order_by("-date")[:1], many=True).data
+        latest = self._latest_snapshot(obj)
+        return [PerformanceSnapshotSerializer(latest).data] if latest else []
 
     def get_metrics(self, obj):
-        latest = obj.performance_snapshots.order_by("-date").first()
+        latest = self._latest_snapshot(obj)
         if not latest:
             return {}
         return {

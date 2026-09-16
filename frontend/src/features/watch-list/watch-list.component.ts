@@ -6,6 +6,7 @@ import { WatchListApiService, WatchListProduct } from '../../core/services/watch
 
 type ProductTab = 'MUTUAL_FUND' | 'PMS';
 type StatusTab = 'ALL' | 'OWNED' | 'UNIVERSAL';
+type PageItem = number | 'ellipsis';
 
 @Component({
   selector: 'app-watch-list',
@@ -28,6 +29,8 @@ export class WatchListComponent implements OnInit {
   productTab: ProductTab = 'MUTUAL_FUND';
   ordering = 'name';
   count = 0;
+  page = 1;
+  readonly pageSize = 50;
   refreshing = false;
 
   readonly orderings = [
@@ -41,6 +44,25 @@ export class WatchListComponent implements OnInit {
   ngOnInit(): void {
     this.loadFilters();
     this.load();
+  }
+
+  get totalPages(): number {
+    return Math.max(1, Math.ceil(this.count / this.pageSize));
+  }
+
+  get pageItems(): PageItem[] {
+    const total = this.totalPages;
+    if (total <= 7) return Array.from({ length: total }, (_, index) => index + 1);
+
+    const items: PageItem[] = [1];
+    const start = Math.max(2, this.page - 2);
+    const end = Math.min(total - 1, this.page + 2);
+
+    if (start > 2) items.push('ellipsis');
+    for (let value = start; value <= end; value += 1) items.push(value);
+    if (end < total - 1) items.push('ellipsis');
+    items.push(total);
+    return items;
   }
 
   loadFilters(): void {
@@ -65,11 +87,36 @@ export class WatchListComponent implements OnInit {
       provider: this.provider || undefined,
       category: this.category || undefined,
       ordering: this.ordering,
-      page_size: 50,
+      page: this.page,
+      page_size: this.pageSize,
     }).subscribe({
-      next: response => { this.products = response.results; this.count = response.count; this.loading = false; },
-      error: error => { console.error('Failed to load Watch List:', error); this.error = 'Unable to load Watch List right now.'; this.loading = false; },
+      next: response => {
+        this.products = response.results;
+        this.count = response.count;
+        if (this.page > this.totalPages) {
+          this.page = this.totalPages;
+          this.load();
+          return;
+        }
+        this.loading = false;
+      },
+      error: error => {
+        console.error('Failed to load Watch List:', error);
+        this.error = 'Unable to load Watch List right now.';
+        this.loading = false;
+      },
     });
+  }
+
+  applyFilters(): void {
+    this.page = 1;
+    this.load();
+  }
+
+  goToPage(page: number): void {
+    if (page < 1 || page > this.totalPages || page === this.page || this.loading) return;
+    this.page = page;
+    this.load();
   }
 
   setProductTab(tab: ProductTab): void {
@@ -77,19 +124,35 @@ export class WatchListComponent implements OnInit {
       this.productTab = tab;
       this.provider = '';
       this.category = '';
+      this.page = 1;
       this.loadFilters();
       this.load();
     }
   }
 
-  setStatus(status: StatusTab): void { if (this.status !== status) { this.status = status; this.load(); } }
+  setStatus(status: StatusTab): void {
+    if (this.status !== status) {
+      this.status = status;
+      this.page = 1;
+      this.load();
+    }
+  }
 
   refreshUniverse(): void {
     if (this.refreshing) return;
     this.refreshing = true;
     this.api.refresh().subscribe({
-      next: () => { this.refreshing = false; this.loadFilters(); this.load(); },
-      error: error => { console.error('Watch List refresh failed:', error); this.refreshing = false; this.error = 'Universe refresh failed. Existing data was not changed.'; },
+      next: () => {
+        this.refreshing = false;
+        this.page = 1;
+        this.loadFilters();
+        this.load();
+      },
+      error: error => {
+        console.error('Watch List refresh failed:', error);
+        this.refreshing = false;
+        this.error = 'Universe refresh failed. Existing data was not changed.';
+      },
     });
   }
 

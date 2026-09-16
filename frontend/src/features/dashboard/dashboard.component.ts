@@ -20,25 +20,12 @@ export class DashboardComponent extends BaseDashboardComponent {
   private readonly allocationThemeService = inject(ThemeService);
   private readonly dashboardWealthApi = inject(WealthApiService);
 
-  private xirrAssetClassRows: Array<{
-    asset_category: string;
-    asset_class: string;
-    xirr: number;
-    current_value: number;
-  }> = [];
-
   override standardAllocations: Record<string, number> = {};
   override standardAllocationDraft: Record<string, number> = {};
   override standardAllocationEditing = false;
   override standardAllocationSaving = false;
   override standardAllocationError = '';
 
-  /**
-   * Re-render the canvas-based Allocation chart whenever the theme
-   * changes. Chart.js renders legend text inside the canvas, so the
-   * legend color is fixed when the chart is created and does not react
-   * to the HTML dark-theme class by itself.
-   */
   private readonly allocationThemeEffect = effect(() => {
     this.allocationThemeService.mode();
 
@@ -49,17 +36,6 @@ export class DashboardComponent extends BaseDashboardComponent {
     }
   });
 
-  /**
-   * Dashboard Investment Summary hierarchy:
-   *
-   *   Asset Category = Portfolio Asset Class
-   *   Sub Class      = Portfolio Sub Class
-   *
-   * Values are aggregated from the existing Portfolio Tree so the
-   * Dashboard uses exactly the same classification hierarchy as the
-   * Portfolio page without changing the backend investment-summary
-   * calculation or the Allocation chart.
-   */
   override get investmentSummaryGroups(): Array<{
     asset_category: string;
     current_value: number;
@@ -160,10 +136,6 @@ export class DashboardComponent extends BaseDashboardComponent {
     }));
   }
 
-  /**
-   * Allocation chart uses the exact Asset Category and % of Total
-   * Investment shown in the Dashboard Investment Summary table.
-   */
   override get allocationByCategory(): Array<{
     category: string;
     value: number;
@@ -178,17 +150,11 @@ export class DashboardComponent extends BaseDashboardComponent {
       }));
   }
 
-  /**
-   * The base Dashboard loads Investment Summary and Portfolio Tree
-   * independently. Allocation uses the Portfolio Tree-backed groups,
-   * so retry rendering until both sources are ready.
-   */
   override loadDashboard(): void {
     const request = ++this.allocationRenderRequest;
 
     super.loadDashboard();
     this.loadStandardAllocations();
-    this.loadXirrByAssetClass();
 
     const renderWhenReady = (attempt: number): void => {
       if (request !== this.allocationRenderRequest) {
@@ -225,39 +191,6 @@ export class DashboardComponent extends BaseDashboardComponent {
         this.standardAllocationDraft = {};
       },
     });
-  }
-
-  private loadXirrByAssetClass(): void {
-    this.xirrAssetClassRows = [];
-
-    this.dashboardWealthApi
-      .getXirrByAssetClass(this.selectedFamily || undefined)
-      .subscribe({
-        next: (data) => {
-          const rows = Array.isArray(data?.results) ? data.results : [];
-
-          this.xirrAssetClassRows = rows
-            .map((row: any) => ({
-              asset_category: String(row?.asset_category ?? '').trim(),
-              asset_class: String(row?.asset_class ?? '').trim(),
-              xirr: Number(row?.xirr),
-              current_value: Number(row?.current_value ?? 0),
-            }))
-            .filter(
-              (row) =>
-                !!row.asset_category &&
-                !!row.asset_class &&
-                Number.isFinite(row.xirr),
-            );
-
-          this.ensureValidXirrCategoryIndex();
-        },
-        error: (error) => {
-          console.error('XIRR BY ASSET CLASS API ERROR:', error);
-          this.xirrAssetClassRows = [];
-          this.ensureValidXirrCategoryIndex();
-        },
-      });
   }
 
   override startStandardAllocationEdit(): void {
@@ -392,14 +325,27 @@ export class DashboardComponent extends BaseDashboardComponent {
     return result;
   }
 
-  /** XIRR Performance is grouped by Asset Class, not Underlying. */
+  /**
+   * XIRR Performance categories are the same top-level Asset Categories
+   * used by Investment Summary. The ranking inside each category is based
+   * on Asset Name XIRR, not the XIRR of individual Underlyings.
+   */
   override get xirrPerformanceCategories(): string[] {
-    return Array.from(
-      new Set(this.xirrAssetClassRows.map((row) => row.asset_category)),
-    ).filter((category) => this.xirrAssetClassRows.some((row) => row.asset_category === category));
+    return this.investmentSummaryGroups
+      .filter((group) =>
+        group.asset_classes.some((subClass) => this.hasXirrForSubClass(subClass.asset_class)),
+      )
+      .map((group) => group.asset_category);
   }
 
-  /** XIRR rows for the selected Asset Category; one row per Asset Class. */
+  /**
+   * Return Asset Name rows for the selected Asset Category.
+   *
+   * The XIRR used for ranking is `asset_name_xirr`, which is calculated
+   * by the Portfolio Tree from the aggregated cash flows of the Asset
+   * Name. We deliberately do NOT use `asset.xirr` here because that is
+   * the XIRR of the individual underlying/asset position.
+   */
   override get selectedXirrRows(): Array<{
     underlying: string;
     xirr: number;
@@ -407,17 +353,85 @@ export class DashboardComponent extends BaseDashboardComponent {
   }> {
     const category = this.selectedXirrAssetCategory;
 
-    if (!category) {
+    if (!category || !this.portfolioTree) {
       return [];
     }
 
-    return this.xirrAssetClassRows
-      .filter((row) => row.asset_category === category)
-      .sort((a, b) => b.xirr - a.xirr)
-      .map((row) => ({
-        underlying: row.asset_class,
-        xirr: row.xirr,
-        assetClass: row.asset_class,
-      }));
+    const rowsByKey = new Map<string, {
+      underlying: string;
+      xirr: number;
+      assetClass: string;
+    }>();
+
+    for (const family of this.portfolioTree.families ?? []) {
+      if (this.selectedFamily && family.family_name !== this.selectedFamily) {
+        continue;
+      }
+
+      for (const portfolio of family.portfolios ?? []) {
+        for (const assetClass of portfolio.asset_classes ?? []) {
+          for (const subClass of assetClass.sub_classes ?? []) {
+            const assetCategory = this.getAssetCategoryForTreeAssetClass(subClass.sub_class);
+
+            if (assetCategory !== category) {
+              continue;
+            }
+
+            for (const asset of subClass.assets ?? []) {
+              const xirr = Number(asset.asset_name_xirr);
+
+              if (!Number.isFinite(xirr)) {
+                continue;
+              }
+
+              const assetName = asset.asset_name?.trim() || 'Unnamed Asset';
+              const key = `${subClass.sub_class}::${assetName}`;
+
+              if (!rowsByKey.has(key)) {
+                rowsByKey.set(key, {
+                  underlying: assetName,
+                  xirr,
+                  assetClass: subClass.sub_class,
+                });
+              }
+            }
+          }
+        }
+      }
+    }
+
+    return Array.from(rowsByKey.values()).sort((a, b) => b.xirr - a.xirr);
+  }
+
+  private hasXirrForSubClass(subClassName: string): boolean {
+    const target = subClassName.trim();
+
+    if (!target || !this.portfolioTree) {
+      return false;
+    }
+
+    for (const family of this.portfolioTree.families ?? []) {
+      if (this.selectedFamily && family.family_name !== this.selectedFamily) {
+        continue;
+      }
+
+      for (const portfolio of family.portfolios ?? []) {
+        for (const assetClass of portfolio.asset_classes ?? []) {
+          for (const subClass of assetClass.sub_classes ?? []) {
+            if ((subClass.sub_class || '').trim() !== target) {
+              continue;
+            }
+
+            if (
+              (subClass.assets ?? []).some((asset) => Number.isFinite(Number(asset.asset_name_xirr)))
+            ) {
+              return true;
+            }
+          }
+        }
+      }
+    }
+
+    return false;
   }
 }

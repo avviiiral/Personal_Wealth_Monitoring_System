@@ -29,10 +29,19 @@ def _filtered_products(request, product_type=None):
         queryset = queryset.filter(
             Q(name__icontains=search) | Q(provider__icontains=search) | Q(isin__icontains=search)
         )
-    for field in ("provider", "country", "category", "sub_category", "isin"):
+
+    # Provider and category values come directly from the dropdown options,
+    # so use exact matches instead of substring scans. Provider already has
+    # a product_type/provider index and category has a dedicated composite index.
+    for field in ("provider", "category"):
+        value = params.get(field)
+        if value:
+            queryset = queryset.filter(**{field: value})
+    for field in ("country", "sub_category", "isin"):
         value = params.get(field)
         if value:
             queryset = queryset.filter(**{f"{field}__icontains": value})
+
     mf_fields = {"asset_class": "mutual_fund__fund_type", "plan": "mutual_fund__plan", "option": "mutual_fund__option"}
     for query_field, model_field in mf_fields.items():
         value = params.get(query_field)
@@ -112,6 +121,21 @@ def _latest_snapshots(products):
     return latest
 
 
+def _ownership_cache(products, request):
+    status = request.query_params.get("status", "").upper()
+    if status == "UNIVERSAL":
+        return {
+            product.id: {
+                "status": "UNIVERSAL",
+                "ownership": [],
+                "owned_current_value": 0,
+                "owned_invested_value": 0,
+            }
+            for product in products
+        }
+    return OwnershipService.bulk_enrich(products, request.user)
+
+
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def watch_list_filters(request):
@@ -148,7 +172,7 @@ def watch_list_products(request):
     page = paginator.paginate_queryset(queryset, request)
     page = list(page)
     latest_snapshots = _latest_snapshots(page)
-    ownership_cache = OwnershipService.bulk_enrich(page, request.user)
+    ownership_cache = _ownership_cache(page, request)
     serializer = WatchListProductSerializer(
         page,
         many=True,

@@ -807,3 +807,235 @@
 .qr-code-container qrcode {
   display: block;
 }
+
+// ==========================================================
+// TRANSACTION EDIT HISTORY
+// ==========================================================
+
+.tx-history-filters {
+  display: flex;
+  gap: 12px;
+  align-items: end;
+  flex-wrap: wrap;
+  margin-bottom: 20px;
+  padding: 16px;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  background: #fafafa;
+}
+
+.tx-history-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.tx-history-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: #374151;
+}
+
+.tx-history-input {
+  padding: 10px 12px;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  background: white;
+  color: #111827;
+}
+
+.tx-history-empty {
+  padding: 40px;
+  text-align: center;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  color: #667085;
+}
+
+.tx-history-table-wrap {
+  overflow-x: auto;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+}
+
+.tx-history-table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 1050px;
+  font-size: 13px;
+}
+
+.tx-history-head-row {
+  background: #f9fafb;
+  border-bottom: 1px solid #e5e7eb;
+  text-align: left;
+}
+
+.tx-history-th {
+  padding: 13px 14px;
+  font-weight: 600;
+  color: #374151;
+}
+
+.tx-history-row {
+  border-bottom: 1px solid #eef0f3;
+}
+
+.tx-history-td {
+  padding: 13px 14px;
+  color: #111827;
+}
+
+.tx-history-td-nowrap {
+  white-space: nowrap;
+}
+
+.tx-history-td-strong {
+  font-weight: 600;
+}
+
+.tx-history-detail-row .tx-history-detail-cell {
+  padding: 0;
+  background: #fafafa;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.tx-history-detail {
+  padding: 18px 20px;
+}
+
+.tx-history-detail-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #374151;
+  margin-bottom: 10px;
+}
+
+.tx-history-detail-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.tx-history-detail-head-row {
+  border-bottom: 1px solid #e5e7eb;
+  text-align: left;
+}
+
+.tx-history-detail-th {
+  padding: 9px 10px;
+  font-weight: 600;
+  color: #374151;
+}
+
+.tx-history-detail-body-row {
+  border-bottom: 1px solid #eef0f3;
+}
+
+.tx-history-detail-td {
+  padding: 9px 10px;
+  color: #111827;
+}
+
+.tx-history-detail-td-strong {
+  font-weight: 600;
+}
+
+.tx-history-pagination {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-top: 16px;
+  flex-wrap: wrap;
+}
+
+.tx-history-page-info {
+  font-size: 12px;
+  color: #667085;
+}
+
+.tx-history-page-btn {
+  background: white;
+  color: #374151;
+}
+
+.tx-history-page-btn.active {
+  background: #111827;
+  color: white;
+}
+
+// ---- Dark theme overrides ----
+
+:host-context(html.dark-theme) .tx-history-filters {
+  background: #1c1f26;
+  border-color: #2a2e37;
+}
+
+:host-context(html.dark-theme) .tx-history-label,
+:host-context(html.dark-theme) .tx-history-th,
+:host-context(html.dark-theme) .tx-history-detail-title,
+:host-context(html.dark-theme) .tx-history-detail-th,
+:host-context(html.dark-theme) .tx-history-page-btn {
+  color: #b8c0cc;
+}
+
+:host-context(html.dark-theme) .tx-history-input {
+  background: #12151b;
+  border-color: #2a2e37;
+  color: #e6e8eb;
+}
+
+:host-context(html.dark-theme) .tx-history-empty {
+  border-color: #2a2e37;
+  color: #8890a0;
+}
+
+:host-context(html.dark-theme) .tx-history-table-wrap {
+  border-color: #2a2e37;
+}
+
+:host-context(html.dark-theme) .tx-history-head-row {
+  background: #1c1f26;
+  border-bottom-color: #2a2e37;
+}
+
+:host-context(html.dark-theme) .tx-history-row {
+  border-bottom-color: #262a33;
+}
+
+:host-context(html.dark-theme) .tx-history-td {
+  color: #e6e8eb;
+}
+
+:host-context(html.dark-theme) .tx-history-detail-row .tx-history-detail-cell {
+  background: #171a20;
+  border-bottom-color: #2a2e37;
+}
+
+:host-context(html.dark-theme) .tx-history-detail-head-row {
+  border-bottom-color: #2a2e37;
+}
+
+:host-context(html.dark-theme) .tx-history-detail-body-row {
+  border-bottom-color: #262a33;
+}
+
+:host-context(html.dark-theme) .tx-history-detail-td {
+  color: #e6e8eb;
+}
+
+:host-context(html.dark-theme) .tx-history-page-info {
+  color: #8890a0;
+}
+
+:host-context(html.dark-theme) .tx-history-page-btn {
+  background: #12151b;
+  border-color: #2a2e37;
+}
+
+:host-context(html.dark-theme) .tx-history-page-btn.active {
+  background: #e6e8eb;
+  color: #12151b;
+  border-color: #e6e8eb;
+}

@@ -1,0 +1,99 @@
+name: Apply Portfolio Sorting Update
+
+on:
+  push:
+    branches:
+      - feature/personal-wealth-updates
+
+permissions:
+  contents: write
+
+jobs:
+  update-portfolio-sorting:
+    if: ${{ !contains(github.event.head_commit.message, 'feat: add portfolio multi-level sorting') }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Update Portfolio sorting
+        shell: python
+        run: |
+          from pathlib import Path
+
+          ts_path = Path('frontend/src/features/portfolio/portfolio.component.ts')
+          html_path = Path('frontend/src/features/portfolio/portfolio.component.html')
+
+          ts = ts_path.read_text(encoding='utf-8')
+          html = html_path.read_text(encoding='utf-8')
+
+          ts = ts.replace(
+              "import { ChangeDetectorRef, Component, HostListener, OnDestroy, OnInit, inject } from '@angular/core';",
+              "import { ChangeDetectorRef, Component, OnDestroy, OnInit, inject } from '@angular/core';",
+          )
+          ts = ts.replace(
+              "  private sortClickTimer: ReturnType<typeof setTimeout> | null = null;\n",
+              "",
+          )
+
+          old_state = """  /** Active Level-1 Portfolio table sort. */\n  sortColumn: PortfolioSortColumn | null = null;\n  sortDirection: PortfolioSortDirection = 'normal';\n"""
+          new_state = """  /** Independent sorting state for each Portfolio hierarchy level. */\n  private readonly subclassSort: {\n    column: PortfolioSortColumn | null;\n    direction: PortfolioSortDirection;\n  } = { column: null, direction: 'normal' };\n\n  private readonly assetSort = new Map<string, {\n    column: string | null;\n    direction: PortfolioSortDirection;\n  }>();\n\n  private readonly underlyingSort = new Map<string, {\n    column: string | null;\n    direction: PortfolioSortDirection;\n  }>();\n"""
+          assert old_state in ts
+          ts = ts.replace(old_state, new_state)
+
+          old_destroy = """  ngOnDestroy(): void {\n    this.refreshSubscription?.unsubscribe();\n\n    if (this.sortClickTimer) {\n      clearTimeout(this.sortClickTimer);\n      this.sortClickTimer = null;\n    }\n  }\n"""
+          new_destroy = """  ngOnDestroy(): void {\n    this.refreshSubscription?.unsubscribe();\n  }\n"""
+          assert old_destroy in ts
+          ts = ts.replace(old_destroy, new_destroy)
+
+          start = ts.index("  /**\n   * Portfolio Level-1 table header sorting.")
+          end = ts.index("  onTransactionFileSelected(event: Event): void {", start)
+          new_sort_methods = """  /**\n   * Cycle a Portfolio header through: decreasing -> increasing -> normal.\n   * Sorting is independent at each hierarchy level and, for nested levels,\n   * independent for each parent row/group.\n   */\n  cycleSort(\n    level: 'subclass' | 'asset' | 'underlying',\n    column: string,\n    parentKey = '',\n  ): void {\n    const state = this.getSortState(level, parentKey);\n\n    if (state.column !== column) {\n      state.column = column;\n      state.direction = 'desc';\n    } else if (state.direction === 'desc') {\n      state.direction = 'asc';\n    } else {\n      state.column = null;\n      state.direction = 'normal';\n    }\n\n    this.cdr.detectChanges();\n  }\n\n  getSortIndicator(\n    level: 'subclass' | 'asset' | 'underlying',\n    column: string,\n    parentKey = '',\n  ): string {\n    const state = this.getSortState(level, parentKey);\n\n    if (state.column !== column || state.direction === 'normal') {\n      return '';\n    }\n\n    return state.direction === 'desc' ? '↓' : '↑';\n  }\n\n  private getSortState(\n    level: 'subclass' | 'asset' | 'underlying',\n    parentKey: string,\n  ): { column: string | null; direction: PortfolioSortDirection } {\n    if (level === 'subclass') {\n      return this.subclassSort;\n    }\n\n    const store = level === 'asset' ? this.assetSort : this.underlyingSort;\n    let state = store.get(parentKey);\n\n    if (!state) {\n      state = { column: null, direction: 'normal' };\n      store.set(parentKey, state);\n    }\n\n    return state;\n  }\n\n  private sortRows<T>(\n    rows: T[],\n    level: 'subclass' | 'asset' | 'underlying',\n    parentKey: string,\n    valueGetter: (row: T, column: string) => unknown,\n    defaultCompare: (left: T, right: T) => number,\n  ): T[] {\n    const state = this.getSortState(level, parentKey);\n\n    if (!state.column || state.direction === 'normal') {\n      return rows;\n    }\n\n    const sorted = [...rows];\n    const column = state.column;\n\n    sorted.sort((left, right) => {\n      const comparison = this.compareSortValues(\n        valueGetter(left, column),\n        valueGetter(right, column),\n      );\n\n      return comparison === 0\n        ? defaultCompare(left, right)\n        : state.direction === 'asc'\n          ? comparison\n          : -comparison;\n    });\n\n    return sorted;\n  }\n\n  private compareSortValues(left: unknown, right: unknown): number {\n    const leftNumber = this.toNullableNumber(left);\n    const rightNumber = this.toNullableNumber(right);\n\n    if (leftNumber !== null && rightNumber !== null) {\n      return leftNumber === rightNumber ? 0 : leftNumber < rightNumber ? -1 : 1;\n    }\n\n    if (left == null || left === '') return right == null || right === '' ? 0 : 1;\n    if (right == null || right === '') return -1;\n\n    return String(left).localeCompare(String(right), undefined, {\n      numeric: true,\n      sensitivity: 'base',\n    });\n  }\n\n  private toNullableNumber(value: unknown): number | null {\n    if (value === null || value === undefined || value === '') {\n      return null;\n    }\n\n    const number = Number(value);\n    return Number.isFinite(number) ? number : null;\n  }\n\n"""
+          ts = ts[:start] + new_sort_methods + ts[end:]
+
+          old_subclass_sort = """    if (!this.sortColumn || this.sortDirection === 'normal') {\n      return summaries.sort((a, b) => a.sub_class.localeCompare(b.sub_class));\n    }\n\n    return summaries.sort((a, b) => {\n      const left = this.getSortableValue(a, this.sortColumn!);\n      const right = this.getSortableValue(b, this.sortColumn!);\n\n      if (left === null && right === null) return a.sub_class.localeCompare(b.sub_class);\n      if (left === null) return 1;\n      if (right === null) return -1;\n      if (left === right) return a.sub_class.localeCompare(b.sub_class);\n\n      const comparison = left < right ? -1 : 1;\n      return this.sortDirection === 'asc' ? comparison : -comparison;\n    });\n  }\n\n  private getSortableValue(\n    summary: SubClassSummary,\n    column: PortfolioSortColumn,\n  ): number | null {\n    switch (column) {\n      case 'quantity':\n        return this.toNumber(summary.quantity);\n      case 'invested_value':\n        return this.toNumber(summary.invested_value);\n      case 'current_value':\n        return this.toNumber(summary.current_value);\n      case 'pnl':\n        return this.toNumber(summary.pnl);\n      case 'xirr':\n        return summary.xirr === null || summary.xirr === undefined\n          ? null\n          : this.toNumber(summary.xirr);\n    }\n  }\n"""
+          new_subclass_sort = """    return this.sortRows(\n      summaries,\n      'subclass',\n      '',\n      (summary, column) => {\n        switch (column) {\n          case 'quantity': return summary.quantity;\n          case 'invested_value': return summary.invested_value;\n          case 'current_value': return summary.current_value;\n          case 'pnl': return summary.pnl;\n          case 'xirr': return summary.xirr;\n          default: return summary.sub_class;\n        }\n      },\n      (left, right) => left.sub_class.localeCompare(right.sub_class),\n    );\n  }\n"""
+          assert old_subclass_sort in ts
+          ts = ts.replace(old_subclass_sort, new_subclass_sort)
+
+          old_asset_groups = """    return Array.from(groups.entries())\n      .map(([asset_name, groupedAssets]) => {\n        const familyNames = Array.from(\n          new Set(\n            groupedAssets\n              .map((asset) => asset.family_name?.trim())\n              .filter((family): family is string => Boolean(family)),\n          ),\n        ).sort((a, b) => a.localeCompare(b));\n\n        return {\n          asset_name,\n          family_name: familyNames.length ? familyNames.join(', ') : '-',\n          quantity: this.getAssetsQuantity(groupedAssets),\n          invested_value: this.getAssetsInvestedValue(groupedAssets),\n          current_value: this.getAssetsCurrentValue(groupedAssets),\n          pnl: this.getAssetsPnl(groupedAssets),\n          xirr: this.calculateXirr(groupedAssets),\n          assets: groupedAssets,\n        };\n      })\n      .sort((a, b) => a.asset_name.localeCompare(b.asset_name));\n  }\n"""
+          new_asset_groups = """    const groupsList = Array.from(groups.entries()).map(([asset_name, groupedAssets]) => {\n      const familyNames = Array.from(\n        new Set(\n          groupedAssets\n            .map((asset) => asset.family_name?.trim())\n            .filter((family): family is string => Boolean(family)),\n        ),\n      ).sort((a, b) => a.localeCompare(b));\n\n      return {\n        asset_name,\n        family_name: familyNames.length ? familyNames.join(', ') : '-',\n        quantity: this.getAssetsQuantity(groupedAssets),\n        invested_value: this.getAssetsInvestedValue(groupedAssets),\n        current_value: this.getAssetsCurrentValue(groupedAssets),\n        pnl: this.getAssetsPnl(groupedAssets),\n        xirr: this.calculateXirr(groupedAssets),\n        assets: groupedAssets,\n      };\n    });\n\n    return this.sortRows(\n      groupsList,\n      'asset',\n      this.getAssetGroupsSortKey(assets),\n      (group, column) => {\n        switch (column) {\n          case 'asset_name': return group.asset_name;\n          case 'family_name': return group.family_name;\n          case 'quantity': return group.quantity;\n          case 'invested_value': return group.invested_value;\n          case 'current_value': return group.current_value;\n          case 'pnl': return group.pnl;\n          case 'xirr': return group.xirr;\n          default: return group.asset_name;\n        }\n      },\n      (left, right) => left.asset_name.localeCompare(right.asset_name),\n    );\n  }\n\n  private getAssetGroupsSortKey(assets: PortfolioAssetNode[]): string {\n    const first = assets[0];\n    return first ? `${first.sub_class || 'Unassigned'}::asset-groups` : 'empty::asset-groups';\n  }\n"""
+          assert old_asset_groups in ts
+          ts = ts.replace(old_asset_groups, new_asset_groups)
+
+          old_underlying_loop = """                                <ng-container\n                                  *ngFor=\"let asset of assetGroup.assets; trackBy: trackByAssetId\"\n                                >"""
+          new_underlying_loop = """                                <ng-container\n                                  *ngFor=\"let asset of getSortedUnderlyingAssets(assetGroup.assets); trackBy: trackByAssetId\"\n                                >"""
+          assert old_underlying_loop in html
+          html = html.replace(old_underlying_loop, new_underlying_loop)
+
+          marker = "  toggleAsset(assetKey: string): void {"
+          insertion = """  getSortedUnderlyingAssets(assets: PortfolioAssetNode[]): PortfolioAssetNode[] {\n    const parentKey = this.getUnderlyingSortKey(assets);\n\n    return this.sortRows(\n      assets,\n      'underlying',\n      parentKey,\n      (asset, column) => {\n        switch (column) {\n          case 'underlying': return this.getUnderlyingName(asset);\n          case 'family': return asset.family_name || '';\n          case 'isin': return asset.isin || '';\n          case 'quantity': return asset.quantity;\n          case 'invested': return asset.invested_value;\n          case 'current_price': return asset.current_price;\n          case 'current_value': return asset.current_value;\n          case 'pnl': return asset.pnl;\n          case 'xirr': return asset.xirr;\n          default: return this.getUnderlyingName(asset);\n        }\n      },\n      (left, right) => this.getUnderlyingName(left).localeCompare(this.getUnderlyingName(right)),\n    );\n  }\n\n  private getUnderlyingSortKey(assets: PortfolioAssetNode[]): string {\n    const first = assets[0];\n    return first ? `${first.sub_class || 'Unassigned'}::${first.asset_name || 'Unnamed Asset'}` : 'empty';\n  }\n\n"""
+          assert marker in ts
+          ts = ts.replace(marker, insertion + marker, 1)
+
+          ts_path.write_text(ts, encoding='utf-8')
+          html_path.write_text(html, encoding='utf-8')
+
+          print('Portfolio sorting update applied.')
+
+      - name: Commit changes
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add frontend/src/features/portfolio/portfolio.component.ts frontend/src/features/portfolio/portfolio.component.html
+          git diff --cached --check
+          git commit -m "feat: add portfolio multi-level sorting"
+          git push
+
+      - name: Remove temporary workflow
+        if: always()
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if git ls-files --error-unmatch .github/workflows/apply-portfolio-sort-update.yml >/dev/null 2>&1; then
+            git rm .github/workflows/apply-portfolio-sort-update.yml
+            git commit -m "chore: remove temporary portfolio sorting workflow"
+            git push
+          fi

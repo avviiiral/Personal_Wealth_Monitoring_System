@@ -22,8 +22,14 @@
 
   <div class="filters">
     <input [(ngModel)]="search" (keyup.enter)="load()" placeholder="Search fund, provider, ISIN…" aria-label="Search Watch List" />
-    <input [(ngModel)]="provider" (keyup.enter)="load()" placeholder="Provider" aria-label="Provider" />
-    <input [(ngModel)]="category" (keyup.enter)="load()" placeholder="Category" aria-label="Category" />
+    <select [(ngModel)]="provider" aria-label="Provider">
+      <option value="">All Providers</option>
+      <option *ngFor="let option of providers" [value]="option">{{ option }}</option>
+    </select>
+    <select [(ngModel)]="category" aria-label="Category">
+      <option value="">All Categories</option>
+      <option *ngFor="let option of categories" [value]="option">{{ option }}</option>
+    </select>
     <select [(ngModel)]="ordering" (change)="load()" aria-label="Sort by">
       <option *ngFor="let option of orderings" [value]="option.value">{{ option.label }}</option>
     </select>

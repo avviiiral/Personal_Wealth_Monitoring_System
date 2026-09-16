@@ -107,6 +107,17 @@ export class WatchListComponent implements OnInit {
     }
   }
 
+  private shouldBootstrapUniverse(response: WatchListResponse): boolean {
+    return response.count === 0
+      && !this.autoRefreshAttempted
+      && !this.refreshing
+      && this.page === 1
+      && this.status === 'ALL'
+      && !this.search.trim()
+      && !this.provider
+      && !this.category;
+  }
+
   load(): void {
     this.restoreCachedPage();
     this.loading = this.products.length === 0;
@@ -123,7 +134,7 @@ export class WatchListComponent implements OnInit {
       page_size: this.pageSize,
     }).subscribe({
       next: response => {
-        if (response.count === 0 && !this.autoRefreshAttempted && !this.refreshing) {
+        if (this.shouldBootstrapUniverse(response)) {
           this.autoRefreshAttempted = true;
           this.refreshUniverse(true);
           return;

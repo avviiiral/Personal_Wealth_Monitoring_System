@@ -1022,7 +1022,7 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
    *
    * so this avoids changing the backend Portfolio Tree.
    */
-  private getAssetCategoryForTreeAssetClass(treeSubClass: string): string | null {
+  protected getAssetCategoryForTreeAssetClass(treeSubClass: string): string | null {
     const cleaned = (treeSubClass || '').trim();
 
     if (!cleaned) {

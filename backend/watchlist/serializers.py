@@ -21,6 +21,7 @@ class WatchListProductSerializer(serializers.ModelSerializer):
     metrics = serializers.SerializerMethodField()
     mutual_fund = serializers.SerializerMethodField()
     pms = serializers.SerializerMethodField()
+    is_watchlisted = serializers.SerializerMethodField()
 
     class Meta:
         model = InvestmentProduct
@@ -28,7 +29,14 @@ class WatchListProductSerializer(serializers.ModelSerializer):
             "id", "product_type", "name", "provider", "country", "category", "sub_category",
             "isin", "external_identifier", "currency", "source", "source_reference", "source_date",
             "official_website", "status", "ownership", "performance", "metrics", "mutual_fund", "pms",
+            "is_watchlisted",
         ]
+
+    def get_is_watchlisted(self, obj):
+        watchlisted_ids = self.context.get("watchlisted_ids")
+        if watchlisted_ids is None:
+            return False
+        return obj.id in watchlisted_ids
 
     def _ownership(self, obj):
         cache = self.context.setdefault("ownership_cache", {})

@@ -16,8 +16,18 @@
 .table-wrap { overflow: auto; border: 1px solid var(--surface-line); border-radius: 10px; background: var(--surface); }
 table { width: 100%; min-width: 1250px; border-collapse: collapse; color: var(--ink); }
 th, td { padding: 12px 14px; border-bottom: 1px solid var(--surface-line); text-align: right; white-space: nowrap; }
-th:first-child, td:first-child, th:nth-child(2), td:nth-child(2), th:nth-child(3), td:nth-child(3), th:nth-child(4), td:nth-child(4) { text-align: left; }
+th:first-child, td:first-child, th:nth-child(2), td:nth-child(2), th:nth-child(3), td:nth-child(3), th:nth-child(4), td:nth-child(4), th:nth-child(5), td:nth-child(5) { text-align: left; }
 th { font-size: 12px; color: var(--muted); font-weight: 600; }
+.watch-column { width: 34px; padding-left: 14px; padding-right: 0; }
+.watch-toggle {
+  width: 26px; height: 26px; border-radius: 7px; cursor: pointer; line-height: 1;
+  border: 1px solid var(--surface-line); background: var(--surface); color: transparent;
+  font-size: 13px; font-weight: 700; transition: background .12s, border-color .12s, color .12s;
+}
+.watch-toggle:hover:not(:disabled) { border-color: var(--accent); }
+.watch-toggle:disabled { opacity: .6; cursor: default; }
+.watch-toggle.active { background: var(--accent); border-color: var(--accent); color: white; }
+html.dark-theme .watch-list-page .watch-toggle { background: #1b1f27; }
 .product-name { font-weight: 600; color: var(--ink); }
 .secondary { margin-top: 3px; font-size: 11px; color: var(--muted); }
 .ownership-row { min-width: 210px; margin-bottom: 4px; }

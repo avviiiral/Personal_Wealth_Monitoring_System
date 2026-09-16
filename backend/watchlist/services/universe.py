@@ -34,6 +34,13 @@ class AMFIUniverseService:
     def _normalize(value):
         return re.sub(r"\s+", " ", str(value or "").replace("\ufeff", "")).strip()
 
+    # AMFI's NAVAll.txt interleaves two different kinds of non-tabular header
+    # lines among the scheme rows: a scheme-category header (e.g. "Open Ended
+    # Schemes (Overnight Fund)") and, below it, the fund-house/provider name
+    # (e.g. "Aditya Birla Sun Life Mutual Fund"). Both lines have no leading
+    # scheme code, so they cannot be told apart by column shape alone.
+    _CATEGORY_HEADER_RE = re.compile(r"^(Open|Close|Interval)\s+Ended\s+Schemes", re.IGNORECASE)
+
     @classmethod
     def parse_latest_feed(cls, text):
         """Parse both AMFI NAVAll formats currently encountered in the wild.
@@ -45,6 +52,7 @@ class AMFIUniverseService:
         transition cannot silently produce an empty universe.
         """
         provider = None
+        category = None
         records = []
         for raw_line in text.splitlines():
             line = raw_line.strip()
@@ -52,8 +60,18 @@ class AMFIUniverseService:
                 continue
             parts = [cls._normalize(part) for part in line.split(";")]
             if not parts[0].isdigit():
-                if parts[0].lower() != "scheme code":
-                    provider = parts[0]
+                header = parts[0]
+                if header.lower() == "scheme code":
+                    continue
+                # A category header always precedes the fund-house name for
+                # that block, so seeing one resets the provider until AMFI
+                # emits the next fund-house line.
+                if cls._CATEGORY_HEADER_RE.match(header):
+                    category = re.sub(r"^(Open|Close|Interval)\s+Ended\s+Schemes\s*\(?\s*", "", header, flags=re.IGNORECASE)
+                    category = category.rstrip(")").strip() or header
+                    provider = None
+                else:
+                    provider = header
                 continue
             if len(parts) < 6:
                 continue
@@ -73,7 +91,7 @@ class AMFIUniverseService:
                     growth_isin = isin1 if "growth" in name.lower() and "idcw" not in name.lower() else None
                     selected_isin = growth_isin or isin1 or isin2
                     records.append({
-                        "scheme_code": parts[0], "name": name, "provider": provider,
+                        "scheme_code": parts[0], "name": name, "provider": provider, "category": category,
                         "plan": parts[4] or None, "option": parts[5] or None,
                         "isin": selected_isin, "nav": nav, "date": nav_date,
                     })
@@ -94,7 +112,7 @@ class AMFIUniverseService:
             growth_isin = isin1 if "growth" in name.lower() and "idcw" not in name.lower() else None
             selected_isin = growth_isin or isin1 or isin2
             records.append({
-                "scheme_code": parts[0], "name": name, "provider": provider,
+                "scheme_code": parts[0], "name": name, "provider": provider, "category": category,
                 "plan": None, "option": None,
                 "isin": selected_isin, "nav": nav, "date": nav_date,
             })
@@ -126,6 +144,7 @@ class AMFIUniverseService:
                         defaults={
                             "product_type": ProductType.MUTUAL_FUND,
                             "name": record["name"], "provider": record.get("provider"), "country": "India",
+                            "category": record.get("category"),
                             "isin": record.get("isin"), "external_identifier": record.get("scheme_code"),
                             "currency": "INR", "source": cls.SOURCE, "source_reference": cls.NAV_URL,
                             "source_date": record["date"], "is_active": True,
@@ -133,7 +152,10 @@ class AMFIUniverseService:
                     )
                     MutualFundProduct.objects.update_or_create(
                         product=product,
-                        defaults={"scheme_code": record["scheme_code"], "plan": record.get("plan"), "option": record.get("option"), "latest_nav": record["nav"], "latest_nav_date": record["date"]},
+                        defaults={
+                            "scheme_code": record["scheme_code"], "plan": record.get("plan"), "option": record.get("option"),
+                            "fund_type": record.get("category"), "latest_nav": record["nav"], "latest_nav_date": record["date"],
+                        },
                     )
                     PerformanceSnapshot.objects.update_or_create(
                         product=product, date=record["date"], source=cls.SOURCE,

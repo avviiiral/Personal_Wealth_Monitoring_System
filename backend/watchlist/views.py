@@ -7,7 +7,7 @@ from rest_framework.response import Response
 
 from investments.models import AssetCategory, PortfolioPosition
 from users.permissions import get_visible_owner_ids
-from watchlist.models import InvestmentProduct, PerformanceSnapshot, ProductType
+from watchlist.models import InvestmentProduct, PerformanceSnapshot, ProductType, WatchListEntry
 from watchlist.serializers import PerformanceSnapshotSerializer, WatchListProductSerializer
 from watchlist.services.ownership import OwnershipService
 from watchlist.services.universe import AMFIUniverseService, PMSDiscoveryService
@@ -24,10 +24,15 @@ def _filtered_products(request, product_type=None):
     if product_type:
         queryset = queryset.filter(product_type=product_type)
     params = request.query_params
-    search = params.get("search")
+    search = params.get("search", "").strip()
     if search:
         queryset = queryset.filter(
-            Q(name__icontains=search) | Q(provider__icontains=search) | Q(isin__icontains=search)
+            Q(name__icontains=search)
+            | Q(provider__icontains=search)
+            | Q(isin__icontains=search)
+            | Q(category__icontains=search)
+            | Q(sub_category__icontains=search)
+            | Q(external_identifier__icontains=search)
         )
 
     # Provider and category values come directly from the dropdown options,
@@ -79,7 +84,10 @@ def _filtered_products(request, product_type=None):
     queryset = queryset.order_by(prefix + ordering_field, "id")
 
     status = params.get("status", "").upper()
-    if status in {"OWNED", "UNIVERSAL"}:
+    if status == "WATCHLIST":
+        watchlist_entries = WatchListEntry.objects.filter(user=request.user, product_id=OuterRef("pk"))
+        queryset = queryset.filter(Exists(watchlist_entries))
+    elif status in {"OWNED", "UNIVERSAL"}:
         owner_ids = get_visible_owner_ids(request.user)
         active_position = Q(quantity__gt=0) | Q(current_value__gt=0)
         isin_positions = PortfolioPosition.objects.filter(
@@ -119,6 +127,15 @@ def _latest_snapshots(products):
     for snapshot in snapshots:
         latest.setdefault(snapshot.product_id, snapshot)
     return latest
+
+
+def _watchlisted_ids(products, request):
+    product_ids = [product.id for product in products]
+    if not product_ids or not request.user.is_authenticated:
+        return set()
+    return set(
+        WatchListEntry.objects.filter(user=request.user, product_id__in=product_ids).values_list("product_id", flat=True)
+    )
 
 
 def _ownership_cache(products, request):
@@ -180,6 +197,7 @@ def watch_list_products(request):
             "request": request,
             "latest_snapshots": latest_snapshots,
             "ownership_cache": ownership_cache,
+            "watchlisted_ids": _watchlisted_ids(page, request),
         },
     )
     return paginator.get_paginated_response(serializer.data)
@@ -202,6 +220,7 @@ def watch_list_product_detail(request, product_id):
                 "request": request,
                 "latest_snapshots": latest_snapshots,
                 "ownership_cache": ownership_cache,
+                "watchlisted_ids": _watchlisted_ids([product], request),
             },
         ).data
     )
@@ -216,6 +235,19 @@ def watch_list_performance(request, product_id):
     page = paginator.paginate_queryset(snapshots, request)
     serializer = PerformanceSnapshotSerializer(page, many=True)
     return paginator.get_paginated_response(serializer.data)
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def watch_list_toggle(request, product_id):
+    """Add or remove a product from the caller's personal Watch List (the checkmark toggle)."""
+    product = get_object_or_404(InvestmentProduct, pk=product_id, is_active=True)
+    entry = WatchListEntry.objects.filter(user=request.user, product=product).first()
+    if entry:
+        entry.delete()
+        return Response({"id": product.id, "is_watchlisted": False})
+    WatchListEntry.objects.create(user=request.user, product=product)
+    return Response({"id": product.id, "is_watchlisted": True})
 
 
 @api_view(["POST"])

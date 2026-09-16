@@ -66,10 +66,9 @@
           <td>{{ product.provider || '—' }}</td>
           <td><span class="status" [class.owned]="product.status === 'OWNED'">{{ product.status }}</span></td>
           <td>
-            <ng-container *ngIf="product.ownership.length; else universalOwnership">
-              <div *ngFor="let item of product.ownership" class="ownership-row">
-                <strong>{{ item.family || '—' }}</strong> · {{ item.portfolio || '—' }}
-                <span class="secondary">Value {{ formatAmount(item.current_value) }} · XIRR <span [class.positive-value]="item.xirr !== null && item.xirr > 0" [class.negative-value]="item.xirr !== null && item.xirr < 0">{{ item.xirr === null ? '—' : formatPercent(item.xirr) }}</span></span>
+            <ng-container *ngIf="ownershipFamilies(product).length; else universalOwnership">
+              <div *ngFor="let family of ownershipFamilies(product)" class="ownership-row">
+                <strong>{{ family }}</strong>
               </div>
             </ng-container>
             <ng-template #universalOwnership>—</ng-template>

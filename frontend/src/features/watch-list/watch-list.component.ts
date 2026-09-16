@@ -28,6 +28,7 @@ export class WatchListComponent implements OnInit, OnDestroy {
   error = '';
   search = '';
   private readonly togglingIds = new Set<number>();
+  readonly selectedIds = new Set<number>();
   provider = '';
   category = '';
   providers: string[] = [];
@@ -39,6 +40,7 @@ export class WatchListComponent implements OnInit, OnDestroy {
   page = 1;
   readonly pageSize = 50;
   refreshing = false;
+  movingToWatchList = false;
 
   readonly orderings = [
     { value: 'name', label: 'Name' }, { value: '1M', label: '1M Return' },
@@ -69,11 +71,9 @@ export class WatchListComponent implements OnInit, OnDestroy {
   get pageItems(): PageItem[] {
     const total = this.totalPages;
     if (total <= 7) return Array.from({ length: total }, (_, index) => index + 1);
-
     const items: PageItem[] = [1];
     const start = Math.max(2, this.page - 2);
     const end = Math.min(total - 1, this.page + 2);
-
     if (start > 2) items.push('ellipsis');
     for (let value = start; value <= end; value += 1) items.push(value);
     if (end < total - 1) items.push('ellipsis');
@@ -81,7 +81,6 @@ export class WatchListComponent implements OnInit, OnDestroy {
     return items;
   }
 
-  /** Return each owning family only once, regardless of transaction/position count. */
   ownershipFamilies(product: WatchListProduct): string[] {
     const families = new Set<string>();
     for (const item of product.ownership || []) {
@@ -89,6 +88,58 @@ export class WatchListComponent implements OnInit, OnDestroy {
       if (family) families.add(family);
     }
     return Array.from(families);
+  }
+
+  isSelected(productId: number): boolean {
+    return this.selectedIds.has(productId);
+  }
+
+  toggleSelection(productId: number, event?: Event): void {
+    event?.stopPropagation();
+    if (this.selectedIds.has(productId)) this.selectedIds.delete(productId);
+    else this.selectedIds.add(productId);
+  }
+
+  get allVisibleSelected(): boolean {
+    const selectable = this.products.filter(product => !product.is_watchlisted);
+    return selectable.length > 0 && selectable.every(product => this.selectedIds.has(product.id));
+  }
+
+  toggleSelectAll(event: Event): void {
+    event.stopPropagation();
+    const selectable = this.products.filter(product => !product.is_watchlisted);
+    if (this.allVisibleSelected) {
+      selectable.forEach(product => this.selectedIds.delete(product.id));
+    } else {
+      selectable.forEach(product => this.selectedIds.add(product.id));
+    }
+  }
+
+  get selectedCount(): number {
+    return this.selectedIds.size;
+  }
+
+  moveSelectedToWatchList(): void {
+    const productIds = Array.from(this.selectedIds);
+    if (!productIds.length || this.movingToWatchList) return;
+    this.movingToWatchList = true;
+    this.error = '';
+    this.api.bulkAddToWatchList(productIds).subscribe({
+      next: () => {
+        productIds.forEach(id => {
+          const product = this.products.find(item => item.id === id);
+          if (product) product.is_watchlisted = true;
+          this.selectedIds.delete(id);
+        });
+        this.movingToWatchList = false;
+        if (this.status === 'WATCHLIST') this.load();
+      },
+      error: error => {
+        console.error('Failed to move selected products to Watch List:', error);
+        this.movingToWatchList = false;
+        this.error = 'Unable to move the selected products to Watch List.';
+      },
+    });
   }
 
   loadFilters(): void {
@@ -122,29 +173,19 @@ export class WatchListComponent implements OnInit, OnDestroy {
   }
 
   private cachePage(response: WatchListResponse): void {
-    try {
-      localStorage.setItem(this.cacheKey(), JSON.stringify(response));
-    } catch (error) {
-      console.warn('Failed to cache Watch List page:', error);
-    }
+    try { localStorage.setItem(this.cacheKey(), JSON.stringify(response)); }
+    catch (error) { console.warn('Failed to cache Watch List page:', error); }
   }
 
   private shouldBootstrapUniverse(response: WatchListResponse): boolean {
-    return response.count === 0
-      && !this.autoRefreshAttempted
-      && !this.refreshing
-      && this.page === 1
-      && this.status === 'ALL'
-      && !this.search.trim()
-      && !this.provider
-      && !this.category;
+    return response.count === 0 && !this.autoRefreshAttempted && !this.refreshing && this.page === 1
+      && this.status === 'ALL' && !this.search.trim() && !this.provider && !this.category;
   }
 
   load(): void {
     this.restoreCachedPage();
     this.loading = this.products.length === 0;
     this.error = '';
-
     this.api.getProducts({
       product_type: this.productTab,
       status: this.status === 'ALL' ? undefined : this.status,
@@ -161,15 +202,12 @@ export class WatchListComponent implements OnInit, OnDestroy {
           this.refreshUniverse(true);
           return;
         }
-
         this.products = response.results;
         this.count = response.count;
         this.cachePage(response);
-        if (this.page > this.totalPages) {
-          this.page = this.totalPages;
-          this.load();
-          return;
-        }
+        const visibleIds = new Set(this.products.map(product => product.id));
+        this.selectedIds.forEach(id => { if (!visibleIds.has(id)) this.selectedIds.delete(id); });
+        if (this.page > this.totalPages) { this.page = this.totalPages; this.load(); return; }
         this.loading = false;
       },
       error: error => {
@@ -182,11 +220,13 @@ export class WatchListComponent implements OnInit, OnDestroy {
 
   applyFilters(): void {
     this.page = 1;
+    this.selectedIds.clear();
     this.load();
   }
 
   goToPage(page: number): void {
     if (page < 1 || page > this.totalPages || page === this.page || this.loading) return;
+    this.selectedIds.clear();
     this.page = page;
     this.load();
   }
@@ -196,6 +236,7 @@ export class WatchListComponent implements OnInit, OnDestroy {
       this.productTab = tab;
       this.provider = '';
       this.category = '';
+      this.selectedIds.clear();
       this.page = 1;
       this.loadFilters();
       this.load();
@@ -205,14 +246,13 @@ export class WatchListComponent implements OnInit, OnDestroy {
   setStatus(status: StatusTab): void {
     if (this.status !== status) {
       this.status = status;
+      this.selectedIds.clear();
       this.page = 1;
       this.load();
     }
   }
 
-  isToggling(productId: number): boolean {
-    return this.togglingIds.has(productId);
-  }
+  isToggling(productId: number): boolean { return this.togglingIds.has(productId); }
 
   toggleWatch(product: WatchListProduct, event: Event): void {
     event.stopPropagation();
@@ -224,6 +264,7 @@ export class WatchListComponent implements OnInit, OnDestroy {
       next: response => {
         product.is_watchlisted = response.is_watchlisted;
         this.togglingIds.delete(product.id);
+        this.selectedIds.delete(product.id);
         if (this.status === 'WATCHLIST' && !response.is_watchlisted) {
           this.products = this.products.filter(item => item.id !== product.id);
           this.count = Math.max(0, this.count - 1);
@@ -245,6 +286,7 @@ export class WatchListComponent implements OnInit, OnDestroy {
       next: () => {
         this.refreshing = false;
         this.page = 1;
+        this.selectedIds.clear();
         this.loadFilters();
         this.load();
       },

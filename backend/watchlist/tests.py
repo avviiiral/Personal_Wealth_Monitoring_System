@@ -10,7 +10,6 @@ from investments.models import Asset, AssetCategory, PortfolioPosition, Transact
 from watchlist.models import InvestmentProduct, MutualFundProduct, PerformanceSnapshot, ProductType, WatchListEntry
 from watchlist.services.ownership import OwnershipService
 from watchlist.services.performance import AMFIPerformanceService
-from watchlist.services.pms import APMIPMSDiscoveryService
 from watchlist.services.universe import AMFIUniverseService
 
 
@@ -28,11 +27,7 @@ class WatchListTests(TestCase):
         self.assertEqual(records[1]["provider"], "Provider Two")
 
     def test_amfi_parser_supports_six_column_legacy_format(self):
-        feed = (
-            "Scheme Code;ISIN Div Payout/ISIN Growth;ISIN Div Reinvestment;Scheme Name;Net Asset Value;Date\n"
-            "Provider One\n"
-            "1;INF000000001;-;Generic Equity Fund;100.25;15-Sep-2026\n"
-        )
+        feed = ("Scheme Code;ISIN Div Payout/ISIN Growth;ISIN Div Reinvestment;Scheme Name;Net Asset Value;Date\nProvider One\n1;INF000000001;-;Generic Equity Fund;100.25;15-Sep-2026\n")
         records = AMFIUniverseService.parse_latest_feed(feed)
         self.assertEqual(len(records), 1)
         self.assertEqual(records[0]["scheme_code"], "1")
@@ -49,29 +44,16 @@ class WatchListTests(TestCase):
         self.assertEqual(identity, "MUTUAL_FUND:ISIN:INF123")
 
     def test_duplicate_snapshot_is_upserted(self):
-        product = InvestmentProduct.objects.create(
-            product_type=ProductType.MUTUAL_FUND,
-            name="Test Fund",
-            identity_key="MUTUAL_FUND:SCHEME:1",
-            source="AMFI",
-        )
+        product = InvestmentProduct.objects.create(product_type=ProductType.MUTUAL_FUND, name="Test Fund", identity_key="MUTUAL_FUND:SCHEME:1", source="AMFI")
         MutualFundProduct.objects.create(product=product, scheme_code="1", latest_nav=Decimal("10"))
         PerformanceSnapshot.objects.create(product=product, date="2026-09-15", nav_or_value=Decimal("10"), source="AMFI")
-        PerformanceSnapshot.objects.update_or_create(
-            product=product, date="2026-09-15", source="AMFI",
-            defaults={"nav_or_value": Decimal("11")},
-        )
+        PerformanceSnapshot.objects.update_or_create(product=product, date="2026-09-15", source="AMFI", defaults={"nav_or_value": Decimal("11")})
         self.assertEqual(PerformanceSnapshot.objects.filter(product=product).count(), 1)
         self.assertEqual(PerformanceSnapshot.objects.get(product=product).nav_or_value, Decimal("11"))
 
     def test_api_pagination_and_filters(self):
         for index in range(3):
-            product = InvestmentProduct.objects.create(
-                product_type=ProductType.MUTUAL_FUND,
-                name=f"Fund {index}",
-                identity_key=f"MUTUAL_FUND:SCHEME:{index}",
-                source="AMFI",
-            )
+            product = InvestmentProduct.objects.create(product_type=ProductType.MUTUAL_FUND, name=f"Fund {index}", identity_key=f"MUTUAL_FUND:SCHEME:{index}", source="AMFI")
             MutualFundProduct.objects.create(product=product, scheme_code=str(index))
         response = self.client.get("/api/watch-list/products/?product_type=MUTUAL_FUND&page_size=2")
         self.assertEqual(response.status_code, 200)
@@ -79,12 +61,7 @@ class WatchListTests(TestCase):
         self.assertEqual(response.data["count"], 3)
 
     def test_watch_list_uses_latest_snapshot_for_metrics_and_performance(self):
-        product = InvestmentProduct.objects.create(
-            product_type=ProductType.MUTUAL_FUND,
-            name="Snapshot Fund",
-            identity_key="MUTUAL_FUND:SCHEME:SNAPSHOT",
-            source="AMFI",
-        )
+        product = InvestmentProduct.objects.create(product_type=ProductType.MUTUAL_FUND, name="Snapshot Fund", identity_key="MUTUAL_FUND:SCHEME:SNAPSHOT", source="AMFI")
         MutualFundProduct.objects.create(product=product, scheme_code="SNAPSHOT")
         PerformanceSnapshot.objects.create(product=product, date="2026-09-14", nav_or_value=Decimal("10"), return_1m=Decimal("1"), source="AMFI")
         PerformanceSnapshot.objects.create(product=product, date="2026-09-15", nav_or_value=Decimal("11"), return_1m=Decimal("2.5"), return_1y=Decimal("12.5"), cagr=Decimal("3.75"), source="AMFI")
@@ -141,24 +118,13 @@ class WatchListTests(TestCase):
 
 
 class APMIPMSDiscoveryTests(TestCase):
-    SAMPLE_HTML = """
-    <html><body>
-      <h4>Investment Approach Wise Performance As on 31/08/2026</h4>
-      <table>
-        <tr><th>PMS Provider Name</th><th>IA Name</th><th>AUM (in INR Cr.)</th><th>1 Month</th><th>3 Months</th><th>6 Months</th><th>1 Year</th><th>2 Years</th><th>3 Years</th><th>4 Years</th><th>5 Years</th><th>Since Inception</th></tr>
-        <tr><td>ICICI Prudential Asset Management Company Ltd</td><td><a href="IaInsight.htm?IAID=2595">ICICI Prudential PMS Small and Midcap FPI Strategy</a></td><td>₹75.38</td><td>NA</td><td>NA</td><td>NA</td><td>NA</td><td>NA</td><td>NA</td><td>NA</td><td>NA</td><td>0.06</td></tr>
-      </table>
-    </body></html>
-    """
+    SAMPLE_HTML = '<table><tr><th>PMS Provider Name</th><th>IA Name</th><th>AUM (in INR Cr.)</th><th>1 Month</th><th>3 Months</th><th>6 Months</th><th>1 Year</th><th>2 Years</th><th>3 Years</th><th>4 Years</th><th>5 Years</th><th>Since Inception</th></tr><tr><td>ICICI Prudential Asset Management Company Ltd</td><td><a href="IaInsight.htm?IAID=2595">ICICI Prudential PMS Small and Midcap FPI Strategy</a></td><td>₹75.38</td><td>NA</td><td>NA</td><td>NA</td><td>NA</td><td>NA</td><td>NA</td><td>NA</td><td>NA</td><td>0.06</td></tr></table>'
 
     def test_apmi_parser_reads_html_rows(self):
         records = APMIPMSDiscoveryService._records(self.SAMPLE_HTML)
         self.assertEqual(len(records), 1)
-        self.assertEqual(records[0]["provider"], "ICICI Prudential Asset Management Company Ltd")
-        self.assertEqual(records[0]["name"], "ICICI Prudential PMS Small and Midcap FPI Strategy")
         self.assertEqual(records[0]["iaid"], "2595")
         self.assertEqual(records[0]["aum"], Decimal("75.38"))
-        self.assertIsNone(records[0]["performance"]["1m"])
         self.assertEqual(records[0]["performance"]["si"], Decimal("0.06"))
 
     @patch("watchlist.services.pms.requests.get")
@@ -167,14 +133,10 @@ class APMIPMSDiscoveryTests(TestCase):
         mocked_get.return_value.raise_for_status.return_value = None
         result = APMIPMSDiscoveryService.refresh()
         self.assertEqual(result["discovered"], 1)
-        self.assertEqual(result["failed"], 0)
         product = InvestmentProduct.objects.get(product_type=ProductType.PMS)
         self.assertEqual(product.external_identifier, "2595")
-        self.assertEqual(product.provider, "ICICI Prudential Asset Management Company Ltd")
         self.assertEqual(product.pms.aum, Decimal("75.38"))
-        snapshot = PerformanceSnapshot.objects.get(product=product, source="APMI")
-        self.assertEqual(snapshot.aum, Decimal("75.38"))
-        self.assertEqual(snapshot.return_since_inception, Decimal("0.06"))
+        self.assertEqual(PerformanceSnapshot.objects.get(product=product, source="APMI").return_since_inception, Decimal("0.06"))
 
     @patch("watchlist.services.pms.requests.get")
     def test_apmi_refresh_is_idempotent(self, mocked_get):

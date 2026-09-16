@@ -5,7 +5,7 @@ from rest_framework.pagination import PageNumberPagination
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
-from investments.models import AssetCategory, PortfolioPosition
+from investments.models import AssetCategory, PortfolioPosition, Transaction
 from users.permissions import get_visible_owner_ids
 from watchlist.models import InvestmentProduct, PerformanceSnapshot, ProductType, WatchListEntry
 from watchlist.serializers import PerformanceSnapshotSerializer, WatchListProductSerializer
@@ -36,9 +36,6 @@ def _filtered_products(request, product_type=None):
             | Q(external_identifier__icontains=search)
         )
 
-    # Provider and category values come directly from the dropdown options,
-    # so use exact matches instead of substring scans. Provider already has
-    # a product_type/provider index and category has a dedicated composite index.
     for field in ("provider", "category"):
         value = params.get(field)
         if value:
@@ -68,10 +65,6 @@ def _filtered_products(request, product_type=None):
     ordering = params.get("ordering", "name")
     prefix = "-" if ordering.startswith("-") else ""
     key = ordering[1:] if prefix else ordering
-
-    # Only calculate a correlated snapshot subquery when the user is
-    # actually sorting by a performance metric. Normal search/filter/name
-    # sorting no longer pays for seven snapshot subqueries per product.
     ordering_field = ordering_fields.get(key, "name")
     if ordering_field.startswith("latest_"):
         latest_snapshot = PerformanceSnapshot.objects.filter(
@@ -91,42 +84,49 @@ def _filtered_products(request, product_type=None):
     elif status in {"OWNED", "UNIVERSAL"}:
         owner_ids = get_visible_owner_ids(request.user)
         active_position = Q(quantity__gt=0) | Q(current_value__gt=0)
-        isin_positions = PortfolioPosition.objects.filter(
-            owner_id__in=owner_ids,
-        ).filter(active_position).filter(asset__isin__iexact=OuterRef("isin"))
-        fallback_positions = PortfolioPosition.objects.filter(
-            owner_id__in=owner_ids,
-        ).filter(active_position).filter(
-            Q(asset__symbol__iexact=OuterRef("external_identifier"))
-            | Q(asset__name__iexact=OuterRef("name"))
-        )
 
-        # PMS ownership is dynamic: match the portfolio Asset name against
-        # the InvestmentProduct name populated from the APMI PMS strategy.
-        # No PMS names are hardcoded and IAID is not used for ownership.
         if product_type == ProductType.PMS:
-            pms_name_positions = PortfolioPosition.objects.filter(
+            # PMS holdings are represented by underlying stock Assets. The
+            # transaction's asset_name stores the PMS strategy name, while
+            # Transaction.asset points to the underlying stock. Therefore
+            # ownership must be derived from Transaction.asset_name rather
+            # than Asset.name. No PMS names are hardcoded.
+            pms_transactions = Transaction.objects.filter(
                 owner_id__in=owner_ids,
-            ).filter(active_position).filter(
-                asset__name__iexact=OuterRef("name")
+                asset_name__iexact=OuterRef("name"),
+                asset__portfolio_positions__owner_id__in=owner_ids,
+            ).filter(
+                Q(asset__portfolio_positions__quantity__gt=0)
+                | Q(asset__portfolio_positions__current_value__gt=0)
+            )
+            queryset = queryset.annotate(
+                has_owned_pms_transaction=Exists(pms_transactions),
+            ).filter(
+                has_owned_pms_transaction=(status == "OWNED")
             )
         else:
-            pms_name_positions = PortfolioPosition.objects.none()
+            isin_positions = PortfolioPosition.objects.filter(
+                owner_id__in=owner_ids,
+            ).filter(active_position).filter(asset__isin__iexact=OuterRef("isin"))
+            fallback_positions = PortfolioPosition.objects.filter(
+                owner_id__in=owner_ids,
+            ).filter(active_position).filter(
+                Q(asset__symbol__iexact=OuterRef("external_identifier"))
+                | Q(asset__name__iexact=OuterRef("name"))
+            )
 
-        if product_type == ProductType.MUTUAL_FUND:
-            isin_positions = isin_positions.filter(asset__category=AssetCategory.MUTUAL_FUND)
-            fallback_positions = fallback_positions.filter(asset__category=AssetCategory.MUTUAL_FUND)
+            if product_type == ProductType.MUTUAL_FUND:
+                isin_positions = isin_positions.filter(asset__category=AssetCategory.MUTUAL_FUND)
+                fallback_positions = fallback_positions.filter(asset__category=AssetCategory.MUTUAL_FUND)
 
-        owned_expression = (
-            (~Q(isin__isnull=True) & ~Q(isin="") & Q(has_owned_isin=True))
-            | (Q(isin__isnull=True) | Q(isin="")) & Q(has_owned_fallback=True)
-            | (Q(product_type=ProductType.PMS) & Q(has_owned_pms_name=True))
-        )
-        queryset = queryset.annotate(
-            has_owned_isin=Exists(isin_positions),
-            has_owned_fallback=Exists(fallback_positions),
-            has_owned_pms_name=Exists(pms_name_positions),
-        ).filter(owned_expression if status == "OWNED" else ~owned_expression)
+            owned_expression = (
+                (~Q(isin__isnull=True) & ~Q(isin="") & Q(has_owned_isin=True))
+                | (Q(isin__isnull=True) | Q(isin="")) & Q(has_owned_fallback=True)
+            )
+            queryset = queryset.annotate(
+                has_owned_isin=Exists(isin_positions),
+                has_owned_fallback=Exists(fallback_positions),
+            ).filter(owned_expression if status == "OWNED" else ~owned_expression)
     return queryset
 
 

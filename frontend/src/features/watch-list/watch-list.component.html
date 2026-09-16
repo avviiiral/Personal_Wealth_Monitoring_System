@@ -21,7 +21,7 @@
   </div>
 
   <div class="filters">
-    <input [(ngModel)]="search" (keyup.enter)="load()" placeholder="Search fund, provider, ISIN…" aria-label="Search Watch List" />
+    <input [(ngModel)]="search" (keyup.enter)="applyFilters()" placeholder="Search fund, provider, ISIN…" aria-label="Search Watch List" />
     <select [(ngModel)]="provider" aria-label="Provider">
       <option value="">All Providers</option>
       <option *ngFor="let option of providers" [value]="option">{{ option }}</option>
@@ -30,10 +30,10 @@
       <option value="">All Categories</option>
       <option *ngFor="let option of categories" [value]="option">{{ option }}</option>
     </select>
-    <select [(ngModel)]="ordering" (change)="load()" aria-label="Sort by">
+    <select [(ngModel)]="ordering" (change)="applyFilters()" aria-label="Sort by">
       <option *ngFor="let option of orderings" [value]="option.value">{{ option.label }}</option>
     </select>
-    <button type="button" class="apply-button" (click)="load()">Apply</button>
+    <button type="button" class="apply-button" (click)="applyFilters()">Apply</button>
   </div>
 
   <div *ngIf="error" class="error">{{ error }}</div>
@@ -71,5 +71,16 @@
     </table>
   </div>
 
-  <div class="count" *ngIf="!loading">{{ count | number }} products</div>
+  <div class="pagination" *ngIf="!loading && count > pageSize" aria-label="Watch List pagination">
+    <button type="button" class="page-button" (click)="goToPage(page - 1)" [disabled]="page === 1">Previous</button>
+    <ng-container *ngFor="let item of pageItems">
+      <span *ngIf="item === 'ellipsis'" class="page-ellipsis">…</span>
+      <button *ngIf="item !== 'ellipsis'" type="button" class="page-button page-number" [class.active]="item === page" (click)="goToPage(item)" [disabled]="item === page">{{ item }}</button>
+    </ng-container>
+    <button type="button" class="page-button" (click)="goToPage(page + 1)" [disabled]="page === totalPages">Next</button>
+  </div>
+
+  <div class="count" *ngIf="!loading">
+    Showing {{ ((page - 1) * pageSize) + (products.length ? 1 : 0) }}–{{ ((page - 1) * pageSize) + products.length }} of {{ count | number }} products
+  </div>
 </section>

@@ -113,16 +113,11 @@ class PortfolioTreeService:
     @staticmethod
     def _calculate_xirr(transactions, current_quantity, current_value):
         """
-        Preserve the existing PortfolioMetricsService XIRR semantics.
+        Calculate XIRR from the supplied transaction cash flows.
 
-        The previous implementation queried all transactions for the
-        same owner + family + portfolio + asset (without sub_class),
-        skipped DIVIDEND REINVESTMENT rows, treated BUY/SIP as negative
-        cash flow and SELL as positive cash flow, and added today's
-        current value when the position and current value were positive.
-
-        The tree already has those transactions in memory, so the same
-        calculation can be performed without another transaction query.
+        BUY/SIP are negative investor cash flows, SELL is positive,
+        dividend reinvestment rows are excluded, and the current
+        position value is added as today's terminal cash flow.
         """
         cash_flows = []
 
@@ -231,6 +226,7 @@ class PortfolioTreeService:
         cls,
         transactions,
         xirr_transactions,
+        asset_name_xirr,
         price_cache,
     ):
         first = transactions[0]
@@ -302,6 +298,7 @@ class PortfolioTreeService:
                 else None
             ),
             "xirr": xirr,
+            "asset_name_xirr": asset_name_xirr,
             "sector": (
                 getattr(security_master, "sector", None)
                 if security_master
@@ -381,12 +378,14 @@ class PortfolioTreeService:
         tree = {}
         grouped = {}
         xirr_grouped = {}
+        asset_name_xirr_grouped = {}
 
         for tx in transactions:
             family = cls._clean(tx.family_name)
             portfolio = cls._clean(tx.portfolio)
             asset_class = cls._clean(tx.asset_class)
             sub_class = cls._clean(tx.sub_class)
+            asset_name = cls._clean(tx.asset_name, getattr(tx.asset, "name", "Unassigned"))
 
             group_key = (
                 family,
@@ -397,8 +396,7 @@ class PortfolioTreeService:
             )
             grouped.setdefault(group_key, []).append(tx)
 
-            # Preserve the old XIRR grouping: owner + family +
-            # portfolio + asset, intentionally without sub_class.
+            # Existing per-underlying/asset XIRR grouping is preserved.
             xirr_key = (
                 tx.owner_id,
                 family,
@@ -407,8 +405,75 @@ class PortfolioTreeService:
             )
             xirr_grouped.setdefault(xirr_key, []).append(tx)
 
+            # Asset Name XIRR intentionally ignores underlying and asset_id.
+            # It combines every transaction belonging to the same displayed
+            # Asset Name within the same family/portfolio/asset-class/sub-class.
+            asset_name_xirr_key = (
+                tx.owner_id,
+                family,
+                portfolio,
+                asset_class,
+                sub_class,
+                asset_name,
+            )
+            asset_name_xirr_grouped.setdefault(asset_name_xirr_key, []).append(tx)
+
         asset_ids = {tx.asset_id for tx in transactions}
         price_cache = cls._load_price_cache(asset_ids)
+
+        # Build the aggregate terminal value and quantity used for the
+        # Asset Name XIRR. This is the critical difference from the old
+        # frontend weighted-average calculation: XIRR is solved once from
+        # the combined cash flows and combined current value.
+        asset_name_terminal_values = {}
+        asset_name_quantities = {}
+
+        for (
+            family,
+            portfolio,
+            asset_class,
+            sub_class,
+            asset_id,
+        ), asset_transactions in grouped.items():
+            first = asset_transactions[0]
+            asset_name = cls._clean(
+                first.asset_name,
+                getattr(first.asset, "name", "Unassigned"),
+            )
+            asset_name_key = (
+                first.owner_id,
+                family,
+                portfolio,
+                asset_class,
+                sub_class,
+                asset_name,
+            )
+
+            position = cls._calculate_position(asset_transactions)
+            asset_name_quantities[asset_name_key] = (
+                asset_name_quantities.get(asset_name_key, Decimal("0"))
+                + position["quantity"]
+            )
+
+            price_data = price_cache.get(asset_id, {})
+            current_price = price_data.get("current_price")
+
+            if current_price is not None and position["quantity"] > 0:
+                current_value = (
+                    position["quantity"] * Decimal(str(current_price))
+                )
+                asset_name_terminal_values[asset_name_key] = (
+                    asset_name_terminal_values.get(asset_name_key, Decimal("0"))
+                    + current_value
+                )
+
+        asset_name_xirr_values = {}
+        for asset_name_key, cash_flow_transactions in asset_name_xirr_grouped.items():
+            asset_name_xirr_values[asset_name_key] = cls._calculate_xirr(
+                cash_flow_transactions,
+                asset_name_quantities.get(asset_name_key, Decimal("0")),
+                asset_name_terminal_values.get(asset_name_key),
+            )
 
         for (
             family,
@@ -424,10 +489,23 @@ class PortfolioTreeService:
                 portfolio,
                 asset_id,
             )
+            asset_name = cls._clean(
+                first.asset_name,
+                getattr(first.asset, "name", "Unassigned"),
+            )
+            asset_name_key = (
+                first.owner_id,
+                family,
+                portfolio,
+                asset_class,
+                sub_class,
+                asset_name,
+            )
 
             asset_data = cls._build_asset(
                 transactions=asset_transactions,
                 xirr_transactions=xirr_grouped.get(xirr_key, []),
+                asset_name_xirr=asset_name_xirr_values.get(asset_name_key),
                 price_cache=price_cache,
             )
 

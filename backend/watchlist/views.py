@@ -36,6 +36,9 @@ def _filtered_products(request, product_type=None):
             | Q(external_identifier__icontains=search)
         )
 
+    # Provider and category values come directly from the dropdown options,
+    # so use exact matches instead of substring scans. Provider already has
+    # a product_type/provider index and category has a dedicated composite index.
     for field in ("provider", "category"):
         value = params.get(field)
         if value:
@@ -65,11 +68,19 @@ def _filtered_products(request, product_type=None):
     ordering = params.get("ordering", "name")
     prefix = "-" if ordering.startswith("-") else ""
     key = ordering[1:] if prefix else ordering
+
+    # Only calculate a correlated snapshot subquery when the user is
+    # actually sorting by a performance metric. Normal search/filter/name
+    # sorting no longer pays for seven snapshot subqueries per product.
     ordering_field = ordering_fields.get(key, "name")
     if ordering_field.startswith("latest_"):
-        latest_snapshot = PerformanceSnapshot.objects.filter(product_id=OuterRef("pk")).order_by("-date", "-id")
+        latest_snapshot = PerformanceSnapshot.objects.filter(
+            product_id=OuterRef("pk")
+        ).order_by("-date", "-id")
         metric_field = ordering_field.removeprefix("latest_")
-        queryset = queryset.annotate(**{ordering_field: Subquery(latest_snapshot.values(metric_field)[:1])})
+        queryset = queryset.annotate(
+            **{ordering_field: Subquery(latest_snapshot.values(metric_field)[:1])}
+        )
 
     queryset = queryset.order_by(prefix + ordering_field, "id")
 
@@ -80,9 +91,14 @@ def _filtered_products(request, product_type=None):
     elif status in {"OWNED", "UNIVERSAL"}:
         owner_ids = get_visible_owner_ids(request.user)
         active_position = Q(quantity__gt=0) | Q(current_value__gt=0)
-        isin_positions = PortfolioPosition.objects.filter(owner_id__in=owner_ids).filter(active_position).filter(asset__isin__iexact=OuterRef("isin"))
-        fallback_positions = PortfolioPosition.objects.filter(owner_id__in=owner_ids).filter(active_position).filter(
-            Q(asset__symbol__iexact=OuterRef("external_identifier")) | Q(asset__name__iexact=OuterRef("name"))
+        isin_positions = PortfolioPosition.objects.filter(
+            owner_id__in=owner_ids,
+        ).filter(active_position).filter(asset__isin__iexact=OuterRef("isin"))
+        fallback_positions = PortfolioPosition.objects.filter(
+            owner_id__in=owner_ids,
+        ).filter(active_position).filter(
+            Q(asset__symbol__iexact=OuterRef("external_identifier"))
+            | Q(asset__name__iexact=OuterRef("name"))
         )
         if product_type == ProductType.MUTUAL_FUND:
             isin_positions = isin_positions.filter(asset__category=AssetCategory.MUTUAL_FUND)
@@ -92,17 +108,22 @@ def _filtered_products(request, product_type=None):
             (~Q(isin__isnull=True) & ~Q(isin="") & Q(has_owned_isin=True))
             | (Q(isin__isnull=True) | Q(isin="")) & Q(has_owned_fallback=True)
         )
-        queryset = queryset.annotate(has_owned_isin=Exists(isin_positions), has_owned_fallback=Exists(fallback_positions)).filter(
-            owned_expression if status == "OWNED" else ~owned_expression
-        )
+        queryset = queryset.annotate(
+            has_owned_isin=Exists(isin_positions),
+            has_owned_fallback=Exists(fallback_positions),
+        ).filter(owned_expression if status == "OWNED" else ~owned_expression)
     return queryset
 
 
 def _latest_snapshots(products):
+    """Load one latest performance snapshot per page product in a single query."""
     product_ids = [product.id for product in products]
     if not product_ids:
         return {}
-    snapshots = PerformanceSnapshot.objects.filter(product_id__in=product_ids).order_by("product_id", "-date", "-id")
+    snapshots = (
+        PerformanceSnapshot.objects.filter(product_id__in=product_ids)
+        .order_by("product_id", "-date", "-id")
+    )
     latest = {}
     for snapshot in snapshots:
         latest.setdefault(snapshot.product_id, snapshot)
@@ -113,13 +134,23 @@ def _watchlisted_ids(products, request):
     product_ids = [product.id for product in products]
     if not product_ids or not request.user.is_authenticated:
         return set()
-    return set(WatchListEntry.objects.filter(user=request.user, product_id__in=product_ids).values_list("product_id", flat=True))
+    return set(
+        WatchListEntry.objects.filter(user=request.user, product_id__in=product_ids).values_list("product_id", flat=True)
+    )
 
 
 def _ownership_cache(products, request):
     status = request.query_params.get("status", "").upper()
     if status == "UNIVERSAL":
-        return {product.id: {"status": "UNIVERSAL", "ownership": [], "owned_current_value": 0, "owned_invested_value": 0} for product in products}
+        return {
+            product.id: {
+                "status": "UNIVERSAL",
+                "ownership": [],
+                "owned_current_value": 0,
+                "owned_invested_value": 0,
+            }
+            for product in products
+        }
     return OwnershipService.bulk_enrich(products, request.user)
 
 
@@ -130,8 +161,21 @@ def watch_list_filters(request):
     queryset = InvestmentProduct.objects.filter(is_active=True)
     if product_type in ProductType.values:
         queryset = queryset.filter(product_type=product_type)
-    providers = list(queryset.exclude(provider__isnull=True).exclude(provider="").values_list("provider", flat=True).distinct().order_by("provider"))
-    categories = list(queryset.exclude(category__isnull=True).exclude(category="").values_list("category", flat=True).distinct().order_by("category"))
+
+    providers = list(
+        queryset.exclude(provider__isnull=True)
+        .exclude(provider="")
+        .values_list("provider", flat=True)
+        .distinct()
+        .order_by("provider")
+    )
+    categories = list(
+        queryset.exclude(category__isnull=True)
+        .exclude(category="")
+        .values_list("category", flat=True)
+        .distinct()
+        .order_by("category")
+    )
     return Response({"providers": providers, "categories": categories})
 
 
@@ -143,20 +187,44 @@ def watch_list_products(request):
         product_type = product_type.upper()
     queryset = _filtered_products(request, product_type if product_type in ProductType.values else None)
     paginator = WatchListPagination()
-    page = list(paginator.paginate_queryset(queryset, request))
+    page = paginator.paginate_queryset(queryset, request)
+    page = list(page)
     latest_snapshots = _latest_snapshots(page)
     ownership_cache = _ownership_cache(page, request)
-    serializer = WatchListProductSerializer(page, many=True, context={"request": request, "latest_snapshots": latest_snapshots, "ownership_cache": ownership_cache, "watchlisted_ids": _watchlisted_ids(page, request)})
+    serializer = WatchListProductSerializer(
+        page,
+        many=True,
+        context={
+            "request": request,
+            "latest_snapshots": latest_snapshots,
+            "ownership_cache": ownership_cache,
+            "watchlisted_ids": _watchlisted_ids(page, request),
+        },
+    )
     return paginator.get_paginated_response(serializer.data)
 
 
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def watch_list_product_detail(request, product_id):
-    product = get_object_or_404(InvestmentProduct.objects.select_related("mutual_fund", "pms"), pk=product_id, is_active=True)
+    product = get_object_or_404(
+        InvestmentProduct.objects.select_related("mutual_fund", "pms"),
+        pk=product_id,
+        is_active=True,
+    )
     latest_snapshots = _latest_snapshots([product])
     ownership_cache = OwnershipService.bulk_enrich([product], request.user)
-    return Response(WatchListProductSerializer(product, context={"request": request, "latest_snapshots": latest_snapshots, "ownership_cache": ownership_cache, "watchlisted_ids": _watchlisted_ids([product], request)}).data)
+    return Response(
+        WatchListProductSerializer(
+            product,
+            context={
+                "request": request,
+                "latest_snapshots": latest_snapshots,
+                "ownership_cache": ownership_cache,
+                "watchlisted_ids": _watchlisted_ids([product], request),
+            },
+        ).data
+    )
 
 
 @api_view(["GET"])
@@ -173,6 +241,7 @@ def watch_list_performance(request, product_id):
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def watch_list_toggle(request, product_id):
+    """Add or remove a product from the caller's personal Watch List (the checkmark toggle)."""
     product = get_object_or_404(InvestmentProduct, pk=product_id, is_active=True)
     entry = WatchListEntry.objects.filter(user=request.user, product=product).first()
     if entry:

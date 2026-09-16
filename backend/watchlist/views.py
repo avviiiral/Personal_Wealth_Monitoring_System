@@ -69,11 +69,19 @@ def _filtered_products(request, product_type=None):
     status = params.get("status", "").upper()
     if status in {"OWNED", "UNIVERSAL"}:
         owner_ids = get_visible_owner_ids(request.user)
-        # Match OwnershipService semantics: use ISIN when the product has one;
-        # otherwise fall back to external identifier/name.
-        has_isin_match = Q(asset__isin__iexact=OuterRef("isin")) & ~Q(isin__isnull=True) & ~Q(isin="")
-        fallback_match = (Q(asset__symbol__iexact=OuterRef("external_identifier")) | Q(asset__name__iexact=OuterRef("name"))) & (
-            Q(isin__isnull=True) | Q(isin="")
+        # Match OwnershipService semantics using the product's identifiers.
+        # Keep the outer-product null/empty checks explicit; unqualified
+        # `isin` here would incorrectly refer to PortfolioPosition/Asset.
+        has_isin_match = (
+            Q(asset__isin__iexact=OuterRef("isin"))
+            & ~Q(asset__isin__isnull=True)
+            & ~Q(asset__isin="")
+            & ~Q(isin__isnull=True)
+            & ~Q(isin="")
+        )
+        fallback_match = (
+            (Q(asset__symbol__iexact=OuterRef("external_identifier")) | Q(asset__name__iexact=OuterRef("name")))
+            & (Q(isin__isnull=True) | Q(isin=""))
         )
         owned_positions = PortfolioPosition.objects.filter(
             owner_id__in=owner_ids,
@@ -102,6 +110,31 @@ def _latest_snapshots(products):
     for snapshot in snapshots:
         latest.setdefault(snapshot.product_id, snapshot)
     return latest
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def watch_list_filters(request):
+    product_type = request.query_params.get("product_type", "").upper()
+    queryset = InvestmentProduct.objects.filter(is_active=True)
+    if product_type in ProductType.values:
+        queryset = queryset.filter(product_type=product_type)
+
+    providers = list(
+        queryset.exclude(provider__isnull=True)
+        .exclude(provider="")
+        .values_list("provider", flat=True)
+        .distinct()
+        .order_by("provider")
+    )
+    categories = list(
+        queryset.exclude(category__isnull=True)
+        .exclude(category="")
+        .values_list("category", flat=True)
+        .distinct()
+        .order_by("category")
+    )
+    return Response({"providers": providers, "categories": categories})
 
 
 @api_view(["GET"])

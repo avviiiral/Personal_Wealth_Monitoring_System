@@ -6,6 +6,7 @@ from django.contrib.auth.models import User
 from django.test import TestCase
 from rest_framework.test import APIClient
 
+from investments.models import Asset, AssetCategory, PortfolioPosition
 from watchlist.models import InvestmentProduct, MutualFundProduct, PerformanceSnapshot, ProductType
 from watchlist.services.performance import AMFIPerformanceService
 from watchlist.services.universe import AMFIUniverseService
@@ -113,6 +114,70 @@ class WatchListTests(TestCase):
         self.assertEqual(len(result["performance"]), 1)
         self.assertEqual(result["performance"][0]["date"], "2026-09-15")
         self.assertEqual(Decimal(result["performance"][0]["nav_or_value"]), Decimal("11"))
+
+    def test_owned_status_filter_matches_owned_mutual_fund(self):
+        product = InvestmentProduct.objects.create(
+            product_type=ProductType.MUTUAL_FUND,
+            name="Owned Fund",
+            provider="Owned AMC",
+            isin="INF000000001",
+            identity_key="MUTUAL_FUND:ISIN:INF000000001",
+            source="AMFI",
+        )
+        MutualFundProduct.objects.create(product=product, scheme_code="1001")
+        asset = Asset.objects.create(
+            owner=self.user,
+            name="Owned Fund",
+            category=AssetCategory.MUTUAL_FUND,
+            isin="INF000000001",
+            symbol="1001",
+        )
+        PortfolioPosition.objects.create(
+            owner=self.user,
+            family_name="My Family",
+            portfolio="My Portfolio",
+            asset=asset,
+            quantity=10,
+            current_value=1000,
+        )
+
+        owned = self.client.get("/api/watch-list/products/?product_type=MUTUAL_FUND&status=OWNED&page_size=50")
+        universal = self.client.get("/api/watch-list/products/?product_type=MUTUAL_FUND&status=UNIVERSAL&page_size=50")
+
+        self.assertEqual(owned.status_code, 200)
+        self.assertEqual(owned.data["count"], 1)
+        self.assertEqual(owned.data["results"][0]["name"], "Owned Fund")
+        self.assertEqual(universal.status_code, 200)
+        self.assertEqual(universal.data["count"], 0)
+
+    def test_watch_list_filter_options(self):
+        InvestmentProduct.objects.create(
+            product_type=ProductType.MUTUAL_FUND,
+            name="Fund A",
+            provider="AMC Alpha",
+            category="Equity",
+            identity_key="MUTUAL_FUND:SCHEME:A",
+        )
+        InvestmentProduct.objects.create(
+            product_type=ProductType.MUTUAL_FUND,
+            name="Fund B",
+            provider="AMC Beta",
+            category="Debt",
+            identity_key="MUTUAL_FUND:SCHEME:B",
+        )
+        InvestmentProduct.objects.create(
+            product_type=ProductType.PMS,
+            name="PMS A",
+            provider="PMS Provider",
+            category="Equity",
+            identity_key="PMS:SCHEME:A",
+        )
+
+        response = self.client.get("/api/watch-list/filters/?product_type=MUTUAL_FUND")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["providers"], ["AMC Alpha", "AMC Beta"])
+        self.assertEqual(response.data["categories"], ["Debt", "Equity"])
 
     @patch("watchlist.services.universe.AMFIUniverseService.download_latest")
     def test_discovery_creates_products(self, download):

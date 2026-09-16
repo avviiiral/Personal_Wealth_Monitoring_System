@@ -13,16 +13,27 @@ class OwnershipService:
     """Derive ownership from existing PWMS portfolio positions."""
 
     @staticmethod
-    def _asset_queryset(product, owner_ids):
+    def _product_name(product):
+        """Return the canonical name that should be matched to a portfolio Asset."""
+        if product.product_type == ProductType.PMS and getattr(product, "pms", None):
+            return product.pms.strategy_name or product.name
+        return product.name
+
+    @classmethod
+    def _asset_queryset(cls, product, owner_ids):
         qs = Asset.objects.filter(owner_id__in=owner_ids)
+        match_name = cls._product_name(product)
         if product.isin:
             qs = qs.filter(isin__iexact=product.isin)
             if product.product_type == ProductType.MUTUAL_FUND:
                 qs = qs.filter(category=AssetCategory.MUTUAL_FUND)
             return qs
         if product.external_identifier:
-            return qs.filter(Q(symbol__iexact=product.external_identifier) | Q(name__iexact=product.name))
-        return qs.filter(name__iexact=product.name)
+            # PMS products have an APMI IAID, but portfolio Assets are keyed by
+            # the human-readable PMS strategy name. Always include the name
+            # comparison so the IAID is never required for ownership matching.
+            return qs.filter(Q(symbol__iexact=product.external_identifier) | Q(name__iexact=match_name))
+        return qs.filter(name__iexact=match_name)
 
     @staticmethod
     def _position_xirr(position, transactions_by_position=None):
@@ -92,13 +103,19 @@ class OwnershipService:
         product_by_id = {product.id: product for product in products}
 
         identifier_query = Q()
+        product_match_names = {}
         for product in products:
+            match_name = cls._product_name(product)
+            product_match_names[product.id] = match_name
             if product.isin:
                 identifier_query |= Q(isin__iexact=product.isin)
             elif product.external_identifier:
-                identifier_query |= Q(symbol__iexact=product.external_identifier) | Q(name__iexact=product.name)
+                identifier_query |= (
+                    Q(symbol__iexact=product.external_identifier)
+                    | Q(name__iexact=match_name)
+                )
             else:
-                identifier_query |= Q(name__iexact=product.name)
+                identifier_query |= Q(name__iexact=match_name)
 
         assets_qs = Asset.objects.filter(owner_id__in=owner_ids).filter(identifier_query)
         if products and all(product.product_type == ProductType.MUTUAL_FUND for product in products):
@@ -121,12 +138,16 @@ class OwnershipService:
 
         product_asset_ids = {}
         for product in products:
+            match_name = product_match_names[product.id]
             if product.isin:
                 matches = assets_by_isin.get(norm(product.isin), [])
             elif product.external_identifier:
-                matches = assets_by_symbol.get(norm(product.external_identifier), []) + assets_by_name.get(norm(product.name), [])
+                matches = (
+                    assets_by_symbol.get(norm(product.external_identifier), [])
+                    + assets_by_name.get(norm(match_name), [])
+                )
             else:
-                matches = assets_by_name.get(norm(product.name), [])
+                matches = assets_by_name.get(norm(match_name), [])
             product_asset_ids[product.id] = {asset.id for asset in matches}
 
         all_asset_ids = {asset_id for ids in product_asset_ids.values() for asset_id in ids}

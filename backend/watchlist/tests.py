@@ -26,7 +26,7 @@ class WatchListTests(TestCase):
 
     def test_amfi_parser_supports_six_column_legacy_format(self):
         feed = (
-            "Scheme Code;ISIN Div Payout/ ISIN Growth;ISIN Div Reinvestment;Scheme Name;Net Asset Value;Date\n"
+            "Scheme Code;ISIN Div Payout/ISIN Growth;ISIN Div Reinvestment;Scheme Name;Net Asset Value;Date\n"
             "Provider One\n"
             "1;INF000000001;-;Generic Equity Fund;100.25;15-Sep-2026\n"
         )
@@ -104,6 +104,22 @@ class WatchListTests(TestCase):
         self.assertEqual(len(records), 1)
         self.assertEqual(records[0]["scheme_code"], "1")
         self.assertEqual(records[0]["nav"], Decimal("100.25"))
+
+    @patch("watchlist.services.performance.requests.get")
+    def test_download_history_requests_text_report(self, get):
+        get.return_value.raise_for_status.return_value = None
+        get.return_value.text = ""
+        start = date(2026, 8, 1)
+        end = date(2026, 8, 15)
+
+        AMFIPerformanceService.download_history(start, end)
+
+        get.assert_called_once_with(
+            AMFIPerformanceService.HISTORY_URL,
+            params={"tp": "1", "frmdt": "01-Aug-2026", "todt": "15-Aug-2026"},
+            headers={"User-Agent": "PWMS-WatchList/1.0"},
+            timeout=120,
+        )
 
     def test_subtract_months_handles_month_end(self):
         self.assertEqual(AMFIPerformanceService._subtract_months(date(2026, 3, 31), 1), date(2026, 2, 28))

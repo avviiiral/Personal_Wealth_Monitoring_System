@@ -55,24 +55,82 @@ class AMFIPerformanceService:
 
     @classmethod
     def parse_history(cls, text):
+        """Parse AMFI historical NAV text across supported column layouts.
+
+        AMFI has changed the historical report layout. The current report is:
+        Scheme Code;NAV Name;Plan;Option;ISIN Div Payout/ISIN Growth;
+        ISIN Div Reinvestment;Net Asset Value;Date
+
+        Older reports used the ISIN fields immediately after the scheme name
+        and placed NAV at column 5. Detect the column positions from the
+        header so either layout remains parseable.
+        """
         records = []
+        positions = {
+            "name": 1,
+            "plan": None,
+            "option": None,
+            "isin": 2,
+            "isin2": 3,
+            "nav": 4,
+            "date": 7,
+        }
+
         for raw_line in text.splitlines():
             parts = [str(part).strip().replace("\ufeff", "") for part in raw_line.split(";")]
-            if len(parts) < 8 or not parts[0].isdigit():
+            normalized = [part.lower() for part in parts]
+
+            if normalized and normalized[0] == "scheme code":
+                try:
+                    positions["name"] = normalized.index("nav name")
+                except ValueError:
+                    try:
+                        positions["name"] = normalized.index("scheme name")
+                    except ValueError:
+                        pass
+                try:
+                    positions["plan"] = normalized.index("plan")
+                except ValueError:
+                    positions["plan"] = None
+                try:
+                    positions["option"] = normalized.index("option")
+                except ValueError:
+                    positions["option"] = None
+                try:
+                    positions["isin"] = normalized.index("isin div payout/isin growth")
+                except ValueError:
+                    pass
+                try:
+                    positions["isin2"] = normalized.index("isin div reinvestment")
+                except ValueError:
+                    pass
+                try:
+                    positions["nav"] = normalized.index("net asset value")
+                except ValueError:
+                    pass
+                try:
+                    positions["date"] = normalized.index("date")
+                except ValueError:
+                    pass
                 continue
-            nav = cls._decimal(parts[4])
+
+            if len(parts) <= positions["date"] or not parts[0].isdigit():
+                continue
+            nav = cls._decimal(parts[positions["nav"]])
             if nav is None:
                 continue
             try:
-                nav_date = datetime.strptime(parts[7], "%d-%b-%Y").date()
+                nav_date = datetime.strptime(parts[positions["date"]], "%d-%b-%Y").date()
             except (ValueError, TypeError):
                 continue
             records.append(
                 {
                     "scheme_code": parts[0],
-                    "name": parts[1],
-                    "isin": parts[2] if parts[2] not in {"", "-"} else None,
-                    "isin2": parts[3] if parts[3] not in {"", "-"} else None,
+                    "name": parts[positions["name"]],
+                    "plan": parts[positions["plan"]] if positions["plan"] is not None else None,
+                    "option": parts[positions["option"]] if positions["option"] is not None else None,
+                    "isin": parts[positions["isin"]] if parts[positions["isin"]] not in {"", "-"} else None,
+                    "isin2": parts[positions["isin2"]] if parts[positions["isin2"]] not in {"", "-"} else None,
                     "nav": nav,
                     "date": nav_date,
                 }

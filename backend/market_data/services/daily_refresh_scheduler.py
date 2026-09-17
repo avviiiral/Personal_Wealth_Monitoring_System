@@ -8,8 +8,6 @@ from django.conf import settings
 from django.core.management import call_command
 from django.db import close_old_connections
 
-from config.database_scheduler_lock import DATABASE_SCHEDULER_LOCK
-
 
 logger = logging.getLogger(__name__)
 
@@ -67,11 +65,7 @@ class DailyRefreshScheduler:
             try:
                 if not cls._already_ran_today():
                     close_old_connections()
-                    # SQLite serializes writes. Share one lock with the other
-                    # in-process DB-heavy schedulers so the daily refresh does
-                    # not collide with market/Watch List updates at startup.
-                    with DATABASE_SCHEDULER_LOCK:
-                        call_command("run_scheduled_refresh")
+                    call_command("run_scheduled_refresh")
                     cls._mark_ran_today()
                     logger.info("Daily refresh completed.")
             except Exception as exc:

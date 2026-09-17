@@ -35,8 +35,11 @@
       <option *ngFor="let option of orderings" [value]="option.value">{{ option.label }}</option>
     </select>
     <button type="button" class="apply-button" (click)="applyFilters()">Apply</button>
-    <button type="button" class="apply-button" [disabled]="selectedCount === 0 || movingToWatchList" (click)="moveSelectedToWatchList()">
-      {{ movingToWatchList ? 'Moving…' : 'Move to Watch List' }}<span *ngIf="selectedCount > 0"> ({{ selectedCount }})</span>
+    <button type="button" class="apply-button" [disabled]="selectedAddCount === 0 || movingToWatchList || removingFromWatchList" (click)="moveSelectedToWatchList()">
+      {{ movingToWatchList ? 'Moving…' : 'Move to Watch List' }}<span *ngIf="selectedAddCount > 0"> ({{ selectedAddCount }})</span>
+    </button>
+    <button type="button" class="apply-button" [disabled]="selectedRemoveCount === 0 || movingToWatchList || removingFromWatchList" (click)="removeSelectedFromWatchList()">
+      {{ removingFromWatchList ? 'Removing…' : 'Remove from Watch List' }}<span *ngIf="selectedRemoveCount > 0"> ({{ selectedRemoveCount }})</span>
     </button>
   </div>
 
@@ -55,7 +58,7 @@
       <tbody>
         <tr *ngFor="let product of products">
           <td class="select-column">
-            <input type="checkbox" [checked]="isSelected(product.id)" [disabled]="product.is_watchlisted" (change)="toggleSelection(product.id, $event)" [attr.aria-label]="'Select ' + product.name" />
+            <input type="checkbox" [checked]="isSelected(product.id)" (change)="toggleSelection(product.id, $event)" [attr.aria-label]="'Select ' + product.name" />
           </td>
           <td class="watch-column">
             <button type="button" class="watch-toggle" [class.active]="product.is_watchlisted" [disabled]="isToggling(product.id)" (click)="toggleWatch(product, $event)" [attr.aria-pressed]="product.is_watchlisted" [attr.aria-label]="product.is_watchlisted ? 'Remove from Watch List' : 'Add to Watch List'" title="{{ product.is_watchlisted ? 'Remove from Watch List' : 'Add to Watch List' }}">✓</button>

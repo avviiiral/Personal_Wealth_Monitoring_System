@@ -302,6 +302,29 @@ def watch_list_bulk_add(request):
 
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
+def watch_list_bulk_remove(request):
+    """Remove multiple products from the caller's personal Watch List."""
+    product_ids = request.data.get("product_ids", [])
+    if not isinstance(product_ids, list) or not product_ids:
+        return Response({"detail": "product_ids must be a non-empty list."}, status=400)
+
+    try:
+        product_ids = list({int(product_id) for product_id in product_ids})
+    except (TypeError, ValueError):
+        return Response({"detail": "product_ids must contain valid product IDs."}, status=400)
+
+    deleted_count, _ = WatchListEntry.objects.filter(
+        user=request.user,
+        product_id__in=product_ids,
+    ).delete()
+    return Response({
+        "selected": len(product_ids),
+        "removed": deleted_count,
+    })
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
 def watch_list_refresh(request):
     mf_result = AMFIUniverseService.refresh()
     pms_result = APMIPMSDiscoveryService.refresh()

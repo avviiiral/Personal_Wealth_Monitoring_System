@@ -42,6 +42,18 @@ def refresh_security_metrics():
                     owner=asset.owner,
                     asset=asset,
                 )
+
+                asset_updates = []
+                if resolved_symbol and asset.symbol != resolved_symbol:
+                    asset.symbol = resolved_symbol
+                    asset_updates.append("symbol")
+                if asset.security_master_id != security.id:
+                    asset.security_master = security
+                    asset_updates.append("security_master")
+                if asset_updates:
+                    asset_updates.append("updated_at")
+                    asset.save(update_fields=asset_updates)
+
                 if enrich_quant_fields(asset, security, force_refresh=True):
                     refreshed += 1
                 else:

@@ -3,8 +3,7 @@ import threading
 import time
 
 from django.apps import AppConfig
-
-from config.database_scheduler_lock import DATABASE_SCHEDULER_LOCK
+from django.db import close_old_connections
 
 
 logger = logging.getLogger(__name__)
@@ -43,23 +42,17 @@ class WatchlistConfig(AppConfig):
 
         while True:
             try:
-                from watchlist.services.pms import APMIPMSDiscoveryService
-                from watchlist.services.universe import AMFIUniverseService
+                from watchlist.services.background_refresh import BackgroundWatchListRefreshService
 
-                logger.info("Automatic Watch List refresh started.")
-                with DATABASE_SCHEDULER_LOCK:
-                    mf_result = AMFIUniverseService.refresh()
-                    logger.info("Automatic Mutual Fund refresh completed: %s", mf_result)
-
-                    pms_result = APMIPMSDiscoveryService.refresh()
-                    logger.info("Automatic PMS refresh completed: %s", pms_result)
-
-                logger.info("Automatic Watch List refresh completed successfully.")
+                # The worker fetches/parses external data first and only then
+                # performs short autocommit ORM writes. No global scheduler
+                # lock is held while AMFI/APMI/network calls are in flight.
+                result = BackgroundWatchListRefreshService.refresh()
+                logger.info("Automatic Watch List refresh completed: %s", result)
             except Exception:
-                # A failed refresh must not kill the background worker. It will
-                # retry after the next 24-hour interval while the backend runs.
                 logger.exception("Automatic Watch List refresh failed.")
+            finally:
+                close_old_connections()
 
-            # The 24-hour interval starts after the refresh attempt completes,
-            # so the next update is approximately 24 hours after this update.
+            # The 24-hour interval starts after the refresh attempt completes.
             time.sleep(cls.REFRESH_INTERVAL_SECONDS)

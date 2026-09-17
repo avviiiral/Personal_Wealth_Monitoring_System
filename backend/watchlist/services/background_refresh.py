@@ -13,6 +13,7 @@ from decimal import Decimal
 from django.db import close_old_connections
 from django.utils import timezone
 
+from config.database_scheduler_lock import DATABASE_SCHEDULER_LOCK
 from watchlist.models import (
     DiscoveryRun,
     InvestmentProduct,
@@ -29,7 +30,15 @@ logger = logging.getLogger(__name__)
 
 
 class BackgroundWatchListRefreshService:
-    """Fetch first, then persist with short autocommit DB operations."""
+    """Fetch first, then persist with short autocommit DB operations.
+
+    SQLite has a single writer. The worker remains a dedicated thread, but all
+    background database writers share DATABASE_SCHEDULER_LOCK so AMFI/APMI,
+    market prices, daily refreshes, and portfolio-news persistence never try to
+    write SQLite concurrently. The lock is intentionally held only by this
+    background worker while it is persisting; network calls are completed before
+    each refresh phase starts.
+    """
 
     @classmethod
     def refresh_mutual_funds(cls):
@@ -303,9 +312,16 @@ class BackgroundWatchListRefreshService:
         close_old_connections()
         try:
             logger.info("Background Watch List refresh started (network-first mode).")
-            mf_result = cls.refresh_mutual_funds()
-            close_old_connections()
-            pms_result = cls.refresh_pms()
+
+            # SQLite supports concurrent readers but serializes writers. This
+            # worker is one of several background writers, so serialize the
+            # background write phases in-process. This does NOT block API code;
+            # it only prevents background schedulers from fighting each other.
+            with DATABASE_SCHEDULER_LOCK:
+                mf_result = cls.refresh_mutual_funds()
+                close_old_connections()
+                pms_result = cls.refresh_pms()
+
             logger.info("Background Watch List refresh completed successfully.")
             return {"mutual_funds": mf_result, "pms": pms_result}
         finally:

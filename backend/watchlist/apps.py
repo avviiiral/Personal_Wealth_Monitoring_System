@@ -4,6 +4,8 @@ import time
 
 from django.apps import AppConfig
 
+from config.database_scheduler_lock import DATABASE_SCHEDULER_LOCK
+
 
 logger = logging.getLogger(__name__)
 
@@ -45,11 +47,13 @@ class WatchlistConfig(AppConfig):
                 from watchlist.services.universe import AMFIUniverseService
 
                 logger.info("Automatic Watch List refresh started.")
-                mf_result = AMFIUniverseService.refresh()
-                logger.info("Automatic Mutual Fund refresh completed: %s", mf_result)
+                with DATABASE_SCHEDULER_LOCK:
+                    mf_result = AMFIUniverseService.refresh()
+                    logger.info("Automatic Mutual Fund refresh completed: %s", mf_result)
 
-                pms_result = APMIPMSDiscoveryService.refresh()
-                logger.info("Automatic PMS refresh completed: %s", pms_result)
+                    pms_result = APMIPMSDiscoveryService.refresh()
+                    logger.info("Automatic PMS refresh completed: %s", pms_result)
+
                 logger.info("Automatic Watch List refresh completed successfully.")
             except Exception:
                 # A failed refresh must not kill the background worker. It will

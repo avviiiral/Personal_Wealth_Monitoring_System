@@ -75,6 +75,11 @@ export class HoldingReportsComponent implements OnInit {
   async downloadHoldingReport(): Promise<void> {
     await this.downloadRows(this.flattenFilteredHoldings(), this.fullColumns(), `holding_report${this.fileSuffix()}_${this.todayStamp()}.xlsx`, `Holding Report — ${this.reportScope()} (as of ${this.todayLabel()})`);
   }
+  async downloadAllSubClassXirrReport(event?: Event): Promise<void> {
+    event?.stopPropagation();
+    const rows = this.subClassGroups.map(group => this.toSubClassXirrExportRow(group));
+    await this.downloadRows(rows, this.subClassXirrColumns(), `holding_report_sub_class_xirr${this.fileSuffix()}_${this.todayStamp()}.xlsx`, `Sub Class XIRR Report — ${this.reportScope()} (as of ${this.todayLabel()})`);
+  }
   async downloadSubClassReport(group: SubClassGroup, event?: Event): Promise<void> {
     event?.stopPropagation();
     const rows = group.holdings.map(h => this.toExportRow(h.row, group.xirr, false));
@@ -106,10 +111,16 @@ export class HoldingReportsComponent implements OnInit {
   private subClassColumns() { return [
     {header:'Family Name',key:'family_name',width:24},{header:'Portfolio',key:'portfolio',width:24},{header:'Asset Class',key:'asset_class',width:18},{header:'Sub Class',key:'sub_class',width:22},{header:'Underlying',key:'underlying',width:28},{header:'ISIN',key:'isin',width:18},{header:'Advisor',key:'advisors',width:24},{header:'Quantity',key:'quantity',width:14,numFmt:'#,##0.00'},{header:'Average Cost',key:'average_cost',width:16,numFmt:'"₹"#,##0.00'},{header:'Invested Value',key:'invested_value',width:18,numFmt:'"₹"#,##0'},{header:'Current Price / NAV',key:'current_price',width:18,numFmt:'"₹"#,##0.00'},{header:'Current Value',key:'current_value',width:18,numFmt:'"₹"#,##0'},{header:'Gain',key:'gain',width:18,numFmt:'"₹"#,##0'},{header:'Gain %',key:'pnl_percentage',width:14,numFmt:'0.00"%"'},{header:'XIRR (%)',key:'xirr',width:14,numFmt:'0.00"%"'}
   ]; }
+  private subClassXirrColumns() { return [
+    {header:'Family Name',key:'family_name',width:24},{header:'Portfolio',key:'portfolio',width:24},{header:'Asset Class',key:'asset_class',width:18},{header:'Sub Class',key:'sub_class',width:22},{header:'Quantity',key:'quantity',width:14,numFmt:'#,##0.00'},{header:'Invested Value',key:'invested_value',width:18,numFmt:'"₹"#,##0'},{header:'Current Value',key:'current_value',width:18,numFmt:'"₹"#,##0'},{header:'Gain',key:'gain',width:18,numFmt:'"₹"#,##0'},{header:'Gain %',key:'pnl_percentage',width:14,numFmt:'0.00"%"'},{header:'XIRR (%)',key:'xirr',width:14,numFmt:'0.00"%"'}
+  ]; }
   private assetNameColumns() { return [
     {header:'Family Name',key:'family_name',width:24},{header:'Portfolio',key:'portfolio',width:24},{header:'Asset Class',key:'asset_class',width:18},{header:'Sub Class',key:'sub_class',width:22},{header:'Asset Name',key:'asset_name',width:30},{header:'Underlying',key:'underlying',width:28},{header:'ISIN',key:'isin',width:18},{header:'Advisor',key:'advisors',width:24},{header:'Quantity',key:'quantity',width:14,numFmt:'#,##0.00'},{header:'Average Cost',key:'average_cost',width:16,numFmt:'"₹"#,##0.00'},{header:'Invested Value',key:'invested_value',width:18,numFmt:'"₹"#,##0'},{header:'Current Price / NAV',key:'current_price',width:18,numFmt:'"₹"#,##0.00'},{header:'Current Value',key:'current_value',width:18,numFmt:'"₹"#,##0'},{header:'Gain',key:'gain',width:18,numFmt:'"₹"#,##0'},{header:'Gain %',key:'pnl_percentage',width:14,numFmt:'0.00"%"'},{header:'XIRR (%)',key:'xirr',width:14,numFmt:'0.00"%"'}
   ]; }
   private flattenFilteredHoldings(): HoldingExportRow[] { return this.filteredRows.map(row => this.toExportRow(row,row.xirr,true)).sort((a,b) => a.family_name.localeCompare(b.family_name)||a.portfolio.localeCompare(b.portfolio)||a.asset_class.localeCompare(b.asset_class)||a.sub_class.localeCompare(b.sub_class)||a.asset_name.localeCompare(b.asset_name)); }
+  private toSubClassXirrExportRow(group: SubClassGroup): HoldingExportRow {
+    return {family_name:group.holdings[0]?.row.family_name ? this.clean(group.holdings[0].row.family_name) : '',portfolio:group.holdings[0]?.row.portfolio ? this.clean(group.holdings[0].row.portfolio) : '',asset_class:group.holdings[0]?.row.asset_class ? this.clean(group.holdings[0].row.asset_class) : '',sub_class:group.sub_class,asset_name:'',underlying:'',isin:'-',advisors:'',quantity:this.toNumber(group.quantity),average_cost:group.quantity ? group.invested_value / group.quantity : 0,invested_value:this.toNumber(group.invested_value),current_price:0,current_value:this.toNumber(group.current_value),gain:this.toNumber(group.pnl),pnl_percentage:group.invested_value ? (group.pnl / group.invested_value) * 100 : 0,xirr:group.xirr,sector:'-',cap_type:'-',amc_name:'-'};
+  }
   private toExportRow(row: HoldingReportRow, xirr: number | null, includeAssetName: boolean): HoldingExportRow {
     return {family_name:this.clean(row.family_name),portfolio:this.clean(row.portfolio),asset_class:this.clean(row.asset_class),sub_class:this.clean(row.sub_class),asset_name:includeAssetName?this.clean(row.asset_name):'',underlying:this.clean(row.underlying,''),isin:row.isin||'-',advisors:this.clean(row.advisors,''),quantity:this.toNumber(row.quantity),average_cost:this.toNumber(row.average_cost),invested_value:this.toNumber(row.invested_value),current_price:this.toNumber(row.current_price),current_value:this.toNumber(row.current_value),gain:this.toNumber(row.gain),pnl_percentage:this.toNumber(row.gain_percentage),xirr,sector:row.sector||'-',cap_type:row.cap_type||'-',amc_name:row.amc_name||'-'};
   }

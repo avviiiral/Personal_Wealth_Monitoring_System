@@ -5,6 +5,7 @@ from decimal import Decimal
 from django.db.models import OuterRef, QuerySet, Subquery
 
 from investments.models import Transaction, TransactionType
+from investments.services.security_master import SecurityMasterService
 from investments.services.xirr import XIRRCalculator
 from market_data.models import ManualAssetPrice, MarketPrice
 
@@ -137,6 +138,8 @@ class PortfolioTreeService:
         pnl_percentage = (pnl / invested_value) * Decimal("100") if pnl is not None and invested_value > Decimal("0") else None
         xirr = cls._calculate_xirr(xirr_transactions, quantity, current_value)
         security_master = getattr(asset, "security_master", None)
+        if security_master is None:
+            security_master = SecurityMasterService.get_for_asset(owner=asset.owner, asset=asset)
         asset_name = cls._clean(first.asset_name, getattr(asset, "name", "Unassigned"))
         return {
             "id": asset.id,

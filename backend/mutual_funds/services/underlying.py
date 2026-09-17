@@ -29,43 +29,22 @@ class MutualFundUnderlyingService:
     MAX_CRAWL_PAGES = 20
 
     COLUMN_ALIASES = {
-        "security_name": {
-            "name", "name of instrument", "name of the instrument", "security",
-            "security name", "instrument", "instrument name", "issuer", "company",
-            "company name", "stock", "scrip name",
-        },
+        "security_name": {"name", "name of instrument", "name of the instrument", "security", "security name", "instrument", "instrument name", "issuer", "company", "company name", "stock", "scrip name"},
         "isin": {"isin", "isin code", "isin no", "isin number"},
-        "quantity": {
-            "quantity", "qty", "units", "no of shares", "number of shares",
-            "shares", "face value units",
-        },
-        "market_value": {
-            "market value", "market value (rs.)", "market value (in rs.)",
-            "fair value", "valuation", "value", "market/fair value",
-        },
-        "percentage_of_nav": {
-            "% to nav", "% of nav", "percent of nav", "percentage of nav",
-            "% nav", "nav (%)", "weight", "weight (%)", "portfolio (%)", "percentage",
-        },
+        "quantity": {"quantity", "qty", "units", "no of shares", "number of shares", "shares", "face value units"},
+        "market_value": {"market value", "market value (rs.)", "market value (in rs.)", "fair value", "valuation", "value", "market/fair value"},
+        "percentage_of_nav": {"% to nav", "% of nav", "percent of nav", "percentage of nav", "% nav", "nav (%)", "weight", "weight (%)", "portfolio (%)", "percentage"},
     }
 
     @classmethod
     def _headers(cls, referer="https://www.amfiindia.com/"):
-        return {
-            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-            "Accept-Language": "en-US,en;q=0.9",
-            "Referer": referer,
-        }
+        return {"Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8", "Accept-Language": "en-US,en;q=0.9", "Referer": referer}
 
     @staticmethod
     def _valid_http_url(url):
         try:
             parsed = urlparse(url)
-            return (
-                parsed.scheme in {"http", "https"}
-                and bool(parsed.netloc)
-                and bool(parsed.hostname)
-            )
+            return parsed.scheme in {"http", "https"} and bool(parsed.netloc) and bool(parsed.hostname)
         except (TypeError, ValueError):
             return False
 
@@ -112,17 +91,12 @@ class MutualFundUnderlyingService:
         if isin and isin not in {"-", "NA", "N/A"}:
             return f"ISIN:{isin}"
         name = re.sub(r"[^A-Z0-9]+", " ", cls.normalize_text(security_name).upper())
-        normalized_name = re.sub(r"\s+", " ", name).strip()
-        return f"NAME:{normalized_name}"
+        return f"NAME:{re.sub(r'\s+', ' ', name).strip()}"
 
     @classmethod
     def _extract_date(cls, text):
         text = cls.normalize_text(text)
-        patterns = [
-            r"(?P<d>\d{1,2})[-_/](?P<m>\d{1,2})[-_/](?P<y>20\d{2})",
-            r"(?P<d>\d{1,2})[- ](?P<m>[A-Za-z]{3,9})[- ](?P<y>20\d{2})",
-            r"(?P<y>20\d{2})[-_/](?P<m>\d{1,2})[-_/](?P<d>\d{1,2})",
-        ]
+        patterns = [r"(?P<d>\d{1,2})[-_/](?P<m>\d{1,2})[-_/](?P<y>20\d{2})", r"(?P<d>\d{1,2})[- ](?P<m>[A-Za-z]{3,9})[- ](?P<y>20\d{2})", r"(?P<y>20\d{2})[-_/](?P<m>\d{1,2})[-_/](?P<d>\d{1,2})"]
         for pattern in patterns:
             match = re.search(pattern, text)
             if not match:
@@ -177,21 +151,15 @@ class MutualFundUnderlyingService:
     def _fetch(cls, url, referer=None):
         if not cls._valid_http_url(url):
             raise ValueError(f"Invalid HTTP URL: {url}")
-        response = curl_requests.get(
-            url,
-            headers=cls._headers(referer or "https://www.amfiindia.com/"),
-            timeout=cls.TIMEOUT_SECONDS,
-            impersonate="chrome",
-            allow_redirects=True,
-        )
+        response = curl_requests.get(url, headers=cls._headers(referer or "https://www.amfiindia.com/"), timeout=cls.TIMEOUT_SECONDS, impersonate="chrome", allow_redirects=True)
         response.raise_for_status()
         return response
 
     @classmethod
     def _official_links(cls, html, base_url):
-        links = []
         if not cls._valid_http_url(base_url):
-            return links
+            return []
+        links = []
         for href in re.findall(r"(?:href|data-href|data-url)=[\"']([^\"']+)[\"']", html or "", re.I):
             absolute = urljoin(base_url, unescape(href.strip()))
             if cls._valid_http_url(absolute):
@@ -208,11 +176,7 @@ class MutualFundUnderlyingService:
             except (TypeError, ValueError):
                 continue
             if parsed.path in {"/url", "/l/", "/link"}:
-                target = (
-                    parse_qs(parsed.query).get("q", [None])[0]
-                    or parse_qs(parsed.query).get("uddg", [None])[0]
-                    or parse_qs(parsed.query).get("url", [None])[0]
-                )
+                target = parse_qs(parsed.query).get("q", [None])[0] or parse_qs(parsed.query).get("uddg", [None])[0] or parse_qs(parsed.query).get("url", [None])[0]
                 if target:
                     href = unquote(target)
             if not cls._valid_http_url(href):
@@ -226,20 +190,9 @@ class MutualFundUnderlyingService:
     @classmethod
     def _search_urls(cls, query):
         urls = []
-        for endpoint in (
-            "https://www.google.com/search",
-            "https://www.bing.com/search",
-            "https://html.duckduckgo.com/html/",
-        ):
+        for endpoint in ("https://www.google.com/search", "https://www.bing.com/search", "https://html.duckduckgo.com/html/"):
             try:
-                response = curl_requests.get(
-                    endpoint,
-                    params={"q": query, "num": cls.MAX_SEARCH_RESULTS, "count": cls.MAX_SEARCH_RESULTS, "hl": "en"},
-                    headers=cls._headers(endpoint),
-                    timeout=cls.SEARCH_TIMEOUT_SECONDS,
-                    impersonate="chrome",
-                    allow_redirects=True,
-                )
+                response = curl_requests.get(endpoint, params={"q": query, "num": cls.MAX_SEARCH_RESULTS, "count": cls.MAX_SEARCH_RESULTS, "hl": "en"}, headers=cls._headers(endpoint), timeout=cls.SEARCH_TIMEOUT_SECONDS, impersonate="chrome", allow_redirects=True)
                 response.raise_for_status()
                 found = cls._extract_search_result_urls(response.text)
             except Exception:
@@ -256,15 +209,7 @@ class MutualFundUnderlyingService:
         amc_name = cls.normalize_text(getattr(scheme, "amc_name", ""))
         isin = cls.normalize_text(scheme.isin_growth or scheme.isin_dividend or "")
         code = cls.normalize_text(scheme.scheme_code or "")
-        queries = [
-            f'"{scheme_name}" "{isin}" portfolio',
-            f'"{scheme_name}" "{code}" portfolio',
-            f'"{scheme_name}" "portfolio disclosure"',
-            f'"{amc_name}" "{scheme_name}" holdings',
-            f'"{isin}" "portfolio" mutual fund' if isin else f'"{scheme_name}" portfolio mutual fund',
-            f'"{code}" "portfolio" mutual fund' if code else f'"{scheme_name}" portfolio mutual fund',
-        ]
-
+        queries = [f'"{scheme_name}" "{isin}" portfolio', f'"{scheme_name}" "{code}" portfolio', f'"{scheme_name}" "portfolio disclosure"', f'"{amc_name}" "{scheme_name}" holdings', f'"{isin}" "portfolio" mutual fund' if isin else f'"{scheme_name}" portfolio mutual fund', f'"{code}" "portfolio" mutual fund' if code else f'"{scheme_name}" portfolio mutual fund']
         pages = []
         seen_urls = set()
         for query in queries:
@@ -294,11 +239,7 @@ class MutualFundUnderlyingService:
 
     @classmethod
     def _find_download_links(cls, page_url, html, scheme):
-        return [
-            link for link in cls._official_links(html, page_url)
-            if link.lower().endswith((".xlsx", ".xls", ".csv", ".pdf"))
-            and (cls._matches_scheme(link, scheme) or cls._matches_scheme(html, scheme))
-        ]
+        return [link for link in cls._official_links(html, page_url) if link.lower().endswith((".xlsx", ".xls", ".csv", ".pdf")) and cls._matches_scheme(link, scheme)]
 
     @classmethod
     def _discover_amc_domains_from_amfi(cls, scheme):

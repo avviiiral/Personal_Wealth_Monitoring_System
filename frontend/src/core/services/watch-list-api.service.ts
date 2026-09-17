@@ -1,6 +1,6 @@
 import { Injectable, inject } from '@angular/core';
-import { HttpClient, HttpParams } from '@angular/common/http';
-import { Observable } from 'rxjs';
+import { HttpClient, HttpHeaders, HttpParams } from '@angular/common/http';
+import { Observable, switchMap } from 'rxjs';
 
 import { environment } from '../../environments/environment';
 
@@ -91,5 +91,51 @@ export class WatchListApiService {
       {},
       { withCredentials: true },
     );
+  }
+
+  bulkAddToWatchList(productIds: number[]): Observable<{
+    selected: number;
+    added: number;
+    already_watchlisted: number;
+  }> {
+    return this.postWithCsrf<{
+      selected: number;
+      added: number;
+      already_watchlisted: number;
+    }>(`${this.baseUrl}/bulk-add/`, { product_ids: productIds });
+  }
+
+  bulkRemoveFromWatchList(productIds: number[]): Observable<{
+    selected: number;
+    removed: number;
+  }> {
+    return this.postWithCsrf<{
+      selected: number;
+      removed: number;
+    }>(`${this.baseUrl}/bulk-remove/`, { product_ids: productIds });
+  }
+
+  private postWithCsrf<T>(url: string, body: unknown): Observable<T> {
+    return this.http.get(`${environment.apiUrl}/api/health/`, {
+      withCredentials: true,
+      responseType: 'json',
+    }).pipe(
+      switchMap(() => {
+        const token = this.getCsrfToken();
+        const headers = token ? new HttpHeaders({ 'X-CSRFToken': token }) : undefined;
+        return this.http.post<T>(url, body, {
+          withCredentials: true,
+          headers,
+        });
+      }),
+    );
+  }
+
+  private getCsrfToken(): string | null {
+    if (typeof document === 'undefined') return null;
+    const match = document.cookie
+      .split('; ')
+      .find(cookie => cookie.startsWith('csrftoken='));
+    return match ? decodeURIComponent(match.substring('csrftoken='.length)) : null;
   }
 }

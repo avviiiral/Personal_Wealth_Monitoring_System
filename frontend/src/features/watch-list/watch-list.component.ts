@@ -2,7 +2,7 @@ import { CommonModule } from '@angular/common';
 import { Component, OnDestroy, OnInit, inject } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { Subject } from 'rxjs';
-import { debounceTime, distinctUntilChanged } from 'rxjs/operators';
+import { debounceTime, distinctUntilChanged, takeUntil } from 'rxjs/operators';
 
 import { WatchListApiService, WatchListProduct, WatchListResponse } from '../../core/services/watch-list-api.service';
 
@@ -22,12 +22,15 @@ export class WatchListComponent implements OnInit, OnDestroy {
   private readonly cachePrefix = 'pwms.watch-list.';
   private autoRefreshAttempted = false;
   private readonly searchInput$ = new Subject<string>();
+  private readonly destroy$ = new Subject<void>();
+  private requestSequence = 0;
 
   products: WatchListProduct[] = [];
   loading = true;
   error = '';
   search = '';
   private readonly togglingIds = new Set<number>();
+  readonly selectedIds = new Set<number>();
   provider = '';
   category = '';
   providers: string[] = [];
@@ -39,6 +42,8 @@ export class WatchListComponent implements OnInit, OnDestroy {
   page = 1;
   readonly pageSize = 50;
   refreshing = false;
+  movingToWatchList = false;
+  removingFromWatchList = false;
 
   readonly orderings = [
     { value: 'name', label: 'Name' }, { value: '1M', label: '1M Return' },
@@ -51,37 +56,113 @@ export class WatchListComponent implements OnInit, OnDestroy {
   ngOnInit(): void {
     this.loadFilters();
     this.load();
-    this.searchInput$.pipe(debounceTime(350), distinctUntilChanged()).subscribe(() => this.applyFilters());
+    this.searchInput$.pipe(debounceTime(350), distinctUntilChanged(), takeUntil(this.destroy$)).subscribe(() => this.applyFilters());
   }
 
   ngOnDestroy(): void {
+    this.destroy$.next();
+    this.destroy$.complete();
     this.searchInput$.complete();
   }
 
-  onSearchInput(): void {
-    // Debounced live search: fires ~350ms after the user stops typing, in
-    // addition to the existing Enter/Apply triggers, so search no longer
-    // silently requires the exact right key press to actually run.
-    this.searchInput$.next(this.search);
-  }
+  onSearchInput(): void { this.searchInput$.next(this.search); }
 
-  get totalPages(): number {
-    return Math.max(1, Math.ceil(this.count / this.pageSize));
-  }
+  get totalPages(): number { return Math.max(1, Math.ceil(this.count / this.pageSize)); }
 
   get pageItems(): PageItem[] {
     const total = this.totalPages;
     if (total <= 7) return Array.from({ length: total }, (_, index) => index + 1);
-
     const items: PageItem[] = [1];
     const start = Math.max(2, this.page - 2);
     const end = Math.min(total - 1, this.page + 2);
-
     if (start > 2) items.push('ellipsis');
     for (let value = start; value <= end; value += 1) items.push(value);
     if (end < total - 1) items.push('ellipsis');
     items.push(total);
     return items;
+  }
+
+  ownershipFamilies(product: WatchListProduct): string[] {
+    const families = new Set<string>();
+    for (const item of product.ownership || []) {
+      const family = String(item.family || '').trim();
+      if (family) families.add(family);
+    }
+    return Array.from(families);
+  }
+
+  isSelected(productId: number): boolean { return this.selectedIds.has(productId); }
+
+  toggleSelection(productId: number, event?: Event): void {
+    event?.stopPropagation();
+    if (this.selectedIds.has(productId)) this.selectedIds.delete(productId);
+    else this.selectedIds.add(productId);
+  }
+
+  get allVisibleSelected(): boolean {
+    return this.products.length > 0 && this.products.every(product => this.selectedIds.has(product.id));
+  }
+
+  toggleSelectAll(event: Event): void {
+    event.stopPropagation();
+    if (this.allVisibleSelected) this.products.forEach(product => this.selectedIds.delete(product.id));
+    else this.products.forEach(product => this.selectedIds.add(product.id));
+  }
+
+  get selectedCount(): number { return this.selectedIds.size; }
+
+  get selectedAddCount(): number {
+    return this.products.filter(product => this.selectedIds.has(product.id) && !product.is_watchlisted).length;
+  }
+
+  get selectedRemoveCount(): number {
+    return this.products.filter(product => this.selectedIds.has(product.id) && product.is_watchlisted).length;
+  }
+
+  moveSelectedToWatchList(): void {
+    const productIds = this.products.filter(product => this.selectedIds.has(product.id) && !product.is_watchlisted).map(product => product.id);
+    if (!productIds.length || this.movingToWatchList || this.removingFromWatchList) return;
+    this.movingToWatchList = true;
+    this.error = '';
+    this.api.bulkAddToWatchList(productIds).subscribe({
+      next: () => {
+        productIds.forEach(id => {
+          const product = this.products.find(item => item.id === id);
+          if (product) product.is_watchlisted = true;
+          this.selectedIds.delete(id);
+        });
+        this.movingToWatchList = false;
+        if (this.status === 'WATCHLIST') this.load();
+      },
+      error: error => {
+        console.error('Failed to move selected products to Watch List:', error);
+        this.movingToWatchList = false;
+        this.error = 'Unable to move the selected products to Watch List.';
+      },
+    });
+  }
+
+  removeSelectedFromWatchList(): void {
+    const productIds = this.products.filter(product => this.selectedIds.has(product.id) && product.is_watchlisted).map(product => product.id);
+    if (!productIds.length || this.movingToWatchList || this.removingFromWatchList) return;
+    this.removingFromWatchList = true;
+    this.error = '';
+    this.api.bulkRemoveFromWatchList(productIds).subscribe({
+      next: () => {
+        productIds.forEach(id => {
+          const product = this.products.find(item => item.id === id);
+          if (product) product.is_watchlisted = false;
+          this.selectedIds.delete(id);
+        });
+        this.removingFromWatchList = false;
+        if (this.status === 'WATCHLIST') this.load();
+      },
+      error: error => {
+        console.error('Failed to remove selected products from Watch List:', error);
+        this.removingFromWatchList = false;
+        this.error = 'Unable to remove the selected products from Watch List.';
+      },
+    });
   }
 
   loadFilters(): void {
@@ -109,64 +190,67 @@ export class WatchListComponent implements OnInit, OnDestroy {
       this.products = cached.results;
       this.count = Number(cached.count) || cached.results.length;
       this.loading = false;
-    } catch (error) {
-      console.warn('Failed to restore Watch List cache:', error);
-    }
+    } catch (error) { console.warn('Failed to restore Watch List cache:', error); }
   }
 
   private cachePage(response: WatchListResponse): void {
-    try {
-      localStorage.setItem(this.cacheKey(), JSON.stringify(response));
-    } catch (error) {
-      // A full/disabled browser storage should never block Watch List loading.
-      console.warn('Failed to cache Watch List page:', error);
-    }
+    try { localStorage.setItem(this.cacheKey(), JSON.stringify(response)); }
+    catch (error) { console.warn('Failed to cache Watch List page:', error); }
   }
 
   private shouldBootstrapUniverse(response: WatchListResponse): boolean {
-    return response.count === 0
-      && !this.autoRefreshAttempted
-      && !this.refreshing
-      && this.page === 1
-      && this.status === 'ALL'
-      && !this.search.trim()
-      && !this.provider
-      && !this.category;
+    return response.count === 0 && !this.autoRefreshAttempted && !this.refreshing && this.page === 1
+      && this.status === 'ALL' && !this.search.trim() && !this.provider && !this.category;
   }
 
   load(): void {
+    const requestId = ++this.requestSequence;
+    const requestedProductTab = this.productTab;
+    const requestedStatus = this.status;
+    const requestedPage = this.page;
+    const requestedOrdering = this.ordering;
+    const requestedProvider = this.provider;
+    const requestedCategory = this.category;
+    const requestedSearch = this.search.trim();
+
     this.restoreCachedPage();
     this.loading = this.products.length === 0;
     this.error = '';
-
     this.api.getProducts({
-      product_type: this.productTab,
-      status: this.status === 'ALL' ? undefined : this.status,
-      search: this.search.trim() || undefined,
-      provider: this.provider || undefined,
-      category: this.category || undefined,
-      ordering: this.ordering,
-      page: this.page,
+      product_type: requestedProductTab,
+      status: requestedStatus === 'ALL' ? undefined : requestedStatus,
+      search: requestedSearch || undefined,
+      provider: requestedProvider || undefined,
+      category: requestedCategory || undefined,
+      ordering: requestedOrdering,
+      page: requestedPage,
       page_size: this.pageSize,
     }).subscribe({
       next: response => {
+        if (requestId !== this.requestSequence
+          || requestedProductTab !== this.productTab
+          || requestedStatus !== this.status
+          || requestedPage !== this.page
+          || requestedOrdering !== this.ordering
+          || requestedProvider !== this.provider
+          || requestedCategory !== this.category
+          || requestedSearch !== this.search.trim()) return;
+
         if (this.shouldBootstrapUniverse(response)) {
           this.autoRefreshAttempted = true;
           this.refreshUniverse(true);
           return;
         }
-
         this.products = response.results;
         this.count = response.count;
         this.cachePage(response);
-        if (this.page > this.totalPages) {
-          this.page = this.totalPages;
-          this.load();
-          return;
-        }
+        const visibleIds = new Set(this.products.map(product => product.id));
+        this.selectedIds.forEach(id => { if (!visibleIds.has(id)) this.selectedIds.delete(id); });
+        if (this.page > this.totalPages) { this.page = this.totalPages; this.load(); return; }
         this.loading = false;
       },
       error: error => {
+        if (requestId !== this.requestSequence) return;
         console.error('Failed to load Watch List:', error);
         this.error = 'Unable to load Watch List right now.';
         this.loading = false;
@@ -174,13 +258,11 @@ export class WatchListComponent implements OnInit, OnDestroy {
     });
   }
 
-  applyFilters(): void {
-    this.page = 1;
-    this.load();
-  }
+  applyFilters(): void { this.page = 1; this.selectedIds.clear(); this.load(); }
 
   goToPage(page: number): void {
     if (page < 1 || page > this.totalPages || page === this.page || this.loading) return;
+    this.selectedIds.clear();
     this.page = page;
     this.load();
   }
@@ -190,6 +272,7 @@ export class WatchListComponent implements OnInit, OnDestroy {
       this.productTab = tab;
       this.provider = '';
       this.category = '';
+      this.selectedIds.clear();
       this.page = 1;
       this.loadFilters();
       this.load();
@@ -199,14 +282,13 @@ export class WatchListComponent implements OnInit, OnDestroy {
   setStatus(status: StatusTab): void {
     if (this.status !== status) {
       this.status = status;
+      this.selectedIds.clear();
       this.page = 1;
       this.load();
     }
   }
 
-  isToggling(productId: number): boolean {
-    return this.togglingIds.has(productId);
-  }
+  isToggling(productId: number): boolean { return this.togglingIds.has(productId); }
 
   toggleWatch(product: WatchListProduct, event: Event): void {
     event.stopPropagation();
@@ -218,6 +300,7 @@ export class WatchListComponent implements OnInit, OnDestroy {
       next: response => {
         product.is_watchlisted = response.is_watchlisted;
         this.togglingIds.delete(product.id);
+        this.selectedIds.delete(product.id);
         if (this.status === 'WATCHLIST' && !response.is_watchlisted) {
           this.products = this.products.filter(item => item.id !== product.id);
           this.count = Math.max(0, this.count - 1);
@@ -239,6 +322,7 @@ export class WatchListComponent implements OnInit, OnDestroy {
       next: () => {
         this.refreshing = false;
         this.page = 1;
+        this.selectedIds.clear();
         this.loadFilters();
         this.load();
       },

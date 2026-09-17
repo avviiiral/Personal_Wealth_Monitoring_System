@@ -56,6 +56,11 @@ class WatchListProductSerializer(serializers.ModelSerializer):
         return obj.performance_snapshots.order_by("-date", "-id").first()
 
     def get_status(self, obj):
+        # Watch List is an explicit user selection and takes precedence over
+        # the ownership-derived status. This makes the checkmark immediately
+        # represent the product's Watch List state.
+        if self.get_is_watchlisted(obj):
+            return "WATCHLIST"
         return self._ownership(obj)["status"]
 
     def get_ownership(self, obj):

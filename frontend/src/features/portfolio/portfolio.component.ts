@@ -170,12 +170,12 @@ export class PortfolioComponent implements OnInit, OnDestroy {
   getUnderlyingName(asset: PortfolioAssetNode): string { return asset.underlying?.trim() || asset.asset_name; }
   getUnderlyingInvested(asset: PortfolioAssetNode): number { return this.toNumber(asset.invested_value); }
 
-  selectFamily(family: string): void { this.selectedFamily = this.selectedFamily === family ? '' : family; this.selectedAssetClass = ''; this.selectedAdvisor = ''; this.resetExpansion(); this.loadPortfolio(); }
-  selectAssetClass(assetClass: string): void { this.selectedAssetClass = this.selectedAssetClass === assetClass ? '' : assetClass; this.selectedAdvisor = ''; this.resetExpansion(); this.loadPortfolio(); }
-  selectAdvisor(advisor: string): void { this.selectedAdvisor = this.selectedAdvisor === advisor ? '' : advisor; this.resetExpansion(); this.loadPortfolio(); }
-  clearFamily(): void { this.selectedFamily = ''; this.selectedAssetClass = ''; this.selectedAdvisor = ''; this.resetExpansion(); this.loadPortfolio(); }
-  clearAssetClass(): void { this.selectedAssetClass = ''; this.selectedAdvisor = ''; this.resetExpansion(); this.loadPortfolio(); }
-  clearAdvisor(): void { this.selectedAdvisor = ''; this.resetExpansion(); this.loadPortfolio(); }
+  selectFamily(family: string): void { this.selectedFamily = this.selectedFamily === family ? '' : family; this.selectedAssetClass = ''; this.selectedAdvisor = ''; this.resetExpansion(); this.loadPortfolio(true); }
+  selectAssetClass(assetClass: string): void { this.selectedAssetClass = this.selectedAssetClass === assetClass ? '' : assetClass; this.selectedAdvisor = ''; this.resetExpansion(); this.loadPortfolio(true); }
+  selectAdvisor(advisor: string): void { this.selectedAdvisor = this.selectedAdvisor === advisor ? '' : advisor; this.resetExpansion(); this.loadPortfolio(true); }
+  clearFamily(): void { this.selectedFamily = ''; this.selectedAssetClass = ''; this.selectedAdvisor = ''; this.resetExpansion(); this.loadPortfolio(true); }
+  clearAssetClass(): void { this.selectedAssetClass = ''; this.selectedAdvisor = ''; this.resetExpansion(); this.loadPortfolio(true); }
+  clearAdvisor(): void { this.selectedAdvisor = ''; this.resetExpansion(); this.loadPortfolio(true); }
   private resetExpansion(): void { this.expandedSubClass = ''; this.expandedAsset = ''; this.expandedQuantsAssetId = null; }
   isFamilySelected(family: string): boolean { return this.selectedFamily === family; }
   isAssetClassSelected(assetClass: string): boolean { return this.selectedAssetClass === assetClass; }

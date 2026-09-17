@@ -323,7 +323,7 @@
           </span>
           <div>
             <h2>XIRR Performance</h2>
-            <p>Top and bottom underlying investments by XIRR</p>
+            <p>Top and bottom asset names by Asset XIRR</p>
           </div>
         </div>
       </div>
@@ -337,13 +337,13 @@
       <div class="xirr-ranking-grid" *ngIf="topXirrRows.length > 0 || bottomXirrRows.length > 0">
         <div class="xirr-ranking-panel">
           <div class="xirr-ranking-header">
-            <h3>Top 5 Underlying</h3>
+            <h3>Top 5 Asset Names</h3>
             <span> Highest XIRR </span>
           </div>
           <div class="xirr-ranking-table-wrapper">
             <table class="xirr-ranking-table">
               <thead>
-                <tr><th>Underlying</th><th class="align-right">XIRR</th></tr>
+                <tr><th>Asset Name</th><th class="align-right">XIRR</th></tr>
               </thead>
               <tbody>
                 <tr *ngFor="let row of topXirrRows; trackBy: trackByXirrUnderlying">
@@ -360,13 +360,13 @@
 
         <div class="xirr-ranking-panel">
           <div class="xirr-ranking-header">
-            <h3>Bottom 5 Underlying</h3>
+            <h3>Bottom 5 Asset Names</h3>
             <span> Lowest XIRR </span>
           </div>
           <div class="xirr-ranking-table-wrapper">
             <table class="xirr-ranking-table">
               <thead>
-                <tr><th>Underlying</th><th class="align-right">XIRR</th></tr>
+                <tr><th>Asset Name</th><th class="align-right">XIRR</th></tr>
               </thead>
               <tbody>
                 <tr *ngFor="let row of bottomXirrRows; trackBy: trackByXirrUnderlying">

@@ -5,12 +5,13 @@ from rest_framework.pagination import PageNumberPagination
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
-from investments.models import AssetCategory, PortfolioPosition
+from investments.models import AssetCategory, PortfolioPosition, Transaction
 from users.permissions import get_visible_owner_ids
 from watchlist.models import InvestmentProduct, PerformanceSnapshot, ProductType, WatchListEntry
 from watchlist.serializers import PerformanceSnapshotSerializer, WatchListProductSerializer
 from watchlist.services.ownership import OwnershipService
-from watchlist.services.universe import AMFIUniverseService, PMSDiscoveryService
+from watchlist.services.pms import APMIPMSDiscoveryService
+from watchlist.services.universe import AMFIUniverseService
 
 
 class WatchListPagination(PageNumberPagination):
@@ -35,9 +36,6 @@ def _filtered_products(request, product_type=None):
             | Q(external_identifier__icontains=search)
         )
 
-    # Provider and category values come directly from the dropdown options,
-    # so use exact matches instead of substring scans. Provider already has
-    # a product_type/provider index and category has a dedicated composite index.
     for field in ("provider", "category"):
         value = params.get(field)
         if value:
@@ -67,10 +65,6 @@ def _filtered_products(request, product_type=None):
     ordering = params.get("ordering", "name")
     prefix = "-" if ordering.startswith("-") else ""
     key = ordering[1:] if prefix else ordering
-
-    # Only calculate a correlated snapshot subquery when the user is
-    # actually sorting by a performance metric. Normal search/filter/name
-    # sorting no longer pays for seven snapshot subqueries per product.
     ordering_field = ordering_fields.get(key, "name")
     if ordering_field.startswith("latest_"):
         latest_snapshot = PerformanceSnapshot.objects.filter(
@@ -90,32 +84,48 @@ def _filtered_products(request, product_type=None):
     elif status in {"OWNED", "UNIVERSAL"}:
         owner_ids = get_visible_owner_ids(request.user)
         active_position = Q(quantity__gt=0) | Q(current_value__gt=0)
-        isin_positions = PortfolioPosition.objects.filter(
-            owner_id__in=owner_ids,
-        ).filter(active_position).filter(asset__isin__iexact=OuterRef("isin"))
-        fallback_positions = PortfolioPosition.objects.filter(
-            owner_id__in=owner_ids,
-        ).filter(active_position).filter(
-            Q(asset__symbol__iexact=OuterRef("external_identifier"))
-            | Q(asset__name__iexact=OuterRef("name"))
-        )
-        if product_type == ProductType.MUTUAL_FUND:
-            isin_positions = isin_positions.filter(asset__category=AssetCategory.MUTUAL_FUND)
-            fallback_positions = fallback_positions.filter(asset__category=AssetCategory.MUTUAL_FUND)
 
-        owned_expression = (
-            (~Q(isin__isnull=True) & ~Q(isin="") & Q(has_owned_isin=True))
-            | (Q(isin__isnull=True) | Q(isin="")) & Q(has_owned_fallback=True)
-        )
-        queryset = queryset.annotate(
-            has_owned_isin=Exists(isin_positions),
-            has_owned_fallback=Exists(fallback_positions),
-        ).filter(owned_expression if status == "OWNED" else ~owned_expression)
+        if product_type == ProductType.PMS:
+            pms_transactions = Transaction.objects.filter(
+                owner_id__in=owner_ids,
+                asset_name__iexact=OuterRef("name"),
+                asset__portfolio_positions__owner_id__in=owner_ids,
+            ).filter(
+                Q(asset__portfolio_positions__quantity__gt=0)
+                | Q(asset__portfolio_positions__current_value__gt=0)
+            )
+            queryset = queryset.annotate(
+                has_owned_pms_transaction=Exists(pms_transactions),
+            ).filter(
+                has_owned_pms_transaction=(status == "OWNED")
+            )
+        else:
+            isin_positions = PortfolioPosition.objects.filter(
+                owner_id__in=owner_ids,
+            ).filter(active_position).filter(asset__isin__iexact=OuterRef("isin"))
+            fallback_positions = PortfolioPosition.objects.filter(
+                owner_id__in=owner_ids,
+            ).filter(active_position).filter(
+                Q(asset__symbol__iexact=OuterRef("external_identifier"))
+                | Q(asset__name__iexact=OuterRef("name"))
+            )
+
+            if product_type == ProductType.MUTUAL_FUND:
+                isin_positions = isin_positions.filter(asset__category=AssetCategory.MUTUAL_FUND)
+                fallback_positions = fallback_positions.filter(asset__category=AssetCategory.MUTUAL_FUND)
+
+            owned_expression = (
+                (~Q(isin__isnull=True) & ~Q(isin="") & Q(has_owned_isin=True))
+                | (Q(isin__isnull=True) | Q(isin="")) & Q(has_owned_fallback=True)
+            )
+            queryset = queryset.annotate(
+                has_owned_isin=Exists(isin_positions),
+                has_owned_fallback=Exists(fallback_positions),
+            ).filter(owned_expression if status == "OWNED" else ~owned_expression)
     return queryset
 
 
 def _latest_snapshots(products):
-    """Load one latest performance snapshot per page product in a single query."""
     product_ids = [product.id for product in products]
     if not product_ids:
         return {}
@@ -240,7 +250,7 @@ def watch_list_performance(request, product_id):
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def watch_list_toggle(request, product_id):
-    """Add or remove a product from the caller's personal Watch List (the checkmark toggle)."""
+    """Add or remove a product from the caller's personal Watch List."""
     product = get_object_or_404(InvestmentProduct, pk=product_id, is_active=True)
     entry = WatchListEntry.objects.filter(user=request.user, product=product).first()
     if entry:
@@ -252,7 +262,70 @@ def watch_list_toggle(request, product_id):
 
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
+def watch_list_bulk_add(request):
+    """Add multiple active mutual-fund/PMS products to the caller's Watch List."""
+    product_ids = request.data.get("product_ids", [])
+    if not isinstance(product_ids, list) or not product_ids:
+        return Response({"detail": "product_ids must be a non-empty list."}, status=400)
+
+    try:
+        product_ids = list({int(product_id) for product_id in product_ids})
+    except (TypeError, ValueError):
+        return Response({"detail": "product_ids must contain valid product IDs."}, status=400)
+
+    products = InvestmentProduct.objects.filter(
+        id__in=product_ids,
+        is_active=True,
+        product_type__in=[ProductType.MUTUAL_FUND, ProductType.PMS],
+    )
+    valid_ids = set(products.values_list("id", flat=True))
+    if not valid_ids:
+        return Response({"detail": "No valid products were selected."}, status=400)
+
+    existing_ids = set(
+        WatchListEntry.objects.filter(user=request.user, product_id__in=valid_ids)
+        .values_list("product_id", flat=True)
+    )
+    WatchListEntry.objects.bulk_create(
+        [
+            WatchListEntry(user=request.user, product_id=product_id)
+            for product_id in valid_ids - existing_ids
+        ],
+        ignore_conflicts=True,
+    )
+    return Response({
+        "selected": len(valid_ids),
+        "added": len(valid_ids - existing_ids),
+        "already_watchlisted": len(existing_ids),
+    })
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def watch_list_bulk_remove(request):
+    """Remove multiple products from the caller's personal Watch List."""
+    product_ids = request.data.get("product_ids", [])
+    if not isinstance(product_ids, list) or not product_ids:
+        return Response({"detail": "product_ids must be a non-empty list."}, status=400)
+
+    try:
+        product_ids = list({int(product_id) for product_id in product_ids})
+    except (TypeError, ValueError):
+        return Response({"detail": "product_ids must contain valid product IDs."}, status=400)
+
+    deleted_count, _ = WatchListEntry.objects.filter(
+        user=request.user,
+        product_id__in=product_ids,
+    ).delete()
+    return Response({
+        "selected": len(product_ids),
+        "removed": deleted_count,
+    })
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
 def watch_list_refresh(request):
     mf_result = AMFIUniverseService.refresh()
-    pms_result = PMSDiscoveryService.refresh()
+    pms_result = APMIPMSDiscoveryService.refresh()
     return Response({"mutual_funds": mf_result, "pms": pms_result})

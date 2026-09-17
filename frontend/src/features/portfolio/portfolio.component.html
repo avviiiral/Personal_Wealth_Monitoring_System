@@ -645,9 +645,6 @@
                                   "
                                 >
                                   <tr class="underlying-row">
-                                    <!-- FINAL NAME
-                                       NO CLICK
-                                       NO ARROW -->
                                     <td class="asset-name final-underlying">
                                       {{ getUnderlyingName(asset) }}
                                     </td>
@@ -666,12 +663,10 @@
 
                                     <td>₹{{ formatCurrency(getUnderlyingInvested(asset)) }}</td>
 
-                                    <!-- CURRENT PRICE / NAV -->
                                     <td
                                       class="price-cell"
                                       [class.manual-price-cell]="isManualPrice(asset)"
                                     >
-                                      <!-- NORMAL DISPLAY -->
                                       <ng-container *ngIf="!isEditingPrice(asset)">
                                         <div class="current-price">
                                           {{
@@ -700,7 +695,6 @@
                                         </button>
                                       </ng-container>
 
-                                      <!-- EDIT MODE -->
                                       <ng-container *ngIf="isEditingPrice(asset)">
                                         <div
                                           class="manual-price-container"
@@ -773,7 +767,7 @@
 
                                     <td class="quant-toggle-cell">
                                       <button
-                                        *ngIf="hasQuantDetails(asset)"
+                                        *ngIf="hasQuantDetails(asset) || asset.id > 0"
                                         type="button"
                                         class="quant-toggle-button"
                                         (click)="toggleQuantDetails(asset)"

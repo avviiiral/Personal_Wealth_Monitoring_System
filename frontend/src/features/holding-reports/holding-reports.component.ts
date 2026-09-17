@@ -85,7 +85,7 @@ export class HoldingReportsComponent implements OnInit {
     const assetRows = group.holdings.filter(item => item.asset_name === holding.asset_name).map(item => this.toExportRow(item.row, holding.row.asset_name_xirr, true));
     await this.downloadRows(assetRows, this.assetNameColumns(), `holding_report_asset_${this.slugify(holding.asset_name)}_${this.todayStamp()}.xlsx`, `Asset Name Holding Report — ${holding.asset_name} (as of ${this.todayLabel()})`);
   }
-  private async downloadRows(rows: Array<Record<string, unknown>>, columns: Array<{header:string; key:string; width:number; numFmt?:string}>, filename: string, title: string): Promise<void> {
+  private async downloadRows(rows: HoldingExportRow[], columns: Array<{header:string; key:string; width:number; numFmt?:string}>, filename: string, title: string): Promise<void> {
     if (this.downloading || !rows.length) return;
     this.downloading = true;
     try {
@@ -95,7 +95,7 @@ export class HoldingReportsComponent implements OnInit {
       sheet.mergeCells(1,1,1,columns.length); const titleCell = sheet.getCell(1,1); titleCell.value = title; titleCell.font = { bold:true, size:12, color:{argb:'FFFFFFFF'} }; titleCell.fill = { type:'pattern', pattern:'solid', fgColor:{argb:'FF111827'} }; titleCell.alignment = { vertical:'middle', horizontal:'left' }; sheet.getRow(1).height = 26;
       const headerRow = sheet.getRow(2); columns.forEach((column,index) => { const cell=headerRow.getCell(index+1); cell.value=column.header; cell.font={bold:true,color:{argb:'FF101828'}}; cell.fill={type:'pattern',pattern:'solid',fgColor:{argb:'FFF8FAFC'}}; });
       sheet.columns = columns.map(column => ({ key:column.key, width:column.width, style:column.numFmt ? {numFmt:column.numFmt} : undefined }));
-      rows.forEach((rowData,index) => { const row=sheet.addRow(rowData); row.eachCell(cell => { if(index%2===1) cell.fill={type:'pattern',pattern:'solid',fgColor:{argb:'FFF8FAFC'}}; }); if (rowData.gain !== undefined) row.getCell('gain').font={color:Number(rowData.gain)>=0?'FF16A34A':'FFDC2626',bold:true}; });
+      rows.forEach((rowData,index) => { const row=sheet.addRow(rowData); row.eachCell(cell => { if(index%2===1) cell.fill={type:'pattern',pattern:'solid',fgColor:{argb:'FFF8FAFC'}}; }); if (rowData.gain !== undefined) row.getCell('gain').font={color:{argb:Number(rowData.gain)>=0?'FF16A34A':'FFDC2626'},bold:true}; });
       sheet.autoFilter={from:{row:2,column:1},to:{row:2,column:columns.length}};
       const buffer=await workbook.xlsx.writeBuffer(); const blob=new Blob([buffer],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}); const url=URL.createObjectURL(blob); const anchor=document.createElement('a'); anchor.href=url; anchor.download=filename; anchor.style.display='none'; document.body.appendChild(anchor); anchor.click(); document.body.removeChild(anchor); URL.revokeObjectURL(url);
     } finally { this.downloading=false; }

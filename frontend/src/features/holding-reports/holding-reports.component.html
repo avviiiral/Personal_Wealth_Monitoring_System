@@ -8,6 +8,9 @@
 
     <div class="header-actions">
       <button type="button" class="secondary-button" [disabled]="loading" (click)="refresh()">Refresh</button>
+      <button type="button" class="secondary-button" [disabled]="loading || downloading || !subClassGroups.length" (click)="downloadAllSubClassXirrReport($event)">
+        {{ downloading ? 'Preparing...' : 'Download Sub Class XIRR' }}
+      </button>
       <button type="button" class="primary-button" [disabled]="loading || downloading" (click)="downloadHoldingReport()">
         {{ downloading ? 'Preparing...' : 'Download Holding Report' }}
       </button>

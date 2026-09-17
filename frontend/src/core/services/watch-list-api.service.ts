@@ -1,6 +1,6 @@
 import { Injectable, inject } from '@angular/core';
-import { HttpClient, HttpParams } from '@angular/common/http';
-import { Observable } from 'rxjs';
+import { HttpClient, HttpHeaders, HttpParams } from '@angular/common/http';
+import { Observable, switchMap } from 'rxjs';
 
 import { environment } from '../../environments/environment';
 
@@ -98,10 +98,31 @@ export class WatchListApiService {
     added: number;
     already_watchlisted: number;
   }> {
-    return this.http.post<{
-      selected: number;
-      added: number;
-      already_watchlisted: number;
-    }>(`${this.baseUrl}/bulk-add/`, { product_ids: productIds }, { withCredentials: true });
+    return this.http.get(`${environment.apiUrl}/api/health/`, {
+      withCredentials: true,
+      responseType: 'json',
+    }).pipe(
+      switchMap(() => {
+        const token = this.getCsrfToken();
+        const headers = token ? new HttpHeaders({ 'X-CSRFToken': token }) : undefined;
+        return this.http.post<{
+          selected: number;
+          added: number;
+          already_watchlisted: number;
+        }>(
+          `${this.baseUrl}/bulk-add/`,
+          { product_ids: productIds },
+          { withCredentials: true, headers },
+        );
+      }),
+    );
+  }
+
+  private getCsrfToken(): string | null {
+    if (typeof document === 'undefined') return null;
+    const match = document.cookie
+      .split('; ')
+      .find(cookie => cookie.startsWith('csrftoken='));
+    return match ? decodeURIComponent(match.substring('csrftoken='.length)) : null;
   }
 }

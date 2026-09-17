@@ -4,7 +4,6 @@ import time
 
 from django.db import close_old_connections
 
-from config.database_scheduler_lock import DATABASE_SCHEDULER_LOCK
 from investments.models import Asset
 from market_data.services.market_data_manager import MarketDataManager
 
@@ -42,8 +41,7 @@ class MarketPriceScheduler:
         while True:
             try:
                 close_old_connections()
-                with DATABASE_SCHEDULER_LOCK:
-                    cls.update_prices()
+                cls.update_prices()
             except Exception as exc:
                 logger.exception("Market price scheduler failed: %s", exc)
             finally:
@@ -53,65 +51,62 @@ class MarketPriceScheduler:
 
     @classmethod
     def update_prices(cls):
-        # Keep direct callers safe as well. RLock makes this harmless when
-        # the scheduler loop already owns the shared lock.
-        with DATABASE_SCHEDULER_LOCK:
-            assets = (
-                Asset.objects
-                .filter(category__in=["STOCK", "ETF", "MUTUAL_FUND", "BOND"])
-                .select_related("owner")
-            )
+        assets = (
+            Asset.objects
+            .filter(category__in=["STOCK", "ETF", "MUTUAL_FUND", "BOND"])
+            .select_related("owner")
+        )
 
-            total_assets = assets.count()
-            logger.info("Found %s STOCK/ETF/MUTUAL_FUND/BOND assets.", total_assets)
+        total_assets = assets.count()
+        logger.info("Found %s STOCK/ETF/MUTUAL_FUND/BOND assets.", total_assets)
 
-            updated = 0
-            skipped = 0
-            failed = 0
-            total_records = 0
+        updated = 0
+        skipped = 0
+        failed = 0
+        total_records = 0
 
-            for asset in assets:
-                try:
-                    result = MarketDataManager.fetch_and_rebuild(asset=asset)
+        for asset in assets:
+            try:
+                result = MarketDataManager.fetch_and_rebuild(asset=asset)
 
-                    if result.get("success"):
-                        if result.get("skipped"):
-                            skipped += 1
-                            logger.info(
-                                "Market price skipped for %s: %s",
-                                asset.name,
-                                result.get("reason"),
-                            )
-                        else:
-                            updated += 1
-                            records = result.get("records", 0)
-                            total_records += records
-                            logger.info(
-                                "Market price updated for %s: source=%s, records=%s, price=%s",
-                                asset.name,
-                                result.get("source", "MARKET_DATA"),
-                                records,
-                                result.get("current_price"),
-                            )
-                    else:
-                        failed += 1
-                        logger.warning(
-                            "Market price update failed for %s: %s",
+                if result.get("success"):
+                    if result.get("skipped"):
+                        skipped += 1
+                        logger.info(
+                            "Market price skipped for %s: %s",
                             asset.name,
-                            result.get("error") or result.get("reason"),
+                            result.get("reason"),
                         )
-                except Exception as exc:
+                    else:
+                        updated += 1
+                        records = result.get("records", 0)
+                        total_records += records
+                        logger.info(
+                            "Market price updated for %s: source=%s, records=%s, price=%s",
+                            asset.name,
+                            result.get("source", "MARKET_DATA"),
+                            records,
+                            result.get("current_price"),
+                        )
+                else:
                     failed += 1
-                    logger.exception(
-                        "Unable to update market price for %s: %s",
+                    logger.warning(
+                        "Market price update failed for %s: %s",
                         asset.name,
-                        exc,
+                        result.get("error") or result.get("reason"),
                     )
+            except Exception as exc:
+                failed += 1
+                logger.exception(
+                    "Unable to update market price for %s: %s",
+                    asset.name,
+                    exc,
+                )
 
-            logger.info(
-                "Market update completed - updated=%s, skipped=%s, failed=%s, records=%s",
-                updated,
-                skipped,
-                failed,
-                total_records,
-            )
+        logger.info(
+            "Market update completed - updated=%s, skipped=%s, failed=%s, records=%s",
+            updated,
+            skipped,
+            failed,
+            total_records,
+        )

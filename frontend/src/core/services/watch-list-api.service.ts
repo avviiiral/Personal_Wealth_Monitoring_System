@@ -98,6 +98,24 @@ export class WatchListApiService {
     added: number;
     already_watchlisted: number;
   }> {
+    return this.postWithCsrf<{
+      selected: number;
+      added: number;
+      already_watchlisted: number;
+    }>(`${this.baseUrl}/bulk-add/`, { product_ids: productIds });
+  }
+
+  bulkRemoveFromWatchList(productIds: number[]): Observable<{
+    selected: number;
+    removed: number;
+  }> {
+    return this.postWithCsrf<{
+      selected: number;
+      removed: number;
+    }>(`${this.baseUrl}/bulk-remove/`, { product_ids: productIds });
+  }
+
+  private postWithCsrf<T>(url: string, body: unknown): Observable<T> {
     return this.http.get(`${environment.apiUrl}/api/health/`, {
       withCredentials: true,
       responseType: 'json',
@@ -105,15 +123,10 @@ export class WatchListApiService {
       switchMap(() => {
         const token = this.getCsrfToken();
         const headers = token ? new HttpHeaders({ 'X-CSRFToken': token }) : undefined;
-        return this.http.post<{
-          selected: number;
-          added: number;
-          already_watchlisted: number;
-        }>(
-          `${this.baseUrl}/bulk-add/`,
-          { product_ids: productIds },
-          { withCredentials: true, headers },
-        );
+        return this.http.post<T>(url, body, {
+          withCredentials: true,
+          headers,
+        });
       }),
     );
   }

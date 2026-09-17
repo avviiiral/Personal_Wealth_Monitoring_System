@@ -31,3 +31,9 @@ class MarketDataConfig(AppConfig):
         )
 
         DailyRefreshScheduler.start()
+
+        from market_data.services.security_metrics_scheduler import (
+            SecurityMetricsScheduler,
+        )
+
+        SecurityMetricsScheduler.start()

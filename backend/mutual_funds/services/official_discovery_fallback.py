@@ -1,4 +1,5 @@
 import re
+from html import unescape
 from urllib.parse import urljoin, urlparse
 
 from .official_underlying import OfficialMutualFundUnderlyingService
@@ -12,10 +13,9 @@ class ProductionMutualFundUnderlyingService(OfficialMutualFundUnderlyingService)
             "https://www.hdfcfund.com/statutory-disclosure/portfolio/monthly-portfolio",
         ),
         "bandhan": (
-            "https://cmsnew.bandhanmutual.com/category/scheme-portfolios/",
-            "https://cmsnew.bandhanmutual.com/category/scheme-portfolios/monthly-and-half-yearly/",
             "https://cmsnew.bandhanmutual.com/category/scheme-portfolios/monthly-and-half-yearly/page/2/",
             "https://cmsnew.bandhanmutual.com/category/scheme-portfolios/monthly-and-half-yearly/page/3/",
+            "https://cmsnew.bandhanmutual.com/category/scheme-portfolios/monthly-and-half-yearly/",
         ),
         "icici": (
             "https://www.icicipruamc.com/news-and-media/downloads?currentTabFilter=OtherSchemeDisclosures&subCatTabFilter=Monthly%20Portfolio%20Disclosures",
@@ -45,33 +45,85 @@ class ProductionMutualFundUnderlyingService(OfficialMutualFundUnderlyingService)
             parsed = urlparse(url)
             if parsed.scheme not in {"http", "https"} or not parsed.netloc:
                 return False
-            # Accessing hostname validates bracketed IPv6 syntax as well.
             return bool(parsed.hostname)
-        except ValueError:
+        except (TypeError, ValueError):
             return False
+
+    @classmethod
+    def _clean_link(cls, href, base_url):
+        if not href:
+            return None
+        href = unescape(str(href).strip()).replace("\\/", "/")
+        href = href.strip(" \\"'<>;,)")
+        if href.startswith(("javascript:", "mailto:", "#")):
+            return None
+        link = urljoin(base_url, href)
+        return link if cls._valid_http_url(link) else None
+
+    @classmethod
+    def _official_links(cls, html, base_url):
+        links = []
+        if not cls._valid_http_url(base_url):
+            return links
+        for href in re.findall(
+            r"(?:href|data-href|data-url|data-download|data-file|ng-href)\\s*=\\s*[\\\"']([^\\\"']+)[\\\"']",
+            html or "",
+            re.I,
+        ):
+            link = cls._clean_link(href, base_url)
+            if link:
+                links.append(link)
+        return list(dict.fromkeys(links))
 
     @classmethod
     def _embedded_download_links(cls, html, base_url, scheme):
         if not html or not cls._valid_http_url(base_url):
             return []
 
-        raw_urls = re.findall(
-            r'(?:https?:)?//[^\"\'<>\s]+|(?:/|\.\.?/)[^\"\'<>\s]+',
-            html,
-            re.I,
-        )
-        links = []
-        for raw in raw_urls:
-            link = urljoin(base_url, raw.replace("\\/", "/").rstrip("\\"))
-            if not cls._valid_http_url(link):
-                continue
+        candidates = []
+        patterns = [
+            r"(?:https?:)?//[^\"'<>\\s]+\\.(?:xlsx?|csv)(?:\\?[^\"'<>\\s]*)?",
+            r"(?:/|\\.\\.?/)[^\"'<>\\s]+\\.(?:xlsx?|csv)(?:\\?[^\"'<>\\s]*)?",
+        ]
+        for pattern in patterns:
+            for raw in re.findall(pattern, html, re.I):
+                link = cls._clean_link(raw, base_url)
+                if not link:
+                    continue
+                if not re.search(r"\\.(?:xlsx?|csv)(?:\\?|$)", urlparse(link).path, re.I):
+                    continue
+                if cls._matches_scheme(unescape(link), scheme) or cls._matches_scheme(unescape(html), scheme):
+                    candidates.append(link)
+        return list(dict.fromkeys(candidates))
+
+    @classmethod
+    def _download_candidates_from_page(cls, page_url, html, scheme):
+        candidates = []
+        candidates.extend(cls._embedded_download_links(html, page_url, scheme))
+
+        for link in cls._official_links(html, page_url):
             lower = link.lower()
-            if not lower.endswith((".xlsx", ".xls", ".csv")):
+            parsed = urlparse(link)
+            if re.search(r"\\.(?:xlsx?|csv|pdf)(?:$|\\?)", parsed.path, re.I):
+                if cls._matches_scheme(link, scheme) or cls._matches_scheme(html, scheme):
+                    candidates.append(link)
                 continue
-            if not cls._matches_scheme(link, scheme) and not cls._matches_scheme(html, scheme):
+            if not (
+                cls._matches_scheme(link, scheme)
+                or re.search(
+                    r"portfolio|holding|disclosure|download|monthly|half.?yearly|scheme",
+                    lower,
+                    re.I,
+                )
+            ):
                 continue
-            links.append(link)
-        return list(dict.fromkeys(links))
+            try:
+                child_response = cls._fetch(link, referer=page_url)
+            except Exception:
+                continue
+            candidates.extend(cls._download_candidates_from_page(link, child_response.text, scheme))
+
+        return candidates
 
     @classmethod
     def _collect_fallback_page(cls, page_url, scheme):
@@ -82,7 +134,7 @@ class ProductionMutualFundUnderlyingService(OfficialMutualFundUnderlyingService)
         except Exception:
             return []
 
-        html = response.text
+        html = response.text or ""
         candidates = []
         if cls._matches_scheme(html, scheme) and re.search(
             r"portfolio|holding|disclosure|scheme",
@@ -90,51 +142,11 @@ class ProductionMutualFundUnderlyingService(OfficialMutualFundUnderlyingService)
             re.I,
         ):
             candidates.append(page_url)
-
-        candidates.extend(cls._embedded_download_links(html, page_url, scheme))
-        links = cls._official_links(html, page_url)
-        for link in links:
-            if not cls._valid_http_url(link):
-                continue
-            lower = link.lower()
-            if lower.endswith((".xlsx", ".xls", ".csv")):
-                if cls._matches_scheme(link, scheme) or cls._matches_scheme(html, scheme):
-                    candidates.append(link)
-                continue
-
-            link_text = f"{link}"
-            if not (
-                cls._matches_scheme(link, scheme)
-                or re.search(
-                    r"portfolio|holding|disclosure|download|monthly|half.?yearly|scheme",
-                    link_text,
-                    re.I,
-                )
-            ):
-                continue
-
-            try:
-                child_response = cls._fetch(link, referer=page_url)
-            except Exception:
-                continue
-            child_html = child_response.text
-            candidates.extend(cls._embedded_download_links(child_html, link, scheme))
-            for child_link in cls._official_links(child_html, link):
-                if not cls._valid_http_url(child_link):
-                    continue
-                if child_link.lower().endswith((".xlsx", ".xls", ".csv")) and (
-                    cls._matches_scheme(child_link, scheme)
-                    or cls._matches_scheme(child_html, scheme)
-                ):
-                    candidates.append(child_link)
-
-        return candidates
+        candidates.extend(cls._download_candidates_from_page(page_url, html, scheme))
+        return list(dict.fromkeys(candidates))
 
     @classmethod
     def discover_documents(cls, scheme):
-        # The AMC-specific pages are the authoritative fallback and should be
-        # tried before generic search results, which can return stale or
-        # unrelated workbook URLs.
         fallback_candidates = []
         for page_url in cls._fallback_page_urls(scheme):
             fallback_candidates.extend(cls._collect_fallback_page(page_url, scheme))

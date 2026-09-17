@@ -4,6 +4,7 @@ from django.db import close_old_connections
 
 from investments.models import Asset, AssetCategory
 from investments.services.security_master import SecurityMasterService
+from market_data.services.security_resolver import SecurityResolver
 from market_data.services.yahoo_quant_enrichment import enrich_quant_fields
 
 logger = logging.getLogger(__name__)
@@ -18,7 +19,6 @@ def refresh_security_metrics():
             .filter(
                 is_active=True,
                 category__in=(AssetCategory.STOCK, AssetCategory.ETF),
-                symbol__isnull=False,
             )
             .select_related("security_master")
             .order_by("id")
@@ -30,6 +30,14 @@ def refresh_security_metrics():
 
         for asset in assets.iterator():
             try:
+                resolved_symbol = SecurityResolver.resolve_yahoo_symbol(
+                    symbol=asset.symbol,
+                    isin=asset.isin,
+                    name=asset.name,
+                )
+                if not asset.symbol:
+                    asset.symbol = resolved_symbol
+
                 security = asset.security_master or SecurityMasterService.get_or_create(
                     owner=asset.owner,
                     asset=asset,

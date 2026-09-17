@@ -264,8 +264,24 @@ class OfficialMutualFundUnderlyingService(MutualFundUnderlyingService):
         }
 
     @classmethod
+    def _valid_http_url(cls, url):
+        try:
+            from urllib.parse import urlparse
+            parsed = urlparse(url)
+            return (
+                parsed.scheme in {"http", "https"}
+                and bool(parsed.netloc)
+                and bool(parsed.hostname)
+            )
+        except (TypeError, ValueError):
+            return False
+
+    @classmethod
     def fetch_scheme(cls, scheme):
-        documents = cls.discover_documents(scheme)
+        documents = [
+            url for url in cls.discover_documents(scheme)
+            if cls._valid_http_url(url)
+        ]
         if not documents:
             raise ValueError(
                 f"No official AMFI/AMC portfolio disclosure was found for {scheme.scheme_name} "

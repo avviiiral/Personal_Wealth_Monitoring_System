@@ -5,7 +5,6 @@ import time
 
 from django.db import close_old_connections
 
-from config.database_scheduler_lock import DATABASE_SCHEDULER_LOCK
 from portfolio_news.services.pipeline import run_portfolio_news_monitor
 
 
@@ -55,11 +54,7 @@ class PortfolioNewsScheduler:
         while True:
             try:
                 close_old_connections()
-                # News processing also writes alerts/articles. Serialize it
-                # with the other background database-heavy schedulers when
-                # SQLite is used for local development.
-                with DATABASE_SCHEDULER_LOCK:
-                    stats = run_portfolio_news_monitor()
+                stats = run_portfolio_news_monitor()
 
                 logger.info(
                     "Portfolio news monitor run complete: users=%s, holdings=%s, "

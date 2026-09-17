@@ -41,6 +41,7 @@ export class WatchListComponent implements OnInit, OnDestroy {
   readonly pageSize = 50;
   refreshing = false;
   movingToWatchList = false;
+  removingFromWatchList = false;
 
   readonly orderings = [
     { value: 'name', label: 'Name' }, { value: '1M', label: '1M Return' },
@@ -101,17 +102,15 @@ export class WatchListComponent implements OnInit, OnDestroy {
   }
 
   get allVisibleSelected(): boolean {
-    const selectable = this.products.filter(product => !product.is_watchlisted);
-    return selectable.length > 0 && selectable.every(product => this.selectedIds.has(product.id));
+    return this.products.length > 0 && this.products.every(product => this.selectedIds.has(product.id));
   }
 
   toggleSelectAll(event: Event): void {
     event.stopPropagation();
-    const selectable = this.products.filter(product => !product.is_watchlisted);
     if (this.allVisibleSelected) {
-      selectable.forEach(product => this.selectedIds.delete(product.id));
+      this.products.forEach(product => this.selectedIds.delete(product.id));
     } else {
-      selectable.forEach(product => this.selectedIds.add(product.id));
+      this.products.forEach(product => this.selectedIds.add(product.id));
     }
   }
 
@@ -119,9 +118,19 @@ export class WatchListComponent implements OnInit, OnDestroy {
     return this.selectedIds.size;
   }
 
+  get selectedAddCount(): number {
+    return this.products.filter(product => this.selectedIds.has(product.id) && !product.is_watchlisted).length;
+  }
+
+  get selectedRemoveCount(): number {
+    return this.products.filter(product => this.selectedIds.has(product.id) && product.is_watchlisted).length;
+  }
+
   moveSelectedToWatchList(): void {
-    const productIds = Array.from(this.selectedIds);
-    if (!productIds.length || this.movingToWatchList) return;
+    const productIds = this.products
+      .filter(product => this.selectedIds.has(product.id) && !product.is_watchlisted)
+      .map(product => product.id);
+    if (!productIds.length || this.movingToWatchList || this.removingFromWatchList) return;
     this.movingToWatchList = true;
     this.error = '';
     this.api.bulkAddToWatchList(productIds).subscribe({
@@ -138,6 +147,33 @@ export class WatchListComponent implements OnInit, OnDestroy {
         console.error('Failed to move selected products to Watch List:', error);
         this.movingToWatchList = false;
         this.error = 'Unable to move the selected products to Watch List.';
+      },
+    });
+  }
+
+  removeSelectedFromWatchList(): void {
+    const productIds = this.products
+      .filter(product => this.selectedIds.has(product.id) && product.is_watchlisted)
+      .map(product => product.id);
+    if (!productIds.length || this.movingToWatchList || this.removingFromWatchList) return;
+    this.removingFromWatchList = true;
+    this.error = '';
+    this.api.bulkRemoveFromWatchList(productIds).subscribe({
+      next: () => {
+        productIds.forEach(id => {
+          const product = this.products.find(item => item.id === id);
+          if (product) product.is_watchlisted = false;
+          this.selectedIds.delete(id);
+        });
+        this.removingFromWatchList = false;
+        if (this.status === 'WATCHLIST') {
+          this.load();
+        }
+      },
+      error: error => {
+        console.error('Failed to remove selected products from Watch List:', error);
+        this.removingFromWatchList = false;
+        this.error = 'Unable to remove the selected products from Watch List.';
       },
     });
   }

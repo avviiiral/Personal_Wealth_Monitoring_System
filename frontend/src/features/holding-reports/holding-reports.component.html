@@ -58,7 +58,7 @@
               <td class="pnl-cell" [ngClass]="getPnlClass(group.pnl)">{{ group.pnl >= 0 ? '+' : '-' }}₹{{ formatAbsoluteCurrency(group.pnl) }}</td>
               <td class="pnl-cell" [ngClass]="group.xirr === null ? 'neutral' : getPnlClass(group.xirr)">{{ formatPercentage(group.xirr) }}</td>
               <td>{{ group.holdings.length }}</td>
-              <td><button type="button" class="row-download-button" [disabled]="downloading" (click)="downloadSubClassReport(group, $event)">Download</button></td>
+              <td><button type="button" class="secondary-button row-download-button" [disabled]="downloading" (click)="downloadSubClassReport(group, $event)">Download</button></td>
               <td class="arrow-column"><span class="row-chevron right" [class.open]="expandedSubClass === group.sub_class">›</span></td>
             </tr>
 
@@ -84,7 +84,7 @@
                         <div *ngIf="expandedAssetName === getAssetKey(group.sub_class, holding)" class="holding-detail">
                           <div class="holding-detail-toolbar">
                             <span>Asset Name Report</span>
-                            <button type="button" class="row-download-button" [disabled]="downloading" (click)="downloadAssetNameReport(group, holding, $event)">Download</button>
+                            <button type="button" class="secondary-button row-download-button" [disabled]="downloading" (click)="downloadAssetNameReport(group, holding, $event)">Download</button>
                           </div>
                           <div class="holding-detail-grid">
                             <div><span>Underlying</span><strong>{{ holding.row.underlying || holding.row.asset_name }}</strong></div>

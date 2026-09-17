@@ -56,29 +56,49 @@ class ProductionMutualFundUnderlyingService(OfficialMutualFundUnderlyingService)
         return list(dict.fromkeys(links))
 
     @classmethod
-    def discover_documents(cls, scheme):
-        candidates = list(super().discover_documents(scheme))
+    def _collect_fallback_page(cls, page_url, scheme):
+        try:
+            response = cls._fetch(page_url)
+        except Exception:
+            return []
 
-        for page_url in cls._fallback_page_urls(scheme):
+        html = response.text
+        candidates = []
+        if cls._matches_scheme(html, scheme) and re.search(
+            r"portfolio|holding|disclosure|scheme",
+            html,
+            re.I,
+        ):
+            candidates.append(page_url)
+
+        candidates.extend(cls._embedded_download_links(html, page_url, scheme))
+        links = cls._official_links(html, page_url)
+        for link in links:
+            lower = link.lower()
+            if lower.endswith((".xlsx", ".xls", ".csv")):
+                if cls._matches_scheme(link, scheme) or cls._matches_scheme(html, scheme):
+                    candidates.append(link)
+                continue
+            if not cls._matches_scheme(link, scheme):
+                continue
             try:
-                response = cls._fetch(page_url)
+                child_response = cls._fetch(link, referer=page_url)
             except Exception:
                 continue
+            child_html = child_response.text
+            candidates.extend(cls._embedded_download_links(child_html, link, scheme))
+            for child_link in cls._official_links(child_html, link):
+                if child_link.lower().endswith((".xlsx", ".xls", ".csv")) and (
+                    cls._matches_scheme(child_link, scheme)
+                    or cls._matches_scheme(child_html, scheme)
+                ):
+                    candidates.append(child_link)
 
-            html = response.text
-            if cls._matches_scheme(html, scheme) and re.search(
-                r"portfolio|holding|disclosure|scheme",
-                html,
-                re.I,
-            ):
-                candidates.append(page_url)
+        return candidates
 
-            candidates.extend(cls._embedded_download_links(html, page_url, scheme))
-
-            for link in cls._official_links(html, page_url):
-                lower = link.lower()
-                if lower.endswith((".xlsx", ".xls", ".csv")):
-                    if cls._matches_scheme(link, scheme) or cls._matches_scheme(html, scheme):
-                        candidates.append(link)
-
+    @classmethod
+    def discover_documents(cls, scheme):
+        candidates = list(super().discover_documents(scheme))
+        for page_url in cls._fallback_page_urls(scheme):
+            candidates.extend(cls._collect_fallback_page(page_url, scheme))
         return list(dict.fromkeys(candidates))

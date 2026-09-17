@@ -58,6 +58,18 @@ class MutualFundUnderlyingService:
         }
 
     @staticmethod
+    def _valid_http_url(url):
+        try:
+            parsed = urlparse(url)
+            return (
+                parsed.scheme in {"http", "https"}
+                and bool(parsed.netloc)
+                and bool(parsed.hostname)
+            )
+        except (TypeError, ValueError):
+            return False
+
+    @staticmethod
     def normalize_text(value):
         value = "" if value is None else str(value)
         return re.sub(r"\s+", " ", value.replace("\u00a0", " ")).strip()
@@ -163,6 +175,8 @@ class MutualFundUnderlyingService:
 
     @classmethod
     def _fetch(cls, url, referer=None):
+        if not cls._valid_http_url(url):
+            raise ValueError(f"Invalid HTTP URL: {url}")
         response = curl_requests.get(
             url,
             headers=cls._headers(referer or "https://www.amfiindia.com/"),
@@ -176,10 +190,11 @@ class MutualFundUnderlyingService:
     @classmethod
     def _official_links(cls, html, base_url):
         links = []
+        if not cls._valid_http_url(base_url):
+            return links
         for href in re.findall(r"(?:href|data-href|data-url)=[\"']([^\"']+)[\"']", html or "", re.I):
             absolute = urljoin(base_url, unescape(href.strip()))
-            parsed = urlparse(absolute)
-            if parsed.scheme in {"http", "https"}:
+            if cls._valid_http_url(absolute):
                 links.append(absolute)
         return list(dict.fromkeys(links))
 
@@ -188,7 +203,10 @@ class MutualFundUnderlyingService:
         urls = []
         for raw_href in re.findall(r"(?:href|data-href)=[\"']([^\"']+)[\"']", html or "", re.I):
             href = unescape(raw_href)
-            parsed = urlparse(href)
+            try:
+                parsed = urlparse(href)
+            except (TypeError, ValueError):
+                continue
             if parsed.path in {"/url", "/l/", "/link"}:
                 target = (
                     parse_qs(parsed.query).get("q", [None])[0]
@@ -197,9 +215,9 @@ class MutualFundUnderlyingService:
                 )
                 if target:
                     href = unquote(target)
-            parsed = urlparse(href)
-            if parsed.scheme not in {"http", "https"}:
+            if not cls._valid_http_url(href):
                 continue
+            parsed = urlparse(href)
             if any(x in parsed.netloc.lower() for x in ("google.", "bing.com", "duckduckgo.com")):
                 continue
             urls.append(href)
@@ -223,9 +241,10 @@ class MutualFundUnderlyingService:
                     allow_redirects=True,
                 )
                 response.raise_for_status()
+                found = cls._extract_search_result_urls(response.text)
             except Exception:
                 continue
-            urls.extend(cls._extract_search_result_urls(response.text))
+            urls.extend(found)
             urls = list(dict.fromkeys(urls))
             if urls:
                 break
@@ -250,7 +269,7 @@ class MutualFundUnderlyingService:
         seen_urls = set()
         for query in queries:
             for url in cls._search_urls(query):
-                if url in seen_urls:
+                if url in seen_urls or not cls._valid_http_url(url):
                     continue
                 seen_urls.add(url)
                 parsed = urlparse(url)
@@ -295,147 +314,3 @@ class MutualFundUnderlyingService:
                 if parsed.netloc and cls._host_looks_like_amc(parsed.netloc, scheme):
                     domains.append(f"{parsed.scheme}://{parsed.netloc}")
         return list(dict.fromkeys(domains))
-
-    @classmethod
-    def discover_documents(cls, scheme):
-        candidates = []
-
-        try:
-            response = cls._fetch(cls.AMFI_DISCLOSURE_URL)
-            for link in cls._official_links(response.text, cls.AMFI_DISCLOSURE_URL):
-                if cls._matches_scheme(link, scheme):
-                    candidates.append(link)
-        except Exception:
-            logger.debug("Unable to inspect AMFI portfolio disclosure page", exc_info=True)
-
-        dynamic_domains = cls._discover_amc_domains_from_amfi(scheme)
-        pages = cls._search_official_pages(scheme)
-        existing_hosts = {urlparse(url).netloc.lower() for url, _ in pages}
-        for domain in dynamic_domains:
-            if urlparse(domain).netloc.lower() in existing_hosts:
-                continue
-            try:
-                response = cls._fetch(domain)
-            except Exception:
-                continue
-            pages.append((domain, response.text))
-
-        queue = list(pages)
-        visited = set()
-        while queue and len(visited) < cls.MAX_CRAWL_PAGES:
-            page_url, html = queue.pop(0)
-            if page_url in visited:
-                continue
-            visited.add(page_url)
-
-            if page_url.lower().endswith((".xlsx", ".xls", ".csv", ".pdf")):
-                candidates.append(page_url)
-                continue
-
-            candidates.extend(cls._find_download_links(page_url, html, scheme))
-            if cls._matches_scheme(html, scheme) and re.search(r"portfolio|holding|disclosure", html, re.I):
-                candidates.append(page_url)
-
-            host = urlparse(page_url).netloc.lower()
-            child_links = []
-            for child in cls._official_links(html, page_url):
-                child_lower = child.lower()
-                child_host = urlparse(child).netloc.lower()
-                if child_host != host:
-                    continue
-                if child_lower.endswith((".xlsx", ".xls", ".csv", ".pdf")):
-                    candidates.append(child)
-                    continue
-                if child in visited:
-                    continue
-                if cls._matches_scheme(child, scheme) or re.search(
-                    r"portfolio|holding|disclosure|download|factsheet|monthly|half.?yearly|scheme",
-                    child_lower,
-                    re.I,
-                ):
-                    child_links.append(child)
-
-            for child in child_links[: cls.MAX_DETAIL_LINKS]:
-                if len(visited) + len(queue) >= cls.MAX_CRAWL_PAGES:
-                    break
-                try:
-                    response = cls._fetch(child, referer=page_url)
-                except Exception:
-                    continue
-                queue.append((child, response.text))
-
-        return list(dict.fromkeys(candidates))
-
-    @classmethod
-    @transaction.atomic
-    def import_document(cls, scheme, content, filename, source_reference, fallback_date=None):
-        raise NotImplementedError
-
-    @classmethod
-    def _portfolio_scheme_pairs(cls, owner_ids=None):
-        holdings = Holding.objects.select_related("asset").filter(
-            asset__category=AssetCategory.MUTUAL_FUND,
-            quantity__gt=0,
-        )
-        if owner_ids is not None:
-            holdings = holdings.filter(owner_id__in=list(owner_ids))
-
-        pairs = []
-        seen = set()
-        for holding in holdings:
-            asset = holding.asset
-            schemes = MutualFundScheme.objects.filter(is_active=True)
-            if holding.owner_id is not None:
-                owner_scoped = schemes.filter(owner_id=holding.owner_id)
-                if owner_scoped.exists():
-                    schemes = owner_scoped
-
-            scheme = None
-            if asset.isin:
-                scheme = schemes.filter(isin_growth__iexact=asset.isin).first()
-                if scheme is None:
-                    scheme = schemes.filter(isin_dividend__iexact=asset.isin).first()
-            if scheme is None:
-                normalized_asset = cls.normalize_text(asset.name).lower()
-                for candidate in schemes.order_by("id"):
-                    candidate_name = cls.normalize_text(candidate.scheme_name).lower()
-                    if normalized_asset == candidate_name or normalized_asset in candidate_name or candidate_name in normalized_asset:
-                        scheme = candidate
-                        break
-            if scheme is None:
-                logger.warning("No MutualFundScheme matched live portfolio asset %s (%s)", asset.id, asset.name)
-                continue
-
-            key = (holding.owner_id, scheme.id)
-            if key not in seen:
-                seen.add(key)
-                pairs.append((holding.owner_id, scheme))
-        return pairs
-
-    @classmethod
-    def fetch_scheme(cls, scheme):
-        raise NotImplementedError(
-            "fetch_scheme must be implemented by a MutualFundUnderlyingService subclass."
-        )
-
-    @classmethod
-    def fetch_all_active(cls, owner_ids=None):
-        pairs = cls._portfolio_scheme_pairs(owner_ids=owner_ids)
-        results = {"schemes": 0, "imported": 0, "already_imported": 0, "failed": 0, "errors": []}
-        for owner_id, scheme in pairs:
-            results["schemes"] += 1
-            try:
-                result = cls.fetch_scheme(scheme)
-                if result["status"] == "imported":
-                    results["imported"] += 1
-                else:
-                    results["already_imported"] += 1
-            except Exception as exc:
-                results["failed"] += 1
-                results["errors"].append({
-                    "owner_id": owner_id,
-                    "scheme_id": scheme.id,
-                    "scheme_name": scheme.scheme_name,
-                    "error": str(exc),
-                })
-        return results

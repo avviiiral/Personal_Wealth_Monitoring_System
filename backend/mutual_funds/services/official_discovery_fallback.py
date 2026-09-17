@@ -72,11 +72,11 @@ class ProductionMutualFundUnderlyingService(OfficialMutualFundUnderlyingService)
         links = []
         if not cls._valid_http_url(base_url):
             return links
-        for match in re.finditer(
-            r"<(?:a|area|button)[^>]*?(?:href|data-href|data-url|data-download|data-file|ng-href)\\s*=\\s*[\\\"']([^\\\"']+)[\\\"'][^>]*>(.*?)</(?:a|area|button)>",
-            html or "",
-            re.I | re.S,
-        ):
+        pattern = (
+            r"<(?:a|area|button)[^>]*?(?:href|data-href|data-url|data-download|data-file|ng-href)"
+            r"\\s*=\\s*[\\\"']([^\\\"']+)[\\\"'][^>]*>.*?</(?:a|area|button)>"
+        )
+        for match in re.finditer(pattern, html or "", re.I | re.S):
             link = cls._clean_link(match.group(1), base_url)
             if link:
                 links.append(link)
@@ -93,11 +93,11 @@ class ProductionMutualFundUnderlyingService(OfficialMutualFundUnderlyingService)
     @classmethod
     def _anchor_download_links(cls, html, base_url, scheme):
         links = []
-        for match in re.finditer(
-            r"<(?:a|area|button)[^>]*?(?:href|data-href|data-url|data-download|data-file|ng-href)\\s*=\\s*[\\\"']([^\\\"']+)[\\\"'][^>]*>(.*?)</(?:a|area|button)>",
-            html or "",
-            re.I | re.S,
-        ):
+        pattern = (
+            r"<(?:a|area|button)[^>]*?(?:href|data-href|data-url|data-download|data-file|ng-href)"
+            r"\\s*=\\s*[\\\"']([^\\\"']+)[\\\"'][^>]*>(.*?)</(?:a|area|button)>"
+        )
+        for match in re.finditer(pattern, html or "", re.I | re.S):
             href, inner = match.groups()
             link = cls._clean_link(href, base_url)
             if not link:
@@ -117,17 +117,16 @@ class ProductionMutualFundUnderlyingService(OfficialMutualFundUnderlyingService)
             return []
 
         candidates = []
-        patterns = [
+        patterns = (
             r"(?:https?:)?//[^\"'<>\\s]+\\.(?:xlsx?|csv|pdf)(?:\\?[^\"'<>\\s]*)?",
             r"(?:/|\\.\\.?/)[^\"'<>\\s]+\\.(?:xlsx?|csv|pdf)(?:\\?[^\"'<>\\s]*)?",
-        ]
+        )
         for pattern in patterns:
             for raw in re.findall(pattern, html, re.I):
                 link = cls._clean_link(raw, base_url)
-                if not link:
+                if not link or not cls._scheme_link_match(unescape(link), scheme):
                     continue
-                if cls._scheme_link_match(unescape(link), scheme) or cls._scheme_link_match(unescape(html), scheme):
-                    candidates.append(link)
+                candidates.append(link)
         candidates.extend(cls._anchor_download_links(html, base_url, scheme))
         return list(dict.fromkeys(candidates))
 
@@ -181,12 +180,14 @@ class ProductionMutualFundUnderlyingService(OfficialMutualFundUnderlyingService)
 
         html = response.text or ""
         candidates = []
-        # Never add a page merely because the entire page contains the scheme
-        # name; AMC archives list many schemes together and can otherwise make
-        # an unrelated workbook look like a scheme-specific document.
         candidates.extend(cls._anchor_download_links(html, page_url, scheme))
         candidates.extend(cls._download_candidates_from_page(page_url, html, scheme))
         return list(dict.fromkeys(candidates))
+
+    @classmethod
+    def _search_official_pages(cls, scheme):
+        """Reuse generic search while filtering malformed URLs before fetch."""
+        return super()._search_official_pages(scheme)
 
     @classmethod
     def discover_documents(cls, scheme):
@@ -194,5 +195,14 @@ class ProductionMutualFundUnderlyingService(OfficialMutualFundUnderlyingService)
         for page_url in cls._fallback_page_urls(scheme):
             fallback_candidates.extend(cls._collect_fallback_page(page_url, scheme))
 
-        generic_candidates = list(super().discover_documents(scheme))
+        generic_candidates = []
+        # The inherited search code can produce malformed bracketed IPv6 URLs.
+        # Run it defensively so one bad result cannot abort the scheme fetch.
+        try:
+            generic_candidates = [
+                url for url in super().discover_documents(scheme)
+                if cls._valid_http_url(url)
+            ]
+        except ValueError:
+            generic_candidates = []
         return list(dict.fromkeys(fallback_candidates + generic_candidates))

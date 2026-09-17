@@ -25,6 +25,7 @@ class ProductionMutualFundUnderlyingService(OfficialMutualFundUnderlyingService)
     SCHEME_PORTFOLIO_PAGES = {
         "kotak liquid fund": (
             "https://www.kotakmf.com/mutual-funds/debt-funds/kotak-liquid-fund/dir-g",
+            "https://www.kotakmf.com/mutual-funds/debt-funds/kotak-liquid-fund/reg-g",
         ),
     }
 
@@ -54,17 +55,31 @@ class ProductionMutualFundUnderlyingService(OfficialMutualFundUnderlyingService)
         if not href:
             return None
         href = unescape(str(href).strip()).replace("\\/", "/")
-        href = href.strip(" \\"'<>;,)")
+        href = href.strip(' \\"\'<>;,')
         if href.startswith(("javascript:", "mailto:", "#")):
             return None
         link = urljoin(base_url, href)
         return link if cls._valid_http_url(link) else None
 
     @classmethod
+    def _scheme_link_match(cls, text, scheme):
+        if not text:
+            return False
+        return cls._matches_scheme(unescape(text), scheme)
+
+    @classmethod
     def _official_links(cls, html, base_url):
         links = []
         if not cls._valid_http_url(base_url):
             return links
+        for match in re.finditer(
+            r"<(?:a|area|button)[^>]*?(?:href|data-href|data-url|data-download|data-file|ng-href)\\s*=\\s*[\\\"']([^\\\"']+)[\\\"'][^>]*>(.*?)</(?:a|area|button)>",
+            html or "",
+            re.I | re.S,
+        ):
+            link = cls._clean_link(match.group(1), base_url)
+            if link:
+                links.append(link)
         for href in re.findall(
             r"(?:href|data-href|data-url|data-download|data-file|ng-href)\\s*=\\s*[\\\"']([^\\\"']+)[\\\"']",
             html or "",
@@ -76,40 +91,63 @@ class ProductionMutualFundUnderlyingService(OfficialMutualFundUnderlyingService)
         return list(dict.fromkeys(links))
 
     @classmethod
+    def _anchor_download_links(cls, html, base_url, scheme):
+        links = []
+        for match in re.finditer(
+            r"<(?:a|area|button)[^>]*?(?:href|data-href|data-url|data-download|data-file|ng-href)\\s*=\\s*[\\\"']([^\\\"']+)[\\\"'][^>]*>(.*?)</(?:a|area|button)>",
+            html or "",
+            re.I | re.S,
+        ):
+            href, inner = match.groups()
+            link = cls._clean_link(href, base_url)
+            if not link:
+                continue
+            inner_text = re.sub(r"<[^>]+>", " ", unescape(inner))
+            context = f"{inner_text} {link}"
+            parsed = urlparse(link)
+            if not re.search(r"\\.(?:xlsx?|csv|pdf)(?:$|\\?)", parsed.path, re.I):
+                continue
+            if cls._scheme_link_match(context, scheme):
+                links.append(link)
+        return list(dict.fromkeys(links))
+
+    @classmethod
     def _embedded_download_links(cls, html, base_url, scheme):
         if not html or not cls._valid_http_url(base_url):
             return []
 
         candidates = []
         patterns = [
-            r"(?:https?:)?//[^\"'<>\\s]+\\.(?:xlsx?|csv)(?:\\?[^\"'<>\\s]*)?",
-            r"(?:/|\\.\\.?/)[^\"'<>\\s]+\\.(?:xlsx?|csv)(?:\\?[^\"'<>\\s]*)?",
+            r"(?:https?:)?//[^\"'<>\\s]+\\.(?:xlsx?|csv|pdf)(?:\\?[^\"'<>\\s]*)?",
+            r"(?:/|\\.\\.?/)[^\"'<>\\s]+\\.(?:xlsx?|csv|pdf)(?:\\?[^\"'<>\\s]*)?",
         ]
         for pattern in patterns:
             for raw in re.findall(pattern, html, re.I):
                 link = cls._clean_link(raw, base_url)
                 if not link:
                     continue
-                if not re.search(r"\\.(?:xlsx?|csv)(?:\\?|$)", urlparse(link).path, re.I):
-                    continue
-                if cls._matches_scheme(unescape(link), scheme) or cls._matches_scheme(unescape(html), scheme):
+                if cls._scheme_link_match(unescape(link), scheme) or cls._scheme_link_match(unescape(html), scheme):
                     candidates.append(link)
+        candidates.extend(cls._anchor_download_links(html, base_url, scheme))
         return list(dict.fromkeys(candidates))
 
     @classmethod
-    def _download_candidates_from_page(cls, page_url, html, scheme):
-        candidates = []
-        candidates.extend(cls._embedded_download_links(html, page_url, scheme))
+    def _download_candidates_from_page(cls, page_url, html, scheme, depth=0, visited=None):
+        if depth > 1:
+            return []
+        visited = set() if visited is None else visited
+        if page_url in visited:
+            return []
+        visited.add(page_url)
 
+        candidates = cls._embedded_download_links(html, page_url, scheme)
         for link in cls._official_links(html, page_url):
-            lower = link.lower()
             parsed = urlparse(link)
+            lower = link.lower()
             if re.search(r"\\.(?:xlsx?|csv|pdf)(?:$|\\?)", parsed.path, re.I):
-                if cls._matches_scheme(link, scheme) or cls._matches_scheme(html, scheme):
-                    candidates.append(link)
                 continue
             if not (
-                cls._matches_scheme(link, scheme)
+                cls._scheme_link_match(link, scheme)
                 or re.search(
                     r"portfolio|holding|disclosure|download|monthly|half.?yearly|scheme",
                     lower,
@@ -121,9 +159,16 @@ class ProductionMutualFundUnderlyingService(OfficialMutualFundUnderlyingService)
                 child_response = cls._fetch(link, referer=page_url)
             except Exception:
                 continue
-            candidates.extend(cls._download_candidates_from_page(link, child_response.text, scheme))
-
-        return candidates
+            candidates.extend(
+                cls._download_candidates_from_page(
+                    link,
+                    child_response.text,
+                    scheme,
+                    depth=depth + 1,
+                    visited=visited,
+                )
+            )
+        return list(dict.fromkeys(candidates))
 
     @classmethod
     def _collect_fallback_page(cls, page_url, scheme):
@@ -136,12 +181,10 @@ class ProductionMutualFundUnderlyingService(OfficialMutualFundUnderlyingService)
 
         html = response.text or ""
         candidates = []
-        if cls._matches_scheme(html, scheme) and re.search(
-            r"portfolio|holding|disclosure|scheme",
-            html,
-            re.I,
-        ):
-            candidates.append(page_url)
+        # Never add a page merely because the entire page contains the scheme
+        # name; AMC archives list many schemes together and can otherwise make
+        # an unrelated workbook look like a scheme-specific document.
+        candidates.extend(cls._anchor_download_links(html, page_url, scheme))
         candidates.extend(cls._download_candidates_from_page(page_url, html, scheme))
         return list(dict.fromkeys(candidates))
 

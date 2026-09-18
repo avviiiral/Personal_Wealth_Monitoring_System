@@ -101,7 +101,7 @@ export class HoldingReportsComponent implements OnInit {
 
   private toHoldingGroup(row: HoldingReportRow): HoldingGroup {
     return {
-      key: row.owner_id + '::' + row.family_name + '::' + row.portfolio + '::' + row.asset_class + '::' + row.asset_id,
+      key: row.owner_id + '::' + row.family_name + '::' + row.portfolio + '::' + row.asset_class + '::' + row.sub_class + '::' + row.asset_id,
       asset_name: this.clean(row.asset_name),
       row,
     };
@@ -117,7 +117,8 @@ export class HoldingReportsComponent implements OnInit {
   isFamilySelected(family: string): boolean { return this.selectedFamily === family; }
   isAssetClassSelected(assetClass: string): boolean { return this.selectedAssetClass === assetClass; }
   toggleAssetClass(assetClass: string): void { this.expandedAssetClass = this.expandedAssetClass === assetClass ? '' : assetClass; this.expandedSubClass = ''; this.expandedAssetName = ''; }
-  toggleSubClass(subClass: string): void { this.expandedSubClass = this.expandedSubClass === subClass ? '' : subClass; this.expandedAssetName = ''; }
+  toggleSubClass(assetClass: string, subClass: string): void { const key = assetClass + '::' + subClass; this.expandedSubClass = this.expandedSubClass === key ? '' : key; this.expandedAssetName = ''; }
+  isSubClassExpanded(assetClass: string, subClass: string): boolean { return this.expandedSubClass === assetClass + '::' + subClass; }
   toggleAssetName(key: string): void { this.expandedAssetName = this.expandedAssetName === key ? '' : key; }
   getAssetKey(subClass: string, holding: HoldingGroup): string { return `${subClass}::${holding.key}`; }
   trackBySubClass(_index: number, group: SubClassGroup): string { return group.sub_class; }

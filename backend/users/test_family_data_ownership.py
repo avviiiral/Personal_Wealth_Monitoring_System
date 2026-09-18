@@ -127,6 +127,16 @@ class FamilyScopedFinancialDataTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data["results"][0]["id"], asset.id)
 
+    def test_family_id_in_request_cannot_override_active_family(self):
+        self.client.force_authenticate(self.user1)
+        response = self.client.post("/api/portfolio/assets/", {
+            "name": "Family 1 Asset",
+            "category": AssetCategory.STOCK,
+            "family": self.family2.id,
+        }, format="json")
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.data["family"], self.family1.id)
+
     def test_no_family_cannot_create_financial_data_or_import(self):
         user = User.objects.create_user(username="orphan", password="pass123")
         self.client.force_authenticate(user)

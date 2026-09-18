@@ -31,7 +31,6 @@ class EquityAnalysisService:
     @classmethod
     def calculate(cls, user):
         equity_holdings = list(UnifiedWealthAnalytics.get_equity_holdings(user))
-        owner_ids = cls._owner_ids(user)
 
         rows = (
             Asset.objects

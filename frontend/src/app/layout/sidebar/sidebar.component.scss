@@ -12,8 +12,8 @@
   display: flex;
   flex-direction: column;
 
-  background: #ffffff;
-  border-right: 1px solid #e8eaf0;
+  background: var(--surface);
+  border-right: 1px solid var(--surface-line);
 
   padding: 22px 14px;
 
@@ -39,7 +39,7 @@
 
   border-radius: 11px;
 
-  background: #111827;
+  background: var(--ink);
   color: #ffffff;
 
   font-size: 18px;
@@ -55,7 +55,7 @@
   font-size: 17px;
   font-weight: 750;
 
-  color: #111827;
+  color: var(--ink);
 
   letter-spacing: -0.02em;
 }
@@ -65,7 +65,7 @@
 
   font-size: 11px;
 
-  color: #8a91a1;
+  color: var(--muted);
 }
 
 .navigation {
@@ -93,7 +93,7 @@
   text-transform: uppercase;
   letter-spacing: 0.08em;
 
-  color: #a0a6b3;
+  color: var(--muted-soft);
 }
 
 .nav-item {
@@ -108,7 +108,7 @@
 
   border-radius: 9px;
 
-  color: #697181;
+  color: var(--muted);
 
   text-decoration: none;
 
@@ -121,21 +121,21 @@
 }
 
 .nav-item:hover {
-  background: #f5f6f9;
+  background: var(--canvas-from);
 
-  color: #111827;
+  color: var(--ink);
 }
 
 .nav-item.active {
-  background: #eef1f6;
+  background: var(--accent-soft);
 
-  color: #111827;
+  color: var(--ink);
 
   font-weight: 650;
 }
 
 .add-investment-item {
-  color: #374151;
+  color: var(--ink-soft);
 }
 
 .add-investment-item svg {
@@ -146,12 +146,12 @@
   margin-top: auto;
 }
 .add-investment-item {
-  color: #111827;
+  color: var(--ink);
 }
 
 .add-investment-item:not(.active):hover {
-  background: #f5f6f9;
-  color: #111827;
+  background: var(--canvas-from);
+  color: var(--ink);
 }
 
 /* --------------------------------------------------

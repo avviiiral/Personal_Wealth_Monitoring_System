@@ -4,9 +4,10 @@
       <h1>Watch List</h1>
       <p>Research universe for mutual funds and PMS products.</p>
     </div>
-    <button class="refresh-button" type="button" (click)="refreshUniverse()" [disabled]="refreshing">
-      {{ refreshing ? 'Refreshing…' : 'Refresh Universe' }}
-    </button>
+    <div class="header-actions">
+      <button class="download-button" type="button" (click)="openDownloadModal()" [disabled]="downloading">{{ downloading ? 'Preparing…' : 'Download' }}</button>
+      <button class="refresh-button" type="button" (click)="refreshUniverse()" [disabled]="refreshing">{{ refreshing ? 'Refreshing…' : 'Refresh Universe' }}</button>
+    </div>
   </div>
 
   <div class="tabs product-tabs">
@@ -97,3 +98,19 @@
 
   <div class="count" *ngIf="!loading">Showing {{ ((page - 1) * pageSize) + (products.length ? 1 : 0) }}–{{ ((page - 1) * pageSize) + products.length }} of {{ count | number }} products</div>
 </section>
+
+<div class="modal-backdrop" *ngIf="downloadModalOpen" (click)="closeDownloadModal()">
+  <div class="download-modal" role="dialog" aria-modal="true" aria-labelledby="download-title" (click)="$event.stopPropagation()">
+    <h2 id="download-title">Download Watch List</h2>
+    <p>Download the currently watchlisted products.</p>
+    <div class="download-options">
+      <label><input type="radio" name="watchlist-download-type" [(ngModel)]="downloadType" value="PMS" /> PMS</label>
+      <label><input type="radio" name="watchlist-download-type" [(ngModel)]="downloadType" value="MUTUAL_FUND" /> Mutual Funds</label>
+      <label><input type="radio" name="watchlist-download-type" [(ngModel)]="downloadType" value="ALL" /> All</label>
+    </div>
+    <div class="modal-actions">
+      <button type="button" class="apply-button" (click)="closeDownloadModal()" [disabled]="downloading">Cancel</button>
+      <button type="button" class="download-button" (click)="confirmWatchListDownload()" [disabled]="downloading">{{ downloading ? 'Preparing…' : 'Download Excel' }}</button>
+    </div>
+  </div>
+</div>

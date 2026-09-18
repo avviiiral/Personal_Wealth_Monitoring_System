@@ -24,10 +24,6 @@ class EquityAnalysisService:
         owner_ids = EquityAnalysisService._owner_ids(user)
         return Q(family_id=family.id)
 
-    @staticmethod
-    def _owner_ids(user):
-        return [user.pk] if hasattr(user, "pk") else list(user)
-
     @classmethod
     def calculate(cls, user):
         equity_holdings = list(UnifiedWealthAnalytics.get_equity_holdings(user))

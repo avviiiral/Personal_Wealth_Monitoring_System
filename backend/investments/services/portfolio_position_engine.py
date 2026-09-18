@@ -198,7 +198,7 @@ class PortfolioPositionEngine:
 
         groups = (
             Transaction.objects
-            .filter(owner=owner)
+            .filter(family=asset.family)
             .values(
                 "family_name",
                 "portfolio",

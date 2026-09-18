@@ -124,11 +124,8 @@ def _transaction_history_snapshot(transaction_obj):
 @api_view(["GET", "PUT", "PATCH", "DELETE"])
 @permission_classes([IsAuthenticated])
 def portfolio_transaction_detail(request, transaction_id):
-    try:
-        transaction_obj = family_scope(Transaction.objects.select_related("asset"), request.user).filter(id=transaction_id).first()
+    transaction_obj = family_scope(Transaction.objects.select_related("asset"), request.user).filter(id=transaction_id).first()
     if transaction_obj is None:
-        return Response({"detail": "Transaction not found."}, status=status.HTTP_404_NOT_FOUND)
-    except Transaction.DoesNotExist:
         return Response({"detail": "Transaction not found."}, status=status.HTTP_404_NOT_FOUND)
     if request.method == "GET":
         return Response(TransactionSerializer(transaction_obj).data, status=status.HTTP_200_OK)
@@ -158,6 +155,7 @@ def portfolio_transaction_detail(request, transaction_id):
             TransactionEditHistory.objects.create(
                 transaction=transaction_obj,
                 owner=transaction_obj.owner,
+                family=transaction_obj.family,
                 edited_by=request.user,
                 old_values={field: old_values[field] for field in changed_fields},
                 new_values={field: new_values[field] for field in changed_fields},

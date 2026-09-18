@@ -63,7 +63,7 @@ class PortfolioPositionEngine:
         transactions = (
             Transaction.objects
             .filter(
-                owner=owner,
+                family=asset.family,
                 family_name=family_name,
                 portfolio=portfolio,
                 asset=asset,

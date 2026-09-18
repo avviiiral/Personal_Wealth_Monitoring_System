@@ -1,10 +1,11 @@
 import { CommonModule } from '@angular/common';
 import { Component, OnDestroy, OnInit, inject } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { Subject } from 'rxjs';
+import { firstValueFrom, Subject } from 'rxjs';
 import { debounceTime, distinctUntilChanged, takeUntil } from 'rxjs/operators';
 
 import { WatchListApiService, WatchListProduct, WatchListResponse } from '../../core/services/watch-list-api.service';
+import { WatchListStateService } from '../../core/services/watch-list-state.service';
 
 type ProductTab = 'MUTUAL_FUND' | 'PMS';
 type StatusTab = 'ALL' | 'OWNED' | 'UNIVERSAL' | 'WATCHLIST';
@@ -19,6 +20,7 @@ type PageItem = number | 'ellipsis';
 })
 export class WatchListComponent implements OnInit, OnDestroy {
   private readonly api = inject(WatchListApiService);
+  private readonly state = inject(WatchListStateService);
   private readonly cachePrefix = 'pwms.watch-list.';
   private autoRefreshAttempted = false;
   private readonly searchInput$ = new Subject<string>();
@@ -44,6 +46,9 @@ export class WatchListComponent implements OnInit, OnDestroy {
   refreshing = false;
   movingToWatchList = false;
   removingFromWatchList = false;
+  downloadModalOpen = false;
+  downloadType: 'PMS' | 'MUTUAL_FUND' | 'ALL' = 'ALL';
+  downloading = false;
 
   readonly orderings = [
     { value: 'name', label: 'Name' }, { value: '1M', label: '1M Return' },
@@ -120,51 +125,58 @@ export class WatchListComponent implements OnInit, OnDestroy {
   }
 
   moveSelectedToWatchList(): void {
-    const productIds = this.products.filter(product => this.selectedIds.has(product.id) && !product.is_watchlisted).map(product => product.id);
+    const selectedProducts = this.products.filter(product => this.selectedIds.has(product.id) && !product.is_watchlisted);
+    const productIds = selectedProducts.map(product => product.id);
     if (!productIds.length || this.movingToWatchList || this.removingFromWatchList) return;
     this.movingToWatchList = true;
     this.error = '';
+    selectedProducts.forEach(product => { product.is_watchlisted = true; });
+    this.state.stageAdded(selectedProducts);
+    productIds.forEach(id => this.selectedIds.delete(id));
     this.api.bulkAddToWatchList(productIds).subscribe({
       next: () => {
-        productIds.forEach(id => {
-          const product = this.products.find(item => item.id === id);
-          if (product) product.is_watchlisted = true;
-          this.selectedIds.delete(id);
-        });
+        this.state.confirmAdded(productIds, this.productTab);
         this.movingToWatchList = false;
-        if (this.status === 'WATCHLIST') this.load();
+        this.cacheCurrentPage();
       },
       error: error => {
         console.error('Failed to move selected products to Watch List:', error);
+        selectedProducts.forEach(product => { product.is_watchlisted = false; });
+        this.state.rollbackAdded(selectedProducts);
         this.movingToWatchList = false;
         this.error = 'Unable to move the selected products to Watch List.';
       },
     });
   }
-
   removeSelectedFromWatchList(): void {
-    const productIds = this.products.filter(product => this.selectedIds.has(product.id) && product.is_watchlisted).map(product => product.id);
+    const selectedProducts = this.products.filter(product => this.selectedIds.has(product.id) && product.is_watchlisted);
+    const productIds = selectedProducts.map(product => product.id);
     if (!productIds.length || this.movingToWatchList || this.removingFromWatchList) return;
     this.removingFromWatchList = true;
     this.error = '';
+    selectedProducts.forEach(product => { product.is_watchlisted = false; });
+    this.state.stageRemoved(selectedProducts);
+    productIds.forEach(id => this.selectedIds.delete(id));
+    if (this.status === 'WATCHLIST') {
+      this.products = this.products.filter(product => !productIds.includes(product.id));
+      this.count = Math.max(0, this.count - productIds.length);
+    }
     this.api.bulkRemoveFromWatchList(productIds).subscribe({
       next: () => {
-        productIds.forEach(id => {
-          const product = this.products.find(item => item.id === id);
-          if (product) product.is_watchlisted = false;
-          this.selectedIds.delete(id);
-        });
+        this.state.confirmRemoved(productIds, this.productTab);
         this.removingFromWatchList = false;
-        if (this.status === 'WATCHLIST') this.load();
+        this.cacheCurrentPage();
       },
       error: error => {
         console.error('Failed to remove selected products from Watch List:', error);
+        selectedProducts.forEach(product => { product.is_watchlisted = true; });
+        this.state.rollbackRemoved(selectedProducts);
         this.removingFromWatchList = false;
         this.error = 'Unable to remove the selected products from Watch List.';
+        if (this.status === 'WATCHLIST') this.load();
       },
     });
   }
-
   loadFilters(): void {
     this.api.getFilters(this.productTab).subscribe({
       next: response => {
@@ -196,6 +208,15 @@ export class WatchListComponent implements OnInit, OnDestroy {
   private cachePage(response: WatchListResponse): void {
     try { localStorage.setItem(this.cacheKey(), JSON.stringify(response)); }
     catch (error) { console.warn('Failed to cache Watch List page:', error); }
+  }
+
+  private cacheCurrentPage(): void {
+    this.cachePage({
+      count: this.count,
+      next: null,
+      previous: null,
+      results: this.products,
+    });
   }
 
   private shouldBootstrapUniverse(response: WatchListResponse): boolean {
@@ -241,9 +262,18 @@ export class WatchListComponent implements OnInit, OnDestroy {
           this.refreshUniverse(true);
           return;
         }
-        this.products = response.results;
-        this.count = response.count;
-        this.cachePage(response);
+        const serverResults = this.state.filterVisible(response.results);
+        if (requestedStatus === 'WATCHLIST' && requestedPage === 1) {
+          const optimistic = this.state.getAdded(requestedProductTab);
+          const serverIds = new Set(serverResults.map(product => product.id));
+          const optimisticResults = optimistic.filter(product => !serverIds.has(product.id));
+          this.products = [...optimisticResults, ...serverResults].slice(0, this.pageSize);
+          this.count = response.count + optimisticResults.length;
+        } else {
+          this.products = serverResults;
+          this.count = Math.max(0, response.count - (response.results.length - serverResults.length));
+        }
+        this.cachePage({ ...response, results: this.products, count: this.count });
         const visibleIds = new Set(this.products.map(product => product.id));
         this.selectedIds.forEach(id => { if (!visibleIds.has(id)) this.selectedIds.delete(id); });
         if (this.page > this.totalPages) { this.page = this.totalPages; this.load(); return; }
@@ -296,9 +326,13 @@ export class WatchListComponent implements OnInit, OnDestroy {
     this.togglingIds.add(product.id);
     const previous = product.is_watchlisted;
     product.is_watchlisted = !previous;
+    if (product.is_watchlisted) this.state.stageAdded([product]);
+    else this.state.stageRemoved([product]);
     this.api.toggleWatch(product.id).subscribe({
       next: response => {
         product.is_watchlisted = response.is_watchlisted;
+        if (response.is_watchlisted) this.state.confirmAdded([product.id], product.product_type);
+        else this.state.confirmRemoved([product.id], product.product_type);
         this.togglingIds.delete(product.id);
         this.selectedIds.delete(product.id);
         if (this.status === 'WATCHLIST' && !response.is_watchlisted) {
@@ -309,9 +343,170 @@ export class WatchListComponent implements OnInit, OnDestroy {
       error: error => {
         console.error('Failed to update Watch List entry:', error);
         product.is_watchlisted = previous;
+        if (previous) this.state.rollbackRemoved([product]);
+        else this.state.rollbackAdded([product]);
         this.togglingIds.delete(product.id);
       },
     });
+  }
+
+  openDownloadModal(): void { this.downloadModalOpen = true; }
+  closeDownloadModal(): void { if (!this.downloading) this.downloadModalOpen = false; }
+
+  async confirmWatchListDownload(): Promise<void> {
+    if (this.downloading) return;
+    this.downloading = true;
+    this.error = '';
+    try {
+      const productTypes: ProductTab[] = this.downloadType === 'ALL' ? ['PMS', 'MUTUAL_FUND'] : [this.downloadType];
+      const allProducts: WatchListProduct[] = [];
+      for (const productType of productTypes) {
+        let page = 1;
+        while (true) {
+          const response = await firstValueFrom(this.api.getProducts({ product_type: productType, status: 'WATCHLIST', ordering: 'name', page, page_size: 100 }));
+          allProducts.push(...this.state.filterVisible(response.results));
+          if (!response.next || response.results.length === 0) break;
+          page += 1;
+        }
+      }
+      await this.exportWatchListWorkbook(allProducts);
+      this.downloadModalOpen = false;
+    } catch (error) {
+      console.error('Failed to download Watch List:', error);
+      this.error = 'Unable to download the Watch List right now.';
+    } finally { this.downloading = false; }
+  }
+
+  private async exportWatchListWorkbook(products: WatchListProduct[]): Promise<void> {
+    const { default: ExcelJSLib } = await import('exceljs');
+    const workbook = new ExcelJSLib.Workbook();
+    workbook.creator = 'Personal Wealth Monitoring System';
+    workbook.subject = 'Watch List';
+    workbook.title = 'Watch List';
+    workbook.created = new Date();
+
+    const sheet = workbook.addWorksheet('Watch List', {
+      views: [{ state: 'frozen', ySplit: 4, showGridLines: false }],
+      properties: { defaultRowHeight: 21 },
+    });
+
+    const exportTypeLabel = this.downloadType === 'ALL'
+      ? 'Mutual Funds & PMS'
+      : this.downloadType === 'MUTUAL_FUND' ? 'Mutual Funds' : 'PMS';
+
+    const columnDefinitions = [
+      { header: 'Type', key: 'type', width: 16 }, { header: 'Product', key: 'product', width: 48 },
+      { header: 'Provider', key: 'provider', width: 28 }, { header: 'Category', key: 'category', width: 24 },
+      { header: 'Identifier', key: 'identifier', width: 24 }, { header: 'Status', key: 'status', width: 14 },
+      { header: '1M', key: '1M', width: 12 }, { header: '3M', key: '3M', width: 12 }, { header: '6M', key: '6M', width: 12 },
+      { header: '1Y', key: '1Y', width: 12 }, { header: '3Y', key: '3Y', width: 12 }, { header: '5Y', key: '5Y', width: 12 },
+      { header: 'CAGR', key: 'CAGR', width: 12 }, { header: 'AUM', key: 'AUM', width: 18 },
+    ];
+    columnDefinitions.forEach((column, index) => {
+      const excelColumn = sheet.getColumn(index + 1);
+      excelColumn.width = column.width;
+      excelColumn.key = column.key;
+    });
+
+    sheet.mergeCells('A1:N1');
+    const title = sheet.getCell('A1');
+    title.value = 'Watch List Report';
+    title.font = { name: 'Aptos Display', size: 18, bold: true, color: { argb: 'FFFFFFFF' } };
+    title.alignment = { vertical: 'middle' };
+    title.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1F2937' } };
+    sheet.getRow(1).height = 32;
+
+    sheet.mergeCells('A2:N2');
+    const subtitle = sheet.getCell('A2');
+    subtitle.value = exportTypeLabel + ' • Watchlisted products • Generated ' + this.todayStamp();
+    subtitle.font = { name: 'Aptos', size: 10, italic: true, color: { argb: 'FF6B7280' } };
+    subtitle.alignment = { vertical: 'middle' };
+    sheet.getRow(2).height = 22;
+
+    sheet.mergeCells('A3:N3');
+    const summary = sheet.getCell('A3');
+    summary.value = 'Total watchlisted products: ' + products.length;
+    summary.font = { name: 'Aptos', size: 10, bold: true, color: { argb: 'FF374151' } };
+    summary.alignment = { vertical: 'middle' };
+    sheet.getRow(3).height = 22;
+
+    const headerRow = sheet.insertRow(4, columnDefinitions.map(column => column.header));
+    headerRow.height = 26;
+    headerRow.eachCell(cell => {
+      cell.font = { name: 'Aptos', size: 10, bold: true, color: { argb: 'FFFFFFFF' } };
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF374151' } };
+      cell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
+      cell.border = {
+        top: { style: 'thin', color: { argb: 'FFD1D5DB' } },
+        bottom: { style: 'thin', color: { argb: 'FFD1D5DB' } },
+      };
+    });
+
+    products.forEach((product, index) => {
+      const row = sheet.addRow({
+        type: product.product_type === 'MUTUAL_FUND' ? 'Mutual Fund' : 'PMS',
+        product: product.name,
+        provider: product.provider || '',
+        category: product.category || '',
+        identifier: product.isin || product.external_identifier || '',
+        status: product.status,
+        '1M': this.metric(product, '1M'), '3M': this.metric(product, '3M'), '6M': this.metric(product, '6M'),
+        '1Y': this.metric(product, '1Y'), '3Y': this.metric(product, '3Y'), '5Y': this.metric(product, '5Y'),
+        CAGR: this.metric(product, 'CAGR'),
+        AUM: product.mutual_fund?.aum ?? product.pms?.aum ?? null,
+      });
+
+      row.eachCell(cell => {
+        cell.font = { name: 'Aptos', size: 10, color: { argb: 'FF111827' } };
+        cell.alignment = { vertical: 'middle' };
+        cell.border = { bottom: { style: 'hair', color: { argb: 'FFE5E7EB' } } };
+      });
+      row.height = 21;
+      if (index % 2 === 1) row.eachCell(cell => {
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF9FAFB' } };
+      });
+
+      [7, 8, 9, 10, 11, 12, 13].forEach(column => {
+        const cell = row.getCell(column);
+        if (typeof cell.value === 'number') {
+          cell.numFmt = '0.00"%"';
+          cell.alignment = { vertical: 'middle', horizontal: 'right' };
+        }
+      });
+
+      const aum = row.getCell(14);
+      if (typeof aum.value === 'number') {
+        aum.numFmt = '#,##0.00';
+        aum.alignment = { vertical: 'middle', horizontal: 'right' };
+      }
+      row.getCell(1).alignment = { vertical: 'middle', horizontal: 'center' };
+      row.getCell(6).alignment = { vertical: 'middle', horizontal: 'center' };
+    });
+
+    sheet.autoFilter = { from: 'A4', to: 'N4' };
+    sheet.getColumn(2).alignment = { vertical: 'middle', wrapText: true };
+    sheet.getColumn(3).alignment = { vertical: 'middle', wrapText: true };
+    sheet.getColumn(4).alignment = { vertical: 'middle', wrapText: true };
+    sheet.getColumn(5).alignment = { vertical: 'middle', wrapText: true };
+
+    const lastRow = Math.max(4, products.length + 4);
+    const noteCell = sheet.getCell('A' + (lastRow + 1));
+    noteCell.value = 'Note: Returns are shown as provided by the Watch List data source. AUM is shown in the source currency.';
+    sheet.mergeCells('A' + (lastRow + 1) + ':N' + (lastRow + 1));
+    noteCell.font = { name: 'Aptos', size: 9, italic: true, color: { argb: 'FF6B7280' } };
+    noteCell.alignment = { vertical: 'middle' };
+    sheet.getRow(lastRow + 1).height = 20;
+
+    const buffer = await workbook.xlsx.writeBuffer();
+    this.triggerDownload(
+      new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }),
+      'watch_list_' + this.downloadType.toLowerCase() + '_' + this.todayStamp() + '.xlsx',
+    );
+  }
+  private todayStamp(): string { return new Date().toISOString().slice(0, 10); }
+  private triggerDownload(blob: Blob, filename: string): void {
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a'); anchor.href = url; anchor.download = filename; anchor.click(); URL.revokeObjectURL(url);
   }
 
   refreshUniverse(auto = false): void {

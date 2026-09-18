@@ -998,3 +998,5 @@
 :host-context(html.dark-theme) .dropdown-arrow {
   color: #8a93a6;
 }
+
+\n@media (prefers-reduced-motion: no-preference) {\n  .header-icon-button,\n  .user-profile,\n  .profile-menu-item,\n  .panel-expand-button,\n  .panel-close-button {\n    transition: background-color var(--motion-fast) var(--ease-standard), color var(--motion-fast) var(--ease-standard), transform var(--motion-fast) var(--ease-standard);\n  }\n\n  .header-icon-button:hover { transform: translateY(-1px); }\n  .user-profile:hover { transform: translateY(-1px); }\n\n  .profile-menu,\n  .header-search-panel,\n  .notifications-panel,\n  .ai-chat-panel {\n    animation: pwms-fade-in var(--motion-base) var(--ease-standard) both;\n  }\n\n  .profile-menu-item:active,\n  .header-icon-button:active { transform: scale(0.97); }\n}\n

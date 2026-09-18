@@ -58,11 +58,8 @@ def portfolio_assets(request):
 @api_view(["GET", "PUT", "PATCH", "DELETE"])
 @permission_classes([IsAuthenticated])
 def portfolio_asset_detail(request, asset_id):
-    try:
-        asset = family_scope(Asset.objects, request.user).filter(id=asset_id).first()
+    asset = family_scope(Asset.objects, request.user).filter(id=asset_id).first()
     if asset is None:
-        return Response({"detail": "Asset not found."}, status=status.HTTP_404_NOT_FOUND)
-    except Asset.DoesNotExist:
         return Response({"detail": "Asset not found."}, status=status.HTTP_404_NOT_FOUND)
     if request.method == "GET":
         return Response(AssetSerializer(asset).data, status=status.HTTP_200_OK)

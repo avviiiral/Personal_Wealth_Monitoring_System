@@ -15,10 +15,7 @@ def settings_price_list(request):
     """
     GET /api/settings/prices/
 
-    Lists the assets the authenticated user can currently see -
-    their own, plus any fellow member's within their active
-    family (the same family-shared visibility used by Dashboard/
-    Portfolio/Analytics; System Owner sees every asset) - with
+    Lists the assets in the authenticated user's active family - with
     each one's current effective price, clearly distinguishing an
     automatic quote from a manual override.
 

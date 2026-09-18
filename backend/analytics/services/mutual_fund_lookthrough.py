@@ -2,6 +2,7 @@ from decimal import Decimal
 
 from investments.models import Asset, SecurityMaster
 from mutual_funds.models import MutualFundHolding, MutualFundUnderlying
+from users.permissions import get_active_family_group, is_system_owner
 
 
 class MutualFundLookThroughService:
@@ -11,6 +12,16 @@ class MutualFundLookThroughService:
     UNCLASSIFIED = "Unclassified"
 
     @staticmethod
+    def scope_q(user):
+        if is_system_owner(user):
+            return Q()
+        family = get_active_family_group(user)
+        if family is None:
+            return Q(pk__in=[])
+        owner_ids = MutualFundLookThroughService.owner_ids(user)
+        return Q(family_id=family.id) | Q(family_id__isnull=True, owner_id__in=owner_ids)
+
+    @staticmethod
     def owner_ids(user):
         return [user.pk] if hasattr(user, "pk") else list(user)
 
@@ -18,7 +29,7 @@ class MutualFundLookThroughService:
     def latest_underlyings(cls, user):
         owner_ids = cls.owner_ids(user)
         holdings = MutualFundHolding.objects.filter(
-            owner_id__in=owner_ids,
+            MutualFundLookThroughService.scope_q(user),
             scheme__is_active=True,
             current_value__gt=0,
         ).select_related("scheme")
@@ -43,10 +54,10 @@ class MutualFundLookThroughService:
     def _classification_maps(cls, user):
         owner_ids = cls.owner_ids(user)
         assets = Asset.objects.filter(
-            owner_id__in=owner_ids,
+            MutualFundLookThroughService.scope_q(user),
             is_active=True,
         ).select_related("security_master")
-        security_masters = SecurityMaster.objects.filter(owner_id__in=owner_ids)
+        security_masters = SecurityMaster.objects.filter(MutualFundLookThroughService.scope_q(user))
 
         by_isin = {}
         by_name = {}
@@ -122,7 +133,7 @@ class MutualFundLookThroughService:
                 totals[holding.asset.category] = totals.get(holding.asset.category, cls.ZERO) + value
 
         all_mf_holdings = MutualFundHolding.objects.filter(
-            owner_id__in=cls.owner_ids(user),
+            MutualFundLookThroughService.scope_q(user),
             scheme__is_active=True,
             current_value__gt=0,
         ).select_related("scheme")

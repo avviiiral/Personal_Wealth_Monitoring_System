@@ -9,19 +9,20 @@ from rest_framework.response import Response
 
 from investments.models import PortfolioPosition, Transaction, TransactionType
 from investments.services.xirr import XIRRCalculator
-from users.permissions import get_visible_owner_ids
+from users.permissions import family_scope, require_active_family
 
 
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def holding_report(request):
     """Return current portfolio positions with asset-class, subclass, asset-name, and holding XIRR."""
-    owner_ids = get_visible_owner_ids(request.user)
+    family = require_active_family(request.user)
+    owner_ids = list(family_scope(Transaction.objects, request.user).values_list("owner_id", flat=True))
 
     latest_transaction = (
         Transaction.objects
         .filter(
-            owner_id=OuterRef("owner_id"),
+            family_id=OuterRef("family_id"),
             asset_id=OuterRef("asset_id"),
             family_name=OuterRef("family_name"),
             portfolio=OuterRef("portfolio"),
@@ -32,7 +33,7 @@ def holding_report(request):
     positions = list(
         PortfolioPosition.objects
         .filter(
-            owner_id__in=owner_ids,
+            family_id=family.id,
             asset__is_active=True,
             quantity__gt=0,
         )
@@ -52,7 +53,7 @@ def holding_report(request):
     transactions = (
         Transaction.objects
         .filter(
-            owner_id__in=owner_ids,
+            family_id=family.id,
             asset_id__in=asset_ids,
         )
         .only(

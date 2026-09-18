@@ -5,7 +5,7 @@ from django.db.models import Q
 
 from analytics.services.xirr import XIRRCalculator
 from investments.models import Asset, AssetCategory, PortfolioPosition, Transaction, TransactionType
-from users.permissions import get_visible_owner_ids
+from users.permissions import family_scope, require_active_family
 from watchlist.models import InvestmentProduct, ProductType
 
 
@@ -20,8 +20,8 @@ class OwnershipService:
         return product.name
 
     @classmethod
-    def _asset_queryset(cls, product, owner_ids):
-        qs = Asset.objects.filter(owner_id__in=owner_ids)
+    def _asset_queryset(cls, product, user):
+        qs = family_scope(Asset.objects, user)
         match_name = cls._product_name(product)
 
         # PMS holdings are stored as underlying-stock Assets. The PMS strategy
@@ -30,7 +30,7 @@ class OwnershipService:
         # PMS strategy itself to exist as an Asset.
         if product.product_type == ProductType.PMS:
             asset_ids = Transaction.objects.filter(
-                owner_id__in=owner_ids,
+                family_id=require_active_family(user).id,
                 asset_name__iexact=match_name,
             ).values_list("asset_id", flat=True).distinct()
             return qs.filter(id__in=asset_ids)
@@ -102,7 +102,6 @@ class OwnershipService:
         if not products:
             return {}
 
-        owner_ids = get_visible_owner_ids(user)
         product_by_id = {product.id: product for product in products}
         product_match_names = {
             product.id: cls._product_name(product)
@@ -118,9 +117,7 @@ class OwnershipService:
             for product in products:
                 name_query |= Q(asset_name__iexact=product_match_names[product.id])
 
-            pms_transactions = Transaction.objects.filter(
-                owner_id__in=owner_ids,
-            ).filter(name_query).values("asset_id", "asset_name")
+            pms_transactions = family_scope(Transaction.objects, user).filter(name_query).values("asset_id", "asset_name")
 
             products_by_name = {}
             for product in products:
@@ -147,7 +144,7 @@ class OwnershipService:
                 else:
                     identifier_query |= Q(name__iexact=match_name)
 
-            assets_qs = Asset.objects.filter(owner_id__in=owner_ids).filter(identifier_query)
+            assets_qs = family_scope(Asset.objects, user).filter(identifier_query)
             if products and all(product.product_type == ProductType.MUTUAL_FUND for product in products):
                 assets_qs = assets_qs.filter(category=AssetCategory.MUTUAL_FUND)
             assets = list(assets_qs.only("id", "owner_id", "name", "symbol", "isin", "category"))
@@ -192,7 +189,7 @@ class OwnershipService:
             }
 
         positions = list(
-            PortfolioPosition.objects.filter(owner_id__in=owner_ids, asset_id__in=all_asset_ids)
+            family_scope(PortfolioPosition.objects, user).filter(asset_id__in=all_asset_ids)
             .select_related("asset")
         )
         product_for_asset = {}
@@ -213,8 +210,7 @@ class OwnershipService:
         }
         transactions_by_position = {key: [] for key in position_keys}
         if position_keys:
-            transactions = Transaction.objects.filter(
-                owner_id__in=owner_ids,
+            transactions = family_scope(Transaction.objects, user).filter(
                 asset_id__in=all_asset_ids,
             ).order_by("transaction_date", "created_at", "id")
             for tx in transactions:
@@ -236,11 +232,10 @@ class OwnershipService:
 
     @classmethod
     def ownership_rows(cls, product, user):
-        owner_ids = get_visible_owner_ids(user)
-        assets = cls._asset_queryset(product, owner_ids)
+        assets = cls._asset_queryset(product, user)
         if product.product_type == ProductType.MUTUAL_FUND:
             assets = assets.filter(category=AssetCategory.MUTUAL_FUND)
-        positions = PortfolioPosition.objects.filter(owner_id__in=owner_ids, asset__in=assets).select_related("asset")
+        positions = family_scope(PortfolioPosition.objects, user).filter(asset__in=assets).select_related("asset")
         rows = []
         for position in positions:
             if position.quantity <= 0 and position.current_value <= 0:

@@ -5,6 +5,8 @@ import logging
 import pandas as pd
 from django.db import transaction as db_transaction
 
+from users.permissions import require_active_family
+
 from investments.models import (
     Asset,
     AssetCategory,
@@ -577,6 +579,7 @@ class TransactionImporter:
         isin,
         asset_class,
         sub_class,
+        family=None,
     ):
         normalized_isin = isin.strip()
 
@@ -616,6 +619,7 @@ class TransactionImporter:
                 Asset.objects
                 .filter(
                     owner=owner,
+                    family=family,
                     isin=normalized_isin,
                 )
                 .first()
@@ -626,6 +630,7 @@ class TransactionImporter:
                 Asset.objects
                 .filter(
                     owner=owner,
+                    family=family,
                     name=asset_name,
                     category=category,
                 )
@@ -635,6 +640,7 @@ class TransactionImporter:
         if asset is None:
             asset = Asset.objects.create(
                 owner=owner,
+                family=family,
                 name=asset_name,
                 category=category,
                 isin=(
@@ -669,6 +675,7 @@ class TransactionImporter:
         SecurityMasterService.get_or_create(
             owner=owner,
             asset=asset,
+            family=family,
         )
 
         return asset
@@ -678,6 +685,7 @@ class TransactionImporter:
         owner,
         asset_name,
         isin,
+        family=None,
     ):
         normalized_isin = isin.strip()
 
@@ -688,6 +696,7 @@ class TransactionImporter:
                 MutualFundScheme.objects
                 .filter(
                     owner=owner,
+                    family=family,
                     isin_growth=normalized_isin,
                 )
                 .first()
@@ -698,6 +707,7 @@ class TransactionImporter:
                 MutualFundScheme.objects
                 .filter(
                     owner=owner,
+                    family=family,
                     scheme_name=asset_name,
                 )
                 .first()
@@ -707,6 +717,7 @@ class TransactionImporter:
             scheme = (
                 MutualFundScheme.objects.create(
                     owner=owner,
+                    family=family,
                     scheme_name=asset_name,
                     isin_growth=(
                         normalized_isin
@@ -738,11 +749,13 @@ class TransactionImporter:
     def _find_existing_investment_transaction(
         owner,
         source_key,
+        family=None,
     ):
         return (
             Transaction.objects
             .filter(
                 owner=owner,
+                family=family,
                 source="EXCEL",
                 source_key=source_key,
             )
@@ -760,11 +773,13 @@ class TransactionImporter:
         quantity,
         price,
         amount,
+        family=None,
     ):
         return (
             MutualFundTransaction.objects
             .filter(
                 owner=owner,
+                family=family,
                 family_name=family_name,
                 portfolio=portfolio,
                 scheme=scheme,
@@ -978,6 +993,7 @@ class TransactionImporter:
     @staticmethod
     @db_transaction.atomic
     def import_file(file, owner):
+        family = require_active_family(owner)
         dataframe, summary = (
             TransactionImporter
             ._read_file(file)
@@ -1109,6 +1125,7 @@ class TransactionImporter:
                     TransactionImporter
                     ._get_or_create_mutual_fund_scheme(
                         owner=owner,
+                        family=family,
                         asset_name=parsed["asset_name"],
                         isin=parsed["isin"],
                     )
@@ -1133,6 +1150,7 @@ class TransactionImporter:
                     TransactionImporter
                     ._find_existing_mutual_fund_transaction(
                         owner=owner,
+                        family=family,
                         family_name=parsed["family_name"],
                         portfolio=parsed["portfolio"],
                         scheme=scheme,
@@ -1153,6 +1171,7 @@ class TransactionImporter:
 
                 MutualFundTransaction.objects.create(
                     owner=owner,
+                    family=family,
                     family_name=parsed["family_name"],
                     portfolio=parsed["portfolio"],
                     scheme=scheme,
@@ -1179,6 +1198,7 @@ class TransactionImporter:
                 TransactionImporter
                 ._find_existing_investment_transaction(
                     owner=owner,
+                    family=family,
                     source_key=source_key,
                 )
             )
@@ -1198,6 +1218,7 @@ class TransactionImporter:
 
             asset = TransactionImporter._get_or_create_asset(
                 owner=owner,
+                family=family,
                 asset_name=security_identity_name,
                 isin=parsed["isin"],
                 asset_class=parsed["asset_class"],
@@ -1221,6 +1242,7 @@ class TransactionImporter:
 
             Transaction.objects.create(
                 owner=owner,
+                family=family,
                 family_name=parsed["family_name"],
                 portfolio=parsed["portfolio"],
                 asset_class=parsed["asset_class"],

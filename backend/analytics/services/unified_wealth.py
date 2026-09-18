@@ -1,7 +1,8 @@
+from django.db.models import Q
 from datetime import date
 from decimal import Decimal
 
-from django.db.models import Sum
+from django.db.models import Sum, Q
 
 from investments.models import (
     Holding,
@@ -16,6 +17,7 @@ from mutual_funds.models import (
 )
 
 from .xirr import XIRRCalculator
+from users.permissions import get_active_family_group, is_system_owner
 
 
 class UnifiedWealthAnalytics:
@@ -35,6 +37,16 @@ class UnifiedWealthAnalytics:
     """
 
     ZERO = Decimal("0")
+
+    @staticmethod
+    def _scope_q(user):
+        if is_system_owner(user):
+            return Q()
+        family = get_active_family_group(user)
+        if family is None:
+            return Q(pk__in=[])
+        owner_ids = UnifiedWealthAnalytics._owner_ids(user)
+        return Q(family_id=family.id) | Q(family_id__isnull=True, owner_id__in=owner_ids)
 
     @staticmethod
     def _owner_ids(user):
@@ -62,7 +74,7 @@ class UnifiedWealthAnalytics:
         return (
             Holding.objects
             .filter(
-                owner_id__in=UnifiedWealthAnalytics._owner_ids(user),
+                UnifiedWealthAnalytics._scope_q(user),
                 asset__is_active=True,
             )
             .select_related("asset")
@@ -125,7 +137,7 @@ class UnifiedWealthAnalytics:
 
         transactions_qs = (
             Transaction.objects
-            .filter(owner_id__in=UnifiedWealthAnalytics._owner_ids(user))
+            .filter(UnifiedWealthAnalytics._scope_q(user))
         )
 
         if family_name:
@@ -239,7 +251,7 @@ class UnifiedWealthAnalytics:
         return (
             MutualFundHolding.objects
             .filter(
-                owner_id__in=UnifiedWealthAnalytics._owner_ids(user),
+                UnifiedWealthAnalytics._scope_q(user),
                 scheme__is_active=True,
             )
             .select_related("scheme")
@@ -302,7 +314,7 @@ class UnifiedWealthAnalytics:
 
         transactions_qs = (
             MutualFundTransaction.objects
-            .filter(owner_id__in=UnifiedWealthAnalytics._owner_ids(user))
+            .filter(UnifiedWealthAnalytics._scope_q(user))
         )
 
         if family_name:
@@ -431,7 +443,7 @@ class UnifiedWealthAnalytics:
         equity_transactions = (
             Transaction.objects
             .filter(
-                owner_id__in=UnifiedWealthAnalytics._owner_ids(user),
+                UnifiedWealthAnalytics._scope_q(user),
                 family_name=family_name,
             )
             .order_by(
@@ -467,7 +479,7 @@ class UnifiedWealthAnalytics:
         mutual_fund_transactions = (
             MutualFundTransaction.objects
             .filter(
-                owner_id__in=UnifiedWealthAnalytics._owner_ids(user),
+                UnifiedWealthAnalytics._scope_q(user),
                 family_name=family_name,
             )
             .order_by(
@@ -791,7 +803,7 @@ class UnifiedWealthAnalytics:
 
         equity_transactions_qs = (
             Transaction.objects
-            .filter(owner_id__in=UnifiedWealthAnalytics._owner_ids(user))
+            .filter(UnifiedWealthAnalytics._scope_q(user))
         )
 
         if family_name:
@@ -850,7 +862,7 @@ class UnifiedWealthAnalytics:
 
         mutual_fund_transactions_qs = (
             MutualFundTransaction.objects
-            .filter(owner_id__in=UnifiedWealthAnalytics._owner_ids(user))
+            .filter(UnifiedWealthAnalytics._scope_q(user))
         )
 
         if family_name:

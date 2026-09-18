@@ -1,3 +1,4 @@
+from django.db.models import Q
 import logging
 from decimal import Decimal
 
@@ -5,6 +6,7 @@ from investments.models import Transaction, TransactionType
 from mutual_funds.models import MutualFundTransaction
 
 from .unified_wealth import UnifiedWealthAnalytics
+from users.permissions import get_active_family_group, is_system_owner
 
 
 logger = logging.getLogger(__name__)
@@ -18,6 +20,16 @@ class InvestmentSummaryService:
     """
 
     ZERO = Decimal("0")
+
+    @staticmethod
+    def _scope_q(user):
+        if is_system_owner(user):
+            return Q()
+        family = get_active_family_group(user)
+        if family is None:
+            return Q(pk__in=[])
+        owner_ids = InvestmentSummaryService._owner_ids(user)
+        return Q(family_id=family.id) | Q(family_id__isnull=True, owner_id__in=owner_ids)
 
     @staticmethod
     def _owner_ids(user):
@@ -164,7 +176,7 @@ class InvestmentSummaryService:
     def _equity_asset_class_by_asset_id(user, family_name=None):
         rows_qs = (
             Transaction.objects
-            .filter(owner_id__in=InvestmentSummaryService._owner_ids(user))
+            .filter(InvestmentSummaryService._scope_q(user))
             .exclude(sub_class__isnull=True)
             .exclude(sub_class__exact="")
         )
@@ -188,7 +200,7 @@ class InvestmentSummaryService:
     def _equity_asset_class_weights_by_asset_id(user, family_name=None):
         rows_qs = (
             Transaction.objects
-            .filter(owner_id__in=InvestmentSummaryService._owner_ids(user))
+            .filter(InvestmentSummaryService._scope_q(user))
             .exclude(sub_class__isnull=True)
             .exclude(sub_class__exact="")
         )
@@ -234,7 +246,7 @@ class InvestmentSummaryService:
         transactions = (
             Transaction.objects
             .filter(
-                owner_id__in=InvestmentSummaryService._owner_ids(user),
+                InvestmentSummaryService._scope_q(user),
                 family_name=family_name,
             )
             .select_related("asset__holding")
@@ -276,7 +288,7 @@ class InvestmentSummaryService:
         transactions = (
             MutualFundTransaction.objects
             .filter(
-                owner_id__in=InvestmentSummaryService._owner_ids(user),
+                InvestmentSummaryService._scope_q(user),
                 family_name=family_name,
             )
             .select_related("scheme__holding")
@@ -439,7 +451,7 @@ class InvestmentSummaryService:
     def _advisor_by_asset_id(user):
         rows = (
             Transaction.objects
-            .filter(owner_id__in=InvestmentSummaryService._owner_ids(user))
+            .filter(InvestmentSummaryService._scope_q(user))
             .exclude(advisors__isnull=True)
             .exclude(advisors__exact="")
             .order_by("asset_id", "-transaction_date", "-created_at", "-id")
@@ -519,7 +531,7 @@ class InvestmentSummaryService:
         rows = (
             Asset.objects
             .filter(
-                owner_id__in=InvestmentSummaryService._owner_ids(user),
+                InvestmentSummaryService._scope_q(user),
                 security_master__amc_name__isnull=False,
             )
             .exclude(security_master__amc_name__exact="")
@@ -571,7 +583,7 @@ class InvestmentSummaryService:
         rows = (
             Asset.objects
             .filter(
-                owner_id__in=InvestmentSummaryService._owner_ids(user),
+                InvestmentSummaryService._scope_q(user),
                 security_master__isnull=False,
             )
             .values_list(
@@ -650,7 +662,7 @@ class InvestmentSummaryService:
         rows = (
             Asset.objects
             .filter(
-                owner_id__in=InvestmentSummaryService._owner_ids(user),
+                InvestmentSummaryService._scope_q(user),
                 security_master__isnull=False,
             )
             .values_list(

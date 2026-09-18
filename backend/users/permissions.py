@@ -320,6 +320,53 @@ def get_manageable_users_queryset(user):
 
 
 # ======================================================================
+# FAMILY — authoritative request scope
+# ======================================================================
+
+def get_active_family_group(user):
+    """Return the authenticated user's currently selected family, or None."""
+    from .models import FamilyGroup
+
+    family_id = get_active_family_group_id(user)
+    if family_id is None:
+        return None
+    return FamilyGroup.objects.filter(pk=family_id).first()
+
+
+def require_active_family(user):
+    """Return the user's active family or raise a DRF 403 response exception."""
+    from rest_framework.exceptions import PermissionDenied
+
+    if not getattr(user, "is_authenticated", False):
+        raise PermissionDenied("Authentication is required.")
+    family = get_active_family_group(user)
+    if family is None:
+        raise PermissionDenied("You must belong to an active family to access family-owned financial data.")
+    return family
+
+
+def family_scope(queryset, user, owner_field="owner_id", family_field="family_id", include_legacy=True):
+    """Scope a financial queryset to the user's active family.
+
+    Family is authoritative for records created under the new model. Legacy
+    rows without a family remain visible only through their existing owner
+    membership so migration never silently exposes or loses historical data.
+    """
+    from django.db.models import Q
+
+    if is_system_owner(user):
+        return queryset.all()
+
+    family = get_active_family_group(user)
+    if family is None:
+        return queryset.none()
+    scoped = Q(**{family_field: family.id})
+    if include_legacy:
+        scoped |= Q(**{family_field: None, owner_field + "__in": get_visible_owner_ids(user)})
+    return queryset.filter(scoped)
+
+
+# ======================================================================
 # DRF PERMISSION CLASSES
 # ======================================================================
 

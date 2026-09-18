@@ -2,6 +2,7 @@ from decimal import Decimal
 
 from analytics.services.unified_wealth import UnifiedWealthAnalytics
 from investments.models import Transaction
+from users.permissions import family_scope, require_active_family
 from mutual_funds.models import (
     MutualFundTransaction,
     SIP,

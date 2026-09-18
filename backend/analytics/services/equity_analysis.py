@@ -1,5 +1,7 @@
+from django.db.models import Q
 from decimal import Decimal
 
+from users.permissions import get_active_family_group, is_system_owner
 from investments.models import Asset
 
 from .unified_wealth import UnifiedWealthAnalytics
@@ -9,6 +11,16 @@ class EquityAnalysisService:
     """Build equity valuation metrics using current-value weighting."""
 
     ZERO = Decimal("0")
+
+    @staticmethod
+    def _scope_q(user):
+        if is_system_owner(user):
+            return Q()
+        family = get_active_family_group(user)
+        if family is None:
+            return Q(pk__in=[])
+        owner_ids = EquityAnalysisService._owner_ids(user)
+        return Q(family_id=family.id) | Q(family_id__isnull=True, owner_id__in=owner_ids)
 
     @staticmethod
     def _owner_ids(user):
@@ -21,7 +33,7 @@ class EquityAnalysisService:
 
         rows = (
             Asset.objects
-            .filter(owner_id__in=owner_ids, security_master__isnull=False)
+            .filter(EquityAnalysisService._scope_q(user), security_master__isnull=False)
             .values_list(
                 "id",
                 "security_master__cap_type",

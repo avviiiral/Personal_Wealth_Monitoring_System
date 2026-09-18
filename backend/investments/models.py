@@ -1,6 +1,8 @@
 from django.db import models
 from django.contrib.auth.models import User
 
+from users.models import FamilyGroup
+
 from typing import TYPE_CHECKING
 
 
@@ -18,7 +20,8 @@ class AssetCategory(models.TextChoices):
 
 
 class Asset(models.Model):
-    owner = models.ForeignKey(User, on_delete=models.CASCADE, related_name="assets")
+    owner = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name="assets")
+    family = models.ForeignKey(FamilyGroup, on_delete=models.PROTECT, related_name="assets", null=True, blank=True, db_index=True)
     name = models.CharField(max_length=255)
     category = models.CharField(max_length=30, choices=AssetCategory.choices)
     symbol = models.CharField(max_length=50, blank=True, null=True)
@@ -57,7 +60,8 @@ class TransactionSource(models.TextChoices):
 
 
 class Transaction(models.Model):
-    owner = models.ForeignKey(User, on_delete=models.CASCADE, related_name="transactions")
+    owner = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name="transactions")
+    family = models.ForeignKey(FamilyGroup, on_delete=models.PROTECT, related_name="transactions", null=True, blank=True, db_index=True)
     family_name = models.CharField(max_length=255, blank=True, null=True)
     portfolio = models.CharField(max_length=255, blank=True, null=True)
     asset_class = models.CharField(max_length=255, blank=True, null=True)
@@ -109,9 +113,12 @@ class TransactionEditHistory(models.Model):
     )
     owner = models.ForeignKey(
         User,
-        on_delete=models.CASCADE,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
         related_name="transaction_edit_history",
     )
+    family = models.ForeignKey(FamilyGroup, on_delete=models.PROTECT, related_name="transaction_edit_history", null=True, blank=True, db_index=True)
     edited_by = models.ForeignKey(
         User,
         on_delete=models.CASCADE,
@@ -135,7 +142,8 @@ class TransactionEditHistory(models.Model):
 
 
 class Holding(models.Model):
-    owner = models.ForeignKey(User, on_delete=models.CASCADE, related_name="holdings")
+    owner = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name="holdings")
+    family = models.ForeignKey(FamilyGroup, on_delete=models.PROTECT, related_name="holdings", null=True, blank=True, db_index=True)
     asset = models.OneToOneField(Asset, on_delete=models.CASCADE, related_name="holding")
 
     if TYPE_CHECKING:
@@ -157,7 +165,8 @@ class Holding(models.Model):
 
 
 class PortfolioPosition(models.Model):
-    owner = models.ForeignKey(User, on_delete=models.CASCADE, related_name="portfolio_positions")
+    owner = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name="portfolio_positions")
+    family = models.ForeignKey(FamilyGroup, on_delete=models.PROTECT, related_name="portfolio_positions", null=True, blank=True, db_index=True)
     family_name = models.CharField(max_length=255)
     portfolio = models.CharField(max_length=255)
     asset = models.ForeignKey(Asset, on_delete=models.CASCADE, related_name="portfolio_positions")
@@ -183,7 +192,8 @@ class PortfolioPosition(models.Model):
 
 
 class SecurityMaster(models.Model):
-    owner = models.ForeignKey(User, on_delete=models.CASCADE, related_name="security_masters")
+    owner = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name="security_masters")
+    family = models.ForeignKey(FamilyGroup, on_delete=models.PROTECT, related_name="security_masters", null=True, blank=True, db_index=True)
     isin = models.CharField(max_length=20, blank=True, null=True)
     asset_name = models.CharField(max_length=255)
     sector = models.CharField(max_length=100, blank=True, null=True)

@@ -74,8 +74,8 @@
                     </thead>
                     <tbody>
                       <ng-container *ngFor="let group of assetClass.sub_classes">
-                        <tr class="sub-class-row nested-row" [class.expanded]="expandedSubClass === group.sub_class" (click)="toggleSubClass(group.sub_class)">
-                          <td class="sub-class-name"><span class="row-chevron" [class.open]="expandedSubClass === group.sub_class">›</span>{{ group.sub_class }}</td>
+                        <tr class="sub-class-row nested-row" [class.expanded]="isSubClassExpanded(assetClass.asset_class, group.sub_class)" (click)="toggleSubClass(assetClass.asset_class, group.sub_class)">
+                          <td class="sub-class-name"><span class="row-chevron" [class.open]="isSubClassExpanded(assetClass.asset_class, group.sub_class)">›</span>{{ group.sub_class }}</td>
                           <td>{{ formatNumber(group.quantity) }}</td>
                           <td>₹{{ formatCurrency(group.invested_value) }}</td>
                           <td>₹{{ formatCurrency(group.current_value) }}</td>
@@ -86,7 +86,7 @@
                           <td></td>
                         </tr>
 
-                        <tr *ngIf="expandedSubClass === group.sub_class" class="detail-row">
+                        <tr *ngIf="isSubClassExpanded(assetClass.asset_class, group.sub_class)" class="detail-row">
                           <td colspan="9">
                             <div class="detail-container">
                               <div class="detail-title">{{ group.sub_class }} — Asset Names</div>

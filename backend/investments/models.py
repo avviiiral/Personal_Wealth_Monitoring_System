@@ -121,7 +121,9 @@ class TransactionEditHistory(models.Model):
     family = models.ForeignKey(FamilyGroup, on_delete=models.PROTECT, related_name="transaction_edit_history", null=True, blank=True, db_index=True)
     edited_by = models.ForeignKey(
         User,
-        on_delete=models.CASCADE,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
         related_name="transaction_edits_made",
     )
     edited_at = models.DateTimeField(auto_now_add=True)

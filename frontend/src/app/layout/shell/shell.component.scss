@@ -87,4 +87,9 @@ app-header {
   }
 }
 
-\n@media (prefers-reduced-motion: no-preference) {\n  .page-content {\n    animation: pwms-fade-in var(--motion-base) var(--ease-standard) both;\n  }\n}\n
+
+@media (prefers-reduced-motion: no-preference) {
+  .page-content {
+    animation: pwms-fade-in var(--motion-base) var(--ease-standard) both;
+  }
+}

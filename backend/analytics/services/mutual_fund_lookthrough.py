@@ -22,7 +22,7 @@ class MutualFundLookThroughService:
         if family is None:
             return Q(pk__in=[])
         owner_ids = MutualFundLookThroughService.owner_ids(user)
-        return Q(family_id=family.id) | Q(family_id__isnull=True, owner_id__in=owner_ids)
+        return Q(family_id=family.id)
 
     @staticmethod
     def owner_ids(user):

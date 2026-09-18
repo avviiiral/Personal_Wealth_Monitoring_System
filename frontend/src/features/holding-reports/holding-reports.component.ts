@@ -168,7 +168,7 @@ export class HoldingReportsComponent implements OnInit {
     const rows = this.toAssetNameXirrRows(group);
     await this.downloadRows(
       rows,
-      this.assetNameColumns(),
+      this.subClassAssetNameColumns(),
       `holding_report_sub_class_${this.slugify(group.sub_class)}_asset_name_xirr_${this.todayStamp()}.xlsx`,
       `Sub Class — Asset Name XIRR Report — ${group.sub_class} (as of ${this.todayLabel()})`
     );
@@ -204,6 +204,9 @@ export class HoldingReportsComponent implements OnInit {
   ]; }
   private assetNameColumns() { return [
     {header:'Family Name',key:'family_name',width:24},{header:'Portfolio',key:'portfolio',width:24},{header:'Asset Class',key:'asset_class',width:18},{header:'Sub Class',key:'sub_class',width:22},{header:'Asset Name',key:'asset_name',width:30},{header:'Underlying',key:'underlying',width:28},{header:'ISIN',key:'isin',width:18},{header:'Advisor',key:'advisors',width:24},{header:'Quantity',key:'quantity',width:14,numFmt:'#,##0.00'},{header:'Average Cost',key:'average_cost',width:16,numFmt:'"₹"#,##0.00'},{header:'Invested Value',key:'invested_value',width:18,numFmt:'"₹"#,##0'},{header:'Current Price / NAV',key:'current_price',width:18,numFmt:'"₹"#,##0.00'},{header:'Current Value',key:'current_value',width:18,numFmt:'"₹"#,##0'},{header:'Gain',key:'gain',width:18,numFmt:'"₹"#,##0'},{header:'Gain %',key:'pnl_percentage',width:14,numFmt:'0.00"%"'},{header:'XIRR (%)',key:'xirr',width:14,numFmt:'0.00"%"'}
+  ]; }
+    private subClassAssetNameColumns() { return [
+    {header:'Family Name',key:'family_name',width:24},{header:'Portfolio',key:'portfolio',width:24},{header:'Asset Class',key:'asset_class',width:18},{header:'Sub Class',key:'sub_class',width:22},{header:'Asset Name',key:'asset_name',width:30},{header:'Underlying',key:'underlying',width:28},{header:'ISIN',key:'isin',width:18},{header:'Advisor',key:'advisors',width:24},{header:'Quantity',key:'quantity',width:14,numFmt:'#,##0.00'},{header:'Average Cost',key:'average_cost',width:16,numFmt:'"₹"#,##0.00'},{header:'Invested Value',key:'invested_value',width:18,numFmt:'"₹"#,##0'},{header:'Current Value',key:'current_value',width:18,numFmt:'"₹"#,##0'},{header:'Gain',key:'gain',width:18,numFmt:'"₹"#,##0'},{header:'Gain %',key:'pnl_percentage',width:14,numFmt:'0.00"%"'},{header:'XIRR (%)',key:'xirr',width:14,numFmt:'0.00"%"'}
   ]; }
   private flattenFilteredHoldings(): HoldingExportRow[] { return this.filteredRows.map(row => this.toExportRow(row,row.xirr,true)).sort((a,b) => a.family_name.localeCompare(b.family_name)||a.portfolio.localeCompare(b.portfolio)||a.asset_class.localeCompare(b.asset_class)||a.sub_class.localeCompare(b.sub_class)||a.asset_name.localeCompare(b.asset_name)); }
   private toAssetNameXirrRows(group: SubClassGroup): HoldingExportRow[] {

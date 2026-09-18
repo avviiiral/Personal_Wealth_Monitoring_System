@@ -380,7 +380,42 @@ export class WatchListComponent implements OnInit, OnDestroy {
   private async exportWatchListWorkbook(products: WatchListProduct[]): Promise<void> {
     const { default: ExcelJSLib } = await import('exceljs');
     const workbook = new ExcelJSLib.Workbook();
-    const sheet = workbook.addWorksheet('Watch List');
+    workbook.creator = 'Personal Wealth Monitoring System';
+    workbook.subject = 'Watch List';
+    workbook.title = 'Watch List';
+    workbook.created = new Date();
+
+    const sheet = workbook.addWorksheet('Watch List', {
+      views: [{ state: 'frozen', ySplit: 4, showGridLines: false }],
+      properties: { defaultRowHeight: 21 },
+    });
+
+    const exportTypeLabel = this.downloadType === 'ALL'
+      ? 'Mutual Funds & PMS'
+      : this.downloadType === 'MUTUAL_FUND' ? 'Mutual Funds' : 'PMS';
+
+    sheet.mergeCells('A1:N1');
+    const title = sheet.getCell('A1');
+    title.value = 'Watch List Report';
+    title.font = { name: 'Aptos Display', size: 18, bold: true, color: { argb: 'FFFFFFFF' } };
+    title.alignment = { vertical: 'middle' };
+    title.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1F2937' } };
+    sheet.getRow(1).height = 32;
+
+    sheet.mergeCells('A2:N2');
+    const subtitle = sheet.getCell('A2');
+    subtitle.value = exportTypeLabel + ' • Watchlisted products • Generated ' + this.todayStamp();
+    subtitle.font = { name: 'Aptos', size: 10, italic: true, color: { argb: 'FF6B7280' } };
+    subtitle.alignment = { vertical: 'middle' };
+    sheet.getRow(2).height = 22;
+
+    sheet.mergeCells('A3:N3');
+    const summary = sheet.getCell('A3');
+    summary.value = 'Total watchlisted products: ' + products.length;
+    summary.font = { name: 'Aptos', size: 10, bold: true, color: { argb: 'FF374151' } };
+    summary.alignment = { vertical: 'middle' };
+    sheet.getRow(3).height = 22;
+
     sheet.columns = [
       { header: 'Type', key: 'type', width: 16 }, { header: 'Product', key: 'product', width: 48 },
       { header: 'Provider', key: 'provider', width: 28 }, { header: 'Category', key: 'category', width: 24 },
@@ -389,17 +424,80 @@ export class WatchListComponent implements OnInit, OnDestroy {
       { header: '1Y', key: '1Y', width: 12 }, { header: '3Y', key: '3Y', width: 12 }, { header: '5Y', key: '5Y', width: 12 },
       { header: 'CAGR', key: 'CAGR', width: 12 }, { header: 'AUM', key: 'AUM', width: 18 },
     ];
-    products.forEach(product => sheet.addRow({
-      type: product.product_type === 'MUTUAL_FUND' ? 'Mutual Fund' : 'PMS', product: product.name, provider: product.provider || '',
-      category: product.category || '', identifier: product.isin || product.external_identifier || '', status: product.status,
-      '1M': this.metric(product, '1M'), '3M': this.metric(product, '3M'), '6M': this.metric(product, '6M'),
-      '1Y': this.metric(product, '1Y'), '3Y': this.metric(product, '3Y'), '5Y': this.metric(product, '5Y'),
-      CAGR: this.metric(product, 'CAGR'), AUM: product.mutual_fund?.aum ?? product.pms?.aum ?? null,
-    }));
-    const buffer = await workbook.xlsx.writeBuffer();
-    this.triggerDownload(new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }), `watch_list_${this.downloadType.toLowerCase()}_${this.todayStamp()}.xlsx`);
-  }
 
+    const headerRow = sheet.getRow(4);
+    headerRow.height = 26;
+    headerRow.eachCell(cell => {
+      cell.font = { name: 'Aptos', size: 10, bold: true, color: { argb: 'FFFFFFFF' } };
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF374151' } };
+      cell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
+      cell.border = {
+        top: { style: 'thin', color: { argb: 'FFD1D5DB' } },
+        bottom: { style: 'thin', color: { argb: 'FFD1D5DB' } },
+      };
+    });
+
+    products.forEach((product, index) => {
+      const row = sheet.addRow({
+        type: product.product_type === 'MUTUAL_FUND' ? 'Mutual Fund' : 'PMS',
+        product: product.name,
+        provider: product.provider || '',
+        category: product.category || '',
+        identifier: product.isin || product.external_identifier || '',
+        status: product.status,
+        '1M': this.metric(product, '1M'), '3M': this.metric(product, '3M'), '6M': this.metric(product, '6M'),
+        '1Y': this.metric(product, '1Y'), '3Y': this.metric(product, '3Y'), '5Y': this.metric(product, '5Y'),
+        CAGR: this.metric(product, 'CAGR'),
+        AUM: product.mutual_fund?.aum ?? product.pms?.aum ?? null,
+      });
+
+      row.eachCell(cell => {
+        cell.font = { name: 'Aptos', size: 10, color: { argb: 'FF111827' } };
+        cell.alignment = { vertical: 'middle' };
+        cell.border = { bottom: { style: 'hair', color: { argb: 'FFE5E7EB' } } };
+      });
+      row.height = 21;
+      if (index % 2 === 1) row.eachCell(cell => {
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF9FAFB' } };
+      });
+
+      [7, 8, 9, 10, 11, 12, 13].forEach(column => {
+        const cell = row.getCell(column);
+        if (typeof cell.value === 'number') {
+          cell.numFmt = '0.00"%"';
+          cell.alignment = { vertical: 'middle', horizontal: 'right' };
+        }
+      });
+
+      const aum = row.getCell(14);
+      if (typeof aum.value === 'number') {
+        aum.numFmt = '#,##0.00';
+        aum.alignment = { vertical: 'middle', horizontal: 'right' };
+      }
+      row.getCell(1).alignment = { vertical: 'middle', horizontal: 'center' };
+      row.getCell(6).alignment = { vertical: 'middle', horizontal: 'center' };
+    });
+
+    sheet.autoFilter = { from: 'A4', to: 'N4' };
+    sheet.getColumn(2).alignment = { vertical: 'middle', wrapText: true };
+    sheet.getColumn(3).alignment = { vertical: 'middle', wrapText: true };
+    sheet.getColumn(4).alignment = { vertical: 'middle', wrapText: true };
+    sheet.getColumn(5).alignment = { vertical: 'middle', wrapText: true };
+
+    const lastRow = Math.max(4, products.length + 4);
+    const noteCell = sheet.getCell('A' + (lastRow + 1));
+    noteCell.value = 'Note: Returns are shown as provided by the Watch List data source. AUM is shown in the source currency.';
+    sheet.mergeCells('A' + (lastRow + 1) + ':N' + (lastRow + 1));
+    noteCell.font = { name: 'Aptos', size: 9, italic: true, color: { argb: 'FF6B7280' } };
+    noteCell.alignment = { vertical: 'middle' };
+    sheet.getRow(lastRow + 1).height = 20;
+
+    const buffer = await workbook.xlsx.writeBuffer();
+    this.triggerDownload(
+      new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }),
+      'watch_list_' + this.downloadType.toLowerCase() + '_' + this.todayStamp() + '.xlsx',
+    );
+  }
   private todayStamp(): string { return new Date().toISOString().slice(0, 10); }
   private triggerDownload(blob: Blob, filename: string): void {
     const url = URL.createObjectURL(blob);

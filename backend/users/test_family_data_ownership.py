@@ -39,6 +39,8 @@ class FamilyScopedFinancialDataTests(TestCase):
             family=family,
             name=name,
             category=AssetCategory.STOCK,
+            asset_class="Equity",
+            sub_class="Stocks",
             is_active=True,
         )
 

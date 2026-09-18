@@ -29,7 +29,6 @@ class InvestmentSummaryService:
         family = get_active_family_group(user)
         if family is None:
             return Q(pk__in=[])
-        owner_ids = InvestmentSummaryService._owner_ids(user)
         return Q(family_id=family.id) | Q(family_id__isnull=True, owner_id__in=owner_ids)
 
     @staticmethod

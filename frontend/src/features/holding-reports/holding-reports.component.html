@@ -48,7 +48,7 @@
       <table class="portfolio-table holding-table">
         <thead>
           <tr>
-            <th>Asset Class</th><th>Quantity</th><th>Invested Value</th><th>Current Value</th><th>Gain</th><th>XIRR</th><th>Holdings</th><th>Download</th><th class="arrow-column"></th>
+            <th>Asset Class</th><th>Quantity</th><th>Invested Value</th><th>Current Value</th><th>Gain</th><th>XIRR</th><th>Holdings</th><th class="arrow-column"></th>
           </tr>
         </thead>
         <tbody>
@@ -61,12 +61,11 @@
               <td class="pnl-cell" [ngClass]="getPnlClass(assetClass.pnl)">{{ assetClass.pnl >= 0 ? '+' : '-' }}₹{{ formatAbsoluteCurrency(assetClass.pnl) }}</td>
               <td class="pnl-cell" [ngClass]="assetClass.xirr === null ? 'neutral' : getPnlClass(assetClass.xirr)">{{ formatPercentage(assetClass.xirr) }}</td>
               <td>{{ assetClass.holdings.length }}</td>
-              <td><button type="button" class="secondary-button row-download-button" [disabled]="downloading" (click)="downloadAssetClassReport(assetClass, $event)">Download Report</button></td>
               <td class="arrow-column"><span class="row-chevron right" [class.open]="expandedAssetClass === assetClass.asset_class">›</span></td>
             </tr>
 
             <tr *ngIf="expandedAssetClass === assetClass.asset_class" class="asset-detail-row">
-              <td colspan="9">
+              <td colspan="8">
                 <div class="asset-detail-container">
                   <div class="asset-detail-title">{{ assetClass.asset_class }} — Sub Classes</div>
                   <table class="holding-table nested-table">
@@ -136,7 +135,7 @@
               </td>
             </tr>
           </ng-container>
-          <tr *ngIf="!assetClassGroups.length"><td colspan="9" class="empty-state">No holdings match the selected filters.</td></tr>
+          <tr *ngIf="!assetClassGroups.length"><td colspan="8" class="empty-state">No holdings match the selected filters.</td></tr>
         </tbody>
       </table>
     </div>

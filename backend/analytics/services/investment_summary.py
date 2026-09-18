@@ -31,10 +31,6 @@ class InvestmentSummaryService:
             return Q(pk__in=[])
         return Q(family_id=family.id)
 
-    @staticmethod
-    def _owner_ids(user):
-        return [user.pk] if hasattr(user, "pk") else list(user)
-
     MASTER_MAPPING = [
         (
             "Other",

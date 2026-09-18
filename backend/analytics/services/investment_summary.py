@@ -1,5 +1,4 @@
 import logging
-import logging
 from decimal import Decimal
 
 from django.db.models import Q

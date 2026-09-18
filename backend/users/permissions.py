@@ -349,8 +349,8 @@ def family_scope(queryset, user, owner_field="owner_id", family_field="family_id
     """Scope a financial queryset to the user's active family.
 
     Family is authoritative for records created under the new model. Legacy
-    rows without a family remain visible only through their existing owner
-    membership so migration never silently exposes or loses historical data.
+    Legacy rows without a family are excluded by default; callers may opt in
+    explicitly during controlled migration/compatibility workflows.
     """
     from django.db.models import Q
 

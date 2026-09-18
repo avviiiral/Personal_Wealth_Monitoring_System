@@ -124,8 +124,9 @@ class SecurityMasterService:
     def get_for_asset(
         owner,
         asset,
+        family=None,
     ):
-        family = getattr(asset, "family", None)
+        family = family or getattr(asset, "family", None)
         scope = Q(family=family) if family is not None else Q(pk__in=[])
         isin = (
             asset.isin.strip()

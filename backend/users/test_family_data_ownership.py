@@ -69,6 +69,8 @@ class FamilyScopedFinancialDataTests(TestCase):
         self.assertEqual(holdings.data["count"], 1)
         summary = self.client.get("/api/analytics/summary/")
         self.assertEqual(summary.status_code, 200)
+        analytics = self.client.get("/api/analytics/portfolio/")
+        self.assertEqual(analytics.status_code, 200)
 
     def test_user_deletion_preserves_family_data_and_nulls_uploader(self):
         asset = self._asset(self.user1, self.family1)

@@ -207,6 +207,15 @@ export class WatchListComponent implements OnInit, OnDestroy {
     catch (error) { console.warn('Failed to cache Watch List page:', error); }
   }
 
+  private cacheCurrentPage(): void {
+    this.cachePage({
+      count: this.count,
+      next: null,
+      previous: null,
+      results: this.products,
+    });
+  }
+
   private shouldBootstrapUniverse(response: WatchListResponse): boolean {
     return response.count === 0 && !this.autoRefreshAttempted && !this.refreshing && this.page === 1
       && this.status === 'ALL' && !this.search.trim() && !this.provider && !this.category;

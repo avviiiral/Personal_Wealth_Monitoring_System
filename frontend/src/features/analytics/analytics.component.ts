@@ -215,7 +215,7 @@ export class AnalyticsComponent implements OnInit, AfterViewInit, OnDestroy {
           { label: 'Invested Capital', data: results.map((item: any) => this.toNumber(item.invested_value)), borderColor: this.isDarkTheme() ? '#94a3b8' : '#9ca3af', backgroundColor: 'transparent', borderWidth: 2, borderDash: [6, 5], fill: false, tension: 0.35, pointRadius: 0, pointHoverRadius: 5 },
         ],
       },
-      options: { responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false }, plugins: { legend: { position: 'top', align: 'end', labels: { color: this.chartTextColor() } }, tooltip: { callbacks: { label: (context) => `${context.dataset.label}: ${this.formatCurrency(context.parsed.y ?? 0)}` } } }, scales: { x: { grid: { display: false }, ticks: { maxTicksLimit: 10, color: this.chartMutedColor() } }, y: { beginAtZero: false, grid: { color: this.chartGridColor() }, ticks: { color: this.chartMutedColor(), callback: (value) => this.formatAxisCurrency(Number(value)) } } } },
+      options: { animation: { duration: 900, easing: 'easeOutQuart' }, responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false }, plugins: { legend: { position: 'top', align: 'end', labels: { color: this.chartTextColor() } }, tooltip: { callbacks: { label: (context) => `${context.dataset.label}: ${this.formatCurrency(context.parsed.y ?? 0)}` } } }, scales: { x: { grid: { display: false }, ticks: { maxTicksLimit: 10, color: this.chartMutedColor() } }, y: { beginAtZero: false, grid: { color: this.chartGridColor() }, ticks: { color: this.chartMutedColor(), callback: (value) => this.formatAxisCurrency(Number(value)) } } } },
     };
     this.historicalChart = new Chart(canvas, config);
   }
@@ -232,7 +232,7 @@ export class AnalyticsComponent implements OnInit, AfterViewInit, OnDestroy {
     const config: ChartConfiguration<'doughnut'> = {
       type: 'doughnut',
       data: { labels, datasets: [{ data: values, backgroundColor: results.map((_: any, index: number) => this.swatchColor(index)), borderWidth: 2, borderColor: this.chartBorderColor() }] },
-      options: { responsive: true, maintainAspectRatio: false, cutout: '68%', plugins: { legend: { position: 'bottom', labels: { color: this.chartTextColor(), usePointStyle: true, padding: 14 } }, tooltip: { callbacks: { label: context => `${context.label}: ${this.formatCurrency(Number(context.raw))} (${(percentages[context.dataIndex] ?? 0).toFixed(2)}%)` } } } },
+      options: { animation: { duration: 900, easing: 'easeOutQuart' }, responsive: true, maintainAspectRatio: false, cutout: '68%', plugins: { legend: { position: 'bottom', labels: { color: this.chartTextColor(), usePointStyle: true, padding: 14 } }, tooltip: { callbacks: { label: context => `${context.label}: ${this.formatCurrency(Number(context.raw))} (${(percentages[context.dataIndex] ?? 0).toFixed(2)}%)` } } } },
     };
     this.allocationChart = new Chart(canvas, config);
   }
@@ -246,7 +246,7 @@ export class AnalyticsComponent implements OnInit, AfterViewInit, OnDestroy {
     const sortedResults = [...results].sort((a: any, b: any) => this.toNumber(b.pnl_percentage) - this.toNumber(a.pnl_percentage));
     const labels = sortedResults.map((item: any) => item.asset_class || item.symbol || item.asset_name || item.scheme_name || item.name || 'Unknown');
     const values = sortedResults.map((item: any) => this.toNumber(item.pnl_percentage));
-    const config: ChartConfiguration<'bar'> = { type: 'bar', data: { labels, datasets: [{ label: 'Return %', data: values, backgroundColor: values.map(value => value >= 0 ? GAIN_COLOR : LOSS_COLOR), borderRadius: 5, barThickness: 24 }] }, options: { indexAxis: 'y', responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false }, tooltip: { callbacks: { label: context => `Return: ${this.toNumber(context.parsed.x).toFixed(2)}%` } } }, scales: { x: { ticks: { color: this.chartMutedColor(), callback: value => `${Number(value).toFixed(0)}%` }, grid: { color: this.chartGridColor() } }, y: { ticks: { color: this.chartMutedColor() }, grid: { display: false } } } } };
+    const config: ChartConfiguration<'bar'> = { type: 'bar', data: { labels, datasets: [{ label: 'Return %', data: values, backgroundColor: values.map(value => value >= 0 ? GAIN_COLOR : LOSS_COLOR), borderRadius: 5, barThickness: 24 }] }, options: { animation: { duration: 850, easing: 'easeOutQuart' }, indexAxis: 'y', responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false }, tooltip: { callbacks: { label: context => `Return: ${this.toNumber(context.parsed.x).toFixed(2)}%` } } }, scales: { x: { ticks: { color: this.chartMutedColor(), callback: value => `${Number(value).toFixed(0)}%` }, grid: { color: this.chartGridColor() } }, y: { ticks: { color: this.chartMutedColor() }, grid: { display: false } } } } };
     this.performanceChart = new Chart(canvas, config);
   }
 
@@ -259,7 +259,7 @@ export class AnalyticsComponent implements OnInit, AfterViewInit, OnDestroy {
     const labels = results.map((item: any) => item.advisor || 'Unassigned');
     const values = results.map((item: any) => this.toNumber(item.value));
     const percentages = results.map((item: any) => this.toNumber(item.percentage));
-    const config: ChartConfiguration<'pie'> = { type: 'pie', data: { labels, datasets: [{ data: values, backgroundColor: results.map((item: any) => this.advisorColor(item.advisor || 'Unassigned')), borderWidth: 2, borderColor: this.chartBorderColor() }] }, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom', labels: { color: this.chartTextColor(), usePointStyle: true, padding: 14 } }, tooltip: { callbacks: { label: context => `${context.label}: ${this.formatCurrency(Number(context.raw))} (${(percentages[context.dataIndex] ?? 0).toFixed(2)}%)` } } } } };
+    const config: ChartConfiguration<'pie'> = { type: 'pie', data: { labels, datasets: [{ data: values, backgroundColor: results.map((item: any) => this.advisorColor(item.advisor || 'Unassigned')), borderWidth: 2, borderColor: this.chartBorderColor() }] }, options: { animation: { duration: 900, easing: 'easeOutQuart' }, responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom', labels: { color: this.chartTextColor(), usePointStyle: true, padding: 14 } }, tooltip: { callbacks: { label: context => `${context.label}: ${this.formatCurrency(Number(context.raw))} (${(percentages[context.dataIndex] ?? 0).toFixed(2)}%)` } } } } };
     this.advisorChart = new Chart(canvas, config);
   }
 
@@ -272,7 +272,7 @@ export class AnalyticsComponent implements OnInit, AfterViewInit, OnDestroy {
     const sortedResults = [...results].sort((a: any, b: any) => this.toNumber(b.pnl_percentage) - this.toNumber(a.pnl_percentage));
     const labels = sortedResults.map((item: any) => item.advisor || 'Unassigned');
     const values = sortedResults.map((item: any) => this.toNumber(item.pnl_percentage));
-    const config: ChartConfiguration<'bar'> = { type: 'bar', data: { labels, datasets: [{ label: 'Return %', data: values, backgroundColor: values.map(value => value >= 0 ? GAIN_COLOR : LOSS_COLOR), borderRadius: 5, barThickness: 24 }] }, options: { indexAxis: 'y', responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false }, tooltip: { callbacks: { label: context => `Return: ${this.toNumber(context.parsed.x).toFixed(2)}%` } } }, scales: { x: { ticks: { color: this.chartMutedColor(), callback: value => `${Number(value).toFixed(0)}%` }, grid: { color: this.chartGridColor() } }, y: { ticks: { color: this.chartMutedColor() }, grid: { display: false } } } } };
+    const config: ChartConfiguration<'bar'> = { type: 'bar', data: { labels, datasets: [{ label: 'Return %', data: values, backgroundColor: values.map(value => value >= 0 ? GAIN_COLOR : LOSS_COLOR), borderRadius: 5, barThickness: 24 }] }, options: { animation: { duration: 850, easing: 'easeOutQuart' }, indexAxis: 'y', responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false }, tooltip: { callbacks: { label: context => `Return: ${this.toNumber(context.parsed.x).toFixed(2)}%` } } }, scales: { x: { ticks: { color: this.chartMutedColor(), callback: value => `${Number(value).toFixed(0)}%` }, grid: { color: this.chartGridColor() } }, y: { ticks: { color: this.chartMutedColor() }, grid: { display: false } } } } };
     this.advisorPerformanceChart = new Chart(canvas, config);
   }
 
@@ -285,7 +285,7 @@ export class AnalyticsComponent implements OnInit, AfterViewInit, OnDestroy {
     const labels = results.map((item: any) => item.cap_type);
     const values = results.map((item: any) => Number(item.current_value));
     const percentages = results.map((item: any) => Number(item.percentage));
-    const config: ChartConfiguration<'doughnut'> = { type: 'doughnut', data: { labels, datasets: [{ data: values, backgroundColor: results.map((_: any, index: number) => this.swatchColor(index)), borderWidth: 2, borderColor: this.chartBorderColor() }] }, options: { responsive: true, maintainAspectRatio: false, cutout: '68%', plugins: { legend: { position: 'bottom', labels: { color: this.chartTextColor(), usePointStyle: true, padding: 16 } }, tooltip: { callbacks: { label: context => `${context.label}: ${this.formatCurrency(Number(context.raw))} (${(percentages[context.dataIndex] ?? 0).toFixed(2)}%)` } } } } };
+    const config: ChartConfiguration<'doughnut'> = { type: 'doughnut', data: { labels, datasets: [{ data: values, backgroundColor: results.map((_: any, index: number) => this.swatchColor(index)), borderWidth: 2, borderColor: this.chartBorderColor() }] }, options: { animation: { duration: 900, easing: 'easeOutQuart' }, responsive: true, maintainAspectRatio: false, cutout: '68%', plugins: { legend: { position: 'bottom', labels: { color: this.chartTextColor(), usePointStyle: true, padding: 16 } }, tooltip: { callbacks: { label: context => `${context.label}: ${this.formatCurrency(Number(context.raw))} (${(percentages[context.dataIndex] ?? 0).toFixed(2)}%)` } } } } };
     this.marketCapChart = new Chart(canvas, config);
   }
 
@@ -298,7 +298,7 @@ export class AnalyticsComponent implements OnInit, AfterViewInit, OnDestroy {
     const labels = results.map((item: any) => item.sector);
     const values = results.map((item: any) => this.toNumber(item.current_value));
     const percentages = results.map((item: any) => this.toNumber(item.percentage));
-    const config: ChartConfiguration<'doughnut'> = { type: 'doughnut', data: { labels, datasets: [{ data: values, backgroundColor: results.map((_: any, index: number) => this.swatchColor(index)), borderWidth: 2, borderColor: this.chartBorderColor() }] }, options: { responsive: true, maintainAspectRatio: false, cutout: '68%', plugins: { legend: { position: 'bottom', labels: { color: this.chartTextColor(), usePointStyle: true, padding: 14 } }, tooltip: { callbacks: { label: context => `${context.label}: ${this.formatAxisCurrency(Number(context.raw))} (${(percentages[context.dataIndex] ?? 0).toFixed(2)}%)` } } } } };
+    const config: ChartConfiguration<'doughnut'> = { type: 'doughnut', data: { labels, datasets: [{ data: values, backgroundColor: results.map((_: any, index: number) => this.swatchColor(index)), borderWidth: 2, borderColor: this.chartBorderColor() }] }, options: { animation: { duration: 900, easing: 'easeOutQuart' }, responsive: true, maintainAspectRatio: false, cutout: '68%', plugins: { legend: { position: 'bottom', labels: { color: this.chartTextColor(), usePointStyle: true, padding: 14 } }, tooltip: { callbacks: { label: context => `${context.label}: ${this.formatAxisCurrency(Number(context.raw))} (${(percentages[context.dataIndex] ?? 0).toFixed(2)}%)` } } } } };
     this.sectorChart = new Chart(canvas, config);
   }
 

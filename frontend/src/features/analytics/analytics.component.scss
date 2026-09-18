@@ -1282,3 +1282,38 @@
   background: #e5e7eb;
   color: #111827;
 }
+
+
+@media (prefers-reduced-motion: no-preference) {
+  .card, .summary-card, .metric-card, .chart-card, .table-card, .analytics-card, .portfolio-card {
+    transition: transform var(--motion-base) var(--ease-standard), box-shadow var(--motion-base) var(--ease-standard);
+  }
+
+  .card:hover, .summary-card:hover, .metric-card:hover, .chart-card:hover, .table-card:hover, .analytics-card:hover, .portfolio-card:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-lift, 0 14px 32px -12px rgba(17, 24, 39, 0.2));
+  }
+}
+
+
+@media (prefers-reduced-motion: no-preference) {
+  .metric-card strong {
+    display: inline-block;
+    animation: pwms-kpi-value 650ms var(--ease-standard) both;
+  }
+
+  .metric-card:nth-child(2) strong { animation-delay: 60ms; }
+  .metric-card:nth-child(3) strong { animation-delay: 120ms; }
+  .metric-card:nth-child(4) strong { animation-delay: 180ms; }
+}
+
+@keyframes pwms-kpi-value {
+  from {
+    opacity: 0;
+    transform: translateY(5px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}

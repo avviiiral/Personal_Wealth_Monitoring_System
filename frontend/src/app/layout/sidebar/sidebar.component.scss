@@ -196,3 +196,31 @@
     display: none;
   }
 }
+
+
+@media (prefers-reduced-motion: no-preference) {
+  .nav-item {
+    position: relative;
+    transition: background-color var(--motion-fast) var(--ease-standard), color var(--motion-fast) var(--ease-standard), transform var(--motion-fast) var(--ease-standard);
+  }
+
+  .nav-item:hover { transform: translateX(2px); }
+
+  .nav-item.active::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 9px;
+    bottom: 9px;
+    width: 3px;
+    border-radius: 0 3px 3px 0;
+    background: var(--accent);
+    animation: pwms-fade-in var(--motion-base) var(--ease-standard) both;
+  }
+
+  .brand-mark {
+    transition: transform var(--motion-base) var(--ease-standard);
+  }
+
+  .brand-mark:hover { transform: rotate(-3deg) scale(1.04); }
+}

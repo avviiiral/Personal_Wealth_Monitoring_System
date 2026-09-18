@@ -416,6 +416,7 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
       },
 
       options: {
+        animation: { duration: 900, easing: 'easeOutQuart' },
         responsive: true,
         maintainAspectRatio: false,
 
@@ -538,6 +539,7 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
       },
 
       options: {
+        animation: { duration: 900, easing: 'easeOutQuart' },
         responsive: true,
         maintainAspectRatio: false,
 

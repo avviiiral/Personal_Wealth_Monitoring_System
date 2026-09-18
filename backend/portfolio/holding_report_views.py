@@ -15,7 +15,7 @@ from users.permissions import get_visible_owner_ids
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def holding_report(request):
-    """Return current portfolio positions with holding, asset-name, and subclass XIRR."""
+    """Return current portfolio positions with asset-class, subclass, asset-name, and holding XIRR."""
     owner_ids = get_visible_owner_ids(request.user)
 
     latest_transaction = (
@@ -82,6 +82,7 @@ def holding_report(request):
         asset_name = str(tx.asset_name or "").strip()
 
         base_key = (tx.owner_id, family, portfolio, asset_class, sub_class)
+        xirr_transactions.setdefault(("asset_class", tx.owner_id, family, portfolio, asset_class), []).append(tx)
         xirr_transactions.setdefault(("sub_class", *base_key), []).append(tx)
 
         asset_key = ("asset_name", *base_key, asset_name)
@@ -111,6 +112,7 @@ def holding_report(request):
             return None
         return XIRRCalculator.calculate(cash_flows)
 
+    asset_class_current_values = {}
     subclass_current_values = {}
     asset_name_current_values = {}
 
@@ -122,12 +124,18 @@ def holding_report(request):
         asset_name = clean(position.latest_asset_name, position.asset.name)
         current_value = float(position.current_value or 0)
 
+        asset_class_key = ("asset_class", position.owner_id, family, portfolio, asset_class)
         base_key = (position.owner_id, family, portfolio, asset_class, sub_class)
         subclass_key = ("sub_class", *base_key)
         asset_key = ("asset_name", *base_key, asset_name)
+        asset_class_current_values[asset_class_key] = asset_class_current_values.get(asset_class_key, 0.0) + current_value
         subclass_current_values[subclass_key] = subclass_current_values.get(subclass_key, 0.0) + current_value
         asset_name_current_values[asset_key] = asset_name_current_values.get(asset_key, 0.0) + current_value
 
+    asset_class_xirr = {
+        key: calculate_group_xirr(key, current_value)
+        for key, current_value in asset_class_current_values.items()
+    }
     subclass_xirr = {
         key: calculate_group_xirr(key, current_value)
         for key, current_value in subclass_current_values.items()
@@ -170,6 +178,7 @@ def holding_report(request):
         asset_class = clean(position.latest_asset_class)
         sub_class = clean(position.latest_sub_class)
         asset_name = clean(position.latest_asset_name, asset.name)
+        asset_class_key = ("asset_class", position.owner_id, family, portfolio, asset_class)
         base_key = (position.owner_id, family, portfolio, asset_class, sub_class)
         subclass_key = ("sub_class", *base_key)
         asset_key = ("asset_name", *base_key, asset_name)
@@ -194,6 +203,7 @@ def holding_report(request):
             "gain": gain,
             "gain_percentage": round(gain / invested_value * 100, 2) if invested_value else 0,
             "xirr": calculate_position_xirr(position),
+            "asset_class_xirr": asset_class_xirr.get(asset_class_key),
             "sub_class_xirr": subclass_xirr.get(subclass_key),
             "asset_name_xirr": asset_name_xirr.get(asset_key),
             "sector": security_master.sector if security_master else None,

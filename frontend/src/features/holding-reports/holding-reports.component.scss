@@ -463,6 +463,18 @@
   color: #e5e7eb;
 }
 
+:host-context(html.dark-theme) .selection-button.active {
+  background: var(--accent, #2fbf8f);
+  border-color: var(--accent, #2fbf8f);
+  color: #07130f;
+  box-shadow: 0 0 0 1px rgba(47, 191, 143, 0.18), 0 3px 10px rgba(47, 191, 143, 0.16);
+}
+
+.selection-button.active {
+  box-shadow: 0 1px 3px rgba(17, 24, 39, 0.14);
+  font-weight: 750;
+}
+
 :host-context(html.dark-theme) .primary-button {
   background: #e5e7eb;
   border-color: #e5e7eb;
@@ -489,4 +501,228 @@
 :host-context(html.dark-theme) .count-badge {
   background: #1b1f27;
   color: #aeb7c6;
+}
+
+
+/* Portfolio-style Holding Reports layout */
+.portfolio-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+.portfolio-header h1 {
+  margin: 0;
+  color: var(--ink, #111827);
+  font-size: 28px;
+  font-weight: 750;
+  letter-spacing: -0.01em;
+}
+
+.portfolio-header p {
+  margin: 7px 0 0;
+  color: var(--muted, #7a8495);
+  font-size: 14px;
+}
+
+.portfolio-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.download-report-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--ink, #111827);
+  background: var(--ink, #111827);
+  color: #fff;
+  border-radius: 7px;
+  padding: 9px 16px;
+  font-size: 13px;
+  font-weight: 650;
+  cursor: pointer;
+  white-space: nowrap;
+  box-shadow: var(--shadow-sm);
+  transition: background-color .15s ease, box-shadow .15s ease, transform .15s ease;
+}
+
+.download-report-button:hover:not(:disabled) {
+  background: var(--ink-soft, #1f2937);
+  box-shadow: var(--shadow-md);
+}
+
+.download-report-button:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.download-report-button:disabled {
+  opacity: .6;
+  cursor: not-allowed;
+}
+
+.portfolio-table-card {
+  width: 100%;
+  overflow: hidden;
+  border: 1px solid var(--surface-line, #e8eaef);
+  border-radius: 16px;
+  background: var(--surface, #fff);
+  box-shadow: var(--shadow-sm);
+}
+
+.portfolio-table {
+  width: 100%;
+  min-width: 980px;
+  border-collapse: collapse;
+}
+
+.portfolio-table th {
+  padding: 13px 16px;
+  border-bottom: 1px solid var(--surface-line, #e5e7eb);
+  background: color-mix(in srgb, var(--surface, #fff) 92%, var(--canvas-to, #eef1f7));
+  color: var(--muted, #667085);
+  font-size: 11px;
+  font-weight: 700;
+  text-align: left;
+  text-transform: uppercase;
+  letter-spacing: .03em;
+  white-space: nowrap;
+}
+
+.portfolio-table td {
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--surface-line, #f1f2f5);
+  color: var(--ink, #101828);
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.nested-table {
+  min-width: 980px;
+  background: transparent;
+}
+
+.nested-table th {
+  padding: 10px 14px;
+  font-size: 10px;
+}
+
+.nested-table td {
+  padding: 12px 14px;
+}
+
+.nested-row {
+  cursor: pointer;
+}
+
+.asset-detail-row > td {
+  padding: 0;
+}
+
+.asset-detail-container {
+  padding: 18px;
+  background: var(--canvas-to, #fafbfc);
+  border-top: 1px solid var(--surface-line, #e8eaef);
+}
+
+.asset-detail-title {
+  margin-bottom: 12px;
+  color: var(--muted, #7a8495);
+  font-size: 13px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .03em;
+}
+
+@media (max-width: 800px) {
+  .portfolio-header { flex-direction: column; }
+  .portfolio-header-actions { width: 100%; }
+  .portfolio-header-actions button { flex: 1; }
+}
+
+:host-context(html.dark-theme) .download-report-button {
+  background: #e5e7eb;
+  border-color: #e5e7eb;
+  color: #111827;
+}
+
+:host-context(html.dark-theme) .portfolio-table-card {
+  background: #171a21;
+  border-color: #2a2e38;
+}
+
+:host-context(html.dark-theme) .portfolio-table th {
+  background: #12151c;
+  color: #cbd5e1;
+  border-color: #2a2e38;
+}
+
+:host-context(html.dark-theme) .portfolio-table td {
+  color: #f3f4f6;
+  border-color: #2a2e38;
+}
+
+:host-context(html.dark-theme) .asset-detail-container {
+  background: #12151c;
+  border-color: #2a2e38;
+}
+
+
+/* Keep the Holding Reports refresh control compact and consistent with Portfolio. */
+.refresh-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-width: 0;
+  height: 40px;
+  box-sizing: border-box;
+  padding: 0 14px;
+  border: 1px solid var(--surface-line, #d9dee7);
+  border-radius: 8px;
+  background: var(--surface, #fff);
+  color: var(--ink, #111827);
+  font-size: 13px;
+  font-weight: 650;
+  line-height: 1;
+  cursor: pointer;
+  box-shadow: var(--shadow-sm, 0 1px 2px rgba(17, 24, 39, .04));
+  transition: background-color .15s ease, border-color .15s ease, box-shadow .15s ease, transform .15s ease;
+}
+
+.refresh-button .button-icon {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 16px;
+}
+
+.refresh-button:hover:not(:disabled) {
+  background: var(--canvas-to, #f5f7fa);
+  border-color: var(--surface-line, #cfd5df);
+  box-shadow: var(--shadow-md, 0 4px 10px rgba(17, 24, 39, .08));
+}
+
+.refresh-button:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.refresh-button:disabled {
+  opacity: .6;
+  cursor: not-allowed;
+}
+
+:host-context(html.dark-theme) .refresh-button {
+  background: #171a21;
+  border-color: #3a414e;
+  color: #e5e7eb;
+}
+
+:host-context(html.dark-theme) .refresh-button:hover:not(:disabled) {
+  background: #1b1f27;
+  border-color: #4a5261;
 }

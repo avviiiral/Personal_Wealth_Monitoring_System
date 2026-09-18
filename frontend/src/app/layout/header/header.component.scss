@@ -998,3 +998,27 @@
 :host-context(html.dark-theme) .dropdown-arrow {
   color: #8a93a6;
 }
+
+
+@media (prefers-reduced-motion: no-preference) {
+  .header-icon-button,
+  .user-profile,
+  .profile-menu-item,
+  .panel-expand-button,
+  .panel-close-button {
+    transition: background-color var(--motion-fast) var(--ease-standard), color var(--motion-fast) var(--ease-standard), transform var(--motion-fast) var(--ease-standard);
+  }
+
+  .header-icon-button:hover { transform: translateY(-1px); }
+  .user-profile:hover { transform: translateY(-1px); }
+
+  .profile-menu,
+  .header-search-panel,
+  .notifications-panel,
+  .ai-chat-panel {
+    animation: pwms-fade-in var(--motion-base) var(--ease-standard) both;
+  }
+
+  .profile-menu-item:active,
+  .header-icon-button:active { transform: scale(0.97); }
+}

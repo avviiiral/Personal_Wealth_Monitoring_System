@@ -86,3 +86,10 @@ app-header {
     padding: 14px;
   }
 }
+
+
+@media (prefers-reduced-motion: no-preference) {
+  .page-content {
+    animation: pwms-fade-in var(--motion-base) var(--ease-standard) both;
+  }
+}

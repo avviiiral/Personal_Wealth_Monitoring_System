@@ -20,6 +20,7 @@ def backfill_family(apps, schema_editor):
             profile = getattr(obj.owner, "profile", None)
             if profile is None:
                 continue
+            # Migration-time historical relations are used only to infer an unambiguous family.
             active_id = getattr(profile, "active_family_group_id", None)
             family_id = active_id
             if family_id is None:

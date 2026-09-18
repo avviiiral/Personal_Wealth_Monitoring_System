@@ -24,10 +24,6 @@ class MutualFundLookThroughService:
         owner_ids = MutualFundLookThroughService.owner_ids(user)
         return Q(family_id=family.id)
 
-    @staticmethod
-    def owner_ids(user):
-        return [user.pk] if hasattr(user, "pk") else list(user)
-
     @classmethod
     def latest_underlyings(cls, user):
         owner_ids = cls.owner_ids(user)

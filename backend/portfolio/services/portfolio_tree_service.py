@@ -32,7 +32,7 @@ class PortfolioTreeService:
         return None if value is None else float(value)
 
     @classmethod
-    def _get_transactions(cls, owner_ids) -> QuerySet:
+    def _get_transactions(cls, owner_ids, family_id=None) -> QuerySet:
         return (
             Transaction.objects
             .filter(family_id=family_id)

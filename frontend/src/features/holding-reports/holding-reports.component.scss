@@ -671,3 +671,58 @@
   background: #12151c;
   border-color: #2a2e38;
 }
+
+
+/* Keep the Holding Reports refresh control compact and consistent with Portfolio. */
+.refresh-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-width: 0;
+  height: 40px;
+  box-sizing: border-box;
+  padding: 0 14px;
+  border: 1px solid var(--surface-line, #d9dee7);
+  border-radius: 8px;
+  background: var(--surface, #fff);
+  color: var(--ink, #111827);
+  font-size: 13px;
+  font-weight: 650;
+  line-height: 1;
+  cursor: pointer;
+  box-shadow: var(--shadow-sm, 0 1px 2px rgba(17, 24, 39, .04));
+  transition: background-color .15s ease, border-color .15s ease, box-shadow .15s ease, transform .15s ease;
+}
+
+.refresh-button .button-icon {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 16px;
+}
+
+.refresh-button:hover:not(:disabled) {
+  background: var(--canvas-to, #f5f7fa);
+  border-color: var(--surface-line, #cfd5df);
+  box-shadow: var(--shadow-md, 0 4px 10px rgba(17, 24, 39, .08));
+}
+
+.refresh-button:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.refresh-button:disabled {
+  opacity: .6;
+  cursor: not-allowed;
+}
+
+:host-context(html.dark-theme) .refresh-button {
+  background: #171a21;
+  border-color: #3a414e;
+  color: #e5e7eb;
+}
+
+:host-context(html.dark-theme) .refresh-button:hover:not(:disabled) {
+  background: #1b1f27;
+  border-color: #4a5261;
+}

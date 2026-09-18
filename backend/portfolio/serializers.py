@@ -24,6 +24,7 @@ class AssetSerializer(
         read_only_fields = (
             "id",
             "owner",
+            "family",
             "created_at",
             "updated_at",
         )
@@ -90,6 +91,7 @@ class HoldingSerializer(
         read_only_fields = (
             "id",
             "owner",
+            "family",
             "invested_value",
             "current_value",
             "unrealized_pnl",

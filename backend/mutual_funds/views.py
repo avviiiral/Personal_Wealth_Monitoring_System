@@ -433,7 +433,8 @@ def sip_summary(request):
     summary = (
         SIPSummaryService
         .get_summary(
-            require_active_family(request.user).id
+            request.user,
+            family_id=require_active_family(request.user).id,
         )
     )
 

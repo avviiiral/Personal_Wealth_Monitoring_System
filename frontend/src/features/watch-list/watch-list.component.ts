@@ -394,7 +394,7 @@ export class WatchListComponent implements OnInit, OnDestroy {
       ? 'Mutual Funds & PMS'
       : this.downloadType === 'MUTUAL_FUND' ? 'Mutual Funds' : 'PMS';
 
-    sheet.columns = [
+    const columnDefinitions = [
       { header: 'Type', key: 'type', width: 16 }, { header: 'Product', key: 'product', width: 48 },
       { header: 'Provider', key: 'provider', width: 28 }, { header: 'Category', key: 'category', width: 24 },
       { header: 'Identifier', key: 'identifier', width: 24 }, { header: 'Status', key: 'status', width: 14 },
@@ -402,32 +402,16 @@ export class WatchListComponent implements OnInit, OnDestroy {
       { header: '1Y', key: '1Y', width: 12 }, { header: '3Y', key: '3Y', width: 12 }, { header: '5Y', key: '5Y', width: 12 },
       { header: 'CAGR', key: 'CAGR', width: 12 }, { header: 'AUM', key: 'AUM', width: 18 },
     ];
-
-
-    sheet.mergeCells('A1:N1');
-    const title = sheet.getCell('A1');
-    title.value = 'Watch List Report';
-    title.font = { name: 'Aptos Display', size: 18, bold: true, color: { argb: 'FFFFFFFF' } };
-    title.alignment = { vertical: 'middle' };
-    title.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1F2937' } };
-    sheet.getRow(1).height = 32;
-
-    sheet.mergeCells('A2:N2');
-    const subtitle = sheet.getCell('A2');
-    subtitle.value = exportTypeLabel + ' • Watchlisted products • Generated ' + this.todayStamp();
-    subtitle.font = { name: 'Aptos', size: 10, italic: true, color: { argb: 'FF6B7280' } };
-    subtitle.alignment = { vertical: 'middle' };
-    sheet.getRow(2).height = 22;
-
-    sheet.mergeCells('A3:N3');
-    const summary = sheet.getCell('A3');
-    summary.value = 'Total watchlisted products: ' + products.length;
-    summary.font = { name: 'Aptos', size: 10, bold: true, color: { argb: 'FF374151' } };
-    summary.alignment = { vertical: 'middle' };
-    sheet.getRow(3).height = 22;
+    columnDefinitions.forEach((column, index) => {
+      sheet.getColumn(index + 1).width = column.width;
+    });
 
     const headerRow = sheet.getRow(4);
     headerRow.height = 26;
+    columnDefinitions.forEach((column, index) => {
+      sheet.getCell(4, index + 1).value = column.header;
+    });
+
     headerRow.eachCell(cell => {
       cell.font = { name: 'Aptos', size: 10, bold: true, color: { argb: 'FFFFFFFF' } };
       cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF374151' } };

@@ -394,6 +394,16 @@ export class WatchListComponent implements OnInit, OnDestroy {
       ? 'Mutual Funds & PMS'
       : this.downloadType === 'MUTUAL_FUND' ? 'Mutual Funds' : 'PMS';
 
+    sheet.columns = [
+      { header: 'Type', key: 'type', width: 16 }, { header: 'Product', key: 'product', width: 48 },
+      { header: 'Provider', key: 'provider', width: 28 }, { header: 'Category', key: 'category', width: 24 },
+      { header: 'Identifier', key: 'identifier', width: 24 }, { header: 'Status', key: 'status', width: 14 },
+      { header: '1M', key: '1M', width: 12 }, { header: '3M', key: '3M', width: 12 }, { header: '6M', key: '6M', width: 12 },
+      { header: '1Y', key: '1Y', width: 12 }, { header: '3Y', key: '3Y', width: 12 }, { header: '5Y', key: '5Y', width: 12 },
+      { header: 'CAGR', key: 'CAGR', width: 12 }, { header: 'AUM', key: 'AUM', width: 18 },
+    ];
+
+
     sheet.mergeCells('A1:N1');
     const title = sheet.getCell('A1');
     title.value = 'Watch List Report';
@@ -415,15 +425,6 @@ export class WatchListComponent implements OnInit, OnDestroy {
     summary.font = { name: 'Aptos', size: 10, bold: true, color: { argb: 'FF374151' } };
     summary.alignment = { vertical: 'middle' };
     sheet.getRow(3).height = 22;
-
-    sheet.columns = [
-      { header: 'Type', key: 'type', width: 16 }, { header: 'Product', key: 'product', width: 48 },
-      { header: 'Provider', key: 'provider', width: 28 }, { header: 'Category', key: 'category', width: 24 },
-      { header: 'Identifier', key: 'identifier', width: 24 }, { header: 'Status', key: 'status', width: 14 },
-      { header: '1M', key: '1M', width: 12 }, { header: '3M', key: '3M', width: 12 }, { header: '6M', key: '6M', width: 12 },
-      { header: '1Y', key: '1Y', width: 12 }, { header: '3Y', key: '3Y', width: 12 }, { header: '5Y', key: '5Y', width: 12 },
-      { header: 'CAGR', key: 'CAGR', width: 12 }, { header: 'AUM', key: 'AUM', width: 18 },
-    ];
 
     const headerRow = sheet.getRow(4);
     headerRow.height = 26;

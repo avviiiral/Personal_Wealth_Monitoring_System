@@ -67,7 +67,6 @@ def import_transactions(request):
         result = TransactionImporter.import_file(
             file=uploaded_file,
             owner=request.user,
-            family=require_active_family(request.user),
         )
 
     except TransactionImportError as exc:

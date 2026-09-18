@@ -17,7 +17,7 @@ from mutual_funds.models import (
 )
 
 from .xirr import XIRRCalculator
-from users.permissions import get_active_family_group, is_system_owner, family_scope
+from users.permissions import get_active_family_group, is_system_owner
 
 
 class UnifiedWealthAnalytics:

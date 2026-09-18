@@ -21,12 +21,10 @@ class MutualFundLookThroughService:
         family = get_active_family_group(user)
         if family is None:
             return Q(pk__in=[])
-        owner_ids = MutualFundLookThroughService.owner_ids(user)
         return Q(family_id=family.id)
 
     @classmethod
     def latest_underlyings(cls, user):
-        owner_ids = cls.owner_ids(user)
         holdings = MutualFundHolding.objects.filter(
             MutualFundLookThroughService.scope_q(user),
             scheme__is_active=True,
@@ -51,7 +49,6 @@ class MutualFundLookThroughService:
 
     @classmethod
     def _classification_maps(cls, user):
-        owner_ids = cls.owner_ids(user)
         assets = Asset.objects.filter(
             MutualFundLookThroughService.scope_q(user),
             is_active=True,

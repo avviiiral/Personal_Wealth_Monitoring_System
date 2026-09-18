@@ -175,9 +175,9 @@ class PortfolioTreeService:
         }
 
     @classmethod
-    def build(cls, owner, xirr_filters=None):
+    def build(cls, owner, xirr_filters=None, family_id=None):
         owner_ids = [owner.pk] if hasattr(owner, "pk") else list(owner)
-        transactions = list(cls._get_transactions(owner_ids))
+        transactions = list(cls._get_transactions(owner_ids, family_id=family_id))
         filters = {key: str(value).strip() for key, value in (xirr_filters or {}).items() if value}
         xirr_transactions = [tx for tx in transactions if cls._matches_xirr_filters(tx, filters)]
 

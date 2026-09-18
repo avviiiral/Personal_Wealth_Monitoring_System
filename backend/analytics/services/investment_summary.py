@@ -1,5 +1,5 @@
-from django.db.models import Q
 import logging
+from django.db.models import Q
 from decimal import Decimal
 
 from investments.models import Transaction, TransactionType

@@ -28,10 +28,6 @@ class XIRRByAssetClassService:
         owner_ids = XIRRByAssetClassService._owner_ids(user)
         return Q(family_id=family.id)
 
-    @staticmethod
-    def _owner_ids(user):
-        return [user.pk] if hasattr(user, "pk") else list(user)
-
     @classmethod
     def calculate(cls, user, family_name=None):
         cash_flows_by_class = defaultdict(list)

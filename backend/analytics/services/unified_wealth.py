@@ -17,7 +17,7 @@ from mutual_funds.models import (
 )
 
 from .xirr import XIRRCalculator
-from users.permissions import get_active_family_group, is_system_owner
+from users.permissions import get_active_family_group, is_system_owner, family_scope
 
 
 class UnifiedWealthAnalytics:
@@ -45,8 +45,7 @@ class UnifiedWealthAnalytics:
         family = get_active_family_group(user)
         if family is None:
             return Q(pk__in=[])
-        owner_ids = UnifiedWealthAnalytics._owner_ids(user)
-        return Q(family_id=family.id) | Q(family_id__isnull=True, owner_id__in=owner_ids)
+        return Q(family_id=family.id)
 
     @staticmethod
     def _owner_ids(user):

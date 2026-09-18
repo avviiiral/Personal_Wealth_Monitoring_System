@@ -266,4 +266,43 @@ html.dark-theme .transaction-edit-modal .modal-error {
   color: #f2685c;
 }
 
-\n/* ==========================================================\n   MOTION SYSTEM\n   ========================================================== */\n:root {\n  --motion-fast: 150ms;\n  --motion-base: 220ms;\n  --motion-slow: 360ms;\n  --ease-standard: cubic-bezier(0.22, 1, 0.36, 1);\n}\n\n@keyframes pwms-fade-up {\n  from { opacity: 0; transform: translateY(8px); }\n  to { opacity: 1; transform: translateY(0); }\n}\n\n@keyframes pwms-fade-in {\n  from { opacity: 0; }\n  to { opacity: 1; }\n}\n\n@media (prefers-reduced-motion: no-preference) {\n  .page-content > * {\n    animation: pwms-fade-up var(--motion-slow) var(--ease-standard) both;\n  }\n\n  button, a, input, select, textarea {\n    transition-duration: var(--motion-fast);\n    transition-timing-function: var(--ease-standard);\n  }\n}\n\n@media (prefers-reduced-motion: reduce) {\n  *, *::before, *::after {\n    animation-duration: 1ms !important;\n    animation-iteration-count: 1 !important;\n    scroll-behavior: auto !important;\n    transition-duration: 1ms !important;\n  }\n}\n
+
+/* ==========================================================
+   MOTION SYSTEM
+   ========================================================== */
+:root {
+  --motion-fast: 150ms;
+  --motion-base: 220ms;
+  --motion-slow: 360ms;
+  --ease-standard: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@keyframes pwms-fade-up {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes pwms-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .page-content > * {
+    animation: pwms-fade-up var(--motion-slow) var(--ease-standard) both;
+  }
+
+  button, a, input, select, textarea {
+    transition-duration: var(--motion-fast);
+    transition-timing-function: var(--ease-standard);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 1ms !important;
+  }
+}

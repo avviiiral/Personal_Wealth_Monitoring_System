@@ -1,6 +1,7 @@
 from decimal import Decimal
 
 from django.db.models import Sum
+from users.permissions import require_active_family
 
 from mutual_funds.models import SIP, SIPInstallment
 
@@ -15,17 +16,13 @@ class SIPSummaryService:
         return [user.pk] if hasattr(user, "pk") else list(user)
 
     @staticmethod
-    def get_summary(user):
+    def get_summary(user, family_id=None):
 
-        owner_ids = SIPSummaryService._owner_ids(user)
+        family_id = family_id or require_active_family(user).id
 
-        sips = SIP.objects.filter(
-            owner_id__in=owner_ids
-        )
+        sips = SIP.objects.filter(family_id=family_id)
 
-        installments = SIPInstallment.objects.filter(
-            sip__owner_id__in=owner_ids
-        )
+        installments = SIPInstallment.objects.filter(sip__family_id=family_id)
 
         executed = installments.filter(
             status="EXECUTED"

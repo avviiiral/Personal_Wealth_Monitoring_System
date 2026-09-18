@@ -231,7 +231,7 @@ class SecurityMaster(models.Model):
     class Meta:
         ordering = ["asset_name"]
         constraints = [
-            models.UniqueConstraint(fields=["owner", "isin"], name="unique_security_master_owner_isin")
+            models.UniqueConstraint(fields=["family", "isin"], name="unique_security_master_family_isin")
         ]
 
     def __str__(self):

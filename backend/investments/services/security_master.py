@@ -86,7 +86,6 @@ class SecurityMasterService:
                 return security
 
             return SecurityMaster.objects.create(
-                owner=owner,
                 family=family,
                 isin=isin,
                 asset_name=asset.name,
@@ -127,7 +126,7 @@ class SecurityMasterService:
         asset,
     ):
         family = getattr(asset, "family", None)
-        scope = Q(family=family) if family is not None else Q(owner=owner)
+        scope = Q(family=family) if family is not None else Q(pk__in=[])
         isin = (
             asset.isin.strip()
             if asset.isin
@@ -165,7 +164,7 @@ class SecurityMasterService:
             SecurityMaster.objects
             .filter(
                 id=security_id,
-                owner=owner,
+                family=family,
             )
             .first()
         )

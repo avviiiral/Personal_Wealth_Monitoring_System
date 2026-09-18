@@ -218,8 +218,10 @@ def portfolio_tree(request):
             "asset_class": request.query_params.get("asset_class", "").strip(),
             "advisor": request.query_params.get("advisor", "").strip(),
         }
+        family = require_active_family(request.user)
         tree = PortfolioTreeService.build(
-            owner=family_scope(Transaction.objects, request.user).values_list("owner_id", flat=True),
+            owner=request.user,
+            family_id=family.id,
             xirr_filters=xirr_filters,
         )
     except Exception as exc:

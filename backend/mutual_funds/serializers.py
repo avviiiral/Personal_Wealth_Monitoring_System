@@ -38,6 +38,8 @@ class MutualFundHoldingSerializer(
         fields = [
             "id",
             "scheme",
+            "family",
+            "family",
             "scheme_name",
             "scheme_code",
             "amc_name",

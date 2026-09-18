@@ -1,6 +1,8 @@
 from django.db import models
 from django.contrib.auth.models import User
 
+from users.models import FamilyGroup
+
 from typing import TYPE_CHECKING
 
 
@@ -11,9 +13,13 @@ class MutualFundScheme(models.Model):
 
     owner = models.ForeignKey(
         User,
-        on_delete=models.CASCADE,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
         related_name="mutual_fund_schemes",
     )
+
+    family = models.ForeignKey(FamilyGroup, on_delete=models.PROTECT, related_name="mutual_fund_schemes", null=True, blank=True, db_index=True)
 
     scheme_name = models.CharField(
         max_length=300,
@@ -142,9 +148,12 @@ class MutualFundTransaction(models.Model):
 
     owner = models.ForeignKey(
         User,
-        on_delete=models.CASCADE,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
         related_name="mutual_fund_transactions",
     )
+    family = models.ForeignKey(FamilyGroup, on_delete=models.PROTECT, related_name="mutual_fund_transactions", null=True, blank=True, db_index=True)
     family_name = models.CharField(max_length=255, blank=True, null=True)
     portfolio = models.CharField(max_length=255, blank=True, null=True)
     scheme = models.ForeignKey(
@@ -187,9 +196,12 @@ class SIP(models.Model):
 
     owner = models.ForeignKey(
         User,
-        on_delete=models.CASCADE,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
         related_name="sips",
     )
+    family = models.ForeignKey(FamilyGroup, on_delete=models.PROTECT, related_name="sips", null=True, blank=True, db_index=True)
     scheme = models.ForeignKey(
         MutualFundScheme,
         on_delete=models.CASCADE,
@@ -220,9 +232,12 @@ class MutualFundHolding(models.Model):
 
     owner = models.ForeignKey(
         User,
-        on_delete=models.CASCADE,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
         related_name="mutual_fund_holdings",
     )
+    family = models.ForeignKey(FamilyGroup, on_delete=models.PROTECT, related_name="mutual_fund_holdings", null=True, blank=True, db_index=True)
     scheme = models.OneToOneField(
         MutualFundScheme,
         on_delete=models.CASCADE,

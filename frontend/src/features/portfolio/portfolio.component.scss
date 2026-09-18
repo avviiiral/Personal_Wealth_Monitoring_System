@@ -697,6 +697,26 @@
 /* ==========================================================
    DARK MODE OVERRIDES
    ========================================================== */
+/* Header action buttons */
+:host-context(html.dark-theme) .refresh-button {
+  background: #1b1f27;
+  color: #e5e7eb;
+  border-color: #3a414e;
+}
+:host-context(html.dark-theme) .refresh-button:hover:not(:disabled) {
+  background: #242832;
+  border-color: #4a5261;
+}
+:host-context(html.dark-theme) .upload-button {
+  background: #2fbf8f;
+  color: #07140f;
+  border-color: #2fbf8f;
+}
+:host-context(html.dark-theme) .upload-button:hover:not(:disabled) {
+  background: #3bd3a0;
+  border-color: #3bd3a0;
+}
+
 :host-context(html.dark-theme) .portfolio-page {
   background: linear-gradient(180deg, #12151c 0%, #0b0d12 100%);
 }

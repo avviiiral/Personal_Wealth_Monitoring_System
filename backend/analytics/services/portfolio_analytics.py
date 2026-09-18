@@ -1,7 +1,7 @@
 from datetime import date
 from decimal import Decimal
 
-from django.db.models import Sum
+from django.db.models import Sum, Q
 
 from investments.models import (
     Asset,
@@ -12,6 +12,7 @@ from investments.models import (
 from market_data.models import MarketPrice
 
 from .xirr import XIRRCalculator
+from users.permissions import get_active_family_group, is_system_owner
 
 
 class PortfolioAnalytics:
@@ -19,23 +20,19 @@ class PortfolioAnalytics:
     ZERO = Decimal("0")
 
     @staticmethod
-    def _owner_ids(user):
-        """
-        Normalize `user` to a list of owner ids to filter by.
-
-        Accepts either a single User instance (existing,
-        single-owner behavior - unchanged) or an iterable of user
-        ids, for combining data across a shared-visibility group
-        (see users.permissions.get_visible_owner_ids).
-        """
-
-        return [user.pk] if hasattr(user, "pk") else list(user)
+    def _scope_q(user):
+        if is_system_owner(user):
+            return Q()
+        family = get_active_family_group(user)
+        if family is None:
+            return Q(pk__in=[])
+        return Q(family_id=family.id)
 
     @staticmethod
     def calculate_xirr(user):
         transactions = (
             Transaction.objects
-            .filter(owner_id__in=PortfolioAnalytics._owner_ids(user))
+            .filter(PortfolioAnalytics._scope_q(user))
             .order_by(
                 "transaction_date",
                 "created_at",
@@ -104,7 +101,7 @@ class PortfolioAnalytics:
         return (
             Holding.objects
             .filter(
-                owner_id__in=PortfolioAnalytics._owner_ids(user),
+                PortfolioAnalytics._scope_q(user),
                 asset__is_active=True,
             )
             .select_related("asset")
@@ -137,7 +134,7 @@ class PortfolioAnalytics:
     def calculate_realized_pnl(user):
         transactions = (
             Transaction.objects
-            .filter(owner_id__in=PortfolioAnalytics._owner_ids(user))
+            .filter(PortfolioAnalytics._scope_q(user))
             .select_related("asset")
             .order_by(
                 "asset_id",
@@ -370,7 +367,7 @@ class PortfolioAnalytics:
             Transaction.objects
             .filter(
                 asset=asset,
-                owner=asset.owner,
+                family=asset.family,
                 transaction_date__lte=target_date,
             )
             .order_by(
@@ -439,7 +436,7 @@ class PortfolioAnalytics:
         assets = (
             Asset.objects
             .filter(
-                owner_id__in=PortfolioAnalytics._owner_ids(user),
+                PortfolioAnalytics._scope_q(user),
                 is_active=True,
             )
         )

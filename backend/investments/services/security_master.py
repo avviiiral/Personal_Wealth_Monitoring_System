@@ -1,3 +1,4 @@
+from django.db.models import Q
 from investments.models import (
     Asset,
     AssetCategory,
@@ -34,7 +35,10 @@ class SecurityMasterService:
     def get_or_create(
         owner,
         asset,
+        family=None,
     ):
+        family = family or getattr(asset, "family", None)
+
         isin = (
             asset.isin.strip()
             if asset.isin
@@ -45,7 +49,7 @@ class SecurityMasterService:
             security = (
                 SecurityMaster.objects
                 .filter(
-                    owner=owner,
+                    family=family,
                     isin=isin,
                 )
                 .first()
@@ -82,7 +86,7 @@ class SecurityMasterService:
                 return security
 
             return SecurityMaster.objects.create(
-                owner=owner,
+                family=family,
                 isin=isin,
                 asset_name=asset.name,
                 amc_name=(
@@ -95,6 +99,7 @@ class SecurityMasterService:
             SecurityMaster.objects
             .filter(
                 owner=owner,
+                family=family,
                 isin__isnull=True,
                 asset_name=asset.name,
             )
@@ -106,6 +111,7 @@ class SecurityMasterService:
 
         return SecurityMaster.objects.create(
             owner=owner,
+            family=family,
             isin=None,
             asset_name=asset.name,
             amc_name=(
@@ -118,7 +124,10 @@ class SecurityMasterService:
     def get_for_asset(
         owner,
         asset,
+        family=None,
     ):
+        family = family or getattr(asset, "family", None)
+        scope = Q(family=family) if family is not None else Q(pk__in=[])
         isin = (
             asset.isin.strip()
             if asset.isin
@@ -129,7 +138,7 @@ class SecurityMasterService:
             return (
                 SecurityMaster.objects
                 .filter(
-                    owner=owner,
+                    scope,
                     isin=isin,
                 )
                 .first()
@@ -138,7 +147,7 @@ class SecurityMasterService:
         return (
             SecurityMaster.objects
             .filter(
-                owner=owner,
+                scope,
                 isin__isnull=True,
                 asset_name=asset.name,
             )
@@ -156,7 +165,7 @@ class SecurityMasterService:
             SecurityMaster.objects
             .filter(
                 id=security_id,
-                owner=owner,
+                family=family,
             )
             .first()
         )

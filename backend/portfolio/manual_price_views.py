@@ -29,7 +29,7 @@ from portfolio.services.portfolio_position_engine import (
 
 from users.permissions import (
     IsAdminOrSuperUser,
-    get_visible_owner_ids,
+    family_scope, require_active_family,
 )
 
 
@@ -69,7 +69,7 @@ def manual_asset_price(
             Asset.objects
             .get(
                 id=asset_id,
-                owner__in=get_visible_owner_ids(request.user),
+                family_id=require_active_family(request.user).id,
                 is_active=True,
             )
         )

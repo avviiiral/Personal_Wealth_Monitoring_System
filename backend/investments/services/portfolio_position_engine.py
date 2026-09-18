@@ -63,7 +63,7 @@ class PortfolioPositionEngine:
         transactions = (
             Transaction.objects
             .filter(
-                owner=owner,
+                family=asset.family,
                 family_name=family_name,
                 portfolio=portfolio,
                 asset=asset,
@@ -180,6 +180,7 @@ class PortfolioPositionEngine:
             PortfolioPosition.objects
             .update_or_create(
                 owner=owner,
+                family=asset.family,
                 family_name=family_name,
                 portfolio=portfolio,
                 asset=asset,
@@ -195,9 +196,12 @@ class PortfolioPositionEngine:
         Rebuild all portfolio positions for a user.
         """
 
+        from users.permissions import require_active_family
+        family = require_active_family(owner)
+
         groups = (
             Transaction.objects
-            .filter(owner=owner)
+            .filter(family=family)
             .values(
                 "family_name",
                 "portfolio",
@@ -219,6 +223,7 @@ class PortfolioPositionEngine:
 
             asset = Asset.objects.get(
                 id=asset_id,
+                family=family,
             )
 
             position = (

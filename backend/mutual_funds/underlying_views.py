@@ -3,7 +3,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from mutual_funds.models import MutualFundScheme, MutualFundUnderlying
-from users.permissions import get_visible_owner_ids
+from users.permissions import require_active_family
 
 from .underlying_serializers import MutualFundUnderlyingSerializer
 
@@ -11,10 +11,10 @@ from .underlying_serializers import MutualFundUnderlyingSerializer
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def mutual_fund_underlying(request, scheme_id):
-    visible_owner_ids = get_visible_owner_ids(request.user)
+    family_id = require_active_family(request.user).id
     scheme = MutualFundScheme.objects.filter(
         id=scheme_id,
-        owner_id__in=visible_owner_ids,
+        family_id=family_id,
         is_active=True,
     ).first()
     if scheme is None:

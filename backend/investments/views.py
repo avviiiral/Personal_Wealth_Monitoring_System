@@ -4,6 +4,8 @@ from rest_framework.decorators import (
 )
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
+from rest_framework.exceptions import PermissionDenied
+from rest_framework import status
 
 from .models import SecurityMaster
 
@@ -20,7 +22,7 @@ from .services.auto_price_refresh import (
     refresh_assets_async,
 )
 
-from users.permissions import get_visible_owner_ids
+from users.permissions import family_scope, require_active_family
 
 
 @api_view(["POST"])
@@ -67,6 +69,15 @@ def import_transactions(request):
         result = TransactionImporter.import_file(
             file=uploaded_file,
             owner=request.user,
+        )
+
+    except PermissionDenied as exc:
+        return Response(
+            {
+                "success": False,
+                "message": str(exc.detail) if hasattr(exc, "detail") else str(exc),
+            },
+            status=status.HTTP_403_FORBIDDEN,
         )
 
     except TransactionImportError as exc:
@@ -120,7 +131,7 @@ def security_master_list(request):
 
     securities = (
         SecurityMaster.objects
-        .filter(owner_id__in=get_visible_owner_ids(request.user))
+        .filter(family_id=require_active_family(request.user).id)
         .order_by("asset_name")
     )
 

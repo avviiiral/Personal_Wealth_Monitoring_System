@@ -1,3 +1,4 @@
+from django.db.models import Q
 from collections import defaultdict
 from datetime import date, timedelta
 from decimal import Decimal
@@ -7,7 +8,9 @@ from investments.models import (
     Transaction,
     TransactionType,
 )
+from django.db.models import Q
 from market_data.models import ManualAssetPrice, MarketPrice
+from users.permissions import get_active_family_group, is_system_owner
 from mutual_funds.models import (
     MutualFundNAV,
     MutualFundScheme,
@@ -30,6 +33,15 @@ class HistoricalWealthAnalytics:
     """
 
     ZERO = Decimal("0")
+
+    @staticmethod
+    def _scope_q(user):
+        if is_system_owner(user):
+            return Q()
+        family = get_active_family_group(user)
+        if family is None:
+            return Q(pk__in=[])
+        return Q(family_id=family.id)
 
     @staticmethod
     def _owner_ids(user):
@@ -489,7 +501,7 @@ class HistoricalWealthAnalytics:
         transactions = (
             Transaction.objects
             .filter(
-                owner=user,
+                family=asset.family,
                 asset=asset,
                 transaction_date__lte=target_date,
             )
@@ -571,7 +583,7 @@ class HistoricalWealthAnalytics:
         transactions = (
             MutualFundTransaction.objects
             .filter(
-                owner=user,
+                family=scheme.family,
                 scheme=scheme,
                 transaction_date__lte=target_date,
             )
@@ -678,7 +690,7 @@ class HistoricalWealthAnalytics:
         equity_asset_ids = (
             Transaction.objects
             .filter(
-                owner_id__in=HistoricalWealthAnalytics._owner_ids(user),
+                HistoricalWealthAnalytics._scope_q(user),
                 transaction_date__lte=target_date,
             )
             .values_list(
@@ -691,7 +703,7 @@ class HistoricalWealthAnalytics:
         assets = (
             Asset.objects
             .filter(
-                owner_id__in=HistoricalWealthAnalytics._owner_ids(user),
+                HistoricalWealthAnalytics._scope_q(user),
                 is_active=True,
                 id__in=equity_asset_ids,
             )
@@ -750,7 +762,7 @@ class HistoricalWealthAnalytics:
         mutual_fund_scheme_ids = (
             MutualFundTransaction.objects
             .filter(
-                owner_id__in=HistoricalWealthAnalytics._owner_ids(user),
+                HistoricalWealthAnalytics._scope_q(user),
                 transaction_date__lte=target_date,
             )
             .values_list(
@@ -763,7 +775,7 @@ class HistoricalWealthAnalytics:
         schemes = (
             MutualFundScheme.objects
             .filter(
-                owner_id__in=HistoricalWealthAnalytics._owner_ids(user),
+                HistoricalWealthAnalytics._scope_q(user),
                 is_active=True,
                 id__in=mutual_fund_scheme_ids,
             )
@@ -911,7 +923,7 @@ class HistoricalWealthAnalytics:
         equity_transactions_qs = (
             Transaction.objects
             .filter(
-                owner_id__in=HistoricalWealthAnalytics._owner_ids(user),
+                HistoricalWealthAnalytics._scope_q(user),
                 transaction_date__lte=end_date,
             )
         )
@@ -954,7 +966,7 @@ class HistoricalWealthAnalytics:
         assets = list(
             Asset.objects
             .filter(
-                owner_id__in=HistoricalWealthAnalytics._owner_ids(user),
+                HistoricalWealthAnalytics._scope_q(user),
                 is_active=True,
                 id__in=equity_asset_ids,
             )
@@ -1008,7 +1020,7 @@ class HistoricalWealthAnalytics:
         mutual_fund_transactions_qs = (
             MutualFundTransaction.objects
             .filter(
-                owner_id__in=HistoricalWealthAnalytics._owner_ids(user),
+                HistoricalWealthAnalytics._scope_q(user),
                 transaction_date__lte=end_date,
             )
         )
@@ -1051,7 +1063,7 @@ class HistoricalWealthAnalytics:
         schemes = list(
             MutualFundScheme.objects
             .filter(
-                owner_id__in=HistoricalWealthAnalytics._owner_ids(user),
+                HistoricalWealthAnalytics._scope_q(user),
                 is_active=True,
                 id__in=mutual_fund_scheme_ids,
             )

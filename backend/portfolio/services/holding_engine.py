@@ -42,7 +42,8 @@ class HoldingCalculationEngine:
         return (
             Transaction.objects
             .filter(
-                asset=asset
+                asset=asset,
+                family=asset.family,
             )
             .order_by(
                 "transaction_date",
@@ -334,6 +335,7 @@ class HoldingCalculationEngine:
                 asset=asset,
                 defaults={
                     "owner": asset.owner,
+                    "family": asset.family,
                     "quantity": quantity,
                     "average_cost": average_cost,
                     "invested_value": invested_value,

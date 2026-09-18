@@ -2,7 +2,7 @@ import logging
 from datetime import date
 from decimal import Decimal
 
-from django.db.models import OuterRef, QuerySet, Subquery
+from django.db.models import OuterRef, QuerySet, Subquery, Q
 
 from investments.models import Transaction, TransactionType
 from investments.services.security_master import SecurityMasterService
@@ -32,10 +32,10 @@ class PortfolioTreeService:
         return None if value is None else float(value)
 
     @classmethod
-    def _get_transactions(cls, owner_ids) -> QuerySet:
+    def _get_transactions(cls, owner_ids, family_id=None) -> QuerySet:
         return (
             Transaction.objects
-            .filter(owner_id__in=owner_ids)
+            .filter(Q(family_id=family_id) | Q(family_id__isnull=True, owner_id__in=owner_ids))
             .select_related("owner", "asset", "asset__security_master")
             .order_by(
                 "family_name", "portfolio", "asset_class", "sub_class",
@@ -139,7 +139,7 @@ class PortfolioTreeService:
         xirr = cls._calculate_xirr(xirr_transactions, quantity, current_value)
         security_master = getattr(asset, "security_master", None)
         if security_master is None:
-            security_master = SecurityMasterService.get_for_asset(owner=asset.owner, asset=asset)
+            security_master = SecurityMasterService.get_for_asset(owner=asset.owner, asset=asset, family=asset.family)
         asset_name = cls._clean(first.asset_name, getattr(asset, "name", "Unassigned"))
         return {
             "id": asset.id,
@@ -175,9 +175,9 @@ class PortfolioTreeService:
         }
 
     @classmethod
-    def build(cls, owner, xirr_filters=None):
+    def build(cls, owner, xirr_filters=None, family_id=None):
         owner_ids = [owner.pk] if hasattr(owner, "pk") else list(owner)
-        transactions = list(cls._get_transactions(owner_ids))
+        transactions = list(cls._get_transactions(owner_ids, family_id=family_id))
         filters = {key: str(value).strip() for key, value in (xirr_filters or {}).items() if value}
         xirr_transactions = [tx for tx in transactions if cls._matches_xirr_filters(tx, filters)]
 

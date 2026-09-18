@@ -48,7 +48,7 @@ from .services.sip_installments import (
     SIPInstallmentService,
 )
 
-from users.permissions import get_visible_owner_ids
+from users.permissions import family_scope, require_active_family
 
 from django.views.decorators.csrf import ensure_csrf_cookie
 
@@ -71,7 +71,7 @@ def mutual_fund_schemes(request):
         schemes = (
             MutualFundScheme.objects
             .filter(
-                owner_id__in=get_visible_owner_ids(request.user),
+                family_id=require_active_family(request.user).id,
                 is_active=True,
             )
         )
@@ -111,7 +111,7 @@ def mutual_fund_schemes(request):
     serializer.is_valid(raise_exception=True)
 
     scheme = serializer.save(
-        owner=request.user
+        owner=request.user, family=require_active_family(request.user)
     )
 
     return Response(
@@ -136,7 +136,8 @@ def mutual_fund_transaction_create(request):
     serializer.is_valid(raise_exception=True)
 
     transaction_record = serializer.save(
-        owner=request.user
+        owner=request.user,
+        family=require_active_family(request.user),
     )
 
     MutualFundHoldingEngine.rebuild_holding(
@@ -170,7 +171,8 @@ def sip_create(request):
     )
 
     sip = serializer.save(
-        owner=request.user
+        owner=request.user,
+        family=require_active_family(request.user),
     )
 
     # Immediately create the SIP installment records
@@ -194,7 +196,7 @@ def mutual_fund_summary(request):
     holdings = (
         MutualFundHolding.objects
         .filter(
-            owner_id__in=get_visible_owner_ids(request.user),
+            family_id=require_active_family(request.user).id,
             scheme__is_active=True,
         )
     )
@@ -249,7 +251,7 @@ def mutual_fund_holdings(request):
     holdings = (
         MutualFundHolding.objects
         .filter(
-            owner_id__in=get_visible_owner_ids(request.user),
+            family_id=require_active_family(request.user).id,
             scheme__is_active=True,
         )
         .select_related("scheme")
@@ -278,7 +280,7 @@ def mutual_fund_transactions(request):
     transactions = (
         MutualFundTransaction.objects
         .filter(
-            owner_id__in=get_visible_owner_ids(request.user),
+            family_id=require_active_family(request.user).id,
         )
         .select_related("scheme")
         .order_by(
@@ -309,7 +311,7 @@ def sip_list(request):
     sips = (
         SIP.objects
         .filter(
-            owner_id__in=get_visible_owner_ids(request.user),
+            family_id=require_active_family(request.user).id,
         )
         .select_related("scheme")
         .order_by(
@@ -356,7 +358,7 @@ def sip_due(request):
     installments = (
         SIPInstallment.objects
         .filter(
-            sip__owner_id__in=get_visible_owner_ids(request.user),
+            sip__family_id=require_active_family(request.user).id,
             sip__is_active=True,
             status=SIPInstallmentStatus.DUE,
         )
@@ -431,7 +433,8 @@ def sip_summary(request):
     summary = (
         SIPSummaryService
         .get_summary(
-            get_visible_owner_ids(request.user)
+            request.user,
+            family_id=require_active_family(request.user).id,
         )
     )
 
@@ -493,7 +496,7 @@ def sip_installment_execute(
             )
             .get(
                 id=installment_id,
-                sip__owner=request.user,
+                sip__family=require_active_family(request.user),
             )
         )
 

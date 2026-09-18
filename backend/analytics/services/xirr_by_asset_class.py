@@ -1,7 +1,11 @@
+from django.db.models import Q
 from collections import defaultdict
 from datetime import date
 from decimal import Decimal
 
+from django.db.models import Q
+
+from users.permissions import get_active_family_group, is_system_owner
 from investments.models import Transaction, TransactionType
 from mutual_funds.models import MutualFundTransaction, MutualFundTransactionType
 
@@ -15,12 +19,16 @@ class XIRRByAssetClassService:
     ZERO = Decimal("0")
 
     @staticmethod
-    def _owner_ids(user):
-        return [user.pk] if hasattr(user, "pk") else list(user)
+    def _scope_q(user):
+        if is_system_owner(user):
+            return Q()
+        family = get_active_family_group(user)
+        if family is None:
+            return Q(pk__in=[])
+        return Q(family_id=family.id)
 
     @classmethod
     def calculate(cls, user, family_name=None):
-        owner_ids = cls._owner_ids(user)
         cash_flows_by_class = defaultdict(list)
 
         equity_class_by_asset_id = InvestmentSummaryService._equity_asset_class_by_asset_id(
@@ -28,7 +36,7 @@ class XIRRByAssetClassService:
             family_name=family_name,
         )
 
-        equity_qs = Transaction.objects.filter(owner_id__in=owner_ids)
+        equity_qs = Transaction.objects.filter(XIRRByAssetClassService._scope_q(user))
         if family_name:
             equity_qs = equity_qs.filter(family_name=family_name)
 
@@ -58,7 +66,7 @@ class XIRRByAssetClassService:
                     (transaction.transaction_date, amount - fees)
                 )
 
-        mutual_fund_qs = MutualFundTransaction.objects.filter(owner_id__in=owner_ids)
+        mutual_fund_qs = MutualFundTransaction.objects.filter(XIRRByAssetClassService._scope_q(user))
         if family_name:
             mutual_fund_qs = mutual_fund_qs.filter(family_name=family_name)
 

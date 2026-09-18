@@ -13,19 +13,19 @@ from .services.portfolio_analytics import PortfolioAnalytics
 from .services.unified_wealth import UnifiedWealthAnalytics
 from .services.equity_analysis import EquityAnalysisService
 from .services.mutual_fund_lookthrough import MutualFundLookThroughService
-from users.permissions import get_visible_owner_ids
+
 
 
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def analytics_summary(request):
-    return Response(PortfolioAnalytics.calculate_summary(get_visible_owner_ids(request.user)))
+    return Response(PortfolioAnalytics.calculate_summary(request.user))
 
 
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def analytics_allocation(request):
-    owner_ids = get_visible_owner_ids(request.user)
+    owner_ids = request.user
     direct_holdings = list(PortfolioAnalytics.get_holdings(owner_ids))
     return Response({"results": MutualFundLookThroughService.allocation(owner_ids, direct_holdings)})
 
@@ -33,7 +33,7 @@ def analytics_allocation(request):
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def analytics_performance(request):
-    return Response({"results": PortfolioAnalytics.get_performance_ranking(get_visible_owner_ids(request.user))})
+    return Response({"results": PortfolioAnalytics.get_performance_ranking(request.user)})
 
 
 @api_view(["GET"])
@@ -48,7 +48,7 @@ def analytics_historical(request):
     start_date = end_date - timedelta(days=days - 1)
     results = []
     current_date = start_date
-    owner_ids = get_visible_owner_ids(request.user)
+    owner_ids = request.user
     while current_date <= end_date:
         result = PortfolioAnalytics.calculate_historical_value(owner_ids, current_date)
         results.append({"date": result["date"], "invested_value": result["invested_value"], "portfolio_value": result["portfolio_value"], "pnl": result["pnl"]})
@@ -60,13 +60,13 @@ def analytics_historical(request):
 @permission_classes([IsAuthenticated])
 def wealth_summary(request):
     family_name = request.GET.get("family") or None
-    return Response(UnifiedWealthAnalytics.calculate_summary(get_visible_owner_ids(request.user), family_name=family_name))
+    return Response(UnifiedWealthAnalytics.calculate_summary(request.user, family_name=family_name))
 
 
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def wealth_allocation(request):
-    owner_ids = get_visible_owner_ids(request.user)
+    owner_ids = request.user
     direct_holdings = list(PortfolioAnalytics.get_holdings(owner_ids))
     return Response({"results": MutualFundLookThroughService.allocation(owner_ids, direct_holdings)})
 
@@ -74,14 +74,14 @@ def wealth_allocation(request):
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def wealth_performance(request):
-    return Response({"results": UnifiedWealthAnalytics.calculate_performance(get_visible_owner_ids(request.user))})
+    return Response({"results": UnifiedWealthAnalytics.calculate_performance(request.user)})
 
 
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def wealth_xirr(request):
     family_name = request.GET.get("family") or None
-    data = UnifiedWealthAnalytics.calculate_xirr(get_visible_owner_ids(request.user), family_name=family_name)
+    data = UnifiedWealthAnalytics.calculate_xirr(request.user, family_name=family_name)
     return Response({"xirr_percentage": data})
 
 
@@ -89,7 +89,7 @@ def wealth_xirr(request):
 @permission_classes([IsAuthenticated])
 def wealth_investment_summary(request):
     family_name = request.GET.get("family") or None
-    return Response(InvestmentSummaryService.calculate(get_visible_owner_ids(request.user), family_name=family_name))
+    return Response(InvestmentSummaryService.calculate(request.user, family_name=family_name))
 
 
 @ensure_csrf_cookie
@@ -167,20 +167,20 @@ def wealth_standard_allocations_update(request):
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def wealth_performance_by_subclass(request):
-    data = InvestmentSummaryService.calculate_performance_by_subclass(get_visible_owner_ids(request.user))
+    data = InvestmentSummaryService.calculate_performance_by_subclass(request.user)
     return Response({"results": data})
 
 
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def wealth_allocation_by_advisor(request):
-    return Response(InvestmentSummaryService.calculate_allocation_by_advisor(get_visible_owner_ids(request.user)))
+    return Response(InvestmentSummaryService.calculate_allocation_by_advisor(request.user))
 
 
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def wealth_performance_by_advisor(request):
-    return Response({"results": InvestmentSummaryService.calculate_performance_by_advisor(get_visible_owner_ids(request.user))})
+    return Response({"results": InvestmentSummaryService.calculate_performance_by_advisor(request.user)})
 
 
 @api_view(["GET"])
@@ -195,32 +195,32 @@ def wealth_historical(request):
     family_name = request.GET.get("family") or None
     end_date = date.today()
     start_date = end_date - timedelta(days=days - 1)
-    results = HistoricalWealthAnalytics.calculate_history(get_visible_owner_ids(request.user), start_date, end_date, family_name=family_name)
+    results = HistoricalWealthAnalytics.calculate_history(request.user, start_date, end_date, family_name=family_name)
     return Response({"days": days, "start_date": start_date, "end_date": end_date, "results": results})
 
 
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def wealth_composition_by_amc(request):
-    return Response(InvestmentSummaryService.calculate_composition_by_amc(get_visible_owner_ids(request.user)))
+    return Response(InvestmentSummaryService.calculate_composition_by_amc(request.user))
 
 
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def wealth_equity_analysis(request):
-    return Response(EquityAnalysisService.calculate(get_visible_owner_ids(request.user)))
+    return Response(EquityAnalysisService.calculate(request.user))
 
 
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def wealth_fixed_income_analysis(request):
-    return Response(InvestmentSummaryService.calculate_fixed_income_analysis(get_visible_owner_ids(request.user)))
+    return Response(InvestmentSummaryService.calculate_fixed_income_analysis(request.user))
 
 
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def wealth_sector_allocation(request):
-    owner_ids = get_visible_owner_ids(request.user)
+    owner_ids = request.user
     direct_holdings = list(UnifiedWealthAnalytics.get_equity_holdings(owner_ids))
     asset_class_by_asset_id = InvestmentSummaryService._equity_asset_class_by_asset_id(owner_ids)
     equity_asset_ids = {
@@ -235,10 +235,10 @@ def wealth_sector_allocation(request):
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def wealth_market_cap_allocation(request):
-    return Response(InvestmentSummaryService.calculate_market_cap_allocation(get_visible_owner_ids(request.user)))
+    return Response(InvestmentSummaryService.calculate_market_cap_allocation(request.user))
 
 
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def wealth_non_stock_holding_types(request):
-    return Response(InvestmentSummaryService.calculate_non_stock_holding_types(get_visible_owner_ids(request.user)))
+    return Response(InvestmentSummaryService.calculate_non_stock_holding_types(request.user))

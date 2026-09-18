@@ -22,6 +22,7 @@ from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
+from rest_framework.exceptions import PermissionDenied
 
 from .serializers import (
     AssetSerializer,
@@ -29,20 +30,21 @@ from .serializers import (
     TransactionSerializer,
     TransactionEditHistorySerializer,
 )
-from users.permissions import get_visible_owner_ids
+from users.permissions import family_scope, require_active_family
 
 
 @api_view(["GET", "POST"])
 @permission_classes([IsAuthenticated])
 def portfolio_assets(request):
     if request.method == "GET":
-        assets = Asset.objects.filter(owner_id__in=get_visible_owner_ids(request.user)).order_by("name")
+        assets = family_scope(Asset.objects, request.user).order_by("name")
         return Response({"count": assets.count(), "results": AssetSerializer(assets, many=True).data})
 
     serializer = AssetSerializer(data=request.data)
     if not serializer.is_valid():
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-    asset = cast(Asset, serializer.save(owner=request.user))
+    family = require_active_family(request.user)
+    asset = cast(Asset, serializer.save(owner=request.user, family=family))
     market_data = {"success": False, "skipped": True, "reason": "Market data not requested."}
     if asset.category in ["STOCK", "ETF"]:
         try:
@@ -57,9 +59,8 @@ def portfolio_assets(request):
 @api_view(["GET", "PUT", "PATCH", "DELETE"])
 @permission_classes([IsAuthenticated])
 def portfolio_asset_detail(request, asset_id):
-    try:
-        asset = Asset.objects.get(id=asset_id, owner=request.user)
-    except Asset.DoesNotExist:
+    asset = family_scope(Asset.objects, request.user).filter(id=asset_id).first()
+    if asset is None:
         return Response({"detail": "Asset not found."}, status=status.HTTP_404_NOT_FOUND)
     if request.method == "GET":
         return Response(AssetSerializer(asset).data, status=status.HTTP_200_OK)
@@ -82,7 +83,7 @@ def portfolio_asset_detail(request, asset_id):
 def portfolio_transactions(request):
     if request.method == "GET":
         transactions = (
-            Transaction.objects.filter(owner_id__in=get_visible_owner_ids(request.user))
+            family_scope(Transaction.objects, request.user)
             .select_related("asset")
             .order_by("-transaction_date", "-created_at")
         )
@@ -91,7 +92,8 @@ def portfolio_transactions(request):
     if not serializer.is_valid():
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     with transaction.atomic():
-        transaction_obj = cast(Transaction, serializer.save(owner=request.user))
+        family = require_active_family(request.user)
+        transaction_obj = cast(Transaction, serializer.save(owner=request.user, family=family))
         HoldingCalculationEngine.rebuild_holding(transaction_obj.asset)
         PortfolioPositionEngine.rebuild_all_for_user(request.user)
     return Response(TransactionSerializer(transaction_obj).data, status=status.HTTP_201_CREATED)
@@ -123,9 +125,8 @@ def _transaction_history_snapshot(transaction_obj):
 @api_view(["GET", "PUT", "PATCH", "DELETE"])
 @permission_classes([IsAuthenticated])
 def portfolio_transaction_detail(request, transaction_id):
-    try:
-        transaction_obj = Transaction.objects.select_related("asset").get(id=transaction_id, owner=request.user)
-    except Transaction.DoesNotExist:
+    transaction_obj = family_scope(Transaction.objects.select_related("asset"), request.user).filter(id=transaction_id).first()
+    if transaction_obj is None:
         return Response({"detail": "Transaction not found."}, status=status.HTTP_404_NOT_FOUND)
     if request.method == "GET":
         return Response(TransactionSerializer(transaction_obj).data, status=status.HTTP_200_OK)
@@ -155,6 +156,7 @@ def portfolio_transaction_detail(request, transaction_id):
             TransactionEditHistory.objects.create(
                 transaction=transaction_obj,
                 owner=transaction_obj.owner,
+                family=transaction_obj.family,
                 edited_by=request.user,
                 old_values={field: old_values[field] for field in changed_fields},
                 new_values={field: new_values[field] for field in changed_fields},
@@ -171,7 +173,7 @@ def portfolio_transaction_detail(request, transaction_id):
 @permission_classes([IsAuthenticated])
 def portfolio_transaction_edit_history(request):
     history = (
-        TransactionEditHistory.objects.filter(owner_id__in=get_visible_owner_ids(request.user))
+        family_scope(TransactionEditHistory.objects, request.user)
         .select_related("transaction", "transaction__asset", "edited_by")
         .order_by("-edited_at")
     )
@@ -181,7 +183,7 @@ def portfolio_transaction_edit_history(request):
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def portfolio_summary(request):
-    holdings = Holding.objects.filter(owner_id__in=get_visible_owner_ids(request.user), asset__is_active=True)
+    holdings = family_scope(Holding.objects, request.user).filter(asset__is_active=True)
     total_invested = holdings.aggregate(total=Sum("invested_value"))["total"] or Decimal("0")
     total_current_value = holdings.aggregate(total=Sum("current_value"))["total"] or Decimal("0")
     total_unrealized_pnl = total_current_value - total_invested
@@ -199,7 +201,7 @@ def portfolio_summary(request):
 @permission_classes([IsAuthenticated])
 def portfolio_holdings(request):
     holdings = (
-        Holding.objects.filter(owner_id__in=get_visible_owner_ids(request.user), asset__is_active=True)
+        family_scope(Holding.objects, request.user).filter(asset__is_active=True)
         .exclude(asset__category=AssetCategory.MUTUAL_FUND)
         .select_related("asset")
         .order_by("-current_value")
@@ -217,9 +219,19 @@ def portfolio_tree(request):
             "asset_class": request.query_params.get("asset_class", "").strip(),
             "advisor": request.query_params.get("advisor", "").strip(),
         }
+        family = require_active_family(request.user)
         tree = PortfolioTreeService.build(
-            owner=get_visible_owner_ids(request.user),
+            owner=request.user,
+            family_id=family.id,
             xirr_filters=xirr_filters,
+        )
+    except PermissionDenied as exc:
+        return Response(
+            {
+                "success": False,
+                "message": str(exc.detail) if hasattr(exc, "detail") else str(exc),
+            },
+            status=status.HTTP_403_FORBIDDEN,
         )
     except Exception as exc:
         traceback.print_exc()

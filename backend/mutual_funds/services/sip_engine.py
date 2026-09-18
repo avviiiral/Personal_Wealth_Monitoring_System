@@ -127,7 +127,7 @@ class SIPEngine:
         sips = (
             SIP.objects
             .filter(
-                owner=user,
+                family_id=getattr(user.profile, "active_family_group_id", None),
                 is_active=True,
             )
             .select_related("scheme")
@@ -310,6 +310,7 @@ class SIPEngine:
             MutualFundTransaction.objects
             .create(
                 owner=sip.owner,
+                family=sip.family,
                 scheme=sip.scheme,
                 transaction_type=(
                     MutualFundTransactionType.SIP

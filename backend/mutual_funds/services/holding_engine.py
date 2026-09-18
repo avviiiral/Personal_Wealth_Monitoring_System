@@ -196,6 +196,7 @@ class MutualFundHoldingEngine:
                 scheme=scheme,
                 defaults={
                     "owner": scheme.owner,
+                    "family": scheme.family,
                     "units": units,
                     "invested_value": invested_value,
                     "average_nav": average_nav,

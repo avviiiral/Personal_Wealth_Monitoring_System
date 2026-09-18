@@ -1,5 +1,8 @@
 from decimal import Decimal
 
+from django.db.models import Q
+
+from users.permissions import get_active_family_group, is_system_owner
 from investments.models import Asset
 
 from .unified_wealth import UnifiedWealthAnalytics
@@ -11,17 +14,21 @@ class EquityAnalysisService:
     ZERO = Decimal("0")
 
     @staticmethod
-    def _owner_ids(user):
-        return [user.pk] if hasattr(user, "pk") else list(user)
+    def _scope_q(user):
+        if is_system_owner(user):
+            return Q()
+        family = get_active_family_group(user)
+        if family is None:
+            return Q(pk__in=[])
+        return Q(family_id=family.id)
 
     @classmethod
     def calculate(cls, user):
         equity_holdings = list(UnifiedWealthAnalytics.get_equity_holdings(user))
-        owner_ids = cls._owner_ids(user)
 
         rows = (
             Asset.objects
-            .filter(owner_id__in=owner_ids, security_master__isnull=False)
+            .filter(EquityAnalysisService._scope_q(user), security_master__isnull=False)
             .values_list(
                 "id",
                 "security_master__cap_type",

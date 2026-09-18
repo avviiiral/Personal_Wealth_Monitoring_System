@@ -41,7 +41,7 @@ class HistoricalWealthAnalytics:
         family = get_active_family_group(user)
         if family is None:
             return Q(pk__in=[])
-        return Q(family_id=family.id) | Q(family_id__isnull=True, owner_id__in=owner_ids)
+        return Q(family_id=family.id)
 
     @staticmethod
     def _owner_ids(user):

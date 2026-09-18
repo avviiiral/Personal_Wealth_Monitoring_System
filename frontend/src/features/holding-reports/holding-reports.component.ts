@@ -130,6 +130,17 @@ export class HoldingReportsComponent implements OnInit {
   formatPercentage(value: number | null): string { return value === null || value === undefined ? '-' : `${this.formatDecimal(value)}%`; }
   getPnlClass(value: number): string { return value > 0 ? 'positive' : value < 0 ? 'negative' : 'neutral'; }
 
+  async downloadAssetClassSubClassXirrReport(group: AssetClassGroup, event?: Event): Promise<void> {
+    event?.stopPropagation();
+    const rows = group.sub_classes.map(subClass => this.toSubClassXirrExportRow(subClass));
+    await this.downloadRows(
+      rows,
+      this.subClassXirrColumns(),
+      'holding_report_' + this.slugify(group.asset_class) + '_sub_class_xirr' + this.fileSuffix() + '_' + this.todayStamp() + '.xlsx',
+      'Sub Class XIRR Report — ' + group.asset_class + ' (as of ' + this.todayLabel() + ')'
+    );
+  }
+
   async downloadAssetClassReport(group: AssetClassGroup, event?: Event): Promise<void> {
     event?.stopPropagation();
     const rows = group.holdings.map(h => this.toExportRow(h.row, group.xirr, true));

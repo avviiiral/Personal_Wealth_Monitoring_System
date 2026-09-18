@@ -34,7 +34,6 @@ class XIRRByAssetClassService:
 
     @classmethod
     def calculate(cls, user, family_name=None):
-        owner_ids = cls._owner_ids(user)
         cash_flows_by_class = defaultdict(list)
 
         equity_class_by_asset_id = InvestmentSummaryService._equity_asset_class_by_asset_id(

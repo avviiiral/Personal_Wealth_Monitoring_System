@@ -163,8 +163,15 @@ export class HoldingReportsComponent implements OnInit {
   }
   async downloadSubClassReport(group: SubClassGroup, event?: Event): Promise<void> {
     event?.stopPropagation();
-    const rows = group.holdings.map(h => this.toExportRow(h.row, group.xirr, false));
-    await this.downloadRows(rows, this.subClassColumns(), `holding_report_sub_class_${this.slugify(group.sub_class)}_${this.todayStamp()}.xlsx`, `Sub Class Holding Report — ${group.sub_class} (as of ${this.todayLabel()})`);
+    // Portfolio-style Sub Class report: one row per Asset Name, with that
+    // Asset Name's own XIRR (not the Sub Class XIRR or underlying XIRR).
+    const rows = this.toAssetNameXirrRows(group);
+    await this.downloadRows(
+      rows,
+      this.subClassAssetNameColumns(),
+      `holding_report_sub_class_${this.slugify(group.sub_class)}_asset_name_xirr_${this.todayStamp()}.xlsx`,
+      `Sub Class — Asset Name XIRR Report — ${group.sub_class} (as of ${this.todayLabel()})`
+    );
   }
   async downloadAssetNameReport(group: SubClassGroup, holding: HoldingGroup, event?: Event): Promise<void> {
     event?.stopPropagation();
@@ -198,7 +205,50 @@ export class HoldingReportsComponent implements OnInit {
   private assetNameColumns() { return [
     {header:'Family Name',key:'family_name',width:24},{header:'Portfolio',key:'portfolio',width:24},{header:'Asset Class',key:'asset_class',width:18},{header:'Sub Class',key:'sub_class',width:22},{header:'Asset Name',key:'asset_name',width:30},{header:'Underlying',key:'underlying',width:28},{header:'ISIN',key:'isin',width:18},{header:'Advisor',key:'advisors',width:24},{header:'Quantity',key:'quantity',width:14,numFmt:'#,##0.00'},{header:'Average Cost',key:'average_cost',width:16,numFmt:'"₹"#,##0.00'},{header:'Invested Value',key:'invested_value',width:18,numFmt:'"₹"#,##0'},{header:'Current Price / NAV',key:'current_price',width:18,numFmt:'"₹"#,##0.00'},{header:'Current Value',key:'current_value',width:18,numFmt:'"₹"#,##0'},{header:'Gain',key:'gain',width:18,numFmt:'"₹"#,##0'},{header:'Gain %',key:'pnl_percentage',width:14,numFmt:'0.00"%"'},{header:'XIRR (%)',key:'xirr',width:14,numFmt:'0.00"%"'}
   ]; }
+    private subClassAssetNameColumns() { return [
+    {header:'Family Name',key:'family_name',width:24},{header:'Portfolio',key:'portfolio',width:24},{header:'Asset Class',key:'asset_class',width:18},{header:'Sub Class',key:'sub_class',width:22},{header:'Asset Name',key:'asset_name',width:30},{header:'Underlying',key:'underlying',width:28},{header:'ISIN',key:'isin',width:18},{header:'Advisor',key:'advisors',width:24},{header:'Quantity',key:'quantity',width:14,numFmt:'#,##0.00'},{header:'Average Cost',key:'average_cost',width:16,numFmt:'"₹"#,##0.00'},{header:'Invested Value',key:'invested_value',width:18,numFmt:'"₹"#,##0'},{header:'Current Value',key:'current_value',width:18,numFmt:'"₹"#,##0'},{header:'Gain',key:'gain',width:18,numFmt:'"₹"#,##0'},{header:'Gain %',key:'pnl_percentage',width:14,numFmt:'0.00"%"'},{header:'XIRR (%)',key:'xirr',width:14,numFmt:'0.00"%"'}
+  ]; }
   private flattenFilteredHoldings(): HoldingExportRow[] { return this.filteredRows.map(row => this.toExportRow(row,row.xirr,true)).sort((a,b) => a.family_name.localeCompare(b.family_name)||a.portfolio.localeCompare(b.portfolio)||a.asset_class.localeCompare(b.asset_class)||a.sub_class.localeCompare(b.sub_class)||a.asset_name.localeCompare(b.asset_name)); }
+  private toAssetNameXirrRows(group: SubClassGroup): HoldingExportRow[] {
+    const assetGroups = new Map<string, HoldingGroup[]>();
+    for (const holding of group.holdings) {
+      const key = holding.asset_name;
+      if (!assetGroups.has(key)) assetGroups.set(key, []);
+      assetGroups.get(key)!.push(holding);
+    }
+
+    return Array.from(assetGroups.entries()).map(([asset_name, holdings]) => {
+      const first = holdings[0].row;
+      const quantity = holdings.reduce((sum, item) => sum + this.toNumber(item.row.quantity), 0);
+      const invested_value = holdings.reduce((sum, item) => sum + this.toNumber(item.row.invested_value), 0);
+      const current_value = holdings.reduce((sum, item) => sum + this.toNumber(item.row.current_value), 0);
+      const gain = holdings.reduce((sum, item) => sum + this.toNumber(item.row.gain), 0);
+      const assetNameXirr = this.firstNumber(holdings.map(item => item.row.asset_name_xirr));
+
+      return {
+        family_name: this.clean(first.family_name),
+        portfolio: this.clean(first.portfolio),
+        asset_class: this.clean(first.asset_class),
+        sub_class: this.clean(first.sub_class),
+        asset_name,
+        underlying: this.clean(first.underlying, ''),
+        isin: first.isin || '-',
+        advisors: this.clean(first.advisors, ''),
+        quantity,
+        average_cost: quantity ? invested_value / quantity : 0,
+        invested_value,
+        current_price: holdings.length === 1 ? this.toNumber(first.current_price) : 0,
+        current_value,
+        gain,
+        pnl_percentage: invested_value ? (gain / invested_value) * 100 : 0,
+        xirr: assetNameXirr,
+        sector: first.sector || '-',
+        cap_type: first.cap_type || '-',
+        amc_name: first.amc_name || '-',
+      };
+    }).sort((a, b) => a.asset_name.localeCompare(b.asset_name));
+  }
+
   private toSubClassXirrExportRow(group: SubClassGroup): HoldingExportRow {
     return {family_name:group.holdings[0]?.row.family_name ? this.clean(group.holdings[0].row.family_name) : '',portfolio:group.holdings[0]?.row.portfolio ? this.clean(group.holdings[0].row.portfolio) : '',asset_class:group.holdings[0]?.row.asset_class ? this.clean(group.holdings[0].row.asset_class) : '',sub_class:group.sub_class,asset_name:'',underlying:'',isin:'-',advisors:'',quantity:this.toNumber(group.quantity),average_cost:group.quantity ? group.invested_value / group.quantity : 0,invested_value:this.toNumber(group.invested_value),current_price:0,current_value:this.toNumber(group.current_value),gain:this.toNumber(group.pnl),pnl_percentage:group.invested_value ? (group.pnl / group.invested_value) * 100 : 0,xirr:group.xirr,sector:'-',cap_type:'-',amc_name:'-'};
   }

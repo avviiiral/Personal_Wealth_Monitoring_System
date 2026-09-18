@@ -15,7 +15,7 @@ from users.permissions import get_visible_owner_ids
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def holding_report(request):
-    """Return current portfolio positions with holding, asset-name, and subclass XIRR."""
+    """Return current portfolio positions with asset-class, subclass, asset-name, and holding XIRR."""
     owner_ids = get_visible_owner_ids(request.user)
 
     latest_transaction = (

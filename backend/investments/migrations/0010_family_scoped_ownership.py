@@ -182,5 +182,13 @@ class Migration(migrations.Migration):
                 to=settings.AUTH_USER_MODEL,
             ),
         ),
+        migrations.RemoveConstraint(
+            model_name="securitymaster",
+            name="unique_security_master_owner_isin",
+        ),
+        migrations.AddConstraint(
+            model_name="securitymaster",
+            constraint=models.UniqueConstraint(fields=["family", "isin"], name="unique_security_master_family_isin"),
+        ),
         migrations.RunPython(backfill_family, migrations.RunPython.noop),
     ]

@@ -4,6 +4,8 @@ from rest_framework.decorators import (
 )
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
+from rest_framework.exceptions import PermissionDenied
+from rest_framework import status
 
 from .models import SecurityMaster
 
@@ -67,6 +69,15 @@ def import_transactions(request):
         result = TransactionImporter.import_file(
             file=uploaded_file,
             owner=request.user,
+        )
+
+    except PermissionDenied as exc:
+        return Response(
+            {
+                "success": False,
+                "message": str(exc.detail) if hasattr(exc, "detail") else str(exc),
+            },
+            status=status.HTTP_403_FORBIDDEN,
         )
 
     except TransactionImportError as exc:

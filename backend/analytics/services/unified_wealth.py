@@ -47,21 +47,8 @@ class UnifiedWealthAnalytics:
             return Q(pk__in=[])
         return Q(family_id=family.id)
 
-    @staticmethod
-    def _owner_ids(user):
-        """
-        Normalize `user` to a list of owner ids to filter by.
-
-        Accepts either a single User instance (existing,
-        single-owner behavior - unchanged) or an iterable of user
-        ids, for combining data across a shared-visibility group
-        (see users.permissions.get_visible_owner_ids).
-        """
-
-        return [user.pk] if hasattr(user, "pk") else list(user)
-
     # ==========================================================
-    # EQUITY
+    # EQUITY/
     # ==========================================================
 
     @staticmethod

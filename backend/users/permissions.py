@@ -355,7 +355,7 @@ def family_scope(queryset, user, owner_field="owner_id", family_field="family_id
     from django.db.models import Q
 
     if is_system_owner(user):
-        return queryset.all()
+        return queryset.filter(**{family_field + "__isnull": False})
 
     family = get_active_family_group(user)
     if family is None:

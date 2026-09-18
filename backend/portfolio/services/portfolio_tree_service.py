@@ -2,7 +2,7 @@ import logging
 from datetime import date
 from decimal import Decimal
 
-from django.db.models import OuterRef, QuerySet, Subquery
+from django.db.models import OuterRef, QuerySet, Subquery, Q
 
 from investments.models import Transaction, TransactionType
 from investments.services.security_master import SecurityMasterService
@@ -35,7 +35,7 @@ class PortfolioTreeService:
     def _get_transactions(cls, owner_ids, family_id=None) -> QuerySet:
         return (
             Transaction.objects
-            .filter(family_id=family_id)
+            .filter(Q(family_id=family_id) | Q(family_id__isnull=True, owner_id__in=owner_ids))
             .select_related("owner", "asset", "asset__security_master")
             .order_by(
                 "family_name", "portfolio", "asset_class", "sub_class",

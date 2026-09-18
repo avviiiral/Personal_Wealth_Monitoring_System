@@ -406,12 +406,8 @@ export class WatchListComponent implements OnInit, OnDestroy {
       sheet.getColumn(index + 1).width = column.width;
     });
 
-    const headerRow = sheet.getRow(4);
+    const headerRow = sheet.insertRow(4, columnDefinitions.map(column => column.header));
     headerRow.height = 26;
-    columnDefinitions.forEach((column, index) => {
-      sheet.getCell(4, index + 1).value = column.header;
-    });
-
     headerRow.eachCell(cell => {
       cell.font = { name: 'Aptos', size: 10, bold: true, color: { argb: 'FFFFFFFF' } };
       cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF374151' } };

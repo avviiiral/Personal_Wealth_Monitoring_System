@@ -1,7 +1,7 @@
 import { CommonModule } from '@angular/common';
 import { Component, OnDestroy, OnInit, inject } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { Subject } from 'rxjs';
+import { firstValueFrom, Subject } from 'rxjs';
 import { debounceTime, distinctUntilChanged, takeUntil } from 'rxjs/operators';
 
 import { WatchListApiService, WatchListProduct, WatchListResponse } from '../../core/services/watch-list-api.service';
@@ -46,6 +46,9 @@ export class WatchListComponent implements OnInit, OnDestroy {
   refreshing = false;
   movingToWatchList = false;
   removingFromWatchList = false;
+  downloadModalOpen = false;
+  downloadType: 'PMS' | 'MUTUAL_FUND' | 'ALL' = 'ALL';
+  downloading = false;
 
   readonly orderings = [
     { value: 'name', label: 'Name' }, { value: '1M', label: '1M Return' },
@@ -345,6 +348,62 @@ export class WatchListComponent implements OnInit, OnDestroy {
         this.togglingIds.delete(product.id);
       },
     });
+  }
+
+  openDownloadModal(): void { this.downloadModalOpen = true; }
+  closeDownloadModal(): void { if (!this.downloading) this.downloadModalOpen = false; }
+
+  async confirmWatchListDownload(): Promise<void> {
+    if (this.downloading) return;
+    this.downloading = true;
+    this.error = '';
+    try {
+      const productTypes: ProductTab[] = this.downloadType === 'ALL' ? ['PMS', 'MUTUAL_FUND'] : [this.downloadType];
+      const allProducts: WatchListProduct[] = [];
+      for (const productType of productTypes) {
+        let page = 1;
+        while (true) {
+          const response = await firstValueFrom(this.api.getProducts({ product_type: productType, status: 'WATCHLIST', ordering: 'name', page, page_size: 100 }));
+          allProducts.push(...this.state.filterVisible(response.results));
+          if (!response.next || response.results.length === 0) break;
+          page += 1;
+        }
+      }
+      await this.exportWatchListWorkbook(allProducts);
+      this.downloadModalOpen = false;
+    } catch (error) {
+      console.error('Failed to download Watch List:', error);
+      this.error = 'Unable to download the Watch List right now.';
+    } finally { this.downloading = false; }
+  }
+
+  private async exportWatchListWorkbook(products: WatchListProduct[]): Promise<void> {
+    const { default: ExcelJSLib } = await import('exceljs');
+    const workbook = new ExcelJSLib.Workbook();
+    const sheet = workbook.addWorksheet('Watch List');
+    sheet.columns = [
+      { header: 'Type', key: 'type', width: 16 }, { header: 'Product', key: 'product', width: 48 },
+      { header: 'Provider', key: 'provider', width: 28 }, { header: 'Category', key: 'category', width: 24 },
+      { header: 'Identifier', key: 'identifier', width: 24 }, { header: 'Status', key: 'status', width: 14 },
+      { header: '1M', key: '1M', width: 12 }, { header: '3M', key: '3M', width: 12 }, { header: '6M', key: '6M', width: 12 },
+      { header: '1Y', key: '1Y', width: 12 }, { header: '3Y', key: '3Y', width: 12 }, { header: '5Y', key: '5Y', width: 12 },
+      { header: 'CAGR', key: 'CAGR', width: 12 }, { header: 'AUM', key: 'AUM', width: 18 },
+    ];
+    products.forEach(product => sheet.addRow({
+      type: product.product_type === 'MUTUAL_FUND' ? 'Mutual Fund' : 'PMS', product: product.name, provider: product.provider || '',
+      category: product.category || '', identifier: product.isin || product.external_identifier || '', status: product.status,
+      '1M': this.metric(product, '1M'), '3M': this.metric(product, '3M'), '6M': this.metric(product, '6M'),
+      '1Y': this.metric(product, '1Y'), '3Y': this.metric(product, '3Y'), '5Y': this.metric(product, '5Y'),
+      CAGR: this.metric(product, 'CAGR'), AUM: product.mutual_fund?.aum ?? product.pms?.aum ?? null,
+    }));
+    const buffer = await workbook.xlsx.writeBuffer();
+    this.triggerDownload(new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }), `watch_list_${this.downloadType.toLowerCase()}_${this.todayStamp()}.xlsx`);
+  }
+
+  private todayStamp(): string { return new Date().toISOString().slice(0, 10); }
+  private triggerDownload(blob: Blob, filename: string): void {
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a'); anchor.href = url; anchor.download = filename; anchor.click(); URL.revokeObjectURL(url);
   }
 
   refreshUniverse(auto = false): void {

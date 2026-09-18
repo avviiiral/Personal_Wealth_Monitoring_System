@@ -22,6 +22,7 @@ from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
+from rest_framework.exceptions import PermissionDenied
 
 from .serializers import (
     AssetSerializer,
@@ -223,6 +224,14 @@ def portfolio_tree(request):
             owner=request.user,
             family_id=family.id,
             xirr_filters=xirr_filters,
+        )
+    except PermissionDenied as exc:
+        return Response(
+            {
+                "success": False,
+                "message": str(exc.detail) if hasattr(exc, "detail") else str(exc),
+            },
+            status=status.HTTP_403_FORBIDDEN,
         )
     except Exception as exc:
         traceback.print_exc()

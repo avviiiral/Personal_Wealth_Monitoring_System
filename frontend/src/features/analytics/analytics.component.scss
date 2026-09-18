@@ -1282,3 +1282,15 @@
   background: #e5e7eb;
   color: #111827;
 }
+
+
+@media (prefers-reduced-motion: no-preference) {
+  .card, .summary-card, .metric-card, .chart-card, .table-card, .analytics-card, .portfolio-card {
+    transition: transform var(--motion-base) var(--ease-standard), box-shadow var(--motion-base) var(--ease-standard);
+  }
+
+  .card:hover, .summary-card:hover, .metric-card:hover, .chart-card:hover, .table-card:hover, .analytics-card:hover, .portfolio-card:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-lift, 0 14px 32px -12px rgba(17, 24, 39, 0.2));
+  }
+}

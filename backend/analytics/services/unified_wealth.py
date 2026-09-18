@@ -48,7 +48,7 @@ class UnifiedWealthAnalytics:
         return Q(family_id=family.id)
 
     # ==========================================================
-    # EQUITY/
+    # EQUITY
     # ==========================================================
 
     @staticmethod

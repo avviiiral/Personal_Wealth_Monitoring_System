@@ -49,7 +49,6 @@ class SecurityMasterService:
             security = (
                 SecurityMaster.objects
                 .filter(
-                    owner=owner,
                     family=family,
                     isin=isin,
                 )

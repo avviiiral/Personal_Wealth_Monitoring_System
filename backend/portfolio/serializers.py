@@ -203,6 +203,7 @@ class TransactionSerializer(
         read_only_fields = (
             "id",
             "owner",
+            "family",
             "created_at",
             "updated_at",
         )

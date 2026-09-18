@@ -35,7 +35,7 @@ class PortfolioTreeService:
     def _get_transactions(cls, owner_ids) -> QuerySet:
         return (
             Transaction.objects
-            .filter(owner_id__in=owner_ids)
+            .filter(family_id=family_id)
             .select_related("owner", "asset", "asset__security_master")
             .order_by(
                 "family_name", "portfolio", "asset_class", "sub_class",
@@ -139,7 +139,7 @@ class PortfolioTreeService:
         xirr = cls._calculate_xirr(xirr_transactions, quantity, current_value)
         security_master = getattr(asset, "security_master", None)
         if security_master is None:
-            security_master = SecurityMasterService.get_for_asset(owner=asset.owner, asset=asset)
+            security_master = SecurityMasterService.get_for_asset(owner=asset.owner, asset=asset, family=asset.family)
         asset_name = cls._clean(first.asset_name, getattr(asset, "name", "Unassigned"))
         return {
             "id": asset.id,

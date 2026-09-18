@@ -67,7 +67,7 @@ class FamilyScopedFinancialDataTests(TestCase):
         self.assertEqual(holdings.data["count"], 1)
         summary = self.client.get("/api/analytics/summary/")
         self.assertEqual(summary.status_code, 200)
-        analytics = self.client.get("/api/analytics/portfolio/")
+        analytics = self.client.get("/api/analytics/allocation/")
         self.assertEqual(analytics.status_code, 200)
 
     def test_user_deletion_preserves_family_data_and_nulls_uploader(self):
@@ -123,7 +123,9 @@ class FamilyScopedFinancialDataTests(TestCase):
         self.user1.profile.save(update_fields=["active_family_group", "updated_at"])
 
         self.client.force_authenticate(self.user1)
-        self.assertEqual(self.client.get("/api/portfolio/assets/").status_code, 403)
+        response = self.client.get("/api/portfolio/assets/")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["count"], 0)
 
         self.client.force_authenticate(self.user2)
         response = self.client.get("/api/portfolio/assets/")

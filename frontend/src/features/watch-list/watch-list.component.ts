@@ -5,6 +5,7 @@ import { Subject } from 'rxjs';
 import { debounceTime, distinctUntilChanged, takeUntil } from 'rxjs/operators';
 
 import { WatchListApiService, WatchListProduct, WatchListResponse } from '../../core/services/watch-list-api.service';
+import { WatchListStateService } from '../../core/services/watch-list-state.service';
 
 type ProductTab = 'MUTUAL_FUND' | 'PMS';
 type StatusTab = 'ALL' | 'OWNED' | 'UNIVERSAL' | 'WATCHLIST';
@@ -19,6 +20,7 @@ type PageItem = number | 'ellipsis';
 })
 export class WatchListComponent implements OnInit, OnDestroy {
   private readonly api = inject(WatchListApiService);
+  private readonly state = inject(WatchListStateService);
   private readonly cachePrefix = 'pwms.watch-list.';
   private autoRefreshAttempted = false;
   private readonly searchInput$ = new Subject<string>();
@@ -120,51 +122,58 @@ export class WatchListComponent implements OnInit, OnDestroy {
   }
 
   moveSelectedToWatchList(): void {
-    const productIds = this.products.filter(product => this.selectedIds.has(product.id) && !product.is_watchlisted).map(product => product.id);
+    const selectedProducts = this.products.filter(product => this.selectedIds.has(product.id) && !product.is_watchlisted);
+    const productIds = selectedProducts.map(product => product.id);
     if (!productIds.length || this.movingToWatchList || this.removingFromWatchList) return;
     this.movingToWatchList = true;
     this.error = '';
+    selectedProducts.forEach(product => { product.is_watchlisted = true; });
+    this.state.stageAdded(selectedProducts);
+    productIds.forEach(id => this.selectedIds.delete(id));
     this.api.bulkAddToWatchList(productIds).subscribe({
       next: () => {
-        productIds.forEach(id => {
-          const product = this.products.find(item => item.id === id);
-          if (product) product.is_watchlisted = true;
-          this.selectedIds.delete(id);
-        });
+        this.state.confirmAdded(productIds, this.productTab);
         this.movingToWatchList = false;
-        if (this.status === 'WATCHLIST') this.load();
+        this.cacheCurrentPage();
       },
       error: error => {
         console.error('Failed to move selected products to Watch List:', error);
+        selectedProducts.forEach(product => { product.is_watchlisted = false; });
+        this.state.rollbackAdded(selectedProducts);
         this.movingToWatchList = false;
         this.error = 'Unable to move the selected products to Watch List.';
       },
     });
   }
-
   removeSelectedFromWatchList(): void {
-    const productIds = this.products.filter(product => this.selectedIds.has(product.id) && product.is_watchlisted).map(product => product.id);
+    const selectedProducts = this.products.filter(product => this.selectedIds.has(product.id) && product.is_watchlisted);
+    const productIds = selectedProducts.map(product => product.id);
     if (!productIds.length || this.movingToWatchList || this.removingFromWatchList) return;
     this.removingFromWatchList = true;
     this.error = '';
+    selectedProducts.forEach(product => { product.is_watchlisted = false; });
+    this.state.stageRemoved(selectedProducts);
+    productIds.forEach(id => this.selectedIds.delete(id));
+    if (this.status === 'WATCHLIST') {
+      this.products = this.products.filter(product => !productIds.includes(product.id));
+      this.count = Math.max(0, this.count - productIds.length);
+    }
     this.api.bulkRemoveFromWatchList(productIds).subscribe({
       next: () => {
-        productIds.forEach(id => {
-          const product = this.products.find(item => item.id === id);
-          if (product) product.is_watchlisted = false;
-          this.selectedIds.delete(id);
-        });
+        this.state.confirmRemoved(productIds, this.productTab);
         this.removingFromWatchList = false;
-        if (this.status === 'WATCHLIST') this.load();
+        this.cacheCurrentPage();
       },
       error: error => {
         console.error('Failed to remove selected products from Watch List:', error);
+        selectedProducts.forEach(product => { product.is_watchlisted = true; });
+        this.state.rollbackRemoved(selectedProducts);
         this.removingFromWatchList = false;
         this.error = 'Unable to remove the selected products from Watch List.';
+        if (this.status === 'WATCHLIST') this.load();
       },
     });
   }
-
   loadFilters(): void {
     this.api.getFilters(this.productTab).subscribe({
       next: response => {
@@ -241,9 +250,18 @@ export class WatchListComponent implements OnInit, OnDestroy {
           this.refreshUniverse(true);
           return;
         }
-        this.products = response.results;
-        this.count = response.count;
-        this.cachePage(response);
+        const serverResults = this.state.filterVisible(response.results);
+        if (requestedStatus === 'WATCHLIST' && requestedPage === 1) {
+          const optimistic = this.state.getAdded(requestedProductTab);
+          const serverIds = new Set(serverResults.map(product => product.id));
+          const optimisticResults = optimistic.filter(product => !serverIds.has(product.id));
+          this.products = [...optimisticResults, ...serverResults].slice(0, this.pageSize);
+          this.count = response.count + optimisticResults.length;
+        } else {
+          this.products = serverResults;
+          this.count = Math.max(0, response.count - (response.results.length - serverResults.length));
+        }
+        this.cachePage({ ...response, results: this.products, count: this.count });
         const visibleIds = new Set(this.products.map(product => product.id));
         this.selectedIds.forEach(id => { if (!visibleIds.has(id)) this.selectedIds.delete(id); });
         if (this.page > this.totalPages) { this.page = this.totalPages; this.load(); return; }
@@ -296,9 +314,13 @@ export class WatchListComponent implements OnInit, OnDestroy {
     this.togglingIds.add(product.id);
     const previous = product.is_watchlisted;
     product.is_watchlisted = !previous;
+    if (product.is_watchlisted) this.state.stageAdded([product]);
+    else this.state.stageRemoved([product]);
     this.api.toggleWatch(product.id).subscribe({
       next: response => {
         product.is_watchlisted = response.is_watchlisted;
+        if (response.is_watchlisted) this.state.confirmAdded([product.id], product.product_type);
+        else this.state.confirmRemoved([product.id], product.product_type);
         this.togglingIds.delete(product.id);
         this.selectedIds.delete(product.id);
         if (this.status === 'WATCHLIST' && !response.is_watchlisted) {
@@ -309,6 +331,8 @@ export class WatchListComponent implements OnInit, OnDestroy {
       error: error => {
         console.error('Failed to update Watch List entry:', error);
         product.is_watchlisted = previous;
+        if (previous) this.state.rollbackRemoved([product]);
+        else this.state.rollbackAdded([product]);
         this.togglingIds.delete(product.id);
       },
     });

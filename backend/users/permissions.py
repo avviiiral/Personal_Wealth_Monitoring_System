@@ -345,7 +345,7 @@ def require_active_family(user):
     return family
 
 
-def family_scope(queryset, user, owner_field="owner_id", family_field="family_id", include_legacy=True):
+def family_scope(queryset, user, owner_field="owner_id", family_field="family_id", include_legacy=False):
     """Scope a financial queryset to the user's active family.
 
     Family is authoritative for records created under the new model. Legacy

@@ -1,5 +1,7 @@
 from decimal import Decimal
 
+from datetime import date
+
 from django.contrib.auth.models import User
 from django.test import TestCase
 from rest_framework.test import APIClient

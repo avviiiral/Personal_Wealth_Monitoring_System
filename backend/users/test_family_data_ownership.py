@@ -116,6 +116,7 @@ class FamilyScopedFinancialDataTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data["results"][0]["id"], asset.id)
         self.assertNotEqual(user1_id, self.user2.id)
+        self.assertEqual(self.family1.assets.filter(pk=asset.id).count(), 1)
 
     def test_removed_member_loses_access_but_data_remains(self):
         asset = self._asset(self.user1, self.family1)

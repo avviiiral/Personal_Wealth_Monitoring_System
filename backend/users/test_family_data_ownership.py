@@ -169,7 +169,7 @@ class FamilyScopedFinancialDataTests(TestCase):
             "category": AssetCategory.STOCK,
         }, format="json")
         self.assertEqual(response.status_code, 201)
-        self.assertEqual(response.data["family"], self.family2.id)
+        self.assertEqual(response.data.get("family"), self.family2.id)
 
         self.client.force_authenticate(self.user2)
         response = self.client.get(f"/api/portfolio/assets/{response.data['id']}/")

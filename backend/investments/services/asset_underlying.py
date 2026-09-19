@@ -40,8 +40,8 @@ class AssetUnderlyingImporter:
     def _normalize_name(value):
         value = str(value or "").strip().upper()
         value = re.sub(r"[.&,'’`]", " ", value)
-        value = re.sub(r"\\b(LIMITED|LTD|LTD\\.|PRIVATE|PVT|PLC)\\b", " ", value)
-        value = re.sub(r"\\s+", " ", value)
+        value = re.sub(r"\b(LIMITED|LTD|LTD\.|PRIVATE|PVT|PLC)\b", " ", value)
+        value = re.sub(r"\s+", " ", value)
         return value.strip()
 
     @classmethod

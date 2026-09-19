@@ -322,44 +322,58 @@ export class DownloadsComponent implements OnInit {
 
   private async downloadXirr(level: 'asset-class' | 'sub-class' | 'asset-name'): Promise<void> {
     const filtered = this.filteredHoldingRows();
-    const map = new Map<string, HoldingReportRow[]>();
+    const rows: Record<string, unknown>[] = [];
+
     for (const row of filtered) {
-      const key = level === 'asset-class' ? this.clean(row.asset_class)
-        : level === 'sub-class' ? this.clean(row.sub_class)
-        : this.clean(row.asset_name);
-      if (!map.has(key)) map.set(key, []);
-      map.get(key)!.push(row);
+      const underlyingEntries = Object.entries(row.underlying_xirr ?? {});
+
+      if (underlyingEntries.length) {
+        for (const [underlying, data] of underlyingEntries) {
+          rows.push({
+            name: level === 'asset-name' ? this.clean(row.asset_name) : level === 'asset-class' ? this.clean(row.asset_class) : this.clean(row.sub_class),
+            family_name: this.clean(row.family_name),
+            asset_class: this.clean(row.asset_class),
+            sub_class: this.clean(row.sub_class),
+            asset_name: this.clean(row.asset_name),
+            underlying,
+            invested_value: Number(row.invested_value || 0) * Number(data.holding_percentage || 0) / 100,
+            current_value: Number(row.current_value || 0) * Number(data.holding_percentage || 0) / 100,
+            gain: Number(row.gain || 0) * Number(data.holding_percentage || 0) / 100,
+            xirr: data.xirr,
+          });
+        }
+        continue;
+      }
+
+      rows.push({
+        name: level === 'asset-class' ? this.clean(row.asset_class)
+          : level === 'sub-class' ? this.clean(row.sub_class)
+          : this.clean(row.asset_name),
+        family_name: this.clean(row.family_name),
+        asset_class: this.clean(row.asset_class),
+        sub_class: this.clean(row.sub_class),
+        asset_name: this.clean(row.asset_name),
+        underlying: this.clean(row.underlying, ''),
+        invested_value: Number(row.invested_value || 0),
+        current_value: Number(row.current_value || 0),
+        gain: Number(row.gain || 0),
+        xirr: level === 'asset-class' ? row.asset_class_xirr
+          : level === 'sub-class' ? row.sub_class_xirr
+          : row.asset_name_xirr,
+      });
     }
 
-    const rows = Array.from(map.entries()).map(([name, group]) => ({
-      name,
-      family_name: this.first(group.map(row => this.clean(row.family_name))),
-      asset_class: this.first(group.map(row => this.clean(row.asset_class))),
-      sub_class: this.first(group.map(row => this.clean(row.sub_class))),
-      invested_value: group.reduce((sum, row) => sum + Number(row.invested_value || 0), 0),
-      current_value: group.reduce((sum, row) => sum + Number(row.current_value || 0), 0),
-      gain: group.reduce((sum, row) => sum + Number(row.gain || 0), 0),
-      xirr: level === 'asset-class' ? this.firstNumber(group.map(row => row.asset_class_xirr))
-        : level === 'sub-class' ? this.firstNumber(group.map(row => row.sub_class_xirr))
-        : this.firstNumber(group.map(row => row.asset_name_xirr)),
-    }));
-
-    if (level === 'asset-class' && this.selectedAssetClass) {
-      return this.writeXirr(rows, 'Asset Class XIRR');
-    }
-    if (level === 'sub-class' && this.selectedSubClass) {
-      return this.writeXirr(rows, 'Sub Class XIRR');
-    }
-    if (level === 'asset-name' && this.selectedAssetName) {
-      return this.writeXirr(rows, 'Asset Name XIRR');
-    }
-    await this.writeXirr(rows, level === 'asset-class' ? 'Asset Class XIRR' : level === 'sub-class' ? 'Sub Class XIRR' : 'Asset Name XIRR');
+    const title = level === 'asset-class' ? 'Asset Class XIRR'
+      : level === 'sub-class' ? 'Sub Class XIRR'
+      : 'Asset Name XIRR';
+    await this.writeXirr(rows, title);
   }
 
   private async writeXirr(rows: Record<string, unknown>[], title: string): Promise<void> {
     await this.exportWorkbook('XIRR', title, [
       ['Family', 'family_name'], ['Asset Class', 'asset_class'], ['Sub Class', 'sub_class'], ['Asset Name / Group', 'name'],
-      ['Invested Value', 'invested_value'], ['Current Value', 'current_value'], ['Gain', 'gain'], ['XIRR (%)', 'xirr'],
+      ['Asset Name', 'asset_name'], ['Underlying', 'underlying'], ['Invested Value', 'invested_value'],
+      ['Current Value', 'current_value'], ['Gain', 'gain'], ['XIRR (%)', 'xirr'],
     ], rows, title.toLowerCase().replace(/[^a-z0-9]+/g, '_'));
   }
 

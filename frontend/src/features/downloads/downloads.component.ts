@@ -598,22 +598,68 @@ export class DownloadsComponent implements OnInit {
       return;
     }
 
-    const rows: Record<string, unknown>[] = [];
+    const groups = new Map<string, {
+      family_name: string;
+      asset_class: string;
+      sub_class: string;
+      asset_name: string;
+      invested_value: number;
+      current_value: number;
+      gain: number;
+      xirr_inputs: { invested_value: number; xirr: number | null }[];
+    }>();
 
     for (const row of filtered) {
-      rows.push({
-        name: this.clean(row.asset_name),
-        family_name: this.clean(row.family_name),
-        asset_class: this.clean(row.asset_class),
-        sub_class: this.clean(row.sub_class),
-        asset_name: this.clean(row.asset_name),
-        underlying: row.underlying || '',
-        invested_value: Number(row.invested_value || 0),
-        current_value: Number(row.current_value || 0),
-        gain: Number(row.gain || 0),
+      const family = this.clean(row.family_name);
+      const assetClass = this.clean(row.asset_class);
+      const subClass = this.clean(row.sub_class);
+      const assetName = this.clean(row.asset_name);
+      const key = family + '::' + assetClass + '::' + subClass + '::' + assetName;
+      let group = groups.get(key);
+
+      if (!group) {
+        group = {
+          family_name: family,
+          asset_class: assetClass,
+          sub_class: subClass,
+          asset_name: assetName,
+          invested_value: 0,
+          current_value: 0,
+          gain: 0,
+          xirr_inputs: [],
+        };
+        groups.set(key, group);
+      }
+
+      const investedValue = Number(row.invested_value || 0);
+      group.invested_value += investedValue;
+      group.current_value += Number(row.current_value || 0);
+      group.gain += Number(row.gain || 0);
+      group.xirr_inputs.push({
+        invested_value: investedValue,
         xirr: row.asset_name_xirr,
       });
     }
+
+    const rows = Array.from(groups.values())
+      .sort((a, b) =>
+        a.family_name.localeCompare(b.family_name) ||
+        a.asset_class.localeCompare(b.asset_class) ||
+        a.sub_class.localeCompare(b.sub_class) ||
+        a.asset_name.localeCompare(b.asset_name),
+      )
+      .map(group => ({
+        name: group.asset_name,
+        family_name: group.family_name,
+        asset_class: group.asset_class,
+        sub_class: group.sub_class,
+        asset_name: group.asset_name,
+        underlying: '',
+        invested_value: group.invested_value,
+        current_value: group.current_value,
+        gain: group.gain,
+        xirr: this.weightedXirr(group.xirr_inputs),
+      }));
 
     await this.writeXirr(rows, 'Asset Name XIRR');
   }

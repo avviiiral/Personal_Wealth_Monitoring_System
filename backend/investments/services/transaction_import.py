@@ -17,6 +17,9 @@ from investments.models import (
 from investments.services.security_master import (
     SecurityMasterService,
 )
+from portfolio.services.portfolio_position_engine import (
+    PortfolioPositionEngine,
+)
 
 from mutual_funds.models import (
     MutualFundScheme,
@@ -1263,6 +1266,12 @@ class TransactionImporter:
 
             seen_source_keys.add(source_key)
             imported_investments += 1
+
+        # Keep Holding Reports in sync with imported investment
+        # transactions. Mutual-fund transactions are handled by
+        # their dedicated holdings pipeline and are intentionally
+        # excluded from PortfolioPosition.
+        PortfolioPositionEngine.rebuild_all_for_user(owner)
 
         return {
             "imported_investments": imported_investments,

@@ -43,11 +43,36 @@ export class HoldingReportsComponent implements OnInit {
   loadHoldings(): void {
     this.loading = true; this.error = ''; this.changeDetectorRef.detectChanges();
     this.portfolioApi.getHoldingReport().subscribe({
-      next: response => { this.holdingRows = response.results ?? []; this.validateSelections(); this.loading = false; this.changeDetectorRef.detectChanges(); },
+      next: response => {
+        this.holdingRows = (response.results ?? []).map(row => this.normalizeHoldingReportRow(row));
+        this.validateSelections();
+        this.loading = false;
+        this.changeDetectorRef.detectChanges();
+      },
       error: error => { console.error('Holding report API error:', error); this.loading = false; this.error = error?.status === 401 || error?.status === 403 ? 'Authentication failed. Please log in again.' : 'Unable to load holding report data.'; this.changeDetectorRef.detectChanges(); },
     });
   }
   refresh(): void { this.loadHoldings(); }
+  private normalizeHoldingReportRow(row: HoldingReportRow): HoldingReportRow {
+    const numeric = (value: number | null | undefined): number | null =>
+      value === null || value === undefined || Number.isNaN(Number(value)) ? null : Number(value);
+
+    return {
+      ...row,
+      asset_class_xirr: numeric(row.asset_class_xirr),
+      sub_class_xirr: numeric(row.sub_class_xirr),
+      asset_name_xirr: numeric(row.asset_name_xirr),
+      xirr: numeric(row.xirr),
+      quantity: Number(row.quantity ?? 0),
+      average_cost: Number(row.average_cost ?? 0),
+      invested_value: Number(row.invested_value ?? 0),
+      current_price: Number(row.current_price ?? 0),
+      current_value: Number(row.current_value ?? 0),
+      gain: Number(row.gain ?? 0),
+      gain_percentage: Number(row.gain_percentage ?? 0),
+    };
+  }
+
   private clean(value: string | null | undefined, fallback = UNASSIGNED): string { const trimmed = value?.trim(); return trimmed || fallback; }
   get familyOptions(): string[] { return Array.from(new Set(this.holdingRows.map(row => this.clean(row.family_name)))).sort((a,b) => a.localeCompare(b)); }
   get assetClassOptions(): string[] { return Array.from(new Set(this.filteredRows.map(row => this.clean(row.asset_class)))).sort((a,b) => a.localeCompare(b)); }
@@ -101,7 +126,7 @@ export class HoldingReportsComponent implements OnInit {
 
   private toHoldingGroup(row: HoldingReportRow): HoldingGroup {
     return {
-      key: row.owner_id + '::' + row.family_name + '::' + row.portfolio + '::' + row.asset_class + '::' + row.sub_class + '::' + row.asset_id,
+      key: row.family_name + '::' + row.portfolio + '::' + row.asset_class + '::' + row.sub_class + '::' + row.asset_id,
       asset_name: this.clean(row.asset_name),
       row,
     };

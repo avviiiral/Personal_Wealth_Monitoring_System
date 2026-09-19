@@ -17,7 +17,7 @@ export interface AssetClassNode { asset_class: string; sub_classes: SubClassNode
 export interface PortfolioNode { portfolio: string; asset_classes: AssetClassNode[]; asset_class_count: number; }
 export interface FamilyNode { family_name: string; portfolios: PortfolioNode[]; portfolio_count: number; }
 export interface PortfolioTreeResponse { success: boolean; count: number; families: FamilyNode[]; }
-export interface HoldingReportRow { id: number; owner_id: number; family_name: string; portfolio: string; asset_class: string; asset_class_xirr: number | null; sub_class: string; asset_id: number; asset_name: string; underlying: string; isin: string | null; advisors: string; quantity: number; average_cost: number; invested_value: number; current_price: number; current_value: number; gain: number; gain_percentage: number; xirr: number | null; sub_class_xirr: number | null; asset_name_xirr: number | null; sector: string | null; cap_type: string | null; amc_name: string | null; }
+export interface HoldingReportRow { id: number; family_name: string; portfolio: string; asset_class: string; asset_class_xirr: number | null; sub_class: string; asset_id: number; asset_name: string; underlying: string; isin: string | null; advisors: string; quantity: number; average_cost: number; invested_value: number; current_price: number; current_value: number; gain: number; gain_percentage: number; xirr: number | null; sub_class_xirr: number | null; asset_name_xirr: number | null; sector: string | null; cap_type: string | null; amc_name: string | null; }
 export interface HoldingReportResponse { success: boolean; count: number; results: HoldingReportRow[]; }
 
 @Injectable({ providedIn: 'root' })
@@ -56,7 +56,7 @@ export class PortfolioApiService {
       },
     });
   }
-  getHoldingReport(): Observable<HoldingReportResponse> { return this.http.get<HoldingReportResponse>(`${this.baseUrl}/holding-report/`, this.requestOptions); }
+  getHoldingReport(): Observable<HoldingReportResponse> { return this.http.get<HoldingReportResponse>(`${this.baseUrl}/holding-report/`, { ...this.requestOptions, params: { _t: Date.now().toString() } }); }
   createAsset(payload: CreateAssetRequest): Observable<PortfolioAsset> {
     return this.getCsrfToken().pipe(switchMap(() => this.http.post<PortfolioAsset>(`${this.baseUrl}/assets/`, payload, { headers: this.getCsrfHeaders(), withCredentials: true })));
   }

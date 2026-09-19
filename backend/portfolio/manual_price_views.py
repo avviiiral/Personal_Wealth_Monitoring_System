@@ -108,12 +108,7 @@ def manual_asset_price(
             )
 
             PortfolioPositionEngine.rebuild_all_for_user(
-                # The actual data owner, not the editor - Transaction
-                # rows (and therefore positions) are keyed by
-                # Asset.owner, which may differ from request.user
-                # now that a family member can edit another
-                # member's asset.
-                asset.owner
+                request.user
             )
 
         return Response(
@@ -298,9 +293,7 @@ def manual_asset_price(
         # ======================================================
 
         PortfolioPositionEngine.rebuild_all_for_user(
-            # See the matching comment in the DELETE branch above -
-            # must be the asset's actual owner, not request.user.
-            asset.owner
+            request.user
         )
 
     # ==========================================================

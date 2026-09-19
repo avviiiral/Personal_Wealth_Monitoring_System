@@ -57,7 +57,6 @@ def holding_report(request):
         )
         .only(
             "id",
-            "owner_id",
             "asset_id",
             "family_name",
             "portfolio",
@@ -81,8 +80,8 @@ def holding_report(request):
         sub_class = str(tx.sub_class or "").strip() or "Unassigned"
         asset_name = str(tx.asset_name or "").strip()
 
-        base_key = (tx.owner_id, family, portfolio, asset_class, sub_class)
-        xirr_transactions.setdefault(("asset_class", tx.owner_id, family, portfolio, asset_class), []).append(tx)
+        base_key = (family, portfolio, asset_class, sub_class)
+        xirr_transactions.setdefault(("asset_class", family, portfolio, asset_class), []).append(tx)
         xirr_transactions.setdefault(("sub_class", *base_key), []).append(tx)
 
         asset_key = ("asset_name", *base_key, asset_name)
@@ -124,8 +123,8 @@ def holding_report(request):
         asset_name = clean(position.latest_asset_name, position.asset.name)
         current_value = float(position.current_value or 0)
 
-        asset_class_key = ("asset_class", position.owner_id, family, portfolio, asset_class)
-        base_key = (position.owner_id, family, portfolio, asset_class, sub_class)
+        asset_class_key = ("asset_class", family, portfolio, asset_class)
+        base_key = (family, portfolio, asset_class, sub_class)
         subclass_key = ("sub_class", *base_key)
         asset_key = ("asset_name", *base_key, asset_name)
         asset_class_current_values[asset_class_key] = asset_class_current_values.get(asset_class_key, 0.0) + current_value
@@ -149,12 +148,11 @@ def holding_report(request):
     for tx in transactions:
         family = clean(tx.family_name)
         portfolio = clean(tx.portfolio)
-        position_key = (tx.owner_id, family, portfolio, tx.asset_id)
+        position_key = (family, portfolio, tx.asset_id)
         xirr_transactions_by_position.setdefault(position_key, []).append(tx)
 
     def calculate_position_xirr(position):
         key = (
-            position.owner_id,
             clean(position.family_name),
             clean(position.portfolio),
             position.asset_id,
@@ -178,14 +176,13 @@ def holding_report(request):
         asset_class = clean(position.latest_asset_class)
         sub_class = clean(position.latest_sub_class)
         asset_name = clean(position.latest_asset_name, asset.name)
-        asset_class_key = ("asset_class", position.owner_id, family, portfolio, asset_class)
-        base_key = (position.owner_id, family, portfolio, asset_class, sub_class)
+        asset_class_key = ("asset_class", family, portfolio, asset_class)
+        base_key = (family, portfolio, asset_class, sub_class)
         subclass_key = ("sub_class", *base_key)
         asset_key = ("asset_name", *base_key, asset_name)
 
         results.append({
             "id": position.id,
-            "owner_id": position.owner_id,
             "family_name": family,
             "portfolio": portfolio,
             "asset_class": asset_class,

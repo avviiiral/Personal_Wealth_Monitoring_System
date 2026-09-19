@@ -9,6 +9,7 @@ from investments.models import (
     TransactionType,
 )
 from market_data.models import MarketPrice
+from users.permissions import require_active_family
 
 
 class PortfolioPositionEngine:
@@ -17,7 +18,7 @@ class PortfolioPositionEngine:
 
     @staticmethod
     def get_transactions(
-        owner,
+        family,
         family_name,
         portfolio,
         asset,
@@ -25,7 +26,7 @@ class PortfolioPositionEngine:
         return (
             Transaction.objects
             .filter(
-                owner=owner,
+                family=family,
                 family_name=family_name,
                 portfolio=portfolio,
                 asset=asset,
@@ -40,7 +41,7 @@ class PortfolioPositionEngine:
     @classmethod
     def calculate_position(
         cls,
-        owner,
+        family,
         family_name,
         portfolio,
         asset,
@@ -49,21 +50,15 @@ class PortfolioPositionEngine:
         invested_value = cls.ZERO
 
         transactions = cls.get_transactions(
-            owner=owner,
+            family=family,
             family_name=family_name,
             portfolio=portfolio,
             asset=asset,
         )
 
         for tx in transactions:
-
-            tx_quantity = (
-                tx.quantity or cls.ZERO
-            )
-
-            tx_amount = (
-                tx.amount or cls.ZERO
-            )
+            tx_quantity = tx.quantity or cls.ZERO
+            tx_amount = tx.amount or cls.ZERO
 
             if tx.transaction_type in (
                 TransactionType.BUY,
@@ -71,12 +66,10 @@ class PortfolioPositionEngine:
             ):
                 if tx_quantity > 0:
                     quantity += tx_quantity
-
                 if tx_amount > 0:
                     invested_value += tx_amount
 
             elif tx.transaction_type == TransactionType.SELL:
-
                 if tx_quantity <= 0 or quantity <= 0:
                     continue
 
@@ -85,29 +78,19 @@ class PortfolioPositionEngine:
                     if quantity > 0
                     else cls.ZERO
                 )
-
-                sell_quantity = min(
-                    tx_quantity,
-                    quantity,
-                )
-
+                sell_quantity = min(tx_quantity, quantity)
                 quantity -= sell_quantity
-
-                invested_value -= (
-                    average_cost * sell_quantity
-                )
+                invested_value -= average_cost * sell_quantity
 
                 if quantity <= 0:
                     quantity = cls.ZERO
                     invested_value = cls.ZERO
 
             elif tx.transaction_type == TransactionType.BONUS:
-
                 if tx_quantity > 0:
                     quantity += tx_quantity
 
             elif tx.transaction_type == TransactionType.SPLIT:
-
                 if tx_quantity > 0:
                     quantity += tx_quantity
 
@@ -136,13 +119,20 @@ class PortfolioPositionEngine:
     @transaction.atomic
     def rebuild_position(
         cls,
-        owner,
         family_name,
         portfolio,
         asset,
+        family=None,
     ):
+        family = family or asset.family
+
+        if family is None:
+            raise ValueError(
+                "Portfolio positions require a family."
+            )
+
         position = cls.calculate_position(
-            owner=owner,
+            family=family,
             family_name=family_name,
             portfolio=portfolio,
             asset=asset,
@@ -153,29 +143,23 @@ class PortfolioPositionEngine:
         average_cost = position["average_cost"]
 
         latest_price = cls.get_latest_price(asset)
-
         current_price = (
             latest_price.close_price
             if latest_price
             else cls.ZERO
         )
-
-        current_value = (
-            quantity * current_price
-        )
-
-        gain = (
-            current_value - invested_value
-        )
+        current_value = quantity * current_price
+        gain = current_value - invested_value
 
         portfolio_position, _ = (
             PortfolioPosition.objects
             .update_or_create(
-                owner=owner,
+                family=family,
                 family_name=family_name,
                 portfolio=portfolio,
                 asset=asset,
                 defaults={
+                    "owner": None,
                     "quantity": quantity,
                     "average_cost": average_cost,
                     "invested_value": invested_value,
@@ -189,10 +173,12 @@ class PortfolioPositionEngine:
         return portfolio_position
 
     @classmethod
-    def rebuild_all_for_user(cls, owner):
+    def rebuild_all_for_user(cls, user):
+        family = require_active_family(user)
+
         combinations = (
             Transaction.objects
-            .filter(owner=owner)
+            .filter(family=family)
             .values(
                 "family_name",
                 "portfolio",
@@ -204,22 +190,14 @@ class PortfolioPositionEngine:
         positions = []
 
         for combination in combinations:
-
-            asset = Asset.objects.get(
-                id=combination["asset_id"]
-            )
+            asset = Asset.objects.get(id=combination["asset_id"])
 
             position = cls.rebuild_position(
-                owner=owner,
-                family_name=combination[
-                    "family_name"
-                ],
-                portfolio=combination[
-                    "portfolio"
-                ],
+                family=family,
+                family_name=combination["family_name"],
+                portfolio=combination["portfolio"],
                 asset=asset,
             )
-
             positions.append(position)
 
         return positions

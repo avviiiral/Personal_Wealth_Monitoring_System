@@ -1,589 +1,1120 @@
-# PWMS Setup Guide — Step by Step
+<div align="center">
 
-This guide takes you from a brand-new computer with nothing installed to a
-running PWMS instance (backend + frontend) that you can log into, on the
-`Updates-2.0` branch.
+# 🚀 PWMS Setup Guide
 
-You do not need prior Django or Angular experience — just follow the steps
-in order. Commands are shown for **Windows (PowerShell)** since that's how
-this project is normally run, with a macOS/Linux equivalent given wherever
-it differs meaningfully.
+### From a brand-new machine to a running Personal Wealth Monitoring System
+
+⏱️ **About 20 minutes** &nbsp;·&nbsp; 🧑‍💻 **No Django or Angular experience needed** &nbsp;·&nbsp; 🪟🍎🐧 **Windows · macOS · Linux**
+
+[← Back to the README](./README.md)
+
+</div>
 
 ---
 
-## 1. What you're installing
+This guide takes you from nothing installed to a working PWMS instance (backend + frontend) that you can log into, then covers importing data, everyday use, optional PostgreSQL, running it in a production-style setup, backups, and troubleshooting.
 
-```text
-Backend  = Django (Python) — stores data, exposes the API, runs on :8000
-Frontend = Angular (Node.js) — the website you use, runs on :4200
+Commands are shown for **Windows (PowerShell)** first, with the **macOS / Linux** equivalent wherever it differs.
+
+## 📑 Contents
+
+|                                                                           |                                                                      |
+| ------------------------------------------------------------------------- | -------------------------------------------------------------------- |
+| [1 · What you're installing](#1--what-youre-installing)                   | [10 · Optional: PostgreSQL](#10--optional-postgresql)                |
+| [2 · Prerequisites](#2--prerequisites)                                    | [11 · Production-style deployment](#11--production-style-deployment) |
+| [3 · Get the code](#3--get-the-code)                                      | [12 · Updating PWMS](#12--updating-pwms)                             |
+| [4 · Backend setup](#4--backend-setup)                                    | [13 · Backups and restore](#13--backups-and-restore)                 |
+| [5 · Frontend setup](#5--frontend-setup)                                  | [14 · Running the tests](#14--running-the-tests)                     |
+| [6 · First login, users and families](#6--first-login-users-and-families) | [15 · Troubleshooting](#15--troubleshooting)                         |
+| [7 · Getting your data in](#7--getting-your-data-in)                      | [16 · Cheat sheet](#16--cheat-sheet)                                 |
+| [8 · Background jobs](#8--background-jobs)                                | [17 · Reset or uninstall](#17--reset-or-uninstall)                   |
+| [9 · Everyday startup](#9--everyday-startup)                              |                                                                      |
+
+---
+
+## 1 · What you're installing
+
+PWMS is two programs that run side by side:
+
+```
+Backend  = Django (Python)   stores data, exposes the API, runs on  :8000
+Frontend = Angular (Node.js) the website you use,            runs on  :4200
 ```
 
-Both must be running at the same time for the app to work: the frontend
-in your browser talks to the backend over HTTP.
+Both must be running at the same time — the website in your browser talks to the backend over HTTP.
+
+```mermaid
+flowchart LR
+    U["Your browser"] -->|"loads the app"| F["Frontend - Angular<br/>npm start - port 4200"]
+    U -->|"API calls with session cookie"| B["Backend - Django<br/>runserver - port 8000"]
+    B --> D[("SQLite file<br/>backend/db.sqlite3")]
+    B -.->|"optional"| G["Gemini API"]
+```
+
+**The whole journey at a glance**
+
+```mermaid
+flowchart LR
+    A["Install<br/>prerequisites"] --> B["Clone<br/>the repo"]
+    B --> C["Backend<br/>venv · deps · .env · migrate"]
+    C --> D["Create<br/>first user"]
+    D --> E["Start backend<br/>port 8000"]
+    E --> F["Frontend<br/>npm install · npm start"]
+    F --> G["Log in<br/>and import data"]
+```
 
 ---
 
-## 2. Prerequisites
+## 2 · Prerequisites
 
-Install these first:
+| Tool                            | Version                                              | Used for                        | Verify with                                      |
+| ------------------------------- | ---------------------------------------------------- | ------------------------------- | ------------------------------------------------ |
+| **Git**                         | any recent                                           | Cloning the repository          | `git --version`                                  |
+| **Python**                      | **3.12** recommended (3.11+ works)                   | Backend                         | `python --version`                               |
+| **Node.js**                     | **22 LTS** recommended (20 LTS or newer should work) | Angular dev server and build    | `node --version`                                 |
+| **npm**                         | ships with Node.js                                   | Frontend packages               | `npm --version`                                  |
+| **Browser**                     | Chrome or Edge recommended                           | The app + browser notifications | —                                                |
+| **Gemini API key** _(optional)_ | —                                                    | AI Chat and Portfolio News      | [Google AI Studio](https://aistudio.google.com/) |
+| **PostgreSQL** _(optional)_     | recent                                               | Alternative to SQLite           | `psql --version`                                 |
 
-1. **Git** — https://git-scm.com/downloads
-2. **Python 3.12** (or a recent 3.11+) — https://www.python.org/downloads/
-   - On Windows, tick **"Add python.exe to PATH"** during install.
-3. **Node.js** — a current LTS release (Node 20 or newer; this project was
-   built and tested against Node 22). https://nodejs.org/
-4. A modern browser (Chrome or Edge recommended, for browser-notification
-   support later).
+### Install the tools
 
-### Verify everything is installed
+**Windows** — with `winget` (or download the installers from the official sites):
 
 ```powershell
+winget install Git.Git
+winget install Python.Python.3.12
+winget install OpenJS.NodeJS.LTS
+```
+
+> On the Python installer, tick **"Add python.exe to PATH"**. Close and reopen PowerShell after installing.
+
+**macOS** — with [Homebrew](https://brew.sh):
+
+```bash
+brew install git python@3.12 node
+```
+
+**Linux (Debian / Ubuntu)**
+
+```bash
+sudo apt update
+sudo apt install -y git python3 python3-venv python3-pip build-essential
+# Node.js: use nvm or NodeSource so you get a current LTS (apt's default is often too old)
+```
+
+### Verify everything
+
+```bash
 git --version
-python --version
+python --version      # macOS / Linux: python3 --version
 node --version
 npm --version
 ```
 
-Each command should print a version number. If any says "not recognized",
-that program isn't installed correctly yet — install it and reopen your
-terminal before continuing.
+Each command should print a version number. If one says _"not recognized"_ or _"command not found"_, that tool isn't installed correctly yet — fix it and **reopen your terminal** before continuing.
 
 ---
 
-## 3. Clone the repository
+## 3 · Get the code
 
-Pick a folder for the project, e.g.:
+Pick a folder for the project and clone it:
 
-```powershell
-cd D:\
-git clone https://github.com/avviiiral/Personal_Wealth_Monitoring.git
-cd Personal_Wealth_Monitoring
+```bash
+cd D:\                     # or any folder you like (macOS / Linux: cd ~/projects)
+git clone https://github.com/avviiiral/Personal_Wealth_Monitoring_System.git
+cd Personal_Wealth_Monitoring_System
 ```
 
-Make sure you're on the `Updates-2.0` branch (this guide assumes it):
+The repository root contains `backend/`, `frontend/`, `docs/`, this guide and the README. Make sure you're on the branch you intend to run:
 
-```powershell
-git checkout Updates-2.0
+```bash
+git branch --show-current      # expected: main
 git pull
-git branch --show-current
 ```
 
 ---
 
-## 4. Backend setup
+## 4 · Backend setup
 
-All commands in this section run from the `backend` folder.
+Everything in this section runs from the **`backend`** folder.
 
-```powershell
+```bash
 cd backend
 ```
 
 ### 4.1 Create and activate a virtual environment
+
+**Windows (PowerShell)**
 
 ```powershell
 python -m venv venv
 .\venv\Scripts\Activate.ps1
 ```
 
-macOS/Linux equivalent:
+**macOS / Linux**
 
 ```bash
 python3 -m venv venv
 source venv/bin/activate
 ```
 
-Your terminal prompt should now start with `(venv)`. Every command below in
-this section assumes the virtual environment is active — if you close and
-reopen your terminal, re-run the `Activate.ps1` line first.
+Your prompt should now start with `(venv)`. Every command in this section assumes the environment is active — if you close and reopen the terminal, run the activate line again first.
 
-> **PowerShell blocks the activation script?** Run this once, then retry:
+> [!TIP]
+> **PowerShell refuses to run the activation script?** Run this once, then retry:
 >
 > ```powershell
 > Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
 > ```
 
-### 4.2 Install Python dependencies
+### 4.2 Install the Python dependencies
 
-```powershell
+```bash
 python -m pip install --upgrade pip
 python -m pip install -r requirements.txt
 ```
 
-Use the full `requirements.txt` as-is (don't add `--no-deps`) — some
-packages (like `feedparser`, used by the Portfolio News agent) need their
-own transitive dependencies installed to work correctly.
+Use the full `requirements.txt` as-is (no `--no-deps`) — some packages, such as `feedparser` (used by the Portfolio News agent), need their own transitive dependencies to work correctly.
 
-### 4.3 Create your environment file
+### 4.3 Create your `.env` file
 
-Copy the template and fill it in:
+The backend reads its settings from **`backend/.env`**. For local development you need almost nothing, because every setting has a safe default baked into `config/settings.py`.
 
-```powershell
-copy .env.example .env
+> [!WARNING]
+> **Don't copy `.env.example` unchanged for local development.** That file is a _production-style_ template — it sets `SECURE_SSL_REDIRECT=True`, `SESSION_COOKIE_SECURE=True` and `CSRF_COOKIE_SECURE=True`. Browsers reject `Secure` cookies over plain `http://localhost`, so login would silently fail. Use the minimal file below instead.
+
+**Local development (recommended)** — create `backend/.env` with just:
+
+```ini
+DEBUG=True
+GEMINI_API_KEY=paste-your-key-here
 ```
 
-Open `backend\.env` in a text editor. For local development, the only line
-worth filling in right away is:
-
-```env
-GEMINI_API_KEY=YOUR_KEY_HERE
-```
-
-- Get a Gemini API key from **Google AI Studio**
-  (https://aistudio.google.com/) if you don't have one.
-- The Gemini key is only needed for the **AI Chat** and **Portfolio News**
-  features. Everything else — portfolio tracking, holdings, analytics,
-  reports, user management — works without it.
-- Every other variable in `.env.example` (`SECRET_KEY`, `DEBUG`,
-  `ALLOWED_HOSTS`, `CORS_ALLOWED_ORIGINS`, etc.) already has a safe default
-  for local development baked into `config/settings.py` — you only need to
-  set these for a real deployment, not for running this on your own
-  machine. See the comments in `.env.example` for what each one does.
-- **Do not commit this file.** It's already in `.gitignore`.
-
-### 4.4 Set up the database
-
-The project uses SQLite by default — no separate database server to
-install. Just run the migrations to create the schema:
+You can create it from your terminal:
 
 ```powershell
+# Windows PowerShell
+@"
+DEBUG=True
+GEMINI_API_KEY=paste-your-key-here
+"@ | Set-Content .env
+```
+
+```bash
+# macOS / Linux
+printf 'DEBUG=True\nGEMINI_API_KEY=paste-your-key-here\n' > .env
+```
+
+- **Gemini key:** get one from [Google AI Studio](https://aistudio.google.com/). It is only needed for **AI Chat** and **Portfolio News**. Everything else — holdings, analytics, reports, user management — works without it. You can leave the line out entirely and add it later.
+- **Never commit `.env`.** It is already listed in `.gitignore`.
+- For a real deployment, start from `.env.example` instead — see [section 11](#11--production-style-deployment). The full variable list is in the [README](./README.md#-configuration).
+
+### 4.4 Create the database
+
+PWMS uses **SQLite** by default — there is no database server to install. Apply the migrations to create the schema:
+
+```bash
 python manage.py migrate
 ```
 
-You should see a list of `Applying ... OK` lines. This step is safe to
-re-run any time; it never deletes existing data.
+You should see a long list of `Applying ... OK` lines. This is safe to re-run at any time; it never deletes existing data.
 
-### 4.5 Verify the backend is healthy
+### 4.5 Verify the backend
 
-```powershell
+```bash
 python manage.py check
 ```
 
-Expect: `System check identified no issues (0 silenced).`
+Expected: `System check identified no issues (0 silenced).`
 
-### 4.6 Create your first user (Super User)
+### 4.6 Create your first user
 
-Because PWMS enforces roles on every request, you need at least one
-account before you can log in and do anything. The very first account
-should be a **Super User** (the highest-privilege role) so you can then
-create everyone else from inside the app:
+PWMS enforces roles on every request, so you need an account before you can do anything. The **first account should be a System Owner** — the highest role, the only one that can create families and see every family's data — so you can create everyone else from inside the app.
 
-```powershell
+```bash
 python manage.py createsuperuser
 ```
 
-Follow the prompts (username, email, password). This account is
-automatically given the `SUPERUSER` role — you don't need any extra step.
+Follow the prompts (username, email, password).
 
-> Forgot to create one, or need a second Super User later? Either run
-> `createsuperuser` again, or once you're logged in as an existing Super
-> User, use **Settings → User Management → Add User** and set the role to
-> `SUPERUSER`.
+Once you've logged in ([section 6](#6--first-login-users-and-families)), open **Settings → Account** and confirm your **Role** reads **System Owner**. If it shows something lower, promote the account from the Django shell:
 
-### 4.7 Start the backend server
+```bash
+python manage.py shell
+```
 
-For local development:
+```python
+from django.contrib.auth import get_user_model
+from users.models import Role
 
-```powershell
+user = get_user_model().objects.get(username="your-username")
+user.profile.role = Role.SYSTEM_OWNER
+user.profile.save()
+exit()
+```
+
+> [!NOTE]
+> Need another privileged account later? Log in as a System Owner and use **Settings → User Management → Add User**. See the [permission matrix](./README.md#-roles-and-permissions) for who can create which role.
+
+### 4.7 Start the backend
+
+```bash
 python manage.py runserver
 ```
 
-Leave this terminal window open — it needs to keep running. You should see:
+Leave this terminal open — it has to keep running. You should see:
 
-```text
+```
 Starting development server at http://127.0.0.1:8000/
 ```
 
-Confirm it's actually responding by opening this URL in a browser:
+Confirm it's responding by opening this in a browser:
 
-```text
+```
 http://127.0.0.1:8000/api/health/
 ```
 
-You should see a small JSON response with `"status": "success"`.
+You should see a small JSON response containing `"status": "success"`.
 
-> **Running this closer to how it'd actually be deployed?** See
-> [section 11](#11-alternative-running-via-a-real-wsgiasgi-server) for the
-> `waitress`/`uvicorn` equivalents — same app, no dev-server autoreloader.
+> Want to run it more like a real deployment (no autoreloader)? See [section 11](#11--production-style-deployment) for the `waitress` / `uvicorn` equivalents.
 
 ---
 
-## 5. Frontend setup
+## 5 · Frontend setup
 
-Open a **second, separate terminal window** (leave the backend running in
-the first one). From the repository root:
+Open a **second, separate terminal** and leave the backend running in the first one. From the repository root:
 
-```powershell
+```bash
 cd frontend
 npm install
 ```
 
-This downloads all Angular dependencies — it can take a few minutes the
-first time.
+This downloads the Angular dependencies — it can take a few minutes the first time. Then start the dev server:
 
-Then start the Angular dev server:
-
-```powershell
+```bash
 npm start
 ```
 
-You should see Angular compile successfully and print something like:
+Angular compiles and prints something like:
 
-```text
+```
 Local:   http://localhost:4200/
 ```
 
-Open that URL in your browser.
+Open **http://localhost:4200** in your browser.
 
-> This dev server always talks to `http://localhost:8000` (set in
-> `frontend/src/environments/environment.ts`). You don't need to touch
-> this for local development — it's only relevant if you're building for
-> a real deployment, see [section 12](#12-building-the-frontend-for-a-real-deployment).
+> [!NOTE]
+> The dev server talks to **`http://localhost:8000`**, set as `apiUrl` in `frontend/src/environments/environment.ts`. You don't need to change it for local development — only when building for a real deployment ([section 11](#11--production-style-deployment)).
+
+> [!TIP]
+> Open the app at **`http://localhost:4200`** consistently. `localhost` and `127.0.0.1` count as _different origins_ for cookies and CORS, and mixing them is the most common cause of "login does nothing".
 
 ---
 
-## 6. First login
+## 6 · First login, users and families
 
-1. Go to `http://localhost:4200/login`.
-2. Log in with the Super User account you created in step 4.6.
-3. You should land on the Dashboard. It will be empty until you add
-   portfolio data (see step 8).
-4. Open **Settings → Account** and confirm your Role shows `SUPERUSER`.
+### Log in
 
-### Creating more users
+1. Go to **http://localhost:4200/login**.
+2. Sign in with the account from step 4.6.
+3. You land on the **Dashboard** — it's empty until you add data ([section 7](#7--getting-your-data-in)).
+4. Open **Settings → Account** and confirm your role.
 
-From **Settings → User Management** (visible because you're a Super User):
+### Take the tour
+
+| Menu               | What you'll do there                                                     |
+| ------------------ | ------------------------------------------------------------------------ |
+| **Dashboard**      | Net worth, allocation and the Investment Summary                         |
+| **Portfolio**      | Holdings tree, transactions, **Import**, manual price override           |
+| **Analytics**      | Allocation by class / sector / market cap / AMC, XIRR, historical wealth |
+| **Reports**        | Export transactions, holdings and summaries to Excel or PDF              |
+| **AI Chat**        | Ask Gemini about your portfolio _(needs a Gemini key)_                   |
+| **Portfolio News** | Alerts for news that matches your holdings _(needs a Gemini key)_        |
+| **Settings**       | Account · User Management · Family Management · Manual Prices            |
+
+### Create more users
+
+From **Settings → User Management**:
 
 1. Click **+ Add User**.
-2. Fill in name/username/email/password, pick a role (Viewer or Admin —
-   only a Super User can grant the Super User role), optionally assign a
-   **Family Group** so this person can see your portfolio data (or theirs,
-   once they have some).
+2. Enter name, username, email and password, then choose a **role**. You can only assign roles at or below what your own role allows (a System Owner can assign any; a Super User can assign Admin or Viewer; an Admin can assign Viewer).
 3. Click **Create User**.
 
-To let two accounts see each other's combined Dashboard/Portfolio/
-Analytics/Mutual Funds data (e.g. two family members), put them in the
-same **Family Group**: either set it when creating/editing a user, or use
-**Manage Family Groups** to create a group and add existing users to it.
-This never changes who can _edit_ anything — only what's visible.
+### Share data with a family
+
+To let several accounts see each other's combined Dashboard, Portfolio, Analytics and Mutual Funds data:
+
+1. As a **System Owner**, open **Settings → Family Management** and create a family.
+2. Add the members. (A user can belong to zero, one or many families.)
+3. Each member picks their **active family** from the selector in the header — every data screen is scoped to that one family at a time.
+
+> [!IMPORTANT]
+> **Role and family are independent.** Family membership only changes what a user can _see_. It never changes what they can _edit_ — that is decided by role alone, and by who owns the data.
 
 ---
 
-## 7. Automatic background jobs — nothing to configure
+## 7 · Getting your data in
 
-You don't need to do anything for this. Four background jobs start
-automatically inside the Django process the moment you run `runserver`
-(or the WSGI/ASGI commands in section 11) — market price refresh (every 15
-minutes), a once-a-day refresh job, an immediate post-import price fetch,
-and Portfolio News monitoring (every 30 minutes, needs the Gemini key from
-step 4.3). None of them need Windows Task Scheduler, a `.bat` file, or any
-separate process — they run for as long as the server is up, and stop the
-moment you stop it.
+### Import transactions from Excel
 
-Check `backend\logs\pwms.log` (created automatically) to see them running.
+1. Log in and go to **Portfolio**.
+2. Choose **Import** and select your `.xlsx` workbook. A **Transactions** sheet is required; a **Summary** sheet is optional.
+3. Every asset the import touches gets an **immediate background price refresh** — no need to wait for the scheduled run.
 
-If you want an immediate one-off price refresh instead of waiting:
+The expected column layout is defined by the importer in `backend/investments/`; the tests in `investments/tests.py` show working examples.
 
-```powershell
+### Optional but recommended: enrich and verify
+
+Run these from `backend/` with the virtual environment active. The order below is a sensible first-time sequence:
+
+```bash
+# 1. Pull the latest mutual-fund NAVs from AMFI
+python manage.py fetch_amfi_nav
+
+# 2. Load sector / cap-type / P-E / P-B / ROE reference data
+python manage.py load_security_master_data
+
+# 3. Link assets to their Security Master row by ISIN (dry-run by default)
+python manage.py link_security_master
+python manage.py link_security_master --help      # shows how to apply the changes
+
+# 4. Classify stocks Large / Mid / Small Cap by AMFI rank (dry-run by default)
+python manage.py import_amfi_cap_classification
+python manage.py import_amfi_cap_classification --help
+
+# 5. Fetch fresh prices right now
 python manage.py update_market_prices
 ```
 
-Or an immediate one-off news check:
+If holdings look off after an import, rebuild them from the transaction history:
 
-```powershell
-python manage.py monitor_portfolio_news
-```
-
-Watch the printed statistics (`Holdings processed`, `Articles retrieved`,
-`Alerts created`, etc.) — `Alerts created: 0` is often normal on a fresh
-portfolio with no recent matching news yet.
-
----
-
-## 8. Getting your portfolio data in
-
-Import transactions from an Excel workbook (a "Summary" sheet is optional
-— a Transactions-only workbook is valid):
-
-1. Log in, go to **Portfolio**.
-2. Use the **Import** option and select your `.xlsx` file.
-3. Every asset the import touches gets an immediate background price
-   refresh (see section 7) — you don't need to wait for the scheduled run.
-
-If holdings look off after an import, rebuild them from the transaction
-history:
-
-```powershell
+```bash
 python manage.py rebuild_holdings --user-id <id>
 ```
 
-(Use the ID of the user you imported for — you can find it in
-**Settings → User Management**.)
+Use the ID of the user you imported for — you'll find it in **Settings → User Management**.
+
+### Fix a missing price by hand
+
+If Yahoo Finance or AMFI has no quote for an asset, use **Settings → Manual Prices** (or the inline override in **Portfolio**). Manual prices are visible to the whole family and every override is audit-logged.
+
+### Sanity-check checklist
+
+| Check                                  | Expected                                                       |
+| -------------------------------------- | -------------------------------------------------------------- |
+| `http://127.0.0.1:8000/api/health/`    | JSON with `"status": "success"`                                |
+| Login at `http://localhost:4200/login` | Lands on the Dashboard                                         |
+| **Settings → Account**                 | Role shows **System Owner**                                    |
+| After import: **Portfolio** tree       | Your holdings, with quantity, invested value and current value |
+| `backend/logs/pwms.log`                | Scheduler start-up lines and price refreshes                   |
 
 ---
 
-## 9. Running the test suites (optional, recommended if you plan to modify code)
+## 8 · Background jobs
 
-Backend (from `backend/`, virtual environment active):
+**Nothing to configure.** Four jobs start automatically inside the Django process when you run `runserver` (or the WSGI / ASGI commands in [section 11](#11--production-style-deployment)). None of them needs Task Scheduler, cron or a `.bat` file, and they stop the moment the server stops.
 
-```powershell
-python manage.py test
-```
+| Job                                                                  | Cadence                                    | Needs Gemini key? |
+| -------------------------------------------------------------------- | ------------------------------------------ | :---------------: |
+| Market price refresh (Yahoo Finance + AMFI)                          | every 15 minutes                           |        No         |
+| Daily refresh (AMFI NAV, security-master ratios, SIP sync / execute) | once per calendar day of uptime            |        No         |
+| Post-import price refresh                                            | right after an import commits              |        No         |
+| Portfolio News monitor                                               | every 30 minutes (`NEWS_MONITOR_INTERVAL`) |      **Yes**      |
 
-To run just the RBAC/Family Groups tests:
-
-```powershell
-python manage.py test users portfolio -v 2
-```
-
-Frontend (from `frontend/`):
+**Watch them work** — the log file is created automatically:
 
 ```powershell
-npm test
-npm run build
+# Windows PowerShell (from backend/)
+Get-Content logs\pwms.log -Wait -Tail 50
 ```
+
+```bash
+# macOS / Linux (from backend/)
+tail -f logs/pwms.log
+```
+
+**Run a job once, right now:**
+
+```bash
+python manage.py update_market_prices        # prices and NAVs
+python manage.py monitor_portfolio_news      # one full news pass
+```
+
+Read the printed statistics (`Holdings processed`, `Articles retrieved`, `Alerts created`, …). `Alerts created: 0` is often perfectly normal on a fresh portfolio with no recent matching news.
 
 ---
 
-## 10. Everyday startup (after the first-time setup above)
+## 9 · Everyday startup
 
-Once steps 1–8 are done once, starting the app again is just:
+After the first-time setup, starting PWMS again takes two terminals.
 
-**Terminal 1:**
+**Terminal 1 — backend**
 
 ```powershell
-cd Personal_Wealth_Monitoring\backend
+cd Personal_Wealth_Monitoring_System\backend
 .\venv\Scripts\Activate.ps1
 python manage.py runserver
 ```
 
-**Terminal 2:**
+```bash
+# macOS / Linux
+cd Personal_Wealth_Monitoring_System/backend
+source venv/bin/activate
+python manage.py runserver
+```
 
-```powershell
-cd Personal_Wealth_Monitoring\frontend
+**Terminal 2 — frontend**
+
+```bash
+cd Personal_Wealth_Monitoring_System/frontend
 npm start
 ```
 
-Then open `http://localhost:4200`.
+Then open **http://localhost:4200**.
+
+### Optional: one-command launcher
+
+<details>
+<summary><b>Windows — <code>start-pwms.ps1</code></b> (save in the repo root)</summary>
+
+```powershell
+# start-pwms.ps1 - opens the backend and frontend in two PowerShell windows
+$root = Split-Path -Parent $MyInvocation.MyCommand.Path
+
+Start-Process powershell -ArgumentList "-NoExit", "-Command",
+  "cd '$root\backend'; .\venv\Scripts\Activate.ps1; python manage.py runserver"
+
+Start-Process powershell -ArgumentList "-NoExit", "-Command",
+  "cd '$root\frontend'; npm start"
+```
+
+Run it with `.\start-pwms.ps1`.
+
+</details>
+
+<details>
+<summary><b>macOS / Linux — <code>start-pwms.sh</code></b> (save in the repo root)</summary>
+
+```bash
+#!/usr/bin/env bash
+# start-pwms.sh - runs the backend and frontend together; Ctrl+C stops both
+set -e
+root="$(cd "$(dirname "$0")" && pwd)"
+trap 'kill 0' SIGINT SIGTERM EXIT
+
+( cd "$root/backend"  && source venv/bin/activate && python manage.py runserver ) &
+( cd "$root/frontend" && npm start ) &
+wait
+```
+
+Make it executable once with `chmod +x start-pwms.sh`, then run `./start-pwms.sh`.
+
+</details>
 
 ---
 
-## 11. Alternative: running via a real WSGI/ASGI server
+## 10 · Optional: PostgreSQL
 
-`runserver` is fine for everyday development. If you want to run this
-closer to how it'd actually be deployed — no autoreloader, a real
-production-style server — two options, both already in `requirements.txt`:
+SQLite is perfect for a household. If you expect many concurrent writers, or simply prefer a server database, PWMS can use **PostgreSQL** by switching one setting.
 
-**WSGI (waitress):**
+### 10.1 Create the database and user
 
-```powershell
+In `psql` (or any SQL client) as a PostgreSQL admin:
+
+```sql
+CREATE USER pwms_user WITH PASSWORD 'choose-a-strong-password';
+CREATE DATABASE pwms OWNER pwms_user;
+```
+
+### 10.2 Point PWMS at it
+
+Add to `backend/.env`:
+
+```ini
+DATABASE_ENGINE=postgresql
+POSTGRES_DB=pwms
+POSTGRES_USER=pwms_user
+POSTGRES_PASSWORD=choose-a-strong-password
+POSTGRES_HOST=localhost
+POSTGRES_PORT=5432
+```
+
+### 10.3 Build the schema
+
+```bash
+python manage.py migrate
+python manage.py createsuperuser
+```
+
+> If Django reports that a PostgreSQL driver is missing, install one into the virtual environment:
+>
+> ```bash
+> python -m pip install "psycopg[binary]"
+> ```
+
+### 10.4 Moving existing SQLite data (optional)
+
+> [!WARNING]
+> Rehearse this on a **copy** first, and keep your original `db.sqlite3` until you've verified the result.
+
+1. **Stop the server** (so the background jobs aren't writing) and keep `DATABASE_ENGINE=sqlite` for the export (bash shown — on PowerShell, put the command on one line):
+
+   ```bash
+   python manage.py dumpdata --natural-foreign --natural-primary \
+       --exclude contenttypes --exclude auth.permission --indent 2 -o pwms_dump.json
+   ```
+
+2. Switch `.env` to `DATABASE_ENGINE=postgresql`, then create the empty schema and load:
+
+   ```bash
+   python manage.py migrate
+   python manage.py loaddata pwms_dump.json
+   ```
+
+3. **Verify** — compare row counts for key tables, log in, and check that every user still has the right role. PWMS creates a `UserProfile` through a `post_save` signal, so pay special attention to `UserProfile` rows after loading.
+
+To go back to SQLite, set `DATABASE_ENGINE=sqlite` again.
+
+---
+
+## 11 · Production-style deployment
+
+`runserver` and `npm start` are for development. To run PWMS on a server, follow this checklist.
+
+```mermaid
+flowchart LR
+    U["Browser"] -->|"HTTPS"| N["Reverse proxy<br/>nginx or Caddy"]
+    N -->|"static files"| S["Angular build<br/>frontend/dist"]
+    N -->|"/api/ proxied"| W["waitress or uvicorn<br/>127.0.0.1:8000"]
+    W --> DB[("SQLite or PostgreSQL")]
+```
+
+### 11.1 Production `.env`
+
+Start from the template — this is what it is _for_:
+
+```bash
+cp .env.example .env        # Windows: copy .env.example .env
+```
+
+Generate a real secret key:
+
+```bash
+python -c "from django.core.management.utils import get_random_secret_key; print(get_random_secret_key())"
+```
+
+Then fill in `backend/.env`:
+
+```ini
+SECRET_KEY=paste-the-generated-key
+DEBUG=False
+ALLOWED_HOSTS=yourdomain.com,www.yourdomain.com,localhost,127.0.0.1
+CORS_ALLOWED_ORIGINS=https://yourdomain.com
+CSRF_TRUSTED_ORIGINS=https://yourdomain.com
+
+# Turn these on ONLY once real HTTPS is working
+SESSION_COOKIE_SECURE=True
+CSRF_COOKIE_SECURE=True
+SECURE_SSL_REDIRECT=True
+
+DATABASE_ENGINE=sqlite
+GEMINI_API_KEY=your-key
+```
+
+`CORS_ALLOWED_ORIGINS` and `CSRF_TRUSTED_ORIGINS` must be the **exact** scheme + host + port your browser loads the frontend from.
+
+### 11.2 Run the backend with a real server
+
+Both options are already in `requirements.txt` and serve the same app on the same port as `runserver`. Both start all four background jobs exactly once — check `logs/pwms.log` to confirm.
+
+**WSGI — waitress**
+
+```bash
 python -m waitress --host=127.0.0.1 --port=8000 config.wsgi:application
 ```
 
-**ASGI (uvicorn):**
+**ASGI — uvicorn**
 
-```powershell
+```bash
 python -m uvicorn config.asgi:application --host 127.0.0.1 --port 8000
 ```
 
-Both serve the exact same app on the same port `runserver` uses, and both
-correctly start all four background jobs from section 7 automatically —
-check `logs\pwms.log` to confirm.
+> [!CAUTION]
+> **Run exactly one server process.** The background schedulers assume a single process. Multiple worker _processes_ (for example `uvicorn --workers 4` or a multi-worker gunicorn) would each start their own copy of every scheduler. Threads inside one process are fine.
 
----
+### 11.3 Build the frontend
 
-## 12. Building the frontend for a real deployment
+1. Open `frontend/src/environments/environment.prod.ts` and change `apiUrl` from the placeholder to your real backend address — or to `''` (empty) if the frontend and backend share one origin, as in the nginx example below.
+2. Build:
 
-For local development, skip this — `npm start` is all you need.
-
-Before building for anywhere other than your own machine:
-
-1. Open `frontend/src/environments/environment.prod.ts`.
-2. Change `apiUrl` from the placeholder to your real deployed backend
-   address (or `''` if the frontend and backend share the same origin).
-3. Build:
-
-   ```powershell
+   ```bash
    cd frontend
-   ng build --configuration production
+   npm install
+   npm run build              # or: npx ng build --configuration production
    ```
 
-   This automatically swaps in `environment.prod.ts` in place of
-   `environment.ts` (configured in `angular.json`) — you don't edit
-   `environment.ts` itself for this.
-4. On the backend side, also update `.env`'s `ALLOWED_HOSTS`,
-   `CORS_ALLOWED_ORIGINS`, and `CSRF_TRUSTED_ORIGINS` to match your real
-   deployed frontend origin — see `backend/.env.example`.
+   This automatically swaps in `environment.prod.ts` for `environment.ts` (configured in `angular.json`) — you never edit `environment.ts` for this.
+
+3. The build output lands under `frontend/dist/<project>/browser/`. Serve that folder as static files.
+
+### 11.4 Put a reverse proxy in front
+
+Serving the frontend and API from **one origin** is the simplest and most robust setup (no CORS surprises, cookies just work). An nginx example:
+
+```nginx
+server {
+    listen 80;
+    server_name yourdomain.com;
+
+    # Contents of frontend/dist/<project>/browser
+    root  /var/www/pwms;
+    index index.html;
+
+    # API -> Django
+    location /api/ {
+        proxy_pass http://127.0.0.1:8000;
+        proxy_set_header Host              $host;
+        proxy_set_header X-Real-IP         $remote_addr;
+        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    # Angular routes -> index.html
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+}
+```
+
+Add HTTPS (for example `sudo certbot --nginx -d yourdomain.com`), **then** enable the three `*_SECURE` / SSL settings in `.env` and restart the backend.
+
+> [!WARNING]
+> If TLS ends at the proxy and Django sees plain HTTP, `SECURE_SSL_REDIRECT=True` can cause an endless redirect loop. Django needs to be told to trust the `X-Forwarded-Proto` header (`SECURE_PROXY_SSL_HEADER` in `config/settings.py`). Check that setting before going live behind a proxy.
+
+### 11.5 Keep it running (Linux example)
+
+A minimal `systemd` unit, `/etc/systemd/system/pwms.service`:
+
+```ini
+[Unit]
+Description=PWMS backend (waitress)
+After=network.target
+
+[Service]
+User=pwms
+WorkingDirectory=/opt/pwms/backend
+ExecStart=/opt/pwms/backend/venv/bin/python -m waitress --host=127.0.0.1 --port=8000 config.wsgi:application
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
+```
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable --now pwms
+sudo systemctl status pwms
+```
+
+On Windows, run the same `waitress` command under a service wrapper such as NSSM, or a startup task.
+
+### 11.6 Go-live checklist
+
+- [ ] `DEBUG=False` and a **freshly generated** `SECRET_KEY`
+- [ ] `ALLOWED_HOSTS`, `CORS_ALLOWED_ORIGINS`, `CSRF_TRUSTED_ORIGINS` match your real domain
+- [ ] HTTPS working **before** the secure-cookie and SSL-redirect flags are on
+- [ ] `environment.prod.ts` `apiUrl` correct, frontend rebuilt
+- [ ] Exactly one backend process
+- [ ] Backups scheduled and a restore rehearsed ([section 13](#13--backups-and-restore))
+- [ ] `backend/.env` and the database are not world-readable and not in git
+- [ ] `runserver` is **not** exposed to the internet
 
 ---
 
-## Troubleshooting
+## 12 · Updating PWMS
 
-### `python` or `pip` is not recognized
+```bash
+git pull
 
-```powershell
-python --version
-pip --version
+cd backend
+# activate the virtual environment first
+python -m pip install -r requirements.txt
+python manage.py migrate
+python manage.py check
+
+cd ../frontend
+npm install
 ```
 
-If Python is installed but the wrong interpreter runs, make sure the
-virtual environment is active:
+Restart the backend (and rebuild the frontend if you serve a production build). Then skim `backend/logs/pwms.log` to confirm the schedulers started cleanly.
 
-```powershell
-cd backend
-.\venv\Scripts\Activate.ps1
+> **Back up first** ([section 13](#13--backups-and-restore)) if the update includes new migrations and you have real data.
+
+---
+
+## 13 · Backups and restore
+
+PWMS has no automated backup yet, so make your own. Your data lives in **one place**: the database.
+
+### SQLite
+
+The safest method — works even while the server is running (it respects WAL mode). From `backend/`:
+
+```bash
+python -c "import sqlite3,datetime; s=sqlite3.connect('db.sqlite3'); d=sqlite3.connect(f'backup-{datetime.date.today()}.sqlite3'); s.backup(d); d.close(); s.close()"
+```
+
+**Restore:** stop the server, replace `db.sqlite3` with the backup file (rename it), start the server.
+
+### PostgreSQL
+
+```bash
+pg_dump -U pwms_user -h localhost -Fc pwms > pwms-backup.dump
+pg_restore -U pwms_user -h localhost -d pwms --clean pwms-backup.dump
+```
+
+### Also keep a copy of
+
+- `backend/.env` — stored somewhere private (it contains secrets)
+- Your original Excel import workbooks
+
+---
+
+## 14 · Running the tests
+
+Recommended before you modify any code.
+
+**Backend** — from `backend/`, virtual environment active:
+
+```bash
+python manage.py test                        # everything
+python manage.py test users portfolio -v 2   # RBAC + portfolio, verbose
+```
+
+**Frontend** — from `frontend/`:
+
+```bash
+npm test
+npm run build
+```
+
+> A few `mutual_funds` SIP-scheduling tests compare against today's real date and can drift as time passes. This is a known fixture limitation; it does not affect the running app.
+
+---
+
+## 15 · Troubleshooting
+
+Click a symptom to expand the fix.
+
+### 🧰 Install and environment
+
+<details>
+<summary><b><code>python</code> or <code>pip</code> is not recognized</b></summary>
+
+Python isn't on your PATH (reinstall and tick **Add python.exe to PATH**) or the terminal was opened before installing. Reopen the terminal, then:
+
+```bash
 python --version
 python -m pip --version
 ```
 
-Prefer `python -m pip` over a bare `pip` when diagnosing interpreter
-mismatches.
+If the wrong interpreter runs, make sure the virtual environment is active (`(venv)` in the prompt). Prefer `python -m pip` over bare `pip` when diagnosing interpreter mismatches.
 
-### PowerShell refuses to activate the virtual environment
+</details>
+
+<details>
+<summary><b>PowerShell refuses to activate the virtual environment</b></summary>
 
 ```powershell
 Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
 .\venv\Scripts\Activate.ps1
 ```
 
-### Django says a module/app is missing
+</details>
 
-```powershell
+<details>
+<summary><b><code>pip install</code> fails while building a package</b></summary>
+
+Upgrade pip (`python -m pip install --upgrade pip`), make sure you're on a supported 64-bit Python (3.11 or 3.12), and on Linux install build tools (`sudo apt install build-essential python3-dev`). Re-run the install; read the _first_ error in the output, not the last.
+
+</details>
+
+<details>
+<summary><b><code>npm install</code> or <code>npm start</code> fails / Node version errors</b></summary>
+
+Check `node --version`. Use **Node 22 LTS** (or a current 20 LTS). The Angular CLI prints a clear message if Node is too old. If `ng` is "not recognized", you don't need it globally — use `npm start`, `npm run build`, or `npx ng ...`.
+
+</details>
+
+### ⚙️ Backend
+
+<details>
+<summary><b>Django says a module or app is missing</b></summary>
+
+The virtual environment probably isn't active.
+
+```bash
 cd backend
-.\venv\Scripts\Activate.ps1
+# activate the venv, then:
 python -m pip install -r requirements.txt
 python manage.py check
 ```
 
-### Django says migrations are pending
+</details>
 
-```powershell
+<details>
+<summary><b>Django says migrations are pending</b></summary>
+
+```bash
 cd backend
 python manage.py migrate
 ```
 
-### "System check identified no issues" but the browser can't connect
+</details>
 
-Make sure the backend is actually running (`python manage.py runserver`)
-and test `http://127.0.0.1:8000/api/health/` directly in a browser before
-troubleshooting the frontend.
+<details>
+<summary><b>Port 8000 (or 4200) is already in use</b></summary>
 
-### Frontend can't reach the backend
+Stop the other process, or use another port. If you move the backend to 8001, update `apiUrl` in `frontend/src/environments/environment.ts`. If you move the frontend (`npm start -- --port 4300`), add the new origin to `CORS_ALLOWED_ORIGINS` and `CSRF_TRUSTED_ORIGINS` in `backend/.env` and restart the backend.
 
-Check `frontend/src/environments/environment.ts`'s `apiUrl` — for local
-development this should be `http://localhost:8000`. If you're opening the
-frontend from a different device on your network, `localhost` on that
-device means itself, not your Django machine — you'd need to change
-`apiUrl` to your backend machine's real address, and update
-`CORS_ALLOWED_ORIGINS`/`CSRF_TRUSTED_ORIGINS` in `backend/.env` to match.
-This isn't needed for normal single-machine development.
+</details>
 
-### I can't log in / there's no user yet
+<details>
+<summary><b><code>database is locked</code> (SQLite)</b></summary>
 
-Run `python manage.py createsuperuser` (see step 4.6). If you already have
-a user but forgot the password, an existing Super User can reset it from
-**Settings → User Management → Reset Password**, or you can reset it
-directly:
+SQLite allows one writer at a time. PWMS uses WAL mode and a busy-timeout, which help but can't eliminate contention. Common culprits: a database browser app holding the file open, or **two server processes** running at once. Close other tools, make sure only one backend is running, and consider [PostgreSQL](#10--optional-postgresql) for heavier use.
 
-```powershell
+</details>
+
+<details>
+<summary><b>Log lines appear twice, or jobs seem to run twice</b></summary>
+
+More than one backend process is running. Stop them all and start exactly one. The schedulers assume a single process.
+
+</details>
+
+<details>
+<summary><b><code>Bad Request (400)</code> / <code>DisallowedHost</code> after setting <code>DEBUG=False</code></b></summary>
+
+Add your host name or IP to `ALLOWED_HOSTS` in `backend/.env` and restart.
+
+</details>
+
+### 🌐 Frontend and connectivity
+
+<details>
+<summary><b>The browser can't connect / the frontend can't reach the backend</b></summary>
+
+1. Is the backend running? Open `http://127.0.0.1:8000/api/health/` directly.
+2. Check `apiUrl` in `frontend/src/environments/environment.ts` — for local development it must be `http://localhost:8000`.
+3. Opening the frontend from **another device**? `localhost` there means _that_ device. Set `apiUrl` to your backend machine's real address and add the frontend's origin to `CORS_ALLOWED_ORIGINS` / `CSRF_TRUSTED_ORIGINS`.
+</details>
+
+<details>
+<summary><b>CORS error in the browser console</b></summary>
+
+`CORS_ALLOWED_ORIGINS` must match the origin the browser uses **exactly** — scheme, host and port (`http://localhost:4200`, not `http://127.0.0.1:4200`). Fix `backend/.env` and **restart the backend**.
+
+</details>
+
+<details>
+<summary><b>Login does nothing / "CSRF verification failed" / cookie not saved</b></summary>
+
+- Use `http://localhost:4200` consistently — don't mix `localhost` and `127.0.0.1`.
+- Make sure `CSRF_TRUSTED_ORIGINS` includes your frontend origin.
+- For **local** development, `SESSION_COOKIE_SECURE`, `CSRF_COOKIE_SECURE` and `SECURE_SSL_REDIRECT` must be `False` (or unset). If you copied `.env.example` unchanged, that's the cause — see [step 4.3](#43-create-your-env-file).
+</details>
+
+<details>
+<summary><b>Endless redirects or a blank page behind a reverse proxy</b></summary>
+
+Two usual suspects: the SPA fallback is missing (`try_files $uri $uri/ /index.html;` in nginx), or `SECURE_SSL_REDIRECT=True` while Django can't tell the request was HTTPS — see the warning in [section 11.4](#114-put-a-reverse-proxy-in-front).
+
+</details>
+
+### 🔑 Login, roles and visibility
+
+<details>
+<summary><b>I can't log in / there's no user yet</b></summary>
+
+```bash
+python manage.py createsuperuser
+```
+
+Forgot a password? An existing privileged user can reset it from **Settings → User Management → Reset Password**, or reset it directly:
+
+```bash
 python manage.py changepassword <username>
 ```
 
-### A Viewer/Admin account can't see something I expect
+</details>
+
+<details>
+<summary><b>My first account isn't a System Owner</b></summary>
+
+Promote it from the shell — see [step 4.6](#46-create-your-first-user).
+
+</details>
+
+<details>
+<summary><b>A Viewer or Admin can't see or do something I expect</b></summary>
 
 Check three things, in order:
 
-1. **Role** — Viewer accounts can't edit prices or manage users by design;
-   that's expected, not a bug.
-2. **Ownership** — portfolio data belongs to whoever entered it. A brand
-   new account has no data of its own until you add some or share access.
-3. **Family Group** — if you expect two accounts to see combined data,
-   confirm both are in the _same_ Family Group under
-   **Settings → User Management → Manage Family Groups**.
+1. **Role** — a Viewer can't edit prices or manage users, by design.
+2. **Ownership** — portfolio data belongs to whoever entered it. A brand-new account has no data of its own until you add some or share access.
+3. **Family and active family** — for accounts to see combined data they must be in the **same** family _and_ have it selected as their **active** family (header selector). A System Owner assigns families in **Settings → Family Management**.
+</details>
 
-### An Admin can't do something involving a Super User account
+<details>
+<summary><b>An Admin can't do something involving a Super User (or above)</b></summary>
 
-This is by design — an Admin can never edit, deactivate, delete, reset the
-password of, or change the Family Group of a Super User account. Only
-another Super User can do that.
+By design. An Admin can only manage **Viewers**; a Super User can manage **Admins and Viewers**; only a System Owner can manage Super Users and System Owners. See the [permission matrix](./README.md#-roles-and-permissions).
 
-### "Cannot deactivate/delete the last active Super User"
+</details>
 
-The system deliberately refuses to leave itself with zero Super Users.
-Create or promote a second Super User first if you need to remove one.
+<details>
+<summary><b>I can't create or edit families</b></summary>
 
-### The Portfolio/Dashboard numbers look wrong after sharing a Family Group
+Family Management is **System Owner only**.
 
-Manual price edits and any write action are still scoped to the actual
-owner — sharing visibility never changes who can edit what. If a combined
-total looks off, check each member's own data individually first
-(temporarily removing them from the group, or checking
-`Settings → Manual Prices`, is the fastest way to isolate it).
+</details>
 
-### The news page is empty
+<details>
+<summary><b>The system won't let me change or demote a System Owner / my own role</b></summary>
 
-```powershell
+Two intentional guards: nobody can change **their own** role, and the **last active System Owner** can never be demoted. Create or promote a second System Owner first if you need to change the first.
+
+</details>
+
+<details>
+<summary><b>Dashboard numbers look wrong after sharing a family</b></summary>
+
+Write actions and manual price edits stay scoped to the actual owner — sharing changes visibility only. Check the **active family** selector first, then review each member's own data individually (or **Settings → Manual Prices**) to isolate the source.
+
+</details>
+
+### 📈 Data and prices
+
+<details>
+<summary><b>Holdings look wrong after an import</b></summary>
+
+Rebuild them from the transaction history:
+
+```bash
+python manage.py rebuild_holdings --user-id <id>
+```
+
+</details>
+
+<details>
+<summary><b>A price is missing or stale</b></summary>
+
+1. Watch `backend/logs/pwms.log` for provider errors.
+2. Force a refresh: `python manage.py update_market_prices`.
+3. Yahoo Finance is an unofficial, rate-limited source and may temporarily fail or not recognise a symbol — set a **manual price** in **Settings → Manual Prices** as a stop-gap.
+</details>
+
+<details>
+<summary><b>Mutual-fund NAVs are missing</b></summary>
+
+```bash
+python manage.py fetch_amfi_nav
+```
+
+Confirm the machine can reach the AMFI website, then check the log for errors. The daily job also refreshes NAVs once per day of uptime.
+
+</details>
+
+<details>
+<summary><b>The Excel import fails or imports nothing</b></summary>
+
+Make sure the workbook has a **Transactions** sheet (a Summary sheet is optional) with the columns the importer expects — see the importer in `backend/investments/` and its tests in `investments/tests.py`. The error message returned by the import shows which row or column it rejected.
+
+</details>
+
+### 📰 News and AI
+
+<details>
+<summary><b>The Portfolio News page is empty</b></summary>
+
+```bash
 cd backend
 python manage.py check
 python manage.py migrate
 python manage.py monitor_portfolio_news
 ```
 
-Read the printed counts. Common reasons for zero alerts: the user has no
-active (non-zero-quantity) holdings, no recent matching news exists, the
-Gemini key is missing/invalid, or every candidate article was already
-processed in a previous run.
+Read the printed counts. Common reasons for zero alerts: the user has no active (non-zero-quantity) holdings, no recent matching news exists, the Gemini key is missing or invalid, or every candidate article was already processed in an earlier run.
 
-### The monitor says Gemini is skipped
+</details>
 
-Make sure `backend/.env` has `GEMINI_API_KEY=...` (or `GOOGLE_API_KEY=...`),
-then restart `runserver` and re-run
-`python manage.py monitor_portfolio_news`.
+<details>
+<summary><b>The monitor says Gemini is skipped / AI Chat doesn't answer</b></summary>
 
-### No browser popup even though an alert shows in the Portfolio News page
+Make sure `backend/.env` has `GEMINI_API_KEY=...` (or `GOOGLE_API_KEY=...`), then **restart the backend** and re-run `python manage.py monitor_portfolio_news`.
 
-You need: a supported browser, browser notification permission granted
-(check your browser's site settings for the PWMS URL), the alert to be
-newly created (Critical/High tier) — not one that already existed at your
-last visit — and the Angular app open and polling (every 60 seconds).
+</details>
 
-### Too many Gemini rate-limit errors during a news monitor run
+<details>
+<summary><b>Too many Gemini rate-limit errors during a news run</b></summary>
 
-Increase the delay between calls in `backend/.env`:
+Increase the pause between calls in `backend/.env`, then restart:
 
-```env
+```ini
 NEWS_MONITOR_AI_CALL_DELAY_SECONDS=6
 ```
 
-Then restart the server (or re-run the command manually).
+Check your usage any time with `python manage.py gemini_usage`.
 
-### I accidentally deleted `db.sqlite3`
+</details>
 
-This is your local development database — if it had real data, restore it
-from a backup. If you intentionally want a fresh empty database:
+<details>
+<summary><b>No browser popup, even though an alert shows on the Portfolio News page</b></summary>
 
-```powershell
+You need: a supported browser; notification permission granted for the PWMS URL (check the browser's site settings); an alert that is **newly created** at Critical / High tier (not one that existed at your last visit); and the Angular app **open** — notifications are polled every 60 seconds, not pushed.
+
+</details>
+
+### 🗄️ Database
+
+<details>
+<summary><b>I accidentally deleted <code>db.sqlite3</code></b></summary>
+
+If it held real data, restore from a backup ([section 13](#13--backups-and-restore)). For a fresh empty database:
+
+```bash
 cd backend
 python manage.py migrate
 python manage.py createsuperuser
 ```
 
-Then re-enter or re-import your data.
+Then re-import your data.
 
-### A `mutual_funds` SIP test fails when I run the test suite
-
-A few SIP-scheduling tests compare against today's real date and can drift
-as time passes since they were written — this is a known, pre-existing
-test-fixture limitation, not something this guide can fix for you. It does
-not affect the running application, only that specific test file.
+</details>
 
 ---
 
-## Quick reference: full first-time setup, start to finish
+## 16 · Cheat sheet
+
+### Where things live
+
+| What                                | Where                                             |
+| ----------------------------------- | ------------------------------------------------- |
+| Backend settings                    | `backend/.env` (template: `backend/.env.example`) |
+| SQLite database                     | `backend/db.sqlite3`                              |
+| Application log                     | `backend/logs/pwms.log`                           |
+| Frontend API URL (dev)              | `frontend/src/environments/environment.ts`        |
+| Frontend API URL (production build) | `frontend/src/environments/environment.prod.ts`   |
+| Authorization rules                 | `backend/users/permissions.py`                    |
+
+### First-time setup, start to finish
 
 ```powershell
-git clone https://github.com/avviiiral/Personal_Wealth_Monitoring.git
-cd Personal_Wealth_Monitoring
-git checkout Updates-2.0
+# Windows PowerShell
+git clone https://github.com/avviiiral/Personal_Wealth_Monitoring_System.git
+cd Personal_Wealth_Monitoring_System
 
 cd backend
 python -m venv venv
@@ -591,8 +1122,10 @@ python -m venv venv
 python -m pip install --upgrade pip
 python -m pip install -r requirements.txt
 
-copy .env.example .env
-# edit backend\.env — fill in GEMINI_API_KEY if you want AI Chat / News
+@"
+DEBUG=True
+GEMINI_API_KEY=paste-your-key-here
+"@ | Set-Content .env
 
 python manage.py migrate
 python manage.py check
@@ -600,13 +1133,80 @@ python manage.py createsuperuser
 python manage.py runserver
 ```
 
-In a second terminal:
+```bash
+# macOS / Linux
+git clone https://github.com/avviiiral/Personal_Wealth_Monitoring_System.git
+cd Personal_Wealth_Monitoring_System
 
-```powershell
-cd Personal_Wealth_Monitoring\frontend
+cd backend
+python3 -m venv venv
+source venv/bin/activate
+python -m pip install --upgrade pip
+python -m pip install -r requirements.txt
+
+printf 'DEBUG=True\nGEMINI_API_KEY=paste-your-key-here\n' > .env
+
+python manage.py migrate
+python manage.py check
+python manage.py createsuperuser
+python manage.py runserver
+```
+
+In a **second terminal**:
+
+```bash
+cd Personal_Wealth_Monitoring_System/frontend
 npm install
 npm start
 ```
 
-Open `http://localhost:4200/login` and sign in with the account you just
-created.
+Open **http://localhost:4200/login** and sign in with the account you just created.
+
+### Commands you'll reuse
+
+| Goal                   | Command (from `backend/`)                          |
+| ---------------------- | -------------------------------------------------- |
+| Start the backend      | `python manage.py runserver`                       |
+| Apply database changes | `python manage.py migrate`                         |
+| Health check           | `python manage.py check`                           |
+| Create a user          | `python manage.py createsuperuser`                 |
+| Reset a password       | `python manage.py changepassword <username>`       |
+| Refresh prices now     | `python manage.py update_market_prices`            |
+| Refresh MF NAVs now    | `python manage.py fetch_amfi_nav`                  |
+| Run a news pass now    | `python manage.py monitor_portfolio_news`          |
+| Rebuild holdings       | `python manage.py rebuild_holdings --user-id <id>` |
+| Execute due SIPs       | `python manage.py execute_sips` _(see `--help`)_   |
+| Gemini usage summary   | `python manage.py gemini_usage`                    |
+| Run backend tests      | `python manage.py test`                            |
+
+---
+
+## 17 · Reset or uninstall
+
+**Fresh start, keep the code** — delete the database and rebuild it (this **erases all data**):
+
+```bash
+cd backend
+# delete db.sqlite3, then:
+python manage.py migrate
+python manage.py createsuperuser
+```
+
+**Remove local installs** (safe; they are recreated by the setup steps):
+
+| Delete                   | Recreated by                                                      |
+| ------------------------ | ----------------------------------------------------------------- |
+| `backend/venv/`          | [Step 4.1](#41-create-and-activate-a-virtual-environment) and 4.2 |
+| `frontend/node_modules/` | `npm install`                                                     |
+
+**Remove everything** — deactivate the virtual environment (`deactivate`) and delete the project folder.
+
+---
+
+<div align="center">
+
+**Stuck?** Check the [Troubleshooting](#15--troubleshooting) section, then read `backend/logs/pwms.log` — it usually names the problem.
+
+[← Back to the README](./README.md) &nbsp;·&nbsp; [⬆ Back to top](#-pwms-setup-guide)
+
+</div>

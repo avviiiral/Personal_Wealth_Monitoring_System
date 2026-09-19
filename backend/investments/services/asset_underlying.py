@@ -6,6 +6,7 @@ from django.db import transaction
 from rest_framework.exceptions import ValidationError
 
 from investments.models import Asset, AssetUnderlyingHolding, SecurityMaster
+from investments.services.underlying_security_classifier import UnderlyingSecurityClassifier
 from users.permissions import require_active_family
 
 
@@ -134,6 +135,18 @@ class AssetUnderlyingImporter:
             sector, cap_type = cls._resolve_classification(
                 stock_name, family, by_name, by_compact_name, by_isin
             )
+
+            # Keep the family SecurityMaster path first. If that path
+            # has no classification, use the existing Yahoo Finance
+            # infrastructure to resolve the uploaded security name
+            # automatically instead of requiring manual classification.
+            if not sector or not cap_type:
+                fallback_sector, fallback_cap_type = (
+                    UnderlyingSecurityClassifier.classify(stock_name)
+                )
+                sector = sector or fallback_sector
+                cap_type = cap_type or fallback_cap_type
+
             rows.append(
                 AssetUnderlyingHolding(
                     owner=owner,

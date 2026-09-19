@@ -16,6 +16,7 @@ import { Chart, ChartConfiguration, registerables } from 'chart.js';
 import { forkJoin } from 'rxjs';
 
 import { WealthApiService } from '../../core/services/wealth-api.service';
+import { PortfolioApiService, PortfolioTreeResponse } from '../../core/services/portfolio-api.service';
 
 Chart.register(...registerables);
 
@@ -44,6 +45,7 @@ const LOSS_COLOR = '#b42318';
 })
 export class AnalyticsComponent implements OnInit, AfterViewInit, OnDestroy {
   private readonly wealthApi = inject(WealthApiService);
+  private readonly portfolioApi = inject(PortfolioApiService);
   private readonly cdr = inject(ChangeDetectorRef);
 
   @ViewChild('historicalChart') historicalChartRef?: ElementRef<HTMLCanvasElement>;
@@ -60,6 +62,7 @@ export class AnalyticsComponent implements OnInit, AfterViewInit, OnDestroy {
   investmentSummary: any = null;
   allocation: any = null;
   performance: any = null;
+  portfolioTree: PortfolioTreeResponse | null = null;
   advisorAllocation: any = null;
   advisorPerformance: any = null;
   xirr: any = null;
@@ -93,6 +96,28 @@ export class AnalyticsComponent implements OnInit, AfterViewInit, OnDestroy {
     this.marketCapAllocationError = '';
     this.sectorAllocation = null;
     this.sectorAllocationError = '';
+    this.performance = null;
+    this.portfolioTree = null;
+
+    this.portfolioApi.getPortfolioTree().subscribe({
+      next: tree => {
+        this.portfolioTree = tree;
+        this.performance = {
+          results: this.getInvestmentPerformanceRows(),
+        };
+        this.calculateInsights();
+        this.cdr.markForCheck();
+        setTimeout(() => {
+          this.renderPerformanceChart();
+          this.cdr.markForCheck();
+        });
+      },
+      error: error => {
+        console.error('PORTFOLIO TREE API ERROR:', error);
+        this.performance = { results: [] };
+        this.cdr.markForCheck();
+      },
+    });
 
     this.wealthApi.getMarketCapAllocation().subscribe({
       next: data => {
@@ -124,7 +149,6 @@ export class AnalyticsComponent implements OnInit, AfterViewInit, OnDestroy {
       summary: this.wealthApi.getSummary(),
       investmentSummary: this.wealthApi.getInvestmentSummary(),
       allocation: this.wealthApi.getAllocation(),
-      performance: this.wealthApi.getPerformanceBySubclass(),
       advisorAllocation: this.wealthApi.getAllocationByAdvisor(),
       advisorPerformance: this.wealthApi.getPerformanceByAdvisor(),
       historical: this.wealthApi.getHistorical(this.selectedDays),
@@ -237,16 +261,104 @@ export class AnalyticsComponent implements OnInit, AfterViewInit, OnDestroy {
     this.allocationChart = new Chart(canvas, config);
   }
 
+  private getInvestmentPerformanceRows(): Array<{
+    asset_name: string;
+    asset_class: string;
+    xirr_percentage: number;
+  }> {
+    const rowsByKey = new Map<string, {
+      asset_name: string;
+      asset_class: string;
+      xirr_percentage: number;
+    }>();
+
+    for (const family of this.portfolioTree?.families ?? []) {
+      for (const portfolio of family.portfolios ?? []) {
+        for (const assetClass of portfolio.asset_classes ?? []) {
+          for (const subClass of assetClass.sub_classes ?? []) {
+            for (const asset of subClass.assets ?? []) {
+              const xirr = Number(asset.asset_name_xirr);
+
+              if (!Number.isFinite(xirr)) {
+                continue;
+              }
+
+              const assetName = asset.asset_name?.trim() || 'Unnamed Asset';
+              const subClassName = subClass.sub_class?.trim() || 'Unassigned';
+              const key = `${subClassName}::${assetName}`;
+
+              if (!rowsByKey.has(key)) {
+                rowsByKey.set(key, {
+                  asset_name: assetName,
+                  asset_class: subClassName,
+                  xirr_percentage: xirr,
+                });
+              }
+            }
+          }
+        }
+      }
+    }
+
+    return Array.from(rowsByKey.values()).sort(
+      (a, b) => b.xirr_percentage - a.xirr_percentage,
+    );
+  }
+
   private renderPerformanceChart(): void {
     const canvas = this.performanceChartRef?.nativeElement;
     if (!canvas) return;
     this.performanceChart?.destroy();
+
     const results = this.performance?.results ?? [];
     if (!results.length) return;
-    const sortedResults = [...results].sort((a: any, b: any) => this.toNumber(b.pnl_percentage) - this.toNumber(a.pnl_percentage));
-    const labels = sortedResults.map((item: any) => item.asset_class || item.symbol || item.asset_name || item.scheme_name || item.name || 'Unknown');
-    const values = sortedResults.map((item: any) => this.toNumber(item.pnl_percentage));
-    const config: ChartConfiguration<'bar'> = { type: 'bar', data: { labels, datasets: [{ label: 'Return %', data: values, backgroundColor: values.map(value => value >= 0 ? GAIN_COLOR : LOSS_COLOR), borderRadius: 5, barThickness: 24 }] }, options: { animation: { duration: 850, easing: 'easeOutQuart' }, indexAxis: 'y', responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false }, tooltip: { callbacks: { label: context => `Return: ${this.toNumber(context.parsed.x).toFixed(2)}%` } } }, scales: { x: { ticks: { color: this.chartMutedColor(), callback: value => `${Number(value).toFixed(0)}%` }, grid: { color: this.chartGridColor() } }, y: { ticks: { color: this.chartMutedColor() }, grid: { display: false } } } } };
+
+    const labels = results.map(
+      (item: any) => item.asset_name || item.asset_class || 'Unknown',
+    );
+    const values = results.map((item: any) => this.toNumber(item.xirr_percentage));
+
+    const config: ChartConfiguration<'bar'> = {
+      type: 'bar',
+      data: {
+        labels,
+        datasets: [{
+          label: 'XIRR %',
+          data: values,
+          backgroundColor: values.map(value => value >= 0 ? GAIN_COLOR : LOSS_COLOR),
+          borderRadius: 5,
+          barThickness: 24,
+        }],
+      },
+      options: {
+        animation: { duration: 850, easing: 'easeOutQuart' },
+        indexAxis: 'y',
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            callbacks: {
+              label: context => `XIRR: ${this.toNumber(context.parsed.x).toFixed(2)}%`,
+            },
+          },
+        },
+        scales: {
+          x: {
+            ticks: {
+              color: this.chartMutedColor(),
+              callback: value => `${Number(value).toFixed(0)}%`,
+            },
+            grid: { color: this.chartGridColor() },
+          },
+          y: {
+            ticks: { color: this.chartMutedColor() },
+            grid: { display: false },
+          },
+        },
+      },
+    };
+
     this.performanceChart = new Chart(canvas, config);
   }
 

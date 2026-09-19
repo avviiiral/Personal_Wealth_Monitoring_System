@@ -21,6 +21,7 @@ from .views import (
     wealth_summary,
     wealth_xirr,
     wealth_historical,
+    wealth_historical_period,
 )
 from .xirr_by_asset_class_views import wealth_xirr_by_asset_class
 
@@ -50,4 +51,5 @@ urlpatterns = [
     path("wealth/non-stock-holding-types/", wealth_non_stock_holding_types, name="wealth-non-stock-holding-types"),
     path("wealth/performance-by-advisor/", wealth_performance_by_advisor, name="wealth-performance-by-advisor"),
     path("wealth/historical/", wealth_historical, name="wealth-historical"),
+    path("wealth/historical-period/", wealth_historical_period, name="wealth-historical-period"),
 ]

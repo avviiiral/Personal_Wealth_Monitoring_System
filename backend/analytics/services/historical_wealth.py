@@ -237,7 +237,6 @@ class HistoricalWealthAnalytics:
             MarketPrice.objects
             .filter(
                 asset_id__in=asset_ids,
-                date__gte=start_date,
                 date__lte=end_date,
             )
             .order_by(
@@ -492,7 +491,6 @@ class HistoricalWealthAnalytics:
             MutualFundNAV.objects
             .filter(
                 scheme_id__in=scheme_ids,
-                date__gte=start_date,
                 date__lte=end_date,
             )
             .order_by(

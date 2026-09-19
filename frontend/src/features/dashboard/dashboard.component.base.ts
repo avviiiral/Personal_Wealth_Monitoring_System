@@ -1209,31 +1209,41 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
    * PDF than to show a number that might not match.
    */
   private buildSubClassSummariesForReport(): SubClassSummaryRow[] {
-    const totals = new Map<
-      string,
-      { current_value: number; invested_value: number; pnl: number }
-    >();
+    const totals = new Map<string, {
+      family_name: string;
+      sub_class: string;
+      current_value: number;
+      invested_value: number;
+      pnl: number;
+      xirr_inputs: { invested_value: number; xirr: number | null }[];
+    }>();
 
     for (const family of this.portfolioTree?.families ?? []) {
-      if (this.selectedFamily && family.family_name !== this.selectedFamily) {
-        continue;
-      }
+      if (this.selectedFamily && family.family_name !== this.selectedFamily) continue;
 
       for (const portfolio of family.portfolios) {
         for (const assetClass of portfolio.asset_classes) {
           for (const subClass of assetClass.sub_classes) {
-            const key = subClass.sub_class || 'Unassigned';
-
+            const subClassName = subClass.sub_class || 'Unassigned';
+            const key = family.family_name + '::' + subClassName;
             const existing = totals.get(key) ?? {
+              family_name: family.family_name,
+              sub_class: subClassName,
               current_value: 0,
               invested_value: 0,
               pnl: 0,
+              xirr_inputs: [],
             };
 
             for (const asset of subClass.assets) {
-              existing.current_value += asset.current_value ?? 0;
-              existing.invested_value += asset.invested_value ?? 0;
-              existing.pnl += asset.pnl ?? 0;
+              const investedValue = Number(asset.invested_value ?? 0);
+              existing.current_value += Number(asset.current_value ?? 0);
+              existing.invested_value += investedValue;
+              existing.pnl += Number(asset.pnl ?? 0);
+              existing.xirr_inputs.push({
+                invested_value: investedValue,
+                xirr: asset.sub_class_xirr ?? null,
+              });
             }
 
             totals.set(key, existing);
@@ -1242,12 +1252,28 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
       }
     }
 
-    return Array.from(totals.entries())
-      .map(([sub_class, values]) => ({
-        sub_class,
-        ...values,
-      }))
-      .sort((a, b) => b.current_value - a.current_value);
+    return Array.from(totals.values())
+      .map((values) => {
+        const valid = values.xirr_inputs.filter(
+          (item) => item.xirr !== null && Number.isFinite(Number(item.xirr)) && item.invested_value > 0,
+        );
+        const totalInvested = valid.reduce((sum, item) => sum + item.invested_value, 0);
+        const xirr = totalInvested
+          ? valid.reduce((sum, item) => sum + Number(item.xirr) * item.invested_value, 0) / totalInvested
+          : null;
+
+        return {
+          family_name: values.family_name,
+          sub_class: values.sub_class,
+          invested_value: values.invested_value,
+          current_value: values.current_value,
+          pnl: values.pnl,
+          xirr,
+        };
+      })
+      .sort((a, b) =>
+        a.family_name.localeCompare(b.family_name) || b.current_value - a.current_value,
+      );
   }
 
   /**
@@ -1278,6 +1304,7 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
 
             for (const asset of subClass.assets) {
               existing.assets.push({
+                family_name: family.family_name,
                 asset_name: asset.asset_name || asset.underlying || '-',
                 isin: asset.isin,
                 advisors: asset.advisors,
@@ -1288,7 +1315,7 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
                 current_value: asset.current_value ?? 0,
                 pnl: asset.pnl ?? 0,
                 pnl_percentage: asset.pnl_percentage ?? 0,
-                xirr: asset.xirr,
+                xirr: asset.asset_name_xirr ?? asset.xirr,
               });
             }
 

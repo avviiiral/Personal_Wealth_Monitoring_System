@@ -17,6 +17,7 @@ from investments.services.portfolio_metrics import PortfolioMetricsService
 from market_data.services.market_data_manager import MarketDataManager
 from portfolio.services.holding_engine import HoldingCalculationEngine
 from portfolio.services.portfolio_position_engine import PortfolioPositionEngine
+from investments.services.asset_underlying import AssetUnderlyingImportError, AssetUnderlyingImporter
 
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
@@ -240,3 +241,25 @@ def portfolio_tree(request):
             status=status.HTTP_500_INTERNAL_SERVER_ERROR,
         )
     return Response({"success": True, **tree}, status=status.HTTP_200_OK)
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def portfolio_asset_underlying_import(request, asset_id):
+    uploaded_file = request.FILES.get("file")
+    if uploaded_file is None:
+        return Response({"success": False, "message": "Please upload an Excel file using the 'file' field."}, status=status.HTTP_400_BAD_REQUEST)
+    try:
+        result = AssetUnderlyingImporter.import_file(
+            file=uploaded_file,
+            asset_id=asset_id,
+            owner=request.user,
+        )
+    except AssetUnderlyingImportError as exc:
+        return Response({"success": False, "message": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+    except PermissionDenied as exc:
+        return Response({"success": False, "message": str(exc.detail) if hasattr(exc, "detail") else str(exc)}, status=status.HTTP_403_FORBIDDEN)
+    except Exception as exc:
+        traceback.print_exc()
+        return Response({"success": False, "message": "Unexpected error while importing underlying data.", "error": str(exc)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    return Response({"success": True, "message": "Underlying data uploaded successfully.", "data": result}, status=status.HTTP_201_CREATED)

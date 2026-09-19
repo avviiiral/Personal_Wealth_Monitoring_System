@@ -9,7 +9,7 @@ from investments.models import (
     TransactionType,
 )
 from django.db.models import Q
-from market_data.models import ManualAssetPrice, MarketPrice
+from market_data.models import DataSource, ManualAssetPrice, MarketPrice
 from users.permissions import get_active_family_group, is_system_owner
 from mutual_funds.models import (
     MutualFundNAV,
@@ -297,28 +297,144 @@ class HistoricalWealthAnalytics:
                 )
 
         # ------------------------------------------------------
-        # MANUAL OVERRIDE (ManualAssetPrice)
+        # MANUAL PRICE HISTORY
         #
-        # IMPORTANT:
-        # This is a SEPARATE table from MarketPrice(source=MANUAL) -
-        # used for assets where automatic market data is
-        # unavailable (AIFs, PMS, unlisted, etc). It holds exactly
-        # one row per asset, no history, and
-        # PortfolioMetricsService.get_current_price() - the price
-        # source behind Holding / the "All Families" figures -
-        # already gives it unconditional top priority over
-        # MarketPrice, regardless of date.
+        # Manual prices are stored in MarketPrice with
+        # source=MANUAL. Each dated entry is an effective
+        # historical snapshot:
         #
-        # To keep this calculation consistent with that, any asset
-        # with a ManualAssetPrice entry gets its MarketPrice series
-        # REPLACED with that single price. _get_value_for_date()
-        # already falls back to a single point's value for every
-        # date (before OR after it), so this one override price is
-        # used across the entire requested range - the same
-        # date-agnostic behavior get_current_price() has.
+        #   Sunday      -> 2
+        #   Today       -> 4
+        #
+        # The 2 must remain effective from Sunday until today,
+        # and 4 becomes effective from today onward.
+        #
+        # Manual prices also override automatic prices from their
+        # effective date until the next manual price is entered.
+        # Before the first manual price, an older automatic price
+        # is still used when available. If no older price exists,
+        # _get_value_for_date() falls back to the first known
+        # manual price.
+        #
+        # We therefore load ALL manual snapshots, not just the
+        # requested date range, and merge them into the automatic
+        # price history below.
         # ------------------------------------------------------
 
         manual_prices = (
+            MarketPrice.objects
+            .filter(
+                asset_id__in=asset_ids,
+                source=DataSource.MANUAL,
+            )
+            .order_by(
+                "asset_id",
+                "date",
+                "id",
+            )
+            .only(
+                "asset_id",
+                "date",
+                "close_price",
+            )
+        )
+
+        manual_by_asset = defaultdict(list)
+
+        for manual_price in manual_prices:
+            manual_by_asset[
+                manual_price.asset_id
+            ].append(
+                (
+                    manual_price.date,
+                    manual_price.close_price,
+                )
+            )
+
+        # Apply manual snapshots as effective overrides over the
+        # automatic series. This makes the result independent of
+        # the requested historical window.
+        for asset_id, manual_values in manual_by_asset.items():
+            automatic_values = prices_by_asset.get(
+                asset_id,
+                [],
+            )
+
+            combined_dates = sorted({
+                price_date
+                for price_date, _ in automatic_values
+            } | {
+                price_date
+                for price_date, _ in manual_values
+            })
+
+            effective_values = []
+
+            manual_index = -1
+
+            for price_date in combined_dates:
+                while (
+                    manual_index + 1 < len(manual_values)
+                    and manual_values[manual_index + 1][0]
+                    <= price_date
+                ):
+                    manual_index += 1
+
+                if manual_index >= 0:
+                    effective_values.append(
+                        (
+                            price_date,
+                            manual_values[manual_index][1],
+                        )
+                    )
+                    continue
+
+                automatic_value = next(
+                    (
+                        value
+                        for value_date, value in automatic_values
+                        if value_date == price_date
+                    ),
+                    None,
+                )
+
+                if automatic_value is not None:
+                    effective_values.append(
+                        (
+                            price_date,
+                            automatic_value,
+                        )
+                    )
+
+            # Keep every manual snapshot even when there are no
+            # automatic prices at the same dates. This also lets
+            # _get_value_for_date() use the first manual snapshot
+            # as the fallback for dates before the first known
+            # price when no older automatic price exists.
+            for manual_value in manual_values:
+                if manual_value not in effective_values:
+                    effective_values.append(manual_value)
+
+            prices_by_asset[asset_id] = sorted(
+                effective_values,
+                key=lambda item: item[0],
+            )
+
+        # ------------------------------------------------------
+        # LEGACY ManualAssetPrice FALLBACK
+        #
+        # Older installations may still contain the legacy
+        # one-row ManualAssetPrice record. Keep it as a fallback
+        # only when the asset has no MarketPrice manual history.
+        # New manual-price updates use MarketPrice and therefore
+        # retain their full dated history.
+        # ------------------------------------------------------
+
+        manual_history_asset_ids = set(
+            manual_by_asset.keys()
+        )
+
+        legacy_manual_prices = (
             ManualAssetPrice.objects
             .filter(
                 asset_id__in=asset_ids,
@@ -330,11 +446,14 @@ class HistoricalWealthAnalytics:
             )
         )
 
-        for manual_price in manual_prices:
-            prices_by_asset[manual_price.asset_id] = [
+        for legacy_price in legacy_manual_prices:
+            if legacy_price.asset_id in manual_history_asset_ids:
+                continue
+
+            prices_by_asset[legacy_price.asset_id] = [
                 (
-                    manual_price.price_date,
-                    manual_price.price,
+                    legacy_price.price_date,
+                    legacy_price.price,
                 )
             ]
 

@@ -1,5 +1,5 @@
 import { CommonModule } from '@angular/common';
-import { Component, OnInit, inject } from '@angular/core';
+import { ChangeDetectorRef, Component, OnInit, inject } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { firstValueFrom } from 'rxjs';
 
@@ -41,6 +41,7 @@ interface ReportDefinition {
 export class DownloadsComponent implements OnInit {
   private readonly portfolioApi = inject(PortfolioApiService);
   private readonly watchListApi = inject(WatchListApiService);
+  private readonly cdr = inject(ChangeDetectorRef);
 
   readonly reports: ReportDefinition[] = [
     { id: 'portfolio-summary', name: 'Portfolio Summary', type: 'Portfolio Summary', description: 'Sub Class level portfolio values, gain/loss and XIRR.', filters: 'Family' },
@@ -69,6 +70,7 @@ export class DownloadsComponent implements OnInit {
   toDate = '';
 
   loading = true;
+  reportLoading = false;
   downloading = false;
   error = '';
   success = '';
@@ -122,12 +124,9 @@ export class DownloadsComponent implements OnInit {
   }
 
   private setTransactionDateRange(): void {
-    if (this.transactionsLoaded) {
-      this.setTransactionDateRange();
-    } else {
-      this.fromDate = '';
-      this.toDate = '';
-    }
+    const dates = this.transactions.map(tx => tx.transaction_date).filter(Boolean).sort();
+    this.fromDate = dates[0] ?? '';
+    this.toDate = dates[dates.length - 1] ?? '';
   }
 
   get familyOptions(): string[] {
@@ -172,7 +171,7 @@ export class DownloadsComponent implements OnInit {
     this.selectedReport = id;
     this.success = '';
     this.error = '';
-    this.loading = true;
+    this.reportLoading = true;
 
     try {
       await this.loadDataForReport(id);
@@ -181,7 +180,8 @@ export class DownloadsComponent implements OnInit {
       console.error('Download report data load failed:', error);
       this.error = 'Unable to load this report data.';
     } finally {
-      this.loading = false;
+      this.reportLoading = false;
+      this.cdr.detectChanges();
     }
   }
 

@@ -159,7 +159,6 @@ export class AnalyticsComponent implements OnInit, AfterViewInit, OnDestroy {
           this.summary = data.summary;
           this.investmentSummary = data.investmentSummary;
           this.allocation = data.allocation;
-          this.performance = data.performance;
           this.advisorAllocation = data.advisorAllocation;
           this.advisorPerformance = data.advisorPerformance;
           this.xirr = { xirr_percentage: this.summary?.xirr_percentage ?? null };

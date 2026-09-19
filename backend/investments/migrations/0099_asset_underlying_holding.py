@@ -5,7 +5,7 @@ import django.db.models.deletion
 
 class Migration(migrations.Migration):
     dependencies = [
-        ("investments", "0001_initial"),
+        ("investments", "0012_family_owned_portfolio_positions"),
         ("users", "0001_initial"),
         migrations.swappable_dependency(settings.AUTH_USER_MODEL),
     ]

@@ -354,11 +354,14 @@ class HoldingCalculationEngine:
 
     @staticmethod
     def rebuild_all_for_user(user):
+        from users.permissions import require_active_family
+
+        family = require_active_family(user)
 
         assets = (
             Asset.objects
             .filter(
-                owner=user,
+                family=family,
                 is_active=True,
             )
         )
@@ -366,16 +369,12 @@ class HoldingCalculationEngine:
         holdings = []
 
         for asset in assets:
-
             holding = (
                 HoldingCalculationEngine
                 .rebuild_holding(
                     asset
                 )
             )
-
-            holdings.append(
-                holding
-            )
+            holdings.append(holding)
 
         return holdings

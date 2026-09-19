@@ -205,19 +205,7 @@ export class AnalyticsComponent implements OnInit, AfterViewInit, OnDestroy {
       return this.wealthApi.getHistoricalByPeriod('this-month');
     }
     if (this.selectedPeriod === 'last-month') {
-      const today = new Date();
-      const currentMonthStart = new Date(today.getFullYear(), today.getMonth(), 1);
-      const lastMonthEnd = new Date(currentMonthStart);
-      lastMonthEnd.setDate(0);
-      const lastMonthStart = new Date(
-        lastMonthEnd.getFullYear(),
-        lastMonthEnd.getMonth(),
-        1,
-      );
-      return this.wealthApi.getHistoricalRange(
-        this.toIsoDate(lastMonthStart),
-        this.toIsoDate(lastMonthEnd),
-      );
+      return this.wealthApi.getHistoricalByPeriod('last-month');
     }
     if (this.selectedPeriod === 'inception') {
       return this.wealthApi.getHistoricalByPeriod('inception');

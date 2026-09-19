@@ -557,8 +557,9 @@ function drawTopExposuresPage(
   autoTable(doc, {
     startY: 46,
     margin: { left: MARGIN, right: PAGE_W / 2 + 4 },
-    head: [['Top 10 by Allocation', 'Current Value', '%']],
+    head: [['Family Name', 'Top 10 by Allocation', 'Current Value', '%']],
     body: topByValue.map((asset) => [
+      asset.family_name,
       asset.asset_name,
       formatInr(asset.current_value),
       totalValue
@@ -574,7 +575,7 @@ function drawTopExposuresPage(
     },
     bodyStyles: { fontSize: 8, textColor: INK },
     alternateRowStyles: { fillColor: LIGHT_ROW },
-    columnStyles: { 1: { halign: 'right' }, 2: { halign: 'right' } },
+    columnStyles: { 2: { halign: 'right' }, 3: { halign: 'right' } },
     styles: { cellPadding: 2.6 },
   });
 
@@ -589,8 +590,9 @@ function drawTopExposuresPage(
   autoTable(doc, {
     startY: 46,
     margin: { left: PAGE_W / 2 + 4, right: MARGIN },
-    head: [['Top 10 by XIRR', 'XIRR', 'Current Value']],
+    head: [['Family Name', 'Top 10 by XIRR', 'XIRR', 'Current Value']],
     body: topByXirr.map((asset) => [
+      asset.family_name,
       asset.asset_name,
       formatPercent(asset.xirr),
       formatInr(asset.current_value),
@@ -604,7 +606,7 @@ function drawTopExposuresPage(
     },
     bodyStyles: { fontSize: 8, textColor: INK },
     alternateRowStyles: { fillColor: LIGHT_ROW },
-    columnStyles: { 1: { halign: 'right' }, 2: { halign: 'right' } },
+    columnStyles: { 2: { halign: 'right' }, 3: { halign: 'right' } },
     styles: { cellPadding: 2.6 },
   });
 

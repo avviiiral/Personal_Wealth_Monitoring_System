@@ -21,7 +21,9 @@ type ReportId =
   | 'asset-class-xirr'
   | 'sub-class-xirr'
   | 'asset-name-xirr'
-  | 'watch-list'\n  | 'market-cap'\n  | 'holding-matrix';
+  | 'watch-list'\n  | 'market-cap'\n  |'watch-list'
+  | 'market-cap'
+  | 'holding-matrix';
 
 interface ReportDefinition {
   id: ReportId;

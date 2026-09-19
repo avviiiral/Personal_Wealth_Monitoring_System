@@ -57,6 +57,19 @@ export class PortfolioApiService {
     });
   }
   getHoldingReport(): Observable<HoldingReportResponse> { return this.http.get<HoldingReportResponse>(`${this.baseUrl}/holding-report/`, { ...this.requestOptions, params: { _t: Date.now().toString() } }); }
+  uploadAssetUnderlying(assetId: number, file: File): Observable<any> {
+    const formData = new FormData();
+    formData.append('file', file);
+    return this.getCsrfToken().pipe(
+      switchMap(() =>
+        this.http.post<any>(`${this.baseUrl}/assets/${assetId}/underlying/import/`, formData, {
+          headers: this.getCsrfHeaders(),
+          withCredentials: true,
+        }),
+      ),
+    );
+  }
+
   createAsset(payload: CreateAssetRequest): Observable<PortfolioAsset> {
     return this.getCsrfToken().pipe(switchMap(() => this.http.post<PortfolioAsset>(`${this.baseUrl}/assets/`, payload, { headers: this.getCsrfHeaders(), withCredentials: true })));
   }

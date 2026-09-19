@@ -163,6 +163,7 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
   selectFamily(family: string): void {
     this.selectedFamily = this.selectedFamily === family ? '' : family;
 
+    this.xirrPerformanceAssetCategoryIndex = 0;
 
     this.loadDashboard();
   }
@@ -174,6 +175,7 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
 
     this.selectedFamily = '';
 
+    this.xirrPerformanceAssetCategoryIndex = 0;
 
     this.loadDashboard();
   }
@@ -302,6 +304,7 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
 
         this.portfolioTree = data;
 
+        this.ensureValidXirrCategoryIndex();
 
         this.cdr.markForCheck();
       },
@@ -799,6 +802,365 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
     },
   ): string {
     return row.asset_class;
+  }
+
+  /* ============================================================
+     XIRR PERFORMANCE
+     ============================================================ */
+
+  /**
+   * Asset Categories available for the XIRR selector.
+   *
+   * The order comes from Investment Summary:
+   *
+   * Other
+   * Alternate
+   * Equities
+   * Fixed Income
+   * Liquids
+   */
+  get xirrPerformanceCategories(): string[] {
+    const categories = this.investmentSummaryGroups.map((group) => group.asset_category);
+
+    return categories.filter((category) => this.hasXirrDataForCategory(category));
+  }
+
+  /**
+   * Currently selected Asset Category.
+   */
+  get selectedXirrAssetCategory(): string {
+    const categories = this.xirrPerformanceCategories;
+
+    if (!categories.length) {
+      return '';
+    }
+
+    this.ensureValidXirrCategoryIndex();
+
+    return categories[this.xirrPerformanceAssetCategoryIndex] ?? categories[0];
+  }
+
+  /**
+   * Move to the previous Asset Category.
+   */
+  previousXirrAssetCategory(): void {
+    const categories = this.xirrPerformanceCategories;
+
+    if (!categories.length) {
+      return;
+    }
+
+    this.ensureValidXirrCategoryIndex();
+
+    this.xirrPerformanceAssetCategoryIndex =
+      this.xirrPerformanceAssetCategoryIndex <= 0
+        ? categories.length - 1
+        : this.xirrPerformanceAssetCategoryIndex - 1;
+  }
+
+  /**
+   * Move to the next Asset Category.
+   */
+  nextXirrAssetCategory(): void {
+    const categories = this.xirrPerformanceCategories;
+
+    if (!categories.length) {
+      return;
+    }
+
+    this.ensureValidXirrCategoryIndex();
+
+    this.xirrPerformanceAssetCategoryIndex =
+      this.xirrPerformanceAssetCategoryIndex >= categories.length - 1
+        ? 0
+        : this.xirrPerformanceAssetCategoryIndex + 1;
+  }
+
+  /**
+   * Return the XIRR rows for the currently selected
+   * Asset Category.
+   *
+   * Each row represents the exact portfolio-tree asset
+   * position, so the XIRR is the XIRR already calculated
+   * by the existing PortfolioMetricsService.
+   */
+  get selectedXirrRows(): Array<{
+    underlying: string;
+    xirr: number;
+    assetClass: string;
+  }> {
+    const category = this.selectedXirrAssetCategory;
+
+    if (!category || !this.portfolioTree) {
+      return [];
+    }
+
+    const rows: Array<{
+      underlying: string;
+      xirr: number;
+      assetClass: string;
+    }> = [];
+
+    for (const family of this.portfolioTree.families ?? []) {
+      if (this.selectedFamily && family.family_name !== this.selectedFamily) {
+        continue;
+      }
+
+      for (const portfolio of family.portfolios ?? []) {
+        for (const assetClass of portfolio.asset_classes ?? []) {
+          for (const subClass of assetClass.sub_classes ?? []) {
+            const assetCategory = this.getAssetCategoryForTreeAssetClass(subClass.sub_class);
+
+            if (assetCategory !== category) {
+              continue;
+            }
+
+            for (const asset of subClass.assets ?? []) {
+              const xirr = Number(asset.xirr);
+
+              if (!Number.isFinite(xirr)) {
+                continue;
+              }
+
+              const underlying =
+                asset.underlying?.trim() || asset.asset_name?.trim() || 'Unnamed Underlying';
+
+              rows.push({
+                underlying,
+                xirr,
+                assetClass: subClass.sub_class,
+              });
+            }
+          }
+        }
+      }
+    }
+
+    return rows.sort((a, b) => b.xirr - a.xirr);
+  }
+
+  /**
+   * Top 5 Underlyings by XIRR.
+   */
+  get topXirrRows(): Array<{
+    underlying: string;
+    xirr: number;
+    assetClass: string;
+  }> {
+    return this.selectedXirrRows.slice(0, 5);
+  }
+
+  /**
+   * Bottom 5 Underlyings by XIRR.
+   */
+  get bottomXirrRows(): Array<{
+    underlying: string;
+    xirr: number;
+    assetClass: string;
+  }> {
+    return [...this.selectedXirrRows].sort((a, b) => a.xirr - b.xirr).slice(0, 5);
+  }
+
+  /**
+   * Return true when a category contains at least one
+   * valid XIRR record.
+   */
+  private hasXirrDataForCategory(category: string): boolean {
+    if (!this.portfolioTree) {
+      return false;
+    }
+
+    for (const family of this.portfolioTree.families ?? []) {
+      if (this.selectedFamily && family.family_name !== this.selectedFamily) {
+        continue;
+      }
+
+      for (const portfolio of family.portfolios ?? []) {
+        for (const assetClass of portfolio.asset_classes ?? []) {
+          for (const subClass of assetClass.sub_classes ?? []) {
+            const assetCategory = this.getAssetCategoryForTreeAssetClass(subClass.sub_class);
+
+            if (assetCategory !== category) {
+              continue;
+            }
+
+            for (const asset of subClass.assets ?? []) {
+              const xirr = Number(asset.xirr);
+
+              if (Number.isFinite(xirr)) {
+                return true;
+              }
+            }
+          }
+        }
+      }
+    }
+
+    return false;
+  }
+
+  /**
+   * Resolve the Asset Category for a Portfolio Tree Sub Class.
+   *
+   * IMPORTANT:
+   *
+   * This must be called with the Portfolio Tree's SUB CLASS value
+   * (e.g. "Debt Mutual Fund", "Arbitrage Mutual Fund", "Direct
+   * Equity"), NOT the broader top-level Asset Class value.
+   *
+   * The backend's Investment Summary categorization
+   * (investment_summary.py) resolves its own "Asset Class" concept
+   * as the SUB CLASS of each transaction, not the Portfolio Tree's
+   * separate, broader asset_class field. Matching against the
+   * wrong field meant categories like Fixed Income, Liquids, and
+   * Other never matched anything and silently dropped out of the
+   * XIRR Performance selector, even though their underlying assets
+   * had valid XIRR data.
+   *
+   * Investment Summary already contains both:
+   *
+   *   canonical Asset Class
+   *   raw Asset Class values
+   *
+   * so this avoids changing the backend Portfolio Tree.
+   */
+  protected getAssetCategoryForTreeAssetClass(treeSubClass: string): string | null {
+    const cleaned = (treeSubClass || '').trim();
+
+    if (!cleaned) {
+      return null;
+    }
+
+    for (const group of this.investmentSummaryGroups) {
+      for (const assetClass of group.asset_classes) {
+        if (assetClass.asset_class === cleaned) {
+          return group.asset_category;
+        }
+
+        if (assetClass.raw_asset_classes.some((raw) => raw.trim() === cleaned)) {
+          return group.asset_category;
+        }
+      }
+    }
+
+    /*
+     * The Portfolio Tree can contain a raw Excel
+     * classification that was normalized by the backend.
+     *
+     * These fallbacks mirror the existing Investment
+     * Summary normalization rules.
+     */
+    const upper = cleaned.toUpperCase();
+
+    if (upper.includes('EQUITY AIF') || upper === 'AIF') {
+      return 'Equities';
+    }
+
+    if (upper.includes('EQUITY PMS') || upper === 'PMS') {
+      return 'Equities';
+    }
+
+    if (upper.includes('EQUITY MUTUAL FUND')) {
+      return 'Equities';
+    }
+
+    if (upper.includes('EQUITY LRS') || upper === 'LRS') {
+      return 'Equities';
+    }
+
+    if (upper.includes('DIRECT EQUITY') || upper === 'EQUITY' || upper === 'STOCK') {
+      return 'Equities';
+    }
+
+    if (upper.includes('DEBT MUTUAL FUND')) {
+      return 'Fixed Income';
+    }
+
+    if (upper.includes('GOLD BOND') || upper === 'SGB' || upper.includes('SOVEREIGN GOLD')) {
+      return 'Fixed Income';
+    }
+
+    if (upper.includes('ARBITRAGE')) {
+      return 'Liquids';
+    }
+
+    if (upper.includes('LIQUID')) {
+      return 'Liquids';
+    }
+
+    if (upper.includes('PRIVATE EQUITY')) {
+      return 'Alternate';
+    }
+
+    if (upper.includes('REIT')) {
+      return 'Alternate';
+    }
+
+    if (upper.includes('INVIT')) {
+      return 'Alternate';
+    }
+
+    if (upper.includes('COMMODITY')) {
+      return 'Alternate';
+    }
+
+    if (upper.includes('UNLISTED')) {
+      return 'Other';
+    }
+
+    return null;
+  }
+
+  /**
+   * Keep the selected category index valid after API
+   * responses arrive or the available categories change.
+   */
+  private ensureValidXirrCategoryIndex(): void {
+    const categories = this.xirrPerformanceCategories;
+
+    if (!categories.length) {
+      this.xirrPerformanceAssetCategoryIndex = 0;
+      return;
+    }
+
+    if (this.xirrPerformanceAssetCategoryIndex >= categories.length) {
+      this.xirrPerformanceAssetCategoryIndex = 0;
+    }
+
+    if (this.xirrPerformanceAssetCategoryIndex < 0) {
+      this.xirrPerformanceAssetCategoryIndex = categories.length - 1;
+    }
+  }
+
+  /**
+   * Color class for an XIRR value based on its actual sign,
+   * not on whether it appears in the Top or Bottom panel.
+   */
+  getXirrClass(value: number): string {
+    if (value > 0) {
+      return 'xirr-positive';
+    }
+
+    if (value < 0) {
+      return 'xirr-negative';
+    }
+
+    return 'xirr-neutral';
+  }
+
+  formatXirr(value: number): string {
+    return `${this.toNumber(value).toFixed(2)}%`;
+  }
+
+  trackByXirrUnderlying(
+    index: number,
+    row: {
+      underlying: string;
+      xirr: number;
+      assetClass: string;
+    },
+  ): string {
+    return `${row.underlying}::${row.assetClass}::${index}`;
   }
 
   private formatAxisCurrency(value: number): string {

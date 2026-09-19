@@ -21,7 +21,7 @@ type ReportId =
   | 'asset-class-xirr'
   | 'sub-class-xirr'
   | 'asset-name-xirr'
-  | 'watch-list'\n  | 'market-cap'\n  |'watch-list'
+  | 'watch-list'
   | 'market-cap'
   | 'holding-matrix';
 
@@ -54,7 +54,8 @@ export class DownloadsComponent implements OnInit {
     { id: 'asset-class-xirr', name: 'Asset Class XIRR', type: 'Performance / XIRR', description: 'Asset Class level XIRR performance.', filters: 'Family + Asset Class' },
     { id: 'sub-class-xirr', name: 'Sub Class XIRR', type: 'Performance / XIRR', description: 'Sub Class level XIRR performance.', filters: 'Family + Asset Class + Sub Class' },
     { id: 'asset-name-xirr', name: 'Asset Name XIRR', type: 'Performance / XIRR', description: 'Asset Name level XIRR performance, matching Portfolio.', filters: 'Family + Asset Class + Sub Class + Asset Name' },
-    { id: 'watch-list', name: 'Watch List', type: 'Watch List Report', description: 'Currently watchlisted Mutual Funds and/or PMS products.', filters: 'Product Type' },\n    { id: 'market-cap', name: 'Market Cap', type: 'Equity Allocation Report', description: 'Equity PMS, Direct Equity and Equity Mutual Fund exposure grouped by market capitalization.', filters: 'Family' },\n    { id: 'holding-matrix', name: 'Holding Matrix', type: 'Equity Concentration Report', description: 'Equity PMS and Direct Equity holdings aggregated by security.', filters: 'Family' },
+    { id: 'watch-list', name: 'Watch List', type: 'Watch List Report', description: 'Currently watchlisted Mutual Funds and/or PMS products.', filters: 'Product Type' },
+    { id: 'market-cap', name: 'Market Cap', type: 'Equity Allocation Report', description: 'Equity PMS, Direct Equity and Equity Mutual Fund exposure grouped by market capitalization.', filters: 'Family' },\n    { id: 'holding-matrix', name: 'Holding Matrix', type: 'Equity Concentration Report', description: 'Equity PMS and Direct Equity holdings aggregated by security.', filters: 'Family' },
   ];
 
   transactions: Transaction[] = [];
@@ -230,7 +231,9 @@ export class DownloadsComponent implements OnInit {
         case 'asset-class-xirr': await this.downloadXirr('asset-class'); break;
         case 'sub-class-xirr': await this.downloadXirr('sub-class'); break;
         case 'asset-name-xirr': await this.downloadXirr('asset-name'); break;
-        case 'watch-list': await this.downloadWatchList(); break;\n        case 'market-cap': await this.downloadMarketCap(); break;\n        case 'holding-matrix': await this.downloadHoldingMatrix(); break;
+        case 'watch-list': await this.downloadWatchList(); break;
+        case 'market-cap': await this.downloadMarketCap(); break;
+        case 'holding-matrix': await this.downloadHoldingMatrix(); break;
       }
       this.success = `${this.selectedDefinition.name} downloaded successfully.`;
     } catch (error) {
@@ -473,7 +476,7 @@ export class DownloadsComponent implements OnInit {
         equity_mutual_fund: item.equity_mf,
       });
     });
-    rows.sort((a, b) => Number(b.current_value) - Number(a.current_value));
+    rows.sort((a, b) => Number(b['current_value']) - Number(a['current_value']));
 
     await this.exportWorkbook('Market Cap', 'Market Cap - Equity', [
       ['Market Cap', 'cap_type'],
@@ -531,7 +534,7 @@ export class DownloadsComponent implements OnInit {
       equity_pms: item.equity_pms,
       portfolio_count: item.portfolios.size,
       portfolios: Array.from(item.portfolios).sort().join(', '),
-    })).sort((a, b) => Number(b.current_value) - Number(a.current_value));
+    })).sort((a, b) => Number(b['current_value']) - Number(a['current_value']));
 
     await this.exportWorkbook('Holding Matrix', 'Holding Matrix - Equity PMS + Direct Equity', [
       ['Holding', 'holding'],

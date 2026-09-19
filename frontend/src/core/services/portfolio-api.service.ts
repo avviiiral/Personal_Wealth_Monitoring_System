@@ -56,7 +56,7 @@ export class PortfolioApiService {
       },
     });
   }
-  getHoldingReport(): Observable<HoldingReportResponse> { return this.http.get<HoldingReportResponse>(`${this.baseUrl}/holding-report/`, this.requestOptions); }
+  getHoldingReport(): Observable<HoldingReportResponse> { return this.http.get<HoldingReportResponse>(`${this.baseUrl}/holding-report/`, { ...this.requestOptions, params: { _t: Date.now().toString() } }); }
   createAsset(payload: CreateAssetRequest): Observable<PortfolioAsset> {
     return this.getCsrfToken().pipe(switchMap(() => this.http.post<PortfolioAsset>(`${this.baseUrl}/assets/`, payload, { headers: this.getCsrfHeaders(), withCredentials: true })));
   }

@@ -45,23 +45,43 @@ class AssetUnderlyingImporter:
         return value.strip()
 
     @classmethod
+    def _compact_name(cls, value):
+        return re.sub(r"[^A-Z0-9]", "", cls._normalize_name(value))
+
+    @classmethod
     def _classification_maps(cls, family):
         masters = SecurityMaster.objects.filter(family=family).only("asset_name", "isin", "sector", "cap_type")
         by_name = {}
+        by_compact_name = {}
         by_isin = {}
         for master in masters:
             name_key = cls._normalize_name(master.asset_name)
             if name_key:
                 by_name.setdefault(name_key, master)
+                by_compact_name.setdefault(cls._compact_name(master.asset_name), master)
             isin_key = cls._normalize_name(master.isin)
             if isin_key:
                 by_isin.setdefault(isin_key, master)
-        return by_name, by_isin
+        return by_name, by_compact_name, by_isin
 
     @classmethod
-    def _resolve_classification(cls, stock_name, family, by_name, by_isin):
+    def _resolve_classification(cls, stock_name, family, by_name, by_compact_name, by_isin):
         key = cls._normalize_name(stock_name)
         master = by_name.get(key)
+        if master is None:
+            master = by_compact_name.get(cls._compact_name(stock_name))
+        if master is None:
+            stock_compact = cls._compact_name(stock_name)
+            candidates = [
+                candidate for candidate in by_compact_name.values()
+                if len(cls._compact_name(candidate.asset_name)) >= 8
+                and (
+                    stock_compact.startswith(cls._compact_name(candidate.asset_name))
+                    or cls._compact_name(candidate.asset_name).startswith(stock_compact)
+                )
+            ]
+            if len(candidates) == 1:
+                master = candidates[0]
         if master is None:
             asset = Asset.objects.filter(family=family, name__iexact=str(stock_name).strip()).select_related("security_master").first()
             master = getattr(asset, "security_master", None)
@@ -95,7 +115,7 @@ class AssetUnderlyingImporter:
             raise AssetUnderlyingImportError("Excel must contain 'Stocks' and '% Holding' columns.")
 
         rows = []
-        by_name, by_isin = cls._classification_maps(family)
+        by_name, by_compact_name, by_isin = cls._classification_maps(family)
         for index, raw in frame.iterrows():
             stock_name = str(raw.get(stock_column, "")).strip()
             if not stock_name or stock_name.lower() == "nan":
@@ -111,7 +131,9 @@ class AssetUnderlyingImporter:
                 raise AssetUnderlyingImportError(f"Invalid holding percentage on Excel row {index + 2}.")
             if percentage < 0 or percentage > 100:
                 raise AssetUnderlyingImportError(f"Holding percentage must be between 0 and 100 on Excel row {index + 2}.")
-            sector, cap_type = cls._resolve_classification(stock_name, family, by_name, by_isin)
+            sector, cap_type = cls._resolve_classification(
+                stock_name, family, by_name, by_compact_name, by_isin
+            )
             rows.append(
                 AssetUnderlyingHolding(
                     owner=owner,

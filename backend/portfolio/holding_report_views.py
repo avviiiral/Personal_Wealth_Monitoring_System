@@ -17,6 +17,7 @@ from users.permissions import family_scope, require_active_family
 def holding_report(request):
     """Return current portfolio positions with asset-class, subclass, asset-name, and holding XIRR."""
     family = require_active_family(request.user)
+    active_family = family
 
     latest_transaction = (
         Transaction.objects
@@ -52,7 +53,7 @@ def holding_report(request):
     transactions = (
         Transaction.objects
         .filter(
-            family_id=family.id,
+            family_id=active_family.id,
             asset_id__in=asset_ids,
         )
         .only(

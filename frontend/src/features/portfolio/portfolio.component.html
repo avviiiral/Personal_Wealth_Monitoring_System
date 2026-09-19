@@ -46,6 +46,17 @@
         {{ uploadingTransactions ? 'Uploading…' : 'Upload Transactions' }}
       </button>
 
+
+      <button
+        type="button"
+        class="upload-button underlying-upload-trigger"
+        [disabled]="uploadingUnderlying"
+        (click)="toggleUnderlyingUpload()"
+      >
+        <span class="button-icon">↥</span>
+        Upload Underlying
+      </button>
+
       <button type="button" class="refresh-button" [disabled]="loading" (click)="refresh()">
         <svg
           class="button-icon refresh-icon"
@@ -62,6 +73,38 @@
       </button>
     </div>
   </div>
+
+
+  <div *ngIf="showUnderlyingUpload" class="underlying-upload-panel">
+    <div class="underlying-upload-content">
+      <div>
+        <div class="underlying-upload-title">Upload Underlying</div>
+        <div class="underlying-upload-help">Select an Asset Name and upload an Excel file containing <strong>Stocks</strong> and <strong>% Holding</strong>.</div>
+      </div>
+
+      <div class="underlying-upload-fields">
+        <label class="underlying-upload-field">
+          <span>Asset Name</span>
+          <select [(ngModel)]="selectedUnderlyingAssetId" [disabled]="uploadingUnderlying">
+            <option [ngValue]="null">Select Asset Name</option>
+            <option *ngFor="let asset of underlyingAssetOptions" [ngValue]="asset.id">{{ asset.name }}</option>
+          </select>
+        </label>
+
+        <label class="underlying-upload-file">
+          <span>{{ selectedUnderlyingFile?.name || 'Choose Excel file' }}</span>
+          <input type="file" accept=".xlsx" (change)="onUnderlyingFileSelected($event)" [disabled]="uploadingUnderlying" />
+        </label>
+
+        <button type="button" class="upload-button" [disabled]="uploadingUnderlying || !selectedUnderlyingAssetId || !selectedUnderlyingFile" (click)="uploadSelectedUnderlying()">
+          {{ uploadingUnderlying ? 'Uploading…' : 'Upload' }}
+        </button>
+
+        <button type="button" class="underlying-upload-cancel" [disabled]="uploadingUnderlying" (click)="toggleUnderlyingUpload()">Cancel</button>
+      </div>
+    </div>
+  </div>
+
 
   <!-- FILTERS -->
   <div *ngIf="!loading && !error" class="selection-area">

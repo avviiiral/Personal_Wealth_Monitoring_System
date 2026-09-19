@@ -324,7 +324,7 @@ export class AnalyticsComponent implements OnInit, AfterViewInit, OnDestroy {
         datasets: [{
           label: 'XIRR %',
           data: values,
-          backgroundColor: values.map(value => value >= 0 ? GAIN_COLOR : LOSS_COLOR),
+          backgroundColor: values.map((value: number) => value >= 0 ? GAIN_COLOR : LOSS_COLOR),
           borderRadius: 5,
           barThickness: 24,
         }],

@@ -205,12 +205,31 @@ export class AnalyticsComponent implements OnInit, AfterViewInit, OnDestroy {
       return this.wealthApi.getHistoricalByPeriod('this-month');
     }
     if (this.selectedPeriod === 'last-month') {
-      return this.wealthApi.getHistoricalByPeriod('last-month');
+      const today = new Date();
+      const currentMonthStart = new Date(today.getFullYear(), today.getMonth(), 1);
+      const lastMonthEnd = new Date(currentMonthStart);
+      lastMonthEnd.setDate(0);
+      const lastMonthStart = new Date(
+        lastMonthEnd.getFullYear(),
+        lastMonthEnd.getMonth(),
+        1,
+      );
+      return this.wealthApi.getHistoricalRange(
+        this.toIsoDate(lastMonthStart),
+        this.toIsoDate(lastMonthEnd),
+      );
     }
     if (this.selectedPeriod === 'inception') {
       return this.wealthApi.getHistoricalByPeriod('inception');
     }
     return this.wealthApi.getHistorical(this.selectedDays);
+  }
+
+  private toIsoDate(value: Date): string {
+    const year = value.getFullYear();
+    const month = String(value.getMonth() + 1).padStart(2, '0');
+    const day = String(value.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
   }
 
   private daysForPeriod(period: string): number | null {

@@ -604,16 +604,98 @@ export class DownloadsComponent implements OnInit {
     workbook.creator = 'PWMS';
     workbook.created = new Date();
     const sheet = workbook.addWorksheet(sheetName);
+    const isMarketCap = sheetName === 'Market Cap';
+
     sheet.mergeCells(1, 1, 1, columns.length);
-    sheet.getCell(1, 1).value = title;
-    sheet.getCell(1, 1).font = { bold: true, size: 12 };
+    const titleCell = sheet.getCell(1, 1);
+    titleCell.value = title;
+    titleCell.font = { bold: true, size: 16 };
+    titleCell.alignment = { vertical: 'middle', horizontal: 'left' };
+    titleCell.border = { bottom: { style: 'medium' } };
+    sheet.getRow(1).height = 28;
+
     const header = sheet.getRow(2);
     columns.forEach(([label, key], index) => {
-      header.getCell(index + 1).value = label;
-      header.getCell(index + 1).font = { bold: true };
+      const cell = header.getCell(index + 1);
+      cell.value = label;
+      cell.font = { bold: true, size: 11 };
+      cell.alignment = { vertical: 'middle', horizontal: index === 0 ? 'left' : 'right' };
+      cell.border = {
+        top: { style: 'thin' },
+        bottom: { style: 'thin' },
+      };
     });
-    sheet.columns = columns.map(([_, key]) => ({ key, width: Math.max(14, Math.min(32, key.length + 8)) }));
+    header.height = 22;
+
+    sheet.columns = columns.map(([label, key], index) => ({
+      key,
+      width: isMarketCap
+        ? (index === 0 ? 34 : 18)
+        : Math.max(14, Math.min(32, Math.max(label.length, key.length) + 8)),
+    }));
+
     rows.forEach(row => sheet.addRow(row));
+
+    const lastRow = sheet.rowCount;
+    for (let rowNumber = 3; rowNumber <= lastRow; rowNumber++) {
+      const row = sheet.getRow(rowNumber);
+      const firstValue = String(row.getCell(1).value ?? '');
+      const isSummaryRow = ['% of Equity', 'Current Value', 'total'].includes(firstValue);
+
+      row.height = 20;
+      row.eachCell({ includeEmpty: true }, (cell, columnNumber) => {
+        cell.border = {
+          bottom: { style: 'hair' },
+        };
+        cell.alignment = {
+          vertical: 'middle',
+          horizontal: columnNumber === 1 ? 'left' : 'right',
+        };
+
+        if (columnNumber > 1 && typeof cell.value === 'number') {
+          cell.numFmt = isMarketCap && firstValue === '% of Equity'
+            ? '0.00%'
+            : '#,##0.00';
+        }
+      });
+
+      if (isSummaryRow) {
+        row.font = { bold: true };
+        row.height = 22;
+        row.eachCell({ includeEmpty: true }, cell => {
+          cell.border = {
+            top: { style: 'thin' },
+            bottom: { style: 'thin' },
+          };
+        });
+      }
+    }
+
+    if (isMarketCap) {
+      // The API returns percentages as 0-100 values, so Excel needs a
+      // decimal fraction for percentage formatting.
+      const percentageRow = rows.findIndex(row => row['underlying'] === '% of Equity');
+      if (percentageRow >= 0) {
+        const excelRow = percentageRow + 3;
+        for (let column = 2; column <= columns.length; column++) {
+          const cell = sheet.getCell(excelRow, column);
+          if (typeof cell.value === 'number') {
+            cell.value = Number(cell.value) / 100;
+          }
+        }
+      }
+
+      const firstDataRow = 3;
+      const lastDataRow = Math.max(firstDataRow, lastRow - 3);
+      for (let rowNumber = firstDataRow; rowNumber <= lastDataRow; rowNumber++) {
+        if ((rowNumber - firstDataRow) % 2 === 0) {
+          sheet.getRow(rowNumber).eachCell({ includeEmpty: true }, cell => {
+            cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'F7F9FC' } };
+          });
+        }
+      }
+    }
+
     sheet.views = [{ state: 'frozen', ySplit: 2 }];
     sheet.autoFilter = { from: { row: 2, column: 1 }, to: { row: 2, column: columns.length } };
     const buffer = await workbook.xlsx.writeBuffer();

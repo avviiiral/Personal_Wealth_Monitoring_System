@@ -50,6 +50,7 @@ export interface InvestmentSummaryRow {
 }
 
 export interface SubClassSummaryRow {
+  family_name: string;
   sub_class: string;
   quantity?: number;
   invested_value: number;
@@ -59,6 +60,7 @@ export interface SubClassSummaryRow {
 }
 
 export interface AssetDetailRow {
+  family_name: string;
   asset_name: string;
   isin: string | null;
   advisors: string;
@@ -383,6 +385,7 @@ function drawHoldingsPage(
     margin: { left: MARGIN, right: MARGIN },
     head: [
       [
+        'Family Name',
         'Sub Class',
         'Invested Value',
         'Current Value',
@@ -391,6 +394,7 @@ function drawHoldingsPage(
       ],
     ],
     body: data.subClassSummaries.map((row) => [
+      row.family_name,
       row.sub_class,
       formatInr(row.invested_value),
       formatInr(row.current_value),
@@ -409,10 +413,10 @@ function drawHoldingsPage(
     bodyStyles: { fontSize: 9, textColor: INK },
     alternateRowStyles: { fillColor: LIGHT_ROW },
     columnStyles: {
-      1: { halign: 'right' },
       2: { halign: 'right' },
       3: { halign: 'right' },
       4: { halign: 'right' },
+      5: { halign: 'right' },
     },
     styles: { cellPadding: 3.2 },
     didParseCell: (hookData: CellHookData) => {
@@ -456,6 +460,7 @@ function drawSchemeDetailPages(
       margin: { left: MARGIN, right: MARGIN },
       head: [
         [
+          'Family Name',
           'Scheme / Holding',
           'ISIN',
           'Advisor',
@@ -469,6 +474,7 @@ function drawSchemeDetailPages(
         ],
       ],
       body: sortedAssets.map((asset) => [
+        asset.family_name,
         asset.asset_name,
         asset.isin || '-',
         asset.advisors || '-',
@@ -498,13 +504,13 @@ function drawSchemeDetailPages(
       bodyStyles: { fontSize: 7.5, textColor: INK },
       alternateRowStyles: { fillColor: LIGHT_ROW },
       columnStyles: {
-        3: { halign: 'right' },
         4: { halign: 'right' },
         5: { halign: 'right' },
         6: { halign: 'right' },
         7: { halign: 'right' },
         8: { halign: 'right' },
         9: { halign: 'right' },
+        10: { halign: 'right' },
       },
       styles: { cellPadding: 2.4 },
       didParseCell: (hookData: CellHookData) => {

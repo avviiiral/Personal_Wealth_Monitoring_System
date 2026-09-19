@@ -311,10 +311,83 @@ export class DownloadsComponent implements OnInit {
   }
 
   private async downloadSubClassHoldings(): Promise<void> {
-    const rows = this.filteredHoldingRows()
-      .filter(row => !this.selectedSubClass || this.clean(row.sub_class) === this.selectedSubClass)
-      .map(row => this.subClassHoldingExportRow(row));
+    const rows = this.buildSubClassHoldingExportRows(
+      this.filteredHoldingRows()
+        .filter(row => !this.selectedSubClass || this.clean(row.sub_class) === this.selectedSubClass),
+    );
     await this.exportWorkbook('Holdings', 'Sub Class Holdings', this.subClassHoldingColumns(), rows, 'sub_class_holdings');
+  }
+
+  private buildSubClassHoldingExportRows(rows: HoldingReportRow[]): Record<string, unknown>[] {
+    const groups = new Map<string, {
+      family_name: string;
+      sub_class: string;
+      asset_classes: Set<string>;
+      quantity: number;
+      invested_value: number;
+      current_value: number;
+      gain: number;
+      xirr_inputs: { invested_value: number; xirr: number | null }[];
+    }>();
+
+    for (const row of rows) {
+      const family = this.clean(row.family_name);
+      const subClass = this.clean(row.sub_class);
+      const key = family + '::' + subClass;
+      let group = groups.get(key);
+
+      if (!group) {
+        group = {
+          family_name: family,
+          sub_class: subClass,
+          asset_classes: new Set<string>(),
+          quantity: 0,
+          invested_value: 0,
+          current_value: 0,
+          gain: 0,
+          xirr_inputs: [],
+        };
+        groups.set(key, group);
+      }
+
+      const investedValue = Number(row.invested_value || 0);
+      const currentValue = Number(row.current_value || 0);
+
+      group.asset_classes.add(this.clean(row.asset_class));
+      group.quantity += Number(row.quantity || 0);
+      group.invested_value += investedValue;
+      group.current_value += currentValue;
+      group.gain += Number(row.gain || 0);
+
+      group.xirr_inputs.push({
+        invested_value: investedValue,
+        xirr: row.asset_name_xirr,
+      });
+    }
+
+    return Array.from(groups.values())
+      .sort((a, b) =>
+        a.family_name.localeCompare(b.family_name) ||
+        a.sub_class.localeCompare(b.sub_class),
+      )
+      .map((group) => ({
+        family_name: group.family_name,
+        portfolio: 'All Portfolios',
+        asset_class: group.asset_classes.size === 1
+          ? Array.from(group.asset_classes)[0]
+          : 'Multiple',
+        sub_class: group.sub_class,
+        quantity: group.quantity,
+        average_cost: group.quantity ? group.invested_value / group.quantity : 0,
+        invested_value: group.invested_value,
+        current_price: group.quantity ? group.current_value / group.quantity : 0,
+        current_value: group.current_value,
+        gain: group.gain,
+        gain_percentage: group.invested_value
+          ? (group.gain / group.invested_value) * 100
+          : 0,
+        xirr: this.weightedXirr(group.xirr_inputs),
+      }));
   }
 
   private async downloadAssetNameTransactions(): Promise<void> {

@@ -712,7 +712,6 @@ export class DownloadsComponent implements OnInit {
     workbook.created = new Date();
     const sheet = workbook.addWorksheet(sheetName);
     const isMarketCap = sheetName === 'Market Cap';
-    const isSubClassHoldings = sheetName === 'Holdings' && title === 'Sub Class Holdings';
 
     sheet.mergeCells(1, 1, 1, columns.length);
     const titleCell = sheet.getCell(1, 1);
@@ -729,7 +728,7 @@ export class DownloadsComponent implements OnInit {
       cell.value = label;
       cell.font = { bold: true, size: 11, color: { argb: 'FFFFFF' } };
       cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: '4472C4' } };
-      cell.alignment = { vertical: 'middle', horizontal: isSubClassHoldings ? 'center' : (index === 0 ? 'left' : 'right') };
+      cell.alignment = { vertical: 'middle', horizontal: 'center' };
       cell.border = {
         top: { style: 'thin' },
         bottom: { style: 'thin' },
@@ -759,7 +758,7 @@ export class DownloadsComponent implements OnInit {
         };
         cell.alignment = {
           vertical: 'middle',
-          horizontal: isSubClassHoldings ? 'center' : (columnNumber === 1 ? 'left' : 'right'),
+          horizontal: 'center',
         };
 
         if (columnNumber > 1 && typeof cell.value === 'number') {
@@ -767,21 +766,26 @@ export class DownloadsComponent implements OnInit {
             ? '0.00%'
             : '#,##0.00';
 
-          if (isSubClassHoldings) {
-            if (cell.value > 0) {
-              cell.font = { color: { argb: '008000' } };
-            } else if (cell.value < 0) {
-              cell.font = { color: { argb: 'C00000' } };
-            }
+          if (cell.value > 0) {
+            cell.font = { color: { argb: '008000' } };
+          } else if (cell.value < 0) {
+            cell.font = { color: { argb: 'C00000' } };
           }
         }
       });
 
       if (isSummaryRow) {
-        row.font = { bold: true };
         row.height = 22;
         row.eachCell({ includeEmpty: true }, cell => {
           cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: firstValue === 'total' ? 'D9EAF7' : 'EAF2F8' } };
+          if (typeof cell.value === 'number') {
+            cell.font = {
+              bold: true,
+              color: cell.value > 0 ? { argb: '008000' } : cell.value < 0 ? { argb: 'C00000' } : undefined,
+            };
+          } else {
+            cell.font = { bold: true };
+          }
         });
         row.eachCell({ includeEmpty: true }, cell => {
           cell.border = {

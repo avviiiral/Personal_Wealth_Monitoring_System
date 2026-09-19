@@ -558,7 +558,7 @@ export class DownloadsComponent implements OnInit {
     return match?.cap_type || 'Unclassified';
   }
 
-  private async downloadWatchList(): Promise<void {
+  private async downloadWatchList(): Promise<void> {
     const types: Array<'MUTUAL_FUND' | 'PMS'> = this.selectedWatchListType === 'ALL'
       ? ['MUTUAL_FUND', 'PMS'] : [this.selectedWatchListType];
     const products: WatchListProduct[] = [];

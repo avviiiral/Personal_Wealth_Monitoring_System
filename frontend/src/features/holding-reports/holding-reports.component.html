@@ -107,7 +107,7 @@
 
                                     <div *ngIf="expandedAssetName === getAssetKey(group.sub_class, holding)" class="holding-detail">
                                       <div class="holding-detail-toolbar">
-                                        <span>Asset Name Report — XIRR {{ formatPercentage(holding.row.asset_name_xirr) }}</span>
+                                        <span>Asset Name Report — XIRR {{ formatPercentage(getUnderlyingAwareXirr(holding.row)) }}</span>
                                         <button type="button" class="secondary-button row-download-button" [disabled]="downloading" (click)="downloadAssetNameReport(group, holding, $event)">Download Report</button>
                                       </div>
                                       <div class="holding-detail-grid">
@@ -117,7 +117,7 @@
                                         <div><span>Average Cost</span><strong>₹{{ formatDecimal(holding.row.average_cost) }}</strong></div>
                                         <div><span>Current Price / NAV</span><strong>₹{{ formatDecimal(holding.row.current_price) }}</strong></div>
                                         <div><span>Gain %</span><strong>{{ formatPercentage(holding.row.gain_percentage) }}</strong></div>
-                                        <div><span>XIRR</span><strong>{{ formatPercentage(holding.row.asset_name_xirr) }}</strong></div>
+                                        <div><span>XIRR</span><strong>{{ formatPercentage(getUnderlyingAwareXirr(holding.row)) }}</strong></div>
                                         <div><span>Sector</span><strong>{{ holding.row.sector || '-' }}</strong></div>
                                         <div><span>Cap Type</span><strong>{{ holding.row.cap_type || '-' }}</strong></div>
                                         <div><span>AMC</span><strong>{{ holding.row.amc_name || '-' }}</strong></div>

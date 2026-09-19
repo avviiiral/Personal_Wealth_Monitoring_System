@@ -91,8 +91,11 @@ export class DownloadsComponent implements OnInit {
   }
 
   async load(): Promise<void> {
-    this.loading = true;
     this.error = '';
+    this.loading = false;
+    this.reportLoading = true;
+    this.cdr.detectChanges();
+
     try {
       await this.loadDataForReport(this.selectedReport, true);
       this.validateSelections();
@@ -100,7 +103,8 @@ export class DownloadsComponent implements OnInit {
       console.error('Download page load failed:', error);
       this.error = 'Unable to load report data.';
     } finally {
-      this.loading = false;
+      this.reportLoading = false;
+      this.cdr.detectChanges();
     }
   }
 

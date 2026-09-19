@@ -397,185 +397,140 @@ export class DownloadsComponent implements OnInit {
     ], rows, title.toLowerCase().replace(/[^a-z0-9]+/g, '_'));
   }
 
+  private equityReportType(row: HoldingReportRow): 'Direct Equity' | 'Equity PMS' | 'Equity Mutual Fund' | null {
+    const assetClass = this.clean(row.asset_class).toUpperCase();
+    const subClass = this.clean(row.sub_class).toUpperCase();
+    const isEquity = assetClass.includes('EQUITY') || subClass.includes('EQUITY');
+
+    if (subClass.includes('DIRECT EQUITY') || assetClass.includes('DIRECT EQUITY')) return 'Direct Equity';
+    if (subClass.includes('PMS') || assetClass.includes('PMS')) return isEquity ? 'Equity PMS' : null;
+
+    const isMutualFund = subClass.includes('MUTUAL FUND') || subClass === 'MF'
+      || assetClass.includes('MUTUAL FUND') || assetClass === 'MF';
+    if (isMutualFund && isEquity) return 'Equity Mutual Fund';
+
+    return null;
+  }
+
   private async downloadMarketCap(): Promise<void> {
-    const selectedFamily = this.selectedFamily;
-    const rows: Record<string, unknown>[] = [];
-    const marketCapTotals = new Map<string, { current_value: number; direct_equity: number; equity_pms: number; equity_mf: number }>();
+    const totals = new Map<string, { current_value: number; direct_equity: number; equity_pms: number; equity_mf: number }>();
 
-    // Direct Equity + Equity PMS. For PMS positions with uploaded underlyings,
-    // use the underlying cap classification so the exposure is attributed to
-    // the securities actually held inside the PMS.
+    const add = (cap: string, value: number, type: 'direct_equity' | 'equity_pms' | 'equity_mf') => {
+      if (!Number.isFinite(value) || value <= 0) return;
+      const key = cap?.trim() || 'Unclassified';
+      const item = totals.get(key) || { current_value: 0, direct_equity: 0, equity_pms: 0, equity_mf: 0 };
+      item.current_value += value;
+      item[type] += value;
+      totals.set(key, item);
+    };
+
     for (const row of this.holdingRows) {
-      if (selectedFamily && this.clean(row.family_name) !== selectedFamily) continue;
-      const equityType = this.equityReportType(row);
-      if (!equityType) continue;
+      if (this.selectedFamily && this.clean(row.family_name) !== this.selectedFamily) continue;
+      const type = this.equityReportType(row);
+      if (!type) continue;
 
-      const baseValue = Number(row.current_value || 0);
-      if (baseValue <= 0) continue;
+      const currentValue = Number(row.current_value || 0);
+      if (currentValue <= 0) continue;
 
-      const entries = Object.entries(row.underlying_xirr ?? {});
-      if (equityType === 'Equity PMS' && entries.length) {
-        for (const [underlying, data] of entries) {
-          const pct = Number(data.holding_percentage || 0) / 100;
-          if (pct <= 0) continue;
-          const value = baseValue * pct;
-          const cap = this.clean(this.findUnderlyingCapType(row, underlying));
-          const item = marketCapTotals.get(cap) || { current_value: 0, direct_equity: 0, equity_pms: 0, equity_mf: 0 };
-          item.current_value += value;
-          item.equity_pms += value;
-          marketCapTotals.set(cap, item);
+      if (type === 'Equity PMS') {
+        const underlyings = Object.entries(row.underlying_xirr || {});
+        if (underlyings.length) {
+          for (const [underlying, data] of underlyings) {
+            const percentage = Number(data.holding_percentage || 0) / 100;
+            if (percentage <= 0) continue;
+            const match = this.holdingRows.find(candidate =>
+              this.equityReportType(candidate) === 'Direct Equity'
+              && this.clean(candidate.asset_name).toUpperCase() === underlying.trim().toUpperCase()
+              && this.clean(candidate.cap_type) !== 'Unassigned'
+            );
+            add(match?.cap_type || row.cap_type || 'Unclassified', currentValue * percentage, 'equity_pms');
+          }
+        } else {
+          add(row.cap_type || 'Unclassified', currentValue, 'equity_pms');
         }
-        continue;
-      }
-
-      const cap = this.clean(row.cap_type);
-      const item = marketCapTotals.get(cap) || { current_value: 0, direct_equity: 0, equity_pms: 0, equity_mf: 0 };
-      item.current_value += baseValue;
-      if (equityType === 'Direct Equity') item.direct_equity += baseValue;
-      else item.equity_pms += baseValue;
-      marketCapTotals.set(cap, item);
-    }
-
-    // Equity Mutual Funds are look-through classified from the same holding
-    // report rows when their underlying snapshot is available.
-    for (const row of this.holdingRows) {
-      if (selectedFamily && this.clean(row.family_name) !== selectedFamily) continue;
-      if (this.equityReportType(row) !== 'Equity Mutual Fund') continue;
-
-      const baseValue = Number(row.current_value || 0);
-      if (baseValue <= 0) continue;
-      const entries = Object.entries(row.underlying_xirr ?? {});
-      if (!entries.length) {
-        const cap = this.clean(row.cap_type);
-        const item = marketCapTotals.get(cap) || { current_value: 0, direct_equity: 0, equity_pms: 0, equity_mf: 0 };
-        item.current_value += baseValue;
-        item.equity_mf += baseValue;
-        marketCapTotals.set(cap, item);
-        continue;
-      }
-
-      for (const [underlying, data] of entries) {
-        const pct = Number(data.holding_percentage || 0) / 100;
-        if (pct <= 0) continue;
-        const value = baseValue * pct;
-        const cap = this.clean(this.findUnderlyingCapType(row, underlying));
-        const item = marketCapTotals.get(cap) || { current_value: 0, direct_equity: 0, equity_pms: 0, equity_mf: 0 };
-        item.current_value += value;
-        item.equity_mf += value;
-        marketCapTotals.set(cap, item);
+      } else if (type === 'Direct Equity') {
+        add(row.cap_type || 'Unclassified', currentValue, 'direct_equity');
+      } else {
+        add(row.cap_type || 'Unclassified', currentValue, 'equity_mf');
       }
     }
 
-    const total = Array.from(marketCapTotals.values()).reduce((sum, item) => sum + item.current_value, 0);
-    marketCapTotals.forEach((item, cap_type) => {
-      rows.push({
+    const rows = Array.from(totals.entries())
+      .map(([cap_type, item]) => ({
         cap_type,
         current_value: item.current_value,
-        percentage: total ? (item.current_value / total) * 100 : 0,
+        percentage: 0,
         direct_equity: item.direct_equity,
         equity_pms: item.equity_pms,
         equity_mutual_fund: item.equity_mf,
-      });
-    });
-    rows.sort((a, b) => Number(b['current_value']) - Number(a['current_value']));
+      }))
+      .sort((a, b) => b.current_value - a.current_value);
+
+    const total = rows.reduce((sum, row) => sum + row.current_value, 0);
+    rows.forEach(row => row.percentage = total > 0 ? (row.current_value / total) * 100 : 0);
 
     await this.exportWorkbook('Market Cap', 'Market Cap - Equity', [
-      ['Market Cap', 'cap_type'],
-      ['Current Value', 'current_value'],
-      ['% of Equity', 'percentage'],
-      ['Direct Equity', 'direct_equity'],
-      ['Equity PMS', 'equity_pms'],
-      ['Equity Mutual Fund', 'equity_mutual_fund'],
+      ['Market Cap', 'cap_type'], ['Current Value', 'current_value'], ['% of Equity', 'percentage'],
+      ['Direct Equity', 'direct_equity'], ['Equity PMS', 'equity_pms'], ['Equity Mutual Fund', 'equity_mutual_fund'],
     ], rows, 'market_cap');
   }
 
   private async downloadHoldingMatrix(): Promise<void> {
-    const selectedFamily = this.selectedFamily;
     const matrix = new Map<string, { current_value: number; direct_equity: number; equity_pms: number; portfolios: Set<string> }>();
 
-    for (const row of this.holdingRows) {
-      if (selectedFamily && this.clean(row.family_name) !== selectedFamily) continue;
-      const equityType = this.equityReportType(row);
-      if (!equityType) continue;
-
-      const baseValue = Number(row.current_value || 0);
-      if (baseValue <= 0) continue;
-
-      const entries = Object.entries(row.underlying_xirr ?? {});
-      if (equityType === 'Equity PMS' && entries.length) {
-        for (const [underlying, data] of entries) {
-          const pct = Number(data.holding_percentage || 0) / 100;
-          if (pct <= 0) continue;
-          const value = baseValue * pct;
-          const key = this.clean(underlying);
-          const item = matrix.get(key) || { current_value: 0, direct_equity: 0, equity_pms: 0, portfolios: new Set<string>() };
-          item.current_value += value;
-          item.equity_pms += value;
-          if (row.portfolio) item.portfolios.add(row.portfolio);
-          matrix.set(key, item);
-        }
-        continue;
-      }
-
-      const key = this.clean(row.asset_name);
+    const add = (holding: string, value: number, type: 'direct_equity' | 'equity_pms', portfolio: string) => {
+      if (!holding || !Number.isFinite(value) || value <= 0) return;
+      const key = holding.trim() || 'Unclassified';
       const item = matrix.get(key) || { current_value: 0, direct_equity: 0, equity_pms: 0, portfolios: new Set<string>() };
-      item.current_value += baseValue;
-      if (equityType === 'Direct Equity') item.direct_equity += baseValue;
-      else item.equity_pms += baseValue;
-      if (row.portfolio) item.portfolios.add(row.portfolio);
+      item.current_value += value;
+      item[type] += value;
+      if (portfolio) item.portfolios.add(portfolio);
       matrix.set(key, item);
-    }
-
-    const total = Array.from(matrix.values()).reduce((sum, item) => sum + item.current_value, 0);
-    const rows = Array.from(matrix.entries()).map(([holding, item]) => ({
-      holding,
-      current_value: item.current_value,
-      percentage: total ? (item.current_value / total) * 100 : 0,
-      direct_equity: item.direct_equity,
-      equity_pms: item.equity_pms,
-      portfolio_count: item.portfolios.size,
-      portfolios: Array.from(item.portfolios).sort().join(', '),
-    })).sort((a, b) => Number(b['current_value']) - Number(a['current_value']));
-
-    await this.exportWorkbook('Holding Matrix', 'Holding Matrix - Equity PMS + Direct Equity', [
-      ['Holding', 'holding'],
-      ['Current Value', 'current_value'],
-      ['% of Equity', 'percentage'],
-      ['Direct Equity', 'direct_equity'],
-      ['Equity PMS', 'equity_pms'],
-      ['Portfolio Count', 'portfolio_count'],
-      ['Portfolios', 'portfolios'],
-    ], rows, 'holding_matrix');
-  }
-
-  private equityReportType(row: HoldingReportRow): 'Direct Equity' | 'Equity PMS' | 'Equity Mutual Fund' | null {
-    const assetClass = this.clean(row.asset_class).trim().toUpperCase();
-    const subClass = this.clean(row.sub_class).trim().toUpperCase();
-
-    const classify = (value: string): 'Direct Equity' | 'Equity PMS' | 'Equity Mutual Fund' | null => {
-      if (value === 'DIRECT EQUITY' || value === 'DIRECT EQUITIES') return 'Direct Equity';
-      if (value === 'EQUITY PMS' || value === 'PMS') return 'Equity PMS';
-      if (value === 'EQUITY MUTUAL FUND' || value === 'EQUITY MUTUAL FUNDS' || value === 'MUTUAL FUND') return 'Equity Mutual Fund';
-      return null;
     };
 
-    return classify(subClass) ?? classify(assetClass);
-  }
+    for (const row of this.holdingRows) {
+      if (this.selectedFamily && this.clean(row.family_name) !== this.selectedFamily) continue;
+      const type = this.equityReportType(row);
+      if (type !== 'Direct Equity' && type !== 'Equity PMS') continue;
 
-  private findUnderlyingCapType(row: HoldingReportRow, underlying: string): string {
-    const normalizedUnderlying = underlying.trim().toUpperCase();
-    if (!normalizedUnderlying) return 'Unclassified';
+      const currentValue = Number(row.current_value || 0);
+      if (currentValue <= 0) continue;
 
-    // Existing holding-report payload exposes one parent cap type. For
-    // underlyings, use the same security master classification already
-    // present in the dataset when the underlying is represented as an
-    // asset row; otherwise leave it explicitly unclassified.
-    const match = this.holdingRows.find(candidate =>
-      this.clean(candidate.asset_name).trim().toUpperCase() === normalizedUnderlying
-      && this.clean(candidate.cap_type) !== 'Unassigned'
-      && this.clean(candidate.asset_class) === 'Direct Equity'
-    );
-    return match?.cap_type || 'Unclassified';
+      if (type === 'Equity PMS') {
+        const underlyings = Object.entries(row.underlying_xirr || {});
+        if (underlyings.length) {
+          for (const [underlying, data] of underlyings) {
+            const percentage = Number(data.holding_percentage || 0) / 100;
+            if (percentage <= 0) continue;
+            add(underlying, currentValue * percentage, 'equity_pms', this.clean(row.portfolio));
+          }
+        } else {
+          add(row.asset_name, currentValue, 'equity_pms', this.clean(row.portfolio));
+        }
+      } else {
+        add(row.asset_name, currentValue, 'direct_equity', this.clean(row.portfolio));
+      }
+    }
+
+    const rows = Array.from(matrix.entries())
+      .map(([holding, item]) => ({
+        holding,
+        current_value: item.current_value,
+        percentage: 0,
+        direct_equity: item.direct_equity,
+        equity_pms: item.equity_pms,
+        portfolio_count: item.portfolios.size,
+        portfolios: Array.from(item.portfolios).sort().join(', '),
+      }))
+      .sort((a, b) => b.current_value - a.current_value);
+
+    const total = rows.reduce((sum, row) => sum + row.current_value, 0);
+    rows.forEach(row => row.percentage = total > 0 ? (row.current_value / total) * 100 : 0);
+
+    await this.exportWorkbook('Holding Matrix', 'Holding Matrix - Equity PMS + Direct Equity', [
+      ['Holding', 'holding'], ['Current Value', 'current_value'], ['% of Equity', 'percentage'],
+      ['Direct Equity', 'direct_equity'], ['Equity PMS', 'equity_pms'], ['Portfolio Count', 'portfolio_count'], ['Portfolios', 'portfolios'],
+    ], rows, 'holding_matrix');
   }
 
   private async downloadWatchList(): Promise<void> {

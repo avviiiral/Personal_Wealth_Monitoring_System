@@ -272,8 +272,8 @@ class AssetUnderlyingHolding(models.Model):
     class Meta:
         ordering = ["-holding_percentage", "stock_name"]
         indexes = [
-            models.Index(fields=["family", "asset"], name="asset_underlying_family_asset_idx"),
-            models.Index(fields=["asset", "stock_name"], name="asset_underlying_asset_stock_idx"),
+            models.Index(fields=["family", "asset"], name="au_family_asset_idx"),
+            models.Index(fields=["asset", "stock_name"], name="au_asset_stock_idx"),
         ]
 
     def __str__(self):

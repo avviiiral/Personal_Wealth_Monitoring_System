@@ -1000,29 +1000,12 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
   }
 
   /**
-   * Resolve the Asset Category for a Portfolio Tree Sub Class.
+   * Resolve the Asset Category for a Portfolio Tree Sub Class using
+   * the current Investment Summary classification.
    *
-   * IMPORTANT:
-   *
-   * This must be called with the Portfolio Tree's SUB CLASS value
-   * (e.g. "Debt Mutual Fund", "Arbitrage Mutual Fund", "Direct
-   * Equity"), NOT the broader top-level Asset Class value.
-   *
-   * The backend's Investment Summary categorization
-   * (investment_summary.py) resolves its own "Asset Class" concept
-   * as the SUB CLASS of each transaction, not the Portfolio Tree's
-   * separate, broader asset_class field. Matching against the
-   * wrong field meant categories like Fixed Income, Liquids, and
-   * Other never matched anything and silently dropped out of the
-   * XIRR Performance selector, even though their underlying assets
-   * had valid XIRR data.
-   *
-   * Investment Summary already contains both:
-   *
-   *   canonical Asset Class
-   *   raw Asset Class values
-   *
-   * so this avoids changing the backend Portfolio Tree.
+   * Investment Summary is the single source of truth for Asset
+   * Category. The Portfolio Tree only supplies the Sub Class value;
+   * no Dashboard-side Asset Category mapping is maintained here.
    */
   protected getAssetCategoryForTreeAssetClass(treeSubClass: string): string | null {
     const cleaned = (treeSubClass || '').trim();
@@ -1033,7 +1016,7 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
 
     for (const group of this.investmentSummaryGroups) {
       for (const assetClass of group.asset_classes) {
-        if (assetClass.asset_class === cleaned) {
+        if (assetClass.asset_class.trim() === cleaned) {
           return group.asset_category;
         }
 
@@ -1041,71 +1024,6 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
           return group.asset_category;
         }
       }
-    }
-
-    /*
-     * The Portfolio Tree can contain a raw Excel
-     * classification that was normalized by the backend.
-     *
-     * These fallbacks mirror the existing Investment
-     * Summary normalization rules.
-     */
-    const upper = cleaned.toUpperCase();
-
-    if (upper.includes('EQUITY AIF') || upper === 'AIF') {
-      return 'Equities';
-    }
-
-    if (upper.includes('EQUITY PMS') || upper === 'PMS') {
-      return 'Equities';
-    }
-
-    if (upper.includes('EQUITY MUTUAL FUND')) {
-      return 'Equities';
-    }
-
-    if (upper.includes('EQUITY LRS') || upper === 'LRS') {
-      return 'Equities';
-    }
-
-    if (upper.includes('DIRECT EQUITY') || upper === 'EQUITY' || upper === 'STOCK') {
-      return 'Equities';
-    }
-
-    if (upper.includes('DEBT MUTUAL FUND')) {
-      return 'Fixed Income';
-    }
-
-    if (upper.includes('GOLD BOND') || upper === 'SGB' || upper.includes('SOVEREIGN GOLD')) {
-      return 'Fixed Income';
-    }
-
-    if (upper.includes('ARBITRAGE')) {
-      return 'Liquids';
-    }
-
-    if (upper.includes('LIQUID')) {
-      return 'Liquids';
-    }
-
-    if (upper.includes('PRIVATE EQUITY')) {
-      return 'Alternate';
-    }
-
-    if (upper.includes('REIT')) {
-      return 'Alternate';
-    }
-
-    if (upper.includes('INVIT')) {
-      return 'Alternate';
-    }
-
-    if (upper.includes('COMMODITY')) {
-      return 'Alternate';
-    }
-
-    if (upper.includes('UNLISTED')) {
-      return 'Other';
     }
 
     return null;

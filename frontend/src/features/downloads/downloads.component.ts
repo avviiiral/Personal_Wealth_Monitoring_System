@@ -317,8 +317,41 @@ export class DownloadsComponent implements OnInit {
   }
 
   private async downloadHoldingReport(): Promise<void> {
-    const rows = this.filteredHoldingRows().map(row => this.holdingExportRow(row));
+    const rows = this.filteredHoldingRows().flatMap(row => this.holdingExportRows(row));
     await this.exportWorkbook('Holdings', 'Holding Report', this.holdingColumns(), rows, 'holding_report');
+  }
+
+  private holdingExportRows(row: HoldingReportRow): Record<string, unknown>[] {
+    const underlyingEntries = Object.entries(row.underlying_xirr ?? {});
+
+    if (!underlyingEntries.length) {
+      return [this.holdingExportRow(row)];
+    }
+
+    return underlyingEntries.map(([underlying, data]) => {
+      const percentage = Number(data.holding_percentage || 0) / 100;
+      return {
+        family_name: this.clean(row.family_name),
+        portfolio: row.portfolio,
+        asset_class: row.asset_class,
+        sub_class: row.sub_class,
+        asset_name: row.asset_name,
+        underlying,
+        isin: row.isin || '-',
+        advisors: row.advisors || '-',
+        quantity: Number(row.quantity || 0) * percentage,
+        average_cost: Number(row.average_cost || 0),
+        invested_value: Number(row.invested_value || 0) * percentage,
+        current_price: Number(row.current_price || 0),
+        current_value: Number(row.current_value || 0) * percentage,
+        gain: Number(row.gain || 0) * percentage,
+        gain_percentage: Number(row.gain_percentage || 0),
+        xirr: data.xirr,
+        sector: row.sector || '-',
+        cap_type: row.cap_type || '-',
+        amc_name: row.amc_name || '-',
+      };
+    });
   }
 
   private async downloadXirr(level: 'asset-class' | 'sub-class' | 'asset-name'): Promise<void> {
@@ -326,26 +359,6 @@ export class DownloadsComponent implements OnInit {
     const rows: Record<string, unknown>[] = [];
 
     for (const row of filtered) {
-      const underlyingEntries = Object.entries(row.underlying_xirr ?? {});
-
-      if (underlyingEntries.length) {
-        for (const [underlying, data] of underlyingEntries) {
-          rows.push({
-            name: level === 'asset-name' ? this.clean(row.asset_name) : level === 'asset-class' ? this.clean(row.asset_class) : this.clean(row.sub_class),
-            family_name: this.clean(row.family_name),
-            asset_class: this.clean(row.asset_class),
-            sub_class: this.clean(row.sub_class),
-            asset_name: this.clean(row.asset_name),
-            underlying,
-            invested_value: Number(row.invested_value || 0) * Number(data.holding_percentage || 0) / 100,
-            current_value: Number(row.current_value || 0) * Number(data.holding_percentage || 0) / 100,
-            gain: Number(row.gain || 0) * Number(data.holding_percentage || 0) / 100,
-            xirr: data.xirr,
-          });
-        }
-        continue;
-      }
-
       rows.push({
         name: level === 'asset-class' ? this.clean(row.asset_class)
           : level === 'sub-class' ? this.clean(row.sub_class)

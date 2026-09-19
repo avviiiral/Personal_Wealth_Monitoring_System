@@ -139,6 +139,21 @@ export class WealthApiService {
     return this.http.get<any>(`${this.baseUrl}/historical/`, { params, withCredentials: true });
   }
 
+  getHistoricalRange(
+    startDate: string,
+    endDate: string,
+    family?: string,
+  ): Observable<any> {
+    let params = new HttpParams()
+      .set('start_date', startDate)
+      .set('end_date', endDate);
+    if (family) params = params.set('family', family);
+    return this.http.get<any>(`${this.baseUrl}/historical/`, {
+      params,
+      withCredentials: true,
+    });
+  }
+
   getHistoricalByPeriod(
     period: 'this-month' | 'last-month' | 'inception',
     family?: string,

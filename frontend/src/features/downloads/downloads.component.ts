@@ -353,7 +353,7 @@ export class DownloadsComponent implements OnInit {
         asset_class: this.clean(row.asset_class),
         sub_class: this.clean(row.sub_class),
         asset_name: this.clean(row.asset_name),
-        underlying: this.clean(row.underlying, ''),
+        underlying: row.underlying || '',
         invested_value: Number(row.invested_value || 0),
         current_value: Number(row.current_value || 0),
         gain: Number(row.gain || 0),

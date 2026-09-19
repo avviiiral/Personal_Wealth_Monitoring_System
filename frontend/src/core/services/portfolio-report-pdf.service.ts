@@ -420,7 +420,7 @@ function drawHoldingsPage(
     },
     styles: { cellPadding: 3.2 },
     didParseCell: (hookData: CellHookData) => {
-      if (hookData.section !== 'body' || hookData.column.index !== 3) {
+      if (hookData.section !== 'body' || hookData.column.index !== 4) {
         return;
       }
 
@@ -514,7 +514,7 @@ function drawSchemeDetailPages(
       },
       styles: { cellPadding: 2.4 },
       didParseCell: (hookData: CellHookData) => {
-        if (hookData.section !== 'body' || hookData.column.index !== 7) {
+        if (hookData.section !== 'body' || hookData.column.index !== 8) {
           return;
         }
 

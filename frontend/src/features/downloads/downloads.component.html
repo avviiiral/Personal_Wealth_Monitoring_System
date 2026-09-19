@@ -27,6 +27,7 @@
       </aside>
 
       <main class="download-panel">
+        <div *ngIf="reportLoading" class="report-loading">Loading report data...</div>
         <div class="panel-heading">
           <div>
             <div class="eyebrow">{{ selectedDefinition.type }}</div>

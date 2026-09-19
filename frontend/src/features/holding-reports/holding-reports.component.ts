@@ -55,7 +55,7 @@ export class HoldingReportsComponent implements OnInit {
   refresh(): void { this.loadHoldings(); }
   private normalizeHoldingReportRow(row: HoldingReportRow): HoldingReportRow {
     const numeric = (value: number | null | undefined): number | null =>
-      value === null || value === undefined || value === '' as any ? null : Number(value);
+      value === null || value === undefined || Number.isNaN(Number(value)) ? null : Number(value);
 
     return {
       ...row,

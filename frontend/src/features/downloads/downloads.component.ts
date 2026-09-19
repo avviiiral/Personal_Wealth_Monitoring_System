@@ -73,6 +73,10 @@ export class DownloadsComponent implements OnInit {
   error = '';
   success = '';
 
+  private transactionsLoaded = false;
+  private holdingsLoaded = false;
+  private portfolioTreeLoaded = false;
+
   ngOnInit(): void {
     this.load();
   }
@@ -81,17 +85,7 @@ export class DownloadsComponent implements OnInit {
     this.loading = true;
     this.error = '';
     try {
-      const [transactions, holdingResponse, treeResponse] = await Promise.all([
-        firstValueFrom(this.portfolioApi.getTransactions()),
-        firstValueFrom(this.portfolioApi.getHoldingReport()),
-        firstValueFrom(this.portfolioApi.getPortfolioTree()),
-      ]);
-      this.transactions = transactions.results ?? [];
-      this.holdingRows = holdingResponse.results ?? [];
-      this.portfolioTree = treeResponse.families ?? [];
-      const dates = this.transactions.map(tx => tx.transaction_date).filter(Boolean).sort();
-      this.fromDate = dates[0] ?? '';
-      this.toDate = dates[dates.length - 1] ?? '';
+      await this.loadDataForReport(this.selectedReport, true);
       this.validateSelections();
     } catch (error) {
       console.error('Download page load failed:', error);
@@ -101,10 +95,46 @@ export class DownloadsComponent implements OnInit {
     }
   }
 
+  private async loadDataForReport(report: ReportId, force = false): Promise<void> {
+    if (report === 'watch-list') return;
+
+    if (report === 'portfolio-summary') {
+      if (this.portfolioTreeLoaded && !force) return;
+      const treeResponse = await firstValueFrom(this.portfolioApi.getPortfolioTree());
+      this.portfolioTree = treeResponse.families ?? [];
+      this.portfolioTreeLoaded = true;
+      return;
+    }
+
+    if (report === 'portfolio-detailed' || report === 'asset-name-transactions') {
+      if (this.transactionsLoaded && !force) return;
+      const response = await firstValueFrom(this.portfolioApi.getTransactions());
+      this.transactions = response.results ?? [];
+      this.setTransactionDateRange();
+      this.transactionsLoaded = true;
+      return;
+    }
+
+    if (this.holdingsLoaded && !force) return;
+    const holdingResponse = await firstValueFrom(this.portfolioApi.getHoldingReport());
+    this.holdingRows = holdingResponse.results ?? [];
+    this.holdingsLoaded = true;
+  }
+
+  private setTransactionDateRange(): void {
+    if (this.transactionsLoaded) {
+      this.setTransactionDateRange();
+    } else {
+      this.fromDate = '';
+      this.toDate = '';
+    }
+  }
+
   get familyOptions(): string[] {
     return Array.from(new Set([
       ...this.transactions.map(tx => this.clean(tx.family_name)),
       ...this.holdingRows.map(row => this.clean(row.family_name)),
+      ...this.portfolioTree.map(family => this.clean(family.family_name)),
     ])).sort((a, b) => a.localeCompare(b));
   }
 
@@ -136,9 +166,23 @@ export class DownloadsComponent implements OnInit {
     return this.reports.find(report => report.id === this.selectedReport) ?? this.reports[0];
   }
 
-  selectReport(id: ReportId): void {
+  async selectReport(id: ReportId): Promise<void> {
+    if (this.selectedReport === id) return;
+
     this.selectedReport = id;
     this.success = '';
+    this.error = '';
+    this.loading = true;
+
+    try {
+      await this.loadDataForReport(id);
+      this.validateSelections();
+    } catch (error) {
+      console.error('Download report data load failed:', error);
+      this.error = 'Unable to load this report data.';
+    } finally {
+      this.loading = false;
+    }
   }
 
   clearFilters(): void {
@@ -174,6 +218,7 @@ export class DownloadsComponent implements OnInit {
     this.downloading = true;
 
     try {
+      await this.loadDataForReport(this.selectedReport);
       switch (this.selectedReport) {
         case 'portfolio-summary': await this.downloadPortfolioSummary(); break;
         case 'portfolio-detailed': await this.downloadPortfolioDetailed(); break;

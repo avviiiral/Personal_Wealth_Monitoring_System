@@ -609,7 +609,8 @@ export class DownloadsComponent implements OnInit {
     sheet.mergeCells(1, 1, 1, columns.length);
     const titleCell = sheet.getCell(1, 1);
     titleCell.value = title;
-    titleCell.font = { bold: true, size: 16 };
+    titleCell.font = { bold: true, size: 16, color: { argb: 'FFFFFF' } };
+    titleCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: '1F4E78' } };
     titleCell.alignment = { vertical: 'middle', horizontal: 'left' };
     titleCell.border = { bottom: { style: 'medium' } };
     sheet.getRow(1).height = 28;
@@ -618,7 +619,8 @@ export class DownloadsComponent implements OnInit {
     columns.forEach(([label, key], index) => {
       const cell = header.getCell(index + 1);
       cell.value = label;
-      cell.font = { bold: true, size: 11 };
+      cell.font = { bold: true, size: 11, color: { argb: 'FFFFFF' } };
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: '4472C4' } };
       cell.alignment = { vertical: 'middle', horizontal: index === 0 ? 'left' : 'right' };
       cell.border = {
         top: { style: 'thin' },
@@ -662,6 +664,9 @@ export class DownloadsComponent implements OnInit {
       if (isSummaryRow) {
         row.font = { bold: true };
         row.height = 22;
+        row.eachCell({ includeEmpty: true }, cell => {
+          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: firstValue === 'total' ? 'D9EAF7' : 'EAF2F8' } };
+        });
         row.eachCell({ includeEmpty: true }, cell => {
           cell.border = {
             top: { style: 'thin' },

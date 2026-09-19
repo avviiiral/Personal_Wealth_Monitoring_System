@@ -1,4 +1,5 @@
 from decimal import Decimal, InvalidOperation
+import re
 
 import pandas as pd
 from django.db import transaction
@@ -37,7 +38,11 @@ class AssetUnderlyingImporter:
 
     @staticmethod
     def _normalize_name(value):
-        return " ".join(str(value or "").strip().upper().split())
+        value = str(value or "").strip().upper()
+        value = re.sub(r"[.&,'’`]", " ", value)
+        value = re.sub(r"\\b(LIMITED|LTD|LTD\\.|PRIVATE|PVT|PLC)\\b", " ", value)
+        value = re.sub(r"\\s+", " ", value)
+        return value.strip()
 
     @classmethod
     def _classification_maps(cls, family):
@@ -100,6 +105,8 @@ class AssetUnderlyingImporter:
                 if pd.isna(raw_percentage):
                     raise ValueError
                 percentage = Decimal(str(raw_percentage).replace("%", "").strip())
+                if Decimal("0") <= percentage <= Decimal("1"):
+                    percentage *= Decimal("100")
             except (InvalidOperation, TypeError, ValueError):
                 raise AssetUnderlyingImportError(f"Invalid holding percentage on Excel row {index + 2}.")
             if percentage < 0 or percentage > 100:

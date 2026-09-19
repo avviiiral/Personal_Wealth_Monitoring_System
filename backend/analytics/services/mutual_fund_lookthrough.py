@@ -5,6 +5,7 @@ from django.db.models import Q
 from investments.models import Asset, SecurityMaster
 from mutual_funds.models import MutualFundHolding, MutualFundUnderlying
 from users.permissions import get_active_family_group, is_system_owner
+from investments.services.asset_underlying import AssetUnderlyingService
 
 
 class MutualFundLookThroughService:
@@ -183,11 +184,24 @@ class MutualFundLookThroughService:
         totals = {}
         by_isin, by_name, security_by_isin, security_by_name = cls._classification_maps(user)
 
+        underlying_by_asset = AssetUnderlyingService.latest_by_asset(user)
         for holding in direct_holdings:
             if holding.asset_id not in equity_asset_ids:
                 continue
             value = holding.current_value or cls.ZERO
             if value <= 0:
+                continue
+            underlying_rows = underlying_by_asset.get(holding.asset_id, [])
+            if underlying_rows:
+                disclosed = cls.ZERO
+                for row in underlying_rows:
+                    exposure = value * (row.holding_percentage or cls.ZERO) / Decimal("100")
+                    sector = (row.sector or "").strip() or cls.UNCLASSIFIED
+                    totals[sector] = totals.get(sector, cls.ZERO) + exposure
+                    disclosed += row.holding_percentage or cls.ZERO
+                residual = value * max(cls.ZERO, Decimal("100") - disclosed) / Decimal("100")
+                if residual:
+                    totals[cls.UNCLASSIFIED] = totals.get(cls.UNCLASSIFIED, cls.ZERO) + residual
                 continue
             sector = None
             if holding.asset.security_master:

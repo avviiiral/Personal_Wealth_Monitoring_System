@@ -390,6 +390,29 @@ export class DownloadsComponent implements OnInit {
       }));
   }
 
+  private weightedXirr(
+    inputs: { invested_value: number; xirr: number | null }[],
+  ): number | null {
+    const valid = inputs.filter(
+      item => item.xirr !== null && item.xirr !== undefined && item.invested_value > 0,
+    );
+
+    if (!valid.length) {
+      return null;
+    }
+
+    const totalInvested = valid.reduce((sum, item) => sum + item.invested_value, 0);
+
+    if (!totalInvested) {
+      return null;
+    }
+
+    return valid.reduce(
+      (sum, item) => sum + (item.xirr as number) * item.invested_value,
+      0,
+    ) / totalInvested;
+  }
+
   private async downloadAssetNameTransactions(): Promise<void> {
     const rows = this.transactions
       .filter(tx => this.matchesTransaction(tx) && (!this.selectedAssetName || this.clean(tx.asset_name) === this.selectedAssetName))

@@ -9,6 +9,7 @@ from .views import (
     portfolio_summary,
     portfolio_holdings,
     portfolio_tree,
+    portfolio_asset_underlying_import,
 )
 from .holding_report_views import holding_report
 
@@ -70,6 +71,12 @@ urlpatterns = [
         "tree/",
         portfolio_tree,
         name="portfolio-tree",
+    ),
+
+    path(
+        "assets/<int:asset_id>/underlying/import/",
+        portfolio_asset_underlying_import,
+        name="portfolio-asset-underlying-import",
     ),
 
     path(

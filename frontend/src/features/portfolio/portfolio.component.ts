@@ -41,6 +41,10 @@ export class PortfolioComponent implements OnInit, OnDestroy {
   savingManualPriceAssetId: number | null = null;
   manualPriceErrors: Record<number, string> = {};
   uploadingTransactions = false;
+  showUnderlyingUpload = false;
+  selectedUnderlyingAssetId: number | null = null;
+  selectedUnderlyingFile: File | null = null;
+  uploadingUnderlying = false;
 
   ngOnInit(): void {
     this.loadPortfolio();
@@ -102,6 +106,54 @@ export class PortfolioComponent implements OnInit, OnDestroy {
     });
   }
 
+  get underlyingAssetOptions(): Array<{ id: number; name: string }> {
+    const options = new Map<number, string>();
+    for (const family of this.families) for (const portfolio of family.portfolios) for (const assetClass of portfolio.asset_classes) for (const subClass of assetClass.sub_classes) for (const asset of subClass.assets) {
+      if (asset.id > 0 && asset.asset_name) options.set(asset.id, asset.asset_name);
+    }
+    return Array.from(options.entries()).map(([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name));
+  }
+
+  toggleUnderlyingUpload(): void {
+    this.showUnderlyingUpload = !this.showUnderlyingUpload;
+    if (!this.showUnderlyingUpload) this.resetUnderlyingUpload();
+  }
+
+  onUnderlyingFileSelected(event: Event): void {
+    const input = event.target as HTMLInputElement;
+    this.selectedUnderlyingFile = input.files?.[0] ?? null;
+    input.value = '';
+  }
+
+  uploadSelectedUnderlying(): void {
+    if (!this.selectedUnderlyingAssetId || !this.selectedUnderlyingFile) {
+      this.toast.error('Select an Asset Name and an Excel file first.');
+      return;
+    }
+    this.uploadingUnderlying = true;
+    this.portfolioApi.uploadAssetUnderlying(this.selectedUnderlyingAssetId, this.selectedUnderlyingFile).subscribe({
+      next: (response) => {
+        this.uploadingUnderlying = false;
+        const data = response?.data;
+        const message = data?.rows_imported ? 'Uploaded ' + data.rows_imported + ' underlying holding(s).' : (response?.message || 'Underlying data uploaded successfully.');
+        this.toast.success(message);
+        this.resetUnderlyingUpload();
+        this.loadPortfolio(true);
+        this.cdr.detectChanges();
+      },
+      error: (error) => {
+        this.uploadingUnderlying = false;
+        this.toast.error(error?.error?.message || error?.error?.error || 'Unable to upload underlying data.', 6000);
+        this.cdr.detectChanges();
+      },
+    });
+  }
+
+  private resetUnderlyingUpload(): void {
+    this.showUnderlyingUpload = false;
+    this.selectedUnderlyingAssetId = null;
+    this.selectedUnderlyingFile = null;
+  }
   get familyOptions(): string[] { return this.families.map((family) => family.family_name).filter(Boolean).sort((a, b) => a.localeCompare(b)); }
   get assetClassOptions(): string[] {
     const classes = new Set<string>();

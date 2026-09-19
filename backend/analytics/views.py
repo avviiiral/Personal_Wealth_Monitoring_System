@@ -231,16 +231,45 @@ def wealth_historical_period(request):
 @permission_classes([IsAuthenticated])
 def wealth_historical(request):
     from .services.historical_wealth import HistoricalWealthAnalytics
-    try:
-        days = int(request.GET.get("days", 30))
-    except (TypeError, ValueError):
-        days = 30
-    days = max(1, min(days, 3650))
     family_name = request.GET.get("family") or None
-    end_date = date.today()
-    start_date = end_date - timedelta(days=days - 1)
-    results = HistoricalWealthAnalytics.calculate_history(request.user, start_date, end_date, family_name=family_name)
-    return Response({"days": days, "start_date": start_date, "end_date": end_date, "results": results})
+    start_date_param = request.GET.get("start_date")
+    end_date_param = request.GET.get("end_date")
+
+    if start_date_param or end_date_param:
+        try:
+            start_date = date.fromisoformat(start_date_param)
+            end_date = date.fromisoformat(end_date_param)
+        except (TypeError, ValueError):
+            return Response(
+                {"detail": "start_date and end_date must be valid ISO dates."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if start_date > end_date:
+            return Response(
+                {"detail": "start_date cannot be after end_date."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+    else:
+        try:
+            days = int(request.GET.get("days", 30))
+        except (TypeError, ValueError):
+            days = 30
+        days = max(1, min(days, 3650))
+        end_date = date.today()
+        start_date = end_date - timedelta(days=days - 1)
+
+    results = HistoricalWealthAnalytics.calculate_history(
+        request.user,
+        start_date,
+        end_date,
+        family_name=family_name,
+    )
+    return Response({
+        "days": (end_date - start_date).days + 1,
+        "start_date": start_date,
+        "end_date": end_date,
+        "results": results,
+    })
 
 
 @api_view(["GET"])

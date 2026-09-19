@@ -13,7 +13,7 @@ import { CommonModule } from '@angular/common';
 
 import { Chart, ChartConfiguration, registerables } from 'chart.js';
 
-import { forkJoin } from 'rxjs';
+import { forkJoin, Observable } from 'rxjs';
 
 import { WealthApiService } from '../../core/services/wealth-api.service';
 import { PortfolioApiService, PortfolioTreeResponse } from '../../core/services/portfolio-api.service';
@@ -72,6 +72,7 @@ export class AnalyticsComponent implements OnInit, AfterViewInit, OnDestroy {
   sectorAllocation: any = null;
   sectorAllocationError = '';
   selectedDays = 30;
+  selectedPeriod = '30d';
   bestPerformer: any = null;
   worstPerformer: any = null;
   largestAllocation: any = null;
@@ -151,7 +152,7 @@ export class AnalyticsComponent implements OnInit, AfterViewInit, OnDestroy {
       allocation: this.wealthApi.getAllocation(),
       advisorAllocation: this.wealthApi.getAllocationByAdvisor(),
       advisorPerformance: this.wealthApi.getPerformanceByAdvisor(),
-      historical: this.wealthApi.getHistorical(this.selectedDays),
+      historical: this.getSelectedHistorical(),
     }).subscribe({
       next: data => {
         console.log('Analytics API response:', data);
@@ -185,7 +186,71 @@ export class AnalyticsComponent implements OnInit, AfterViewInit, OnDestroy {
   changePeriod(days: number): void {
     if (this.selectedDays === days) return;
     this.selectedDays = days;
+    this.selectedPeriod = this.periodForDays(days);
     this.loadAnalytics();
+  }
+
+  changeAnalyticsPeriod(period: string): void {
+    if (this.selectedPeriod === period) return;
+    this.selectedPeriod = period;
+    const days = this.daysForPeriod(period);
+    if (days !== null) {
+      this.selectedDays = days;
+    }
+    this.loadAnalytics();
+  }
+
+  private getSelectedHistorical(): Observable<any> {
+    if (this.selectedPeriod === 'this-month') {
+      return this.wealthApi.getHistoricalByPeriod('this-month');
+    }
+    if (this.selectedPeriod === 'last-month') {
+      return this.wealthApi.getHistoricalByPeriod('last-month');
+    }
+    if (this.selectedPeriod === 'inception') {
+      return this.wealthApi.getHistoricalByPeriod('inception');
+    }
+    return this.wealthApi.getHistorical(this.selectedDays);
+  }
+
+  private daysForPeriod(period: string): number | null {
+    switch (period) {
+      case '30d': return 30;
+      case '90d': return 90;
+      case '6m': return 180;
+      case '1y': return 365;
+      default: return null;
+    }
+  }
+
+  private periodForDays(days: number): string {
+    switch (days) {
+      case 90: return '90d';
+      case 180: return '6m';
+      case 365: return '1y';
+      default: return '30d';
+    }
+  }
+
+  getSelectedPeriodLabel(): string {
+    switch (this.selectedPeriod) {
+      case 'this-month': return 'This Month';
+      case 'last-month': return 'Last Month';
+      case 'inception': return 'From Inception';
+      case '90d': return '90 Days';
+      case '6m': return '6 Months';
+      case '1y': return '1 Year';
+      default: return '30 Days';
+    }
+  }
+
+  getSelectedPeriodShortLabel(): string {
+    switch (this.selectedPeriod) {
+      case 'this-month': return 'this month';
+      case 'last-month': return 'last month';
+      case 'inception': return 'since inception';
+      default: return this.selectedDays + 'd';
+    }
   }
 
   private calculateInsights(): void {

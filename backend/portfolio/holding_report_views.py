@@ -168,7 +168,7 @@ def holding_report(request):
     uploaded_underlying_by_asset = {}
     if asset_ids:
         underlying_rows = AssetUnderlyingHolding.objects.filter(
-            family_id=family.id,
+            family_id=active_family.id,
             asset_id__in=asset_ids,
         ).only("asset_id", "stock_name", "holding_percentage")
         for underlying_row in underlying_rows:

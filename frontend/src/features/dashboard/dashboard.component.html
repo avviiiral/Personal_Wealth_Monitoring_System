@@ -312,5 +312,79 @@
       </div>
     </div>
 
+    <!-- XIRR PERFORMANCE -->
+    <div class="dashboard-card xirr-performance-card" *ngIf="xirrPerformanceCategories.length > 0">
+      <div class="card-header">
+        <div class="card-header-title">
+          <span class="card-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
+              <path d="M4 19V9M10 19V5M16 19v-7M20 19H4" stroke-linecap="round" stroke-linejoin="round" />
+            </svg>
+          </span>
+          <div>
+            <h2>XIRR Performance</h2>
+            <p>Top and bottom asset names by Asset XIRR</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="xirr-category-selector">
+        <button type="button" class="xirr-category-arrow" aria-label="Previous asset category" (click)="previousXirrAssetCategory()">←</button>
+        <div class="xirr-category-name">{{ selectedXirrAssetCategory }}</div>
+        <button type="button" class="xirr-category-arrow" aria-label="Next asset category" (click)="nextXirrAssetCategory()">→</button>
+      </div>
+
+      <div class="xirr-ranking-grid" *ngIf="topXirrRows.length > 0 || bottomXirrRows.length > 0">
+        <div class="xirr-ranking-panel">
+          <div class="xirr-ranking-header">
+            <h3>Top 5 Asset Names</h3>
+            <span> Highest XIRR </span>
+          </div>
+          <div class="xirr-ranking-table-wrapper">
+            <table class="xirr-ranking-table">
+              <thead>
+                <tr><th>Asset Name</th><th class="align-right">XIRR</th></tr>
+              </thead>
+              <tbody>
+                <tr *ngFor="let row of topXirrRows; trackBy: trackByXirrUnderlying">
+                  <td>
+                    <div class="xirr-underlying-name">{{ row.underlying }}</div>
+                    <div class="xirr-asset-class">{{ row.assetClass }}</div>
+                  </td>
+                  <td class="align-right" [ngClass]="getXirrClass(row.xirr)">{{ formatXirr(row.xirr) }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="xirr-ranking-panel">
+          <div class="xirr-ranking-header">
+            <h3>Bottom 5 Asset Names</h3>
+            <span> Lowest XIRR </span>
+          </div>
+          <div class="xirr-ranking-table-wrapper">
+            <table class="xirr-ranking-table">
+              <thead>
+                <tr><th>Asset Name</th><th class="align-right">XIRR</th></tr>
+              </thead>
+              <tbody>
+                <tr *ngFor="let row of bottomXirrRows; trackBy: trackByXirrUnderlying">
+                  <td>
+                    <div class="xirr-underlying-name">{{ row.underlying }}</div>
+                    <div class="xirr-asset-class">{{ row.assetClass }}</div>
+                  </td>
+                  <td class="align-right" [ngClass]="getXirrClass(row.xirr)">{{ formatXirr(row.xirr) }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <div class="empty-state xirr-empty-state" *ngIf="topXirrRows.length === 0 && bottomXirrRows.length === 0">
+        No XIRR data available for {{ selectedXirrAssetCategory }}.
+      </div>
+    </div>
   </ng-container>
 </div>

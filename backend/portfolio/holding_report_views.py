@@ -176,8 +176,8 @@ def holding_report(request):
         asset_class = clean(position.latest_asset_class)
         sub_class = clean(position.latest_sub_class)
         asset_name = clean(position.latest_asset_name, asset.name)
-        asset_class_key = ("asset_class", position.owner_id, family, portfolio, asset_class)
-        base_key = (position.owner_id, family, portfolio, asset_class, sub_class)
+        asset_class_key = ("asset_class", family, portfolio, asset_class)
+        base_key = (family, portfolio, asset_class, sub_class)
         subclass_key = ("sub_class", *base_key)
         asset_key = ("asset_name", *base_key, asset_name)
 

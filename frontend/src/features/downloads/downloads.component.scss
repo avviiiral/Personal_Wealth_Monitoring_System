@@ -1,6 +1,6 @@
 .downloads-page {
   padding: 24px;
-  color: var(--text-primary, #111827);
+  color: var(--ink, #111827);
 }
 
 .page-header {
@@ -212,4 +212,113 @@ button:disabled {
   .filters { grid-template-columns: 1fr; }
   .actions { justify-content: stretch; }
   .actions button { flex: 1; }
+}
+
+.report-loading {
+  margin-bottom: 12px;
+  padding: 9px 12px;
+  border-radius: 8px;
+  background: var(--accent-soft, #e6f4ef);
+  color: var(--ink, #344054);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+:host-context(html.dark-theme) {
+  .downloads-page {
+    color: var(--ink, #e5e7eb);
+  }
+
+  .page-header p,
+  .report-description,
+  .report-type,
+  .panel-heading p,
+  .eyebrow,
+  .filter-field label,
+  .state {
+    color: var(--muted, #8a93a6);
+  }
+
+  .report-list,
+  .download-panel {
+    background: var(--surface, #171a21);
+    border-color: var(--surface-line, #2a2e38);
+  }
+
+  .report-card {
+    color: var(--ink, #e5e7eb);
+  }
+
+  .report-card:hover,
+  .report-card.active {
+    background: #222834;
+  }
+
+  .report-card.active {
+    border-color: #3a414e;
+  }
+
+  .panel-heading {
+    border-bottom-color: #2a2e38;
+
+    h2 {
+      color: #e5e7eb;
+    }
+  }
+
+  .filter-badge {
+    border-color: #3a414e;
+    color: #cbd5e1;
+  }
+
+  .filter-field {
+    label {
+      color: #cbd5e1;
+    }
+
+    select,
+    input {
+      background: #12151c;
+      border-color: #3a414e;
+      color: #e5e7eb;
+      color-scheme: dark;
+    }
+
+    select option {
+      background: #171a21;
+      color: #e5e7eb;
+    }
+  }
+
+  .filter-summary {
+    background: #12151c;
+    color: #aeb7c6;
+  }
+
+  .refresh-button,
+  .clear-button {
+    background: #1b1f27;
+    color: #e5e7eb;
+    border: 1px solid #3a414e;
+  }
+
+  .download-button {
+    background: #e5e7eb;
+    color: #111827;
+  }
+
+  .report-loading {
+    background: #123329;
+    color: #d1fae5;
+  }
+
+  .success {
+    background: #123329;
+    color: #86efac;
+  }
+
+  .error {
+    background: #3a1a17;
+    color: #fca5a5;
+  }
 }

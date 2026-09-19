@@ -1,4 +1,4 @@
-from django.db.models import Q
+from django.db.models import Q, Min
 from collections import defaultdict
 from datetime import date, timedelta
 from decimal import Decimal
@@ -55,6 +55,30 @@ class HistoricalWealthAnalytics:
         """
 
         return [user.pk] if hasattr(user, "pk") else list(user)
+
+    @staticmethod
+    def get_inception_date(user, family_name=None):
+        """Return the earliest investment transaction date in the user's visible scope."""
+        equity_qs = Transaction.objects.filter(
+            HistoricalWealthAnalytics._scope_q(user),
+        )
+        mutual_fund_qs = MutualFundTransaction.objects.filter(
+            HistoricalWealthAnalytics._scope_q(user),
+        )
+
+        if family_name:
+            equity_qs = equity_qs.filter(family_name=family_name)
+            mutual_fund_qs = mutual_fund_qs.filter(family_name=family_name)
+
+        equity_date = equity_qs.aggregate(
+            first_date=Min("transaction_date"),
+        )["first_date"]
+        mutual_fund_date = mutual_fund_qs.aggregate(
+            first_date=Min("transaction_date"),
+        )["first_date"]
+
+        dates = [value for value in (equity_date, mutual_fund_date) if value]
+        return min(dates) if dates else None
 
     # ==========================================================
     # EQUITY TRANSACTION HELPER

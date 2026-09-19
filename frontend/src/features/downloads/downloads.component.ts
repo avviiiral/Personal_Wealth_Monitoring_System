@@ -413,19 +413,41 @@ export class DownloadsComponent implements OnInit {
   }
 
   private async downloadMarketCap(): Promise<void> {
-    const totals = new Map<string, { current_value: number; direct_equity: number; equity_pms: number; equity_mf: number }>();
+    const matrix = new Map<string, {
+      small_cap: number;
+      mid_cap: number;
+      large_cap: number;
+      unclassified: number;
+    }>();
 
-    const add = (cap: string, value: number, type: 'direct_equity' | 'equity_pms' | 'equity_mf') => {
-      if (!Number.isFinite(value) || value <= 0) return;
-      const key = cap?.trim() || 'Unclassified';
-      const item = totals.get(key) || { current_value: 0, direct_equity: 0, equity_pms: 0, equity_mf: 0 };
-      item.current_value += value;
-      item[type] += value;
-      totals.set(key, item);
+    const add = (underlying: string, capType: string, value: number) => {
+      if (!underlying || !Number.isFinite(value) || value <= 0) return;
+
+      const key = underlying.trim() || 'Unclassified';
+      const item = matrix.get(key) || {
+        small_cap: 0,
+        mid_cap: 0,
+        large_cap: 0,
+        unclassified: 0,
+      };
+
+      const cap = capType.trim().toUpperCase();
+      if (cap.includes('SMALL')) {
+        item.small_cap += value;
+      } else if (cap.includes('MID')) {
+        item.mid_cap += value;
+      } else if (cap.includes('LARGE')) {
+        item.large_cap += value;
+      } else {
+        item.unclassified += value;
+      }
+
+      matrix.set(key, item);
     };
 
     for (const row of this.holdingRows) {
       if (this.selectedFamily && this.clean(row.family_name) !== this.selectedFamily) continue;
+
       const type = this.equityReportType(row);
       if (!type) continue;
 
@@ -434,44 +456,92 @@ export class DownloadsComponent implements OnInit {
 
       if (type === 'Equity PMS') {
         const underlyings = Object.entries(row.underlying_xirr || {});
+
         if (underlyings.length) {
           for (const [underlying, data] of underlyings) {
             const percentage = Number(data.holding_percentage || 0) / 100;
             if (percentage <= 0) continue;
+
             const match = this.holdingRows.find(candidate =>
               this.equityReportType(candidate) === 'Direct Equity'
-              && this.clean(candidate.asset_name).toUpperCase() === underlying.trim().toUpperCase()
-              && this.clean(candidate.cap_type) !== 'Unassigned'
+              && this.clean(candidate.asset_name).trim().toUpperCase() === underlying.trim().toUpperCase()
             );
-            add(match?.cap_type || row.cap_type || 'Unclassified', currentValue * percentage, 'equity_pms');
+
+            add(
+              underlying,
+              match?.cap_type || row.cap_type || 'Unclassified',
+              currentValue * percentage,
+            );
           }
         } else {
-          add(row.cap_type || 'Unclassified', currentValue, 'equity_pms');
+          add(row.asset_name, row.cap_type || 'Unclassified', currentValue);
         }
       } else if (type === 'Direct Equity') {
-        add(row.cap_type || 'Unclassified', currentValue, 'direct_equity');
-      } else {
-        add(row.cap_type || 'Unclassified', currentValue, 'equity_mf');
+        add(row.asset_name, row.cap_type || 'Unclassified', currentValue);
+      } else if (type === 'Equity Mutual Fund') {
+        // Keep the fund visible when the current holding payload does not
+        // expose its underlying snapshot. The underlying look-through data
+        // can be added here when it is returned by the MF holding endpoint.
+        add(row.asset_name, row.cap_type || 'Unclassified', currentValue);
       }
     }
 
-    const rows = Array.from(totals.entries())
-      .map(([cap_type, item]) => ({
-        cap_type,
-        current_value: item.current_value,
-        percentage: 0,
-        direct_equity: item.direct_equity,
-        equity_pms: item.equity_pms,
-        equity_mutual_fund: item.equity_mf,
-      }))
-      .sort((a, b) => b.current_value - a.current_value);
+    const totalCurrentValue = Array.from(matrix.values()).reduce(
+      (sum, item) => sum + item.small_cap + item.mid_cap + item.large_cap + item.unclassified,
+      0,
+    );
 
-    const total = rows.reduce((sum, row) => sum + row.current_value, 0);
-    rows.forEach(row => row.percentage = total > 0 ? (row.current_value / total) * 100 : 0);
+    const currentValueByCap = {
+      small_cap: Array.from(matrix.values()).reduce((sum, item) => sum + item.small_cap, 0),
+      mid_cap: Array.from(matrix.values()).reduce((sum, item) => sum + item.mid_cap, 0),
+      large_cap: Array.from(matrix.values()).reduce((sum, item) => sum + item.large_cap, 0),
+      unclassified: Array.from(matrix.values()).reduce((sum, item) => sum + item.unclassified, 0),
+    };
+
+    const rows: Record<string, unknown>[] = Array.from(matrix.entries())
+      .sort((a, b) => {
+        const totalA = a[1].small_cap + a[1].mid_cap + a[1].large_cap + a[1].unclassified;
+        const totalB = b[1].small_cap + b[1].mid_cap + b[1].large_cap + b[1].unclassified;
+        return totalB - totalA || a[0].localeCompare(b[0]);
+      })
+      .map(([underlying, item]) => ({
+        underlying,
+        small_cap: item.small_cap || null,
+        mid_cap: item.mid_cap || null,
+        large_cap: item.large_cap || null,
+        unclassified: item.unclassified || null,
+      }));
+
+    rows.push({
+      underlying: '% of Equity',
+      small_cap: totalCurrentValue ? (currentValueByCap.small_cap / totalCurrentValue) * 100 : 0,
+      mid_cap: totalCurrentValue ? (currentValueByCap.mid_cap / totalCurrentValue) * 100 : 0,
+      large_cap: totalCurrentValue ? (currentValueByCap.large_cap / totalCurrentValue) * 100 : 0,
+      unclassified: totalCurrentValue ? (currentValueByCap.unclassified / totalCurrentValue) * 100 : 0,
+    });
+
+    rows.push({
+      underlying: 'Current Value',
+      small_cap: currentValueByCap.small_cap,
+      mid_cap: currentValueByCap.mid_cap,
+      large_cap: currentValueByCap.large_cap,
+      unclassified: currentValueByCap.unclassified,
+    });
+
+    rows.push({
+      underlying: 'total',
+      small_cap: currentValueByCap.small_cap,
+      mid_cap: currentValueByCap.mid_cap,
+      large_cap: currentValueByCap.large_cap,
+      unclassified: currentValueByCap.unclassified,
+    });
 
     await this.exportWorkbook('Market Cap', 'Market Cap - Equity', [
-      ['Market Cap', 'cap_type'], ['Current Value', 'current_value'], ['% of Equity', 'percentage'],
-      ['Direct Equity', 'direct_equity'], ['Equity PMS', 'equity_pms'], ['Equity Mutual Fund', 'equity_mutual_fund'],
+      ['Underlying', 'underlying'],
+      ['Small Cap', 'small_cap'],
+      ['Mid Cap', 'mid_cap'],
+      ['Large Cap', 'large_cap'],
+      ['Unclassified', 'unclassified'],
     ], rows, 'market_cap');
   }
 

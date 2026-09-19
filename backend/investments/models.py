@@ -184,7 +184,7 @@ class PortfolioPosition(models.Model):
         ordering = ["family_name", "portfolio", "asset__name"]
         constraints = [
             models.UniqueConstraint(
-                fields=["owner", "family", "family_name", "portfolio", "asset"],
+                fields=["family", "family_name", "portfolio", "asset"],
                 name="unique_portfolio_position",
             )
         ]

@@ -407,14 +407,14 @@ export class DownloadsComponent implements OnInit {
     // the securities actually held inside the PMS.
     for (const row of this.holdingRows) {
       if (selectedFamily && this.clean(row.family_name) !== selectedFamily) continue;
-      const assetClass = this.clean(row.asset_class);
-      if (assetClass !== 'Direct Equity' && assetClass !== 'Equity PMS') continue;
+      const equityType = this.equityReportType(row);
+      if (!equityType) continue;
 
       const baseValue = Number(row.current_value || 0);
       if (baseValue <= 0) continue;
 
       const entries = Object.entries(row.underlying_xirr ?? {});
-      if (assetClass === 'Equity PMS' && entries.length) {
+      if (equityType === 'Equity PMS' && entries.length) {
         for (const [underlying, data] of entries) {
           const pct = Number(data.holding_percentage || 0) / 100;
           if (pct <= 0) continue;
@@ -431,7 +431,7 @@ export class DownloadsComponent implements OnInit {
       const cap = this.clean(row.cap_type);
       const item = marketCapTotals.get(cap) || { current_value: 0, direct_equity: 0, equity_pms: 0, equity_mf: 0 };
       item.current_value += baseValue;
-      if (assetClass === 'Direct Equity') item.direct_equity += baseValue;
+      if (equityType === 'Direct Equity') item.direct_equity += baseValue;
       else item.equity_pms += baseValue;
       marketCapTotals.set(cap, item);
     }
@@ -440,7 +440,7 @@ export class DownloadsComponent implements OnInit {
     // report rows when their underlying snapshot is available.
     for (const row of this.holdingRows) {
       if (selectedFamily && this.clean(row.family_name) !== selectedFamily) continue;
-      if (this.clean(row.asset_class) !== 'Equity Mutual Fund') continue;
+      if (this.equityReportType(row) !== 'Equity Mutual Fund') continue;
 
       const baseValue = Number(row.current_value || 0);
       if (baseValue <= 0) continue;
@@ -495,14 +495,14 @@ export class DownloadsComponent implements OnInit {
 
     for (const row of this.holdingRows) {
       if (selectedFamily && this.clean(row.family_name) !== selectedFamily) continue;
-      const assetClass = this.clean(row.asset_class);
-      if (assetClass !== 'Direct Equity' && assetClass !== 'Equity PMS') continue;
+      const equityType = this.equityReportType(row);
+      if (!equityType) continue;
 
       const baseValue = Number(row.current_value || 0);
       if (baseValue <= 0) continue;
 
       const entries = Object.entries(row.underlying_xirr ?? {});
-      if (assetClass === 'Equity PMS' && entries.length) {
+      if (equityType === 'Equity PMS' && entries.length) {
         for (const [underlying, data] of entries) {
           const pct = Number(data.holding_percentage || 0) / 100;
           if (pct <= 0) continue;
@@ -520,7 +520,7 @@ export class DownloadsComponent implements OnInit {
       const key = this.clean(row.asset_name);
       const item = matrix.get(key) || { current_value: 0, direct_equity: 0, equity_pms: 0, portfolios: new Set<string>() };
       item.current_value += baseValue;
-      if (assetClass === 'Direct Equity') item.direct_equity += baseValue;
+      if (equityType === 'Direct Equity') item.direct_equity += baseValue;
       else item.equity_pms += baseValue;
       if (row.portfolio) item.portfolios.add(row.portfolio);
       matrix.set(key, item);
@@ -546,6 +546,20 @@ export class DownloadsComponent implements OnInit {
       ['Portfolio Count', 'portfolio_count'],
       ['Portfolios', 'portfolios'],
     ], rows, 'holding_matrix');
+  }
+
+  private equityReportType(row: HoldingReportRow): 'Direct Equity' | 'Equity PMS' | 'Equity Mutual Fund' | null {
+    const assetClass = this.clean(row.asset_class).trim().toUpperCase();
+    const subClass = this.clean(row.sub_class).trim().toUpperCase();
+
+    const classify = (value: string): 'Direct Equity' | 'Equity PMS' | 'Equity Mutual Fund' | null => {
+      if (value === 'DIRECT EQUITY' || value === 'DIRECT EQUITIES') return 'Direct Equity';
+      if (value === 'EQUITY PMS' || value === 'PMS') return 'Equity PMS';
+      if (value === 'EQUITY MUTUAL FUND' || value === 'EQUITY MUTUAL FUNDS' || value === 'MUTUAL FUND') return 'Equity Mutual Fund';
+      return null;
+    };
+
+    return classify(subClass) ?? classify(assetClass);
   }
 
   private findUnderlyingCapType(row: HoldingReportRow, underlying: string): string {

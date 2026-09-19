@@ -2,28 +2,16 @@ import { Routes } from '@angular/router';
 
 import { ShellComponent } from './layout/shell/shell.component';
 
-import { DashboardComponent } from '../features/dashboard/dashboard.component';
-import { LoginComponent } from '../features/login/login.component';
-import { PortfolioComponent } from '../features/portfolio/portfolio.component';
-import { ReportsComponent } from '../features/reports/reports.component';
-import { HoldingReportsComponent } from '../features/holding-reports/holding-reports.component';
-import { DownloadsComponent } from '../features/downloads/downloads.component';
 
-import { AnalyticsComponent } from '../features/analytics/analytics.component';
-import { SettingsComponent } from '../features/settings/settings.component';
-import { AiChatComponent } from '../features/ai-chat/ai-chat.component';
-import { PortfolioNewsListComponent } from '../features/portfolio-news/portfolio-news-list.component';
-import { PortfolioNewsDetailComponent } from '../features/portfolio-news/portfolio-news-detail.component';
-import { WatchListComponent } from '../features/watch-list/watch-list.component';
-
-import { PagePlaceholderComponent } from '../shared/components/page-placeholder.component';
 
 import { authGuard } from '../core/guards/auth.guard';
 
+import { PagePlaceholderComponent } from '../shared/components/page-placeholder.component';
 export const routes: Routes = [
   {
     path: 'login',
-    component: LoginComponent,
+    loadComponent: () =>
+      import('../features/login/login.component').then((m) => m.LoginComponent),
   },
   {
     path: '',
@@ -37,47 +25,58 @@ export const routes: Routes = [
       },
       {
         path: 'dashboard',
-        component: DashboardComponent,
+        loadComponent: () =>
+          import('../features/dashboard/dashboard.component').then((m) => m.DashboardComponent),
       },
       {
         path: 'portfolio',
-        component: PortfolioComponent,
+        loadComponent: () =>
+          import('../features/portfolio/portfolio.component').then((m) => m.PortfolioComponent),
       },
       {
         path: 'reports',
-        component: ReportsComponent,
+        loadComponent: () =>
+          import('../features/reports/reports.component').then((m) => m.ReportsComponent),
       },
       {
         path: 'reports/holdings',
-        component: HoldingReportsComponent,
+        loadComponent: () =>
+          import('../features/holding-reports/holding-reports.component').then((m) => m.HoldingReportsComponent),
       },
       {
         path: 'downloads',
-        component: DownloadsComponent,
+        loadComponent: () =>
+          import('../features/downloads/downloads.component').then((m) => m.DownloadsComponent),
       },
       {
         path: 'analytics',
-        component: AnalyticsComponent,
+        loadComponent: () =>
+          import('../features/analytics/analytics.component').then((m) => m.AnalyticsComponent),
       },
       {
         path: 'settings',
-        component: SettingsComponent,
+        loadComponent: () =>
+          import('../features/settings/settings.component').then((m) => m.SettingsComponent),
       },
       {
         path: 'ai-chat',
-        component: AiChatComponent,
+        loadComponent: () =>
+          import('../features/ai-chat/ai-chat.component').then((m) => m.AiChatComponent),
       },
       {
         path: 'portfolio-news',
-        component: PortfolioNewsListComponent,
+        loadComponent: () =>
+          import('../features/portfolio-news/portfolio-news-list.component').then((m) => m.PortfolioNewsListComponent),
       },
       {
         path: 'portfolio-news/:id',
-        component: PortfolioNewsDetailComponent,
+        loadComponent: () =>
+          import('../features/portfolio-news/portfolio-news-detail.component').then((m) => m.PortfolioNewsDetailComponent),
       },
       {
         path: 'watch-list',
-        component: WatchListComponent,
+        loadComponent: () =>
+          import('../features/watch-list/watch-list.component').then((m) => m.WatchListComponent),
       },
     ],
   },

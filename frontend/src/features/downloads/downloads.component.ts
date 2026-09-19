@@ -273,6 +273,7 @@ export class DownloadsComponent implements OnInit {
       .map(tx => ({
         family_name: this.clean(tx.family_name),
         sub_class: this.clean(tx.sub_class),
+        asset_name: this.clean(tx.asset_name),
         underlying: this.clean(tx.underlying || tx.asset_name),
         isin: tx.isin || '-',
         transaction_date: tx.transaction_date,
@@ -282,7 +283,7 @@ export class DownloadsComponent implements OnInit {
         amount: Number(tx.amount || 0),
       }));
     await this.exportWorkbook('Detailed', 'Portfolio Detailed', [
-      ['Family', 'family_name'], ['Sub Class', 'sub_class'], ['Underlying', 'underlying'], ['ISIN', 'isin'],
+      ['Family', 'family_name'], ['Sub Class', 'sub_class'], ['Asset Name', 'asset_name'], ['Underlying', 'underlying'], ['ISIN', 'isin'],
       ['Transaction Date', 'transaction_date'], ['Transaction Type', 'transaction_type'], ['Quantity', 'quantity'],
       ['Price', 'price'], ['Amount', 'amount'],
     ], rows, 'portfolio_detailed');
@@ -292,7 +293,7 @@ export class DownloadsComponent implements OnInit {
     const rows = this.filteredHoldingRows()
       .filter(row => !this.selectedSubClass || this.clean(row.sub_class) === this.selectedSubClass)
       .map(row => this.holdingExportRow(row));
-    await this.exportWorkbook('Holdings', 'Sub Class Holdings', this.holdingColumns(), rows, 'sub_class_holdings');
+    await this.exportWorkbook('Holdings', 'Sub Class Holdings', this.subClassHoldingColumns(), rows, 'sub_class_holdings');
   }
 
   private async downloadAssetNameTransactions(): Promise<void> {
@@ -447,6 +448,15 @@ export class DownloadsComponent implements OnInit {
       gain: Number(row.gain || 0), gain_percentage: Number(row.gain_percentage || 0),
       xirr: row.asset_name_xirr, sector: row.sector || '-', cap_type: row.cap_type || '-', amc_name: row.amc_name || '-',
     };
+  }
+
+  private subClassHoldingColumns(): Array<[string, string]> {
+    return [
+      ['Family Name', 'family_name'], ['Portfolio', 'portfolio'], ['Asset Class', 'asset_class'], ['Sub Class', 'sub_class'],
+      ['Quantity', 'quantity'], ['Average Cost', 'average_cost'], ['Invested Value', 'invested_value'],
+      ['Current Price / NAV', 'current_price'], ['Current Value', 'current_value'], ['Gain', 'gain'],
+      ['Gain %', 'gain_percentage'], ['XIRR (%)', 'xirr'], ['Sector', 'sector'], ['Cap Type', 'cap_type'], ['AMC', 'amc_name'],
+    ];
   }
 
   private holdingColumns(): Array<[string, string]> {

@@ -6,6 +6,7 @@ import { firstValueFrom } from 'rxjs';
 import {
   FamilyNode,
   HoldingReportRow,
+  MarketCapReportRow,
   PortfolioApiService,
   PortfolioAssetNode,
   Transaction,
@@ -21,7 +22,9 @@ type ReportId =
   | 'asset-class-xirr'
   | 'sub-class-xirr'
   | 'asset-name-xirr'
-  | 'watch-list';
+  | 'watch-list'
+  | 'market-cap'
+  | 'holding-matrix';
 
 interface ReportDefinition {
   id: ReportId;
@@ -53,12 +56,15 @@ export class DownloadsComponent implements OnInit {
     { id: 'sub-class-xirr', name: 'Sub Class XIRR', type: 'Performance / XIRR', description: 'Sub Class level XIRR performance.', filters: 'Family + Asset Class + Sub Class' },
     { id: 'asset-name-xirr', name: 'Asset Name XIRR', type: 'Performance / XIRR', description: 'Asset Name level XIRR performance, matching Portfolio.', filters: 'Family + Asset Class + Sub Class + Asset Name' },
     { id: 'watch-list', name: 'Watch List', type: 'Watch List Report', description: 'Currently watchlisted Mutual Funds and/or PMS products.', filters: 'Product Type' },
+    { id: 'market-cap', name: 'Market Cap', type: 'Equity Allocation Report', description: 'Equity PMS, Direct Equity and Equity Mutual Fund exposure grouped by market capitalization.', filters: 'Family' },
+    { id: 'holding-matrix', name: 'Holding Matrix', type: 'Equity Concentration Report', description: 'Equity PMS and Direct Equity holdings aggregated by security.', filters: 'Family' },
   ];
 
   transactions: Transaction[] = [];
   holdingRows: HoldingReportRow[] = [];
   portfolioTree: FamilyNode[] = [];
   watchListProducts: WatchListProduct[] = [];
+  marketCapRows: MarketCapReportRow[] = [];
 
   selectedReport: ReportId = 'portfolio-summary';
   selectedFamily = '';
@@ -78,14 +84,18 @@ export class DownloadsComponent implements OnInit {
   private transactionsLoaded = false;
   private holdingsLoaded = false;
   private portfolioTreeLoaded = false;
+  private marketCapLoaded = false;
 
   ngOnInit(): void {
     this.load();
   }
 
   async load(): Promise<void> {
-    this.loading = true;
     this.error = '';
+    this.loading = false;
+    this.reportLoading = true;
+    this.cdr.detectChanges();
+
     try {
       await this.loadDataForReport(this.selectedReport, true);
       this.validateSelections();
@@ -93,7 +103,8 @@ export class DownloadsComponent implements OnInit {
       console.error('Download page load failed:', error);
       this.error = 'Unable to load report data.';
     } finally {
-      this.loading = false;
+      this.reportLoading = false;
+      this.cdr.detectChanges();
     }
   }
 
@@ -114,6 +125,14 @@ export class DownloadsComponent implements OnInit {
       this.transactions = response.results ?? [];
       this.setTransactionDateRange();
       this.transactionsLoaded = true;
+      return;
+    }
+
+    if (report === 'market-cap') {
+      if (this.marketCapLoaded && !force) return;
+      const response = await firstValueFrom(this.portfolioApi.getEquityMarketCapReport());
+      this.marketCapRows = response.results ?? [];
+      this.marketCapLoaded = true;
       return;
     }
 
@@ -229,6 +248,8 @@ export class DownloadsComponent implements OnInit {
         case 'sub-class-xirr': await this.downloadXirr('sub-class'); break;
         case 'asset-name-xirr': await this.downloadXirr('asset-name'); break;
         case 'watch-list': await this.downloadWatchList(); break;
+        case 'market-cap': await this.downloadMarketCap(); break;
+        case 'holding-matrix': await this.downloadHoldingMatrix(); break;
       }
       this.success = `${this.selectedDefinition.name} downloaded successfully.`;
     } catch (error) {
@@ -391,6 +412,97 @@ export class DownloadsComponent implements OnInit {
     ], rows, title.toLowerCase().replace(/[^a-z0-9]+/g, '_'));
   }
 
+  private equityReportType(row: HoldingReportRow): 'Direct Equity' | 'Equity PMS' | 'Equity Mutual Fund' | null {
+    const assetClass = this.clean(row.asset_class).toUpperCase();
+    const subClass = this.clean(row.sub_class).toUpperCase();
+    const isEquity = assetClass.includes('EQUITY') || subClass.includes('EQUITY');
+
+    if (subClass.includes('DIRECT EQUITY') || assetClass.includes('DIRECT EQUITY')) return 'Direct Equity';
+    if (subClass.includes('PMS') || assetClass.includes('PMS')) return isEquity ? 'Equity PMS' : null;
+
+    const isMutualFund = subClass.includes('MUTUAL FUND') || subClass === 'MF'
+      || assetClass.includes('MUTUAL FUND') || assetClass === 'MF';
+    if (isMutualFund && isEquity) return 'Equity Mutual Fund';
+
+    return null;
+  }
+
+  private async downloadMarketCap(): Promise<void> {
+    const rows: Record<string, unknown>[] = this.marketCapRows.map(row => ({
+      underlying: row.underlying,
+      small_cap: row.small_cap,
+      mid_cap: row.mid_cap,
+      large_cap: row.large_cap,
+      unclassified: row.unclassified,
+    }));
+
+    await this.exportWorkbook('Market Cap', 'Market Cap - Equity', [
+      ['Underlying', 'underlying'],
+      ['Small Cap', 'small_cap'],
+      ['Mid Cap', 'mid_cap'],
+      ['Large Cap', 'large_cap'],
+      ['Unclassified', 'unclassified'],
+    ], rows, 'market_cap');
+  }
+
+  private async downloadHoldingMatrix(): Promise<void> {
+    const matrix = new Map<string, { current_value: number; direct_equity: number; equity_pms: number; portfolios: Set<string> }>();
+
+    const add = (holding: string, value: number, type: 'direct_equity' | 'equity_pms', portfolio: string) => {
+      if (!holding || !Number.isFinite(value) || value <= 0) return;
+      const key = holding.trim() || 'Unclassified';
+      const item = matrix.get(key) || { current_value: 0, direct_equity: 0, equity_pms: 0, portfolios: new Set<string>() };
+      item.current_value += value;
+      item[type] += value;
+      if (portfolio) item.portfolios.add(portfolio);
+      matrix.set(key, item);
+    };
+
+    for (const row of this.holdingRows) {
+      if (this.selectedFamily && this.clean(row.family_name) !== this.selectedFamily) continue;
+      const type = this.equityReportType(row);
+      if (type !== 'Direct Equity' && type !== 'Equity PMS') continue;
+
+      const currentValue = Number(row.current_value || 0);
+      if (currentValue <= 0) continue;
+
+      if (type === 'Equity PMS') {
+        const underlyings = Object.entries(row.underlying_xirr || {});
+        if (underlyings.length) {
+          for (const [underlying, data] of underlyings) {
+            const percentage = Number(data.holding_percentage || 0) / 100;
+            if (percentage <= 0) continue;
+            add(underlying, currentValue * percentage, 'equity_pms', this.clean(row.portfolio));
+          }
+        } else {
+          add(row.asset_name, currentValue, 'equity_pms', this.clean(row.portfolio));
+        }
+      } else {
+        add(row.asset_name, currentValue, 'direct_equity', this.clean(row.portfolio));
+      }
+    }
+
+    const rows = Array.from(matrix.entries())
+      .map(([holding, item]) => ({
+        holding,
+        current_value: item.current_value,
+        percentage: 0,
+        direct_equity: item.direct_equity,
+        equity_pms: item.equity_pms,
+        portfolio_count: item.portfolios.size,
+        portfolios: Array.from(item.portfolios).sort().join(', '),
+      }))
+      .sort((a, b) => b.current_value - a.current_value);
+
+    const total = rows.reduce((sum, row) => sum + row.current_value, 0);
+    rows.forEach(row => row.percentage = total > 0 ? (row.current_value / total) * 100 : 0);
+
+    await this.exportWorkbook('Holding Matrix', 'Holding Matrix - Equity PMS + Direct Equity', [
+      ['Holding', 'holding'], ['Current Value', 'current_value'], ['% of Equity', 'percentage'],
+      ['Direct Equity', 'direct_equity'], ['Equity PMS', 'equity_pms'], ['Portfolio Count', 'portfolio_count'], ['Portfolios', 'portfolios'],
+    ], rows, 'holding_matrix');
+  }
+
   private async downloadWatchList(): Promise<void> {
     const types: Array<'MUTUAL_FUND' | 'PMS'> = this.selectedWatchListType === 'ALL'
       ? ['MUTUAL_FUND', 'PMS'] : [this.selectedWatchListType];
@@ -496,16 +608,103 @@ export class DownloadsComponent implements OnInit {
     workbook.creator = 'PWMS';
     workbook.created = new Date();
     const sheet = workbook.addWorksheet(sheetName);
+    const isMarketCap = sheetName === 'Market Cap';
+
     sheet.mergeCells(1, 1, 1, columns.length);
-    sheet.getCell(1, 1).value = title;
-    sheet.getCell(1, 1).font = { bold: true, size: 12 };
+    const titleCell = sheet.getCell(1, 1);
+    titleCell.value = title;
+    titleCell.font = { bold: true, size: 16, color: { argb: 'FFFFFF' } };
+    titleCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: '1F4E78' } };
+    titleCell.alignment = { vertical: 'middle', horizontal: 'left' };
+    titleCell.border = { bottom: { style: 'medium' } };
+    sheet.getRow(1).height = 28;
+
     const header = sheet.getRow(2);
     columns.forEach(([label, key], index) => {
-      header.getCell(index + 1).value = label;
-      header.getCell(index + 1).font = { bold: true };
+      const cell = header.getCell(index + 1);
+      cell.value = label;
+      cell.font = { bold: true, size: 11, color: { argb: 'FFFFFF' } };
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: '4472C4' } };
+      cell.alignment = { vertical: 'middle', horizontal: index === 0 ? 'left' : 'right' };
+      cell.border = {
+        top: { style: 'thin' },
+        bottom: { style: 'thin' },
+      };
     });
-    sheet.columns = columns.map(([_, key]) => ({ key, width: Math.max(14, Math.min(32, key.length + 8)) }));
+    header.height = 22;
+
+    sheet.columns = columns.map(([label, key], index) => ({
+      key,
+      width: isMarketCap
+        ? (index === 0 ? 34 : 18)
+        : Math.max(14, Math.min(32, Math.max(label.length, key.length) + 8)),
+    }));
+
     rows.forEach(row => sheet.addRow(row));
+
+    const lastRow = sheet.rowCount;
+    for (let rowNumber = 3; rowNumber <= lastRow; rowNumber++) {
+      const row = sheet.getRow(rowNumber);
+      const firstValue = String(row.getCell(1).value ?? '');
+      const isSummaryRow = ['% of Equity', 'Current Value', 'total'].includes(firstValue);
+
+      row.height = 20;
+      row.eachCell({ includeEmpty: true }, (cell, columnNumber) => {
+        cell.border = {
+          bottom: { style: 'hair' },
+        };
+        cell.alignment = {
+          vertical: 'middle',
+          horizontal: columnNumber === 1 ? 'left' : 'right',
+        };
+
+        if (columnNumber > 1 && typeof cell.value === 'number') {
+          cell.numFmt = isMarketCap && firstValue === '% of Equity'
+            ? '0.00%'
+            : '#,##0.00';
+        }
+      });
+
+      if (isSummaryRow) {
+        row.font = { bold: true };
+        row.height = 22;
+        row.eachCell({ includeEmpty: true }, cell => {
+          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: firstValue === 'total' ? 'D9EAF7' : 'EAF2F8' } };
+        });
+        row.eachCell({ includeEmpty: true }, cell => {
+          cell.border = {
+            top: { style: 'thin' },
+            bottom: { style: 'thin' },
+          };
+        });
+      }
+    }
+
+    if (isMarketCap) {
+      // The API returns percentages as 0-100 values, so Excel needs a
+      // decimal fraction for percentage formatting.
+      const percentageRow = rows.findIndex(row => row['underlying'] === '% of Equity');
+      if (percentageRow >= 0) {
+        const excelRow = percentageRow + 3;
+        for (let column = 2; column <= columns.length; column++) {
+          const cell = sheet.getCell(excelRow, column);
+          if (typeof cell.value === 'number') {
+            cell.value = Number(cell.value) / 100;
+          }
+        }
+      }
+
+      const firstDataRow = 3;
+      const lastDataRow = Math.max(firstDataRow, lastRow - 3);
+      for (let rowNumber = firstDataRow; rowNumber <= lastDataRow; rowNumber++) {
+        if ((rowNumber - firstDataRow) % 2 === 0) {
+          sheet.getRow(rowNumber).eachCell({ includeEmpty: true }, cell => {
+            cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'F7F9FC' } };
+          });
+        }
+      }
+    }
+
     sheet.views = [{ state: 'frozen', ySplit: 2 }];
     sheet.autoFilter = { from: { row: 2, column: 1 }, to: { row: 2, column: columns.length } };
     const buffer = await workbook.xlsx.writeBuffer();

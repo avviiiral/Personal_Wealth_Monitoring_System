@@ -2,11 +2,8 @@ import { Routes } from '@angular/router';
 
 import { ShellComponent } from './layout/shell/shell.component';
 
-
-
 import { authGuard } from '../core/guards/auth.guard';
 
-import { PagePlaceholderComponent } from '../shared/components/page-placeholder.component';
 export const routes: Routes = [
   {
     path: 'login',

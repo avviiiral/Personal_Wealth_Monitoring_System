@@ -46,7 +46,7 @@
             </select>
           </div>
 
-          <div class="filter-field" *ngIf="selectedReport !== 'portfolio-summary' && selectedReport !== 'portfolio-detailed' && selectedReport !== 'watch-list'">
+          <div class="filter-field" *ngIf="selectedReport !== 'portfolio-summary' && selectedReport !== 'portfolio-detailed' && selectedReport !== 'watch-list' && selectedReport !== 'market-cap'">
             <label>Asset Class</label>
             <select [(ngModel)]="selectedAssetClass" (ngModelChange)="onAssetClassChange()">
               <option value="">All Asset Classes</option>

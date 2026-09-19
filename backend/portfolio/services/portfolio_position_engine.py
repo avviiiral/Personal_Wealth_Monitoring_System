@@ -18,6 +18,7 @@ class PortfolioPositionEngine:
     @staticmethod
     def get_transactions(
         owner,
+        family,
         family_name,
         portfolio,
         asset,
@@ -26,6 +27,7 @@ class PortfolioPositionEngine:
             Transaction.objects
             .filter(
                 owner=owner,
+                family=family,
                 family_name=family_name,
                 portfolio=portfolio,
                 asset=asset,
@@ -41,6 +43,7 @@ class PortfolioPositionEngine:
     def calculate_position(
         cls,
         owner,
+        family,
         family_name,
         portfolio,
         asset,
@@ -50,6 +53,7 @@ class PortfolioPositionEngine:
 
         transactions = cls.get_transactions(
             owner=owner,
+            family=family,
             family_name=family_name,
             portfolio=portfolio,
             asset=asset,
@@ -140,9 +144,18 @@ class PortfolioPositionEngine:
         family_name,
         portfolio,
         asset,
+        family=None,
     ):
+        family = family or asset.family
+
+        if family is None:
+            raise ValueError(
+                "Portfolio positions require a family."
+            )
+
         position = cls.calculate_position(
             owner=owner,
+            family=family,
             family_name=family_name,
             portfolio=portfolio,
             asset=asset,
@@ -172,6 +185,7 @@ class PortfolioPositionEngine:
             PortfolioPosition.objects
             .update_or_create(
                 owner=owner,
+                family=family,
                 family_name=family_name,
                 portfolio=portfolio,
                 asset=asset,
@@ -192,8 +206,12 @@ class PortfolioPositionEngine:
     def rebuild_all_for_user(cls, owner):
         combinations = (
             Transaction.objects
-            .filter(owner=owner)
+            .filter(
+                owner=owner,
+                family__isnull=False,
+            )
             .values(
+                "family_id",
                 "family_name",
                 "portfolio",
                 "asset_id",
@@ -209,8 +227,14 @@ class PortfolioPositionEngine:
                 id=combination["asset_id"]
             )
 
+            family = asset.family
+
+            if family is None:
+                continue
+
             position = cls.rebuild_position(
                 owner=owner,
+                family=family,
                 family_name=combination[
                     "family_name"
                 ],

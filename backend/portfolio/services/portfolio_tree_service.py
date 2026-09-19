@@ -228,8 +228,8 @@ class PortfolioTreeService:
         for (family, portfolio, asset_class, sub_class, asset_id), asset_transactions in filtered_grouped.items():
             first = asset_transactions[0]
             asset_name = cls._clean(first.asset_name, getattr(first.asset, "name", "Unassigned"))
-            asset_name_key = (first.family_id, sub_class, asset_name)
-            sub_class_key = (first.family_id, sub_class)
+            asset_name_key = (family, sub_class, asset_name)
+            sub_class_key = (family, sub_class)
             position = cls._calculate_position(asset_transactions)
             quantity = position["quantity"]
             asset_name_quantities[asset_name_key] = asset_name_quantities.get(asset_name_key, Decimal("0")) + quantity
@@ -261,8 +261,8 @@ class PortfolioTreeService:
             first = asset_transactions[0]
             xirr_key = (family, portfolio, asset_class, sub_class, asset_id)
             asset_name = cls._clean(first.asset_name, getattr(first.asset, "name", "Unassigned"))
-            asset_name_key = (first.family_id, sub_class, asset_name)
-            sub_class_key = (first.family_id, sub_class)
+            asset_name_key = (family, sub_class, asset_name)
+            sub_class_key = (family, sub_class)
             asset_data = cls._build_asset(
                 transactions=asset_transactions,
                 xirr_transactions=xirr_grouped.get(xirr_key, []),

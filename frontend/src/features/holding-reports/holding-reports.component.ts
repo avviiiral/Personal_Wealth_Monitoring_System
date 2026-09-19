@@ -74,10 +74,8 @@ export class HoldingReportsComponent implements OnInit {
   }
 
   private clean(value: string | null | undefined, fallback = UNASSIGNED): string { const trimmed = value?.trim(); return trimmed || fallback; }
-  underlyingAwareXirr(row: HoldingReportRow): number | null {
-    const underlyingEntries = Object.values(row.underlying_xirr ?? {});
-    const underlyingXirr = underlyingEntries.find(entry => entry.xirr !== null && entry.xirr !== undefined)?.xirr;
-    return underlyingXirr === undefined ? (row.asset_name_xirr ?? null) : Number(underlyingXirr);
+  getUnderlyingAwareXirr(row: HoldingReportRow): number | null {
+    return this.underlyingAwareXirr(row, row.asset_name_xirr);
   }
 
   private underlyingAwareXirr(row: HoldingReportRow, fallback: number | null): number | null {

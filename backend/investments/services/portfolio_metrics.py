@@ -15,6 +15,7 @@ from investments.services.xirr import (
 )
 
 from market_data.models import (
+    DataSource,
     ManualAssetPrice,
     MarketPrice,
 )
@@ -42,6 +43,26 @@ class PortfolioMetricsService:
         as worthless and the position as a total loss.
         """
 
+        latest_manual_price = (
+            MarketPrice.objects
+            .filter(
+                asset=asset,
+                source=DataSource.MANUAL,
+            )
+            .order_by(
+                "-date",
+                "-id",
+            )
+            .first()
+        )
+
+        if (
+            latest_manual_price is not None
+            and latest_manual_price.close_price is not None
+        ):
+            return latest_manual_price.close_price
+
+        # Backward compatibility for legacy one-row manual prices.
         manual_price = (
             ManualAssetPrice.objects
             .filter(asset=asset)
@@ -57,6 +78,7 @@ class PortfolioMetricsService:
         latest_price = (
             MarketPrice.objects
             .filter(asset=asset)
+            .exclude(source=DataSource.MANUAL)
             .order_by(
                 "-date",
                 "-id",
@@ -78,6 +100,29 @@ class PortfolioMetricsService:
         stale one.
         """
 
+        latest_manual_price = (
+            MarketPrice.objects
+            .filter(
+                asset=asset,
+                source=DataSource.MANUAL,
+            )
+            .order_by(
+                "-date",
+                "-id",
+            )
+            .first()
+        )
+
+        if (
+            latest_manual_price is not None
+            and latest_manual_price.close_price is not None
+        ):
+            return {
+                "price_source": "MANUAL",
+                "price_date": latest_manual_price.date,
+            }
+
+        # Backward compatibility for legacy one-row manual prices.
         manual_price = (
             ManualAssetPrice.objects
             .filter(asset=asset)
@@ -96,6 +141,7 @@ class PortfolioMetricsService:
         latest_price = (
             MarketPrice.objects
             .filter(asset=asset)
+            .exclude(source=DataSource.MANUAL)
             .order_by(
                 "-date",
                 "-id",

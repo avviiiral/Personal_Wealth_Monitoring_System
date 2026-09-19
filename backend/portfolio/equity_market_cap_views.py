@@ -14,19 +14,25 @@ def _clean(value):
     return str(value or "").strip()
 
 
-def _is_equity_pms(asset_class, sub_class):
-    asset_class = _clean(asset_class).upper()
-    sub_class = _clean(sub_class).upper()
-    return (
-        ("EQUITY" in asset_class or "EQUITY" in sub_class)
-        and ("PMS" in asset_class or "PMS" in sub_class)
-    )
+def _normalized_sub_class(value):
+    return "".join(ch for ch in _clean(value).upper() if ch.isalnum())
 
 
-def _is_direct_equity(asset_class, sub_class):
-    asset_class = _clean(asset_class).upper()
-    sub_class = _clean(sub_class).upper()
-    return "DIRECT EQUITY" in asset_class or "DIRECT EQUITY" in sub_class
+def _is_allowed_equity_subclass(sub_class):
+    normalized = _normalized_sub_class(sub_class)
+    return normalized in {
+        "EQUITYPMS",
+        "DIRECTEQUITY",
+        "EQUITYMUTUALFUNDS",
+    }
+
+
+def _is_equity_pms(sub_class):
+    return _normalized_sub_class(sub_class) == "EQUITYPMS"
+
+
+def _is_direct_equity(sub_class):
+    return _normalized_sub_class(sub_class) == "DIRECTEQUITY"
 
 
 def _cap_bucket(cap_type):
@@ -110,14 +116,17 @@ def equity_market_cap_report(request):
         if current_value <= 0:
             continue
 
-        if _is_direct_equity(position.latest_asset_class, position.latest_sub_class):
+        if not _is_allowed_equity_subclass(position.latest_sub_class):
+            continue
+
+        if _is_direct_equity(position.latest_sub_class):
             security = getattr(position.asset, "security_master", None)
             add(
                 position.asset.name,
                 security.cap_type if security else None,
                 current_value,
             )
-        elif _is_equity_pms(position.latest_asset_class, position.latest_sub_class):
+        elif _is_equity_pms(position.latest_sub_class):
             pms_positions.append(position)
 
     if pms_positions:

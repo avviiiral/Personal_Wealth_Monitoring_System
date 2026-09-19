@@ -138,4 +138,16 @@ export class WealthApiService {
     if (family) params = params.set('family', family);
     return this.http.get<any>(`${this.baseUrl}/historical/`, { params, withCredentials: true });
   }
+
+  getHistoricalByPeriod(
+    period: 'this-month' | 'last-month' | 'inception',
+    family?: string,
+  ): Observable<any> {
+    let params = new HttpParams().set('period', period);
+    if (family) params = params.set('family', family);
+    return this.http.get<any>(`${this.baseUrl}/historical-period/`, {
+      params,
+      withCredentials: true,
+    });
+  }
 }

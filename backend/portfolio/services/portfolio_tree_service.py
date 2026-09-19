@@ -207,10 +207,10 @@ class PortfolioTreeService:
             filtered_grouped.setdefault(group_key, []).append(tx)
 
             # Underlying XIRR follows the exact Portfolio holding hierarchy.
-            xirr_grouped.setdefault((tx.owner_id, family, portfolio, asset_class, sub_class, tx.asset_id), []).append(tx)
+            xirr_grouped.setdefault((family, portfolio, asset_class, sub_class, tx.asset_id), []).append(tx)
             # Asset Name XIRR intentionally ignores family/portfolio/asset-class boundaries.
-            asset_name_xirr_grouped.setdefault((tx.owner_id, sub_class, asset_name), []).append(tx)
-            sub_class_xirr_grouped.setdefault((tx.owner_id, sub_class), []).append(tx)
+            asset_name_xirr_grouped.setdefault((family, sub_class, asset_name), []).append(tx)
+            sub_class_xirr_grouped.setdefault((family, sub_class), []).append(tx)
 
         asset_ids = {tx.asset_id for tx in transactions}
         price_cache = cls._load_price_cache(asset_ids)
@@ -223,8 +223,8 @@ class PortfolioTreeService:
         for (family, portfolio, asset_class, sub_class, asset_id), asset_transactions in filtered_grouped.items():
             first = asset_transactions[0]
             asset_name = cls._clean(first.asset_name, getattr(first.asset, "name", "Unassigned"))
-            asset_name_key = (first.owner_id, sub_class, asset_name)
-            sub_class_key = (first.owner_id, sub_class)
+            asset_name_key = (first.family_id, sub_class, asset_name)
+            sub_class_key = (first.family_id, sub_class)
             position = cls._calculate_position(asset_transactions)
             quantity = position["quantity"]
             asset_name_quantities[asset_name_key] = asset_name_quantities.get(asset_name_key, Decimal("0")) + quantity
@@ -254,10 +254,10 @@ class PortfolioTreeService:
 
         for (family, portfolio, asset_class, sub_class, asset_id), asset_transactions in grouped.items():
             first = asset_transactions[0]
-            xirr_key = (first.owner_id, family, portfolio, asset_class, sub_class, asset_id)
+            xirr_key = (family, portfolio, asset_class, sub_class, asset_id)
             asset_name = cls._clean(first.asset_name, getattr(first.asset, "name", "Unassigned"))
-            asset_name_key = (first.owner_id, sub_class, asset_name)
-            sub_class_key = (first.owner_id, sub_class)
+            asset_name_key = (first.family_id, sub_class, asset_name)
+            sub_class_key = (first.family_id, sub_class)
             asset_data = cls._build_asset(
                 transactions=asset_transactions,
                 xirr_transactions=xirr_grouped.get(xirr_key, []),

@@ -33,9 +33,14 @@ class PortfolioTreeService:
 
     @classmethod
     def _get_transactions(cls, owner_ids, family_id=None) -> QuerySet:
+        if family_id is not None:
+            scope = Q(family_id=family_id)
+        else:
+            scope = Q(family_id__isnull=True, owner_id__in=owner_ids)
+
         return (
             Transaction.objects
-            .filter(Q(family_id=family_id) | Q(family_id__isnull=True, owner_id__in=owner_ids))
+            .filter(scope)
             .select_related("owner", "asset", "asset__security_master")
             .order_by(
                 "family_name", "portfolio", "asset_class", "sub_class",

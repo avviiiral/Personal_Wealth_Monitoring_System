@@ -95,9 +95,13 @@ def equity_market_cap_report(request):
     def add(underlying, cap_type, value):
         underlying = _clean(underlying)
         value = float(value or 0)
-        if not underlying or value <= 0:
+        if value <= 0:
             return
         bucket = _cap_bucket(cap_type)
+        if bucket == "unclassified":
+            underlying = "Unclassified"
+        elif not underlying:
+            return
         item = matrix.setdefault(
             underlying,
             {

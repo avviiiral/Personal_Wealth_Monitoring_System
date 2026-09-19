@@ -4,6 +4,7 @@ from decimal import Decimal
 from django.db.models import Q
 
 from investments.models import Transaction, TransactionType
+from investments.services.asset_underlying import AssetUnderlyingService
 from mutual_funds.models import MutualFundTransaction
 
 from .unified_wealth import UnifiedWealthAnalytics
@@ -762,10 +763,11 @@ class InvestmentSummaryService:
 
     @classmethod
     def calculate_sector_allocation(cls, user):
-        """Return current-value sector allocation for Asset Class Equity only."""
+        """Return current-value sector allocation for Asset Class Equity, including uploaded asset underlyings."""
         asset_class_by_asset_id = cls._equity_asset_class_by_asset_id(user)
         equity_holdings = list(UnifiedWealthAnalytics.get_equity_holdings(user))
         sm_by_asset_id = cls._security_master_by_asset_id(user)
+        underlying_by_asset = AssetUnderlyingService.latest_by_asset(user)
         totals = {}
 
         for holding in equity_holdings:
@@ -773,10 +775,21 @@ class InvestmentSummaryService:
             if current_value <= 0:
                 continue
 
-            asset_class = cls._normalize_asset_class(
-                asset_class_by_asset_id.get(holding.asset_id)
-            )
+            asset_class = cls._normalize_asset_class(asset_class_by_asset_id.get(holding.asset_id))
             if asset_class not in cls.EQUITY_ASSET_CLASSES:
+                continue
+
+            underlying_rows = underlying_by_asset.get(holding.asset_id, [])
+            if underlying_rows:
+                disclosed = cls.ZERO
+                for row in underlying_rows:
+                    exposure = current_value * (row.holding_percentage or cls.ZERO) / Decimal("100")
+                    sector = (row.sector or "").strip() or "Unclassified"
+                    totals[sector] = totals.get(sector, cls.ZERO) + exposure
+                    disclosed += row.holding_percentage or cls.ZERO
+                residual = current_value * max(cls.ZERO, Decimal("100") - disclosed) / Decimal("100")
+                if residual:
+                    totals["Unclassified"] = totals.get("Unclassified", cls.ZERO) + residual
                 continue
 
             sm = sm_by_asset_id.get(holding.asset_id, {})
@@ -787,19 +800,16 @@ class InvestmentSummaryService:
         results = []
         for sector, value in sorted(totals.items(), key=lambda item: item[1], reverse=True):
             percentage = (value / grand_total) * 100 if grand_total else cls.ZERO
-            results.append({
-                "sector": sector,
-                "current_value": value,
-                "percentage": round(percentage, 2),
-            })
+            results.append({"sector": sector, "current_value": value, "percentage": round(percentage, 2)})
         return {"results": results, "total_current_value": grand_total}
 
     @classmethod
     def calculate_market_cap_allocation(cls, user):
-        """Return current-value market-cap allocation for Asset Class Equity only."""
+        """Return current-value market-cap allocation for Asset Class Equity, including uploaded asset underlyings."""
         asset_class_by_asset_id = cls._equity_asset_class_by_asset_id(user)
         equity_holdings = list(UnifiedWealthAnalytics.get_equity_holdings(user))
         sm_by_asset_id = cls._security_master_by_asset_id(user)
+        underlying_by_asset = AssetUnderlyingService.latest_by_asset(user)
         totals = {}
 
         for holding in equity_holdings:
@@ -807,10 +817,21 @@ class InvestmentSummaryService:
             if current_value <= 0:
                 continue
 
-            asset_class = cls._normalize_asset_class(
-                asset_class_by_asset_id.get(holding.asset_id)
-            )
+            asset_class = cls._normalize_asset_class(asset_class_by_asset_id.get(holding.asset_id))
             if asset_class not in cls.EQUITY_ASSET_CLASSES:
+                continue
+
+            underlying_rows = underlying_by_asset.get(holding.asset_id, [])
+            if underlying_rows:
+                disclosed = cls.ZERO
+                for row in underlying_rows:
+                    exposure = current_value * (row.holding_percentage or cls.ZERO) / Decimal("100")
+                    cap_type = (row.cap_type or "").strip() or "Unclassified"
+                    totals[cap_type] = totals.get(cap_type, cls.ZERO) + exposure
+                    disclosed += row.holding_percentage or cls.ZERO
+                residual = current_value * max(cls.ZERO, Decimal("100") - disclosed) / Decimal("100")
+                if residual:
+                    totals["Unclassified"] = totals.get("Unclassified", cls.ZERO) + residual
                 continue
 
             sm = sm_by_asset_id.get(holding.asset_id, {})
@@ -821,11 +842,7 @@ class InvestmentSummaryService:
         results = []
         for cap_type, value in sorted(totals.items(), key=lambda item: item[1], reverse=True):
             percentage = (value / grand_total) * 100 if grand_total else cls.ZERO
-            results.append({
-                "cap_type": cap_type,
-                "current_value": value,
-                "percentage": round(percentage, 2),
-            })
+            results.append({"cap_type": cap_type, "current_value": value, "percentage": round(percentage, 2)})
         return {"results": results, "total_current_value": grand_total}
 
     @classmethod

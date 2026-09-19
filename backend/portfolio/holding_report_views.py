@@ -33,7 +33,7 @@ def holding_report(request):
     positions = list(
         PortfolioPosition.objects
         .filter(
-            family_id=family.id,
+            family_id=active_family.id,
             asset__is_active=True,
             quantity__gt=0,
         )
@@ -75,14 +75,14 @@ def holding_report(request):
     xirr_transactions = {}
 
     for tx in transactions:
-        family = str(tx.family_name or "").strip() or "Unassigned"
+        tx_family = str(tx.family_name or "").strip() or "Unassigned"
         portfolio = str(tx.portfolio or "").strip() or "Unassigned"
         asset_class = str(tx.asset_class or "").strip() or "Unassigned"
         sub_class = str(tx.sub_class or "").strip() or "Unassigned"
         asset_name = str(tx.asset_name or "").strip()
 
-        base_key = (family, portfolio, asset_class, sub_class)
-        xirr_transactions.setdefault(("asset_class", family, portfolio, asset_class), []).append(tx)
+        base_key = (tx_family, portfolio, asset_class, sub_class)
+        xirr_transactions.setdefault(("asset_class", tx_family, portfolio, asset_class), []).append(tx)
         xirr_transactions.setdefault(("sub_class", *base_key), []).append(tx)
 
         asset_key = ("asset_name", *base_key, asset_name)

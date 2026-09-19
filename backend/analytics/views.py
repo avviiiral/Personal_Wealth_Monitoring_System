@@ -1,6 +1,5 @@
 from datetime import date, timedelta
 
-from django.db.models import Min
 from decimal import Decimal, InvalidOperation
 
 from django.views.decorators.csrf import ensure_csrf_cookie

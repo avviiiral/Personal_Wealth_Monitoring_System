@@ -1,0 +1,109 @@
+<div class="downloads-page">
+  <div class="page-header">
+    <div>
+      <h1>Downloads</h1>
+      <p>Download any report currently available in PWMS using the same report data and filters.</p>
+    </div>
+    <button type="button" class="refresh-button" [disabled]="loading || downloading" (click)="load()">Refresh</button>
+  </div>
+
+  <div *ngIf="loading" class="state">Loading report data...</div>
+  <div *ngIf="!loading && error" class="state error">{{ error }}</div>
+
+  <ng-container *ngIf="!loading">
+    <div class="layout">
+      <aside class="report-list">
+        <div class="list-title">Report Types</div>
+        <button
+          *ngFor="let report of reports"
+          type="button"
+          class="report-card"
+          [class.active]="selectedReport === report.id"
+          (click)="selectReport(report.id)">
+          <span class="report-name">{{ report.name }}</span>
+          <span class="report-type">{{ report.type }}</span>
+          <span class="report-description">{{ report.description }}</span>
+        </button>
+      </aside>
+
+      <main class="download-panel">
+        <div class="panel-heading">
+          <div>
+            <div class="eyebrow">{{ selectedDefinition.type }}</div>
+            <h2>{{ selectedDefinition.name }}</h2>
+            <p>{{ selectedDefinition.description }}</p>
+          </div>
+          <span class="filter-badge">{{ selectedDefinition.filters }}</span>
+        </div>
+
+        <div class="filters">
+          <div class="filter-field" *ngIf="selectedReport !== 'watch-list'">
+            <label>Family</label>
+            <select [(ngModel)]="selectedFamily" (ngModelChange)="onFamilyChange()">
+              <option value="">All Families</option>
+              <option *ngFor="let family of familyOptions" [value]="family">{{ family }}</option>
+            </select>
+          </div>
+
+          <div class="filter-field" *ngIf="selectedReport !== 'portfolio-summary' && selectedReport !== 'portfolio-detailed' && selectedReport !== 'watch-list'">
+            <label>Asset Class</label>
+            <select [(ngModel)]="selectedAssetClass" (ngModelChange)="onAssetClassChange()">
+              <option value="">All Asset Classes</option>
+              <option *ngFor="let item of assetClassOptions" [value]="item">{{ item }}</option>
+            </select>
+          </div>
+
+          <div class="filter-field" *ngIf="['sub-class-holdings','asset-name-transactions','sub-class-xirr','asset-name-xirr'].includes(selectedReport)">
+            <label>Sub Class</label>
+            <select [(ngModel)]="selectedSubClass" (ngModelChange)="onSubClassChange()">
+              <option value="">All Sub Classes</option>
+              <option *ngFor="let item of subClassOptions" [value]="item">{{ item }}</option>
+            </select>
+          </div>
+
+          <div class="filter-field" *ngIf="['asset-name-transactions','asset-name-xirr'].includes(selectedReport)">
+            <label>Asset Name</label>
+            <select [(ngModel)]="selectedAssetName">
+              <option value="">All Asset Names</option>
+              <option *ngFor="let item of assetNameOptions" [value]="item">{{ item }}</option>
+            </select>
+          </div>
+
+          <div class="filter-field" *ngIf="selectedReport === 'portfolio-detailed'">
+            <label>From Date</label>
+            <input type="date" [(ngModel)]="fromDate">
+          </div>
+
+          <div class="filter-field" *ngIf="selectedReport === 'portfolio-detailed'">
+            <label>To Date</label>
+            <input type="date" [(ngModel)]="toDate">
+          </div>
+
+          <div class="filter-field" *ngIf="selectedReport === 'watch-list'">
+            <label>Product Type</label>
+            <select [(ngModel)]="selectedWatchListType">
+              <option value="ALL">All</option>
+              <option value="MUTUAL_FUND">Mutual Funds</option>
+              <option value="PMS">PMS</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="filter-summary">
+          <span>Report: <strong>{{ selectedDefinition.name }}</strong></span>
+          <span>Filters: <strong>{{ selectedDefinition.filters }}</strong></span>
+        </div>
+
+        <div class="actions">
+          <button type="button" class="clear-button" [disabled]="downloading" (click)="clearFilters()">Clear Filters</button>
+          <button type="button" class="download-button" [disabled]="downloading" (click)="download()">
+            {{ downloading ? 'Preparing...' : 'Download Excel' }}
+          </button>
+        </div>
+
+        <div *ngIf="success" class="success">{{ success }}</div>
+        <div *ngIf="error" class="error">{{ error }}</div>
+      </main>
+    </div>
+  </ng-container>
+</div>

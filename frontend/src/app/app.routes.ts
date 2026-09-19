@@ -7,6 +7,7 @@ import { LoginComponent } from '../features/login/login.component';
 import { PortfolioComponent } from '../features/portfolio/portfolio.component';
 import { ReportsComponent } from '../features/reports/reports.component';
 import { HoldingReportsComponent } from '../features/holding-reports/holding-reports.component';
+import { DownloadsComponent } from '../features/downloads/downloads.component';
 
 import { AnalyticsComponent } from '../features/analytics/analytics.component';
 import { SettingsComponent } from '../features/settings/settings.component';
@@ -49,6 +50,10 @@ export const routes: Routes = [
       {
         path: 'reports/holdings',
         component: HoldingReportsComponent,
+      },
+      {
+        path: 'downloads',
+        component: DownloadsComponent,
       },
       {
         path: 'analytics',

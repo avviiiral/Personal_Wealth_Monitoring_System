@@ -313,7 +313,7 @@ export class DownloadsComponent implements OnInit {
   private async downloadSubClassHoldings(): Promise<void> {
     const rows = this.filteredHoldingRows()
       .filter(row => !this.selectedSubClass || this.clean(row.sub_class) === this.selectedSubClass)
-      .map(row => this.holdingExportRow(row));
+      .map(row => this.subClassHoldingExportRow(row));
     await this.exportWorkbook('Holdings', 'Sub Class Holdings', this.subClassHoldingColumns(), rows, 'sub_class_holdings');
   }
 
@@ -575,12 +575,19 @@ export class DownloadsComponent implements OnInit {
     };
   }
 
+  private subClassHoldingExportRow(row: HoldingReportRow): Record<string, unknown> {
+    return {
+      ...this.holdingExportRow(row),
+      xirr: row.sub_class_xirr,
+    };
+  }
+
   private subClassHoldingColumns(): Array<[string, string]> {
     return [
       ['Family Name', 'family_name'], ['Portfolio', 'portfolio'], ['Asset Class', 'asset_class'], ['Sub Class', 'sub_class'],
       ['Quantity', 'quantity'], ['Average Cost', 'average_cost'], ['Invested Value', 'invested_value'],
       ['Current Price / NAV', 'current_price'], ['Current Value', 'current_value'], ['Gain', 'gain'],
-      ['Gain %', 'gain_percentage'], ['XIRR (%)', 'xirr'], ['Sector', 'sector'], ['Cap Type', 'cap_type'], ['AMC', 'amc_name'],
+      ['Gain %', 'gain_percentage'], ['XIRR (%)', 'xirr'],
     ];
   }
 
@@ -609,6 +616,7 @@ export class DownloadsComponent implements OnInit {
     workbook.created = new Date();
     const sheet = workbook.addWorksheet(sheetName);
     const isMarketCap = sheetName === 'Market Cap';
+    const isSubClassHoldings = sheetName === 'Holdings' && title === 'Sub Class Holdings';
 
     sheet.mergeCells(1, 1, 1, columns.length);
     const titleCell = sheet.getCell(1, 1);
@@ -625,7 +633,7 @@ export class DownloadsComponent implements OnInit {
       cell.value = label;
       cell.font = { bold: true, size: 11, color: { argb: 'FFFFFF' } };
       cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: '4472C4' } };
-      cell.alignment = { vertical: 'middle', horizontal: index === 0 ? 'left' : 'right' };
+      cell.alignment = { vertical: 'middle', horizontal: isSubClassHoldings ? 'center' : (index === 0 ? 'left' : 'right') };
       cell.border = {
         top: { style: 'thin' },
         bottom: { style: 'thin' },
@@ -655,13 +663,21 @@ export class DownloadsComponent implements OnInit {
         };
         cell.alignment = {
           vertical: 'middle',
-          horizontal: columnNumber === 1 ? 'left' : 'right',
+          horizontal: isSubClassHoldings ? 'center' : (columnNumber === 1 ? 'left' : 'right'),
         };
 
         if (columnNumber > 1 && typeof cell.value === 'number') {
           cell.numFmt = isMarketCap && firstValue === '% of Equity'
             ? '0.00%'
             : '#,##0.00';
+
+          if (isSubClassHoldings) {
+            if (cell.value > 0) {
+              cell.font = { color: { argb: '008000' } };
+            } else if (cell.value < 0) {
+              cell.font = { color: { argb: 'C00000' } };
+            }
+          }
         }
       });
 

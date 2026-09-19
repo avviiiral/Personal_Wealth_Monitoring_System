@@ -74,6 +74,15 @@ export class HoldingReportsComponent implements OnInit {
   }
 
   private clean(value: string | null | undefined, fallback = UNASSIGNED): string { const trimmed = value?.trim(); return trimmed || fallback; }
+  getUnderlyingAwareXirr(row: HoldingReportRow): number | null {
+    return this.underlyingAwareXirr(row, row.asset_name_xirr);
+  }
+
+  private underlyingAwareXirr(row: HoldingReportRow, fallback: number | null): number | null {
+    const underlyingEntries = Object.values(row.underlying_xirr ?? {});
+    const underlyingXirr = underlyingEntries.find(entry => entry.xirr !== null && entry.xirr !== undefined)?.xirr;
+    return underlyingXirr === undefined ? fallback : Number(underlyingXirr);
+  }
   get familyOptions(): string[] { return Array.from(new Set(this.holdingRows.map(row => this.clean(row.family_name)))).sort((a,b) => a.localeCompare(b)); }
   get assetClassOptions(): string[] { return Array.from(new Set(this.filteredRows.map(row => this.clean(row.asset_class)))).sort((a,b) => a.localeCompare(b)); }
   private get filteredRows(): HoldingReportRow[] { return this.holdingRows.filter(row => (!this.selectedFamily || this.clean(row.family_name) === this.selectedFamily) && (!this.selectedAssetClass || this.clean(row.asset_class) === this.selectedAssetClass)); }
@@ -101,7 +110,7 @@ export class HoldingReportsComponent implements OnInit {
         invested_value: rows.reduce((s, r) => s + this.toNumber(r.invested_value), 0),
         current_value: rows.reduce((s, r) => s + this.toNumber(r.current_value), 0),
         pnl: rows.reduce((s, r) => s + this.toNumber(r.gain), 0),
-        xirr: this.firstNumber(rows.map(r => r.asset_class_xirr)),
+        xirr: this.firstNumber(rows.map(r => this.underlyingAwareXirr(r, r.asset_class_xirr))),
         sub_classes,
       };
     }).sort((a, b) => a.asset_class.localeCompare(b.asset_class));
@@ -120,7 +129,7 @@ export class HoldingReportsComponent implements OnInit {
       invested_value: rows.reduce((s, r) => s + this.toNumber(r.invested_value), 0),
       current_value: rows.reduce((s, r) => s + this.toNumber(r.current_value), 0),
       pnl: rows.reduce((s, r) => s + this.toNumber(r.gain), 0),
-      xirr: this.firstNumber(rows.map(r => r.sub_class_xirr)),
+      xirr: this.firstNumber(rows.map(r => this.underlyingAwareXirr(r, r.sub_class_xirr))),
     };
   }
 

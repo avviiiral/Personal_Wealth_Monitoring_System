@@ -7,7 +7,7 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
-from investments.models import PortfolioPosition, Transaction, TransactionType
+from investments.models import AssetUnderlyingHolding, PortfolioPosition, Transaction, TransactionType
 from investments.services.xirr import XIRRCalculator
 from users.permissions import family_scope, require_active_family
 
@@ -17,6 +17,7 @@ from users.permissions import family_scope, require_active_family
 def holding_report(request):
     """Return current portfolio positions with asset-class, subclass, asset-name, and holding XIRR."""
     family = require_active_family(request.user)
+    active_family = family
 
     latest_transaction = (
         Transaction.objects
@@ -32,7 +33,7 @@ def holding_report(request):
     positions = list(
         PortfolioPosition.objects
         .filter(
-            family_id=family.id,
+            family_id=active_family.id,
             asset__is_active=True,
             quantity__gt=0,
         )
@@ -52,7 +53,7 @@ def holding_report(request):
     transactions = (
         Transaction.objects
         .filter(
-            family_id=family.id,
+            family_id=active_family.id,
             asset_id__in=asset_ids,
         )
         .only(
@@ -74,14 +75,14 @@ def holding_report(request):
     xirr_transactions = {}
 
     for tx in transactions:
-        family = str(tx.family_name or "").strip() or "Unassigned"
+        tx_family = str(tx.family_name or "").strip() or "Unassigned"
         portfolio = str(tx.portfolio or "").strip() or "Unassigned"
         asset_class = str(tx.asset_class or "").strip() or "Unassigned"
         sub_class = str(tx.sub_class or "").strip() or "Unassigned"
         asset_name = str(tx.asset_name or "").strip()
 
-        base_key = (family, portfolio, asset_class, sub_class)
-        xirr_transactions.setdefault(("asset_class", family, portfolio, asset_class), []).append(tx)
+        base_key = (tx_family, portfolio, asset_class, sub_class)
+        xirr_transactions.setdefault(("asset_class", tx_family, portfolio, asset_class), []).append(tx)
         xirr_transactions.setdefault(("sub_class", *base_key), []).append(tx)
 
         asset_key = ("asset_name", *base_key, asset_name)
@@ -164,6 +165,53 @@ def holding_report(request):
             return None
         return XIRRCalculator.calculate(cash_flows)
 
+    uploaded_underlying_by_asset = {}
+    if asset_ids:
+        underlying_rows = AssetUnderlyingHolding.objects.filter(
+            family_id=active_family.id,
+            asset_id__in=asset_ids,
+        ).only("asset_id", "stock_name", "holding_percentage")
+        for underlying_row in underlying_rows:
+            uploaded_underlying_by_asset.setdefault(underlying_row.asset_id, []).append(underlying_row)
+
+    underlying_xirr_by_asset = {}
+    for asset_id, underlying_rows in uploaded_underlying_by_asset.items():
+        position = next((item for item in positions if item.asset_id == asset_id), None)
+        if position is None:
+            continue
+        position_transactions = xirr_transactions_by_position.get(
+            (clean(position.family_name), clean(position.portfolio), asset_id),
+            [],
+        )
+        underlying_values = {}
+        for underlying_row in underlying_rows:
+            percentage = float(underlying_row.holding_percentage or 0) / 100.0
+            if percentage <= 0:
+                continue
+            cash_flows = []
+            for tx in position_transactions:
+                amount = float(tx.amount or 0) * percentage
+                if tx.notes == "DIVIDEND REINVESTMENT":
+                    continue
+                if tx.transaction_type in (TransactionType.BUY, TransactionType.SIP):
+                    cash_flows.append((tx.transaction_date, -amount))
+                elif tx.transaction_type == TransactionType.SELL:
+                    cash_flows.append((tx.transaction_date, amount))
+
+            current_value = float(position.current_value or 0) * percentage
+            if current_value > 0:
+                cash_flows.append((date.today(), current_value))
+            xirr = None
+            if len(cash_flows) >= 2:
+                xirr = XIRRCalculator.calculate(cash_flows)
+
+            underlying_values[str(underlying_row.stock_name).strip()] = {
+                "xirr": xirr,
+                "holding_percentage": float(underlying_row.holding_percentage or 0),
+            }
+        if underlying_values:
+            underlying_xirr_by_asset[asset_id] = underlying_values
+
     results = []
 
     for position in positions:
@@ -203,6 +251,7 @@ def holding_report(request):
             "asset_class_xirr": asset_class_xirr.get(asset_class_key),
             "sub_class_xirr": subclass_xirr.get(subclass_key),
             "asset_name_xirr": asset_name_xirr.get(asset_key),
+            "underlying_xirr": underlying_xirr_by_asset.get(position.asset_id, {}),
             "sector": security_master.sector if security_master else None,
             "cap_type": security_master.cap_type if security_master else None,
             "amc_name": security_master.amc_name if security_master else None,

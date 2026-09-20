@@ -688,14 +688,16 @@ export class DownloadsComponent implements OnInit {
   }
 
   private async downloadMarketCap(): Promise<void> {
-    const rows: Record<string, unknown>[] = this.marketCapRows.map(row => ({
-      family_name: row.family_name,
-      asset_name: row.asset_name,
-      small_cap: row.small_cap,
-      mid_cap: row.mid_cap,
-      large_cap: row.large_cap,
-      unclassified: row.unclassified,
-    }));
+    const rows: Record<string, unknown>[] = this.marketCapRows
+      .filter(row => !this.selectedFamily || this.clean(row.family_name) === this.selectedFamily)
+      .map(row => ({
+        family_name: this.clean(row.family_name),
+        asset_name: this.clean(row.asset_name),
+        small_cap: row.small_cap,
+        mid_cap: row.mid_cap,
+        large_cap: row.large_cap,
+        unclassified: row.unclassified,
+      }));
 
     await this.exportWorkbook('Market Cap', 'Market Cap - Equity', [
       ['Family Name', 'family_name'],

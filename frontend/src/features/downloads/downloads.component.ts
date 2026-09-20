@@ -689,6 +689,7 @@ export class DownloadsComponent implements OnInit {
 
   private async downloadMarketCap(): Promise<void> {
     const rows: Record<string, unknown>[] = this.marketCapRows.map(row => ({
+      family_name: row.family_name,
       asset_name: row.asset_name,
       small_cap: row.small_cap,
       mid_cap: row.mid_cap,
@@ -697,6 +698,7 @@ export class DownloadsComponent implements OnInit {
     }));
 
     await this.exportWorkbook('Market Cap', 'Market Cap - Equity', [
+      ['Family Name', 'family_name'],
       ['Asset Name', 'asset_name'],
       ['Small Cap', 'small_cap'],
       ['Mid Cap', 'mid_cap'],

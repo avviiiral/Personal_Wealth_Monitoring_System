@@ -88,6 +88,7 @@ def equity_market_cap_report(request):
         .annotate(
             latest_asset_class=Subquery(latest_transaction.values("asset_class")[:1]),
             latest_sub_class=Subquery(latest_transaction.values("sub_class")[:1]),
+            latest_asset_name=Subquery(latest_transaction.values("asset_name")[:1]),
         )
     )
 
@@ -124,11 +125,14 @@ def equity_market_cap_report(request):
         if not _is_allowed_equity_subclass(position.latest_sub_class):
             continue
 
+        position_family_name = _clean(position.family_name) or family_name
+        position_asset_name = _clean(position.latest_asset_name) or _clean(position.asset.name)
+
         if _is_direct_equity(position.latest_sub_class):
             security = getattr(position.asset, "security_master", None)
             add_asset(
-                family_name,
-                position.asset.name,
+                position_family_name,
+                position_asset_name,
                 security.cap_type if security else None,
                 100.0,
                 current_value,
@@ -153,8 +157,8 @@ def equity_market_cap_report(request):
             if not asset_underlyings:
                 security = getattr(position.asset, "security_master", None)
                 add_asset(
-                    family_name,
-                    position.asset.name,
+                    position_family_name,
+                    position_asset_name,
                     security.cap_type if security else None,
                     100.0,
                     current_value,
@@ -169,8 +173,8 @@ def equity_market_cap_report(request):
                     ("name", _clean(underlying.stock_name).upper())
                 )
                 add_asset(
-                    family.family_name,
-                    position.asset.name,
+                    position_family_name,
+                    position_asset_name,
                     cap_type,
                     percentage,
                     current_value,

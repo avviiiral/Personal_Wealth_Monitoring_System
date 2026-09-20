@@ -19,7 +19,7 @@ export interface FamilyNode { family_name: string; portfolios: PortfolioNode[]; 
 export interface PortfolioTreeResponse { success: boolean; count: number; families: FamilyNode[]; }
 export interface HoldingReportRow { id: number; family_name: string; portfolio: string; asset_class: string; asset_class_xirr: number | null; sub_class: string; asset_id: number; asset_name: string; underlying: string; underlying_xirr?: Record<string, { xirr: number | null; holding_percentage: number }>; isin: string | null; advisors: string; quantity: number; average_cost: number; invested_value: number; current_price: number; current_value: number; gain: number; gain_percentage: number; xirr: number | null; sub_class_xirr: number | null; asset_name_xirr: number | null; sector: string | null; cap_type: string | null; amc_name: string | null; }
 export interface HoldingReportResponse { success: boolean; count: number; results: HoldingReportRow[]; }
-export interface MarketCapReportRow { asset_name: string; small_cap: number | null; mid_cap: number | null; large_cap: number | null; unclassified: number | null; }
+export interface MarketCapReportRow { family_name: string; asset_name: string; small_cap: number | null; mid_cap: number | null; large_cap: number | null; unclassified: number | null; }
 export interface MarketCapReportResponse { success: boolean; count: number; results: MarketCapReportRow[]; }
 
 @Injectable({ providedIn: 'root' })

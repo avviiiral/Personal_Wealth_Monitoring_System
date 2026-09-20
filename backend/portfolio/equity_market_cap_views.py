@@ -234,6 +234,7 @@ def equity_market_cap_report(request):
     ):
         rows.append(
             {
+                "underlying": asset_name,
                 "asset_name": asset_name,
                 "small_cap": item["small_cap"] or None,
                 "mid_cap": item["mid_cap"] or None,

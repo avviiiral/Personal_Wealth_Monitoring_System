@@ -14,6 +14,27 @@ def _clean(value):
     return str(value or "").strip()
 
 
+def _normalized_name(value):
+    value = _clean(value).upper()
+    return "".join(ch if ch.isalnum() else " " for ch in value).split()
+
+
+def _name_key(value):
+    return "".join(_normalized_name(value))
+
+
+def _name_matches(left, right):
+    left_key = _name_key(left)
+    right_key = _name_key(right)
+    if not left_key or not right_key:
+        return False
+    if left_key == right_key:
+        return True
+    if len(left_key) >= 8 and len(right_key) >= 8:
+        return left_key.startswith(right_key) or right_key.startswith(left_key)
+    return False
+
+
 def _normalized_sub_class(value):
     return "".join(ch for ch in _clean(value).upper() if ch.isalnum())
 
@@ -220,12 +241,20 @@ def equity_market_cap_report(request):
         .select_related("asset")
         .only("asset_id", "asset__name", "stock_name", "holding_percentage", "cap_type")
     )
-    uploaded_by_asset_name = {}
+    uploaded_assets = {}
     for underlying in uploaded_underlying_rows:
-        uploaded_by_asset_name.setdefault(
-            _clean(underlying.asset.name).upper(),
-            [],
-        ).append(underlying)
+        uploaded_assets.setdefault(underlying.asset_id, []).append(underlying)
+
+    uploaded_by_name = {}
+    uploaded_by_isin = {}
+    for underlying in uploaded_underlying_rows:
+        asset = underlying.asset
+        uploaded_by_name.setdefault(_name_key(asset.name), set()).add(underlying.asset_id)
+        if asset.isin:
+            uploaded_by_isin.setdefault(_clean(asset.isin).upper(), set()).add(underlying.asset_id)
+        security_master = getattr(asset, "security_master", None)
+        if security_master and security_master.isin:
+            uploaded_by_isin.setdefault(_clean(security_master.isin).upper(), set()).add(underlying.asset_id)
 
     for holding in equity_mf_holdings:
         invested_value = float(holding.invested_value or 0)
@@ -233,7 +262,37 @@ def equity_market_cap_report(request):
             continue
 
         asset_name = _clean(holding.scheme.scheme_name)
-        asset_underlyings = uploaded_by_asset_name.get(asset_name.upper(), [])
+        matching_asset_ids = set()
+
+        # Match the uploaded Portfolio underlying to the MF holding
+        # dynamically. Do not depend on a fixed fund name or a hardcoded
+        # list of securities.
+        exact_name_ids = uploaded_by_name.get(_name_key(asset_name), set())
+        matching_asset_ids.update(exact_name_ids)
+
+        if not matching_asset_ids:
+            scheme_isins = {
+                _clean(holding.scheme.isin_growth).upper(),
+                _clean(holding.scheme.isin_dividend).upper(),
+            }
+            scheme_isins.discard("")
+            for isin in scheme_isins:
+                matching_asset_ids.update(uploaded_by_isin.get(isin, set()))
+
+        if not matching_asset_ids:
+            candidate_ids = {
+                asset_id
+                for asset_id, rows in uploaded_assets.items()
+                if rows and _name_matches(asset_name, rows[0].asset.name)
+            }
+            if len(candidate_ids) == 1:
+                matching_asset_ids = candidate_ids
+
+        asset_underlyings = [
+            row
+            for asset_id in matching_asset_ids
+            for row in uploaded_assets.get(asset_id, [])
+        ]
 
         if asset_underlyings:
             percentage_total = sum(

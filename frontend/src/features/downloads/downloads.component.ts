@@ -930,8 +930,8 @@ export class DownloadsComponent implements OnInit {
         };
 
         if (columnNumber > 1 && typeof cell.value === 'number') {
-          cell.numFmt = isMarketCap && firstValue !== 'Current Value' && firstValue !== 'total'
-            ? '0.00%'
+          cell.numFmt = isMarketCap
+            ? '0.00"%"'
             : '#,##0.00';
 
           if (cell.value > 0) {
@@ -965,12 +965,10 @@ export class DownloadsComponent implements OnInit {
     }
 
     if (isMarketCap) {
-      // Market-cap data rows are already percentages (0-100) and are
-      // formatted directly as percentages in Excel. Summary rows keep
-      // their existing Current Value / % of Equity semantics.
-
+      // Market-cap data rows are percentage points (0-100), so use a
+      // literal percent sign rather than Excel's fractional percentage format.
       const firstDataRow = 3;
-      const lastDataRow = Math.max(firstDataRow, lastRow - 3);
+      const lastDataRow = lastRow;
       for (let rowNumber = firstDataRow; rowNumber <= lastDataRow; rowNumber++) {
         if ((rowNumber - firstDataRow) % 2 === 0) {
           sheet.getRow(rowNumber).eachCell({ includeEmpty: true }, cell => {

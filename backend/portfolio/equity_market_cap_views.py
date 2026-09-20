@@ -63,6 +63,7 @@ def _security_lookup(family_id):
 def equity_market_cap_report(request):
     """Return equity market-cap exposure with PMS and MF underlying look-through."""
     family = require_active_family(request.user)
+    family_name = _clean(getattr(family, "name", None) or getattr(family, "family_name", None) or str(family))
     security_lookup = _security_lookup(family.id)
 
     latest_transaction = (
@@ -126,7 +127,7 @@ def equity_market_cap_report(request):
         if _is_direct_equity(position.latest_sub_class):
             security = getattr(position.asset, "security_master", None)
             add_asset(
-                family.family_name,
+                family_name,
                 position.asset.name,
                 security.cap_type if security else None,
                 100.0,
@@ -152,7 +153,7 @@ def equity_market_cap_report(request):
             if not asset_underlyings:
                 security = getattr(position.asset, "security_master", None)
                 add_asset(
-                    family.family_name,
+                    family_name,
                     position.asset.name,
                     security.cap_type if security else None,
                     100.0,
@@ -211,7 +212,7 @@ def equity_market_cap_report(request):
             snapshot_rows = rows_by_scheme.get(holding.scheme_id, [])
 
             if not snapshot_rows:
-                add_asset(family.family_name, holding.scheme.scheme_name, None, 100.0, float(holding.current_value or 0))
+                add_asset(family_name, holding.scheme.scheme_name, None, 100.0, float(holding.current_value or 0))
                 continue
 
             for underlying in snapshot_rows:
@@ -230,7 +231,7 @@ def equity_market_cap_report(request):
                     )
 
                 add_asset(
-                    family.family_name,
+                    family_name,
                     holding.scheme.scheme_name,
                     cap_type,
                     percentage,

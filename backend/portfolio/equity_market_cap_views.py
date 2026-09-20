@@ -92,14 +92,16 @@ def equity_market_cap_report(request):
 
     matrix = {}
 
-    def add_asset(asset_name, cap_type, percentage, current_value=0):
+    def add_asset(family_name, asset_name, cap_type, percentage, current_value=0):
+        family_name = _clean(family_name)
         asset_name = _clean(asset_name)
         percentage = float(percentage or 0)
-        if not asset_name or percentage <= 0:
+        if not family_name or not asset_name or percentage <= 0:
             return
         bucket = _cap_bucket(cap_type)
+        key = (family_name, asset_name)
         item = matrix.setdefault(
-            asset_name,
+            key,
             {
                 "small_cap": 0.0,
                 "mid_cap": 0.0,
@@ -124,6 +126,7 @@ def equity_market_cap_report(request):
         if _is_direct_equity(position.latest_sub_class):
             security = getattr(position.asset, "security_master", None)
             add_asset(
+                family.family_name,
                 position.asset.name,
                 security.cap_type if security else None,
                 100.0,
@@ -149,6 +152,7 @@ def equity_market_cap_report(request):
             if not asset_underlyings:
                 security = getattr(position.asset, "security_master", None)
                 add_asset(
+                    family.family_name,
                     position.asset.name,
                     security.cap_type if security else None,
                     100.0,
@@ -164,6 +168,7 @@ def equity_market_cap_report(request):
                     ("name", _clean(underlying.stock_name).upper())
                 )
                 add_asset(
+                    family.family_name,
                     position.asset.name,
                     cap_type,
                     percentage,
@@ -206,7 +211,7 @@ def equity_market_cap_report(request):
             snapshot_rows = rows_by_scheme.get(holding.scheme_id, [])
 
             if not snapshot_rows:
-                add_asset(holding.scheme.scheme_name, None, 100.0, float(holding.current_value or 0))
+                add_asset(family.family_name, holding.scheme.scheme_name, None, 100.0, float(holding.current_value or 0))
                 continue
 
             for underlying in snapshot_rows:
@@ -225,6 +230,7 @@ def equity_market_cap_report(request):
                     )
 
                 add_asset(
+                    family.family_name,
                     holding.scheme.scheme_name,
                     cap_type,
                     percentage,
@@ -235,13 +241,14 @@ def equity_market_cap_report(request):
     # underlying exposure falling into each market-cap bucket.
     total_asset_value = sum(item.get("current_value", 0.0) for item in matrix.values())
     rows = []
-    for asset_name, item in sorted(
+    for (family_name, asset_name), item in sorted(
         matrix.items(),
         key=lambda entry: -entry[1].get("current_value", 0.0),
     ):
         asset_total = item.get("current_value", 0.0)
         rows.append(
             {
+                "family_name": family_name,
                 "asset_name": asset_name,
                 "small_cap": asset_total * (item["small_cap"] / 100.0) / total_asset_value * 100 if total_asset_value else None,
                 "mid_cap": asset_total * (item["mid_cap"] / 100.0) / total_asset_value * 100 if total_asset_value else None,

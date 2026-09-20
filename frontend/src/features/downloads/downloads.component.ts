@@ -689,7 +689,7 @@ export class DownloadsComponent implements OnInit {
 
   private async downloadMarketCap(): Promise<void> {
     const rows: Record<string, unknown>[] = this.marketCapRows.map(row => ({
-      underlying: row.underlying,
+      asset_name: row.asset_name,
       small_cap: row.small_cap,
       mid_cap: row.mid_cap,
       large_cap: row.large_cap,
@@ -697,7 +697,7 @@ export class DownloadsComponent implements OnInit {
     }));
 
     await this.exportWorkbook('Market Cap', 'Market Cap - Equity', [
-      ['Underlying', 'underlying'],
+      ['Asset Name', 'asset_name'],
       ['Small Cap', 'small_cap'],
       ['Mid Cap', 'mid_cap'],
       ['Large Cap', 'large_cap'],
@@ -926,7 +926,7 @@ export class DownloadsComponent implements OnInit {
         };
 
         if (columnNumber > 1 && typeof cell.value === 'number') {
-          cell.numFmt = isMarketCap && firstValue === '% of Equity'
+          cell.numFmt = isMarketCap && firstValue !== 'Current Value' && firstValue !== 'total'
             ? '0.00%'
             : '#,##0.00';
 
@@ -961,18 +961,9 @@ export class DownloadsComponent implements OnInit {
     }
 
     if (isMarketCap) {
-      // The API returns percentages as 0-100 values, so Excel needs a
-      // decimal fraction for percentage formatting.
-      const percentageRow = rows.findIndex(row => row['underlying'] === '% of Equity');
-      if (percentageRow >= 0) {
-        const excelRow = percentageRow + 3;
-        for (let column = 2; column <= columns.length; column++) {
-          const cell = sheet.getCell(excelRow, column);
-          if (typeof cell.value === 'number') {
-            cell.value = Number(cell.value) / 100;
-          }
-        }
-      }
+      // Market-cap data rows are already percentages (0-100) and are
+      // formatted directly as percentages in Excel. Summary rows keep
+      // their existing Current Value / % of Equity semantics.
 
       const firstDataRow = 3;
       const lastDataRow = Math.max(firstDataRow, lastRow - 3);

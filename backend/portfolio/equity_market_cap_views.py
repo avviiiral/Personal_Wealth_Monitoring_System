@@ -205,74 +205,97 @@ def equity_market_cap_report(request):
                     underlying_invested,
                 )
 
-    # Equity Mutual Funds: use the latest underlying portfolio snapshot.
-    mf_holdings = list(
+    # Equity Mutual Funds: use the same uploaded underlying classification
+    # path used by Analytics Market Cap Allocation whenever available.
+    # The uploaded AssetUnderlyingHolding rows carry the resolved cap_type.
+    equity_mf_holdings = list(
         MutualFundHolding.objects
         .filter(family_id=family.id, scheme__is_active=True)
         .select_related("scheme")
     )
-    equity_mf_holdings = [
-        holding
-        for holding in mf_holdings
-        if "EQUITY" in _clean(holding.scheme.category).upper()
-    ]
 
-    scheme_ids = [holding.scheme_id for holding in equity_mf_holdings]
-    if scheme_ids:
+    uploaded_underlying_rows = (
+        AssetUnderlyingHolding.objects
+        .filter(family_id=family.id)
+        .select_related("asset")
+        .only("asset_id", "asset__name", "stock_name", "holding_percentage", "cap_type")
+    )
+    uploaded_by_asset_name = {}
+    for underlying in uploaded_underlying_rows:
+        uploaded_by_asset_name.setdefault(
+            _clean(underlying.asset.name).upper(),
+            [],
+        ).append(underlying)
+
+    for holding in equity_mf_holdings:
+        invested_value = float(holding.invested_value or 0)
+        if invested_value <= 0:
+            continue
+
+        asset_name = _clean(holding.scheme.scheme_name)
+        asset_underlyings = uploaded_by_asset_name.get(asset_name.upper(), [])
+
+        if asset_underlyings:
+            percentage_total = sum(
+                max(float(row.holding_percentage or 0), 0)
+                for row in asset_underlyings
+            )
+            if percentage_total > 0:
+                for row in asset_underlyings:
+                    holding_percentage = max(float(row.holding_percentage or 0), 0)
+                    if holding_percentage <= 0:
+                        continue
+                    underlying_invested = invested_value * holding_percentage / percentage_total
+                    add_exposure(
+                        family_name,
+                        asset_name,
+                        row.cap_type,
+                        underlying_invested,
+                    )
+                continue
+
+        # Fall back to the latest disclosed MF portfolio when the uploaded
+        # Analytics-style underlying snapshot is not present for this fund.
         latest_date = (
             MutualFundUnderlying.objects
-            .filter(scheme_id=OuterRef("scheme_id"))
+            .filter(scheme_id=holding.scheme_id)
             .order_by("-portfolio_date")
             .values("portfolio_date")[:1]
         )
-        underlying_rows = (
+        snapshot_rows = list(
             MutualFundUnderlying.objects
-            .filter(scheme_id__in=scheme_ids)
-            .annotate(latest_portfolio_date=Subquery(latest_date))
-            .filter(portfolio_date=F("latest_portfolio_date"))
-            .order_by("scheme_id", "-percentage_of_nav")
+            .filter(scheme_id=holding.scheme_id)
+            .filter(portfolio_date=Subquery(latest_date))
         )
-        rows_by_scheme = {}
-        for underlying in underlying_rows:
-            rows_by_scheme.setdefault(underlying.scheme_id, []).append(underlying)
 
-        for holding in equity_mf_holdings:
-            invested_value = float(holding.invested_value or 0)
-            if invested_value <= 0:
+        if not snapshot_rows:
+            add_exposure(family_name, asset_name, None, invested_value)
+            continue
+
+        percentage_total = sum(
+            max(float(row.percentage_of_nav or 0), 0)
+            for row in snapshot_rows
+        )
+        if percentage_total <= 0:
+            add_exposure(family_name, asset_name, None, invested_value)
+            continue
+
+        for row in snapshot_rows:
+            nav_percentage = max(float(row.percentage_of_nav or 0), 0)
+            if nav_percentage <= 0:
                 continue
-            asset_name = _clean(holding.scheme.scheme_name)
-            snapshot_rows = rows_by_scheme.get(holding.scheme_id, [])
-
-            if not snapshot_rows:
-                add_exposure(family_name, asset_name, None, invested_value)
-                continue
-
-            percentage_total = sum(
-                max(float(underlying.percentage_of_nav or 0), 0)
-                for underlying in snapshot_rows
+            underlying_invested = invested_value * nav_percentage / percentage_total
+            cap_type = None
+            if row.isin:
+                cap_type = security_lookup.get(("isin", _clean(row.isin).upper()))
+            if not cap_type:
+                cap_type = security_lookup.get(("name", _clean(row.security_name).upper()))
+            add_exposure(
+                family_name,
+                asset_name,
+                cap_type,
+                underlying_invested,
             )
-            if percentage_total <= 0:
-                add_exposure(family_name, asset_name, None, invested_value)
-                continue
-
-            for underlying in snapshot_rows:
-                nav_percentage = max(float(underlying.percentage_of_nav or 0), 0)
-                if nav_percentage <= 0:
-                    continue
-                underlying_invested = invested_value * nav_percentage / percentage_total
-
-                cap_type = None
-                if underlying.isin:
-                    cap_type = security_lookup.get(("isin", _clean(underlying.isin).upper()))
-                if not cap_type:
-                    cap_type = security_lookup.get(("name", _clean(underlying.security_name).upper()))
-
-                add_exposure(
-                    family_name,
-                    asset_name,
-                    cap_type,
-                    underlying_invested,
-                )
 
     rows = []
     for (family_name, asset_name), item in sorted(

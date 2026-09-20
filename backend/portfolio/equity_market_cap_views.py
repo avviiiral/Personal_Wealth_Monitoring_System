@@ -92,18 +92,14 @@ def equity_market_cap_report(request):
 
     matrix = {}
 
-    def add(underlying, cap_type, value):
-        underlying = _clean(underlying)
-        value = float(value or 0)
-        if value <= 0:
+    def add_asset(asset_name, cap_type, percentage):
+        asset_name = _clean(asset_name)
+        percentage = float(percentage or 0)
+        if not asset_name or percentage <= 0:
             return
         bucket = _cap_bucket(cap_type)
-        if bucket == "unclassified":
-            underlying = "Unclassified"
-        elif not underlying:
-            return
         item = matrix.setdefault(
-            underlying,
+            asset_name,
             {
                 "small_cap": 0.0,
                 "mid_cap": 0.0,
@@ -111,7 +107,7 @@ def equity_market_cap_report(request):
                 "unclassified": 0.0,
             },
         )
-        item[bucket] += value
+        item[bucket] += percentage
 
     pms_positions = []
 
@@ -125,10 +121,10 @@ def equity_market_cap_report(request):
 
         if _is_direct_equity(position.latest_sub_class):
             security = getattr(position.asset, "security_master", None)
-            add(
+            add_asset(
                 position.asset.name,
                 security.cap_type if security else None,
-                current_value,
+                100.0,
             )
         elif _is_equity_pms(position.latest_sub_class):
             pms_positions.append(position)
@@ -145,29 +141,28 @@ def equity_market_cap_report(request):
             rows_by_asset.setdefault(underlying.asset_id, []).append(underlying)
 
         for position in pms_positions:
-            current_value = float(position.current_value or 0)
             asset_underlyings = rows_by_asset.get(position.asset_id, [])
 
             if not asset_underlyings:
                 security = getattr(position.asset, "security_master", None)
-                add(
+                add_asset(
                     position.asset.name,
                     security.cap_type if security else None,
-                    current_value,
+                    100.0,
                 )
                 continue
 
             for underlying in asset_underlyings:
-                percentage = float(underlying.holding_percentage or 0) / 100.0
+                percentage = float(underlying.holding_percentage or 0)
                 if percentage <= 0:
                     continue
                 cap_type = underlying.cap_type or security_lookup.get(
                     ("name", _clean(underlying.stock_name).upper())
                 )
-                add(
-                    underlying.stock_name,
+                add_asset(
+                    position.asset.name,
                     cap_type,
-                    current_value * percentage,
+                    percentage,
                 )
 
     mf_holdings = list(
@@ -206,11 +201,11 @@ def equity_market_cap_report(request):
             snapshot_rows = rows_by_scheme.get(holding.scheme_id, [])
 
             if not snapshot_rows:
-                add(holding.scheme.scheme_name, None, holding.current_value)
+                add_asset(holding.scheme.scheme_name, None, 100.0)
                 continue
 
             for underlying in snapshot_rows:
-                percentage = float(underlying.percentage_of_nav or 0) / 100.0
+                percentage = float(underlying.percentage_of_nav or 0)
                 if percentage <= 0:
                     continue
 
@@ -224,28 +219,22 @@ def equity_market_cap_report(request):
                         ("name", _clean(underlying.security_name).upper())
                     )
 
-                add(
-                    underlying.security_name,
+                add_asset(
+                    holding.scheme.scheme_name,
                     cap_type,
-                    float(holding.current_value or 0) * percentage,
+                    percentage,
                 )
 
-    current_value_by_cap = {
-        "small_cap": sum(item["small_cap"] for item in matrix.values()),
-        "mid_cap": sum(item["mid_cap"] for item in matrix.values()),
-        "large_cap": sum(item["large_cap"] for item in matrix.values()),
-        "unclassified": sum(item["unclassified"] for item in matrix.values()),
-    }
-    total_current_value = sum(current_value_by_cap.values())
-
+    # Each asset row contains the percentage of that asset's
+    # underlying exposure falling into each market-cap bucket.
     rows = []
-    for underlying, item in sorted(
+    for asset_name, item in sorted(
         matrix.items(),
         key=lambda entry: -sum(entry[1].values()),
     ):
         rows.append(
             {
-                "underlying": underlying,
+                "asset_name": asset_name,
                 "small_cap": item["small_cap"] or None,
                 "mid_cap": item["mid_cap"] or None,
                 "large_cap": item["large_cap"] or None,
@@ -253,26 +242,85 @@ def equity_market_cap_report(request):
             }
         )
 
+    # Keep the existing summary rows, but their values continue to
+    # represent overall equity exposure rather than per-asset
+    # underlying percentages.
+    equity_asset_values = {}
+    for position in positions:
+        current_value = float(position.current_value or 0)
+        if current_value <= 0 or not _is_allowed_equity_subclass(position.latest_sub_class):
+            continue
+        if _is_direct_equity(position.latest_sub_class):
+            security = getattr(position.asset, "security_master", None)
+            bucket = _cap_bucket(security.cap_type if security else None)
+            equity_asset_values[bucket] = equity_asset_values.get(bucket, 0.0) + current_value
+
+    if pms_positions:
+        pms_asset_ids = [position.asset_id for position in pms_positions]
+        # Reuse the loaded underlying rows to derive current-value exposure.
+        for position in pms_positions:
+            current_value = float(position.current_value or 0)
+            asset_underlyings = rows_by_asset.get(position.asset_id, [])
+            if not asset_underlyings:
+                security = getattr(position.asset, "security_master", None)
+                bucket = _cap_bucket(security.cap_type if security else None)
+                equity_asset_values[bucket] = equity_asset_values.get(bucket, 0.0) + current_value
+                continue
+            for underlying in asset_underlyings:
+                percentage = float(underlying.holding_percentage or 0) / 100.0
+                if percentage <= 0:
+                    continue
+                cap_type = underlying.cap_type or security_lookup.get(("name", _clean(underlying.stock_name).upper()))
+                bucket = _cap_bucket(cap_type)
+                equity_asset_values[bucket] = equity_asset_values.get(bucket, 0.0) + current_value * percentage
+
+    # MF current-value exposure for the summary rows.
+    for holding in equity_mf_holdings:
+        snapshot_rows = rows_by_scheme.get(holding.scheme_id, []) if scheme_ids else []
+        if not snapshot_rows:
+            bucket = "unclassified"
+            equity_asset_values[bucket] = equity_asset_values.get(bucket, 0.0) + float(holding.current_value or 0)
+            continue
+        for underlying in snapshot_rows:
+            percentage = float(underlying.percentage_of_nav or 0) / 100.0
+            if percentage <= 0:
+                continue
+            cap_type = None
+            if underlying.isin:
+                cap_type = security_lookup.get(("isin", _clean(underlying.isin).upper()))
+            if not cap_type:
+                cap_type = security_lookup.get(("name", _clean(underlying.security_name).upper()))
+            bucket = _cap_bucket(cap_type)
+            equity_asset_values[bucket] = equity_asset_values.get(bucket, 0.0) + float(holding.current_value or 0) * percentage
+
+    total_current_value = sum(equity_asset_values.values())
+
     rows.extend(
         [
             {
-                "underlying": "% of Equity",
+                "asset_name": "% of Equity",
                 **{
                     bucket: (
                         value / total_current_value * 100
                         if total_current_value
                         else 0
                     )
-                    for bucket, value in current_value_by_cap.items()
+                    for bucket, value in equity_asset_values.items()
                 },
             },
             {
-                "underlying": "Current Value",
-                **current_value_by_cap,
+                "asset_name": "Current Value",
+                **{
+                    bucket: equity_asset_values.get(bucket, 0.0)
+                    for bucket in ("small_cap", "mid_cap", "large_cap", "unclassified")
+                },
             },
             {
-                "underlying": "total",
-                **current_value_by_cap,
+                "asset_name": "total",
+                **{
+                    bucket: equity_asset_values.get(bucket, 0.0)
+                    for bucket in ("small_cap", "mid_cap", "large_cap", "unclassified")
+                },
             },
         ]
     )

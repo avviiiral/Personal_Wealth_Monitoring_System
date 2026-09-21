@@ -1074,7 +1074,6 @@ class TransactionImporter:
                         quantity=parsed["quantity"],
                         price=parsed["price"],
                         amount=parsed["amount"],
-                        source_key=source_key,
                     )
                 )
 

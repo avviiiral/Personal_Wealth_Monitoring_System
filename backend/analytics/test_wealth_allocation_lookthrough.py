@@ -31,6 +31,7 @@ class WealthAllocationLookThroughApiTests(TestCase):
         )
         Holding.objects.create(
             owner=self.user,
+            family=self.family,
             asset=equity_asset,
             quantity=Decimal("1"),
             average_cost=Decimal("40000"),
@@ -42,12 +43,14 @@ class WealthAllocationLookThroughApiTests(TestCase):
 
         scheme = MutualFundScheme.objects.create(
             owner=self.user,
+            family=self.family,
             scheme_name="Equity Fund",
             scheme_code="MF-1",
             is_active=True,
         )
         MutualFundHolding.objects.create(
             owner=self.user,
+            family=self.family,
             scheme=scheme,
             units=Decimal("100"),
             invested_value=Decimal("60000"),

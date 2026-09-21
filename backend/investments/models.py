@@ -276,6 +276,7 @@ class AssetUnderlyingHolding(models.Model):
         indexes = [
             models.Index(fields=["family", "asset"], name="au_family_asset_idx"),
             models.Index(fields=["asset", "stock_name"], name="au_asset_stock_idx"),
+            models.Index(fields=["family", "stock_name"], name="au_family_stock_idx"),
         ]
 
     def __str__(self):

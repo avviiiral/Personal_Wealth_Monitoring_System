@@ -2,7 +2,7 @@ import { CommonModule } from '@angular/common';
 import { Component, OnDestroy, OnInit, inject } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { firstValueFrom, Subject } from 'rxjs';
-import { debounceTime, distinctUntilChanged, takeUntil } from 'rxjs/operators';
+import { debounceTime, distinctUntilChanged, finalize, takeUntil } from 'rxjs/operators';
 
 import { WatchListApiService, WatchListProduct, WatchListResponse } from '../../core/services/watch-list-api.service';
 import { WatchListStateService } from '../../core/services/watch-list-state.service';
@@ -246,7 +246,11 @@ export class WatchListComponent implements OnInit, OnDestroy {
       ordering: requestedOrdering,
       page: requestedPage,
       page_size: this.pageSize,
-    }).subscribe({
+    }).pipe(
+      finalize(() => {
+        if (requestId === this.requestSequence) this.loading = false;
+      }),
+    ).subscribe({
       next: response => {
         if (requestId !== this.requestSequence
           || requestedProductTab !== this.productTab
@@ -256,6 +260,10 @@ export class WatchListComponent implements OnInit, OnDestroy {
           || requestedProvider !== this.provider
           || requestedCategory !== this.category
           || requestedSearch !== this.search.trim()) return;
+
+        // A completed response for the active request always ends the
+        // loading state before any response-specific handling.
+        this.loading = false;
 
         if (this.shouldBootstrapUniverse(response)) {
           this.autoRefreshAttempted = true;
@@ -283,7 +291,6 @@ export class WatchListComponent implements OnInit, OnDestroy {
         if (requestId !== this.requestSequence) return;
         console.error('Failed to load Watch List:', error);
         this.error = 'Unable to load Watch List right now.';
-        this.loading = false;
       },
     });
   }

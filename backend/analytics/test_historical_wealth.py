@@ -326,6 +326,53 @@ class HistoricalWealthAnalyticsTests(TestCase):
             Decimal("12200"),
         )
         
+
+    def test_history_starts_with_latest_price_before_range(self):
+        asset = self.create_equity()
+
+        MarketPrice.objects.create(
+            asset=asset,
+            date=date(2025, 12, 31),
+            open_price=Decimal("90"),
+            high_price=Decimal("90"),
+            low_price=Decimal("90"),
+            close_price=Decimal("90"),
+            adjusted_close=Decimal("90"),
+            source=DataSource.YAHOO_FINANCE,
+        )
+
+        results = HistoricalWealthAnalytics.calculate_history(
+            self.user,
+            date(2026, 1, 2),
+            date(2026, 1, 2),
+        )
+
+        self.assertEqual(results[0]["portfolio_value"], Decimal("1200"))
+
+    def test_manual_price_overrides_automatic_price_from_effective_date(self):
+        asset = self.create_equity()
+
+        MarketPrice.objects.create(
+            asset=asset,
+            date=date(2026, 1, 3),
+            open_price=Decimal("130"),
+            high_price=Decimal("130"),
+            low_price=Decimal("130"),
+            close_price=Decimal("130"),
+            adjusted_close=Decimal("130"),
+            source=DataSource.MANUAL,
+        )
+
+        results = HistoricalWealthAnalytics.calculate_history(
+            self.user,
+            date(2026, 1, 2),
+            date(2026, 1, 4),
+        )
+
+        self.assertEqual(results[0]["portfolio_value"], Decimal("1200"))
+        self.assertEqual(results[1]["portfolio_value"], Decimal("1300"))
+        self.assertEqual(results[2]["portfolio_value"], Decimal("1300"))
+
     # ==========================================================
     # USER ISOLATION
     # ==========================================================

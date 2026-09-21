@@ -22,8 +22,7 @@ def merge_scheme_transactions_and_holdings(apps, schema_editor):
     for scheme in family_schemes:
         key = (
             scheme.family_id,
-            (scheme.isin_growth or "").strip().upper()
-            or (scheme.scheme_name or "").strip().upper(),
+            (scheme.scheme_name or "").strip().upper(),
         )
 
         if key not in canonical:

@@ -109,6 +109,9 @@ class MarketPrice(models.Model):
             models.Index(
                 fields=["date"]
             ),
+            models.Index(
+                fields=["source", "date"]
+            ),
         ]
 
     def __str__(self):

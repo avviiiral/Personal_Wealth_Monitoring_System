@@ -110,7 +110,12 @@ class MarketPrice(models.Model):
                 fields=["date"]
             ),
             models.Index(
-                fields=["source", "date"]
+                fields=["source", "date"],
+                name="marketprice_source_date_idx",
+            ),
+            models.Index(
+                fields=["asset", "source", "-date"],
+                name="marketprice_asset_src_date_idx",
             ),
         ]
 

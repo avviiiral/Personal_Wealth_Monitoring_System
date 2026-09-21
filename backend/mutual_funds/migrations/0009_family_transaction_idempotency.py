@@ -227,6 +227,13 @@ class Migration(migrations.Migration):
             ),
         ),
         migrations.AddConstraint(
+            model_name="mutualfundscheme",
+            constraint=models.UniqueConstraint(
+                fields=("family", "scheme_name"),
+                name="unique_mf_scheme_family_name",
+            ),
+        ),
+        migrations.AddConstraint(
             model_name="mutualfundtransaction",
             constraint=models.UniqueConstraint(
                 condition=models.Q(("source_key__isnull", False)),

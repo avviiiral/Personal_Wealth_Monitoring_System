@@ -313,40 +313,55 @@ class PortfolioAnalytics:
 
     @staticmethod
     def get_performance_ranking(user):
-        holdings = list(
-            PortfolioAnalytics.get_holdings(user)
+        # Calculate the ranking fields in SQL and fetch only the columns
+        # required by the response. This avoids materializing full Holding
+        # and Asset model instances for large portfolios.
+        from django.db.models import Case, F, When, DecimalField, ExpressionWrapper
+
+        pnl_percentage = Case(
+            When(
+                invested_value__gt=0,
+                then=ExpressionWrapper(
+                    F("unrealized_pnl") * 100 / F("invested_value"),
+                    output_field=DecimalField(max_digits=24, decimal_places=8),
+                ),
+            ),
+            default=PortfolioAnalytics.ZERO,
+            output_field=DecimalField(max_digits=24, decimal_places=8),
+        )
+
+        rows = (
+            PortfolioAnalytics
+            .get_holdings(user)
+            .annotate(pnl_percentage=pnl_percentage)
+            .values(
+                "asset_id",
+                "asset__name",
+                "asset__symbol",
+                "current_value",
+                "unrealized_pnl",
+                "pnl_percentage",
+            )
+            .order_by("-pnl_percentage")
         )
 
         results = []
-
-        for holding in holdings:
-            if holding.invested_value:
-                pnl_percentage = (
-                    holding.unrealized_pnl
-                    / holding.invested_value
-                ) * 100
-            else:
-                pnl_percentage = PortfolioAnalytics.ZERO
-
+        for row in rows:
             results.append(
                 {
-                    "asset_id": holding.asset.id,
-                    "asset_name": holding.asset.name,
-                    "symbol": holding.asset.symbol,
-                    "current_value": holding.current_value,
-                    "unrealized_pnl": holding.unrealized_pnl,
+                    "asset_id": row["asset_id"],
+                    "asset_name": row["asset__name"],
+                    "symbol": row["asset__symbol"],
+                    "current_value": row["current_value"],
+                    "unrealized_pnl": row["unrealized_pnl"],
                     "pnl_percentage": round(
-                        pnl_percentage,
+                        row["pnl_percentage"],
                         2,
                     ),
                 }
             )
 
-        return sorted(
-            results,
-            key=lambda item: item["pnl_percentage"],
-            reverse=True,
-        )
+        return results
 
     @staticmethod
     def calculate_position_as_of(

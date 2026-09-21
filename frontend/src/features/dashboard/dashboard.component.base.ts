@@ -70,6 +70,7 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
   historical: any = null;
   investmentSummary: any = null;
   investmentSummaryError = '';
+  standardAllocations: Record<string, number> = {};
 
   /*
    * Allocation/performance by Advisor - fetched alongside the rest

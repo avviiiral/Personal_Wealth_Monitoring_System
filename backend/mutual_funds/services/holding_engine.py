@@ -29,7 +29,7 @@ class MutualFundHoldingEngine:
             MutualFundTransaction.objects
             .filter(
                 scheme=scheme,
-                owner=scheme.owner,
+                family=scheme.family,
             )
             .order_by(
                 "transaction_date",
@@ -216,10 +216,14 @@ class MutualFundHoldingEngine:
         schemes belonging to a user.
         """
 
+        from users.permissions import require_active_family
+
+        family = require_active_family(user)
+
         schemes = (
             MutualFundScheme.objects
             .filter(
-                owner=user,
+                family=family,
                 is_active=True,
             )
         )

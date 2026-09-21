@@ -92,12 +92,17 @@ def _filtered_products(request, product_type=None):
         scoped_positions = family_scope(PortfolioPosition.objects, request.user).filter(active_position)
 
         if product_type == ProductType.PMS:
-            # PMS products are matched through Transaction.asset_name to the
-            # underlying Asset, exactly as OwnershipService.bulk_enrich().
-            pms_asset_ids = family_scope(Transaction.objects, request.user).filter(
-                asset_name__iexact=OuterRef("name"),
-            ).values("asset_id")
-            owned_pms_positions = scoped_positions.filter(asset_id__in=pms_asset_ids)
+            # Correlate the transaction to the current position first, then
+            # correlate that nested query back to the InvestmentProduct.
+            # OuterRef(OuterRef("name")) is required because the transaction
+            # query is nested inside the PortfolioPosition EXISTS.
+            pms_transactions = family_scope(Transaction.objects, request.user).filter(
+                asset_name__iexact=OuterRef(OuterRef("name")),
+                asset_id=OuterRef("asset_id"),
+            )
+            owned_pms_positions = scoped_positions.filter(
+                Exists(pms_transactions),
+            )
             owned_expression = Exists(owned_pms_positions)
             queryset = queryset.filter(
                 owned_expression if status == "OWNED" else ~owned_expression

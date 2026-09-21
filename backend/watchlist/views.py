@@ -6,7 +6,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from investments.models import AssetCategory, PortfolioPosition, Transaction
-from users.permissions import get_visible_owner_ids
+from users.permissions import get_active_family_group_id, get_visible_owner_ids
 from watchlist.models import InvestmentProduct, PerformanceSnapshot, ProductType, WatchListEntry
 from watchlist.serializers import PerformanceSnapshotSerializer, WatchListProductSerializer
 from watchlist.services.ownership import OwnershipService
@@ -18,6 +18,23 @@ class WatchListPagination(PageNumberPagination):
     page_size = 25
     page_size_query_param = "page_size"
     max_page_size = 100
+
+
+def _watchlist_user_ids(request):
+    """Return the users sharing the caller's active family's Watch List."""
+    family_id = get_active_family_group_id(request.user)
+    if family_id is None:
+        return [request.user.id]
+
+    from users.models import UserProfile
+
+    member_ids = list(
+        UserProfile.objects.filter(
+            family_groups__id=family_id,
+            user__is_active=True,
+        ).values_list("user_id", flat=True)
+    )
+    return member_ids or [request.user.id]
 
 
 def _filtered_products(request, product_type=None):
@@ -79,7 +96,12 @@ def _filtered_products(request, product_type=None):
 
     status = params.get("status", "").upper()
     if status == "WATCHLIST":
-        watchlist_entries = WatchListEntry.objects.filter(user=request.user, product_id=OuterRef("pk"))
+        # Watch List is shared by every active member of the caller's
+        # currently selected family.
+        watchlist_entries = WatchListEntry.objects.filter(
+            user_id__in=_watchlist_user_ids(request),
+            product_id=OuterRef("pk"),
+        )
         queryset = queryset.filter(Exists(watchlist_entries))
     elif status in {"OWNED", "UNIVERSAL"}:
         # Keep the status filter aligned with OwnershipService.bulk_enrich():
@@ -151,7 +173,10 @@ def _watchlisted_ids(products, request):
     if not product_ids or not request.user.is_authenticated:
         return set()
     return set(
-        WatchListEntry.objects.filter(user=request.user, product_id__in=product_ids).values_list("product_id", flat=True)
+        WatchListEntry.objects.filter(
+            user_id__in=_watchlist_user_ids(request),
+            product_id__in=product_ids,
+        ).values_list("product_id", flat=True)
     )
 
 
@@ -259,11 +284,21 @@ def watch_list_performance(request, product_id):
 def watch_list_toggle(request, product_id):
     """Add or remove a product from the caller's personal Watch List."""
     product = get_object_or_404(InvestmentProduct, pk=product_id, is_active=True)
-    entry = WatchListEntry.objects.filter(user=request.user, product=product).first()
-    if entry:
-        entry.delete()
+    family_user_ids = _watchlist_user_ids(request)
+    entries = WatchListEntry.objects.filter(
+        user_id__in=family_user_ids,
+        product=product,
+    )
+    if entries.exists():
+        entries.delete()
         return Response({"id": product.id, "is_watchlisted": False})
-    WatchListEntry.objects.create(user=request.user, product=product)
+    WatchListEntry.objects.bulk_create(
+        [
+            WatchListEntry(user_id=user_id, product=product)
+            for user_id in family_user_ids
+        ],
+        ignore_conflicts=True,
+    )
     return Response({"id": product.id, "is_watchlisted": True})
 
 
@@ -289,13 +324,17 @@ def watch_list_bulk_add(request):
     if not valid_ids:
         return Response({"detail": "No valid products were selected."}, status=400)
 
+    family_user_ids = _watchlist_user_ids(request)
     existing_ids = set(
-        WatchListEntry.objects.filter(user=request.user, product_id__in=valid_ids)
-        .values_list("product_id", flat=True)
+        WatchListEntry.objects.filter(
+            user_id__in=family_user_ids,
+            product_id__in=valid_ids,
+        ).values_list("product_id", flat=True)
     )
     WatchListEntry.objects.bulk_create(
         [
-            WatchListEntry(user=request.user, product_id=product_id)
+            WatchListEntry(user_id=user_id, product_id=product_id)
+            for user_id in family_user_ids
             for product_id in valid_ids - existing_ids
         ],
         ignore_conflicts=True,
@@ -321,7 +360,7 @@ def watch_list_bulk_remove(request):
         return Response({"detail": "product_ids must contain valid product IDs."}, status=400)
 
     deleted_count, _ = WatchListEntry.objects.filter(
-        user=request.user,
+        user_id__in=_watchlist_user_ids(request),
         product_id__in=product_ids,
     ).delete()
     return Response({

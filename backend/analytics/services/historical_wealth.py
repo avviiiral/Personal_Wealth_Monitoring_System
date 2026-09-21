@@ -313,7 +313,16 @@ class HistoricalWealthAnalytics:
                     ),
                 )
             elif not values:
+                # If the asset has no price on or before the requested
+                # period, do not silently value the holding at zero.
+                # This happens for assets whose market-data history
+                # starts after the selected period. Use the latest
+                # available manual snapshot first, then the latest
+                # available market price as a last-known-value
+                # fallback. This keeps the historical series complete
+                # without changing normal historical prices.
                 latest_manual = latest_manual_prices.get(asset.pk)
+
                 if latest_manual is not None:
                     values.append(
                         (
@@ -322,6 +331,32 @@ class HistoricalWealthAnalytics:
                             latest_manual.source,
                         )
                     )
+                else:
+                    latest_available = (
+                        MarketPrice.objects
+                        .filter(
+                            asset_id=asset.pk,
+                        )
+                        .order_by(
+                            "-date",
+                            "-id",
+                        )
+                        .only(
+                            "date",
+                            "close_price",
+                            "source",
+                        )
+                        .first()
+                    )
+
+                    if latest_available is not None:
+                        values.append(
+                            (
+                                latest_available.date,
+                                latest_available.close_price,
+                                latest_available.source,
+                            )
+                        )
 
             prices_by_asset[asset.pk] = values
 
@@ -416,7 +451,12 @@ class HistoricalWealthAnalytics:
         )
 
         for legacy_price in legacy_manual_prices:
-            if legacy_price.asset_id in prices_by_asset:
+            existing_values = prices_by_asset.get(
+                legacy_price.asset_id,
+                [],
+            )
+
+            if existing_values:
                 continue
 
             prices_by_asset[legacy_price.asset_id] = [
@@ -518,6 +558,33 @@ class HistoricalWealthAnalytics:
                         previous_nav.nav,
                     ),
                 )
+            elif not navs_by_scheme.get(scheme.pk):
+                # If NAV history starts after the requested period,
+                # use the latest available NAV rather than valuing the
+                # holding at zero for the entire historical range.
+                latest_nav = (
+                    MutualFundNAV.objects
+                    .filter(
+                        scheme_id=scheme.pk,
+                    )
+                    .order_by(
+                        "-date",
+                        "-id",
+                    )
+                    .only(
+                        "date",
+                        "nav",
+                    )
+                    .first()
+                )
+
+                if latest_nav is not None:
+                    navs_by_scheme[scheme.pk].append(
+                        (
+                            latest_nav.date,
+                            latest_nav.nav,
+                        )
+                    )
 
         return dict(navs_by_scheme)
 

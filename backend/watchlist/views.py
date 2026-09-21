@@ -82,30 +82,33 @@ def _filtered_products(request, product_type=None):
         watchlist_entries = WatchListEntry.objects.filter(user=request.user, product_id=OuterRef("pk"))
         queryset = queryset.filter(Exists(watchlist_entries))
     elif status in {"OWNED", "UNIVERSAL"}:
-        owner_ids = get_visible_owner_ids(request.user)
+        # Keep the status filter aligned with OwnershipService.bulk_enrich():
+        # ownership is family-scoped, and the same Asset/PortfolioPosition
+        # matching rules are used here. This fixes cases where a product is
+        # shown as OWNED after an ISIN search but is excluded by status=OWNED.
+        from users.permissions import family_scope
+
         active_position = Q(quantity__gt=0) | Q(current_value__gt=0)
+        scoped_positions = family_scope(PortfolioPosition.objects, request.user).filter(active_position)
 
         if product_type == ProductType.PMS:
-            pms_transactions = Transaction.objects.filter(
-                owner_id__in=owner_ids,
+            # PMS products are matched through Transaction.asset_name to the
+            # underlying Asset, exactly as OwnershipService.bulk_enrich().
+            pms_asset_ids = family_scope(Transaction.objects, request.user).filter(
                 asset_name__iexact=OuterRef("name"),
-                asset__portfolio_positions__owner_id__in=owner_ids,
-            ).filter(
-                Q(asset__portfolio_positions__quantity__gt=0)
-                | Q(asset__portfolio_positions__current_value__gt=0)
-            )
-            queryset = queryset.annotate(
-                has_owned_pms_transaction=Exists(pms_transactions),
-            ).filter(
-                has_owned_pms_transaction=(status == "OWNED")
+            ).values("asset_id")
+            owned_pms_positions = scoped_positions.filter(asset_id__in=pms_asset_ids)
+            owned_expression = Exists(owned_pms_positions)
+            queryset = queryset.filter(
+                owned_expression if status == "OWNED" else ~owned_expression
             )
         else:
-            isin_positions = PortfolioPosition.objects.filter(
-                owner_id__in=owner_ids,
-            ).filter(active_position).filter(asset__isin__iexact=OuterRef("isin"))
-            fallback_positions = PortfolioPosition.objects.filter(
-                owner_id__in=owner_ids,
-            ).filter(active_position).filter(
+            # Mutual funds and other products first match by ISIN, then use
+            # the same symbol/name fallback as OwnershipService.bulk_enrich().
+            isin_positions = scoped_positions.filter(
+                asset__isin__iexact=OuterRef("isin"),
+            )
+            fallback_positions = scoped_positions.filter(
                 Q(asset__symbol__iexact=OuterRef("external_identifier"))
                 | Q(asset__name__iexact=OuterRef("name"))
             )
@@ -115,13 +118,12 @@ def _filtered_products(request, product_type=None):
                 fallback_positions = fallback_positions.filter(asset__category=AssetCategory.MUTUAL_FUND)
 
             owned_expression = (
-                (~Q(isin__isnull=True) & ~Q(isin="") & Q(has_owned_isin=True))
-                | (Q(isin__isnull=True) | Q(isin="")) & Q(has_owned_fallback=True)
+                (~Q(isin__isnull=True) & ~Q(isin="") & Exists(isin_positions))
+                | ((Q(isin__isnull=True) | Q(isin="")) & Exists(fallback_positions))
             )
-            queryset = queryset.annotate(
-                has_owned_isin=Exists(isin_positions),
-                has_owned_fallback=Exists(fallback_positions),
-            ).filter(owned_expression if status == "OWNED" else ~owned_expression)
+            queryset = queryset.filter(
+                owned_expression if status == "OWNED" else ~owned_expression
+            )
     return queryset
 
 

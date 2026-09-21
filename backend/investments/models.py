@@ -90,6 +90,8 @@ class Transaction(models.Model):
         indexes = [
             models.Index(fields=["family", "source", "source_key"], name="transaction_source_key_idx"),
             models.Index(fields=["owner", "family_name", "asset_class", "sub_class"], name="transaction_hierarchy_idx"),
+            models.Index(fields=["family", "asset", "transaction_date"], name="transaction_asset_date_idx"),
+            models.Index(fields=["family", "transaction_date"], name="transaction_family_date_idx"),
         ]
         constraints = [
             models.UniqueConstraint(

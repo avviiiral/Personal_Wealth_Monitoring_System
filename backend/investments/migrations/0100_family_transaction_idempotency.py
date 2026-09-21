@@ -40,6 +40,17 @@ class Migration(migrations.Migration):
             deduplicate_family_transactions,
             migrations.RunPython.noop,
         ),
+        migrations.RemoveIndex(
+            model_name="transaction",
+            name="transaction_source_key_idx",
+        ),
+        migrations.AddIndex(
+            model_name="transaction",
+            index=models.Index(
+                fields=("family", "source", "source_key"),
+                name="transaction_source_key_idx",
+            ),
+        ),
         migrations.RemoveConstraint(
             model_name="transaction",
             name="unique_transaction_source_key",

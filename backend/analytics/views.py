@@ -14,6 +14,8 @@ from .services.portfolio_analytics import PortfolioAnalytics
 from .services.unified_wealth import UnifiedWealthAnalytics
 from .services.equity_analysis import EquityAnalysisService
 from .services.mutual_fund_lookthrough import MutualFundLookThroughService
+from users.models import FamilyGroup
+from users.permissions import get_active_family_group, get_family_group_ids, is_system_owner
 
 
 
@@ -93,17 +95,34 @@ def wealth_investment_summary(request):
     return Response(InvestmentSummaryService.calculate(request.user, family_name=family_name))
 
 
+def _standard_allocation_family(request):
+    requested_name = (request.GET.get("family") or "").strip()
+
+    if requested_name:
+        families = FamilyGroup.objects.filter(name=requested_name)
+        if not is_system_owner(request.user):
+            families = families.filter(id__in=get_family_group_ids(request.user))
+        family = families.order_by("id").first()
+        if family is None:
+            from rest_framework.exceptions import PermissionDenied
+            raise PermissionDenied("You do not have access to this family.")
+        return family
+
+    family = get_active_family_group(request.user)
+    if family is None:
+        from rest_framework.exceptions import PermissionDenied
+        raise PermissionDenied("You must belong to an active family to access Standard Allocation.")
+    return family
+
+
 @ensure_csrf_cookie
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def wealth_standard_allocations(request):
-    family_name = request.GET.get("family") or ""
-    rows = StandardAllocation.objects.filter(
-        user=request.user,
-        family_name=family_name,
-    )
+    family = _standard_allocation_family(request)
+    rows = StandardAllocation.objects.filter(family=family)
     return Response({
-        "family": family_name,
+        "family": family.name,
         "allocations": {
             row.asset_category: float(row.allocation_percent)
             for row in rows
@@ -114,7 +133,7 @@ def wealth_standard_allocations(request):
 @api_view(["PUT"])
 @permission_classes([IsAuthenticated])
 def wealth_standard_allocations_update(request):
-    family_name = request.GET.get("family") or ""
+    family = _standard_allocation_family(request)
     raw_allocations = request.data.get("allocations")
 
     if not isinstance(raw_allocations, dict) or not raw_allocations:
@@ -144,15 +163,11 @@ def wealth_standard_allocations_update(request):
             status=status.HTTP_400_BAD_REQUEST,
         )
 
-    StandardAllocation.objects.filter(
-        user=request.user,
-        family_name=family_name,
-    ).delete()
+    StandardAllocation.objects.filter(family=family).delete()
 
     StandardAllocation.objects.bulk_create([
         StandardAllocation(
-            user=request.user,
-            family_name=family_name,
+            family=family,
             asset_category=category,
             allocation_percent=value,
         )
@@ -160,7 +175,7 @@ def wealth_standard_allocations_update(request):
     ])
 
     return Response({
-        "family": family_name,
+        "family": family.name,
         "allocations": {category: float(value) for category, value in allocations.items()},
     })
 

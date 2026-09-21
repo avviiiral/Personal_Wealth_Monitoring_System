@@ -70,6 +70,7 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
   historical: any = null;
   investmentSummary: any = null;
   investmentSummaryError = '';
+  standardAllocations: Record<string, number> = {};
 
   /*
    * Allocation/performance by Advisor - fetched alongside the rest
@@ -1265,7 +1266,15 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
         totalInvested: this.summary?.total_invested ?? this.summary?.invested_value ?? 0,
         totalPnl: this.summary?.total_pnl ?? this.summary?.pnl ?? 0,
         xirrPercentage: this.xirr?.xirr_percentage ?? this.summary?.xirr_percentage ?? null,
-        investmentSummary: this.investmentSummary?.results ?? [],
+        investmentSummary: this.investmentSummaryGroups.flatMap((group) =>
+          group.asset_classes.map((assetClass) => ({
+            asset_category: group.asset_category,
+            asset_class: assetClass.asset_class,
+            current_value: assetClass.current_value,
+            percentage_of_total: assetClass.percentage_of_total,
+          }))
+        ),
+        standardAllocations: this.standardAllocations,
         advisorAllocation: this.advisorAllocation,
         advisorPerformance: this.advisorPerformance,
         subClassSummaries: this.buildSubClassSummariesForReport(),

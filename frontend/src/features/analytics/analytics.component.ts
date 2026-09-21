@@ -263,7 +263,11 @@ export class AnalyticsComponent implements OnInit, AfterViewInit, OnDestroy {
   private calculateInsights(): void {
     const performanceResults = this.performance?.results ?? [];
     if (performanceResults.length) {
-      const sorted = [...performanceResults].sort((a: any, b: any) => this.toNumber(b.pnl_percentage) - this.toNumber(a.pnl_percentage));
+      // Investment Performance is XIRR-based. Use the same metric for the
+      // Best/Worst Performer insight cards so the cards and chart stay consistent.
+      const sorted = [...performanceResults].sort(
+        (a: any, b: any) => this.toNumber(b.xirr_percentage) - this.toNumber(a.xirr_percentage),
+      );
       this.bestPerformer = sorted[0];
       this.worstPerformer = sorted[sorted.length - 1];
     } else {
@@ -519,8 +523,8 @@ export class AnalyticsComponent implements OnInit, AfterViewInit, OnDestroy {
   formatCategory(value: string): string { if (!value) return 'Unknown'; return value.replace(/_/g, ' ').toLowerCase().replace(/\b\w/g, char => char.toUpperCase()); }
   getBestPerformerName(): string { if (!this.bestPerformer) return '-'; return this.bestPerformer.asset_class || this.bestPerformer.symbol || this.bestPerformer.asset_name || this.bestPerformer.scheme_name || this.bestPerformer.name || 'Unknown'; }
   getWorstPerformerName(): string { if (!this.worstPerformer) return '-'; return this.worstPerformer.asset_class || this.worstPerformer.symbol || this.worstPerformer.asset_name || this.worstPerformer.scheme_name || this.worstPerformer.name || 'Unknown'; }
-  getBestPerformerReturn(): number { return this.toNumber(this.bestPerformer?.pnl_percentage); }
-  getWorstPerformerReturn(): number { return this.toNumber(this.worstPerformer?.pnl_percentage); }
+  getBestPerformerReturn(): number { return this.toNumber(this.bestPerformer?.xirr_percentage); }
+  getWorstPerformerReturn(): number { return this.toNumber(this.worstPerformer?.xirr_percentage); }
   getLargestAllocationName(): string { if (!this.largestAllocation) return '-'; return this.formatCategory(this.largestAllocation.category); }
   getLargestAllocationPercentage(): number { return this.toNumber(this.largestAllocation?.percentage); }
 }

@@ -257,6 +257,36 @@ class HistoricalWealthAnalytics:
         # Ensure the first requested day has a carry-forward quote
         # from the most recent prior date when no quote exists on the
         # start date.
+        #
+        # Manual-only assets need one additional special case:
+        # their current manual snapshot can be dated AFTER the
+        # requested historical window. MarketPrice stores that
+        # snapshot as a dated row, so the normal date__lte=end_date
+        # query would exclude it entirely and the asset would be
+        # valued at zero for the whole historical range. For
+        # manual-only assets, use the latest manual snapshot as the
+        # best available historical estimate when no older price
+        # exists in the requested range.
+        latest_manual_prices = {}
+        for manual_price in (
+            MarketPrice.objects
+            .filter(
+                asset_id__in=asset_ids,
+                source=DataSource.MANUAL,
+            )
+            .order_by("asset_id", "-date", "-id")
+            .only(
+                "asset_id",
+                "date",
+                "close_price",
+                "source",
+            )
+        ):
+            latest_manual_prices.setdefault(
+                manual_price.asset_id,
+                manual_price,
+            )
+
         for asset in assets:
             values = prices_by_asset.get(asset.pk, [])
             if any(price_date == start_date for price_date, _, _ in values):
@@ -282,6 +312,16 @@ class HistoricalWealthAnalytics:
                         previous.source,
                     ),
                 )
+            elif not values:
+                latest_manual = latest_manual_prices.get(asset.pk)
+                if latest_manual is not None:
+                    values.append(
+                        (
+                            latest_manual.date,
+                            latest_manual.close_price,
+                            latest_manual.source,
+                        )
+                    )
 
             prices_by_asset[asset.pk] = values
 

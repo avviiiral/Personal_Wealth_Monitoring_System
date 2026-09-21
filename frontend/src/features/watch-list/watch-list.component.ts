@@ -261,6 +261,10 @@ export class WatchListComponent implements OnInit, OnDestroy {
           || requestedCategory !== this.category
           || requestedSearch !== this.search.trim()) return;
 
+        // A completed response for the active request always ends the
+        // loading state before any response-specific handling.
+        this.loading = false;
+
         if (this.shouldBootstrapUniverse(response)) {
           this.autoRefreshAttempted = true;
           this.refreshUniverse(true);

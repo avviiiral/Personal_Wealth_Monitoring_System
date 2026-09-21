@@ -127,6 +127,7 @@ class Migration(migrations.Migration):
 
     dependencies = [
         ("investments", "0099_asset_underlying_holding"),
+        ("market_data", "0003_marketprice_updated_by"),
     ]
 
     operations = [

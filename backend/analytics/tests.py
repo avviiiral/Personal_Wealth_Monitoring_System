@@ -52,6 +52,7 @@ class InvestmentSummaryServiceTests(TestCase):
 
         Holding.objects.create(
             owner=self.user,
+            family=self.family,
             asset=asset,
             quantity=Decimal("1"),
             average_cost=current_value,
@@ -63,6 +64,7 @@ class InvestmentSummaryServiceTests(TestCase):
 
         Transaction.objects.create(
             owner=self.user,
+            family=self.family,
             asset=asset,
             asset_class="EQUITY",
             sub_class=sub_class,
@@ -84,6 +86,7 @@ class InvestmentSummaryServiceTests(TestCase):
     ):
         scheme = MutualFundScheme.objects.create(
             owner=self.user,
+            family=self.family,
             scheme_name=name,
             category=category,
             is_active=True,
@@ -91,6 +94,7 @@ class InvestmentSummaryServiceTests(TestCase):
 
         MutualFundHolding.objects.create(
             owner=self.user,
+            family=self.family,
             scheme=scheme,
             units=Decimal("1"),
             invested_value=current_value,

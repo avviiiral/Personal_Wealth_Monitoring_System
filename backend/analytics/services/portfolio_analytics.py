@@ -276,50 +276,40 @@ class PortfolioAnalytics:
 
     @staticmethod
     def calculate_allocation(user):
-        holdings = PortfolioAnalytics.get_holdings(user)
-
-        total_value = sum(
-            (
-                holding.current_value
-                or PortfolioAnalytics.ZERO
-            )
-            for holding in holdings
+        # Aggregate allocation in SQL instead of loading every holding into
+        # Python. This keeps the result identical while reducing application
+        # work for large portfolios.
+        rows = (
+            PortfolioAnalytics
+            .get_holdings(user)
+            .values("asset__category")
+            .annotate(value=Sum("current_value"))
         )
 
-        allocation = {}
+        total_value = PortfolioAnalytics.ZERO
+        allocation = []
 
-        for holding in holdings:
-            category = holding.asset.category
-
-            value = (
-                holding.current_value
-                or PortfolioAnalytics.ZERO
-            )
-
-            if category not in allocation:
-                allocation[category] = {
-                    "category": category,
-                    "value": PortfolioAnalytics.ZERO,
+        for row in rows:
+            value = row["value"] or PortfolioAnalytics.ZERO
+            total_value += value
+            allocation.append(
+                {
+                    "category": row["asset__category"],
+                    "value": value,
                     "percentage": 0,
                 }
+            )
 
-            allocation[category]["value"] += value
-
-        for category in allocation:
-            value = allocation[category]["value"]
-
+        for item in allocation:
+            value = item["value"]
             percentage = (
                 (value / total_value) * 100
                 if total_value
                 else PortfolioAnalytics.ZERO
             )
+            item["percentage"] = round(percentage, 2)
 
-            allocation[category]["percentage"] = round(
-                percentage,
-                2,
-            )
-
-        return list(allocation.values())
+        return allocation
 
     @staticmethod
     def get_performance_ranking(user):

@@ -10,6 +10,7 @@ from users.permissions import require_active_family
 from investments.models import (
     Asset,
     AssetCategory,
+    SecurityMaster,
     Transaction,
     TransactionType,
 )
@@ -20,6 +21,8 @@ from investments.services.security_master import (
 from portfolio.services.portfolio_position_engine import (
     PortfolioPositionEngine,
 )
+from market_data.services.security_resolver import SecurityResolver
+from market_data.services.yahoo_quant_enrichment import enrich_quant_fields
 
 from mutual_funds.models import (
     MutualFundScheme,
@@ -621,7 +624,6 @@ class TransactionImporter:
             asset = (
                 Asset.objects
                 .filter(
-                    owner=owner,
                     family=family,
                     isin=normalized_isin,
                 )
@@ -632,7 +634,6 @@ class TransactionImporter:
             asset = (
                 Asset.objects
                 .filter(
-                    owner=owner,
                     family=family,
                     name=asset_name,
                     category=category,
@@ -698,7 +699,6 @@ class TransactionImporter:
             scheme = (
                 MutualFundScheme.objects
                 .filter(
-                    owner=owner,
                     family=family,
                     isin_growth=normalized_isin,
                 )
@@ -709,7 +709,6 @@ class TransactionImporter:
             scheme = (
                 MutualFundScheme.objects
                 .filter(
-                    owner=owner,
                     family=family,
                     scheme_name=asset_name,
                 )
@@ -757,7 +756,6 @@ class TransactionImporter:
         return (
             Transaction.objects
             .filter(
-                owner=owner,
                 family=family,
                 source="EXCEL",
                 source_key=source_key,
@@ -777,11 +775,23 @@ class TransactionImporter:
         price,
         amount,
         family=None,
+        source_key=None,
     ):
+        if source_key:
+            existing = (
+                MutualFundTransaction.objects
+                .filter(
+                    family=family,
+                    source_key=source_key,
+                )
+                .first()
+            )
+            if existing is not None:
+                return existing
+
         return (
             MutualFundTransaction.objects
             .filter(
-                owner=owner,
                 family=family,
                 family_name=family_name,
                 portfolio=portfolio,
@@ -1162,6 +1172,7 @@ class TransactionImporter:
                         quantity=parsed["quantity"],
                         price=parsed["price"],
                         amount=parsed["amount"],
+                        source_key=source_key,
                     )
                 )
 
@@ -1184,6 +1195,7 @@ class TransactionImporter:
                     nav=parsed["price"],
                     amount=parsed["amount"],
                     fees=Decimal("0"),
+                    source_key=source_key,
                 )
 
                 seen_mutual_fund_keys.add(
@@ -1266,6 +1278,58 @@ class TransactionImporter:
 
             seen_source_keys.add(source_key)
             imported_investments += 1
+
+        # Enrich every stock/ETF touched by this upload immediately.
+        # This keeps Sector, Cap Type, P/E, P/B, PEG and ROE populated
+        # without requiring a separate command after upload.
+        # enrich_quant_fields skips mutual funds, PMS and other classes.
+        for asset_id in touched_asset_ids:
+            asset = Asset.objects.filter(
+                id=asset_id,
+                family=family,
+                is_active=True,
+            ).first()
+
+            if asset is None:
+                continue
+
+            try:
+                yahoo_symbol = SecurityResolver.resolve_yahoo_symbol(
+                    symbol=asset.symbol,
+                    isin=asset.isin,
+                    name=asset.name,
+                )
+
+                if yahoo_symbol and asset.symbol != yahoo_symbol:
+                    asset.symbol = yahoo_symbol
+                    asset.save(update_fields=["symbol"])
+
+                security = (
+                    asset.security_master
+                    or SecurityMasterService.get_or_create(
+                        owner=owner,
+                        asset=asset,
+                        family=family,
+                    )
+                )
+
+                if asset.security_master_id != security.id:
+                    asset.security_master = security
+                    asset.save(update_fields=["security_master"])
+
+                enrich_quant_fields(
+                    asset,
+                    security,
+                    force_refresh=True,
+                )
+
+            except Exception:
+                logger.exception(
+                    "[TRANSACTION IMPORT] Security metrics enrichment "
+                    "failed for asset %s (%s). Import will continue.",
+                    asset.id,
+                    asset.name,
+                )
 
         # Keep Holding Reports in sync with imported investment
         # transactions. Mutual-fund transactions are handled by

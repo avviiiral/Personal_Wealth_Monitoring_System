@@ -140,8 +140,28 @@ def equity_market_cap_report(request):
         item["total_invested"] += invested_amount
         item[bucket] += invested_amount
 
-    # Equity PMS and Direct Equity come from the portfolio hierarchy.
-    pms_positions = []
+    # Use the same Portfolio Asset -> uploaded underlying relationship
+    # that Analytics uses. This is intentionally generic: it applies to
+    # whatever Equity subclass the uploaded Asset belongs to, including
+    # Equity Mutual Funds, without hardcoding fund names or securities.
+    equity_asset_ids = [
+        position.asset_id
+        for position in positions
+        if _normalized_sub_class(position.latest_asset_class) == "EQUITY"
+        and _normalized_sub_class(position.latest_sub_class) in {
+            "EQUITYPMS",
+            "EQUITYMUTUALFUNDS",
+        }
+    ]
+    underlying_rows = (
+        AssetUnderlyingHolding.objects
+        .filter(family_id=family.id, asset_id__in=equity_asset_ids)
+        .only("asset_id", "stock_name", "holding_percentage", "cap_type")
+    )
+    rows_by_asset = {}
+    for underlying in underlying_rows:
+        rows_by_asset.setdefault(underlying.asset_id, []).append(underlying)
+
     for position in positions:
         if _normalized_sub_class(position.latest_asset_class) != "EQUITY":
             continue
@@ -160,37 +180,12 @@ def equity_market_cap_report(request):
                 security.cap_type if security else None,
                 invested_value,
             )
-        elif _is_equity_pms(position.latest_sub_class):
-            pms_positions.append(position)
-        # Other Equity subclasses remain in the Equity scope but are only
-        # classified when an underlying/security classification is available.
-        else:
-            security = getattr(position.asset, "security_master", None)
-            add_exposure(
-                family_name_for_position,
-                asset_name_for_position,
-                security.cap_type if security else None,
-                invested_value,
-            )
+            continue
 
-    if pms_positions:
-        pms_asset_ids = [position.asset_id for position in pms_positions]
-        underlying_rows = (
-            AssetUnderlyingHolding.objects
-            .filter(family_id=family.id, asset_id__in=pms_asset_ids)
-            .only("asset_id", "stock_name", "holding_percentage", "cap_type")
-        )
-        rows_by_asset = {}
-        for underlying in underlying_rows:
-            rows_by_asset.setdefault(underlying.asset_id, []).append(underlying)
-
-        for position in pms_positions:
-            family_name_for_position = _clean(position.family_name) or family_name
-            asset_name_for_position = _clean(position.latest_asset_name) or _clean(position.asset.name)
-            invested_value = float(position.invested_value or 0)
-            if invested_value <= 0:
-                continue
-
+        if _normalized_sub_class(position.latest_sub_class) in {
+            "EQUITYPMS",
+            "EQUITYMUTUALFUNDS",
+        }:
             asset_underlyings = rows_by_asset.get(position.asset_id, [])
             if not asset_underlyings:
                 security = getattr(position.asset, "security_master", None)
@@ -207,14 +202,18 @@ def equity_market_cap_report(request):
                 for underlying in asset_underlyings
             )
             if percentage_total <= 0:
+                add_exposure(
+                    family_name_for_position,
+                    asset_name_for_position,
+                    None,
+                    invested_value,
+                )
                 continue
 
             for underlying in asset_underlyings:
                 holding_percentage = max(float(underlying.holding_percentage or 0), 0)
                 if holding_percentage <= 0:
                     continue
-                # Normalize the uploaded underlying percentages to the
-                # actual total invested amount of this Asset Name.
                 underlying_invested = invested_value * holding_percentage / percentage_total
                 cap_type = underlying.cap_type or security_lookup.get(
                     ("name", _clean(underlying.stock_name).upper())
@@ -225,6 +224,17 @@ def equity_market_cap_report(request):
                     cap_type,
                     underlying_invested,
                 )
+            continue
+
+        # Other Equity subclasses remain classified from their own
+        # SecurityMaster metadata.
+        security = getattr(position.asset, "security_master", None)
+        add_exposure(
+            family_name_for_position,
+            asset_name_for_position,
+            security.cap_type if security else None,
+            invested_value,
+        )
 
     # Equity Mutual Funds: use the same uploaded underlying classification
     # path used by Analytics Market Cap Allocation whenever available.

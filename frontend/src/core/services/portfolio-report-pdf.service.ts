@@ -86,6 +86,7 @@ export interface PortfolioReviewReportData {
   totalPnl: number;
   xirrPercentage: number | null;
   investmentSummary: InvestmentSummaryRow[];
+  standardAllocations: Record<string, number>;
   advisorAllocation: AdvisorAllocationRow[];
   advisorPerformance: AdvisorPerformanceRow[];
   subClassSummaries: SubClassSummaryRow[];
@@ -228,6 +229,184 @@ function drawCoverPage(
   );
 }
 
+function getStandardAllocation(
+  data: PortfolioReviewReportData,
+  category: string
+): number {
+  const value = Number(data.standardAllocations?.[category]);
+  return Number.isFinite(value) ? value : 0;
+}
+
+function getAllocationComment(
+  percentage: number,
+  standard: number
+): string {
+  const difference = percentage - standard;
+
+  if (Math.abs(difference) <= 2) {
+    return 'Neutral';
+  }
+
+  return difference > 2
+    ? 'Invest Less in Other Asset Category'
+    : 'Invest More in this Category';
+}
+
+function buildCategoryAllocationRows(data: PortfolioReviewReportData): Array<{
+  category: string;
+  value: number;
+  percentage: number;
+  standard: number;
+  comment: string;
+}> {
+  const order: string[] = [];
+  const totals = new Map<string, { value: number; percentage: number }>();
+
+  for (const row of data.investmentSummary) {
+    const category = (row.asset_category || 'Unassigned').trim() || 'Unassigned';
+    if (!totals.has(category)) {
+      totals.set(category, { value: 0, percentage: 0 });
+      order.push(category);
+    }
+
+    const entry = totals.get(category)!;
+    entry.value += Number(row.current_value) || 0;
+    entry.percentage += Number(row.percentage_of_total) || 0;
+  }
+
+  return order
+    .map((category) => {
+      const entry = totals.get(category)!;
+      const percentage = Math.round(entry.percentage * 100) / 100;
+      const standard = getStandardAllocation(data, category);
+      return {
+        category,
+        value: entry.value,
+        percentage,
+        standard,
+        comment: getAllocationComment(percentage, standard),
+      };
+    })
+    .filter((row) => row.value > 0);
+}
+
+function drawAllocationAnalysisPage(
+  doc: jsPDF,
+  data: PortfolioReviewReportData
+): void {
+  const rows = buildCategoryAllocationRows(data);
+  if (rows.length === 0) {
+    return;
+  }
+
+  doc.addPage();
+  drawSectionHeader(
+    doc,
+    'Allocation Analysis',
+    'Current portfolio allocation and comparison with Standard Allocation'
+  );
+
+  const leftX = MARGIN;
+  const rightX = PAGE_W / 2 + 4;
+  const chartW = PAGE_W / 2 - MARGIN - 12;
+  const barH = 6;
+  const rowGap = 12;
+  const maxValue = Math.max(...rows.map((row) => row.percentage), 1);
+
+  const drawBarChart = (
+    x: number,
+    y: number,
+    title: string,
+    valueFor: (row: typeof rows[number]) => number,
+    color: [number, number, number],
+    valueSuffix: string
+  ) => {
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(10);
+    doc.setTextColor(...INK);
+    doc.text(title, x, y);
+
+    const labelW = 42;
+    const barX = x + labelW;
+    const valueX = x + chartW;
+    const availableW = chartW - labelW - 14;
+    let cursorY = y + 10;
+
+    for (const row of rows) {
+      const value = valueFor(row);
+      const width = Math.max(0, Math.min(availableW, (value / maxValue) * availableW));
+
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(7.5);
+      doc.setTextColor(...INK);
+      doc.text(row.category, x, cursorY + 4.2);
+
+      doc.setFillColor(239, 241, 245);
+      doc.roundedRect(barX, cursorY, availableW, barH, 1.2, 1.2, 'F');
+
+      doc.setFillColor(...color);
+      if (width > 0) {
+        doc.roundedRect(barX, cursorY, width, barH, 1.2, 1.2, 'F');
+      }
+
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(7.5);
+      doc.setTextColor(...INK);
+      doc.text(value.toFixed(1) + valueSuffix, valueX, cursorY + 4.2, { align: 'right' });
+      cursorY += rowGap;
+    }
+  };
+
+  drawBarChart(leftX, 52, 'Current Allocation', (row) => row.percentage, NAVY, '%');
+
+  const comparisonY = 52;
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(10);
+  doc.setTextColor(...INK);
+  doc.text('Current vs Standard Allocation', rightX, comparisonY);
+
+  const labelW = 44;
+  const barX = rightX + labelW;
+  const valueX = rightX + chartW;
+  const availableW = chartW - labelW - 14;
+  let cursorY = comparisonY + 10;
+
+  for (const row of rows) {
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(7.5);
+    doc.setTextColor(...INK);
+    doc.text(row.category, rightX, cursorY + 4.2);
+
+    doc.setFillColor(239, 241, 245);
+    doc.roundedRect(barX, cursorY, availableW, 4, 0.8, 0.8, 'F');
+    doc.setFillColor(...NAVY);
+    doc.roundedRect(barX, cursorY, Math.min(availableW, (row.percentage / 100) * availableW), 4, 0.8, 0.8, 'F');
+
+    doc.setFillColor(239, 241, 245);
+    doc.roundedRect(barX, cursorY + 5, availableW, 4, 0.8, 0.8, 'F');
+    doc.setFillColor(...ORANGE);
+    doc.roundedRect(barX, cursorY + 5, Math.min(availableW, (row.standard / 100) * availableW), 4, 0.8, 0.8, 'F');
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(7.5);
+    doc.setTextColor(...INK);
+    doc.text(row.percentage.toFixed(1) + '% / ' + row.standard.toFixed(1) + '%', valueX, cursorY + 6.8, { align: 'right' });
+    cursorY += rowGap + 3;
+  }
+
+  const legendY = Math.min(PAGE_H - 25, cursorY + 4);
+  doc.setFillColor(...NAVY);
+  doc.rect(rightX, legendY, 4, 4, 'F');
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(7.5);
+  doc.setTextColor(...MUTED);
+  doc.text('Current', rightX + 7, legendY + 3.2);
+  doc.setFillColor(...ORANGE);
+  doc.rect(rightX + 36, legendY, 4, 4, 'F');
+  doc.text('Standard', rightX + 43, legendY + 3.2);
+
+  drawFooter(doc, 'Allocation Analysis');
+}
 function drawExecutiveSummaryPage(
   doc: jsPDF,
   data: PortfolioReviewReportData
@@ -270,33 +449,18 @@ function drawExecutiveSummaryPage(
     styles: { cellPadding: 3 },
   });
 
-  const categoryTotals = new Map<string, number>();
-
-  for (const row of data.investmentSummary) {
-    categoryTotals.set(
-      row.asset_category,
-      (categoryTotals.get(row.asset_category) ?? 0) + row.current_value
-    );
-  }
-
-  const totalValue = Array.from(categoryTotals.values()).reduce(
-    (a, b) => a + b,
-    0
-  );
-
-  const allocationRows = Array.from(categoryTotals.entries())
-    .filter(([, value]) => value > 0)
-    .sort((a, b) => b[1] - a[1])
-    .map(([category, value]) => [
-      category,
-      formatInr(value),
-      totalValue ? `${((value / totalValue) * 100).toFixed(1)}%` : '-',
-    ]);
+  const allocationRows = buildCategoryAllocationRows(data).map((row) => [
+    row.category,
+    formatInr(row.value),
+    formatPercent(row.percentage),
+    formatPercent(row.standard),
+    row.comment,
+  ]);
 
   autoTable(doc, {
     startY: 52,
     margin: { left: PAGE_W / 2 + 4, right: MARGIN },
-    head: [['Asset Allocation', 'Value', '%']],
+    head: [['Asset Allocation', 'Value', '%', 'Standard', 'Comments']],
     body: allocationRows,
     theme: 'plain',
     headStyles: {
@@ -310,6 +474,7 @@ function drawExecutiveSummaryPage(
     columnStyles: {
       1: { halign: 'right' },
       2: { halign: 'right' },
+      3: { halign: 'right' },
     },
     styles: { cellPadding: 3 },
   });
@@ -769,6 +934,7 @@ export class PortfolioReportPdfService {
 
     drawCoverPage(doc, data, today);
     drawExecutiveSummaryPage(doc, data);
+    drawAllocationAnalysisPage(doc, data);
     drawInvestmentSummaryPage(doc, data);
     drawAdvisorPage(doc, data);
     drawHoldingsPage(doc, data);

@@ -1,6 +1,7 @@
 from decimal import Decimal
 
 from django.db import transaction
+from django.db.models import Sum
 
 from investments.models import (
     Asset,
@@ -55,6 +56,33 @@ class PortfolioPositionEngine:
             portfolio=portfolio,
             asset=asset,
         )
+
+        # Optimize the common BUY/SIP-only case with a single SQL
+        # aggregation. Positions containing SELL/BONUS/SPLIT still use
+        # the existing ordered transaction logic unchanged.
+        has_adjustments = transactions.exclude(
+            transaction_type__in=(
+                TransactionType.BUY,
+                TransactionType.SIP,
+            )
+        ).exists()
+        if not has_adjustments:
+            totals = transactions.aggregate(
+                quantity=Sum("quantity"),
+                invested_value=Sum("amount"),
+            )
+            quantity = totals["quantity"] or cls.ZERO
+            invested_value = totals["invested_value"] or cls.ZERO
+            average_cost = (
+                invested_value / quantity
+                if quantity > 0
+                else cls.ZERO
+            )
+            return {
+                "quantity": quantity,
+                "invested_value": invested_value,
+                "average_cost": average_cost,
+            }
 
         for tx in transactions:
             tx_quantity = tx.quantity or cls.ZERO

@@ -772,7 +772,20 @@ class TransactionImporter:
         price,
         amount,
         family=None,
+        source_key=None,
     ):
+        if source_key:
+            existing = (
+                MutualFundTransaction.objects
+                .filter(
+                    family=family,
+                    source_key=source_key,
+                )
+                .first()
+            )
+            if existing is not None:
+                return existing
+
         return (
             MutualFundTransaction.objects
             .filter(
@@ -1157,6 +1170,7 @@ class TransactionImporter:
                         quantity=parsed["quantity"],
                         price=parsed["price"],
                         amount=parsed["amount"],
+                        source_key=source_key,
                     )
                 )
 

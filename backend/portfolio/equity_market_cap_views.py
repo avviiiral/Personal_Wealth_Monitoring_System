@@ -6,7 +6,6 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from investments.models import AssetUnderlyingHolding, PortfolioPosition, SecurityMaster, Transaction
-from mutual_funds.models import MutualFundHolding, MutualFundUnderlying
 from users.permissions import require_active_family
 
 
@@ -14,17 +13,29 @@ def _clean(value):
     return str(value or "").strip()
 
 
+def _normalized_name(value):
+    value = _clean(value).upper()
+    return "".join(ch if ch.isalnum() else " " for ch in value).split()
+
+
+def _name_key(value):
+    return "".join(_normalized_name(value))
+
+
+def _name_matches(left, right):
+    left_key = _name_key(left)
+    right_key = _name_key(right)
+    if not left_key or not right_key:
+        return False
+    if left_key == right_key:
+        return True
+    if len(left_key) >= 8 and len(right_key) >= 8:
+        return left_key.startswith(right_key) or right_key.startswith(left_key)
+    return False
+
+
 def _normalized_sub_class(value):
     return "".join(ch for ch in _clean(value).upper() if ch.isalnum())
-
-
-def _is_allowed_equity_subclass(sub_class):
-    normalized = _normalized_sub_class(sub_class)
-    return normalized in {
-        "EQUITYPMS",
-        "DIRECTEQUITY",
-        "EQUITYMUTUALFUNDS",
-    }
 
 
 def _is_equity_pms(sub_class):
@@ -33,6 +44,11 @@ def _is_equity_pms(sub_class):
 
 def _is_direct_equity(sub_class):
     return _normalized_sub_class(sub_class) == "DIRECTEQUITY"
+
+
+def _is_equity_mutual_fund(sub_class):
+    normalized = _normalized_sub_class(sub_class)
+    return normalized in {"EQUITYMUTUALFUND", "EQUITYMUTUALFUNDS"}
 
 
 def _cap_bucket(cap_type):
@@ -63,6 +79,7 @@ def _security_lookup(family_id):
 def equity_market_cap_report(request):
     """Return equity market-cap exposure with PMS and MF underlying look-through."""
     family = require_active_family(request.user)
+    family_name = _clean(getattr(family, "name", None) or getattr(family, "family_name", None) or str(family))
     security_lookup = _security_lookup(family.id)
 
     latest_transaction = (
@@ -87,191 +104,149 @@ def equity_market_cap_report(request):
         .annotate(
             latest_asset_class=Subquery(latest_transaction.values("asset_class")[:1]),
             latest_sub_class=Subquery(latest_transaction.values("sub_class")[:1]),
+            latest_asset_name=Subquery(latest_transaction.values("asset_name")[:1]),
         )
     )
 
+    # Store invested-value-weighted market-cap exposure per
+    # Family + Asset Name. The report is based on the hierarchy:
+    # Family -> Asset Class (Equity) -> Sub Class -> Asset Name -> Underlying.
     matrix = {}
 
-    def add(underlying, cap_type, value):
-        underlying = _clean(underlying)
-        value = float(value or 0)
-        if not underlying or value <= 0:
+    def add_exposure(family_name, asset_name, cap_type, invested_amount):
+        family_name = _clean(family_name)
+        asset_name = _clean(asset_name)
+        invested_amount = float(invested_amount or 0)
+        if not family_name or not asset_name or invested_amount <= 0:
             return
+
         bucket = _cap_bucket(cap_type)
+        key = (family_name, asset_name)
         item = matrix.setdefault(
-            underlying,
+            key,
             {
+                "total_invested": 0.0,
                 "small_cap": 0.0,
                 "mid_cap": 0.0,
                 "large_cap": 0.0,
                 "unclassified": 0.0,
             },
         )
-        item[bucket] += value
+        item["total_invested"] += invested_amount
+        item[bucket] += invested_amount
 
-    pms_positions = []
+    # Use the same Portfolio Asset -> uploaded underlying relationship
+    # that Analytics uses. This is intentionally generic: it applies to
+    # whatever Equity subclass the uploaded Asset belongs to, including
+    # Equity Mutual Funds, without hardcoding fund names or securities.
+    equity_asset_ids = [
+        position.asset_id
+        for position in positions
+        if _normalized_sub_class(position.latest_asset_class) == "EQUITY"
+        and (
+            _is_equity_pms(position.latest_sub_class)
+            or _is_equity_mutual_fund(position.latest_sub_class)
+        )
+    ]
+    underlying_rows = (
+        AssetUnderlyingHolding.objects
+        .filter(family_id=family.id, asset_id__in=equity_asset_ids)
+        .only("asset_id", "stock_name", "holding_percentage", "cap_type")
+    )
+    rows_by_asset = {}
+    for underlying in underlying_rows:
+        rows_by_asset.setdefault(underlying.asset_id, []).append(underlying)
 
     for position in positions:
-        current_value = float(position.current_value or 0)
-        if current_value <= 0:
+        if _normalized_sub_class(position.latest_asset_class) != "EQUITY":
             continue
 
-        if not _is_allowed_equity_subclass(position.latest_sub_class):
+        family_name_for_position = _clean(position.family_name) or family_name
+        asset_name_for_position = _clean(position.latest_asset_name) or _clean(position.asset.name)
+        invested_value = float(position.invested_value or 0)
+        if invested_value <= 0:
             continue
 
         if _is_direct_equity(position.latest_sub_class):
             security = getattr(position.asset, "security_master", None)
-            add(
-                position.asset.name,
+            add_exposure(
+                family_name_for_position,
+                asset_name_for_position,
                 security.cap_type if security else None,
-                current_value,
+                invested_value,
             )
-        elif _is_equity_pms(position.latest_sub_class):
-            pms_positions.append(position)
+            continue
 
-    if pms_positions:
-        pms_asset_ids = [position.asset_id for position in pms_positions]
-        underlying_rows = (
-            AssetUnderlyingHolding.objects
-            .filter(family_id=family.id, asset_id__in=pms_asset_ids)
-            .only("asset_id", "stock_name", "holding_percentage", "cap_type")
-        )
-        rows_by_asset = {}
-        for underlying in underlying_rows:
-            rows_by_asset.setdefault(underlying.asset_id, []).append(underlying)
-
-        for position in pms_positions:
-            current_value = float(position.current_value or 0)
+        if (
+            _is_equity_pms(position.latest_sub_class)
+            or _is_equity_mutual_fund(position.latest_sub_class)
+        ):
             asset_underlyings = rows_by_asset.get(position.asset_id, [])
-
             if not asset_underlyings:
                 security = getattr(position.asset, "security_master", None)
-                add(
-                    position.asset.name,
+                add_exposure(
+                    family_name_for_position,
+                    asset_name_for_position,
                     security.cap_type if security else None,
-                    current_value,
+                    invested_value,
+                )
+                continue
+
+            percentage_total = sum(
+                max(float(underlying.holding_percentage or 0), 0)
+                for underlying in asset_underlyings
+            )
+            if percentage_total <= 0:
+                add_exposure(
+                    family_name_for_position,
+                    asset_name_for_position,
+                    None,
+                    invested_value,
                 )
                 continue
 
             for underlying in asset_underlyings:
-                percentage = float(underlying.holding_percentage or 0) / 100.0
-                if percentage <= 0:
+                holding_percentage = max(float(underlying.holding_percentage or 0), 0)
+                if holding_percentage <= 0:
                     continue
+                underlying_invested = invested_value * holding_percentage / percentage_total
                 cap_type = underlying.cap_type or security_lookup.get(
                     ("name", _clean(underlying.stock_name).upper())
                 )
-                add(
-                    underlying.stock_name,
+                add_exposure(
+                    family_name_for_position,
+                    asset_name_for_position,
                     cap_type,
-                    current_value * percentage,
+                    underlying_invested,
                 )
+            continue
 
-    mf_holdings = list(
-        MutualFundHolding.objects
-        .filter(family_id=family.id, scheme__is_active=True)
-        .select_related("scheme")
-    )
-    equity_mf_holdings = [
-        holding
-        for holding in mf_holdings
-        if "EQUITY" in _clean(holding.scheme.category).upper()
-    ]
-
-    scheme_ids = [holding.scheme_id for holding in equity_mf_holdings]
-
-    if scheme_ids:
-        latest_date = (
-            MutualFundUnderlying.objects
-            .filter(scheme_id=OuterRef("scheme_id"))
-            .order_by("-portfolio_date")
-            .values("portfolio_date")[:1]
+        # Other Equity subclasses remain classified from their own
+        # SecurityMaster metadata.
+        security = getattr(position.asset, "security_master", None)
+        add_exposure(
+            family_name_for_position,
+            asset_name_for_position,
+            security.cap_type if security else None,
+            invested_value,
         )
-        underlying_rows = (
-            MutualFundUnderlying.objects
-            .filter(scheme_id__in=scheme_ids)
-            .annotate(latest_portfolio_date=Subquery(latest_date))
-            .filter(portfolio_date=F("latest_portfolio_date"))
-            .order_by("scheme_id", "-percentage_of_nav")
-        )
-
-        rows_by_scheme = {}
-        for underlying in underlying_rows:
-            rows_by_scheme.setdefault(underlying.scheme_id, []).append(underlying)
-
-        for holding in equity_mf_holdings:
-            snapshot_rows = rows_by_scheme.get(holding.scheme_id, [])
-
-            if not snapshot_rows:
-                add(holding.scheme.scheme_name, None, holding.current_value)
-                continue
-
-            for underlying in snapshot_rows:
-                percentage = float(underlying.percentage_of_nav or 0) / 100.0
-                if percentage <= 0:
-                    continue
-
-                cap_type = None
-                if underlying.isin:
-                    cap_type = security_lookup.get(
-                        ("isin", _clean(underlying.isin).upper())
-                    )
-                if not cap_type:
-                    cap_type = security_lookup.get(
-                        ("name", _clean(underlying.security_name).upper())
-                    )
-
-                add(
-                    underlying.security_name,
-                    cap_type,
-                    float(holding.current_value or 0) * percentage,
-                )
-
-    current_value_by_cap = {
-        "small_cap": sum(item["small_cap"] for item in matrix.values()),
-        "mid_cap": sum(item["mid_cap"] for item in matrix.values()),
-        "large_cap": sum(item["large_cap"] for item in matrix.values()),
-        "unclassified": sum(item["unclassified"] for item in matrix.values()),
-    }
-    total_current_value = sum(current_value_by_cap.values())
 
     rows = []
-    for underlying, item in sorted(
+    for (family_name, asset_name), item in sorted(
         matrix.items(),
-        key=lambda entry: -sum(entry[1].values()),
+        key=lambda entry: (entry[0][0], entry[0][1]),
     ):
+        total_invested = item["total_invested"]
         rows.append(
             {
-                "underlying": underlying,
-                "small_cap": item["small_cap"] or None,
-                "mid_cap": item["mid_cap"] or None,
-                "large_cap": item["large_cap"] or None,
-                "unclassified": item["unclassified"] or None,
+                "family_name": family_name,
+                "asset_name": asset_name,
+                "small_cap": item["small_cap"] / total_invested * 100 if total_invested else None,
+                "mid_cap": item["mid_cap"] / total_invested * 100 if total_invested else None,
+                "large_cap": item["large_cap"] / total_invested * 100 if total_invested else None,
+                "unclassified": item["unclassified"] / total_invested * 100 if total_invested else None,
             }
         )
-
-    rows.extend(
-        [
-            {
-                "underlying": "% of Equity",
-                **{
-                    bucket: (
-                        value / total_current_value * 100
-                        if total_current_value
-                        else 0
-                    )
-                    for bucket, value in current_value_by_cap.items()
-                },
-            },
-            {
-                "underlying": "Current Value",
-                **current_value_by_cap,
-            },
-            {
-                "underlying": "total",
-                **current_value_by_cap,
-            },
-        ]
-    )
 
     return Response(
         {

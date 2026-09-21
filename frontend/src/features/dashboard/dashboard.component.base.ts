@@ -1000,29 +1000,12 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
   }
 
   /**
-   * Resolve the Asset Category for a Portfolio Tree Sub Class.
+   * Resolve the Asset Category for a Portfolio Tree Sub Class using
+   * the current Investment Summary classification.
    *
-   * IMPORTANT:
-   *
-   * This must be called with the Portfolio Tree's SUB CLASS value
-   * (e.g. "Debt Mutual Fund", "Arbitrage Mutual Fund", "Direct
-   * Equity"), NOT the broader top-level Asset Class value.
-   *
-   * The backend's Investment Summary categorization
-   * (investment_summary.py) resolves its own "Asset Class" concept
-   * as the SUB CLASS of each transaction, not the Portfolio Tree's
-   * separate, broader asset_class field. Matching against the
-   * wrong field meant categories like Fixed Income, Liquids, and
-   * Other never matched anything and silently dropped out of the
-   * XIRR Performance selector, even though their underlying assets
-   * had valid XIRR data.
-   *
-   * Investment Summary already contains both:
-   *
-   *   canonical Asset Class
-   *   raw Asset Class values
-   *
-   * so this avoids changing the backend Portfolio Tree.
+   * Investment Summary is the single source of truth for Asset
+   * Category. The Portfolio Tree only supplies the Sub Class value;
+   * no Dashboard-side Asset Category mapping is maintained here.
    */
   protected getAssetCategoryForTreeAssetClass(treeSubClass: string): string | null {
     const cleaned = (treeSubClass || '').trim();
@@ -1033,7 +1016,7 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
 
     for (const group of this.investmentSummaryGroups) {
       for (const assetClass of group.asset_classes) {
-        if (assetClass.asset_class === cleaned) {
+        if (assetClass.asset_class.trim() === cleaned) {
           return group.asset_category;
         }
 
@@ -1041,71 +1024,6 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
           return group.asset_category;
         }
       }
-    }
-
-    /*
-     * The Portfolio Tree can contain a raw Excel
-     * classification that was normalized by the backend.
-     *
-     * These fallbacks mirror the existing Investment
-     * Summary normalization rules.
-     */
-    const upper = cleaned.toUpperCase();
-
-    if (upper.includes('EQUITY AIF') || upper === 'AIF') {
-      return 'Equities';
-    }
-
-    if (upper.includes('EQUITY PMS') || upper === 'PMS') {
-      return 'Equities';
-    }
-
-    if (upper.includes('EQUITY MUTUAL FUND')) {
-      return 'Equities';
-    }
-
-    if (upper.includes('EQUITY LRS') || upper === 'LRS') {
-      return 'Equities';
-    }
-
-    if (upper.includes('DIRECT EQUITY') || upper === 'EQUITY' || upper === 'STOCK') {
-      return 'Equities';
-    }
-
-    if (upper.includes('DEBT MUTUAL FUND')) {
-      return 'Fixed Income';
-    }
-
-    if (upper.includes('GOLD BOND') || upper === 'SGB' || upper.includes('SOVEREIGN GOLD')) {
-      return 'Fixed Income';
-    }
-
-    if (upper.includes('ARBITRAGE')) {
-      return 'Liquids';
-    }
-
-    if (upper.includes('LIQUID')) {
-      return 'Liquids';
-    }
-
-    if (upper.includes('PRIVATE EQUITY')) {
-      return 'Alternate';
-    }
-
-    if (upper.includes('REIT')) {
-      return 'Alternate';
-    }
-
-    if (upper.includes('INVIT')) {
-      return 'Alternate';
-    }
-
-    if (upper.includes('COMMODITY')) {
-      return 'Alternate';
-    }
-
-    if (upper.includes('UNLISTED')) {
-      return 'Other';
     }
 
     return null;
@@ -1209,31 +1127,41 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
    * PDF than to show a number that might not match.
    */
   private buildSubClassSummariesForReport(): SubClassSummaryRow[] {
-    const totals = new Map<
-      string,
-      { current_value: number; invested_value: number; pnl: number }
-    >();
+    const totals = new Map<string, {
+      family_name: string;
+      sub_class: string;
+      current_value: number;
+      invested_value: number;
+      pnl: number;
+      xirr_inputs: { invested_value: number; xirr: number | null }[];
+    }>();
 
     for (const family of this.portfolioTree?.families ?? []) {
-      if (this.selectedFamily && family.family_name !== this.selectedFamily) {
-        continue;
-      }
+      if (this.selectedFamily && family.family_name !== this.selectedFamily) continue;
 
       for (const portfolio of family.portfolios) {
         for (const assetClass of portfolio.asset_classes) {
           for (const subClass of assetClass.sub_classes) {
-            const key = subClass.sub_class || 'Unassigned';
-
+            const subClassName = subClass.sub_class || 'Unassigned';
+            const key = family.family_name + '::' + subClassName;
             const existing = totals.get(key) ?? {
+              family_name: family.family_name,
+              sub_class: subClassName,
               current_value: 0,
               invested_value: 0,
               pnl: 0,
+              xirr_inputs: [],
             };
 
             for (const asset of subClass.assets) {
-              existing.current_value += asset.current_value ?? 0;
-              existing.invested_value += asset.invested_value ?? 0;
-              existing.pnl += asset.pnl ?? 0;
+              const investedValue = Number(asset.invested_value ?? 0);
+              existing.current_value += Number(asset.current_value ?? 0);
+              existing.invested_value += investedValue;
+              existing.pnl += Number(asset.pnl ?? 0);
+              existing.xirr_inputs.push({
+                invested_value: investedValue,
+                xirr: asset.sub_class_xirr ?? null,
+              });
             }
 
             totals.set(key, existing);
@@ -1242,12 +1170,28 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
       }
     }
 
-    return Array.from(totals.entries())
-      .map(([sub_class, values]) => ({
-        sub_class,
-        ...values,
-      }))
-      .sort((a, b) => b.current_value - a.current_value);
+    return Array.from(totals.values())
+      .map((values) => {
+        const valid = values.xirr_inputs.filter(
+          (item) => item.xirr !== null && Number.isFinite(Number(item.xirr)) && item.invested_value > 0,
+        );
+        const totalInvested = valid.reduce((sum, item) => sum + item.invested_value, 0);
+        const xirr = totalInvested
+          ? valid.reduce((sum, item) => sum + Number(item.xirr) * item.invested_value, 0) / totalInvested
+          : null;
+
+        return {
+          family_name: values.family_name,
+          sub_class: values.sub_class,
+          invested_value: values.invested_value,
+          current_value: values.current_value,
+          pnl: values.pnl,
+          xirr,
+        };
+      })
+      .sort((a, b) =>
+        a.family_name.localeCompare(b.family_name) || b.current_value - a.current_value,
+      );
   }
 
   /**
@@ -1278,6 +1222,7 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
 
             for (const asset of subClass.assets) {
               existing.assets.push({
+                family_name: family.family_name,
                 asset_name: asset.asset_name || asset.underlying || '-',
                 isin: asset.isin,
                 advisors: asset.advisors,
@@ -1288,7 +1233,7 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
                 current_value: asset.current_value ?? 0,
                 pnl: asset.pnl ?? 0,
                 pnl_percentage: asset.pnl_percentage ?? 0,
-                xirr: asset.xirr,
+                xirr: asset.asset_name_xirr ?? asset.xirr,
               });
             }
 

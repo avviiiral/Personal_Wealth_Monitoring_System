@@ -1,10 +1,14 @@
-from django.db import migrations, models
+from django.db import migrations
 
 
 def deduplicate_family_transactions(apps, schema_editor):
     Transaction = apps.get_model("investments", "Transaction")
 
     # Remove repeated Excel transaction rows within each family.
+    # This migration intentionally contains only data changes. Keeping
+    # the data cleanup in its own migration allows PostgreSQL to commit
+    # DELETE-trigger work before the following schema migration creates
+    # or changes indexes/constraints.
     seen = set()
     duplicate_ids = []
 
@@ -30,40 +34,15 @@ def deduplicate_family_transactions(apps, schema_editor):
         Transaction.objects.filter(id__in=duplicate_ids).delete()
 
 
-
 class Migration(migrations.Migration):
 
     dependencies = [
         ("investments", "0099_asset_underlying_holding"),
-        ("market_data", "0003_marketprice_updated_by"),
     ]
 
     operations = [
         migrations.RunPython(
             deduplicate_family_transactions,
             migrations.RunPython.noop,
-        ),
-        migrations.RemoveIndex(
-            model_name="transaction",
-            name="transaction_source_key_idx",
-        ),
-        migrations.AddIndex(
-            model_name="transaction",
-            index=models.Index(
-                fields=("family", "source", "source_key"),
-                name="transaction_source_key_idx",
-            ),
-        ),
-        migrations.RemoveConstraint(
-            model_name="transaction",
-            name="unique_transaction_source_key",
-        ),
-        migrations.AddConstraint(
-            model_name="transaction",
-            constraint=models.UniqueConstraint(
-                fields=("family", "source", "source_key"),
-                condition=models.Q(source_key__isnull=False),
-                name="unique_transaction_family_source_key",
-            ),
         ),
     ]

@@ -93,9 +93,9 @@ class Transaction(models.Model):
         ]
         constraints = [
             models.UniqueConstraint(
-                fields=["owner", "source", "source_key"],
+                fields=["family", "source", "source_key"],
                 condition=models.Q(source_key__isnull=False),
-                name="unique_transaction_source_key",
+                name="unique_transaction_family_source_key",
             )
         ]
 

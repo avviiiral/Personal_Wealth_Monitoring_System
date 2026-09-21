@@ -1,6 +1,8 @@
 from django.contrib.auth.models import User
 from django.test import TestCase
 
+from users.models import FamilyGroup
+
 from .services.investment_summary import InvestmentSummaryService
 
 from decimal import Decimal 
@@ -28,6 +30,10 @@ class InvestmentSummaryServiceTests(TestCase):
             username="investment_summary_user",
             password="testpassword123",
         )
+        self.family = FamilyGroup.objects.create(name="Investment Summary Test Family", created_by=self.user)
+        self.user.profile.family_groups.add(self.family)
+        self.user.profile.active_family_group = self.family
+        self.user.profile.save(update_fields=["active_family_group"])
 
     def _make_equity_holding(
         self,
@@ -37,6 +43,7 @@ class InvestmentSummaryServiceTests(TestCase):
     ):
         asset = Asset.objects.create(
             owner=self.user,
+            family=self.family,
             name=name,
             category=AssetCategory.STOCK,
             currency="INR",

@@ -40,6 +40,7 @@ class MutualFundLookThroughClassificationTests(TestCase):
     def test_classification_precedence_is_isin_asset_then_name_asset_then_security_master(self):
         asset = Asset.objects.create(
             owner=self.user,
+            family=self.family,
             name="Canonical Asset Name",
             isin="INF123",
             category=AssetCategory.STOCK,

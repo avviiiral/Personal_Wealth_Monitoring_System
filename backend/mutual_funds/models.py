@@ -88,6 +88,10 @@ class MutualFundScheme(models.Model):
                 condition=models.Q(scheme_code__isnull=False),
                 name="unique_mf_scheme_family_code",
             ),
+            models.UniqueConstraint(
+                fields=["family", "scheme_name"],
+                name="unique_mf_scheme_family_name",
+            ),
         ]
 
     def __str__(self):

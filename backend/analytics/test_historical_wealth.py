@@ -326,6 +326,141 @@ class HistoricalWealthAnalyticsTests(TestCase):
             Decimal("12200"),
         )
         
+
+    def test_history_starts_with_latest_price_before_range(self):
+        asset = self.create_equity()
+
+        MarketPrice.objects.create(
+            asset=asset,
+            date=date(2025, 12, 31),
+            open_price=Decimal("90"),
+            high_price=Decimal("90"),
+            low_price=Decimal("90"),
+            close_price=Decimal("90"),
+            adjusted_close=Decimal("90"),
+            source=DataSource.YAHOO_FINANCE,
+        )
+
+        results = HistoricalWealthAnalytics.calculate_history(
+            self.user,
+            date(2026, 1, 2),
+            date(2026, 1, 2),
+        )
+
+        self.assertEqual(results[0]["portfolio_value"], Decimal("1200"))
+
+    def test_manual_price_overrides_automatic_price_from_effective_date(self):
+        asset = self.create_equity()
+
+        MarketPrice.objects.create(
+            asset=asset,
+            date=date(2026, 1, 3),
+            open_price=Decimal("130"),
+            high_price=Decimal("130"),
+            low_price=Decimal("130"),
+            close_price=Decimal("130"),
+            adjusted_close=Decimal("130"),
+            source=DataSource.MANUAL,
+        )
+
+        results = HistoricalWealthAnalytics.calculate_history(
+            self.user,
+            date(2026, 1, 2),
+            date(2026, 1, 4),
+        )
+
+        self.assertEqual(results[0]["portfolio_value"], Decimal("1200"))
+        self.assertEqual(results[1]["portfolio_value"], Decimal("1300"))
+        self.assertEqual(results[2]["portfolio_value"], Decimal("1300"))
+
+    def test_future_manual_price_is_used_for_manual_only_historical_range(self):
+        asset = self.create_equity()
+
+        # Simulate a manual-only asset whose current snapshot was
+        # entered after the requested historical window. The
+        # historical chart should still use that snapshot as the
+        # best available value instead of dropping the asset to zero.
+        MarketPrice.objects.filter(asset=asset).delete()
+
+        MarketPrice.objects.create(
+            asset=asset,
+            date=date(2026, 1, 5),
+            open_price=Decimal("150"),
+            high_price=Decimal("150"),
+            low_price=Decimal("150"),
+            close_price=Decimal("150"),
+            adjusted_close=Decimal("150"),
+            source=DataSource.MANUAL,
+        )
+
+        results = HistoricalWealthAnalytics.calculate_history(
+            self.user,
+            date(2026, 1, 1),
+            date(2026, 1, 3),
+        )
+
+        self.assertEqual(
+            results[0]["portfolio_value"],
+            Decimal("1500"),
+        )
+        self.assertEqual(
+            results[1]["portfolio_value"],
+            Decimal("1500"),
+        )
+        self.assertEqual(
+            results[2]["portfolio_value"],
+            Decimal("1500"),
+        )
+
+
+    def test_future_automatic_price_is_used_when_no_historical_price_exists(self):
+        asset = self.create_equity()
+        MarketPrice.objects.filter(asset=asset).delete()
+        MarketPrice.objects.create(
+            asset=asset,
+            date=date(2026, 1, 10),
+            open_price=Decimal("150"),
+            high_price=Decimal("150"),
+            low_price=Decimal("150"),
+            close_price=Decimal("150"),
+            adjusted_close=Decimal("150"),
+            source=DataSource.YAHOO_FINANCE,
+        )
+        results = HistoricalWealthAnalytics.calculate_history(
+            self.user, date(2026, 1, 1), date(2026, 1, 3)
+        )
+        self.assertEqual(results[0]["portfolio_value"], Decimal("1500"))
+        self.assertEqual(results[1]["portfolio_value"], Decimal("1500"))
+        self.assertEqual(results[2]["portfolio_value"], Decimal("1500"))
+
+    def test_legacy_manual_asset_price_is_used(self):
+        asset = self.create_equity()
+        MarketPrice.objects.filter(asset=asset).delete()
+        from market_data.models import ManualAssetPrice
+        ManualAssetPrice.objects.create(
+            asset=asset,
+            price=Decimal("150"),
+            price_date=date(2026, 1, 10),
+        )
+        results = HistoricalWealthAnalytics.calculate_history(
+            self.user, date(2026, 1, 1), date(2026, 1, 3)
+        )
+        self.assertEqual(results[0]["portfolio_value"], Decimal("1500"))
+
+    def test_future_mutual_fund_nav_is_used_when_no_historical_nav_exists(self):
+        scheme = self.create_mutual_fund()
+        MutualFundNAV.objects.filter(scheme=scheme).delete()
+        MutualFundNAV.objects.create(
+            scheme=scheme,
+            date=date(2026, 1, 10),
+            nav=Decimal("150"),
+            source="AMFI",
+        )
+        results = HistoricalWealthAnalytics.calculate_history(
+            self.user, date(2026, 1, 1), date(2026, 1, 3)
+        )
+        self.assertEqual(results[0]["portfolio_value"], Decimal("15000"))
+
     # ==========================================================
     # USER ISOLATION
     # ==========================================================

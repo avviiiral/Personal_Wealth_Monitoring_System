@@ -107,13 +107,26 @@
         </div>
 
         <div class="metric-card">
+          <span class="metric-label"> Realized P&amp;L </span>
+
+          <strong
+            [class.negative]="(summary?.realized_pnl ?? 0) < 0"
+            [class.positive]="(summary?.realized_pnl ?? 0) >= 0"
+          >
+            {{ formatCurrency(summary?.realized_pnl ?? 0) }}
+          </strong>
+
+          <span class="metric-description"> Total realized gain or loss </span>
+        </div>
+
+        <div class="metric-card">
           <span class="metric-label"> Unrealized P&amp;L </span>
 
           <strong
-            [class.negative]="(summary?.total_unrealized_pnl ?? 0) < 0"
-            [class.positive]="(summary?.total_unrealized_pnl ?? 0) >= 0"
+            [class.negative]="(summary?.unrealized_pnl ?? 0) < 0"
+            [class.positive]="(summary?.unrealized_pnl ?? 0) >= 0"
           >
-            {{ formatCurrency(summary?.total_unrealized_pnl ?? summary?.total_pnl ?? 0) }}
+            {{ formatCurrency(summary?.unrealized_pnl ?? 0) }}
           </strong>
 
           <span class="metric-description"> Current unrealized gain or loss </span>

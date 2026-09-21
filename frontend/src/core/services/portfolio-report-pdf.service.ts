@@ -92,6 +92,8 @@ export interface PortfolioReviewReportData {
   advisorPerformance: AdvisorPerformanceRow[];
   subClassSummaries: SubClassSummaryRow[];
   subClassDetails: SubClassDetail[];
+  /** Optional asset-class scope selected from the Dashboard report filter. */
+  reportAssetClass?: string;
 }
 
 function formatInr(value: number | null | undefined): string {

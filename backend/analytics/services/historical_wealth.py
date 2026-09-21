@@ -292,26 +292,20 @@ class HistoricalWealthAnalytics:
             if any(price_date == start_date for price_date, _, _ in values):
                 continue
 
-            previous = (
-                MarketPrice.objects
-                .filter(
-                    asset_id=asset.pk,
-                    date__lt=start_date,
-                )
-                .order_by("-date", "-id")
-                .only("date", "close_price", "source")
-                .first()
+            # The bulk price query above already contains every price
+            # on/before end_date. Use the in-memory series to find the
+            # opening carry-forward quote instead of issuing one query per asset.
+            previous = next(
+                (
+                    (value_date, value, source)
+                    for value_date, value, source in reversed(values)
+                    if value_date < start_date
+                ),
+                None,
             )
 
             if previous is not None:
-                values.insert(
-                    0,
-                    (
-                        previous.date,
-                        previous.close_price,
-                        previous.source,
-                    ),
-                )
+                values.insert(0, previous)
             elif not values:
                 # If the asset has no price on or before the requested
                 # period, do not silently value the holding at zero.

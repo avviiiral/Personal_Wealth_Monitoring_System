@@ -30,14 +30,3 @@ def deduplicate_family_transactions(apps, schema_editor):
     if duplicate_ids:
         Transaction.objects.filter(id__in=duplicate_ids).delete()
 
-    # Existing positions are already derived data. Remove them here and let
-    # the normal post-migration import/position rebuild path recreate them.
-    # This avoids calculating positions in a migration against historical
-    # model state and avoids unique-key collisions with existing rows.
-    PortfolioPosition.objects.filter(
-        family_id__in=Transaction.objects
-        .filter(family__isnull=False)
-        .values_list("family_id", flat=True)
-        .distinct()
-    ).delete()
-

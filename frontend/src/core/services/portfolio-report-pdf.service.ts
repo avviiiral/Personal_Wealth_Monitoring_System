@@ -61,7 +61,11 @@ export interface SubClassSummaryRow {
 
 export interface AssetDetailRow {
   family_name: string;
+  asset_class: string;
+  sub_class: string;
   asset_name: string;
+  underlying: string;
+  underlying_xirr: number | null;
   isin: string | null;
   advisors: string;
   quantity: number;
@@ -76,6 +80,7 @@ export interface AssetDetailRow {
 
 export interface SubClassDetail {
   sub_class: string;
+  asset_class?: string;
   assets: AssetDetailRow[];
 }
 
@@ -91,6 +96,10 @@ export interface PortfolioReviewReportData {
   advisorPerformance: AdvisorPerformanceRow[];
   subClassSummaries: SubClassSummaryRow[];
   subClassDetails: SubClassDetail[];
+  /** Optional asset-class scope selected from the Dashboard report filter. */
+  reportAssetClass?: string;
+  reportLevel?: 'asset_class' | 'sub_class' | 'asset_name' | 'underlying';
+  reportScope?: string;
 }
 
 function formatInr(value: number | null | undefined): string {
@@ -192,12 +201,16 @@ function drawCoverPage(
 
   doc.setFont('times', 'normal');
   doc.setFontSize(42);
-  doc.text('Portfolio Review', MARGIN, 100);
+  const reportTitle = data.reportAssetClass ? data.reportAssetClass + ' Review' : 'Portfolio Review';
+  doc.text(reportTitle, MARGIN, 100);
 
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(13);
   doc.setTextColor(...ORANGE);
-  doc.text(`Family: ${data.familyName || 'All Families'}`, MARGIN, 130);
+  const reportContext = data.reportAssetClass
+    ? 'Asset Class: ' + data.reportAssetClass + ' | Family: ' + (data.familyName || 'All Families')
+    : 'Family: ' + (data.familyName || 'All Families');
+  doc.text(reportContext, MARGIN, 130);
 
   doc.setDrawColor(...WHITE);
   doc.setLineWidth(0.3);
@@ -599,99 +612,117 @@ function drawHoldingsPage(
   drawFooter(doc, 'Holdings by Sub Class');
 }
 
-function drawSchemeDetailPages(
-  doc: jsPDF,
-  data: PortfolioReviewReportData
-): void {
-  for (const subClassDetail of data.subClassDetails) {
-    if (subClassDetail.assets.length === 0) {
-      continue;
-    }
+function normalized(value: string | null | undefined): string {
+  return (value || '').trim().toLowerCase();
+}
 
+function isPmsDetail(detail: SubClassDetail): boolean {
+  return normalized(detail.asset_class) === 'equity' && normalized(detail.sub_class).includes('pms');
+}
+
+function isDirectEquityDetail(detail: SubClassDetail): boolean {
+  return normalized(detail.asset_class) === 'equity' && normalized(detail.sub_class) === 'direct equity';
+}
+
+function drawSchemeDetailPages(doc: jsPDF, data: PortfolioReviewReportData): void {
+  for (const detail of data.subClassDetails) {
+    if (!detail.assets.length) continue;
     doc.addPage();
 
-    drawSectionHeader(
-      doc,
-      subClassDetail.sub_class,
-      `Every individual holding within ${subClassDetail.sub_class}`
-    );
+    const directEquity = isDirectEquityDetail(detail);
+    const pms = isPmsDetail(detail);
+    const title = detail.asset_class ? detail.asset_class + ' - ' + detail.sub_class : detail.sub_class;
+    drawSectionHeader(doc, title, 'Family-scoped holdings for the selected report hierarchy');
+    const assets = [...detail.assets].sort((a, b) => b.current_value - a.current_value);
 
-    const sortedAssets = [...subClassDetail.assets].sort(
-      (a, b) => b.current_value - a.current_value
-    );
+    if (directEquity) {
+      autoTable(doc, {
+        startY: 46, margin: { left: MARGIN, right: MARGIN },
+        head: [['Family', 'Asset Name', 'Underlying', 'Invested Value', 'Current Value', 'Gain / Loss', 'XIRR']],
+        body: assets.map(a => [a.family_name, a.asset_name, a.underlying || '-', formatInr(a.invested_value), formatInr(a.current_value), formatInr(a.pnl), formatPercent(a.underlying_xirr)]),
+        theme: 'grid', headStyles: { fillColor: NAVY, textColor: WHITE, fontStyle: 'bold', fontSize: 8.5 },
+        bodyStyles: { fontSize: 8, textColor: INK }, alternateRowStyles: { fillColor: LIGHT_ROW },
+        columnStyles: { 3: { halign: 'right' }, 4: { halign: 'right' }, 5: { halign: 'right' }, 6: { halign: 'right' } },
+        styles: { cellPadding: 2.7 },
+      });
+    } else if (pms) {
+      // Equity PMS is a Sub Class. At Sub Class level the report must
+      // present one row per Asset Name (per Family), not one row per
+      // individual PMS security/holding record. Quantity, invested
+      // value, current value and P&L are therefore aggregated at the
+      // Asset Name level. XIRR is the existing Asset Name XIRR
+      // (asset_name_xirr), carried into a.xirr by the dashboard builder.
+      const grouped = new Map<string, {
+        family_name: string;
+        asset_name: string;
+        quantity: number;
+        invested_value: number;
+        current_value: number;
+        pnl: number;
+        xirr: number | null;
+      }>();
 
-    autoTable(doc, {
-      startY: 46,
-      margin: { left: MARGIN, right: MARGIN },
-      head: [
-        [
-          'Family Name',
-          'Scheme / Holding',
-          'ISIN',
-          'Advisor',
-          'Quantity',
-          'Invested Value',
-          'Current Price',
-          'Current Value',
-          'Gain / Loss',
-          'Gain %',
-          'XIRR',
-        ],
-      ],
-      body: sortedAssets.map((asset) => [
-        asset.family_name,
-        asset.asset_name,
-        asset.isin || '-',
-        asset.advisors || '-',
-        asset.quantity
-          ? asset.quantity.toLocaleString('en-IN', {
-              maximumFractionDigits: 3,
-            })
-          : '-',
-        formatInr(asset.invested_value),
-        asset.current_price
-          ? asset.current_price.toLocaleString('en-IN', {
-              maximumFractionDigits: 4,
-            })
-          : '-',
-        formatInr(asset.current_value),
-        formatInr(asset.pnl),
-        formatPercent(asset.pnl_percentage),
-        asset.xirr !== null ? formatPercent(asset.xirr) : '-',
-      ]),
-      theme: 'grid',
-      headStyles: {
-        fillColor: NAVY,
-        textColor: WHITE,
-        fontStyle: 'bold',
-        fontSize: 8,
-      },
-      bodyStyles: { fontSize: 7.5, textColor: INK },
-      alternateRowStyles: { fillColor: LIGHT_ROW },
-      columnStyles: {
-        4: { halign: 'right' },
-        5: { halign: 'right' },
-        6: { halign: 'right' },
-        7: { halign: 'right' },
-        8: { halign: 'right' },
-        9: { halign: 'right' },
-        10: { halign: 'right' },
-      },
-      styles: { cellPadding: 2.4 },
-      didParseCell: (hookData: CellHookData) => {
-        if (hookData.section !== 'body' || hookData.column.index !== 8) {
-          return;
+      for (const asset of assets) {
+        const key = asset.family_name + '::' + asset.asset_name;
+        const existing = grouped.get(key) ?? {
+          family_name: asset.family_name,
+          asset_name: asset.asset_name,
+          quantity: 0,
+          invested_value: 0,
+          current_value: 0,
+          pnl: 0,
+          xirr: asset.xirr ?? null,
+        };
+
+        existing.quantity += Number(asset.quantity || 0);
+        existing.invested_value += Number(asset.invested_value || 0);
+        existing.current_value += Number(asset.current_value || 0);
+        existing.pnl += Number(asset.pnl || 0);
+
+        if (
+          existing.xirr === null &&
+          asset.xirr !== null &&
+          Number.isFinite(Number(asset.xirr))
+        ) {
+          existing.xirr = Number(asset.xirr);
         }
 
-        const raw = sortedAssets[hookData.row.index]?.pnl ?? 0;
+        grouped.set(key, existing);
+      }
 
-        hookData.cell.styles.textColor =
-          raw >= 0 ? [15, 122, 92] : [180, 35, 24];
-      },
-      didDrawPage: () => {
-        drawFooter(doc, subClassDetail.sub_class);
-      },
-    });
+      const assetNameRows = Array.from(grouped.values()).sort(
+        (a, b) => b.current_value - a.current_value
+      );
+
+      autoTable(doc, {
+        startY: 46, margin: { left: MARGIN, right: MARGIN },
+        head: [['Family', 'Asset Name', 'Quantity', 'Invested Value', 'Current Value', 'Gain / Loss', 'XIRR']],
+        body: assetNameRows.map(a => [
+          a.family_name,
+          a.asset_name,
+          a.quantity ? a.quantity.toLocaleString('en-IN', { maximumFractionDigits: 3 }) : '-',
+          formatInr(a.invested_value),
+          formatInr(a.current_value),
+          formatInr(a.pnl),
+          formatPercent(a.xirr),
+        ]),
+        theme: 'grid', headStyles: { fillColor: NAVY, textColor: WHITE, fontStyle: 'bold', fontSize: 8.5 },
+        bodyStyles: { fontSize: 8, textColor: INK }, alternateRowStyles: { fillColor: LIGHT_ROW },
+        columnStyles: { 2: { halign: 'right' }, 3: { halign: 'right' }, 4: { halign: 'right' }, 5: { halign: 'right' }, 6: { halign: 'right' } },
+        styles: { cellPadding: 2.7 },
+      });
+    } else {
+      autoTable(doc, {
+        startY: 46, margin: { left: MARGIN, right: MARGIN },
+        head: [['Family', 'Asset Name', 'Underlying', 'ISIN', 'Invested Value', 'Current Value', 'Gain / Loss', 'XIRR']],
+        body: assets.map(a => [a.family_name, a.asset_name, a.underlying || '-', a.isin || '-', formatInr(a.invested_value), formatInr(a.current_value), formatInr(a.pnl), formatPercent(a.xirr)]),
+        theme: 'grid', headStyles: { fillColor: NAVY, textColor: WHITE, fontStyle: 'bold', fontSize: 8 },
+        bodyStyles: { fontSize: 7.5, textColor: INK }, alternateRowStyles: { fillColor: LIGHT_ROW },
+        columnStyles: { 4: { halign: 'right' }, 5: { halign: 'right' }, 6: { halign: 'right' }, 7: { halign: 'right' } },
+        styles: { cellPadding: 2.4 },
+      });
+    }
+    drawFooter(doc, title);
   }
 }
 
@@ -875,6 +906,187 @@ function drawAdvisorPage(
   drawFooter(doc, 'Advisor Comparison');
 }
 
+function drawMetricCard(doc: jsPDF, x: number, y: number, width: number, title: string, value: string, subtitle: string): void {
+  doc.setDrawColor(226, 230, 236);
+  doc.setFillColor(250, 251, 253);
+  doc.roundedRect(x, y, width, 28, 2, 2, 'FD');
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(8);
+  doc.setTextColor(...MUTED);
+  doc.text(title.toUpperCase(), x + 6, y + 7);
+  doc.setFontSize(15);
+  doc.setTextColor(...INK);
+  doc.text(value, x + 6, y + 17);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(7);
+  doc.setTextColor(...MUTED);
+  doc.text(subtitle, x + 6, y + 23);
+}
+
+function drawScopedHierarchyPage(doc: jsPDF, data: PortfolioReviewReportData): void {
+  const assets = data.subClassDetails.flatMap(detail => detail.assets);
+  if (!assets.length) return;
+  const scope = data.reportScope || data.reportAssetClass || 'Selected Scope';
+  const levelLabel = data.reportLevel === 'asset_class' ? 'Asset Class' : data.reportLevel === 'sub_class' ? 'Sub Class' : data.reportLevel === 'asset_name' ? 'Asset Name' : 'Underlying';
+  doc.addPage();
+  drawSectionHeader(doc, scope, levelLabel + ' report | Family: ' + (data.familyName || 'All Families'));
+  const current = assets.reduce((s, a) => s + Number(a.current_value || 0), 0);
+  const invested = assets.reduce((s, a) => s + Number(a.invested_value || 0), 0);
+  const pnl = assets.reduce((s, a) => s + Number(a.pnl || 0), 0);
+  const valid = assets.filter(a => a.xirr !== null && Number.isFinite(Number(a.xirr)) && Number(a.invested_value || 0) > 0);
+  const base = valid.reduce((s, a) => s + Number(a.invested_value || 0), 0);
+  const weightedXirr = base ? valid.reduce((s, a) => s + Number(a.xirr) * Number(a.invested_value || 0), 0) / base : null;
+  const cardW = (PAGE_W - MARGIN * 2 - 18) / 4;
+  drawMetricCard(doc, MARGIN, 48, cardW, 'Current Value', formatInr(current), assets.length + ' rows');
+  drawMetricCard(doc, MARGIN + cardW + 6, 48, cardW, 'Invested Value', formatInr(invested), 'Capital deployed');
+  drawMetricCard(doc, MARGIN + (cardW + 6) * 2, 48, cardW, 'Gain / Loss', formatInr(pnl), 'Return: ' + (invested ? ((pnl / invested) * 100).toFixed(1) : '0.0') + '%');
+  drawMetricCard(doc, MARGIN + (cardW + 6) * 3, 48, cardW, 'XIRR', weightedXirr === null ? '-' : formatPercent(weightedXirr), 'Weighted by invested value');
+
+  const grouped = new Map<string, number>();
+  for (const asset of assets) {
+    const key = data.reportLevel === 'asset_class' ? asset.sub_class : data.reportLevel === 'sub_class' ? asset.asset_name : data.reportLevel === 'asset_name' ? asset.underlying : asset.family_name;
+    grouped.set(key || '-', (grouped.get(key || '-') || 0) + Number(asset.current_value || 0));
+  }
+  const rows = Array.from(grouped.entries()).sort((a, b) => b[1] - a[1]).slice(0, 10);
+  const max = Math.max(...rows.map(([, value]) => value), 1);
+  let y = 92;
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(10); doc.setTextColor(...INK);
+  doc.text(data.reportLevel === 'asset_class' ? 'Value by Sub Class' : data.reportLevel === 'sub_class' ? 'Value by Asset Name' : data.reportLevel === 'asset_name' ? 'Value by Underlying' : 'Value by Family', MARGIN, y);
+  y += 9;
+  for (const [name, value] of rows) {
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(8); doc.setTextColor(...INK); doc.text(name, MARGIN, y + 4);
+    doc.setFillColor(241, 243, 247); doc.roundedRect(MARGIN + 52, y, 132, 5, 1, 1, 'F');
+    doc.setFillColor(...NAVY); doc.roundedRect(MARGIN + 52, y, Math.min(132, value / max * 132), 5, 1, 1, 'F');
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(7.5); doc.text(formatInr(value), MARGIN + 190, y + 4);
+    y += 10;
+  }
+  drawFooter(doc, levelLabel + ': ' + scope);
+}
+
+function drawScopedOverviewPage(doc: jsPDF, data: PortfolioReviewReportData): void {
+  const assets = data.subClassDetails.flatMap(detail => detail.assets);
+  if (!assets.length) return;
+
+  doc.addPage();
+  const scope = data.reportAssetClass || 'Selected Asset Class';
+  drawSectionHeader(doc, scope, 'Detailed report generated from the Portfolio hierarchy');
+
+  const totalCurrent = assets.reduce((sum, asset) => sum + Number(asset.current_value || 0), 0);
+  const totalInvested = assets.reduce((sum, asset) => sum + Number(asset.invested_value || 0), 0);
+  const totalPnl = assets.reduce((sum, asset) => sum + Number(asset.pnl || 0), 0);
+  const weightedXirrAssets = assets.filter(asset => asset.xirr !== null && Number.isFinite(Number(asset.xirr)) && Number(asset.invested_value || 0) > 0);
+  const weightedXirrBase = weightedXirrAssets.reduce((sum, asset) => sum + Number(asset.invested_value || 0), 0);
+  const weightedXirr = weightedXirrBase
+    ? weightedXirrAssets.reduce((sum, asset) => sum + Number(asset.xirr) * Number(asset.invested_value || 0), 0) / weightedXirrBase
+    : null;
+
+  const cardW = (PAGE_W - MARGIN * 2 - 18) / 4;
+  drawMetricCard(doc, MARGIN, 48, cardW, 'Current Value', formatInr(totalCurrent), assets.length + ' holdings');
+  drawMetricCard(doc, MARGIN + cardW + 6, 48, cardW, 'Invested Value', formatInr(totalInvested), 'Capital deployed');
+  drawMetricCard(doc, MARGIN + (cardW + 6) * 2, 48, cardW, 'Gain / Loss', formatInr(totalPnl), 'Return: ' + (totalInvested ? ((totalPnl / totalInvested) * 100).toFixed(1) : '0.0') + '%');
+  drawMetricCard(doc, MARGIN + (cardW + 6) * 3, 48, cardW, 'XIRR', weightedXirr === null ? '-' : formatPercent(weightedXirr), 'Invested-value weighted');
+
+  const typeRows = [...data.subClassSummaries].sort((a, b) => Number(b.current_value || 0) - Number(a.current_value || 0));
+  const maxTypeValue = Math.max(...typeRows.map(row => Number(row.current_value || 0)), 1);
+  let y = 92;
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(10);
+  doc.setTextColor(...INK);
+  doc.text('Current Value by Type', MARGIN, y);
+  y += 9;
+  for (const row of typeRows.slice(0, 10)) {
+    const value = Number(row.current_value || 0);
+    const width = Math.min(132, (value / maxTypeValue) * 132);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8);
+    doc.setTextColor(...INK);
+    doc.text(row.sub_class, MARGIN, y + 4);
+    doc.setFillColor(241, 243, 247);
+    doc.roundedRect(MARGIN + 50, y, 132, 5, 1, 1, 'F');
+    doc.setFillColor(...NAVY);
+    doc.roundedRect(MARGIN + 50, y, width, 5, 1, 1, 'F');
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(7.5);
+    doc.text(formatInr(value) + ' (' + (totalCurrent ? ((value / totalCurrent) * 100).toFixed(1) : '0.0') + '%)', MARGIN + 190, y + 4);
+    y += 10;
+  }
+
+  const topAssets = [...assets].sort((a, b) => Number(b.current_value || 0) - Number(a.current_value || 0)).slice(0, 8);
+  autoTable(doc, {
+    startY: 92,
+    margin: { left: PAGE_W / 2 + 2, right: MARGIN },
+    head: [['Top Holding', 'Current Value', 'Gain', 'XIRR']],
+    body: topAssets.map(asset => [asset.asset_name, formatInr(asset.current_value), formatInr(asset.pnl), asset.xirr === null ? '-' : formatPercent(asset.xirr)]),
+    theme: 'grid',
+    headStyles: { fillColor: NAVY, textColor: WHITE, fontStyle: 'bold', fontSize: 8.5 },
+    bodyStyles: { fontSize: 8, textColor: INK },
+    alternateRowStyles: { fillColor: LIGHT_ROW },
+    columnStyles: { 1: { halign: 'right' }, 2: { halign: 'right' }, 3: { halign: 'right' } },
+    styles: { cellPadding: 2.5 },
+  });
+
+  drawFooter(doc, scope + ' Overview');
+}
+
+function drawScopedPerformancePage(doc: jsPDF, data: PortfolioReviewReportData): void {
+  const rows = [...data.subClassSummaries];
+  if (!rows.length) return;
+
+  doc.addPage();
+  const scope = data.reportAssetClass || 'Selected Asset Class';
+  drawSectionHeader(doc, 'Performance & Contribution', 'P&L and XIRR by type within ' + scope);
+
+  const maxPnl = Math.max(...rows.map(row => Math.abs(Number(row.pnl || 0))), 1);
+  let leftY = 55;
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(10);
+  doc.setTextColor(...INK);
+  doc.text('P&L Contribution', MARGIN, leftY);
+  leftY += 10;
+  for (const row of [...rows].sort((a, b) => Number(b.pnl || 0) - Number(a.pnl || 0)).slice(0, 10)) {
+    const pnl = Number(row.pnl || 0);
+    const width = Math.min(116, (Math.abs(pnl) / maxPnl) * 116);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8);
+    doc.setTextColor(...INK);
+    doc.text(row.sub_class, MARGIN, leftY + 4);
+    doc.setFillColor(241, 243, 247);
+    doc.roundedRect(MARGIN + 50, leftY, 116, 5, 1, 1, 'F');
+    doc.setFillColor(...(pnl >= 0 ? [15, 122, 92] : [180, 35, 24]) as [number, number, number]);
+    doc.roundedRect(MARGIN + 50, leftY, width, 5, 1, 1, 'F');
+    doc.setFont('helvetica', 'bold');
+    doc.text(formatInr(pnl), MARGIN + 172, leftY + 4);
+    leftY += 11;
+  }
+
+  const xirrRows = rows.filter(row => row.xirr !== null && row.xirr !== undefined && Number.isFinite(Number(row.xirr))).sort((a, b) => Number(b.xirr) - Number(a.xirr));
+  const maxXirr = Math.max(...xirrRows.map(row => Math.abs(Number(row.xirr || 0))), 1);
+  let rightY = 55;
+  const rightX = PAGE_W / 2 + 4;
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(10);
+  doc.setTextColor(...INK);
+  doc.text('XIRR by Type', rightX, rightY);
+  rightY += 10;
+  for (const row of xirrRows.slice(0, 10)) {
+    const xirr = Number(row.xirr || 0);
+    const width = Math.min(116, (Math.abs(xirr) / maxXirr) * 116);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8);
+    doc.setTextColor(...INK);
+    doc.text(row.sub_class, rightX, rightY + 4);
+    doc.setFillColor(241, 243, 247);
+    doc.roundedRect(rightX + 48, rightY, 116, 5, 1, 1, 'F');
+    doc.setFillColor(...(xirr >= 0 ? [15, 122, 92] : [180, 35, 24]) as [number, number, number]);
+    doc.roundedRect(rightX + 48, rightY, width, 5, 1, 1, 'F');
+    doc.setFont('helvetica', 'bold');
+    doc.text(formatPercent(xirr), rightX + 170, rightY + 4);
+    rightY += 11;
+  }
+
+  drawFooter(doc, 'Performance & Contribution');
+}
+
 function drawDisclaimerPage(doc: jsPDF): void {
   doc.addPage();
 
@@ -933,20 +1145,37 @@ export class PortfolioReportPdfService {
     const today = new Date();
 
     drawCoverPage(doc, data, today);
-    drawExecutiveSummaryPage(doc, data);
-    drawAllocationAnalysisPage(doc, data);
-    drawInvestmentSummaryPage(doc, data);
-    drawAdvisorPage(doc, data);
-    drawHoldingsPage(doc, data);
-    drawTopExposuresPage(doc, data);
-    drawSchemeDetailPages(doc, data);
-    drawDisclaimerPage(doc);
+
+    if (data.reportAssetClass) {
+      if (data.subClassDetails.length === 0) {
+        throw new Error('No holdings found for the selected asset class.');
+      }
+
+      drawScopedHierarchyPage(doc, data);
+      drawScopedOverviewPage(doc, data);
+      drawScopedPerformancePage(doc, data);
+      drawTopExposuresPage(doc, data);
+      drawSchemeDetailPages(doc, data);
+      drawDisclaimerPage(doc);
+    } else {
+      drawExecutiveSummaryPage(doc, data);
+      drawAllocationAnalysisPage(doc, data);
+      drawInvestmentSummaryPage(doc, data);
+      drawAdvisorPage(doc, data);
+      drawHoldingsPage(doc, data);
+      drawTopExposuresPage(doc, data);
+      drawSchemeDetailPages(doc, data);
+      drawDisclaimerPage(doc);
+    }
 
     const filenameSafeDate = today.toISOString().slice(0, 10);
     const familyPart = data.familyName
-      ? `-${data.familyName.replace(/[^a-z0-9]+/gi, '_')}`
+      ? '-' + data.familyName.replace(/[^a-z0-9]+/gi, '_')
+      : '';
+    const assetClassPart = data.reportAssetClass
+      ? '-' + data.reportAssetClass.replace(/[^a-z0-9]+/gi, '_')
       : '';
 
-    doc.save(`Portfolio_Review${familyPart}_${filenameSafeDate}.pdf`);
+    doc.save('Portfolio_Review' + assetClassPart + familyPart + '_' + filenameSafeDate + '.pdf');
   }
 }

@@ -84,8 +84,9 @@ class MutualFundScheme(models.Model):
 
         constraints = [
             models.UniqueConstraint(
-                fields=["owner", "scheme_code"],
-                name="unique_mf_scheme_owner_code",
+                fields=["family", "scheme_code"],
+                condition=models.Q(scheme_code__isnull=False),
+                name="unique_mf_scheme_family_code",
             ),
         ]
 
@@ -175,10 +176,21 @@ class MutualFundTransaction(models.Model):
     amount = models.DecimalField(max_digits=20, decimal_places=2)
     fees = models.DecimalField(max_digits=20, decimal_places=2, default=0)
     notes = models.TextField(blank=True, null=True)
+    source_key = models.CharField(max_length=64, blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
         ordering = ["-transaction_date", "-created_at"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["family", "source_key"],
+                condition=models.Q(source_key__isnull=False),
+                name="unique_mf_transaction_family_source_key",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["family", "source_key"], name="mf_tx_family_source_key_idx"),
+        ]
 
     def __str__(self):
         return f"{self.scheme.scheme_name} - {self.transaction_type} - {self.amount}"

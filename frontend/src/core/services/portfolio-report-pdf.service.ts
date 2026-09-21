@@ -646,10 +646,66 @@ function drawSchemeDetailPages(doc: jsPDF, data: PortfolioReviewReportData): voi
         styles: { cellPadding: 2.7 },
       });
     } else if (pms) {
+      // Equity PMS is a Sub Class. At Sub Class level the report must
+      // present one row per Asset Name (per Family), not one row per
+      // individual PMS security/holding record. Quantity, invested
+      // value, current value and P&L are therefore aggregated at the
+      // Asset Name level. XIRR is the existing Asset Name XIRR
+      // (asset_name_xirr), carried into a.xirr by the dashboard builder.
+      const grouped = new Map<string, {
+        family_name: string;
+        asset_name: string;
+        quantity: number;
+        invested_value: number;
+        current_value: number;
+        pnl: number;
+        xirr: number | null;
+      }>();
+
+      for (const asset of assets) {
+        const key = asset.family_name + '::' + asset.asset_name;
+        const existing = grouped.get(key) ?? {
+          family_name: asset.family_name,
+          asset_name: asset.asset_name,
+          quantity: 0,
+          invested_value: 0,
+          current_value: 0,
+          pnl: 0,
+          xirr: asset.xirr ?? null,
+        };
+
+        existing.quantity += Number(asset.quantity || 0);
+        existing.invested_value += Number(asset.invested_value || 0);
+        existing.current_value += Number(asset.current_value || 0);
+        existing.pnl += Number(asset.pnl || 0);
+
+        if (
+          existing.xirr === null &&
+          asset.xirr !== null &&
+          Number.isFinite(Number(asset.xirr))
+        ) {
+          existing.xirr = Number(asset.xirr);
+        }
+
+        grouped.set(key, existing);
+      }
+
+      const assetNameRows = Array.from(grouped.values()).sort(
+        (a, b) => b.current_value - a.current_value
+      );
+
       autoTable(doc, {
         startY: 46, margin: { left: MARGIN, right: MARGIN },
         head: [['Family', 'Asset Name', 'Quantity', 'Invested Value', 'Current Value', 'Gain / Loss', 'XIRR']],
-        body: assets.map(a => [a.family_name, a.asset_name, a.quantity ? a.quantity.toLocaleString('en-IN', { maximumFractionDigits: 3 }) : '-', formatInr(a.invested_value), formatInr(a.current_value), formatInr(a.pnl), formatPercent(a.xirr)]),
+        body: assetNameRows.map(a => [
+          a.family_name,
+          a.asset_name,
+          a.quantity ? a.quantity.toLocaleString('en-IN', { maximumFractionDigits: 3 }) : '-',
+          formatInr(a.invested_value),
+          formatInr(a.current_value),
+          formatInr(a.pnl),
+          formatPercent(a.xirr),
+        ]),
         theme: 'grid', headStyles: { fillColor: NAVY, textColor: WHITE, fontStyle: 'bold', fontSize: 8.5 },
         bodyStyles: { fontSize: 8, textColor: INK }, alternateRowStyles: { fillColor: LIGHT_ROW },
         columnStyles: { 2: { halign: 'right' }, 3: { halign: 'right' }, 4: { halign: 'right' }, 5: { halign: 'right' }, 6: { halign: 'right' } },

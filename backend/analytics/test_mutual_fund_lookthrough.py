@@ -36,6 +36,7 @@ class MutualFundLookThroughTests(TestCase):
         self.stock.save(update_fields=["security_master"])
         Holding.objects.create(
             owner=self.user,
+            family=self.family,
             asset=self.stock,
             quantity=Decimal("10"),
             invested_value=Decimal("4000"),
@@ -46,12 +47,14 @@ class MutualFundLookThroughTests(TestCase):
 
         self.scheme = MutualFundScheme.objects.create(
             owner=self.user,
+            family=self.family,
             scheme_name="Test Equity Fund",
             scheme_code="888888",
             isin_growth="INF000000002",
         )
         MutualFundHolding.objects.create(
             owner=self.user,
+            family=self.family,
             scheme=self.scheme,
             units=Decimal("1000"),
             invested_value=Decimal("9000"),

@@ -15,4 +15,11 @@ class Migration(migrations.Migration):
                 name="marketprice_source_date_idx",
             ),
         ),
+        migrations.AddIndex(
+            model_name="marketprice",
+            index=models.Index(
+                fields=["asset", "source", "-date"],
+                name="marketprice_asset_src_date_idx",
+            ),
+        ),
     ]

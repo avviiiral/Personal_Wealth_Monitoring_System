@@ -1518,14 +1518,25 @@
 ----------------------------- */
 .report-scope-inline {
   display: flex;
-  flex-direction: column;
-  gap: 6px;
-  min-width: 190px;
+  align-items: flex-end;
+  gap: 10px;
+  min-width: 420px;
   padding: 9px 12px;
   border: 1px solid var(--surface-line);
   border-radius: var(--radius-sm);
   background: var(--surface);
   box-shadow: var(--shadow-sm);
+}
+
+.report-scope-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 140px;
+}
+
+.report-scope-field--wide {
+  min-width: 280px;
 }
 
 .report-scope-label {
@@ -1565,6 +1576,15 @@
 @media (max-width: 700px) {
   .report-scope-inline {
     width: 100%;
+    min-width: 0;
     box-sizing: border-box;
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .report-scope-field,
+  .report-scope-field--wide {
+    min-width: 0;
+    width: 100%;
   }
 }

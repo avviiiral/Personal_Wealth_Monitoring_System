@@ -118,6 +118,8 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
    */
   selectedFamily = '';
   reportAssetClass = '';
+  reportLevel: 'asset_class' | 'sub_class' | 'asset_name' | 'underlying' = 'asset_class';
+  reportScope = '';
 
   ngOnInit(): void {
     this.loadDashboard();
@@ -154,21 +156,64 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
     return Array.from(names).sort((a, b) => a.localeCompare(b));
   }
 
-  get reportAssetClassOptions(): string[] {
-    const classes = new Set<string>();
+  get reportScopeOptions(): Array<{ value: string; label: string }> {
+    const options = new Map<string, string>();
     for (const family of this.portfolioTree?.families ?? []) {
+      if (this.selectedFamily && family.family_name !== this.selectedFamily) continue;
       for (const portfolio of family.portfolios ?? []) {
         for (const assetClass of portfolio.asset_classes ?? []) {
-          const value = (assetClass.asset_class || '').trim();
-          if (value) classes.add(value);
+          const ac = (assetClass.asset_class || 'Unassigned').trim() || 'Unassigned';
+          if (this.reportLevel === 'asset_class') {
+            options.set(ac, ac);
+            continue;
+          }
+          for (const subClass of assetClass.sub_classes ?? []) {
+            const sc = (subClass.sub_class || 'Unassigned').trim() || 'Unassigned';
+            if (this.reportLevel === 'sub_class') {
+              options.set(ac + '::' + sc, ac + ' → ' + sc);
+              continue;
+            }
+            for (const asset of subClass.assets ?? []) {
+              const an = (asset.asset_name || 'Unnamed Asset').trim() || 'Unnamed Asset';
+              if (this.reportLevel === 'asset_name') {
+                options.set(ac + '::' + sc + '::' + an, ac + ' → ' + sc + ' → ' + an);
+                continue;
+              }
+              const un = (asset.underlying || '').trim();
+              if (un) {
+                const key = ac + '::' + sc + '::' + an + '::' + un;
+                options.set(key, ac + ' → ' + sc + ' → ' + an + ' → ' + un);
+              }
+            }
+          }
         }
       }
     }
-    return Array.from(classes).sort((a, b) => a.localeCompare(b));
+    return Array.from(options.entries())
+      .map(([value, label]) => ({ value, label }))
+      .sort((a, b) => a.label.localeCompare(b.label));
   }
 
-  onReportAssetClassChange(value: string): void {
-    this.reportAssetClass = value.trim();
+  get reportLevelLabel(): string {
+    return this.reportLevel === 'asset_class'
+      ? 'Asset Class'
+      : this.reportLevel === 'sub_class'
+        ? 'Sub Class'
+        : this.reportLevel === 'asset_name'
+          ? 'Asset Name'
+          : 'Underlying';
+  }
+
+  onReportLevelChange(value: string): void {
+    if (value !== 'asset_class' && value !== 'sub_class' && value !== 'asset_name' && value !== 'underlying') return;
+    this.reportLevel = value;
+    this.reportScope = '';
+    this.reportAssetClass = '';
+  }
+
+  onReportScopeChange(value: string): void {
+    this.reportScope = value.trim();
+    this.reportAssetClass = this.reportScope.split('::')[0] || '';
   }
 
   isFamilySelected(family: string): boolean {
@@ -322,6 +367,11 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
         console.log('PORTFOLIO TREE RESPONSE:', data);
 
         this.portfolioTree = data;
+
+        if (this.reportScope && !this.reportScopeOptions.some(option => option.value === this.reportScope)) {
+          this.reportScope = '';
+          this.reportAssetClass = '';
+        }
 
         this.ensureValidXirrCategoryIndex();
 
@@ -1145,7 +1195,7 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
    * number shown on the Portfolio page. Better to omit it in the
    * PDF than to show a number that might not match.
    */
-  private buildSubClassSummariesForReport(reportAssetClass = ''): SubClassSummaryRow[] {
+  private buildSubClassSummariesForReport(reportLevel: 'asset_class' | 'sub_class' | 'asset_name' | 'underlying' = 'asset_class', reportScope = ''): SubClassSummaryRow[] {
     const totals = new Map<string, {
       family_name: string;
       sub_class: string;
@@ -1160,10 +1210,13 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
 
       for (const portfolio of family.portfolios) {
         for (const assetClass of portfolio.asset_classes) {
-          if (reportAssetClass && (assetClass.asset_class || '').trim().toLowerCase() !== reportAssetClass.trim().toLowerCase()) continue;
+          const ac = (assetClass.asset_class || 'Unassigned').trim() || 'Unassigned';
           for (const subClass of assetClass.sub_classes) {
             const subClassName = subClass.sub_class || 'Unassigned';
-            const key = family.family_name + '::' + subClassName;
+            const subScope = ac + '::' + subClassName;
+            if (reportLevel === 'asset_class' && reportScope && reportScope !== ac) continue;
+            if (reportLevel === 'sub_class' && reportScope !== subScope) continue;
+            const key = family.family_name + '::' + subScope;
             const existing = totals.get(key) ?? {
               family_name: family.family_name,
               sub_class: subClassName,
@@ -1174,6 +1227,11 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
             };
 
             for (const asset of subClass.assets) {
+              const assetName = (asset.asset_name || 'Unnamed Asset').trim() || 'Unnamed Asset';
+              const underlying = (asset.underlying || '').trim();
+              const assetScope = subScope + '::' + assetName;
+              if (reportLevel === 'asset_name' && reportScope !== assetScope) continue;
+              if (reportLevel === 'underlying' && reportScope.indexOf(assetScope + '::') !== 0) continue;
               const investedValue = Number(asset.invested_value ?? 0);
               existing.current_value += Number(asset.current_value ?? 0);
               existing.invested_value += investedValue;
@@ -1222,7 +1280,7 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
    * PortfolioAssetNode (the same data the Portfolio page's
    * Underlying table already renders) - no new calculation.
    */
-  private buildSubClassDetailsForReport(reportAssetClass = ''): SubClassDetail[] {
+  private buildSubClassDetailsForReport(reportLevel: 'asset_class' | 'sub_class' | 'asset_name' | 'underlying' = 'asset_class', reportScope = ''): SubClassDetail[] {
     const bySubClass = new Map<string, SubClassDetail>();
 
     for (const family of this.portfolioTree?.families ?? []) {
@@ -1232,10 +1290,13 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
 
       for (const portfolio of family.portfolios) {
         for (const assetClass of portfolio.asset_classes) {
-          if (reportAssetClass && (assetClass.asset_class || '').trim().toLowerCase() !== reportAssetClass.trim().toLowerCase()) continue;
+          const ac = (assetClass.asset_class || 'Unassigned').trim() || 'Unassigned';
           for (const subClass of assetClass.sub_classes) {
             const subClassName = subClass.sub_class || 'Unassigned';
-            const key = (assetClass.asset_class || 'Unassigned') + '::' + subClassName;
+            const subScope = ac + '::' + subClassName;
+            if (reportLevel === 'asset_class' && reportScope && reportScope !== ac) continue;
+            if (reportLevel === 'sub_class' && reportScope !== subScope) continue;
+            const key = subScope;
 
             const existing = bySubClass.get(key) ?? {
               sub_class: subClassName,
@@ -1244,9 +1305,18 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
             };
 
             for (const asset of subClass.assets) {
+              const assetName = (asset.asset_name || asset.underlying || '-').trim();
+              const underlying = (asset.underlying || '').trim();
+              const assetScope = subScope + '::' + assetName;
+              if (reportLevel === 'asset_name' && reportScope !== assetScope) continue;
+              if (reportLevel === 'underlying' && reportScope !== assetScope + '::' + underlying) continue;
               existing.assets.push({
                 family_name: family.family_name,
-                asset_name: asset.asset_name || asset.underlying || '-',
+                asset_class: ac,
+                sub_class: subClassName,
+                asset_name: assetName,
+                underlying,
+                underlying_xirr: asset.xirr ?? null,
                 isin: asset.isin,
                 advisors: asset.advisors,
                 quantity: asset.quantity ?? 0,
@@ -1299,9 +1369,11 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
         standardAllocations: this.standardAllocations,
         advisorAllocation: this.advisorAllocation,
         advisorPerformance: this.advisorPerformance,
-        subClassSummaries: this.buildSubClassSummariesForReport(this.reportAssetClass),
-        subClassDetails: this.buildSubClassDetailsForReport(this.reportAssetClass),
+        subClassSummaries: this.buildSubClassSummariesForReport(this.reportLevel, this.reportScope),
+        subClassDetails: this.buildSubClassDetailsForReport(this.reportLevel, this.reportScope),
         reportAssetClass: this.reportAssetClass,
+        reportLevel: this.reportLevel,
+        reportScope: this.reportScope,
       });
     } catch (error) {
       console.error('Failed to generate Portfolio Review PDF:', error);

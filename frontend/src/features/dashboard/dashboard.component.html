@@ -35,24 +35,6 @@
         Refresh
       </button>
 
-            <div class="report-scope-inline" *ngIf="reportScopeOptions.length > 0">
-        <div class="report-scope-field">
-          <span class="report-scope-label">Report Level</span>
-          <select class="report-scope-select" [value]="reportLevel" [disabled]="loading || generatingReport" (change)="onReportLevelChange($any($event.target).value)">
-            <option value="asset_class">Asset Class</option>
-            <option value="sub_class">Sub Class</option>
-            <option value="asset_name">Asset Name</option>
-            <option value="underlying">Underlying</option>
-          </select>
-        </div>
-        <div class="report-scope-field report-scope-field--wide">
-          <span class="report-scope-label">{{ reportLevelLabel }}</span>
-          <select class="report-scope-select" [value]="reportScope" [disabled]="loading || generatingReport" (change)="onReportScopeChange($any($event.target).value)">
-            <option value="">Select {{ reportLevelLabel }}</option>
-            <option *ngFor="let option of reportScopeOptions" [value]="option.value">{{ option.label }}</option>
-          </select>
-        </div>
-      </div>
       <button class="download-report-button" type="button" [disabled]="loading || generatingReport" (click)="downloadPortfolioReview()">
         <svg class="button-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
           <path d="M12 15V4M12 15 8.5 11.5M12 15l3.5-3.5" stroke-linecap="round" stroke-linejoin="round" />

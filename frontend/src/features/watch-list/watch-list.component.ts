@@ -246,7 +246,11 @@ export class WatchListComponent implements OnInit, OnDestroy {
       ordering: requestedOrdering,
       page: requestedPage,
       page_size: this.pageSize,
-    }).subscribe({
+    }).pipe(
+      finalize(() => {
+        if (requestId === this.requestSequence) this.loading = false;
+      }),
+    ).subscribe({
       next: response => {
         if (requestId !== this.requestSequence
           || requestedProductTab !== this.productTab
@@ -284,11 +288,7 @@ export class WatchListComponent implements OnInit, OnDestroy {
         console.error('Failed to load Watch List:', error);
         this.error = 'Unable to load Watch List right now.';
       },
-    }).pipe(
-      finalize(() => {
-        if (requestId === this.requestSequence) this.loading = false;
-      }),
-    );
+    });
   }
 
   applyFilters(): void { this.page = 1; this.selectedIds.clear(); this.load(); }

@@ -621,7 +621,6 @@ class TransactionImporter:
             asset = (
                 Asset.objects
                 .filter(
-                    owner=owner,
                     family=family,
                     isin=normalized_isin,
                 )
@@ -632,7 +631,6 @@ class TransactionImporter:
             asset = (
                 Asset.objects
                 .filter(
-                    owner=owner,
                     family=family,
                     name=asset_name,
                     category=category,
@@ -698,7 +696,6 @@ class TransactionImporter:
             scheme = (
                 MutualFundScheme.objects
                 .filter(
-                    owner=owner,
                     family=family,
                     isin_growth=normalized_isin,
                 )
@@ -709,7 +706,6 @@ class TransactionImporter:
             scheme = (
                 MutualFundScheme.objects
                 .filter(
-                    owner=owner,
                     family=family,
                     scheme_name=asset_name,
                 )
@@ -757,7 +753,6 @@ class TransactionImporter:
         return (
             Transaction.objects
             .filter(
-                owner=owner,
                 family=family,
                 source="EXCEL",
                 source_key=source_key,
@@ -781,7 +776,6 @@ class TransactionImporter:
         return (
             MutualFundTransaction.objects
             .filter(
-                owner=owner,
                 family=family,
                 family_name=family_name,
                 portfolio=portfolio,
@@ -1067,6 +1061,7 @@ class TransactionImporter:
                         quantity=parsed["quantity"],
                         price=parsed["price"],
                         amount=parsed["amount"],
+                        source_key=source_key,
                     )
                 )
 
@@ -1184,6 +1179,7 @@ class TransactionImporter:
                     nav=parsed["price"],
                     amount=parsed["amount"],
                     fees=Decimal("0"),
+                    source_key=source_key,
                 )
 
                 seen_mutual_fund_keys.add(

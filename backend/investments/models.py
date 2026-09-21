@@ -88,7 +88,7 @@ class Transaction(models.Model):
     class Meta:
         ordering = ["-transaction_date", "-created_at"]
         indexes = [
-            models.Index(fields=["owner", "source", "source_key"], name="transaction_source_key_idx"),
+            models.Index(fields=["family", "source", "source_key"], name="transaction_source_key_idx"),
             models.Index(fields=["owner", "family_name", "asset_class", "sub_class"], name="transaction_hierarchy_idx"),
         ]
         constraints = [

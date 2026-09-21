@@ -76,6 +76,7 @@ export interface AssetDetailRow {
 
 export interface SubClassDetail {
   sub_class: string;
+  asset_class?: string;
   assets: AssetDetailRow[];
 }
 
@@ -192,12 +193,16 @@ function drawCoverPage(
 
   doc.setFont('times', 'normal');
   doc.setFontSize(42);
-  doc.text('Portfolio Review', MARGIN, 100);
+  const reportTitle = data.reportAssetClass ? data.reportAssetClass + ' Review' : 'Portfolio Review';
+  doc.text(reportTitle, MARGIN, 100);
 
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(13);
   doc.setTextColor(...ORANGE);
-  doc.text(`Family: ${data.familyName || 'All Families'}`, MARGIN, 130);
+  const reportContext = data.reportAssetClass
+    ? 'Asset Class: ' + data.reportAssetClass + ' | Family: ' + (data.familyName || 'All Families')
+    : 'Family: ' + (data.familyName || 'All Families');
+  doc.text(reportContext, MARGIN, 130);
 
   doc.setDrawColor(...WHITE);
   doc.setLineWidth(0.3);
@@ -610,10 +615,13 @@ function drawSchemeDetailPages(
 
     doc.addPage();
 
+    const detailTitle = subClassDetail.asset_class
+      ? subClassDetail.asset_class + ' - ' + subClassDetail.sub_class
+      : subClassDetail.sub_class;
     drawSectionHeader(
       doc,
-      subClassDetail.sub_class,
-      `Every individual holding within ${subClassDetail.sub_class}`
+      detailTitle,
+      'Every individual holding within ' + subClassDetail.sub_class
     );
 
     const sortedAssets = [...subClassDetail.assets].sort(
@@ -875,6 +883,147 @@ function drawAdvisorPage(
   drawFooter(doc, 'Advisor Comparison');
 }
 
+function drawMetricCard(doc: jsPDF, x: number, y: number, width: number, title: string, value: string, subtitle: string): void {
+  doc.setDrawColor(226, 230, 236);
+  doc.setFillColor(250, 251, 253);
+  doc.roundedRect(x, y, width, 28, 2, 2, 'FD');
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(8);
+  doc.setTextColor(...MUTED);
+  doc.text(title.toUpperCase(), x + 6, y + 7);
+  doc.setFontSize(15);
+  doc.setTextColor(...INK);
+  doc.text(value, x + 6, y + 17);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(7);
+  doc.setTextColor(...MUTED);
+  doc.text(subtitle, x + 6, y + 23);
+}
+
+function drawScopedOverviewPage(doc: jsPDF, data: PortfolioReviewReportData): void {
+  const assets = data.subClassDetails.flatMap(detail => detail.assets);
+  if (!assets.length) return;
+
+  doc.addPage();
+  const scope = data.reportAssetClass || 'Selected Asset Class';
+  drawSectionHeader(doc, scope, 'Detailed report generated from the Portfolio hierarchy');
+
+  const totalCurrent = assets.reduce((sum, asset) => sum + Number(asset.current_value || 0), 0);
+  const totalInvested = assets.reduce((sum, asset) => sum + Number(asset.invested_value || 0), 0);
+  const totalPnl = assets.reduce((sum, asset) => sum + Number(asset.pnl || 0), 0);
+  const weightedXirrAssets = assets.filter(asset => asset.xirr !== null && Number.isFinite(Number(asset.xirr)) && Number(asset.invested_value || 0) > 0);
+  const weightedXirrBase = weightedXirrAssets.reduce((sum, asset) => sum + Number(asset.invested_value || 0), 0);
+  const weightedXirr = weightedXirrBase
+    ? weightedXirrAssets.reduce((sum, asset) => sum + Number(asset.xirr) * Number(asset.invested_value || 0), 0) / weightedXirrBase
+    : null;
+
+  const cardW = (PAGE_W - MARGIN * 2 - 18) / 4;
+  drawMetricCard(doc, MARGIN, 48, cardW, 'Current Value', formatInr(totalCurrent), assets.length + ' holdings');
+  drawMetricCard(doc, MARGIN + cardW + 6, 48, cardW, 'Invested Value', formatInr(totalInvested), 'Capital deployed');
+  drawMetricCard(doc, MARGIN + (cardW + 6) * 2, 48, cardW, 'Gain / Loss', formatInr(totalPnl), 'Return: ' + (totalInvested ? ((totalPnl / totalInvested) * 100).toFixed(1) : '0.0') + '%');
+  drawMetricCard(doc, MARGIN + (cardW + 6) * 3, 48, cardW, 'XIRR', weightedXirr === null ? '-' : formatPercent(weightedXirr), 'Invested-value weighted');
+
+  const typeRows = [...data.subClassSummaries].sort((a, b) => Number(b.current_value || 0) - Number(a.current_value || 0));
+  const maxTypeValue = Math.max(...typeRows.map(row => Number(row.current_value || 0)), 1);
+  let y = 92;
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(10);
+  doc.setTextColor(...INK);
+  doc.text('Current Value by Type', MARGIN, y);
+  y += 9;
+  for (const row of typeRows.slice(0, 10)) {
+    const value = Number(row.current_value || 0);
+    const width = Math.min(132, (value / maxTypeValue) * 132);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8);
+    doc.setTextColor(...INK);
+    doc.text(row.sub_class, MARGIN, y + 4);
+    doc.setFillColor(241, 243, 247);
+    doc.roundedRect(MARGIN + 50, y, 132, 5, 1, 1, 'F');
+    doc.setFillColor(...NAVY);
+    doc.roundedRect(MARGIN + 50, y, width, 5, 1, 1, 'F');
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(7.5);
+    doc.text(formatInr(value) + ' (' + (totalCurrent ? ((value / totalCurrent) * 100).toFixed(1) : '0.0') + '%)', MARGIN + 190, y + 4);
+    y += 10;
+  }
+
+  const topAssets = [...assets].sort((a, b) => Number(b.current_value || 0) - Number(a.current_value || 0)).slice(0, 8);
+  autoTable(doc, {
+    startY: 92,
+    margin: { left: PAGE_W / 2 + 2, right: MARGIN },
+    head: [['Top Holding', 'Current Value', 'Gain', 'XIRR']],
+    body: topAssets.map(asset => [asset.asset_name, formatInr(asset.current_value), formatInr(asset.pnl), asset.xirr === null ? '-' : formatPercent(asset.xirr)]),
+    theme: 'grid',
+    headStyles: { fillColor: NAVY, textColor: WHITE, fontStyle: 'bold', fontSize: 8.5 },
+    bodyStyles: { fontSize: 8, textColor: INK },
+    alternateRowStyles: { fillColor: LIGHT_ROW },
+    columnStyles: { 1: { halign: 'right' }, 2: { halign: 'right' }, 3: { halign: 'right' } },
+    styles: { cellPadding: 2.5 },
+  });
+
+  drawFooter(doc, scope + ' Overview');
+}
+
+function drawScopedPerformancePage(doc: jsPDF, data: PortfolioReviewReportData): void {
+  const rows = [...data.subClassSummaries];
+  if (!rows.length) return;
+
+  doc.addPage();
+  const scope = data.reportAssetClass || 'Selected Asset Class';
+  drawSectionHeader(doc, 'Performance & Contribution', 'P&L and XIRR by type within ' + scope);
+
+  const maxPnl = Math.max(...rows.map(row => Math.abs(Number(row.pnl || 0))), 1);
+  let leftY = 55;
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(10);
+  doc.setTextColor(...INK);
+  doc.text('P&L Contribution', MARGIN, leftY);
+  leftY += 10;
+  for (const row of [...rows].sort((a, b) => Number(b.pnl || 0) - Number(a.pnl || 0)).slice(0, 10)) {
+    const pnl = Number(row.pnl || 0);
+    const width = Math.min(116, (Math.abs(pnl) / maxPnl) * 116);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8);
+    doc.setTextColor(...INK);
+    doc.text(row.sub_class, MARGIN, leftY + 4);
+    doc.setFillColor(241, 243, 247);
+    doc.roundedRect(MARGIN + 50, leftY, 116, 5, 1, 1, 'F');
+    doc.setFillColor(...(pnl >= 0 ? [15, 122, 92] : [180, 35, 24]) as [number, number, number]);
+    doc.roundedRect(MARGIN + 50, leftY, width, 5, 1, 1, 'F');
+    doc.setFont('helvetica', 'bold');
+    doc.text(formatInr(pnl), MARGIN + 172, leftY + 4);
+    leftY += 11;
+  }
+
+  const xirrRows = rows.filter(row => row.xirr !== null && row.xirr !== undefined && Number.isFinite(Number(row.xirr))).sort((a, b) => Number(b.xirr) - Number(a.xirr));
+  const maxXirr = Math.max(...xirrRows.map(row => Math.abs(Number(row.xirr || 0))), 1);
+  let rightY = 55;
+  const rightX = PAGE_W / 2 + 4;
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(10);
+  doc.setTextColor(...INK);
+  doc.text('XIRR by Type', rightX, rightY);
+  rightY += 10;
+  for (const row of xirrRows.slice(0, 10)) {
+    const xirr = Number(row.xirr || 0);
+    const width = Math.min(116, (Math.abs(xirr) / maxXirr) * 116);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8);
+    doc.setTextColor(...INK);
+    doc.text(row.sub_class, rightX, rightY + 4);
+    doc.setFillColor(241, 243, 247);
+    doc.roundedRect(rightX + 48, rightY, 116, 5, 1, 1, 'F');
+    doc.setFillColor(...(xirr >= 0 ? [15, 122, 92] : [180, 35, 24]) as [number, number, number]);
+    doc.roundedRect(rightX + 48, rightY, width, 5, 1, 1, 'F');
+    doc.setFont('helvetica', 'bold');
+    doc.text(formatPercent(xirr), rightX + 170, rightY + 4);
+    rightY += 11;
+  }
+
+  drawFooter(doc, 'Performance & Contribution');
+}
+
 function drawDisclaimerPage(doc: jsPDF): void {
   doc.addPage();
 
@@ -933,20 +1082,36 @@ export class PortfolioReportPdfService {
     const today = new Date();
 
     drawCoverPage(doc, data, today);
-    drawExecutiveSummaryPage(doc, data);
-    drawAllocationAnalysisPage(doc, data);
-    drawInvestmentSummaryPage(doc, data);
-    drawAdvisorPage(doc, data);
-    drawHoldingsPage(doc, data);
-    drawTopExposuresPage(doc, data);
-    drawSchemeDetailPages(doc, data);
-    drawDisclaimerPage(doc);
+
+    if (data.reportAssetClass) {
+      if (data.subClassDetails.length === 0) {
+        throw new Error('No holdings found for the selected asset class.');
+      }
+
+      drawScopedOverviewPage(doc, data);
+      drawScopedPerformancePage(doc, data);
+      drawTopExposuresPage(doc, data);
+      drawSchemeDetailPages(doc, data);
+      drawDisclaimerPage(doc);
+    } else {
+      drawExecutiveSummaryPage(doc, data);
+      drawAllocationAnalysisPage(doc, data);
+      drawInvestmentSummaryPage(doc, data);
+      drawAdvisorPage(doc, data);
+      drawHoldingsPage(doc, data);
+      drawTopExposuresPage(doc, data);
+      drawSchemeDetailPages(doc, data);
+      drawDisclaimerPage(doc);
+    }
 
     const filenameSafeDate = today.toISOString().slice(0, 10);
     const familyPart = data.familyName
-      ? `-${data.familyName.replace(/[^a-z0-9]+/gi, '_')}`
+      ? '-' + data.familyName.replace(/[^a-z0-9]+/gi, '_')
+      : '';
+    const assetClassPart = data.reportAssetClass
+      ? '-' + data.reportAssetClass.replace(/[^a-z0-9]+/gi, '_')
       : '';
 
-    doc.save(`Portfolio_Review${familyPart}_${filenameSafeDate}.pdf`);
+    doc.save('Portfolio_Review' + assetClassPart + familyPart + '_' + filenameSafeDate + '.pdf');
   }
 }

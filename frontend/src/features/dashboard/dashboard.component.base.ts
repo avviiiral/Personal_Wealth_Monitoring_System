@@ -117,6 +117,7 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
    * Portfolio/Reports filter by Family.
    */
   selectedFamily = '';
+  reportAssetClass = '';
 
   ngOnInit(): void {
     this.loadDashboard();
@@ -151,6 +152,23 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
     }
 
     return Array.from(names).sort((a, b) => a.localeCompare(b));
+  }
+
+  get reportAssetClassOptions(): string[] {
+    const classes = new Set<string>();
+    for (const family of this.portfolioTree?.families ?? []) {
+      for (const portfolio of family.portfolios ?? []) {
+        for (const assetClass of portfolio.asset_classes ?? []) {
+          const value = (assetClass.asset_class || '').trim();
+          if (value) classes.add(value);
+        }
+      }
+    }
+    return Array.from(classes).sort((a, b) => a.localeCompare(b));
+  }
+
+  onReportAssetClassChange(value: string): void {
+    this.reportAssetClass = value.trim();
   }
 
   isFamilySelected(family: string): boolean {
@@ -1127,7 +1145,7 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
    * number shown on the Portfolio page. Better to omit it in the
    * PDF than to show a number that might not match.
    */
-  private buildSubClassSummariesForReport(): SubClassSummaryRow[] {
+  private buildSubClassSummariesForReport(reportAssetClass = ''): SubClassSummaryRow[] {
     const totals = new Map<string, {
       family_name: string;
       sub_class: string;
@@ -1142,6 +1160,7 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
 
       for (const portfolio of family.portfolios) {
         for (const assetClass of portfolio.asset_classes) {
+          if (reportAssetClass && (assetClass.asset_class || '').trim().toLowerCase() !== reportAssetClass.trim().toLowerCase()) continue;
           for (const subClass of assetClass.sub_classes) {
             const subClassName = subClass.sub_class || 'Unassigned';
             const key = family.family_name + '::' + subClassName;
@@ -1203,7 +1222,7 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
    * PortfolioAssetNode (the same data the Portfolio page's
    * Underlying table already renders) - no new calculation.
    */
-  private buildSubClassDetailsForReport(): SubClassDetail[] {
+  private buildSubClassDetailsForReport(reportAssetClass = ''): SubClassDetail[] {
     const bySubClass = new Map<string, SubClassDetail>();
 
     for (const family of this.portfolioTree?.families ?? []) {
@@ -1213,11 +1232,14 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
 
       for (const portfolio of family.portfolios) {
         for (const assetClass of portfolio.asset_classes) {
+          if (reportAssetClass && (assetClass.asset_class || '').trim().toLowerCase() !== reportAssetClass.trim().toLowerCase()) continue;
           for (const subClass of assetClass.sub_classes) {
-            const key = subClass.sub_class || 'Unassigned';
+            const subClassName = subClass.sub_class || 'Unassigned';
+            const key = (assetClass.asset_class || 'Unassigned') + '::' + subClassName;
 
             const existing = bySubClass.get(key) ?? {
-              sub_class: key,
+              sub_class: subClassName,
+              asset_class: (assetClass.asset_class || 'Unassigned').trim() || 'Unassigned',
               assets: [],
             };
 
@@ -1277,8 +1299,9 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
         standardAllocations: this.standardAllocations,
         advisorAllocation: this.advisorAllocation,
         advisorPerformance: this.advisorPerformance,
-        subClassSummaries: this.buildSubClassSummariesForReport(),
-        subClassDetails: this.buildSubClassDetailsForReport(),
+        subClassSummaries: this.buildSubClassSummariesForReport(this.reportAssetClass),
+        subClassDetails: this.buildSubClassDetailsForReport(this.reportAssetClass),
+        reportAssetClass: this.reportAssetClass,
       });
     } catch (error) {
       console.error('Failed to generate Portfolio Review PDF:', error);

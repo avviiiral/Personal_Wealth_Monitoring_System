@@ -583,6 +583,96 @@ class UnifiedWealthAnalytics:
         return round(result * 100, 2)
 
     @staticmethod
+    def _calculate_realized_pnl(transactions):
+        positions = {}
+        realized_pnl = UnifiedWealthAnalytics.ZERO
+
+        for transaction in transactions:
+            asset_id = transaction.asset_id
+            position = positions.setdefault(
+                asset_id,
+                {
+                    "quantity": UnifiedWealthAnalytics.ZERO,
+                    "invested_value": UnifiedWealthAnalytics.ZERO,
+                },
+            )
+
+            quantity = transaction.quantity or UnifiedWealthAnalytics.ZERO
+            amount = transaction.amount or UnifiedWealthAnalytics.ZERO
+            fees = transaction.fees or UnifiedWealthAnalytics.ZERO
+
+            if transaction.transaction_type in (
+                TransactionType.BUY,
+                TransactionType.SIP,
+            ):
+                position["quantity"] += quantity
+                position["invested_value"] += amount
+            elif transaction.transaction_type == TransactionType.SELL:
+                if position["quantity"] <= 0 or quantity <= 0:
+                    continue
+
+                average_cost = (
+                    position["invested_value"]
+                    / position["quantity"]
+                )
+                cost_of_sale = average_cost * quantity
+                realized_pnl += amount - fees - cost_of_sale
+
+                position["quantity"] -= quantity
+                position["invested_value"] -= cost_of_sale
+
+                if position["quantity"] <= 0:
+                    position["quantity"] = UnifiedWealthAnalytics.ZERO
+                    position["invested_value"] = UnifiedWealthAnalytics.ZERO
+
+        return realized_pnl
+
+    @staticmethod
+    def _calculate_mutual_fund_realized_pnl(transactions):
+        positions = {}
+        realized_pnl = UnifiedWealthAnalytics.ZERO
+
+        for transaction in transactions:
+            scheme_id = transaction.scheme_id
+            position = positions.setdefault(
+                scheme_id,
+                {
+                    "units": UnifiedWealthAnalytics.ZERO,
+                    "invested_value": UnifiedWealthAnalytics.ZERO,
+                },
+            )
+
+            units = transaction.units or UnifiedWealthAnalytics.ZERO
+            amount = transaction.amount or UnifiedWealthAnalytics.ZERO
+            fees = transaction.fees or UnifiedWealthAnalytics.ZERO
+
+            if transaction.transaction_type in (
+                MutualFundTransactionType.PURCHASE,
+                MutualFundTransactionType.SIP,
+            ):
+                position["units"] += units
+                position["invested_value"] += amount
+            elif transaction.transaction_type == MutualFundTransactionType.REDEMPTION:
+                if position["units"] <= 0 or units <= 0:
+                    continue
+
+                average_cost = (
+                    position["invested_value"]
+                    / position["units"]
+                )
+                cost_of_redemption = average_cost * units
+                realized_pnl += amount - fees - cost_of_redemption
+
+                position["units"] -= units
+                position["invested_value"] -= cost_of_redemption
+
+                if position["units"] <= 0:
+                    position["units"] = UnifiedWealthAnalytics.ZERO
+                    position["invested_value"] = UnifiedWealthAnalytics.ZERO
+
+        return realized_pnl
+
+    @staticmethod
     def calculate_summary(user, family_name=None):
         """
         Calculate the complete unified wealth summary.

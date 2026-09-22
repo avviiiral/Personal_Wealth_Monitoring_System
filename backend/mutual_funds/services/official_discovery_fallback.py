@@ -74,14 +74,14 @@ class ProductionMutualFundUnderlyingService(OfficialMutualFundUnderlyingService)
             return links
         pattern = (
             r"<(?:a|area|button)[^>]*?(?:href|data-href|data-url|data-download|data-file|ng-href)"
-            r"\s*=\s*["']([^"']+)["'][^>]*>.*?</(?:a|area|button)>"
+            r'''\s*=\s*["']([^"']+)["'][^>]*>.*?</(?:a|area|button)>'''
         )
         for match in re.finditer(pattern, html or "", re.I | re.S):
             link = cls._clean_link(match.group(1), base_url)
             if link:
                 links.append(link)
         for href in re.findall(
-            r"(?:href|data-href|data-url|data-download|data-file|ng-href)\s*=\s*["']([^"']+)["']",
+            r'''(?:href|data-href|data-url|data-download|data-file|ng-href)\s*=\s*["']([^"']+)["']''',
             html or "",
             re.I,
         ):
@@ -95,7 +95,7 @@ class ProductionMutualFundUnderlyingService(OfficialMutualFundUnderlyingService)
         links = []
         pattern = (
             r"<(?:a|area|button)[^>]*?(?:href|data-href|data-url|data-download|data-file|ng-href)"
-            r"\s*=\s*["']([^"']+)["'][^>]*>(.*?)</(?:a|area|button)>"
+            r'''\s*=\s*["']([^"']+)["'][^>]*>(.*?)</(?:a|area|button)>'''
         )
         for match in re.finditer(pattern, html or "", re.I | re.S):
             href, inner = match.groups()

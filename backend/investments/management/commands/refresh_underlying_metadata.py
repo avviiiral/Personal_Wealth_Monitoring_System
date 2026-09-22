@@ -18,8 +18,8 @@ class Command(BaseCommand):
             if not isin:
                 isin = UnderlyingSecurityClassifier.resolve_isin(row.stock_name)
 
-            sector = (row.sector or "").strip() or None
-            cap_type = (row.cap_type or "").strip() or None
+            sector = None
+            cap_type = None
 
             if isin:
                 master = (
@@ -29,8 +29,8 @@ class Command(BaseCommand):
                     .first()
                 )
                 if master:
-                    sector = sector or (master.sector or "").strip() or None
-                    cap_type = cap_type or (master.cap_type or "").strip() or None
+                    sector = (master.sector or "").strip() or None
+                    cap_type = (master.cap_type or "").strip() or None
 
             if not sector or not cap_type:
                 fallback_sector, fallback_cap_type = UnderlyingSecurityClassifier.classify(
@@ -38,6 +38,12 @@ class Command(BaseCommand):
                 )
                 sector = sector or fallback_sector
                 cap_type = cap_type or fallback_cap_type
+
+            # Never treat the source placeholder as a real security.
+            if row.stock_name.strip().casefold() == "unclassified":
+                isin = None
+                sector = None
+                cap_type = None
 
             changed = (
                 row.isin != isin

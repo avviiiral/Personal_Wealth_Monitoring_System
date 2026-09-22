@@ -95,8 +95,8 @@ class WatchListTests(TestCase):
     def test_universal_status_filter_excludes_owned_mutual_fund(self):
         product = InvestmentProduct.objects.create(product_type=ProductType.MUTUAL_FUND, name="Owned Fund", isin="INFOWNED", identity_key="MUTUAL_FUND:ISIN:INFOWNED", source="AMFI")
         MutualFundProduct.objects.create(product=product, scheme_code="OWNED")
-        asset = Asset.objects.create(owner=self.user, name="Owned Asset", symbol="OWNED", isin="INFOWNED", category=AssetCategory.MUTUAL_FUND)
-        PortfolioPosition.objects.create(owner=self.user, asset=asset, quantity=1, current_value=100)
+        asset = Asset.objects.create(owner=self.user, family=self.family, name="Owned Asset", symbol="OWNED", isin="INFOWNED", category=AssetCategory.MUTUAL_FUND)
+        PortfolioPosition.objects.create(owner=self.user, family=self.family, asset=asset, quantity=1, current_value=100)
         response = self.client.get("/api/watch-list/products/?product_type=MUTUAL_FUND&status=UNIVERSAL")
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data["count"], 0)

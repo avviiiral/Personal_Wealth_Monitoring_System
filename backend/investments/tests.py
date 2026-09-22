@@ -4,6 +4,8 @@ from decimal import Decimal
 from django.contrib.auth.models import User
 from django.test import TestCase
 
+from users.models import FamilyGroup
+
 from .models import (
     Asset,
     AssetCategory,
@@ -431,6 +433,8 @@ class TransactionImportExcelShapeTests(TestCase):
             username="import_shape_test",
             password="test-password",
         )
+        family = FamilyGroup.objects.create(name="Import Shape Family")
+        self.user.profile.family_groups.add(family)
 
     def test_import_succeeds_without_summary_sheet(self):
         upload = _build_transactions_workbook(include_summary=False)

@@ -117,6 +117,18 @@ def build_daily_digest(
             created_at__lte=end,
         )
         .select_related("article")
+        .only(
+            "id",
+            "holding_display_name",
+            "holding_type",
+            "category",
+            "impact",
+            "materiality",
+            "sentiment",
+            "summary",
+            "alert_score",
+            "article__source_count",
+        )
         .order_by("-alert_score", "-created_at")
     )
 

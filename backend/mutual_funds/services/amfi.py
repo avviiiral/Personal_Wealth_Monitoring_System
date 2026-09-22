@@ -424,6 +424,9 @@ class AMFIService:
         record actually has something.
         """
 
+        from users.permissions import require_active_family
+
+        family = require_active_family(owner)
         scheme_codes = [
             record["scheme_code"]
             for record in records
@@ -434,7 +437,7 @@ class AMFIService:
             for scheme in (
                 MutualFundScheme.objects
                 .filter(
-                    owner=owner,
+                    family=family,
                     scheme_code__in=scheme_codes,
                 )
             )
@@ -455,6 +458,7 @@ class AMFIService:
 
             schemes_by_code[scheme_code] = MutualFundScheme(
                 owner=owner,
+                family=family,
                 scheme_code=scheme_code,
                 scheme_name=record["scheme_name"],
                 isin_growth=(
@@ -478,7 +482,7 @@ class AMFIService:
         MutualFundScheme.objects.bulk_create(
             list(schemes_by_code.values()),
             update_conflicts=True,
-            unique_fields=["owner", "scheme_code"],
+            unique_fields=["family", "scheme_code"],
             update_fields=[
                 "scheme_name",
                 "isin_growth",
@@ -494,7 +498,7 @@ class AMFIService:
         scheme_ids_by_code = dict(
             MutualFundScheme.objects
             .filter(
-                owner=owner,
+                family=family,
                 scheme_code__in=scheme_codes,
             )
             .values_list("scheme_code", "id")

@@ -36,7 +36,10 @@ class PortfolioTreeService:
         if family_id is not None:
             scope = Q(family_id=family_id)
         else:
-            scope = Q(family_id__isnull=True, owner_id__in=owner_ids)
+            # Backward-compatible service mode: when no explicit family is
+            # supplied, include the caller's own legacy ungrouped transactions
+            # as well as family-linked transactions owned by the requested users.
+            scope = Q(owner_id__in=owner_ids)
 
         return (
             Transaction.objects

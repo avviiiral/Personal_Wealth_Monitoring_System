@@ -167,11 +167,30 @@ def holding_report(request):
 
     uploaded_underlying_by_asset = {}
     if asset_ids:
+        # Resolve uploaded underlying snapshots primarily by Asset FK.  The
+        # asset-name fallback is intentional: older imports can leave a
+        # duplicate Asset record while the current PortfolioPosition points
+        # at the other record.  In that case the uploaded snapshot is still
+        # the correct family-owned snapshot for the same named investment.
         underlying_rows = AssetUnderlyingHolding.objects.filter(
-            asset_id__in=asset_ids,
-        ).only("asset_id", "stock_name", "holding_percentage")
+            family_id=active_family.id,
+        ).select_related("asset").only(
+            "asset_id", "stock_name", "holding_percentage", "asset__name"
+        )
+        underlying_by_asset_name = {}
         for underlying_row in underlying_rows:
             uploaded_underlying_by_asset.setdefault(underlying_row.asset_id, []).append(underlying_row)
+            asset_name_key = clean(underlying_row.asset.name, "").casefold()
+            if asset_name_key:
+                underlying_by_asset_name.setdefault(asset_name_key, []).append(underlying_row)
+
+        for position in positions:
+            if position.asset_id in uploaded_underlying_by_asset:
+                continue
+            asset_name_key = clean(position.asset.name, "").casefold()
+            fallback_rows = underlying_by_asset_name.get(asset_name_key, [])
+            if fallback_rows:
+                uploaded_underlying_by_asset[position.asset_id] = fallback_rows
 
     underlying_xirr_by_asset = {}
     for asset_id, underlying_rows in uploaded_underlying_by_asset.items():

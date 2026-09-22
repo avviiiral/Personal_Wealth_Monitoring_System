@@ -457,31 +457,39 @@ class AMFIService:
             )
         }
 
-        # AMFI scheme_code is normally the strongest identity.  However, if
-        # the family already has the incoming scheme_name under another code,
-        # the family/name uniqueness rule wins: reuse that existing scheme.
-        # This is what prevents errors such as:
-        # (family_id=1, scheme_name="Axis Children's Fund") already exists.
-        canonical_by_code = {}
-        collision_records = []
+        # Resolve every incoming record to one canonical AMFI code.  If the
+        # same scheme name appears under multiple codes in one feed, retain
+        # the first code because the family has a unique scheme_name.
+        canonical_input_code = {}
+        first_code_by_name = {}
 
         for record in records:
-            incoming_code = record["scheme_code"]
-            existing_by_code = existing_schemes.get(incoming_code)
-            existing_by_name_match = existing_by_name.get(
-                record["scheme_name"]
-            )
+            code = record["scheme_code"]
+            name = record["scheme_name"]
 
-            if (
-                existing_by_name_match is not None
-                and existing_by_code is None
-            ):
-                canonical_by_code[incoming_code] = existing_by_name_match
-                collision_records.append(
-                    (record, existing_by_name_match)
-                )
+            existing_by_name_match = existing_by_name.get(name)
+            existing_by_code = existing_schemes.get(code)
+
+            if existing_by_name_match is not None and existing_by_code is None:
+                canonical_input_code[code] = existing_by_name_match.scheme_code
+            elif name in first_code_by_name:
+                canonical_input_code[code] = first_code_by_name[name]
             else:
-                canonical_by_code[incoming_code] = existing_by_code
+                first_code_by_name[name] = code
+                canonical_input_code[code] = code
+
+        canonical_records = {}
+        for record in records:
+            canonical_code = canonical_input_code[record["scheme_code"]]
+            if canonical_code not in canonical_records:
+                canonical_records[canonical_code] = record
+
+        canonical_records = list(canonical_records.values())
+
+        canonical_codes = [
+            record["scheme_code"]
+            for record in canonical_records
+        ]
 
         # Bulk path for schemes that do not collide with an existing
         # family/name row.  Records already mapped to an existing
@@ -539,37 +547,27 @@ class AMFIService:
                 ],
             )
 
-        # Re-fetch the canonical scheme rows.  This also gives us the primary
-        # key of rows reused because of the family/name uniqueness rule.
-        scheme_ids_by_code = {}
-
-        for code, scheme in canonical_by_code.items():
-            if scheme is not None:
-                scheme_ids_by_code[code] = scheme.id
-
-        refreshed_schemes = (
+        # Re-fetch the canonical scheme rows.  This also gives us the
+        # primary key of rows reused because of the family/name uniqueness rule.
+        scheme_ids_by_code = dict(
             MutualFundScheme.objects
             .filter(
                 family=family,
-                scheme_code__in=scheme_codes,
+                scheme_code__in=canonical_codes,
             )
-        )
-        scheme_ids_by_code.update(
-            refreshed_schemes.values_list(
+            .values_list(
                 "scheme_code",
                 "id",
             )
         )
 
-        # Name-collision rows may have a canonical scheme whose stored code
-        # differs from the AMFI code.  Resolve them directly by name as a
-        # final safety net and preserve the existing family record.
-        collision_scheme_ids = {
-            record["scheme_code"]: scheme.id
-            for record, scheme in collision_records
-        }
-
-        scheme_ids_by_code.update(collision_scheme_ids)
+        # Every original AMFI code points to the canonical scheme code that
+        # was actually stored for this family.
+        original_to_scheme_id = {}
+        for original_code, canonical_code in canonical_input_code.items():
+            scheme_id = scheme_ids_by_code.get(canonical_code)
+            if scheme_id is not None:
+                original_to_scheme_id[original_code] = scheme_id
 
         navs_by_key = {}
 

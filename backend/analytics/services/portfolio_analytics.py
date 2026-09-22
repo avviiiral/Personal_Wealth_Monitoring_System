@@ -438,49 +438,127 @@ class PortfolioAnalytics:
         user,
         target_date,
     ):
-        assets = (
+        assets = list(
             Asset.objects
             .filter(
                 PortfolioAnalytics._scope_q(user),
                 is_active=True,
             )
+            .only("id")
         )
+
+        if not assets:
+            return {
+                "date": target_date,
+                "invested_value": PortfolioAnalytics.ZERO,
+                "portfolio_value": PortfolioAnalytics.ZERO,
+                "pnl": PortfolioAnalytics.ZERO,
+            }
+
+        asset_ids = [asset.id for asset in assets]
+
+        transactions_by_asset = {
+            asset_id: []
+            for asset_id in asset_ids
+        }
+
+        transactions = (
+            Transaction.objects
+            .filter(
+                asset_id__in=asset_ids,
+                transaction_date__lte=target_date,
+            )
+            .order_by(
+                "asset_id",
+                "transaction_date",
+                "created_at",
+                "id",
+            )
+        )
+
+        for tx in transactions:
+            transactions_by_asset[tx.asset_id].append(tx)
+
+        latest_prices_by_asset = {}
+        prices = (
+            MarketPrice.objects
+            .filter(
+                asset_id__in=asset_ids,
+                date__lte=target_date,
+            )
+            .order_by("asset_id", "-date")
+            .only(
+                "asset_id",
+                "date",
+                "close_price",
+            )
+        )
+
+        for price in prices:
+            latest_prices_by_asset.setdefault(
+                price.asset_id,
+                price,
+            )
 
         total_value = PortfolioAnalytics.ZERO
         total_invested = PortfolioAnalytics.ZERO
 
         for asset in assets:
-            position = (
-                PortfolioAnalytics
-                .calculate_position_as_of(
-                    asset,
-                    target_date,
-                )
-            )
+            quantity = PortfolioAnalytics.ZERO
+            invested_value = PortfolioAnalytics.ZERO
 
-            quantity = position["quantity"]
-            invested_value = position["invested_value"]
+            for tx in transactions_by_asset[asset.id]:
+                tx_quantity = (
+                    tx.quantity
+                    or PortfolioAnalytics.ZERO
+                )
+
+                amount = (
+                    tx.amount
+                    or PortfolioAnalytics.ZERO
+                )
+
+                fees = (
+                    tx.fees
+                    or PortfolioAnalytics.ZERO
+                )
+
+                if tx.transaction_type in (
+                    TransactionType.BUY,
+                    TransactionType.SIP,
+                ):
+                    quantity += tx_quantity
+                    invested_value += amount + fees
+
+                elif tx.transaction_type == TransactionType.SELL:
+                    if quantity <= 0:
+                        continue
+
+                    average_cost = (
+                        invested_value / quantity
+                        if quantity
+                        else PortfolioAnalytics.ZERO
+                    )
+
+                    quantity -= tx_quantity
+                    invested_value -= (
+                        average_cost * tx_quantity
+                    )
+
+                    if quantity <= 0:
+                        quantity = PortfolioAnalytics.ZERO
+                        invested_value = PortfolioAnalytics.ZERO
 
             if quantity <= 0:
                 continue
 
-            price_record = (
-                MarketPrice.objects
-                .filter(
-                    asset=asset,
-                    date__lte=target_date,
-                )
-                .order_by("-date")
-                .first()
-            )
+            price_record = latest_prices_by_asset.get(asset.id)
 
             if not price_record:
                 continue
 
-            current_price = price_record.close_price
-
             current_value = (
-                quantity * current_price
+                quantity * price_record.close_price
             )
 
             total_value += current_value

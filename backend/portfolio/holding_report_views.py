@@ -339,7 +339,10 @@ def holding_matrix_report(request):
         if "DIRECT EQUITY" in asset_class or "DIRECT EQUITY" in sub_class:
             report_type = "Direct Equity"
         elif "PMS" in asset_class or "PMS" in sub_class:
-            report_type = "Equity PMS" if "EQUITY" in asset_class or "EQUITY" in sub_class else None
+            # PMS holdings are the PMS sleeve represented by this matrix.
+            # Do not require the text "EQUITY" in the classification: existing
+            # transaction uploads may use simply "PMS" or "Equity PMS".
+            report_type = "Equity PMS"
         else:
             report_type = None
 

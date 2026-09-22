@@ -232,6 +232,7 @@ class PortfolioTreeAPITests(TestCase):
 
         Transaction.objects.create(
             owner=self.user,
+            family=family,
             asset=self.asset,
             family_name="Family API",
             portfolio="Portfolio API",

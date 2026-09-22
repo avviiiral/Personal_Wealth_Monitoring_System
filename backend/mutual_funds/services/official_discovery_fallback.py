@@ -180,6 +180,8 @@ class ProductionMutualFundUnderlyingService(OfficialMutualFundUnderlyingService)
 
         html = response.text or ""
         candidates = []
+        if cls._scheme_link_match(html, scheme):
+            candidates.append(page_url)
         candidates.extend(cls._anchor_download_links(html, page_url, scheme))
         candidates.extend(cls._download_candidates_from_page(page_url, html, scheme))
         return list(dict.fromkeys(candidates))

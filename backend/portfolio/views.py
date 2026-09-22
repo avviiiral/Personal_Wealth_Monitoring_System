@@ -3,7 +3,7 @@ from decimal import Decimal
 from typing import cast
 
 from django.db import transaction
-from django.db.models import Sum
+from django.db.models import Count, Sum
 
 from investments.models import (
     Asset,
@@ -39,7 +39,8 @@ from users.permissions import family_scope, require_active_family
 def portfolio_assets(request):
     if request.method == "GET":
         assets = family_scope(Asset.objects, request.user).order_by("name")
-        return Response({"count": assets.count(), "results": AssetSerializer(assets, many=True).data})
+        results = AssetSerializer(assets, many=True).data
+        return Response({"count": len(results), "results": results})
 
     serializer = AssetSerializer(data=request.data)
     if not serializer.is_valid():
@@ -88,7 +89,8 @@ def portfolio_transactions(request):
             .select_related("asset")
             .order_by("-transaction_date", "-created_at")
         )
-        return Response({"count": transactions.count(), "results": TransactionSerializer(transactions, many=True).data})
+        results = TransactionSerializer(transactions, many=True).data
+        return Response({"count": len(results), "results": results})
     serializer = TransactionSerializer(data=request.data, context={"request": request})
     if not serializer.is_valid():
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
@@ -178,15 +180,21 @@ def portfolio_transaction_edit_history(request):
         .select_related("transaction", "transaction__asset", "edited_by")
         .order_by("-edited_at")
     )
-    return Response({"count": history.count(), "results": TransactionEditHistorySerializer(history, many=True).data})
+    results = TransactionEditHistorySerializer(history, many=True).data
+    return Response({"count": len(results), "results": results})
 
 
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def portfolio_summary(request):
     holdings = family_scope(Holding.objects, request.user).filter(asset__is_active=True)
-    total_invested = holdings.aggregate(total=Sum("invested_value"))["total"] or Decimal("0")
-    total_current_value = holdings.aggregate(total=Sum("current_value"))["total"] or Decimal("0")
+    totals = holdings.aggregate(
+        total_invested=Sum("invested_value"),
+        total_current_value=Sum("current_value"),
+        number_of_holdings=Count("id"),
+    )
+    total_invested = totals["total_invested"] or Decimal("0")
+    total_current_value = totals["total_current_value"] or Decimal("0")
     total_unrealized_pnl = total_current_value - total_invested
     pnl_percentage = (total_unrealized_pnl / total_invested) * Decimal("100") if total_invested else Decimal("0")
     return Response({
@@ -194,7 +202,7 @@ def portfolio_summary(request):
         "total_current_value": total_current_value,
         "total_unrealized_pnl": total_unrealized_pnl,
         "pnl_percentage": round(float(pnl_percentage), 2),
-        "number_of_holdings": holdings.count(),
+        "number_of_holdings": totals["number_of_holdings"] or 0,
     })
 
 
@@ -207,7 +215,8 @@ def portfolio_holdings(request):
         .select_related("asset")
         .order_by("-current_value")
     )
-    return Response({"count": holdings.count(), "results": HoldingSerializer(holdings, many=True).data})
+    results = HoldingSerializer(holdings, many=True).data
+    return Response({"count": len(results), "results": results})
 
 
 @api_view(["GET"])

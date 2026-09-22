@@ -991,6 +991,26 @@ class UnifiedWealthAnalytics:
             )
         )
 
+        mutual_fund_transactions_qs = (
+            MutualFundTransaction.objects
+            .filter(UnifiedWealthAnalytics._scope_q(user))
+        )
+
+        if family_name:
+            mutual_fund_transactions_qs = (
+                mutual_fund_transactions_qs
+                .filter(family_name=family_name)
+            )
+
+        mutual_fund_transactions = (
+            mutual_fund_transactions_qs
+            .order_by(
+                "transaction_date",
+                "created_at",
+                "id",
+            )
+        )
+
         cash_flows.extend(
             UnifiedWealthAnalytics._build_mutual_fund_cash_flows(
                 mutual_fund_transactions,

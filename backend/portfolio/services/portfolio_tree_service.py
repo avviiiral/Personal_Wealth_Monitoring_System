@@ -4,7 +4,7 @@ from decimal import Decimal
 
 from django.db.models import OuterRef, QuerySet, Subquery, Q
 
-from investments.models import Transaction, TransactionType
+from investments.models import SecurityMaster, Transaction, TransactionType
 from investments.services.security_master import SecurityMasterService
 from investments.services.xirr import XIRRCalculator
 from market_data.models import ManualAssetPrice, MarketPrice
@@ -132,7 +132,7 @@ class PortfolioTreeService:
         return price_cache
 
     @classmethod
-    def _build_asset(cls, transactions, xirr_transactions, asset_name_xirr, sub_class_xirr, price_cache):
+    def _build_asset(cls, transactions, xirr_transactions, asset_name_xirr, sub_class_xirr, price_cache, security_master_cache=None):
         first = transactions[0]
         asset = first.asset
         position = cls._calculate_position(transactions)
@@ -146,6 +146,13 @@ class PortfolioTreeService:
         pnl_percentage = (pnl / invested_value) * Decimal("100") if pnl is not None and invested_value > Decimal("0") else None
         xirr = cls._calculate_xirr(xirr_transactions, quantity, current_value)
         security_master = getattr(asset, "security_master", None)
+        if security_master is None and security_master_cache is not None:
+            isin = asset.isin.strip() if asset.isin else ""
+            if asset.family_id is not None:
+                security_key = ("family_isin", asset.family_id, isin) if isin else ("family_name", asset.family_id, asset.name)
+            else:
+                security_key = ("owner_isin", asset.owner_id, isin) if isin else ("owner_name", asset.owner_id, asset.name)
+            security_master = security_master_cache.get(security_key)
         if security_master is None:
             security_master = SecurityMasterService.get_for_asset(owner=asset.owner, asset=asset, family=asset.family)
         asset_name = cls._clean(first.asset_name, getattr(asset, "name", "Unassigned"))
@@ -223,6 +230,38 @@ class PortfolioTreeService:
         asset_ids = {tx.asset_id for tx in transactions}
         price_cache = cls._load_price_cache(asset_ids)
 
+        assets_for_security_master = {}
+        for tx in transactions:
+            assets_for_security_master.setdefault(tx.asset_id, tx.asset)
+
+        family_ids = {asset.family_id for asset in assets_for_security_master.values() if asset.family_id is not None}
+        owner_ids_for_legacy = {asset.owner_id for asset in assets_for_security_master.values() if asset.family_id is None}
+
+        security_filters = Q()
+        if family_ids:
+            security_filters |= Q(family_id__in=family_ids)
+        if owner_ids_for_legacy:
+            security_filters |= Q(family__isnull=True, owner_id__in=owner_ids_for_legacy)
+
+        security_master_cache = {}
+        if security_filters:
+            security_masters = SecurityMaster.objects.filter(security_filters).only(
+                "id", "owner_id", "family_id", "isin", "asset_name",
+                "sector", "cap_type", "amc_name", "pe_ratio", "pb_ratio",
+                "peg_ratio", "roe", "credit_rating", "ytm",
+                "modified_duration", "average_maturity",
+            )
+            for security in security_masters:
+                if security.family_id is not None:
+                    if security.isin:
+                        security_master_cache.setdefault(("family_isin", security.family_id, security.isin), security)
+                    else:
+                        security_master_cache.setdefault(("family_name", security.family_id, security.asset_name), security)
+                elif security.isin:
+                    security_master_cache.setdefault(("owner_isin", security.owner_id, security.isin), security)
+                else:
+                    security_master_cache.setdefault(("owner_name", security.owner_id, security.asset_name), security)
+
         asset_name_terminal_values = {}
         asset_name_quantities = {}
         sub_class_terminal_values = {}
@@ -272,6 +311,7 @@ class PortfolioTreeService:
                 asset_name_xirr=asset_name_xirr_values.get(asset_name_key),
                 sub_class_xirr=sub_class_xirr_values.get(sub_class_key),
                 price_cache=price_cache,
+                security_master_cache=security_master_cache,
             )
             if asset_data["quantity"] <= 0:
                 continue

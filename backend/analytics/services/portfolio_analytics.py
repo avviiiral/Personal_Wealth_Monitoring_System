@@ -1,7 +1,7 @@
 from datetime import date
 from decimal import Decimal
 
-from django.db.models import Sum, Q
+from django.db.models import Count, Sum, Q
 
 from investments.models import (
     Asset,
@@ -29,17 +29,7 @@ class PortfolioAnalytics:
         return Q(family_id=family.id)
 
     @staticmethod
-    def calculate_xirr(user):
-        transactions = (
-            Transaction.objects
-            .filter(PortfolioAnalytics._scope_q(user))
-            .order_by(
-                "transaction_date",
-                "created_at",
-                "id",
-            )
-        )
-
+    def _calculate_xirr_from_transactions(transactions, current_value):
         cash_flows = []
 
         for tx in transactions:
@@ -71,15 +61,7 @@ class PortfolioAnalytics:
                     )
                 )
 
-        holdings = PortfolioAnalytics.get_holdings(user)
-
-        current_value = sum(
-            (
-                holding.current_value
-                or PortfolioAnalytics.ZERO
-            )
-            for holding in holdings
-        )
+        cash_flows.sort(key=lambda item: item[0])
 
         if current_value > 0:
             cash_flows.append(
@@ -95,6 +77,33 @@ class PortfolioAnalytics:
             return None
 
         return round(xirr * 100, 2)
+
+    @staticmethod
+    def calculate_xirr(user):
+        transactions = (
+            Transaction.objects
+            .filter(PortfolioAnalytics._scope_q(user))
+            .order_by(
+                "transaction_date",
+                "created_at",
+                "id",
+            )
+        )
+
+        holdings = PortfolioAnalytics.get_holdings(user)
+
+        current_value = sum(
+            (
+                holding.current_value
+                or PortfolioAnalytics.ZERO
+            )
+            for holding in holdings
+        )
+
+        return PortfolioAnalytics._calculate_xirr_from_transactions(
+            transactions,
+            current_value,
+        )
 
     @staticmethod
     def get_holdings(user):
@@ -131,24 +140,12 @@ class PortfolioAnalytics:
         return current - invested
 
     @staticmethod
-    def calculate_realized_pnl(user):
-        transactions = (
-            Transaction.objects
-            .filter(PortfolioAnalytics._scope_q(user))
-            .select_related("asset")
-            .order_by(
-                "asset_id",
-                "transaction_date",
-                "created_at",
-                "id",
-            )
-        )
-
+    def _calculate_realized_pnl_from_transactions(transactions):
         positions = {}
         realized_pnl = PortfolioAnalytics.ZERO
 
         for tx in transactions:
-            asset_id = tx.asset.id
+            asset_id = tx.asset_id
 
             if asset_id not in positions:
                 positions[asset_id] = {
@@ -158,29 +155,16 @@ class PortfolioAnalytics:
 
             position = positions[asset_id]
 
-            quantity = (
-                tx.quantity
-                or PortfolioAnalytics.ZERO
-            )
-
-            amount = (
-                tx.amount
-                or PortfolioAnalytics.ZERO
-            )
-
-            fees = (
-                tx.fees
-                or PortfolioAnalytics.ZERO
-            )
+            quantity = tx.quantity or PortfolioAnalytics.ZERO
+            amount = tx.amount or PortfolioAnalytics.ZERO
+            fees = tx.fees or PortfolioAnalytics.ZERO
 
             if tx.transaction_type in (
                 TransactionType.BUY,
                 TransactionType.SIP,
             ):
                 position["quantity"] += quantity
-                position["invested_value"] += (
-                    amount + fees
-                )
+                position["invested_value"] += amount + fees
 
             elif tx.transaction_type == TransactionType.SELL:
                 if (
@@ -194,9 +178,7 @@ class PortfolioAnalytics:
                     / position["quantity"]
                 )
 
-                cost_of_sale = (
-                    average_cost * quantity
-                )
+                cost_of_sale = average_cost * quantity
 
                 realized_pnl += (
                     amount
@@ -208,14 +190,27 @@ class PortfolioAnalytics:
                 position["invested_value"] -= cost_of_sale
 
                 if position["quantity"] <= 0:
-                    position["quantity"] = (
-                        PortfolioAnalytics.ZERO
-                    )
-                    position["invested_value"] = (
-                        PortfolioAnalytics.ZERO
-                    )
+                    position["quantity"] = PortfolioAnalytics.ZERO
+                    position["invested_value"] = PortfolioAnalytics.ZERO
 
         return realized_pnl
+
+    @staticmethod
+    def calculate_realized_pnl(user):
+        transactions = (
+            Transaction.objects
+            .filter(PortfolioAnalytics._scope_q(user))
+            .order_by(
+                "asset_id",
+                "transaction_date",
+                "created_at",
+                "id",
+            )
+        )
+
+        return PortfolioAnalytics._calculate_realized_pnl_from_transactions(
+            transactions
+        )
 
     @staticmethod
     def calculate_summary(user):
@@ -225,32 +220,30 @@ class PortfolioAnalytics:
             invested=Sum("invested_value"),
             current=Sum("current_value"),
             unrealized=Sum("unrealized_pnl"),
+            number_of_holdings=Count("id"),
         )
 
-        total_invested = (
-            totals["invested"]
-            or PortfolioAnalytics.ZERO
-        )
+        total_invested = totals["invested"] or PortfolioAnalytics.ZERO
+        total_current_value = totals["current"] or PortfolioAnalytics.ZERO
+        unrealized_pnl = totals["unrealized"] or PortfolioAnalytics.ZERO
 
-        total_current_value = (
-            totals["current"]
-            or PortfolioAnalytics.ZERO
-        )
-
-        unrealized_pnl = (
-            totals["unrealized"]
-            or PortfolioAnalytics.ZERO
+        transactions = list(
+            Transaction.objects
+            .filter(PortfolioAnalytics._scope_q(user))
+            .order_by(
+                "asset_id",
+                "transaction_date",
+                "created_at",
+                "id",
+            )
         )
 
         realized_pnl = (
             PortfolioAnalytics
-            .calculate_realized_pnl(user)
+            ._calculate_realized_pnl_from_transactions(transactions)
         )
 
-        total_pnl = (
-            realized_pnl
-            + unrealized_pnl
-        )
+        total_pnl = realized_pnl + unrealized_pnl
 
         return_percentage = (
             (total_pnl / total_invested) * 100
@@ -258,7 +251,10 @@ class PortfolioAnalytics:
             else PortfolioAnalytics.ZERO
         )
 
-        xirr = PortfolioAnalytics.calculate_xirr(user)
+        xirr = PortfolioAnalytics._calculate_xirr_from_transactions(
+            transactions,
+            total_current_value,
+        )
 
         return {
             "total_invested": total_invested,
@@ -271,7 +267,7 @@ class PortfolioAnalytics:
                 2,
             ),
             "xirr_percentage": xirr,
-            "number_of_holdings": holdings.count(),
+            "number_of_holdings": totals["number_of_holdings"] or 0,
         }
 
     @staticmethod

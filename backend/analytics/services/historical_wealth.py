@@ -287,70 +287,66 @@ class HistoricalWealthAnalytics:
                 manual_price,
             )
 
+        # The bulk price query already contains every price on/before
+        # end_date, so opening carry-forward values can be resolved entirely
+        # in memory. Only assets with no historical row at all need a
+        # last-known-value fallback, which is loaded in one bulk query.
+        missing_price_asset_ids = [
+            asset.pk
+            for asset in assets
+            if not prices_by_asset.get(asset.pk)
+        ]
+
+        latest_available_by_asset = {}
+        if missing_price_asset_ids:
+            latest_available_prices = (
+                MarketPrice.objects
+                .filter(asset_id__in=missing_price_asset_ids)
+                .order_by("asset_id", "-date", "-id")
+                .only(
+                    "asset_id",
+                    "date",
+                    "close_price",
+                    "source",
+                )
+            )
+            for latest_available in latest_available_prices:
+                latest_available_by_asset.setdefault(
+                    latest_available.asset_id,
+                    latest_available,
+                )
+
         for asset in assets:
             values = prices_by_asset.get(asset.pk, [])
-            if any(price_date == start_date for price_date, _, _ in values):
+
+            if values:
+                prices_by_asset[asset.pk] = values
                 continue
 
-            # The bulk price query above already contains every price
-            # on/before end_date. Use the in-memory series to find the
-            # opening carry-forward quote instead of issuing one query per asset.
-            previous = next(
-                (
-                    (value_date, value, source)
-                    for value_date, value, source in reversed(values)
-                    if value_date < start_date
-                ),
-                None,
-            )
+            # If the asset has no price on or before the requested period,
+            # use the latest available manual snapshot first, then the latest
+            # available market price as a last-known-value fallback.
+            latest_manual = latest_manual_prices.get(asset.pk)
 
-            if previous is not None:
-                values.insert(0, previous)
-            elif not values:
-                # If the asset has no price on or before the requested
-                # period, do not silently value the holding at zero.
-                # This happens for assets whose market-data history
-                # starts after the selected period. Use the latest
-                # available manual snapshot first, then the latest
-                # available market price as a last-known-value
-                # fallback. This keeps the historical series complete
-                # without changing normal historical prices.
-                latest_manual = latest_manual_prices.get(asset.pk)
+            if latest_manual is not None:
+                values.append(
+                    (
+                        latest_manual.date,
+                        latest_manual.close_price,
+                        latest_manual.source,
+                    )
+                )
+            else:
+                latest_available = latest_available_by_asset.get(asset.pk)
 
-                if latest_manual is not None:
+                if latest_available is not None:
                     values.append(
                         (
-                            latest_manual.date,
-                            latest_manual.close_price,
-                            latest_manual.source,
+                            latest_available.date,
+                            latest_available.close_price,
+                            latest_available.source,
                         )
                     )
-                else:
-                    latest_available = (
-                        MarketPrice.objects
-                        .filter(
-                            asset_id=asset.pk,
-                        )
-                        .order_by(
-                            "-date",
-                            "-id",
-                        )
-                        .only(
-                            "date",
-                            "close_price",
-                            "source",
-                        )
-                        .first()
-                    )
-
-                    if latest_available is not None:
-                        values.append(
-                            (
-                                latest_available.date,
-                                latest_available.close_price,
-                                latest_available.source,
-                            )
-                        )
 
             prices_by_asset[asset.pk] = values
 
@@ -519,61 +515,34 @@ class HistoricalWealthAnalytics:
                 )
             )
 
-        # ------------------------------------------------------
-        # Latest NAV before requested range
-        # ------------------------------------------------------
+        # The bulk NAV query already contains every NAV on/before
+        # end_date, so values before start_date are available for the
+        # opening carry-forward without a query per scheme. Only schemes
+        # with no historical NAV at all need a last-known-value fallback.
+        missing_scheme_ids = [
+            scheme.pk
+            for scheme in schemes
+            if not navs_by_scheme.get(scheme.pk)
+        ]
 
-        for scheme in schemes:
-
-            previous_nav = (
+        if missing_scheme_ids:
+            latest_navs = (
                 MutualFundNAV.objects
-                .filter(
-                    scheme_id=scheme.pk,
-                    date__lt=start_date,
-                )
-                .order_by(
-                    "-date",
-                    "-id",
-                )
+                .filter(scheme_id__in=missing_scheme_ids)
+                .order_by("scheme_id", "-date", "-id")
                 .only(
+                    "scheme_id",
                     "date",
                     "nav",
                 )
-                .first()
             )
-
-            if previous_nav is not None:
-                navs_by_scheme[
-                    scheme.pk
-                ].insert(
-                    0,
-                    (
-                        previous_nav.date,
-                        previous_nav.nav,
-                    ),
+            for latest_nav in latest_navs:
+                navs_by_scheme.setdefault(
+                    latest_nav.scheme_id,
+                    [],
                 )
-            elif not navs_by_scheme.get(scheme.pk):
-                # If NAV history starts after the requested period,
-                # use the latest available NAV rather than valuing the
-                # holding at zero for the entire historical range.
-                latest_nav = (
-                    MutualFundNAV.objects
-                    .filter(
-                        scheme_id=scheme.pk,
-                    )
-                    .order_by(
-                        "-date",
-                        "-id",
-                    )
-                    .only(
-                        "date",
-                        "nav",
-                    )
-                    .first()
-                )
-
-                if latest_nav is not None:
-                    navs_by_scheme[scheme.pk].append(
+                if not navs_by_scheme[latest_nav.scheme_id]:
+                    navs_by_scheme[latest_nav.scheme_id].append(
                         (
                             latest_nav.date,
                             latest_nav.nav,

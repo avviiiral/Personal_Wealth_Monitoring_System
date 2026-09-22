@@ -203,6 +203,20 @@ def get_monitored_holdings(user) -> List[MonitoredHolding]:
     monitored_holdings = []
 
     equity_holdings = UnifiedWealthAnalytics.get_equity_holdings(user)
+    mutual_fund_holdings = (
+        UnifiedWealthAnalytics.get_mutual_fund_holdings(user)
+    )
+
+    total_current_value = (
+        sum(
+            (holding.current_value or Decimal("0"))
+            for holding in equity_holdings
+        )
+        + sum(
+            (holding.current_value or Decimal("0"))
+            for holding in mutual_fund_holdings
+        )
+    )
 
     for holding in equity_holdings:
 
@@ -218,24 +232,6 @@ def get_monitored_holdings(user) -> List[MonitoredHolding]:
         monitored_holdings.append(
             _build_equity_holding(holding, weight)
         )
-
-    mutual_fund_holdings = (
-        UnifiedWealthAnalytics.get_mutual_fund_holdings(user)
-    )
-
-    # Both holding querysets expose the same current_value field used by
-    # calculate_summary(). Summing them here preserves the existing
-    # all-family semantics while avoiding the summary's transaction reads.
-    total_current_value = (
-        sum(
-            (holding.current_value or Decimal("0"))
-            for holding in equity_holdings
-        )
-        + sum(
-            (holding.current_value or Decimal("0"))
-            for holding in mutual_fund_holdings
-        )
-    )
 
     for holding in mutual_fund_holdings:
 

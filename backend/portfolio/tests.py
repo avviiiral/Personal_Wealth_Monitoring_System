@@ -162,6 +162,7 @@ class PortfolioTreeServiceTests(TestCase):
     def test_sell_reduces_position(self):
         Transaction.objects.create(
             owner=self.user,
+            family=family,
             asset=self.asset,
             family_name="Family A",
             portfolio="Portfolio A",
@@ -218,7 +219,11 @@ class PortfolioTreeAPITests(TestCase):
             user=self.user
         )
 
+        family = FamilyGroup.objects.create(name="Portfolio API Family")
+        self.user.profile.family_groups.add(family)
+
         self.asset = Asset.objects.create(
+            family=family,
             owner=self.user,
             name="API Test Equity",
             category="STOCK",
@@ -572,6 +577,7 @@ class PortfolioSummaryMultiOwnerTests(TestCase):
         self.owner_a.profile.family_groups.add(group)
 
         self.owner_b.profile.family_groups.add(group)
+        self.family = group
 
         from investments.models import Holding
 

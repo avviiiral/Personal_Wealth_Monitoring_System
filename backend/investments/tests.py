@@ -2,6 +2,7 @@ from datetime import date
 from decimal import Decimal
 
 from django.contrib.auth.models import User
+from django.db import close_old_connections
 from django.test import TestCase
 
 from users.models import FamilyGroup
@@ -503,6 +504,7 @@ class AutoPriceRefreshTests(TestCase):
         )
 
     def test_refresh_assets_calls_fetch_and_rebuild_for_each_asset(self):
+        close_old_connections()
         from .services.auto_price_refresh import _refresh_assets
 
         with patch(
@@ -520,6 +522,7 @@ class AutoPriceRefreshTests(TestCase):
         )
 
     def test_refresh_assets_does_not_raise_on_individual_failure(self):
+        close_old_connections()
         from .services.auto_price_refresh import _refresh_assets
 
         with patch(

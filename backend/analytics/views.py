@@ -49,14 +49,17 @@ def analytics_historical(request):
     days = max(1, min(days, 3650))
     end_date = date.today()
     start_date = end_date - timedelta(days=days - 1)
-    results = []
-    current_date = start_date
-    owner_ids = request.user
-    while current_date <= end_date:
-        result = PortfolioAnalytics.calculate_historical_value(owner_ids, current_date)
-        results.append({"date": result["date"], "invested_value": result["invested_value"], "portfolio_value": result["portfolio_value"], "pnl": result["pnl"]})
-        current_date += timedelta(days=1)
-    return Response({"days": days, "start_date": start_date, "end_date": end_date, "results": results})
+    results = PortfolioAnalytics.calculate_historical_values(
+        request.user,
+        start_date,
+        end_date,
+    )
+    return Response({
+        "days": days,
+        "start_date": start_date,
+        "end_date": end_date,
+        "results": results,
+    })
 
 
 @api_view(["GET"])

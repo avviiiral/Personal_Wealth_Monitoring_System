@@ -44,7 +44,30 @@ class PortfolioTreeService:
         return (
             Transaction.objects
             .filter(scope)
-            .select_related("owner", "asset", "asset__security_master")
+            .select_related("owner", "asset", "asset__security_master").only(
+                "owner_id", "family_id", "family_name", "portfolio",
+                "asset_class", "sub_class", "asset_name", "underlying",
+                "advisors", "transaction_date", "transaction_type",
+                "quantity", "price_per_unit", "amount", "notes", "id",
+                "asset__owner_id", "asset__family_id", "asset__name",
+                "asset__isin", "asset__symbol",
+                "asset__security_master__id",
+                "asset__security_master__owner_id",
+                "asset__security_master__family_id",
+                "asset__security_master__isin",
+                "asset__security_master__asset_name",
+                "asset__security_master__sector",
+                "asset__security_master__cap_type",
+                "asset__security_master__amc_name",
+                "asset__security_master__pe_ratio",
+                "asset__security_master__pb_ratio",
+                "asset__security_master__peg_ratio",
+                "asset__security_master__roe",
+                "asset__security_master__credit_rating",
+                "asset__security_master__ytm",
+                "asset__security_master__modified_duration",
+                "asset__security_master__average_maturity",
+            )
             .order_by(
                 "family_name", "portfolio", "asset_class", "sub_class",
                 "asset_name", "transaction_date", "id",

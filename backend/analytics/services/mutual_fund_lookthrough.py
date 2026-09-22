@@ -13,6 +13,7 @@ class MutualFundLookThroughService:
 
     ZERO = Decimal("0")
     UNCLASSIFIED = "Unclassified"
+    EXCLUDED_ALLOCATION_LABEL = "EQUITY AIF (CATEGORY III)"
 
     @staticmethod
     def scope_q(user):
@@ -197,6 +198,8 @@ class MutualFundLookThroughService:
                 for row in underlying_rows:
                     exposure = value * (row.holding_percentage or cls.ZERO) / Decimal("100")
                     sector = (row.sector or "").strip() or cls.UNCLASSIFIED
+                    if sector.upper() == cls.EXCLUDED_ALLOCATION_LABEL:
+                        continue
                     totals[sector] = totals.get(sector, cls.ZERO) + exposure
                     disclosed += row.holding_percentage or cls.ZERO
                 residual = value * max(cls.ZERO, Decimal("100") - disclosed) / Decimal("100")
@@ -206,7 +209,9 @@ class MutualFundLookThroughService:
             sector = None
             if holding.asset.security_master:
                 sector = (holding.asset.security_master.sector or "").strip() or None
-            totals[sector or cls.UNCLASSIFIED] = totals.get(sector or cls.UNCLASSIFIED, cls.ZERO) + value
+            sector = sector or cls.UNCLASSIFIED
+            if sector.upper() != cls.EXCLUDED_ALLOCATION_LABEL:
+                totals[sector] = totals.get(sector, cls.ZERO) + value
 
         for data in cls.latest_underlyings(user).values():
             mf_value = data["holding"].current_value or cls.ZERO
@@ -219,6 +224,8 @@ class MutualFundLookThroughService:
                     security_by_name,
                 )
                 if not sector and asset_class not in {"STOCK", "ETF"}:
+                    continue
+                if sector and sector.upper() == cls.EXCLUDED_ALLOCATION_LABEL:
                     continue
                 exposure = mf_value * (row.percentage_of_nav or cls.ZERO) / Decimal("100")
                 totals[sector or cls.UNCLASSIFIED] = totals.get(sector or cls.UNCLASSIFIED, cls.ZERO) + exposure

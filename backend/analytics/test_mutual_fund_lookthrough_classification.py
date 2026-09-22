@@ -3,6 +3,8 @@ from decimal import Decimal
 from django.contrib.auth.models import User
 from django.test import TestCase
 
+from users.models import FamilyGroup
+
 from investments.models import Asset, AssetCategory, SecurityMaster
 from mutual_funds.models import MutualFundScheme, MutualFundUnderlying
 from analytics.services.mutual_fund_lookthrough import MutualFundLookThroughService
@@ -11,8 +13,13 @@ from analytics.services.mutual_fund_lookthrough import MutualFundLookThroughServ
 class MutualFundLookThroughClassificationTests(TestCase):
     def setUp(self):
         self.user = User.objects.create_user(username="mf-classification-user", password="pw")
+        self.family = FamilyGroup.objects.create(name="MF Classification Test Family", created_by=self.user)
+        self.user.profile.family_groups.add(self.family)
+        self.user.profile.active_family_group = self.family
+        self.user.profile.save(update_fields=["active_family_group"])
         self.scheme = MutualFundScheme.objects.create(
             owner=self.user,
+            family=self.family,
             scheme_name="Test Fund",
             scheme_code="MF-CLASS-1",
             is_active=True,
@@ -33,6 +40,7 @@ class MutualFundLookThroughClassificationTests(TestCase):
     def test_classification_precedence_is_isin_asset_then_name_asset_then_security_master(self):
         asset = Asset.objects.create(
             owner=self.user,
+            family=self.family,
             name="Canonical Asset Name",
             isin="INF123",
             category=AssetCategory.STOCK,

@@ -2,7 +2,10 @@ from datetime import date
 from decimal import Decimal
 
 from django.contrib.auth.models import User
-from django.test import TestCase
+from django.db import close_old_connections
+from django.test import TestCase, TransactionTestCase
+
+from users.models import FamilyGroup
 
 from .models import (
     Asset,
@@ -431,6 +434,8 @@ class TransactionImportExcelShapeTests(TestCase):
             username="import_shape_test",
             password="test-password",
         )
+        family = FamilyGroup.objects.create(name="Import Shape Family")
+        self.user.profile.family_groups.add(family)
 
     def test_import_succeeds_without_summary_sheet(self):
         upload = _build_transactions_workbook(include_summary=False)
@@ -475,7 +480,7 @@ class TransactionImportExcelShapeTests(TestCase):
         self.assertIn(asset.id, result["touched_asset_ids"])
 
 
-class AutoPriceRefreshTests(TestCase):
+class AutoPriceRefreshTests(TransactionTestCase):
     """
     The post-import price refresh runs on a background thread (see
     services.auto_price_refresh) so the import response never

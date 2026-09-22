@@ -6,7 +6,7 @@ from investments.models import Asset
 
 from portfolio.services.holding_engine import HoldingCalculationEngine
 
-from users.permissions import family_scope
+from users.permissions import family_scope, get_visible_owner_ids
 
 
 @api_view(["GET"])

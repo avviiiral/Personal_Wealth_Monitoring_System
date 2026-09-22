@@ -2,7 +2,7 @@ from django.views.decorators.csrf import ensure_csrf_cookie
 
 from decimal import Decimal
 
-from django.db.models import Sum
+from django.db.models import Count, Sum
 
 from rest_framework.decorators import (
     api_view,
@@ -205,6 +205,7 @@ def mutual_fund_summary(request):
         invested=Sum("invested_value"),
         current=Sum("current_value"),
         pnl=Sum("unrealized_pnl"),
+        number_of_holdings=Count("id"),
     )
 
     invested = (
@@ -236,7 +237,7 @@ def mutual_fund_summary(request):
             float(pnl_percentage),
             2,
         ),
-        "number_of_holdings": holdings.count(),
+        "number_of_holdings": totals["number_of_holdings"],
     })
 
 
@@ -263,9 +264,11 @@ def mutual_fund_holdings(request):
         many=True,
     )
 
+    data = serializer.data
+
     return Response({
-        "count": holdings.count(),
-        "results": serializer.data,
+        "count": len(data),
+        "results": data,
     })
 
 
@@ -294,9 +297,11 @@ def mutual_fund_transactions(request):
         many=True,
     )
 
+    data = serializer.data
+
     return Response({
-        "count": transactions.count(),
-        "results": serializer.data,
+        "count": len(data),
+        "results": data,
     })
 
 
@@ -324,9 +329,11 @@ def sip_list(request):
         many=True,
     )
 
+    data = serializer.data
+
     return Response({
-        "count": sips.count(),
-        "results": serializer.data,
+        "count": len(data),
+        "results": data,
     })
 
 

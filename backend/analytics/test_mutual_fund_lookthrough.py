@@ -4,6 +4,8 @@ from decimal import Decimal
 from django.contrib.auth.models import User
 from django.test import TestCase
 
+from users.models import FamilyGroup
+
 from analytics.services.mutual_fund_lookthrough import MutualFundLookThroughService
 from investments.models import Asset, AssetCategory, Holding, SecurityMaster
 from mutual_funds.models import MutualFundHolding, MutualFundScheme, MutualFundUnderlying
@@ -12,9 +14,14 @@ from mutual_funds.models import MutualFundHolding, MutualFundScheme, MutualFundU
 class MutualFundLookThroughTests(TestCase):
     def setUp(self):
         self.user = User.objects.create_user(username="analytics-mf-test", password="test")
+        self.family = FamilyGroup.objects.create(name="Analytics MF Test Family", created_by=self.user)
+        self.user.profile.family_groups.add(self.family)
+        self.user.profile.active_family_group = self.family
+        self.user.profile.save(update_fields=["active_family_group"])
 
         self.stock = Asset.objects.create(
             owner=self.user,
+            family=self.family,
             name="HDFC Bank Limited",
             category=AssetCategory.STOCK,
             isin="INE040A01034",
@@ -29,6 +36,7 @@ class MutualFundLookThroughTests(TestCase):
         self.stock.save(update_fields=["security_master"])
         Holding.objects.create(
             owner=self.user,
+            family=self.family,
             asset=self.stock,
             quantity=Decimal("10"),
             invested_value=Decimal("4000"),
@@ -39,12 +47,14 @@ class MutualFundLookThroughTests(TestCase):
 
         self.scheme = MutualFundScheme.objects.create(
             owner=self.user,
+            family=self.family,
             scheme_name="Test Equity Fund",
             scheme_code="888888",
             isin_growth="INF000000002",
         )
         MutualFundHolding.objects.create(
             owner=self.user,
+            family=self.family,
             scheme=self.scheme,
             units=Decimal("1000"),
             invested_value=Decimal("9000"),

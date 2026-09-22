@@ -74,14 +74,14 @@ class ProductionMutualFundUnderlyingService(OfficialMutualFundUnderlyingService)
             return links
         pattern = (
             r"<(?:a|area|button)[^>]*?(?:href|data-href|data-url|data-download|data-file|ng-href)"
-            r"\\s*=\\s*[\\\"']([^\\\"']+)[\\\"'][^>]*>.*?</(?:a|area|button)>"
+            r'''\s*=\s*["']([^"']+)["'][^>]*>.*?</(?:a|area|button)>'''
         )
         for match in re.finditer(pattern, html or "", re.I | re.S):
             link = cls._clean_link(match.group(1), base_url)
             if link:
                 links.append(link)
         for href in re.findall(
-            r"(?:href|data-href|data-url|data-download|data-file|ng-href)\\s*=\\s*[\\\"']([^\\\"']+)[\\\"']",
+            r'''(?:href|data-href|data-url|data-download|data-file|ng-href)\s*=\s*["']([^"']+)["']''',
             html or "",
             re.I,
         ):
@@ -95,7 +95,7 @@ class ProductionMutualFundUnderlyingService(OfficialMutualFundUnderlyingService)
         links = []
         pattern = (
             r"<(?:a|area|button)[^>]*?(?:href|data-href|data-url|data-download|data-file|ng-href)"
-            r"\\s*=\\s*[\\\"']([^\\\"']+)[\\\"'][^>]*>(.*?)</(?:a|area|button)>"
+            r'''\s*=\s*["']([^"']+)["'][^>]*>(.*?)</(?:a|area|button)>'''
         )
         for match in re.finditer(pattern, html or "", re.I | re.S):
             href, inner = match.groups()
@@ -105,7 +105,7 @@ class ProductionMutualFundUnderlyingService(OfficialMutualFundUnderlyingService)
             inner_text = re.sub(r"<[^>]+>", " ", unescape(inner))
             context = f"{inner_text} {link}"
             parsed = urlparse(link)
-            if not re.search(r"\\.(?:xlsx?|csv|pdf)(?:$|\\?)", parsed.path, re.I):
+            if not re.search(r"\.(?:xlsx?|csv|pdf)(?:$|\?)", parsed.path, re.I):
                 continue
             if cls._scheme_link_match(context, scheme):
                 links.append(link)
@@ -118,8 +118,8 @@ class ProductionMutualFundUnderlyingService(OfficialMutualFundUnderlyingService)
 
         candidates = []
         patterns = (
-            r"(?:https?:)?//[^\"'<>\\s]+\\.(?:xlsx?|csv|pdf)(?:\\?[^\"'<>\\s]*)?",
-            r"(?:/|\\.\\.?/)[^\"'<>\\s]+\\.(?:xlsx?|csv|pdf)(?:\\?[^\"'<>\\s]*)?",
+            r"""(?:https?:)?//[^"'<>\s]+\.(?:xlsx?|csv|pdf)(?:\?[^"'<>\s]*)?""",
+            r"""(?:/|\.\.?/)[^"'<>\s]+\.(?:xlsx?|csv|pdf)(?:\?[^"'<>\s]*)?""",
         )
         for pattern in patterns:
             for raw in re.findall(pattern, html, re.I):
@@ -143,7 +143,7 @@ class ProductionMutualFundUnderlyingService(OfficialMutualFundUnderlyingService)
         for link in cls._official_links(html, page_url):
             parsed = urlparse(link)
             lower = link.lower()
-            if re.search(r"\\.(?:xlsx?|csv|pdf)(?:$|\\?)", parsed.path, re.I):
+            if re.search(r"\.(?:xlsx?|csv|pdf)(?:$|\?)", parsed.path, re.I):
                 continue
             if not (
                 cls._scheme_link_match(link, scheme)
@@ -180,6 +180,8 @@ class ProductionMutualFundUnderlyingService(OfficialMutualFundUnderlyingService)
 
         html = response.text or ""
         candidates = []
+        if cls._scheme_link_match(html, scheme):
+            candidates.append(page_url)
         candidates.extend(cls._anchor_download_links(html, page_url, scheme))
         candidates.extend(cls._download_candidates_from_page(page_url, html, scheme))
         return list(dict.fromkeys(candidates))

@@ -1,6 +1,7 @@
 from decimal import Decimal
 
 from django.db import transaction
+from django.db.models import Sum
 
 from investments.models import (
     Asset,
@@ -71,6 +72,36 @@ class HoldingCalculationEngine:
             HoldingCalculationEngine
             .get_transactions(asset)
         )
+
+        # The common transaction types used for position math can be
+        # reduced directly in SQL. This removes the Python row-by-row
+        # loop for the normal BUY/SIP-only path while preserving the
+        # existing sell/bonus/split logic when those transaction types
+        # are present.
+        has_adjustments = transactions.exclude(
+            transaction_type__in=(
+                TransactionType.BUY,
+                TransactionType.SIP,
+            )
+        ).exists()
+
+        if not has_adjustments:
+            totals = transactions.aggregate(
+                quantity=Sum("quantity"),
+                invested_value=Sum("amount"),
+            )
+            quantity = totals["quantity"] or HoldingCalculationEngine.ZERO
+            invested_value = totals["invested_value"] or HoldingCalculationEngine.ZERO
+            average_cost = (
+                invested_value / quantity
+                if quantity > 0
+                else HoldingCalculationEngine.ZERO
+            )
+            return {
+                "quantity": quantity,
+                "invested_value": invested_value,
+                "average_cost": average_cost,
+            }
 
         for tx in transactions:
 

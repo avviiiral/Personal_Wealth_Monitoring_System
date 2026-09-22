@@ -380,6 +380,15 @@ class PortfolioNewsAlert(models.Model):
                 name="news_alert_user_unread_idx",
             ),
             models.Index(
+                fields=[
+                    "user",
+                    "relevant",
+                    "notification_tier",
+                    "-created_at",
+                ],
+                name="news_alert_digest_filter_idx",
+            ),
+            models.Index(
                 fields=["user", "notification_tier"],
                 name="news_alert_user_tier_idx",
             ),

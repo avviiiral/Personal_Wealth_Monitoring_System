@@ -1,7 +1,7 @@
 from datetime import date
 from decimal import Decimal
 
-from django.db.models import Sum, Q
+from django.db.models import Count, Sum, Q
 
 from investments.models import (
     Asset,
@@ -29,17 +29,7 @@ class PortfolioAnalytics:
         return Q(family_id=family.id)
 
     @staticmethod
-    def calculate_xirr(user):
-        transactions = (
-            Transaction.objects
-            .filter(PortfolioAnalytics._scope_q(user))
-            .order_by(
-                "transaction_date",
-                "created_at",
-                "id",
-            )
-        )
-
+    def _calculate_xirr_from_transactions(transactions, current_value):
         cash_flows = []
 
         for tx in transactions:
@@ -71,15 +61,7 @@ class PortfolioAnalytics:
                     )
                 )
 
-        holdings = PortfolioAnalytics.get_holdings(user)
-
-        current_value = sum(
-            (
-                holding.current_value
-                or PortfolioAnalytics.ZERO
-            )
-            for holding in holdings
-        )
+        cash_flows.sort(key=lambda item: item[0])
 
         if current_value > 0:
             cash_flows.append(
@@ -95,6 +77,33 @@ class PortfolioAnalytics:
             return None
 
         return round(xirr * 100, 2)
+
+    @staticmethod
+    def calculate_xirr(user):
+        transactions = (
+            Transaction.objects
+            .filter(PortfolioAnalytics._scope_q(user))
+            .order_by(
+                "transaction_date",
+                "created_at",
+                "id",
+            )
+        )
+
+        holdings = PortfolioAnalytics.get_holdings(user)
+
+        current_value = sum(
+            (
+                holding.current_value
+                or PortfolioAnalytics.ZERO
+            )
+            for holding in holdings
+        )
+
+        return PortfolioAnalytics._calculate_xirr_from_transactions(
+            transactions,
+            current_value,
+        )
 
     @staticmethod
     def get_holdings(user):
@@ -131,24 +140,12 @@ class PortfolioAnalytics:
         return current - invested
 
     @staticmethod
-    def calculate_realized_pnl(user):
-        transactions = (
-            Transaction.objects
-            .filter(PortfolioAnalytics._scope_q(user))
-            .select_related("asset")
-            .order_by(
-                "asset_id",
-                "transaction_date",
-                "created_at",
-                "id",
-            )
-        )
-
+    def _calculate_realized_pnl_from_transactions(transactions):
         positions = {}
         realized_pnl = PortfolioAnalytics.ZERO
 
         for tx in transactions:
-            asset_id = tx.asset.id
+            asset_id = tx.asset_id
 
             if asset_id not in positions:
                 positions[asset_id] = {
@@ -158,29 +155,16 @@ class PortfolioAnalytics:
 
             position = positions[asset_id]
 
-            quantity = (
-                tx.quantity
-                or PortfolioAnalytics.ZERO
-            )
-
-            amount = (
-                tx.amount
-                or PortfolioAnalytics.ZERO
-            )
-
-            fees = (
-                tx.fees
-                or PortfolioAnalytics.ZERO
-            )
+            quantity = tx.quantity or PortfolioAnalytics.ZERO
+            amount = tx.amount or PortfolioAnalytics.ZERO
+            fees = tx.fees or PortfolioAnalytics.ZERO
 
             if tx.transaction_type in (
                 TransactionType.BUY,
                 TransactionType.SIP,
             ):
                 position["quantity"] += quantity
-                position["invested_value"] += (
-                    amount + fees
-                )
+                position["invested_value"] += amount + fees
 
             elif tx.transaction_type == TransactionType.SELL:
                 if (
@@ -194,9 +178,7 @@ class PortfolioAnalytics:
                     / position["quantity"]
                 )
 
-                cost_of_sale = (
-                    average_cost * quantity
-                )
+                cost_of_sale = average_cost * quantity
 
                 realized_pnl += (
                     amount
@@ -208,14 +190,27 @@ class PortfolioAnalytics:
                 position["invested_value"] -= cost_of_sale
 
                 if position["quantity"] <= 0:
-                    position["quantity"] = (
-                        PortfolioAnalytics.ZERO
-                    )
-                    position["invested_value"] = (
-                        PortfolioAnalytics.ZERO
-                    )
+                    position["quantity"] = PortfolioAnalytics.ZERO
+                    position["invested_value"] = PortfolioAnalytics.ZERO
 
         return realized_pnl
+
+    @staticmethod
+    def calculate_realized_pnl(user):
+        transactions = (
+            Transaction.objects
+            .filter(PortfolioAnalytics._scope_q(user))
+            .order_by(
+                "asset_id",
+                "transaction_date",
+                "created_at",
+                "id",
+            )
+        )
+
+        return PortfolioAnalytics._calculate_realized_pnl_from_transactions(
+            transactions
+        )
 
     @staticmethod
     def calculate_summary(user):
@@ -225,32 +220,30 @@ class PortfolioAnalytics:
             invested=Sum("invested_value"),
             current=Sum("current_value"),
             unrealized=Sum("unrealized_pnl"),
+            number_of_holdings=Count("id"),
         )
 
-        total_invested = (
-            totals["invested"]
-            or PortfolioAnalytics.ZERO
-        )
+        total_invested = totals["invested"] or PortfolioAnalytics.ZERO
+        total_current_value = totals["current"] or PortfolioAnalytics.ZERO
+        unrealized_pnl = totals["unrealized"] or PortfolioAnalytics.ZERO
 
-        total_current_value = (
-            totals["current"]
-            or PortfolioAnalytics.ZERO
-        )
-
-        unrealized_pnl = (
-            totals["unrealized"]
-            or PortfolioAnalytics.ZERO
+        transactions = list(
+            Transaction.objects
+            .filter(PortfolioAnalytics._scope_q(user))
+            .order_by(
+                "asset_id",
+                "transaction_date",
+                "created_at",
+                "id",
+            )
         )
 
         realized_pnl = (
             PortfolioAnalytics
-            .calculate_realized_pnl(user)
+            ._calculate_realized_pnl_from_transactions(transactions)
         )
 
-        total_pnl = (
-            realized_pnl
-            + unrealized_pnl
-        )
+        total_pnl = realized_pnl + unrealized_pnl
 
         return_percentage = (
             (total_pnl / total_invested) * 100
@@ -258,7 +251,10 @@ class PortfolioAnalytics:
             else PortfolioAnalytics.ZERO
         )
 
-        xirr = PortfolioAnalytics.calculate_xirr(user)
+        xirr = PortfolioAnalytics._calculate_xirr_from_transactions(
+            transactions,
+            total_current_value,
+        )
 
         return {
             "total_invested": total_invested,
@@ -271,92 +267,97 @@ class PortfolioAnalytics:
                 2,
             ),
             "xirr_percentage": xirr,
-            "number_of_holdings": holdings.count(),
+            "number_of_holdings": totals["number_of_holdings"] or 0,
         }
 
     @staticmethod
     def calculate_allocation(user):
-        holdings = PortfolioAnalytics.get_holdings(user)
-
-        total_value = sum(
-            (
-                holding.current_value
-                or PortfolioAnalytics.ZERO
-            )
-            for holding in holdings
+        # Aggregate allocation in SQL instead of loading every holding into
+        # Python. This keeps the result identical while reducing application
+        # work for large portfolios.
+        rows = (
+            PortfolioAnalytics
+            .get_holdings(user)
+            .values("asset__category")
+            .annotate(value=Sum("current_value"))
         )
 
-        allocation = {}
+        total_value = PortfolioAnalytics.ZERO
+        allocation = []
 
-        for holding in holdings:
-            category = holding.asset.category
-
-            value = (
-                holding.current_value
-                or PortfolioAnalytics.ZERO
-            )
-
-            if category not in allocation:
-                allocation[category] = {
-                    "category": category,
-                    "value": PortfolioAnalytics.ZERO,
+        for row in rows:
+            value = row["value"] or PortfolioAnalytics.ZERO
+            total_value += value
+            allocation.append(
+                {
+                    "category": row["asset__category"],
+                    "value": value,
                     "percentage": 0,
                 }
+            )
 
-            allocation[category]["value"] += value
-
-        for category in allocation:
-            value = allocation[category]["value"]
-
+        for item in allocation:
+            value = item["value"]
             percentage = (
                 (value / total_value) * 100
                 if total_value
                 else PortfolioAnalytics.ZERO
             )
+            item["percentage"] = round(percentage, 2)
 
-            allocation[category]["percentage"] = round(
-                percentage,
-                2,
-            )
-
-        return list(allocation.values())
+        return allocation
 
     @staticmethod
     def get_performance_ranking(user):
-        holdings = list(
-            PortfolioAnalytics.get_holdings(user)
+        # Calculate the ranking fields in SQL and fetch only the columns
+        # required by the response. This avoids materializing full Holding
+        # and Asset model instances for large portfolios.
+        from django.db.models import Case, F, When, DecimalField, ExpressionWrapper
+
+        pnl_percentage = Case(
+            When(
+                invested_value__gt=0,
+                then=ExpressionWrapper(
+                    F("unrealized_pnl") * 100 / F("invested_value"),
+                    output_field=DecimalField(max_digits=24, decimal_places=8),
+                ),
+            ),
+            default=PortfolioAnalytics.ZERO,
+            output_field=DecimalField(max_digits=24, decimal_places=8),
+        )
+
+        rows = (
+            PortfolioAnalytics
+            .get_holdings(user)
+            .annotate(pnl_percentage=pnl_percentage)
+            .values(
+                "asset_id",
+                "asset__name",
+                "asset__symbol",
+                "current_value",
+                "unrealized_pnl",
+                "pnl_percentage",
+            )
+            .order_by("-pnl_percentage")
         )
 
         results = []
-
-        for holding in holdings:
-            if holding.invested_value:
-                pnl_percentage = (
-                    holding.unrealized_pnl
-                    / holding.invested_value
-                ) * 100
-            else:
-                pnl_percentage = PortfolioAnalytics.ZERO
-
+        for row in rows:
             results.append(
                 {
-                    "asset_id": holding.asset.id,
-                    "asset_name": holding.asset.name,
-                    "symbol": holding.asset.symbol,
-                    "current_value": holding.current_value,
-                    "unrealized_pnl": holding.unrealized_pnl,
+                    "asset_id": row["asset_id"],
+                    "asset_name": row["asset__name"],
+                    "symbol": row["asset__symbol"],
+                    "current_value": row["current_value"],
+                    "unrealized_pnl": row["unrealized_pnl"],
                     "pnl_percentage": round(
-                        pnl_percentage,
+                        row["pnl_percentage"],
                         2,
                     ),
                 }
             )
 
-        return sorted(
-            results,
-            key=lambda item: item["pnl_percentage"],
-            reverse=True,
-        )
+        return results
 
     @staticmethod
     def calculate_position_as_of(
@@ -429,53 +430,316 @@ class PortfolioAnalytics:
         }
 
     @staticmethod
-    def calculate_historical_value(
+    def calculate_historical_values(
         user,
-        target_date,
+        start_date,
+        end_date,
     ):
-        assets = (
+        """
+        Calculate historical portfolio values for an inclusive date range
+        using one bulk transaction load and one bulk price load.
+
+        This preserves calculate_historical_value()'s equity-only
+        calculation while avoiding a database round trip per day.
+        """
+
+        if start_date > end_date:
+            return []
+
+        assets = list(
             Asset.objects
             .filter(
                 PortfolioAnalytics._scope_q(user),
                 is_active=True,
             )
+            .only("id")
         )
+
+        dates = []
+        current_date = start_date
+        while current_date <= end_date:
+            dates.append(current_date)
+            current_date += __import__("datetime").timedelta(days=1)
+
+        if not assets:
+            return [
+                {
+                    "date": target_date,
+                    "invested_value": PortfolioAnalytics.ZERO,
+                    "portfolio_value": PortfolioAnalytics.ZERO,
+                    "pnl": PortfolioAnalytics.ZERO,
+                }
+                for target_date in dates
+            ]
+
+        asset_ids = [asset.id for asset in assets]
+
+        transactions = list(
+            Transaction.objects
+            .filter(
+                asset_id__in=asset_ids,
+                transaction_date__lte=end_date,
+            )
+            .order_by(
+                "asset_id",
+                "transaction_date",
+                "created_at",
+                "id",
+            )
+        )
+
+        transactions_by_asset = {}
+        for tx in transactions:
+            transactions_by_asset.setdefault(tx.asset_id, []).append(tx)
+
+        prices_by_asset = {}
+        prices = (
+            MarketPrice.objects
+            .filter(
+                asset_id__in=asset_ids,
+                date__lte=end_date,
+            )
+            .order_by(
+                "asset_id",
+                "date",
+                "id",
+            )
+            .only("asset_id", "date", "close_price")
+        )
+
+        for price in prices:
+            prices_by_asset.setdefault(price.asset_id, []).append(
+                (price.date, price.close_price)
+            )
+
+        positions = {
+            asset.id: {
+                "quantity": PortfolioAnalytics.ZERO,
+                "invested_value": PortfolioAnalytics.ZERO,
+            }
+            for asset in assets
+        }
+        transaction_indexes = {
+            asset.id: 0
+            for asset in assets
+        }
+        price_indexes = {
+            asset.id: -1
+            for asset in assets
+        }
+
+        results = []
+
+        for target_date in dates:
+            total_value = PortfolioAnalytics.ZERO
+            total_invested = PortfolioAnalytics.ZERO
+
+            for asset in assets:
+                asset_id = asset.id
+                asset_transactions = transactions_by_asset.get(
+                    asset_id,
+                    [],
+                )
+                position = positions[asset_id]
+                tx_index = transaction_indexes[asset_id]
+
+                while (
+                    tx_index < len(asset_transactions)
+                    and asset_transactions[tx_index].transaction_date
+                    <= target_date
+                ):
+                    tx = asset_transactions[tx_index]
+                    quantity = tx.quantity or PortfolioAnalytics.ZERO
+                    amount = tx.amount or PortfolioAnalytics.ZERO
+                    fees = tx.fees or PortfolioAnalytics.ZERO
+
+                    if tx.transaction_type in (
+                        TransactionType.BUY,
+                        TransactionType.SIP,
+                    ):
+                        position["quantity"] += quantity
+                        position["invested_value"] += amount + fees
+
+                    elif tx.transaction_type == TransactionType.SELL:
+                        if position["quantity"] > 0:
+                            average_cost = (
+                                position["invested_value"]
+                                / position["quantity"]
+                            )
+                            position["quantity"] -= quantity
+                            position["invested_value"] -= (
+                                average_cost * quantity
+                            )
+
+                            if position["quantity"] <= 0:
+                                position["quantity"] = PortfolioAnalytics.ZERO
+                                position["invested_value"] = PortfolioAnalytics.ZERO
+
+                    tx_index += 1
+
+                transaction_indexes[asset_id] = tx_index
+
+                if position["quantity"] <= 0:
+                    continue
+
+                asset_prices = prices_by_asset.get(asset_id, [])
+                price_index = price_indexes[asset_id]
+
+                while (
+                    price_index + 1 < len(asset_prices)
+                    and asset_prices[price_index + 1][0] <= target_date
+                ):
+                    price_index += 1
+
+                price_indexes[asset_id] = price_index
+
+                if price_index < 0:
+                    continue
+
+                current_value = (
+                    position["quantity"]
+                    * asset_prices[price_index][1]
+                )
+                total_value += current_value
+                total_invested += position["invested_value"]
+
+            results.append(
+                {
+                    "date": target_date,
+                    "invested_value": total_invested,
+                    "portfolio_value": total_value,
+                    "pnl": total_value - total_invested,
+                }
+            )
+
+        return results
+
+    @staticmethod
+    def calculate_historical_value(
+        user,
+        target_date,
+    ):
+        assets = list(
+            Asset.objects
+            .filter(
+                PortfolioAnalytics._scope_q(user),
+                is_active=True,
+            )
+            .only("id")
+        )
+
+        if not assets:
+            return {
+                "date": target_date,
+                "invested_value": PortfolioAnalytics.ZERO,
+                "portfolio_value": PortfolioAnalytics.ZERO,
+                "pnl": PortfolioAnalytics.ZERO,
+            }
+
+        asset_ids = [asset.id for asset in assets]
+
+        transactions_by_asset = {
+            asset_id: []
+            for asset_id in asset_ids
+        }
+
+        transactions = (
+            Transaction.objects
+            .filter(
+                asset_id__in=asset_ids,
+                transaction_date__lte=target_date,
+            )
+            .order_by(
+                "asset_id",
+                "transaction_date",
+                "created_at",
+                "id",
+            )
+        )
+
+        for tx in transactions:
+            transactions_by_asset[tx.asset_id].append(tx)
+
+        latest_prices_by_asset = {}
+        prices = (
+            MarketPrice.objects
+            .filter(
+                asset_id__in=asset_ids,
+                date__lte=target_date,
+            )
+            .order_by("asset_id", "-date")
+            .only(
+                "asset_id",
+                "date",
+                "close_price",
+            )
+        )
+
+        for price in prices:
+            latest_prices_by_asset.setdefault(
+                price.asset_id,
+                price,
+            )
 
         total_value = PortfolioAnalytics.ZERO
         total_invested = PortfolioAnalytics.ZERO
 
         for asset in assets:
-            position = (
-                PortfolioAnalytics
-                .calculate_position_as_of(
-                    asset,
-                    target_date,
-                )
-            )
+            quantity = PortfolioAnalytics.ZERO
+            invested_value = PortfolioAnalytics.ZERO
 
-            quantity = position["quantity"]
-            invested_value = position["invested_value"]
+            for tx in transactions_by_asset[asset.id]:
+                tx_quantity = (
+                    tx.quantity
+                    or PortfolioAnalytics.ZERO
+                )
+
+                amount = (
+                    tx.amount
+                    or PortfolioAnalytics.ZERO
+                )
+
+                fees = (
+                    tx.fees
+                    or PortfolioAnalytics.ZERO
+                )
+
+                if tx.transaction_type in (
+                    TransactionType.BUY,
+                    TransactionType.SIP,
+                ):
+                    quantity += tx_quantity
+                    invested_value += amount + fees
+
+                elif tx.transaction_type == TransactionType.SELL:
+                    if quantity <= 0:
+                        continue
+
+                    average_cost = (
+                        invested_value / quantity
+                        if quantity
+                        else PortfolioAnalytics.ZERO
+                    )
+
+                    quantity -= tx_quantity
+                    invested_value -= (
+                        average_cost * tx_quantity
+                    )
+
+                    if quantity <= 0:
+                        quantity = PortfolioAnalytics.ZERO
+                        invested_value = PortfolioAnalytics.ZERO
 
             if quantity <= 0:
                 continue
 
-            price_record = (
-                MarketPrice.objects
-                .filter(
-                    asset=asset,
-                    date__lte=target_date,
-                )
-                .order_by("-date")
-                .first()
-            )
+            price_record = latest_prices_by_asset.get(asset.id)
 
             if not price_record:
                 continue
 
-            current_price = price_record.close_price
-
             current_value = (
-                quantity * current_price
+                quantity * price_record.close_price
             )
 
             total_value += current_value

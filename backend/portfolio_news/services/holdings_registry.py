@@ -197,16 +197,26 @@ def get_monitored_holdings(user) -> List[MonitoredHolding]:
     against.
     """
 
-    summary = UnifiedWealthAnalytics.calculate_summary(user)
-
-    total_current_value = summary.get(
-        "total_current_value",
-        Decimal("0"),
-    ) or Decimal("0")
-
+    # Only current values are needed here to calculate portfolio weights.
+    # Avoid calculate_summary(), which also loads realized-P&L transactions
+    # and performs additional aggregates that news monitoring never uses.
     monitored_holdings = []
 
     equity_holdings = UnifiedWealthAnalytics.get_equity_holdings(user)
+    mutual_fund_holdings = (
+        UnifiedWealthAnalytics.get_mutual_fund_holdings(user)
+    )
+
+    total_current_value = (
+        sum(
+            (holding.current_value or Decimal("0"))
+            for holding in equity_holdings
+        )
+        + sum(
+            (holding.current_value or Decimal("0"))
+            for holding in mutual_fund_holdings
+        )
+    )
 
     for holding in equity_holdings:
 
@@ -222,10 +232,6 @@ def get_monitored_holdings(user) -> List[MonitoredHolding]:
         monitored_holdings.append(
             _build_equity_holding(holding, weight)
         )
-
-    mutual_fund_holdings = (
-        UnifiedWealthAnalytics.get_mutual_fund_holdings(user)
-    )
 
     for holding in mutual_fund_holdings:
 

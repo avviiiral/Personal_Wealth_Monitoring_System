@@ -5,6 +5,8 @@ from decimal import Decimal
 from django.contrib.auth.models import User
 from django.test import TestCase
 
+from users.models import FamilyGroup
+
 from investments.models import (
     Asset,
     AssetCategory,
@@ -42,6 +44,14 @@ class HistoricalWealthAnalyticsTests(TestCase):
             password="testpassword123",
         )
 
+        self.family = FamilyGroup.objects.create(
+            name="Historical Test Family",
+            created_by=self.user,
+        )
+        self.user.profile.family_groups.add(self.family)
+        self.user.profile.active_family_group = self.family
+        self.user.profile.save(update_fields=["active_family_group"])
+
     # ==========================================================
     # EQUITY FIXTURES
     # ==========================================================
@@ -49,6 +59,7 @@ class HistoricalWealthAnalyticsTests(TestCase):
     def create_equity(self):
         asset = Asset.objects.create(
             owner=self.user,
+            family=self.family,
             name="Historical Test Stock",
             category=AssetCategory.STOCK,
             symbol="HTEST",
@@ -58,6 +69,7 @@ class HistoricalWealthAnalyticsTests(TestCase):
 
         Transaction.objects.create(
             owner=self.user,
+            family=self.family,
             asset=asset,
             transaction_type=TransactionType.BUY,
             transaction_date=date(2026, 1, 1),
@@ -98,6 +110,7 @@ class HistoricalWealthAnalyticsTests(TestCase):
     def create_mutual_fund(self):
         scheme = MutualFundScheme.objects.create(
             owner=self.user,
+            family=self.family,
             scheme_name="Historical Test Fund",
             amc_name="Test AMC",
             scheme_code="HTESTMF",
@@ -109,6 +122,7 @@ class HistoricalWealthAnalyticsTests(TestCase):
 
         MutualFundTransaction.objects.create(
             owner=self.user,
+            family=self.family,
             scheme=scheme,
             transaction_type=(
                 MutualFundTransactionType.PURCHASE

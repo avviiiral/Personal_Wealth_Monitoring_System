@@ -2,6 +2,8 @@ from decimal import Decimal
 
 from django.contrib.auth.models import User
 from django.test import TestCase
+
+from users.models import FamilyGroup
 from rest_framework.test import APIClient
 
 from investments.models import Asset, AssetCategory, Holding
@@ -11,12 +13,17 @@ from mutual_funds.models import MutualFundHolding, MutualFundScheme, MutualFundU
 class WealthAllocationLookThroughApiTests(TestCase):
     def setUp(self):
         self.user = User.objects.create_user(username="wealth-allocation-user", password="pw")
+        self.family = FamilyGroup.objects.create(name="Wealth Allocation Test Family", created_by=self.user)
+        self.user.profile.family_groups.add(self.family)
+        self.user.profile.active_family_group = self.family
+        self.user.profile.save(update_fields=["active_family_group"])
         self.client = APIClient()
         self.client.force_authenticate(self.user)
 
     def test_wealth_allocation_replaces_mutual_fund_with_underlying_exposure(self):
         equity_asset = Asset.objects.create(
             owner=self.user,
+            family=self.family,
             name="Direct Equity",
             category=AssetCategory.STOCK,
             currency="INR",
@@ -24,6 +31,7 @@ class WealthAllocationLookThroughApiTests(TestCase):
         )
         Holding.objects.create(
             owner=self.user,
+            family=self.family,
             asset=equity_asset,
             quantity=Decimal("1"),
             average_cost=Decimal("40000"),
@@ -35,12 +43,14 @@ class WealthAllocationLookThroughApiTests(TestCase):
 
         scheme = MutualFundScheme.objects.create(
             owner=self.user,
+            family=self.family,
             scheme_name="Equity Fund",
             scheme_code="MF-1",
             is_active=True,
         )
         MutualFundHolding.objects.create(
             owner=self.user,
+            family=self.family,
             scheme=scheme,
             units=Decimal("100"),
             invested_value=Decimal("60000"),

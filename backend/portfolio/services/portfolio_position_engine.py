@@ -1,6 +1,7 @@
 from decimal import Decimal
 
 from django.db import transaction
+from django.db.models import Sum
 
 from investments.models import (
     Asset,
@@ -9,7 +10,6 @@ from investments.models import (
     TransactionType,
 )
 from market_data.models import MarketPrice
-from users.permissions import require_active_family
 
 
 class PortfolioPositionEngine:
@@ -55,6 +55,33 @@ class PortfolioPositionEngine:
             portfolio=portfolio,
             asset=asset,
         )
+
+        # Optimize the common BUY/SIP-only case with a single SQL
+        # aggregation. Positions containing SELL/BONUS/SPLIT still use
+        # the existing ordered transaction logic unchanged.
+        has_adjustments = transactions.exclude(
+            transaction_type__in=(
+                TransactionType.BUY,
+                TransactionType.SIP,
+            )
+        ).exists()
+        if not has_adjustments:
+            totals = transactions.aggregate(
+                quantity=Sum("quantity"),
+                invested_value=Sum("amount"),
+            )
+            quantity = totals["quantity"] or cls.ZERO
+            invested_value = totals["invested_value"] or cls.ZERO
+            average_cost = (
+                invested_value / quantity
+                if quantity > 0
+                else cls.ZERO
+            )
+            return {
+                "quantity": quantity,
+                "invested_value": invested_value,
+                "average_cost": average_cost,
+            }
 
         for tx in transactions:
             tx_quantity = tx.quantity or cls.ZERO
@@ -173,8 +200,15 @@ class PortfolioPositionEngine:
         return portfolio_position
 
     @classmethod
-    def rebuild_all_for_user(cls, user):
-        family = require_active_family(user)
+    def rebuild_all_for_family(cls, family):
+        """
+        Rebuild all portfolio positions for a specific family.
+
+        This avoids coupling a data mutation to the editor's
+        currently selected family.
+        """
+        if family is None:
+            return []
 
         combinations = (
             Transaction.objects
@@ -201,3 +235,18 @@ class PortfolioPositionEngine:
             positions.append(position)
 
         return positions
+    
+    @classmethod
+    def rebuild_all_for_user(cls, user):
+        """
+        Backward-compatible user-scoped rebuild.
+
+        Existing transaction flows depend on the caller's active
+        family. Manual-price editing uses rebuild_all_for_family()
+        instead so an editor's active family does not control the
+        asset owner's position rebuild.
+        """
+        from users.permissions import require_active_family
+
+        family = require_active_family(user)
+        return cls.rebuild_all_for_family(family)

@@ -61,12 +61,14 @@ def _attach_source(article, candidate: NewsArticleResult) -> bool:
     if not source_created:
         return False
 
-    existing_tiers = article.sources.values_list(
-        "quality_tier", flat=True
+    existing_tiers = list(
+        article.sources.values_list(
+            "quality_tier", flat=True
+        )
     )
 
     article.source_quality = best_tier(existing_tiers)
-    article.source_count = article.sources.count()
+    article.source_count = len(existing_tiers)
     article.save(update_fields=["source_quality", "source_count"])
 
     return True

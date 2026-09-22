@@ -31,6 +31,14 @@ class MutualFundHoldingEngine:
                 scheme=scheme,
                 family=scheme.family,
             )
+            .only(
+                "transaction_type",
+                "units",
+                "amount",
+                "transaction_date",
+                "created_at",
+                "id",
+            )
             .order_by(
                 "transaction_date",
                 "created_at",
@@ -138,6 +146,7 @@ class MutualFundHoldingEngine:
             .filter(
                 scheme=scheme,
             )
+            .only("nav", "date")
             .order_by("-date")
             .first()
         )

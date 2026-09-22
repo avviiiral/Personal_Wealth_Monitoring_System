@@ -6,6 +6,8 @@ from unittest.mock import (
 
 from django.test import TestCase
 
+from users.models import FamilyGroup
+
 import requests
 
 from portfolio_news.models import NewsArticle
@@ -548,6 +550,8 @@ class HoldingsRegistryTests(TestCase):
             username="registryuser",
             password="testpassword",
         )
+        self.family = FamilyGroup.objects.create(name="News Registry Family")
+        self.user.profile.family_groups.add(self.family)
 
     def _create_equity_holding(
         self,
@@ -559,6 +563,7 @@ class HoldingsRegistryTests(TestCase):
     ):
         asset = Asset.objects.create(
             owner=self.user,
+            family=self.family,
             name=name,
             category=AssetCategory.STOCK,
             symbol=symbol,
@@ -568,6 +573,7 @@ class HoldingsRegistryTests(TestCase):
 
         return Holding.objects.create(
             owner=self.user,
+            family=self.family,
             asset=asset,
             quantity=quantity,
             average_cost=Decimal("100"),
@@ -586,6 +592,7 @@ class HoldingsRegistryTests(TestCase):
     ):
         scheme = MutualFundScheme.objects.create(
             owner=self.user,
+            family=self.family,
             scheme_name=scheme_name,
             amc_name=amc_name,
             scheme_code="TEST001",
@@ -597,6 +604,7 @@ class HoldingsRegistryTests(TestCase):
 
         return MutualFundHolding.objects.create(
             owner=self.user,
+            family=self.family,
             scheme=scheme,
             units=units,
             invested_value=Decimal("1000"),
@@ -2506,9 +2514,12 @@ class PortfolioNewsPipelineTests(TestCase):
             username="pipelineuser",
             password="testpassword",
         )
+        self.family = FamilyGroup.objects.create(name="News Pipeline Family")
+        self.user.profile.family_groups.add(self.family)
 
         self.asset = Asset.objects.create(
             owner=self.user,
+            family=self.family,
             name="Aurobindo Pharma Limited",
             category=AssetCategory.STOCK,
             symbol="AUROPHARMA",
@@ -2518,6 +2529,7 @@ class PortfolioNewsPipelineTests(TestCase):
 
         Holding.objects.create(
             owner=self.user,
+            family=self.family,
             asset=self.asset,
             quantity=Decimal("10"),
             average_cost=Decimal("100"),

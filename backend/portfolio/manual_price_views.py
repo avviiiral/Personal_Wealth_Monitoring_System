@@ -28,6 +28,7 @@ from portfolio.services.portfolio_position_engine import (
 )
 
 from users.permissions import get_visible_owner_ids
+from users.permissions import is_admin_or_above
 
 
 @api_view(["PUT", "PATCH", "DELETE"])
@@ -50,6 +51,19 @@ def manual_asset_price(
     the editor's active-family selection, because the editor
     may be a different family member.
     """
+
+    # ==========================================================
+    # AUTHORIZE CAPABILITY
+    # ==========================================================
+
+    if not is_admin_or_above(request.user):
+        return Response(
+            {
+                "success": False,
+                "message": "This action requires Admin, Super User, or System Owner privileges.",
+            },
+            status=status.HTTP_403_FORBIDDEN,
+        )
 
     # ==========================================================
     # FIND ASSET

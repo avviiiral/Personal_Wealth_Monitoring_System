@@ -1,12 +1,26 @@
 import logging
+import re
 from functools import lru_cache
 
 import yfinance as yf
+from django.db.models import Q
 
 from investments.models import Asset, SecurityMaster
 from market_data.services.security_resolver import SecurityResolver
 
 logger = logging.getLogger(__name__)
+
+
+def _normalize_name(value):
+    value = str(value or "").strip().upper()
+    value = re.sub(r"[.&,'’`]", " ", value)
+    value = re.sub(r"\b(LIMITED|LTD|PRIVATE|PVT|PLC)\b", " ", value)
+    value = re.sub(r"\s+", " ", value)
+    return value.strip()
+
+
+def _compact_name(value):
+    return re.sub(r"[^A-Z0-9]", "", _normalize_name(value))
 
 
 def _cap_type_from_market_cap(market_cap):
@@ -27,13 +41,13 @@ def _cap_type_from_market_cap(market_cap):
 
 
 class UnderlyingSecurityClassifier:
-    """Resolve sector and market-cap metadata for uploaded underlying names."""
+    """Resolve sector, market cap and ISIN for uploaded underlying names."""
 
     @staticmethod
     @lru_cache(maxsize=512)
     def _lookup(stock_name):
         name = str(stock_name or "").strip()
-        if not name:
+        if not name or name.casefold() == "unclassified":
             return None, None
 
         candidates = []
@@ -83,38 +97,57 @@ class UnderlyingSecurityClassifier:
     def resolve_isin(cls, stock_name):
         """Resolve an underlying security to its canonical ISIN."""
         name = str(stock_name or "").strip()
-        if not name:
+        if not name or name.casefold() == "unclassified":
             return None
 
-        try:
-            master = (
-                SecurityMaster.objects
-                .filter(asset_name__iexact=name, isin__isnull=False)
-                .exclude(isin__exact="")
-                .only("isin")
-                .first()
-            )
-            isin = str(master.isin or "").strip().upper() if master else ""
-            if isin:
-                return isin
-        except Exception:
-            logger.warning("[UNDERLYING ISIN] SecurityMaster lookup failed for %s", name, exc_info=True)
+        normalized = _normalize_name(name)
+        compact = _compact_name(name)
 
+        # Match SecurityMaster by normalized/compact name so
+        # "ICICI Bank" and "ICICI Bank Ltd." resolve to the same security.
         try:
-            asset = (
-                Asset.objects
-                .filter(name__iexact=name, isin__isnull=False)
+            masters = (
+                SecurityMaster.objects
+                .exclude(isin__isnull=True)
                 .exclude(isin__exact="")
-                .only("isin")
-                .first()
+                .only("asset_name", "isin")
             )
-            isin = str(asset.isin or "").strip().upper() if asset else ""
-            if isin:
-                return isin
+            for master in masters:
+                master_compact = _compact_name(master.asset_name)
+                if not master_compact:
+                    continue
+                if _normalize_name(master.asset_name) == normalized or master_compact == compact:
+                    return str(master.isin).strip().upper()
         except Exception:
-            logger.warning("[UNDERLYING ISIN] Asset lookup failed for %s", name, exc_info=True)
+            logger.warning(
+                "[UNDERLYING ISIN] SecurityMaster normalized lookup failed for %s",
+                name,
+                exc_info=True,
+            )
+
+        # Match Asset names using the same normalization.
+        try:
+            assets = (
+                Asset.objects
+                .filter(Q(isin__isnull=False))
+                .exclude(isin__exact="")
+                .only("name", "isin")
+            )
+            for asset in assets:
+                asset_compact = _compact_name(asset.name)
+                if not asset_compact:
+                    continue
+                if _normalize_name(asset.name) == normalized or asset_compact == compact:
+                    return str(asset.isin).strip().upper()
+        except Exception:
+            logger.warning(
+                "[UNDERLYING ISIN] Asset normalized lookup failed for %s",
+                name,
+                exc_info=True,
+            )
 
         candidates = []
+
         try:
             resolved = SecurityResolver.resolve_yahoo_symbol(name=name)
             if resolved:
@@ -129,7 +162,11 @@ class UnderlyingSecurityClassifier:
                 if symbol.endswith((".NS", ".BO")) and symbol not in candidates:
                     candidates.append(symbol)
         except Exception:
-            logger.warning("[UNDERLYING ISIN] Yahoo search failed for %s", name, exc_info=True)
+            logger.warning(
+                "[UNDERLYING ISIN] Yahoo search failed for %s",
+                name,
+                exc_info=True,
+            )
 
         for symbol in candidates:
             try:
@@ -138,7 +175,12 @@ class UnderlyingSecurityClassifier:
                 if isin:
                     return isin
             except Exception:
-                logger.warning("[UNDERLYING ISIN] Yahoo info lookup failed for %s (%s)", name, symbol, exc_info=True)
+                logger.warning(
+                    "[UNDERLYING ISIN] Yahoo info lookup failed for %s (%s)",
+                    name,
+                    symbol,
+                    exc_info=True,
+                )
 
         return None
 

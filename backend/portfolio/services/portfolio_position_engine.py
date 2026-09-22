@@ -10,7 +10,6 @@ from investments.models import (
     TransactionType,
 )
 from market_data.models import MarketPrice
-from users.permissions import require_active_family
 
 
 class PortfolioPositionEngine:
@@ -210,7 +209,6 @@ class PortfolioPositionEngine:
         """
         if family is None:
             return []
-
 
         combinations = (
             Transaction.objects

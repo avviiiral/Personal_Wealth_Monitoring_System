@@ -496,7 +496,7 @@ class AMFIService:
         # family/name scheme are excluded from this upsert.
         bulk_records = [
             record
-            for record in records
+            for record in canonical_records
             if not (
                 existing_by_name.get(record["scheme_name"]) is not None
                 and existing_schemes.get(record["scheme_code"]) is None
@@ -572,7 +572,7 @@ class AMFIService:
         navs_by_key = {}
 
         for record in records:
-            scheme_id = scheme_ids_by_code.get(
+            scheme_id = original_to_scheme_id.get(
                 record["scheme_code"]
             )
 

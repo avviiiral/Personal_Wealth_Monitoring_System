@@ -199,6 +199,7 @@ class MutualFundLookThroughService:
                     exposure = value * (row.holding_percentage or cls.ZERO) / Decimal("100")
                     sector = (row.sector or "").strip() or cls.UNCLASSIFIED
                     if sector.upper() == cls.EXCLUDED_ALLOCATION_LABEL:
+                        disclosed += row.holding_percentage or cls.ZERO
                         continue
                     totals[sector] = totals.get(sector, cls.ZERO) + exposure
                     disclosed += row.holding_percentage or cls.ZERO

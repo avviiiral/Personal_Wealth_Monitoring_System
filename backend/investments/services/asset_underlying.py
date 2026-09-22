@@ -132,6 +132,7 @@ class AssetUnderlyingImporter:
                 raise AssetUnderlyingImportError(f"Invalid holding percentage on Excel row {index + 2}.")
             if percentage < 0 or percentage > 100:
                 raise AssetUnderlyingImportError(f"Holding percentage must be between 0 and 100 on Excel row {index + 2}.")
+            isin = UnderlyingSecurityClassifier.resolve_isin(stock_name)
             sector, cap_type = cls._resolve_classification(
                 stock_name, family, by_name, by_compact_name, by_isin
             )
@@ -153,6 +154,7 @@ class AssetUnderlyingImporter:
                     family=family,
                     asset=asset,
                     stock_name=stock_name,
+                    isin=isin,
                     holding_percentage=percentage.quantize(Decimal("0.0001")),
                     sector=sector,
                     cap_type=cap_type,

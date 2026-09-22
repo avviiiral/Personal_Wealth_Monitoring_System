@@ -751,13 +751,13 @@ export class DownloadsComponent implements OnInit {
             addCell(
               row.asset_name,
               underlying,
-              Number(data.holding_percentage || 0),
+              currentValue * Number(data.holding_percentage || 0) / 100,
             );
           }
         } else {
           // Preserve the existing fallback for PMS holdings without an
           // uploaded underlying breakdown.
-          addCell(row.asset_name, row.asset_name, 100);
+          addCell(row.asset_name, row.asset_name, currentValue);
         }
       } else {
         // Direct equity is itself the underlying and therefore represents

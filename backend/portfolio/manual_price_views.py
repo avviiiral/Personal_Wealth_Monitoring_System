@@ -29,7 +29,8 @@ from portfolio.services.portfolio_position_engine import (
 
 from users.permissions import (
     IsAdminOrSuperUser,
-    family_scope, require_active_family,
+    family_scope,
+    get_visible_owner_ids,
 )
 
 
@@ -64,17 +65,39 @@ def manual_asset_price(
     # FIND ASSET
     # ==========================================================
 
-    try:
+    visible_owner_ids = get_visible_owner_ids(request.user)
+    asset = (
+        Asset.objects
+        .filter(
+            id=asset_id,
+            is_active=True,
+        )
+        .filter(
+            family_id__isnull=False,
+            family_id__in=(
+                request.user.profile.family_groups.values_list("id", flat=True)
+            ),
+        )
+        .first()
+    )
+
+    # Legacy rows created before family ownership was introduced remain
+    # addressable through the same owner-visibility helper. This keeps
+    # existing personal assets usable while still preventing a user who
+    # is outside a family from editing a family member's asset.
+    if asset is None:
         asset = (
             Asset.objects
-            .get(
+            .filter(
                 id=asset_id,
-                family_id=require_active_family(request.user).id,
+                owner_id__in=visible_owner_ids,
+                family_id__isnull=True,
                 is_active=True,
             )
+            .first()
         )
 
-    except Asset.DoesNotExist:
+    if asset is None:
         return Response(
             {
                 "success": False,

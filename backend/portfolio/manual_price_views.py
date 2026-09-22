@@ -62,6 +62,10 @@ def manual_asset_price(
     # ==========================================================
 
     visible_owner_ids = get_visible_owner_ids(request.user)
+
+    # Manual-price capability is role-based. Resource visibility remains
+    # family/owner based, but a user's own legacy asset must still be
+    # editable even when it has no family.
     asset = (
         Asset.objects
         .filter(
@@ -69,25 +73,17 @@ def manual_asset_price(
             is_active=True,
         )
         .filter(
-            family_id__isnull=False,
-            family_id__in=(
-                request.user.profile.family_groups.values_list("id", flat=True)
-            ),
+            family_id__in=request.user.profile.family_groups.values_list("id", flat=True)
         )
         .first()
     )
 
-    # Legacy rows created before family ownership was introduced remain
-    # addressable through the same owner-visibility helper. This keeps
-    # existing personal assets usable while still preventing a user who
-    # is outside a family from editing a family member's asset.
     if asset is None:
         asset = (
             Asset.objects
             .filter(
                 id=asset_id,
                 owner_id__in=visible_owner_ids,
-                family_id__isnull=True,
                 is_active=True,
             )
             .first()

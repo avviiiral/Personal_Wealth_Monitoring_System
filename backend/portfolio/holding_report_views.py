@@ -286,7 +286,7 @@ def holding_report(request):
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def holding_matrix_report(request):
-    """Return Asset Name x Underlying percentages from the portfolio's look-through positions."""
+    """Return Asset Name x Underlying percentages using uploaded snapshots first."""
     family = require_active_family(request.user)
 
     def clean_matrix(value, default=""):
@@ -304,11 +304,6 @@ def holding_matrix_report(request):
         .order_by("-transaction_date", "-id")
     )
 
-    # The Portfolio page already has the correct look-through structure:
-    # each position carries the parent Asset Name and its Underlying.
-    # Use that same source here instead of AssetUnderlyingHolding, because
-    # PMS and Direct Equity underlyings are represented by transaction/position
-    # rows in the portfolio tree.
     positions = list(
         PortfolioPosition.objects
         .filter(
@@ -318,16 +313,29 @@ def holding_matrix_report(request):
         )
         .select_related("asset")
         .annotate(
-            latest_asset_class=Subquery(latest_transaction.values("asset_class")[:1]),
-            latest_sub_class=Subquery(latest_transaction.values("sub_class")[:1]),
             latest_asset_name=Subquery(latest_transaction.values("asset_name")[:1]),
             latest_underlying=Subquery(latest_transaction.values("underlying")[:1]),
         )
     )
 
-    # exposure[(parent asset name, underlying)] is the current market value
-    # represented by that underlying. The portfolio position itself is the
-    # underlying holding, so no manually uploaded percentage is required.
+    # Portfolio-page look-through is the source for PMS/direct-equity assets,
+    # while an explicitly uploaded underlying workbook is authoritative for
+    # assets such as mutual funds where the workbook contains the security
+    # weights.
+    uploaded_rows = list(
+        AssetUnderlyingHolding.objects
+        .filter(family_id=family.id)
+        .select_related("asset")
+        .only("asset_id", "stock_name", "holding_percentage", "asset__name")
+    )
+    uploaded_by_asset = {}
+    uploaded_by_name = {}
+    for underlying in uploaded_rows:
+        uploaded_by_asset.setdefault(underlying.asset_id, []).append(underlying)
+        name_key = clean_matrix(underlying.asset.name).casefold()
+        if name_key:
+            uploaded_by_name.setdefault(name_key, []).append(underlying)
+
     exposure = {}
     underlying_totals = {}
 
@@ -337,10 +345,32 @@ def holding_matrix_report(request):
             continue
 
         asset_name = clean_matrix(position.latest_asset_name, position.asset.name)
-        underlying = clean_matrix(position.latest_underlying)
 
-        # Only look-through rows belong in this matrix. A blank underlying is
-        # not a valid matrix column.
+        # IMPORTANT: uploaded workbook wins over the transaction's generic
+        # "underlying" field. This prevents a mutual fund such as HDFC Focused
+        # Fund from appearing as its own underlying when its workbook contains
+        # the actual stocks.
+        rows = uploaded_by_asset.get(position.asset_id, [])
+        if not rows:
+            rows = uploaded_by_name.get(clean_matrix(position.asset.name).casefold(), [])
+
+        if rows:
+            for underlying in rows:
+                pct = float(underlying.holding_percentage or 0)
+                underlying_name = clean_matrix(underlying.stock_name)
+                if pct <= 0 or not underlying_name:
+                    continue
+                value = current_value * pct / 100.0
+                key = (asset_name, underlying_name)
+                exposure[key] = exposure.get(key, 0.0) + value
+                underlying_totals[underlying_name] = (
+                    underlying_totals.get(underlying_name, 0.0) + value
+                )
+            continue
+
+        # No uploaded snapshot: use the underlying already represented by the
+        # portfolio position (the existing PMS/direct-equity look-through).
+        underlying = clean_matrix(position.latest_underlying)
         if not underlying:
             continue
 

@@ -710,20 +710,34 @@ export class DownloadsComponent implements OnInit {
   }
 
   private async downloadHoldingMatrix(): Promise<void> {
-    const matrix = new Map<string, { current_value: number; direct_equity: number; equity_pms: number; portfolios: Set<string> }>();
+    type MatrixRow = Record<string, unknown> & { asset_name: string; [key: string]: unknown };
 
-    const add = (holding: string, value: number, type: 'direct_equity' | 'equity_pms', portfolio: string) => {
-      if (!holding || !Number.isFinite(value) || value <= 0) return;
-      const key = holding.trim() || 'Unclassified';
-      const item = matrix.get(key) || { current_value: 0, direct_equity: 0, equity_pms: 0, portfolios: new Set<string>() };
-      item.current_value += value;
-      item[type] += value;
-      if (portfolio) item.portfolios.add(portfolio);
-      matrix.set(key, item);
+    const matrix = new Map<string, Map<string, number>>();
+    const underlyingTotals = new Map<string, number>();
+    const rowAssetNames = new Set<string>();
+    const underlyings = new Set<string>();
+
+    const addCell = (assetName: string, underlying: string, percentage: number): void => {
+      const cleanAsset = this.clean(assetName);
+      const cleanUnderlying = this.clean(underlying, cleanAsset);
+      if (!Number.isFinite(percentage) || percentage <= 0) return;
+
+      rowAssetNames.add(cleanAsset);
+      underlyings.add(cleanUnderlying);
+
+      const row = matrix.get(cleanAsset) ?? new Map<string, number>();
+      row.set(cleanUnderlying, (row.get(cleanUnderlying) ?? 0) + percentage);
+      matrix.set(cleanAsset, row);
+
+      underlyingTotals.set(
+        cleanUnderlying,
+        (underlyingTotals.get(cleanUnderlying) ?? 0) + percentage,
+      );
     };
 
     for (const row of this.holdingRows) {
       if (this.selectedFamily && this.clean(row.family_name) !== this.selectedFamily) continue;
+
       const type = this.equityReportType(row);
       if (type !== 'Direct Equity' && type !== 'Equity PMS') continue;
 
@@ -731,40 +745,57 @@ export class DownloadsComponent implements OnInit {
       if (currentValue <= 0) continue;
 
       if (type === 'Equity PMS') {
-        const underlyings = Object.entries(row.underlying_xirr || {});
-        if (underlyings.length) {
-          for (const [underlying, data] of underlyings) {
-            const percentage = Number(data.holding_percentage || 0) / 100;
-            if (percentage <= 0) continue;
-            add(underlying, currentValue * percentage, 'equity_pms', this.clean(row.portfolio));
+        const entries = Object.entries(row.underlying_xirr || {});
+        if (entries.length) {
+          for (const [underlying, data] of entries) {
+            addCell(
+              row.asset_name,
+              underlying,
+              Number(data.holding_percentage || 0),
+            );
           }
         } else {
-          add(row.asset_name, currentValue, 'equity_pms', this.clean(row.portfolio));
+          // Preserve the existing fallback for PMS holdings without an
+          // uploaded underlying breakdown.
+          addCell(row.asset_name, row.asset_name, 100);
         }
       } else {
-        add(row.asset_name, currentValue, 'direct_equity', this.clean(row.portfolio));
+        // Direct equity is itself the underlying and therefore represents
+        // 100% of that Asset Name's underlying exposure.
+        addCell(row.asset_name, row.asset_name, 100);
       }
     }
 
-    const rows = Array.from(matrix.entries())
-      .map(([holding, item]) => ({
-        holding,
-        current_value: item.current_value,
-        percentage: 0,
-        direct_equity: item.direct_equity,
-        equity_pms: item.equity_pms,
-        portfolio_count: item.portfolios.size,
-        portfolios: Array.from(item.portfolios).sort().join(', '),
-      }))
-      .sort((a, b) => b.current_value - a.current_value);
+    const sortedUnderlyings = Array.from(underlyings).sort((a, b) => a.localeCompare(b));
+    const rows: MatrixRow[] = Array.from(rowAssetNames)
+      .map(assetName => {
+        const row = matrix.get(assetName) ?? new Map<string, number>();
+        const output: MatrixRow = { asset_name: assetName };
 
-    const total = rows.reduce((sum, row) => sum + row.current_value, 0);
-    rows.forEach(row => row.percentage = total > 0 ? (row.current_value / total) * 100 : 0);
+        for (const underlying of sortedUnderlyings) {
+          const rawShare = row.get(underlying) ?? 0;
+          const underlyingTotal = underlyingTotals.get(underlying) ?? 0;
+          output[underlying] = underlyingTotal > 0
+            ? (rawShare / underlyingTotal) * 100
+            : 0;
+        }
 
-    await this.exportWorkbook('Holding Matrix', 'Holding Matrix - Equity PMS + Direct Equity', [
-      ['Holding', 'holding'], ['Current Value', 'current_value'], ['% of Equity', 'percentage'],
-      ['Direct Equity', 'direct_equity'], ['Equity PMS', 'equity_pms'], ['Portfolio Count', 'portfolio_count'], ['Portfolios', 'portfolios'],
-    ], rows, 'holding_matrix');
+        return output;
+      })
+      .sort((a, b) => a.asset_name.localeCompare(b.asset_name));
+
+    const columns: Array<[string, string]> = [
+      ['Asset Name', 'asset_name'],
+      ...sortedUnderlyings.map(underlying => [underlying, underlying] as [string, string]),
+    ];
+
+    await this.exportWorkbook(
+      'Holding Matrix',
+      'Holding Matrix - Asset Name vs Underlying',
+      columns,
+      rows,
+      'holding_matrix',
+    );
   }
 
   private async downloadWatchList(): Promise<void> {

@@ -2,7 +2,7 @@ from django.db.models import Q
 from datetime import date
 from decimal import Decimal
 
-from django.db.models import Sum, Q
+from django.db.models import Count, Sum, Q
 
 from investments.models import (
     Holding,
@@ -499,96 +499,190 @@ class UnifiedWealthAnalytics:
         return equity_count, mutual_fund_count
 
     @staticmethod
+    def _build_equity_cash_flows(transactions):
+        cash_flows = []
+
+        for transaction in transactions:
+            amount = transaction.amount or UnifiedWealthAnalytics.ZERO
+            fees = transaction.fees or UnifiedWealthAnalytics.ZERO
+
+            if transaction.transaction_type in (
+                TransactionType.BUY,
+                TransactionType.SIP,
+                TransactionType.DEPOSIT,
+            ):
+                cash_flows.append(
+                    (
+                        transaction.transaction_date,
+                        -(amount + fees),
+                    )
+                )
+            elif transaction.transaction_type in (
+                TransactionType.SELL,
+                TransactionType.DIVIDEND,
+                TransactionType.INTEREST,
+                TransactionType.WITHDRAWAL,
+            ):
+                cash_flows.append(
+                    (
+                        transaction.transaction_date,
+                        amount - fees,
+                    )
+                )
+
+        return cash_flows
+
+    @staticmethod
+    def _build_mutual_fund_cash_flows(transactions):
+        cash_flows = []
+
+        for transaction in transactions:
+            amount = transaction.amount or UnifiedWealthAnalytics.ZERO
+            fees = transaction.fees or UnifiedWealthAnalytics.ZERO
+
+            if transaction.transaction_type in (
+                MutualFundTransactionType.PURCHASE,
+                MutualFundTransactionType.SIP,
+            ):
+                cash_flows.append(
+                    (
+                        transaction.transaction_date,
+                        -(amount + fees),
+                    )
+                )
+            elif transaction.transaction_type in (
+                MutualFundTransactionType.REDEMPTION,
+                MutualFundTransactionType.DIVIDEND,
+            ):
+                cash_flows.append(
+                    (
+                        transaction.transaction_date,
+                        amount - fees,
+                    )
+                )
+
+        return cash_flows
+
+    @staticmethod
+    def _calculate_xirr_from_cash_flows(cash_flows, current_value):
+        cash_flows.sort(key=lambda item: item[0])
+
+        if current_value > 0:
+            cash_flows.append(
+                (
+                    date.today(),
+                    current_value,
+                )
+            )
+
+        result = XIRRCalculator.calculate(cash_flows)
+
+        if result is None:
+            return None
+
+        return round(result * 100, 2)
+
+    @staticmethod
     def calculate_summary(user, family_name=None):
         """
         Calculate the complete unified wealth summary.
 
-        family_name:
-            Optional. When omitted, this is byte-for-byte the
-            original all-families calculation (Holding /
-            MutualFundHolding based) - unchanged.
-
-            When provided, Holding/MutualFundHolding cannot be used
-            because neither carries a family_name (each is a single
-            aggregated row per asset/scheme across every family), so
-            this path instead sources today's invested/current/P&L
-            from HistoricalWealthAnalytics.calculate_history() for
-            just that one day - the same family-aware, transaction-
-            based calculation already powering the Wealth Overview
-            chart - so the KPI cards and the chart always agree.
+        The all-families path reuses one transaction read per investment
+        type for realized P&L and XIRR, while the existing family-filtered
+        path remains transaction/history based so its family semantics stay
+        unchanged.
         """
 
         if not family_name:
-            equity = (
+            equity_totals = (
                 UnifiedWealthAnalytics
-                .get_equity_totals(user)
+                .get_equity_holdings(user)
+                .aggregate(
+                    invested=Sum("invested_value"),
+                    current=Sum("current_value"),
+                    unrealized=Sum("unrealized_pnl"),
+                    number_of_holdings=Count("id"),
+                )
             )
 
-            mutual_funds = (
+            mutual_fund_totals = (
                 UnifiedWealthAnalytics
-                .get_mutual_fund_totals(user)
+                .get_mutual_fund_holdings(user)
+                .aggregate(
+                    invested=Sum("invested_value"),
+                    current=Sum("current_value"),
+                    unrealized=Sum("unrealized_pnl"),
+                    number_of_holdings=Count("id"),
+                )
             )
 
-            equity_realized = (
-                UnifiedWealthAnalytics
-                .calculate_equity_realized_pnl(user)
+            equity = {
+                "invested": equity_totals["invested"] or UnifiedWealthAnalytics.ZERO,
+                "current": equity_totals["current"] or UnifiedWealthAnalytics.ZERO,
+                "unrealized": equity_totals["unrealized"] or UnifiedWealthAnalytics.ZERO,
+            }
+            mutual_funds = {
+                "invested": mutual_fund_totals["invested"] or UnifiedWealthAnalytics.ZERO,
+                "current": mutual_fund_totals["current"] or UnifiedWealthAnalytics.ZERO,
+                "unrealized": mutual_fund_totals["unrealized"] or UnifiedWealthAnalytics.ZERO,
+            }
+
+            equity_transactions = list(
+                Transaction.objects
+                .filter(UnifiedWealthAnalytics._scope_q(user))
+                .order_by(
+                    "asset_id",
+                    "transaction_date",
+                    "created_at",
+                    "id",
+                )
             )
 
-            mutual_fund_realized = (
-                UnifiedWealthAnalytics
-                .calculate_mutual_fund_realized_pnl(user)
+            mutual_fund_transactions = list(
+                MutualFundTransaction.objects
+                .filter(UnifiedWealthAnalytics._scope_q(user))
+                .order_by(
+                    "scheme_id",
+                    "transaction_date",
+                    "created_at",
+                    "id",
+                )
             )
 
-            total_invested = (
-                equity["invested"]
-                + mutual_funds["invested"]
+            equity_realized = UnifiedWealthAnalytics._calculate_realized_pnl(
+                equity_transactions,
+            )
+            mutual_fund_realized = UnifiedWealthAnalytics._calculate_mutual_fund_realized_pnl(
+                mutual_fund_transactions,
             )
 
-            total_current_value = (
-                equity["current"]
-                + mutual_funds["current"]
-            )
-
-            unrealized_pnl = (
-                equity["unrealized"]
-                + mutual_funds["unrealized"]
-            )
-
-            realized_pnl = (
-                equity_realized
-                + mutual_fund_realized
-            )
-
-            total_pnl = (
-                realized_pnl
-                + unrealized_pnl
-            )
+            total_invested = equity["invested"] + mutual_funds["invested"]
+            total_current_value = equity["current"] + mutual_funds["current"]
+            unrealized_pnl = equity["unrealized"] + mutual_funds["unrealized"]
+            realized_pnl = equity_realized + mutual_fund_realized
+            total_pnl = realized_pnl + unrealized_pnl
 
             return_percentage = (
-                (
-                    total_pnl
-                    / total_invested
-                ) * 100
+                (total_pnl / total_invested) * 100
                 if total_invested
                 else UnifiedWealthAnalytics.ZERO
             )
 
-            xirr_percentage = (
-                UnifiedWealthAnalytics
-                .calculate_xirr(user)
+            cash_flows = (
+                UnifiedWealthAnalytics._build_equity_cash_flows(
+                    equity_transactions,
+                )
+                + UnifiedWealthAnalytics._build_mutual_fund_cash_flows(
+                    mutual_fund_transactions,
+                )
+            )
+            xirr_percentage = UnifiedWealthAnalytics._calculate_xirr_from_cash_flows(
+                cash_flows,
+                total_current_value,
             )
 
-            equity_count = (
-                UnifiedWealthAnalytics
-                .get_equity_holdings(user)
-                .count()
-            )
-
-            mutual_fund_count = (
-                UnifiedWealthAnalytics
-                .get_mutual_fund_holdings(user)
-                .count()
-            )
+            equity_count = equity_totals["number_of_holdings"] or 0
+            mutual_fund_count = mutual_fund_totals["number_of_holdings"] or 0
 
             return {
                 "total_invested": total_invested,
@@ -596,15 +690,9 @@ class UnifiedWealthAnalytics:
                 "realized_pnl": realized_pnl,
                 "unrealized_pnl": unrealized_pnl,
                 "total_pnl": total_pnl,
-                "return_percentage": round(
-                    return_percentage,
-                    2,
-                ),
+                "return_percentage": round(return_percentage, 2),
                 "xirr_percentage": xirr_percentage,
-                "number_of_holdings": (
-                    equity_count
-                    + mutual_fund_count
-                ),
+                "number_of_holdings": equity_count + mutual_fund_count,
                 "equity": {
                     "invested": equity["invested"],
                     "current_value": equity["current"],
@@ -807,100 +895,17 @@ class UnifiedWealthAnalytics:
             )
         )
 
-        for transaction in equity_transactions:
-
-            amount = (
-                transaction.amount
-                or UnifiedWealthAnalytics.ZERO
-            )
-
-            fees = (
-                transaction.fees
-                or UnifiedWealthAnalytics.ZERO
-            )
-
-            if transaction.transaction_type in (
-                TransactionType.BUY,
-                TransactionType.SIP,
-                TransactionType.DEPOSIT,
-            ):
-
-                cash_flows.append(
-                    (
-                        transaction.transaction_date,
-                        -(amount + fees),
-                    )
-                )
-
-            elif transaction.transaction_type in (
-                TransactionType.SELL,
-                TransactionType.DIVIDEND,
-                TransactionType.INTEREST,
-                TransactionType.WITHDRAWAL,
-            ):
-
-                cash_flows.append(
-                    (
-                        transaction.transaction_date,
-                        amount - fees,
-                    )
-                )
-
-        mutual_fund_transactions_qs = (
-            MutualFundTransaction.objects
-            .filter(UnifiedWealthAnalytics._scope_q(user))
-        )
-
-        if family_name:
-            mutual_fund_transactions_qs = (
-                mutual_fund_transactions_qs
-                .filter(family_name=family_name)
-            )
-
-        mutual_fund_transactions = (
-            mutual_fund_transactions_qs
-            .order_by(
-                "transaction_date",
-                "created_at",
-                "id",
+        cash_flows.extend(
+            UnifiedWealthAnalytics._build_equity_cash_flows(
+                equity_transactions,
             )
         )
 
-        for transaction in mutual_fund_transactions:
-
-            amount = (
-                transaction.amount
-                or UnifiedWealthAnalytics.ZERO
+        cash_flows.extend(
+            UnifiedWealthAnalytics._build_mutual_fund_cash_flows(
+                mutual_fund_transactions,
             )
-
-            fees = (
-                transaction.fees
-                or UnifiedWealthAnalytics.ZERO
-            )
-
-            if transaction.transaction_type in (
-                MutualFundTransactionType.PURCHASE,
-                MutualFundTransactionType.SIP,
-            ):
-
-                cash_flows.append(
-                    (
-                        transaction.transaction_date,
-                        -(amount + fees),
-                    )
-                )
-
-            elif transaction.transaction_type in (
-                MutualFundTransactionType.REDEMPTION,
-                MutualFundTransactionType.DIVIDEND,
-            ):
-
-                cash_flows.append(
-                    (
-                        transaction.transaction_date,
-                        amount - fees,
-                    )
-                )
+        )
 
         if family_name:
             from .historical_wealth import (

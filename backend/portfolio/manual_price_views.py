@@ -28,14 +28,14 @@ from portfolio.services.portfolio_position_engine import (
 )
 
 from users.permissions import (
-    IsAdminOrSuperUser,
     family_scope,
     get_visible_owner_ids,
+    is_admin_or_above,
 )
 
 
 @api_view(["PUT", "PATCH", "DELETE"])
-@permission_classes([IsAuthenticated, IsAdminOrSuperUser])
+@permission_classes([IsAuthenticated])
 def manual_asset_price(
     request,
     asset_id,
@@ -60,6 +60,12 @@ def manual_asset_price(
     can also edit its price. Role still gates WHO can edit at
     all; family membership gates WHICH assets.
     """
+
+    if not is_admin_or_above(request.user):
+        return Response(
+            {"success": False, "message": "This action requires Admin, Super User, or System Owner privileges."},
+            status=status.HTTP_403_FORBIDDEN,
+        )
 
     # ==========================================================
     # FIND ASSET

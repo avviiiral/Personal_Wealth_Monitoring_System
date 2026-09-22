@@ -201,8 +201,16 @@ class PortfolioPositionEngine:
         return portfolio_position
 
     @classmethod
-    def rebuild_all_for_user(cls, user):
-        family = require_active_family(user)
+    def rebuild_all_for_family(cls, family):
+        """
+        Rebuild all portfolio positions for a specific family.
+
+        This avoids coupling a data mutation to the editor's
+        currently selected family.
+        """
+        if family is None:
+            return []
+
 
         combinations = (
             Transaction.objects

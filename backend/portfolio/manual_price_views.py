@@ -27,10 +27,10 @@ from portfolio.services.portfolio_position_engine import (
     PortfolioPositionEngine,
 )
 
+from users.models import Role, UserProfile
 from users.permissions import (
     family_scope,
     get_visible_owner_ids,
-    is_admin_or_above,
 )
 
 
@@ -61,7 +61,13 @@ def manual_asset_price(
     all; family membership gates WHICH assets.
     """
 
-    if not is_admin_or_above(request.user):
+    # Read the persisted business role directly. Manual-price editing is
+    # a role capability and must not depend on family membership.
+    can_edit_price = UserProfile.objects.filter(
+        user_id=request.user.id,
+        role__in=(Role.ADMIN, Role.SUPER_USER, Role.SYSTEM_OWNER),
+    ).exists()
+    if not can_edit_price:
         return Response(
             {"success": False, "message": "This action requires Admin, Super User, or System Owner privileges."},
             status=status.HTTP_403_FORBIDDEN,

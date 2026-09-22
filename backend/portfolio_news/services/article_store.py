@@ -3,6 +3,7 @@ import logging
 from typing import Tuple
 
 from django.db import IntegrityError
+from django.db.models import Count, Min
 
 from .deduplication import (
     ArticleDeduplicator,
@@ -61,12 +62,17 @@ def _attach_source(article, candidate: NewsArticleResult) -> bool:
     if not source_created:
         return False
 
+    source_stats = article.sources.aggregate(
+        source_count=Count("id"),
+        best_quality=Min("quality_tier"),
+    )
+
     existing_tiers = article.sources.values_list(
         "quality_tier", flat=True
     )
 
     article.source_quality = best_tier(existing_tiers)
-    article.source_count = article.sources.count()
+    article.source_count = source_stats["source_count"]
     article.save(update_fields=["source_quality", "source_count"])
 
     return True

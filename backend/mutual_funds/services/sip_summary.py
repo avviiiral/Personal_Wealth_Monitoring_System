@@ -1,6 +1,6 @@
 from decimal import Decimal
 
-from django.db.models import Sum
+from django.db.models import Count, Q, Sum
 from users.permissions import require_active_family
 
 from mutual_funds.models import SIP, SIPInstallment
@@ -20,53 +20,64 @@ class SIPSummaryService:
 
         family_id = family_id or require_active_family(user).id
 
-        sips = SIP.objects.filter(family_id=family_id)
-
-        installments = SIPInstallment.objects.filter(sip__family_id=family_id)
-
-        executed = installments.filter(
-            status="EXECUTED"
+        sip_totals = SIP.objects.filter(
+            family_id=family_id
+        ).aggregate(
+            total_sips=Count("id"),
+            active_sips=Count(
+                "id",
+                filter=Q(is_active=True),
+            ),
         )
 
-        due = installments.filter(
-            status="DUE"
-        )
+        active_sip_amounts = SIP.objects.filter(
+            family_id=family_id,
+            is_active=True,
+        ).values_list("frequency", "amount")
 
-        skipped = installments.filter(
-            status="SKIPPED"
-        )
-
-        failed = installments.filter(
-            status="FAILED"
-        )
-
-        actual_invested = (
-            executed.aggregate(
-                total=Sum("amount")
-            )["total"]
-            or Decimal("0.00")
-        )
-
-        pending_amount = (
-            due.aggregate(
-                total=Sum("amount")
-            )["total"]
-            or Decimal("0.00")
+        installment_totals = SIPInstallment.objects.filter(
+            sip__family_id=family_id
+        ).aggregate(
+            scheduled=Count("id"),
+            executed=Count(
+                "id",
+                filter=Q(status="EXECUTED"),
+            ),
+            due=Count(
+                "id",
+                filter=Q(status="DUE"),
+            ),
+            skipped=Count(
+                "id",
+                filter=Q(status="SKIPPED"),
+            ),
+            failed=Count(
+                "id",
+                filter=Q(status="FAILED"),
+            ),
+            actual_invested=Sum(
+                "amount",
+                filter=Q(status="EXECUTED"),
+            ),
+            pending_amount=Sum(
+                "amount",
+                filter=Q(status="DUE"),
+            ),
         )
 
         next_installment = (
-            due.order_by(
-                "scheduled_date"
-            ).first()
-        )
-
-        active_sips = sips.filter(
-            is_active=True
+            SIPInstallment.objects
+            .filter(
+                sip__family_id=family_id,
+                status="DUE",
+            )
+            .order_by("scheduled_date")
+            .first()
         )
 
         monthly_commitment = Decimal("0.00")
 
-        for sip in active_sips:
+        for frequency, amount in active_sip_amounts:
 
             if sip.frequency == "MONTHLY":
 
@@ -96,32 +107,34 @@ class SIPSummaryService:
                 )
 
         return {
-            "total_sips": sips.count(),
+            "total_sips": sip_totals["total_sips"],
 
-            "active_sips": active_sips.count(),
+            "active_sips": sip_totals["active_sips"],
 
             "total_monthly_commitment": (
                 monthly_commitment
             ),
 
             "installments": {
-                "scheduled": installments.count(),
+                "scheduled": installment_totals["scheduled"],
 
-                "executed": executed.count(),
+                "executed": installment_totals["executed"],
 
-                "due": due.count(),
+                "due": installment_totals["due"],
 
-                "skipped": skipped.count(),
+                "skipped": installment_totals["skipped"],
 
-                "failed": failed.count(),
+                "failed": installment_totals["failed"],
             },
 
             "actual_sip_invested": (
-                actual_invested
+                installment_totals["actual_invested"]
+                or Decimal("0.00")
             ),
 
             "pending_sip_amount": (
-                pending_amount
+                installment_totals["pending_amount"]
+                or Decimal("0.00")
             ),
 
             "next_installment": (

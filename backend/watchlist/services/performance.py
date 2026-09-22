@@ -3,6 +3,7 @@ from decimal import Decimal, InvalidOperation
 
 import requests
 from django.db import transaction
+from django.utils import timezone
 
 from watchlist.models import InvestmentProduct, PerformanceSnapshot, ProductType
 
@@ -218,23 +219,48 @@ class AMFIPerformanceService:
         products_needing_history = [
             product
             for product in products
-            if latest_snapshots.get(product.id)
-            and any(getattr(latest_snapshots[product.id], field) is None for field, _ in cls.PERIODS)
+            if latest_snapshots.get(product.id) is None
+            or any(
+                getattr(latest_snapshots[product.id], field) is None
+                for field, _ in cls.PERIODS
+            )
         ]
         if not products_needing_history:
             return {"products": len(products), "history_requests": 0, "snapshots": 0, "metrics_updated": 0, "failed": 0}
 
-        latest_date = max(snapshot.date for snapshot in latest_snapshots.values())
+        latest_date = (
+            max(snapshot.date for snapshot in latest_snapshots.values())
+            if latest_snapshots
+            else timezone.localdate()
+        )
         history, failed = cls._load_required_history(products_needing_history, latest_date)
         snapshots_written = 0
         metrics_updated = 0
 
         for product in products_needing_history:
             latest = latest_snapshots.get(product.id)
+            code = str(
+                product.external_identifier
+                or getattr(getattr(product, "mutual_fund", None), "scheme_code", "")
+                or ""
+            )
+            periods = history.get(code, {})
+            if latest is None and periods:
+                latest_record = max(periods.values(), key=lambda record: record["date"])
+                latest, _ = PerformanceSnapshot.objects.update_or_create(
+                    product=product,
+                    date=latest_record["date"],
+                    source=cls.SOURCE,
+                    defaults={
+                        "nav_or_value": latest_record["nav"],
+                        "source_reference": cls.HISTORY_URL,
+                    },
+                )
+                latest_snapshots[product.id] = latest
+
             if latest is None:
                 continue
-            code = str(product.external_identifier or "")
-            periods = history.get(code, {})
+
             values = {}
             for field, _ in cls.PERIODS:
                 record = periods.get(field)

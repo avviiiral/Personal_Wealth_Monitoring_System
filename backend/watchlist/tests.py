@@ -4,6 +4,8 @@ from unittest.mock import patch
 
 from django.contrib.auth.models import User
 from django.test import TestCase
+
+from users.models import FamilyGroup
 from rest_framework.test import APIClient
 
 from investments.models import Asset, AssetCategory, PortfolioPosition, Transaction, TransactionType
@@ -11,11 +13,15 @@ from watchlist.models import InvestmentProduct, MutualFundProduct, PerformanceSn
 from watchlist.services.ownership import OwnershipService
 from watchlist.services.performance import AMFIPerformanceService
 from watchlist.services.universe import AMFIUniverseService
+from watchlist.services.pms import APMIPMSDiscoveryService
 
 
 class WatchListTests(TestCase):
     def setUp(self):
         self.user = User.objects.create_user(username="watchlist-user", password="pw")
+        family = FamilyGroup.objects.create(name="Watchlist Family")
+        self.user.profile.family_groups.add(family)
+        self.family = family
         self.client = APIClient()
         self.client.force_authenticate(self.user)
 
@@ -79,8 +85,8 @@ class WatchListTests(TestCase):
     def test_owned_status_filter_matches_owned_mutual_fund(self):
         product = InvestmentProduct.objects.create(product_type=ProductType.MUTUAL_FUND, name="Owned Fund", isin="INFOWNED", identity_key="MUTUAL_FUND:ISIN:INFOWNED", source="AMFI")
         MutualFundProduct.objects.create(product=product, scheme_code="OWNED")
-        asset = Asset.objects.create(owner=self.user, name="Owned Asset", symbol="OWNED", isin="INFOWNED", category=AssetCategory.MUTUAL_FUND)
-        PortfolioPosition.objects.create(owner=self.user, asset=asset, quantity=1, current_value=100)
+        asset = Asset.objects.create(owner=self.user, family=self.family, name="Owned Asset", symbol="OWNED", isin="INFOWNED", category=AssetCategory.MUTUAL_FUND)
+        PortfolioPosition.objects.create(owner=self.user, family=self.family, asset=asset, quantity=1, current_value=100)
         response = self.client.get("/api/watch-list/products/?product_type=MUTUAL_FUND&status=OWNED")
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data["count"], 1)
@@ -89,8 +95,8 @@ class WatchListTests(TestCase):
     def test_universal_status_filter_excludes_owned_mutual_fund(self):
         product = InvestmentProduct.objects.create(product_type=ProductType.MUTUAL_FUND, name="Owned Fund", isin="INFOWNED", identity_key="MUTUAL_FUND:ISIN:INFOWNED", source="AMFI")
         MutualFundProduct.objects.create(product=product, scheme_code="OWNED")
-        asset = Asset.objects.create(owner=self.user, name="Owned Asset", symbol="OWNED", isin="INFOWNED", category=AssetCategory.MUTUAL_FUND)
-        PortfolioPosition.objects.create(owner=self.user, asset=asset, quantity=1, current_value=100)
+        asset = Asset.objects.create(owner=self.user, family=self.family, name="Owned Asset", symbol="OWNED", isin="INFOWNED", category=AssetCategory.MUTUAL_FUND)
+        PortfolioPosition.objects.create(owner=self.user, family=self.family, asset=asset, quantity=1, current_value=100)
         response = self.client.get("/api/watch-list/products/?product_type=MUTUAL_FUND&status=UNIVERSAL")
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data["count"], 0)
@@ -107,7 +113,7 @@ class WatchListTests(TestCase):
         self.assertFalse(WatchListEntry.objects.filter(user=self.user, product=product).exists())
 
     def test_amfi_performance_service_updates_snapshot(self):
-        product = InvestmentProduct.objects.create(product_type=ProductType.MUTUAL_FUND, name="Performance Fund", isin="INFPERF", identity_key="MUTUAL_FUND:ISIN:INFPERF", source="AMFI")
+        product = InvestmentProduct.objects.create(product_type=ProductType.MUTUAL_FUND, name="Performance Fund", isin="INFPERF", external_identifier="1", identity_key="MUTUAL_FUND:ISIN:INFPERF", source="AMFI")
         MutualFundProduct.objects.create(product=product, scheme_code="PERF")
         feed = "Scheme Code;ISIN Div Payout/ISIN Growth;ISIN Div Reinvestment;Scheme Name;Net Asset Value;Date\n1;INFPERF;-;Performance Fund;100;15-Sep-2026\n"
         with patch("watchlist.services.performance.requests.get") as mocked_get:

@@ -6,6 +6,8 @@ from dateutil.relativedelta import relativedelta
 from django.contrib.auth.models import User
 from django.test import TestCase
 
+from users.models import FamilyGroup
+
 from mutual_funds.models import (
     MutualFundHolding,
     MutualFundNAV,
@@ -399,6 +401,8 @@ class AMFINavImportBatchingTests(TestCase):
             username="amfi_batch_test",
             password="test-password",
         )
+        family = FamilyGroup.objects.create(name="AMFI Batch Family")
+        self.user.profile.family_groups.add(family)
 
     def _make_records(self, count):
         return [

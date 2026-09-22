@@ -90,6 +90,8 @@ class Transaction(models.Model):
         indexes = [
             models.Index(fields=["family", "source", "source_key"], name="transaction_source_key_idx"),
             models.Index(fields=["owner", "family_name", "asset_class", "sub_class"], name="transaction_hierarchy_idx"),
+            models.Index(fields=["family", "asset", "transaction_date"], name="transaction_asset_date_idx"),
+            models.Index(fields=["family", "transaction_date"], name="transaction_family_date_idx"),
         ]
         constraints = [
             models.UniqueConstraint(
@@ -274,6 +276,7 @@ class AssetUnderlyingHolding(models.Model):
         indexes = [
             models.Index(fields=["family", "asset"], name="au_family_asset_idx"),
             models.Index(fields=["asset", "stock_name"], name="au_asset_stock_idx"),
+            models.Index(fields=["family", "stock_name"], name="au_family_stock_idx"),
         ]
 
     def __str__(self):

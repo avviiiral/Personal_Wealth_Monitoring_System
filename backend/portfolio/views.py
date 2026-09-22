@@ -1,9 +1,10 @@
+import logging
 import traceback
 from decimal import Decimal
 from typing import cast
 
 from django.db import transaction
-from django.db.models import Sum
+from django.db.models import Count, Sum
 
 from investments.models import (
     Asset,
@@ -33,13 +34,16 @@ from .serializers import (
 )
 from users.permissions import family_scope, require_active_family
 
+logger = logging.getLogger("portfolio.views")
+
 
 @api_view(["GET", "POST"])
 @permission_classes([IsAuthenticated])
 def portfolio_assets(request):
     if request.method == "GET":
         assets = family_scope(Asset.objects, request.user).order_by("name")
-        return Response({"count": assets.count(), "results": AssetSerializer(assets, many=True).data})
+        results = AssetSerializer(assets, many=True).data
+        return Response({"count": len(results), "results": results})
 
     serializer = AssetSerializer(data=request.data)
     if not serializer.is_valid():
@@ -88,13 +92,15 @@ def portfolio_transactions(request):
             .select_related("asset")
             .order_by("-transaction_date", "-created_at")
         )
-        return Response({"count": transactions.count(), "results": TransactionSerializer(transactions, many=True).data})
+        results = TransactionSerializer(transactions, many=True).data
+        return Response({"count": len(results), "results": results})
     serializer = TransactionSerializer(data=request.data, context={"request": request})
     if not serializer.is_valid():
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     with transaction.atomic():
         family = require_active_family(request.user)
         transaction_obj = cast(Transaction, serializer.save(owner=request.user, family=family))
+        logger.info("Transaction created: id=%s asset_id=%s user_id=%s", transaction_obj.id, transaction_obj.asset_id, request.user.id)
         HoldingCalculationEngine.rebuild_holding(transaction_obj.asset)
         PortfolioPositionEngine.rebuild_all_for_user(request.user)
     return Response(TransactionSerializer(transaction_obj).data, status=status.HTTP_201_CREATED)
@@ -134,7 +140,10 @@ def portfolio_transaction_detail(request, transaction_id):
     if request.method == "DELETE":
         old_asset = transaction_obj.asset
         with transaction.atomic():
+            transaction_id = transaction_obj.id
+            asset_id = old_asset.id
             transaction_obj.delete()
+            logger.info("Transaction deleted: id=%s asset_id=%s user_id=%s", transaction_id, asset_id, request.user.id)
             HoldingCalculationEngine.rebuild_holding(old_asset)
             PortfolioPositionEngine.rebuild_all_for_user(request.user)
         return Response(status=status.HTTP_204_NO_CONTENT)
@@ -154,6 +163,7 @@ def portfolio_transaction_detail(request, transaction_id):
         new_values = _transaction_history_snapshot(transaction_obj)
         changed_fields = [field for field in new_values if old_values.get(field) != new_values.get(field)]
         if changed_fields:
+            logger.info("Transaction updated: id=%s changed_fields=%s user_id=%s", transaction_obj.id, changed_fields, request.user.id)
             TransactionEditHistory.objects.create(
                 transaction=transaction_obj,
                 owner=transaction_obj.owner,
@@ -178,15 +188,21 @@ def portfolio_transaction_edit_history(request):
         .select_related("transaction", "transaction__asset", "edited_by")
         .order_by("-edited_at")
     )
-    return Response({"count": history.count(), "results": TransactionEditHistorySerializer(history, many=True).data})
+    results = TransactionEditHistorySerializer(history, many=True).data
+    return Response({"count": len(results), "results": results})
 
 
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def portfolio_summary(request):
     holdings = family_scope(Holding.objects, request.user).filter(asset__is_active=True)
-    total_invested = holdings.aggregate(total=Sum("invested_value"))["total"] or Decimal("0")
-    total_current_value = holdings.aggregate(total=Sum("current_value"))["total"] or Decimal("0")
+    totals = holdings.aggregate(
+        total_invested=Sum("invested_value"),
+        total_current_value=Sum("current_value"),
+        number_of_holdings=Count("id"),
+    )
+    total_invested = totals["total_invested"] or Decimal("0")
+    total_current_value = totals["total_current_value"] or Decimal("0")
     total_unrealized_pnl = total_current_value - total_invested
     pnl_percentage = (total_unrealized_pnl / total_invested) * Decimal("100") if total_invested else Decimal("0")
     return Response({
@@ -194,7 +210,7 @@ def portfolio_summary(request):
         "total_current_value": total_current_value,
         "total_unrealized_pnl": total_unrealized_pnl,
         "pnl_percentage": round(float(pnl_percentage), 2),
-        "number_of_holdings": holdings.count(),
+        "number_of_holdings": totals["number_of_holdings"] or 0,
     })
 
 
@@ -207,7 +223,8 @@ def portfolio_holdings(request):
         .select_related("asset")
         .order_by("-current_value")
     )
-    return Response({"count": holdings.count(), "results": HoldingSerializer(holdings, many=True).data})
+    results = HoldingSerializer(holdings, many=True).data
+    return Response({"count": len(results), "results": results})
 
 
 @api_view(["GET"])

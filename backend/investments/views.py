@@ -129,32 +129,35 @@ def security_master_list(request):
     the authenticated user.
     """
 
-    securities = (
-        SecurityMaster.objects
-        .filter(family_id=require_active_family(request.user).id)
-        .order_by("asset_name")
-    )
-
-    results = []
-
-    for security in securities:
-        results.append(
-            {
-                "id": security.id,
-                "isin": security.isin,
-                "asset_name": security.asset_name,
-                "sector": security.sector,
-                "cap_type": security.cap_type,
-                "manual_nav_enabled": (
-                    security.manual_nav_enabled
-                ),
-                "manual_nav": (
-                    str(security.manual_nav)
-                    if security.manual_nav is not None
-                    else None
-                ),
-            }
+    results = [
+        {
+            "id": security["id"],
+            "isin": security["isin"],
+            "asset_name": security["asset_name"],
+            "sector": security["sector"],
+            "cap_type": security["cap_type"],
+            "manual_nav_enabled": security["manual_nav_enabled"],
+            "manual_nav": (
+                str(security["manual_nav"])
+                if security["manual_nav"] is not None
+                else None
+            ),
+        }
+        for security in (
+            SecurityMaster.objects
+            .filter(family_id=require_active_family(request.user).id)
+            .order_by("asset_name")
+            .values(
+                "id",
+                "isin",
+                "asset_name",
+                "sector",
+                "cap_type",
+                "manual_nav_enabled",
+                "manual_nav",
+            )
         )
+    ]
 
     return Response(
         {

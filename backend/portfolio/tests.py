@@ -3,6 +3,8 @@ from datetime import date
 
 from django.contrib.auth import get_user_model
 from django.test import TestCase
+
+from users.models import FamilyGroup
 from rest_framework.test import APIClient
 
 from investments.models import Asset, Transaction
@@ -20,8 +22,11 @@ class PortfolioTreeServiceTests(TestCase):
             username="portfolio_test_user",
             password="test-password",
         )
+        self.family = FamilyGroup.objects.create(name="Portfolio Tree Family")
+        self.user.profile.family_groups.add(self.family)
 
         self.asset = Asset.objects.create(
+            family=self.family,
             owner=self.user,
             name="Test Equity",
             category="STOCK",
@@ -30,6 +35,7 @@ class PortfolioTreeServiceTests(TestCase):
 
         Transaction.objects.create(
             owner=self.user,
+            family=self.family,
             asset=self.asset,
             family_name="Family A",
             portfolio="Portfolio A",
@@ -156,6 +162,7 @@ class PortfolioTreeServiceTests(TestCase):
     def test_sell_reduces_position(self):
         Transaction.objects.create(
             owner=self.user,
+            family=self.family,
             asset=self.asset,
             family_name="Family A",
             portfolio="Portfolio A",
@@ -212,7 +219,11 @@ class PortfolioTreeAPITests(TestCase):
             user=self.user
         )
 
+        family = FamilyGroup.objects.create(name="Portfolio API Family")
+        self.user.profile.family_groups.add(family)
+
         self.asset = Asset.objects.create(
+            family=family,
             owner=self.user,
             name="API Test Equity",
             category="STOCK",
@@ -221,6 +232,7 @@ class PortfolioTreeAPITests(TestCase):
 
         Transaction.objects.create(
             owner=self.user,
+            family=family,
             asset=self.asset,
             family_name="Family API",
             portfolio="Portfolio API",
@@ -566,11 +578,13 @@ class PortfolioSummaryMultiOwnerTests(TestCase):
         self.owner_a.profile.family_groups.add(group)
 
         self.owner_b.profile.family_groups.add(group)
+        self.family = group
 
         from investments.models import Holding
 
         asset_a = Asset.objects.create(
             owner=self.owner_a,
+            family=self.family,
             name="Summary Owner A Stock",
             category="STOCK",
             isin="INE000SUMA001",
@@ -578,6 +592,7 @@ class PortfolioSummaryMultiOwnerTests(TestCase):
 
         asset_b = Asset.objects.create(
             owner=self.owner_b,
+            family=self.family,
             name="Summary Owner B Stock",
             category="STOCK",
             isin="INE000SUMB001",
@@ -585,6 +600,7 @@ class PortfolioSummaryMultiOwnerTests(TestCase):
 
         Holding.objects.create(
             owner=self.owner_a,
+            family=self.family,
             asset=asset_a,
             invested_value=Decimal("1000"),
             current_value=Decimal("1200"),
@@ -593,6 +609,7 @@ class PortfolioSummaryMultiOwnerTests(TestCase):
 
         Holding.objects.create(
             owner=self.owner_b,
+            family=self.family,
             asset=asset_b,
             invested_value=Decimal("2000"),
             current_value=Decimal("1800"),
@@ -624,11 +641,14 @@ class PortfolioSummaryMultiOwnerTests(TestCase):
             username="summary_multi_owner_outsider",
             password="test-password",
         )
+        outsider_family = FamilyGroup.objects.create(name="Summary Outsider Family")
+        outsider.profile.family_groups.add(outsider_family)
 
         from investments.models import Holding
 
         outsider_asset = Asset.objects.create(
             owner=outsider,
+            family=outsider_family,
             name="Outsider Stock",
             category="STOCK",
             isin="INE000OUTSIDE1",
@@ -636,6 +656,7 @@ class PortfolioSummaryMultiOwnerTests(TestCase):
 
         Holding.objects.create(
             owner=outsider,
+            family=outsider_family,
             asset=outsider_asset,
             invested_value=Decimal("500"),
             current_value=Decimal("500"),

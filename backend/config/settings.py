@@ -152,7 +152,7 @@ STATIC_ROOT = BASE_DIR / 'staticfiles'
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 REST_FRAMEWORK = {
-    'DEFAULT_PERMISSION_CLASSES': ['rest_framework.permissions.AllowAny'],
+    'DEFAULT_PERMISSION_CLASSES': ['rest_framework.permissions.IsAuthenticated'],
     'DEFAULT_AUTHENTICATION_CLASSES': ['rest_framework.authentication.SessionAuthentication'],
 }
 
@@ -166,27 +166,99 @@ SECURE_SSL_REDIRECT = _env_bool('SECURE_SSL_REDIRECT', False)
 
 LOGS_DIR = BASE_DIR / 'logs'
 LOGS_DIR.mkdir(exist_ok=True)
+
+# Logs are separated by application area so production troubleshooting does not
+# require searching through one large application log.  Each file rotates at
+# 10 MB and keeps the five most recent backups.
+LOG_FORMAT = '%(asctime)s %(levelname)s %(name)s: %(message)s'
+LOG_MAX_BYTES = 10 * 1024 * 1024
+LOG_BACKUP_COUNT = 5
+
+
+def _rotating_log_handler(filename, level='INFO'):
+    return {
+        'class': 'logging.handlers.RotatingFileHandler',
+        'filename': str(LOGS_DIR / filename),
+        'maxBytes': LOG_MAX_BYTES,
+        'backupCount': LOG_BACKUP_COUNT,
+        'formatter': 'standard',
+        'encoding': 'utf-8',
+        'level': level,
+    }
+
+
 LOGGING = {
     'version': 1,
     'disable_existing_loggers': False,
     'formatters': {
-        'standard': {'format': '%(asctime)s %(levelname)s %(name)s: %(message)s'},
+        'standard': {'format': LOG_FORMAT},
     },
     'handlers': {
-        'console': {'class': 'logging.StreamHandler', 'formatter': 'standard'},
-        'file': {
-            'class': 'logging.handlers.RotatingFileHandler',
-            'filename': str(LOGS_DIR / 'pwms.log'),
-            'maxBytes': 10 * 1024 * 1024,
-            'backupCount': 5,
+        'console': {
+            'class': 'logging.StreamHandler',
             'formatter': 'standard',
-            'encoding': 'utf-8',
         },
+        'errors_file': _rotating_log_handler('errors.log', 'ERROR'),
+        'application_file': _rotating_log_handler('application.log'),
+        'price_updates_file': _rotating_log_handler('price_updates.log'),
+        'transactions_file': _rotating_log_handler('transactions.log'),
+        'portfolio_file': _rotating_log_handler('portfolio.log'),
+        'mutual_funds_file': _rotating_log_handler('mutual_funds.log'),
+        'watchlist_file': _rotating_log_handler('watchlist.log'),
+        'news_file': _rotating_log_handler('news.log'),
+        'authentication_file': _rotating_log_handler('authentication.log'),
+        'imports_file': _rotating_log_handler('imports.log'),
     },
-    'root': {'handlers': ['console', 'file'], 'level': 'INFO'},
+    'root': {
+        'handlers': ['console', 'application_file', 'errors_file'],
+        'level': 'INFO',
+    },
     'loggers': {
+        # market_data owns scheduled/market price and NAV refresh logging.
+        'market_data': {
+            'handlers': ['console', 'price_updates_file', 'errors_file'],
+            'level': 'INFO',
+            'propagate': False,
+        },
+        # Transaction/import operations are kept separate from portfolio
+        # calculation logs.
+        'portfolio.views': {
+            'handlers': ['console', 'transactions_file', 'errors_file'],
+            'level': 'INFO',
+            'propagate': False,
+        },
+        'portfolio': {
+            'handlers': ['console', 'portfolio_file', 'errors_file'],
+            'level': 'INFO',
+            'propagate': False,
+        },
+        'mutual_funds': {
+            'handlers': ['console', 'mutual_funds_file', 'errors_file'],
+            'level': 'INFO',
+            'propagate': False,
+        },
+        'watchlist': {
+            'handlers': ['console', 'watchlist_file', 'errors_file'],
+            'level': 'INFO',
+            'propagate': False,
+        },
+        'portfolio_news': {
+            'handlers': ['console', 'news_file', 'errors_file'],
+            'level': 'INFO',
+            'propagate': False,
+        },
+        'users': {
+            'handlers': ['console', 'authentication_file', 'errors_file'],
+            'level': 'INFO',
+            'propagate': False,
+        },
+        'investments': {
+            'handlers': ['console', 'imports_file', 'errors_file'],
+            'level': 'INFO',
+            'propagate': False,
+        },
         'django': {
-            'handlers': ['console', 'file'],
+            'handlers': ['console', 'application_file', 'errors_file'],
             'level': 'WARNING',
             'propagate': False,
         },

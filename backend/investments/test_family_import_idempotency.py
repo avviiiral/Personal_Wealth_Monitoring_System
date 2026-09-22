@@ -2,7 +2,7 @@ from datetime import date
 from decimal import Decimal
 
 from django.contrib.auth.models import User
-from django.db import IntegrityError
+from django.db import IntegrityError, transaction
 from django.test import TestCase
 
 from mutual_funds.models import (
@@ -111,12 +111,13 @@ class FamilyImportIdempotencyTests(TestCase):
         )
 
         with self.assertRaises(IntegrityError):
-            MutualFundScheme.objects.create(
-                owner=self.user2,
-                family=self.family,
-                scheme_name="Shared Fund",
-                isin_growth="TESTMF000003",
-            )
+            with transaction.atomic():
+                MutualFundScheme.objects.create(
+                    owner=self.user2,
+                    family=self.family,
+                    scheme_name="Shared Fund",
+                    isin_growth="TESTMF000003",
+                )
 
         self.assertEqual(
             MutualFundScheme.objects.filter(

@@ -6,6 +6,7 @@ from difflib import SequenceMatcher
 
 from typing import Optional
 
+from django.db.models import Q
 from django.utils import timezone
 
 from .news_provider import NewsArticleResult
@@ -82,13 +83,6 @@ class ArticleDeduplicator:
 
         url_hash = compute_url_hash(candidate.url)
 
-        existing = NewsArticle.objects.filter(
-            url_hash=url_hash
-        ).first()
-
-        if existing:
-            return existing
-
         normalized_title = normalize_title(candidate.title)
 
         fingerprint = compute_fingerprint(
@@ -96,9 +90,14 @@ class ArticleDeduplicator:
             candidate.published_at,
         )
 
-        existing = NewsArticle.objects.filter(
-            fingerprint=fingerprint
-        ).first()
+        existing = (
+            NewsArticle.objects
+            .filter(
+                Q(url_hash=url_hash)
+                | Q(fingerprint=fingerprint)
+            )
+            .first()
+        )
 
         if existing:
             return existing

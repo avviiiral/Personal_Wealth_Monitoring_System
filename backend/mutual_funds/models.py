@@ -85,7 +85,6 @@ class MutualFundScheme(models.Model):
         constraints = [
             models.UniqueConstraint(
                 fields=["family", "scheme_code"],
-                condition=models.Q(scheme_code__isnull=False),
                 name="unique_mf_scheme_family_code",
             ),
             models.UniqueConstraint(

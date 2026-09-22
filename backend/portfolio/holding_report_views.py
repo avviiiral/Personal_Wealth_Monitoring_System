@@ -286,12 +286,20 @@ def holding_report(request):
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def holding_matrix_report(request):
-    """Return Asset Name x Underlying percentages using uploaded snapshots first."""
+    """Return Underlying x Asset Name percentages using canonical ISIN identity."""
     family = require_active_family(request.user)
 
     def clean_matrix(value, default=""):
         value = str(value or "").strip()
         return value or default
+
+    def canonical_key(isin, name):
+        cleaned_isin = clean_matrix(isin).upper()
+        if cleaned_isin:
+            return ("isin", cleaned_isin)
+        normalized = re.sub(r"[^A-Z0-9]", "", clean_matrix(name).upper())
+        normalized = re.sub(r"(LIMITED|LTD|PRIVATE|PVT)$", "", normalized)
+        return ("name", normalized)
 
     latest_transaction = (
         Transaction.objects
@@ -306,11 +314,7 @@ def holding_matrix_report(request):
 
     positions = list(
         PortfolioPosition.objects
-        .filter(
-            family_id=family.id,
-            asset__is_active=True,
-            quantity__gt=0,
-        )
+        .filter(family_id=family.id, asset__is_active=True, quantity__gt=0)
         .select_related("asset")
         .annotate(
             latest_asset_name=Subquery(latest_transaction.values("asset_name")[:1]),
@@ -318,25 +322,26 @@ def holding_matrix_report(request):
         )
     )
 
-    # Portfolio-page look-through is the source for PMS/direct-equity assets,
-    # while an explicitly uploaded underlying workbook is authoritative for
-    # assets such as mutual funds where the workbook contains the security
-    # weights.
     uploaded_rows = list(
         AssetUnderlyingHolding.objects
         .filter(family_id=family.id)
         .select_related("asset")
-        .only("asset_id", "stock_name", "holding_percentage", "asset__name")
+        .only(
+            "asset_id", "stock_name", "isin", "holding_percentage",
+            "asset__name",
+        )
     )
+
     uploaded_by_asset = {}
     uploaded_by_name = {}
     for underlying in uploaded_rows:
         uploaded_by_asset.setdefault(underlying.asset_id, []).append(underlying)
-        name_key = clean_matrix(underlying.asset.name).casefold()
-        if name_key:
-            uploaded_by_name.setdefault(name_key, []).append(underlying)
+        uploaded_by_name.setdefault(
+            clean_matrix(underlying.asset.name).casefold(), []
+        ).append(underlying)
 
     exposure = {}
+    display_names = {}
     underlying_totals = {}
 
     for position in positions:
@@ -345,14 +350,11 @@ def holding_matrix_report(request):
             continue
 
         asset_name = clean_matrix(position.latest_asset_name, position.asset.name)
-
-        # IMPORTANT: uploaded workbook wins over the transaction's generic
-        # "underlying" field. This prevents a mutual fund such as HDFC Focused
-        # Fund from appearing as its own underlying when its workbook contains
-        # the actual stocks.
         rows = uploaded_by_asset.get(position.asset_id, [])
         if not rows:
-            rows = uploaded_by_name.get(clean_matrix(position.asset.name).casefold(), [])
+            rows = uploaded_by_name.get(
+                clean_matrix(position.asset.name).casefold(), []
+            )
 
         if rows:
             for underlying in rows:
@@ -360,27 +362,34 @@ def holding_matrix_report(request):
                 underlying_name = clean_matrix(underlying.stock_name)
                 if pct <= 0 or not underlying_name:
                     continue
+
+                identity = canonical_key(underlying.isin, underlying_name)
+                display_names.setdefault(identity, underlying_name)
+
                 value = current_value * pct / 100.0
-                key = (asset_name, underlying_name)
+                key = (asset_name, identity)
                 exposure[key] = exposure.get(key, 0.0) + value
-                underlying_totals[underlying_name] = (
-                    underlying_totals.get(underlying_name, 0.0) + value
+                underlying_totals[identity] = (
+                    underlying_totals.get(identity, 0.0) + value
                 )
             continue
 
-        # No uploaded snapshot: use the underlying already represented by the
-        # portfolio position (the existing PMS/direct-equity look-through).
         underlying = clean_matrix(position.latest_underlying)
         if not underlying:
             continue
 
-        key = (asset_name, underlying)
+        identity = canonical_key("", underlying)
+        display_names.setdefault(identity, underlying)
+        key = (asset_name, identity)
         exposure[key] = exposure.get(key, 0.0) + current_value
-        underlying_totals[underlying] = (
-            underlying_totals.get(underlying, 0.0) + current_value
+        underlying_totals[identity] = (
+            underlying_totals.get(identity, 0.0) + current_value
         )
 
-    underlyings = sorted(underlying_totals.keys(), key=str.casefold)
+    identities = sorted(
+        underlying_totals.keys(),
+        key=lambda identity: display_names.get(identity, "").casefold(),
+    )
     asset_names = sorted(
         {asset_name for asset_name, _ in exposure.keys()},
         key=str.casefold,
@@ -389,16 +398,18 @@ def holding_matrix_report(request):
     results = []
     for asset_name in asset_names:
         row = {"asset_name": asset_name}
-        for underlying in underlyings:
-            total = underlying_totals.get(underlying, 0.0)
-            value = exposure.get((asset_name, underlying), 0.0)
-            row[underlying] = (value / total * 100.0) if total > 0 else 0.0
+        for identity in identities:
+            total = underlying_totals.get(identity, 0.0)
+            value = exposure.get((asset_name, identity), 0.0)
+            row[display_names[identity]] = (
+                value / total * 100.0 if total > 0 else 0.0
+            )
         results.append(row)
 
     return Response({
         "success": True,
         "count": len(results),
-        "underlyings": underlyings,
+        "underlyings": [display_names[identity] for identity in identities],
         "results": results,
     }, status=status.HTTP_200_OK)
 

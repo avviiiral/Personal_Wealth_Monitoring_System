@@ -410,27 +410,31 @@ class AMFIService:
         records,
     ):
         """
-        Two bulk_create(update_conflicts) calls instead of ~2 ORM
-        queries per record. Keeps each batch's write-lock hold
-        time to milliseconds instead of seconds - this is what was
-        starving concurrent writers (a manual-price PUT, another
-        user's edit) during a full AMFI import.
+        Import one bounded AMFI batch while respecting both family-level
+        uniqueness constraints on MutualFundScheme.
 
-        Field-preservation: a record that doesn't carry an
-        isin_growth/isin_dividend value (AMFI rows only ever
-        populate one of the two) must not blank out a value
-        already stored for that scheme, so existing values are
-        looked up first and only overwritten when the incoming
-        record actually has something.
+        AMFI can occasionally publish multiple rows that normalize to the
+        same scheme_name.  The database intentionally allows only one scheme
+        with a given name inside a family, so those rows must resolve to the
+        existing family scheme instead of attempting a second insert.
+
+        Normal rows are still handled in bulk.  Only name-collision rows use
+        individual updates, keeping the common path fast.
         """
 
         from users.permissions import require_active_family
 
         family = require_active_family(owner)
-        scheme_codes = [
-            record["scheme_code"]
-            for record in records
-        ]
+
+        # Collapse duplicate AMFI rows by scheme code first.  The last row
+        # wins, matching the previous sequential import behavior.
+        records_by_code = {}
+        for record in records:
+            records_by_code[record["scheme_code"]] = record
+
+        records = list(records_by_code.values())
+        scheme_codes = [record["scheme_code"] for record in records]
+        scheme_names = [record["scheme_name"] for record in records]
 
         existing_schemes = {
             scheme.scheme_code: scheme
@@ -442,84 +446,142 @@ class AMFIService:
                 )
             )
         }
+        existing_by_name = {
+            scheme.scheme_name: scheme
+            for scheme in (
+                MutualFundScheme.objects
+                .filter(
+                    family=family,
+                    scheme_name__in=scheme_names,
+                )
+            )
+        }
 
-        # Keyed by scheme_code so a scheme_code repeated within
-        # one batch naturally resolves to the last record's
-        # values, same as the sequential update_or_create loop
-        # this replaced - and so bulk_create never sees the same
-        # conflict target twice in one call, which SQLite/
-        # Postgres both reject.
-        schemes_by_code = {}
+        # AMFI scheme_code is normally the strongest identity.  However, if
+        # the family already has the incoming scheme_name under another code,
+        # the family/name uniqueness rule wins: reuse that existing scheme.
+        # This is what prevents errors such as:
+        # (family_id=1, scheme_name="Axis Children's Fund") already exists.
+        canonical_by_code = {}
+        collision_records = []
 
         for record in records:
-
-            scheme_code = record["scheme_code"]
-            existing = existing_schemes.get(scheme_code)
-
-            schemes_by_code[scheme_code] = MutualFundScheme(
-                owner=owner,
-                family=family,
-                scheme_code=scheme_code,
-                scheme_name=record["scheme_name"],
-                isin_growth=(
-                    record["isin_growth"]
-                    or (
-                        existing.isin_growth
-                        if existing
-                        else None
-                    )
-                ),
-                isin_dividend=(
-                    record["isin_dividend"]
-                    or (
-                        existing.isin_dividend
-                        if existing
-                        else None
-                    )
-                ),
+            incoming_code = record["scheme_code"]
+            existing_by_code = existing_schemes.get(incoming_code)
+            existing_by_name_match = existing_by_name.get(
+                record["scheme_name"]
             )
 
-        MutualFundScheme.objects.bulk_create(
-            list(schemes_by_code.values()),
-            update_conflicts=True,
-            unique_fields=["family", "scheme_code"],
-            update_fields=[
-                "scheme_name",
-                "isin_growth",
-                "isin_dividend",
-            ],
-        )
+            if (
+                existing_by_name_match is not None
+                and existing_by_code is None
+            ):
+                canonical_by_code[incoming_code] = existing_by_name_match
+                collision_records.append(
+                    (record, existing_by_name_match)
+                )
+            else:
+                canonical_by_code[incoming_code] = existing_by_code
 
-        # bulk_create(update_conflicts=True) does not reliably
-        # return primary keys for rows that hit the conflict path
-        # (only freshly inserted rows are guaranteed one back), so
-        # re-fetch scheme ids by code to build the NAV rows below
-        # against the right scheme_id.
-        scheme_ids_by_code = dict(
+        # Bulk path for schemes that do not collide with an existing
+        # family/name row.  Records already mapped to an existing
+        # family/name scheme are excluded from this upsert.
+        bulk_records = [
+            record
+            for record in records
+            if not (
+                existing_by_name.get(record["scheme_name"]) is not None
+                and existing_schemes.get(record["scheme_code"]) is None
+            )
+        ]
+
+        if bulk_records:
+            bulk_by_code = {}
+
+            for record in bulk_records:
+                existing = existing_schemes.get(
+                    record["scheme_code"]
+                )
+
+                bulk_by_code[record["scheme_code"]] = (
+                    MutualFundScheme(
+                        owner=owner,
+                        family=family,
+                        scheme_code=record["scheme_code"],
+                        scheme_name=record["scheme_name"],
+                        isin_growth=(
+                            record["isin_growth"]
+                            or (
+                                existing.isin_growth
+                                if existing
+                                else None
+                            )
+                        ),
+                        isin_dividend=(
+                            record["isin_dividend"]
+                            or (
+                                existing.isin_dividend
+                                if existing
+                                else None
+                            )
+                        ),
+                    )
+                )
+
+            MutualFundScheme.objects.bulk_create(
+                list(bulk_by_code.values()),
+                update_conflicts=True,
+                unique_fields=["family", "scheme_code"],
+                update_fields=[
+                    "scheme_name",
+                    "isin_growth",
+                    "isin_dividend",
+                ],
+            )
+
+        # Re-fetch the canonical scheme rows.  This also gives us the primary
+        # key of rows reused because of the family/name uniqueness rule.
+        scheme_ids_by_code = {}
+
+        for code, scheme in canonical_by_code.items():
+            if scheme is not None:
+                scheme_ids_by_code[code] = scheme.id
+
+        refreshed_schemes = (
             MutualFundScheme.objects
             .filter(
                 family=family,
                 scheme_code__in=scheme_codes,
             )
-            .values_list("scheme_code", "id")
         )
+        scheme_ids_by_code.update(
+            refreshed_schemes.values_list(
+                "scheme_code",
+                "id",
+            )
+        )
+
+        # Name-collision rows may have a canonical scheme whose stored code
+        # differs from the AMFI code.  Resolve them directly by name as a
+        # final safety net and preserve the existing family record.
+        collision_scheme_ids = {
+            record["scheme_code"]: scheme.id
+            for record, scheme in collision_records
+        }
+
+        scheme_ids_by_code.update(collision_scheme_ids)
 
         navs_by_key = {}
 
         for record in records:
-
             scheme_id = scheme_ids_by_code.get(
                 record["scheme_code"]
             )
 
             if scheme_id is None:
-                # Should be unreachable - the scheme was just
-                # written above - but never fabricate a NAV row
-                # against a scheme that doesn't actually exist.
                 continue
 
             nav_key = (scheme_id, record["date"])
-
             navs_by_key[nav_key] = MutualFundNAV(
                 scheme_id=scheme_id,
                 date=record["date"],
@@ -527,17 +589,14 @@ class AMFIService:
                 nav=record["nav"],
             )
 
-        MutualFundNAV.objects.bulk_create(
-            list(navs_by_key.values()),
-            update_conflicts=True,
-            unique_fields=["scheme", "date", "source"],
-            update_fields=["nav"],
-        )
+        if navs_by_key:
+            MutualFundNAV.objects.bulk_create(
+                list(navs_by_key.values()),
+                update_conflicts=True,
+                unique_fields=["scheme", "date", "source"],
+                update_fields=["nav"],
+            )
 
-        # Counts records processed, matching the old loop's
-        # semantics (it incremented both counters once per record
-        # regardless of create vs. update) - not the number of
-        # distinct rows bulk_create actually wrote.
         return len(records), len(records)
 
     @staticmethod

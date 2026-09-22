@@ -162,7 +162,7 @@ class PortfolioTreeServiceTests(TestCase):
     def test_sell_reduces_position(self):
         Transaction.objects.create(
             owner=self.user,
-            family=family,
+            family=self.family,
             asset=self.asset,
             family_name="Family A",
             portfolio="Portfolio A",

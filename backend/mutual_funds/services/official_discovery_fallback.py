@@ -118,8 +118,8 @@ class ProductionMutualFundUnderlyingService(OfficialMutualFundUnderlyingService)
 
         candidates = []
         patterns = (
-            r"""(?:https?:)?//[^"'<>s]+\.(?:xlsx?|csv|pdf)(?:\?[^"'<>s]*)?""",
-            r"""(?:/|\.\.?/)[^"'<>s]+\.(?:xlsx?|csv|pdf)(?:\?[^"'<>s]*)?""",
+            r"""(?:https?:)?//[^"'<>\s]+\.(?:xlsx?|csv|pdf)(?:\?[^"'<>\s]*)?""",
+            r"""(?:/|\.\.?/)[^"'<>\s]+\.(?:xlsx?|csv|pdf)(?:\?[^"'<>\s]*)?""",
         )
         for pattern in patterns:
             for raw in re.findall(pattern, html, re.I):

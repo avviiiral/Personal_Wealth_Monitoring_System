@@ -3,6 +3,7 @@ from functools import lru_cache
 
 import yfinance as yf
 
+from investments.models import Asset, SecurityMaster
 from market_data.services.security_resolver import SecurityResolver
 
 logger = logging.getLogger(__name__)
@@ -86,14 +87,32 @@ class UnderlyingSecurityClassifier:
             return None
 
         try:
-            asset = SecurityMaster.objects.filter(
-                asset_name__iexact=name
-            ).only("isin").first()
+            master = (
+                SecurityMaster.objects
+                .filter(asset_name__iexact=name, isin__isnull=False)
+                .exclude(isin__exact="")
+                .only("isin")
+                .first()
+            )
+            isin = str(master.isin or "").strip().upper() if master else ""
+            if isin:
+                return isin
+        except Exception:
+            logger.warning("[UNDERLYING ISIN] SecurityMaster lookup failed for %s", name, exc_info=True)
+
+        try:
+            asset = (
+                Asset.objects
+                .filter(name__iexact=name, isin__isnull=False)
+                .exclude(isin__exact="")
+                .only("isin")
+                .first()
+            )
             isin = str(asset.isin or "").strip().upper() if asset else ""
             if isin:
                 return isin
         except Exception:
-            pass
+            logger.warning("[UNDERLYING ISIN] Asset lookup failed for %s", name, exc_info=True)
 
         candidates = []
         try:

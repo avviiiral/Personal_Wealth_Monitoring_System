@@ -787,6 +787,7 @@ class InvestmentSummaryService:
                     exposure = current_value * (row.holding_percentage or cls.ZERO) / Decimal("100")
                     sector = (row.sector or "").strip() or "Unclassified"
                     if sector.upper() == cls.EXCLUDED_ALLOCATION_LABEL:
+                        disclosed += row.holding_percentage or cls.ZERO
                         continue
                     totals[sector] = totals.get(sector, cls.ZERO) + exposure
                     disclosed += row.holding_percentage or cls.ZERO
@@ -833,6 +834,7 @@ class InvestmentSummaryService:
                     exposure = current_value * (row.holding_percentage or cls.ZERO) / Decimal("100")
                     cap_type = (row.cap_type or "").strip() or "Unclassified"
                     if cap_type.upper() == cls.EXCLUDED_ALLOCATION_LABEL:
+                        disclosed += row.holding_percentage or cls.ZERO
                         continue
                     totals[cap_type] = totals.get(cap_type, cls.ZERO) + exposure
                     disclosed += row.holding_percentage or cls.ZERO

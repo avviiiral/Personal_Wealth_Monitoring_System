@@ -280,3 +280,109 @@ def holding_report(request):
         "count": len(results),
         "results": results,
     }, status=status.HTTP_200_OK)
+
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def holding_matrix_report(request):
+    """Return Asset Name x Underlying exposure percentages for equity PMS/direct equity."""
+    family = require_active_family(request.user)
+
+    def clean_matrix(value, default="Unassigned"):
+        value = str(value or "").strip()
+        return value or default
+
+    latest_transaction = (
+        Transaction.objects
+        .filter(
+            family_id=OuterRef("family_id"),
+            asset_id=OuterRef("asset_id"),
+            family_name=OuterRef("family_name"),
+            portfolio=OuterRef("portfolio"),
+        )
+        .order_by("-transaction_date", "-id")
+    )
+
+    positions = list(
+        PortfolioPosition.objects
+        .filter(family_id=family.id, asset__is_active=True, quantity__gt=0)
+        .select_related("asset")
+        .annotate(
+            latest_asset_class=Subquery(latest_transaction.values("asset_class")[:1]),
+            latest_sub_class=Subquery(latest_transaction.values("sub_class")[:1]),
+            latest_asset_name=Subquery(latest_transaction.values("asset_name")[:1]),
+        )
+    )
+
+    asset_ids = {position.asset_id for position in positions}
+    underlying_rows = list(
+        AssetUnderlyingHolding.objects
+        .filter(family_id=family.id, asset_id__in=asset_ids)
+        .select_related("asset")
+        .only("asset_id", "stock_name", "holding_percentage", "asset__name")
+    )
+
+    rows_by_asset = {}
+    rows_by_asset_name = {}
+    for row in underlying_rows:
+        rows_by_asset.setdefault(row.asset_id, []).append(row)
+        rows_by_asset_name.setdefault(clean_matrix(row.asset.name, "").casefold(), []).append(row)
+
+    exposure = {}
+    totals = {}
+
+    for position in positions:
+        asset_class = clean_matrix(position.latest_asset_class, "").upper()
+        sub_class = clean_matrix(position.latest_sub_class, "").upper()
+
+        if "DIRECT EQUITY" in asset_class or "DIRECT EQUITY" in sub_class:
+            report_type = "Direct Equity"
+        elif "PMS" in asset_class or "PMS" in sub_class:
+            report_type = "Equity PMS" if "EQUITY" in asset_class or "EQUITY" in sub_class else None
+        else:
+            report_type = None
+
+        if report_type not in ("Direct Equity", "Equity PMS"):
+            continue
+
+        asset_name = clean_matrix(position.latest_asset_name, position.asset.name)
+        current_value = float(position.current_value or 0)
+        if current_value <= 0:
+            continue
+
+        rows = rows_by_asset.get(position.asset_id, [])
+        if not rows:
+            rows = rows_by_asset_name.get(clean_matrix(position.asset.name, "").casefold(), [])
+
+        if report_type == "Equity PMS" and rows:
+            for underlying in rows:
+                pct = float(underlying.holding_percentage or 0)
+                underlying_name = clean_matrix(underlying.stock_name, "")
+                if pct <= 0 or not underlying_name:
+                    continue
+                value = current_value * pct / 100.0
+                exposure[(asset_name, underlying_name)] = exposure.get((asset_name, underlying_name), 0.0) + value
+                totals[underlying_name] = totals.get(underlying_name, 0.0) + value
+        elif report_type == "Direct Equity":
+            underlying_name = asset_name
+            exposure[(asset_name, underlying_name)] = exposure.get((asset_name, underlying_name), 0.0) + current_value
+            totals[underlying_name] = totals.get(underlying_name, 0.0) + current_value
+
+    underlying_names = sorted(totals.keys(), key=str.casefold)
+    asset_names = sorted({key[0] for key in exposure.keys()}, key=str.casefold)
+    results = []
+    for asset_name in asset_names:
+        row = {"asset_name": asset_name}
+        for underlying_name in underlying_names:
+            value = exposure.get((asset_name, underlying_name), 0.0)
+            total = totals.get(underlying_name, 0.0)
+            row[underlying_name] = (value / total * 100.0) if total > 0 else 0.0
+        results.append(row)
+
+    return Response({
+        "success": True,
+        "count": len(results),
+        "underlyings": underlying_names,
+        "results": results,
+    }, status=status.HTTP_200_OK)

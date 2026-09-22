@@ -11,7 +11,7 @@ from .views import (
     portfolio_tree,
     portfolio_asset_underlying_import,
 )
-from .holding_report_views import holding_report
+from .holding_report_views import holding_report, holding_matrix_report
 from .equity_market_cap_views import equity_market_cap_report
 
 from .manual_price_views import (
@@ -66,6 +66,12 @@ urlpatterns = [
         "holding-report/",
         holding_report,
         name="holding-report",
+    ),
+
+    path(
+        "holding-matrix/",
+        holding_matrix_report,
+        name="holding-matrix",
     ),
 
     path(

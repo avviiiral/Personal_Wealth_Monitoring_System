@@ -315,40 +315,28 @@ def holding_matrix_report(request):
         )
     )
 
-    asset_ids = {position.asset_id for position in positions}
+    # Load ALL underlying snapshots for the family. This deliberately does
+    # not restrict the query to position.asset_id because older uploads can
+    # be attached to a duplicate Asset record with the same asset name.
     underlying_rows = list(
         AssetUnderlyingHolding.objects
-        .filter(family_id=family.id, asset_id__in=asset_ids)
+        .filter(family_id=family.id)
         .select_related("asset")
         .only("asset_id", "stock_name", "holding_percentage", "asset__name")
     )
 
     rows_by_asset = {}
     rows_by_asset_name = {}
-    for row in underlying_rows:
-        rows_by_asset.setdefault(row.asset_id, []).append(row)
-        rows_by_asset_name.setdefault(clean_matrix(row.asset.name, "").casefold(), []).append(row)
+    for underlying in underlying_rows:
+        rows_by_asset.setdefault(underlying.asset_id, []).append(underlying)
+        key = clean_matrix(underlying.asset.name, "").casefold()
+        if key:
+            rows_by_asset_name.setdefault(key, []).append(underlying)
 
     exposure = {}
     totals = {}
 
     for position in positions:
-        asset_class = clean_matrix(position.latest_asset_class, "").upper()
-        sub_class = clean_matrix(position.latest_sub_class, "").upper()
-
-        if "DIRECT EQUITY" in asset_class or "DIRECT EQUITY" in sub_class:
-            report_type = "Direct Equity"
-        elif "PMS" in asset_class or "PMS" in sub_class:
-            # PMS holdings are the PMS sleeve represented by this matrix.
-            # Do not require the text "EQUITY" in the classification: existing
-            # transaction uploads may use simply "PMS" or "Equity PMS".
-            report_type = "Equity PMS"
-        else:
-            report_type = None
-
-        if report_type not in ("Direct Equity", "Equity PMS"):
-            continue
-
         asset_name = clean_matrix(position.latest_asset_name, position.asset.name)
         current_value = float(position.current_value or 0)
         if current_value <= 0:
@@ -356,24 +344,41 @@ def holding_matrix_report(request):
 
         rows = rows_by_asset.get(position.asset_id, [])
         if not rows:
-            rows = rows_by_asset_name.get(clean_matrix(position.asset.name, "").casefold(), [])
+            rows = rows_by_asset_name.get(
+                clean_matrix(position.asset.name, "").casefold(),
+                [],
+            )
 
-        if report_type == "Equity PMS" and rows:
+        # Presence of an uploaded underlying snapshot is the authoritative
+        # indicator that this position is a PMS/fund-style look-through
+        # holding. Do this before reading asset-class labels because historical
+        # transaction uploads may classify PMS rows inconsistently.
+        if rows:
             for underlying in rows:
                 pct = float(underlying.holding_percentage or 0)
                 underlying_name = clean_matrix(underlying.stock_name, "")
                 if pct <= 0 or not underlying_name:
                     continue
+
                 value = current_value * pct / 100.0
-                exposure[(asset_name, underlying_name)] = exposure.get((asset_name, underlying_name), 0.0) + value
+                key = (asset_name, underlying_name)
+                exposure[key] = exposure.get(key, 0.0) + value
                 totals[underlying_name] = totals.get(underlying_name, 0.0) + value
-        elif report_type == "Direct Equity":
+            continue
+
+        # No look-through snapshot: only then treat an explicitly classified
+        # Direct Equity position as its own underlying.
+        asset_class = clean_matrix(position.latest_asset_class, "").upper()
+        sub_class = clean_matrix(position.latest_sub_class, "").upper()
+        if "DIRECT EQUITY" in asset_class or "DIRECT EQUITY" in sub_class:
             underlying_name = asset_name
-            exposure[(asset_name, underlying_name)] = exposure.get((asset_name, underlying_name), 0.0) + current_value
+            key = (asset_name, underlying_name)
+            exposure[key] = exposure.get(key, 0.0) + current_value
             totals[underlying_name] = totals.get(underlying_name, 0.0) + current_value
 
     underlying_names = sorted(totals.keys(), key=str.casefold)
     asset_names = sorted({key[0] for key in exposure.keys()}, key=str.casefold)
+
     results = []
     for asset_name in asset_names:
         row = {"asset_name": asset_name}
@@ -389,3 +394,4 @@ def holding_matrix_report(request):
         "underlyings": underlying_names,
         "results": results,
     }, status=status.HTTP_200_OK)
+

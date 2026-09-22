@@ -235,3 +235,18 @@ class PortfolioPositionEngine:
             positions.append(position)
 
         return positions
+    
+    @classmethod
+    def rebuild_all_for_user(cls, user):
+        """
+        Backward-compatible user-scoped rebuild.
+
+        Existing transaction flows depend on the caller's active
+        family. Manual-price editing uses rebuild_all_for_family()
+        instead so an editor's active family does not control the
+        asset owner's position rebuild.
+        """
+        from users.permissions import require_active_family
+
+        family = require_active_family(user)
+        return cls.rebuild_all_for_family(family)

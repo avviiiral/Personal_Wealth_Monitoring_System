@@ -111,12 +111,13 @@ class FamilyImportIdempotencyTests(TestCase):
         )
 
         with self.assertRaises(IntegrityError):
-            MutualFundScheme.objects.create(
-                owner=self.user2,
-                family=self.family,
-                scheme_name="Shared Fund",
-                isin_growth="TESTMF000003",
-            )
+            with transaction.atomic():
+                MutualFundScheme.objects.create(
+                    owner=self.user2,
+                    family=self.family,
+                    scheme_name="Shared Fund",
+                    isin_growth="TESTMF000003",
+                )
 
         self.assertEqual(
             MutualFundScheme.objects.filter(

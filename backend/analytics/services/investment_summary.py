@@ -22,6 +22,7 @@ class InvestmentSummaryService:
     """
 
     ZERO = Decimal("0")
+    EXCLUDED_ALLOCATION_LABEL = "EQUITY AIF (CATEGORY III)"
 
     @staticmethod
     def _scope_q(user):
@@ -785,6 +786,8 @@ class InvestmentSummaryService:
                 for row in underlying_rows:
                     exposure = current_value * (row.holding_percentage or cls.ZERO) / Decimal("100")
                     sector = (row.sector or "").strip() or "Unclassified"
+                    if sector.upper() == cls.EXCLUDED_ALLOCATION_LABEL:
+                        continue
                     totals[sector] = totals.get(sector, cls.ZERO) + exposure
                     disclosed += row.holding_percentage or cls.ZERO
                 residual = current_value * max(cls.ZERO, Decimal("100") - disclosed) / Decimal("100")
@@ -794,6 +797,8 @@ class InvestmentSummaryService:
 
             sm = sm_by_asset_id.get(holding.asset_id, {})
             sector = (sm.get("sector") or "").strip() or "Unclassified"
+            if sector.upper() == cls.EXCLUDED_ALLOCATION_LABEL:
+                continue
             totals[sector] = totals.get(sector, cls.ZERO) + current_value
 
         grand_total = sum(totals.values(), cls.ZERO)
@@ -827,6 +832,8 @@ class InvestmentSummaryService:
                 for row in underlying_rows:
                     exposure = current_value * (row.holding_percentage or cls.ZERO) / Decimal("100")
                     cap_type = (row.cap_type or "").strip() or "Unclassified"
+                    if cap_type.upper() == cls.EXCLUDED_ALLOCATION_LABEL:
+                        continue
                     totals[cap_type] = totals.get(cap_type, cls.ZERO) + exposure
                     disclosed += row.holding_percentage or cls.ZERO
                 residual = current_value * max(cls.ZERO, Decimal("100") - disclosed) / Decimal("100")
@@ -836,6 +843,8 @@ class InvestmentSummaryService:
 
             sm = sm_by_asset_id.get(holding.asset_id, {})
             cap_type = (sm.get("cap_type") or "").strip() or "Unclassified"
+            if cap_type.upper() == cls.EXCLUDED_ALLOCATION_LABEL:
+                continue
             totals[cap_type] = totals.get(cap_type, cls.ZERO) + current_value
 
         grand_total = sum(totals.values(), cls.ZERO)

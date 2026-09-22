@@ -719,7 +719,7 @@ export class DownloadsComponent implements OnInit {
 
     const addCell = (assetName: string, underlying: string, percentage: number): void => {
       const cleanAsset = this.clean(assetName);
-      const cleanUnderlying = this.clean(underlying, cleanAsset);
+      const cleanUnderlying = this.clean(underlying);
       if (!Number.isFinite(percentage) || percentage <= 0) return;
 
       rowAssetNames.add(cleanAsset);

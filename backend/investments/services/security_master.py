@@ -46,14 +46,10 @@ class SecurityMasterService:
         )
 
         if isin:
-            security = (
-                SecurityMaster.objects
-                .filter(
-                    family=family,
-                    isin=isin,
-                )
-                .first()
-            )
+            filters = {"family": family, "isin": isin}
+            if family is None:
+                filters["owner"] = owner
+            security = SecurityMaster.objects.filter(**filters).first()
 
             if security:
 
@@ -86,6 +82,7 @@ class SecurityMasterService:
                 return security
 
             return SecurityMaster.objects.create(
+                owner=owner,
                 family=family,
                 isin=isin,
                 asset_name=asset.name,
@@ -135,24 +132,19 @@ class SecurityMasterService:
         )
 
         if isin:
-            return (
-                SecurityMaster.objects
-                .filter(
-                    scope,
-                    isin=isin,
-                )
-                .first()
-            )
+            filters = {"isin": isin}
+            if family is None:
+                filters.update(owner=owner, family__isnull=True)
+            else:
+                filters["family"] = family
+            return SecurityMaster.objects.filter(**filters).first()
 
-        return (
-            SecurityMaster.objects
-            .filter(
-                scope,
-                isin__isnull=True,
-                asset_name=asset.name,
-            )
-            .first()
-        )
+        filters = {"isin__isnull": True, "asset_name": asset.name}
+        if family is None:
+            filters.update(owner=owner, family__isnull=True)
+        else:
+            filters["family"] = family
+        return SecurityMaster.objects.filter(**filters).first()
 
     @staticmethod
     def update_classification(
@@ -161,14 +153,10 @@ class SecurityMasterService:
         sector=None,
         cap_type=None,
     ):
-        security = (
-            SecurityMaster.objects
-            .filter(
-                id=security_id,
-                family=family,
-            )
-            .first()
-        )
+        security = SecurityMaster.objects.filter(
+            id=security_id,
+            owner=owner,
+        ).first()
 
         if security is None:
             raise SecurityMaster.DoesNotExist(

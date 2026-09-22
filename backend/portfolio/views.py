@@ -1,3 +1,4 @@
+import logging
 import traceback
 from decimal import Decimal
 from typing import cast
@@ -32,6 +33,8 @@ from .serializers import (
     TransactionEditHistorySerializer,
 )
 from users.permissions import family_scope, require_active_family
+
+logger = logging.getLogger("portfolio.views")
 
 
 @api_view(["GET", "POST"])
@@ -97,6 +100,7 @@ def portfolio_transactions(request):
     with transaction.atomic():
         family = require_active_family(request.user)
         transaction_obj = cast(Transaction, serializer.save(owner=request.user, family=family))
+        logger.info("Transaction created: id=%s asset_id=%s user_id=%s", transaction_obj.id, transaction_obj.asset_id, request.user.id)
         HoldingCalculationEngine.rebuild_holding(transaction_obj.asset)
         PortfolioPositionEngine.rebuild_all_for_user(request.user)
     return Response(TransactionSerializer(transaction_obj).data, status=status.HTTP_201_CREATED)
@@ -136,7 +140,10 @@ def portfolio_transaction_detail(request, transaction_id):
     if request.method == "DELETE":
         old_asset = transaction_obj.asset
         with transaction.atomic():
+            transaction_id = transaction_obj.id
+            asset_id = old_asset.id
             transaction_obj.delete()
+            logger.info("Transaction deleted: id=%s asset_id=%s user_id=%s", transaction_id, asset_id, request.user.id)
             HoldingCalculationEngine.rebuild_holding(old_asset)
             PortfolioPositionEngine.rebuild_all_for_user(request.user)
         return Response(status=status.HTTP_204_NO_CONTENT)
@@ -156,6 +163,7 @@ def portfolio_transaction_detail(request, transaction_id):
         new_values = _transaction_history_snapshot(transaction_obj)
         changed_fields = [field for field in new_values if old_values.get(field) != new_values.get(field)]
         if changed_fields:
+            logger.info("Transaction updated: id=%s changed_fields=%s user_id=%s", transaction_obj.id, changed_fields, request.user.id)
             TransactionEditHistory.objects.create(
                 transaction=transaction_obj,
                 owner=transaction_obj.owner,

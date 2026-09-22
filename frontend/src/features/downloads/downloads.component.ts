@@ -712,16 +712,34 @@ export class DownloadsComponent implements OnInit {
   private async downloadHoldingMatrix(): Promise<void> {
     const response = await firstValueFrom(this.portfolioApi.getHoldingMatrix());
     const underlyings = response.underlyings ?? [];
-    const rows = (response.results ?? []).map(row => ({ ...row }));
+    const sourceRows = response.results ?? [];
+
+    // Transpose the matrix so Underlying is on rows and Asset Name is on columns.
+    const assetNames = sourceRows
+      .map(row => row.asset_name)
+      .filter((name): name is string => typeof name === 'string' && name.trim().length > 0)
+      .sort((a, b) => a.localeCompare(b));
+
+    const rows = underlyings.map(underlying => {
+      const row: Record<string, unknown> = { underlying };
+
+      for (const sourceRow of sourceRows) {
+        const assetName = sourceRow.asset_name;
+        if (typeof assetName !== 'string' || !assetName.trim()) continue;
+        row[assetName] = Number(sourceRow[underlying] ?? 0);
+      }
+
+      return row;
+    });
 
     const columns: Array<[string, string]> = [
-      ['Asset Name', 'asset_name'],
-      ...underlyings.map(underlying => [underlying, underlying] as [string, string]),
+      ['Underlying', 'underlying'],
+      ...assetNames.map(assetName => [assetName, assetName] as [string, string]),
     ];
 
     await this.exportWorkbook(
       'Holding Matrix',
-      'Holding Matrix - Asset Name vs Underlying',
+      'Holding Matrix - Underlying vs Asset Name',
       columns,
       rows,
       'holding_matrix',

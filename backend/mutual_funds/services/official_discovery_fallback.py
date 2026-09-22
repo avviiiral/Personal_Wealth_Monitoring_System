@@ -143,7 +143,7 @@ class ProductionMutualFundUnderlyingService(OfficialMutualFundUnderlyingService)
         for link in cls._official_links(html, page_url):
             parsed = urlparse(link)
             lower = link.lower()
-            if re.search(r"\\.(?:xlsx?|csv|pdf)(?:$|\\?)", parsed.path, re.I):
+            if re.search(r"\.(?:xlsx?|csv|pdf)(?:$|\?)", parsed.path, re.I):
                 continue
             if not (
                 cls._scheme_link_match(link, scheme)

@@ -3,7 +3,7 @@ from decimal import Decimal
 
 from django.contrib.auth.models import User
 from django.db import close_old_connections
-from django.test import TestCase
+from django.test import TestCase, TransactionTestCase
 
 from users.models import FamilyGroup
 
@@ -480,7 +480,7 @@ class TransactionImportExcelShapeTests(TestCase):
         self.assertIn(asset.id, result["touched_asset_ids"])
 
 
-class AutoPriceRefreshTests(TestCase):
+class AutoPriceRefreshTests(TransactionTestCase):
     """
     The post-import price refresh runs on a background thread (see
     services.auto_price_refresh) so the import response never
@@ -504,7 +504,6 @@ class AutoPriceRefreshTests(TestCase):
         )
 
     def test_refresh_assets_calls_fetch_and_rebuild_for_each_asset(self):
-        close_old_connections()
         from .services.auto_price_refresh import _refresh_assets
 
         with patch(
@@ -522,7 +521,6 @@ class AutoPriceRefreshTests(TestCase):
         )
 
     def test_refresh_assets_does_not_raise_on_individual_failure(self):
-        close_old_connections()
         from .services.auto_price_refresh import _refresh_assets
 
         with patch(

@@ -78,5 +78,51 @@ class UnderlyingSecurityClassifier:
         return None, None
 
     @classmethod
+    @lru_cache(maxsize=512)
+    def resolve_isin(cls, stock_name):
+        """Resolve an underlying security to its canonical ISIN."""
+        name = str(stock_name or "").strip()
+        if not name:
+            return None
+
+        try:
+            asset = SecurityMaster.objects.filter(
+                asset_name__iexact=name
+            ).only("isin").first()
+            isin = str(asset.isin or "").strip().upper() if asset else ""
+            if isin:
+                return isin
+        except Exception:
+            pass
+
+        candidates = []
+        try:
+            resolved = SecurityResolver.resolve_yahoo_symbol(name=name)
+            if resolved:
+                candidates.append(resolved)
+        except Exception:
+            pass
+
+        try:
+            search = yf.Search(name, max_results=10)
+            for quote in getattr(search, "quotes", []) or []:
+                symbol = str(quote.get("symbol") or "").strip().upper()
+                if symbol.endswith((".NS", ".BO")) and symbol not in candidates:
+                    candidates.append(symbol)
+        except Exception:
+            logger.warning("[UNDERLYING ISIN] Yahoo search failed for %s", name, exc_info=True)
+
+        for symbol in candidates:
+            try:
+                info = yf.Ticker(symbol).info or {}
+                isin = str(info.get("isin") or "").strip().upper()
+                if isin:
+                    return isin
+            except Exception:
+                logger.warning("[UNDERLYING ISIN] Yahoo info lookup failed for %s (%s)", name, symbol, exc_info=True)
+
+        return None
+
+    @classmethod
     def classify(cls, stock_name):
         return cls._lookup(str(stock_name or "").strip())

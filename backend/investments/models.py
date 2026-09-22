@@ -264,6 +264,7 @@ class AssetUnderlyingHolding(models.Model):
         related_name="underlying_holdings",
     )
     stock_name = models.CharField(max_length=300)
+    isin = models.CharField(max_length=20, blank=True, null=True, db_index=True)
     holding_percentage = models.DecimalField(max_digits=10, decimal_places=4)
     sector = models.CharField(max_length=150, blank=True, null=True)
     cap_type = models.CharField(max_length=50, blank=True, null=True)

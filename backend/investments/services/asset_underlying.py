@@ -132,9 +132,26 @@ class AssetUnderlyingImporter:
                 raise AssetUnderlyingImportError(f"Invalid holding percentage on Excel row {index + 2}.")
             if percentage < 0 or percentage > 100:
                 raise AssetUnderlyingImportError(f"Holding percentage must be between 0 and 100 on Excel row {index + 2}.")
-            sector, cap_type = cls._resolve_classification(
-                stock_name, family, by_name, by_compact_name, by_isin
-            )
+            isin = UnderlyingSecurityClassifier.resolve_isin(stock_name)
+            sector = None
+            cap_type = None
+            if isin:
+                master = (
+                    SecurityMaster.objects
+                    .filter(family=family, isin__iexact=isin)
+                    .only("sector", "cap_type")
+                    .first()
+                )
+                if master is not None:
+                    sector = (master.sector or "").strip() or None
+                    cap_type = (master.cap_type or "").strip() or None
+
+            if not sector or not cap_type:
+                fallback_sector, fallback_cap_type = cls._resolve_classification(
+                    stock_name, family, by_name, by_compact_name, by_isin
+                )
+                sector = sector or fallback_sector
+                cap_type = cap_type or fallback_cap_type
 
             # Keep the family SecurityMaster path first. If that path
             # has no classification, use the existing Yahoo Finance
@@ -153,6 +170,7 @@ class AssetUnderlyingImporter:
                     family=family,
                     asset=asset,
                     stock_name=stock_name,
+                    isin=isin,
                     holding_percentage=percentage.quantize(Decimal("0.0001")),
                     sector=sector,
                     cap_type=cap_type,

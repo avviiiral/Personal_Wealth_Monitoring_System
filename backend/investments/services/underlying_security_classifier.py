@@ -185,6 +185,10 @@ class UnderlyingSecurityClassifier:
         return None
 
     @classmethod
+    def classify(cls, stock_name):
+        return cls._lookup(str(stock_name or "").strip())
+
+    @classmethod
     def resolve_metadata(cls, stock_name):
         """Resolve ISIN, sector and market-cap metadata from canonical/public sources."""
         name = str(stock_name or "").strip()

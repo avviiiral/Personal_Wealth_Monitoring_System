@@ -614,10 +614,10 @@ export class DownloadsComponent implements OnInit {
 
     const columns: Array<[string, string]> = [
       ['Underlying', 'underlying'],
+      ...assetNames.map(assetName => [assetName, assetName] as [string, string]),
       ['Current Value', 'current_value'],
       ['Percentage of Total Current Value', 'percentage_of_total_current_value'],
       ['Current Market Price', 'current_market_price'],
-      ...assetNames.map(assetName => [assetName, assetName] as [string, string]),
     ];
 
     await this.exportWorkbook(

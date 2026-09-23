@@ -405,35 +405,93 @@ def holding_matrix_report(request):
     total_current_value = sum(underlying_totals.values())
 
     # Resolve the latest effective market price for each underlying.
-    # Uploaded underlying rows carry an ISIN where available; use that
-    # canonical identity first and fall back to the underlying name.
+    # Uploaded underlying rows normally carry an ISIN.  Prices may be stored
+    # against an Asset whose ISIN is populated directly OR through its
+    # SecurityMaster, so try both.  For name-only rows, also match the
+    # SecurityMaster asset name.  Direct-equity fallbacks use the position
+    # asset itself, so they receive the same effective-price treatment.
     underlying_identifiers = {}
     for underlying in uploaded_rows:
         identity = canonical_key(underlying.isin, underlying.stock_name)
         if identity[0] == "isin" and underlying.isin:
-            underlying_identifiers[identity] = ("isin", clean_matrix(underlying.isin).upper())
+            underlying_identifiers[identity] = (
+                "isin",
+                clean_matrix(underlying.isin).upper(),
+            )
         elif identity[0] == "name":
             underlying_identifiers.setdefault(
                 identity,
                 ("name", clean_matrix(underlying.stock_name)),
             )
 
+    # If an underlying came from the transaction fallback rather than an
+    # uploaded snapshot, resolve its identity from the portfolio position.
+    for position in positions:
+        underlying_name = clean_matrix(position.latest_underlying)
+        if not underlying_name:
+            continue
+        identity = canonical_key("", underlying_name)
+        asset = position.asset
+        identifier = clean_matrix(
+            asset.isin
+            or getattr(getattr(asset, "security_master", None), "isin", None)
+        )
+        if identifier:
+            underlying_identifiers.setdefault(identity, ("isin", identifier.upper()))
+        else:
+            underlying_identifiers.setdefault(identity, ("name", underlying_name))
+
     price_by_identity = {}
     for identity, (identifier_type, identifier) in underlying_identifiers.items():
+        asset = None
+
         if identifier_type == "isin":
             asset = (
                 Asset.objects
-                .filter(family_id=family.id, isin__iexact=identifier, is_active=True)
+                .filter(
+                    family_id=family.id,
+                    isin__iexact=identifier,
+                    is_active=True,
+                )
                 .order_by("id")
                 .first()
             )
+            if asset is None:
+                asset = (
+                    Asset.objects
+                    .filter(
+                        family_id=family.id,
+                        security_master__isin__iexact=identifier,
+                        is_active=True,
+                    )
+                    .select_related("security_master")
+                    .order_by("id")
+                    .first()
+                )
         else:
             asset = (
                 Asset.objects
-                .filter(family_id=family.id, name__iexact=identifier, is_active=True)
+                .filter(
+                    family_id=family.id,
+                    name__iexact=identifier,
+                    is_active=True,
+                )
                 .order_by("id")
                 .first()
             )
+            if asset is None:
+                asset = (
+                    Asset.objects
+                    .filter(
+                        family_id=family.id,
+                        security_master__asset_name__iexact=identifier,
+                        is_active=True,
+                    )
+                    .select_related("security_master")
+                    .order_by("id")
+                    .first()
+                )
+
         if asset is None:
             continue
 

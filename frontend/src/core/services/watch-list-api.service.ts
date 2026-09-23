@@ -93,6 +93,13 @@ export class WatchListApiService {
     );
   }
 
+  getBenchmarksPerformance(): Observable<{ benchmarks: any[] }> {
+    return this.http.get<{ benchmarks: any[] }>(
+      `${this.baseUrl}/benchmarks-performance/`,
+      { withCredentials: true },
+    );
+  }
+
   getPerformance(productId: number): Observable<any> {
     return this.http.get(`${this.baseUrl}/products/${productId}/performance/`, {
       withCredentials: true,

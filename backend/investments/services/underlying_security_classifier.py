@@ -102,9 +102,9 @@ class UnderlyingSecurityClassifier:
         unique = {record["isin"]: record for record in candidates}
         return next(iter(unique.values())) if len(unique) == 1 else None
 
-    @staticmethod
+    @classmethod
     @lru_cache(maxsize=512)
-    def _lookup(stock_name):
+    def _lookup(cls, stock_name):
         name = str(stock_name or "").strip()
         if not name or name.casefold() == "unclassified":
             return None, None

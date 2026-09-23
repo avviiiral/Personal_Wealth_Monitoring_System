@@ -107,7 +107,7 @@ export class PortfolioComponent implements OnInit, OnDestroy {
   }
 
   get underlyingAssetOptions(): Array<{ id: number; name: string }> {
-    const options = new Map<number, { name: string; isin: string | null }>();
+    const options = new Map<number, { name: string; context: string }>();
 
     for (const family of this.families) {
       for (const portfolio of family.portfolios) {
@@ -115,9 +115,18 @@ export class PortfolioComponent implements OnInit, OnDestroy {
           for (const subClass of assetClass.sub_classes) {
             for (const asset of subClass.assets) {
               if (asset.id > 0 && asset.asset_name) {
+                const context = [
+                  portfolio.portfolio,
+                  assetClass.asset_class,
+                  subClass.sub_class,
+                ]
+                  .map((value) => value?.trim())
+                  .filter(Boolean)
+                  .join(' / ');
+
                 options.set(asset.id, {
                   name: asset.asset_name,
-                  isin: asset.isin?.trim() || null,
+                  context,
                 });
               }
             }
@@ -126,9 +135,8 @@ export class PortfolioComponent implements OnInit, OnDestroy {
       }
     }
 
-    const groupedByName = new Map<string, Array<{ id: number; name: string; isin: string | null }>>();
-    for (const option of options.entries()) {
-      const [id, details] = option;
+    const groupedByName = new Map<string, Array<{ id: number; name: string; context: string }>>();
+    for (const [id, details] of options.entries()) {
       const group = groupedByName.get(details.name) ?? [];
       group.push({ id, ...details });
       groupedByName.set(details.name, group);
@@ -141,13 +149,15 @@ export class PortfolioComponent implements OnInit, OnDestroy {
         continue;
       }
 
-      // The same asset name can occur more than once in the portfolio tree
-      // because different Asset records can represent that name. Keep every
-      // selectable Asset ID, but make duplicate labels distinguishable.
+      // Duplicate asset names must remain selectable because each option
+      // represents a different Asset ID. Use portfolio hierarchy as the
+      // visible context; fall back to the Asset ID only if the context is
+      // also identical. Do not use ISIN here because it can describe the
+      // underlying security rather than the parent asset being uploaded.
       const labels = new Set<string>();
       for (const option of group) {
-        let label = option.isin
-          ? `${option.name} — ${option.isin}`
+        let label = option.context
+          ? `${option.name} — ${option.context}`
           : `${option.name} — Asset #${option.id}`;
 
         if (labels.has(label)) {

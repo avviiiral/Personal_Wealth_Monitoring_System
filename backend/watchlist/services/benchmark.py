@@ -124,7 +124,10 @@ class BenchmarkPerformanceService:
 
         max_days = cls.PERIOD_DAYS["5Y"] + 31
         start = timezone.now().date() - timedelta(days=max_days)
-        benchmark_series = cls._series(cls._ticker(benchmark), start)
+        try:
+            benchmark_series = cls._series(cls._ticker(benchmark), start)
+        except Exception:
+            benchmark_series = []
         if not benchmark_series:
             return {
                 "benchmark": benchmark,

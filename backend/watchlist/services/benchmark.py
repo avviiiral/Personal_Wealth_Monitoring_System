@@ -487,7 +487,7 @@ class BenchmarkDataRefreshService:
     """Refresh BSE500 automatically and persist a validated local cache."""
 
     @classmethod
-    def refresh_bse500_tri(cls, start=None):
+    def refresh_bse500(cls, start=None):
         service = BenchmarkPerformanceService
         start = start or (
             timezone.now().date()

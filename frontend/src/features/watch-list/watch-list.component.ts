@@ -59,6 +59,8 @@ export class WatchListComponent implements OnInit, OnDestroy {
   benchmarkModalProduct: WatchListProduct | null = null;
   benchmarkData: any = null;
   benchmarkLoading = false;
+  benchmarkError = '';
+  private benchmarkRequestSequence = 0;
   benchmarkPeriod: BenchmarkPeriod = '1Y';
 
   ngOnInit(): void {
@@ -435,40 +437,59 @@ export class WatchListComponent implements OnInit, OnDestroy {
     if (!product.benchmark) return;
     this.benchmarkModalProduct = product;
     this.benchmarkData = null;
+    this.benchmarkError = '';
     this.benchmarkLoading = true;
     this.benchmarkPeriod = '1Y';
-    this.api.getBenchmarkPerformance(product.id, this.benchmarkPeriod).subscribe({
+    const requestId = ++this.benchmarkRequestSequence;
+    this.api.getBenchmarkPerformance(product.id, this.benchmarkPeriod).pipe(
+      finalize(() => {
+        if (requestId === this.benchmarkRequestSequence) this.benchmarkLoading = false;
+      }),
+    ).subscribe({
       next: data => {
+        if (requestId !== this.benchmarkRequestSequence) return;
         this.benchmarkData = data;
-        this.benchmarkLoading = false;
+        if (data?.available === false) this.benchmarkError = data.message || 'Benchmark data is unavailable.';
       },
       error: error => {
+        if (requestId !== this.benchmarkRequestSequence) return;
         console.error('Failed to load benchmark performance:', error);
-        this.benchmarkLoading = false;
-        this.error = 'Unable to load benchmark performance right now.';
+        this.benchmarkData = null;
+        this.benchmarkError = 'Unable to load benchmark performance right now.';
       },
     });
   }
 
   closeBenchmarkComparison(): void {
+    this.benchmarkRequestSequence += 1;
     this.benchmarkModalProduct = null;
     this.benchmarkData = null;
+    this.benchmarkError = '';
     this.benchmarkLoading = false;
   }
 
   changeBenchmarkChartPeriod(period: BenchmarkPeriod): void {
     if (!this.benchmarkModalProduct || this.benchmarkLoading) return;
     this.benchmarkPeriod = period;
+    this.benchmarkData = null;
+    this.benchmarkError = '';
     this.benchmarkLoading = true;
-    this.api.getBenchmarkPerformance(this.benchmarkModalProduct.id, period).subscribe({
+    const requestId = ++this.benchmarkRequestSequence;
+    this.api.getBenchmarkPerformance(this.benchmarkModalProduct.id, period).pipe(
+      finalize(() => {
+        if (requestId === this.benchmarkRequestSequence) this.benchmarkLoading = false;
+      }),
+    ).subscribe({
       next: data => {
+        if (requestId !== this.benchmarkRequestSequence) return;
         this.benchmarkData = data;
-        this.benchmarkLoading = false;
+        if (data?.available === false) this.benchmarkError = data.message || 'Benchmark data is unavailable.';
       },
       error: error => {
+        if (requestId !== this.benchmarkRequestSequence) return;
         console.error('Failed to load benchmark chart:', error);
-        this.benchmarkLoading = false;
-        this.error = 'Unable to load benchmark chart right now.';
+        this.benchmarkData = null;
+        this.benchmarkError = 'Unable to load benchmark chart right now.';
       },
     });
   }

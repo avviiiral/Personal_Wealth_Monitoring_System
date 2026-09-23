@@ -55,6 +55,10 @@
           <th class="sortable-header" (click)="cycleSort('status')">Status <span class="sort-indicator">{{ getSortIndicator('status') }}</span></th>
           <th class="sortable-header" (click)="cycleSort('ownership')">Ownership <span class="sort-indicator">{{ getSortIndicator('ownership') }}</span></th>
           <th>Benchmark</th>
+          <th>Benchmark Return (1Y)</th>
+          <th>Vs Benchmark (1Y)</th>
+          <th>Benchmark CAGR (3Y)</th>
+          <th>Comparison</th>
           <th class="sortable-header" (click)="cycleSort('1M')">1M <span class="sort-indicator">{{ getSortIndicator('1M') }}</span></th>
           <th class="sortable-header" (click)="cycleSort('3M')">3M <span class="sort-indicator">{{ getSortIndicator('3M') }}</span></th>
           <th class="sortable-header" (click)="cycleSort('6M')">6M <span class="sort-indicator">{{ getSortIndicator('6M') }}</span></th>
@@ -92,6 +96,10 @@
               <option *ngFor="let benchmark of benchmarkOptions" [value]="benchmark">{{ benchmark }}</option>
             </select>
           </td>
+          <td [class.positive-value]="benchmarkMetric('1Y', 'benchmark_metrics') !== null && benchmarkMetric('1Y', 'benchmark_metrics')! > 0" [class.negative-value]="benchmarkMetric('1Y', 'benchmark_metrics') !== null && benchmarkMetric('1Y', 'benchmark_metrics')! < 0">—</td>
+          <td>—</td>
+          <td>—</td>
+          <td><button type="button" class="compare-button" [disabled]="!product.benchmark" (click)="openBenchmarkComparison(product)">Compare</button></td>
           <td [class.positive-value]="metric(product, '1M') !== null && metric(product, '1M')! > 0" [class.negative-value]="metric(product, '1M') !== null && metric(product, '1M')! < 0">{{ formatPercent(metric(product, '1M')) }}</td>
           <td [class.positive-value]="metric(product, '3M') !== null && metric(product, '3M')! > 0" [class.negative-value]="metric(product, '3M') !== null && metric(product, '3M')! < 0">{{ formatPercent(metric(product, '3M')) }}</td>
           <td [class.positive-value]="metric(product, '6M') !== null && metric(product, '6M')! > 0" [class.negative-value]="metric(product, '6M') !== null && metric(product, '6M')! < 0">{{ formatPercent(metric(product, '6M')) }}</td>
@@ -101,7 +109,7 @@
           <td [class.positive-value]="metric(product, 'CAGR') !== null && metric(product, 'CAGR')! > 0" [class.negative-value]="metric(product, 'CAGR') !== null && metric(product, 'CAGR')! < 0">{{ formatPercent(metric(product, 'CAGR')) }}</td>
           <td>{{ product.mutual_fund?.aum ? formatAmount(product.mutual_fund.aum) : (product.pms?.aum ? formatAmount(product.pms.aum) : '—') }}</td>
         </tr>
-        <tr *ngIf="products.length === 0"><td colspan="15" class="empty">No products match the current filters.</td></tr>
+        <tr *ngIf="products.length === 0"><td colspan="19" class="empty">No products match the current filters.</td></tr>
       </tbody>
     </table>
   </div>
@@ -131,5 +139,70 @@
       <button type="button" class="apply-button" (click)="closeDownloadModal()" [disabled]="downloading">Cancel</button>
       <button type="button" class="download-button" (click)="confirmWatchListDownload()" [disabled]="downloading">{{ downloading ? 'Preparing…' : 'Download Excel' }}</button>
     </div>
+  </div>
+</div>
+<div class="modal-backdrop" *ngIf="benchmarkModalProduct" (click)="closeBenchmarkComparison()">
+  <div class="benchmark-modal" role="dialog" aria-modal="true" aria-labelledby="benchmark-title" (click)="$event.stopPropagation()">
+    <div class="benchmark-modal-header">
+      <div>
+        <h2 id="benchmark-title">Benchmark Comparison</h2>
+        <p>{{ benchmarkModalProduct?.name }}</p>
+      </div>
+      <button type="button" class="modal-close" (click)="closeBenchmarkComparison()" aria-label="Close">×</button>
+    </div>
+
+    <div *ngIf="benchmarkLoading" class="state">Loading benchmark data…</div>
+
+    <ng-container *ngIf="!benchmarkLoading && benchmarkData">
+      <div *ngIf="!benchmarkData.available" class="error">{{ benchmarkData.message }}</div>
+
+      <ng-container *ngIf="benchmarkData.available">
+        <div class="benchmark-summary">
+          <div><span>Benchmark</span><strong>{{ benchmarkData.benchmark }}</strong></div>
+          <div><span>Benchmark CAGR (3Y)</span><strong>{{ formatPercent(benchmarkData.benchmark_cagr_3y) }}</strong></div>
+          <div><span>Benchmark CAGR (5Y)</span><strong>{{ formatPercent(benchmarkData.benchmark_cagr_5y) }}</strong></div>
+          <div><span>As of</span><strong>{{ benchmarkData.as_of_date }}</strong></div>
+        </div>
+
+        <div class="benchmark-periods">
+          <button *ngFor="let period of ['1M','3M','6M','1Y','3Y','5Y']"
+            type="button"
+            [class.active]="benchmarkPeriod === period"
+            (click)="changeBenchmarkChartPeriod(period)">
+            {{ period }}
+          </button>
+        </div>
+
+        <div class="benchmark-table-wrap">
+          <table class="benchmark-comparison-table">
+            <thead>
+              <tr><th>Period</th><th>Fund Return</th><th>Benchmark Return</th><th>Difference</th><th>Result</th></tr>
+            </thead>
+            <tbody>
+              <tr *ngFor="let period of ['1M','3M','6M','1Y','3Y','5Y']">
+                <td>{{ period }}</td>
+                <td>{{ formatPercent(benchmarkMetric(period, 'fund_metrics')) }}</td>
+                <td>{{ formatPercent(benchmarkMetric(period, 'benchmark_metrics')) }}</td>
+                <td>{{ formatPercent(benchmarkMetric(period, 'differences')) }}</td>
+                <td>{{ benchmarkComparison(period) }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="relative-chart">
+          <div class="chart-title">Relative Performance — {{ benchmarkPeriod }}</div>
+          <div class="chart-legend">
+            <span><i class="legend-fund"></i>{{ benchmarkModalProduct?.name }}</span>
+            <span><i class="legend-benchmark"></i>{{ benchmarkData.benchmark }}</span>
+          </div>
+          <svg viewBox="0 0 100 100" preserveAspectRatio="none" role="img" aria-label="Relative performance chart">
+            <polyline [attr.points]="benchmarkPolyline(benchmarkData.chart?.fund)" fill="none" stroke="var(--accent)" stroke-width="1.5" vector-effect="non-scaling-stroke"></polyline>
+            <polyline [attr.points]="benchmarkPolyline(benchmarkData.chart?.benchmark)" fill="none" stroke="var(--negative)" stroke-width="1.5" vector-effect="non-scaling-stroke"></polyline>
+          </svg>
+          <div class="chart-axis"><span>Start</span><span>End</span></div>
+        </div>
+      </ng-container>
+    </ng-container>
   </div>
 </div>

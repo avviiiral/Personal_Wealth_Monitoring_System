@@ -8,7 +8,7 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
-from investments.models import AssetUnderlyingHolding, PortfolioPosition, Transaction, TransactionType
+from investments.models import AssetCategory, AssetUnderlyingHolding, PortfolioPosition, Transaction, TransactionType
 from investments.services.xirr import XIRRCalculator
 from users.permissions import family_scope, require_active_family
 
@@ -315,7 +315,12 @@ def holding_matrix_report(request):
 
     positions = list(
         PortfolioPosition.objects
-        .filter(family_id=family.id, asset__is_active=True, quantity__gt=0)
+        .filter(
+            family_id=family.id,
+            asset__is_active=True,
+            quantity__gt=0,
+        )
+        .exclude(asset__category=AssetCategory.MUTUAL_FUND)
         .select_related("asset")
         .annotate(
             latest_asset_name=Subquery(latest_transaction.values("asset_name")[:1]),

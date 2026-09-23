@@ -687,7 +687,7 @@ export class WatchListComponent implements OnInit, OnDestroy {
       excelColumn.key = column.key;
     });
 
-    sheet.mergeCells('A1:N1');
+    sheet.mergeCells('A1:O1');
     const title = sheet.getCell('A1');
     title.value = 'Watch List Report';
     title.font = { name: 'Aptos Display', size: 18, bold: true, color: { argb: 'FFFFFFFF' } };
@@ -695,14 +695,14 @@ export class WatchListComponent implements OnInit, OnDestroy {
     title.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1F2937' } };
     sheet.getRow(1).height = 32;
 
-    sheet.mergeCells('A2:N2');
+    sheet.mergeCells('A2:O2');
     const subtitle = sheet.getCell('A2');
     subtitle.value = exportTypeLabel + ' • Watchlisted products • Generated ' + this.todayStamp();
     subtitle.font = { name: 'Aptos', size: 10, italic: true, color: { argb: 'FF6B7280' } };
     subtitle.alignment = { vertical: 'middle' };
     sheet.getRow(2).height = 22;
 
-    sheet.mergeCells('A3:N3');
+    sheet.mergeCells('A3:O3');
     const summary = sheet.getCell('A3');
     summary.value = 'Total watchlisted products: ' + products.length;
     summary.font = { name: 'Aptos', size: 10, bold: true, color: { argb: 'FF374151' } };

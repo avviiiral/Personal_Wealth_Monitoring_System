@@ -339,13 +339,14 @@ export class WatchListComponent implements OnInit, OnDestroy {
   private compareSortValues(left: unknown, right: unknown): number {
     const leftNumber = this.toNullableNumber(left);
     const rightNumber = this.toNullableNumber(right);
-    if (leftNumber !== null && rightNumber !== null) {
-      if (leftNumber === rightNumber) return 0;
-      return leftNumber < rightNumber ? -1 : 1;
-    }
-    if (left == null || left === '') return right == null || right === '' ? 0 : 1;
-    if (right == null || right === '') return -1;
-    return String(left).localeCompare(String(right), undefined, { numeric: true, sensitivity: 'base' });
+
+    // Keep missing numeric values at the bottom for both ascending and descending sorts.
+    if (leftNumber === null && rightNumber === null) return 0;
+    if (leftNumber === null) return 1;
+    if (rightNumber === null) return -1;
+
+    if (leftNumber === rightNumber) return 0;
+    return leftNumber < rightNumber ? -1 : 1;
   }
 
   private toNullableNumber(value: unknown): number | null {

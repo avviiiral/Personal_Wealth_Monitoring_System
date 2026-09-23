@@ -22,15 +22,18 @@ class PortfolioPositionEngine:
         family_name,
         portfolio,
         asset,
+        as_of_date=None,
     ):
+        queryset = Transaction.objects.filter(
+            family=family,
+            family_name=family_name,
+            portfolio=portfolio,
+            asset=asset,
+        )
+        if as_of_date is not None:
+            queryset = queryset.filter(transaction_date__lte=as_of_date)
         return (
-            Transaction.objects
-            .filter(
-                family=family,
-                family_name=family_name,
-                portfolio=portfolio,
-                asset=asset,
-            )
+            queryset
             .order_by(
                 "transaction_date",
                 "created_at",
@@ -45,6 +48,7 @@ class PortfolioPositionEngine:
         family_name,
         portfolio,
         asset,
+        as_of_date=None,
     ):
         quantity = cls.ZERO
         invested_value = cls.ZERO
@@ -54,6 +58,7 @@ class PortfolioPositionEngine:
             family_name=family_name,
             portfolio=portfolio,
             asset=asset,
+            as_of_date=as_of_date,
         )
 
         # Optimize the common BUY/SIP-only case with a single SQL

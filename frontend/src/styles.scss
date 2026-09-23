@@ -436,9 +436,8 @@ textarea {
 
 
 /* ==========================================================
-   POPUP VIEWPORT ANCHORING
-   Never center a dialog in a way that can place its header
-   outside the visible viewport at browser zoom levels.
+   POPUP VIEWPORT FIT + CENTERING
+   Keep dialogs centered whenever their fitted height allows it.
    ========================================================== */
 
 .modal-backdrop,
@@ -453,8 +452,8 @@ textarea {
   max-height: 100dvh !important;
   box-sizing: border-box !important;
   padding: clamp(8px, 2vw, 24px) !important;
-  overflow: auto !important;
-  align-items: flex-start !important;
+  overflow: hidden !important;
+  align-items: center !important;
   justify-content: center !important;
   z-index: 10000;
 }
@@ -471,13 +470,13 @@ textarea {
   max-width: 100% !important;
   min-width: 0 !important;
   max-height: calc(100dvh - clamp(16px, 4vw, 48px)) !important;
-  margin: 0 auto !important;
+  margin: auto !important;
 }
 
-/* Benchmark dialog has its own header/body split. Keep the header
-   visible and make only the body the scrolling region. */
+/* Benchmark dialog: centered frame, independently scrollable body. */
 .benchmark-modal {
   height: min(780px, calc(100dvh - clamp(16px, 4vw, 48px))) !important;
+  max-height: calc(100dvh - clamp(16px, 4vw, 48px)) !important;
   flex: 0 1 auto;
 }
 

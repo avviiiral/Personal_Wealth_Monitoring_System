@@ -150,10 +150,11 @@ html.dark-theme .watch-list-page .status.owned {
 .compare-button:disabled { opacity: .5; cursor: default; }
 
 .benchmark-modal {
-  width: min(1200px, 96vw);
+  width: min(1200px, calc(100vw - 24px));
   max-width: 1200px;
-  height: auto;
-  max-height: calc(100dvh - 24px);
+  height: min(780px, calc(100dvh - 24px));
+  max-height: none;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -181,6 +182,7 @@ html.dark-theme .watch-list-page .status.owned {
 .benchmark-modal-header p { margin: 0; color: var(--muted); }
 
 .benchmark-modal-body {
+  flex: 1 1 auto;
   min-height: 0;
   overflow: auto;
   overscroll-behavior: contain;
@@ -273,7 +275,8 @@ html.dark-theme .watch-list-page .status.owned {
   .benchmark-modal {
     width: calc(100vw - 24px);
     max-width: none;
-    max-height: calc(100dvh - 24px);
+    height: calc(100dvh - 24px);
+    max-height: none;
   }
 
   .benchmark-modal-header {
@@ -300,5 +303,86 @@ html.dark-theme .watch-list-page .status.owned {
 
   .relative-chart svg {
     height: 220px;
+  }
+}
+
+
+/* Keep the dialog frame completely inside the viewport at high browser zoom. */
+@media (max-height: 600px) {
+  .modal-backdrop {
+    padding: 8px;
+  }
+
+  .benchmark-modal {
+    width: min(1200px, calc(100vw - 16px));
+    height: calc(100dvh - 16px);
+    border-radius: 10px;
+  }
+
+  .benchmark-modal-header {
+    gap: 10px;
+    padding: 10px 14px 8px;
+  }
+
+  .benchmark-modal-header h2 {
+    font-size: 18px;
+    margin-bottom: 3px;
+  }
+
+  .benchmark-modal-header p {
+    font-size: 12px;
+  }
+
+  .modal-close {
+    width: 30px;
+    height: 30px;
+    font-size: 20px;
+  }
+
+  .benchmark-modal-body {
+    padding: 0 14px 12px;
+  }
+
+  .benchmark-summary {
+    padding-top: 12px;
+    margin-bottom: 12px;
+  }
+
+  .relative-chart {
+    margin-top: 14px;
+  }
+
+  .relative-chart svg {
+    height: 180px;
+  }
+}
+
+@media (max-height: 450px) {
+  .benchmark-modal-header h2 {
+    font-size: 16px;
+  }
+
+  .benchmark-modal-header p {
+    display: none;
+  }
+
+  .benchmark-modal-body {
+    padding-bottom: 8px;
+  }
+
+  .benchmark-summary > div {
+    padding: 8px;
+  }
+
+  .benchmark-summary span {
+    margin-bottom: 3px;
+  }
+
+  .benchmark-periods {
+    margin-bottom: 10px;
+  }
+
+  .relative-chart svg {
+    height: 150px;
   }
 }

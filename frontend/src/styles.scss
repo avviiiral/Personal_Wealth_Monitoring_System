@@ -472,22 +472,17 @@ textarea {
   margin: auto !important;
 }
 
-/* Benchmark Comparison intentionally keeps one fixed desktop frame.
-   Browser zoom changes the viewport, not the dialog's CSS dimensions. */
+/* Benchmark Comparison uses viewport-relative sizing so its physical
+   size stays visually stable when Chrome browser zoom changes.
+   It remains capped on large screens and centered by the backdrop. */
 .benchmark-modal {
-  width: 1200px !important;
-  min-width: 1200px !important;
-  max-width: 1200px !important;
-  height: 780px !important;
-  min-height: 780px !important;
-  max-height: 780px !important;
+  width: min(1200px, 70vw) !important;
+  max-width: min(1200px, 70vw) !important;
+  min-width: 0 !important;
+  height: min(780px, 78vh) !important;
+  max-height: min(780px, 78vh) !important;
+  min-height: 0 !important;
   margin: auto !important;
-  flex: 0 0 780px !important;
-}
-/* Benchmark dialog: centered frame, independently scrollable body. */
-.benchmark-modal {
-  height: min(780px, calc(100dvh - clamp(16px, 4vw, 48px))) !important;
-  max-height: calc(100dvh - clamp(16px, 4vw, 48px)) !important;
   flex: 0 1 auto;
 }
 
@@ -516,9 +511,6 @@ textarea {
     max-height: calc(100dvh - 16px) !important;
   }
 
-  .benchmark-modal {
-    height: min(780px, calc(100dvh - 16px)) !important;
-  }
 }
 
 @media (max-width: 480px) {
@@ -538,7 +530,4 @@ textarea {
     max-height: calc(100dvh - 12px) !important;
   }
 
-  .benchmark-modal {
-    height: min(780px, calc(100dvh - 12px)) !important;
-  }
 }

@@ -11,6 +11,43 @@ from django.utils import timezone
 from watchlist.models import PerformanceSnapshot
 
 
+class BenchmarkDataRefreshService:
+    """Refresh the verified BSE 500 TRI source and persist the local cache."""
+
+    @classmethod
+    def refresh_bse500_tri(cls, start=None):
+        service = BenchmarkPerformanceService
+        start = start or (timezone.now().date() - timedelta(days=service.PERIOD_DAYS["5Y"] + 31))
+        if not service.BSE500_TRI_URL:
+            return {
+                "available": False,
+                "updated": 0,
+                "reason": "WATCHLIST_BENCHMARK_BSE500_TRI_URL is not configured.",
+            }
+        response = requests.get(
+            service.BSE500_TRI_URL,
+            headers=service.BSE_HEADERS,
+            timeout=45,
+        )
+        response.raise_for_status()
+        points = service._load_bse_tri_csv(response.text)
+        points = [point for point in points if date.fromisoformat(point["date"]) >= start]
+        if not points:
+            return {
+                "available": False,
+                "updated": 0,
+                "reason": "BSE 500 TRI source returned no observations.",
+            }
+        target = Path(service.BSE500_TRI_FILE)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(
+            "Date,Close\n" + "\n".join(f"{p['date']},{p['value']}" for p in points) + "\n",
+            encoding="utf-8",
+        )
+        return {"available": True, "updated": len(points), "as_of_date": points[-1]["date"]}
+
+
+
 class BenchmarkPerformanceService:
     """Calculate Watch List benchmark comparisons from market/index time series."""
 

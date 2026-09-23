@@ -55,9 +55,6 @@
           <th class="sortable-header" (click)="cycleSort('status')">Status <span class="sort-indicator">{{ getSortIndicator('status') }}</span></th>
           <th class="sortable-header" (click)="cycleSort('ownership')">Ownership <span class="sort-indicator">{{ getSortIndicator('ownership') }}</span></th>
           <th>Benchmark</th>
-          <th>Benchmark Return (1Y)</th>
-          <th>Vs Benchmark (1Y)</th>
-          <th>Benchmark CAGR (3Y)</th>
           <th>Comparison</th>
           <th class="sortable-header" (click)="cycleSort('1M')">1M <span class="sort-indicator">{{ getSortIndicator('1M') }}</span></th>
           <th class="sortable-header" (click)="cycleSort('3M')">3M <span class="sort-indicator">{{ getSortIndicator('3M') }}</span></th>
@@ -96,9 +93,6 @@
               <option *ngFor="let benchmark of benchmarkOptions" [value]="benchmark">{{ benchmark }}</option>
             </select>
           </td>
-          <td [class.positive-value]="benchmarkMetric('1Y', 'benchmark_metrics') !== null && benchmarkMetric('1Y', 'benchmark_metrics')! > 0" [class.negative-value]="benchmarkMetric('1Y', 'benchmark_metrics') !== null && benchmarkMetric('1Y', 'benchmark_metrics')! < 0">—</td>
-          <td>—</td>
-          <td>—</td>
           <td><button type="button" class="compare-button" [disabled]="!product.benchmark" (click)="openBenchmarkComparison(product)">Compare</button></td>
           <td [class.positive-value]="metric(product, '1M') !== null && metric(product, '1M')! > 0" [class.negative-value]="metric(product, '1M') !== null && metric(product, '1M')! < 0">{{ formatPercent(metric(product, '1M')) }}</td>
           <td [class.positive-value]="metric(product, '3M') !== null && metric(product, '3M')! > 0" [class.negative-value]="metric(product, '3M') !== null && metric(product, '3M')! < 0">{{ formatPercent(metric(product, '3M')) }}</td>
@@ -109,7 +103,7 @@
           <td [class.positive-value]="metric(product, 'CAGR') !== null && metric(product, 'CAGR')! > 0" [class.negative-value]="metric(product, 'CAGR') !== null && metric(product, 'CAGR')! < 0">{{ formatPercent(metric(product, 'CAGR')) }}</td>
           <td>{{ product.mutual_fund?.aum ? formatAmount(product.mutual_fund.aum) : (product.pms?.aum ? formatAmount(product.pms.aum) : '—') }}</td>
         </tr>
-        <tr *ngIf="products.length === 0"><td colspan="19" class="empty">No products match the current filters.</td></tr>
+        <tr *ngIf="products.length === 0"><td colspan="16" class="empty">No products match the current filters.</td></tr>
       </tbody>
     </table>
   </div>

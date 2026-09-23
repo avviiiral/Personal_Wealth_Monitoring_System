@@ -54,7 +54,7 @@ export class WatchListComponent implements OnInit, OnDestroy {
   downloadModalOpen = false;
   downloadType: 'PMS' | 'MUTUAL_FUND' | 'ALL' = 'ALL';
   downloading = false;
-  readonly benchmarkOptions: Array<'BSE 500 TRI' | 'Nifty 50'> = ['BSE 500 TRI', 'Nifty 50'];
+  readonly benchmarkOptions: Array<'BSE 500' | 'Nifty 50'> = ['BSE 500', 'Nifty 50'];
   readonly benchmarkPeriods: BenchmarkPeriod[] = ['1M', '3M', '6M', '1Y', '3Y', '5Y'];
   private readonly updatingBenchmarkIds = new Set<number>();
   benchmarkModalProduct: WatchListProduct | null = null;
@@ -414,14 +414,14 @@ export class WatchListComponent implements OnInit, OnDestroy {
 
   isUpdatingBenchmark(productId: number): boolean { return this.updatingBenchmarkIds.has(productId); }
 
-  updateBenchmark(product: WatchListProduct, benchmark: 'BSE 500 TRI' | 'Nifty 50'): void {
+  updateBenchmark(product: WatchListProduct, benchmark: 'BSE 500' | 'Nifty 50'): void {
     const previous = product.benchmark;
     if (previous === benchmark || this.updatingBenchmarkIds.has(product.id)) return;
     this.updatingBenchmarkIds.add(product.id);
     this.error = '';
     this.api.updateBenchmark(product.id, benchmark).subscribe({
       next: response => {
-        product.benchmark = response.benchmark as 'BSE 500 TRI' | 'Nifty 50';
+        product.benchmark = response.benchmark as 'BSE 500' | 'Nifty 50';
         this.updatingBenchmarkIds.delete(product.id);
         this.cacheCurrentPage();
       },

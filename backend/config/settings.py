@@ -148,6 +148,12 @@ USE_I18N = True
 USE_TZ = True
 
 STATIC_URL = 'static/'
+WATCHLIST_BENCHMARK_BSE500_TRI_URL = os.getenv("WATCHLIST_BENCHMARK_BSE500_TRI_URL", "").strip()
+WATCHLIST_BENCHMARK_BSE500_TRI_FILE = os.getenv(
+    "WATCHLIST_BENCHMARK_BSE500_TRI_FILE",
+    str(BASE_DIR / "watchlist" / "data" / "bse500_tri.csv"),
+)
+
 STATIC_ROOT = BASE_DIR / 'staticfiles'
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 

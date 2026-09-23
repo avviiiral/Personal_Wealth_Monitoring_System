@@ -306,3 +306,125 @@ html.dark-theme .transaction-edit-modal .modal-error {
     transition-duration: 1ms !important;
   }
 }
+
+
+/* ==========================================================
+   ZOOM-SAFE RESPONSIVE UI
+   The UI must reflow at narrow CSS viewports caused by browser
+   zoom instead of forcing horizontal scrolling.
+   ========================================================== */
+
+html,
+body,
+app-root {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
+img,
+svg,
+canvas,
+video {
+  max-width: 100%;
+}
+
+button,
+input,
+select,
+textarea {
+  max-width: 100%;
+}
+
+@media (max-width: 1100px) {
+  .page-content {
+    min-width: 0 !important;
+  }
+
+  /* Tables reflow instead of creating a left/right scroll surface. */
+  table {
+    width: 100% !important;
+    min-width: 0 !important;
+    max-width: 100% !important;
+    table-layout: fixed;
+  }
+
+  table th,
+  table td {
+    min-width: 0 !important;
+    max-width: 100%;
+    white-space: normal !important;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+  }
+
+  [class*="table-wrap"],
+  [class*="table-container"],
+  [class*="table-scroll"] {
+    width: 100%;
+    max-width: 100%;
+    overflow-x: hidden !important;
+  }
+
+  /* Cards/grids collapse naturally as the zoomed CSS viewport narrows. */
+  [class*="grid"],
+  [class*="cards"] {
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  /* Any flex child may shrink; prevents a single child from widening the page. */
+  .page-content *,
+  .main-area * {
+    min-width: 0;
+  }
+
+  /* Keep dialogs inside the visible viewport. */
+  [role="dialog"],
+  .modal,
+  .modal-content,
+  .modal-dialog,
+  .dialog,
+  .dialog-content {
+    box-sizing: border-box;
+    max-width: calc(100vw - 16px) !important;
+  }
+
+  .modal-backdrop,
+  .overlay,
+  .dialog-backdrop {
+    max-width: 100vw;
+    overflow: hidden;
+  }
+}
+
+@media (max-width: 700px) {
+  .page-content {
+    padding-left: 10px !important;
+    padding-right: 10px !important;
+  }
+
+  table th,
+  table td {
+    padding: 6px 5px !important;
+    font-size: 11px;
+  }
+
+  [role="dialog"],
+  .modal,
+  .modal-content,
+  .modal-dialog,
+  .dialog,
+  .dialog-content {
+    width: calc(100vw - 16px) !important;
+    max-width: calc(100vw - 16px) !important;
+  }
+}
+
+@media (max-width: 450px) {
+  table th,
+  table td {
+    padding: 5px 3px !important;
+    font-size: 10px;
+  }
+}

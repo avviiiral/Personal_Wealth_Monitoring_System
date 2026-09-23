@@ -1,3 +1,6 @@
+from datetime import date
+from types import SimpleNamespace
+
 from django.db.models import F, OuterRef, Subquery
 
 from rest_framework import status
@@ -7,6 +10,7 @@ from rest_framework.response import Response
 
 from investments.models import AssetUnderlyingHolding, PortfolioPosition, SecurityMaster, Transaction
 from users.permissions import require_active_family
+from portfolio.services.portfolio_position_engine import PortfolioPositionEngine
 
 
 def _clean(value):
@@ -82,31 +86,65 @@ def equity_market_cap_report(request):
     family_name = _clean(getattr(family, "name", None) or getattr(family, "family_name", None) or str(family))
     security_lookup = _security_lookup(family.id)
 
-    latest_transaction = (
+    raw_date = request.query_params.get("as_of_date")
+    if raw_date:
+        try:
+            as_of_date = date.fromisoformat(raw_date)
+        except ValueError:
+            return Response(
+                {"success": False, "message": "as_of_date must be YYYY-MM-DD."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+    else:
+        as_of_date = date.today()
+
+    transactions_as_of = list(
         Transaction.objects
-        .filter(
-            family_id=OuterRef("family_id"),
-            asset_id=OuterRef("asset_id"),
-            family_name=OuterRef("family_name"),
-            portfolio=OuterRef("portfolio"),
-        )
-        .order_by("-transaction_date", "-id")
+        .filter(family=family, transaction_date__lte=as_of_date)
+        .select_related("asset")
+        .order_by("transaction_date", "created_at", "id")
     )
 
-    positions = (
-        PortfolioPosition.objects
-        .filter(
-            family_id=family.id,
-            asset__is_active=True,
-            quantity__gt=0,
+    grouped_transactions = {}
+    for transaction in transactions_as_of:
+        key = (
+            _clean(transaction.family_name) or family_name,
+            _clean(transaction.portfolio) or "Unassigned",
+            transaction.asset_id,
         )
-        .select_related("asset", "asset__security_master")
-        .annotate(
-            latest_asset_class=Subquery(latest_transaction.values("asset_class")[:1]),
-            latest_sub_class=Subquery(latest_transaction.values("sub_class")[:1]),
-            latest_asset_name=Subquery(latest_transaction.values("asset_name")[:1]),
+        grouped_transactions[key] = transaction
+
+    positions = []
+    for (position_family_name, portfolio, asset_id), latest_transaction in grouped_transactions.items():
+        asset = latest_transaction.asset
+        if not asset.is_active:
+            continue
+
+        calculated = PortfolioPositionEngine.calculate_position(
+            family=family,
+            family_name=position_family_name,
+            portfolio=portfolio,
+            asset=asset,
+            as_of_date=as_of_date,
         )
-    )
+        quantity = float(calculated["quantity"] or 0)
+        invested_value = float(calculated["invested_value"] or 0)
+        if quantity <= 0 or invested_value <= 0:
+            continue
+
+        positions.append(
+            SimpleNamespace(
+                family_name=position_family_name,
+                portfolio=portfolio,
+                asset_id=asset_id,
+                asset=asset,
+                quantity=quantity,
+                invested_value=invested_value,
+                latest_asset_class=latest_transaction.asset_class,
+                latest_sub_class=latest_transaction.sub_class,
+                latest_asset_name=latest_transaction.asset_name,
+            )
+        )
 
     # Store invested-value-weighted market-cap exposure per
     # Family + Asset Name. The report is based on the hierarchy:
@@ -151,7 +189,7 @@ def equity_market_cap_report(request):
     ]
     underlying_rows = (
         AssetUnderlyingHolding.objects
-        .filter(family_id=family.id, asset_id__in=equity_asset_ids)
+        .filter(family_id=family.id, asset_id__in=equity_asset_ids, created_at__date__lte=as_of_date)
         .only("asset_id", "stock_name", "holding_percentage", "cap_type")
     )
     rows_by_asset = {}
@@ -259,6 +297,7 @@ def equity_market_cap_report(request):
         {
             "success": True,
             "count": len(rows),
+            "as_of_date": as_of_date.isoformat(),
             "results": rows,
         },
         status=status.HTTP_200_OK,

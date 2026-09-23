@@ -157,15 +157,25 @@ def _filtered_products(request, product_type=None):
 def _latest_snapshots(products):
     product_ids = [product.id for product in products]
     if not product_ids:
-        return {}
+        return {}, {}
+
     snapshots = (
         PerformanceSnapshot.objects.filter(product_id__in=product_ids)
         .order_by("product_id", "-date", "-id")
     )
     latest = {}
+    metric_snapshot = {}
+    metric_fields = (
+        "return_1d", "return_1w", "return_1m", "return_3m", "return_6m",
+        "return_1y", "return_3y", "return_5y", "return_since_inception", "cagr",
+    )
     for snapshot in snapshots:
         latest.setdefault(snapshot.product_id, snapshot)
-    return latest
+        if snapshot.product_id not in metric_snapshot and any(
+            getattr(snapshot, field) is not None for field in metric_fields
+        ):
+            metric_snapshot[snapshot.product_id] = snapshot
+    return latest, metric_snapshot
 
 
 def _watchlisted_ids(products, request):
@@ -230,7 +240,7 @@ def watch_list_products(request):
     paginator = WatchListPagination()
     page = paginator.paginate_queryset(queryset, request)
     page = list(page)
-    latest_snapshots = _latest_snapshots(page)
+    latest_snapshots, metric_snapshots = _latest_snapshots(page)
     ownership_cache = _ownership_cache(page, request)
     serializer = WatchListProductSerializer(
         page,
@@ -238,6 +248,7 @@ def watch_list_products(request):
         context={
             "request": request,
             "latest_snapshots": latest_snapshots,
+            "metric_snapshots": metric_snapshots,
             "ownership_cache": ownership_cache,
             "watchlisted_ids": _watchlisted_ids(page, request),
         },
@@ -253,7 +264,7 @@ def watch_list_product_detail(request, product_id):
         pk=product_id,
         is_active=True,
     )
-    latest_snapshots = _latest_snapshots([product])
+    latest_snapshots, metric_snapshots = _latest_snapshots([product])
     ownership_cache = OwnershipService.bulk_enrich([product], request.user)
     return Response(
         WatchListProductSerializer(
@@ -261,6 +272,7 @@ def watch_list_product_detail(request, product_id):
             context={
                 "request": request,
                 "latest_snapshots": latest_snapshots,
+                "metric_snapshots": metric_snapshots,
                 "ownership_cache": ownership_cache,
                 "watchlisted_ids": _watchlisted_ids([product], request),
             },

@@ -145,10 +145,11 @@
       <button type="button" class="modal-close" (click)="closeBenchmarkComparison()" aria-label="Close">×</button>
     </div>
 
-    <div *ngIf="benchmarkLoading && !benchmarkData" class="state">Loading benchmark data…</div>
-    <div *ngIf="benchmarkError && !benchmarkData" class="error">{{ benchmarkError }}</div>
+    <div class="benchmark-modal-body">
+      <div *ngIf="benchmarkLoading && !benchmarkData" class="state">Loading benchmark data…</div>
+      <div *ngIf="benchmarkError && !benchmarkData" class="error">{{ benchmarkError }}</div>
 
-    <ng-container *ngIf="benchmarkData && !benchmarkError">
+      <ng-container *ngIf="benchmarkData && !benchmarkError">
       <div *ngIf="!benchmarkData.available" class="error">{{ benchmarkData.message }}</div>
 
       <ng-container *ngIf="benchmarkData.available">
@@ -198,6 +199,7 @@
           <div class="chart-axis"><span>Start</span><span>End</span></div>
         </div>
       </ng-container>
-    </ng-container>
+      </ng-container>
+    </div>
   </div>
 </div>

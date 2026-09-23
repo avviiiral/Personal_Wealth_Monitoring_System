@@ -83,6 +83,16 @@ export class WatchListApiService {
     );
   }
 
+  getBenchmarkPerformance(productId: number, period: '1M' | '3M' | '6M' | '1Y' | '3Y' | '5Y' = '1Y'): Observable<any> {
+    return this.http.get(
+      `${this.baseUrl}/products/${productId}/benchmark-performance/`,
+      {
+        params: new HttpParams().set('period', period),
+        withCredentials: true,
+      },
+    );
+  }
+
   getPerformance(productId: number): Observable<any> {
     return this.http.get(`${this.baseUrl}/products/${productId}/performance/`, {
       withCredentials: true,

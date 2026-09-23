@@ -534,6 +534,14 @@ export class DownloadsComponent implements OnInit {
     await this.writeXirr(rows, 'Asset Name XIRR');
   }
 
+  private async writeXirr(rows: Record<string, unknown>[], title: string): Promise<void> {
+    await this.exportWorkbook('XIRR', title, [
+      ['Family', 'family_name'], ['Asset Class', 'asset_class'], ['Sub Class', 'sub_class'], ['Asset Name / Group', 'name'],
+      ['Asset Name', 'asset_name'], ['Underlying', 'underlying'], ['Invested Value', 'invested_value'],
+      ['Current Value', 'current_value'], ['Gain', 'gain'], ['XIRR (%)', 'xirr'],
+    ], rows, title.toLowerCase().replace(/[^a-z0-9]+/g, '_'));
+  }
+
   private equityReportType(row: HoldingReportRow): 'Direct Equity' | 'Equity PMS' | 'Equity Mutual Fund' | null {
     const assetClass = this.clean(row.asset_class).toUpperCase();
     const subClass = this.clean(row.sub_class).toUpperCase();

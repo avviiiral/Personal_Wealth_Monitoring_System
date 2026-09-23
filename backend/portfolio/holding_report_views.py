@@ -1,7 +1,7 @@
 from datetime import date
 import re
 
-from django.db.models import F, OuterRef, Subquery
+from django.db.models import OuterRef, Subquery
 
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
@@ -407,20 +407,33 @@ def holding_matrix_report(request):
     # Resolve the latest effective market price for each underlying.
     # Uploaded underlying rows carry an ISIN where available; use that
     # canonical identity first and fall back to the underlying name.
-    underlying_isins = {}
+    underlying_identifiers = {}
     for underlying in uploaded_rows:
         identity = canonical_key(underlying.isin, underlying.stock_name)
         if identity[0] == "isin" and underlying.isin:
-            underlying_isins[identity] = clean_matrix(underlying.isin).upper()
+            underlying_identifiers[identity] = ("isin", clean_matrix(underlying.isin).upper())
+        elif identity[0] == "name":
+            underlying_identifiers.setdefault(
+                identity,
+                ("name", clean_matrix(underlying.stock_name)),
+            )
 
     price_by_identity = {}
-    for identity, isin in underlying_isins.items():
-        asset = (
-            Asset.objects
-            .filter(family_id=family.id, isin__iexact=isin, is_active=True)
-            .order_by("id")
-            .first()
-        )
+    for identity, (identifier_type, identifier) in underlying_identifiers.items():
+        if identifier_type == "isin":
+            asset = (
+                Asset.objects
+                .filter(family_id=family.id, isin__iexact=identifier, is_active=True)
+                .order_by("id")
+                .first()
+            )
+        else:
+            asset = (
+                Asset.objects
+                .filter(family_id=family.id, name__iexact=identifier, is_active=True)
+                .order_by("id")
+                .first()
+            )
         if asset is None:
             continue
 

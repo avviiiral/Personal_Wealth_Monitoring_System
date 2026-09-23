@@ -140,7 +140,7 @@
     <div class="benchmark-modal-header">
       <div>
         <h2 id="benchmark-title">Benchmark Comparison</h2>
-        <p>{{ benchmarkModalProduct?.name }}</p>
+        <p>{{ benchmarkModalProduct.name }}</p>
       </div>
       <button type="button" class="modal-close" (click)="closeBenchmarkComparison()" aria-label="Close">×</button>
     </div>
@@ -159,7 +159,7 @@
         </div>
 
         <div class="benchmark-periods">
-          <button *ngFor="let period of ['1M','3M','6M','1Y','3Y','5Y']"
+          <button *ngFor="let period of benchmarkPeriods"
             type="button"
             [class.active]="benchmarkPeriod === period"
             (click)="changeBenchmarkChartPeriod(period)">
@@ -173,7 +173,7 @@
               <tr><th>Period</th><th>Fund Return</th><th>Benchmark Return</th><th>Difference</th><th>Result</th></tr>
             </thead>
             <tbody>
-              <tr *ngFor="let period of ['1M','3M','6M','1Y','3Y','5Y']">
+              <tr *ngFor="let period of benchmarkPeriods">
                 <td>{{ period }}</td>
                 <td>{{ formatPercent(benchmarkMetric(period, 'fund_metrics')) }}</td>
                 <td>{{ formatPercent(benchmarkMetric(period, 'benchmark_metrics')) }}</td>
@@ -187,7 +187,7 @@
         <div class="relative-chart">
           <div class="chart-title">Relative Performance — {{ benchmarkPeriod }}</div>
           <div class="chart-legend">
-            <span><i class="legend-fund"></i>{{ benchmarkModalProduct?.name }}</span>
+            <span><i class="legend-fund"></i>{{ benchmarkModalProduct.name }}</span>
             <span><i class="legend-benchmark"></i>{{ benchmarkData.benchmark }}</span>
           </div>
           <svg viewBox="0 0 100 100" preserveAspectRatio="none" role="img" aria-label="Relative performance chart">

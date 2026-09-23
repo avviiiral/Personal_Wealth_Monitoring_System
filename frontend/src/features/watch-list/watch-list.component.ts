@@ -621,7 +621,17 @@ export class WatchListComponent implements OnInit, OnDestroy {
           page += 1;
         }
       }
-      await this.exportWatchListWorkbook(allProducts);
+      const benchmarkData = new Map<number, any>();
+      await Promise.all(allProducts.map(async product => {
+        if (!product.benchmark) return;
+        try {
+          const result = await firstValueFrom(this.api.getBenchmarkPerformance(product.id, '5Y'));
+          benchmarkData.set(product.id, result);
+        } catch (error) {
+          console.warn('Benchmark data unavailable for Watch List report:', product.id, error);
+        }
+      }));
+      await this.exportWatchListWorkbook(allProducts, benchmarkData);
       this.downloadModalOpen = false;
     } catch (error) {
       console.error('Failed to download Watch List:', error);
@@ -629,7 +639,7 @@ export class WatchListComponent implements OnInit, OnDestroy {
     } finally { this.downloading = false; }
   }
 
-  private async exportWatchListWorkbook(products: WatchListProduct[]): Promise<void> {
+  private async exportWatchListWorkbook(products: WatchListProduct[], benchmarkData: Map<number, any>): Promise<void> {
     const { default: ExcelJSLib } = await import('exceljs');
     const workbook = new ExcelJSLib.Workbook();
     workbook.creator = 'Personal Wealth Monitoring System';
@@ -650,17 +660,24 @@ export class WatchListComponent implements OnInit, OnDestroy {
       { header: 'Type', key: 'type', width: 16 }, { header: 'Product', key: 'product', width: 48 },
       { header: 'Provider', key: 'provider', width: 28 }, { header: 'Category', key: 'category', width: 24 },
       { header: 'Identifier', key: 'identifier', width: 24 }, { header: 'Status', key: 'status', width: 14 },
+      { header: 'Benchmark', key: 'benchmark', width: 18 },
       { header: '1M', key: '1M', width: 12 }, { header: '3M', key: '3M', width: 12 }, { header: '6M', key: '6M', width: 12 },
       { header: '1Y', key: '1Y', width: 12 }, { header: '3Y', key: '3Y', width: 12 }, { header: '5Y', key: '5Y', width: 12 },
-      { header: 'CAGR', key: 'CAGR', width: 12 }, { header: 'AUM', key: 'AUM', width: 18 },
-    ];
-    columnDefinitions.forEach((column, index) => {
+      { header: 'CAGR', key: 'CAGR', width: 12 },
+      { header: 'Benchmark 1M', key: 'benchmark_1M', width: 16 }, { header: 'Benchmark 3M', key: 'benchmark_3M', width: 16 },
+      { header: 'Benchmark 6M', key: 'benchmark_6M', width: 16 }, { header: 'Benchmark 1Y', key: 'benchmark_1Y', width: 16 },
+      { header: 'Benchmark 3Y', key: 'benchmark_3Y', width: 16 }, { header: 'Benchmark 5Y', key: 'benchmark_5Y', width: 16 },
+      { header: 'Benchmark CAGR 3Y', key: 'benchmark_cagr_3y', width: 18 },
+      { header: 'Benchmark CAGR 5Y', key: 'benchmark_cagr_5y', width: 18 },
+      { header: '1Y Difference', key: 'difference_1Y', width: 16 }, { header: '1Y Comparison', key: 'comparison_1Y', width: 18 },
+      { header: 'AUM', key: 'AUM', width: 18 },
+    ];    columnDefinitions.forEach((column, index) => {
       const excelColumn = sheet.getColumn(index + 1);
       excelColumn.width = column.width;
       excelColumn.key = column.key;
     });
 
-    sheet.mergeCells('A1:N1');
+    sheet.mergeCells('A1:Z1');
     const title = sheet.getCell('A1');
     title.value = 'Watch List Report';
     title.font = { name: 'Aptos Display', size: 18, bold: true, color: { argb: 'FFFFFFFF' } };
@@ -668,14 +685,14 @@ export class WatchListComponent implements OnInit, OnDestroy {
     title.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1F2937' } };
     sheet.getRow(1).height = 32;
 
-    sheet.mergeCells('A2:N2');
+    sheet.mergeCells('A2:Z2');
     const subtitle = sheet.getCell('A2');
     subtitle.value = exportTypeLabel + ' • Watchlisted products • Generated ' + this.todayStamp();
     subtitle.font = { name: 'Aptos', size: 10, italic: true, color: { argb: 'FF6B7280' } };
     subtitle.alignment = { vertical: 'middle' };
     sheet.getRow(2).height = 22;
 
-    sheet.mergeCells('A3:N3');
+    sheet.mergeCells('A3:Z3');
     const summary = sheet.getCell('A3');
     summary.value = 'Total watchlisted products: ' + products.length;
     summary.font = { name: 'Aptos', size: 10, bold: true, color: { argb: 'FF374151' } };
@@ -695,6 +712,10 @@ export class WatchListComponent implements OnInit, OnDestroy {
     });
 
     products.forEach((product, index) => {
+      const benchmark = benchmarkData.get(product.id);
+      const benchmarkMetrics = benchmark?.benchmark_metrics || {};
+      const differences = benchmark?.differences || {};
+      const comparisons = benchmark?.comparison || {};
       const row = sheet.addRow({
         type: product.product_type === 'MUTUAL_FUND' ? 'Mutual Fund' : 'PMS',
         product: product.name,
@@ -702,9 +723,15 @@ export class WatchListComponent implements OnInit, OnDestroy {
         category: product.category || '',
         identifier: product.isin || product.external_identifier || '',
         status: product.status,
+        benchmark: product.benchmark || '',
         '1M': this.metric(product, '1M'), '3M': this.metric(product, '3M'), '6M': this.metric(product, '6M'),
         '1Y': this.metric(product, '1Y'), '3Y': this.metric(product, '3Y'), '5Y': this.metric(product, '5Y'),
         CAGR: this.metric(product, 'CAGR'),
+        benchmark_1M: benchmarkMetrics['1M'] ?? null, benchmark_3M: benchmarkMetrics['3M'] ?? null,
+        benchmark_6M: benchmarkMetrics['6M'] ?? null, benchmark_1Y: benchmarkMetrics['1Y'] ?? null,
+        benchmark_3Y: benchmarkMetrics['3Y'] ?? null, benchmark_5Y: benchmarkMetrics['5Y'] ?? null,
+        benchmark_cagr_3y: benchmark?.benchmark_cagr_3y ?? null, benchmark_cagr_5y: benchmark?.benchmark_cagr_5y ?? null,
+        difference_1Y: differences['1Y'] ?? null, comparison_1Y: comparisons['1Y'] ?? 'Unavailable',
         AUM: product.mutual_fund?.aum ?? product.pms?.aum ?? null,
       });
 
@@ -718,7 +745,7 @@ export class WatchListComponent implements OnInit, OnDestroy {
         cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF9FAFB' } };
       });
 
-      [7, 8, 9, 10, 11, 12, 13].forEach(column => {
+      [8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25].forEach(column => {
         const cell = row.getCell(column);
         if (typeof cell.value === 'number') {
           cell.numFmt = '0.00"%"';
@@ -726,16 +753,17 @@ export class WatchListComponent implements OnInit, OnDestroy {
         }
       });
 
-      const aum = row.getCell(14);
+      const aum = row.getCell(26);
       if (typeof aum.value === 'number') {
         aum.numFmt = '#,##0.00';
         aum.alignment = { vertical: 'middle', horizontal: 'right' };
       }
       row.getCell(1).alignment = { vertical: 'middle', horizontal: 'center' };
       row.getCell(6).alignment = { vertical: 'middle', horizontal: 'center' };
+      row.getCell(7).alignment = { vertical: 'middle', horizontal: 'center' };
     });
 
-    sheet.autoFilter = { from: 'A4', to: 'N4' };
+    sheet.autoFilter = { from: 'A4', to: 'Z4' };
     sheet.getColumn(2).alignment = { vertical: 'middle', wrapText: true };
     sheet.getColumn(3).alignment = { vertical: 'middle', wrapText: true };
     sheet.getColumn(4).alignment = { vertical: 'middle', wrapText: true };
@@ -743,8 +771,8 @@ export class WatchListComponent implements OnInit, OnDestroy {
 
     const lastRow = Math.max(4, products.length + 4);
     const noteCell = sheet.getCell('A' + (lastRow + 1));
-    noteCell.value = 'Note: Returns are shown as provided by the Watch List data source. AUM is shown in the source currency.';
-    sheet.mergeCells('A' + (lastRow + 1) + ':N' + (lastRow + 1));
+    noteCell.value = 'Note: Product return columns are Watch List returns; Benchmark columns are the selected benchmark returns; Difference is product return minus benchmark return. AUM is shown in the source currency.';
+    sheet.mergeCells('A' + (lastRow + 1) + ':Z' + (lastRow + 1));
     noteCell.font = { name: 'Aptos', size: 9, italic: true, color: { argb: 'FF6B7280' } };
     noteCell.alignment = { vertical: 'middle' };
     sheet.getRow(lastRow + 1).height = 20;

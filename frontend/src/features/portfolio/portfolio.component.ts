@@ -107,11 +107,31 @@ export class PortfolioComponent implements OnInit, OnDestroy {
   }
 
   get underlyingAssetOptions(): Array<{ id: number; name: string }> {
-    const options = new Map<number, string>();
-    for (const family of this.families) for (const portfolio of family.portfolios) for (const assetClass of portfolio.asset_classes) for (const subClass of assetClass.sub_classes) for (const asset of subClass.assets) {
-      if (asset.id > 0 && asset.asset_name) options.set(asset.id, asset.asset_name);
+    const options = new Map<string, { id: number; name: string }>();
+
+    for (const family of this.families) {
+      for (const portfolio of family.portfolios) {
+        for (const assetClass of portfolio.asset_classes) {
+          for (const subClass of assetClass.sub_classes) {
+            for (const asset of subClass.assets) {
+              if (asset.id > 0 && asset.asset_name) {
+                // The upload selector represents the Asset Name level only.
+                // Do not expose portfolio, asset-class, sub-class, ISIN, or
+                // Asset ID details in the visible option label.
+                if (!options.has(asset.asset_name)) {
+                  options.set(asset.asset_name, {
+                    id: asset.id,
+                    name: asset.asset_name,
+                  });
+                }
+              }
+            }
+          }
+        }
+      }
     }
-    return Array.from(options.entries()).map(([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name));
+
+    return Array.from(options.values()).sort((a, b) => a.name.localeCompare(b.name));
   }
 
   toggleUnderlyingUpload(): void {

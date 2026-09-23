@@ -146,8 +146,9 @@
     </div>
 
     <div *ngIf="benchmarkLoading" class="state">Loading benchmark data…</div>
+    <div *ngIf="!benchmarkLoading && benchmarkError" class="error">{{ benchmarkError }}</div>
 
-    <ng-container *ngIf="!benchmarkLoading && benchmarkData">
+    <ng-container *ngIf="!benchmarkLoading && benchmarkData && !benchmarkError">
       <div *ngIf="!benchmarkData.available" class="error">{{ benchmarkData.message }}</div>
 
       <ng-container *ngIf="benchmarkData.available">

@@ -12,6 +12,7 @@ type StatusTab = 'ALL' | 'OWNED' | 'UNIVERSAL' | 'WATCHLIST';
 type PageItem = number | 'ellipsis';
 type WatchListSortColumn = 'product' | 'provider' | 'status' | 'ownership' | '1M' | '3M' | '6M' | '1Y' | '3Y' | '5Y' | 'CAGR' | 'AUM';
 type WatchListSortDirection = 'normal' | 'asc' | 'desc';
+type BenchmarkPeriod = '1M' | '3M' | '6M' | '1Y' | '3Y' | '5Y';
 interface WatchListSortState { column: WatchListSortColumn | null; direction: WatchListSortDirection; }
 
 @Component({
@@ -53,11 +54,12 @@ export class WatchListComponent implements OnInit, OnDestroy {
   downloadType: 'PMS' | 'MUTUAL_FUND' | 'ALL' = 'ALL';
   downloading = false;
   readonly benchmarkOptions: Array<'BSE 500 TRI' | 'Nifty 50'> = ['BSE 500 TRI', 'Nifty 50'];
+  readonly benchmarkPeriods: BenchmarkPeriod[] = ['1M', '3M', '6M', '1Y', '3Y', '5Y'];
   private readonly updatingBenchmarkIds = new Set<number>();
   benchmarkModalProduct: WatchListProduct | null = null;
   benchmarkData: any = null;
   benchmarkLoading = false;
-  benchmarkPeriod: '1M' | '3M' | '6M' | '1Y' | '3Y' | '5Y' = '1Y';
+  benchmarkPeriod: BenchmarkPeriod = '1Y';
 
   ngOnInit(): void {
     this.loadFilters();
@@ -454,7 +456,7 @@ export class WatchListComponent implements OnInit, OnDestroy {
     this.benchmarkLoading = false;
   }
 
-  changeBenchmarkChartPeriod(period: '1M' | '3M' | '6M' | '1Y' | '3Y' | '5Y'): void {
+  changeBenchmarkChartPeriod(period: BenchmarkPeriod): void {
     if (!this.benchmarkModalProduct || this.benchmarkLoading) return;
     this.benchmarkPeriod = period;
     this.benchmarkLoading = true;
@@ -471,12 +473,12 @@ export class WatchListComponent implements OnInit, OnDestroy {
     });
   }
 
-  benchmarkMetric(period: string, key: 'fund_metrics' | 'benchmark_metrics' | 'differences'): number | null {
+  benchmarkMetric(period: BenchmarkPeriod, key: 'fund_metrics' | 'benchmark_metrics' | 'differences'): number | null {
     const value = this.benchmarkData?.[key]?.[period];
     return value === null || value === undefined ? null : Number(value);
   }
 
-  benchmarkComparison(period: string): string {
+  benchmarkComparison(period: BenchmarkPeriod): string {
     return this.benchmarkData?.comparison?.[period] || 'Unavailable';
   }
 

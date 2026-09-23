@@ -330,6 +330,15 @@ def watch_list_benchmark_performance(request, product_id):
 
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
+def watch_list_benchmarks_performance(request):
+    results = []
+    for benchmark in ("Nifty 50", "BSE 500"):
+        results.append(BenchmarkPerformanceService.calculate_benchmark(benchmark))
+    return Response({"benchmarks": results})
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
 def watch_list_performance(request, product_id):
     product = get_object_or_404(InvestmentProduct, pk=product_id, is_active=True)
     snapshots = product.performance_snapshots.order_by("-date")

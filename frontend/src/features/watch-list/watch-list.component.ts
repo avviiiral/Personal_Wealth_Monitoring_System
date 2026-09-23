@@ -482,16 +482,33 @@ export class WatchListComponent implements OnInit, OnDestroy {
 
   benchmarkPolyline(series: Array<{ date: string; value: number }> | undefined): string {
     if (!series?.length) return '';
-    const values = series.map(point => Number(point.value)).filter(value => Number.isFinite(value) && value > 0);
-    if (!values.length) return '';
-    const min = Math.min(...values);
-    const max = Math.max(...values);
+    const normalized = series
+      .map(point => Number(point.value))
+      .filter(value => Number.isFinite(value) && value > 0);
+    if (!normalized.length) return '';
+
+    const base = normalized[0];
+    const normalizedSeries = series.map(point => ({
+      value: Number(point.value) / base * 100,
+    }));
+    const fund = this.benchmarkData?.chart?.fund || [];
+    const benchmark = this.benchmarkData?.chart?.benchmark || [];
+    const combined = [...fund, ...benchmark]
+      .map((point: { value: number }) => Number(point.value))
+      .filter(value => Number.isFinite(value) && value > 0);
+    const fundBase = fund[0]?.value ? Number(fund[0].value) : null;
+    const benchmarkBase = benchmark[0]?.value ? Number(benchmark[0].value) : null;
+    const normalizedAll = [
+      ...(fundBase ? fund.map((point: { value: number }) => Number(point.value) / fundBase * 100) : []),
+      ...(benchmarkBase ? benchmark.map((point: { value: number }) => Number(point.value) / benchmarkBase * 100) : []),
+    ];
+    const min = normalizedAll.length ? Math.min(...normalizedAll) : Math.min(...combined);
+    const max = normalizedAll.length ? Math.max(...normalizedAll) : Math.max(...combined);
     const range = max - min || 1;
     const lastIndex = Math.max(series.length - 1, 1);
-    return series.map((point, index) => {
-      const value = Number(point.value);
+    return normalizedSeries.map((point, index) => {
       const x = (index / lastIndex) * 100;
-      const y = 96 - ((value - min) / range) * 88;
+      const y = 96 - ((point.value - min) / range) * 88;
       return `${x.toFixed(2)},${y.toFixed(2)}`;
     }).join(' ');
   }

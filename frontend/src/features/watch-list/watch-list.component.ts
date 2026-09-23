@@ -440,18 +440,18 @@ export class WatchListComponent implements OnInit, OnDestroy {
     this.benchmarkError = '';
     this.benchmarkLoading = true;
     this.benchmarkPeriod = '1Y';
-    const requestId = ++this.benchmarkRequestSequence;
-    this.api.getBenchmarkPerformance(product.id, this.benchmarkPeriod).subscribe({
+    const productId = product.id;
+    this.api.getBenchmarkPerformance(productId, this.benchmarkPeriod).subscribe({
       next: data => {
-        if (requestId !== this.benchmarkRequestSequence) return;
+        if (!this.benchmarkModalProduct || this.benchmarkModalProduct.id !== productId) return;
         this.benchmarkData = data;
         this.benchmarkLoading = false;
-        if (data?.available === false) {
-          this.benchmarkError = data.message || 'Benchmark data is unavailable.';
-        }
+        this.benchmarkError = data?.available === false
+          ? (data.message || 'Benchmark data is unavailable.')
+          : '';
       },
       error: error => {
-        if (requestId !== this.benchmarkRequestSequence) return;
+        if (!this.benchmarkModalProduct || this.benchmarkModalProduct.id !== productId) return;
         console.error('Failed to load benchmark performance:', error);
         this.benchmarkData = null;
         this.benchmarkLoading = false;
@@ -474,18 +474,18 @@ export class WatchListComponent implements OnInit, OnDestroy {
     this.benchmarkData = null;
     this.benchmarkError = '';
     this.benchmarkLoading = true;
-    const requestId = ++this.benchmarkRequestSequence;
-    this.api.getBenchmarkPerformance(this.benchmarkModalProduct.id, period).subscribe({
+    const productId = this.benchmarkModalProduct.id;
+    this.api.getBenchmarkPerformance(productId, period).subscribe({
       next: data => {
-        if (requestId !== this.benchmarkRequestSequence) return;
+        if (!this.benchmarkModalProduct || this.benchmarkModalProduct.id !== productId) return;
         this.benchmarkData = data;
         this.benchmarkLoading = false;
-        if (data?.available === false) {
-          this.benchmarkError = data.message || 'Benchmark data is unavailable.';
-        }
+        this.benchmarkError = data?.available === false
+          ? (data.message || 'Benchmark data is unavailable.')
+          : '';
       },
       error: error => {
-        if (requestId !== this.benchmarkRequestSequence) return;
+        if (!this.benchmarkModalProduct || this.benchmarkModalProduct.id !== productId) return;
         console.error('Failed to load benchmark chart:', error);
         this.benchmarkData = null;
         this.benchmarkLoading = false;

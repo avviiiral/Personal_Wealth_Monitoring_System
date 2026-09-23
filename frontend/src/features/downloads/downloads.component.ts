@@ -584,6 +584,7 @@ export class DownloadsComponent implements OnInit {
   private async downloadHoldingMatrix(): Promise<void> {
     const response = await firstValueFrom(this.portfolioApi.getHoldingMatrix());
     const underlyings = response.underlyings ?? [];
+    const details = response.underlying_details ?? [];
     const sourceRows = response.results ?? [];
 
     // Transpose the matrix so Underlying is on rows and Asset Name is on columns.
@@ -592,8 +593,15 @@ export class DownloadsComponent implements OnInit {
       .filter((name): name is string => typeof name === 'string' && name.trim().length > 0)
       .sort((a, b) => a.localeCompare(b));
 
+    const detailByUnderlying = new Map(details.map(detail => [detail.name, detail]));
     const rows = underlyings.map(underlying => {
-      const row: Record<string, unknown> = { underlying };
+      const detail = detailByUnderlying.get(underlying);
+      const row: Record<string, unknown> = {
+        underlying,
+        current_value: detail?.current_value ?? 0,
+        percentage_of_total_current_value: detail?.percentage_of_total_current_value ?? 0,
+        current_market_price: detail?.current_market_price ?? null,
+      };
 
       for (const sourceRow of sourceRows) {
         const assetName = sourceRow.asset_name;
@@ -606,6 +614,9 @@ export class DownloadsComponent implements OnInit {
 
     const columns: Array<[string, string]> = [
       ['Underlying', 'underlying'],
+      ['Current Value', 'current_value'],
+      ['Percentage of Total Current Value', 'percentage_of_total_current_value'],
+      ['Current Market Price', 'current_market_price'],
       ...assetNames.map(assetName => [assetName, assetName] as [string, string]),
     ];
 

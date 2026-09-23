@@ -77,10 +77,9 @@ export class WatchListApiService {
   }
 
   updateBenchmark(productId: number, benchmark: 'BSE 500 TRI' | 'Nifty 50'): Observable<{ id: number; benchmark: string }> {
-    return this.http.patch<{ id: number; benchmark: string }>(
+    return this.patchWithCsrf<{ id: number; benchmark: string }>(
       `${this.baseUrl}/products/${productId}/benchmark/`,
       { benchmark },
-      { withCredentials: true },
     );
   }
 
@@ -122,6 +121,22 @@ export class WatchListApiService {
       selected: number;
       removed: number;
     }>(`${this.baseUrl}/bulk-remove/`, { product_ids: productIds });
+  }
+
+  private patchWithCsrf<T>(url: string, body: unknown): Observable<T> {
+    return this.http.get(`${environment.apiUrl}/api/health/`, {
+      withCredentials: true,
+      responseType: 'json',
+    }).pipe(
+      switchMap(() => {
+        const token = this.getCsrfToken();
+        const headers = token ? new HttpHeaders({ 'X-CSRFToken': token }) : undefined;
+        return this.http.patch<T>(url, body, {
+          withCredentials: true,
+          headers,
+        });
+      }),
+    );
   }
 
   private postWithCsrf<T>(url: string, body: unknown): Observable<T> {

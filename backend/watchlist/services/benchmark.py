@@ -1,5 +1,9 @@
-from datetime import date, timedelta
+import csv
+import io
+import os
+from datetime import date, datetime, timedelta
 
+import requests
 import yfinance as yf
 from django.utils import timezone
 
@@ -18,19 +22,28 @@ class BenchmarkPerformanceService:
         "5Y": 365 * 5,
     }
 
-    # Yahoo Finance exposes Nifty 50 as ^NSEI. BSE's published market-data
-    # ticker for the total-return series is BSE500T; deployments may override
-    # the Yahoo-compatible ticker if their market-data provider exposes it.
+    # Yahoo Finance exposes Nifty 50 as ^NSEI. BSE publishes the BSE 500
+    # total-return series as BSE500T, but Yahoo Finance does not reliably
+    # expose that series. BSE 500 TRI therefore uses BSE's own historical
+    # index API unless a deployment explicitly configures another provider.
     TICKERS = {
         "Nifty 50": "^NSEI",
-        "BSE 500 TRI": "^BSE500T",
+        "BSE 500 TRI": "BSE500T",
+    }
+
+    BSE_INDEX_HISTORY_URL = "https://api.bseindia.com/BseIndiaAPI/api/ProduceCSVForDate/w"
+    BSE_HEADERS = {
+        "Accept": "application/json, text/plain, */*",
+        "Referer": "https://www.bseindia.com/",
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/140.0 Safari/537.36"
+        ),
     }
 
     @classmethod
     def _ticker(cls, benchmark):
-        if benchmark == "BSE 500 TRI":
-            import os
-            return os.getenv("WATCHLIST_BENCHMARK_BSE500_TRI_TICKER", cls.TICKERS[benchmark])
         return cls.TICKERS[benchmark]
 
     @staticmethod
@@ -56,6 +69,173 @@ class BenchmarkPerformanceService:
             except (AttributeError, TypeError, ValueError):
                 continue
         return points
+
+    @staticmethod
+    def _parse_date(value):
+        if value is None:
+            return None
+        if isinstance(value, datetime):
+            return value.date()
+        if isinstance(value, date):
+            return value
+
+        text = str(value).strip()
+        for fmt in (
+            "%Y-%m-%d",
+            "%d/%m/%Y",
+            "%d-%m-%Y",
+            "%d-%b-%Y",
+            "%d %b %Y",
+            "%d-%B-%Y",
+            "%d %B %Y",
+            "%Y/%m/%d",
+        ):
+            try:
+                return datetime.strptime(text, fmt).date()
+            except ValueError:
+                continue
+
+        try:
+            return datetime.fromisoformat(text.replace("Z", "+00:00")).date()
+        except ValueError:
+            return None
+
+    @classmethod
+    def _parse_bse_rows(cls, payload):
+        date_keys = {
+            "date",
+            "indexdate",
+            "tradedate",
+            "tradingdate",
+            "dt",
+            "dtdate",
+        }
+        value_keys = {
+            "close",
+            "closevalue",
+            "closing",
+            "closingvalue",
+            "indexvalue",
+            "indexlevel",
+            "value",
+            "ltp",
+            "prevclose",
+        }
+        rows = []
+
+        def visit(node):
+            if isinstance(node, dict):
+                normalized = {
+                    str(key).strip().lower().replace(" ", "").replace("_", ""): value
+                    for key, value in node.items()
+                }
+                parsed_date = next(
+                    (
+                        cls._parse_date(value)
+                        for key, value in normalized.items()
+                        if key in date_keys and cls._parse_date(value) is not None
+                    ),
+                    None,
+                )
+                raw_value = next(
+                    (
+                        value
+                        for key, value in normalized.items()
+                        if key in value_keys and value not in (None, "")
+                    ),
+                    None,
+                )
+                if parsed_date is not None and raw_value is not None:
+                    try:
+                        numeric_value = float(str(raw_value).replace(",", "").strip())
+                        if numeric_value > 0:
+                            rows.append((parsed_date, numeric_value))
+                    except (TypeError, ValueError):
+                        pass
+
+                for value in node.values():
+                    visit(value)
+            elif isinstance(node, list):
+                for item in node:
+                    visit(item)
+
+        visit(payload)
+        return rows
+
+    @classmethod
+    def _parse_bse_response(cls, response):
+        content_type = response.headers.get("Content-Type", "").lower()
+        try:
+            if "json" in content_type:
+                return cls._parse_bse_rows(response.json())
+        except (ValueError, TypeError):
+            pass
+
+        text = response.text.strip()
+        if not text:
+            return []
+
+        try:
+            return cls._parse_bse_rows(response.json())
+        except (ValueError, TypeError):
+            pass
+
+        rows = []
+        try:
+            reader = csv.DictReader(io.StringIO(text))
+            for row in reader:
+                parsed = cls._parse_bse_rows(row)
+                rows.extend(parsed)
+        except (csv.Error, UnicodeError):
+            return []
+
+        return rows
+
+    @classmethod
+    def _bse_tri_series(cls, start):
+        """Fetch the official BSE 500 TRI history in yearly API chunks."""
+        end = timezone.now().date()
+        session = requests.Session()
+        session.headers.update(cls.BSE_HEADERS)
+
+        points = []
+        chunk_start = start
+        while chunk_start <= end:
+            chunk_end = min(chunk_start + timedelta(days=364), end)
+            params = {
+                "strIndex": "BSE500T",
+                "dtFromDate": chunk_start.strftime("%d/%m/%Y"),
+                "dtToDate": chunk_end.strftime("%d/%m/%Y"),
+                "period": "D",
+            }
+            response = session.get(
+                cls.BSE_INDEX_HISTORY_URL,
+                params=params,
+                timeout=20,
+            )
+            response.raise_for_status()
+            points.extend(cls._parse_bse_response(response))
+            chunk_start = chunk_end + timedelta(days=1)
+
+        unique = {}
+        for point_date, value in points:
+            unique[point_date.isoformat()] = {
+                "date": point_date.isoformat(),
+                "value": value,
+            }
+        return [unique[key] for key in sorted(unique)]
+
+    @classmethod
+    def _benchmark_series(cls, benchmark, start):
+        if benchmark == "BSE 500 TRI":
+            # A configured Yahoo-compatible ticker is an explicit deployment
+            # override. The default path uses BSE's official data source.
+            override = os.getenv("WATCHLIST_BENCHMARK_BSE500_TRI_TICKER", "").strip()
+            if override:
+                return cls._series(override, start)
+            return cls._bse_tri_series(start)
+
+        return cls._series(cls._ticker(benchmark), start)
 
     @staticmethod
     def _period_return(points, days):
@@ -136,7 +316,7 @@ class BenchmarkPerformanceService:
         max_days = cls.PERIOD_DAYS["5Y"] + 31
         start = timezone.now().date() - timedelta(days=max_days)
         try:
-            benchmark_series = cls._series(cls._ticker(benchmark), start)
+            benchmark_series = cls._benchmark_series(benchmark, start)
         except Exception:
             benchmark_series = []
         if not benchmark_series:

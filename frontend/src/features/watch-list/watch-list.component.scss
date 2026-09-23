@@ -242,7 +242,7 @@ html.dark-theme .watch-list-page .status.owned {
 }
 .benchmark-periods button.active { background: var(--accent); border-color: var(--accent); color: white; }
 .benchmark-table-wrap { overflow-x: auto; }
-.benchmark-comparison-table { width: 100%; border-collapse: collapse; min-width: 620px; }
+.benchmark-comparison-table { width: 100%; max-width: 100%; border-collapse: collapse; min-width: 0; table-layout: fixed; }
 .benchmark-comparison-table th, .benchmark-comparison-table td {
   padding: 10px 12px; border-bottom: 1px solid var(--surface-line); text-align: right;
 }
@@ -341,6 +341,14 @@ html.dark-theme .watch-list-page .status.owned {
 
   .benchmark-modal-body {
     padding: 0 14px 12px;
+    overflow-x: hidden;
+  }
+
+  .benchmark-comparison-table th,
+  .benchmark-comparison-table td {
+    padding: 7px 6px;
+    white-space: normal;
+    overflow-wrap: anywhere;
   }
 
   .benchmark-summary {

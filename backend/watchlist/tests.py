@@ -144,6 +144,23 @@ class BenchmarkPerformanceTests(TestCase):
         with self.assertRaises(ValueError):
             BenchmarkPerformanceService._load_bse_tri_csv("Date,Close\n2021-01-01,\n")
 
+    @patch("watchlist.services.benchmark.requests.get")
+    def test_bse500_tri_fetches_bse500t_automatically(self, mocked_get):
+        mocked_get.return_value.text = (
+            "Index Name,Date,Open,High,Low,Close\n"
+            "BSE500T,01/01/2021,100,101,99,100\n"
+            "BSE500T,04/01/2021,100,102,99,101\n"
+        )
+        mocked_get.return_value.raise_for_status.return_value = None
+        points = BenchmarkPerformanceService._fetch_bse_tri_points(
+            date(2021, 1, 1), date(2021, 1, 4)
+        )
+        mocked_get.assert_called_once()
+        self.assertEqual(
+            mocked_get.call_args.kwargs["params"]["strIndex"], "BSE500T"
+        )
+        self.assertEqual(points[-1]["value"], 101.0)
+
     def test_bse500_tri_insufficient_history_returns_unavailable(self):
         product = InvestmentProduct.objects.create(
             product_type=ProductType.MUTUAL_FUND,

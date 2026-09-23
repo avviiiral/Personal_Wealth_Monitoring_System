@@ -54,6 +54,10 @@ export class WatchListComponent implements OnInit, OnDestroy {
   downloading = false;
   readonly benchmarkOptions: Array<'BSE 500 TRI' | 'Nifty 50'> = ['BSE 500 TRI', 'Nifty 50'];
   private readonly updatingBenchmarkIds = new Set<number>();
+  benchmarkModalProduct: WatchListProduct | null = null;
+  benchmarkData: any = null;
+  benchmarkLoading = false;
+  benchmarkPeriod: '1M' | '3M' | '6M' | '1Y' | '3Y' | '5Y' = '1Y';
 
   ngOnInit(): void {
     this.loadFilters();
@@ -423,6 +427,73 @@ export class WatchListComponent implements OnInit, OnDestroy {
         this.error = 'Unable to update the benchmark right now.';
       },
     });
+  }
+
+  openBenchmarkComparison(product: WatchListProduct): void {
+    if (!product.benchmark) return;
+    this.benchmarkModalProduct = product;
+    this.benchmarkData = null;
+    this.benchmarkLoading = true;
+    this.benchmarkPeriod = '1Y';
+    this.api.getBenchmarkPerformance(product.id, this.benchmarkPeriod).subscribe({
+      next: data => {
+        this.benchmarkData = data;
+        this.benchmarkLoading = false;
+      },
+      error: error => {
+        console.error('Failed to load benchmark performance:', error);
+        this.benchmarkLoading = false;
+        this.error = 'Unable to load benchmark performance right now.';
+      },
+    });
+  }
+
+  closeBenchmarkComparison(): void {
+    this.benchmarkModalProduct = null;
+    this.benchmarkData = null;
+    this.benchmarkLoading = false;
+  }
+
+  changeBenchmarkChartPeriod(period: '1M' | '3M' | '6M' | '1Y' | '3Y' | '5Y'): void {
+    if (!this.benchmarkModalProduct || this.benchmarkLoading) return;
+    this.benchmarkPeriod = period;
+    this.benchmarkLoading = true;
+    this.api.getBenchmarkPerformance(this.benchmarkModalProduct.id, period).subscribe({
+      next: data => {
+        this.benchmarkData = data;
+        this.benchmarkLoading = false;
+      },
+      error: error => {
+        console.error('Failed to load benchmark chart:', error);
+        this.benchmarkLoading = false;
+        this.error = 'Unable to load benchmark chart right now.';
+      },
+    });
+  }
+
+  benchmarkMetric(period: string, key: 'fund_metrics' | 'benchmark_metrics' | 'differences'): number | null {
+    const value = this.benchmarkData?.[key]?.[period];
+    return value === null || value === undefined ? null : Number(value);
+  }
+
+  benchmarkComparison(period: string): string {
+    return this.benchmarkData?.comparison?.[period] || 'Unavailable';
+  }
+
+  benchmarkPolyline(series: Array<{ date: string; value: number }> | undefined): string {
+    if (!series?.length) return '';
+    const values = series.map(point => Number(point.value)).filter(value => Number.isFinite(value) && value > 0);
+    if (!values.length) return '';
+    const min = Math.min(...values);
+    const max = Math.max(...values);
+    const range = max - min || 1;
+    const lastIndex = Math.max(series.length - 1, 1);
+    return series.map((point, index) => {
+      const value = Number(point.value);
+      const x = (index / lastIndex) * 100;
+      const y = 96 - ((value - min) / range) * 88;
+      return `${x.toFixed(2)},${y.toFixed(2)}`;
+    }).join(' ');
   }
 
   toggleWatch(product: WatchListProduct, event: Event): void {

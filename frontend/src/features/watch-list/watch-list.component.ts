@@ -52,6 +52,8 @@ export class WatchListComponent implements OnInit, OnDestroy {
   downloadModalOpen = false;
   downloadType: 'PMS' | 'MUTUAL_FUND' | 'ALL' = 'ALL';
   downloading = false;
+  readonly benchmarkOptions: Array<'BSE 500 TRI' | 'Nifty 50'> = ['BSE 500 TRI', 'Nifty 50'];
+  private readonly updatingBenchmarkIds = new Set<number>();
 
   ngOnInit(): void {
     this.loadFilters();
@@ -400,6 +402,28 @@ export class WatchListComponent implements OnInit, OnDestroy {
   }
 
   isToggling(productId: number): boolean { return this.togglingIds.has(productId); }
+
+  isUpdatingBenchmark(productId: number): boolean { return this.updatingBenchmarkIds.has(productId); }
+
+  updateBenchmark(product: WatchListProduct, benchmark: 'BSE 500 TRI' | 'Nifty 50'): void {
+    const previous = product.benchmark;
+    if (previous === benchmark || this.updatingBenchmarkIds.has(product.id)) return;
+    this.updatingBenchmarkIds.add(product.id);
+    this.error = '';
+    this.api.updateBenchmark(product.id, benchmark).subscribe({
+      next: response => {
+        product.benchmark = response.benchmark as 'BSE 500 TRI' | 'Nifty 50';
+        this.updatingBenchmarkIds.delete(product.id);
+        this.cacheCurrentPage();
+      },
+      error: error => {
+        console.error('Failed to update Watch List benchmark:', error);
+        product.benchmark = previous;
+        this.updatingBenchmarkIds.delete(product.id);
+        this.error = 'Unable to update the benchmark right now.';
+      },
+    });
+  }
 
   toggleWatch(product: WatchListProduct, event: Event): void {
     event.stopPropagation();

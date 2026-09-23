@@ -22,6 +22,7 @@ class WatchListProductSerializer(serializers.ModelSerializer):
     mutual_fund = serializers.SerializerMethodField()
     pms = serializers.SerializerMethodField()
     is_watchlisted = serializers.SerializerMethodField()
+    benchmark = serializers.SerializerMethodField()
 
     class Meta:
         model = InvestmentProduct

@@ -125,27 +125,27 @@ class WatchListTests(TestCase):
 
 
 class BenchmarkPerformanceTests(TestCase):
-    def test_bse500_tri_csv_validation(self):
+    def test_bse500_csv_validation(self):
         csv_text = "Date,Close\n2021-01-01,100.0\n2021-01-04,101.5\n"
         points = BenchmarkPerformanceService._load_bse_tri_csv(csv_text)
         self.assertEqual(points[0]["date"], "2021-01-01")
         self.assertEqual(points[-1]["value"], 101.5)
 
-    def test_bse500_tri_rejects_duplicate_dates(self):
+    def test_bse500_rejects_duplicate_dates(self):
         csv_text = "Date,Close\n2021-01-01,100.0\n2021-01-01,101.5\n"
         with self.assertRaises(ValueError):
             BenchmarkPerformanceService._load_bse_tri_csv(csv_text)
 
-    def test_bse500_tri_rejects_non_positive_values(self):
+    def test_bse500_rejects_non_positive_values(self):
         with self.assertRaises(ValueError):
             BenchmarkPerformanceService._load_bse_tri_csv("Date,Close\n2021-01-01,0\n")
 
-    def test_bse500_tri_rejects_missing_values(self):
+    def test_bse500_rejects_missing_values(self):
         with self.assertRaises(ValueError):
             BenchmarkPerformanceService._load_bse_tri_csv("Date,Close\n2021-01-01,\n")
 
     @patch("watchlist.services.benchmark.requests.get")
-    def test_bse500_tri_fetches_bse500t_automatically(self, mocked_get):
+    def test_bse500_fetches_bse500t_automatically(self, mocked_get):
         mocked_get.return_value.text = (
             "Index Name,Date,Open,High,Low,Close\n"
             "BSE500T,01/01/2021,100,101,99,100\n"
@@ -161,16 +161,16 @@ class BenchmarkPerformanceTests(TestCase):
         )
         self.assertEqual(points[-1]["value"], 101.0)
 
-    def test_bse500_tri_insufficient_history_returns_unavailable(self):
+    def test_bse500_insufficient_history_returns_unavailable(self):
         product = InvestmentProduct.objects.create(
             product_type=ProductType.MUTUAL_FUND,
             name="BSE TRI Fund",
             identity_key="MUTUAL_FUND:SCHEME:BSETRI",
             source="TEST",
         )
-        MutualFundProduct.objects.create(product=product, scheme_code="BSETRI", benchmark="BSE 500 TRI")
+        MutualFundProduct.objects.create(product=product, scheme_code="BSETRI", benchmark="BSE 500")
         csv_text = "Date,Close\n2026-09-15,100.0\n2026-09-16,101.0\n"
-        with patch.object(BenchmarkPerformanceService, "_bse_tri_series", return_value=[]):
+        with patch.object(BenchmarkPerformanceService, "_bse_series", return_value=[]):
             result = BenchmarkPerformanceService.calculate(product)
         self.assertFalse(result["available"])
 
@@ -192,17 +192,17 @@ class BenchmarkPerformanceTests(TestCase):
         self.assertEqual(result["benchmark"], "Nifty 50")
         self.assertIsNotNone(result["benchmark_metrics"]["5Y"])
 
-    def test_benchmark_api_response_for_bse500_tri(self):
+    def test_benchmark_api_response_for_bse500(self):
         product = InvestmentProduct.objects.create(
             product_type=ProductType.MUTUAL_FUND,
             name="API BSE TRI Fund",
             identity_key="MUTUAL_FUND:SCHEME:API-BSETRI",
             source="TEST",
         )
-        MutualFundProduct.objects.create(product=product, scheme_code="API-BSETRI", benchmark="BSE 500 TRI")
+        MutualFundProduct.objects.create(product=product, scheme_code="API-BSETRI", benchmark="BSE 500")
         with patch.object(
             BenchmarkPerformanceService,
-            "_bse_tri_series",
+            "_bse_series",
             return_value=[
                 {"date": "2021-01-01", "value": 100.0},
                 {"date": "2026-01-01", "value": 150.0},
@@ -211,7 +211,7 @@ class BenchmarkPerformanceTests(TestCase):
             response = self.client.get(f"/api/watch-list/products/{product.id}/benchmark-performance/?period=1Y")
         self.assertEqual(response.status_code, 200)
         self.assertTrue(response.data["available"])
-        self.assertEqual(response.data["benchmark"], "BSE 500 TRI")
+        self.assertEqual(response.data["benchmark"], "BSE 500")
 
 
 class APMIPMSDiscoveryTests(TestCase):

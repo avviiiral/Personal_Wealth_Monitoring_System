@@ -1,15 +1,16 @@
 from datetime import date
 import re
 
-from django.db.models import OuterRef, Subquery
+from django.db.models import F, OuterRef, Subquery
 
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
-from investments.models import AssetCategory, AssetUnderlyingHolding, PortfolioPosition, Transaction, TransactionType
+from investments.models import Asset, AssetCategory, AssetUnderlyingHolding, PortfolioPosition, Transaction, TransactionType
 from investments.services.xirr import XIRRCalculator
+from market_data.models import DataSource, MarketPrice
 from users.permissions import family_scope, require_active_family
 
 
@@ -401,21 +402,70 @@ def holding_matrix_report(request):
         key=str.casefold,
     )
 
+    total_current_value = sum(underlying_totals.values())
+
+    # Resolve the latest effective market price for each underlying.
+    # Uploaded underlying rows carry an ISIN where available; use that
+    # canonical identity first and fall back to the underlying name.
+    underlying_isins = {}
+    for underlying in uploaded_rows:
+        identity = canonical_key(underlying.isin, underlying.stock_name)
+        if identity[0] == "isin" and underlying.isin:
+            underlying_isins[identity] = clean_matrix(underlying.isin).upper()
+
+    price_by_identity = {}
+    for identity, isin in underlying_isins.items():
+        asset = (
+            Asset.objects
+            .filter(family_id=family.id, isin__iexact=isin, is_active=True)
+            .order_by("id")
+            .first()
+        )
+        if asset is None:
+            continue
+
+        manual_price = (
+            MarketPrice.objects
+            .filter(asset=asset, source=DataSource.MANUAL)
+            .order_by("-date", "-id")
+            .first()
+        )
+        latest_price = (
+            MarketPrice.objects
+            .filter(asset=asset)
+            .exclude(source=DataSource.MANUAL)
+            .order_by("-date", "-id")
+            .first()
+        )
+        effective_price = manual_price or latest_price
+        if effective_price is not None:
+            price_by_identity[identity] = float(effective_price.close_price or 0)
+
+    underlying_details = [
+        {
+            "name": display_names[identity],
+            "current_value": underlying_totals.get(identity, 0.0),
+            "percentage_of_total_current_value": (
+                underlying_totals.get(identity, 0.0) / total_current_value * 100.0
+                if total_current_value > 0 else 0.0
+            ),
+            "current_market_price": price_by_identity.get(identity),
+        }
+        for identity in identities
+    ]
+
     results = []
     for asset_name in asset_names:
         row = {"asset_name": asset_name}
         for identity in identities:
-            total = underlying_totals.get(identity, 0.0)
-            value = exposure.get((asset_name, identity), 0.0)
-            row[display_names[identity]] = (
-                value / total * 100.0 if total > 0 else 0.0
-            )
+            row[display_names[identity]] = exposure.get((asset_name, identity), 0.0)
         results.append(row)
 
     return Response({
         "success": True,
         "count": len(results),
         "underlyings": [display_names[identity] for identity in identities],
+        "underlying_details": underlying_details,
         "results": results,
     }, status=status.HTTP_200_OK)
 

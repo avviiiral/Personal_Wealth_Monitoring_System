@@ -1,5 +1,5 @@
 import { CommonModule } from '@angular/common';
-import { Component, OnDestroy, OnInit, inject } from '@angular/core';
+import { ChangeDetectorRef, Component, OnDestroy, OnInit, inject } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { firstValueFrom, Subject } from 'rxjs';
 import { debounceTime, distinctUntilChanged, finalize, takeUntil } from 'rxjs/operators';
@@ -25,6 +25,7 @@ interface WatchListSortState { column: WatchListSortColumn | null; direction: Wa
 export class WatchListComponent implements OnInit, OnDestroy {
   private readonly api = inject(WatchListApiService);
   private readonly state = inject(WatchListStateService);
+  private readonly changeDetector = inject(ChangeDetectorRef);
   private readonly cachePrefix = 'pwms.watch-list.';
   private autoRefreshAttempted = false;
   private readonly searchInput$ = new Subject<string>();
@@ -435,33 +436,52 @@ export class WatchListComponent implements OnInit, OnDestroy {
 
   openBenchmarkComparison(product: WatchListProduct): void {
     if (!product.benchmark) return;
+
+    const requestId = ++this.benchmarkRequestSequence;
+    const productId = product.id;
+
     this.benchmarkModalProduct = product;
     this.benchmarkData = null;
     this.benchmarkError = '';
     this.benchmarkLoading = true;
     this.benchmarkPeriod = '1Y';
-    const productId = product.id;
+
     this.api.getBenchmarkPerformance(productId, this.benchmarkPeriod).subscribe({
       next: data => {
-        if (!this.benchmarkModalProduct || this.benchmarkModalProduct.id !== productId) return;
+        if (
+          requestId !== this.benchmarkRequestSequence
+          || !this.benchmarkModalProduct
+          || this.benchmarkModalProduct.id !== productId
+        ) return;
+
         this.benchmarkData = data;
         this.benchmarkLoading = false;
         this.benchmarkError = data?.available === false
           ? (data.message || 'Benchmark data is unavailable.')
           : '';
+
+        // Angular 21+ is zoneless by default. These fields are plain component
+        // state updated by an async subscription, so notify Angular explicitly.
+        this.changeDetector.markForCheck();
       },
       error: error => {
-        if (!this.benchmarkModalProduct || this.benchmarkModalProduct.id !== productId) return;
+        if (
+          requestId !== this.benchmarkRequestSequence
+          || !this.benchmarkModalProduct
+          || this.benchmarkModalProduct.id !== productId
+        ) return;
+
         console.error('Failed to load benchmark performance:', error);
         this.benchmarkData = null;
         this.benchmarkLoading = false;
         this.benchmarkError = 'Unable to load benchmark performance right now.';
+        this.changeDetector.markForCheck();
       },
     });
   }
 
   closeBenchmarkComparison(): void {
-    this.benchmarkRequestSequence += 1;
+    ++this.benchmarkRequestSequence;
     this.benchmarkModalProduct = null;
     this.benchmarkData = null;
     this.benchmarkError = '';
@@ -469,27 +489,43 @@ export class WatchListComponent implements OnInit, OnDestroy {
   }
 
   changeBenchmarkChartPeriod(period: BenchmarkPeriod): void {
-    if (!this.benchmarkModalProduct || this.benchmarkLoading) return;
+    if (!this.benchmarkModalProduct || this.benchmarkLoading || this.benchmarkPeriod === period) return;
+
+    const requestId = ++this.benchmarkRequestSequence;
+    const productId = this.benchmarkModalProduct.id;
+
     this.benchmarkPeriod = period;
     this.benchmarkData = null;
     this.benchmarkError = '';
     this.benchmarkLoading = true;
-    const productId = this.benchmarkModalProduct.id;
+
     this.api.getBenchmarkPerformance(productId, period).subscribe({
       next: data => {
-        if (!this.benchmarkModalProduct || this.benchmarkModalProduct.id !== productId) return;
+        if (
+          requestId !== this.benchmarkRequestSequence
+          || !this.benchmarkModalProduct
+          || this.benchmarkModalProduct.id !== productId
+        ) return;
+
         this.benchmarkData = data;
         this.benchmarkLoading = false;
         this.benchmarkError = data?.available === false
           ? (data.message || 'Benchmark data is unavailable.')
           : '';
+        this.changeDetector.markForCheck();
       },
       error: error => {
-        if (!this.benchmarkModalProduct || this.benchmarkModalProduct.id !== productId) return;
+        if (
+          requestId !== this.benchmarkRequestSequence
+          || !this.benchmarkModalProduct
+          || this.benchmarkModalProduct.id !== productId
+        ) return;
+
         console.error('Failed to load benchmark chart:', error);
         this.benchmarkData = null;
         this.benchmarkLoading = false;
         this.benchmarkError = 'Unable to load benchmark chart right now.';
+        this.changeDetector.markForCheck();
       },
     });
   }

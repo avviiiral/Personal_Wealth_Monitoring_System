@@ -48,8 +48,8 @@ export class DownloadsComponent implements OnInit {
     { id: 'sub-class-xirr', name: 'Portfolio Summary', type: 'Performance / XIRR', description: 'Sub Class level portfolio summary with XIRR performance.', filters: 'Family + Asset Class + Sub Class' },
     { id: 'asset-name-xirr', name: 'Asset Name XIRR', type: 'Performance / XIRR', description: 'Asset Name level XIRR performance, matching Portfolio.', filters: 'Family + Asset Class + Sub Class + Asset Name' },
     { id: 'watch-list', name: 'Watch List', type: 'Watch List Report', description: 'Currently watchlisted Mutual Funds and/or PMS products.', filters: 'Product Type' },
-    { id: 'market-cap', name: 'Market Cap', type: 'Equity Allocation Report', description: 'Equity PMS, Direct Equity and Equity Mutual Fund exposure grouped by market capitalization.', filters: 'Family' },
-    { id: 'holding-matrix', name: 'Holding Matrix', type: 'Equity Concentration Report', description: 'Equity PMS and Direct Equity holdings aggregated by security.', filters: 'Family' },
+    { id: 'market-cap', name: 'Market Cap', type: 'Equity Allocation Report', description: 'Equity PMS, Direct Equity and Equity Mutual Fund exposure grouped by market capitalization.', filters: 'Family + Date' },
+    { id: 'holding-matrix', name: 'Holding Matrix', type: 'Equity Concentration Report', description: 'Equity PMS and Direct Equity holdings aggregated by security.', filters: 'Family + Date' },
   ];
 
   transactions: Transaction[] = [];
@@ -65,6 +65,7 @@ export class DownloadsComponent implements OnInit {
   selectedWatchListType: 'ALL' | 'MUTUAL_FUND' | 'PMS' = 'ALL';
   fromDate = '';
   toDate = '';
+  selectedReportDate = new Date().toISOString().slice(0, 10);
 
   loading = true;
   reportLoading = false;
@@ -112,7 +113,7 @@ export class DownloadsComponent implements OnInit {
 
     if (report === 'market-cap') {
       if (this.marketCapLoaded && !force) return;
-      const response = await firstValueFrom(this.portfolioApi.getEquityMarketCapReport());
+      const response = await firstValueFrom(this.portfolioApi.getEquityMarketCapReport(this.selectedReportDate));
       this.marketCapRows = response.results ?? [];
       this.marketCapLoaded = true;
       return;
@@ -194,6 +195,7 @@ export class DownloadsComponent implements OnInit {
     const dates = this.transactions.map(tx => tx.transaction_date).filter(Boolean).sort();
     this.fromDate = dates[0] ?? '';
     this.toDate = dates[dates.length - 1] ?? '';
+    this.selectedReportDate = new Date().toISOString().slice(0, 10);
   }
 
   onFamilyChange(): void {
@@ -209,6 +211,21 @@ export class DownloadsComponent implements OnInit {
 
   onSubClassChange(): void {
     this.selectedAssetName = '';
+  }
+
+  async onReportDateChange(): Promise<void> {
+    if (this.selectedReport !== 'market-cap') return;
+    this.reportLoading = true;
+    this.error = '';
+    try {
+      await this.loadDataForReport('market-cap', true);
+    } catch (error) {
+      console.error('Report date change failed:', error);
+      this.error = 'Unable to load report data for the selected date.';
+    } finally {
+      this.reportLoading = false;
+      this.cdr.detectChanges();
+    }
   }
 
   async download(): Promise<void> {
@@ -558,6 +575,8 @@ export class DownloadsComponent implements OnInit {
   }
 
   private async downloadMarketCap(): Promise<void> {
+    const response = await firstValueFrom(this.portfolioApi.getEquityMarketCapReport(this.selectedReportDate));
+    this.marketCapRows = response.results ?? [];
     const rows: Record<string, unknown>[] = this.marketCapRows
       .filter(row => !this.selectedFamily || this.clean(row.family_name) === this.selectedFamily)
       .map(row => ({
@@ -582,8 +601,9 @@ export class DownloadsComponent implements OnInit {
   }
 
   private async downloadHoldingMatrix(): Promise<void> {
-    const response = await firstValueFrom(this.portfolioApi.getHoldingMatrix());
+    const response = await firstValueFrom(this.portfolioApi.getHoldingMatrix(this.selectedReportDate));
     const underlyings = response.underlyings ?? [];
+    const details = response.underlying_details ?? [];
     const sourceRows = response.results ?? [];
 
     // Transpose the matrix so Underlying is on rows and Asset Name is on columns.
@@ -592,8 +612,15 @@ export class DownloadsComponent implements OnInit {
       .filter((name): name is string => typeof name === 'string' && name.trim().length > 0)
       .sort((a, b) => a.localeCompare(b));
 
+    const detailByUnderlying = new Map(details.map(detail => [detail.name, detail]));
     const rows = underlyings.map(underlying => {
-      const row: Record<string, unknown> = { underlying };
+      const detail = detailByUnderlying.get(underlying);
+      const row: Record<string, unknown> = {
+        underlying,
+        current_value: detail?.current_value ?? 0,
+        percentage_of_total_current_value: detail?.percentage_of_total_current_value ?? 0,
+        current_market_price: detail?.current_market_price ?? null,
+      };
 
       for (const sourceRow of sourceRows) {
         const assetName = sourceRow.asset_name;
@@ -607,6 +634,9 @@ export class DownloadsComponent implements OnInit {
     const columns: Array<[string, string]> = [
       ['Underlying', 'underlying'],
       ...assetNames.map(assetName => [assetName, assetName] as [string, string]),
+      ['Current Value', 'current_value'],
+      ['Percentage of Total Current Value', 'percentage_of_total_current_value'],
+      ['Current Market Price', 'current_market_price'],
     ];
 
     await this.exportWorkbook(

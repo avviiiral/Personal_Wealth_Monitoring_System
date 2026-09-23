@@ -288,13 +288,12 @@ export class DashboardComponent extends BaseDashboardComponent {
     const standard = this.getStandardAllocation(group.asset_category);
     const difference = actual - standard;
 
+    // Within +/- 2 percentage points of the Standard Allocation is Neutral.
     if (Math.abs(difference) <= 2) {
       return 'Neutral';
     }
 
-    return difference > 2
-      ? 'Invest Less in Other Asset Category'
-      : 'Invest More in this Category';
+    return difference < 0 ? 'Underweight' : 'Overweight';
   }
 
   override getAllocationCommentClass(group: { asset_category: string; percentage_of_total: number }): string {
@@ -304,7 +303,7 @@ export class DashboardComponent extends BaseDashboardComponent {
       return 'is-neutral';
     }
 
-    return comment === 'Invest More in this Category' ? 'is-underweight' : 'is-overweight';
+    return comment === 'Underweight' ? 'is-underweight' : 'is-overweight';
   }
 
   private normalizeAllocationMap(value: unknown): Record<string, number> {

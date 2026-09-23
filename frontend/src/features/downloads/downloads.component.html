@@ -80,6 +80,11 @@
             <input type="date" [(ngModel)]="toDate">
           </div>
 
+          <div class="filter-field" *ngIf="selectedReport === 'market-cap' || selectedReport === 'holding-matrix'">
+            <label>As of Date</label>
+            <input type="date" [(ngModel)]="selectedReportDate" (ngModelChange)="onReportDateChange()">
+          </div>
+
           <div class="filter-field" *ngIf="selectedReport === 'watch-list'">
             <label>Product Type</label>
             <select [(ngModel)]="selectedWatchListType">

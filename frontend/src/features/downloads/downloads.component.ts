@@ -45,7 +45,7 @@ export class DownloadsComponent implements OnInit {
     { id: 'portfolio-detailed', name: 'Portfolio Detailed', type: 'Transaction Report', description: 'Transaction-level portfolio activity for a selected date range.', filters: 'Family + Date Range' },
     { id: 'sub-class-holdings', name: 'Sub Class Holdings', type: 'Holdings Report', description: 'Current holdings belonging to a selected Sub Class.', filters: 'Family + Asset Class + Sub Class' },
     { id: 'holding-report', name: 'Holding Report', type: 'Holdings Report', description: 'Current holdings with quantity, invested value, current value, gain and XIRR.', filters: 'Family + Asset Class' },
-    { id: 'sub-class-xirr', name: 'Sub Class XIRR', type: 'Performance / XIRR', description: 'Sub Class level XIRR performance.', filters: 'Family + Asset Class + Sub Class' },
+    { id: 'sub-class-xirr', name: 'Portfolio Summary', type: 'Performance / XIRR', description: 'Sub Class level portfolio summary with XIRR performance.', filters: 'Family + Asset Class + Sub Class' },
     { id: 'asset-name-xirr', name: 'Asset Name XIRR', type: 'Performance / XIRR', description: 'Asset Name level XIRR performance, matching Portfolio.', filters: 'Family + Asset Class + Sub Class + Asset Name' },
     { id: 'watch-list', name: 'Watch List', type: 'Watch List Report', description: 'Currently watchlisted Mutual Funds and/or PMS products.', filters: 'Product Type' },
     { id: 'market-cap', name: 'Market Cap', type: 'Equity Allocation Report', description: 'Equity PMS, Direct Equity and Equity Mutual Fund exposure grouped by market capitalization.', filters: 'Family' },
@@ -464,7 +464,7 @@ export class DownloadsComponent implements OnInit {
           xirr: this.weightedXirr(group.xirr_inputs),
         }));
 
-      await this.writeXirr(rows, 'Sub Class XIRR');
+      await this.writeXirr(rows, 'Portfolio Summary');
       return;
     }
 

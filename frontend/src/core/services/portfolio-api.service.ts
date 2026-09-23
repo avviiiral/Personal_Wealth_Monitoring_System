@@ -61,9 +61,23 @@ export class PortfolioApiService {
     });
   }
   getHoldingReport(): Observable<HoldingReportResponse> { return this.http.get<HoldingReportResponse>(`${this.baseUrl}/holding-report/`, { ...this.requestOptions, params: { _t: Date.now().toString() } }); }
-  getHoldingMatrix(): Observable<HoldingMatrixResponse> { return this.http.get<HoldingMatrixResponse>(`${this.baseUrl}/holding-matrix/`, { ...this.requestOptions, params: { _t: Date.now().toString() } }); }
-  getEquityMarketCapReport(): Observable<MarketCapReportResponse> {
-    return this.http.get<MarketCapReportResponse>(`${this.baseUrl}/equity-market-cap/`, { ...this.requestOptions, params: { _t: Date.now().toString() } });
+  getHoldingMatrix(asOfDate?: string): Observable<HoldingMatrixResponse> {
+    return this.http.get<HoldingMatrixResponse>(`${this.baseUrl}/holding-matrix/`, {
+      ...this.requestOptions,
+      params: {
+        as_of_date: asOfDate || '',
+        _t: Date.now().toString(),
+      },
+    });
+  }
+  getEquityMarketCapReport(asOfDate?: string): Observable<MarketCapReportResponse> {
+    return this.http.get<MarketCapReportResponse>(`${this.baseUrl}/equity-market-cap/`, {
+      ...this.requestOptions,
+      params: {
+        as_of_date: asOfDate || '',
+        _t: Date.now().toString(),
+      },
+    });
   }
   uploadAssetUnderlying(assetId: number, file: File): Observable<any> {
     const formData = new FormData();

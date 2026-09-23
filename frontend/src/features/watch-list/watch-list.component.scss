@@ -150,10 +150,12 @@ html.dark-theme .watch-list-page .status.owned {
 .compare-button:disabled { opacity: .5; cursor: default; }
 
 .benchmark-modal {
-  width: min(1200px, calc(100vw - 24px));
+  width: 1200px;
+  min-width: 1200px;
   max-width: 1200px;
-  height: min(780px, calc(100dvh - 24px));
-  max-height: none;
+  height: 780px;
+  min-height: 780px;
+  max-height: 780px;
   min-height: 0;
   display: flex;
   flex-direction: column;
@@ -273,10 +275,12 @@ html.dark-theme .watch-list-page .status.owned {
   }
 
   .benchmark-modal {
-    width: calc(100vw - 24px);
-    max-width: none;
-    height: calc(100dvh - 24px);
-    max-height: none;
+    width: 1200px;
+    min-width: 1200px;
+    max-width: 1200px;
+    height: 780px;
+    min-height: 780px;
+    max-height: 780px;
   }
 
   .benchmark-modal-header {
@@ -314,8 +318,12 @@ html.dark-theme .watch-list-page .status.owned {
   }
 
   .benchmark-modal {
-    width: min(1200px, calc(100vw - 16px));
-    height: calc(100dvh - 16px);
+    width: 1200px;
+    min-width: 1200px;
+    max-width: 1200px;
+    height: 780px;
+    min-height: 780px;
+    max-height: 780px;
     border-radius: 10px;
   }
 

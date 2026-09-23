@@ -408,6 +408,45 @@ class BenchmarkPerformanceService:
         return None
 
     @classmethod
+    def calculate_benchmark(cls, benchmark):
+        if benchmark not in cls.TICKERS:
+            return {
+                "benchmark": benchmark,
+                "available": False,
+                "message": "Unsupported benchmark.",
+            }
+
+        max_days = cls.PERIOD_DAYS["5Y"] + 31
+        start = timezone.now().date() - timedelta(days=max_days)
+        try:
+            series = cls._benchmark_series(benchmark, start)
+        except Exception:
+            series = []
+
+        if not series:
+            return {
+                "benchmark": benchmark,
+                "available": False,
+                "benchmark_metrics": {
+                    period: None for period in cls.PERIOD_DAYS
+                },
+                "message": "Benchmark market data is not available from the configured data source.",
+            }
+
+        metrics = {
+            period: cls._period_return(series, days)
+            for period, days in cls.PERIOD_DAYS.items()
+        }
+        return {
+            "benchmark": benchmark,
+            "available": True,
+            "as_of_date": series[-1]["date"],
+            "benchmark_metrics": metrics,
+            "benchmark_cagr_3y": metrics.get("3Y"),
+            "benchmark_cagr_5y": metrics.get("5Y"),
+        }
+
+    @classmethod
     def calculate(cls, product, chart_period="1Y"):
         benchmark = cls._product_benchmark(product)
         if not benchmark or benchmark not in cls.TICKERS:

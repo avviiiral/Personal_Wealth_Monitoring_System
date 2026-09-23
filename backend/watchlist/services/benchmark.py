@@ -113,12 +113,23 @@ class BenchmarkPerformanceService:
             if snapshot.nav_or_value and float(snapshot.nav_or_value) > 0
         ]
 
+    @staticmethod
+    def _product_benchmark(product):
+        if not product:
+            return None
+        if getattr(product, "product_type", None) == "MUTUAL_FUND":
+            mutual_fund = getattr(product, "mutual_fund", None)
+            return getattr(mutual_fund, "benchmark", None) if mutual_fund else None
+        if getattr(product, "product_type", None) == "PMS":
+            pms = getattr(product, "pms", None)
+            return getattr(pms, "benchmark", None) if pms else None
+        return None
+
     @classmethod
     def calculate(cls, product, chart_period="1Y"):
-        if not product or not getattr(product, "benchmark", None):
+        benchmark = cls._product_benchmark(product)
+        if not benchmark:
             return None
-
-        benchmark = product.benchmark
         if benchmark not in cls.TICKERS:
             return None
 

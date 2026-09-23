@@ -388,6 +388,9 @@ textarea {
   .dialog-content {
     box-sizing: border-box;
     max-width: calc(100vw - 16px) !important;
+    max-height: calc(100dvh - 16px) !important;
+    overflow-x: hidden !important;
+    overflow-y: auto;
   }
 
   .modal-backdrop,

@@ -113,15 +113,16 @@ def equity_market_cap_report(request):
     # Family -> Asset Class (Equity) -> Sub Class -> Asset Name -> Underlying.
     matrix = {}
 
-    def add_exposure(family_name, asset_name, cap_type, invested_amount):
+    def add_exposure(family_name, sub_class, asset_name, cap_type, invested_amount):
         family_name = _clean(family_name)
+        sub_class = _clean(sub_class)
         asset_name = _clean(asset_name)
         invested_amount = float(invested_amount or 0)
         if not family_name or not asset_name or invested_amount <= 0:
             return
 
         bucket = _cap_bucket(cap_type)
-        key = (family_name, asset_name)
+        key = (family_name, sub_class, asset_name)
         item = matrix.setdefault(
             key,
             {
@@ -171,6 +172,7 @@ def equity_market_cap_report(request):
             security = getattr(position.asset, "security_master", None)
             add_exposure(
                 family_name_for_position,
+                position.latest_sub_class,
                 asset_name_for_position,
                 security.cap_type if security else None,
                 invested_value,
@@ -186,6 +188,7 @@ def equity_market_cap_report(request):
                 security = getattr(position.asset, "security_master", None)
                 add_exposure(
                     family_name_for_position,
+                    position.latest_sub_class,
                     asset_name_for_position,
                     security.cap_type if security else None,
                     invested_value,
@@ -199,6 +202,7 @@ def equity_market_cap_report(request):
             if percentage_total <= 0:
                 add_exposure(
                     family_name_for_position,
+                    position.latest_sub_class,
                     asset_name_for_position,
                     None,
                     invested_value,
@@ -215,6 +219,7 @@ def equity_market_cap_report(request):
                 )
                 add_exposure(
                     family_name_for_position,
+                    position.latest_sub_class,
                     asset_name_for_position,
                     cap_type,
                     underlying_invested,
@@ -226,20 +231,22 @@ def equity_market_cap_report(request):
         security = getattr(position.asset, "security_master", None)
         add_exposure(
             family_name_for_position,
+            position.latest_sub_class,
             asset_name_for_position,
             security.cap_type if security else None,
             invested_value,
         )
 
     rows = []
-    for (family_name, asset_name), item in sorted(
+    for (family_name, sub_class, asset_name), item in sorted(
         matrix.items(),
-        key=lambda entry: (entry[0][0], entry[0][1]),
+        key=lambda entry: (entry[0][0], entry[0][1], entry[0][2]),
     ):
         total_invested = item["total_invested"]
         rows.append(
             {
                 "family_name": family_name,
+                "sub_class": sub_class,
                 "asset_name": asset_name,
                 "small_cap": item["small_cap"] / total_invested * 100 if total_invested else None,
                 "mid_cap": item["mid_cap"] / total_invested * 100 if total_invested else None,

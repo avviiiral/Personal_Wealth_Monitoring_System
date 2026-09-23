@@ -4,22 +4,17 @@ import { FormsModule } from '@angular/forms';
 import { firstValueFrom } from 'rxjs';
 
 import {
-  FamilyNode,
   HoldingReportRow,
   MarketCapReportRow,
   PortfolioApiService,
-  PortfolioAssetNode,
   Transaction,
 } from '../../core/services/portfolio-api.service';
 import { WatchListApiService, WatchListProduct } from '../../core/services/watch-list-api.service';
 
 type ReportId =
-  | 'portfolio-summary'
   | 'portfolio-detailed'
   | 'sub-class-holdings'
-  | 'asset-name-transactions'
   | 'holding-report'
-  | 'asset-class-xirr'
   | 'sub-class-xirr'
   | 'asset-name-xirr'
   | 'watch-list'
@@ -47,12 +42,9 @@ export class DownloadsComponent implements OnInit {
   private readonly cdr = inject(ChangeDetectorRef);
 
   readonly reports: ReportDefinition[] = [
-    { id: 'portfolio-summary', name: 'Portfolio Summary', type: 'Portfolio Summary', description: 'Sub Class level portfolio values, gain/loss and XIRR.', filters: 'Family' },
     { id: 'portfolio-detailed', name: 'Portfolio Detailed', type: 'Transaction Report', description: 'Transaction-level portfolio activity for a selected date range.', filters: 'Family + Date Range' },
     { id: 'sub-class-holdings', name: 'Sub Class Holdings', type: 'Holdings Report', description: 'Current holdings belonging to a selected Sub Class.', filters: 'Family + Asset Class + Sub Class' },
-    { id: 'asset-name-transactions', name: 'Asset Name Transactions', type: 'Transaction Report', description: 'All transactions for one selected Asset Name.', filters: 'Family + Asset Class + Sub Class + Asset Name' },
     { id: 'holding-report', name: 'Holding Report', type: 'Holdings Report', description: 'Current holdings with quantity, invested value, current value, gain and XIRR.', filters: 'Family + Asset Class' },
-    { id: 'asset-class-xirr', name: 'Asset Class XIRR', type: 'Performance / XIRR', description: 'Asset Class level XIRR performance.', filters: 'Family + Asset Class' },
     { id: 'sub-class-xirr', name: 'Sub Class XIRR', type: 'Performance / XIRR', description: 'Sub Class level XIRR performance.', filters: 'Family + Asset Class + Sub Class' },
     { id: 'asset-name-xirr', name: 'Asset Name XIRR', type: 'Performance / XIRR', description: 'Asset Name level XIRR performance, matching Portfolio.', filters: 'Family + Asset Class + Sub Class + Asset Name' },
     { id: 'watch-list', name: 'Watch List', type: 'Watch List Report', description: 'Currently watchlisted Mutual Funds and/or PMS products.', filters: 'Product Type' },
@@ -62,11 +54,10 @@ export class DownloadsComponent implements OnInit {
 
   transactions: Transaction[] = [];
   holdingRows: HoldingReportRow[] = [];
-  portfolioTree: FamilyNode[] = [];
   watchListProducts: WatchListProduct[] = [];
   marketCapRows: MarketCapReportRow[] = [];
 
-  selectedReport: ReportId = 'portfolio-summary';
+  selectedReport: ReportId = 'portfolio-detailed';
   selectedFamily = '';
   selectedAssetClass = '';
   selectedSubClass = '';
@@ -83,7 +74,6 @@ export class DownloadsComponent implements OnInit {
 
   private transactionsLoaded = false;
   private holdingsLoaded = false;
-  private portfolioTreeLoaded = false;
   private marketCapLoaded = false;
 
   ngOnInit(): void {
@@ -111,15 +101,7 @@ export class DownloadsComponent implements OnInit {
   private async loadDataForReport(report: ReportId, force = false): Promise<void> {
     if (report === 'watch-list') return;
 
-    if (report === 'portfolio-summary') {
-      if (this.portfolioTreeLoaded && !force) return;
-      const treeResponse = await firstValueFrom(this.portfolioApi.getPortfolioTree());
-      this.portfolioTree = treeResponse.families ?? [];
-      this.portfolioTreeLoaded = true;
-      return;
-    }
-
-    if (report === 'portfolio-detailed' || report === 'asset-name-transactions') {
+    if (report === 'portfolio-detailed') {
       if (this.transactionsLoaded && !force) return;
       const response = await firstValueFrom(this.portfolioApi.getTransactions());
       this.transactions = response.results ?? [];
@@ -152,7 +134,6 @@ export class DownloadsComponent implements OnInit {
     return Array.from(new Set([
       ...this.transactions.map(tx => this.clean(tx.family_name)),
       ...this.holdingRows.map(row => this.clean(row.family_name)),
-      ...this.portfolioTree.map(family => this.clean(family.family_name)),
     ])).sort((a, b) => a.localeCompare(b));
   }
 
@@ -239,12 +220,9 @@ export class DownloadsComponent implements OnInit {
     try {
       await this.loadDataForReport(this.selectedReport);
       switch (this.selectedReport) {
-        case 'portfolio-summary': await this.downloadPortfolioSummary(); break;
         case 'portfolio-detailed': await this.downloadPortfolioDetailed(); break;
         case 'sub-class-holdings': await this.downloadSubClassHoldings(); break;
-        case 'asset-name-transactions': await this.downloadAssetNameTransactions(); break;
         case 'holding-report': await this.downloadHoldingReport(); break;
-        case 'asset-class-xirr': await this.downloadXirr('asset-class'); break;
         case 'sub-class-xirr': await this.downloadXirr('sub-class'); break;
         case 'asset-name-xirr': await this.downloadXirr('asset-name'); break;
         case 'watch-list': await this.downloadWatchList(); break;
@@ -258,34 +236,6 @@ export class DownloadsComponent implements OnInit {
     } finally {
       this.downloading = false;
     }
-  }
-
-  private async downloadPortfolioSummary(): Promise<void> {
-    const rows: Record<string, unknown>[] = [];
-    for (const family of this.portfolioTree) {
-      if (this.selectedFamily && family.family_name !== this.selectedFamily) continue;
-      for (const portfolio of family.portfolios) {
-        for (const assetClass of portfolio.asset_classes) {
-          if (this.selectedAssetClass && assetClass.asset_class !== this.selectedAssetClass) continue;
-          for (const subClass of assetClass.sub_classes) {
-            const assets = subClass.assets;
-            rows.push({
-              family_name: family.family_name,
-              sub_class: subClass.sub_class || 'Unassigned',
-              quantity: this.sum(assets, 'quantity'),
-              invested_value: this.sum(assets, 'invested_value'),
-              current_value: this.sum(assets, 'current_value'),
-              gain: this.sum(assets, 'pnl'),
-              xirr: this.firstNumber(assets.map(asset => asset.sub_class_xirr ?? asset.xirr)),
-            });
-          }
-        }
-      }
-    }
-    await this.exportWorkbook('Summary', 'Portfolio Summary', [
-      ['Family', 'family_name'], ['Sub Class', 'sub_class'], ['Quantity', 'quantity'],
-      ['Invested Amount', 'invested_value'], ['Current Value', 'current_value'], ['Gain/Loss', 'gain'], ['XIRR (%)', 'xirr'],
-    ], rows, 'portfolio_summary');
   }
 
   private async downloadPortfolioDetailed(): Promise<void> {
@@ -413,26 +363,6 @@ export class DownloadsComponent implements OnInit {
     ) / totalInvested;
   }
 
-  private async downloadAssetNameTransactions(): Promise<void> {
-    const rows = this.transactions
-      .filter(tx => this.matchesTransaction(tx) && (!this.selectedAssetName || this.clean(tx.asset_name) === this.selectedAssetName))
-      .map(tx => ({
-        family_name: this.clean(tx.family_name),
-        asset_name: this.clean(tx.asset_name),
-        underlying: this.clean(tx.underlying || tx.asset_name),
-        transaction_date: tx.transaction_date,
-        transaction_type: tx.transaction_type_display || tx.transaction_type,
-        isin: tx.isin || '-',
-        quantity: Number(tx.quantity || 0),
-        price: Number(tx.price_per_unit || 0),
-        amount: Number(tx.amount || 0),
-      }));
-    await this.exportWorkbook('Transactions', 'Asset Name Transactions', [
-      ['Family', 'family_name'], ['Asset Name', 'asset_name'], ['Underlying', 'underlying'], ['Transaction Date', 'transaction_date'],
-      ['Transaction Type', 'transaction_type'], ['ISIN', 'isin'], ['Quantity', 'quantity'], ['Price', 'price'], ['Amount', 'amount'],
-    ], rows, 'asset_name_transactions');
-  }
-
   private async downloadHoldingReport(): Promise<void> {
     const rows = this.filteredHoldingRows().flatMap(row => this.holdingExportRows(row));
     await this.exportWorkbook('Holdings', 'Holding Report', this.holdingColumns(), rows, 'holding_report');
@@ -473,66 +403,6 @@ export class DownloadsComponent implements OnInit {
 
   private async downloadXirr(level: 'asset-class' | 'sub-class' | 'asset-name'): Promise<void> {
     const filtered = this.filteredHoldingRows();
-
-    if (level === 'asset-class') {
-      const groups = new Map<string, {
-        family_name: string;
-        asset_class: string;
-        invested_value: number;
-        current_value: number;
-        gain: number;
-        xirr_inputs: { invested_value: number; xirr: number | null }[];
-      }>();
-
-      for (const row of filtered) {
-        const family = this.clean(row.family_name);
-        const assetClass = this.clean(row.asset_class);
-        const key = family + '::' + assetClass;
-        let group = groups.get(key);
-
-        if (!group) {
-          group = {
-            family_name: family,
-            asset_class: assetClass,
-            invested_value: 0,
-            current_value: 0,
-            gain: 0,
-            xirr_inputs: [],
-          };
-          groups.set(key, group);
-        }
-
-        const investedValue = Number(row.invested_value || 0);
-        group.invested_value += investedValue;
-        group.current_value += Number(row.current_value || 0);
-        group.gain += Number(row.gain || 0);
-        group.xirr_inputs.push({
-          invested_value: investedValue,
-          xirr: row.asset_class_xirr,
-        });
-      }
-
-      const rows = Array.from(groups.values())
-        .sort((a, b) =>
-          a.family_name.localeCompare(b.family_name) ||
-          a.asset_class.localeCompare(b.asset_class),
-        )
-        .map(group => ({
-          name: group.asset_class,
-          family_name: group.family_name,
-          asset_class: group.asset_class,
-          sub_class: 'All Sub Classes',
-          asset_name: 'All Assets',
-          underlying: '',
-          invested_value: group.invested_value,
-          current_value: group.current_value,
-          gain: group.gain,
-          xirr: this.weightedXirr(group.xirr_inputs),
-        }));
-
-      await this.writeXirr(rows, 'Asset Class XIRR');
-      return;
-    }
 
     if (level === 'sub-class') {
       const groups = new Map<string, {
@@ -662,14 +532,6 @@ export class DownloadsComponent implements OnInit {
       }));
 
     await this.writeXirr(rows, 'Asset Name XIRR');
-  }
-
-  private async writeXirr(rows: Record<string, unknown>[], title: string): Promise<void> {
-    await this.exportWorkbook('XIRR', title, [
-      ['Family', 'family_name'], ['Asset Class', 'asset_class'], ['Sub Class', 'sub_class'], ['Asset Name / Group', 'name'],
-      ['Asset Name', 'asset_name'], ['Underlying', 'underlying'], ['Invested Value', 'invested_value'],
-      ['Current Value', 'current_value'], ['Gain', 'gain'], ['XIRR (%)', 'xirr'],
-    ], rows, title.toLowerCase().replace(/[^a-z0-9]+/g, '_'));
   }
 
   private equityReportType(row: HoldingReportRow): 'Direct Equity' | 'Equity PMS' | 'Equity Mutual Fund' | null {
@@ -974,14 +836,6 @@ export class DownloadsComponent implements OnInit {
   private clean(value: string | null | undefined): string {
     const trimmed = value?.trim();
     return trimmed || 'Unassigned';
-  }
-
-  private sum(assets: PortfolioAssetNode[], key: keyof PortfolioAssetNode): number {
-    return assets.reduce((total, asset) => total + Number(asset[key] ?? 0), 0);
-  }
-
-  private first(values: string[]): string {
-    return values.find(Boolean) || 'Unassigned';
   }
 
   private firstNumber(values: Array<number | null | undefined>): number | null {

@@ -622,22 +622,28 @@ export class DownloadsComponent implements OnInit {
     const products: WatchListProduct[] = [];
 
     for (const type of types) {
-      let page = 1;
-      while (true) {
-        const response = await firstValueFrom(this.watchListApi.getProducts({
-          product_type: type,
-          status: 'WATCHLIST',
-          ordering: 'name',
-          page,
-          page_size: 100,
-        }));
-        products.push(...response.results);
-        if (!response.next || !response.results.length) break;
-        page += 1;
+      for (const status of ['WATCHLIST', 'OWNED'] as const) {
+        let page = 1;
+        while (true) {
+          const response = await firstValueFrom(this.watchListApi.getProducts({
+            product_type: type,
+            status,
+            ordering: 'name',
+            page,
+            page_size: 100,
+          }));
+          products.push(...response.results);
+          if (!response.next || !response.results.length) break;
+          page += 1;
+        }
       }
     }
 
-    const rows = products.map(product => ({
+    const uniqueProducts = Array.from(
+      new Map(products.map(product => [product.id, product])).values(),
+    );
+
+    const rows = uniqueProducts.map(product => ({
       type: product.product_type === 'MUTUAL_FUND' ? 'Mutual Fund' : 'PMS',
       product: product.name,
       provider: product.provider || '-',

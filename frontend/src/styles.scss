@@ -463,7 +463,6 @@ textarea {
 .modal-panel-small,
 .transaction-edit-modal,
 .download-modal,
-.benchmark-modal,
 [role="dialog"] {
   box-sizing: border-box !important;
   width: min(1200px, 100%) !important;
@@ -473,6 +472,18 @@ textarea {
   margin: auto !important;
 }
 
+/* Benchmark Comparison intentionally keeps one fixed desktop frame.
+   Browser zoom changes the viewport, not the dialog's CSS dimensions. */
+.benchmark-modal {
+  width: 1200px !important;
+  min-width: 1200px !important;
+  max-width: 1200px !important;
+  height: 780px !important;
+  min-height: 780px !important;
+  max-height: 780px !important;
+  margin: auto !important;
+  flex: 0 0 780px !important;
+}
 /* Benchmark dialog: centered frame, independently scrollable body. */
 .benchmark-modal {
   height: min(780px, calc(100dvh - clamp(16px, 4vw, 48px))) !important;
@@ -499,7 +510,6 @@ textarea {
   .modal-panel-small,
   .transaction-edit-modal,
   .download-modal,
-  .benchmark-modal,
   [role="dialog"] {
     width: 100% !important;
     max-width: 100% !important;
@@ -524,7 +534,6 @@ textarea {
   .modal-panel-small,
   .transaction-edit-modal,
   .download-modal,
-  .benchmark-modal,
   [role="dialog"] {
     max-height: calc(100dvh - 12px) !important;
   }

@@ -1,6 +1,7 @@
 import csv
 import io
 import os
+from pathlib import Path
 from datetime import date, datetime, timedelta
 
 import requests
@@ -31,7 +32,13 @@ class BenchmarkPerformanceService:
         "BSE 500 TRI": "BSE500T",
     }
 
-    BSE_INDEX_HISTORY_URL = "https://api.bseindia.com/BseIndiaAPI/api/IndexArchDailyAll/w"
+    # BSE 500 TRI is a licensed total-return series. The public BSE IndexArchDailyAll
+    # endpoint exposes the price index, not the TRI, so never fall back to it.
+    BSE500_TRI_FILE = os.getenv(
+        "WATCHLIST_BENCHMARK_BSE500_TRI_FILE",
+        str(Path(__file__).resolve().parents[1] / "data" / "bse500_tri.csv"),
+    )
+    BSE500_TRI_URL = os.getenv("WATCHLIST_BENCHMARK_BSE500_TRI_URL", "").strip()
     BSE_HEADERS = {
         "Accept": "application/json, text/plain, */*",
         "Referer": "https://www.bseindia.com/",
@@ -192,80 +199,86 @@ class BenchmarkPerformanceService:
         return rows
 
     @classmethod
-    def _bse_tri_series(cls, start):
-        """Fetch BSE's daily index archive and retain the BSE 500 TRI rows."""
-        end = timezone.now().date()
-        session = requests.Session()
-        session.headers.update(cls.BSE_HEADERS)
+    def _load_bse_tri_csv(cls, text):
+        reader = csv.DictReader(io.StringIO(text))
+        if not reader.fieldnames:
+            raise ValueError("BSE 500 TRI source has no CSV header")
 
-        response = session.get(
-            cls.BSE_INDEX_HISTORY_URL,
-            params={
-                "fmdt": start.strftime("%d/%m/%Y"),
-                "todt": end.strftime("%d/%m/%Y"),
-                "index": "All",
-                "period": "D",
-            },
+        normalized_fields = {
+            str(field).strip().lower().replace(" ", "").replace("_", ""): field
+            for field in reader.fieldnames
+            if field
+        }
+        date_field = next(
+            (normalized_fields[key] for key in ("date", "indexdate", "tradedate") if key in normalized_fields),
+            None,
+        )
+        value_field = next(
+            (
+                normalized_fields[key]
+                for key in (
+                    "close", "closevalue", "indexvalue", "indexlevel",
+                    "totalreturnindex", "tri", "value",
+                )
+                if key in normalized_fields
+            ),
+            None,
+        )
+        if not date_field or not value_field:
+            raise ValueError("BSE 500 TRI CSV must contain Date and Close/Index Value columns")
+
+        points = []
+        seen = set()
+        previous = None
+        for row_number, row in enumerate(reader, start=2):
+            raw_date = row.get(date_field)
+            raw_value = row.get(value_field)
+            if raw_date in (None, "") or raw_value in (None, ""):
+                raise ValueError(f"BSE 500 TRI row {row_number} has missing date/value")
+            point_date = cls._parse_date(raw_date)
+            if point_date is None:
+                raise ValueError(f"BSE 500 TRI row {row_number} has invalid date: {raw_date!r}")
+            try:
+                numeric_value = float(str(raw_value).replace(",", "").strip())
+            except (TypeError, ValueError) as exc:
+                raise ValueError(f"BSE 500 TRI row {row_number} has invalid value: {raw_value!r}") from exc
+            if numeric_value <= 0:
+                raise ValueError(f"BSE 500 TRI row {row_number} has non-positive value")
+            if point_date in seen:
+                raise ValueError(f"BSE 500 TRI contains duplicate date: {point_date.isoformat()}")
+            if previous is not None and point_date <= previous:
+                raise ValueError("BSE 500 TRI dates must be strictly increasing")
+            seen.add(point_date)
+            previous = point_date
+            points.append({"date": point_date.isoformat(), "value": numeric_value})
+
+        return points
+
+    @classmethod
+    def _bse_tri_series(cls, start):
+        """Load only a verified BSE 500 TRI series; never substitute BSE 500 PRI."""
+        source_file = Path(cls.BSE500_TRI_FILE)
+        if source_file.exists():
+            points = cls._load_bse_tri_csv(source_file.read_text(encoding="utf-8-sig"))
+            return [point for point in points if date.fromisoformat(point["date"]) >= start]
+
+        if not cls.BSE500_TRI_URL:
+            return []
+
+        response = requests.get(
+            cls.BSE500_TRI_URL,
+            headers=cls.BSE_HEADERS,
             timeout=45,
         )
         response.raise_for_status()
-
-        try:
-            payload = response.json()
-        except (ValueError, TypeError):
-            payload = response.text
-
-        rows = []
-        target_names = {
-            "bse 500 tri",
-            "bse 500 total return index",
-            "s&p bse 500 tri",
-            "s&p bse 500 total return index",
-        }
-        normalized_targets = {
-            name.replace("&", "and").replace(" ", "").lower()
-            for name in target_names
-        }
-
-        def visit(node):
-            if isinstance(node, dict):
-                normalized = {
-                    str(key).strip().lower().replace(" ", "").replace("_", ""): value
-                    for key, value in node.items()
-                }
-                index_name = str(
-                    normalized.get("index")
-                    or normalized.get("indexname")
-                    or normalized.get("name")
-                    or ""
-                )
-                compact_name = index_name.replace("&", "and").replace(" ", "").lower()
-                if compact_name in normalized_targets:
-                    rows.extend(cls._parse_bse_rows(node))
-                for value in node.values():
-                    visit(value)
-            elif isinstance(node, list):
-                for item in node:
-                    visit(item)
-
-        visit(payload)
-
-        unique = {}
-        for point_date, value in rows:
-            unique[point_date.isoformat()] = {
-                "date": point_date.isoformat(),
-                "value": value,
-            }
-        return [unique[key] for key in sorted(unique)]
+        points = cls._load_bse_tri_csv(response.text)
+        return [point for point in points if date.fromisoformat(point["date"]) >= start]
 
     @classmethod
     def _benchmark_series(cls, benchmark, start):
         if benchmark == "BSE 500 TRI":
-            # A configured Yahoo-compatible ticker is an explicit deployment
-            # override. The default path uses BSE's official data source.
-            override = os.getenv("WATCHLIST_BENCHMARK_BSE500_TRI_TICKER", "").strip()
-            if override:
-                return cls._series(override, start)
+            # Never use a Yahoo ticker for BSE 500 TRI: a public symbol can
+            # resolve to the price index and silently change benchmark semantics.
             return cls._bse_tri_series(start)
 
         return cls._series(cls._ticker(benchmark), start)

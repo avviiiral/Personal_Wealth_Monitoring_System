@@ -107,7 +107,7 @@ export class PortfolioComponent implements OnInit, OnDestroy {
   }
 
   get underlyingAssetOptions(): Array<{ id: number; name: string }> {
-    const options = new Map<number, { name: string; context: string }>();
+    const options = new Map<string, { id: number; name: string }>();
 
     for (const family of this.families) {
       for (const portfolio of family.portfolios) {
@@ -115,19 +115,15 @@ export class PortfolioComponent implements OnInit, OnDestroy {
           for (const subClass of assetClass.sub_classes) {
             for (const asset of subClass.assets) {
               if (asset.id > 0 && asset.asset_name) {
-                const context = [
-                  portfolio.portfolio,
-                  assetClass.asset_class,
-                  subClass.sub_class,
-                ]
-                  .map((value) => value?.trim())
-                  .filter(Boolean)
-                  .join(' / ');
-
-                options.set(asset.id, {
-                  name: asset.asset_name,
-                  context,
-                });
+                // The upload selector represents the Asset Name level only.
+                // Do not expose portfolio, asset-class, sub-class, ISIN, or
+                // Asset ID details in the visible option label.
+                if (!options.has(asset.asset_name)) {
+                  options.set(asset.asset_name, {
+                    id: asset.id,
+                    name: asset.asset_name,
+                  });
+                }
               }
             }
           }
@@ -135,41 +131,7 @@ export class PortfolioComponent implements OnInit, OnDestroy {
       }
     }
 
-    const groupedByName = new Map<string, Array<{ id: number; name: string; context: string }>>();
-    for (const [id, details] of options.entries()) {
-      const group = groupedByName.get(details.name) ?? [];
-      group.push({ id, ...details });
-      groupedByName.set(details.name, group);
-    }
-
-    const result: Array<{ id: number; name: string }> = [];
-    for (const group of groupedByName.values()) {
-      if (group.length === 1) {
-        result.push({ id: group[0].id, name: group[0].name });
-        continue;
-      }
-
-      // Duplicate asset names must remain selectable because each option
-      // represents a different Asset ID. Use portfolio hierarchy as the
-      // visible context; fall back to the Asset ID only if the context is
-      // also identical. Do not use ISIN here because it can describe the
-      // underlying security rather than the parent asset being uploaded.
-      const labels = new Set<string>();
-      for (const option of group) {
-        let label = option.context
-          ? `${option.name} — ${option.context}`
-          : `${option.name} — Asset #${option.id}`;
-
-        if (labels.has(label)) {
-          label = `${option.name} — Asset #${option.id}`;
-        }
-
-        labels.add(label);
-        result.push({ id: option.id, name: label });
-      }
-    }
-
-    return result.sort((a, b) => a.name.localeCompare(b.name));
+    return Array.from(options.values()).sort((a, b) => a.name.localeCompare(b.name));
   }
 
   toggleUnderlyingUpload(): void {

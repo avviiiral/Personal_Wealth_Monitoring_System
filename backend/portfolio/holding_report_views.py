@@ -1,5 +1,6 @@
 from datetime import date
 import re
+from types import SimpleNamespace
 
 from django.db.models import OuterRef, Subquery
 
@@ -12,6 +13,7 @@ from investments.models import Asset, AssetCategory, AssetUnderlyingHolding, Por
 from investments.services.xirr import XIRRCalculator
 from market_data.models import DataSource, MarketPrice
 from users.permissions import family_scope, require_active_family
+from portfolio.services.portfolio_position_engine import PortfolioPositionEngine
 
 
 @api_view(["GET"])
@@ -288,8 +290,20 @@ def holding_report(request):
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def holding_matrix_report(request):
-    """Return Underlying x Asset Name percentages using canonical ISIN identity."""
+    """Return Underlying x Asset Name current-value exposure as of a selected date."""
     family = require_active_family(request.user)
+
+    raw_date = request.query_params.get("as_of_date")
+    if raw_date:
+        try:
+            as_of_date = date.fromisoformat(raw_date)
+        except ValueError:
+            return Response(
+                {"success": False, "message": "as_of_date must be YYYY-MM-DD."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+    else:
+        as_of_date = date.today()
 
     def clean_matrix(value, default=""):
         value = str(value or "").strip()
@@ -303,35 +317,67 @@ def holding_matrix_report(request):
         normalized = re.sub(r"(LIMITED|LTD|PRIVATE|PVT)$", "", normalized)
         return ("name", normalized)
 
-    latest_transaction = (
+    transactions_as_of = list(
         Transaction.objects
-        .filter(
-            family_id=OuterRef("family_id"),
-            asset_id=OuterRef("asset_id"),
-            family_name=OuterRef("family_name"),
-            portfolio=OuterRef("portfolio"),
-        )
-        .order_by("-transaction_date", "-id")
-    )
-
-    positions = list(
-        PortfolioPosition.objects
-        .filter(
-            family_id=family.id,
-            asset__is_active=True,
-            quantity__gt=0,
-        )
-        .exclude(asset__category=AssetCategory.MUTUAL_FUND)
+        .filter(family=family, transaction_date__lte=as_of_date)
         .select_related("asset")
-        .annotate(
-            latest_asset_name=Subquery(latest_transaction.values("asset_name")[:1]),
-            latest_underlying=Subquery(latest_transaction.values("underlying")[:1]),
-        )
+        .order_by("transaction_date", "created_at", "id")
     )
 
+    grouped_transactions = {}
+    for transaction in transactions_as_of:
+        key = (
+            clean_matrix(transaction.family_name, "Unassigned"),
+            clean_matrix(transaction.portfolio, "Unassigned"),
+            transaction.asset_id,
+        )
+        grouped_transactions[key] = transaction
+
+    positions = []
+    for (family_name, portfolio, asset_id), latest_transaction in grouped_transactions.items():
+        asset = latest_transaction.asset
+        if not asset.is_active or asset.category == AssetCategory.MUTUAL_FUND:
+            continue
+
+        calculated = PortfolioPositionEngine.calculate_position(
+            family=family,
+            family_name=family_name,
+            portfolio=portfolio,
+            asset=asset,
+            as_of_date=as_of_date,
+        )
+        quantity = float(calculated["quantity"] or 0)
+        if quantity <= 0:
+            continue
+
+        price_record = (
+            MarketPrice.objects
+            .filter(asset=asset, date__lte=as_of_date)
+            .order_by("-date", "-id")
+            .first()
+        )
+        historical_price = float(price_record.close_price or 0) if price_record else 0.0
+        current_value = quantity * historical_price
+        if current_value <= 0:
+            continue
+
+        positions.append(
+            SimpleNamespace(
+                family_name=family_name,
+                portfolio=portfolio,
+                asset_id=asset_id,
+                asset=asset,
+                quantity=quantity,
+                current_value=current_value,
+                latest_asset_name=latest_transaction.asset_name,
+                latest_underlying=latest_transaction.underlying,
+            )
+        )
+
+    asset_ids = {position.asset_id for position in positions}
     uploaded_rows = list(
         AssetUnderlyingHolding.objects
-        .filter(family_id=family.id)
+        .filter(family_id=family.id, asset_id__in=asset_ids, created_at__date__lte=as_of_date)
         .select_related("asset")
         .only(
             "asset_id", "stock_name", "isin", "holding_percentage",
@@ -404,12 +450,6 @@ def holding_matrix_report(request):
 
     total_current_value = sum(underlying_totals.values())
 
-    # Resolve the latest effective market price for each underlying.
-    # Uploaded underlying rows normally carry an ISIN.  Prices may be stored
-    # against an Asset whose ISIN is populated directly OR through its
-    # SecurityMaster, so try both.  For name-only rows, also match the
-    # SecurityMaster asset name.  Direct-equity fallbacks use the position
-    # asset itself, so they receive the same effective-price treatment.
     underlying_identifiers = {}
     for underlying in uploaded_rows:
         identity = canonical_key(underlying.isin, underlying.stock_name)
@@ -424,8 +464,6 @@ def holding_matrix_report(request):
                 ("name", clean_matrix(underlying.stock_name)),
             )
 
-    # If an underlying came from the transaction fallback rather than an
-    # uploaded snapshot, resolve its identity from the portfolio position.
     for position in positions:
         underlying_name = clean_matrix(position.latest_underlying)
         if not underlying_name:
@@ -444,15 +482,10 @@ def holding_matrix_report(request):
     price_by_identity = {}
     for identity, (identifier_type, identifier) in underlying_identifiers.items():
         asset = None
-
         if identifier_type == "isin":
             asset = (
                 Asset.objects
-                .filter(
-                    family_id=family.id,
-                    isin__iexact=identifier,
-                    is_active=True,
-                )
+                .filter(family_id=family.id, isin__iexact=identifier, is_active=True)
                 .order_by("id")
                 .first()
             )
@@ -471,11 +504,7 @@ def holding_matrix_report(request):
         else:
             asset = (
                 Asset.objects
-                .filter(
-                    family_id=family.id,
-                    name__iexact=identifier,
-                    is_active=True,
-                )
+                .filter(family_id=family.id, name__iexact=identifier, is_active=True)
                 .order_by("id")
                 .first()
             )
@@ -497,13 +526,13 @@ def holding_matrix_report(request):
 
         manual_price = (
             MarketPrice.objects
-            .filter(asset=asset, source=DataSource.MANUAL)
+            .filter(asset=asset, source=DataSource.MANUAL, date__lte=as_of_date)
             .order_by("-date", "-id")
             .first()
         )
         latest_price = (
             MarketPrice.objects
-            .filter(asset=asset)
+            .filter(asset=asset, date__lte=as_of_date)
             .exclude(source=DataSource.MANUAL)
             .order_by("-date", "-id")
             .first()
@@ -535,8 +564,8 @@ def holding_matrix_report(request):
     return Response({
         "success": True,
         "count": len(results),
+        "as_of_date": as_of_date.isoformat(),
         "underlyings": [display_names[identity] for identity in identities],
         "underlying_details": underlying_details,
         "results": results,
     }, status=status.HTTP_200_OK)
-

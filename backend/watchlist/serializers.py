@@ -55,6 +55,11 @@ class WatchListProductSerializer(serializers.ModelSerializer):
             return snapshots[obj.id]
         return obj.performance_snapshots.order_by("-date", "-id").first()
 
+    def _metric_snapshot(self, obj):
+        """Return the newest snapshot containing at least one return metric."""
+        metric_snapshots = self.context.get("metric_snapshots", {})
+        return metric_snapshots.get(obj.id) or self._latest_snapshot(obj)
+
     def get_status(self, obj):
         # Watch List is an explicit user selection and takes precedence over
         # the ownership-derived status. This makes the checkmark immediately
@@ -72,19 +77,28 @@ class WatchListProductSerializer(serializers.ModelSerializer):
 
     def get_metrics(self, obj):
         latest = self._latest_snapshot(obj)
-        if not latest:
+        metric_snapshot = self._metric_snapshot(obj)
+        if not latest and not metric_snapshot:
             return {}
+        fields = (
+            ("1D", "return_1d"),
+            ("1W", "return_1w"),
+            ("1M", "return_1m"),
+            ("3M", "return_3m"),
+            ("6M", "return_6m"),
+            ("1Y", "return_1y"),
+            ("3Y", "return_3y"),
+            ("5Y", "return_5y"),
+            ("Since Inception", "return_since_inception"),
+            ("CAGR", "cagr"),
+        )
         return {
-            "1D": latest.return_1d,
-            "1W": latest.return_1w,
-            "1M": latest.return_1m,
-            "3M": latest.return_3m,
-            "6M": latest.return_6m,
-            "1Y": latest.return_1y,
-            "3Y": latest.return_3y,
-            "5Y": latest.return_5y,
-            "Since Inception": latest.return_since_inception,
-            "CAGR": latest.cagr,
+            key: (
+                getattr(latest, field, None)
+                if getattr(latest, field, None) is not None
+                else getattr(metric_snapshot, field, None)
+            )
+            for key, field in fields
         }
 
     def get_mutual_fund(self, obj):

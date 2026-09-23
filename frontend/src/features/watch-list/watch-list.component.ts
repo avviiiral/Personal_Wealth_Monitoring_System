@@ -10,6 +10,9 @@ import { WatchListStateService } from '../../core/services/watch-list-state.serv
 type ProductTab = 'MUTUAL_FUND' | 'PMS';
 type StatusTab = 'ALL' | 'OWNED' | 'UNIVERSAL' | 'WATCHLIST';
 type PageItem = number | 'ellipsis';
+type WatchListSortColumn = 'product' | 'provider' | 'status' | 'ownership' | '1M' | '3M' | '6M' | '1Y' | '3Y' | '5Y' | 'CAGR' | 'AUM';
+type WatchListSortDirection = 'normal' | 'asc' | 'desc';
+interface WatchListSortState { column: WatchListSortColumn | null; direction: WatchListSortDirection; }
 
 @Component({
   selector: 'app-watch-list',
@@ -39,7 +42,7 @@ export class WatchListComponent implements OnInit, OnDestroy {
   categories: string[] = [];
   status: StatusTab = 'ALL';
   productTab: ProductTab = 'MUTUAL_FUND';
-  ordering = 'name';
+  private readonly sortState: WatchListSortState = { column: null, direction: 'normal' };
   count = 0;
   page = 1;
   readonly pageSize = 50;
@@ -49,14 +52,6 @@ export class WatchListComponent implements OnInit, OnDestroy {
   downloadModalOpen = false;
   downloadType: 'PMS' | 'MUTUAL_FUND' | 'ALL' = 'ALL';
   downloading = false;
-
-  readonly orderings = [
-    { value: 'name', label: 'Name' }, { value: '1M', label: '1M Return' },
-    { value: '3M', label: '3M Return' }, { value: '6M', label: '6M Return' },
-    { value: '1Y', label: '1Y Return' }, { value: '3Y', label: '3Y Return' },
-    { value: '5Y', label: '5Y Return' }, { value: 'cagr', label: 'CAGR' },
-    { value: 'aum', label: 'AUM' },
-  ];
 
   ngOnInit(): void {
     this.loadFilters();
@@ -190,7 +185,7 @@ export class WatchListComponent implements OnInit, OnDestroy {
   }
 
   private cacheKey(): string {
-    return `${this.cachePrefix}${this.productTab}.${this.status}.${this.page}.${this.ordering}.${this.provider}.${this.category}.${this.search.trim()}`;
+    return `${this.cachePrefix}${this.productTab}.${this.status}.${this.page}.${this.provider}.${this.category}.${this.search.trim()}`;
   }
 
   private restoreCachedPage(): void {
@@ -199,7 +194,7 @@ export class WatchListComponent implements OnInit, OnDestroy {
       if (!raw) return;
       const cached = JSON.parse(raw) as WatchListResponse;
       if (!cached || !Array.isArray(cached.results)) return;
-      this.products = cached.results;
+      this.products = this.sortProducts(cached.results);
       this.count = Number(cached.count) || cached.results.length;
       this.loading = false;
     } catch (error) { console.warn('Failed to restore Watch List cache:', error); }
@@ -229,7 +224,6 @@ export class WatchListComponent implements OnInit, OnDestroy {
     const requestedProductTab = this.productTab;
     const requestedStatus = this.status;
     const requestedPage = this.page;
-    const requestedOrdering = this.ordering;
     const requestedProvider = this.provider;
     const requestedCategory = this.category;
     const requestedSearch = this.search.trim();
@@ -243,7 +237,6 @@ export class WatchListComponent implements OnInit, OnDestroy {
       search: requestedSearch || undefined,
       provider: requestedProvider || undefined,
       category: requestedCategory || undefined,
-      ordering: requestedOrdering,
       page: requestedPage,
       page_size: this.pageSize,
     }).pipe(
@@ -256,7 +249,6 @@ export class WatchListComponent implements OnInit, OnDestroy {
           || requestedProductTab !== this.productTab
           || requestedStatus !== this.status
           || requestedPage !== this.page
-          || requestedOrdering !== this.ordering
           || requestedProvider !== this.provider
           || requestedCategory !== this.category
           || requestedSearch !== this.search.trim()) return;
@@ -275,10 +267,10 @@ export class WatchListComponent implements OnInit, OnDestroy {
           const optimistic = this.state.getAdded(requestedProductTab);
           const serverIds = new Set(serverResults.map(product => product.id));
           const optimisticResults = optimistic.filter(product => !serverIds.has(product.id));
-          this.products = [...optimisticResults, ...serverResults].slice(0, this.pageSize);
+          this.products = this.sortProducts([...optimisticResults, ...serverResults].slice(0, this.pageSize));
           this.count = response.count + optimisticResults.length;
         } else {
-          this.products = serverResults;
+          this.products = this.sortProducts(serverResults);
           this.count = Math.max(0, response.count - (response.results.length - serverResults.length));
         }
         this.cachePage({ ...response, results: this.products, count: this.count });
@@ -293,6 +285,73 @@ export class WatchListComponent implements OnInit, OnDestroy {
         this.error = 'Unable to load Watch List right now.';
       },
     });
+  }
+
+  cycleSort(column: WatchListSortColumn): void {
+    if (this.sortState.column !== column) {
+      this.sortState.column = column;
+      this.sortState.direction = 'desc';
+    } else if (this.sortState.direction === 'desc') {
+      this.sortState.direction = 'asc';
+    } else {
+      this.sortState.column = null;
+      this.sortState.direction = 'normal';
+    }
+    this.products = this.sortProducts(this.products);
+    this.cacheCurrentPage();
+  }
+
+  getSortIndicator(column: WatchListSortColumn): string {
+    if (this.sortState.column !== column || this.sortState.direction === 'normal') return '';
+    return this.sortState.direction === 'desc' ? '↓' : '↑';
+  }
+
+  private sortProducts(products: WatchListProduct[]): WatchListProduct[] {
+    const { column, direction } = this.sortState;
+    if (!column || direction === 'normal') return [...products];
+
+    const sorted = [...products];
+    sorted.sort((left, right) => {
+      const comparison = this.compareSortValues(this.getSortValue(left, column), this.getSortValue(right, column));
+      if (comparison === 0) return left.name.localeCompare(right.name, undefined, { numeric: true, sensitivity: 'base' });
+      return direction === 'asc' ? comparison : -comparison;
+    });
+    return sorted;
+  }
+
+  private getSortValue(product: WatchListProduct, column: WatchListSortColumn): unknown {
+    switch (column) {
+      case 'product': return product.name;
+      case 'provider': return product.provider || '';
+      case 'status': return product.status || '';
+      case 'ownership': return this.ownershipFamilies(product).join(', ');
+      case '1M':
+      case '3M':
+      case '6M':
+      case '1Y':
+      case '3Y':
+      case '5Y':
+      case 'CAGR': return this.metric(product, column);
+      case 'AUM': return product.mutual_fund?.aum ?? product.pms?.aum ?? null;
+    }
+  }
+
+  private compareSortValues(left: unknown, right: unknown): number {
+    const leftNumber = this.toNullableNumber(left);
+    const rightNumber = this.toNullableNumber(right);
+    if (leftNumber !== null && rightNumber !== null) {
+      if (leftNumber === rightNumber) return 0;
+      return leftNumber < rightNumber ? -1 : 1;
+    }
+    if (left == null || left === '') return right == null || right === '' ? 0 : 1;
+    if (right == null || right === '') return -1;
+    return String(left).localeCompare(String(right), undefined, { numeric: true, sensitivity: 'base' });
+  }
+
+  private toNullableNumber(value: unknown): number | null {
+    if (value === null || value === undefined || value === '') return null;
+    const number = Number(value);
+    return Number.isFinite(number) ? number : null;
   }
 
   applyFilters(): void { this.page = 1; this.selectedIds.clear(); this.load(); }

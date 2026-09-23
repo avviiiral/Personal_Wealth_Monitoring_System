@@ -127,37 +127,37 @@ class WatchListTests(TestCase):
 class BenchmarkPerformanceTests(TestCase):
     def test_bse500_csv_validation(self):
         csv_text = "Date,Close\n2021-01-01,100.0\n2021-01-04,101.5\n"
-        points = BenchmarkPerformanceService._load_bse_tri_csv(csv_text)
+        points = BenchmarkPerformanceService._load_bse_csv(csv_text)
         self.assertEqual(points[0]["date"], "2021-01-01")
         self.assertEqual(points[-1]["value"], 101.5)
 
     def test_bse500_rejects_duplicate_dates(self):
         csv_text = "Date,Close\n2021-01-01,100.0\n2021-01-01,101.5\n"
         with self.assertRaises(ValueError):
-            BenchmarkPerformanceService._load_bse_tri_csv(csv_text)
+            BenchmarkPerformanceService._load_bse_csv(csv_text)
 
     def test_bse500_rejects_non_positive_values(self):
         with self.assertRaises(ValueError):
-            BenchmarkPerformanceService._load_bse_tri_csv("Date,Close\n2021-01-01,0\n")
+            BenchmarkPerformanceService._load_bse_csv("Date,Close\n2021-01-01,0\n")
 
     def test_bse500_rejects_missing_values(self):
         with self.assertRaises(ValueError):
-            BenchmarkPerformanceService._load_bse_tri_csv("Date,Close\n2021-01-01,\n")
+            BenchmarkPerformanceService._load_bse_csv("Date,Close\n2021-01-01,\n")
 
     @patch("watchlist.services.benchmark.requests.get")
-    def test_bse500_fetches_bse500t_automatically(self, mocked_get):
+    def test_bse500_fetches_automatically(self, mocked_get):
         mocked_get.return_value.text = (
             "Index Name,Date,Open,High,Low,Close\n"
-            "BSE500T,01/01/2021,100,101,99,100\n"
-            "BSE500T,04/01/2021,100,102,99,101\n"
+            "BSE500,01/01/2021,100,101,99,100\n"
+            "BSE500,04/01/2021,100,102,99,101\n"
         )
         mocked_get.return_value.raise_for_status.return_value = None
-        points = BenchmarkPerformanceService._fetch_bse_tri_points(
+        points = BenchmarkPerformanceService._fetch_bse_points(
             date(2021, 1, 1), date(2021, 1, 4)
         )
         mocked_get.assert_called_once()
         self.assertEqual(
-            mocked_get.call_args.kwargs["params"]["strIndex"], "BSE500T"
+            mocked_get.call_args.kwargs["params"]["strIndex"], "BSE500"
         )
         self.assertEqual(points[-1]["value"], 101.0)
 

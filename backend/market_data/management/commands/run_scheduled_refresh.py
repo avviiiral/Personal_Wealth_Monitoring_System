@@ -134,24 +134,24 @@ class Command(BaseCommand):
         for command_name, kwargs in self.GLOBAL_STEPS:
             run_step(command_name, kwargs)
 
-        if "refresh_bse500_tri" not in skip:
-            self.stdout.write("\n--- refresh_bse500_tri ---")
+        if "refresh_bse500" not in skip:
+            self.stdout.write("\n--- refresh_bse500 ---")
             try:
-                result = BenchmarkDataRefreshService.refresh_bse500_tri()
+                result = BenchmarkDataRefreshService.refresh_bse500()
                 if result.get("available"):
-                    succeeded.append("refresh_bse500_tri")
+                    succeeded.append("refresh_bse500")
                     self.stdout.write(self.style.SUCCESS(
-                        f"BSE 500 TRI refreshed: {result.get('updated', 0)} observations, "
+                        f"BSE 500 refreshed: {result.get('updated', 0)} observations, "
                         f"as of {result.get('as_of_date')}"
                     ))
                 else:
-                    failed.append(("refresh_bse500_tri", result.get("reason", "unavailable")))
+                    failed.append(("refresh_bse500", result.get("reason", "unavailable")))
                     self.stderr.write(self.style.WARNING(
-                        f"BSE 500 TRI refresh skipped: {result.get('reason', 'unavailable')}"
+                        f"BSE 500 refresh skipped: {result.get('reason', 'unavailable')}"
                     ))
             except Exception as exc:
-                failed.append(("refresh_bse500_tri", str(exc)))
-                self.stderr.write(self.style.ERROR(f"BSE 500 TRI refresh failed: {exc}"))
+                failed.append(("refresh_bse500", str(exc)))
+                self.stderr.write(self.style.ERROR(f"BSE 500 refresh failed: {exc}"))
 
         active_user_ids = list(
             User.objects.filter(is_active=True).values_list("id", flat=True)

@@ -216,7 +216,7 @@ class BenchmarkPerformanceService:
                 for identity in identities
             ):
                 raise ValueError(
-                    "BSE historical endpoint did not return the requested BSE500 total-return series"
+                    "BSE historical endpoint did not return the requested BSE500 price-return series"
                 )
 
         date_field = next(
@@ -304,7 +304,7 @@ class BenchmarkPerformanceService:
 
     @classmethod
     def _bse_series(cls, start):
-        """Load only BSE500 total-return data; never substitute BSE500 price return."""
+        """Load only BSE500 price-return data; never substitute BSE500 price return."""
         source_file = Path(cls.BSE500_FILE)
         if source_file.exists():
             points = cls._load_bse_csv(
@@ -399,10 +399,12 @@ class BenchmarkPerformanceService:
             return None
         if getattr(product, "product_type", None) == "MUTUAL_FUND":
             mutual_fund = getattr(product, "mutual_fund", None)
-            return getattr(mutual_fund, "benchmark", None) if mutual_fund else None
+            benchmark = getattr(mutual_fund, "benchmark", None) if mutual_fund else None
+            return "BSE 500" if benchmark == "BSE 500 TRI" else benchmark
         if getattr(product, "product_type", None) == "PMS":
             pms = getattr(product, "pms", None)
-            return getattr(pms, "benchmark", None) if pms else None
+            benchmark = getattr(pms, "benchmark", None) if pms else None
+            return "BSE 500" if benchmark == "BSE 500 TRI" else benchmark
         return None
 
     @classmethod

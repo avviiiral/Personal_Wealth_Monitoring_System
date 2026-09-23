@@ -107,11 +107,59 @@ export class PortfolioComponent implements OnInit, OnDestroy {
   }
 
   get underlyingAssetOptions(): Array<{ id: number; name: string }> {
-    const options = new Map<number, string>();
-    for (const family of this.families) for (const portfolio of family.portfolios) for (const assetClass of portfolio.asset_classes) for (const subClass of assetClass.sub_classes) for (const asset of subClass.assets) {
-      if (asset.id > 0 && asset.asset_name) options.set(asset.id, asset.asset_name);
+    const options = new Map<number, { name: string; isin: string | null }>();
+
+    for (const family of this.families) {
+      for (const portfolio of family.portfolios) {
+        for (const assetClass of portfolio.asset_classes) {
+          for (const subClass of assetClass.sub_classes) {
+            for (const asset of subClass.assets) {
+              if (asset.id > 0 && asset.asset_name) {
+                options.set(asset.id, {
+                  name: asset.asset_name,
+                  isin: asset.isin?.trim() || null,
+                });
+              }
+            }
+          }
+        }
+      }
     }
-    return Array.from(options.entries()).map(([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name));
+
+    const groupedByName = new Map<string, Array<{ id: number; name: string; isin: string | null }>>();
+    for (const option of options.entries()) {
+      const [id, details] = option;
+      const group = groupedByName.get(details.name) ?? [];
+      group.push({ id, ...details });
+      groupedByName.set(details.name, group);
+    }
+
+    const result: Array<{ id: number; name: string }> = [];
+    for (const group of groupedByName.values()) {
+      if (group.length === 1) {
+        result.push({ id: group[0].id, name: group[0].name });
+        continue;
+      }
+
+      // The same asset name can occur more than once in the portfolio tree
+      // because different Asset records can represent that name. Keep every
+      // selectable Asset ID, but make duplicate labels distinguishable.
+      const labels = new Set<string>();
+      for (const option of group) {
+        let label = option.isin
+          ? `${option.name} — ${option.isin}`
+          : `${option.name} — Asset #${option.id}`;
+
+        if (labels.has(label)) {
+          label = `${option.name} — Asset #${option.id}`;
+        }
+
+        labels.add(label);
+        result.push({ id: option.id, name: label });
+      }
+    }
+
+    return result.sort((a, b) => a.name.localeCompare(b.name));
   }
 
   toggleUnderlyingUpload(): void {

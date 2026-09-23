@@ -562,6 +562,7 @@ export class DownloadsComponent implements OnInit {
       .filter(row => !this.selectedFamily || this.clean(row.family_name) === this.selectedFamily)
       .map(row => ({
         family_name: this.clean(row.family_name),
+        sub_class: this.clean(row.sub_class),
         asset_name: this.clean(row.asset_name),
         small_cap: row.small_cap,
         mid_cap: row.mid_cap,
@@ -571,6 +572,7 @@ export class DownloadsComponent implements OnInit {
 
     await this.exportWorkbook('Market Cap', 'Market Cap - Equity', [
       ['Family Name', 'family_name'],
+      ['Sub Class', 'sub_class'],
       ['Asset Name', 'asset_name'],
       ['Small Cap', 'small_cap'],
       ['Mid Cap', 'mid_cap'],

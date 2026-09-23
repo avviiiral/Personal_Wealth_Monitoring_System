@@ -280,6 +280,36 @@ def watch_list_product_detail(request, product_id):
     )
 
 
+BENCHMARK_CHOICES = ("BSE 500 TRI", "Nifty 50")
+
+
+@api_view(["PATCH"])
+@permission_classes([IsAuthenticated])
+def watch_list_benchmark(request, product_id):
+    product = get_object_or_404(
+        InvestmentProduct.objects.select_related("mutual_fund", "pms"),
+        pk=product_id,
+        is_active=True,
+    )
+    benchmark = str(request.data.get("benchmark") or "").strip()
+    if benchmark not in BENCHMARK_CHOICES:
+        return Response(
+            {"detail": "Benchmark must be one of: BSE 500 TRI, Nifty 50."},
+            status=400,
+        )
+
+    if product.product_type == ProductType.MUTUAL_FUND:
+        product.mutual_fund.benchmark = benchmark
+        product.mutual_fund.save(update_fields=["benchmark"])
+    elif product.product_type == ProductType.PMS:
+        product.pms.benchmark = benchmark
+        product.pms.save(update_fields=["benchmark"])
+    else:
+        return Response({"detail": "Benchmark is supported only for Mutual Fund and PMS products."}, status=400)
+
+    return Response({"id": product.id, "benchmark": benchmark})
+
+
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def watch_list_performance(request, product_id):

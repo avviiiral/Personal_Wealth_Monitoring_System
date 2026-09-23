@@ -19,7 +19,7 @@ export interface WatchListProduct {
   source_reference: string | null;
   source_date: string | null;
   official_website: string | null;
-  status: 'OWNED' | 'UNIVERSAL';
+  status: 'OWNED' | 'UNIVERSAL' | 'WATCHLIST';
   is_watchlisted: boolean;
   ownership: Array<{
     family: string;

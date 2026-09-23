@@ -452,7 +452,6 @@ class BenchmarkPerformanceService:
         )
         return {"available": True, "updated": len(points), "as_of_date": points[-1]["date"]}
 
-
 class BenchmarkDataRefreshService:
     """Refresh the verified BSE 500 TRI source and persist the local cache."""
 
@@ -501,4 +500,3 @@ class BenchmarkDataRefreshService:
             "updated": len(points),
             "as_of_date": points[-1]["date"],
         }
-

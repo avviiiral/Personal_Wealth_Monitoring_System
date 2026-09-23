@@ -1,7 +1,10 @@
+import io
 import logging
 import re
 from functools import lru_cache
 
+import pandas as pd
+import requests
 import yfinance as yf
 from django.db.models import Q
 
@@ -43,6 +46,62 @@ def _cap_type_from_market_cap(market_cap):
 class UnderlyingSecurityClassifier:
     """Resolve sector, market cap and ISIN for uploaded underlying names."""
 
+    _nse_loaded = False
+    _nse_by_name = {}
+
+    @classmethod
+    def _load_nse_master(cls):
+        if cls._nse_loaded:
+            return
+        cls._nse_loaded = True
+        try:
+            response = requests.get(
+                "https://nsearchives.nseindia.com/content/equities/EQUITY_L.csv",
+                headers={
+                    "User-Agent": "Mozilla/5.0",
+                    "Accept": "text/csv,text/plain,application/octet-stream,*/*",
+                    "Referer": "https://www.nseindia.com/",
+                },
+                timeout=30,
+            )
+            response.raise_for_status()
+            dataframe = pd.read_csv(
+                io.StringIO(response.content.decode("utf-8-sig", errors="replace"))
+            )
+            dataframe.columns = [str(column).strip().upper() for column in dataframe.columns]
+            isin_column = next((x for x in ("ISIN NUMBER", "ISIN") if x in dataframe.columns), None)
+            symbol_column = "SYMBOL" if "SYMBOL" in dataframe.columns else None
+            name_column = next((x for x in ("NAME OF COMPANY", "NAME") if x in dataframe.columns), None)
+            if not isin_column or not symbol_column or not name_column:
+                return
+            for _, row in dataframe.iterrows():
+                isin = str(row.get(isin_column) or "").strip().upper().replace(" ", "")
+                symbol = str(row.get(symbol_column) or "").strip().upper()
+                name = str(row.get(name_column) or "").strip()
+                if not isin or not symbol or not name:
+                    continue
+                record = {"isin": isin, "symbol": symbol}
+                cls._nse_by_name[_normalize_name(name)] = record
+                cls._nse_by_name[_compact_name(name)] = record
+            logger.info("Loaded %s NSE securities for underlying resolution.", len({x["isin"] for x in cls._nse_by_name.values()}))
+        except Exception:
+            logger.warning("[UNDERLYING NSE] Failed to load NSE equity master.", exc_info=True)
+
+    @classmethod
+    def _nse_match(cls, stock_name):
+        cls._load_nse_master()
+        normalized = _normalize_name(stock_name)
+        compact = _compact_name(stock_name)
+        match = cls._nse_by_name.get(normalized) or cls._nse_by_name.get(compact)
+        if match:
+            return match
+        candidates = []
+        for key, record in cls._nse_by_name.items():
+            if len(key) >= 8 and (compact.startswith(key) or key.startswith(compact)):
+                candidates.append(record)
+        unique = {record["isin"]: record for record in candidates}
+        return next(iter(unique.values())) if len(unique) == 1 else None
+
     @staticmethod
     @lru_cache(maxsize=512)
     def _lookup(stock_name):
@@ -51,6 +110,10 @@ class UnderlyingSecurityClassifier:
             return None, None
 
         candidates = []
+
+        nse_record = cls._nse_match(name)
+        if nse_record:
+            candidates.append(f'{nse_record["symbol"]}.NS')
 
         try:
             resolved = SecurityResolver.resolve_yahoo_symbol(name=name)
@@ -99,6 +162,10 @@ class UnderlyingSecurityClassifier:
         name = str(stock_name or "").strip()
         if not name or name.casefold() == "unclassified":
             return None
+
+        nse_record = cls._nse_match(name)
+        if nse_record:
+            return nse_record["isin"]
 
         normalized = _normalize_name(name)
         compact = _compact_name(name)

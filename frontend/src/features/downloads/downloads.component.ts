@@ -65,6 +65,7 @@ export class DownloadsComponent implements OnInit {
   selectedWatchListType: 'ALL' | 'MUTUAL_FUND' | 'PMS' = 'ALL';
   fromDate = '';
   toDate = '';
+  selectedReportDate = new Date().toISOString().slice(0, 10);
 
   loading = true;
   reportLoading = false;
@@ -112,7 +113,7 @@ export class DownloadsComponent implements OnInit {
 
     if (report === 'market-cap') {
       if (this.marketCapLoaded && !force) return;
-      const response = await firstValueFrom(this.portfolioApi.getEquityMarketCapReport());
+      const response = await firstValueFrom(this.portfolioApi.getEquityMarketCapReport(this.selectedReportDate));
       this.marketCapRows = response.results ?? [];
       this.marketCapLoaded = true;
       return;
@@ -194,6 +195,7 @@ export class DownloadsComponent implements OnInit {
     const dates = this.transactions.map(tx => tx.transaction_date).filter(Boolean).sort();
     this.fromDate = dates[0] ?? '';
     this.toDate = dates[dates.length - 1] ?? '';
+    this.selectedReportDate = new Date().toISOString().slice(0, 10);
   }
 
   onFamilyChange(): void {
@@ -209,6 +211,21 @@ export class DownloadsComponent implements OnInit {
 
   onSubClassChange(): void {
     this.selectedAssetName = '';
+  }
+
+  async onReportDateChange(): Promise<void> {
+    if (this.selectedReport !== 'market-cap') return;
+    this.reportLoading = true;
+    this.error = '';
+    try {
+      await this.loadDataForReport('market-cap', true);
+    } catch (error) {
+      console.error('Report date change failed:', error);
+      this.error = 'Unable to load report data for the selected date.';
+    } finally {
+      this.reportLoading = false;
+      this.cdr.detectChanges();
+    }
   }
 
   async download(): Promise<void> {
@@ -558,6 +575,8 @@ export class DownloadsComponent implements OnInit {
   }
 
   private async downloadMarketCap(): Promise<void> {
+    const response = await firstValueFrom(this.portfolioApi.getEquityMarketCapReport(this.selectedReportDate));
+    this.marketCapRows = response.results ?? [];
     const rows: Record<string, unknown>[] = this.marketCapRows
       .filter(row => !this.selectedFamily || this.clean(row.family_name) === this.selectedFamily)
       .map(row => ({
@@ -582,7 +601,7 @@ export class DownloadsComponent implements OnInit {
   }
 
   private async downloadHoldingMatrix(): Promise<void> {
-    const response = await firstValueFrom(this.portfolioApi.getHoldingMatrix());
+    const response = await firstValueFrom(this.portfolioApi.getHoldingMatrix(this.selectedReportDate));
     const underlyings = response.underlyings ?? [];
     const details = response.underlying_details ?? [];
     const sourceRows = response.results ?? [];

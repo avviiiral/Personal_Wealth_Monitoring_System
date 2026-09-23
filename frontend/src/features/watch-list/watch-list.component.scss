@@ -1,3 +1,9 @@
+:host {
+  display: block;
+  animation: none !important;
+  transform: none !important;
+  will-change: auto !important;
+}
 .watch-list-page { padding: 28px; color: var(--ink); }
 .page-header { display: flex; align-items: center; justify-content: space-between; gap: 20px; margin-bottom: 22px; }
 .page-header h1 { margin: 0 0 6px; font-size: 28px; color: var(--ink); }
@@ -82,12 +88,13 @@ html.dark-theme .watch-list-page .status.owned {
   inset: 0;
   width: 100vw;
   height: 100dvh;
+  min-height: 100dvh;
   background: rgba(0,0,0,.35);
   display: flex;
   align-items: center;
   justify-content: center;
   z-index: 10000;
-  padding: 16px;
+  padding: 12px;
   box-sizing: border-box;
   overflow: hidden;
 }
@@ -145,7 +152,8 @@ html.dark-theme .watch-list-page .status.owned {
 .benchmark-modal {
   width: min(1200px, 96vw);
   max-width: 1200px;
-  max-height: 94dvh;
+  height: auto;
+  max-height: calc(100dvh - 24px);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -176,7 +184,7 @@ html.dark-theme .watch-list-page .status.owned {
   min-height: 0;
   overflow: auto;
   overscroll-behavior: contain;
-  padding: 0 22px 22px;
+  padding: 0 22px 18px;
   scrollbar-width: thin;
   scrollbar-color: var(--surface-line) transparent;
 }

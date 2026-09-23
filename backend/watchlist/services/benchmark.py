@@ -31,7 +31,7 @@ class BenchmarkPerformanceService:
         "BSE 500 TRI": "BSE500T",
     }
 
-    BSE_INDEX_HISTORY_URL = "https://api.bseindia.com/BseIndiaAPI/api/ProduceCSVForDate/w"
+    BSE_INDEX_HISTORY_URL = "https://api.bseindia.com/BseIndiaAPI/api/IndexArchDailyAll/w"
     BSE_HEADERS = {
         "Accept": "application/json, text/plain, */*",
         "Referer": "https://www.bseindia.com/",
@@ -193,32 +193,65 @@ class BenchmarkPerformanceService:
 
     @classmethod
     def _bse_tri_series(cls, start):
-        """Fetch the official BSE 500 TRI history in yearly API chunks."""
+        """Fetch BSE's daily index archive and retain the BSE 500 TRI rows."""
         end = timezone.now().date()
         session = requests.Session()
         session.headers.update(cls.BSE_HEADERS)
 
-        points = []
-        chunk_start = start
-        while chunk_start <= end:
-            chunk_end = min(chunk_start + timedelta(days=364), end)
-            params = {
-                "strIndex": "BSE500T",
-                "dtFromDate": chunk_start.strftime("%d/%m/%Y"),
-                "dtToDate": chunk_end.strftime("%d/%m/%Y"),
+        response = session.get(
+            cls.BSE_INDEX_HISTORY_URL,
+            params={
+                "fmdt": start.strftime("%d/%m/%Y"),
+                "todt": end.strftime("%d/%m/%Y"),
+                "index": "All",
                 "period": "D",
-            }
-            response = session.get(
-                cls.BSE_INDEX_HISTORY_URL,
-                params=params,
-                timeout=20,
-            )
-            response.raise_for_status()
-            points.extend(cls._parse_bse_response(response))
-            chunk_start = chunk_end + timedelta(days=1)
+            },
+            timeout=45,
+        )
+        response.raise_for_status()
+
+        try:
+            payload = response.json()
+        except (ValueError, TypeError):
+            payload = response.text
+
+        rows = []
+        target_names = {
+            "bse 500 tri",
+            "bse 500 total return index",
+            "s&p bse 500 tri",
+            "s&p bse 500 total return index",
+        }
+        normalized_targets = {
+            name.replace("&", "and").replace(" ", "").lower()
+            for name in target_names
+        }
+
+        def visit(node):
+            if isinstance(node, dict):
+                normalized = {
+                    str(key).strip().lower().replace(" ", "").replace("_", ""): value
+                    for key, value in node.items()
+                }
+                index_name = str(
+                    normalized.get("index")
+                    or normalized.get("indexname")
+                    or normalized.get("name")
+                    or ""
+                )
+                compact_name = index_name.replace("&", "and").replace(" ", "").lower()
+                if compact_name in normalized_targets:
+                    rows.extend(cls._parse_bse_rows(node))
+                for value in node.values():
+                    visit(value)
+            elif isinstance(node, list):
+                for item in node:
+                    visit(item)
+
+        visit(payload)
 
         unique = {}
-        for point_date, value in points:
+        for point_date, value in rows:
             unique[point_date.isoformat()] = {
                 "date": point_date.isoformat(),
                 "value": value,

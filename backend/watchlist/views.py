@@ -11,6 +11,7 @@ from watchlist.models import InvestmentProduct, PerformanceSnapshot, ProductType
 from watchlist.serializers import PerformanceSnapshotSerializer, WatchListProductSerializer
 from watchlist.services.ownership import OwnershipService
 from watchlist.services.pms import APMIPMSDiscoveryService
+from watchlist.services.benchmark import BenchmarkPerformanceService
 from watchlist.services.universe import AMFIUniverseService
 
 
@@ -308,6 +309,23 @@ def watch_list_benchmark(request, product_id):
         return Response({"detail": "Benchmark is supported only for Mutual Fund and PMS products."}, status=400)
 
     return Response({"id": product.id, "benchmark": benchmark})
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def watch_list_benchmark_performance(request, product_id):
+    product = get_object_or_404(
+        InvestmentProduct.objects.select_related("mutual_fund", "pms"),
+        pk=product_id,
+        is_active=True,
+    )
+    chart_period = request.query_params.get("period", "1Y").upper()
+    if chart_period not in BenchmarkPerformanceService.PERIOD_DAYS:
+        chart_period = "1Y"
+    result = BenchmarkPerformanceService.calculate(product, chart_period=chart_period)
+    if result is None:
+        return Response({"available": False, "benchmark": None, "message": "Select a supported benchmark first."})
+    return Response(result)
 
 
 @api_view(["GET"])

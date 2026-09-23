@@ -281,7 +281,7 @@ def watch_list_product_detail(request, product_id):
     )
 
 
-BENCHMARK_CHOICES = ("BSE 500 TRI", "Nifty 50")
+BENCHMARK_CHOICES = ("BSE 500", "Nifty 50")
 
 
 @api_view(["PATCH"])
@@ -295,7 +295,7 @@ def watch_list_benchmark(request, product_id):
     benchmark = str(request.data.get("benchmark") or "").strip()
     if benchmark not in BENCHMARK_CHOICES:
         return Response(
-            {"detail": "Benchmark must be one of: BSE 500 TRI, Nifty 50."},
+            {"detail": "Benchmark must be one of: BSE 500, Nifty 50."},
             status=400,
         )
 

@@ -560,35 +560,70 @@ class BenchmarkPerformanceService:
 
     @classmethod
     def _fund_series(cls, product, start, end=None):
+        """Return the daily fund series needed by the relative-performance chart.
+
+        Mutual funds use the shared AMFI master as the primary source. If the
+        master does not yet contain enough observations for the requested
+        window, fall back to the already-imported AMFI PerformanceSnapshot
+        history for this product. This is a read-only fallback: it does not
+        trigger a per-user AMFI download and keeps the chart usable while the
+        shared master is being populated.
+        """
+        end = end or timezone.now().date()
+
         if getattr(product, "product_type", None) == "MUTUAL_FUND":
             scheme_code = cls._fund_scheme_code(product)
-            if not scheme_code:
-                return []
+            if scheme_code:
+                cls._ensure_master_history(product, start, end)
 
-            end = end or timezone.now().date()
-            cls._ensure_master_history(product, start, end)
+                master_points = list(
+                    AMFIMasterNAV.objects.filter(
+                        scheme__scheme_code=scheme_code,
+                        source="AMFI",
+                        date__gte=start,
+                        date__lte=end,
+                    )
+                    .order_by("date", "id")
+                    .values("date", "nav")
+                )
+                master_series = [
+                    {
+                        "date": point["date"].isoformat(),
+                        "value": float(point["nav"]),
+                    }
+                    for point in master_points
+                    if point["nav"] and float(point["nav"]) > 0
+                ]
+                if len(master_series) >= 2:
+                    return master_series
 
-            points = (
-                AMFIMasterNAV.objects.filter(
-                    scheme__scheme_code=scheme_code,
+            # Compatibility fallback for existing AMFI history. The chart
+            # should not disappear merely because the shared master has not
+            # yet been backfilled for this scheme.
+            snapshots = (
+                PerformanceSnapshot.objects.filter(
+                    product=product,
                     source="AMFI",
                     date__gte=start,
                     date__lte=end,
                 )
+                .exclude(nav_or_value__isnull=True)
                 .order_by("date", "id")
-                .values("date", "nav")
             )
             return [
-                {"date": point["date"].isoformat(), "value": float(point["nav"])}
-                for point in points
-                if point["nav"] and float(point["nav"]) > 0
+                {
+                    "date": snapshot.date.isoformat(),
+                    "value": float(snapshot.nav_or_value),
+                }
+                for snapshot in snapshots
+                if snapshot.nav_or_value and float(snapshot.nav_or_value) > 0
             ]
 
         snapshots = (
             PerformanceSnapshot.objects.filter(
                 product=product,
                 date__gte=start,
-                **({"date__lte": end} if end else {}),
+                date__lte=end,
             )
             .exclude(nav_or_value__isnull=True)
             .order_by("date", "id")

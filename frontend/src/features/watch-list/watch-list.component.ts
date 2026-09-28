@@ -1,5 +1,5 @@
 import { CommonModule } from '@angular/common';
-import { Component, OnDestroy, OnInit, inject } from '@angular/core';
+import { ChangeDetectorRef, Component, OnDestroy, OnInit, inject } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { firstValueFrom, Subject } from 'rxjs';
 import { debounceTime, distinctUntilChanged, finalize, takeUntil } from 'rxjs/operators';
@@ -12,6 +12,7 @@ type StatusTab = 'ALL' | 'OWNED' | 'UNIVERSAL' | 'WATCHLIST';
 type PageItem = number | 'ellipsis';
 type WatchListSortColumn = 'product' | 'provider' | 'status' | 'ownership' | '1M' | '3M' | '6M' | '1Y' | '3Y' | '5Y' | 'CAGR' | 'AUM';
 type WatchListSortDirection = 'normal' | 'asc' | 'desc';
+type BenchmarkPeriod = '1M' | '3M' | '6M' | '1Y' | '3Y' | '5Y';
 interface WatchListSortState { column: WatchListSortColumn | null; direction: WatchListSortDirection; }
 
 @Component({
@@ -24,6 +25,7 @@ interface WatchListSortState { column: WatchListSortColumn | null; direction: Wa
 export class WatchListComponent implements OnInit, OnDestroy {
   private readonly api = inject(WatchListApiService);
   private readonly state = inject(WatchListStateService);
+  private readonly changeDetector = inject(ChangeDetectorRef);
   private readonly cachePrefix = 'pwms.watch-list.';
   private autoRefreshAttempted = false;
   private readonly searchInput$ = new Subject<string>();
@@ -52,6 +54,15 @@ export class WatchListComponent implements OnInit, OnDestroy {
   downloadModalOpen = false;
   downloadType: 'PMS' | 'MUTUAL_FUND' | 'ALL' = 'ALL';
   downloading = false;
+  readonly benchmarkOptions: Array<'BSE 500' | 'Nifty 50'> = ['BSE 500', 'Nifty 50'];
+  readonly benchmarkPeriods: BenchmarkPeriod[] = ['1M', '3M', '6M', '1Y', '3Y', '5Y'];
+  private readonly updatingBenchmarkIds = new Set<number>();
+  benchmarkModalProduct: WatchListProduct | null = null;
+  benchmarkData: any = null;
+  benchmarkLoading = false;
+  benchmarkError = '';
+  private benchmarkRequestSequence = 0;
+  benchmarkPeriod: BenchmarkPeriod = '1Y';
 
   ngOnInit(): void {
     this.loadFilters();
@@ -401,6 +412,166 @@ export class WatchListComponent implements OnInit, OnDestroy {
 
   isToggling(productId: number): boolean { return this.togglingIds.has(productId); }
 
+  isUpdatingBenchmark(productId: number): boolean { return this.updatingBenchmarkIds.has(productId); }
+
+  updateBenchmark(product: WatchListProduct, benchmark: 'BSE 500' | 'Nifty 50'): void {
+    const previous = product.benchmark;
+    if (previous === benchmark || this.updatingBenchmarkIds.has(product.id)) return;
+    this.updatingBenchmarkIds.add(product.id);
+    this.error = '';
+    this.api.updateBenchmark(product.id, benchmark).subscribe({
+      next: response => {
+        product.benchmark = response.benchmark as 'BSE 500' | 'Nifty 50';
+        this.updatingBenchmarkIds.delete(product.id);
+        this.cacheCurrentPage();
+      },
+      error: error => {
+        console.error('Failed to update Watch List benchmark:', error);
+        product.benchmark = previous;
+        this.updatingBenchmarkIds.delete(product.id);
+        this.error = 'Unable to update the benchmark right now.';
+      },
+    });
+  }
+
+  openBenchmarkComparison(product: WatchListProduct): void {
+    if (!product.benchmark) return;
+
+    const requestId = ++this.benchmarkRequestSequence;
+    const productId = product.id;
+
+    this.benchmarkModalProduct = product;
+    this.benchmarkData = null;
+    this.benchmarkError = '';
+    this.benchmarkLoading = true;
+    this.benchmarkPeriod = '1Y';
+
+    this.api.getBenchmarkPerformance(productId, this.benchmarkPeriod).subscribe({
+      next: data => {
+        if (
+          requestId !== this.benchmarkRequestSequence
+          || !this.benchmarkModalProduct
+          || this.benchmarkModalProduct.id !== productId
+        ) return;
+
+        this.benchmarkData = data;
+        this.benchmarkLoading = false;
+        this.benchmarkError = data?.available === false
+          ? (data.message || 'Benchmark data is unavailable.')
+          : '';
+
+        // Angular 21+ is zoneless by default. These fields are plain component
+        // state updated by an async subscription, so notify Angular explicitly.
+        this.changeDetector.markForCheck();
+      },
+      error: error => {
+        if (
+          requestId !== this.benchmarkRequestSequence
+          || !this.benchmarkModalProduct
+          || this.benchmarkModalProduct.id !== productId
+        ) return;
+
+        console.error('Failed to load benchmark performance:', error);
+        this.benchmarkData = null;
+        this.benchmarkLoading = false;
+        this.benchmarkError = 'Unable to load benchmark performance right now.';
+        this.changeDetector.markForCheck();
+      },
+    });
+  }
+
+  closeBenchmarkComparison(): void {
+    ++this.benchmarkRequestSequence;
+    this.benchmarkModalProduct = null;
+    this.benchmarkData = null;
+    this.benchmarkError = '';
+    this.benchmarkLoading = false;
+  }
+
+  changeBenchmarkChartPeriod(period: BenchmarkPeriod): void {
+    if (!this.benchmarkModalProduct || this.benchmarkLoading || this.benchmarkPeriod === period) return;
+
+    const requestId = ++this.benchmarkRequestSequence;
+    const productId = this.benchmarkModalProduct.id;
+
+    this.benchmarkPeriod = period;
+    this.benchmarkData = null;
+    this.benchmarkError = '';
+    this.benchmarkLoading = true;
+
+    this.api.getBenchmarkPerformance(productId, period).subscribe({
+      next: data => {
+        if (
+          requestId !== this.benchmarkRequestSequence
+          || !this.benchmarkModalProduct
+          || this.benchmarkModalProduct.id !== productId
+        ) return;
+
+        this.benchmarkData = data;
+        this.benchmarkLoading = false;
+        this.benchmarkError = data?.available === false
+          ? (data.message || 'Benchmark data is unavailable.')
+          : '';
+        this.changeDetector.markForCheck();
+      },
+      error: error => {
+        if (
+          requestId !== this.benchmarkRequestSequence
+          || !this.benchmarkModalProduct
+          || this.benchmarkModalProduct.id !== productId
+        ) return;
+
+        console.error('Failed to load benchmark chart:', error);
+        this.benchmarkData = null;
+        this.benchmarkLoading = false;
+        this.benchmarkError = 'Unable to load benchmark chart right now.';
+        this.changeDetector.markForCheck();
+      },
+    });
+  }
+
+  benchmarkMetric(period: BenchmarkPeriod, key: 'fund_metrics' | 'benchmark_metrics' | 'differences'): number | null {
+    const value = this.benchmarkData?.[key]?.[period];
+    return value === null || value === undefined ? null : Number(value);
+  }
+
+  benchmarkComparison(period: BenchmarkPeriod): string {
+    return this.benchmarkData?.comparison?.[period] || 'Unavailable';
+  }
+
+  benchmarkPolyline(series: Array<{ date: string; value: number }> | undefined): string {
+    if (!series?.length) return '';
+    const normalized = series
+      .map(point => Number(point.value))
+      .filter(value => Number.isFinite(value) && value > 0);
+    if (!normalized.length) return '';
+
+    const base = normalized[0];
+    const normalizedSeries = series.map(point => ({
+      value: Number(point.value) / base * 100,
+    }));
+    const fund = this.benchmarkData?.chart?.fund || [];
+    const benchmark = this.benchmarkData?.chart?.benchmark || [];
+    const combined = [...fund, ...benchmark]
+      .map((point: { value: number }) => Number(point.value))
+      .filter(value => Number.isFinite(value) && value > 0);
+    const fundBase = fund[0]?.value ? Number(fund[0].value) : null;
+    const benchmarkBase = benchmark[0]?.value ? Number(benchmark[0].value) : null;
+    const normalizedAll = [
+      ...(fundBase ? fund.map((point: { value: number }) => Number(point.value) / fundBase * 100) : []),
+      ...(benchmarkBase ? benchmark.map((point: { value: number }) => Number(point.value) / benchmarkBase * 100) : []),
+    ];
+    const min = normalizedAll.length ? Math.min(...normalizedAll) : Math.min(...combined);
+    const max = normalizedAll.length ? Math.max(...normalizedAll) : Math.max(...combined);
+    const range = max - min || 1;
+    const lastIndex = Math.max(series.length - 1, 1);
+    return normalizedSeries.map((point, index) => {
+      const x = (index / lastIndex) * 100;
+      const y = 96 - ((point.value - min) / range) * 88;
+      return `${x.toFixed(2)},${y.toFixed(2)}`;
+    }).join(' ');
+  }
+
   toggleWatch(product: WatchListProduct, event: Event): void {
     event.stopPropagation();
     if (this.togglingIds.has(product.id)) return;
@@ -444,21 +615,46 @@ export class WatchListComponent implements OnInit, OnDestroy {
       for (const productType of productTypes) {
         let page = 1;
         while (true) {
-          const response = await firstValueFrom(this.api.getProducts({ product_type: productType, status: 'WATCHLIST', ordering: 'name', page, page_size: 100 }));
+          const response = await firstValueFrom(this.api.getProducts({
+            product_type: productType,
+            status: 'WATCHLIST',
+            ordering: 'name',
+            page,
+            page_size: 100,
+          }));
           allProducts.push(...this.state.filterVisible(response.results));
           if (!response.next || response.results.length === 0) break;
           page += 1;
         }
       }
-      await this.exportWatchListWorkbook(allProducts);
+
+      let benchmarkRows: any[] = [
+        { benchmark: 'Nifty 50', available: false },
+        { benchmark: 'BSE 500', available: false },
+      ];
+      try {
+        const response = await firstValueFrom(this.api.getBenchmarksPerformance());
+        benchmarkRows = ['Nifty 50', 'BSE 500'].map(name =>
+          response.benchmarks.find(item => item?.benchmark === name) || {
+            benchmark: name,
+            available: false,
+          },
+        );
+      } catch (error) {
+        console.warn('Benchmark data unavailable for Watch List report:', error);
+      }
+
+      await this.exportWatchListWorkbook(allProducts, benchmarkRows);
       this.downloadModalOpen = false;
     } catch (error) {
       console.error('Failed to download Watch List:', error);
       this.error = 'Unable to download the Watch List right now.';
-    } finally { this.downloading = false; }
+    } finally {
+      this.downloading = false;
+    }
   }
 
-  private async exportWatchListWorkbook(products: WatchListProduct[]): Promise<void> {
+  private async exportWatchListWorkbook(products: WatchListProduct[], benchmarkRows: any[]): Promise<void> {
     const { default: ExcelJSLib } = await import('exceljs');
     const workbook = new ExcelJSLib.Workbook();
     workbook.creator = 'Personal Wealth Monitoring System';
@@ -467,7 +663,7 @@ export class WatchListComponent implements OnInit, OnDestroy {
     workbook.created = new Date();
 
     const sheet = workbook.addWorksheet('Watch List', {
-      views: [{ state: 'frozen', ySplit: 4, showGridLines: false }],
+      views: [{ state: 'frozen', ySplit: 11, showGridLines: false }],
       properties: { defaultRowHeight: 21 },
     });
 
@@ -479,8 +675,10 @@ export class WatchListComponent implements OnInit, OnDestroy {
       { header: 'Type', key: 'type', width: 16 }, { header: 'Product', key: 'product', width: 48 },
       { header: 'Provider', key: 'provider', width: 28 }, { header: 'Category', key: 'category', width: 24 },
       { header: 'Identifier', key: 'identifier', width: 24 }, { header: 'Status', key: 'status', width: 14 },
-      { header: '1M', key: '1M', width: 12 }, { header: '3M', key: '3M', width: 12 }, { header: '6M', key: '6M', width: 12 },
-      { header: '1Y', key: '1Y', width: 12 }, { header: '3Y', key: '3Y', width: 12 }, { header: '5Y', key: '5Y', width: 12 },
+      { header: 'Benchmark', key: 'benchmark', width: 18 },
+      { header: '1M', key: '1M', width: 12 }, { header: '3M', key: '3M', width: 12 },
+      { header: '6M', key: '6M', width: 12 }, { header: '1Y', key: '1Y', width: 12 },
+      { header: '3Y', key: '3Y', width: 12 }, { header: '5Y', key: '5Y', width: 12 },
       { header: 'CAGR', key: 'CAGR', width: 12 }, { header: 'AUM', key: 'AUM', width: 18 },
     ];
     columnDefinitions.forEach((column, index) => {
@@ -489,7 +687,7 @@ export class WatchListComponent implements OnInit, OnDestroy {
       excelColumn.key = column.key;
     });
 
-    sheet.mergeCells('A1:N1');
+    sheet.mergeCells('A1:O1');
     const title = sheet.getCell('A1');
     title.value = 'Watch List Report';
     title.font = { name: 'Aptos Display', size: 18, bold: true, color: { argb: 'FFFFFFFF' } };
@@ -497,21 +695,92 @@ export class WatchListComponent implements OnInit, OnDestroy {
     title.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1F2937' } };
     sheet.getRow(1).height = 32;
 
-    sheet.mergeCells('A2:N2');
+    sheet.mergeCells('A2:O2');
     const subtitle = sheet.getCell('A2');
     subtitle.value = exportTypeLabel + ' • Watchlisted products • Generated ' + this.todayStamp();
     subtitle.font = { name: 'Aptos', size: 10, italic: true, color: { argb: 'FF6B7280' } };
     subtitle.alignment = { vertical: 'middle' };
     sheet.getRow(2).height = 22;
 
-    sheet.mergeCells('A3:N3');
+    sheet.mergeCells('A3:O3');
     const summary = sheet.getCell('A3');
     summary.value = 'Total watchlisted products: ' + products.length;
     summary.font = { name: 'Aptos', size: 10, bold: true, color: { argb: 'FF374151' } };
     summary.alignment = { vertical: 'middle' };
     sheet.getRow(3).height = 22;
 
-    const headerRow = sheet.insertRow(4, columnDefinitions.map(column => column.header));
+    // Keep benchmark performance at the top of the export, before the
+    // existing Watch List product table.
+    const benchmarkSectionTitleRow = 4;
+    const benchmarkHeaderRow = 5;
+    const firstBenchmarkRow = 6;
+    const noteRow = 9;
+    const productHeaderRow = 11;
+
+    sheet.mergeCells('A' + benchmarkSectionTitleRow + ':O' + benchmarkSectionTitleRow);
+    const benchmarkTitle = sheet.getCell('A' + benchmarkSectionTitleRow);
+    benchmarkTitle.value = 'Benchmark Performance';
+    benchmarkTitle.font = { name: 'Aptos Display', size: 14, bold: true, color: { argb: 'FFFFFFFF' } };
+    benchmarkTitle.alignment = { vertical: 'middle' };
+    benchmarkTitle.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1F2937' } };
+    sheet.getRow(benchmarkSectionTitleRow).height = 28;
+
+    const benchmarkHeaders = ['Benchmark', '1M', '3M', '6M', '1Y', '3Y', '5Y', 'CAGR'];
+    const benchmarkHeader = sheet.getRow(benchmarkHeaderRow);
+    benchmarkHeaders.forEach((header, index) => {
+      const cell = benchmarkHeader.getCell(index + 1);
+      cell.value = header;
+      cell.font = { name: 'Aptos', size: 10, bold: true, color: { argb: 'FFFFFFFF' } };
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF374151' } };
+      cell.alignment = { vertical: 'middle', horizontal: 'center' };
+      cell.border = {
+        top: { style: 'thin', color: { argb: 'FFD1D5DB' } },
+        bottom: { style: 'thin', color: { argb: 'FFD1D5DB' } },
+      };
+    });
+    benchmarkHeader.height = 24;
+
+    ['Nifty 50', 'BSE 500'].forEach((benchmarkName, index) => {
+      const data = benchmarkRows.find(item => item?.benchmark === benchmarkName) || {};
+      const metrics = data?.benchmark_metrics || {};
+      const values = [
+        benchmarkName,
+        data?.available ? (metrics['1M'] ?? null) : 'Unavailable',
+        data?.available ? (metrics['3M'] ?? null) : 'Unavailable',
+        data?.available ? (metrics['6M'] ?? null) : 'Unavailable',
+        data?.available ? (metrics['1Y'] ?? null) : 'Unavailable',
+        data?.available ? (metrics['3Y'] ?? null) : 'Unavailable',
+        data?.available ? (metrics['5Y'] ?? null) : 'Unavailable',
+        data?.available ? (data?.benchmark_cagr_5y ?? metrics['5Y'] ?? null) : 'Unavailable',
+      ];
+      const row = sheet.getRow(firstBenchmarkRow + index);
+      values.forEach((value, column) => {
+        const cell = row.getCell(column + 1);
+        cell.value = value;
+        cell.font = { name: 'Aptos', size: 10, color: { argb: 'FF111827' } };
+        cell.alignment = { vertical: 'middle', horizontal: column === 0 ? 'left' : 'right' };
+        cell.border = { bottom: { style: 'hair', color: { argb: 'FFE5E7EB' } } };
+        if (typeof value === 'number') cell.numFmt = '0.00"%"';
+      });
+      if (index % 2 === 1) {
+        row.eachCell({ includeEmpty: true }, cell => {
+          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF9FAFB' } };
+        });
+      }
+      row.height = 21;
+    });
+
+    const noteCell = sheet.getCell('A' + noteRow);
+    noteCell.value = 'Note: Product return columns are Watch List returns. Benchmark Performance shows the selected Nifty 50 and BSE 500 market benchmark returns as of the latest available benchmark date.';
+    sheet.mergeCells('A' + noteRow + ':O' + noteRow);
+    noteCell.font = { name: 'Aptos', size: 9, italic: true, color: { argb: 'FF6B7280' } };
+    noteCell.alignment = { vertical: 'middle' };
+    sheet.getRow(noteRow).height = 20;
+
+    const headerRow = sheet.getRow(productHeaderRow);
+    columnDefinitions.forEach((column, index) => {
+      headerRow.getCell(index + 1).value = column.header;
+    });
     headerRow.height = 26;
     headerRow.eachCell(cell => {
       cell.font = { name: 'Aptos', size: 10, bold: true, color: { argb: 'FFFFFFFF' } };
@@ -531,8 +800,13 @@ export class WatchListComponent implements OnInit, OnDestroy {
         category: product.category || '',
         identifier: product.isin || product.external_identifier || '',
         status: product.status,
-        '1M': this.metric(product, '1M'), '3M': this.metric(product, '3M'), '6M': this.metric(product, '6M'),
-        '1Y': this.metric(product, '1Y'), '3Y': this.metric(product, '3Y'), '5Y': this.metric(product, '5Y'),
+        benchmark: product.benchmark || '',
+        '1M': this.metric(product, '1M'),
+        '3M': this.metric(product, '3M'),
+        '6M': this.metric(product, '6M'),
+        '1Y': this.metric(product, '1Y'),
+        '3Y': this.metric(product, '3Y'),
+        '5Y': this.metric(product, '5Y'),
         CAGR: this.metric(product, 'CAGR'),
         AUM: product.mutual_fund?.aum ?? product.pms?.aum ?? null,
       });
@@ -543,11 +817,13 @@ export class WatchListComponent implements OnInit, OnDestroy {
         cell.border = { bottom: { style: 'hair', color: { argb: 'FFE5E7EB' } } };
       });
       row.height = 21;
-      if (index % 2 === 1) row.eachCell(cell => {
-        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF9FAFB' } };
-      });
+      if (index % 2 === 1) {
+        row.eachCell(cell => {
+          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF9FAFB' } };
+        });
+      }
 
-      [7, 8, 9, 10, 11, 12, 13].forEach(column => {
+      [8, 9, 10, 11, 12, 13, 14].forEach(column => {
         const cell = row.getCell(column);
         if (typeof cell.value === 'number') {
           cell.numFmt = '0.00"%"';
@@ -555,28 +831,21 @@ export class WatchListComponent implements OnInit, OnDestroy {
         }
       });
 
-      const aum = row.getCell(14);
+      const aum = row.getCell(15);
       if (typeof aum.value === 'number') {
         aum.numFmt = '#,##0.00';
         aum.alignment = { vertical: 'middle', horizontal: 'right' };
       }
       row.getCell(1).alignment = { vertical: 'middle', horizontal: 'center' };
       row.getCell(6).alignment = { vertical: 'middle', horizontal: 'center' };
+      row.getCell(7).alignment = { vertical: 'middle', horizontal: 'center' };
     });
 
-    sheet.autoFilter = { from: 'A4', to: 'N4' };
+    sheet.autoFilter = { from: 'A' + productHeaderRow, to: 'O' + productHeaderRow };
     sheet.getColumn(2).alignment = { vertical: 'middle', wrapText: true };
     sheet.getColumn(3).alignment = { vertical: 'middle', wrapText: true };
     sheet.getColumn(4).alignment = { vertical: 'middle', wrapText: true };
     sheet.getColumn(5).alignment = { vertical: 'middle', wrapText: true };
-
-    const lastRow = Math.max(4, products.length + 4);
-    const noteCell = sheet.getCell('A' + (lastRow + 1));
-    noteCell.value = 'Note: Returns are shown as provided by the Watch List data source. AUM is shown in the source currency.';
-    sheet.mergeCells('A' + (lastRow + 1) + ':N' + (lastRow + 1));
-    noteCell.font = { name: 'Aptos', size: 9, italic: true, color: { argb: 'FF6B7280' } };
-    noteCell.alignment = { vertical: 'middle' };
-    sheet.getRow(lastRow + 1).height = 20;
 
     const buffer = await workbook.xlsx.writeBuffer();
     this.triggerDownload(

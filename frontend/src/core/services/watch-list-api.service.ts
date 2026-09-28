@@ -19,6 +19,7 @@ export interface WatchListProduct {
   source_reference: string | null;
   source_date: string | null;
   official_website: string | null;
+  benchmark: 'BSE 500' | 'Nifty 50' | null;
   status: 'OWNED' | 'UNIVERSAL' | 'WATCHLIST';
   is_watchlisted: boolean;
   ownership: Array<{
@@ -75,6 +76,30 @@ export class WatchListApiService {
     });
   }
 
+  updateBenchmark(productId: number, benchmark: 'BSE 500' | 'Nifty 50'): Observable<{ id: number; benchmark: string }> {
+    return this.patchWithCsrf<{ id: number; benchmark: string }>(
+      `${this.baseUrl}/products/${productId}/benchmark/`,
+      { benchmark },
+    );
+  }
+
+  getBenchmarkPerformance(productId: number, period: '1M' | '3M' | '6M' | '1Y' | '3Y' | '5Y' = '1Y'): Observable<any> {
+    return this.http.get(
+      `${this.baseUrl}/products/${productId}/benchmark-performance/`,
+      {
+        params: new HttpParams().set('period', period),
+        withCredentials: true,
+      },
+    );
+  }
+
+  getBenchmarksPerformance(): Observable<{ benchmarks: any[] }> {
+    return this.http.get<{ benchmarks: any[] }>(
+      `${this.baseUrl}/benchmarks-performance/`,
+      { withCredentials: true },
+    );
+  }
+
   getPerformance(productId: number): Observable<any> {
     return this.http.get(`${this.baseUrl}/products/${productId}/performance/`, {
       withCredentials: true,
@@ -113,6 +138,22 @@ export class WatchListApiService {
       selected: number;
       removed: number;
     }>(`${this.baseUrl}/bulk-remove/`, { product_ids: productIds });
+  }
+
+  private patchWithCsrf<T>(url: string, body: unknown): Observable<T> {
+    return this.http.get(`${environment.apiUrl}/api/health/`, {
+      withCredentials: true,
+      responseType: 'json',
+    }).pipe(
+      switchMap(() => {
+        const token = this.getCsrfToken();
+        const headers = token ? new HttpHeaders({ 'X-CSRFToken': token }) : undefined;
+        return this.http.patch<T>(url, body, {
+          withCredentials: true,
+          headers,
+        });
+      }),
+    );
   }
 
   private postWithCsrf<T>(url: string, body: unknown): Observable<T> {

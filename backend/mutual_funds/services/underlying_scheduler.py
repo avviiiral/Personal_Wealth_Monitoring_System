@@ -28,7 +28,7 @@ class MutualFundUnderlyingScheduler:
                 return
             cls._started = True
             threading.Thread(target=cls._run, name="mutual-fund-underlying-scheduler", daemon=True).start()
-            logger.info("Mutual-fund underlying/Watch List scheduler started with startup fetch and 06:00 IST daily refresh.")
+            logger.info("Mutual-fund underlying scheduler started; Watch List refresh is handled by the daily refresh command.")
 
     @classmethod
     def _seconds_until_next_run(cls):

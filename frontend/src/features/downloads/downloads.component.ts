@@ -675,28 +675,218 @@ export class DownloadsComponent implements OnInit {
       new Map(products.map(product => [product.id, product])).values(),
     );
 
-    const rows = uniqueProducts.map(product => ({
-      type: product.product_type === 'MUTUAL_FUND' ? 'Mutual Fund' : 'PMS',
-      product: product.name,
-      provider: product.provider || '-',
-      category: product.category || '-',
-      identifier: product.isin || product.external_identifier || '-',
-      status: product.status,
-      one_month: product.metrics?.['1M'] ?? null,
-      three_month: product.metrics?.['3M'] ?? null,
-      six_month: product.metrics?.['6M'] ?? null,
-      one_year: product.metrics?.['1Y'] ?? null,
-      three_year: product.metrics?.['3Y'] ?? null,
-      five_year: product.metrics?.['5Y'] ?? null,
-      cagr: product.metrics?.['CAGR'] ?? null,
-      aum: product.mutual_fund?.aum ?? product.pms?.aum ?? null,
-    }));
+    let benchmarkRows: any[] = [
+      { benchmark: 'Nifty 50', available: false },
+      { benchmark: 'BSE 500', available: false },
+    ];
+    try {
+      const response = await firstValueFrom(this.watchListApi.getBenchmarksPerformance());
+      benchmarkRows = ['Nifty 50', 'BSE 500'].map(name =>
+        response.benchmarks.find(item => item?.benchmark === name) || {
+          benchmark: name,
+          available: false,
+        },
+      );
+    } catch (error) {
+      console.warn('Benchmark data unavailable for Watch List report:', error);
+    }
 
-    await this.exportWorkbook('Watch List', 'Watch List', [
-      ['Type', 'type'], ['Product', 'product'], ['Provider', 'provider'], ['Category', 'category'],
-      ['Identifier', 'identifier'], ['Status', 'status'], ['1M', 'one_month'], ['3M', 'three_month'],
-      ['6M', 'six_month'], ['1Y', 'one_year'], ['3Y', 'three_year'], ['5Y', 'five_year'], ['CAGR', 'cagr'], ['AUM', 'aum'],
-    ], rows, 'watch_list');
+    await this.exportWatchListWorkbook(uniqueProducts, benchmarkRows);
+  }
+
+  private async exportWatchListWorkbook(products: WatchListProduct[], benchmarkRows: any[]): Promise<void> {
+    if (!products.length) throw new Error('No data matches the selected filters.');
+
+    const { default: ExcelJS } = await import('exceljs');
+    const workbook = new ExcelJS.Workbook();
+    workbook.creator = 'PWMS';
+    workbook.subject = 'Watch List';
+    workbook.title = 'Watch List';
+    workbook.created = new Date();
+
+    const sheet = workbook.addWorksheet('Watch List', {
+      views: [{ state: 'frozen', ySplit: 11, showGridLines: false }],
+      properties: { defaultRowHeight: 21 },
+    });
+
+    const exportTypeLabel = this.selectedWatchListType === 'ALL'
+      ? 'Mutual Funds & PMS'
+      : this.selectedWatchListType === 'MUTUAL_FUND' ? 'Mutual Funds' : 'PMS';
+
+    const columns: Array<[string, string, number]> = [
+      ['Type', 'type', 16], ['Product', 'product', 48], ['Provider', 'provider', 28],
+      ['Category', 'category', 24], ['Identifier', 'identifier', 24], ['Status', 'status', 14],
+      ['Benchmark', 'benchmark', 18], ['1M', 'one_month', 12], ['3M', 'three_month', 12],
+      ['6M', 'six_month', 12], ['1Y', 'one_year', 12], ['3Y', 'three_year', 12],
+      ['5Y', 'five_year', 12], ['CAGR', 'cagr', 12], ['AUM', 'aum', 18],
+    ];
+
+    columns.forEach(([, key, width], index) => {
+      const column = sheet.getColumn(index + 1);
+      column.key = key;
+      column.width = width;
+    });
+
+    sheet.mergeCells('A1:O1');
+    const title = sheet.getCell('A1');
+    title.value = 'Watch List Report';
+    title.font = { name: 'Aptos Display', size: 18, bold: true, color: { argb: 'FFFFFFFF' } };
+    title.alignment = { vertical: 'middle' };
+    title.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1F2937' } };
+    sheet.getRow(1).height = 32;
+
+    sheet.mergeCells('A2:O2');
+    const subtitle = sheet.getCell('A2');
+    subtitle.value = exportTypeLabel + ' • Watchlisted products • Generated ' + this.todayStamp();
+    subtitle.font = { name: 'Aptos', size: 10, italic: true, color: { argb: 'FF6B7280' } };
+    subtitle.alignment = { vertical: 'middle' };
+    sheet.getRow(2).height = 22;
+
+    sheet.mergeCells('A3:O3');
+    const summary = sheet.getCell('A3');
+    summary.value = 'Total watchlisted products: ' + products.length;
+    summary.font = { name: 'Aptos', size: 10, bold: true, color: { argb: 'FF374151' } };
+    summary.alignment = { vertical: 'middle' };
+    sheet.getRow(3).height = 22;
+
+    sheet.mergeCells('A4:O4');
+    const benchmarkTitle = sheet.getCell('A4');
+    benchmarkTitle.value = 'Benchmark Performance';
+    benchmarkTitle.font = { name: 'Aptos Display', size: 14, bold: true, color: { argb: 'FFFFFFFF' } };
+    benchmarkTitle.alignment = { vertical: 'middle' };
+    benchmarkTitle.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1F2937' } };
+    sheet.getRow(4).height = 28;
+
+    const benchmarkHeaders = ['Benchmark', '1M', '3M', '6M', '1Y', '3Y', '5Y', 'CAGR'];
+    const benchmarkHeader = sheet.getRow(5);
+    benchmarkHeaders.forEach((header, index) => {
+      const cell = benchmarkHeader.getCell(index + 1);
+      cell.value = header;
+      cell.font = { name: 'Aptos', size: 10, bold: true, color: { argb: 'FFFFFFFF' } };
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF374151' } };
+      cell.alignment = { vertical: 'middle', horizontal: 'center' };
+      cell.border = {
+        top: { style: 'thin', color: { argb: 'FFD1D5DB' } },
+        bottom: { style: 'thin', color: { argb: 'FFD1D5DB' } },
+      };
+    });
+    benchmarkHeader.height = 24;
+
+    ['Nifty 50', 'BSE 500'].forEach((benchmarkName, index) => {
+      const data = benchmarkRows.find(item => item?.benchmark === benchmarkName) || {};
+      const metrics = data?.benchmark_metrics || {};
+      const values = [
+        benchmarkName,
+        data?.available ? (metrics['1M'] ?? null) : 'Unavailable',
+        data?.available ? (metrics['3M'] ?? null) : 'Unavailable',
+        data?.available ? (metrics['6M'] ?? null) : 'Unavailable',
+        data?.available ? (metrics['1Y'] ?? null) : 'Unavailable',
+        data?.available ? (metrics['3Y'] ?? null) : 'Unavailable',
+        data?.available ? (metrics['5Y'] ?? null) : 'Unavailable',
+        data?.available ? (data?.benchmark_cagr_5y ?? metrics['5Y'] ?? null) : 'Unavailable',
+      ];
+      const row = sheet.getRow(6 + index);
+      values.forEach((value, column) => {
+        const cell = row.getCell(column + 1);
+        cell.value = value;
+        cell.font = { name: 'Aptos', size: 10, color: { argb: 'FF111827' } };
+        cell.alignment = { vertical: 'middle', horizontal: column === 0 ? 'left' : 'right' };
+        cell.border = { bottom: { style: 'hair', color: { argb: 'FFE5E7EB' } } };
+        if (typeof value === 'number') cell.numFmt = '0.00"%"';
+      });
+      if (index % 2 === 1) {
+        row.eachCell({ includeEmpty: true }, cell => {
+          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF9FAFB' } };
+        });
+      }
+      row.height = 21;
+    });
+
+    sheet.mergeCells('A9:O9');
+    const noteCell = sheet.getCell('A9');
+    noteCell.value = 'Note: Product return columns are Watch List returns. Benchmark Performance shows the selected Nifty 50 and BSE 500 market benchmark returns as of the latest available benchmark date.';
+    noteCell.font = { name: 'Aptos', size: 9, italic: true, color: { argb: 'FF6B7280' } };
+    noteCell.alignment = { vertical: 'middle' };
+    sheet.getRow(9).height = 20;
+
+    const headerRow = sheet.getRow(11);
+    columns.forEach(([label], index) => { headerRow.getCell(index + 1).value = label; });
+    headerRow.height = 26;
+    headerRow.eachCell(cell => {
+      cell.font = { name: 'Aptos', size: 10, bold: true, color: { argb: 'FFFFFFFF' } };
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF374151' } };
+      cell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
+      cell.border = {
+        top: { style: 'thin', color: { argb: 'FFD1D5DB' } },
+        bottom: { style: 'thin', color: { argb: 'FFD1D5DB' } },
+      };
+    });
+
+    products.forEach((product, index) => {
+      const row = sheet.addRow({
+        type: product.product_type === 'MUTUAL_FUND' ? 'Mutual Fund' : 'PMS',
+        product: product.name,
+        provider: product.provider || '-',
+        category: product.category || '-',
+        identifier: product.isin || product.external_identifier || '-',
+        status: product.status,
+        benchmark: product.benchmark || '',
+        one_month: product.metrics?.['1M'] ?? null,
+        three_month: product.metrics?.['3M'] ?? null,
+        six_month: product.metrics?.['6M'] ?? null,
+        one_year: product.metrics?.['1Y'] ?? null,
+        three_year: product.metrics?.['3Y'] ?? null,
+        five_year: product.metrics?.['5Y'] ?? null,
+        cagr: product.metrics?.['CAGR'] ?? null,
+        aum: product.mutual_fund?.aum ?? product.pms?.aum ?? null,
+      });
+
+      row.eachCell({ includeEmpty: true }, cell => {
+        cell.font = { name: 'Aptos', size: 10, color: { argb: 'FF111827' } };
+        cell.alignment = { vertical: 'middle' };
+        cell.border = { bottom: { style: 'hair', color: { argb: 'FFE5E7EB' } } };
+      });
+      row.height = 21;
+      if (index % 2 === 1) {
+        row.eachCell({ includeEmpty: true }, cell => {
+          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF9FAFB' } };
+        });
+      }
+
+      [8, 9, 10, 11, 12, 13, 14].forEach(column => {
+        const cell = row.getCell(column);
+        if (typeof cell.value === 'number') {
+          cell.numFmt = '0.00"%"';
+          cell.alignment = { vertical: 'middle', horizontal: 'right' };
+        }
+      });
+
+      const aum = row.getCell(15);
+      if (typeof aum.value === 'number') {
+        aum.numFmt = '#,##0.00';
+        aum.alignment = { vertical: 'middle', horizontal: 'right' };
+      }
+      row.getCell(1).alignment = { vertical: 'middle', horizontal: 'center' };
+      row.getCell(6).alignment = { vertical: 'middle', horizontal: 'center' };
+      row.getCell(7).alignment = { vertical: 'middle', horizontal: 'center' };
+    });
+
+    sheet.autoFilter = { from: 'A11', to: 'O11' };
+    sheet.getColumn(2).alignment = { vertical: 'middle', wrapText: true };
+    sheet.getColumn(3).alignment = { vertical: 'middle', wrapText: true };
+    sheet.getColumn(4).alignment = { vertical: 'middle', wrapText: true };
+    sheet.getColumn(5).alignment = { vertical: 'middle', wrapText: true };
+
+    const buffer = await workbook.xlsx.writeBuffer();
+    const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = 'watch_list_' + this.selectedWatchListType.toLowerCase() + '_' + this.todayStamp() + '.xlsx';
+    document.body.appendChild(anchor);
+    anchor.click();
+    document.body.removeChild(anchor);
+    URL.revokeObjectURL(url);
   }
 
   private filteredHoldingRows(): HoldingReportRow[] {

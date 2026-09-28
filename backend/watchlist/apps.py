@@ -1,6 +1,8 @@
 import logging
 import threading
 import time
+from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 
 from django.apps import AppConfig
 from django.db import close_old_connections
@@ -16,6 +18,7 @@ class WatchlistConfig(AppConfig):
     _refresh_thread = None
     _refresh_lock = threading.Lock()
     REFRESH_INTERVAL_SECONDS = 24 * 60 * 60
+    IST = ZoneInfo("Asia/Kolkata")
 
     def ready(self):
         # Django's autoreloader starts the application twice. Only start the
@@ -36,9 +39,13 @@ class WatchlistConfig(AppConfig):
 
     @classmethod
     def _watchlist_refresh_loop(cls):
-        # Give Django time to finish application initialization before the
-        # first network/database refresh.
-        time.sleep(2)
+        # Do not perform a large Watch List refresh during Django startup.
+        # The daily schedule below is the single automatic refresh path.
+        now = datetime.now(cls.IST)
+        next_run = now.replace(hour=6, minute=0, second=0, microsecond=0)
+        if now >= next_run:
+            next_run += timedelta(days=1)
+        time.sleep(max(1, (next_run - now).total_seconds()))
 
         while True:
             try:

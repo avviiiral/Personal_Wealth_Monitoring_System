@@ -8,7 +8,6 @@ from decimal import Decimal, InvalidOperation
 import logging
 
 import requests
-from django.db import transaction
 from django.utils import timezone
 
 from watchlist.models import DiscoveryRun, InvestmentProduct, MutualFundProduct, PerformanceSnapshot, PMSProduct, ProductType

@@ -54,7 +54,10 @@ export class WatchListComponent implements OnInit, OnDestroy {
   downloadModalOpen = false;
   downloadType: 'PMS' | 'MUTUAL_FUND' | 'ALL' = 'ALL';
   downloading = false;
-  readonly benchmarkOptions: Array<'BSE 500' | 'Nifty 50'> = ['BSE 500', 'Nifty 50'];
+  readonly benchmarkOptions: Array<{ value: 'BSE 500' | 'Nifty 50'; label: string }> = [
+    { value: 'BSE 500', label: 'BSE 500 TRI' },
+    { value: 'Nifty 50', label: 'Nifty 50' },
+  ];
   readonly benchmarkPeriods: BenchmarkPeriod[] = ['1M', '3M', '6M', '1Y', '3Y', '5Y'];
   private readonly updatingBenchmarkIds = new Set<number>();
   benchmarkModalProduct: WatchListProduct | null = null;
@@ -885,7 +888,7 @@ export class WatchListComponent implements OnInit, OnDestroy {
     });
 
     const noteCell = sheet.getCell('A' + noteRow);
-    noteCell.value = 'Note: Product return columns are Watch List returns. Benchmark Performance shows the selected Nifty 50 and BSE 500 market benchmark returns as of the latest available benchmark date.';
+    noteCell.value = 'Note: Product return columns are Watch List returns. Benchmark Performance shows the selected Nifty 50 and BSE 500 TRI market benchmark returns as of the latest available benchmark date.';
     sheet.mergeCells('A' + noteRow + ':O' + noteRow);
     noteCell.font = { name: 'Aptos', size: 9, italic: true, color: { argb: 'FF6B7280' } };
     noteCell.alignment = { vertical: 'middle' };
@@ -992,6 +995,10 @@ export class WatchListComponent implements OnInit, OnDestroy {
         this.loading = false;
       },
     });
+  }
+
+  benchmarkDisplayName(benchmark: string | null | undefined): string {
+    return benchmark === 'BSE 500' ? 'BSE 500 TRI' : (benchmark || '—');
   }
 
   metric(product: WatchListProduct, key: string): number | null { return product.metrics?.[key] ?? null; }

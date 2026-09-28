@@ -30,6 +30,11 @@ class AMFIPerformanceService:
     )
 
     @staticmethod
+    def _is_idcw_option(option):
+        normalized = str(option or "").strip().upper()
+        return "IDCW" in normalized
+
+    @staticmethod
     def _decimal(value):
         if value in (None, "", "-"):
             return None
@@ -267,22 +272,32 @@ class AMFIPerformanceService:
                 continue
 
             values = {}
-            for field, _ in cls.PERIODS:
-                record = periods.get(field)
-                if record:
-                    PerformanceSnapshot.objects.update_or_create(
-                        product=product,
-                        date=record["date"],
-                        source=cls.SOURCE,
-                        defaults={"nav_or_value": record["nav"], "source_reference": cls.HISTORY_URL},
-                    )
-                    snapshots_written += 1
-                    elapsed_days = (latest.date - record["date"]).days
-                    values[field] = cls._return_percent(
-                        latest.nav_or_value,
-                        record["nav"],
-                        elapsed_days=elapsed_days,
-                    )
+            is_idcw = cls._is_idcw_option(
+                getattr(getattr(product, "mutual_fund", None), "option", None)
+            )
+
+            if not is_idcw:
+                for field, _ in cls.PERIODS:
+                    record = periods.get(field)
+                    if record:
+                        PerformanceSnapshot.objects.update_or_create(
+                            product=product,
+                            date=record["date"],
+                            source=cls.SOURCE,
+                            defaults={"nav_or_value": record["nav"], "source_reference": cls.HISTORY_URL},
+                        )
+                        snapshots_written += 1
+                        elapsed_days = (latest.date - record["date"]).days
+                        values[field] = cls._return_percent(
+                            latest.nav_or_value,
+                            record["nav"],
+                            elapsed_days=elapsed_days,
+                        )
+            else:
+                # An IDCW NAV series alone cannot produce investor total
+                # returns because distributions reduce NAV. Do not expose
+                # NAV-only returns as if they were total returns.
+                values = {field: None for field, _ in cls.PERIODS}
 
             if values:
                 update_fields = []

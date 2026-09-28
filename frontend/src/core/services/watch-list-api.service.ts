@@ -107,14 +107,13 @@ export class WatchListApiService {
   }
 
   refresh(): Observable<any> {
-    return this.http.post(`${this.baseUrl}/refresh/`, {}, { withCredentials: true });
+    return this.postWithCsrf<any>(`${this.baseUrl}/refresh/`, {});
   }
 
   toggleWatch(productId: number): Observable<{ id: number; is_watchlisted: boolean }> {
-    return this.http.post<{ id: number; is_watchlisted: boolean }>(
+    return this.postWithCsrf<{ id: number; is_watchlisted: boolean }>(
       `${this.baseUrl}/products/${productId}/toggle/`,
       {},
-      { withCredentials: true },
     );
   }
 

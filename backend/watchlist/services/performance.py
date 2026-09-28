@@ -2,7 +2,6 @@ from datetime import date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 
 import requests
-from django.db import transaction
 from django.utils import timezone
 
 from watchlist.models import InvestmentProduct, PerformanceSnapshot, ProductType
@@ -211,7 +210,6 @@ class AMFIPerformanceService:
         return (ratio - Decimal("1")) * Decimal("100")
 
     @classmethod
-    @transaction.atomic
     def refresh(cls):
         products = list(
             InvestmentProduct.objects.filter(

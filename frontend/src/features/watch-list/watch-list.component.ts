@@ -552,7 +552,7 @@ export class WatchListComponent implements OnInit, OnDestroy {
     return [...fund, ...benchmark].map(point => point.value);
   }
 
-  private benchmarkChartRange(): { min: number; max: number } {
+  benchmarkChartRange(): { min: number; max: number } {
     const values = this.benchmarkChartValues();
     if (!values.length) return { min: 99, max: 101 };
 
@@ -650,7 +650,7 @@ export class WatchListComponent implements OnInit, OnDestroy {
 
     const actualDates = [...new Set(all.map(point => point.date))].sort();
     return Array.from({ length: tickCount }, (_, index) => {
-      const ratio = tickCount === 1 ? 0 : index / (tickCount - 1);
+      const ratio = index / (tickCount - 1);
       const targetTime = startTime + (endTime - startTime) * ratio;
       const nearestDate = actualDates.reduce((closest, candidate) => {
         const candidateDistance = Math.abs(new Date(candidate).getTime() - targetTime);

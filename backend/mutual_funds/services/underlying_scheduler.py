@@ -12,7 +12,11 @@ IST = ZoneInfo("Asia/Kolkata")
 
 
 class MutualFundUnderlyingScheduler:
-    """Run underlying ingestion at startup and every day at 06:00 IST."""
+    """Run underlying ingestion at startup and every day at 06:00 IST.
+
+    Watch List universe refresh is owned by WatchlistConfig so there is only
+    one automatic Watch List scheduler.
+    """
 
     _started = False
     _lock = threading.Lock()
@@ -42,10 +46,6 @@ class MutualFundUnderlyingScheduler:
                 call_command("fetch_mf_underlying")
             except Exception:
                 logger.exception("Mutual-fund underlying fetch failed.")
-            try:
-                call_command("refresh_watchlist")
-            except Exception:
-                logger.exception("Watch List refresh failed.")
         finally:
             close_old_connections()
 

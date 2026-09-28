@@ -332,3 +332,56 @@ class SIPInstallment(models.Model):
 # Keep the historical models above stable while exposing the new
 # disclosure model through the conventional mutual_funds.models module.
 from .underlying_models import MutualFundUnderlying  # noqa: E402,F401
+
+
+
+class AMFIMasterScheme(models.Model):
+    """Global AMFI scheme master shared by every PWMS user."""
+
+    scheme_code = models.CharField(max_length=50, unique=True)
+    scheme_name = models.CharField(max_length=300)
+    isin_growth = models.CharField(max_length=30, blank=True, null=True)
+    isin_dividend = models.CharField(max_length=30, blank=True, null=True)
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["scheme_name"]
+        indexes = [
+            models.Index(fields=["isin_growth"]),
+            models.Index(fields=["isin_dividend"]),
+        ]
+
+    def __str__(self):
+        return f"{self.scheme_code} - {self.scheme_name}"
+
+
+class AMFIMasterNAV(models.Model):
+    """Global AMFI NAV history shared by every PWMS user."""
+
+    scheme = models.ForeignKey(
+        AMFIMasterScheme,
+        on_delete=models.CASCADE,
+        related_name="nav_history",
+    )
+    date = models.DateField()
+    nav = models.DecimalField(max_digits=20, decimal_places=6)
+    source = models.CharField(max_length=50, default="AMFI")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-date"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["scheme", "date", "source"],
+                name="unique_amfi_master_nav",
+            )
+        ]
+        indexes = [
+            models.Index(fields=["scheme", "-date"]),
+            models.Index(fields=["date"]),
+        ]
+
+    def __str__(self):
+        return f"{self.scheme.scheme_name} - {self.date} - {self.nav}"

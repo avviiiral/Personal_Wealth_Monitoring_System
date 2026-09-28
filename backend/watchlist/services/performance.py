@@ -195,10 +195,15 @@ class AMFIPerformanceService:
         return selected, failed
 
     @classmethod
-    def _return_percent(cls, latest_nav, historical_nav):
+    def _return_percent(cls, latest_nav, historical_nav, elapsed_days=None):
         if latest_nav is None or historical_nav in (None, Decimal("0")):
             return None
-        return (latest_nav / historical_nav - Decimal("1")) * Decimal("100")
+
+        ratio = latest_nav / historical_nav
+        if elapsed_days is not None and elapsed_days > 365:
+            return (ratio ** (Decimal("365.2425") / Decimal(str(elapsed_days))) - Decimal("1")) * Decimal("100")
+
+        return (ratio - Decimal("1")) * Decimal("100")
 
     @classmethod
     @transaction.atomic
@@ -272,7 +277,12 @@ class AMFIPerformanceService:
                         defaults={"nav_or_value": record["nav"], "source_reference": cls.HISTORY_URL},
                     )
                     snapshots_written += 1
-                    values[field] = cls._return_percent(latest.nav_or_value, record["nav"])
+                    elapsed_days = (latest.date - record["date"]).days
+                    values[field] = cls._return_percent(
+                        latest.nav_or_value,
+                        record["nav"],
+                        elapsed_days=elapsed_days,
+                    )
 
             if values:
                 update_fields = []

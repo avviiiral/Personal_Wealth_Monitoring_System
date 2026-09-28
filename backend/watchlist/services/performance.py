@@ -226,6 +226,30 @@ class AMFIPerformanceService:
         ).order_by("-date"):
             latest_snapshots.setdefault(snapshot.product_id, snapshot)
 
+        # IDCW NAV history cannot provide total returns without distributions.
+        # Clear any legacy NAV-derived metrics in one bulk update and skip
+        # historical downloads for IDCW schemes entirely.
+        idcw_product_ids = [
+            product.id
+            for product in products
+            if cls._is_idcw_option(
+                getattr(getattr(product, "mutual_fund", None), "option", None)
+            )
+        ]
+        if idcw_product_ids:
+            PerformanceSnapshot.objects.filter(
+                product_id__in=idcw_product_ids,
+                source=cls.SOURCE,
+            ).update(
+                return_1m=None,
+                return_3m=None,
+                return_6m=None,
+                return_1y=None,
+                return_3y=None,
+                return_5y=None,
+                cagr=None,
+            )
+
         products_needing_history = [
             product
             for product in products
@@ -233,15 +257,6 @@ class AMFIPerformanceService:
             or any(
                 getattr(latest_snapshots[product.id], field) is None
                 for field, _ in cls.PERIODS
-            )
-            or (
-                cls._is_idcw_option(
-                    getattr(getattr(product, "mutual_fund", None), "option", None)
-                )
-                and any(
-                    getattr(latest_snapshots[product.id], field) is not None
-                    for field, _ in cls.PERIODS
-                )
             )
         ]
         if not products_needing_history:
@@ -284,20 +299,6 @@ class AMFIPerformanceService:
             is_idcw = cls._is_idcw_option(
                 getattr(getattr(product, "mutual_fund", None), "option", None)
             )
-
-            if is_idcw:
-                PerformanceSnapshot.objects.filter(
-                    product=product,
-                    source=cls.SOURCE,
-                ).update(
-                    return_1m=None,
-                    return_3m=None,
-                    return_6m=None,
-                    return_1y=None,
-                    return_3y=None,
-                    return_5y=None,
-                    cagr=None,
-                )
 
             if not is_idcw:
                 for field, _ in cls.PERIODS:

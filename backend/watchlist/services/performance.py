@@ -234,6 +234,15 @@ class AMFIPerformanceService:
                 getattr(latest_snapshots[product.id], field) is None
                 for field, _ in cls.PERIODS
             )
+            or (
+                cls._is_idcw_option(
+                    getattr(getattr(product, "mutual_fund", None), "option", None)
+                )
+                and any(
+                    getattr(latest_snapshots[product.id], field) is not None
+                    for field, _ in cls.PERIODS
+                )
+            )
         ]
         if not products_needing_history:
             return {"products": len(products), "history_requests": 0, "snapshots": 0, "metrics_updated": 0, "failed": 0}

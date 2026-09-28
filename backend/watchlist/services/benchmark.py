@@ -25,14 +25,14 @@ class BenchmarkPerformanceService:
 
     TICKERS = {
         "Nifty 50": "^NSEI",
-        "BSE 500": "BSE500",
+        "BSE 500": "BSE500T",
     }
 
     BSE500_FILE = os.getenv(
         "WATCHLIST_BENCHMARK_BSE500_FILE",
-        str(Path(__file__).resolve().parents[1] / "data" / "bse500.csv"),
+        str(Path(__file__).resolve().parents[1] / "data" / "bse500_tri.csv"),
     )
-    # Optional override for deployments that have a licensed BSE500 feed.
+    # Optional override for deployments that have a licensed BSE500 TRI feed.
     BSE500_URL = os.getenv("WATCHLIST_BENCHMARK_BSE500_URL", "").strip()
     BSE500_API = "https://api.bseindia.com/BseIndiaAPI/api/ProduceCSVForDate/w"
     BSE_HEADERS = {
@@ -106,7 +106,7 @@ class BenchmarkPerformanceService:
     def _load_bse_csv(cls, text):
         reader = csv.DictReader(io.StringIO(text))
         if not reader.fieldnames:
-            raise ValueError("BSE 500 source has no CSV header")
+            raise ValueError("BSE 500 TRI source has no CSV header")
 
         normalized_fields = {
             str(field).strip().lower().replace(" ", "").replace("_", ""): field
@@ -129,7 +129,6 @@ class BenchmarkPerformanceService:
                     "closevalue",
                     "indexvalue",
                     "indexlevel",
-                    "indexvalue",
                     "value",
                 )
                 if key in normalized_fields
@@ -138,7 +137,7 @@ class BenchmarkPerformanceService:
         )
         if not date_field or not value_field:
             raise ValueError(
-                "BSE 500 source must contain Date and Close/Index Value columns"
+                "BSE 500 TRI source must contain Date and Close/Index Value columns"
             )
 
         points = []
@@ -148,31 +147,31 @@ class BenchmarkPerformanceService:
             raw_date = row.get(date_field)
             raw_value = row.get(value_field)
             if raw_date in (None, "") or raw_value in (None, ""):
-                raise ValueError(f"BSE 500 row {row_number} has missing date/value")
+                raise ValueError(f"BSE 500 TRI row {row_number} has missing date/value")
 
             point_date = cls._parse_date(raw_date)
             if point_date is None:
                 raise ValueError(
-                    f"BSE 500 row {row_number} has invalid date: {raw_date!r}"
+                    f"BSE 500 TRI row {row_number} has invalid date: {raw_date!r}"
                 )
 
             try:
                 numeric_value = float(str(raw_value).replace(",", "").strip())
             except (TypeError, ValueError) as exc:
                 raise ValueError(
-                    f"BSE 500 row {row_number} has invalid value: {raw_value!r}"
+                    f"BSE 500 TRI row {row_number} has invalid value: {raw_value!r}"
                 ) from exc
 
             if numeric_value <= 0:
                 raise ValueError(
-                    f"BSE 500 row {row_number} has non-positive value"
+                    f"BSE 500 TRI row {row_number} has non-positive value"
                 )
             if point_date in seen:
                 raise ValueError(
-                    f"BSE 500 contains duplicate date: {point_date.isoformat()}"
+                    f"BSE 500 TRI contains duplicate date: {point_date.isoformat()}"
                 )
             if previous is not None and point_date <= previous:
-                raise ValueError("BSE 500 dates must be strictly increasing")
+                raise ValueError("BSE 500 TRI dates must be strictly increasing")
 
             seen.add(point_date)
             previous = point_date
@@ -184,7 +183,7 @@ class BenchmarkPerformanceService:
 
     @classmethod
     def _parse_bse_api_csv(cls, text):
-        """Parse BSE's historical CSV while requiring the requested BSE500 identity when supplied."""
+        """Parse BSE's historical CSV and require the BSE500T identity when supplied."""
         reader = csv.DictReader(io.StringIO(text))
         if not reader.fieldnames:
             return []
@@ -210,13 +209,14 @@ class BenchmarkPerformanceService:
                 if row.get(index_field) not in (None, "")
             }
             if identities and not any(
-                identity == "BSE500"
-                or "BSE 500" in identity
-                or "BSE500" in identity
+                identity in {"BSE500T", "BSE 500 TRI", "BSE 500 TOTAL RETURN INDEX"}
+                or "BSE500T" in identity
+                or "BSE 500 TRI" in identity
                 for identity in identities
             ):
                 raise ValueError(
-                    "BSE historical endpoint did not return the requested BSE500 price-return series"
+                    "BSE historical endpoint did not return the requested BSE500T "
+                    "Total Return Index series"
                 )
 
         date_field = next(
@@ -230,7 +230,13 @@ class BenchmarkPerformanceService:
         value_field = next(
             (
                 fields[key]
-                for key in ("close", "closevalue", "indexvalue", "indexlevel", "value")
+                for key in (
+                    "close",
+                    "closevalue",
+                    "indexvalue",
+                    "indexlevel",
+                    "value",
+                )
                 if key in fields
             ),
             None,
@@ -271,7 +277,7 @@ class BenchmarkPerformanceService:
         response = requests.get(
             cls.BSE500_API,
             params={
-                "strIndex": "BSE500",
+                "strIndex": "BSE500T",
                 "dtFromDate": start.strftime("%d/%m/%Y"),
                 "dtToDate": end.strftime("%d/%m/%Y"),
                 "period": "D",
@@ -282,7 +288,7 @@ class BenchmarkPerformanceService:
         response.raise_for_status()
         points = cls._parse_bse_api_csv(response.text)
         if not points:
-            raise ValueError("BSE500 historical endpoint returned no observations")
+            raise ValueError("BSE500T historical endpoint returned no observations")
         return points
 
     @classmethod
@@ -304,7 +310,6 @@ class BenchmarkPerformanceService:
 
     @classmethod
     def _bse_series(cls, start):
-        """Load only BSE500 price-return data; never substitute BSE500 price return."""
         source_file = Path(cls.BSE500_FILE)
         if source_file.exists():
             points = cls._load_bse_csv(
@@ -519,59 +524,4 @@ class BenchmarkPerformanceService:
                 "fund": fund_chart,
                 "benchmark": benchmark_chart,
             },
-        }
-
-
-class BenchmarkDataRefreshService:
-    """Refresh BSE500 automatically and persist a validated local cache."""
-
-    @classmethod
-    def refresh_bse500(cls, start=None):
-        service = BenchmarkPerformanceService
-        start = start or (
-            timezone.now().date()
-            - timedelta(days=service.PERIOD_DAYS["5Y"] + 31)
-        )
-        source_file = Path(service.BSE500_FILE)
-
-        # Reuse the existing cache and fetch only the missing tail on normal runs.
-        if source_file.exists():
-            cached = service._load_bse_csv(
-                source_file.read_text(encoding="utf-8-sig")
-            )
-            if cached:
-                latest = date.fromisoformat(cached[-1]["date"])
-                fetch_start = max(start, latest - timedelta(days=7))
-            else:
-                cached = []
-                fetch_start = start
-        else:
-            cached = []
-            fetch_start = start
-
-        points = service._fetch_bse_history(fetch_start)
-        merged = {point["date"]: point for point in cached if date.fromisoformat(point["date"]) >= start}
-        merged.update(point for point in points if date.fromisoformat(point["date"]) >= start)
-        ordered = [merged[key] for key in sorted(merged)]
-
-        if not ordered:
-            return {
-                "available": False,
-                "updated": 0,
-                "reason": "BSE500 historical endpoint returned no observations.",
-            }
-
-        source_file.parent.mkdir(parents=True, exist_ok=True)
-        source_file.write_text(
-            "Date,Close\n"
-            + "\n".join(
-                f"{point['date']},{point['value']}" for point in ordered
-            )
-            + "\n",
-            encoding="utf-8",
-        )
-        return {
-            "available": True,
-            "updated": len(ordered),
-            "as_of_date": ordered[-1]["date"],
         }

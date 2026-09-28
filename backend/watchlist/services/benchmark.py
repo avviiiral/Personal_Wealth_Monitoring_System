@@ -367,10 +367,14 @@ class BenchmarkPerformanceService:
         return cls._series(cls._ticker(benchmark), start)
 
     @staticmethod
-    def _period_return(points, days):
+    def _period_return_detail(points, days):
         if not points:
             return None
-        cutoff = date.fromisoformat(points[-1]["date"]) - timedelta(days=days)
+
+        points = sorted(points, key=lambda point: point["date"])
+        end = points[-1]
+        end_date = date.fromisoformat(end["date"])
+        cutoff = end_date - timedelta(days=days)
         eligible = [
             point
             for point in points
@@ -378,21 +382,41 @@ class BenchmarkPerformanceService:
         ]
         if not eligible:
             return None
+
         start = eligible[-1]
-        end = points[-1]
-        if not start["value"] or not end["value"]:
+        start_date = date.fromisoformat(start["date"])
+        start_value = float(start["value"])
+        end_value = float(end["value"])
+        if start_value <= 0 or end_value <= 0:
             return None
-        ratio = end["value"] / start["value"]
+
+        elapsed_days = max((end_date - start_date).days, 1)
+        ratio = end_value / start_value
         if days > 365:
-            elapsed = max(
-                (
-                    date.fromisoformat(end["date"])
-                    - date.fromisoformat(start["date"])
-                ).days,
-                1,
-            )
-            return (ratio ** (365.25 / elapsed) - 1.0) * 100.0
-        return (ratio - 1.0) * 100.0
+            return {
+                "return": (ratio ** (365.25 / elapsed_days) - 1.0) * 100.0,
+                "start_date": start["date"],
+                "end_date": end["date"],
+                "start_value": start_value,
+                "end_value": end_value,
+                "elapsed_days": elapsed_days,
+                "method": "CAGR",
+            }
+
+        return {
+            "return": (ratio - 1.0) * 100.0,
+            "start_date": start["date"],
+            "end_date": end["date"],
+            "start_value": start_value,
+            "end_value": end_value,
+            "elapsed_days": elapsed_days,
+            "method": "Cumulative return",
+        }
+
+    @classmethod
+    def _period_return(cls, points, days):
+        detail = cls._period_return_detail(points, days)
+        return detail["return"] if detail else None
 
     @classmethod
     def _fund_metrics(cls, product):
@@ -417,12 +441,16 @@ class BenchmarkPerformanceService:
                 for snapshot in snapshots
                 if snapshot.nav_or_value and float(snapshot.nav_or_value) > 0
             ]
-            metrics = {
-                period: cls._period_return(points, days)
+            details = {
+                period: cls._period_return_detail(points, days)
                 for period, days in cls.PERIOD_DAYS.items()
             }
+            metrics = {
+                period: detail["return"] if detail else None
+                for period, detail in details.items()
+            }
             latest = snapshots[-1] if snapshots else None
-            return metrics, latest
+            return metrics, details, latest
 
         # PMS/provider-reported returns are retained because nav_or_value is
         # not necessarily a portfolio NAV from which a return can be rebuilt.
@@ -450,7 +478,8 @@ class BenchmarkPerformanceService:
             )
             metrics[period] = float(value) if value is not None else None
         latest = snapshots[0] if snapshots else None
-        return metrics, latest
+        details = {period: None for period in fields}
+        return metrics, details, latest
 
     @staticmethod
     def _fund_series(product, start):
@@ -505,15 +534,20 @@ class BenchmarkPerformanceService:
                 "message": "Benchmark market data is not available from the configured data source.",
             }
 
-        metrics = {
-            period: cls._period_return(series, days)
+        details = {
+            period: cls._period_return_detail(series, days)
             for period, days in cls.PERIOD_DAYS.items()
+        }
+        metrics = {
+            period: detail["return"] if detail else None
+            for period, detail in details.items()
         }
         return {
             "benchmark": benchmark,
             "available": True,
             "as_of_date": series[-1]["date"],
             "benchmark_metrics": metrics,
+            "benchmark_return_details": details,
             "benchmark_cagr_3y": metrics.get("3Y"),
             "benchmark_cagr_5y": metrics.get("5Y"),
         }
@@ -617,10 +651,14 @@ class BenchmarkPerformanceService:
                 "message": "Benchmark market data is not available from the configured data source.",
             }
 
-        fund_metrics, latest = cls._fund_metrics(product)
-        benchmark_metrics = {
-            period: cls._period_return(benchmark_series, days)
+        fund_metrics, fund_return_details, latest = cls._fund_metrics(product)
+        benchmark_return_details = {
+            period: cls._period_return_detail(benchmark_series, days)
             for period, days in cls.PERIOD_DAYS.items()
+        }
+        benchmark_metrics = {
+            period: detail["return"] if detail else None
+            for period, detail in benchmark_return_details.items()
         }
         differences = {
             period: (
@@ -674,7 +712,9 @@ class BenchmarkPerformanceService:
             "available": True,
             "as_of_date": benchmark_series[-1]["date"],
             "fund_metrics": fund_metrics,
+            "fund_return_details": fund_return_details,
             "benchmark_metrics": benchmark_metrics,
+            "benchmark_return_details": benchmark_return_details,
             "differences": differences,
             "comparison": comparison,
             "benchmark_cagr_3y": benchmark_metrics.get("3Y"),

@@ -659,7 +659,15 @@ class BenchmarkPerformanceService:
 
     @staticmethod
     def _normalized_chart_series(fund_points, benchmark_points, days):
-        """Build synchronized, independently normalized series for the selected period."""
+        """Build a synchronized, independently normalized chart series.
+
+        Mutual-fund NAV dates and exchange-index dates can differ by a
+        business day. Do not require exact date equality: for each benchmark
+        observation use the latest fund NAV on or before that date, provided
+        it is no more than three calendar days old. This avoids dropping an
+        otherwise valid daily fund series simply because the two data sources
+        publish the observation on different dates.
+        """
         fund = sorted(
             (
                 point
@@ -679,54 +687,73 @@ class BenchmarkPerformanceService:
         if not fund or not benchmark:
             return None
 
-        # Use the same effective end date for both series and derive the
-        # selected-period window from that common endpoint.
         end_date = min(
             date.fromisoformat(fund[-1]["date"]),
             date.fromisoformat(benchmark[-1]["date"]),
         )
         requested_start = end_date - timedelta(days=days)
 
-        fund_by_date = {
-            point["date"]: point
+        fund_window = [
+            point
             for point in fund
-            if requested_start <= date.fromisoformat(point["date"]) <= end_date
+            if requested_start - timedelta(days=3)
+            <= date.fromisoformat(point["date"]) <= end_date
             and float(point["value"]) > 0
-        }
-        benchmark_by_date = {
-            point["date"]: point
+        ]
+        benchmark_window = [
+            point
             for point in benchmark
             if requested_start <= date.fromisoformat(point["date"]) <= end_date
             and float(point["value"]) > 0
-        }
-        common_dates = sorted(set(fund_by_date).intersection(benchmark_by_date))
-        if len(common_dates) < 2:
+        ]
+        if not fund_window or not benchmark_window:
             return None
 
-        start_date = common_dates[0]
-        effective_end = common_dates[-1]
-        fund_base = float(fund_by_date[start_date]["value"])
-        benchmark_base = float(benchmark_by_date[start_date]["value"])
+        paired = []
+        fund_index = 0
+        latest_fund = None
+        for benchmark_point in benchmark_window:
+            benchmark_date = date.fromisoformat(benchmark_point["date"])
+            while fund_index < len(fund_window):
+                candidate = fund_window[fund_index]
+                candidate_date = date.fromisoformat(candidate["date"])
+                if candidate_date > benchmark_date:
+                    break
+                latest_fund = candidate
+                fund_index += 1
+
+            if latest_fund is None:
+                continue
+
+            fund_date = date.fromisoformat(latest_fund["date"])
+            if (benchmark_date - fund_date).days > 3:
+                continue
+
+            paired.append((benchmark_point, latest_fund))
+
+        if len(paired) < 2:
+            return None
+
+        start_date = paired[0][0]["date"]
+        effective_end = paired[-1][0]["date"]
+        fund_base = float(paired[0][1]["value"])
+        benchmark_base = float(paired[0][0]["value"])
         if fund_base <= 0 or benchmark_base <= 0:
             return None
 
         fund_chart = [
             {
-                "date": point["date"],
-                "value": float(point["value"]) / fund_base * 100.0,
+                "date": benchmark_point["date"],
+                "value": float(fund_point["value"]) / fund_base * 100.0,
             }
-            for point in fund
-            if start_date <= point["date"] <= effective_end
-            and float(point["value"]) > 0
+            for benchmark_point, fund_point in paired
         ]
         benchmark_chart = [
             {
-                "date": point["date"],
-                "value": float(point["value"]) / benchmark_base * 100.0,
+                "date": benchmark_point["date"],
+                "value": float(benchmark_point["value"]) / benchmark_base * 100.0,
             }
-            for point in benchmark
-            if start_date <= point["date"] <= effective_end
-            and float(point["value"]) > 0
+            for benchmark_point, _ in paired
         ]
 
         return {

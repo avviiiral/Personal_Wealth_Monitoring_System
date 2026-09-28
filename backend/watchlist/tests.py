@@ -192,6 +192,54 @@ class BenchmarkPerformanceTests(TestCase):
         self.assertEqual(result["benchmark"], "Nifty 50")
         self.assertIsNotNone(result["benchmark_metrics"]["5Y"])
 
+    def test_idcw_fund_returns_are_unavailable_without_distribution_data(self):
+        product = InvestmentProduct.objects.create(
+            product_type=ProductType.MUTUAL_FUND,
+            name="IDCW Benchmark Test",
+            isin="INF579M01AZ6",
+            identity_key="MUTUAL_FUND:ISIN:INF579M01AZ6",
+            source="AMFI",
+        )
+        MutualFundProduct.objects.create(
+            product=product,
+            scheme_code="152073",
+            option="IDCW",
+            benchmark="BSE 500",
+        )
+        PerformanceSnapshot.objects.create(
+            product=product,
+            date="2026-09-28",
+            nav_or_value=Decimal("13.68"),
+            source="AMFI",
+        )
+        with patch.object(
+            BenchmarkPerformanceService,
+            "_bse_series",
+            return_value=[
+                {"date": "2025-09-25", "value": 100.0},
+                {"date": "2026-09-28", "value": 98.0},
+            ],
+        ):
+            result = BenchmarkPerformanceService.calculate(product)
+
+        self.assertTrue(result["available"])
+        self.assertIsNone(result["fund_metrics"]["1Y"])
+        self.assertIsNone(result["fund_return_details"]["1Y"])
+        self.assertEqual(result["benchmark_metrics"]["1Y"], -2.0)
+
+    def test_return_detail_exposes_exact_observations(self):
+        points = [
+            {"date": "2025-09-25", "value": 100.0},
+            {"date": "2026-09-25", "value": 105.0},
+            {"date": "2026-09-28", "value": 106.0},
+        ]
+        detail = BenchmarkPerformanceService._period_return_detail(points, 365)
+        self.assertEqual(detail["start_date"], "2025-09-25")
+        self.assertEqual(detail["end_date"], "2026-09-28")
+        self.assertEqual(detail["start_value"], 105.0)
+        self.assertEqual(detail["end_value"], 106.0)
+        self.assertEqual(detail["method"], "Cumulative return")
+
     def test_benchmark_api_response_for_bse500(self):
         product = InvestmentProduct.objects.create(
             product_type=ProductType.MUTUAL_FUND,

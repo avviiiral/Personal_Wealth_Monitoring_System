@@ -176,7 +176,10 @@ class AMFIService:
         shifted NAV and Date two columns to the right.
         """
 
-        if len(parts) < 8:
+        # AMFI has published both the 8-column and newer compact 6-column
+        # latest formats. In both formats NAV is the penultimate field and
+        # Date is the final field.
+        if len(parts) < 6:
             return None
 
         scheme_code = parts[0]
@@ -236,6 +239,8 @@ class AMFIService:
         7 = Date
         """
 
+        # Historical downloads currently contain the full 8-column layout.
+        # Keep the minimum explicit because NAV and Date are positional here.
         if len(parts) < 8:
             return None
 

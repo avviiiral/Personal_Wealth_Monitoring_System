@@ -394,8 +394,38 @@ class BenchmarkPerformanceService:
             return (ratio ** (365.25 / elapsed) - 1.0) * 100.0
         return (ratio - 1.0) * 100.0
 
-    @staticmethod
-    def _fund_metrics(product):
+    @classmethod
+    def _fund_metrics(cls, product):
+        # Mutual-fund returns must be calculated from the actual AMFI NAV
+        # observations. Do not trust previously stored return_* fields here:
+        # older snapshots were calculated as simple cumulative returns even
+        # for 3Y/5Y, while benchmark 3Y/5Y are annualized.
+        if getattr(product, "product_type", None) == "MUTUAL_FUND":
+            snapshots = list(
+                PerformanceSnapshot.objects.filter(
+                    product=product,
+                    source="AMFI",
+                )
+                .exclude(nav_or_value__isnull=True)
+                .order_by("date", "id")
+            )
+            points = [
+                {
+                    "date": snapshot.date.isoformat(),
+                    "value": float(snapshot.nav_or_value),
+                }
+                for snapshot in snapshots
+                if snapshot.nav_or_value and float(snapshot.nav_or_value) > 0
+            ]
+            metrics = {
+                period: cls._period_return(points, days)
+                for period, days in cls.PERIOD_DAYS.items()
+            }
+            latest = snapshots[-1] if snapshots else None
+            return metrics, latest
+
+        # PMS/provider-reported returns are retained because nav_or_value is
+        # not necessarily a portfolio NAV from which a return can be rebuilt.
         snapshots = list(
             PerformanceSnapshot.objects.filter(product=product)
             .order_by("-date", "-id")

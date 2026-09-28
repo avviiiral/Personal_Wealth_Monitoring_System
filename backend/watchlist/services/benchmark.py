@@ -616,18 +616,28 @@ class BenchmarkPerformanceService:
         chart_days = cls.PERIOD_DAYS.get(
             chart_period, cls.PERIOD_DAYS["1Y"]
         )
-        chart_start = timezone.now().date() - timedelta(days=chart_days + 10)
-        benchmark_chart = [
-            point
-            for point in benchmark_series
-            if date.fromisoformat(point["date"]) >= chart_start
-        ]
-        fund_chart = cls._fund_series(product, chart_start)
-        normalized_chart = cls._normalized_chart_series(
-            fund_chart,
-            benchmark_chart,
-            chart_days,
-        )
+
+        # Keep chart availability consistent with the selected period's
+        # comparison result. For example, if the fund has no stored 5Y
+        # return, do not display a shorter history and label it as 5Y.
+        if (
+            fund_metrics.get(chart_period) is None
+            or benchmark_metrics.get(chart_period) is None
+        ):
+            normalized_chart = None
+        else:
+            chart_start = timezone.now().date() - timedelta(days=chart_days + 10)
+            benchmark_chart = [
+                point
+                for point in benchmark_series
+                if date.fromisoformat(point["date"]) >= chart_start
+            ]
+            fund_chart = cls._fund_series(product, chart_start)
+            normalized_chart = cls._normalized_chart_series(
+                fund_chart,
+                benchmark_chart,
+                chart_days,
+            )
 
         return {
             "benchmark": benchmark,

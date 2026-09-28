@@ -5,8 +5,11 @@ import time
 import requests
 
 from django.db import transaction
+from django.db.models import OuterRef, Subquery
 
 from mutual_funds.models import (
+    AMFIMasterNAV,
+    AMFIMasterScheme,
     MutualFundNAV,
     MutualFundScheme,
 )
@@ -173,15 +176,18 @@ class AMFIService:
         shifted NAV and Date two columns to the right.
         """
 
-        if len(parts) < 8:
+        # AMFI has published both the 8-column and newer compact 6-column
+        # latest formats. In both formats NAV is the penultimate field and
+        # Date is the final field.
+        if len(parts) < 6:
             return None
 
         scheme_code = parts[0]
         isin_first = parts[1]
         isin_second = parts[2]
-        scheme_name = parts[3]
-        nav_text = parts[6]
-        date_text = parts[7]
+        scheme_name = ";".join(parts[3:-2]).strip()
+        nav_text = parts[-2]
+        date_text = parts[-1]
 
         if not scheme_code.isdigit():
             return None
@@ -233,6 +239,8 @@ class AMFIService:
         7 = Date
         """
 
+        # Historical downloads currently contain the full 8-column layout.
+        # Keep the minimum explicit because NAV and Date are positional here.
         if len(parts) < 8:
             return None
 
@@ -597,58 +605,188 @@ class AMFIService:
 
         return len(records), len(records)
 
+    MASTER_SCHEME_BATCH_SIZE = 250
+    MASTER_NAV_BATCH_SIZE = 250
+
     @staticmethod
-    def import_latest_navs(owner):
-        """
-        Download the latest AMFI NAV file and import
-        all valid scheme records.
-        """
+    @transaction.atomic
+    def _import_master_records(records):
+        """Upsert AMFI data once into the global master tables."""
+        records_by_code = {}
+        for record in records:
+            records_by_code[record["scheme_code"]] = record
 
-        text = (
-            AMFIService
-            .download_latest_nav()
-        )
+        records = list(records_by_code.values())
+        if not records:
+            return {"schemes": 0, "nav_records": 0}
 
-        records = (
-            AMFIService
-            .parse_nav_file(
-                text,
-                historical=False,
+        schemes = [
+            AMFIMasterScheme(
+                scheme_code=record["scheme_code"],
+                scheme_name=record["scheme_name"],
+                isin_growth=record["isin_growth"],
+                isin_dividend=record["isin_dividend"],
+                is_active=True,
             )
+            for record in records
+        ]
+
+        AMFIMasterScheme.objects.bulk_create(
+            schemes,
+            batch_size=AMFIService.MASTER_SCHEME_BATCH_SIZE,
+            update_conflicts=True,
+            unique_fields=["scheme_code"],
+            update_fields=[
+                "scheme_name",
+                "isin_growth",
+                "isin_dividend",
+                "is_active",
+                "updated_at",
+            ],
         )
 
-        return AMFIService._import_records(
-            owner,
-            records,
+        scheme_ids = dict(
+            AMFIMasterScheme.objects
+            .filter(scheme_code__in=[record["scheme_code"] for record in records])
+            .values_list("scheme_code", "id")
         )
+
+        navs = [
+            AMFIMasterNAV(
+                scheme_id=scheme_ids[record["scheme_code"]],
+                date=record["date"],
+                nav=record["nav"],
+                source="AMFI",
+            )
+            for record in records
+            if record["date"] is not None and record["scheme_code"] in scheme_ids
+        ]
+
+        if navs:
+            AMFIMasterNAV.objects.bulk_create(
+                navs,
+                batch_size=AMFIService.MASTER_NAV_BATCH_SIZE,
+                update_conflicts=True,
+                unique_fields=["scheme", "date", "source"],
+                update_fields=["nav"],
+            )
+
+        return {"schemes": len(records), "nav_records": len(navs)}
 
     @staticmethod
-    def import_historical_navs(
-        owner,
+    def import_latest_master_navs():
+        """Download AMFI once and refresh the global master dataset."""
+        text = AMFIService.download_latest_nav()
+        records = AMFIService.parse_nav_file(text, historical=False)
+        return AMFIService._import_master_records(records)
+
+    @staticmethod
+    def import_historical_master_navs(
         from_date,
         to_date,
+        scheme_codes=None,
     ):
+        """Import historical AMFI NAVs into the global master dataset.
+
+        ``scheme_codes`` is an optional write-side filter. AMFI's historical
+        endpoint returns the full universe for the requested date range, but
+        callers such as the benchmark chart only need one scheme. Filtering
+        before the database upsert keeps the shared master authoritative
+        without duplicating unrelated historical rows.
         """
-        Download and import historical AMFI NAV data.
-        """
+        text = AMFIService.download_historical_nav(from_date, to_date)
+        records = AMFIService.parse_nav_file(text, historical=True)
+        if scheme_codes:
+            normalized_codes = {str(code).strip() for code in scheme_codes}
+            records = [
+                record
+                for record in records
+                if record["scheme_code"] in normalized_codes
+            ]
+        return AMFIService._import_master_records(records)
 
-        text = (
-            AMFIService
-            .download_historical_nav(
-                from_date,
-                to_date,
+    @staticmethod
+    def sync_user_nav_from_master(owner):
+        """Materialize the latest shared master NAVs into one family."""
+        from users.permissions import require_active_family
+
+        family = require_active_family(owner)
+        master_schemes = list(AMFIMasterScheme.objects.filter(is_active=True))
+        if not master_schemes:
+            return {"schemes": 0, "nav_records": 0}
+
+        codes = [scheme.scheme_code for scheme in master_schemes]
+        family_schemes = [
+            MutualFundScheme(
+                owner=owner,
+                family=family,
+                scheme_code=master.scheme_code,
+                scheme_name=master.scheme_name,
+                isin_growth=master.isin_growth,
+                isin_dividend=master.isin_dividend,
             )
+            for master in master_schemes
+        ]
+
+        MutualFundScheme.objects.bulk_create(
+            family_schemes,
+            batch_size=AMFIService.MASTER_SCHEME_BATCH_SIZE,
+            update_conflicts=True,
+            unique_fields=["family", "scheme_code"],
+            update_fields=["scheme_name", "isin_growth", "isin_dividend"],
         )
 
-        records = (
-            AMFIService
-            .parse_nav_file(
-                text,
-                historical=True,
+        scheme_ids = dict(
+            MutualFundScheme.objects
+            .filter(family=family, scheme_code__in=codes)
+            .values_list("scheme_code", "id")
+        )
+
+        latest_nav_id = (
+            AMFIMasterNAV.objects
+            .filter(scheme_id=OuterRef("scheme_id"))
+            .order_by("-date", "-id")
+            .values("id")[:1]
+        )
+        latest_master_navs = (
+            AMFIMasterNAV.objects
+            .filter(
+                scheme__is_active=True,
+                id=Subquery(latest_nav_id),
             )
+            .select_related("scheme")
         )
 
-        return AMFIService._import_records(
-            owner,
-            records,
-        )
+        family_navs = [
+            MutualFundNAV(
+                scheme_id=scheme_ids[master_nav.scheme.scheme_code],
+                date=master_nav.date,
+                nav=master_nav.nav,
+                source="AMFI",
+            )
+            for master_nav in latest_master_navs
+            if master_nav.scheme.scheme_code in scheme_ids
+        ]
+
+        if family_navs:
+            MutualFundNAV.objects.bulk_create(
+                family_navs,
+                batch_size=AMFIService.MASTER_NAV_BATCH_SIZE,
+                update_conflicts=True,
+                unique_fields=["scheme", "date", "source"],
+                update_fields=["nav"],
+            )
+
+        return {"schemes": len(master_schemes), "nav_records": len(family_navs)}
+    
+    @staticmethod
+    def import_latest_navs(owner):
+        """Compatibility wrapper: refresh the shared master, then sync one family."""
+        AMFIService.import_latest_master_navs()
+        return AMFIService.sync_user_nav_from_master(owner)
+
+    @staticmethod
+    def import_historical_navs(owner, from_date, to_date):
+        """Compatibility wrapper: import history once into the master, then sync the family."""
+        AMFIService.import_historical_master_navs(from_date, to_date)
+        return AMFIService.sync_user_nav_from_master(owner)

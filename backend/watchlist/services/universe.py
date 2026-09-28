@@ -5,12 +5,16 @@ import re
 from datetime import date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 
+import logging
+
 import requests
-from django.db import transaction
 from django.utils import timezone
 
 from watchlist.models import DiscoveryRun, InvestmentProduct, MutualFundProduct, PerformanceSnapshot, PMSProduct, ProductType
 from watchlist.services.performance import AMFIPerformanceService
+
+
+logger = logging.getLogger(__name__)
 
 
 class AMFIUniverseService:
@@ -131,52 +135,156 @@ class AMFIUniverseService:
         return f"MUTUAL_FUND:SCHEME:{record['scheme_code']}"
 
     @classmethod
-    @transaction.atomic
     def refresh(cls):
+        """
+        Refresh the latest AMFI universe using bulk database writes.
+
+        The AMFI feed contains thousands of schemes. Calling update_or_create()
+        three times for every row makes the manual Watch List refresh look
+        hung because it performs tens of thousands of individual SQLite
+        queries. Bulk upserts keep the refresh bounded and observable.
+        """
         run = DiscoveryRun.objects.create(source=cls.SOURCE)
-        discovered = updated = failed = 0
+        logger.info("Watch List AMFI refresh started (run=%s)", run.id)
         try:
             records = cls.parse_latest_feed(cls.download_latest())
+            logger.info("Watch List AMFI feed downloaded (run=%s, records=%s)", run.id, len(records))
+
+            # AMFI can expose multiple rows sharing an ISIN. identity_key is
+            # unique in PWMS, so keep one authoritative row per identity.
+            deduped = {}
             for record in records:
-                try:
-                    product, created = InvestmentProduct.objects.update_or_create(
-                        identity_key=cls.identity(record),
-                        defaults={
-                            "product_type": ProductType.MUTUAL_FUND,
-                            "name": record["name"], "provider": record.get("provider"), "country": "India",
-                            "category": record.get("category"),
-                            "isin": record.get("isin"), "external_identifier": record.get("scheme_code"),
-                            "currency": "INR", "source": cls.SOURCE, "source_reference": cls.NAV_URL,
-                            "source_date": record["date"], "is_active": True,
-                        },
+                deduped[cls.identity(record)] = record
+            records = list(deduped.values())
+
+            identity_keys = [cls.identity(record) for record in records]
+            existing_keys = set(
+                InvestmentProduct.objects.filter(
+                    identity_key__in=identity_keys,
+                ).values_list("identity_key", flat=True)
+            )
+
+            products = [
+                InvestmentProduct(
+                    identity_key=cls.identity(record),
+                    product_type=ProductType.MUTUAL_FUND,
+                    name=record["name"],
+                    provider=record.get("provider"),
+                    country="India",
+                    category=record.get("category"),
+                    isin=record.get("isin"),
+                    external_identifier=record.get("scheme_code"),
+                    currency="INR",
+                    source=cls.SOURCE,
+                    source_reference=cls.NAV_URL,
+                    source_date=record["date"],
+                    is_active=True,
+                )
+                for record in records
+            ]
+
+            logger.info("Watch List AMFI bulk upsert starting (run=%s, products=%s, existing=%s)", run.id, len(products), len(existing_keys))
+            InvestmentProduct.objects.bulk_create(
+                products,
+                batch_size=1000,
+                update_conflicts=True,
+                update_fields=[
+                    "product_type", "name", "provider", "country", "category",
+                    "isin", "external_identifier", "currency", "source",
+                    "source_reference", "source_date", "is_active", "updated_at",
+                ],
+                unique_fields=["identity_key"],
+            )
+
+            product_by_identity = {
+                product.identity_key: product
+                for product in InvestmentProduct.objects.filter(
+                    identity_key__in=identity_keys,
+                )
+            }
+
+            mf_products = []
+            snapshots = []
+            for record in records:
+                product = product_by_identity.get(cls.identity(record))
+                if product is None:
+                    continue
+                mf_products.append(
+                    MutualFundProduct(
+                        product_id=product.id,
+                        scheme_code=record["scheme_code"],
+                        plan=record.get("plan"),
+                        option=record.get("option"),
+                        fund_type=record.get("category"),
+                        latest_nav=record["nav"],
+                        latest_nav_date=record["date"],
                     )
-                    MutualFundProduct.objects.update_or_create(
-                        product=product,
-                        defaults={
-                            "scheme_code": record["scheme_code"], "plan": record.get("plan"), "option": record.get("option"),
-                            "fund_type": record.get("category"), "latest_nav": record["nav"], "latest_nav_date": record["date"],
-                        },
+                )
+                snapshots.append(
+                    PerformanceSnapshot(
+                        product_id=product.id,
+                        date=record["date"],
+                        nav_or_value=record["nav"],
+                        source=cls.SOURCE,
+                        source_reference=cls.NAV_URL,
                     )
-                    PerformanceSnapshot.objects.update_or_create(
-                        product=product, date=record["date"], source=cls.SOURCE,
-                        defaults={"nav_or_value": record["nav"], "source_reference": cls.NAV_URL},
-                    )
-                    discovered += 1
-                    updated += int(not created)
-                except Exception:
-                    failed += 1
-            performance = AMFIPerformanceService.refresh()
-            run.discovered, run.updated, run.failed = discovered, updated, failed
-            run.details = {"source_reference": cls.NAV_URL, "performance": performance}
+                )
+
+            MutualFundProduct.objects.bulk_create(
+                mf_products,
+                batch_size=1000,
+                update_conflicts=True,
+                update_fields=[
+                    "scheme_code", "plan", "option", "fund_type",
+                    "latest_nav", "latest_nav_date",
+                ],
+                unique_fields=["product"],
+            )
+            PerformanceSnapshot.objects.bulk_create(
+                snapshots,
+                batch_size=1000,
+                update_conflicts=True,
+                update_fields=["nav_or_value", "source_reference", "fetched_at"],
+                unique_fields=["product", "date", "source"],
+            )
+
+            discovered = len(records)
+            updated = len(existing_keys)
+            failed = 0
+
+            performance = {
+                "deferred": True,
+                "message": "Historical performance refresh is scheduled separately.",
+            }
+            run.discovered = discovered
+            run.updated = updated
+            run.failed = failed
+            run.details = {
+                "source_reference": cls.NAV_URL,
+                "performance": performance,
+                "mode": "bulk_upsert",
+            }
             run.finished_at = timezone.now()
-            run.save(update_fields=["discovered", "updated", "failed", "details", "finished_at"])
-            return {"discovered": discovered, "updated": updated, "failed": failed, "performance": performance}
+            logger.info("Watch List AMFI refresh finished (run=%s, discovered=%s, updated=%s, failed=%s)", run.id, discovered, updated, failed)
+            run.save(
+                update_fields=[
+                    "discovered", "updated", "failed", "details", "finished_at",
+                ]
+            )
+            return {
+                "discovered": discovered,
+                "updated": updated,
+                "failed": failed,
+                "performance": performance,
+            }
         except Exception as exc:
+            logger.exception("Watch List AMFI refresh failed (run=%s)", run.id)
             run.failed = 1
             run.details = {"error": str(exc)}
             run.finished_at = timezone.now()
             run.save(update_fields=["failed", "details", "finished_at"])
             raise
+
 
 
 class PMSDiscoveryService:

@@ -2,6 +2,7 @@ from django.contrib.auth import authenticate, login, logout
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError
 from django.http import JsonResponse
+from django.middleware.csrf import get_token
 from django.views.decorators.csrf import csrf_exempt, ensure_csrf_cookie
 
 from rest_framework.decorators import (
@@ -37,6 +38,7 @@ def health_check(request):
             if request.user.is_authenticated
             else None
         ),
+        "csrf_token": get_token(request),
     })
 
 

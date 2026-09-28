@@ -5,6 +5,8 @@ from rest_framework.pagination import PageNumberPagination
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
+from config.database_scheduler_lock import DATABASE_SCHEDULER_LOCK
+
 from investments.models import AssetCategory, PortfolioPosition, Transaction
 from users.permissions import get_active_family_group_id, get_visible_owner_ids
 from watchlist.models import InvestmentProduct, PerformanceSnapshot, ProductType, WatchListEntry
@@ -441,6 +443,9 @@ def watch_list_bulk_remove(request):
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def watch_list_refresh(request):
-    mf_result = AMFIUniverseService.refresh()
-    pms_result = APMIPMSDiscoveryService.refresh()
+    # Serialize manual refreshes with background schedulers so two full
+    # universe upserts cannot run concurrently against SQLite.
+    with DATABASE_SCHEDULER_LOCK:
+        mf_result = AMFIUniverseService.refresh()
+        pms_result = APMIPMSDiscoveryService.refresh()
     return Response({"mutual_funds": mf_result, "pms": pms_result})

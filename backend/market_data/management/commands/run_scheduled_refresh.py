@@ -3,7 +3,9 @@ from django.core.management import call_command
 from django.core.management.base import BaseCommand
 from django.utils import timezone
 
-from watchlist.services.benchmark import BenchmarkDataRefreshService
+from mutual_funds.services.amfi import AMFIService
+from watchlist.services.performance import AMFIPerformanceService
+from watchlist.services.universe import AMFIUniverseService
 
 
 class Command(BaseCommand):
@@ -14,13 +16,13 @@ class Command(BaseCommand):
 
     Runs, in dependency order:
 
-        1. update_market_prices          - live Stock/ETF prices
+        1. refresh_amfi_master            - AMFI scheme/NAV master,
+                                            downloaded once for all users.
+        2. update_market_prices            - live Stock/ETF prices
                                             (Yahoo). Also
                                             auto-refreshes
                                             security_master.xlsx if
                                             a new ISIN shows up.
-        2. fetch_amfi_nav (per user)     - mutual fund NAV (AMFI),
-                                            latest day only.
         3. refresh_security_master
            --apply                       - sector/pe_ratio/
                                             pb_ratio/roe (Yahoo).
@@ -56,7 +58,7 @@ class Command(BaseCommand):
 
     help = (
         "Run every scheduled external-data refresh (market prices, "
-        "mutual fund NAV, security master ratios, SIP sync/execute, "
+        "shared AMFI master NAV, security master ratios, SIP sync/execute, "
         "portfolio news) for every active user, in one call. "
         "Intended to be the single command a scheduler triggers "
         "nightly."
@@ -65,13 +67,13 @@ class Command(BaseCommand):
     # Commands that operate across all users in one call - no
     # --user-id needed/accepted.
     GLOBAL_STEPS = [
+        ("refresh_amfi_master", {}),
         ("update_market_prices", {}),
     ]
 
     # Commands that require --user-id and must be run once per
     # active user.
     PER_USER_STEPS = [
-        ("fetch_amfi_nav", {}),
         ("sync_sip_installments", {}),
         ("execute_sips", {}),
     ]
@@ -134,24 +136,9 @@ class Command(BaseCommand):
         for command_name, kwargs in self.GLOBAL_STEPS:
             run_step(command_name, kwargs)
 
-        if "refresh_bse500" not in skip:
-            self.stdout.write("\n--- refresh_bse500 ---")
-            try:
-                result = BenchmarkDataRefreshService.refresh_bse500()
-                if result.get("available"):
-                    succeeded.append("refresh_bse500")
-                    self.stdout.write(self.style.SUCCESS(
-                        f"BSE 500 refreshed: {result.get('updated', 0)} observations, "
-                        f"as of {result.get('as_of_date')}"
-                    ))
-                else:
-                    failed.append(("refresh_bse500", result.get("reason", "unavailable")))
-                    self.stderr.write(self.style.WARNING(
-                        f"BSE 500 refresh skipped: {result.get('reason', 'unavailable')}"
-                    ))
-            except Exception as exc:
-                failed.append(("refresh_bse500", str(exc)))
-                self.stderr.write(self.style.ERROR(f"BSE 500 refresh failed: {exc}"))
+        # BenchmarkPerformanceService calculates benchmark series on demand;
+        # there is no BenchmarkDataRefreshService to invoke here. Keeping this
+        # step out avoids the stale import that previously crashed the scheduler.
 
         active_user_ids = list(
             User.objects.filter(is_active=True).values_list("id", flat=True)
@@ -160,6 +147,31 @@ class Command(BaseCommand):
         for user_id in active_user_ids:
             for command_name, kwargs in self.PER_USER_STEPS:
                 run_step(command_name, kwargs, user_id=user_id)
+
+        # Watch List universe/performance is global, not user-owned.
+        if "refresh_watchlist_universe" not in skip:
+            self.stdout.write("\n--- refresh_watchlist_universe ---")
+            try:
+                result = AMFIUniverseService.refresh()
+                succeeded.append("refresh_watchlist_universe")
+                self.stdout.write(self.style.SUCCESS(
+                    f"Watch List universe refreshed: {result.get('discovered', 0)} schemes"
+                ))
+            except Exception as exc:
+                failed.append(("refresh_watchlist_universe", str(exc)))
+                self.stderr.write(self.style.ERROR(f"refresh_watchlist_universe failed: {exc}"))
+
+        if "refresh_watchlist_performance" not in skip:
+            self.stdout.write("\n--- refresh_watchlist_performance ---")
+            try:
+                result = AMFIPerformanceService.refresh()
+                succeeded.append("refresh_watchlist_performance")
+                self.stdout.write(self.style.SUCCESS(
+                    f"Watch List performance refreshed: {result.get('metrics_updated', 0)} products"
+                ))
+            except Exception as exc:
+                failed.append(("refresh_watchlist_performance", str(exc)))
+                self.stderr.write(self.style.ERROR(f"refresh_watchlist_performance failed: {exc}"))
 
         for command_name, kwargs in self.GLOBAL_STEPS_AFTER:
             run_step(command_name, kwargs)

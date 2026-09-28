@@ -2,7 +2,6 @@ from datetime import date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 
 import requests
-from django.db import transaction
 from django.utils import timezone
 
 from watchlist.models import InvestmentProduct, PerformanceSnapshot, ProductType
@@ -28,6 +27,11 @@ class AMFIPerformanceService:
         ("return_3y", 36),
         ("return_5y", 60),
     )
+
+    @staticmethod
+    def _is_idcw_option(option):
+        normalized = str(option or "").strip().upper()
+        return "IDCW" in normalized
 
     @staticmethod
     def _decimal(value):
@@ -195,13 +199,17 @@ class AMFIPerformanceService:
         return selected, failed
 
     @classmethod
-    def _return_percent(cls, latest_nav, historical_nav):
+    def _return_percent(cls, latest_nav, historical_nav, elapsed_days=None):
         if latest_nav is None or historical_nav in (None, Decimal("0")):
             return None
-        return (latest_nav / historical_nav - Decimal("1")) * Decimal("100")
+
+        ratio = latest_nav / historical_nav
+        if elapsed_days is not None and elapsed_days > 365:
+            return (ratio ** (Decimal("365.2425") / Decimal(str(elapsed_days))) - Decimal("1")) * Decimal("100")
+
+        return (ratio - Decimal("1")) * Decimal("100")
 
     @classmethod
-    @transaction.atomic
     def refresh(cls):
         products = list(
             InvestmentProduct.objects.filter(
@@ -215,6 +223,30 @@ class AMFIPerformanceService:
             source=cls.SOURCE,
         ).order_by("-date"):
             latest_snapshots.setdefault(snapshot.product_id, snapshot)
+
+        # IDCW NAV history cannot provide total returns without distributions.
+        # Clear any legacy NAV-derived metrics in one bulk update and skip
+        # historical downloads for IDCW schemes entirely.
+        idcw_product_ids = [
+            product.id
+            for product in products
+            if cls._is_idcw_option(
+                getattr(getattr(product, "mutual_fund", None), "option", None)
+            )
+        ]
+        if idcw_product_ids:
+            PerformanceSnapshot.objects.filter(
+                product_id__in=idcw_product_ids,
+                source=cls.SOURCE,
+            ).update(
+                return_1m=None,
+                return_3m=None,
+                return_6m=None,
+                return_1y=None,
+                return_3y=None,
+                return_5y=None,
+                cagr=None,
+            )
 
         products_needing_history = [
             product
@@ -262,17 +294,32 @@ class AMFIPerformanceService:
                 continue
 
             values = {}
-            for field, _ in cls.PERIODS:
-                record = periods.get(field)
-                if record:
-                    PerformanceSnapshot.objects.update_or_create(
-                        product=product,
-                        date=record["date"],
-                        source=cls.SOURCE,
-                        defaults={"nav_or_value": record["nav"], "source_reference": cls.HISTORY_URL},
-                    )
-                    snapshots_written += 1
-                    values[field] = cls._return_percent(latest.nav_or_value, record["nav"])
+            is_idcw = cls._is_idcw_option(
+                getattr(getattr(product, "mutual_fund", None), "option", None)
+            )
+
+            if not is_idcw:
+                for field, _ in cls.PERIODS:
+                    record = periods.get(field)
+                    if record:
+                        PerformanceSnapshot.objects.update_or_create(
+                            product=product,
+                            date=record["date"],
+                            source=cls.SOURCE,
+                            defaults={"nav_or_value": record["nav"], "source_reference": cls.HISTORY_URL},
+                        )
+                        snapshots_written += 1
+                        elapsed_days = (latest.date - record["date"]).days
+                        values[field] = cls._return_percent(
+                            latest.nav_or_value,
+                            record["nav"],
+                            elapsed_days=elapsed_days,
+                        )
+            else:
+                # An IDCW NAV series alone cannot produce investor total
+                # returns because distributions reduce NAV. Do not expose
+                # NAV-only returns as if they were total returns.
+                values = {field: None for field, _ in cls.PERIODS}
 
             if values:
                 update_fields = []
@@ -280,18 +327,22 @@ class AMFIPerformanceService:
                     setattr(latest, field, value)
                     update_fields.append(field)
 
-                # CAGR uses the longest available annual period. Since the
-                # underlying NAV dates are actual market dates, elapsed days
-                # are used rather than assuming exactly 365 days per year.
-                for field, months in reversed(cls.PERIODS):
-                    record = periods.get(field)
-                    if not record or record["nav"] in (None, Decimal("0")) or latest.nav_or_value in (None, Decimal("0")):
-                        continue
-                    years = Decimal(str((latest.date - record["date"]).days)) / Decimal("365.2425")
-                    if years > 0:
-                        latest.cagr = ((latest.nav_or_value / record["nav"]) ** (Decimal("1") / years) - Decimal("1")) * Decimal("100")
-                        update_fields.append("cagr")
-                        break
+                # CAGR uses the longest available annual period. IDCW
+                # NAV history is excluded because distributions are not
+                # represented in the NAV series.
+                if not is_idcw:
+                    for field, months in reversed(cls.PERIODS):
+                        record = periods.get(field)
+                        if not record or record["nav"] in (None, Decimal("0")) or latest.nav_or_value in (None, Decimal("0")):
+                            continue
+                        years = Decimal(str((latest.date - record["date"]).days)) / Decimal("365.2425")
+                        if years > 0:
+                            latest.cagr = ((latest.nav_or_value / record["nav"]) ** (Decimal("1") / years) - Decimal("1")) * Decimal("100")
+                            update_fields.append("cagr")
+                            break
+                else:
+                    latest.cagr = None
+                    update_fields.append("cagr")
 
                 latest.save(update_fields=list(dict.fromkeys(update_fields)))
                 metrics_updated += 1

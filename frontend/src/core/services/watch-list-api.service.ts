@@ -1,6 +1,6 @@
 import { Injectable, inject } from '@angular/core';
 import { HttpClient, HttpHeaders, HttpParams } from '@angular/common/http';
-import { Observable, switchMap } from 'rxjs';
+import { Observable, switchMap, timeout } from 'rxjs';
 
 import { environment } from '../../environments/environment';
 
@@ -107,14 +107,18 @@ export class WatchListApiService {
   }
 
   refresh(): Observable<any> {
-    return this.http.post(`${this.baseUrl}/refresh/`, {}, { withCredentials: true });
+    // A refresh should never leave the UI in an indefinite pending state.
+    // The backend is expected to finish the latest-universe refresh well
+    // before this safety timeout; historical performance is scheduled separately.
+    return this.postWithCsrf<any>(`${this.baseUrl}/refresh/`, {}).pipe(
+      timeout({ each: 120000 }),
+    );
   }
 
   toggleWatch(productId: number): Observable<{ id: number; is_watchlisted: boolean }> {
-    return this.http.post<{ id: number; is_watchlisted: boolean }>(
+    return this.postWithCsrf<{ id: number; is_watchlisted: boolean }>(
       `${this.baseUrl}/products/${productId}/toggle/`,
       {},
-      { withCredentials: true },
     );
   }
 
@@ -141,13 +145,15 @@ export class WatchListApiService {
   }
 
   private patchWithCsrf<T>(url: string, body: unknown): Observable<T> {
-    return this.http.get(`${environment.apiUrl}/api/health/`, {
+    return this.http.get<{ csrf_token?: string }>(`${environment.apiUrl}/api/health/`, {
       withCredentials: true,
-      responseType: 'json',
     }).pipe(
-      switchMap(() => {
-        const token = this.getCsrfToken();
-        const headers = token ? new HttpHeaders({ 'X-CSRFToken': token }) : undefined;
+      switchMap((health) => {
+        const token = health.csrf_token || this.getCsrfToken();
+        if (!token) {
+          throw new Error('CSRF token was not provided by the backend.');
+        }
+        const headers = new HttpHeaders({ 'X-CSRFToken': token });
         return this.http.patch<T>(url, body, {
           withCredentials: true,
           headers,
@@ -157,13 +163,15 @@ export class WatchListApiService {
   }
 
   private postWithCsrf<T>(url: string, body: unknown): Observable<T> {
-    return this.http.get(`${environment.apiUrl}/api/health/`, {
+    return this.http.get<{ csrf_token?: string }>(`${environment.apiUrl}/api/health/`, {
       withCredentials: true,
-      responseType: 'json',
     }).pipe(
-      switchMap(() => {
-        const token = this.getCsrfToken();
-        const headers = token ? new HttpHeaders({ 'X-CSRFToken': token }) : undefined;
+      switchMap((health) => {
+        const token = health.csrf_token || this.getCsrfToken();
+        if (!token) {
+          throw new Error('CSRF token was not provided by the backend.');
+        }
+        const headers = new HttpHeaders({ 'X-CSRFToken': token });
         return this.http.post<T>(url, body, {
           withCredentials: true,
           headers,

@@ -54,7 +54,10 @@ export class WatchListComponent implements OnInit, OnDestroy {
   downloadModalOpen = false;
   downloadType: 'PMS' | 'MUTUAL_FUND' | 'ALL' = 'ALL';
   downloading = false;
-  readonly benchmarkOptions: Array<'BSE 500' | 'Nifty 50'> = ['BSE 500', 'Nifty 50'];
+  readonly benchmarkOptions: Array<{ value: 'BSE 500' | 'Nifty 50'; label: string }> = [
+    { value: 'BSE 500', label: 'BSE 500 TRI' },
+    { value: 'Nifty 50', label: 'Nifty 50' },
+  ];
   readonly benchmarkPeriods: BenchmarkPeriod[] = ['1M', '3M', '6M', '1Y', '3Y', '5Y'];
   private readonly updatingBenchmarkIds = new Set<number>();
   benchmarkModalProduct: WatchListProduct | null = null;
@@ -535,42 +538,156 @@ export class WatchListComponent implements OnInit, OnDestroy {
     return value === null || value === undefined ? null : Number(value);
   }
 
+  benchmarkReturnDetail(period: BenchmarkPeriod, key: 'fund_return_details' | 'benchmark_return_details'): string {
+    const detail = this.benchmarkData?.[key]?.[period];
+    if (!detail) {
+      if (key === 'fund_return_details' && this.benchmarkData?.fund_return_basis) {
+        return this.benchmarkData.fund_return_basis;
+      }
+      return 'Return calculation is unavailable for this period.';
+    }
+    const start = Number(detail.start_value).toFixed(4);
+    const end = Number(detail.end_value).toFixed(4);
+    return String(detail.method) + ': ' + String(detail.start_date) + ' (' + start + ') → ' + String(detail.end_date) + ' (' + end + ')';
+  }
+
   benchmarkComparison(period: BenchmarkPeriod): string {
     return this.benchmarkData?.comparison?.[period] || 'Unavailable';
   }
 
-  benchmarkPolyline(series: Array<{ date: string; value: number }> | undefined): string {
-    if (!series?.length) return '';
-    const normalized = series
-      .map(point => Number(point.value))
-      .filter(value => Number.isFinite(value) && value > 0);
-    if (!normalized.length) return '';
+  private benchmarkChartSeries(series: Array<{ date: string; value: number }> | undefined): Array<{ date: string; value: number }> {
+    return (series || [])
+      .map(point => ({ date: point.date, value: Number(point.value) }))
+      .filter(point => Boolean(point.date) && Number.isFinite(point.value))
+      .sort((a, b) => a.date.localeCompare(b.date));
+  }
 
-    const base = normalized[0];
-    const normalizedSeries = series.map(point => ({
-      value: Number(point.value) / base * 100,
-    }));
-    const fund = this.benchmarkData?.chart?.fund || [];
-    const benchmark = this.benchmarkData?.chart?.benchmark || [];
-    const combined = [...fund, ...benchmark]
-      .map((point: { value: number }) => Number(point.value))
-      .filter(value => Number.isFinite(value) && value > 0);
-    const fundBase = fund[0]?.value ? Number(fund[0].value) : null;
-    const benchmarkBase = benchmark[0]?.value ? Number(benchmark[0].value) : null;
-    const normalizedAll = [
-      ...(fundBase ? fund.map((point: { value: number }) => Number(point.value) / fundBase * 100) : []),
-      ...(benchmarkBase ? benchmark.map((point: { value: number }) => Number(point.value) / benchmarkBase * 100) : []),
-    ];
-    const min = normalizedAll.length ? Math.min(...normalizedAll) : Math.min(...combined);
-    const max = normalizedAll.length ? Math.max(...normalizedAll) : Math.max(...combined);
-    const range = max - min || 1;
-    const lastIndex = Math.max(series.length - 1, 1);
-    return normalizedSeries.map((point, index) => {
-      const x = (index / lastIndex) * 100;
-      const y = 96 - ((point.value - min) / range) * 88;
-      return `${x.toFixed(2)},${y.toFixed(2)}`;
+  private benchmarkChartValues(): number[] {
+    const fund = this.benchmarkChartSeries(this.benchmarkData?.chart?.fund);
+    const benchmark = this.benchmarkChartSeries(this.benchmarkData?.chart?.benchmark);
+    return [...fund, ...benchmark].map(point => point.value);
+  }
+
+  benchmarkChartRange(): { min: number; max: number } {
+    const values = this.benchmarkChartValues();
+    if (!values.length) return { min: 99, max: 101 };
+
+    const minValue = Math.min(...values, 100);
+    const maxValue = Math.max(...values, 100);
+    const range = Math.max(maxValue - minValue, 1);
+    const padding = Math.max(range * 0.08, 0.5);
+    return {
+      min: minValue - padding,
+      max: maxValue + padding,
+    };
+  }
+
+  private benchmarkNiceStep(range: number): number {
+    const raw = Math.max(range / 5, 0.1);
+    const magnitude = Math.pow(10, Math.floor(Math.log10(raw)));
+    const normalized = raw / magnitude;
+    const multiplier = normalized <= 1 ? 1 : normalized <= 2 ? 2 : normalized <= 5 ? 5 : 10;
+    return multiplier * magnitude;
+  }
+
+  benchmarkChartHasData(): boolean {
+    const fund = this.benchmarkChartSeries(this.benchmarkData?.chart?.fund);
+    const benchmark = this.benchmarkChartSeries(this.benchmarkData?.chart?.benchmark);
+    return fund.length >= 2 && benchmark.length >= 2;
+  }
+
+  benchmarkPolyline(series: Array<{ date: string; value: number }> | undefined): string {
+    const points = this.benchmarkChartSeries(series);
+    if (points.length < 2) return '';
+
+    const fund = this.benchmarkChartSeries(this.benchmarkData?.chart?.fund);
+    const benchmark = this.benchmarkChartSeries(this.benchmarkData?.chart?.benchmark);
+    const all = [...fund, ...benchmark];
+    if (!all.length) return '';
+
+    const startTime = new Date(this.benchmarkData?.chart?.start_date || all[0].date).getTime();
+    const endTime = new Date(this.benchmarkData?.chart?.end_date || all[all.length - 1].date).getTime();
+    const timeRange = Math.max(endTime - startTime, 1);
+    const { min, max } = this.benchmarkChartRange();
+    const valueRange = Math.max(max - min, 1);
+
+    return points.map(point => {
+      const timestamp = new Date(point.date).getTime();
+      const x = 8 + ((timestamp - startTime) / timeRange) * 90;
+      const y = 94 - ((point.value - min) / valueRange) * 89;
+      return `${Math.max(8, Math.min(98, x)).toFixed(2)},${Math.max(5, Math.min(94, y)).toFixed(2)}`;
     }).join(' ');
   }
+
+  benchmarkChartYTicks(): Array<{ value: number; top: number }> {
+    if (!this.benchmarkChartHasData()) return [];
+    const { min, max } = this.benchmarkChartRange();
+    const step = this.benchmarkNiceStep(max - min);
+    const first = Math.floor(min / step) * step;
+    const last = Math.ceil(max / step) * step;
+    const values: number[] = [];
+
+    for (let value = first; value <= last + step * 0.001; value += step) {
+      values.push(Number(value.toFixed(8)));
+    }
+    if (!values.some(value => Math.abs(value - 100) < 1e-8)) values.push(100);
+
+    return [...new Set(values)]
+      .filter(value => value >= min - step && value <= max + step)
+      .sort((a, b) => b - a)
+      .map(value => ({
+        value,
+        top: 94 - ((value - min) / Math.max(max - min, 1)) * 89,
+      }));
+  }
+
+  benchmarkChartXAxisTicks(): Array<{ label: string; left: number }> {
+    if (!this.benchmarkChartHasData()) return [];
+    const fund = this.benchmarkChartSeries(this.benchmarkData?.chart?.fund);
+    const benchmark = this.benchmarkChartSeries(this.benchmarkData?.chart?.benchmark);
+    const all = [...fund, ...benchmark];
+    if (!all.length) return [];
+
+    const startDate = new Date(this.benchmarkData?.chart?.start_date || all[0].date);
+    const endDate = new Date(this.benchmarkData?.chart?.end_date || all[all.length - 1].date);
+    const startTime = startDate.getTime();
+    const endTime = endDate.getTime();
+    const tickCount = this.benchmarkPeriod === '1M' ? 4
+      : this.benchmarkPeriod === '3M' ? 4
+      : this.benchmarkPeriod === '6M' ? 4
+      : this.benchmarkPeriod === '1Y' ? 5
+      : this.benchmarkPeriod === '3Y' ? 7
+      : 6;
+
+    const formatter = new Intl.DateTimeFormat('en-US', {
+      month: 'short',
+      year: 'numeric',
+    });
+
+    const actualDates = [...new Set(all.map(point => point.date))].sort();
+    return Array.from({ length: tickCount }, (_, index) => {
+      const ratio = index / (tickCount - 1);
+      const targetTime = startTime + (endTime - startTime) * ratio;
+      const nearestDate = actualDates.reduce((closest, candidate) => {
+        const candidateDistance = Math.abs(new Date(candidate).getTime() - targetTime);
+        const closestDistance = Math.abs(new Date(closest).getTime() - targetTime);
+        return candidateDistance < closestDistance ? candidate : closest;
+      }, actualDates[0]);
+      const date = new Date(nearestDate);
+      const actualRatio = (date.getTime() - startTime) / Math.max(endTime - startTime, 1);
+      return {
+        label: formatter.format(date),
+        left: 8 + Math.max(0, Math.min(1, actualRatio)) * 90,
+      };
+    });
+  }
+
+  benchmarkChartYLabel(value: number): string {
+    const returnValue = value - 100;
+    const rounded = Number.isInteger(returnValue) ? returnValue.toFixed(0) : returnValue.toFixed(1);
+    return returnValue > 0 ? `+${rounded}%` : `${rounded}%`;
+  }
+
 
   toggleWatch(product: WatchListProduct, event: Event): void {
     event.stopPropagation();
@@ -771,7 +888,7 @@ export class WatchListComponent implements OnInit, OnDestroy {
     });
 
     const noteCell = sheet.getCell('A' + noteRow);
-    noteCell.value = 'Note: Product return columns are Watch List returns. Benchmark Performance shows the selected Nifty 50 and BSE 500 market benchmark returns as of the latest available benchmark date.';
+    noteCell.value = 'Note: Product return columns are Watch List returns. Benchmark Performance shows the selected Nifty 50 and BSE 500 TRI market benchmark returns as of the latest available benchmark date.';
     sheet.mergeCells('A' + noteRow + ':O' + noteRow);
     noteCell.font = { name: 'Aptos', size: 9, italic: true, color: { argb: 'FF6B7280' } };
     noteCell.alignment = { vertical: 'middle' };
@@ -878,6 +995,10 @@ export class WatchListComponent implements OnInit, OnDestroy {
         this.loading = false;
       },
     });
+  }
+
+  benchmarkDisplayName(benchmark: string | null | undefined): string {
+    return benchmark === 'BSE 500' ? 'BSE 500 TRI' : (benchmark || '—');
   }
 
   metric(product: WatchListProduct, key: string): number | null { return product.metrics?.[key] ?? null; }

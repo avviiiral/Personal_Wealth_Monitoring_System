@@ -139,9 +139,6 @@ class Command(BaseCommand):
         # there is no BenchmarkDataRefreshService to invoke here. Keeping this
         # step out avoids the stale import that previously crashed the scheduler.
 
-        for command_name, kwargs in self.GLOBAL_STEPS:
-            pass
-
         active_user_ids = list(
             User.objects.filter(is_active=True).values_list("id", flat=True)
         )

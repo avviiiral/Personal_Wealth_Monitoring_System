@@ -9,6 +9,8 @@ import requests
 import yfinance as yf
 from django.utils import timezone
 
+from mutual_funds.models import AMFIMasterNAV
+from mutual_funds.services.amfi import AMFIService
 from watchlist.models import PerformanceSnapshot
 
 
@@ -506,9 +508,88 @@ class BenchmarkPerformanceService:
         return metrics, details, latest
 
     @staticmethod
-    def _fund_series(product, start):
+    def _fund_scheme_code(product):
+        if getattr(product, "product_type", None) != "MUTUAL_FUND":
+            return None
+        mutual_fund = getattr(product, "mutual_fund", None)
+        return str(
+            getattr(mutual_fund, "scheme_code", None)
+            or getattr(product, "external_identifier", None)
+            or ""
+        ).strip() or None
+
+    @classmethod
+    def _ensure_master_history(cls, product, start, end):
+        """Backfill the shared AMFI master only for the requested scheme/window.
+
+        AMFI's public historical endpoint accepts at most 90 days per request.
+        The response contains all schemes, so the importer filters it before
+        writing; no per-user AMFI download or family-level NAV duplication is
+        performed.
+        """
+        scheme_code = cls._fund_scheme_code(product)
+        if not scheme_code or start > end:
+            return
+
+        # Do not make a network call when a window already contains a normal
+        # business-day density of observations. The latest NAV import can leave
+        # only one observation in the most recent window, so checking only for
+        # existence is insufficient.
+        window_start = start
+        while window_start <= end:
+            window_end = min(window_start + timedelta(days=89), end)
+            expected_minimum = max(
+                5,
+                int((window_end - window_start).days * 0.5),
+            )
+            existing_count = AMFIMasterNAV.objects.filter(
+                scheme__scheme_code=scheme_code,
+                source="AMFI",
+                date__gte=window_start,
+                date__lte=window_end,
+            ).count()
+
+            if existing_count < expected_minimum:
+                AMFIService.import_historical_master_navs(
+                    window_start,
+                    window_end,
+                    scheme_codes={scheme_code},
+                )
+
+            window_start = window_end + timedelta(days=1)
+
+    @classmethod
+    def _fund_series(cls, product, start, end=None):
+        if getattr(product, "product_type", None) == "MUTUAL_FUND":
+            scheme_code = cls._fund_scheme_code(product)
+            if not scheme_code:
+                return []
+
+            end = end or timezone.now().date()
+            cls._ensure_master_history(product, start, end)
+
+            points = (
+                AMFIMasterNAV.objects.filter(
+                    scheme__scheme_code=scheme_code,
+                    source="AMFI",
+                    date__gte=start,
+                    date__lte=end,
+                )
+                .order_by("date", "id")
+                .values("date", "nav")
+            )
+            return [
+                {"date": point["date"].isoformat(), "value": float(point["nav"])}
+                for point in points
+                if point["nav"] and float(point["nav"]) > 0
+            ]
+
         snapshots = (
-            PerformanceSnapshot.objects.filter(product=product, date__gte=start)
+            PerformanceSnapshot.objects.filter(
+                product=product,
+                date__gte=start,
+                **({"date__lte": end} if end else {}),
+            )
             .exclude(nav_or_value__isnull=True)
             .order_by("date", "id")
         )
@@ -730,7 +811,11 @@ class BenchmarkPerformanceService:
                 for point in benchmark_series
                 if date.fromisoformat(point["date"]) >= chart_start
             ]
-            fund_chart = cls._fund_series(product, chart_start)
+            fund_chart = cls._fund_series(
+                product,
+                chart_start,
+                end=timezone.now().date(),
+            )
             normalized_chart = cls._normalized_chart_series(
                 fund_chart,
                 benchmark_chart,

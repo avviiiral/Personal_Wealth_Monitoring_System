@@ -3,6 +3,7 @@ from django.core.management import call_command
 from django.core.management.base import BaseCommand
 from django.utils import timezone
 
+from mutual_funds.services.amfi import AMFIService
 from watchlist.services.performance import AMFIPerformanceService
 from watchlist.services.universe import AMFIUniverseService
 
@@ -20,8 +21,8 @@ class Command(BaseCommand):
                                             auto-refreshes
                                             security_master.xlsx if
                                             a new ISIN shows up.
-        2. fetch_amfi_nav (per user)     - mutual fund NAV (AMFI),
-                                            latest day only.
+        2. refresh_amfi_master            - AMFI scheme/NAV master,
+                                            downloaded once for all users.
         3. refresh_security_master
            --apply                       - sector/pe_ratio/
                                             pb_ratio/roe (Yahoo).
@@ -57,7 +58,7 @@ class Command(BaseCommand):
 
     help = (
         "Run every scheduled external-data refresh (market prices, "
-        "mutual fund NAV, security master ratios, SIP sync/execute, "
+        "shared AMFI master NAV, security master ratios, SIP sync/execute, "
         "portfolio news) for every active user, in one call. "
         "Intended to be the single command a scheduler triggers "
         "nightly."
@@ -72,7 +73,6 @@ class Command(BaseCommand):
     # Commands that require --user-id and must be run once per
     # active user.
     PER_USER_STEPS = [
-        ("fetch_amfi_nav", {}),
         ("sync_sip_installments", {}),
         ("execute_sips", {}),
     ]
@@ -138,6 +138,19 @@ class Command(BaseCommand):
         # BenchmarkPerformanceService calculates benchmark series on demand;
         # there is no BenchmarkDataRefreshService to invoke here. Keeping this
         # step out avoids the stale import that previously crashed the scheduler.
+
+        if "refresh_amfi_master" not in skip:
+            self.stdout.write("\n--- refresh_amfi_master ---")
+            try:
+                result = AMFIService.import_latest_master_navs()
+                succeeded.append("refresh_amfi_master")
+                self.stdout.write(self.style.SUCCESS(
+                    f"AMFI master refreshed: {result.get('schemes', 0)} schemes, "
+                    f"{result.get('nav_records', 0)} NAV records"
+                ))
+            except Exception as exc:
+                failed.append(("refresh_amfi_master", str(exc)))
+                self.stderr.write(self.style.ERROR(f"refresh_amfi_master failed: {exc}"))
 
         active_user_ids = list(
             User.objects.filter(is_active=True).values_list("id", flat=True)

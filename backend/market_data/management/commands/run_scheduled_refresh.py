@@ -16,13 +16,13 @@ class Command(BaseCommand):
 
     Runs, in dependency order:
 
-        1. update_market_prices          - live Stock/ETF prices
+        1. refresh_amfi_master            - AMFI scheme/NAV master,
+                                            downloaded once for all users.
+        2. update_market_prices            - live Stock/ETF prices
                                             (Yahoo). Also
                                             auto-refreshes
                                             security_master.xlsx if
                                             a new ISIN shows up.
-        2. refresh_amfi_master            - AMFI scheme/NAV master,
-                                            downloaded once for all users.
         3. refresh_security_master
            --apply                       - sector/pe_ratio/
                                             pb_ratio/roe (Yahoo).

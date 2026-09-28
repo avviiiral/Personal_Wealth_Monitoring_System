@@ -3,6 +3,7 @@ import io
 import os
 from datetime import date, datetime, timedelta
 from pathlib import Path
+from typing import Any
 
 import requests
 import yfinance as yf
@@ -66,13 +67,20 @@ class BenchmarkPerformanceService:
         if data is None or data.empty:
             return []
 
-        close = data["Adj Close"] if "Adj Close" in data else data["Close"]
+        # yfinance's DataFrame/Series typing varies across its releases.
+        # Keep the runtime behavior unchanged while making the boundary
+        # explicit to Pylance.
+        close: Any = data["Adj Close"] if "Adj Close" in data else data["Close"]
         if hasattr(close, "columns"):
             close = close.iloc[:, 0]
+
         points = []
         for index, value in close.dropna().items():
             try:
-                points.append({"date": index.date().isoformat(), "value": float(value)})
+                index_date = index.date()
+                points.append(
+                    {"date": index_date.isoformat(), "value": float(value)}
+                )
             except (AttributeError, TypeError, ValueError):
                 continue
         return points
@@ -514,18 +522,17 @@ class BenchmarkPerformanceService:
             )
             for period in cls.PERIOD_DAYS
         }
-        comparison = {
-            period: (
-                "Outperformed"
-                if differences[period] > 0
-                else "Underperformed"
-                if differences[period] < 0
-                else "In line"
-            )
-            if differences[period] is not None
-            else "Unavailable"
-            for period in cls.PERIOD_DAYS
-        }
+        comparison = {}
+        for period in cls.PERIOD_DAYS:
+            difference = differences.get(period)
+            if difference is None:
+                comparison[period] = "Unavailable"
+            elif difference > 0:
+                comparison[period] = "Outperformed"
+            elif difference < 0:
+                comparison[period] = "Underperformed"
+            else:
+                comparison[period] = "In line"
 
         chart_days = cls.PERIOD_DAYS.get(
             chart_period, cls.PERIOD_DAYS["1Y"]

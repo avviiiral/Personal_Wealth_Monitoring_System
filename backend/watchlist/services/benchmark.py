@@ -35,6 +35,10 @@ class BenchmarkPerformanceService:
     # Optional override for deployments that have a licensed BSE500 TRI feed.
     BSE500_URL = os.getenv("WATCHLIST_BENCHMARK_BSE500_URL", "").strip()
     BSE500_API = "https://api.bseindia.com/BseIndiaAPI/api/ProduceCSVForDate/w"
+    # Public-market fallback: HDFC's ETF explicitly tracks the BSE 500 TRI.
+    # This keeps Watch List benchmark comparison automatic when BSE's public
+    # historical endpoint does not expose the TRI series directly.
+    BSE_TRI_PROXY_TICKERS = ("HDFCBSE500.NS", "BSE500IETF.NS")
     BSE_HEADERS = {
         "Accept": "text/csv,application/json,text/plain,*/*",
         "Referer": "https://www.bseindia.com/",
@@ -321,7 +325,32 @@ class BenchmarkPerformanceService:
                 if date.fromisoformat(point["date"]) >= start
             ]
 
-        return cls._fetch_bse_history(start)
+        # First try the BSE historical endpoint. If the public endpoint does
+        # not provide BSE500T, fall back to exchange-traded products that
+        # explicitly track the BSE 500 TRI. This requires no manual CSV.
+        try:
+            points = cls._fetch_bse_history(start)
+            if points:
+                return points
+        except Exception as bse_error:
+            last_error = bse_error
+        else:
+            last_error = None
+
+        for ticker in cls.BSE_TRI_PROXY_TICKERS:
+            try:
+                points = cls._series(ticker, start)
+                if points:
+                    return points
+            except Exception as proxy_error:
+                last_error = proxy_error
+
+        if last_error:
+            raise ValueError(
+                f"BSE 500 TRI data unavailable from BSE and public TRI-tracking "
+                f"fallbacks: {last_error}"
+            ) from last_error
+        raise ValueError("BSE 500 TRI data source returned no observations")
 
     @classmethod
     def _benchmark_series(cls, benchmark, start):

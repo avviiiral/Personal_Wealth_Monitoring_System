@@ -198,11 +198,75 @@
                 <span><i class="legend-fund"></i>{{ benchmarkModalProduct.name }}</span>
                 <span><i class="legend-benchmark"></i>{{ benchmarkData.benchmark || benchmarkModalProduct.benchmark }}</span>
               </div>
-              <svg viewBox="0 0 100 100" preserveAspectRatio="none" role="img" aria-label="Relative performance chart">
-                <polyline [attr.points]="benchmarkPolyline(benchmarkData.chart?.fund)" fill="none" stroke="var(--accent)" stroke-width="1.5" vector-effect="non-scaling-stroke"></polyline>
-                <polyline [attr.points]="benchmarkPolyline(benchmarkData.chart?.benchmark)" fill="none" stroke="var(--negative)" stroke-width="1.5" vector-effect="non-scaling-stroke"></polyline>
-              </svg>
-              <div class="chart-axis"><span>Start</span><span>End</span></div>
+
+              <div class="relative-chart-area" *ngIf="benchmarkChartHasData(); else benchmarkChartUnavailable">
+                <div class="chart-y-label">Relative Value (Start = 100)</div>
+                <div class="chart-y-axis" aria-hidden="true">
+                  <span
+                    *ngFor="let tick of benchmarkChartYTicks()"
+                    [style.top.%]="tick.top"
+                  >
+                    {{ benchmarkChartYLabel(tick.value) }}
+                  </span>
+                </div>
+
+                <svg
+                  viewBox="0 0 100 100"
+                  preserveAspectRatio="none"
+                  role="img"
+                  aria-label="Relative performance chart"
+                >
+                  <line
+                    *ngFor="let tick of benchmarkChartYTicks()"
+                    x1="8"
+                    x2="98"
+                    [attr.y1]="tick.top"
+                    [attr.y2]="tick.top"
+                    stroke="var(--surface-line)"
+                    stroke-width="0.25"
+                    vector-effect="non-scaling-stroke"
+                  ></line>
+                  <line
+                    x1="8"
+                    x2="98"
+                    [attr.y1]="94 - ((100 - benchmarkChartRange().min) / (benchmarkChartRange().max - benchmarkChartRange().min)) * 89"
+                    [attr.y2]="94 - ((100 - benchmarkChartRange().min) / (benchmarkChartRange().max - benchmarkChartRange().min)) * 89"
+                    stroke="var(--muted)"
+                    stroke-width="0.6"
+                    stroke-dasharray="2 2"
+                    vector-effect="non-scaling-stroke"
+                  ></line>
+                  <polyline
+                    [attr.points]="benchmarkPolyline(benchmarkData.chart?.fund)"
+                    fill="none"
+                    stroke="var(--accent)"
+                    stroke-width="1.5"
+                    vector-effect="non-scaling-stroke"
+                  ></polyline>
+                  <polyline
+                    [attr.points]="benchmarkPolyline(benchmarkData.chart?.benchmark)"
+                    fill="none"
+                    stroke="var(--negative)"
+                    stroke-width="1.5"
+                    vector-effect="non-scaling-stroke"
+                  ></polyline>
+                </svg>
+
+                <div class="chart-x-axis" aria-hidden="true">
+                  <span
+                    *ngFor="let tick of benchmarkChartXAxisTicks()"
+                    [style.left.%]="tick.left"
+                  >
+                    {{ tick.label }}
+                  </span>
+                </div>
+              </div>
+
+              <ng-template #benchmarkChartUnavailable>
+                <div class="chart-unavailable">
+                  Chart data is unavailable for {{ benchmarkPeriod }} because both fund and benchmark series do not have sufficient common observations.
+                </div>
+              </ng-template>
             </div>
           </ng-container>
         </ng-container>

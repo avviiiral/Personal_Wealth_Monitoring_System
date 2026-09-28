@@ -488,6 +488,85 @@ class BenchmarkPerformanceService:
             "benchmark_cagr_5y": metrics.get("5Y"),
         }
 
+    @staticmethod
+    def _normalized_chart_series(fund_points, benchmark_points, days):
+        """Build synchronized, independently normalized series for the selected period."""
+        fund = sorted(
+            (
+                point
+                for point in fund_points
+                if point.get("date") and point.get("value") is not None
+            ),
+            key=lambda point: point["date"],
+        )
+        benchmark = sorted(
+            (
+                point
+                for point in benchmark_points
+                if point.get("date") and point.get("value") is not None
+            ),
+            key=lambda point: point["date"],
+        )
+        if not fund or not benchmark:
+            return None
+
+        # Use the same effective end date for both series and derive the
+        # selected-period window from that common endpoint.
+        end_date = min(
+            date.fromisoformat(fund[-1]["date"]),
+            date.fromisoformat(benchmark[-1]["date"]),
+        )
+        requested_start = end_date - timedelta(days=days)
+
+        fund_by_date = {
+            point["date"]: point
+            for point in fund
+            if requested_start <= date.fromisoformat(point["date"]) <= end_date
+            and float(point["value"]) > 0
+        }
+        benchmark_by_date = {
+            point["date"]: point
+            for point in benchmark
+            if requested_start <= date.fromisoformat(point["date"]) <= end_date
+            and float(point["value"]) > 0
+        }
+        common_dates = sorted(set(fund_by_date).intersection(benchmark_by_date))
+        if len(common_dates) < 2:
+            return None
+
+        start_date = common_dates[0]
+        effective_end = common_dates[-1]
+        fund_base = float(fund_by_date[start_date]["value"])
+        benchmark_base = float(benchmark_by_date[start_date]["value"])
+        if fund_base <= 0 or benchmark_base <= 0:
+            return None
+
+        fund_chart = [
+            {
+                "date": point["date"],
+                "value": float(point["value"]) / fund_base * 100.0,
+            }
+            for point in fund
+            if start_date <= point["date"] <= effective_end
+            and float(point["value"]) > 0
+        ]
+        benchmark_chart = [
+            {
+                "date": point["date"],
+                "value": float(point["value"]) / benchmark_base * 100.0,
+            }
+            for point in benchmark
+            if start_date <= point["date"] <= effective_end
+            and float(point["value"]) > 0
+        ]
+
+        return {
+            "fund": fund_chart,
+            "benchmark": benchmark_chart,
+            "start_date": start_date,
+            "end_date": effective_end,
+        }
+
     @classmethod
     def calculate(cls, product, chart_period="1Y"):
         benchmark = cls._product_benchmark(product)
@@ -544,6 +623,11 @@ class BenchmarkPerformanceService:
             if date.fromisoformat(point["date"]) >= chart_start
         ]
         fund_chart = cls._fund_series(product, chart_start)
+        normalized_chart = cls._normalized_chart_series(
+            fund_chart,
+            benchmark_chart,
+            chart_days,
+        )
 
         return {
             "benchmark": benchmark,
@@ -556,8 +640,10 @@ class BenchmarkPerformanceService:
             "benchmark_cagr_3y": benchmark_metrics.get("3Y"),
             "benchmark_cagr_5y": benchmark_metrics.get("5Y"),
             "chart_period": chart_period,
-            "chart": {
-                "fund": fund_chart,
-                "benchmark": benchmark_chart,
+            "chart": normalized_chart or {
+                "fund": [],
+                "benchmark": [],
+                "start_date": None,
+                "end_date": None,
             },
         }

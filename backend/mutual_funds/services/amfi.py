@@ -5,6 +5,7 @@ import time
 import requests
 
 from django.db import transaction
+from django.db.models import OuterRef, Subquery
 
 from mutual_funds.models import (
     AMFIMasterNAV,
@@ -718,24 +719,30 @@ class AMFIService:
             .values_list("scheme_code", "id")
         )
 
-        latest_by_scheme = {}
-        for master_nav in (
+        latest_nav_id = (
             AMFIMasterNAV.objects
-            .filter(scheme__is_active=True)
+            .filter(scheme_id=OuterRef("scheme_id"))
+            .order_by("-date", "-id")
+            .values("id")[:1]
+        )
+        latest_master_navs = (
+            AMFIMasterNAV.objects
+            .filter(
+                scheme__is_active=True,
+                id=Subquery(latest_nav_id),
+            )
             .select_related("scheme")
-            .order_by("scheme_id", "-date")
-        ):
-            latest_by_scheme.setdefault(master_nav.scheme.scheme_code, master_nav)
+        )
 
         family_navs = [
             MutualFundNAV(
-                scheme_id=scheme_ids[code],
+                scheme_id=scheme_ids[master_nav.scheme.scheme_code],
                 date=master_nav.date,
                 nav=master_nav.nav,
                 source="AMFI",
             )
-            for code, master_nav in latest_by_scheme.items()
-            if code in scheme_ids
+            for master_nav in latest_master_navs
+            if master_nav.scheme.scheme_code in scheme_ids
         ]
 
         if family_navs:

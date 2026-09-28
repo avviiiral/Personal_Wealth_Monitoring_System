@@ -67,6 +67,7 @@ class Command(BaseCommand):
     # Commands that operate across all users in one call - no
     # --user-id needed/accepted.
     GLOBAL_STEPS = [
+        ("refresh_amfi_master", {}),
         ("update_market_prices", {}),
     ]
 
@@ -138,19 +139,6 @@ class Command(BaseCommand):
         # BenchmarkPerformanceService calculates benchmark series on demand;
         # there is no BenchmarkDataRefreshService to invoke here. Keeping this
         # step out avoids the stale import that previously crashed the scheduler.
-
-        if "refresh_amfi_master" not in skip:
-            self.stdout.write("\n--- refresh_amfi_master ---")
-            try:
-                result = AMFIService.import_latest_master_navs()
-                succeeded.append("refresh_amfi_master")
-                self.stdout.write(self.style.SUCCESS(
-                    f"AMFI master refreshed: {result.get('schemes', 0)} schemes, "
-                    f"{result.get('nav_records', 0)} NAV records"
-                ))
-            except Exception as exc:
-                failed.append(("refresh_amfi_master", str(exc)))
-                self.stderr.write(self.style.ERROR(f"refresh_amfi_master failed: {exc}"))
 
         active_user_ids = list(
             User.objects.filter(is_active=True).values_list("id", flat=True)

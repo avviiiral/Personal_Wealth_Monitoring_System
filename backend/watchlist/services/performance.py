@@ -305,18 +305,22 @@ class AMFIPerformanceService:
                     setattr(latest, field, value)
                     update_fields.append(field)
 
-                # CAGR uses the longest available annual period. Since the
-                # underlying NAV dates are actual market dates, elapsed days
-                # are used rather than assuming exactly 365 days per year.
-                for field, months in reversed(cls.PERIODS):
-                    record = periods.get(field)
-                    if not record or record["nav"] in (None, Decimal("0")) or latest.nav_or_value in (None, Decimal("0")):
-                        continue
-                    years = Decimal(str((latest.date - record["date"]).days)) / Decimal("365.2425")
-                    if years > 0:
-                        latest.cagr = ((latest.nav_or_value / record["nav"]) ** (Decimal("1") / years) - Decimal("1")) * Decimal("100")
-                        update_fields.append("cagr")
-                        break
+                # CAGR uses the longest available annual period. IDCW
+                # NAV history is excluded because distributions are not
+                # represented in the NAV series.
+                if not is_idcw:
+                    for field, months in reversed(cls.PERIODS):
+                        record = periods.get(field)
+                        if not record or record["nav"] in (None, Decimal("0")) or latest.nav_or_value in (None, Decimal("0")):
+                            continue
+                        years = Decimal(str((latest.date - record["date"]).days)) / Decimal("365.2425")
+                        if years > 0:
+                            latest.cagr = ((latest.nav_or_value / record["nav"]) ** (Decimal("1") / years) - Decimal("1")) * Decimal("100")
+                            update_fields.append("cagr")
+                            break
+                else:
+                    latest.cagr = None
+                    update_fields.append("cagr")
 
                 latest.save(update_fields=list(dict.fromkeys(update_fields)))
                 metrics_updated += 1

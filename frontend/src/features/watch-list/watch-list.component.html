@@ -90,7 +90,7 @@
               [disabled]="isUpdatingBenchmark(product.id)"
               aria-label="Benchmark">
               <option value="">Select benchmark</option>
-              <option *ngFor="let benchmark of benchmarkOptions" [value]="benchmark">{{ benchmark }}</option>
+              <option *ngFor="let benchmark of benchmarkOptions" [value]="benchmark.value">{{ benchmark.label }}</option>
             </select>
           </td>
           <td><button type="button" class="compare-button" [disabled]="!product.benchmark" (click)="openBenchmarkComparison(product)">Compare</button></td>
@@ -160,7 +160,7 @@
 
           <ng-container *ngIf="benchmarkData.available !== false">
             <div class="benchmark-summary">
-              <div><span>Benchmark</span><strong>{{ benchmarkData.benchmark || benchmarkModalProduct.benchmark }}</strong></div>
+              <div><span>Benchmark</span><strong>{{ benchmarkDisplayName(benchmarkData.benchmark || benchmarkModalProduct.benchmark) }}</strong></div>
               <div><span>As of</span><strong>{{ benchmarkData.as_of_date || '—' }}</strong></div>
             </div>
 
@@ -198,7 +198,7 @@
               <div class="chart-title">Relative Performance — {{ benchmarkPeriod }}</div>
               <div class="chart-legend">
                 <span><i class="legend-fund"></i>{{ benchmarkModalProduct.name }}</span>
-                <span><i class="legend-benchmark"></i>{{ benchmarkData.benchmark || benchmarkModalProduct.benchmark }}</span>
+                <span><i class="legend-benchmark"></i>{{ benchmarkDisplayName(benchmarkData.benchmark || benchmarkModalProduct.benchmark) }}</span>
               </div>
 
               <div class="relative-chart-area" *ngIf="benchmarkChartHasData(); else benchmarkChartUnavailable">

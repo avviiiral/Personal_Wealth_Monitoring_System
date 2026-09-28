@@ -227,6 +227,37 @@ class BenchmarkPerformanceTests(TestCase):
         self.assertIsNone(result["fund_return_details"]["1Y"])
         self.assertEqual(result["benchmark_metrics"]["1Y"], -2.0)
 
+    def test_benchmark_long_periods_are_cumulative_not_cagr(self):
+        points = [
+            {"date": "2021-01-01", "value": 100.0},
+            {"date": "2026-01-01", "value": 150.0},
+        ]
+        product = InvestmentProduct.objects.create(
+            product_type=ProductType.MUTUAL_FUND,
+            name="Benchmark Return Basis Test",
+            identity_key="MUTUAL_FUND:SCHEME:BENCHMARK-BASIS",
+            source="TEST",
+        )
+        MutualFundProduct.objects.create(
+            product=product,
+            scheme_code="BENCHMARK-BASIS",
+            benchmark="Nifty 50",
+        )
+        with patch.object(
+            BenchmarkPerformanceService,
+            "_series",
+            return_value=points,
+        ):
+            result = BenchmarkPerformanceService.calculate(product)
+
+        self.assertEqual(result["benchmark_metrics"]["5Y"], 50.0)
+        self.assertEqual(
+            result["benchmark_return_details"]["5Y"]["method"],
+            "Cumulative return",
+        )
+        self.assertNotIn("benchmark_cagr_3y", result)
+        self.assertNotIn("benchmark_cagr_5y", result)
+
     def test_return_detail_exposes_exact_observations(self):
         points = [
             {"date": "2025-09-25", "value": 100.0},

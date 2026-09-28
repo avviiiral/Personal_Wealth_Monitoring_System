@@ -369,7 +369,7 @@ class BenchmarkPerformanceService:
         return cls._series(cls._ticker(benchmark), start)
 
     @staticmethod
-    def _period_return_detail(points, days):
+    def _period_return_detail(points, days, annualize_long_periods=True):
         if not points:
             return None
 
@@ -394,7 +394,7 @@ class BenchmarkPerformanceService:
 
         elapsed_days = max((end_date - start_date).days, 1)
         ratio = end_value / start_value
-        if days > 365:
+        if days > 365 and annualize_long_periods:
             return {
                 "return": (ratio ** (365.25 / elapsed_days) - 1.0) * 100.0,
                 "start_date": start["date"],
@@ -827,8 +827,15 @@ class BenchmarkPerformanceService:
                 getattr(getattr(product, "mutual_fund", None), "option", None)
             )
         )
+        # Benchmark returns are always reported as the actual cumulative
+        # change over the selected observation window. Do not annualize the
+        # 3Y/5Y benchmark values into CAGR.
         benchmark_return_details = {
-            period: cls._period_return_detail(benchmark_series, days)
+            period: cls._period_return_detail(
+                benchmark_series,
+                days,
+                annualize_long_periods=False,
+            )
             for period, days in cls.PERIOD_DAYS.items()
         }
         benchmark_metrics = {
@@ -902,8 +909,6 @@ class BenchmarkPerformanceService:
             "benchmark_return_details": benchmark_return_details,
             "differences": differences,
             "comparison": comparison,
-            "benchmark_cagr_3y": benchmark_metrics.get("3Y"),
-            "benchmark_cagr_5y": benchmark_metrics.get("5Y"),
             "chart_period": chart_period,
             "chart": normalized_chart or {
                 "fund": [],

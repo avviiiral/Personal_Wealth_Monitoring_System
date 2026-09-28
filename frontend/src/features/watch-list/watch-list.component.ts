@@ -667,7 +667,9 @@ export class WatchListComponent implements OnInit, OnDestroy {
   }
 
   benchmarkChartYLabel(value: number): string {
-    return Number.isInteger(value) ? value.toFixed(0) : value.toFixed(1);
+    const returnValue = value - 100;
+    const rounded = Number.isInteger(returnValue) ? returnValue.toFixed(0) : returnValue.toFixed(1);
+    return returnValue > 0 ? `+${rounded}%` : `${rounded}%`;
   }
 
 

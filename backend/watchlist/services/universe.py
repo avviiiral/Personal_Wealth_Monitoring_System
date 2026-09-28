@@ -5,12 +5,17 @@ import re
 from datetime import date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 
+import logging
+
 import requests
 from django.db import transaction
 from django.utils import timezone
 
 from watchlist.models import DiscoveryRun, InvestmentProduct, MutualFundProduct, PerformanceSnapshot, PMSProduct, ProductType
 from watchlist.services.performance import AMFIPerformanceService
+
+
+logger = logging.getLogger(__name__)
 
 
 class AMFIUniverseService:
@@ -142,8 +147,10 @@ class AMFIUniverseService:
         queries. Bulk upserts keep the refresh bounded and observable.
         """
         run = DiscoveryRun.objects.create(source=cls.SOURCE)
+        logger.info("Watch List AMFI refresh started (run=%s)", run.id)
         try:
             records = cls.parse_latest_feed(cls.download_latest())
+            logger.info("Watch List AMFI feed downloaded (run=%s, records=%s)", run.id, len(records))
 
             # AMFI can expose multiple rows sharing an ISIN. identity_key is
             # unique in PWMS, so keep one authoritative row per identity.
@@ -178,6 +185,7 @@ class AMFIUniverseService:
                 for record in records
             ]
 
+            logger.info("Watch List AMFI bulk upsert starting (run=%s, products=%s, existing=%s)", run.id, len(products), len(existing_keys))
             InvestmentProduct.objects.bulk_create(
                 products,
                 batch_size=1000,
@@ -259,6 +267,7 @@ class AMFIUniverseService:
                 "mode": "bulk_upsert",
             }
             run.finished_at = timezone.now()
+            logger.info("Watch List AMFI refresh finished (run=%s, discovered=%s, updated=%s, failed=%s)", run.id, discovered, updated, failed)
             run.save(
                 update_fields=[
                     "discovered", "updated", "failed", "details", "finished_at",
@@ -271,6 +280,7 @@ class AMFIUniverseService:
                 "performance": performance,
             }
         except Exception as exc:
+            logger.exception("Watch List AMFI refresh failed (run=%s)", run.id)
             run.failed = 1
             run.details = {"error": str(exc)}
             run.finished_at = timezone.now()

@@ -663,7 +663,7 @@ export class WatchListComponent implements OnInit, OnDestroy {
     workbook.created = new Date();
 
     const sheet = workbook.addWorksheet('Watch List', {
-      views: [{ state: 'frozen', ySplit: 4, showGridLines: false }],
+      views: [{ state: 'frozen', ySplit: 11, showGridLines: false }],
       properties: { defaultRowHeight: 21 },
     });
 
@@ -709,7 +709,78 @@ export class WatchListComponent implements OnInit, OnDestroy {
     summary.alignment = { vertical: 'middle' };
     sheet.getRow(3).height = 22;
 
-    const headerRow = sheet.insertRow(4, columnDefinitions.map(column => column.header));
+    // Keep benchmark performance at the top of the export, before the
+    // existing Watch List product table.
+    const benchmarkSectionTitleRow = 4;
+    const benchmarkHeaderRow = 5;
+    const firstBenchmarkRow = 6;
+    const noteRow = 9;
+    const productHeaderRow = 11;
+
+    sheet.mergeCells('A' + benchmarkSectionTitleRow + ':O' + benchmarkSectionTitleRow);
+    const benchmarkTitle = sheet.getCell('A' + benchmarkSectionTitleRow);
+    benchmarkTitle.value = 'Benchmark Performance';
+    benchmarkTitle.font = { name: 'Aptos Display', size: 14, bold: true, color: { argb: 'FFFFFFFF' } };
+    benchmarkTitle.alignment = { vertical: 'middle' };
+    benchmarkTitle.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1F2937' } };
+    sheet.getRow(benchmarkSectionTitleRow).height = 28;
+
+    const benchmarkHeaders = ['Benchmark', '1M', '3M', '6M', '1Y', '3Y', '5Y', 'CAGR'];
+    const benchmarkHeader = sheet.getRow(benchmarkHeaderRow);
+    benchmarkHeaders.forEach((header, index) => {
+      const cell = benchmarkHeader.getCell(index + 1);
+      cell.value = header;
+      cell.font = { name: 'Aptos', size: 10, bold: true, color: { argb: 'FFFFFFFF' } };
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF374151' } };
+      cell.alignment = { vertical: 'middle', horizontal: 'center' };
+      cell.border = {
+        top: { style: 'thin', color: { argb: 'FFD1D5DB' } },
+        bottom: { style: 'thin', color: { argb: 'FFD1D5DB' } },
+      };
+    });
+    benchmarkHeader.height = 24;
+
+    ['Nifty 50', 'BSE 500'].forEach((benchmarkName, index) => {
+      const data = benchmarkRows.find(item => item?.benchmark === benchmarkName) || {};
+      const metrics = data?.benchmark_metrics || {};
+      const values = [
+        benchmarkName,
+        data?.available ? (metrics['1M'] ?? null) : 'Unavailable',
+        data?.available ? (metrics['3M'] ?? null) : 'Unavailable',
+        data?.available ? (metrics['6M'] ?? null) : 'Unavailable',
+        data?.available ? (metrics['1Y'] ?? null) : 'Unavailable',
+        data?.available ? (metrics['3Y'] ?? null) : 'Unavailable',
+        data?.available ? (metrics['5Y'] ?? null) : 'Unavailable',
+        data?.available ? (data?.benchmark_cagr_5y ?? metrics['5Y'] ?? null) : 'Unavailable',
+      ];
+      const row = sheet.getRow(firstBenchmarkRow + index);
+      values.forEach((value, column) => {
+        const cell = row.getCell(column + 1);
+        cell.value = value;
+        cell.font = { name: 'Aptos', size: 10, color: { argb: 'FF111827' } };
+        cell.alignment = { vertical: 'middle', horizontal: column === 0 ? 'left' : 'right' };
+        cell.border = { bottom: { style: 'hair', color: { argb: 'FFE5E7EB' } } };
+        if (typeof value === 'number') cell.numFmt = '0.00"%"';
+      });
+      if (index % 2 === 1) {
+        row.eachCell({ includeEmpty: true }, cell => {
+          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF9FAFB' } };
+        });
+      }
+      row.height = 21;
+    });
+
+    const noteCell = sheet.getCell('A' + noteRow);
+    noteCell.value = 'Note: Product return columns are Watch List returns. Benchmark Performance shows the selected Nifty 50 and BSE 500 market benchmark returns as of the latest available benchmark date.';
+    sheet.mergeCells('A' + noteRow + ':O' + noteRow);
+    noteCell.font = { name: 'Aptos', size: 9, italic: true, color: { argb: 'FF6B7280' } };
+    noteCell.alignment = { vertical: 'middle' };
+    sheet.getRow(noteRow).height = 20;
+
+    const headerRow = sheet.getRow(productHeaderRow);
+    columnDefinitions.forEach((column, index) => {
+      headerRow.getCell(index + 1).value = column.header;
+    });
     headerRow.height = 26;
     headerRow.eachCell(cell => {
       cell.font = { name: 'Aptos', size: 10, bold: true, color: { argb: 'FFFFFFFF' } };
@@ -770,77 +841,11 @@ export class WatchListComponent implements OnInit, OnDestroy {
       row.getCell(7).alignment = { vertical: 'middle', horizontal: 'center' };
     });
 
-    sheet.autoFilter = { from: 'A4', to: 'O4' };
+    sheet.autoFilter = { from: 'A' + productHeaderRow, to: 'O' + productHeaderRow };
     sheet.getColumn(2).alignment = { vertical: 'middle', wrapText: true };
     sheet.getColumn(3).alignment = { vertical: 'middle', wrapText: true };
     sheet.getColumn(4).alignment = { vertical: 'middle', wrapText: true };
     sheet.getColumn(5).alignment = { vertical: 'middle', wrapText: true };
-
-    const lastProductRow = Math.max(4, products.length + 4);
-    const sectionTitleRow = lastProductRow + 2;
-    const benchmarkHeaderRow = sectionTitleRow + 1;
-    const firstBenchmarkRow = sectionTitleRow + 2;
-
-    sheet.mergeCells('A' + sectionTitleRow + ':O' + sectionTitleRow);
-    const benchmarkTitle = sheet.getCell('A' + sectionTitleRow);
-    benchmarkTitle.value = 'Benchmark Performance';
-    benchmarkTitle.font = { name: 'Aptos Display', size: 14, bold: true, color: { argb: 'FFFFFFFF' } };
-    benchmarkTitle.alignment = { vertical: 'middle' };
-    benchmarkTitle.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1F2937' } };
-    sheet.getRow(sectionTitleRow).height = 28;
-
-    const benchmarkHeaders = ['Benchmark', '1M', '3M', '6M', '1Y', '3Y', '5Y', 'CAGR'];
-    const benchmarkHeader = sheet.getRow(benchmarkHeaderRow);
-    benchmarkHeaders.forEach((header, index) => {
-      const cell = benchmarkHeader.getCell(index + 1);
-      cell.value = header;
-      cell.font = { name: 'Aptos', size: 10, bold: true, color: { argb: 'FFFFFFFF' } };
-      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF374151' } };
-      cell.alignment = { vertical: 'middle', horizontal: 'center' };
-      cell.border = {
-        top: { style: 'thin', color: { argb: 'FFD1D5DB' } },
-        bottom: { style: 'thin', color: { argb: 'FFD1D5DB' } },
-      };
-    });
-    benchmarkHeader.height = 24;
-
-    ['Nifty 50', 'BSE 500'].forEach((benchmarkName, index) => {
-      const data = benchmarkRows.find(item => item?.benchmark === benchmarkName) || {};
-      const metrics = data?.benchmark_metrics || {};
-      const values = [
-        benchmarkName,
-        data?.available ? (metrics['1M'] ?? null) : 'Unavailable',
-        data?.available ? (metrics['3M'] ?? null) : 'Unavailable',
-        data?.available ? (metrics['6M'] ?? null) : 'Unavailable',
-        data?.available ? (metrics['1Y'] ?? null) : 'Unavailable',
-        data?.available ? (metrics['3Y'] ?? null) : 'Unavailable',
-        data?.available ? (metrics['5Y'] ?? null) : 'Unavailable',
-        data?.available ? (data?.benchmark_cagr_5y ?? metrics['5Y'] ?? null) : 'Unavailable',
-      ];
-      const row = sheet.getRow(firstBenchmarkRow + index);
-      values.forEach((value, column) => {
-        const cell = row.getCell(column + 1);
-        cell.value = value;
-        cell.font = { name: 'Aptos', size: 10, color: { argb: 'FF111827' } };
-        cell.alignment = { vertical: 'middle', horizontal: column === 0 ? 'left' : 'right' };
-        cell.border = { bottom: { style: 'hair', color: { argb: 'FFE5E7EB' } } };
-        if (typeof value === 'number') cell.numFmt = '0.00"%"';
-      });
-      if (index % 2 === 1) {
-        row.eachCell({ includeEmpty: true }, cell => {
-          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF9FAFB' } };
-        });
-      }
-      row.height = 21;
-    });
-
-    const noteRow = firstBenchmarkRow + 3;
-    const noteCell = sheet.getCell('A' + noteRow);
-    noteCell.value = 'Note: Product return columns are Watch List returns. Benchmark Performance shows the selected Nifty 50 and BSE 500 market benchmark returns as of the latest available benchmark date.';
-    sheet.mergeCells('A' + noteRow + ':O' + noteRow);
-    noteCell.font = { name: 'Aptos', size: 9, italic: true, color: { argb: 'FF6B7280' } };
-    noteCell.alignment = { vertical: 'middle' };
-    sheet.getRow(noteRow).height = 20;
 
     const buffer = await workbook.xlsx.writeBuffer();
     this.triggerDownload(

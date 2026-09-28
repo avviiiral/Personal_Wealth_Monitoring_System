@@ -535,6 +535,19 @@ export class WatchListComponent implements OnInit, OnDestroy {
     return value === null || value === undefined ? null : Number(value);
   }
 
+  benchmarkReturnDetail(period: BenchmarkPeriod, key: 'fund_return_details' | 'benchmark_return_details'): string {
+    const detail = this.benchmarkData?.[key]?.[period];
+    if (!detail) {
+      if (key === 'fund_return_details' && this.benchmarkData?.fund_return_basis) {
+        return this.benchmarkData.fund_return_basis;
+      }
+      return 'Return calculation is unavailable for this period.';
+    }
+    const start = Number(detail.start_value).toFixed(4);
+    const end = Number(detail.end_value).toFixed(4);
+    return String(detail.method) + ': ' + String(detail.start_date) + ' (' + start + ') → ' + String(detail.end_date) + ' (' + end + ')';
+  }
+
   benchmarkComparison(period: BenchmarkPeriod): string {
     return this.benchmarkData?.comparison?.[period] || 'Unavailable';
   }

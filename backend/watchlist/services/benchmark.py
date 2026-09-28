@@ -676,6 +676,12 @@ class BenchmarkPerformanceService:
             }
 
         fund_metrics, fund_return_details, latest = cls._fund_metrics(product)
+        is_idcw = (
+            getattr(product, "product_type", None) == "MUTUAL_FUND"
+            and cls._is_idcw_option(
+                getattr(getattr(product, "mutual_fund", None), "option", None)
+            )
+        )
         benchmark_return_details = {
             period: cls._period_return_detail(benchmark_series, days)
             for period, days in cls.PERIOD_DAYS.items()
@@ -737,6 +743,12 @@ class BenchmarkPerformanceService:
             "as_of_date": benchmark_series[-1]["date"],
             "fund_metrics": fund_metrics,
             "fund_return_details": fund_return_details,
+            "fund_return_basis": (
+                "Unavailable: IDCW NAV history does not include distributions; "
+                "a distribution-adjusted total-return series is required."
+                if is_idcw
+                else "AMFI NAV observations"
+            ),
             "benchmark_metrics": benchmark_metrics,
             "benchmark_return_details": benchmark_return_details,
             "differences": differences,

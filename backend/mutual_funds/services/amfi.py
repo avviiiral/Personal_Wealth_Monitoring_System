@@ -751,56 +751,12 @@ class AMFIService:
     
     @staticmethod
     def import_latest_navs(owner):
-        """
-        Download the latest AMFI NAV file and import
-        all valid scheme records.
-        """
-
-        text = (
-            AMFIService
-            .download_latest_nav()
-        )
-
-        records = (
-            AMFIService
-            .parse_nav_file(
-                text,
-                historical=False,
-            )
-        )
-
-        return AMFIService._import_records(
-            owner,
-            records,
-        )
+        """Compatibility wrapper: refresh the shared master, then sync one family."""
+        AMFIService.import_latest_master_navs()
+        return AMFIService.sync_user_nav_from_master(owner)
 
     @staticmethod
-    def import_historical_navs(
-        owner,
-        from_date,
-        to_date,
-    ):
-        """
-        Download and import historical AMFI NAV data.
-        """
-
-        text = (
-            AMFIService
-            .download_historical_nav(
-                from_date,
-                to_date,
-            )
-        )
-
-        records = (
-            AMFIService
-            .parse_nav_file(
-                text,
-                historical=True,
-            )
-        )
-
-        return AMFIService._import_records(
-            owner,
-            records,
-        )
+    def import_historical_navs(owner, from_date, to_date):
+        """Compatibility wrapper: import history once into the master, then sync the family."""
+        AMFIService.import_historical_master_navs(from_date, to_date)
+        return AMFIService.sync_user_nav_from_master(owner)

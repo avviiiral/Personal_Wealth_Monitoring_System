@@ -1,6 +1,6 @@
 import { Injectable, inject } from '@angular/core';
 import { HttpClient, HttpHeaders, HttpParams } from '@angular/common/http';
-import { Observable, switchMap } from 'rxjs';
+import { Observable, switchMap, timeout } from 'rxjs';
 
 import { environment } from '../../environments/environment';
 
@@ -107,7 +107,12 @@ export class WatchListApiService {
   }
 
   refresh(): Observable<any> {
-    return this.postWithCsrf<any>(`${this.baseUrl}/refresh/`, {});
+    // A refresh should never leave the UI in an indefinite pending state.
+    // The backend is expected to finish the latest-universe refresh well
+    // before this safety timeout; historical performance is scheduled separately.
+    return this.postWithCsrf<any>(`${this.baseUrl}/refresh/`, {}).pipe(
+      timeout({ each: 120000 }),
+    );
   }
 
   toggleWatch(productId: number): Observable<{ id: number; is_watchlisted: boolean }> {

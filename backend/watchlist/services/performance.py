@@ -285,6 +285,20 @@ class AMFIPerformanceService:
                 getattr(getattr(product, "mutual_fund", None), "option", None)
             )
 
+            if is_idcw:
+                PerformanceSnapshot.objects.filter(
+                    product=product,
+                    source=cls.SOURCE,
+                ).update(
+                    return_1m=None,
+                    return_3m=None,
+                    return_6m=None,
+                    return_1y=None,
+                    return_3y=None,
+                    return_5y=None,
+                    cagr=None,
+                )
+
             if not is_idcw:
                 for field, _ in cls.PERIODS:
                     record = periods.get(field)

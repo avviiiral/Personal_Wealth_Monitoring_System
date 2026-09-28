@@ -165,7 +165,10 @@ class AMFIUniverseService:
                     updated += int(not created)
                 except Exception:
                     failed += 1
-            performance = AMFIPerformanceService.refresh()
+            # Universe refresh is intentionally fast. Historical performance
+            # backfill is a separate scheduled operation so the UI does not hold
+            # a request open while AMFI history endpoints are queried.
+            performance = {"deferred": True, "message": "Historical performance refresh is scheduled separately."}
             run.discovered, run.updated, run.failed = discovered, updated, failed
             run.details = {"source_reference": cls.NAV_URL, "performance": performance}
             run.finished_at = timezone.now()

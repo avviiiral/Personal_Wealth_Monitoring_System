@@ -705,13 +705,9 @@ export class DownloadsComponent implements OnInit {
     workbook.created = new Date();
 
     const sheet = workbook.addWorksheet('Watch List', {
-      views: [{ state: 'frozen', ySplit: 11, showGridLines: false }],
+      views: [{ state: 'frozen', ySplit: 6, showGridLines: false }],
       properties: { defaultRowHeight: 21 },
     });
-
-    const exportTypeLabel = this.selectedWatchListType === 'ALL'
-      ? 'Mutual Funds & PMS'
-      : this.selectedWatchListType === 'MUTUAL_FUND' ? 'Mutual Funds' : 'PMS';
 
     const columns: Array<[string, string, number]> = [
       ['Type', 'type', 16], ['Product', 'product', 48], ['Provider', 'provider', 28],
@@ -735,33 +731,29 @@ export class DownloadsComponent implements OnInit {
     title.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1F2937' } };
     sheet.getRow(1).height = 32;
 
+    // Match the established Watch List report layout:
+    // benchmark summary first, followed immediately by the product table.
     sheet.mergeCells('A2:O2');
-    const subtitle = sheet.getCell('A2');
-    subtitle.value = exportTypeLabel + ' • Watchlisted products • Generated ' + this.todayStamp();
-    subtitle.font = { name: 'Aptos', size: 10, italic: true, color: { argb: 'FF6B7280' } };
-    subtitle.alignment = { vertical: 'middle' };
-    sheet.getRow(2).height = 22;
-
-    sheet.mergeCells('A3:O3');
-    const summary = sheet.getCell('A3');
-    summary.value = 'Total watchlisted products: ' + products.length;
-    summary.font = { name: 'Aptos', size: 10, bold: true, color: { argb: 'FF374151' } };
-    summary.alignment = { vertical: 'middle' };
-    sheet.getRow(3).height = 22;
-
-    sheet.mergeCells('A4:O4');
-    const benchmarkTitle = sheet.getCell('A4');
+    const benchmarkTitle = sheet.getCell('A2');
     benchmarkTitle.value = 'Benchmark Performance';
     benchmarkTitle.font = { name: 'Aptos Display', size: 14, bold: true, color: { argb: 'FFFFFFFF' } };
     benchmarkTitle.alignment = { vertical: 'middle' };
     benchmarkTitle.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1F2937' } };
-    sheet.getRow(4).height = 28;
+    sheet.getRow(2).height = 28;
 
-    const benchmarkHeaders = ['Benchmark', '1M', '3M', '6M', '1Y', '3Y', '5Y', 'CAGR'];
-    const benchmarkHeader = sheet.getRow(5);
-    benchmarkHeaders.forEach((header, index) => {
-      const cell = benchmarkHeader.getCell(index + 1);
-      cell.value = header;
+    // Keep the benchmark summary compact and separate from the product-level
+    // Watch List table. Long-period benchmark CAGR is intentionally omitted.
+    sheet.mergeCells('A3:G3');
+    const benchmarkHeaderLabel = sheet.getCell('A3');
+    benchmarkHeaderLabel.value = 'Benchmark';
+
+    const benchmarkPeriods = ['1M', '3M', '6M', '1Y', '3Y', '5Y'];
+    benchmarkPeriods.forEach((period, index) => {
+      sheet.getCell(3, 8 + index).value = period;
+    });
+
+    const benchmarkHeader = sheet.getRow(3);
+    benchmarkHeader.eachCell({ includeEmpty: true }, cell => {
       cell.font = { name: 'Aptos', size: 10, bold: true, color: { argb: 'FFFFFFFF' } };
       cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF374151' } };
       cell.alignment = { vertical: 'middle', horizontal: 'center' };
@@ -783,17 +775,21 @@ export class DownloadsComponent implements OnInit {
         data?.available ? (metrics['1Y'] ?? null) : 'Unavailable',
         data?.available ? (metrics['3Y'] ?? null) : 'Unavailable',
         data?.available ? (metrics['5Y'] ?? null) : 'Unavailable',
-        data?.available ? (data?.benchmark_cagr_5y ?? metrics['5Y'] ?? null) : 'Unavailable',
       ];
-      const row = sheet.getRow(6 + index);
+
+      const rowNumber = 4 + index;
+      sheet.mergeCells('A' + rowNumber + ':G' + rowNumber);
+      const row = sheet.getRow(rowNumber);
+
       values.forEach((value, column) => {
-        const cell = row.getCell(column + 1);
+        const cell = row.getCell(column === 0 ? 1 : 7 + column);
         cell.value = value;
         cell.font = { name: 'Aptos', size: 10, color: { argb: 'FF111827' } };
-        cell.alignment = { vertical: 'middle', horizontal: column === 0 ? 'left' : 'right' };
+        cell.alignment = { vertical: 'middle', horizontal: column === 0 ? 'center' : 'center' };
         cell.border = { bottom: { style: 'hair', color: { argb: 'FFE5E7EB' } } };
         if (typeof value === 'number') cell.numFmt = '0.00"%"';
       });
+
       if (index % 2 === 1) {
         row.eachCell({ includeEmpty: true }, cell => {
           cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF9FAFB' } };
@@ -802,15 +798,10 @@ export class DownloadsComponent implements OnInit {
       row.height = 21;
     });
 
-    sheet.mergeCells('A9:O9');
-    const noteCell = sheet.getCell('A9');
-    noteCell.value = 'Note: Product return columns are Watch List returns. Benchmark Performance shows the selected Nifty 50 and BSE 500 market benchmark returns as of the latest available benchmark date.';
-    noteCell.font = { name: 'Aptos', size: 9, italic: true, color: { argb: 'FF6B7280' } };
-    noteCell.alignment = { vertical: 'middle' };
-    sheet.getRow(9).height = 20;
-
-    const headerRow = sheet.getRow(11);
-    columns.forEach(([label], index) => { headerRow.getCell(index + 1).value = label; });
+    const headerRow = sheet.getRow(6);
+    columns.forEach(([label], index) => {
+      headerRow.getCell(index + 1).value = label;
+    });
     headerRow.height = 26;
     headerRow.eachCell(cell => {
       cell.font = { name: 'Aptos', size: 10, bold: true, color: { argb: 'FFFFFFFF' } };
@@ -847,6 +838,7 @@ export class DownloadsComponent implements OnInit {
         cell.border = { bottom: { style: 'hair', color: { argb: 'FFE5E7EB' } } };
       });
       row.height = 21;
+
       if (index % 2 === 1) {
         row.eachCell({ includeEmpty: true }, cell => {
           cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF9FAFB' } };
@@ -866,12 +858,13 @@ export class DownloadsComponent implements OnInit {
         aum.numFmt = '#,##0.00';
         aum.alignment = { vertical: 'middle', horizontal: 'right' };
       }
+
       row.getCell(1).alignment = { vertical: 'middle', horizontal: 'center' };
       row.getCell(6).alignment = { vertical: 'middle', horizontal: 'center' };
       row.getCell(7).alignment = { vertical: 'middle', horizontal: 'center' };
     });
 
-    sheet.autoFilter = { from: 'A11', to: 'O11' };
+    sheet.autoFilter = { from: 'A6', to: 'O6' };
     sheet.getColumn(2).alignment = { vertical: 'middle', wrapText: true };
     sheet.getColumn(3).alignment = { vertical: 'middle', wrapText: true };
     sheet.getColumn(4).alignment = { vertical: 'middle', wrapText: true };

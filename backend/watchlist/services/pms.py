@@ -106,6 +106,7 @@ class APMIPMSDiscoveryService:
 
     @classmethod
     def refresh(cls):
+        """Refresh APMI PMS data with bulk database upserts."""
         run = DiscoveryRun.objects.create(source=cls.SOURCE)
         discovered = updated = failed = 0
         try:
@@ -114,62 +115,119 @@ class APMIPMSDiscoveryService:
             report_date = cls._report_date(response.text)
             records = cls._records(response.text)
 
+            identities = [
+                f"PMS:APMI:{record['provider'].upper()}:{record['iaid'] or record['name'].upper()}"
+                for record in records
+            ]
+            existing_keys = set(
+                InvestmentProduct.objects.filter(identity_key__in=identities)
+                .values_list("identity_key", flat=True)
+            )
+
+            products = []
             for record in records:
-                try:
-                    identity_suffix = record["iaid"] or record["name"].upper()
-                    identity = f"PMS:APMI:{record['provider'].upper()}:{identity_suffix}"
-
-                    product, created = InvestmentProduct.objects.update_or_create(
+                identity_suffix = record["iaid"] or record["name"].upper()
+                identity = f"PMS:APMI:{record['provider'].upper()}:{identity_suffix}"
+                products.append(
+                    InvestmentProduct(
                         identity_key=identity,
-                        defaults={
-                            "product_type": ProductType.PMS,
-                            "name": record["name"],
-                            "provider": record["provider"],
-                            "country": "India",
-                            "category": "PMS",
-                            "sub_category": "Investment Approach",
-                            "external_identifier": record["iaid"],
-                            "currency": "INR",
-                            "source": cls.SOURCE,
-                            "source_reference": cls.REPORT_URL,
-                            "source_date": report_date,
-                            "is_active": True,
-                        },
+                        product_type=ProductType.PMS,
+                        name=record["name"],
+                        provider=record["provider"],
+                        country="India",
+                        category="PMS",
+                        sub_category="Investment Approach",
+                        external_identifier=record["iaid"],
+                        currency="INR",
+                        source=cls.SOURCE,
+                        source_reference=cls.REPORT_URL,
+                        source_date=report_date,
+                        is_active=True,
                     )
+                )
 
-                    PMSProduct.objects.update_or_create(
-                        product=product,
-                        defaults={
-                            "strategy_name": record["name"],
-                            "strategy_type": "Investment Approach",
-                            "asset_class": "PMS",
-                            "aum": record["aum"],
-                            "latest_value": record["aum"],
-                        },
+            InvestmentProduct.objects.bulk_create(
+                products,
+                batch_size=1000,
+                update_conflicts=True,
+                update_fields=[
+                    "product_type", "name", "provider", "country", "category",
+                    "sub_category", "external_identifier", "currency", "source",
+                    "source_reference", "source_date", "is_active", "updated_at",
+                ],
+                unique_fields=["identity_key"],
+            )
+
+            product_by_identity = {
+                product.identity_key: product
+                for product in InvestmentProduct.objects.filter(
+                    identity_key__in=identities
+                )
+            }
+
+            pms_products = []
+            snapshots = []
+            for record in records:
+                identity_suffix = record["iaid"] or record["name"].upper()
+                identity = f"PMS:APMI:{record['provider'].upper()}:{identity_suffix}"
+                product = product_by_identity.get(identity)
+                if product is None:
+                    failed += 1
+                    continue
+
+                pms_products.append(
+                    PMSProduct(
+                        product_id=product.id,
+                        strategy_name=record["name"],
+                        strategy_type="Investment Approach",
+                        asset_class="PMS",
+                        aum=record["aum"],
+                        latest_value=record["aum"],
                     )
-
-                    PerformanceSnapshot.objects.update_or_create(
-                        product=product,
+                )
+                performance = record["performance"]
+                snapshots.append(
+                    PerformanceSnapshot(
+                        product_id=product.id,
                         date=report_date,
                         source=cls.SOURCE,
-                        defaults={
-                            "nav_or_value": record["aum"],
-                            "aum": record["aum"],
-                            "return_1m": record["performance"].get("1m"),
-                            "return_3m": record["performance"].get("3m"),
-                            "return_6m": record["performance"].get("6m"),
-                            "return_1y": record["performance"].get("1y"),
-                            "return_3y": record["performance"].get("3y"),
-                            "return_5y": record["performance"].get("5y"),
-                            "return_since_inception": record["performance"].get("si"),
-                            "source_reference": cls.REPORT_URL,
-                        },
+                        nav_or_value=record["aum"],
+                        aum=record["aum"],
+                        return_1m=performance.get("1m"),
+                        return_3m=performance.get("3m"),
+                        return_6m=performance.get("6m"),
+                        return_1y=performance.get("1y"),
+                        return_3y=performance.get("3y"),
+                        return_5y=performance.get("5y"),
+                        return_since_inception=performance.get("si"),
+                        source_reference=cls.REPORT_URL,
                     )
-                    discovered += 1
-                    updated += int(not created)
-                except Exception:
-                    failed += 1
+                )
 
+            PMSProduct.objects.bulk_create(
+                pms_products,
+                batch_size=1000,
+                update_conflicts=True,
+                update_fields=[
+                    "strategy_name", "strategy_type", "asset_class",
+                    "aum", "latest_value",
+                ],
+                unique_fields=["product"],
+            )
+            PerformanceSnapshot.objects.bulk_create(
+                snapshots,
+                batch_size=1000,
+                update_conflicts=True,
+                update_fields=[
+                    "nav_or_value", "aum", "return_1m", "return_3m",
+                    "return_6m", "return_1y", "return_3y", "return_5y",
+                    "return_since_inception", "source_reference", "fetched_at",
+                ],
+                unique_fields=["product", "date", "source"],
+            )
+
+            discovered = len(records)
+            updated = len(existing_keys)
             run.discovered = discovered
             run.updated = updated
             run.failed = failed
@@ -177,6 +235,7 @@ class APMIPMSDiscoveryService:
                 "source_reference": cls.REPORT_URL,
                 "report_date": report_date.isoformat(),
                 "records_seen": len(records),
+                "mode": "bulk_upsert",
             }
             run.finished_at = timezone.now()
             run.save(update_fields=["discovered", "updated", "failed", "details", "finished_at"])
@@ -185,10 +244,10 @@ class APMIPMSDiscoveryService:
                 "updated": updated,
                 "failed": failed,
                 "report_date": report_date.isoformat(),
-                "source": cls.SOURCE,
+                "source": "APMI",
             }
         except Exception as exc:
-            run.failed = 1
+            run.failed = max(1, failed)
             run.details = {"source_reference": cls.REPORT_URL, "error": str(exc)}
             run.finished_at = timezone.now()
             run.save(update_fields=["failed", "details", "finished_at"])

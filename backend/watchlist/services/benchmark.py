@@ -418,12 +418,36 @@ class BenchmarkPerformanceService:
         detail = cls._period_return_detail(points, days)
         return detail["return"] if detail else None
 
+    @staticmethod
+    def _is_idcw_option(option):
+        normalized = str(option or "").strip().upper()
+        return "IDCW" in normalized
+
     @classmethod
     def _fund_metrics(cls, product):
-        # Mutual-fund returns must be calculated from the actual AMFI NAV
-        # observations. Do not trust previously stored return_* fields here:
-        # older snapshots were calculated as simple cumulative returns even
-        # for 3Y/5Y, while benchmark 3Y/5Y are annualized.
+        # Mutual-fund returns are rebuilt from AMFI NAV observations for
+        # Growth options. IDCW NAV history cannot produce investor total
+        # returns because distributions reduce NAV.
+        mutual_fund = getattr(product, "mutual_fund", None)
+        if (
+            getattr(product, "product_type", None) == "MUTUAL_FUND"
+            and cls._is_idcw_option(getattr(mutual_fund, "option", None))
+        ):
+            snapshots = list(
+                PerformanceSnapshot.objects.filter(
+                    product=product,
+                    source="AMFI",
+                )
+                .exclude(nav_or_value__isnull=True)
+                .order_by("date", "id")
+            )
+            latest = snapshots[-1] if snapshots else None
+            return (
+                {period: None for period in cls.PERIOD_DAYS},
+                {period: None for period in cls.PERIOD_DAYS},
+                latest,
+            )
+
         if getattr(product, "product_type", None) == "MUTUAL_FUND":
             snapshots = list(
                 PerformanceSnapshot.objects.filter(

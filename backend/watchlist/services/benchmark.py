@@ -695,109 +695,65 @@ class BenchmarkPerformanceService:
         }
 
     @staticmethod
-    def _normalized_chart_series(fund_points, benchmark_points, days):
-        """Build a synchronized, independently normalized chart series.
+    def _aligned_chart_series(product_points, benchmark_points, days):
+        """Build actual values keyed by product valuation dates.
 
-        Mutual-fund NAV dates and exchange-index dates can differ by a
-        business day. Do not require exact date equality: for each benchmark
-        observation use the latest fund NAV on or before that date, provided
-        it is no more than three calendar days old. This avoids dropping an
-        otherwise valid daily fund series simply because the two data sources
-        publish the observation on different dates.
+        Match benchmark observations exactly by date when possible; otherwise
+        use the latest benchmark observation on or before the product date.
+        Future benchmark observations are never used.
         """
-        fund = sorted(
+        product = sorted(
             (
-                point
-                for point in fund_points
+                point for point in product_points
                 if point.get("date") and point.get("value") is not None
+                and float(point["value"]) > 0
             ),
             key=lambda point: point["date"],
         )
         benchmark = sorted(
             (
-                point
-                for point in benchmark_points
+                point for point in benchmark_points
                 if point.get("date") and point.get("value") is not None
+                and float(point["value"]) > 0
             ),
             key=lambda point: point["date"],
         )
-        if not fund or not benchmark:
+        if not product or not benchmark:
             return None
 
-        end_date = min(
-            date.fromisoformat(fund[-1]["date"]),
-            date.fromisoformat(benchmark[-1]["date"]),
-        )
-        requested_start = end_date - timedelta(days=days)
-
-        fund_window = [
-            point
-            for point in fund
-            if requested_start - timedelta(days=3)
-            <= date.fromisoformat(point["date"]) <= end_date
-            and float(point["value"]) > 0
+        product_end = date.fromisoformat(product[-1]["date"])
+        requested_start = product_end - timedelta(days=days)
+        product_window = [
+            point for point in product
+            if requested_start <= date.fromisoformat(point["date"]) <= product_end
         ]
-        benchmark_window = [
-            point
-            for point in benchmark
-            if requested_start <= date.fromisoformat(point["date"]) <= end_date
-            and float(point["value"]) > 0
-        ]
-        if not fund_window or not benchmark_window:
+        if not product_window:
             return None
 
-        paired = []
-        fund_index = 0
-        latest_fund = None
-        for benchmark_point in benchmark_window:
-            benchmark_date = date.fromisoformat(benchmark_point["date"])
-            while fund_index < len(fund_window):
-                candidate = fund_window[fund_index]
-                candidate_date = date.fromisoformat(candidate["date"])
-                if candidate_date > benchmark_date:
+        benchmark_index = 0
+        latest_benchmark = None
+        aligned = []
+        for product_point in product_window:
+            product_date = date.fromisoformat(product_point["date"])
+            while benchmark_index < len(benchmark):
+                candidate = benchmark[benchmark_index]
+                if date.fromisoformat(candidate["date"]) > product_date:
                     break
-                latest_fund = candidate
-                fund_index += 1
+                latest_benchmark = candidate
+                benchmark_index += 1
+            if latest_benchmark is not None:
+                aligned.append({
+                    "date": product_point["date"],
+                    "product_value": float(product_point["value"]),
+                    "benchmark_value": float(latest_benchmark["value"]),
+                })
 
-            if latest_fund is None:
-                continue
-
-            fund_date = date.fromisoformat(latest_fund["date"])
-            if (benchmark_date - fund_date).days > 3:
-                continue
-
-            paired.append((benchmark_point, latest_fund))
-
-        if len(paired) < 2:
+        if len(aligned) < 2:
             return None
-
-        start_date = paired[0][0]["date"]
-        effective_end = paired[-1][0]["date"]
-        fund_base = float(paired[0][1]["value"])
-        benchmark_base = float(paired[0][0]["value"])
-        if fund_base <= 0 or benchmark_base <= 0:
-            return None
-
-        fund_chart = [
-            {
-                "date": benchmark_point["date"],
-                "value": float(fund_point["value"]) / fund_base * 100.0,
-            }
-            for benchmark_point, fund_point in paired
-        ]
-        benchmark_chart = [
-            {
-                "date": benchmark_point["date"],
-                "value": float(benchmark_point["value"]) / benchmark_base * 100.0,
-            }
-            for benchmark_point, _ in paired
-        ]
-
         return {
-            "fund": fund_chart,
-            "benchmark": benchmark_chart,
-            "start_date": start_date,
-            "end_date": effective_end,
+            "points": aligned,
+            "start_date": aligned[0]["date"],
+            "end_date": aligned[-1]["date"],
         }
 
     @classmethod
@@ -867,31 +823,25 @@ class BenchmarkPerformanceService:
             chart_period, cls.PERIOD_DAYS["1Y"]
         )
 
-        # Keep chart availability consistent with the selected period's
-        # comparison result. For example, if the fund has no stored 5Y
-        # return, do not display a shorter history and label it as 5Y.
-        if (
-            fund_metrics.get(chart_period) is None
-            or benchmark_metrics.get(chart_period) is None
-        ):
-            normalized_chart = None
-        else:
-            chart_start = timezone.now().date() - timedelta(days=chart_days + 10)
-            benchmark_chart = [
-                point
-                for point in benchmark_series
-                if date.fromisoformat(point["date"]) >= chart_start
-            ]
-            fund_chart = cls._fund_series(
-                product,
-                chart_start,
-                end=timezone.now().date(),
-            )
-            normalized_chart = cls._normalized_chart_series(
-                fund_chart,
-                benchmark_chart,
-                chart_days,
-            )
+        history_start = timezone.now().date() - timedelta(
+            days=cls.PERIOD_DAYS["5Y"] + 31
+        )
+        product_chart = cls._fund_series(
+            product,
+            history_start,
+            end=timezone.now().date(),
+        )
+        benchmark_chart_start = history_start - timedelta(days=10)
+        benchmark_chart = [
+            point
+            for point in benchmark_series
+            if benchmark_chart_start <= date.fromisoformat(point["date"])
+        ]
+        aligned_chart = cls._aligned_chart_series(
+            product_chart,
+            benchmark_chart,
+            chart_days,
+        )
 
         return {
             "benchmark": benchmark,
@@ -910,10 +860,27 @@ class BenchmarkPerformanceService:
             "differences": differences,
             "comparison": comparison,
             "chart_period": chart_period,
-            "chart": normalized_chart or {
-                "fund": [],
-                "benchmark": [],
-                "start_date": None,
-                "end_date": None,
-            },
+            "chart": (
+                {
+                    "fund": [
+                        {"date": point["date"], "value": point["product_value"]}
+                        for point in aligned_chart["points"]
+                    ],
+                    "benchmark": [
+                        {"date": point["date"], "value": point["benchmark_value"]}
+                        for point in aligned_chart["points"]
+                    ],
+                    "aligned_points": aligned_chart["points"],
+                    "start_date": aligned_chart["start_date"],
+                    "end_date": aligned_chart["end_date"],
+                }
+                if aligned_chart
+                else {
+                    "fund": [],
+                    "benchmark": [],
+                    "aligned_points": [],
+                    "start_date": None,
+                    "end_date": None,
+                }
+            ),
         }

@@ -5,11 +5,12 @@ from unittest.mock import patch
 from django.contrib.auth.models import User
 from django.test import TestCase
 
+from mutual_funds.models import AMFIMasterNAV, AMFIMasterScheme
 from users.models import FamilyGroup
 from rest_framework.test import APIClient
 
 from investments.models import Asset, AssetCategory, PortfolioPosition, Transaction, TransactionType
-from watchlist.models import InvestmentProduct, MutualFundProduct, PerformanceSnapshot, ProductType, WatchListEntry
+from watchlist.models import InvestmentProduct, MutualFundProduct, PMSProduct, PerformanceSnapshot, ProductType, WatchListEntry
 from watchlist.services.ownership import OwnershipService
 from watchlist.services.performance import AMFIPerformanceService
 from watchlist.services.universe import AMFIUniverseService
@@ -291,6 +292,124 @@ class BenchmarkPerformanceTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertTrue(response.data["available"])
         self.assertEqual(response.data["benchmark"], "BSE 500")
+
+    def test_chart_uses_actual_values_and_on_or_before_benchmark_alignment(self):
+        aligned = BenchmarkPerformanceService._aligned_chart_series(
+            [
+                {"date": "2026-09-15", "value": 120.50},
+                {"date": "2026-09-16", "value": 121.25},
+                {"date": "2026-09-17", "value": 122.00},
+            ],
+            [
+                {"date": "2026-09-14", "value": 25000.0},
+                {"date": "2026-09-16", "value": 25100.0},
+                {"date": "2026-09-18", "value": 25300.0},
+            ],
+            365,
+        )
+
+        self.assertEqual(
+            aligned["points"],
+            [
+                {"date": "2026-09-15", "product_value": 120.50, "benchmark_value": 25000.0},
+                {"date": "2026-09-16", "product_value": 121.25, "benchmark_value": 25100.0},
+                {"date": "2026-09-17", "product_value": 122.00, "benchmark_value": 25100.0},
+            ],
+        )
+
+    def test_chart_never_uses_future_benchmark_value(self):
+        aligned = BenchmarkPerformanceService._aligned_chart_series(
+            [
+                {"date": "2026-09-15", "value": 120.0},
+                {"date": "2026-09-16", "value": 121.0},
+            ],
+            [
+                {"date": "2026-09-16", "value": 25100.0},
+                {"date": "2026-09-17", "value": 25200.0},
+            ],
+            31,
+        )
+        self.assertIsNone(aligned)
+
+    def test_chart_supports_all_periods_for_pms_value_history(self):
+        product = InvestmentProduct.objects.create(
+            product_type=ProductType.PMS,
+            name="PMS Historical Value",
+            identity_key="PMS:TEST:PMS-HISTORY",
+            source="APMI",
+        )
+        PMSProduct.objects.create(product=product, benchmark="Nifty 50")
+        start = date(2021, 1, 1)
+        PerformanceSnapshot.objects.bulk_create(
+            [
+                PerformanceSnapshot(
+                    product=product,
+                    date=start + timedelta(days=day),
+                    nav_or_value=Decimal("100.00") + Decimal(day) / Decimal("10"),
+                    source="APMI",
+                )
+                for day in range(0, 365 * 5 + 20, 30)
+            ]
+        )
+        benchmark_points = [
+            {"date": (start + timedelta(days=day)).isoformat(), "value": 15000.0 + day}
+            for day in range(0, 365 * 5 + 21, 7)
+        ]
+
+        with patch.object(BenchmarkPerformanceService, "_benchmark_series", return_value=benchmark_points):
+            for period in BenchmarkPerformanceService.PERIOD_DAYS:
+                result = BenchmarkPerformanceService.calculate(product, period)
+                self.assertTrue(result["available"])
+                self.assertGreaterEqual(len(result["chart"]["aligned_points"]), 2)
+                self.assertEqual(
+                    result["chart"]["fund"][0]["value"],
+                    result["chart"]["aligned_points"][0]["product_value"],
+                )
+                self.assertEqual(
+                    result["chart"]["benchmark"][0]["value"],
+                    result["chart"]["aligned_points"][0]["benchmark_value"],
+                )
+
+    def test_chart_uses_shared_amfi_master_nav_for_mutual_fund(self):
+        product = InvestmentProduct.objects.create(
+            product_type=ProductType.MUTUAL_FUND,
+            name="Master NAV Chart Fund",
+            identity_key="MUTUAL_FUND:SCHEME:MASTER-CHART",
+            source="AMFI",
+        )
+        scheme = AMFIMasterScheme.objects.create(
+            scheme_code="MASTER-CHART",
+            scheme_name="Master NAV Chart Fund",
+        )
+        MutualFundProduct.objects.create(
+            product=product,
+            scheme_code="MASTER-CHART",
+            benchmark="Nifty 50",
+        )
+        AMFIMasterNAV.objects.create(
+            scheme=scheme,
+            date="2026-09-15",
+            nav=Decimal("100.25"),
+            source="AMFI",
+        )
+        AMFIMasterNAV.objects.create(
+            scheme=scheme,
+            date="2026-09-16",
+            nav=Decimal("101.25"),
+            source="AMFI",
+        )
+
+        series = BenchmarkPerformanceService._fund_series(
+            product, date(2026, 9, 1), date(2026, 9, 30)
+        )
+        self.assertEqual(
+            series,
+            [
+                {"date": "2026-09-15", "value": 100.25},
+                {"date": "2026-09-16", "value": 101.25},
+            ],
+        )
+
 
 
 class APMIPMSDiscoveryTests(TestCase):

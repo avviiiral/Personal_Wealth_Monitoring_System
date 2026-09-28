@@ -11,6 +11,7 @@ from investments.models import AssetCategory, PortfolioPosition, Transaction
 from users.permissions import get_active_family_group_id, get_visible_owner_ids
 from watchlist.models import InvestmentProduct, PerformanceSnapshot, ProductType, WatchListEntry
 from watchlist.serializers import PerformanceSnapshotSerializer, WatchListProductSerializer
+from mutual_funds.services.amfi import AMFIService
 from watchlist.services.ownership import OwnershipService
 from watchlist.services.pms import APMIPMSDiscoveryService
 from watchlist.services.benchmark import BenchmarkPerformanceService
@@ -446,6 +447,11 @@ def watch_list_refresh(request):
     # Serialize manual refreshes with background schedulers so two full
     # universe upserts cannot run concurrently against SQLite.
     with DATABASE_SCHEDULER_LOCK:
+        amfi_master_result = AMFIService.import_latest_master_navs()
         mf_result = AMFIUniverseService.refresh()
         pms_result = APMIPMSDiscoveryService.refresh()
-    return Response({"mutual_funds": mf_result, "pms": pms_result})
+    return Response({
+        "amfi_master": amfi_master_result,
+        "mutual_funds": mf_result,
+        "pms": pms_result,
+    })

@@ -135,6 +135,7 @@
     </div>
   </div>
 </div>
+
 <div class="modal-backdrop" *ngIf="benchmarkModalProduct" (click)="closeBenchmarkComparison()">
   <div class="benchmark-modal" role="dialog" aria-modal="true" aria-labelledby="benchmark-title" (click)="$event.stopPropagation()">
     <div class="benchmark-modal-header">
@@ -146,60 +147,68 @@
     </div>
 
     <div class="benchmark-modal-body">
-      <div *ngIf="benchmarkLoading && !benchmarkData" class="state">Loading benchmark data…</div>
-      <div *ngIf="benchmarkError && !benchmarkData" class="error">{{ benchmarkError }}</div>
+      <div *ngIf="benchmarkLoading" class="state">Loading benchmark data…</div>
 
-      <ng-container *ngIf="benchmarkData && !benchmarkError">
-      <div *ngIf="!benchmarkData.available" class="error">{{ benchmarkData.message }}</div>
+      <ng-container *ngIf="benchmarkData">
+        <div *ngIf="benchmarkError" class="error">{{ benchmarkError }}</div>
 
-      <ng-container *ngIf="benchmarkData.available">
-        <div class="benchmark-summary">
-          <div><span>Benchmark</span><strong>{{ benchmarkData.benchmark }}</strong></div>
-          <div><span>Benchmark CAGR (3Y)</span><strong>{{ formatPercent(benchmarkData.benchmark_cagr_3y) }}</strong></div>
-          <div><span>Benchmark CAGR (5Y)</span><strong>{{ formatPercent(benchmarkData.benchmark_cagr_5y) }}</strong></div>
-          <div><span>As of</span><strong>{{ benchmarkData.as_of_date }}</strong></div>
-        </div>
-
-        <div class="benchmark-periods">
-          <button *ngFor="let period of benchmarkPeriods"
-            type="button"
-            [class.active]="benchmarkPeriod === period"
-            (click)="changeBenchmarkChartPeriod(period)">
-            {{ period }}
-          </button>
-        </div>
-
-        <div class="benchmark-table-wrap">
-          <table class="benchmark-comparison-table">
-            <thead>
-              <tr><th>Period</th><th>Fund Return</th><th>Benchmark Return</th><th>Difference</th><th>Result</th></tr>
-            </thead>
-            <tbody>
-              <tr *ngFor="let period of benchmarkPeriods">
-                <td>{{ period }}</td>
-                <td>{{ formatPercent(benchmarkMetric(period, 'fund_metrics')) }}</td>
-                <td>{{ formatPercent(benchmarkMetric(period, 'benchmark_metrics')) }}</td>
-                <td>{{ formatPercent(benchmarkMetric(period, 'differences')) }}</td>
-                <td>{{ benchmarkComparison(period) }}</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-
-        <div class="relative-chart">
-          <div class="chart-title">Relative Performance — {{ benchmarkPeriod }}</div>
-          <div class="chart-legend">
-            <span><i class="legend-fund"></i>{{ benchmarkModalProduct.name }}</span>
-            <span><i class="legend-benchmark"></i>{{ benchmarkData.benchmark }}</span>
+        <ng-container *ngIf="!benchmarkError">
+          <div *ngIf="benchmarkData.available === false" class="benchmark-unavailable">
+            <div class="benchmark-unavailable-title">Benchmark data unavailable</div>
+            <div class="benchmark-unavailable-message">{{ benchmarkData.message || 'Benchmark market data is unavailable from the configured data source.' }}</div>
           </div>
-          <svg viewBox="0 0 100 100" preserveAspectRatio="none" role="img" aria-label="Relative performance chart">
-            <polyline [attr.points]="benchmarkPolyline(benchmarkData.chart?.fund)" fill="none" stroke="var(--accent)" stroke-width="1.5" vector-effect="non-scaling-stroke"></polyline>
-            <polyline [attr.points]="benchmarkPolyline(benchmarkData.chart?.benchmark)" fill="none" stroke="var(--negative)" stroke-width="1.5" vector-effect="non-scaling-stroke"></polyline>
-          </svg>
-          <div class="chart-axis"><span>Start</span><span>End</span></div>
-        </div>
+
+          <ng-container *ngIf="benchmarkData.available !== false">
+            <div class="benchmark-summary">
+              <div><span>Benchmark</span><strong>{{ benchmarkData.benchmark || benchmarkModalProduct.benchmark }}</strong></div>
+              <div><span>Benchmark CAGR (3Y)</span><strong>{{ formatPercent(benchmarkData.benchmark_cagr_3y) }}</strong></div>
+              <div><span>Benchmark CAGR (5Y)</span><strong>{{ formatPercent(benchmarkData.benchmark_cagr_5y) }}</strong></div>
+              <div><span>As of</span><strong>{{ benchmarkData.as_of_date || '—' }}</strong></div>
+            </div>
+
+            <div class="benchmark-periods">
+              <button *ngFor="let period of benchmarkPeriods"
+                type="button"
+                [class.active]="benchmarkPeriod === period"
+                (click)="changeBenchmarkChartPeriod(period)">
+                {{ period }}
+              </button>
+            </div>
+
+            <div class="benchmark-table-wrap">
+              <table class="benchmark-comparison-table">
+                <thead>
+                  <tr><th>Period</th><th>Fund Return</th><th>Benchmark Return</th><th>Difference</th><th>Result</th></tr>
+                </thead>
+                <tbody>
+                  <tr *ngFor="let period of benchmarkPeriods">
+                    <td>{{ period }}</td>
+                    <td>{{ formatPercent(benchmarkMetric(period, 'fund_metrics')) }}</td>
+                    <td>{{ formatPercent(benchmarkMetric(period, 'benchmark_metrics')) }}</td>
+                    <td>{{ formatPercent(benchmarkMetric(period, 'differences')) }}</td>
+                    <td>{{ benchmarkComparison(period) }}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            <div class="relative-chart">
+              <div class="chart-title">Relative Performance — {{ benchmarkPeriod }}</div>
+              <div class="chart-legend">
+                <span><i class="legend-fund"></i>{{ benchmarkModalProduct.name }}</span>
+                <span><i class="legend-benchmark"></i>{{ benchmarkData.benchmark || benchmarkModalProduct.benchmark }}</span>
+              </div>
+              <svg viewBox="0 0 100 100" preserveAspectRatio="none" role="img" aria-label="Relative performance chart">
+                <polyline [attr.points]="benchmarkPolyline(benchmarkData.chart?.fund)" fill="none" stroke="var(--accent)" stroke-width="1.5" vector-effect="non-scaling-stroke"></polyline>
+                <polyline [attr.points]="benchmarkPolyline(benchmarkData.chart?.benchmark)" fill="none" stroke="var(--negative)" stroke-width="1.5" vector-effect="non-scaling-stroke"></polyline>
+              </svg>
+              <div class="chart-axis"><span>Start</span><span>End</span></div>
+            </div>
+          </ng-container>
+        </ng-container>
       </ng-container>
-      </ng-container>
+
+      <div *ngIf="!benchmarkLoading && !benchmarkData && benchmarkError" class="error">{{ benchmarkError }}</div>
     </div>
   </div>
 </div>

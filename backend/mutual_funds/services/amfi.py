@@ -676,10 +676,28 @@ class AMFIService:
         return AMFIService._import_master_records(records)
 
     @staticmethod
-    def import_historical_master_navs(from_date, to_date):
-        """Import historical AMFI NAVs into the global master dataset."""
+    def import_historical_master_navs(
+        from_date,
+        to_date,
+        scheme_codes=None,
+    ):
+        """Import historical AMFI NAVs into the global master dataset.
+
+        ``scheme_codes`` is an optional write-side filter. AMFI's historical
+        endpoint returns the full universe for the requested date range, but
+        callers such as the benchmark chart only need one scheme. Filtering
+        before the database upsert keeps the shared master authoritative
+        without duplicating unrelated historical rows.
+        """
         text = AMFIService.download_historical_nav(from_date, to_date)
         records = AMFIService.parse_nav_file(text, historical=True)
+        if scheme_codes:
+            normalized_codes = {str(code).strip() for code in scheme_codes}
+            records = [
+                record
+                for record in records
+                if record["scheme_code"] in normalized_codes
+            ]
         return AMFIService._import_master_records(records)
 
     @staticmethod

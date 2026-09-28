@@ -574,7 +574,13 @@ class BenchmarkPerformanceService:
         if getattr(product, "product_type", None) == "MUTUAL_FUND":
             scheme_code = cls._fund_scheme_code(product)
             if scheme_code:
-                cls._ensure_master_history(product, start, end)
+                try:
+                    cls._ensure_master_history(product, start, end)
+                except Exception:
+                    # A temporary AMFI history-source failure must not remove
+                    # an otherwise available chart when local AMFI snapshots
+                    # are already present.
+                    pass
 
                 master_points = list(
                     AMFIMasterNAV.objects.filter(

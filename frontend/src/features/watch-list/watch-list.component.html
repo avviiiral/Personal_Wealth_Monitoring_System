@@ -200,7 +200,7 @@
               </div>
 
               <div class="relative-chart-area" *ngIf="benchmarkChartHasData(); else benchmarkChartUnavailable">
-                <div class="chart-y-label">Relative Value (Start = 100)</div>
+                <div class="chart-y-label">Return from Start (%)</div>
                 <div class="chart-y-axis" aria-hidden="true">
                   <span
                     *ngFor="let tick of benchmarkChartYTicks()"

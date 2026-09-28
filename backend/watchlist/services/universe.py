@@ -136,7 +136,6 @@ class AMFIUniverseService:
         return f"MUTUAL_FUND:SCHEME:{record['scheme_code']}"
 
     @classmethod
-    @transaction.atomic
     def refresh(cls):
         """
         Refresh the latest AMFI universe using bulk database writes.

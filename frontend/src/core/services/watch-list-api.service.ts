@@ -140,13 +140,15 @@ export class WatchListApiService {
   }
 
   private patchWithCsrf<T>(url: string, body: unknown): Observable<T> {
-    return this.http.get(`${environment.apiUrl}/api/health/`, {
+    return this.http.get<{ csrf_token?: string }>(`${environment.apiUrl}/api/health/`, {
       withCredentials: true,
-      responseType: 'json',
     }).pipe(
-      switchMap(() => {
-        const token = this.getCsrfToken();
-        const headers = token ? new HttpHeaders({ 'X-CSRFToken': token }) : undefined;
+      switchMap((health) => {
+        const token = health.csrf_token || this.getCsrfToken();
+        if (!token) {
+          throw new Error('CSRF token was not provided by the backend.');
+        }
+        const headers = new HttpHeaders({ 'X-CSRFToken': token });
         return this.http.patch<T>(url, body, {
           withCredentials: true,
           headers,
@@ -156,13 +158,15 @@ export class WatchListApiService {
   }
 
   private postWithCsrf<T>(url: string, body: unknown): Observable<T> {
-    return this.http.get(`${environment.apiUrl}/api/health/`, {
+    return this.http.get<{ csrf_token?: string }>(`${environment.apiUrl}/api/health/`, {
       withCredentials: true,
-      responseType: 'json',
     }).pipe(
-      switchMap(() => {
-        const token = this.getCsrfToken();
-        const headers = token ? new HttpHeaders({ 'X-CSRFToken': token }) : undefined;
+      switchMap((health) => {
+        const token = health.csrf_token || this.getCsrfToken();
+        if (!token) {
+          throw new Error('CSRF token was not provided by the backend.');
+        }
+        const headers = new HttpHeaders({ 'X-CSRFToken': token });
         return this.http.post<T>(url, body, {
           withCredentials: true,
           headers,

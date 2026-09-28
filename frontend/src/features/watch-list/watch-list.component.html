@@ -161,8 +161,6 @@
           <ng-container *ngIf="benchmarkData.available !== false">
             <div class="benchmark-summary">
               <div><span>Benchmark</span><strong>{{ benchmarkData.benchmark || benchmarkModalProduct.benchmark }}</strong></div>
-              <div><span>Benchmark CAGR (3Y)</span><strong>{{ formatPercent(benchmarkData.benchmark_cagr_3y) }}</strong></div>
-              <div><span>Benchmark CAGR (5Y)</span><strong>{{ formatPercent(benchmarkData.benchmark_cagr_5y) }}</strong></div>
               <div><span>As of</span><strong>{{ benchmarkData.as_of_date || '—' }}</strong></div>
             </div>
 

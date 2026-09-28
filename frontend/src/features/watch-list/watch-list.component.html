@@ -183,8 +183,12 @@
                 <tbody>
                   <tr *ngFor="let period of benchmarkPeriods">
                     <td>{{ period }}</td>
-                    <td>{{ formatPercent(benchmarkMetric(period, 'fund_metrics')) }}</td>
-                    <td>{{ formatPercent(benchmarkMetric(period, 'benchmark_metrics')) }}</td>
+                    <td
+                      [title]="benchmarkReturnDetail(period, 'fund_return_details')"
+                    >{{ formatPercent(benchmarkMetric(period, 'fund_metrics')) }}</td>
+                    <td
+                      [title]="benchmarkReturnDetail(period, 'benchmark_return_details')"
+                    >{{ formatPercent(benchmarkMetric(period, 'benchmark_metrics')) }}</td>
                     <td>{{ formatPercent(benchmarkMetric(period, 'differences')) }}</td>
                     <td>{{ benchmarkComparison(period) }}</td>
                   </tr>

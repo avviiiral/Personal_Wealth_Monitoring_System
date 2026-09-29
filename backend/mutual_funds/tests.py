@@ -723,3 +723,59 @@ class AMFIHistoricalMasterImportTests(TestCase):
         ):
             with self.assertRaises(RuntimeError):
                 AMFIService._resolve_nav_ids({"999999"})
+
+
+    def test_amfi_resolution_prefers_isin_over_name(self):
+        class R:
+            def __init__(self, payload):
+                self.payload = payload
+            def raise_for_status(self): pass
+            def json(self): return self.payload
+
+        AMFIMasterScheme.objects.create(
+            scheme_code="152075",
+            scheme_name="360 ONE Balanced Hybrid Fund - Regular Plan - Growth",
+            isin_growth="INF579M01AV5",
+            is_active=True,
+        )
+        responses = [
+            R({"data": [{"mutualFundId": "360", "schemes": [{
+                "schemeId": "152075",
+                "schemeName": "360 ONE Balanced Hybrid Fund",
+            }]}]}),
+            R({"data": [
+                {"nav_id": "wrong", "nav_name": "360 ONE Balanced Hybrid Fund - Regular Plan - Growth",
+                 "MF_ID": "360", "ISIN": "OTHER"},
+                {"nav_id": "right", "nav_name": "360 ONE Balanced Hybrid Fund - Regular Plan - Growth Option",
+                 "MF_ID": "360", "ISIN": "INF579M01AV5"},
+            ]}),
+        ]
+        with patch("mutual_funds.services.amfi.requests.get", side_effect=responses):
+            result = AMFIService._resolve_nav_ids({"152075"})
+        self.assertEqual(result["152075"]["nav_id"], "right")
+        self.assertEqual(result["152075"]["match_method"], "isin")
+
+    def test_amfi_resolution_rejects_equal_top_candidates(self):
+        class R:
+            def __init__(self, payload):
+                self.payload = payload
+            def raise_for_status(self): pass
+            def json(self): return self.payload
+
+        AMFIMasterScheme.objects.create(
+            scheme_code="123457",
+            scheme_name="Ambiguous Fund - Regular Plan - Growth",
+            is_active=True,
+        )
+        responses = [
+            R({"data": [{"mutualFundId": "100", "schemes": [{
+                "schemeId": "123457", "schemeName": "Ambiguous Fund",
+            }]}]}),
+            R({"data": [
+                {"nav_id": "nav-a", "nav_name": "Ambiguous Fund - Regular Plan - Growth", "MF_ID": "100"},
+                {"nav_id": "nav-b", "nav_name": "Ambiguous Fund - Regular Plan - Growth", "MF_ID": "100"},
+            ]}),
+        ]
+        with patch("mutual_funds.services.amfi.requests.get", side_effect=responses):
+            with self.assertRaisesRegex(RuntimeError, "AMFI scheme resolution ambiguous: code=123457"):
+                AMFIService._resolve_nav_ids({"123457"})

@@ -825,8 +825,33 @@ class BenchmarkPerformanceService:
                     for point in master_points
                     if point["nav"] and float(point["nav"]) > 0
                 ]
+                # A partially populated shared master must not mask a
+                # complete product-level AMFI history. This can happen when
+                # benchmark/bootstrap preparation has run before the scheme's
+                # historical NAV backfill. Compare the available histories and
+                # use the richer series for the chart.
                 if len(master_series) >= 2:
-                    return master_series
+                    snapshots = list(
+                        PerformanceSnapshot.objects.filter(
+                            product=product,
+                            source="AMFI",
+                            date__gte=start,
+                            date__lte=end,
+                        )
+                        .exclude(nav_or_value__isnull=True)
+                        .order_by("date", "id")
+                    )
+                    snapshot_series = [
+                        {
+                            "date": snapshot.date.isoformat(),
+                            "value": float(snapshot.nav_or_value),
+                        }
+                        for snapshot in snapshots
+                        if snapshot.nav_or_value and float(snapshot.nav_or_value) > 0
+                    ]
+                    if len(master_series) >= len(snapshot_series):
+                        return master_series
+                    return snapshot_series
 
             # Compatibility fallback for existing AMFI history. The chart
             # should not disappear merely because the shared master has not

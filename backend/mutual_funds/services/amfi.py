@@ -227,46 +227,31 @@ class AMFIService:
     @staticmethod
     def _parse_historical_record(parts):
         """
-        Parse historical AMFI NAV format.
+        Parse AMFI historical NAV format.
 
+        Current AMFI historical downloads use:
         0 = Scheme Code
-        1 = Scheme Name
-        2 = ISIN Div Payout / ISIN Growth
-        3 = ISIN Div Reinvestment
-        4 = NAV
-        5 = Repurchase Price
-        6 = Sale Price
+        1 = NAV Name
+        2 = Plan
+        3 = Option
+        4 = ISIN Div Payout / ISIN Growth
+        5 = ISIN Div Reinvestment
+        6 = Net Asset Value
         7 = Date
+
+        The legacy historical format placed the two ISIN columns at indexes
+        2/3 and NAV at index 4. Support both layouts so the master importer
+        remains compatible with AMFI's transition between formats.
         """
 
-        # Historical downloads currently contain the full 8-column layout.
-        # Keep the minimum explicit because NAV and Date are positional here.
         if len(parts) < 8:
             return None
 
         scheme_code = parts[0]
         scheme_name = parts[1]
-        isin_first = parts[2]
-        isin_second = parts[3]
-        nav_text = parts[4]
         date_text = parts[-1]
 
-        if not scheme_code.isdigit():
-            return None
-
-        if not scheme_name:
-            return None
-
-        try:
-            nav = Decimal(nav_text)
-        except (
-            InvalidOperation,
-            ValueError,
-            TypeError,
-        ):
-            return None
-
-        if nav < 0:
+        if not scheme_code.isdigit() or not scheme_name:
             return None
 
         try:
@@ -276,6 +261,41 @@ class AMFIService:
             ).date()
         except ValueError:
             return None
+
+        # Current format: NAV is index 6 and ISINs are indexes 4/5.
+        # Legacy format: NAV is index 4 and ISINs are indexes 2/3.
+        if len(parts) > 6:
+            try:
+                nav = Decimal(parts[6])
+                current_format = True
+            except (
+                InvalidOperation,
+                ValueError,
+                TypeError,
+            ):
+                current_format = False
+        else:
+            current_format = False
+
+        if not current_format:
+            try:
+                nav = Decimal(parts[4])
+            except (
+                InvalidOperation,
+                ValueError,
+                TypeError,
+            ):
+                return None
+
+        if nav < 0:
+            return None
+
+        if current_format:
+            isin_first = parts[4]
+            isin_second = parts[5]
+        else:
+            isin_first = parts[2]
+            isin_second = parts[3]
 
         return AMFIService._build_record(
             scheme_code=scheme_code,
@@ -611,14 +631,39 @@ class AMFIService:
     @staticmethod
     @transaction.atomic
     def _import_master_records(records):
-        """Upsert AMFI data once into the global master tables."""
-        records_by_code = {}
-        for record in records:
-            records_by_code[record["scheme_code"]] = record
+        """Upsert AMFI data into the global master tables.
 
-        records = list(records_by_code.values())
+        A latest-NAV download normally contains one row per scheme, while a
+        historical download contains many rows per scheme (one per date).
+        Keep one canonical scheme row per scheme code, but retain every
+        scheme/date NAV observation in the master NAV table.
+        """
         if not records:
             return {"schemes": 0, "nav_records": 0}
+
+        schemes_by_code = {}
+        nav_records_by_key = {}
+
+        for record in records:
+            scheme_code = record["scheme_code"]
+
+            # Keep the most recent metadata row for each scheme while merging
+            # any ISIN values that may only appear on one of the rows.
+            existing = schemes_by_code.get(scheme_code)
+            if existing is None:
+                schemes_by_code[scheme_code] = dict(record)
+            else:
+                if record.get("isin_growth"):
+                    existing["isin_growth"] = record["isin_growth"]
+                if record.get("isin_dividend"):
+                    existing["isin_dividend"] = record["isin_dividend"]
+                existing["scheme_name"] = record["scheme_name"]
+
+            if record["date"] is not None:
+                nav_records_by_key[(scheme_code, record["date"])] = record
+
+        scheme_records = list(schemes_by_code.values())
+        nav_records = list(nav_records_by_key.values())
 
         schemes = [
             AMFIMasterScheme(
@@ -628,7 +673,7 @@ class AMFIService:
                 isin_dividend=record["isin_dividend"],
                 is_active=True,
             )
-            for record in records
+            for record in scheme_records
         ]
 
         AMFIMasterScheme.objects.bulk_create(
@@ -647,7 +692,12 @@ class AMFIService:
 
         scheme_ids = dict(
             AMFIMasterScheme.objects
-            .filter(scheme_code__in=[record["scheme_code"] for record in records])
+            .filter(
+                scheme_code__in=[
+                    record["scheme_code"]
+                    for record in scheme_records
+                ]
+            )
             .values_list("scheme_code", "id")
         )
 
@@ -658,8 +708,8 @@ class AMFIService:
                 nav=record["nav"],
                 source="AMFI",
             )
-            for record in records
-            if record["date"] is not None and record["scheme_code"] in scheme_ids
+            for record in nav_records
+            if record["scheme_code"] in scheme_ids
         ]
 
         if navs:
@@ -671,7 +721,10 @@ class AMFIService:
                 update_fields=["nav"],
             )
 
-        return {"schemes": len(records), "nav_records": len(navs)}
+        return {
+            "schemes": len(scheme_records),
+            "nav_records": len(navs),
+        }
 
     @staticmethod
     def import_latest_master_navs():

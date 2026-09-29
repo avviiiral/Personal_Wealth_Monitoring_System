@@ -82,15 +82,32 @@ class BenchmarkPerformanceService:
                 f"'endDate':'{window_end.strftime('%d-%b-%Y')}',"
                 "'indexName':'NIFTY 50'}"
             )
-            response = requests.post(
-                cls.NIFTY_TRI_URL,
-                json={"cinfo": cinfo},
-                headers=cls.NIFTY_TRI_HEADERS,
-                timeout=60,
-            )
-            response.raise_for_status()
-            payload = response.json()
-            rows = json.loads(payload.get("d", "[]"))
+            session = requests.Session()
+            try:
+                session.get(
+                    "https://www.niftyindices.com/reports/historical-data",
+                    headers=cls.NIFTY_TRI_HEADERS,
+                    timeout=10,
+                )
+                response = session.post(
+                    cls.NIFTY_TRI_URL,
+                    data=json.dumps({"cinfo": cinfo}),
+                    headers=cls.NIFTY_TRI_HEADERS,
+                    timeout=60,
+                )
+                response.raise_for_status()
+                try:
+                    payload = response.json()
+                except ValueError as exc:
+                    raise ValueError(
+                        "NSE Indices TRI endpoint returned non-JSON content "
+                        f"(HTTP {response.status_code})"
+                    ) from exc
+            finally:
+                session.close()
+
+            raw_rows = payload.get("d", "[]")
+            rows = json.loads(raw_rows) if isinstance(raw_rows, str) else raw_rows
             if isinstance(rows, str):
                 rows = json.loads(rows)
 

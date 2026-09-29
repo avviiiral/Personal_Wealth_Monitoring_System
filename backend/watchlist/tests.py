@@ -223,6 +223,33 @@ class WatchListTests(TestCase):
             {"COVERAGE"},
         )
 
+    @patch("watchlist.views.prepare_mutual_fund_watchlist_history")
+    def test_watchlist_bulk_add_prepares_only_new_mutual_funds(self, mocked_prepare):
+        mutual_fund = InvestmentProduct.objects.create(
+            product_type=ProductType.MUTUAL_FUND,
+            name="Bulk MF",
+            identity_key="MUTUAL_FUND:SCHEME:BULK-MF",
+            source="AMFI",
+        )
+        MutualFundProduct.objects.create(product=mutual_fund, scheme_code="BULK-MF")
+        pms = InvestmentProduct.objects.create(
+            product_type=ProductType.PMS,
+            name="Bulk PMS",
+            identity_key="PMS:SCHEME:BULK-PMS",
+            source="APMI",
+        )
+        PMSProduct.objects.create(product=pms)
+
+        response = self.client.post(
+            "/api/watch-list/products/bulk-add/",
+            {"product_ids": [mutual_fund.id, pms.id]},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["added"], 2)
+        mocked_prepare.assert_called_once_with(mutual_fund)
+
     def test_amfi_performance_service_updates_snapshot(self):
         product = InvestmentProduct.objects.create(product_type=ProductType.MUTUAL_FUND, name="Performance Fund", isin="INFPERF", external_identifier="1", identity_key="MUTUAL_FUND:ISIN:INFPERF", source="AMFI")
         MutualFundProduct.objects.create(product=product, scheme_code="PERF")

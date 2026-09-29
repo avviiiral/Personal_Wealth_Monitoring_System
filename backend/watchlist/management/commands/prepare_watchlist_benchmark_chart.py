@@ -16,7 +16,7 @@ class Command(BaseCommand):
     )
 
     def add_arguments(self, parser):
-        parser.add_argument("--product-id", type=int, required=True)
+        parser.add_argument("--product-id", type=int, required=False)
         parser.add_argument(
             "--period",
             choices=tuple(BenchmarkPerformanceService.PERIOD_DAYS.keys()),
@@ -27,15 +27,15 @@ class Command(BaseCommand):
         product_id = options["product_id"]
         period = options["period"]
 
-        product = InvestmentProduct.objects.select_related(
-            "mutual_fund", "pms"
-        ).filter(id=product_id).first()
-        if product is None:
-            raise CommandError(f"InvestmentProduct {product_id} was not found.")
-
-        benchmark = BenchmarkPerformanceService._product_benchmark(product)
-        if not benchmark:
-            raise CommandError("Product has no configured benchmark.")
+        product = None
+        benchmark = None
+        if product_id is not None:
+            product = InvestmentProduct.objects.select_related(
+                "mutual_fund", "pms"
+            ).filter(id=product_id).first()
+            if product is None:
+                raise CommandError(f"InvestmentProduct {product_id} was not found.")
+            benchmark = BenchmarkPerformanceService._product_benchmark(product)
 
         today = timezone.now().date()
         days = BenchmarkPerformanceService.PERIOD_DAYS[period]
@@ -92,47 +92,60 @@ class Command(BaseCommand):
                 )
             )
 
-        benchmark_count = BenchmarkMasterPoint.objects.filter(
-            benchmark=benchmark,
-            source="MASTER",
-            date__gte=benchmark_start,
-            date__lte=today,
-        ).count()
-        expected_benchmark = max(
-            5, int((today - benchmark_start).days * 0.5)
-        )
-
-        if benchmark_count < expected_benchmark:
-            self.stdout.write(
-                f"Preparing {benchmark} master history from "
-                f"{benchmark_start} to {today}..."
+        # Benchmark master history is shared across every Mutual Fund and
+        # PMS product. Always prepare BOTH supported benchmarks so opening
+        # the comparison chart never depends on which product was prepared
+        # first. Product-specific preparation is only needed for AMFI NAV data.
+        benchmark_names = ["Nifty 50", "BSE 500"]
+        for benchmark_name in benchmark_names:
+            benchmark_count = BenchmarkMasterPoint.objects.filter(
+                benchmark=benchmark_name,
+                source="MASTER",
+                date__gte=benchmark_start,
+                date__lte=today,
+            ).count()
+            expected_benchmark = max(
+                5, int((today - benchmark_start).days * 0.5)
             )
-            if benchmark == "BSE 500":
-                points = BenchmarkPerformanceService._bse_series(benchmark_start)
-            elif benchmark == "Nifty 50":
-                points = BenchmarkPerformanceService._nifty_tri_series(
-                    benchmark_start, today
+
+            if benchmark_count < expected_benchmark:
+                self.stdout.write(
+                    f"Preparing {benchmark_name} master history from "
+                    f"{benchmark_start} to {today}..."
+                )
+                if benchmark_name == "BSE 500":
+                    points = BenchmarkPerformanceService._bse_series(benchmark_start)
+                else:
+                    points = BenchmarkPerformanceService._nifty_tri_series(
+                        benchmark_start, today
+                    )
+                saved = BenchmarkPerformanceService.save_benchmark_master(
+                    benchmark_name,
+                    points,
+                )
+                self.stdout.write(
+                    self.style.SUCCESS(
+                        f"{benchmark_name} master preparation complete; "
+                        f"{saved} rows saved."
+                    )
                 )
             else:
-                points = []
-            saved = BenchmarkPerformanceService.save_benchmark_master(
-                benchmark,
-                points,
-            )
+                self.stdout.write(
+                    self.style.SUCCESS(
+                        f"{benchmark_name} master already contains sufficient history."
+                    )
+                )
+
+        if product is not None:
             self.stdout.write(
                 self.style.SUCCESS(
-                    f"{benchmark} master preparation complete; {saved} rows saved."
+                    f"Watch List {period} chart data is ready for product {product.id}."
                 )
             )
         else:
             self.stdout.write(
                 self.style.SUCCESS(
-                    f"{benchmark} master already contains sufficient history."
+                    "Shared Watch List Nifty 50 and BSE 500 benchmark data is ready "
+                    "for all Mutual Fund and PMS products."
                 )
             )
-
-        self.stdout.write(
-            self.style.SUCCESS(
-                f"Watch List {period} chart data is ready for product {product.id}."
-            )
-        )

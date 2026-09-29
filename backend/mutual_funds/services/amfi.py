@@ -162,6 +162,8 @@ class AMFIService:
                 for key, value in node.items():
                     if key in {"mutualFundId", "MF_ID", "mf_id"} and value:
                         current["mf_id"] = str(value).strip()
+                    elif key in {"type", "fundType", "fund_type"} and value:
+                        current["fund_type"] = str(value).strip()
                     walk(value, current)
             elif isinstance(node, list):
                 for item in node:

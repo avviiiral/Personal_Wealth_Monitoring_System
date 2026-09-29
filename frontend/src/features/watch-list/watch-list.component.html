@@ -272,22 +272,22 @@
                 </svg>
 
                 <div
-                  *ngIf="benchmarkTooltip?.visible"
+                  *ngIf="benchmarkTooltip as tooltip"
                   class="benchmark-chart-tooltip"
-                  [style.left.px]="benchmarkTooltip.x"
-                  [style.top.px]="benchmarkTooltip.y"
+                  [style.left.px]="tooltip.x"
+                  [style.top.px]="tooltip.y"
                 >
-                  <div class="benchmark-chart-tooltip-date">{{ benchmarkTooltip.date }}</div>
+                  <div class="benchmark-chart-tooltip-date">{{ tooltip.date }}</div>
                   <div>
                     <span>{{ benchmarkChartProductLabel() }}</span>
-                    <strong>{{ formatChartValue(benchmarkTooltip.productValue) }}</strong>
+                    <strong>{{ formatChartValue(tooltip.productValue) }}</strong>
                   </div>
                   <div>
                     <span>{{ benchmarkDisplayName(benchmarkData.benchmark || benchmarkModalProduct.benchmark) }}</span>
-                    <strong>{{ formatChartValue(benchmarkTooltip.benchmarkValue) }}</strong>
+                    <strong>{{ formatChartValue(tooltip.benchmarkValue) }}</strong>
                   </div>
                   <div class="benchmark-chart-tooltip-index">
-                    Index: {{ benchmarkTooltip.productIndexed.toFixed(3) }} / {{ benchmarkTooltip.benchmarkIndexed.toFixed(3) }}
+                    Index: {{ tooltip.productIndexed.toFixed(3) }} / {{ tooltip.benchmarkIndexed.toFixed(3) }}
                   </div>
                 </div>
 

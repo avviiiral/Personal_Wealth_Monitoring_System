@@ -212,14 +212,32 @@ class BenchmarkPerformanceService:
         expected = max(5, int((end - start).days * 0.5))
 
         for benchmark in ("Nifty 50", "BSE 500"):
-            count = BenchmarkMasterPoint.objects.filter(
+            aggregate = BenchmarkMasterPoint.objects.filter(
                 benchmark=benchmark,
                 source="MASTER",
                 date__gte=start,
                 date__lte=end,
-            ).count()
-            if not force and count >= expected:
-                results[benchmark] = {"downloaded": False, "rows": count}
+            ).aggregate(
+                count=models.Count("id"),
+                first_date=models.Min("date"),
+                last_date=models.Max("date"),
+            )
+            count = int(aggregate["count"] or 0)
+            first_date = aggregate["first_date"]
+            last_date = aggregate["last_date"]
+            coverage_ok = (
+                first_date is not None
+                and last_date is not None
+                and first_date <= start + timedelta(days=10)
+                and last_date >= end - timedelta(days=10)
+            )
+            if not force and count >= expected and coverage_ok:
+                results[benchmark] = {
+                    "downloaded": False,
+                    "rows": count,
+                    "first_date": first_date.isoformat(),
+                    "last_date": last_date.isoformat(),
+                }
                 continue
 
             try:

@@ -50,10 +50,9 @@ class Command(BaseCommand):
         if product is None:
             # Historical charts are displayed for the Watch List, so scope the
             # AMFI backfill to currently watchlisted Mutual Fund schemes.
-            # AMFI returns the full universe for each request, but scheme_codes
-            # keeps only relevant schemes in our master. One request covers all
-            # selected schemes for a 90-day window, so a 5Y backfill is about
-            # 21 requests rather than one request per fund.
+            # The current AMFI JSON history API is per scheme. The service
+            # resolves each scheme to its AMFI nav_id and performs one history
+            # request per watchlisted scheme for the full required range.
             watchlisted_scheme_codes = set(
                 InvestmentProduct.objects.filter(
                     id__in=WatchListEntry.objects.values("product_id"),
@@ -104,29 +103,17 @@ class Command(BaseCommand):
                 f"from {start} to {today}..."
             )
 
-            cursor = start
-            imported_windows = 0
-            while cursor <= today:
-                window_end = min(cursor + timedelta(days=89), today)
-                count = AMFIMasterNAV.objects.filter(
-                    scheme__scheme_code=scheme_code,
-                    source="AMFI",
-                    date__gte=cursor,
-                    date__lte=window_end,
-                ).count()
-                expected = max(5, int((window_end - cursor).days * 0.5))
-                if count < expected:
-                    result = AMFIService.import_historical_master_navs(
-                        cursor,
-                        window_end,
-                        scheme_codes={scheme_code},
-                    )
-                    imported_windows += 1
-                    self.stdout.write(
-                        f"  AMFI {cursor} -> {window_end}: "
-                        f"{result['nav_records']} rows imported"
-                    )
-                cursor = window_end + timedelta(days=1)
+            result = AMFIService.import_historical_master_navs(
+                start,
+                today,
+                scheme_codes={scheme_code},
+            )
+            self.stdout.write(
+                self.style.SUCCESS(
+                    f"  AMFI historical API: "
+                    f"{result['nav_records']} rows imported"
+                )
+            )
 
             self.stdout.write(
                 self.style.SUCCESS(

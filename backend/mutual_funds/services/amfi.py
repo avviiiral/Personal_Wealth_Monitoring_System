@@ -112,12 +112,12 @@ class AMFIService:
         ) or inherited.get("mf_id")
         isin_growth = AMFIService._first_value(
             record,
-            "isin_growth", "ISIN_Growth", "isinGrowth",
+            "isin_growth", "ISIN_Growth", "isinGrowth", "ISINPrimary",
             "isin", "ISIN", "ISIN_Div_Payout_ISIN_Growth",
         ) or inherited.get("isin_growth")
         isin_dividend = AMFIService._first_value(
             record,
-            "isin_dividend", "ISIN_Dividend", "isinDividend",
+            "isin_dividend", "ISIN_Dividend", "isinDividend", "ISINReinvestment",
             "ISIN_Div_Reinvestment",
         ) or inherited.get("isin_dividend")
         plan = AMFIService._first_value(

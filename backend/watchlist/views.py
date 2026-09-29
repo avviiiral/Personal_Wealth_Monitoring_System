@@ -482,6 +482,17 @@ def watch_list_bulk_remove(request):
 
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
+def watch_list_refresh(request):
+    # Serialize manual refreshes with background schedulers so two full
+    # universe upserts cannot run concurrently against SQLite.
+    with DATABASE_SCHEDULER_LOCK:
+        mf_result = AMFIUniverseService.refresh()
+        pms_result = APMIPMSDiscoveryService.refresh()
+    return Response({"mutual_funds": mf_result, "pms": pms_result})
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
 def prepare_watch_list(request):
     if not request.user.is_staff:
         return Response({"detail": "Staff permission required."}, status=403)

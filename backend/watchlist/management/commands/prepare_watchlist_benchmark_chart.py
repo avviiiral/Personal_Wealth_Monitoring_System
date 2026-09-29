@@ -28,14 +28,13 @@ class Command(BaseCommand):
         period = options["period"]
 
         product = None
-        benchmark = None
         if product_id is not None:
             product = InvestmentProduct.objects.select_related(
                 "mutual_fund", "pms"
             ).filter(id=product_id).first()
             if product is None:
                 raise CommandError(f"InvestmentProduct {product_id} was not found.")
-            benchmark = BenchmarkPerformanceService._product_benchmark(product)
+            BenchmarkPerformanceService._product_benchmark(product)
 
         today = timezone.now().date()
         days = BenchmarkPerformanceService.PERIOD_DAYS[period]
@@ -47,7 +46,7 @@ class Command(BaseCommand):
         )
         start = today - timedelta(days=days + 31)
 
-        if product.product_type == ProductType.MUTUAL_FUND:
+        if product is not None and product.product_type == ProductType.MUTUAL_FUND:
             inception_date = getattr(product.mutual_fund, "inception_date", None)
             if inception_date:
                 start = max(start, inception_date)

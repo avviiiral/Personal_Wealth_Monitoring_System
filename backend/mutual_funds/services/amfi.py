@@ -458,66 +458,65 @@ class AMFIService:
 
     @staticmethod
     def _download_historical_api_records(from_date, to_date, scheme_codes):
+        """Resolve current AMFI NAV IDs, then download their history."""
         if from_date > to_date:
-            raise ValueError("From date cannot be after to date.")
+            raise ValueError("From date cannot be after to_date.")
 
         nav_ids = AMFIService._resolve_nav_ids(scheme_codes)
-        records = []
+        if not nav_ids:
+            return []
 
-        for scheme_code, metadata in nav_ids.items():
+        records = []
+        mf_ids = {meta.get("mf_id") for meta in nav_ids.values() if meta.get("mf_id")}
+
+        # AMFI's public historical report is the reliable historical-data
+        # endpoint. It accepts the mutual-fund id and dates, whereas the newer
+        # JSON nav-history endpoint currently rejects the same requests with
+        # HTTP 400 in production.
+        report_mf = next(iter(mf_ids)) if len(mf_ids) == 1 else "0"
+        window_start = from_date
+        while window_start <= to_date:
+            window_end = min(
+                window_start + relativedelta(days=90),
+                to_date,
+            )
             response = requests.get(
-                AMFIService.AMFI_HISTORY_API,
+                AMFIService.NAV_HISTORY_URL,
                 params={
-                    "query_type": "historical_period",
-                    "sd_id": metadata["nav_id"],
-                    "from_date": from_date.strftime("%Y-%m-%d"),
-                    "to_date": to_date.strftime("%Y-%m-%d"),
+                    "mf": report_mf,
+                    "tp": "1",
+                    "frmdt": window_start.strftime("%d-%b-%Y"),
+                    "todt": window_end.strftime("%d-%b-%Y"),
                 },
-                headers=AMFIService._api_headers(),
+                headers=AMFIService._headers(),
                 timeout=60,
             )
             response.raise_for_status()
-            payload = response.json()
-            data = payload.get("data", payload) if isinstance(payload, dict) else payload
-            groups = data.get("nav_groups", []) if isinstance(data, dict) else []
-
-            if not groups:
-                logger.warning(
-                    "AMFI historical API returned no nav_groups for scheme %s",
-                    scheme_code,
+            report_text = response.text
+            if not AMFIService._is_historical_report(report_text):
+                raise RuntimeError(
+                    "AMFI historical response was not a NAV report: "
+                    f"endpoint={response.url} "
+                    f"from={window_start} to={window_end}"
                 )
-                continue
 
-            target = AMFIService._normalize_name(metadata["scheme_name"])
-            groups = [
-                group for group in groups
-                if target == AMFIService._normalize_name(group.get("nav_name"))
-            ] or groups[:1]
+            records.extend(
+                AMFIService.parse_nav_file(
+                    report_text,
+                    historical=True,
+                    scheme_codes=set(nav_ids),
+                )
+            )
+            window_start = window_end + relativedelta(days=1)
 
-            for group in groups:
-                for item in group.get("historical_records", []):
-                    try:
-                        nav = Decimal(str(item.get("nav")))
-                        nav_date = datetime.strptime(
-                            str(item.get("date")),
-                            "%Y-%m-%d",
-                        ).date()
-                    except (InvalidOperation, ValueError, TypeError):
-                        continue
-                    if nav < 0:
-                        continue
-                    records.append(
-                        AMFIService._build_record(
-                            scheme_code=scheme_code,
-                            isin_first=None,
-                            isin_second=None,
-                            scheme_name=metadata["scheme_name"],
-                            nav=nav,
-                            nav_date=nav_date,
-                        )
-                    )
+        deduped = {}
+        for record in records:
+            deduped[(record["scheme_code"], record["date"])] = record
 
-        return records
+        return sorted(
+            deduped.values(),
+            key=lambda item: (item["scheme_code"], item["date"]),
+        )
 
     @staticmethod
     def download_historical_nav(

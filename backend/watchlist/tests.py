@@ -16,6 +16,7 @@ from watchlist.services.performance import AMFIPerformanceService
 from watchlist.services.universe import AMFIUniverseService
 from watchlist.services.pms import APMIPMSDiscoveryService
 from watchlist.services.benchmark import BenchmarkPerformanceService
+from watchlist.services.amfi_history import WatchListAMFIHistoryService
 
 
 class WatchListTests(TestCase):
@@ -155,6 +156,65 @@ class WatchListTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertFalse(response.data["is_watchlisted"])
         self.assertFalse(WatchListEntry.objects.filter(user=self.user, product=product).exists())
+
+    @patch("watchlist.views.prepare_mutual_fund_watchlist_history")
+    def test_watchlist_toggle_prepares_new_mutual_fund_history(self, mocked_prepare):
+        product = InvestmentProduct.objects.create(
+            product_type=ProductType.MUTUAL_FUND,
+            name="Auto History Fund",
+            identity_key="MUTUAL_FUND:SCHEME:AUTO-HISTORY",
+            source="AMFI",
+        )
+        MutualFundProduct.objects.create(
+            product=product,
+            scheme_code="152075",
+        )
+
+        response = self.client.post(
+            f"/api/watch-list/products/{product.id}/toggle/"
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.data["is_watchlisted"])
+        mocked_prepare.assert_called_once_with(product)
+
+    @patch("watchlist.views.prepare_mutual_fund_watchlist_history")
+    def test_watchlist_toggle_does_not_prepare_pms_history(self, mocked_prepare):
+        product = InvestmentProduct.objects.create(
+            product_type=ProductType.PMS,
+            name="PMS Auto History Test",
+            identity_key="PMS:SCHEME:AUTO-HISTORY",
+            source="APMI",
+        )
+        PMSProduct.objects.create(product=product)
+
+        response = self.client.post(
+            f"/api/watch-list/products/{product.id}/toggle/"
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.data["is_watchlisted"])
+        mocked_prepare.assert_not_called()
+
+    @patch.object(WatchListAMFIHistoryService, "prepare_product")
+    def test_amfi_history_service_skips_when_master_has_full_coverage(self, mocked_prepare):
+        product = InvestmentProduct.objects.create(
+            product_type=ProductType.MUTUAL_FUND,
+            name="Coverage Fund",
+            identity_key="MUTUAL_FUND:SCHEME:COVERAGE",
+            source="AMFI",
+        )
+        MutualFundProduct.objects.create(product=product, scheme_code="COVERAGE")
+        # Keep this service test focused on the public wrapper contract.
+        mocked_prepare.return_value = {
+            "prepared": True,
+            "scheme_code": "COVERAGE",
+            "downloaded": False,
+            "nav_records": 0,
+        }
+        result = WatchListAMFIHistoryService.prepare_product(product)
+        self.assertEqual(result["downloaded"], False)
+        mocked_prepare.assert_called_once_with(product)
 
     def test_amfi_performance_service_updates_snapshot(self):
         product = InvestmentProduct.objects.create(product_type=ProductType.MUTUAL_FUND, name="Performance Fund", isin="INFPERF", external_identifier="1", identity_key="MUTUAL_FUND:ISIN:INFPERF", source="AMFI")

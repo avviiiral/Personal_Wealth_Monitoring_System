@@ -558,6 +558,53 @@ class AMFIHistoricalMasterImportTests(TestCase):
         self.assertIn("Scheme Code;Scheme Name", text)
         self.assertTrue(AMFIService._is_historical_report(text))
 
+    def test_historical_download_requests_all_schemes_mode(self):
+        class FakeResponse:
+            text = (
+                "Scheme Code;Scheme Name;ISIN Div Payout/ISIN Growth;"
+                "ISIN Div Reinvestment;Net Asset Value;Repurchase Price;"
+                "Sale Price;Date\n"
+                "119551;Requested Fund;INF000000001;-;10.00;10.00;10.00;29-Sep-2026\n"
+            )
+            status_code = 200
+            headers = {"Content-Type": "text/plain"}
+            content = text.encode("utf-8")
+            url = "https://portal.amfiindia.com/DownloadNAVHistoryReport_Po.aspx"
+
+            @property
+            def ok(self):
+                return True
+
+            def raise_for_status(self):
+                return None
+
+        class FakeSession:
+            params = None
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+            def get(self, url, params=None, headers=None, timeout=None):
+                self.params = params
+                return FakeResponse()
+
+        session = FakeSession()
+        with patch(
+            "mutual_funds.services.amfi.requests.Session",
+            return_value=session,
+        ):
+            text = AMFIService.download_historical_nav(
+                date(2026, 9, 1),
+                date(2026, 9, 29),
+            )
+
+        self.assertEqual(session.params["mf"], "0")
+        self.assertEqual(session.params["tp"], "1")
+        self.assertIn("Scheme Code;Scheme Name", text)
+
     def test_historical_report_detection_rejects_html(self):
         self.assertFalse(
             AMFIService._is_historical_report(

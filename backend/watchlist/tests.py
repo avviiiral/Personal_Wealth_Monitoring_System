@@ -4,6 +4,7 @@ from unittest.mock import patch
 
 from django.contrib.auth.models import User
 from django.test import TestCase
+from django.urls import reverse
 
 from mutual_funds.models import AMFIMasterNAV, AMFIMasterScheme
 from mutual_funds.services.amfi import AMFIService
@@ -241,7 +242,7 @@ class WatchListTests(TestCase):
         PMSProduct.objects.create(product=pms)
 
         response = self.client.post(
-            "/api/watch-list/products/bulk-add/",
+            reverse("watch-list-bulk-add"),
             {"product_ids": [mutual_fund.id, pms.id]},
             format="json",
         )

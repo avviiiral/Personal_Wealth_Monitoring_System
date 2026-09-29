@@ -6,6 +6,7 @@ from django.contrib.auth.models import User
 from django.test import TestCase
 
 from mutual_funds.models import AMFIMasterNAV, AMFIMasterScheme
+from mutual_funds.services.amfi import AMFIService
 from users.models import FamilyGroup
 from rest_framework.test import APIClient
 
@@ -196,8 +197,12 @@ class WatchListTests(TestCase):
         self.assertTrue(response.data["is_watchlisted"])
         mocked_prepare.assert_not_called()
 
-    @patch.object(WatchListAMFIHistoryService, "prepare_product")
-    def test_amfi_history_service_skips_when_master_has_full_coverage(self, mocked_prepare):
+    @patch.object(
+        AMFIService,
+        "import_historical_master_navs",
+        return_value={"schemes": 1, "nav_records": 7},
+    )
+    def test_amfi_history_service_imports_missing_master_history(self, mocked_import):
         product = InvestmentProduct.objects.create(
             product_type=ProductType.MUTUAL_FUND,
             name="Coverage Fund",
@@ -205,16 +210,18 @@ class WatchListTests(TestCase):
             source="AMFI",
         )
         MutualFundProduct.objects.create(product=product, scheme_code="COVERAGE")
-        # Keep this service test focused on the public wrapper contract.
-        mocked_prepare.return_value = {
-            "prepared": True,
-            "scheme_code": "COVERAGE",
-            "downloaded": False,
-            "nav_records": 0,
-        }
+
         result = WatchListAMFIHistoryService.prepare_product(product)
-        self.assertEqual(result["downloaded"], False)
-        mocked_prepare.assert_called_once_with(product)
+
+        self.assertTrue(result["prepared"])
+        self.assertTrue(result["downloaded"])
+        self.assertEqual(result["scheme_code"], "COVERAGE")
+        self.assertEqual(result["nav_records"], 7)
+        mocked_import.assert_called_once()
+        self.assertEqual(
+            mocked_import.call_args.kwargs["scheme_codes"],
+            {"COVERAGE"},
+        )
 
     def test_amfi_performance_service_updates_snapshot(self):
         product = InvestmentProduct.objects.create(product_type=ProductType.MUTUAL_FUND, name="Performance Fund", isin="INFPERF", external_identifier="1", identity_key="MUTUAL_FUND:ISIN:INFPERF", source="AMFI")

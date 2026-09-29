@@ -66,6 +66,16 @@ export class WatchListComponent implements OnInit, OnDestroy {
   benchmarkError = '';
   private benchmarkRequestSequence = 0;
   benchmarkPeriod: BenchmarkPeriod = '1Y';
+  benchmarkTooltip: {
+    visible: boolean;
+    x: number;
+    y: number;
+    date: string;
+    productValue: number;
+    benchmarkValue: number;
+    productIndexed: number;
+    benchmarkIndexed: number;
+  } | null = null;
 
   ngOnInit(): void {
     this.loadFilters();
@@ -489,6 +499,7 @@ export class WatchListComponent implements OnInit, OnDestroy {
     this.benchmarkData = null;
     this.benchmarkError = '';
     this.benchmarkLoading = false;
+    this.benchmarkTooltip = null;
   }
 
   changeBenchmarkChartPeriod(period: BenchmarkPeriod): void {
@@ -498,6 +509,7 @@ export class WatchListComponent implements OnInit, OnDestroy {
     const productId = this.benchmarkModalProduct.id;
 
     this.benchmarkPeriod = period;
+    this.benchmarkTooltip = null;
     this.benchmarkData = null;
     this.benchmarkError = '';
     this.benchmarkLoading = true;
@@ -671,7 +683,17 @@ export class WatchListComponent implements OnInit, OnDestroy {
 
   benchmarkChartCirclePoints(
     axis: 'product' | 'benchmark',
-  ): Array<{ x: number; y: number; date: string; value: number; title: string }> {
+  ): Array<{
+    x: number;
+    y: number;
+    date: string;
+    value: number;
+    productValue: number;
+    benchmarkValue: number;
+    productIndexed: number;
+    benchmarkIndexed: number;
+    title: string;
+  }> {
     const points = this.benchmarkChartIndexedSeries(axis);
     if (!points.length) return [];
 
@@ -717,9 +739,50 @@ export class WatchListComponent implements OnInit, OnDestroy {
         y: Math.max(5, Math.min(94, y)),
         date: point.date,
         value: point.value,
+        productValue,
+        benchmarkValue,
+        productIndexed,
+        benchmarkIndexed,
         title,
       };
     });
+  }
+
+  showBenchmarkPointTooltip(
+    point: {
+      date: string;
+      productValue: number;
+      benchmarkValue: number;
+      productIndexed: number;
+      benchmarkIndexed: number;
+    },
+    event: MouseEvent,
+  ): void {
+    const target = event.currentTarget as Element | null;
+    const chartArea = target?.closest('.relative-chart-area') as HTMLElement | null;
+    if (!chartArea) return;
+
+    const rect = chartArea.getBoundingClientRect();
+    const maxX = Math.max(12, rect.width - 290);
+    const maxY = Math.max(12, rect.height - 112);
+
+    this.benchmarkTooltip = {
+      visible: true,
+      x: Math.min(Math.max(12, event.clientX - rect.left + 12), maxX),
+      y: Math.min(Math.max(12, event.clientY - rect.top + 12), maxY),
+      date: point.date,
+      productValue: point.productValue,
+      benchmarkValue: point.benchmarkValue,
+      productIndexed: point.productIndexed,
+      benchmarkIndexed: point.benchmarkIndexed,
+    };
+    this.changeDetector.markForCheck();
+  }
+
+  hideBenchmarkPointTooltip(): void {
+    if (!this.benchmarkTooltip) return;
+    this.benchmarkTooltip = null;
+    this.changeDetector.markForCheck();
   }
 
   private formatChartValue(value: number): string {

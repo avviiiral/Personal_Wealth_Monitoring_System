@@ -468,52 +468,55 @@ class AMFIService:
             return []
 
         records = []
-        mf_ids = {meta.get("mf_id") for meta in nav_ids.values() if meta.get("mf_id")}
+        schemes_by_mf = {}
+        for scheme_code, metadata in nav_ids.items():
+            mf_id = metadata.get("mf_id") or "0"
+            schemes_by_mf.setdefault(str(mf_id), set()).add(str(scheme_code))
 
-        # AMFI's public historical report is the reliable historical-data
-        # endpoint. It accepts the mutual-fund id and dates, whereas the newer
-        # JSON nav-history endpoint currently rejects the same requests with
-        # HTTP 400 in production.
-        report_mf = next(iter(mf_ids)) if len(mf_ids) == 1 else "0"
-        window_start = from_date
-        while window_start <= to_date:
-            window_end = min(
-                window_start + relativedelta(days=90),
-                to_date,
-            )
-            response = requests.get(
-                AMFIService.NAV_HISTORY_URL,
-                params={
-                    "mf": report_mf,
-                    "tp": "1",
-                    "frmdt": window_start.strftime("%d-%b-%Y"),
-                    "todt": window_end.strftime("%d-%b-%Y"),
-                },
-                headers=AMFIService._headers(),
-                timeout=60,
-            )
-            response.raise_for_status()
-            report_text = response.text
-            if not AMFIService._is_historical_report(report_text):
-                raise RuntimeError(
-                    "AMFI historical response was not a NAV report: "
-                    f"endpoint={response.url} "
-                    f"from={window_start} to={window_end}"
+        # The current JSON /api/nav-history route returns HTTP 400 for the
+        # production sd_id/date-range request used by the application. Use
+        # AMFI's historical report endpoint for the actual NAV rows instead.
+        for mf_id, mf_scheme_codes in schemes_by_mf.items():
+            window_start = from_date
+            while window_start <= to_date:
+                window_end = min(
+                    window_start + relativedelta(days=90),
+                    to_date,
                 )
-
-            records.extend(
-                AMFIService.parse_nav_file(
-                    report_text,
-                    historical=True,
-                    scheme_codes=set(nav_ids),
+                response = requests.get(
+                    AMFIService.NAV_HISTORY_URL,
+                    params={
+                        "mf": mf_id,
+                        "tp": "1",
+                        "frmdt": window_start.strftime("%d-%b-%Y"),
+                        "todt": window_end.strftime("%d-%b-%Y"),
+                    },
+                    headers=AMFIService._headers(),
+                    timeout=60,
                 )
-            )
-            window_start = window_end + relativedelta(days=1)
+                response.raise_for_status()
+                report_text = response.text
+                if not AMFIService._is_historical_report(report_text):
+                    raise RuntimeError(
+                        "AMFI historical response was not a NAV report: "
+                        f"endpoint={getattr(response, 'url', AMFIService.NAV_HISTORY_URL)} "
+                        f"from={window_start} to={window_end}"
+                    )
 
-        deduped = {}
-        for record in records:
-            deduped[(record["scheme_code"], record["date"])] = record
+                records.extend(
+                    AMFIService.parse_nav_file(
+                        report_text,
+                        historical=True,
+                        scheme_codes=mf_scheme_codes,
+                    )
+                )
+                window_start = window_end + relativedelta(days=1)
 
+        deduped = {
+            (record["scheme_code"], record["date"]): record
+            for record in records
+            if record["scheme_code"] in nav_ids
+        }
         return sorted(
             deduped.values(),
             key=lambda item: (item["scheme_code"], item["date"]),

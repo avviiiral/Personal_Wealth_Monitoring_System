@@ -512,6 +512,49 @@ class AMFIHistoricalMasterImportTests(TestCase):
 
         self.assertEqual([record["scheme_code"] for record in records], ["119551"])
 
+    def test_amfi_historical_report_path_after_nav_resolution(self):
+        class FakeResponse:
+            text = (
+                "Scheme Code;Scheme Name;ISIN Div Payout/ISIN Growth;"
+                "ISIN Div Reinvestment;Net Asset Value;Repurchase Price;"
+                "Sale Price;Date\n"
+                "152075;360 ONE Balanced Hybrid Fund - Regular Plan - Growth;"
+                "INF579M01AV5;-;12.9916;12.9916;12.9916;29-Sep-2026\n"
+            )
+            status_code = 200
+            headers = {"Content-Type": "text/plain"}
+
+            def raise_for_status(self):
+                return None
+
+        with patch.object(
+            AMFIService,
+            "_resolve_nav_ids",
+            return_value={
+                "152075": {
+                    "nav_id": "152075",
+                    "scheme_name": "360 ONE Balanced Hybrid Fund - Regular Plan - Growth",
+                    "match_method": "exact_name",
+                    "mf_id": "62",
+                }
+            },
+        ), patch(
+            "mutual_funds.services.amfi.requests.get",
+            return_value=FakeResponse(),
+        ) as mock_get:
+            records = AMFIService._download_historical_api_records(
+                date(2026, 9, 1),
+                date(2026, 9, 29),
+                {"152075"},
+            )
+
+        self.assertEqual(len(records), 1)
+        self.assertEqual(records[0]["scheme_code"], "152075")
+        self.assertEqual(records[0]["nav"], Decimal("12.9916"))
+        self.assertEqual(mock_get.call_args.kwargs["params"]["mf"], "62")
+        self.assertEqual(mock_get.call_args.kwargs["params"]["frmdt"], "01-Sep-2026")
+        self.assertEqual(mock_get.call_args.kwargs["params"]["todt"], "29-Sep-2026")
+
     def test_current_api_history_resolves_scheme_code_to_nav_id(self):
         class FakeResponse:
             def __init__(self, payload):

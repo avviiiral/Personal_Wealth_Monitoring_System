@@ -79,61 +79,240 @@ class AMFIService:
         return " ".join(str(value or "").lower().split())
 
     @staticmethod
+    def _normalize_identity(value):
+        value = AMFIService._normalize_name(value)
+        for token in ("-", "_", "/", "(", ")", ",", "."):
+            value = value.replace(token, " ")
+        return " ".join(value.split())
+
+    @staticmethod
+    def _first_value(record, *keys):
+        if not isinstance(record, dict):
+            return None
+        for key in keys:
+            value = record.get(key)
+            if value not in (None, ""):
+                return value
+        return None
+
+    @staticmethod
+    def _extract_identity(record, inherited=None):
+        inherited = inherited or {}
+        code = AMFIService._first_value(
+            record,
+            "schemeId", "scheme_id", "Scheme_Code", "scheme_code", "schemeCode",
+        )
+        name = AMFIService._first_value(
+            record,
+            "schemeName", "Scheme_Name", "scheme_name", "nav_name",
+        )
+        mf_id = AMFIService._first_value(
+            record, "mutualFundId", "MF_ID", "mf_id", "mutual_fund_id"
+        ) or inherited.get("mf_id")
+        isin_growth = AMFIService._first_value(
+            record,
+            "isin_growth", "ISIN_Growth", "isinGrowth",
+            "isin", "ISIN", "ISIN_Div_Payout_ISIN_Growth",
+        ) or inherited.get("isin_growth")
+        isin_dividend = AMFIService._first_value(
+            record,
+            "isin_dividend", "ISIN_Dividend", "isinDividend",
+            "ISIN_Div_Reinvestment",
+        ) or inherited.get("isin_dividend")
+        plan = AMFIService._first_value(
+            record, "plan", "Plan", "planName", "plan_name"
+        ) or inherited.get("plan")
+        option = AMFIService._first_value(
+            record, "option", "Option", "optionName", "option_name"
+        ) or inherited.get("option")
+        fund_type = AMFIService._first_value(
+            record, "type", "fundType", "fund_type"
+        ) or inherited.get("fund_type")
+
+        return {
+            "scheme_code": str(code).strip() if code else None,
+            "scheme_name": str(name).strip() if name else None,
+            "mf_id": str(mf_id).strip() if mf_id else None,
+            "isin_growth": str(isin_growth).strip() if isin_growth else None,
+            "isin_dividend": str(isin_dividend).strip() if isin_dividend else None,
+            "plan": str(plan).strip() if plan else None,
+            "option": str(option).strip() if option else None,
+            "fund_type": str(fund_type).strip() if fund_type else None,
+        }
+
+    @staticmethod
     def _flatten_latest_api(data):
         records = []
 
-        def add(record, mf_id=None):
-            if not isinstance(record, dict):
-                return
-            code = (
-                record.get("schemeId")
-                or record.get("Scheme_Code")
-                or record.get("scheme_code")
-                or record.get("schemeCode")
-            )
-            name = (
-                record.get("schemeName")
-                or record.get("Scheme_Name")
-                or record.get("scheme_name")
-                or record.get("nav_name")
-            )
-            current_mf_id = (
-                record.get("mutualFundId")
-                or record.get("MF_ID")
-                or record.get("mf_id")
-                or mf_id
-            )
-            if code and name and current_mf_id:
-                records.append({
-                    "scheme_code": str(code).strip(),
-                    "scheme_name": str(name).strip(),
-                    "mf_id": str(current_mf_id).strip(),
-                })
-
-        def walk(node, mf_id=None):
+        def walk(node, inherited=None):
+            inherited = inherited or {}
             if isinstance(node, dict):
-                inherited_mf_id = (
-                    node.get("mutualFundId")
-                    or node.get("MF_ID")
-                    or node.get("mf_id")
-                    or mf_id
-                )
-                add(node, inherited_mf_id)
+                current = dict(inherited)
+                extracted = AMFIService._extract_identity(node, current)
+                for key in (
+                    "mf_id", "isin_growth", "isin_dividend",
+                    "plan", "option", "fund_type",
+                ):
+                    if extracted.get(key):
+                        current[key] = extracted[key]
+
+                if extracted.get("scheme_code") and extracted.get("scheme_name") and extracted.get("mf_id"):
+                    records.append(extracted)
+
                 for key, value in node.items():
-                    walk(
-                        value,
-                        value if key in {"mutualFundId", "MF_ID", "mf_id"}
-                        else inherited_mf_id,
-                    )
+                    if key in {"mutualFundId", "MF_ID", "mf_id"} and value:
+                        current["mf_id"] = str(value).strip()
+                    walk(value, current)
             elif isinstance(node, list):
                 for item in node:
-                    walk(item, mf_id)
+                    walk(item, inherited)
 
         walk(data)
         deduped = {}
         for record in records:
-            deduped.setdefault(record["scheme_code"], record)
+            code = record["scheme_code"]
+            existing = deduped.get(code)
+            if existing is None:
+                deduped[code] = record
+                continue
+            for key, value in record.items():
+                if value and not existing.get(key):
+                    existing[key] = value
         return deduped
+
+    @staticmethod
+    def _normalize_candidate(candidate, mf_id=None):
+        if not isinstance(candidate, dict):
+            return None
+        identity = AMFIService._extract_identity(
+            candidate,
+            {"mf_id": str(mf_id).strip() if mf_id else None},
+        )
+        nav_id = AMFIService._first_value(
+            candidate, "nav_id", "navId", "schemeDetailId",
+            "scheme_detail_id", "sd_id", "id",
+        )
+        identity["nav_id"] = str(nav_id).strip() if nav_id else None
+        return identity
+
+    @staticmethod
+    def _metadata_for_code(code):
+        metadata = {
+            "scheme_code": str(code).strip(),
+            "scheme_name": None,
+            "mf_id": None,
+            "isin_growth": None,
+            "isin_dividend": None,
+            "plan": None,
+            "option": None,
+            "fund_type": None,
+        }
+
+        master = (
+            AMFIMasterScheme.objects
+            .filter(scheme_code=code)
+            .values(
+                "scheme_name", "isin_growth", "isin_dividend"
+            )
+            .first()
+        )
+        if master:
+            metadata.update({
+                key: value
+                for key, value in master.items()
+                if value not in (None, "")
+            })
+
+        family_rows = list(
+            MutualFundScheme.objects
+            .filter(scheme_code=code)
+            .values(
+                "scheme_name", "isin_growth", "isin_dividend",
+                "plan", "option",
+            )[:10]
+        )
+        if family_rows:
+            # Prefer a row whose identity agrees with the master name/ISIN.
+            row = family_rows[0]
+            master_name = AMFIService._normalize_identity(metadata["scheme_name"])
+            for candidate in family_rows:
+                candidate_name = AMFIService._normalize_identity(candidate["scheme_name"])
+                if master_name and candidate_name == master_name:
+                    row = candidate
+                    break
+                if metadata["isin_growth"] and metadata["isin_growth"] in {
+                    candidate.get("isin_growth"), candidate.get("isin_dividend")
+                }:
+                    row = candidate
+                    break
+            for key, value in row.items():
+                if value not in (None, ""):
+                    metadata[key] = value
+
+        return metadata
+
+    @staticmethod
+    def _candidate_score(metadata, candidate):
+        score = 0
+        methods = []
+
+        target_isins = {
+            str(metadata.get("isin_growth") or "").strip().lower(),
+            str(metadata.get("isin_dividend") or "").strip().lower(),
+        } - {""}
+        candidate_isins = {
+            str(candidate.get("isin_growth") or "").strip().lower(),
+            str(candidate.get("isin_dividend") or "").strip().lower(),
+        } - {""}
+
+        if target_isins & candidate_isins:
+            score += 1000
+            methods.append("isin")
+
+        if metadata.get("mf_id") and candidate.get("mf_id") == metadata["mf_id"]:
+            score += 250
+
+        target_name = AMFIService._normalize_identity(metadata.get("scheme_name"))
+        candidate_name = AMFIService._normalize_identity(candidate.get("scheme_name"))
+        if target_name and candidate_name == target_name:
+            score += 500
+            methods.append("exact_name")
+        elif target_name and candidate_name:
+            target_tokens = set(target_name.split())
+            candidate_tokens = set(candidate_name.split())
+            overlap = len(target_tokens & candidate_tokens)
+            if overlap:
+                score += min(200, overlap * 20)
+            if target_name in candidate_name or candidate_name in target_name:
+                score += 50
+                methods.append("structured_name")
+
+        target_plan = AMFIService._normalize_identity(metadata.get("plan"))
+        candidate_plan = AMFIService._normalize_identity(candidate.get("plan"))
+        if target_plan and candidate_plan and target_plan == candidate_plan:
+            score += 100
+
+        target_option = AMFIService._normalize_identity(metadata.get("option"))
+        candidate_option = AMFIService._normalize_identity(candidate.get("option"))
+        if target_option and candidate_option and target_option == candidate_option:
+            score += 100
+
+        # Derive plan/option from names when AMFI omits separate fields.
+        combined_target = f"{target_name} {target_plan} {target_option}"
+        combined_candidate = f"{candidate_name} {candidate_plan} {candidate_option}"
+        for token, weight in (("direct", 30), ("regular", 30), ("growth", 40), ("idcw", 40), ("dividend", 40)):
+            if token in combined_target and token in combined_candidate:
+                score += weight
+
+        if "exact_name" in methods and target_isins & candidate_isins:
+            return score, "isin"
+        if target_isins & candidate_isins:
+            return score, "isin"
+        if "exact_name" in methods:
+            return score, "exact_name"
+        if "structured_name" in methods:
+            return score, "structured_name"
+        return score, "fallback"
 
     @staticmethod
     def _resolve_nav_ids(scheme_codes):
@@ -141,77 +320,49 @@ class AMFIService:
         if not codes:
             return {}
 
-        # AMFI documents the `type` parameter as "", "Open Ended",
-        # "Close Ended", and "Interval Fund". Some ETF schemes can be
-        # absent from the blank/all response, so only unresolved codes
-        # are looked up through the explicit fund-type variants.
         latest_by_code = {}
         requested = {}
 
         def refresh_requested():
             requested.clear()
-            requested.update(
-                {
-                    code: latest_by_code[code]
-                    for code in codes
-                    if code in latest_by_code
-                }
+            requested.update({
+                code: latest_by_code[code]
+                for code in codes
+                if code in latest_by_code
+            })
+
+        # AMFI documents the supported latest-NAV type filters as blank/all,
+        # Open Ended, Close Ended, and Interval Fund. Query the broad response
+        # first, then only unresolved codes through explicit types.
+        for fund_type in ("", "Open Ended", "Close Ended", "Interval Fund"):
+            if fund_type and len(requested) == len(codes):
+                break
+            response = requests.get(
+                AMFIService.AMFI_LATEST_API,
+                params={"mfid": "all", "type": fund_type},
+                headers=AMFIService._api_headers(),
+                timeout=60,
             )
-
-        response = requests.get(
-            AMFIService.AMFI_LATEST_API,
-            params={"mfid": "all", "type": ""},
-            headers=AMFIService._api_headers(),
-            timeout=60,
-        )
-        response.raise_for_status()
-        latest_by_code.update(
-            AMFIService._flatten_latest_api(response.json())
-        )
-        refresh_requested()
-
-        if len(requested) != len(codes):
-            missing = codes - requested.keys()
-            for fund_type in (
-                "Open Ended",
-                "Close Ended",
-                "Interval Fund",
-            ):
-                if not missing:
-                    break
-
-                response = requests.get(
-                    AMFIService.AMFI_LATEST_API,
-                    params={"mfid": "all", "type": fund_type},
-                    headers=AMFIService._api_headers(),
-                    timeout=60,
-                )
-                response.raise_for_status()
-                latest_by_code.update(
-                    AMFIService._flatten_latest_api(response.json())
-                )
-                refresh_requested()
-                missing = codes - requested.keys()
-
-        # The current API may expose a generic Scheme_Name while NAVAll/master
-        # retains the exact option name (for example Direct - Growth). Prefer
-        # that stored authoritative name when it exists.
-        master_names = dict(
-            AMFIMasterScheme.objects.filter(
-                scheme_code__in=codes,
-            ).values_list("scheme_code", "scheme_name")
-        )
-        for code, metadata in requested.items():
-            metadata["scheme_name"] = (
-                master_names.get(code) or metadata["scheme_name"]
+            response.raise_for_status()
+            latest_by_code.update(
+                AMFIService._flatten_latest_api(response.json())
             )
+            refresh_requested()
 
-        if len(requested) != len(codes):
-            missing = sorted(codes - requested.keys())
+        unresolved_codes = sorted(codes - requested.keys())
+        if unresolved_codes:
             raise RuntimeError(
                 "AMFI current API did not resolve scheme codes: "
-                + ", ".join(missing)
+                + ", ".join(unresolved_codes)
             )
+
+        # Merge API metadata with persisted master/family identity hints.
+        for code in list(requested):
+            stored = AMFIService._metadata_for_code(code)
+            api_metadata = requested[code]
+            for key, value in stored.items():
+                if value not in (None, ""):
+                    api_metadata[key] = value
 
         scheme_lists = {}
         for mf_id in {item["mf_id"] for item in requested.values()}:
@@ -223,72 +374,82 @@ class AMFIService:
             )
             response.raise_for_status()
             payload = response.json()
-            scheme_lists[mf_id] = (
-                payload.get("data", payload)
-                if isinstance(payload, dict)
-                else payload
-            )
+            raw = payload.get("data", payload) if isinstance(payload, dict) else payload
+            if isinstance(raw, dict):
+                raw = raw.get("schemes", raw.get("navs", []))
+            scheme_lists[mf_id] = [
+                candidate
+                for candidate in (raw or [])
+                if isinstance(candidate, dict)
+            ]
 
         result = {}
-        for code, metadata in requested.items():
-            target = AMFIService._normalize_name(metadata["scheme_name"])
+        for code in sorted(codes):
+            metadata = requested[code]
             candidates = [
-                item for item in scheme_lists[metadata["mf_id"]]
-                if isinstance(item, dict)
+                normalized
+                for item in scheme_lists.get(metadata["mf_id"], [])
+                if (normalized := AMFIService._normalize_candidate(
+                    item, metadata["mf_id"]
+                ))
+                and normalized.get("nav_id")
             ]
-            matches = [
-                item for item in candidates
-                if AMFIService._normalize_name(
-                    item.get("nav_name") or item.get("scheme_name")
-                ) == target
-            ]
-            if not matches:
-                matches = [
-                    item for item in candidates
-                    if target and target in AMFIService._normalize_name(
-                        item.get("nav_name") or item.get("scheme_name")
-                    )
-                ]
-            if not matches:
+
+            scored = []
+            for candidate in candidates:
+                score, method = AMFIService._candidate_score(metadata, candidate)
+                scored.append((score, method, candidate))
+
+            scored.sort(
+                key=lambda item: (
+                    item[0],
+                    item[2].get("nav_id") or "",
+                ),
+                reverse=True,
+            )
+
+            if not scored or scored[0][0] <= 0:
+                candidate_ids = [item[2].get("nav_id") for item in scored]
+                candidate_names = [item[2].get("scheme_name") for item in scored]
                 raise RuntimeError(
-                    f"AMFI current API did not resolve nav_id for scheme {code}."
+                    "AMFI scheme resolution failed: "
+                    f"code={code} mf_id={metadata.get('mf_id')} "
+                    f"requested_name={metadata.get('scheme_name')} "
+                    f"candidate_count={len(scored)} "
+                    f"candidate_nav_ids={candidate_ids} "
+                    f"candidate_names={candidate_names}"
                 )
 
-            if len(matches) > 1:
-                matches.sort(
-                    key=lambda item: (
-                        int(
-                            "direct" in target
-                            and "direct" in AMFIService._normalize_name(
-                                item.get("nav_name") or item.get("scheme_name")
-                            )
-                        ),
-                        int(
-                            "growth" in target
-                            and "growth" in AMFIService._normalize_name(
-                                item.get("nav_name") or item.get("scheme_name")
-                            )
-                        ),
-                        -abs(
-                            len(
-                                AMFIService._normalize_name(
-                                    item.get("nav_name") or item.get("scheme_name")
-                                )
-                            )
-                            - len(target)
-                        ),
-                    ),
-                    reverse=True,
+            best_score, match_method, best = scored[0]
+            ties = [
+                item for item in scored
+                if item[0] == best_score
+            ]
+            if len(ties) > 1:
+                raise RuntimeError(
+                    "AMFI scheme resolution ambiguous: "
+                    f"code={code} mf_id={metadata.get('mf_id')} "
+                    f"requested_name={metadata.get('scheme_name')} "
+                    f"candidate_nav_ids={[item[2].get('nav_id') for item in ties]} "
+                    f"candidate_names={[item[2].get('scheme_name') for item in ties]}"
                 )
 
-            nav_id = matches[0].get("nav_id")
-            if not nav_id:
-                raise RuntimeError(
-                    f"AMFI current API returned no nav_id for scheme {code}."
-                )
+            logger.info(
+                "AMFI scheme resolution: code=%s fund_type=%s mf_id=%s "
+                "scheme_name=%s matched_nav_id=%s match_method=%s",
+                code,
+                metadata.get("fund_type") or "",
+                metadata.get("mf_id") or "",
+                metadata.get("scheme_name") or "",
+                best["nav_id"],
+                match_method,
+            )
+
             result[code] = {
-                "nav_id": str(nav_id),
-                "scheme_name": metadata["scheme_name"],
+                "nav_id": best["nav_id"],
+                "scheme_name": metadata.get("scheme_name") or best.get("scheme_name"),
+                "match_method": match_method,
+                "mf_id": metadata.get("mf_id"),
             }
 
         return result

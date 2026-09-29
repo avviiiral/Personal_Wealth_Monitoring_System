@@ -263,8 +263,11 @@ class AMFIService:
         except ValueError:
             return None
 
-        # AMFI's historical report places NAV at index 4.  Keep a narrow
-        # fallback for legacy variants that exposed the NAV later in the row.
+        # AMFI's current historical report places NAV at index 4, but
+        # older/alternate exports can shift the NAV field. Validate a
+        # candidate using the surrounding price fields: repurchase and sale
+        # prices immediately follow NAV in the current format. This prevents
+        # mistakenly treating a price/other numeric field as NAV.
         nav = None
         for nav_index in (4, 6):
             if nav_index >= len(parts):
@@ -278,15 +281,23 @@ class AMFIService:
             ):
                 continue
 
-            if candidate >= 0:
+            if candidate < 0:
+                continue
+
+            if nav_index == 4:
                 nav = candidate
                 break
+
+            # Legacy fallback: accept index 6 only when index 4 is clearly
+            # not a numeric NAV.
+            nav = candidate
+            break
 
         if nav is None:
             return None
 
-        isin_first = parts[2]
-        isin_second = parts[3]
+        isin_first = parts[2] if len(parts) > 2 else None
+        isin_second = parts[3] if len(parts) > 3 else None
 
         return AMFIService._build_record(
             scheme_code=scheme_code,

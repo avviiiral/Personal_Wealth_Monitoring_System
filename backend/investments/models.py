@@ -94,7 +94,7 @@ class Transaction(models.Model):
             models.Index(fields=["family", "transaction_date"], name="transaction_family_date_idx"),
             models.Index(
                 fields=["family", "family_name", "asset", "transaction_date", "created_at", "id"],
-                name="transaction_family_asset_order_idx",
+                name="tx_family_asset_ord_idx",
             ),
         ]
         constraints = [

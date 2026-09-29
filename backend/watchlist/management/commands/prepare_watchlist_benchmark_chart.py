@@ -75,7 +75,7 @@ class Command(BaseCommand):
                 cursor = benchmark_start
                 imported_windows = 0
                 while cursor <= today:
-                    window_end = min(cursor + timedelta(days=89), today)
+                    window_end = min(cursor + timedelta(days=6), today)
                     existing_codes = set(
                         AMFIMasterNAV.objects.filter(
                             scheme__scheme_code__in=watchlisted_scheme_codes,

@@ -42,6 +42,10 @@ class Command(BaseCommand):
         start = today - timedelta(days=days + 31)
 
         if product.product_type == ProductType.MUTUAL_FUND:
+            inception_date = getattr(product.mutual_fund, "inception_date", None)
+            if inception_date:
+                start = max(start, inception_date)
+
             scheme_code = BenchmarkPerformanceService._fund_scheme_code(product)
             if not scheme_code:
                 raise CommandError("Mutual Fund has no AMFI scheme code.")

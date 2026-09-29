@@ -79,82 +79,70 @@ class BenchmarkPerformanceService:
         """Fetch official Nifty 50 Gross TRI history from NSE Indices."""
         end = end or timezone.now().date()
         all_points = {}
-        cursor = start
 
-        # Nifty Indices may challenge ordinary requests clients. curl_cffi
-        # impersonates a real browser TLS/HTTP fingerprint while keeping the
-        # same official NSE Indices endpoint and response contract.
         try:
             session = curl_requests.Session(impersonate="chrome")
         except Exception:
             session = requests.Session()
 
-        try:
-            while cursor <= end:
-                window_end = min(cursor + timedelta(days=364), end)
-                cinfo = (
-                    "{'name':'NIFTY 50',"
-                    f"'startDate':'{cursor.strftime('%d-%b-%Y')}',"
-                    f"'endDate':'{window_end.strftime('%d-%b-%Y')}',"
-                    "'indexName':'NIFTY 50'}"
+        def parse_response(response):
+            response.raise_for_status()
+            payload = response.json()
+            raw_rows = payload.get("d", []) if isinstance(payload, dict) else payload
+            rows = json.loads(raw_rows) if isinstance(raw_rows, str) else raw_rows
+            if isinstance(rows, str):
+                rows = json.loads(rows)
+            if not isinstance(rows, list):
+                raise ValueError(
+                    "NSE Indices TRI endpoint returned an unexpected response shape"
                 )
+            return rows
 
-                session.get(
-                    "https://www.niftyindices.com/reports/historical-data",
-                    headers=cls.NIFTY_TRI_HEADERS,
-                    timeout=15,
-                )
+        def request_rows(request_start, request_end):
+            cinfo = (
+                "{'name':'NIFTY 50',"
+                f"'startDate':'{request_start.strftime('%d-%b-%Y')}',"
+                f"'endDate':'{request_end.strftime('%d-%b-%Y')}',"
+                "'indexName':'NIFTY 50'}"
+            )
+            payload = {"cinfo": cinfo}
+            last_error = None
 
-                response = None
-                last_error = None
-                rows = None
-                for endpoint in cls.NIFTY_TRI_URLS:
+            for endpoint in cls.NIFTY_TRI_URLS:
+                for body_mode in ("json", "data"):
                     try:
-                        response = session.post(
-                            endpoint,
-                            json={"cinfo": cinfo},
-                            headers=cls.NIFTY_TRI_HEADERS,
-                            timeout=60,
-                        )
-                        response.raise_for_status()
-                        try:
-                            payload = response.json()
-                        except ValueError:
-                            last_error = ValueError(
-                                "NSE Indices TRI endpoint returned non-JSON content "
-                                f"(HTTP {response.status_code})"
-                            )
-                            continue
+                        kwargs = {
+                            "headers": cls.NIFTY_TRI_HEADERS,
+                            "timeout": 60,
+                        }
+                        if body_mode == "json":
+                            kwargs["json"] = payload
+                        else:
+                            kwargs["data"] = json.dumps(payload)
 
-                        # The NSE Indices endpoint changed in July 2026. The
-                        # current /BackPage/ route returns the rows directly,
-                        # while older routes wrap them in {"d": "..."}.
-                        if isinstance(payload, list):
-                            rows = payload
-                        elif isinstance(payload, dict):
-                            raw_rows = payload.get("d", [])
-                            rows = (
-                                json.loads(raw_rows)
-                                if isinstance(raw_rows, str)
-                                else raw_rows
-                            )
-                            if isinstance(rows, str):
-                                rows = json.loads(rows)
-                        if isinstance(rows, list):
-                            break
-                        last_error = ValueError(
-                            "NSE Indices TRI endpoint returned an unexpected "
-                            f"response shape: {type(payload).__name__}"
-                        )
+                        response = session.post(endpoint, **kwargs)
+                        rows = parse_response(response)
+                        if rows:
+                            return rows
                     except Exception as exc:
                         last_error = exc
-                        continue
-                else:
-                    raise last_error or ValueError(
-                        "NSE Indices TRI endpoint returned no usable response"
-                    )
+            raise last_error or ValueError(
+                "NSE Indices TRI endpoint returned no usable response"
+            )
 
-                for row in rows or []:
+        try:
+            session.get(
+                "https://www.niftyindices.com/reports/historical-data",
+                headers=cls.NIFTY_TRI_HEADERS,
+                timeout=15,
+            )
+
+            # Prefer the complete requested history when the current endpoint
+            # supports it. This prevents a date-filter failure from collapsing
+            # every request to the latest available year.
+            try:
+                rows = request_rows(start, end)
+                for row in rows:
                     point_date = cls._parse_date(row.get("Date"))
                     raw_value = row.get("TotalReturnsIndex")
                     if point_date is None or raw_value in (None, ""):
@@ -169,6 +157,46 @@ class BenchmarkPerformanceService:
                             "value": value,
                         }
 
+                covered_start = min(all_points) if all_points else None
+                covered_end = max(all_points) if all_points else None
+                if (
+                    covered_start
+                    and date.fromisoformat(covered_start) <= start + timedelta(days=10)
+                    and covered_end
+                ):
+                    return [all_points[key] for key in sorted(all_points)]
+            except Exception:
+                all_points.clear()
+
+            # Fallback for deployments enforcing a 365-day request limit.
+            all_points.clear()
+            cursor = start
+            while cursor <= end:
+                window_end = min(cursor + timedelta(days=364), end)
+                rows = request_rows(cursor, window_end)
+
+                window_points = 0
+                for row in rows:
+                    point_date = cls._parse_date(row.get("Date"))
+                    raw_value = row.get("TotalReturnsIndex")
+                    if point_date is None or raw_value in (None, ""):
+                        continue
+                    try:
+                        value = float(str(raw_value).replace(",", "").strip())
+                    except (TypeError, ValueError):
+                        continue
+                    if value > 0 and cursor <= point_date <= window_end:
+                        all_points[point_date.isoformat()] = {
+                            "date": point_date.isoformat(),
+                            "value": value,
+                        }
+                        window_points += 1
+
+                if window_points < 20 and (window_end - cursor).days > 45:
+                    raise ValueError(
+                        "NSE Indices TRI returned insufficient historical rows "
+                        f"for {cursor.isoformat()} to {window_end.isoformat()}"
+                    )
                 cursor = window_end + timedelta(days=1)
         finally:
             session.close()

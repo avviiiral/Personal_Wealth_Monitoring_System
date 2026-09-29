@@ -714,3 +714,12 @@ class AMFIHistoricalMasterImportTests(TestCase):
                 "<html><body>Application Error! Please try again later.</body></html>"
             )
         )
+
+
+    def test_amfi_resolution_error_is_diagnostic(self):
+        with patch(
+            "mutual_funds.services.amfi.requests.get",
+            side_effect=RuntimeError("api unavailable"),
+        ):
+            with self.assertRaises(RuntimeError):
+                AMFIService._resolve_nav_ids({"999999"})

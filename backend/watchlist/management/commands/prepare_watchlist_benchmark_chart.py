@@ -100,11 +100,10 @@ class Command(BaseCommand):
             )
             if benchmark == "BSE 500":
                 points = BenchmarkPerformanceService._bse_series(start)
+            elif benchmark == "Nifty 50":
+                points = BenchmarkPerformanceService._nifty_tri_series(start, today)
             else:
-                points = BenchmarkPerformanceService._series(
-                    BenchmarkPerformanceService._ticker(benchmark),
-                    start,
-                )
+                points = []
             saved = BenchmarkPerformanceService.save_benchmark_master(
                 benchmark,
                 points,

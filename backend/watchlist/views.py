@@ -15,6 +15,7 @@ from watchlist.services.ownership import OwnershipService
 from watchlist.services.pms import APMIPMSDiscoveryService
 from watchlist.services.benchmark import BenchmarkPerformanceService
 from watchlist.services.universe import AMFIUniverseService
+from watchlist.services.amfi_history import prepare_mutual_fund_watchlist_history
 
 
 class WatchListPagination(PageNumberPagination):
@@ -392,6 +393,10 @@ def watch_list_toggle(request, product_id):
         ],
         ignore_conflicts=True,
     )
+
+    if product.product_type == ProductType.MUTUAL_FUND:
+        prepare_mutual_fund_watchlist_history(product)
+
     return Response({"id": product.id, "is_watchlisted": True})
 
 
@@ -432,6 +437,14 @@ def watch_list_bulk_add(request):
         ],
         ignore_conflicts=True,
     )
+
+    new_mutual_funds = products.filter(
+        product_type=ProductType.MUTUAL_FUND,
+        id__in=valid_ids - existing_ids,
+    ).select_related("mutual_fund")
+    for product in new_mutual_funds:
+        prepare_mutual_fund_watchlist_history(product)
+
     return Response({
         "selected": len(valid_ids),
         "added": len(valid_ids - existing_ids),

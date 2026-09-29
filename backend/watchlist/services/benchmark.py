@@ -39,11 +39,17 @@ class BenchmarkPerformanceService:
     # Optional override for deployments that have a licensed BSE500 TRI feed.
     BSE500_URL = os.getenv("WATCHLIST_BENCHMARK_BSE500_URL", "").strip()
     BSE500_API = "https://api.bseindia.com/BseIndiaAPI/api/ProduceCSVForDate/w"
-    NIFTY_TRI_URL = "https://www.niftyindices.com/Backpage.aspx/getTotalReturnIndexString"
+    NIFTY_TRI_URLS = (
+        "https://www.niftyindices.com/BackPage/getTotalReturnIndexString",
+        "https://www.niftyindices.com/Backpage.aspx/getTotalReturnIndexString",
+        "https://www.niftyindices.com/Backpage/getTotalReturnIndexString",
+    )
     NIFTY_TRI_HEADERS = {
         "Content-Type": "application/json; charset=UTF-8",
+        "Accept": "application/json, text/plain, */*",
         "X-Requested-With": "XMLHttpRequest",
         "Referer": "https://www.niftyindices.com/reports/historical-data",
+        "Accept-Language": "en-GB,en-US;q=0.9,en;q=0.8",
         "User-Agent": (
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
             "AppleWebKit/537.36 (KHTML, like Gecko) "
@@ -101,27 +107,45 @@ class BenchmarkPerformanceService:
 
                 response = None
                 last_error = None
-                for endpoint in (
-                    cls.NIFTY_TRI_URL,
-                    "https://www.niftyindices.com/Backpage/getTotalReturnIndexString",
-                ):
+                rows = None
+                for endpoint in cls.NIFTY_TRI_URLS:
                     try:
                         response = session.post(
                             endpoint,
-                            data=json.dumps({"cinfo": cinfo}),
+                            json={"cinfo": cinfo},
                             headers=cls.NIFTY_TRI_HEADERS,
                             timeout=60,
                         )
                         response.raise_for_status()
                         try:
                             payload = response.json()
-                        except ValueError as exc:
+                        except ValueError:
                             last_error = ValueError(
                                 "NSE Indices TRI endpoint returned non-JSON content "
                                 f"(HTTP {response.status_code})"
                             )
                             continue
-                        break
+
+                        # The NSE Indices endpoint changed in July 2026. The
+                        # current /BackPage/ route returns the rows directly,
+                        # while older routes wrap them in {"d": "..."}.
+                        if isinstance(payload, list):
+                            rows = payload
+                        elif isinstance(payload, dict):
+                            raw_rows = payload.get("d", [])
+                            rows = (
+                                json.loads(raw_rows)
+                                if isinstance(raw_rows, str)
+                                else raw_rows
+                            )
+                            if isinstance(rows, str):
+                                rows = json.loads(rows)
+                        if isinstance(rows, list):
+                            break
+                        last_error = ValueError(
+                            "NSE Indices TRI endpoint returned an unexpected "
+                            f"response shape: {type(payload).__name__}"
+                        )
                     except Exception as exc:
                         last_error = exc
                         continue
@@ -129,11 +153,6 @@ class BenchmarkPerformanceService:
                     raise last_error or ValueError(
                         "NSE Indices TRI endpoint returned no usable response"
                     )
-
-                raw_rows = payload.get("d", "[]")
-                rows = json.loads(raw_rows) if isinstance(raw_rows, str) else raw_rows
-                if isinstance(rows, str):
-                    rows = json.loads(rows)
 
                 for row in rows or []:
                     point_date = cls._parse_date(row.get("Date"))

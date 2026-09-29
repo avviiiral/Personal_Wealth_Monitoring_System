@@ -87,16 +87,28 @@ class AMFIService:
             AMFIService.NAV_HISTORY_URL,
             params={
                 "tp": "1",
-                "frmdt": from_date.strftime(
-                    "%d-%b-%Y"
-                ),
-                "todt": to_date.strftime(
-                    "%d-%b-%Y"
-                ),
+                "frmdt": from_date.strftime("%d-%b-%Y"),
+                "todt": to_date.strftime("%d-%b-%Y"),
             },
             headers=AMFIService._headers(),
             timeout=60,
         )
+
+        # AMFI's historical form endpoint has changed between deployments.
+        # The download endpoint used by the public NAV History page accepts
+        # the same dates using frmdate/todt, with the historical report mode.
+        if not response.ok or not response.text.strip():
+            response = requests.get(
+                "https://portal.amfiindia.com/NavHistoryReport_Rpt_Po.aspx",
+                params={
+                    "frmdate": from_date.strftime("%d-%b-%Y"),
+                    "todt": to_date.strftime("%d-%b-%Y"),
+                    "mf": "all",
+                    "rpt": "dn",
+                },
+                headers=AMFIService._headers(),
+                timeout=60,
+            )
 
         response.raise_for_status()
 

@@ -787,26 +787,66 @@ class BenchmarkPerformanceService:
             or ""
         ).strip() or None
 
+    @staticmethod
+    def _merge_chart_series(primary, secondary):
+        """Merge two historical series, preferring primary values on duplicate dates.
+
+        The shared AMFI master can be partially backfilled: it may contain a
+        dense recent history while the older product-level AMFI snapshots still
+        contain the observations needed for a full 1Y/3Y/5Y chart. A count-only
+        choice between the two sources can therefore discard valid older
+        history. Merge by date instead so the chart gets the complete coverage
+        available from both sources without duplicating observations.
+        """
+        merged = {}
+
+        for point in secondary or []:
+            if not point.get("date") or point.get("value") is None:
+                continue
+            try:
+                value = float(point["value"])
+            except (TypeError, ValueError):
+                continue
+            if value > 0:
+                merged[str(point["date"])] = {
+                    "date": str(point["date"]),
+                    "value": value,
+                }
+
+        for point in primary or []:
+            if not point.get("date") or point.get("value") is None:
+                continue
+            try:
+                value = float(point["value"])
+            except (TypeError, ValueError):
+                continue
+            if value > 0:
+                merged[str(point["date"])] = {
+                    "date": str(point["date"]),
+                    "value": value,
+                }
+
+        return [merged[key] for key in sorted(merged)]
+
     @classmethod
     def _fund_series(cls, product, start, end=None):
-        """Return the daily fund series needed by the relative-performance chart.
+        """Return the historical fund series needed by the relative-performance chart.
 
-        Mutual funds use the shared AMFI master as the primary source. If the
-        master does not yet contain enough observations for the requested
-        window, fall back to the already-imported AMFI PerformanceSnapshot
-        history for this product. This is a read-only fallback: it does not
-        trigger a per-user AMFI download and keeps the chart usable while the
-        shared master is being populated.
+        Mutual funds combine the shared AMFI master with the already-imported
+        product-level AMFI history. This is intentionally a read-only operation:
+        it never triggers an external AMFI download during chart rendering.
+
+        The shared master is preferred when the same date exists in both
+        sources, but older product-level observations are retained. This is
+        important when the master has been backfilled only for a recent range:
+        selecting the master by row count would otherwise truncate a 1Y/3Y/5Y
+        chart even though the older NAV history is already available locally.
         """
         end = end or timezone.now().date()
 
         if getattr(product, "product_type", None) == "MUTUAL_FUND":
             scheme_code = cls._fund_scheme_code(product)
             if scheme_code:
-                # Benchmark-performance is a read-only API and must never
-                # block on an external AMFI download. Shared AMFI history is
-                # populated by the scheduler/management command; this request
-                # only reads what is already available locally.
                 master_points = list(
                     AMFIMasterNAV.objects.filter(
                         scheme__scheme_code=scheme_code,
@@ -825,33 +865,32 @@ class BenchmarkPerformanceService:
                     for point in master_points
                     if point["nav"] and float(point["nav"]) > 0
                 ]
-                # A partially populated shared master must not mask a
-                # complete product-level AMFI history. This can happen when
-                # benchmark/bootstrap preparation has run before the scheme's
-                # historical NAV backfill. Compare the available histories and
-                # use the richer series for the chart.
-                if len(master_series) >= 2:
-                    snapshots = list(
-                        PerformanceSnapshot.objects.filter(
-                            product=product,
-                            source="AMFI",
-                            date__gte=start,
-                            date__lte=end,
-                        )
-                        .exclude(nav_or_value__isnull=True)
-                        .order_by("date", "id")
+
+                snapshots = list(
+                    PerformanceSnapshot.objects.filter(
+                        product=product,
+                        source="AMFI",
+                        date__gte=start,
+                        date__lte=end,
                     )
-                    snapshot_series = [
-                        {
-                            "date": snapshot.date.isoformat(),
-                            "value": float(snapshot.nav_or_value),
-                        }
-                        for snapshot in snapshots
-                        if snapshot.nav_or_value and float(snapshot.nav_or_value) > 0
-                    ]
-                    if len(master_series) >= len(snapshot_series):
-                        return master_series
-                    return snapshot_series
+                    .exclude(nav_or_value__isnull=True)
+                    .order_by("date", "id")
+                )
+                snapshot_series = [
+                    {
+                        "date": snapshot.date.isoformat(),
+                        "value": float(snapshot.nav_or_value),
+                    }
+                    for snapshot in snapshots
+                    if snapshot.nav_or_value and float(snapshot.nav_or_value) > 0
+                ]
+
+                merged_series = cls._merge_chart_series(
+                    master_series,
+                    snapshot_series,
+                )
+                if len(merged_series) >= 2:
+                    return merged_series
 
             # Compatibility fallback for existing AMFI history. The chart
             # should not disappear merely because the shared master has not

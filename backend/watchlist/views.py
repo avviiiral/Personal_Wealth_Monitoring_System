@@ -43,11 +43,9 @@ def _watchlist_user_ids(request):
 
 def _filtered_products(request, product_type=None):
     queryset = InvestmentProduct.objects.filter(is_active=True).select_related("mutual_fund", "pms")
-
     if product_type:
         queryset = queryset.filter(product_type=product_type)
     params = request.query_params
-    status = params.get("status", "").upper()
     search = params.get("search", "").strip()
     if search:
         queryset = queryset.filter(
@@ -100,6 +98,7 @@ def _filtered_products(request, product_type=None):
 
     queryset = queryset.order_by(prefix + ordering_field, "id")
 
+    status = params.get("status", "").upper()
     if status == "WATCHLIST":
         # Watch List is shared by every active member of the caller's
         # currently selected family.
@@ -118,81 +117,44 @@ def _filtered_products(request, product_type=None):
         active_position = Q(quantity__gt=0) | Q(current_value__gt=0)
         scoped_positions = family_scope(PortfolioPosition.objects, request.user).filter(active_position)
 
-        # Resolve ownership from the same family-scoped positions used by
-        # OwnershipService.bulk_enrich(). Use the complete filtered product
-        # set here so OWNED/UNIVERSAL status is independent of catalogue
-        # displayability data.
-        products_for_ownership = list(queryset)
-        scoped_positions = list(
-            scoped_positions.select_related("asset").only(
-                "asset_id",
-                "quantity",
-                "current_value",
-                "asset__isin",
-                "asset__symbol",
-                "asset__name",
-                "asset__category",
-            )
-        )
-
-        def norm(value):
-            return str(value or "").strip().casefold()
-
-        owned_product_ids = set()
         if product_type == ProductType.PMS:
-            match_names = {
-                product.id: norm(
-                    product.pms.strategy_name
-                    if getattr(product, "pms", None) and product.pms.strategy_name
-                    else product.name
-                )
-                for product in products_for_ownership
-            }
-            names = {name for name in match_names.values() if name}
-            if names:
-                transaction_names = set(
-                    family_scope(Transaction.objects, request.user)
-                    .filter(asset_name__in=names)
-                    .values_list("asset_name", flat=True)
-                )
-                transaction_names = {norm(name) for name in transaction_names}
-                owned_product_ids = {
-                    product_id
-                    for product_id, match_name in match_names.items()
-                    if match_name and match_name in transaction_names
-                }
+            # Correlate the transaction to the current position first, then
+            # correlate that nested query back to the InvestmentProduct.
+            # OuterRef(OuterRef("name")) is required because the transaction
+            # query is nested inside the PortfolioPosition EXISTS.
+            pms_transactions = family_scope(Transaction.objects, request.user).filter(
+                asset_name__iexact=OuterRef(OuterRef("name")),
+                asset_id=OuterRef("asset_id"),
+            )
+            owned_pms_positions = scoped_positions.filter(
+                Exists(pms_transactions),
+            )
+            owned_expression = Exists(owned_pms_positions)
+            queryset = queryset.filter(
+                owned_expression if status == "OWNED" else ~owned_expression
+            )
         else:
-            positions_by_isin = set()
-            positions_by_symbol = set()
-            positions_by_name = set()
-            for position in scoped_positions:
-                asset = position.asset
-                if product_type == ProductType.MUTUAL_FUND and asset.category != AssetCategory.MUTUAL_FUND:
-                    continue
-                if asset.isin:
-                    positions_by_isin.add(norm(asset.isin))
-                if asset.symbol:
-                    positions_by_symbol.add(norm(asset.symbol))
-                if asset.name:
-                    positions_by_name.add(norm(asset.name))
+            # Mutual funds and other products first match by ISIN, then use
+            # the same symbol/name fallback as OwnershipService.bulk_enrich().
+            isin_positions = scoped_positions.filter(
+                asset__isin__iexact=OuterRef("isin"),
+            )
+            fallback_positions = scoped_positions.filter(
+                Q(asset__symbol__iexact=OuterRef("external_identifier"))
+                | Q(asset__name__iexact=OuterRef("name"))
+            )
 
-            for product in products_for_ownership:
-                if product.isin:
-                    owned = norm(product.isin) in positions_by_isin
-                elif product.external_identifier:
-                    owned = (
-                        norm(product.external_identifier) in positions_by_symbol
-                        or norm(product.name) in positions_by_name
-                    )
-                else:
-                    owned = norm(product.name) in positions_by_name
-                if owned:
-                    owned_product_ids.add(product.id)
+            if product_type == ProductType.MUTUAL_FUND:
+                isin_positions = isin_positions.filter(asset__category=AssetCategory.MUTUAL_FUND)
+                fallback_positions = fallback_positions.filter(asset__category=AssetCategory.MUTUAL_FUND)
 
-        if status == "OWNED":
-            queryset = queryset.filter(id__in=owned_product_ids)
-        else:
-            queryset = queryset.exclude(id__in=owned_product_ids)
+            owned_expression = (
+                (~Q(isin__isnull=True) & ~Q(isin="") & Exists(isin_positions))
+                | ((Q(isin__isnull=True) | Q(isin="")) & Exists(fallback_positions))
+            )
+            queryset = queryset.filter(
+                owned_expression if status == "OWNED" else ~owned_expression
+            )
     return queryset
 
 
@@ -409,10 +371,6 @@ def watch_list_toggle(request, product_id):
         ],
         ignore_conflicts=True,
     )
-
-    if product.product_type == ProductType.MUTUAL_FUND:
-        prepare_mutual_fund_watchlist_history(product)
-
     return Response({"id": product.id, "is_watchlisted": True})
 
 
@@ -453,14 +411,6 @@ def watch_list_bulk_add(request):
         ],
         ignore_conflicts=True,
     )
-
-    new_mutual_funds = products.filter(
-        product_type=ProductType.MUTUAL_FUND,
-        id__in=valid_ids - existing_ids,
-    ).select_related("mutual_fund")
-    for product in new_mutual_funds:
-        prepare_mutual_fund_watchlist_history(product)
-
     return Response({
         "selected": len(valid_ids),
         "added": len(valid_ids - existing_ids),

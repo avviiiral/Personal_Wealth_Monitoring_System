@@ -310,48 +310,37 @@ class AMFIService:
     def parse_nav_file(
         text,
         historical=False,
+        scheme_codes=None,
     ):
         """
         Parse AMFI NAV data.
 
-        Supports both latest and historical formats.
+        Supports both latest and historical formats. scheme_codes filters
+        historical rows before the full-universe file is parsed into records.
         """
-
         records = []
+        normalized_codes = (
+            {str(code).strip() for code in scheme_codes}
+            if scheme_codes
+            else None
+        )
 
         for raw_line in text.splitlines():
-
             line = raw_line.strip()
-
-            if not line:
+            if not line or ";" not in line:
                 continue
 
-            if ";" not in line:
-                continue
+            if historical and normalized_codes:
+                raw_scheme_code = line.partition(";")[0].strip()
+                if raw_scheme_code not in normalized_codes:
+                    continue
 
-            parts = [
-                part.strip()
-                for part in line.split(";")
-            ]
-
-            if historical:
-
-                record = (
-                    AMFIService
-                    ._parse_historical_record(
-                        parts
-                    )
-                )
-
-            else:
-
-                record = (
-                    AMFIService
-                    ._parse_latest_record(
-                        parts
-                    )
-                )
-
+            parts = [part.strip() for part in line.split(";")]
+            record = (
+                AMFIService._parse_historical_record(parts)
+                if historical
+                else AMFIService._parse_latest_record(parts)
+            )
             if record:
                 records.append(record)
 
@@ -748,14 +737,11 @@ class AMFIService:
         without duplicating unrelated historical rows.
         """
         text = AMFIService.download_historical_nav(from_date, to_date)
-        records = AMFIService.parse_nav_file(text, historical=True)
-        if scheme_codes:
-            normalized_codes = {str(code).strip() for code in scheme_codes}
-            records = [
-                record
-                for record in records
-                if record["scheme_code"] in normalized_codes
-            ]
+        records = AMFIService.parse_nav_file(
+            text,
+            historical=True,
+            scheme_codes=scheme_codes,
+        )
         return AMFIService._import_master_records(records)
 
     @staticmethod

@@ -9,6 +9,7 @@ from django.test import TestCase
 from users.models import FamilyGroup
 
 from mutual_funds.models import (
+    AMFIMasterScheme,
     MutualFundHolding,
     MutualFundNAV,
     MutualFundScheme,

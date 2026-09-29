@@ -43,6 +43,33 @@ def _watchlist_user_ids(request):
 
 def _filtered_products(request, product_type=None):
     queryset = InvestmentProduct.objects.filter(is_active=True).select_related("mutual_fund", "pms")
+
+    # Do not display products that have no usable performance/AUM data at all.
+    # A product is visible when it has at least one displayed return metric
+    # or an AUM value. This is only a Watch List/API presentation filter and
+    # does not remove the underlying master product.
+    displayable_snapshot = PerformanceSnapshot.objects.filter(
+        product_id=OuterRef("pk"),
+    ).filter(
+        Q(nav_or_value__isnull=False)
+        | Q(aum__isnull=False)
+        | Q(return_1d__isnull=False)
+        | Q(return_1w__isnull=False)
+        | Q(return_1m__isnull=False)
+        | Q(return_3m__isnull=False)
+        | Q(return_6m__isnull=False)
+        | Q(return_1y__isnull=False)
+        | Q(return_3y__isnull=False)
+        | Q(return_5y__isnull=False)
+        | Q(return_since_inception__isnull=False)
+        | Q(cagr__isnull=False)
+    )
+    queryset = queryset.filter(
+        Q(mutual_fund__aum__isnull=False)
+        | Q(pms__aum__isnull=False)
+        | Exists(displayable_snapshot)
+    )
+
     if product_type:
         queryset = queryset.filter(product_type=product_type)
     params = request.query_params
@@ -455,10 +482,27 @@ def watch_list_bulk_remove(request):
 
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
-def watch_list_refresh(request):
-    # Serialize manual refreshes with background schedulers so two full
-    # universe upserts cannot run concurrently against SQLite.
+def prepare_watch_list(request):
+    if not request.user.is_staff:
+        return Response({"detail": "Staff permission required."}, status=403)
+
+    days = int(request.data.get("days", 7))
+    dry_run = str(request.data.get("dry_run", "")).lower() in {"1", "true", "yes"}
+    result = {
+        "amfi": AMFIUniverseService.prepare_watchlist_history(days=days, dry_run=dry_run),
+        "pms": APMIPMSDiscoveryService.prepare_watchlist_history(days=days, dry_run=dry_run),
+    }
+    return Response(result)
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def prepare_watch_list_benchmark(request):
+    if not request.user.is_staff:
+        return Response({"detail": "Staff permission required."}, status=403)
+
+    days = int(request.data.get("days", 7))
+    dry_run = str(request.data.get("dry_run", "")).lower() in {"1", "true", "yes"}
     with DATABASE_SCHEDULER_LOCK:
-        mf_result = AMFIUniverseService.refresh()
-        pms_result = APMIPMSDiscoveryService.refresh()
-    return Response({"mutual_funds": mf_result, "pms": pms_result})
+        result = BenchmarkPerformanceService.prepare_benchmark_history(days=days, dry_run=dry_run)
+    return Response(result)

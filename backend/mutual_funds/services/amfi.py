@@ -141,6 +141,23 @@ class AMFIService:
         if not codes:
             return {}
 
+        # AMFI documents the `type` parameter as "", "Open Ended",
+        # "Close Ended", and "Interval Fund". Some ETF schemes can be
+        # absent from the blank/all response, so only unresolved codes
+        # are looked up through the explicit fund-type variants.
+        latest_by_code = {}
+        requested = {}
+
+        def refresh_requested():
+            requested.clear()
+            requested.update(
+                {
+                    code: latest_by_code[code]
+                    for code in codes
+                    if code in latest_by_code
+                }
+            )
+
         response = requests.get(
             AMFIService.AMFI_LATEST_API,
             params={"mfid": "all", "type": ""},
@@ -148,13 +165,33 @@ class AMFIService:
             timeout=60,
         )
         response.raise_for_status()
-        latest_by_code = AMFIService._flatten_latest_api(response.json())
+        latest_by_code.update(
+            AMFIService._flatten_latest_api(response.json())
+        )
+        refresh_requested()
 
-        requested = {
-            code: latest_by_code[code]
-            for code in codes
-            if code in latest_by_code
-        }
+        if len(requested) != len(codes):
+            missing = codes - requested.keys()
+            for fund_type in (
+                "Open Ended",
+                "Close Ended",
+                "Interval Fund",
+            ):
+                if not missing:
+                    break
+
+                response = requests.get(
+                    AMFIService.AMFI_LATEST_API,
+                    params={"mfid": "all", "type": fund_type},
+                    headers=AMFIService._api_headers(),
+                    timeout=60,
+                )
+                response.raise_for_status()
+                latest_by_code.update(
+                    AMFIService._flatten_latest_api(response.json())
+                )
+                refresh_requested()
+                missing = codes - requested.keys()
 
         # The current API may expose a generic Scheme_Name while NAVAll/master
         # retains the exact option name (for example Direct - Growth). Prefer

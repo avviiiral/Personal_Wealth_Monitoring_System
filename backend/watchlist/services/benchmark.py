@@ -1,5 +1,6 @@
 import csv
 import io
+import json
 import os
 from datetime import date, datetime, timedelta
 from pathlib import Path
@@ -37,6 +38,17 @@ class BenchmarkPerformanceService:
     # Optional override for deployments that have a licensed BSE500 TRI feed.
     BSE500_URL = os.getenv("WATCHLIST_BENCHMARK_BSE500_URL", "").strip()
     BSE500_API = "https://api.bseindia.com/BseIndiaAPI/api/ProduceCSVForDate/w"
+    NIFTY_TRI_URL = "https://www.niftyindices.com/Backpage.aspx/getTotalReturnIndexString"
+    NIFTY_TRI_HEADERS = {
+        "Content-Type": "application/json; charset=UTF-8",
+        "X-Requested-With": "XMLHttpRequest",
+        "Referer": "https://www.niftyindices.com/reports/historical-data",
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/140.0 Safari/537.36"
+        ),
+    }
     # Public-market fallback: HDFC's ETF explicitly tracks the BSE 500 TRI.
     # This keeps Watch List benchmark comparison automatic when BSE's public
     # historical endpoint does not expose the TRI series directly.
@@ -54,6 +66,81 @@ class BenchmarkPerformanceService:
     @classmethod
     def _ticker(cls, benchmark):
         return cls.TICKERS[benchmark]
+
+    @classmethod
+    def _nifty_tri_series(cls, start, end=None):
+        """Fetch official Nifty 50 Gross TRI history from NSE Indices."""
+        end = end or timezone.now().date()
+        all_points = {}
+        cursor = start
+
+        while cursor <= end:
+            window_end = min(cursor + timedelta(days=364), end)
+            cinfo = (
+                "{'name':'NIFTY 50',"
+                f"'startDate':'{cursor.strftime('%d-%b-%Y')}',"
+                f"'endDate':'{window_end.strftime('%d-%b-%Y')}',"
+                "'indexName':'NIFTY 50'}"
+            )
+            response = requests.post(
+                cls.NIFTY_TRI_URL,
+                json={"cinfo": cinfo},
+                headers=cls.NIFTY_TRI_HEADERS,
+                timeout=60,
+            )
+            response.raise_for_status()
+            payload = response.json()
+            rows = json.loads(payload.get("d", "[]"))
+            if isinstance(rows, str):
+                rows = json.loads(rows)
+
+            for row in rows or []:
+                point_date = cls._parse_date(row.get("Date"))
+                raw_value = row.get("TotalReturnsIndex")
+                if point_date is None or raw_value in (None, ""):
+                    continue
+                try:
+                    value = float(str(raw_value).replace(",", "").strip())
+                except (TypeError, ValueError):
+                    continue
+                if value > 0 and start <= point_date <= end:
+                    all_points[point_date.isoformat()] = {
+                        "date": point_date.isoformat(),
+                        "value": value,
+                    }
+
+            cursor = window_end + timedelta(days=1)
+
+        return [all_points[key] for key in sorted(all_points)]
+
+    @classmethod
+    def ensure_benchmark_master_history(cls, start=None, end=None, force=False):
+        """Ensure both supported benchmark masters exist locally."""
+        end = end or timezone.now().date()
+        start = start or (end - timedelta(days=cls.PERIOD_DAYS["5Y"] + 31))
+        results = {}
+        expected = max(5, int((end - start).days * 0.5))
+
+        for benchmark in ("Nifty 50", "BSE 500"):
+            count = BenchmarkMasterPoint.objects.filter(
+                benchmark=benchmark,
+                source="MASTER",
+                date__gte=start,
+                date__lte=end,
+            ).count()
+            if not force and count >= expected:
+                results[benchmark] = {"downloaded": False, "rows": count}
+                continue
+
+            points = (
+                cls._nifty_tri_series(start, end)
+                if benchmark == "Nifty 50"
+                else cls._bse_series(start)
+            )
+            saved = cls.save_benchmark_master(benchmark, points)
+            results[benchmark] = {"downloaded": True, "rows": saved}
+
+        return results
 
     @staticmethod
     def _series(ticker, start):
@@ -363,30 +450,45 @@ class BenchmarkPerformanceService:
 
     @classmethod
     def _benchmark_series(cls, benchmark, start):
-        """Read benchmark history from the shared local master only.
-
-        The Watch List GET endpoint is intentionally read-only. Network
-        ingestion is performed by the benchmark master refresh command and
-        persisted here so every product/family reuses the same history.
-        """
-        points = (
-            BenchmarkMasterPoint.objects
-            .filter(
-                benchmark=benchmark,
-                source="MASTER",
-                date__gte=start,
+        """Read benchmark history from the shared master, bootstrapping once if needed."""
+        def read_master():
+            points = (
+                BenchmarkMasterPoint.objects
+                .filter(
+                    benchmark=benchmark,
+                    source="MASTER",
+                    date__gte=start,
+                )
+                .order_by("date", "id")
+                .values("date", "value")
             )
-            .order_by("date", "id")
-            .values("date", "value")
-        )
-        return [
-            {
-                "date": point["date"].isoformat(),
-                "value": float(point["value"]),
-            }
-            for point in points
-            if point["value"] is not None and float(point["value"]) > 0
-        ]
+            return [
+                {
+                    "date": point["date"].isoformat(),
+                    "value": float(point["value"]),
+                }
+                for point in points
+                if point["value"] is not None and float(point["value"]) > 0
+            ]
+
+        series = read_master()
+        if len(series) >= 2:
+            return series
+
+        try:
+            points = (
+                cls._nifty_tri_series(start)
+                if benchmark == "Nifty 50"
+                else cls._bse_series(start)
+                if benchmark == "BSE 500"
+                else []
+            )
+            if points:
+                cls.save_benchmark_master(benchmark, points)
+        except Exception:
+            return series
+
+        return read_master()
 
     @classmethod
     def save_benchmark_master(cls, benchmark, points):

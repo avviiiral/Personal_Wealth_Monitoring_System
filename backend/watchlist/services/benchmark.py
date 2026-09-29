@@ -8,6 +8,7 @@ from typing import Any
 
 import requests
 import yfinance as yf
+from curl_cffi import requests as curl_requests
 from django.utils import timezone
 
 from mutual_funds.models import AMFIMasterNAV
@@ -74,39 +75,62 @@ class BenchmarkPerformanceService:
         all_points = {}
         cursor = start
 
-        while cursor <= end:
-            window_end = min(cursor + timedelta(days=364), end)
-            cinfo = (
-                "{'name':'NIFTY 50',"
-                f"'startDate':'{cursor.strftime('%d-%b-%Y')}',"
-                f"'endDate':'{window_end.strftime('%d-%b-%Y')}',"
-                "'indexName':'NIFTY 50'}"
-            )
+        # Nifty Indices may challenge ordinary requests clients. curl_cffi
+        # impersonates a real browser TLS/HTTP fingerprint while keeping the
+        # same official NSE Indices endpoint and response contract.
+        try:
+            session = curl_requests.Session(impersonate="chrome")
+        except Exception:
             session = requests.Session()
-            try:
+
+        try:
+            while cursor <= end:
+                window_end = min(cursor + timedelta(days=364), end)
+                cinfo = (
+                    "{'name':'NIFTY 50',"
+                    f"'startDate':'{cursor.strftime('%d-%b-%Y')}',"
+                    f"'endDate':'{window_end.strftime('%d-%b-%Y')}',"
+                    "'indexName':'NIFTY 50'}"
+                )
+
                 session.get(
                     "https://www.niftyindices.com/reports/historical-data",
                     headers=cls.NIFTY_TRI_HEADERS,
-                    timeout=10,
+                    timeout=15,
                 )
-                response = session.post(
-                    cls.NIFTY_TRI_URL,
-                    data=json.dumps({"cinfo": cinfo}),
-                    headers=cls.NIFTY_TRI_HEADERS,
-                    timeout=60,
-                )
-                response.raise_for_status()
-                try:
-                    payload = response.json()
-                except ValueError as exc:
-                    raise ValueError(
-                        "NSE Indices TRI endpoint returned non-JSON content "
-                        f"(HTTP {response.status_code})"
-                    ) from exc
-            finally:
-                session.close()
 
-            raw_rows = payload.get("d", "[]")
+                response = None
+                last_error = None
+                for endpoint in (
+                    cls.NIFTY_TRI_URL,
+                    "https://www.niftyindices.com/Backpage/getTotalReturnIndexString",
+                ):
+                    try:
+                        response = session.post(
+                            endpoint,
+                            data=json.dumps({"cinfo": cinfo}),
+                            headers=cls.NIFTY_TRI_HEADERS,
+                            timeout=60,
+                        )
+                        response.raise_for_status()
+                        try:
+                            payload = response.json()
+                        except ValueError as exc:
+                            last_error = ValueError(
+                                "NSE Indices TRI endpoint returned non-JSON content "
+                                f"(HTTP {response.status_code})"
+                            )
+                            continue
+                        break
+                    except Exception as exc:
+                        last_error = exc
+                        continue
+                else:
+                    raise last_error or ValueError(
+                        "NSE Indices TRI endpoint returned no usable response"
+                    )
+
+                raw_rows = payload.get("d", "[]")
             rows = json.loads(raw_rows) if isinstance(raw_rows, str) else raw_rows
             if isinstance(rows, str):
                 rows = json.loads(rows)
@@ -126,7 +150,9 @@ class BenchmarkPerformanceService:
                         "value": value,
                     }
 
-            cursor = window_end + timedelta(days=1)
+                cursor = window_end + timedelta(days=1)
+        finally:
+            session.close()
 
         return [all_points[key] for key in sorted(all_points)]
 

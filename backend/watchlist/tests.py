@@ -10,7 +10,7 @@ from users.models import FamilyGroup
 from rest_framework.test import APIClient
 
 from investments.models import Asset, AssetCategory, PortfolioPosition, Transaction, TransactionType
-from watchlist.models import InvestmentProduct, MutualFundProduct, PMSProduct, PerformanceSnapshot, ProductType, WatchListEntry
+from watchlist.models import BenchmarkMasterPoint, InvestmentProduct, MutualFundProduct, PMSProduct, PerformanceSnapshot, ProductType, WatchListEntry
 from watchlist.services.ownership import OwnershipService
 from watchlist.services.performance import AMFIPerformanceService
 from watchlist.services.universe import AMFIUniverseService
@@ -292,6 +292,58 @@ class BenchmarkPerformanceTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertTrue(response.data["available"])
         self.assertEqual(response.data["benchmark"], "BSE 500")
+
+    def test_chart_reads_shared_benchmark_master_without_network_fetch(self):
+        product = InvestmentProduct.objects.create(
+            product_type=ProductType.MUTUAL_FUND,
+            name="Master Benchmark Read Test",
+            identity_key="MUTUAL_FUND:SCHEME:MASTER-BENCHMARK-READ",
+            source="TEST",
+        )
+        MutualFundProduct.objects.create(
+            product=product,
+            scheme_code="MASTER-BENCHMARK-READ",
+            benchmark="Nifty 50",
+        )
+        AMFIMasterScheme.objects.create(
+            scheme_code="MASTER-BENCHMARK-READ",
+            scheme_name="Master Benchmark Read Test",
+        )
+        scheme = AMFIMasterScheme.objects.get(scheme_code="MASTER-BENCHMARK-READ")
+        AMFIMasterNAV.objects.create(
+            scheme=scheme,
+            date="2025-01-02",
+            nav=Decimal("100.00"),
+            source="AMFI",
+        )
+        AMFIMasterNAV.objects.create(
+            scheme=scheme,
+            date="2026-09-28",
+            nav=Decimal("120.00"),
+            source="AMFI",
+        )
+        BenchmarkMasterPoint.objects.create(
+            benchmark="Nifty 50",
+            date="2025-01-02",
+            value=Decimal("24000.00"),
+            source="MASTER",
+        )
+        BenchmarkMasterPoint.objects.create(
+            benchmark="Nifty 50",
+            date="2026-09-28",
+            value=Decimal("25000.00"),
+            source="MASTER",
+        )
+
+        with patch.object(
+            BenchmarkPerformanceService,
+            "_series",
+            side_effect=AssertionError("chart endpoint attempted a network fetch"),
+        ):
+            result = BenchmarkPerformanceService.calculate(product, "1Y")
+
+        self.assertTrue(result["available"])
+        self.assertGreaterEqual(len(result["chart"]["aligned_points"]), 2)
 
     def test_chart_uses_actual_values_and_on_or_before_benchmark_alignment(self):
         aligned = BenchmarkPerformanceService._aligned_chart_series(

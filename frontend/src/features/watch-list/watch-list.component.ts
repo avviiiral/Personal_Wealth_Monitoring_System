@@ -70,6 +70,9 @@ export class WatchListComponent implements OnInit, OnDestroy {
     visible: boolean;
     x: number;
     y: number;
+    chartX: number;
+    productY: number;
+    benchmarkY: number;
     date: string;
     productValue: number;
     benchmarkValue: number;

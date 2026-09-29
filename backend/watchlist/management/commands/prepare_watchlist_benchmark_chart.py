@@ -64,6 +64,10 @@ class Command(BaseCommand):
                 .values_list("mutual_fund__scheme_code", flat=True)
             )
 
+            unresolved_schemes = []
+            resolved_scheme_count = 0
+            imported_nav_rows = 0
+
             if watchlisted_scheme_codes:
                 self.stdout.write(
                     f"Preparing historical AMFI NAV for "
@@ -71,23 +75,40 @@ class Command(BaseCommand):
                     f"from {benchmark_start} to {today}..."
                 )
 
-                result = AMFIService.import_historical_master_navs(
-                    benchmark_start,
-                    today,
-                    scheme_codes=watchlisted_scheme_codes,
-                )
-                self.stdout.write(
-                    self.style.SUCCESS(
-                        f"  AMFI historical API: "
-                        f"{result['nav_records']} watchlist NAV rows imported"
-                    )
-                )
+                for scheme_code in sorted(watchlisted_scheme_codes):
+                    try:
+                        result = AMFIService.import_historical_master_navs(
+                            benchmark_start,
+                            today,
+                            scheme_codes={scheme_code},
+                        )
+                        resolved_scheme_count += 1
+                        imported_nav_rows += result["nav_records"]
+                        self.stdout.write(
+                            self.style.SUCCESS(
+                                f"  AMFI {scheme_code}: "
+                                f"{result['nav_records']} historical NAV rows imported"
+                            )
+                        )
+                    except Exception as exc:
+                        unresolved_schemes.append((scheme_code, str(exc)))
+                        self.stdout.write(
+                            self.style.ERROR(
+                                f"  AMFI {scheme_code}: unresolved - {exc}"
+                            )
+                        )
 
+                self.stdout.write(
+                    f"AMFI watchlist resolution: "
+                    f"{resolved_scheme_count}/{len(watchlisted_scheme_codes)} schemes resolved; "
+                    f"{imported_nav_rows} historical NAV rows imported."
+                )
             else:
                 self.stdout.write(
                     "No active Mutual Fund products are currently watchlisted; "
                     "skipping AMFI historical NAV backfill."
                 )
+
 
         if product is not None and product.product_type == ProductType.MUTUAL_FUND:
             inception_date = getattr(product.mutual_fund, "inception_date", None)
@@ -165,6 +186,16 @@ class Command(BaseCommand):
                         f"{benchmark_name} master already contains sufficient history."
                     )
                 )
+
+        if unresolved_schemes:
+            details = "; ".join(
+                f"{code}: {error}"
+                for code, error in unresolved_schemes
+            )
+            raise CommandError(
+                f"AMFI historical NAV preparation completed with "
+                f"{len(unresolved_schemes)} unresolved scheme(s): {details}"
+            )
 
         if product is not None:
             self.stdout.write(

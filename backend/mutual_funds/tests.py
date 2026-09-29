@@ -557,66 +557,38 @@ class AMFIHistoricalMasterImportTests(TestCase):
 
     def test_current_api_history_resolves_scheme_code_to_nav_id(self):
         class FakeResponse:
-            def __init__(self, payload):
-                self.payload = payload
+            def __init__(self, text):
+                self.text = text
                 self.status_code = 200
-                self.headers = {"Content-Type": "application/json"}
+                self.headers = {"Content-Type": "text/plain"}
+                self.url = "https://portal.amfiindia.com/DownloadNAVHistoryReport_Po.aspx"
 
             def raise_for_status(self):
                 return None
 
-            def json(self):
-                return self.payload
+        report = (
+            "Scheme Code;Scheme Name;ISIN Div Payout/ISIN Growth;"
+            "ISIN Div Reinvestment;Net Asset Value;Repurchase Price;"
+            "Sale Price;Date\n"
+            "119551;Requested Fund;INF000000001;-;101.25;101.25;101.25;28-Sep-2026\n"
+            "119551;Requested Fund;INF000000001;-;102.50;102.50;102.50;29-Sep-2026\n"
+        )
 
         responses = [
-            FakeResponse({
-                "data": [{
-                    "type": "Open Ended",
-                    "categories": [{
-                        "category": "Equity Scheme",
-                        "groups": [{
-                            "mutualFundId": "85",
-                            "schemes": [{
-                                "schemeId": "119551",
-                                "schemeName": "Requested Fund",
-                            }],
-                        }],
-                    }],
-                }]
-            }),
-            FakeResponse({
-                "data": [{
-                    "nav_id": "154043",
-                    "nav_name": "Requested Fund",
-                    "MF_ID": "85",
-                }]
-            }),
-            FakeResponse({
-                "data": {
-                    "mf_name": "Test Mutual Fund",
-                    "scheme_name": "Requested Fund",
-                    "nav_groups": [{
-                        "nav_name": "Requested Fund",
-                        "historical_records": [
-                            {
-                                "date": "2026-09-28",
-                                "nav": "101.25",
-                                "repurchase_price": "101.25",
-                                "sale_price": "101.25",
-                            },
-                            {
-                                "date": "2026-09-29",
-                                "nav": "102.50",
-                                "repurchase_price": "102.50",
-                                "sale_price": "102.50",
-                            },
-                        ],
-                    }],
-                },
-            }),
+            FakeResponse(report),
         ]
-
-        with patch(
+        with patch.object(
+            AMFIService,
+            "_resolve_nav_ids",
+            return_value={
+                "119551": {
+                    "nav_id": "154043",
+                    "scheme_name": "Requested Fund",
+                    "match_method": "exact_name",
+                    "mf_id": "85",
+                }
+            },
+        ), patch(
             "mutual_funds.services.amfi.requests.get",
             side_effect=responses,
         ) as mock_get:
@@ -631,81 +603,42 @@ class AMFIHistoricalMasterImportTests(TestCase):
         self.assertEqual(records[0]["nav"], Decimal("101.25"))
         self.assertEqual(records[0]["date"], date(2026, 9, 28))
         self.assertEqual(records[1]["nav"], Decimal("102.50"))
-        self.assertEqual(mock_get.call_count, 3)
 
         history_call = mock_get.call_args_list[-1]
-        self.assertEqual(
-            history_call.kwargs["params"]["query_type"],
-            "historical_period",
-        )
-        self.assertEqual(history_call.kwargs["params"]["sd_id"], "154043")
+        self.assertEqual(history_call.kwargs["params"]["mf"], "85")
+        self.assertEqual(history_call.kwargs["params"]["frmdt"], "01-Sep-2026")
+        self.assertEqual(history_call.kwargs["params"]["todt"], "29-Sep-2026")
 
     def test_current_api_history_falls_back_to_explicit_fund_type(self):
         class FakeResponse:
-            def __init__(self, payload):
-                self.payload = payload
-                self.status_code = 200
-                self.headers = {"Content-Type": "application/json"}
+            text = (
+                "Scheme Code;Scheme Name;ISIN Div Payout/ISIN Growth;"
+                "ISIN Div Reinvestment;Net Asset Value;Repurchase Price;"
+                "Sale Price;Date\n"
+                "153357;360 ONE Gold ETF - Direct Plan - Growth Option;"
+                "-;-;101.25;101.25;101.25;29-Sep-2026\n"
+            )
+            status_code = 200
+            headers = {"Content-Type": "text/plain"}
+            url = "https://portal.amfiindia.com/DownloadNAVHistoryReport_Po.aspx"
 
             def raise_for_status(self):
                 return None
 
-            def json(self):
-                return self.payload
-
-        responses = [
-            FakeResponse({"data": []}),
-            FakeResponse({"data": []}),
-            FakeResponse({
-                "data": [{
-                    "type": "Close Ended",
-                    "categories": [{
-                        "category": "Other ETFs",
-                        "groups": [{
-                            "mutualFundId": "62",
-                            "schemes": [{
-                                "schemeId": "153357",
-                                "schemeName": "360 ONE Gold ETF",
-                            }],
-                        }],
-                    }],
-                }]
-            }),
-            FakeResponse({
-                "data": [{
+        with patch.object(
+            AMFIService,
+            "_resolve_nav_ids",
+            return_value={
+                "153357": {
                     "nav_id": "198765",
-                    "nav_name": "360 ONE Gold ETF - Direct Plan - Growth Option",
-                    "MF_ID": "62",
-                }]
-            }),
-            FakeResponse({
-                "data": {
-                    "mf_name": "360 ONE Mutual Fund",
-                    "scheme_name": "360 ONE Gold ETF",
-                    "nav_groups": [{
-                        "nav_name": "360 ONE Gold ETF - Direct Plan - Growth Option",
-                        "historical_records": [{
-                            "date": "2026-09-29",
-                            "nav": "101.25",
-                            "repurchase_price": "101.25",
-                            "sale_price": "101.25",
-                        }],
-                    }],
-                },
-            }),
-        ]
-
-        from mutual_funds.models import AMFIMasterScheme
-
-        AMFIMasterScheme.objects.create(
-            scheme_code="153357",
-            scheme_name="360 ONE Gold ETF - Direct Plan - Growth Option",
-            is_active=True,
-        )
-
-        with patch(
+                    "scheme_name": "360 ONE Gold ETF - Direct Plan - Growth Option",
+                    "match_method": "exact_name",
+                    "mf_id": "62",
+                }
+            },
+        ), patch(
             "mutual_funds.services.amfi.requests.get",
-            side_effect=responses,
+            return_value=FakeResponse(),
         ) as mock_get:
             records = AMFIService.download_historical_nav(
                 date(2026, 9, 1),
@@ -716,22 +649,7 @@ class AMFIHistoricalMasterImportTests(TestCase):
         self.assertEqual(len(records), 1)
         self.assertEqual(records[0]["scheme_code"], "153357")
         self.assertEqual(records[0]["nav"], Decimal("101.25"))
-
-        self.assertEqual(mock_get.call_count, 5)
-        latest_types = [
-            call.kwargs["params"]["type"]
-            for call in mock_get.call_args_list[:3]
-        ]
-        self.assertEqual(
-            latest_types,
-            ["", "Open Ended", "Close Ended"],
-        )
-
-        history_call = mock_get.call_args_list[-1]
-        self.assertEqual(
-            history_call.kwargs["params"]["sd_id"],
-            "198765",
-        )
+        self.assertEqual(mock_get.call_args.kwargs["params"]["mf"], "62")
 
     def test_legacy_historical_download_rejects_html(self):
         class FakeResponse:

@@ -562,20 +562,6 @@ export class WatchListComponent implements OnInit, OnDestroy {
       .sort((a, b) => a.date.localeCompare(b.date));
   }
 
-  benchmarkChartHasData(): boolean {
-    const fund = this.benchmarkChartSeries(this.benchmarkData?.chart?.fund);
-    const benchmark = this.benchmarkChartSeries(this.benchmarkData?.chart?.benchmark);
-    return fund.length >= 2 && benchmark.length >= 2;
-  }
-
-  benchmarkChartProductLabel(): string {
-    return this.benchmarkModalProduct?.name || 'Product';
-  }
-
-  benchmarkChartProductUnit(): string {
-    return this.benchmarkModalProduct?.product_type === 'PMS' ? 'NAV / Value' : 'NAV';
-  }
-
   private benchmarkChartAlignedPoints(): Array<{
     date: string;
     productValue: number;

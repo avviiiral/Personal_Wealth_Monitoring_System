@@ -831,6 +831,49 @@ class BenchmarkPerformanceService:
             history_start,
             end=timezone.now().date(),
         )
+
+        # A Watch List chart must not silently fall back to the latest few
+        # snapshots when the shared AMFI master does not yet contain the
+        # requested historical window. For real AMFI growth products, lazily
+        # backfill only when the local chart history is clearly insufficient,
+        # then read the newly persisted master data. This is a one-time
+        # write-side repair; subsequent chart GETs use the shared master.
+        if (
+            getattr(product, "product_type", None) == "MUTUAL_FUND"
+            and getattr(product, "source", None) == "AMFI"
+            and not is_idcw
+        ):
+            requested_history_start = timezone.now().date() - timedelta(
+                days=chart_days + 31
+            )
+            first_product_date = (
+                date.fromisoformat(product_chart[0]["date"])
+                if product_chart
+                else None
+            )
+            history_is_insufficient = (
+                len(product_chart) < 2
+                or first_product_date is None
+                or first_product_date > requested_history_start
+            )
+            if history_is_insufficient:
+                try:
+                    cls._ensure_master_history(
+                        product,
+                        requested_history_start,
+                        timezone.now().date(),
+                    )
+                    product_chart = cls._fund_series(
+                        product,
+                        requested_history_start,
+                        end=timezone.now().date(),
+                    )
+                except Exception:
+                    # Keep the existing local snapshot fallback if AMFI is
+                    # temporarily unavailable. The graph should never fail
+                    # solely because historical backfill is unavailable.
+                    pass
+
         benchmark_chart_start = history_start - timedelta(days=10)
         benchmark_chart = [
             point

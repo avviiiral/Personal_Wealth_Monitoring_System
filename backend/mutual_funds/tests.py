@@ -9,6 +9,7 @@ from django.test import TestCase
 from users.models import FamilyGroup
 
 from mutual_funds.models import (
+    AMFIMasterScheme,
     MutualFundHolding,
     MutualFundNAV,
     MutualFundScheme,
@@ -464,3 +465,279 @@ class AMFINavImportBatchingTests(TestCase):
 
         self.assertEqual(result["schemes"], 0)
         self.assertEqual(result["nav_records"], 0)
+
+
+
+class AMFIHistoricalMasterImportTests(TestCase):
+    """Regression coverage for the live AMFI historical report contract."""
+
+    def test_historical_report_parser_uses_report_header_positions(self):
+        text = (
+            "Scheme Code;Scheme Name;ISIN Div Payout/ISIN Growth;"
+            "ISIN Div Reinvestment;Net Asset Value;Repurchase Price;"
+            "Sale Price;Date\n"
+            "119551;SBI Bluechip Fund - Direct Plan - Growth;"
+            "INF200K01A11;-;123.4567;123.4567;123.4567;29-Sep-2026\n"
+            "120503;ICICI Prudential Bluechip Fund - Direct Plan - Growth;"
+            "INF109K01X12;-;234.5678;234.5678;234.5678;29-Sep-2026\n"
+        )
+
+        records = AMFIService.parse_nav_file(
+            text,
+            historical=True,
+            scheme_codes={"119551", "120503"},
+        )
+
+        self.assertEqual(len(records), 2)
+        self.assertEqual(records[0]["scheme_code"], "119551")
+        self.assertEqual(records[0]["nav"], Decimal("123.4567"))
+        self.assertEqual(records[0]["date"], date(2026, 9, 29))
+        self.assertEqual(records[1]["scheme_code"], "120503")
+        self.assertEqual(records[1]["nav"], Decimal("234.5678"))
+
+    def test_historical_report_filter_does_not_match_unrequested_scheme(self):
+        text = (
+            "Scheme Code;Scheme Name;ISIN Div Payout/ISIN Growth;"
+            "ISIN Div Reinvestment;Net Asset Value;Repurchase Price;"
+            "Sale Price;Date\n"
+            "119551;Requested Fund;INF000000001;-;10.00;10.00;10.00;29-Sep-2026\n"
+            "999999;Other Fund;INF000000999;-;20.00;20.00;20.00;29-Sep-2026\n"
+        )
+
+        records = AMFIService.parse_nav_file(
+            text,
+            historical=True,
+            scheme_codes={"119551"},
+        )
+
+        self.assertEqual([record["scheme_code"] for record in records], ["119551"])
+
+    def test_amfi_historical_report_path_after_nav_resolution(self):
+        class FakeResponse:
+            text = (
+                "Scheme Code;Scheme Name;ISIN Div Payout/ISIN Growth;"
+                "ISIN Div Reinvestment;Net Asset Value;Repurchase Price;"
+                "Sale Price;Date\n"
+                "152075;360 ONE Balanced Hybrid Fund - Regular Plan - Growth;"
+                "INF579M01AV5;-;12.9916;12.9916;12.9916;29-Sep-2026\n"
+            )
+            status_code = 200
+            headers = {"Content-Type": "text/plain"}
+
+            def raise_for_status(self):
+                return None
+
+        with patch.object(
+            AMFIService,
+            "_resolve_nav_ids",
+            return_value={
+                "152075": {
+                    "nav_id": "152075",
+                    "scheme_name": "360 ONE Balanced Hybrid Fund - Regular Plan - Growth",
+                    "match_method": "exact_name",
+                    "mf_id": "62",
+                }
+            },
+        ), patch(
+            "mutual_funds.services.amfi.requests.get",
+            return_value=FakeResponse(),
+        ) as mock_get:
+            records = AMFIService._download_historical_api_records(
+                date(2026, 9, 1),
+                date(2026, 9, 29),
+                {"152075"},
+            )
+
+        self.assertEqual(len(records), 1)
+        self.assertEqual(records[0]["scheme_code"], "152075")
+        self.assertEqual(records[0]["nav"], Decimal("12.9916"))
+        self.assertEqual(mock_get.call_args.kwargs["params"]["mf"], "62")
+        self.assertEqual(mock_get.call_args.kwargs["params"]["frmdt"], "01-Sep-2026")
+        self.assertEqual(mock_get.call_args.kwargs["params"]["todt"], "29-Sep-2026")
+
+    def test_current_api_history_resolves_scheme_code_to_nav_id(self):
+        class FakeResponse:
+            def __init__(self, text):
+                self.text = text
+                self.status_code = 200
+                self.headers = {"Content-Type": "text/plain"}
+                self.url = "https://portal.amfiindia.com/DownloadNAVHistoryReport_Po.aspx"
+
+            def raise_for_status(self):
+                return None
+
+        report = (
+            "Scheme Code;Scheme Name;ISIN Div Payout/ISIN Growth;"
+            "ISIN Div Reinvestment;Net Asset Value;Repurchase Price;"
+            "Sale Price;Date\n"
+            "119551;Requested Fund;INF000000001;-;101.25;101.25;101.25;28-Sep-2026\n"
+            "119551;Requested Fund;INF000000001;-;102.50;102.50;102.50;29-Sep-2026\n"
+        )
+
+        responses = [
+            FakeResponse(report),
+        ]
+        with patch.object(
+            AMFIService,
+            "_resolve_nav_ids",
+            return_value={
+                "119551": {
+                    "nav_id": "154043",
+                    "scheme_name": "Requested Fund",
+                    "match_method": "exact_name",
+                    "mf_id": "85",
+                }
+            },
+        ), patch(
+            "mutual_funds.services.amfi.requests.get",
+            side_effect=responses,
+        ) as mock_get:
+            records = AMFIService.download_historical_nav(
+                date(2026, 9, 1),
+                date(2026, 9, 29),
+                scheme_codes={"119551"},
+            )
+
+        self.assertEqual(len(records), 2)
+        self.assertEqual(records[0]["scheme_code"], "119551")
+        self.assertEqual(records[0]["nav"], Decimal("101.25"))
+        self.assertEqual(records[0]["date"], date(2026, 9, 28))
+        self.assertEqual(records[1]["nav"], Decimal("102.50"))
+
+        history_call = mock_get.call_args_list[-1]
+        self.assertEqual(history_call.kwargs["params"]["mf"], "85")
+        self.assertEqual(history_call.kwargs["params"]["frmdt"], "01-Sep-2026")
+        self.assertEqual(history_call.kwargs["params"]["todt"], "29-Sep-2026")
+
+    def test_current_api_history_falls_back_to_explicit_fund_type(self):
+        class FakeResponse:
+            text = (
+                "Scheme Code;Scheme Name;ISIN Div Payout/ISIN Growth;"
+                "ISIN Div Reinvestment;Net Asset Value;Repurchase Price;"
+                "Sale Price;Date\n"
+                "153357;360 ONE Gold ETF - Direct Plan - Growth Option;"
+                "-;-;101.25;101.25;101.25;29-Sep-2026\n"
+            )
+            status_code = 200
+            headers = {"Content-Type": "text/plain"}
+            url = "https://portal.amfiindia.com/DownloadNAVHistoryReport_Po.aspx"
+
+            def raise_for_status(self):
+                return None
+
+        with patch.object(
+            AMFIService,
+            "_resolve_nav_ids",
+            return_value={
+                "153357": {
+                    "nav_id": "198765",
+                    "scheme_name": "360 ONE Gold ETF - Direct Plan - Growth Option",
+                    "match_method": "exact_name",
+                    "mf_id": "62",
+                }
+            },
+        ), patch(
+            "mutual_funds.services.amfi.requests.get",
+            return_value=FakeResponse(),
+        ) as mock_get:
+            records = AMFIService.download_historical_nav(
+                date(2026, 9, 1),
+                date(2026, 9, 29),
+                scheme_codes={"153357"},
+            )
+
+        self.assertEqual(len(records), 1)
+        self.assertEqual(records[0]["scheme_code"], "153357")
+        self.assertEqual(records[0]["nav"], Decimal("101.25"))
+        self.assertEqual(mock_get.call_args.kwargs["params"]["mf"], "62")
+
+    def test_legacy_historical_download_rejects_html(self):
+        class FakeResponse:
+            text = "<html><body>View/Download NAV History</body></html>"
+            status_code = 200
+            headers = {"Content-Type": "text/html"}
+
+            def raise_for_status(self):
+                return None
+
+        with patch(
+            "mutual_funds.services.amfi.requests.get",
+            return_value=FakeResponse(),
+        ):
+            with self.assertRaises(RuntimeError):
+                AMFIService.download_historical_nav(
+                    date(2026, 9, 1),
+                    date(2026, 9, 29),
+                )
+
+    def test_historical_report_detection_rejects_html(self):
+        self.assertFalse(
+            AMFIService._is_historical_report(
+                "<html><body>Application Error! Please try again later.</body></html>"
+            )
+        )
+
+
+    def test_amfi_resolution_error_is_diagnostic(self):
+        with patch(
+            "mutual_funds.services.amfi.requests.get",
+            side_effect=RuntimeError("api unavailable"),
+        ):
+            with self.assertRaises(RuntimeError):
+                AMFIService._resolve_nav_ids({"999999"})
+
+
+    def test_amfi_resolution_prefers_isin_over_name(self):
+        class R:
+            def __init__(self, payload):
+                self.payload = payload
+            def raise_for_status(self): pass
+            def json(self): return self.payload
+
+        AMFIMasterScheme.objects.create(
+            scheme_code="152075",
+            scheme_name="360 ONE Balanced Hybrid Fund - Regular Plan - Growth",
+            isin_growth="INF579M01AV5",
+            is_active=True,
+        )
+        responses = [
+            R({"data": [{"mutualFundId": "360", "schemes": [{
+                "schemeId": "152075",
+                "schemeName": "360 ONE Balanced Hybrid Fund",
+            }]}]}),
+            R({"data": [
+                {"nav_id": "wrong", "nav_name": "360 ONE Balanced Hybrid Fund - Regular Plan - Growth",
+                 "MF_ID": "360", "ISIN": "OTHER"},
+                {"nav_id": "right", "nav_name": "360 ONE Balanced Hybrid Fund - Regular Plan - Growth Option",
+                 "MF_ID": "360", "ISIN": "INF579M01AV5"},
+            ]}),
+        ]
+        with patch("mutual_funds.services.amfi.requests.get", side_effect=responses):
+            result = AMFIService._resolve_nav_ids({"152075"})
+        self.assertEqual(result["152075"]["nav_id"], "right")
+        self.assertEqual(result["152075"]["match_method"], "isin")
+
+    def test_amfi_resolution_rejects_equal_top_candidates(self):
+        class R:
+            def __init__(self, payload):
+                self.payload = payload
+            def raise_for_status(self): pass
+            def json(self): return self.payload
+
+        AMFIMasterScheme.objects.create(
+            scheme_code="123457",
+            scheme_name="Ambiguous Fund - Regular Plan - Growth",
+            is_active=True,
+        )
+        responses = [
+            R({"data": [{"mutualFundId": "100", "schemes": [{
+                "schemeId": "123457", "schemeName": "Ambiguous Fund",
+            }]}]}),
+            R({"data": [
+                {"nav_id": "nav-a", "nav_name": "Ambiguous Fund - Regular Plan - Growth", "MF_ID": "100"},
+                {"nav_id": "nav-b", "nav_name": "Ambiguous Fund - Regular Plan - Growth", "MF_ID": "100"},
+            ]}),
+        ]
+        with patch("mutual_funds.services.amfi.requests.get", side_effect=responses):
+            with self.assertRaisesRegex(RuntimeError, "AMFI scheme resolution ambiguous: code=123457"):
+                AMFIService._resolve_nav_ids({"123457"})

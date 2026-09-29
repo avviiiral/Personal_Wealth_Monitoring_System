@@ -1,0 +1,212 @@
+from datetime import timedelta
+
+from django.core.management.base import BaseCommand, CommandError
+from django.utils import timezone
+from django.db.models import Count
+
+from mutual_funds.models import AMFIMasterNAV
+from mutual_funds.services.amfi import AMFIService
+from watchlist.models import InvestmentProduct, ProductType, BenchmarkMasterPoint, WatchListEntry
+from watchlist.services.benchmark import BenchmarkPerformanceService
+
+
+class Command(BaseCommand):
+    help = (
+        "Populate shared AMFI NAV and benchmark master history required by "
+        "Watch List benchmark charts. Chart API requests remain read-only."
+    )
+
+    def add_arguments(self, parser):
+        parser.add_argument("--product-id", type=int, required=False)
+        parser.add_argument(
+            "--period",
+            choices=tuple(BenchmarkPerformanceService.PERIOD_DAYS.keys()),
+            default="5Y",
+        )
+
+    def handle(self, *args, **options):
+        product_id = options["product_id"]
+        period = options["period"]
+
+        product = None
+        if product_id is not None:
+            product = InvestmentProduct.objects.select_related(
+                "mutual_fund", "pms"
+            ).filter(id=product_id).first()
+            if product is None:
+                raise CommandError(f"InvestmentProduct {product_id} was not found.")
+            BenchmarkPerformanceService._product_benchmark(product)
+
+        today = timezone.now().date()
+        days = BenchmarkPerformanceService.PERIOD_DAYS[period]
+        # Prepare the shared benchmark master for the full supported chart
+        # range, regardless of the currently selected product period. This
+        # prevents switching from 1Y/3Y to 5Y from exposing a partial series.
+        benchmark_start = today - timedelta(
+            days=BenchmarkPerformanceService.PERIOD_DAYS["5Y"] + 31
+        )
+        start = today - timedelta(days=days + 31)
+
+        unresolved_schemes = []
+        resolved_scheme_count = 0
+        imported_nav_rows = 0
+
+        if product is None:
+            # Historical charts are displayed for the Watch List, so scope the
+            # AMFI backfill to currently watchlisted Mutual Fund schemes.
+            # The current AMFI JSON history API is per scheme. The service
+            # resolves each scheme to its AMFI nav_id and performs one history
+            # request per watchlisted scheme for the full required range.
+            watchlisted_scheme_codes = set(
+                InvestmentProduct.objects.filter(
+                    id__in=WatchListEntry.objects.values("product_id"),
+                    product_type=ProductType.MUTUAL_FUND,
+                    is_active=True,
+                )
+                .exclude(mutual_fund__scheme_code__isnull=True)
+                .exclude(mutual_fund__scheme_code="")
+                .values_list("mutual_fund__scheme_code", flat=True)
+            )
+
+            if watchlisted_scheme_codes:
+                self.stdout.write(
+                    f"Preparing historical AMFI NAV for "
+                    f"{len(watchlisted_scheme_codes)} watchlisted Mutual Fund schemes "
+                    f"from {benchmark_start} to {today}..."
+                )
+
+                for scheme_code in sorted(watchlisted_scheme_codes):
+                    try:
+                        result = AMFIService.import_historical_master_navs(
+                            benchmark_start,
+                            today,
+                            scheme_codes={scheme_code},
+                        )
+                        resolved_scheme_count += 1
+                        imported_nav_rows += result["nav_records"]
+                        self.stdout.write(
+                            self.style.SUCCESS(
+                                f"  AMFI {scheme_code}: "
+                                f"{result['nav_records']} historical NAV rows imported"
+                            )
+                        )
+                    except Exception as exc:
+                        unresolved_schemes.append((scheme_code, str(exc)))
+                        self.stdout.write(
+                            self.style.ERROR(
+                                f"  AMFI {scheme_code}: unresolved - {exc}"
+                            )
+                        )
+
+                self.stdout.write(
+                    f"AMFI watchlist resolution: "
+                    f"{resolved_scheme_count}/{len(watchlisted_scheme_codes)} schemes resolved; "
+                    f"{imported_nav_rows} historical NAV rows imported."
+                )
+            else:
+                self.stdout.write(
+                    "No active Mutual Fund products are currently watchlisted; "
+                    "skipping AMFI historical NAV backfill."
+                )
+
+
+        if product is not None and product.product_type == ProductType.MUTUAL_FUND:
+            inception_date = getattr(product.mutual_fund, "inception_date", None)
+            if inception_date:
+                start = max(start, inception_date)
+
+            scheme_code = BenchmarkPerformanceService._fund_scheme_code(product)
+            if not scheme_code:
+                raise CommandError("Mutual Fund has no AMFI scheme code.")
+
+            self.stdout.write(
+                f"Preparing AMFI master history for scheme {scheme_code} "
+                f"from {start} to {today}..."
+            )
+
+            result = AMFIService.import_historical_master_navs(
+                start,
+                today,
+                scheme_codes={scheme_code},
+            )
+            self.stdout.write(
+                self.style.SUCCESS(
+                    f"  AMFI historical API: "
+                    f"{result['nav_records']} rows imported"
+                )
+            )
+
+            self.stdout.write(
+                self.style.SUCCESS(
+                    f"AMFI master preparation complete; "
+                    f"{result['nav_records']} historical NAV rows refreshed."
+                )
+            )
+
+        # Benchmark master history is shared across every Mutual Fund and
+        # PMS product. Always prepare BOTH supported benchmarks so opening
+        # the comparison chart never depends on which product was prepared
+        # first. Product-specific preparation is only needed for AMFI NAV data.
+        benchmark_names = ["Nifty 50", "BSE 500"]
+        for benchmark_name in benchmark_names:
+            benchmark_count = BenchmarkMasterPoint.objects.filter(
+                benchmark=benchmark_name,
+                source="MASTER",
+                date__gte=benchmark_start,
+                date__lte=today,
+            ).count()
+            expected_benchmark = max(
+                5, int((today - benchmark_start).days * 0.5)
+            )
+
+            if benchmark_count < expected_benchmark:
+                self.stdout.write(
+                    f"Preparing {benchmark_name} master history from "
+                    f"{benchmark_start} to {today}..."
+                )
+                if benchmark_name == "BSE 500":
+                    points = BenchmarkPerformanceService._bse_series(benchmark_start)
+                else:
+                    points = BenchmarkPerformanceService._nifty_tri_series(
+                        benchmark_start, today
+                    )
+                saved = BenchmarkPerformanceService.save_benchmark_master(
+                    benchmark_name,
+                    points,
+                )
+                self.stdout.write(
+                    self.style.SUCCESS(
+                        f"{benchmark_name} master preparation complete; "
+                        f"{saved} rows saved."
+                    )
+                )
+            else:
+                self.stdout.write(
+                    self.style.SUCCESS(
+                        f"{benchmark_name} master already contains sufficient history."
+                    )
+                )
+
+        if unresolved_schemes:
+            details = "; ".join(
+                f"{code}: {error}"
+                for code, error in unresolved_schemes
+            )
+            raise CommandError(
+                f"AMFI historical NAV preparation completed with "
+                f"{len(unresolved_schemes)} unresolved scheme(s): {details}"
+            )
+
+        if product is not None:
+            self.stdout.write(
+                self.style.SUCCESS(
+                    f"Watch List {period} chart data is ready for product {product.id}."
+                )
+            )
+        else:
+            self.stdout.write(
+                self.style.SUCCESS(
+                    "Shared Watch List Nifty 50 and BSE 500 benchmark data is ready "
+                    "for all Mutual Fund and PMS products."
+                )
+            )

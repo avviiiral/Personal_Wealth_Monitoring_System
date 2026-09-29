@@ -1,5 +1,7 @@
 from datetime import datetime
 from decimal import Decimal, InvalidOperation
+from dateutil.relativedelta import relativedelta
+import logging
 import time
 
 import requests
@@ -13,6 +15,9 @@ from mutual_funds.models import (
     MutualFundNAV,
     MutualFundScheme,
 )
+
+
+logger = logging.getLogger(__name__)
 
 
 class AMFIService:
@@ -29,6 +34,10 @@ class AMFIService:
         "https://portal.amfiindia.com/"
         "DownloadNAVHistoryReport_Po.aspx"
     )
+    AMFI_API_URL = "https://www.amfiindia.com"
+    AMFI_LATEST_API = f"{AMFI_API_URL}/api/latest-nav"
+    AMFI_SCHEME_LIST_API = f"{AMFI_API_URL}/api/get-nav-history/navs"
+    AMFI_HISTORY_API = f"{AMFI_API_URL}/api/nav-history"
 
     @staticmethod
     def _headers():
@@ -59,48 +68,577 @@ class AMFIService:
         return response.text
 
     @staticmethod
+    def _api_headers():
+        return {
+            **AMFIService._headers(),
+            "Accept": "application/json, text/plain, */*",
+            "Referer": "https://www.amfiindia.com/net-asset-value",
+        }
+
+    @staticmethod
+    def _normalize_name(value):
+        return " ".join(str(value or "").lower().split())
+
+    @staticmethod
+    def _normalize_identity(value):
+        value = AMFIService._normalize_name(value)
+        for token in ("-", "_", "/", "(", ")", ",", "."):
+            value = value.replace(token, " ")
+        return " ".join(value.split())
+
+    @staticmethod
+    def _first_value(record, *keys):
+        if not isinstance(record, dict):
+            return None
+        for key in keys:
+            value = record.get(key)
+            if value not in (None, ""):
+                return value
+        return None
+
+    @staticmethod
+    def _extract_identity(record, inherited=None):
+        inherited = inherited or {}
+        code = AMFIService._first_value(
+            record,
+            "schemeId", "scheme_id", "Scheme_Code", "scheme_code", "schemeCode",
+        )
+        name = AMFIService._first_value(
+            record,
+            "schemeName", "Scheme_Name", "scheme_name", "nav_name",
+        )
+        mf_id = AMFIService._first_value(
+            record, "mutualFundId", "MF_ID", "mf_id", "mutual_fund_id"
+        ) or inherited.get("mf_id")
+        isin_growth = AMFIService._first_value(
+            record,
+            "isin_growth", "ISIN_Growth", "isinGrowth", "ISINPrimary",
+            "isin", "ISIN", "ISIN_Div_Payout_ISIN_Growth",
+        ) or inherited.get("isin_growth")
+        isin_dividend = AMFIService._first_value(
+            record,
+            "isin_dividend", "ISIN_Dividend", "isinDividend", "ISINReinvestment",
+            "ISIN_Div_Reinvestment",
+        ) or inherited.get("isin_dividend")
+        plan = AMFIService._first_value(
+            record, "plan", "Plan", "planName", "plan_name"
+        ) or inherited.get("plan")
+        option = AMFIService._first_value(
+            record, "option", "Option", "optionName", "option_name"
+        ) or inherited.get("option")
+        fund_type = AMFIService._first_value(
+            record, "type", "fundType", "fund_type"
+        ) or inherited.get("fund_type")
+
+        return {
+            "scheme_code": str(code).strip() if code else None,
+            "scheme_name": str(name).strip() if name else None,
+            "mf_id": str(mf_id).strip() if mf_id else None,
+            "isin_growth": str(isin_growth).strip() if isin_growth else None,
+            "isin_dividend": str(isin_dividend).strip() if isin_dividend else None,
+            "plan": str(plan).strip() if plan else None,
+            "option": str(option).strip() if option else None,
+            "fund_type": str(fund_type).strip() if fund_type else None,
+        }
+
+    @staticmethod
+    def _flatten_latest_api(data):
+        records = []
+
+        def walk(node, inherited=None):
+            inherited = inherited or {}
+            if isinstance(node, dict):
+                current = dict(inherited)
+                extracted = AMFIService._extract_identity(node, current)
+                for key in (
+                    "mf_id", "isin_growth", "isin_dividend",
+                    "plan", "option", "fund_type",
+                ):
+                    if extracted.get(key):
+                        current[key] = extracted[key]
+
+                if extracted.get("scheme_code") and extracted.get("scheme_name") and extracted.get("mf_id"):
+                    records.append(extracted)
+
+                for key, value in node.items():
+                    if key in {"mutualFundId", "MF_ID", "mf_id"} and value:
+                        current["mf_id"] = str(value).strip()
+                    elif key in {"type", "fundType", "fund_type"} and value:
+                        current["fund_type"] = str(value).strip()
+                    walk(value, current)
+            elif isinstance(node, list):
+                for item in node:
+                    walk(item, inherited)
+
+        walk(data)
+        deduped = {}
+        for record in records:
+            code = record["scheme_code"]
+            existing = deduped.get(code)
+            if existing is None:
+                deduped[code] = record
+                continue
+            for key, value in record.items():
+                if value and not existing.get(key):
+                    existing[key] = value
+        return deduped
+
+    @staticmethod
+    def _normalize_candidate(candidate, mf_id=None):
+        if not isinstance(candidate, dict):
+            return None
+        identity = AMFIService._extract_identity(
+            candidate,
+            {"mf_id": str(mf_id).strip() if mf_id else None},
+        )
+        nav_id = AMFIService._first_value(
+            candidate, "nav_id", "navId", "schemeDetailId",
+            "scheme_detail_id", "sd_id", "id",
+        )
+        identity["nav_id"] = str(nav_id).strip() if nav_id else None
+        return identity
+
+    @staticmethod
+    def _metadata_for_code(code):
+        metadata = {
+            "scheme_code": str(code).strip(),
+            "scheme_name": None,
+            "mf_id": None,
+            "isin_growth": None,
+            "isin_dividend": None,
+            "plan": None,
+            "option": None,
+            "fund_type": None,
+        }
+
+        master = (
+            AMFIMasterScheme.objects
+            .filter(scheme_code=code)
+            .values(
+                "scheme_name", "isin_growth", "isin_dividend"
+            )
+            .first()
+        )
+        if master:
+            metadata.update({
+                key: value
+                for key, value in master.items()
+                if value not in (None, "")
+            })
+
+        family_rows = list(
+            MutualFundScheme.objects
+            .filter(scheme_code=code)
+            .values(
+                "scheme_name", "isin_growth", "isin_dividend",
+                "plan", "option",
+            )[:10]
+        )
+        if family_rows:
+            # Prefer a row whose identity agrees with the master name/ISIN.
+            row = family_rows[0]
+            master_name = AMFIService._normalize_identity(metadata["scheme_name"])
+            for candidate in family_rows:
+                candidate_name = AMFIService._normalize_identity(candidate["scheme_name"])
+                if master_name and candidate_name == master_name:
+                    row = candidate
+                    break
+                if metadata["isin_growth"] and metadata["isin_growth"] in {
+                    candidate.get("isin_growth"), candidate.get("isin_dividend")
+                }:
+                    row = candidate
+                    break
+            for key, value in row.items():
+                if value not in (None, ""):
+                    metadata[key] = value
+
+        return metadata
+
+    @staticmethod
+    def _candidate_score(metadata, candidate):
+        score = 0
+        methods = []
+
+        target_isins = {
+            str(metadata.get("isin_growth") or "").strip().lower(),
+            str(metadata.get("isin_dividend") or "").strip().lower(),
+        } - {""}
+        candidate_isins = {
+            str(candidate.get("isin_growth") or "").strip().lower(),
+            str(candidate.get("isin_dividend") or "").strip().lower(),
+        } - {""}
+
+        if target_isins & candidate_isins:
+            score += 1000
+            methods.append("isin")
+
+        if metadata.get("mf_id") and candidate.get("mf_id") == metadata["mf_id"]:
+            score += 250
+
+        target_name = AMFIService._normalize_identity(metadata.get("scheme_name"))
+        candidate_name = AMFIService._normalize_identity(candidate.get("scheme_name"))
+        if target_name and candidate_name == target_name:
+            score += 500
+            methods.append("exact_name")
+        elif target_name and candidate_name:
+            target_tokens = set(target_name.split())
+            candidate_tokens = set(candidate_name.split())
+            overlap = len(target_tokens & candidate_tokens)
+            if overlap:
+                score += min(200, overlap * 20)
+            if target_name in candidate_name or candidate_name in target_name:
+                score += 50
+                methods.append("structured_name")
+
+        target_plan = AMFIService._normalize_identity(metadata.get("plan"))
+        candidate_plan = AMFIService._normalize_identity(candidate.get("plan"))
+        if target_plan and candidate_plan and target_plan == candidate_plan:
+            score += 100
+
+        target_option = AMFIService._normalize_identity(metadata.get("option"))
+        candidate_option = AMFIService._normalize_identity(candidate.get("option"))
+        if target_option and candidate_option and target_option == candidate_option:
+            score += 100
+
+        # Derive plan/option from names when AMFI omits separate fields.
+        combined_target = f"{target_name} {target_plan} {target_option}"
+        combined_candidate = f"{candidate_name} {candidate_plan} {candidate_option}"
+        for token, weight in (("direct", 30), ("regular", 30), ("growth", 40), ("idcw", 40), ("dividend", 40)):
+            if token in combined_target and token in combined_candidate:
+                score += weight
+
+        if "exact_name" in methods and target_isins & candidate_isins:
+            return score, "isin"
+        if target_isins & candidate_isins:
+            return score, "isin"
+        if "exact_name" in methods:
+            return score, "exact_name"
+        if "structured_name" in methods:
+            return score, "structured_name"
+        return score, "fallback"
+
+    @staticmethod
+    def _resolve_nav_ids(scheme_codes):
+        codes = {str(code).strip() for code in scheme_codes}
+        if not codes:
+            return {}
+
+        latest_by_code = {}
+        requested = {}
+
+        def refresh_requested():
+            requested.clear()
+            requested.update({
+                code: latest_by_code[code]
+                for code in codes
+                if code in latest_by_code
+            })
+
+        # AMFI documents the supported latest-NAV type filters as blank/all,
+        # Open Ended, Close Ended, and Interval Fund. Query the broad response
+        # first, then only unresolved codes through explicit types.
+        for fund_type in ("", "Open Ended", "Close Ended", "Interval Fund"):
+            if fund_type and len(requested) == len(codes):
+                break
+            response = requests.get(
+                AMFIService.AMFI_LATEST_API,
+                params={"mfid": "all", "type": fund_type},
+                headers=AMFIService._api_headers(),
+                timeout=60,
+            )
+            response.raise_for_status()
+            latest_by_code.update(
+                AMFIService._flatten_latest_api(response.json())
+            )
+            refresh_requested()
+
+        unresolved_codes = sorted(codes - requested.keys())
+        if unresolved_codes:
+            raise RuntimeError(
+                "AMFI current API did not resolve scheme codes: "
+                + ", ".join(unresolved_codes)
+            )
+
+        # Merge API metadata with persisted master/family identity hints.
+        for code in list(requested):
+            stored = AMFIService._metadata_for_code(code)
+            api_metadata = requested[code]
+            for key, value in stored.items():
+                if value not in (None, ""):
+                    api_metadata[key] = value
+
+        scheme_lists = {}
+        for mf_id in {item["mf_id"] for item in requested.values()}:
+            response = requests.get(
+                AMFIService.AMFI_SCHEME_LIST_API,
+                params={"mf_id": mf_id},
+                headers=AMFIService._api_headers(),
+                timeout=60,
+            )
+            response.raise_for_status()
+            payload = response.json()
+            raw = payload.get("data", payload) if isinstance(payload, dict) else payload
+            if isinstance(raw, dict):
+                raw = raw.get("schemes", raw.get("navs", []))
+            scheme_lists[mf_id] = [
+                candidate
+                for candidate in (raw or [])
+                if isinstance(candidate, dict)
+            ]
+
+        result = {}
+        for code in sorted(codes):
+            metadata = requested[code]
+            candidates = [
+                normalized
+                for item in scheme_lists.get(metadata["mf_id"], [])
+                if (normalized := AMFIService._normalize_candidate(
+                    item, metadata["mf_id"]
+                ))
+                and normalized.get("nav_id")
+            ]
+
+            scored = []
+            for candidate in candidates:
+                score, method = AMFIService._candidate_score(metadata, candidate)
+                scored.append((score, method, candidate))
+
+            scored.sort(
+                key=lambda item: (
+                    item[0],
+                    item[2].get("nav_id") or "",
+                ),
+                reverse=True,
+            )
+
+            if not scored or scored[0][0] <= 0:
+                candidate_ids = [item[2].get("nav_id") for item in scored]
+                candidate_names = [item[2].get("scheme_name") for item in scored]
+                raise RuntimeError(
+                    "AMFI scheme resolution failed: "
+                    f"code={code} mf_id={metadata.get('mf_id')} "
+                    f"requested_name={metadata.get('scheme_name')} "
+                    f"candidate_count={len(scored)} "
+                    f"candidate_nav_ids={candidate_ids} "
+                    f"candidate_names={candidate_names}"
+                )
+
+            best_score, match_method, best = scored[0]
+            ties = [
+                item for item in scored
+                if item[0] == best_score
+            ]
+            if len(ties) > 1:
+                raise RuntimeError(
+                    "AMFI scheme resolution ambiguous: "
+                    f"code={code} mf_id={metadata.get('mf_id')} "
+                    f"requested_name={metadata.get('scheme_name')} "
+                    f"candidate_nav_ids={[item[2].get('nav_id') for item in ties]} "
+                    f"candidate_names={[item[2].get('scheme_name') for item in ties]}"
+                )
+
+            logger.info(
+                "AMFI scheme resolution: code=%s fund_type=%s mf_id=%s "
+                "scheme_name=%s matched_nav_id=%s match_method=%s",
+                code,
+                metadata.get("fund_type") or "",
+                metadata.get("mf_id") or "",
+                metadata.get("scheme_name") or "",
+                best["nav_id"],
+                match_method,
+            )
+
+            result[code] = {
+                "nav_id": best["nav_id"],
+                "scheme_name": metadata.get("scheme_name") or best.get("scheme_name"),
+                "match_method": match_method,
+                "mf_id": metadata.get("mf_id"),
+            }
+
+        return result
+
+    @staticmethod
+    def _download_historical_api_records(from_date, to_date, scheme_codes):
+        """Resolve current AMFI NAV IDs, then download their history."""
+        if from_date > to_date:
+            raise ValueError("From date cannot be after to_date.")
+
+        nav_ids = AMFIService._resolve_nav_ids(scheme_codes)
+        if not nav_ids:
+            return []
+
+        records = []
+        schemes_by_mf = {}
+        for scheme_code, metadata in nav_ids.items():
+            mf_id = metadata.get("mf_id") or "0"
+            schemes_by_mf.setdefault(str(mf_id), set()).add(str(scheme_code))
+
+        # The current JSON /api/nav-history route returns HTTP 400 for the
+        # production sd_id/date-range request used by the application. Use
+        # AMFI's historical report endpoint for the actual NAV rows instead.
+        for mf_id, mf_scheme_codes in schemes_by_mf.items():
+            window_start = from_date
+            while window_start <= to_date:
+                window_end = min(
+                    window_start + relativedelta(days=90),
+                    to_date,
+                )
+                response = requests.get(
+                    AMFIService.NAV_HISTORY_URL,
+                    params={
+                        "mf": mf_id,
+                        "tp": "1",
+                        "frmdt": window_start.strftime("%d-%b-%Y"),
+                        "todt": window_end.strftime("%d-%b-%Y"),
+                    },
+                    headers=AMFIService._headers(),
+                    timeout=60,
+                )
+                response.raise_for_status()
+                report_text = response.text
+                if not AMFIService._is_historical_report(report_text):
+                    raise RuntimeError(
+                        "AMFI historical response was not a NAV report: "
+                        f"endpoint={getattr(response, 'url', AMFIService.NAV_HISTORY_URL)} "
+                        f"from={window_start} to={window_end}"
+                    )
+
+                records.extend(
+                    AMFIService.parse_nav_file(
+                        report_text,
+                        historical=True,
+                        scheme_codes=mf_scheme_codes,
+                    )
+                )
+                window_start = window_end + relativedelta(days=1)
+
+        deduped = {
+            (record["scheme_code"], record["date"]): record
+            for record in records
+            if record["scheme_code"] in nav_ids
+        }
+        return sorted(
+            deduped.values(),
+            key=lambda item: (item["scheme_code"], item["date"]),
+        )
+
+    @staticmethod
     def download_historical_nav(
         from_date,
         to_date,
+        scheme_codes=None,
     ):
         """
-        Download historical NAV data from AMFI.
+        Download the real AMFI historical NAV report.
 
-        AMFI historical NAV downloads support a maximum
-        period of 90 days at a time.
+        AMFI documents a maximum 90-day range. The historical download
+        endpoint is a text report even though AMFI can return an HTML
+        WebForms page for an unsuccessful request. Treat a successful HTTP
+        status as insufficient: only a response containing the AMFI
+        historical header is accepted as report data.
         """
+        if scheme_codes:
+            return AMFIService._download_historical_api_records(
+                from_date,
+                to_date,
+                scheme_codes,
+            )
 
         if from_date > to_date:
+            raise ValueError("From date cannot be after to_date.")
+
+        if (to_date - from_date).days > 90:
             raise ValueError(
-                "From date cannot be after to date."
+                "AMFI historical NAV download supports a maximum period "
+                "of 90 days at a time."
             )
 
-        if (
-            to_date - from_date
-        ).days > 90:
-            raise ValueError(
-                "AMFI historical NAV download supports "
-                "a maximum period of 90 days at a time."
-            )
+        date_params = {
+            "frmdt": from_date.strftime("%d-%b-%Y"),
+            "todt": to_date.strftime("%d-%b-%Y"),
+        }
+        headers = {
+            **AMFIService._headers(),
+            "Accept": "text/plain,text/csv,text/*;q=0.9,*/*;q=0.8",
+            "Referer": "https://www.amfiindia.com/net-asset-value/nav-download",
+        }
 
-        response = requests.get(
-            AMFIService.NAV_HISTORY_URL,
-            params={
-                "tp": "1",
-                "frmdt": from_date.strftime(
-                    "%d-%b-%Y"
-                ),
-                "todt": to_date.strftime(
-                    "%d-%b-%Y"
-                ),
-            },
-            headers=AMFIService._headers(),
-            timeout=60,
+        # AMFI's all-schemes historical download is addressable with
+        # mf=0. Keep tp=1 for the text-report mode. A second attempt without
+        # tp handles deployments where the flag is inferred by the endpoint.
+        attempts = (
+            {"mf": "0", "tp": "1", **date_params},
+            {"mf": "0", **date_params},
         )
+        last_response = None
 
-        response.raise_for_status()
+        with requests.Session() as session:
+            for params in attempts:
+                response = session.get(
+                    AMFIService.NAV_HISTORY_URL,
+                    params=params,
+                    headers=headers,
+                    timeout=60,
+                )
+                last_response = response
+                text = response.text or ""
 
-        return response.text
+                # Do not accept an HTTP 200 WebForms/error page as if it
+                # were the downloadable report. This was the reason the
+                # previous importer could silently return zero records.
+                if response.ok and AMFIService._is_historical_report(text):
+                    return text
+
+                preview = " ".join(text.split())[:240]
+                logger.warning(
+                    "AMFI historical response was not a NAV report: "
+                    "endpoint=%s status=%s content_type=%s "
+                    "from=%s to=%s bytes=%s preview=%r",
+                    response.url,
+                    response.status_code,
+                    response.headers.get("Content-Type", ""),
+                    from_date,
+                    to_date,
+                    len(response.content),
+                    preview,
+                )
+
+        if last_response is not None:
+            last_response.raise_for_status()
+            raise RuntimeError(
+                "AMFI historical endpoint returned an unexpected response "
+                f"for {from_date} to {to_date} "
+                f"(status={last_response.status_code}, "
+                f"content_type={last_response.headers.get('Content-Type', '')}, "
+                f"bytes={len(last_response.content)})."
+            )
+
+        raise RuntimeError("AMFI historical endpoint returned no response.")
+
+    @staticmethod
+    def _is_historical_report(text):
+        """Return True only for AMFI's semicolon-delimited historical report."""
+        if not text:
+            return False
+
+        lines = [
+            line.strip().replace("\ufeff", "")
+            for line in text.splitlines()
+            if line.strip()
+        ]
+        if not lines:
+            return False
+
+        header_tokens = {
+            token.strip().lower()
+            for token in lines[0].split(";")
+        }
+        required = {
+            "scheme code",
+            "net asset value",
+            "date",
+        }
+        return required.issubset(header_tokens)
 
     @staticmethod
     def _build_record(
@@ -225,57 +763,58 @@ class AMFIService:
         )
 
     @staticmethod
-    def _parse_historical_record(parts):
-        """
-        Parse historical AMFI NAV format.
-
-        0 = Scheme Code
-        1 = Scheme Name
-        2 = ISIN Div Payout / ISIN Growth
-        3 = ISIN Div Reinvestment
-        4 = NAV
-        5 = Repurchase Price
-        6 = Sale Price
-        7 = Date
-        """
-
-        # Historical downloads currently contain the full 8-column layout.
-        # Keep the minimum explicit because NAV and Date are positional here.
+    def _parse_historical_record(parts, positions=None):
+        """Parse one row from AMFI's current historical text report."""
         if len(parts) < 8:
             return None
 
-        scheme_code = parts[0]
-        scheme_name = parts[1]
-        isin_first = parts[2]
-        isin_second = parts[3]
-        nav_text = parts[4]
-        date_text = parts[-1]
+        if positions:
+            scheme_index = positions.get("scheme_code", 0)
+            name_index = positions.get("scheme_name", 1)
+            nav_index = positions.get("nav", 4)
+            date_index = positions.get("date", len(parts) - 1)
+            isin_first_index = positions.get("isin_first", 2)
+            isin_second_index = positions.get("isin_second", 3)
+        else:
+            scheme_index = 0
+            name_index = 1
+            nav_index = 4
+            date_index = len(parts) - 1
+            isin_first_index = 2
+            isin_second_index = 3
 
-        if not scheme_code.isdigit():
+        if max(
+            scheme_index,
+            name_index,
+            nav_index,
+            date_index,
+            isin_first_index,
+            isin_second_index,
+        ) >= len(parts):
             return None
 
-        if not scheme_name:
+        scheme_code = parts[scheme_index]
+        scheme_name = parts[name_index]
+        if not scheme_code.isdigit() or not scheme_name:
             return None
 
         try:
-            nav = Decimal(nav_text)
-        except (
-            InvalidOperation,
-            ValueError,
-            TypeError,
-        ):
+            nav = Decimal(parts[nav_index])
+        except (InvalidOperation, ValueError, TypeError):
             return None
-
         if nav < 0:
             return None
 
         try:
             nav_date = datetime.strptime(
-                date_text,
+                parts[date_index],
                 "%d-%b-%Y",
             ).date()
         except ValueError:
             return None
+
+        isin_first = parts[isin_first_index] or None
+        isin_second = parts[isin_second_index] or None
 
         return AMFIService._build_record(
             scheme_code=scheme_code,
@@ -290,48 +829,67 @@ class AMFIService:
     def parse_nav_file(
         text,
         historical=False,
+        scheme_codes=None,
     ):
         """
         Parse AMFI NAV data.
 
-        Supports both latest and historical formats.
+        Supports both latest and historical formats. scheme_codes filters
+        historical rows before the full-universe file is parsed into records.
         """
-
         records = []
+        normalized_codes = (
+            {str(code).strip() for code in scheme_codes}
+            if scheme_codes
+            else None
+        )
+        historical_positions = None
 
         for raw_line in text.splitlines():
-
-            line = raw_line.strip()
-
-            if not line:
+            line = raw_line.strip().replace("\ufeff", "")
+            if not line or ";" not in line:
                 continue
 
-            if ";" not in line:
+            parts = [part.strip() for part in line.split(";")]
+
+            if historical and parts[0].strip().lower() == "scheme code":
+                normalized = [part.lower() for part in parts]
+                historical_positions = {
+                    "scheme_code": normalized.index("scheme code"),
+                    "scheme_name": (
+                        normalized.index("scheme name")
+                        if "scheme name" in normalized
+                        else normalized.index("nav name")
+                    ),
+                    "nav": normalized.index("net asset value"),
+                    "date": normalized.index("date"),
+                    "isin_first": (
+                        normalized.index("isin div payout/isin growth")
+                        if "isin div payout/isin growth" in normalized
+                        else 2
+                    ),
+                    "isin_second": (
+                        normalized.index("isin div reinvestment")
+                        if "isin div reinvestment" in normalized
+                        else 3
+                    ),
+                }
                 continue
 
-            parts = [
-                part.strip()
-                for part in line.split(";")
-            ]
+            if not parts[0].isdigit():
+                continue
 
-            if historical:
+            if historical and normalized_codes and parts[0] not in normalized_codes:
+                continue
 
-                record = (
-                    AMFIService
-                    ._parse_historical_record(
-                        parts
-                    )
+            record = (
+                AMFIService._parse_historical_record(
+                    parts,
+                    positions=historical_positions,
                 )
-
-            else:
-
-                record = (
-                    AMFIService
-                    ._parse_latest_record(
-                        parts
-                    )
-                )
-
+                if historical
+                else AMFIService._parse_latest_record(parts)
+            )
             if record:
                 records.append(record)
 
@@ -611,14 +1169,39 @@ class AMFIService:
     @staticmethod
     @transaction.atomic
     def _import_master_records(records):
-        """Upsert AMFI data once into the global master tables."""
-        records_by_code = {}
-        for record in records:
-            records_by_code[record["scheme_code"]] = record
+        """Upsert AMFI data into the global master tables.
 
-        records = list(records_by_code.values())
+        A latest-NAV download normally contains one row per scheme, while a
+        historical download contains many rows per scheme (one per date).
+        Keep one canonical scheme row per scheme code, but retain every
+        scheme/date NAV observation in the master NAV table.
+        """
         if not records:
             return {"schemes": 0, "nav_records": 0}
+
+        schemes_by_code = {}
+        nav_records_by_key = {}
+
+        for record in records:
+            scheme_code = record["scheme_code"]
+
+            # Keep the most recent metadata row for each scheme while merging
+            # any ISIN values that may only appear on one of the rows.
+            existing = schemes_by_code.get(scheme_code)
+            if existing is None:
+                schemes_by_code[scheme_code] = dict(record)
+            else:
+                if record.get("isin_growth"):
+                    existing["isin_growth"] = record["isin_growth"]
+                if record.get("isin_dividend"):
+                    existing["isin_dividend"] = record["isin_dividend"]
+                existing["scheme_name"] = record["scheme_name"]
+
+            if record["date"] is not None:
+                nav_records_by_key[(scheme_code, record["date"])] = record
+
+        scheme_records = list(schemes_by_code.values())
+        nav_records = list(nav_records_by_key.values())
 
         schemes = [
             AMFIMasterScheme(
@@ -628,7 +1211,7 @@ class AMFIService:
                 isin_dividend=record["isin_dividend"],
                 is_active=True,
             )
-            for record in records
+            for record in scheme_records
         ]
 
         AMFIMasterScheme.objects.bulk_create(
@@ -647,7 +1230,12 @@ class AMFIService:
 
         scheme_ids = dict(
             AMFIMasterScheme.objects
-            .filter(scheme_code__in=[record["scheme_code"] for record in records])
+            .filter(
+                scheme_code__in=[
+                    record["scheme_code"]
+                    for record in scheme_records
+                ]
+            )
             .values_list("scheme_code", "id")
         )
 
@@ -658,8 +1246,8 @@ class AMFIService:
                 nav=record["nav"],
                 source="AMFI",
             )
-            for record in records
-            if record["date"] is not None and record["scheme_code"] in scheme_ids
+            for record in nav_records
+            if record["scheme_code"] in scheme_ids
         ]
 
         if navs:
@@ -671,7 +1259,10 @@ class AMFIService:
                 update_fields=["nav"],
             )
 
-        return {"schemes": len(records), "nav_records": len(navs)}
+        return {
+            "schemes": len(scheme_records),
+            "nav_records": len(navs),
+        }
 
     @staticmethod
     def import_latest_master_navs():
@@ -694,15 +1285,20 @@ class AMFIService:
         before the database upsert keeps the shared master authoritative
         without duplicating unrelated historical rows.
         """
-        text = AMFIService.download_historical_nav(from_date, to_date)
-        records = AMFIService.parse_nav_file(text, historical=True)
         if scheme_codes:
-            normalized_codes = {str(code).strip() for code in scheme_codes}
-            records = [
-                record
-                for record in records
-                if record["scheme_code"] in normalized_codes
-            ]
+            records = AMFIService.download_historical_nav(
+                from_date,
+                to_date,
+                scheme_codes=scheme_codes,
+            )
+            return AMFIService._import_master_records(records)
+
+        text = AMFIService.download_historical_nav(from_date, to_date)
+        records = AMFIService.parse_nav_file(
+            text,
+            historical=True,
+            scheme_codes=scheme_codes,
+        )
         return AMFIService._import_master_records(records)
 
     @staticmethod

@@ -100,6 +100,27 @@ class PerformanceSnapshot(models.Model):
         indexes = [models.Index(fields=["product", "-date"]), models.Index(fields=["date"]) ]
 
 
+class BenchmarkMasterPoint(models.Model):
+    """Shared historical benchmark observations used by Watch List charts."""
+    benchmark = models.CharField(max_length=100)
+    date = models.DateField()
+    value = models.DecimalField(max_digits=24, decimal_places=8)
+    source = models.CharField(max_length=100)
+
+    class Meta:
+        ordering = ["date"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["benchmark", "date", "source"],
+                name="unique_watchlist_benchmark_master_point",
+            )
+        ]
+        indexes = [
+            models.Index(fields=["benchmark", "date"]),
+        ]
+
+
+
 class WatchListEntry(models.Model):
     """A user's personal, hand-picked Watch List (the checkmark/star toggle)."""
 

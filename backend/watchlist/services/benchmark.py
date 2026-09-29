@@ -1,5 +1,6 @@
 import csv
 import io
+import json
 import os
 from datetime import date, datetime, timedelta
 from pathlib import Path
@@ -7,11 +8,12 @@ from typing import Any
 
 import requests
 import yfinance as yf
+from curl_cffi import requests as curl_requests
+from django.db import models
 from django.utils import timezone
 
 from mutual_funds.models import AMFIMasterNAV
-from mutual_funds.services.amfi import AMFIService
-from watchlist.models import PerformanceSnapshot
+from watchlist.models import BenchmarkMasterPoint, PerformanceSnapshot
 
 
 class BenchmarkPerformanceService:
@@ -38,6 +40,23 @@ class BenchmarkPerformanceService:
     # Optional override for deployments that have a licensed BSE500 TRI feed.
     BSE500_URL = os.getenv("WATCHLIST_BENCHMARK_BSE500_URL", "").strip()
     BSE500_API = "https://api.bseindia.com/BseIndiaAPI/api/ProduceCSVForDate/w"
+    NIFTY_TRI_URLS = (
+        "https://www.niftyindices.com/BackPage/getTotalReturnIndexString",
+        "https://www.niftyindices.com/Backpage.aspx/getTotalReturnIndexString",
+        "https://www.niftyindices.com/Backpage/getTotalReturnIndexString",
+    )
+    NIFTY_TRI_HEADERS = {
+        "Content-Type": "application/json; charset=UTF-8",
+        "Accept": "application/json, text/plain, */*",
+        "X-Requested-With": "XMLHttpRequest",
+        "Referer": "https://www.niftyindices.com/reports/historical-data",
+        "Accept-Language": "en-GB,en-US;q=0.9,en;q=0.8",
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/140.0 Safari/537.36"
+        ),
+    }
     # Public-market fallback: HDFC's ETF explicitly tracks the BSE 500 TRI.
     # This keeps Watch List benchmark comparison automatic when BSE's public
     # historical endpoint does not expose the TRI series directly.
@@ -55,6 +74,192 @@ class BenchmarkPerformanceService:
     @classmethod
     def _ticker(cls, benchmark):
         return cls.TICKERS[benchmark]
+
+    @classmethod
+    def _nifty_tri_series(cls, start, end=None):
+        """Fetch official Nifty 50 Gross TRI history from NSE Indices."""
+        end = end or timezone.now().date()
+        all_points = {}
+
+        try:
+            session = curl_requests.Session(impersonate="chrome")
+        except Exception:
+            session = requests.Session()
+
+        def parse_response(response):
+            response.raise_for_status()
+            payload = response.json()
+            raw_rows = payload.get("d", []) if isinstance(payload, dict) else payload
+            rows = json.loads(raw_rows) if isinstance(raw_rows, str) else raw_rows
+            if isinstance(rows, str):
+                rows = json.loads(rows)
+            if not isinstance(rows, list):
+                raise ValueError(
+                    "NSE Indices TRI endpoint returned an unexpected response shape"
+                )
+            return rows
+
+        def request_rows(request_start, request_end):
+            cinfo = (
+                "{'name':'NIFTY 50',"
+                f"'startDate':'{request_start.strftime('%d-%b-%Y')}',"
+                f"'endDate':'{request_end.strftime('%d-%b-%Y')}',"
+                "'indexName':'NIFTY 50'}"
+            )
+            payload = {"cinfo": cinfo}
+            last_error = None
+
+            for endpoint in cls.NIFTY_TRI_URLS:
+                for body_mode in ("json", "data"):
+                    try:
+                        kwargs = {
+                            "headers": cls.NIFTY_TRI_HEADERS,
+                            "timeout": 60,
+                        }
+                        if body_mode == "json":
+                            kwargs["json"] = payload
+                        else:
+                            kwargs["data"] = json.dumps(payload)
+
+                        response = session.post(endpoint, **kwargs)
+                        rows = parse_response(response)
+                        if rows:
+                            return rows
+                    except Exception as exc:
+                        last_error = exc
+            raise last_error or ValueError(
+                "NSE Indices TRI endpoint returned no usable response"
+            )
+
+        try:
+            session.get(
+                "https://www.niftyindices.com/reports/historical-data",
+                headers=cls.NIFTY_TRI_HEADERS,
+                timeout=15,
+            )
+
+            # Prefer the complete requested history when the current endpoint
+            # supports it. This prevents a date-filter failure from collapsing
+            # every request to the latest available year.
+            try:
+                rows = request_rows(start, end)
+                for row in rows:
+                    point_date = cls._parse_date(row.get("Date"))
+                    raw_value = row.get("TotalReturnsIndex")
+                    if point_date is None or raw_value in (None, ""):
+                        continue
+                    try:
+                        value = float(str(raw_value).replace(",", "").strip())
+                    except (TypeError, ValueError):
+                        continue
+                    if value > 0 and start <= point_date <= end:
+                        all_points[point_date.isoformat()] = {
+                            "date": point_date.isoformat(),
+                            "value": value,
+                        }
+
+                covered_start = min(all_points) if all_points else None
+                covered_end = max(all_points) if all_points else None
+                if (
+                    covered_start
+                    and date.fromisoformat(covered_start) <= start + timedelta(days=10)
+                    and covered_end
+                ):
+                    return [all_points[key] for key in sorted(all_points)]
+            except Exception:
+                all_points.clear()
+
+            # Fallback for deployments enforcing a 365-day request limit.
+            all_points.clear()
+            cursor = start
+            while cursor <= end:
+                window_end = min(cursor + timedelta(days=364), end)
+                rows = request_rows(cursor, window_end)
+
+                window_points = 0
+                for row in rows:
+                    point_date = cls._parse_date(row.get("Date"))
+                    raw_value = row.get("TotalReturnsIndex")
+                    if point_date is None or raw_value in (None, ""):
+                        continue
+                    try:
+                        value = float(str(raw_value).replace(",", "").strip())
+                    except (TypeError, ValueError):
+                        continue
+                    if value > 0 and cursor <= point_date <= window_end:
+                        all_points[point_date.isoformat()] = {
+                            "date": point_date.isoformat(),
+                            "value": value,
+                        }
+                        window_points += 1
+
+                if window_points < 20 and (window_end - cursor).days > 45:
+                    raise ValueError(
+                        "NSE Indices TRI returned insufficient historical rows "
+                        f"for {cursor.isoformat()} to {window_end.isoformat()}"
+                    )
+                cursor = window_end + timedelta(days=1)
+        finally:
+            session.close()
+
+        return [all_points[key] for key in sorted(all_points)]
+
+    @classmethod
+    def ensure_benchmark_master_history(cls, start=None, end=None, force=False):
+        """Ensure both supported benchmark masters exist locally."""
+        end = end or timezone.now().date()
+        start = start or (end - timedelta(days=cls.PERIOD_DAYS["5Y"] + 31))
+        results = {}
+        expected = max(5, int((end - start).days * 0.5))
+
+        for benchmark in ("Nifty 50", "BSE 500"):
+            aggregate = BenchmarkMasterPoint.objects.filter(
+                benchmark=benchmark,
+                source="MASTER",
+                date__gte=start,
+                date__lte=end,
+            ).aggregate(
+                count=models.Count("id"),
+                first_date=models.Min("date"),
+                last_date=models.Max("date"),
+            )
+            count = int(aggregate["count"] or 0)
+            first_date = aggregate["first_date"]
+            last_date = aggregate["last_date"]
+            coverage_ok = (
+                first_date is not None
+                and last_date is not None
+                and first_date <= start + timedelta(days=10)
+                and last_date >= end - timedelta(days=10)
+            )
+            if not force and count >= expected and coverage_ok:
+                results[benchmark] = {
+                    "downloaded": False,
+                    "rows": count,
+                    "first_date": first_date.isoformat(),
+                    "last_date": last_date.isoformat(),
+                }
+                continue
+
+            try:
+                points = (
+                    cls._nifty_tri_series(start, end)
+                    if benchmark == "Nifty 50"
+                    else cls._bse_series(start)
+                )
+                saved = cls.save_benchmark_master(benchmark, points)
+                results[benchmark] = {"downloaded": True, "rows": saved}
+            except Exception as exc:
+                # One unavailable provider must not prevent the other
+                # benchmark from bootstrapping.
+                results[benchmark] = {
+                    "downloaded": False,
+                    "rows": count,
+                    "error": str(exc),
+                }
+
+
+        return results
 
     @staticmethod
     def _series(ticker, start):
@@ -329,11 +534,16 @@ class BenchmarkPerformanceService:
             points = cls._load_bse_csv(
                 source_file.read_text(encoding="utf-8-sig")
             )
-            return [
+            filtered = [
                 point
                 for point in points
                 if date.fromisoformat(point["date"]) >= start
             ]
+            # A bundled CSV is authoritative only when it actually covers the
+            # requested start date. Otherwise continue to the live sources so
+            # 5Y/other long periods are not silently truncated.
+            if points and date.fromisoformat(points[0]["date"]) <= start:
+                return filtered
 
         # First try the BSE historical endpoint. If the public endpoint does
         # not provide BSE500T, fall back to exchange-traded products that
@@ -364,9 +574,68 @@ class BenchmarkPerformanceService:
 
     @classmethod
     def _benchmark_series(cls, benchmark, start):
-        if benchmark == "BSE 500":
-            return cls._bse_series(start)
-        return cls._series(cls._ticker(benchmark), start)
+        """Read benchmark history from the shared master, bootstrapping once if needed."""
+        def read_master():
+            points = (
+                BenchmarkMasterPoint.objects
+                .filter(
+                    benchmark=benchmark,
+                    source="MASTER",
+                    date__gte=start,
+                )
+                .order_by("date", "id")
+                .values("date", "value")
+            )
+            return [
+                {
+                    "date": point["date"].isoformat(),
+                    "value": float(point["value"]),
+                }
+                for point in points
+                if point["value"] is not None and float(point["value"]) > 0
+            ]
+
+        series = read_master()
+        if len(series) >= 2:
+            return series
+
+        try:
+            points = (
+                cls._nifty_tri_series(start)
+                if benchmark == "Nifty 50"
+                else cls._bse_series(start)
+                if benchmark == "BSE 500"
+                else []
+            )
+            if points:
+                cls.save_benchmark_master(benchmark, points)
+        except Exception:
+            return series
+
+        return read_master()
+
+    @classmethod
+    def save_benchmark_master(cls, benchmark, points):
+        """Persist an externally fetched benchmark series as shared master data."""
+        objects = [
+            BenchmarkMasterPoint(
+                benchmark=benchmark,
+                date=date.fromisoformat(point["date"]),
+                value=point["value"],
+                source="MASTER",
+            )
+            for point in points
+            if point.get("date") and point.get("value") is not None
+        ]
+        if objects:
+            BenchmarkMasterPoint.objects.bulk_create(
+                objects,
+                batch_size=1000,
+                update_conflicts=True,
+                unique_fields=["benchmark", "date", "source"],
+                update_fields=["value"],
+            )
+        return len(objects)
 
     @staticmethod
     def _period_return_detail(points, days, annualize_long_periods=True):
@@ -518,66 +787,66 @@ class BenchmarkPerformanceService:
             or ""
         ).strip() or None
 
-    @classmethod
-    def _ensure_master_history(cls, product, start, end):
-        """Backfill the shared AMFI master only for the requested scheme/window.
+    @staticmethod
+    def _merge_chart_series(primary, secondary):
+        """Merge two historical series, preferring primary values on duplicate dates.
 
-        AMFI's public historical endpoint accepts at most 90 days per request.
-        The response contains all schemes, so the importer filters it before
-        writing; no per-user AMFI download or family-level NAV duplication is
-        performed.
+        The shared AMFI master can be partially backfilled: it may contain a
+        dense recent history while the older product-level AMFI snapshots still
+        contain the observations needed for a full 1Y/3Y/5Y chart. A count-only
+        choice between the two sources can therefore discard valid older
+        history. Merge by date instead so the chart gets the complete coverage
+        available from both sources without duplicating observations.
         """
-        scheme_code = cls._fund_scheme_code(product)
-        if not scheme_code or start > end:
-            return
+        merged = {}
 
-        # Do not make a network call when a window already contains a normal
-        # business-day density of observations. The latest NAV import can leave
-        # only one observation in the most recent window, so checking only for
-        # existence is insufficient.
-        window_start = start
-        while window_start <= end:
-            window_end = min(window_start + timedelta(days=89), end)
-            expected_minimum = max(
-                5,
-                int((window_end - window_start).days * 0.5),
-            )
-            existing_count = AMFIMasterNAV.objects.filter(
-                scheme__scheme_code=scheme_code,
-                source="AMFI",
-                date__gte=window_start,
-                date__lte=window_end,
-            ).count()
+        for point in secondary or []:
+            if not point.get("date") or point.get("value") is None:
+                continue
+            try:
+                value = float(point["value"])
+            except (TypeError, ValueError):
+                continue
+            if value > 0:
+                merged[str(point["date"])] = {
+                    "date": str(point["date"]),
+                    "value": value,
+                }
 
-            if existing_count < expected_minimum:
-                AMFIService.import_historical_master_navs(
-                    window_start,
-                    window_end,
-                    scheme_codes={scheme_code},
-                )
+        for point in primary or []:
+            if not point.get("date") or point.get("value") is None:
+                continue
+            try:
+                value = float(point["value"])
+            except (TypeError, ValueError):
+                continue
+            if value > 0:
+                merged[str(point["date"])] = {
+                    "date": str(point["date"]),
+                    "value": value,
+                }
 
-            window_start = window_end + timedelta(days=1)
+        return [merged[key] for key in sorted(merged)]
 
     @classmethod
     def _fund_series(cls, product, start, end=None):
-        """Return the daily fund series needed by the relative-performance chart.
+        """Return the historical fund series needed by the relative-performance chart.
 
-        Mutual funds use the shared AMFI master as the primary source. If the
-        master does not yet contain enough observations for the requested
-        window, fall back to the already-imported AMFI PerformanceSnapshot
-        history for this product. This is a read-only fallback: it does not
-        trigger a per-user AMFI download and keeps the chart usable while the
-        shared master is being populated.
+        Mutual funds combine the shared AMFI master with the already-imported
+        product-level AMFI history. This is intentionally a read-only operation:
+        it never triggers an external AMFI download during chart rendering.
+
+        The shared master is preferred when the same date exists in both
+        sources, but older product-level observations are retained. This is
+        important when the master has been backfilled only for a recent range:
+        selecting the master by row count would otherwise truncate a 1Y/3Y/5Y
+        chart even though the older NAV history is already available locally.
         """
         end = end or timezone.now().date()
 
         if getattr(product, "product_type", None) == "MUTUAL_FUND":
             scheme_code = cls._fund_scheme_code(product)
             if scheme_code:
-                # Benchmark-performance is a read-only API and must never
-                # block on an external AMFI download. Shared AMFI history is
-                # populated by the scheduler/management command; this request
-                # only reads what is already available locally.
                 master_points = list(
                     AMFIMasterNAV.objects.filter(
                         scheme__scheme_code=scheme_code,
@@ -596,8 +865,32 @@ class BenchmarkPerformanceService:
                     for point in master_points
                     if point["nav"] and float(point["nav"]) > 0
                 ]
-                if len(master_series) >= 2:
-                    return master_series
+
+                snapshots = list(
+                    PerformanceSnapshot.objects.filter(
+                        product=product,
+                        source="AMFI",
+                        date__gte=start,
+                        date__lte=end,
+                    )
+                    .exclude(nav_or_value__isnull=True)
+                    .order_by("date", "id")
+                )
+                snapshot_series = [
+                    {
+                        "date": snapshot.date.isoformat(),
+                        "value": float(snapshot.nav_or_value),
+                    }
+                    for snapshot in snapshots
+                    if snapshot.nav_or_value and float(snapshot.nav_or_value) > 0
+                ]
+
+                merged_series = cls._merge_chart_series(
+                    master_series,
+                    snapshot_series,
+                )
+                if len(merged_series) >= 2:
+                    return merged_series
 
             # Compatibility fallback for existing AMFI history. The chart
             # should not disappear merely because the shared master has not
@@ -695,109 +988,65 @@ class BenchmarkPerformanceService:
         }
 
     @staticmethod
-    def _normalized_chart_series(fund_points, benchmark_points, days):
-        """Build a synchronized, independently normalized chart series.
+    def _aligned_chart_series(product_points, benchmark_points, days):
+        """Build actual values keyed by product valuation dates.
 
-        Mutual-fund NAV dates and exchange-index dates can differ by a
-        business day. Do not require exact date equality: for each benchmark
-        observation use the latest fund NAV on or before that date, provided
-        it is no more than three calendar days old. This avoids dropping an
-        otherwise valid daily fund series simply because the two data sources
-        publish the observation on different dates.
+        Match benchmark observations exactly by date when possible; otherwise
+        use the latest benchmark observation on or before the product date.
+        Future benchmark observations are never used.
         """
-        fund = sorted(
+        product = sorted(
             (
-                point
-                for point in fund_points
+                point for point in product_points
                 if point.get("date") and point.get("value") is not None
+                and float(point["value"]) > 0
             ),
             key=lambda point: point["date"],
         )
         benchmark = sorted(
             (
-                point
-                for point in benchmark_points
+                point for point in benchmark_points
                 if point.get("date") and point.get("value") is not None
+                and float(point["value"]) > 0
             ),
             key=lambda point: point["date"],
         )
-        if not fund or not benchmark:
+        if not product or not benchmark:
             return None
 
-        end_date = min(
-            date.fromisoformat(fund[-1]["date"]),
-            date.fromisoformat(benchmark[-1]["date"]),
-        )
-        requested_start = end_date - timedelta(days=days)
-
-        fund_window = [
-            point
-            for point in fund
-            if requested_start - timedelta(days=3)
-            <= date.fromisoformat(point["date"]) <= end_date
-            and float(point["value"]) > 0
+        product_end = date.fromisoformat(product[-1]["date"])
+        requested_start = product_end - timedelta(days=days)
+        product_window = [
+            point for point in product
+            if requested_start <= date.fromisoformat(point["date"]) <= product_end
         ]
-        benchmark_window = [
-            point
-            for point in benchmark
-            if requested_start <= date.fromisoformat(point["date"]) <= end_date
-            and float(point["value"]) > 0
-        ]
-        if not fund_window or not benchmark_window:
+        if not product_window:
             return None
 
-        paired = []
-        fund_index = 0
-        latest_fund = None
-        for benchmark_point in benchmark_window:
-            benchmark_date = date.fromisoformat(benchmark_point["date"])
-            while fund_index < len(fund_window):
-                candidate = fund_window[fund_index]
-                candidate_date = date.fromisoformat(candidate["date"])
-                if candidate_date > benchmark_date:
+        benchmark_index = 0
+        latest_benchmark = None
+        aligned = []
+        for product_point in product_window:
+            product_date = date.fromisoformat(product_point["date"])
+            while benchmark_index < len(benchmark):
+                candidate = benchmark[benchmark_index]
+                if date.fromisoformat(candidate["date"]) > product_date:
                     break
-                latest_fund = candidate
-                fund_index += 1
+                latest_benchmark = candidate
+                benchmark_index += 1
+            if latest_benchmark is not None:
+                aligned.append({
+                    "date": product_point["date"],
+                    "product_value": float(product_point["value"]),
+                    "benchmark_value": float(latest_benchmark["value"]),
+                })
 
-            if latest_fund is None:
-                continue
-
-            fund_date = date.fromisoformat(latest_fund["date"])
-            if (benchmark_date - fund_date).days > 3:
-                continue
-
-            paired.append((benchmark_point, latest_fund))
-
-        if len(paired) < 2:
+        if len(aligned) < 2:
             return None
-
-        start_date = paired[0][0]["date"]
-        effective_end = paired[-1][0]["date"]
-        fund_base = float(paired[0][1]["value"])
-        benchmark_base = float(paired[0][0]["value"])
-        if fund_base <= 0 or benchmark_base <= 0:
-            return None
-
-        fund_chart = [
-            {
-                "date": benchmark_point["date"],
-                "value": float(fund_point["value"]) / fund_base * 100.0,
-            }
-            for benchmark_point, fund_point in paired
-        ]
-        benchmark_chart = [
-            {
-                "date": benchmark_point["date"],
-                "value": float(benchmark_point["value"]) / benchmark_base * 100.0,
-            }
-            for benchmark_point, _ in paired
-        ]
-
         return {
-            "fund": fund_chart,
-            "benchmark": benchmark_chart,
-            "start_date": start_date,
-            "end_date": effective_end,
+            "points": aligned,
+            "start_date": aligned[0]["date"],
+            "end_date": aligned[-1]["date"],
         }
 
     @classmethod
@@ -867,31 +1116,29 @@ class BenchmarkPerformanceService:
             chart_period, cls.PERIOD_DAYS["1Y"]
         )
 
-        # Keep chart availability consistent with the selected period's
-        # comparison result. For example, if the fund has no stored 5Y
-        # return, do not display a shorter history and label it as 5Y.
-        if (
-            fund_metrics.get(chart_period) is None
-            or benchmark_metrics.get(chart_period) is None
-        ):
-            normalized_chart = None
-        else:
-            chart_start = timezone.now().date() - timedelta(days=chart_days + 10)
-            benchmark_chart = [
-                point
-                for point in benchmark_series
-                if date.fromisoformat(point["date"]) >= chart_start
-            ]
-            fund_chart = cls._fund_series(
-                product,
-                chart_start,
-                end=timezone.now().date(),
-            )
-            normalized_chart = cls._normalized_chart_series(
-                fund_chart,
-                benchmark_chart,
-                chart_days,
-            )
+        history_start = timezone.now().date() - timedelta(
+            days=cls.PERIOD_DAYS["5Y"] + 31
+        )
+        product_chart = cls._fund_series(
+            product,
+            history_start,
+            end=timezone.now().date(),
+        )
+
+        # Benchmark history is shared master data. Do not restrict the chart
+        # to whatever benchmark subset happened to be returned by an earlier
+        # product-specific bootstrap. Use the requested chart range and let
+        # _aligned_chart_series trim it to the product valuation dates.
+        benchmark_chart = [
+            point
+            for point in benchmark_series
+            if date.fromisoformat(point["date"]) <= timezone.now().date()
+        ]
+        aligned_chart = cls._aligned_chart_series(
+            product_chart,
+            benchmark_chart,
+            chart_days,
+        )
 
         return {
             "benchmark": benchmark,
@@ -910,10 +1157,27 @@ class BenchmarkPerformanceService:
             "differences": differences,
             "comparison": comparison,
             "chart_period": chart_period,
-            "chart": normalized_chart or {
-                "fund": [],
-                "benchmark": [],
-                "start_date": None,
-                "end_date": None,
-            },
+            "chart": (
+                {
+                    "fund": [
+                        {"date": point["date"], "value": point["product_value"]}
+                        for point in aligned_chart["points"]
+                    ],
+                    "benchmark": [
+                        {"date": point["date"], "value": point["benchmark_value"]}
+                        for point in aligned_chart["points"]
+                    ],
+                    "aligned_points": aligned_chart["points"],
+                    "start_date": aligned_chart["start_date"],
+                    "end_date": aligned_chart["end_date"],
+                }
+                if aligned_chart
+                else {
+                    "fund": [],
+                    "benchmark": [],
+                    "aligned_points": [],
+                    "start_date": None,
+                    "end_date": None,
+                }
+            ),
         }

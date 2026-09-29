@@ -66,6 +66,19 @@ export class WatchListComponent implements OnInit, OnDestroy {
   benchmarkError = '';
   private benchmarkRequestSequence = 0;
   benchmarkPeriod: BenchmarkPeriod = '1Y';
+  benchmarkTooltip: {
+    visible: boolean;
+    x: number;
+    y: number;
+    chartX: number;
+    productY: number;
+    benchmarkY: number;
+    date: string;
+    productValue: number;
+    benchmarkValue: number;
+    productIndexed: number;
+    benchmarkIndexed: number;
+  } | null = null;
 
   ngOnInit(): void {
     this.loadFilters();
@@ -489,6 +502,7 @@ export class WatchListComponent implements OnInit, OnDestroy {
     this.benchmarkData = null;
     this.benchmarkError = '';
     this.benchmarkLoading = false;
+    this.benchmarkTooltip = null;
   }
 
   changeBenchmarkChartPeriod(period: BenchmarkPeriod): void {
@@ -498,6 +512,7 @@ export class WatchListComponent implements OnInit, OnDestroy {
     const productId = this.benchmarkModalProduct.id;
 
     this.benchmarkPeriod = period;
+    this.benchmarkTooltip = null;
     this.benchmarkData = null;
     this.benchmarkError = '';
     this.benchmarkLoading = true;
@@ -562,22 +577,87 @@ export class WatchListComponent implements OnInit, OnDestroy {
       .sort((a, b) => a.date.localeCompare(b.date));
   }
 
-  private benchmarkChartValues(): number[] {
-    const fund = this.benchmarkChartSeries(this.benchmarkData?.chart?.fund);
-    const benchmark = this.benchmarkChartSeries(this.benchmarkData?.chart?.benchmark);
-    return [...fund, ...benchmark].map(point => point.value);
+  private benchmarkChartAlignedPoints(): Array<{
+    date: string;
+    productValue: number;
+    benchmarkValue: number;
+  }> {
+    const aligned = this.benchmarkData?.chart?.aligned_points;
+    if (Array.isArray(aligned) && aligned.length >= 2) {
+      return aligned
+        .map((point: any) => ({
+          date: String(point.date),
+          productValue: Number(point.product_value),
+          benchmarkValue: Number(point.benchmark_value),
+        }))
+        .filter((point: any) =>
+          Boolean(point.date)
+          && Number.isFinite(point.productValue)
+          && Number.isFinite(point.benchmarkValue)
+          && point.productValue > 0
+          && point.benchmarkValue > 0,
+        )
+        .sort((a: any, b: any) => a.date.localeCompare(b.date));
+    }
+
+    return [];
+  }
+
+  private benchmarkChartIndexedSeries(axis: 'product' | 'benchmark'): Array<{ date: string; value: number }> {
+    const points = this.benchmarkChartAlignedPoints();
+    if (points.length < 2) return [];
+
+    const first = axis === 'product' ? points[0].productValue : points[0].benchmarkValue;
+    if (!Number.isFinite(first) || first <= 0) return [];
+
+    return points.map(point => ({
+      date: point.date,
+      value: Number(
+        ((axis === 'product' ? point.productValue : point.benchmarkValue) / first) * 100,
+      ),
+    }));
+  }
+
+  benchmarkChartHasData(): boolean {
+    return this.benchmarkChartAlignedPoints().length >= 2;
+  }
+
+  benchmarkChartProductLabel(): string {
+    return this.benchmarkModalProduct?.name || 'Product';
+  }
+
+  benchmarkChartProductUnit(): string {
+    return this.benchmarkModalProduct?.product_type === 'PMS' ? 'NAV / Value' : 'NAV';
+  }
+
+  benchmarkChartStartDate(): string {
+    const points = this.benchmarkChartAlignedPoints();
+    if (!points.length) return '';
+    return new Intl.DateTimeFormat('en-IN', {
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric',
+    }).format(new Date(points[0].date));
+  }
+
+  private benchmarkChartValues(axis: 'product' | 'benchmark'): number[] {
+    return this.benchmarkChartIndexedSeries(axis).map(point => point.value);
   }
 
   benchmarkChartRange(): { min: number; max: number } {
-    const values = this.benchmarkChartValues();
+    const values = [
+      ...this.benchmarkChartValues('product'),
+      ...this.benchmarkChartValues('benchmark'),
+    ];
     if (!values.length) return { min: 99, max: 101 };
 
-    const minValue = Math.min(...values, 100);
-    const maxValue = Math.max(...values, 100);
+    const minValue = Math.min(...values);
+    const maxValue = Math.max(...values);
     const range = Math.max(maxValue - minValue, 1);
-    const padding = Math.max(range * 0.08, 0.5);
+    const padding = Math.max(range * 0.12, 0.5);
+
     return {
-      min: minValue - padding,
+      min: Math.max(0, minValue - padding),
       max: maxValue + padding,
     };
   }
@@ -590,33 +670,175 @@ export class WatchListComponent implements OnInit, OnDestroy {
     return multiplier * magnitude;
   }
 
-  benchmarkChartHasData(): boolean {
-    const fund = this.benchmarkChartSeries(this.benchmarkData?.chart?.fund);
-    const benchmark = this.benchmarkChartSeries(this.benchmarkData?.chart?.benchmark);
-    return fund.length >= 2 && benchmark.length >= 2;
-  }
-
-  benchmarkPolyline(series: Array<{ date: string; value: number }> | undefined): string {
-    const points = this.benchmarkChartSeries(series);
+  benchmarkPolyline(axis: 'product' | 'benchmark'): string {
+    const points = this.benchmarkChartIndexedSeries(axis);
     if (points.length < 2) return '';
 
-    const fund = this.benchmarkChartSeries(this.benchmarkData?.chart?.fund);
-    const benchmark = this.benchmarkChartSeries(this.benchmarkData?.chart?.benchmark);
-    const all = [...fund, ...benchmark];
+    const all = [
+      ...this.benchmarkChartIndexedSeries('product'),
+      ...this.benchmarkChartIndexedSeries('benchmark'),
+    ];
     if (!all.length) return '';
 
-    const startTime = new Date(this.benchmarkData?.chart?.start_date || all[0].date).getTime();
-    const endTime = new Date(this.benchmarkData?.chart?.end_date || all[all.length - 1].date).getTime();
+    const startTime = new Date(all[0].date).getTime();
+    const endTime = new Date(all[all.length - 1].date).getTime();
     const timeRange = Math.max(endTime - startTime, 1);
     const { min, max } = this.benchmarkChartRange();
-    const valueRange = Math.max(max - min, 1);
+    const valueRange = Math.max(max - min, 1e-9);
 
     return points.map(point => {
       const timestamp = new Date(point.date).getTime();
-      const x = 8 + ((timestamp - startTime) / timeRange) * 90;
+      const x = 8 + ((timestamp - startTime) / timeRange) * 84;
       const y = 94 - ((point.value - min) / valueRange) * 89;
-      return `${Math.max(8, Math.min(98, x)).toFixed(2)},${Math.max(5, Math.min(94, y)).toFixed(2)}`;
+      return `${Math.max(8, Math.min(92, x)).toFixed(2)},${Math.max(5, Math.min(94, y)).toFixed(2)}`;
     }).join(' ');
+  }
+
+  benchmarkChartCirclePoints(
+    axis: 'product' | 'benchmark',
+  ): Array<{
+    x: number;
+    y: number;
+    date: string;
+    value: number;
+    productValue: number;
+    benchmarkValue: number;
+    productIndexed: number;
+    benchmarkIndexed: number;
+    title: string;
+  }> {
+    const points = this.benchmarkChartIndexedSeries(axis);
+    if (!points.length) return [];
+
+    const all = [
+      ...this.benchmarkChartIndexedSeries('product'),
+      ...this.benchmarkChartIndexedSeries('benchmark'),
+    ];
+    if (!all.length) return [];
+
+    const startTime = new Date(all[0].date).getTime();
+    const endTime = new Date(all[all.length - 1].date).getTime();
+    const timeRange = Math.max(endTime - startTime, 1);
+    const { min, max } = this.benchmarkChartRange();
+    const valueRange = Math.max(max - min, 1e-9);
+    const aligned = this.benchmarkChartAlignedPoints();
+    const benchmarkName = this.benchmarkDisplayName(
+      this.benchmarkData?.benchmark || this.benchmarkModalProduct?.benchmark,
+    );
+    const productName = this.benchmarkChartProductLabel();
+
+    return points.map(point => {
+      const timestamp = new Date(point.date).getTime();
+      const x = 8 + ((timestamp - startTime) / timeRange) * 84;
+      const y = 94 - ((point.value - min) / valueRange) * 89;
+      const alignedPoint = aligned.find(candidate => candidate.date === point.date);
+      const productActual = Number(alignedPoint?.productValue ?? 0);
+      const benchmarkActual = Number(alignedPoint?.benchmarkValue ?? 0);
+      const productIndexed = aligned.length
+        ? (productActual / aligned[0].productValue) * 100
+        : 100;
+      const benchmarkIndexed = aligned.length
+        ? (benchmarkActual / aligned[0].benchmarkValue) * 100
+        : 100;
+
+      const title = [
+        point.date,
+        `${productName} — ${this.benchmarkChartProductUnit()}: ${this.formatChartValue(productActual)} (Index ${productIndexed.toFixed(3)})`,
+        `${benchmarkName}: ${this.formatChartValue(benchmarkActual)} (Index ${benchmarkIndexed.toFixed(3)})`,
+      ].join('\\n');
+
+      return {
+        x: Math.max(8, Math.min(92, x)),
+        y: Math.max(5, Math.min(94, y)),
+        date: point.date,
+        value: point.value,
+        productValue: productActual,
+        benchmarkValue: benchmarkActual,
+        productIndexed,
+        benchmarkIndexed,
+        title,
+      };
+    });
+  }
+
+  handleBenchmarkChartMove(event: MouseEvent): void {
+    const svg = event.currentTarget as SVGElement | null;
+    const chartArea = svg?.closest('.relative-chart-area') as HTMLElement | null;
+    if (!svg || !chartArea) return;
+
+    const svgRect = svg.getBoundingClientRect();
+    const areaRect = chartArea.getBoundingClientRect();
+    if (!svgRect.width || !svgRect.height) return;
+
+    const localX = event.clientX - svgRect.left;
+    const localY = event.clientY - svgRect.top;
+    const plotLeft = svgRect.width * 0.08;
+    const plotRight = svgRect.width * 0.92;
+    const plotTop = svgRect.height * 0.05;
+    const plotBottom = svgRect.height * 0.94;
+
+    if (localX < plotLeft || localX > plotRight || localY < plotTop || localY > plotBottom) {
+      this.hideBenchmarkChartTooltip();
+      return;
+    }
+
+    const targetX = 8 + ((localX - plotLeft) / Math.max(plotRight - plotLeft, 1)) * 84;
+    const productPoints = this.benchmarkChartCirclePoints('product');
+    const benchmarkPoints = this.benchmarkChartCirclePoints('benchmark');
+    if (!productPoints.length || productPoints.length !== benchmarkPoints.length) return;
+
+    let nearestIndex = 0;
+    let nearestDistance = Number.POSITIVE_INFINITY;
+    productPoints.forEach((point, index) => {
+      const distance = Math.abs(point.x - targetX);
+      if (distance < nearestDistance) {
+        nearestDistance = distance;
+        nearestIndex = index;
+      }
+    });
+
+    const productPoint = productPoints[nearestIndex];
+    const benchmarkPoint = benchmarkPoints[nearestIndex];
+    if (!productPoint || !benchmarkPoint) return;
+
+    const tooltipWidth = 282;
+    const tooltipHeight = 126;
+    const pointerX = event.clientX - areaRect.left;
+    const pointerY = event.clientY - areaRect.top;
+    const x = pointerX > areaRect.width - tooltipWidth - 20
+      ? pointerX - tooltipWidth - 14
+      : pointerX + 14;
+    const y = pointerY > areaRect.height - tooltipHeight - 16
+      ? pointerY - tooltipHeight - 14
+      : pointerY + 14;
+
+    this.benchmarkTooltip = {
+      visible: true,
+      x: Math.min(Math.max(8, x), Math.max(8, areaRect.width - tooltipWidth - 8)),
+      y: Math.min(Math.max(8, y), Math.max(8, areaRect.height - tooltipHeight - 8)),
+      chartX: productPoint.x,
+      productY: productPoint.y,
+      benchmarkY: benchmarkPoint.y,
+      date: productPoint.date,
+      productValue: productPoint.productValue,
+      benchmarkValue: productPoint.benchmarkValue,
+      productIndexed: productPoint.productIndexed,
+      benchmarkIndexed: productPoint.benchmarkIndexed,
+    };
+    this.changeDetector.markForCheck();
+  }
+
+  hideBenchmarkChartTooltip(): void {
+    if (!this.benchmarkTooltip) return;
+    this.benchmarkTooltip = null;
+    this.changeDetector.markForCheck();
+  }
+
+  formatChartValue(value: number): string {
+    return new Intl.NumberFormat('en-IN', {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    }).format(Number(value));
   }
 
   benchmarkChartYTicks(): Array<{ value: number; top: number }> {
@@ -630,26 +852,29 @@ export class WatchListComponent implements OnInit, OnDestroy {
     for (let value = first; value <= last + step * 0.001; value += step) {
       values.push(Number(value.toFixed(8)));
     }
-    if (!values.some(value => Math.abs(value - 100) < 1e-8)) values.push(100);
 
     return [...new Set(values)]
       .filter(value => value >= min - step && value <= max + step)
       .sort((a, b) => b - a)
       .map(value => ({
         value,
-        top: 94 - ((value - min) / Math.max(max - min, 1)) * 89,
+        top: 94 - ((value - min) / Math.max(max - min, 1e-9)) * 89,
       }));
   }
 
-  benchmarkChartXAxisTicks(): Array<{ label: string; left: number }> {
-    if (!this.benchmarkChartHasData()) return [];
-    const fund = this.benchmarkChartSeries(this.benchmarkData?.chart?.fund);
-    const benchmark = this.benchmarkChartSeries(this.benchmarkData?.chart?.benchmark);
-    const all = [...fund, ...benchmark];
-    if (!all.length) return [];
+  benchmarkChartYLabel(value: number): string {
+    const rounded = Math.round(Number(value));
+    return Math.abs(Number(value) - rounded) < 1e-8
+      ? String(rounded)
+      : Number(value).toFixed(1);
+  }
 
-    const startDate = new Date(this.benchmarkData?.chart?.start_date || all[0].date);
-    const endDate = new Date(this.benchmarkData?.chart?.end_date || all[all.length - 1].date);
+  benchmarkChartXAxisTicks(): Array<{ label: string; left: number }> {
+    const points = this.benchmarkChartAlignedPoints();
+    if (points.length < 2) return [];
+
+    const startDate = new Date(points[0].date);
+    const endDate = new Date(points[points.length - 1].date);
     const startTime = startDate.getTime();
     const endTime = endDate.getTime();
     const tickCount = this.benchmarkPeriod === '1M' ? 4
@@ -659,35 +884,20 @@ export class WatchListComponent implements OnInit, OnDestroy {
       : this.benchmarkPeriod === '3Y' ? 7
       : 6;
 
-    const formatter = new Intl.DateTimeFormat('en-US', {
+    const formatter = new Intl.DateTimeFormat('en-IN', {
       month: 'short',
       year: 'numeric',
     });
 
-    const actualDates = [...new Set(all.map(point => point.date))].sort();
     return Array.from({ length: tickCount }, (_, index) => {
       const ratio = index / (tickCount - 1);
       const targetTime = startTime + (endTime - startTime) * ratio;
-      const nearestDate = actualDates.reduce((closest, candidate) => {
-        const candidateDistance = Math.abs(new Date(candidate).getTime() - targetTime);
-        const closestDistance = Math.abs(new Date(closest).getTime() - targetTime);
-        return candidateDistance < closestDistance ? candidate : closest;
-      }, actualDates[0]);
-      const date = new Date(nearestDate);
-      const actualRatio = (date.getTime() - startTime) / Math.max(endTime - startTime, 1);
       return {
-        label: formatter.format(date),
-        left: 8 + Math.max(0, Math.min(1, actualRatio)) * 90,
+        label: formatter.format(new Date(targetTime)),
+        left: 8 + ratio * 84,
       };
     });
   }
-
-  benchmarkChartYLabel(value: number): string {
-    const returnValue = value - 100;
-    const rounded = Number.isInteger(returnValue) ? returnValue.toFixed(0) : returnValue.toFixed(1);
-    return returnValue > 0 ? `+${rounded}%` : `${rounded}%`;
-  }
-
 
   toggleWatch(product: WatchListProduct, event: Event): void {
     event.stopPropagation();

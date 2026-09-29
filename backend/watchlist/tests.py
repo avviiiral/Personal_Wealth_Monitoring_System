@@ -4,17 +4,21 @@ from unittest.mock import patch
 
 from django.contrib.auth.models import User
 from django.test import TestCase
+from django.urls import reverse
 
+from mutual_funds.models import AMFIMasterNAV, AMFIMasterScheme
+from mutual_funds.services.amfi import AMFIService
 from users.models import FamilyGroup
 from rest_framework.test import APIClient
 
 from investments.models import Asset, AssetCategory, PortfolioPosition, Transaction, TransactionType
-from watchlist.models import InvestmentProduct, MutualFundProduct, PerformanceSnapshot, ProductType, WatchListEntry
+from watchlist.models import BenchmarkMasterPoint, InvestmentProduct, MutualFundProduct, PMSProduct, PerformanceSnapshot, ProductType, WatchListEntry
 from watchlist.services.ownership import OwnershipService
 from watchlist.services.performance import AMFIPerformanceService
 from watchlist.services.universe import AMFIUniverseService
 from watchlist.services.pms import APMIPMSDiscoveryService
 from watchlist.services.benchmark import BenchmarkPerformanceService
+from watchlist.services.amfi_history import WatchListAMFIHistoryService
 
 
 class WatchListTests(TestCase):
@@ -62,10 +66,52 @@ class WatchListTests(TestCase):
         for index in range(3):
             product = InvestmentProduct.objects.create(product_type=ProductType.MUTUAL_FUND, name=f"Fund {index}", identity_key=f"MUTUAL_FUND:SCHEME:{index}", source="AMFI")
             MutualFundProduct.objects.create(product=product, scheme_code=str(index))
+            PerformanceSnapshot.objects.create(
+                product=product,
+                date="2026-09-15",
+                nav_or_value=Decimal("10"),
+                return_1m=Decimal(str(index + 1)),
+                source="AMFI",
+            )
         response = self.client.get("/api/watch-list/products/?product_type=MUTUAL_FUND&page_size=2")
         self.assertEqual(response.status_code, 200)
         self.assertEqual(len(response.data["results"]), 2)
         self.assertEqual(response.data["count"], 3)
+
+    def test_api_hides_products_with_no_displayable_values(self):
+        visible = InvestmentProduct.objects.create(
+            product_type=ProductType.MUTUAL_FUND,
+            name="Visible Fund",
+            identity_key="MUTUAL_FUND:SCHEME:VISIBLE",
+            source="AMFI",
+        )
+        MutualFundProduct.objects.create(
+            product=visible,
+            scheme_code="VISIBLE",
+            aum=Decimal("100"),
+        )
+
+        hidden = InvestmentProduct.objects.create(
+            product_type=ProductType.MUTUAL_FUND,
+            name="Empty Fund",
+            identity_key="MUTUAL_FUND:SCHEME:EMPTY",
+            source="AMFI",
+        )
+        MutualFundProduct.objects.create(product=hidden, scheme_code="EMPTY")
+        PerformanceSnapshot.objects.create(
+            product=hidden,
+            date="2026-09-15",
+            nav_or_value=Decimal("10"),
+            source="AMFI",
+        )
+
+        response = self.client.get(
+            "/api/watch-list/products/?product_type=MUTUAL_FUND&page_size=100"
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["count"], 1)
+        self.assertEqual(response.data["results"][0]["name"], "Visible Fund")
 
     def test_watch_list_uses_latest_snapshot_for_metrics_and_performance(self):
         product = InvestmentProduct.objects.create(product_type=ProductType.MUTUAL_FUND, name="Snapshot Fund", identity_key="MUTUAL_FUND:SCHEME:SNAPSHOT", source="AMFI")
@@ -112,6 +158,98 @@ class WatchListTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertFalse(response.data["is_watchlisted"])
         self.assertFalse(WatchListEntry.objects.filter(user=self.user, product=product).exists())
+
+    @patch("watchlist.views.prepare_mutual_fund_watchlist_history")
+    def test_watchlist_toggle_prepares_new_mutual_fund_history(self, mocked_prepare):
+        product = InvestmentProduct.objects.create(
+            product_type=ProductType.MUTUAL_FUND,
+            name="Auto History Fund",
+            identity_key="MUTUAL_FUND:SCHEME:AUTO-HISTORY",
+            source="AMFI",
+        )
+        MutualFundProduct.objects.create(
+            product=product,
+            scheme_code="152075",
+        )
+
+        response = self.client.post(
+            f"/api/watch-list/products/{product.id}/toggle/"
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.data["is_watchlisted"])
+        mocked_prepare.assert_called_once_with(product)
+
+    @patch("watchlist.views.prepare_mutual_fund_watchlist_history")
+    def test_watchlist_toggle_does_not_prepare_pms_history(self, mocked_prepare):
+        product = InvestmentProduct.objects.create(
+            product_type=ProductType.PMS,
+            name="PMS Auto History Test",
+            identity_key="PMS:SCHEME:AUTO-HISTORY",
+            source="APMI",
+        )
+        PMSProduct.objects.create(product=product)
+
+        response = self.client.post(
+            f"/api/watch-list/products/{product.id}/toggle/"
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.data["is_watchlisted"])
+        mocked_prepare.assert_not_called()
+
+    @patch.object(
+        AMFIService,
+        "import_historical_master_navs",
+        return_value={"schemes": 1, "nav_records": 7},
+    )
+    def test_amfi_history_service_imports_missing_master_history(self, mocked_import):
+        product = InvestmentProduct.objects.create(
+            product_type=ProductType.MUTUAL_FUND,
+            name="Coverage Fund",
+            identity_key="MUTUAL_FUND:SCHEME:COVERAGE",
+            source="AMFI",
+        )
+        MutualFundProduct.objects.create(product=product, scheme_code="COVERAGE")
+
+        result = WatchListAMFIHistoryService.prepare_product(product)
+
+        self.assertTrue(result["prepared"])
+        self.assertTrue(result["downloaded"])
+        self.assertEqual(result["scheme_code"], "COVERAGE")
+        self.assertEqual(result["nav_records"], 7)
+        mocked_import.assert_called_once()
+        self.assertEqual(
+            mocked_import.call_args.kwargs["scheme_codes"],
+            {"COVERAGE"},
+        )
+
+    @patch("watchlist.views.prepare_mutual_fund_watchlist_history")
+    def test_watchlist_bulk_add_prepares_only_new_mutual_funds(self, mocked_prepare):
+        mutual_fund = InvestmentProduct.objects.create(
+            product_type=ProductType.MUTUAL_FUND,
+            name="Bulk MF",
+            identity_key="MUTUAL_FUND:SCHEME:BULK-MF",
+            source="AMFI",
+        )
+        MutualFundProduct.objects.create(product=mutual_fund, scheme_code="BULK-MF")
+        pms = InvestmentProduct.objects.create(
+            product_type=ProductType.PMS,
+            name="Bulk PMS",
+            identity_key="PMS:SCHEME:BULK-PMS",
+            source="APMI",
+        )
+        PMSProduct.objects.create(product=pms)
+
+        response = self.client.post(
+            reverse("watch-list-bulk-add"),
+            {"product_ids": [mutual_fund.id, pms.id]},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["added"], 2)
+        mocked_prepare.assert_called_once_with(mutual_fund)
 
     def test_amfi_performance_service_updates_snapshot(self):
         product = InvestmentProduct.objects.create(product_type=ProductType.MUTUAL_FUND, name="Performance Fund", isin="INFPERF", external_identifier="1", identity_key="MUTUAL_FUND:ISIN:INFPERF", source="AMFI")
@@ -291,6 +429,176 @@ class BenchmarkPerformanceTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertTrue(response.data["available"])
         self.assertEqual(response.data["benchmark"], "BSE 500")
+
+    def test_chart_reads_shared_benchmark_master_without_network_fetch(self):
+        product = InvestmentProduct.objects.create(
+            product_type=ProductType.MUTUAL_FUND,
+            name="Master Benchmark Read Test",
+            identity_key="MUTUAL_FUND:SCHEME:MASTER-BENCHMARK-READ",
+            source="TEST",
+        )
+        MutualFundProduct.objects.create(
+            product=product,
+            scheme_code="MASTER-BENCHMARK-READ",
+            benchmark="Nifty 50",
+        )
+        AMFIMasterScheme.objects.create(
+            scheme_code="MASTER-BENCHMARK-READ",
+            scheme_name="Master Benchmark Read Test",
+        )
+        scheme = AMFIMasterScheme.objects.get(scheme_code="MASTER-BENCHMARK-READ")
+        AMFIMasterNAV.objects.create(
+            scheme=scheme,
+            date="2025-01-02",
+            nav=Decimal("100.00"),
+            source="AMFI",
+        )
+        AMFIMasterNAV.objects.create(
+            scheme=scheme,
+            date="2026-09-28",
+            nav=Decimal("120.00"),
+            source="AMFI",
+        )
+        BenchmarkMasterPoint.objects.create(
+            benchmark="Nifty 50",
+            date="2025-01-02",
+            value=Decimal("24000.00"),
+            source="MASTER",
+        )
+        BenchmarkMasterPoint.objects.create(
+            benchmark="Nifty 50",
+            date="2026-09-28",
+            value=Decimal("25000.00"),
+            source="MASTER",
+        )
+
+        with patch.object(
+            BenchmarkPerformanceService,
+            "_series",
+            side_effect=AssertionError("chart endpoint attempted a network fetch"),
+        ):
+            result = BenchmarkPerformanceService.calculate(product, "1Y")
+
+        self.assertTrue(result["available"])
+        self.assertGreaterEqual(len(result["chart"]["aligned_points"]), 2)
+
+    def test_chart_uses_actual_values_and_on_or_before_benchmark_alignment(self):
+        aligned = BenchmarkPerformanceService._aligned_chart_series(
+            [
+                {"date": "2026-09-15", "value": 120.50},
+                {"date": "2026-09-16", "value": 121.25},
+                {"date": "2026-09-17", "value": 122.00},
+            ],
+            [
+                {"date": "2026-09-14", "value": 25000.0},
+                {"date": "2026-09-16", "value": 25100.0},
+                {"date": "2026-09-18", "value": 25300.0},
+            ],
+            365,
+        )
+
+        self.assertEqual(
+            aligned["points"],
+            [
+                {"date": "2026-09-15", "product_value": 120.50, "benchmark_value": 25000.0},
+                {"date": "2026-09-16", "product_value": 121.25, "benchmark_value": 25100.0},
+                {"date": "2026-09-17", "product_value": 122.00, "benchmark_value": 25100.0},
+            ],
+        )
+
+    def test_chart_never_uses_future_benchmark_value(self):
+        aligned = BenchmarkPerformanceService._aligned_chart_series(
+            [
+                {"date": "2026-09-15", "value": 120.0},
+                {"date": "2026-09-16", "value": 121.0},
+            ],
+            [
+                {"date": "2026-09-16", "value": 25100.0},
+                {"date": "2026-09-17", "value": 25200.0},
+            ],
+            31,
+        )
+        self.assertIsNone(aligned)
+
+    def test_chart_supports_all_periods_for_pms_value_history(self):
+        product = InvestmentProduct.objects.create(
+            product_type=ProductType.PMS,
+            name="PMS Historical Value",
+            identity_key="PMS:TEST:PMS-HISTORY",
+            source="APMI",
+        )
+        PMSProduct.objects.create(product=product, benchmark="Nifty 50")
+        start = date(2021, 1, 1)
+        PerformanceSnapshot.objects.bulk_create(
+            [
+                PerformanceSnapshot(
+                    product=product,
+                    date=start + timedelta(days=day),
+                    nav_or_value=Decimal("100.00") + Decimal(day) / Decimal("10"),
+                    source="APMI",
+                )
+                for day in range(0, 365 * 5 + 20, 30)
+            ]
+        )
+        benchmark_points = [
+            {"date": (start + timedelta(days=day)).isoformat(), "value": 15000.0 + day}
+            for day in range(0, 365 * 5 + 21, 7)
+        ]
+
+        with patch.object(BenchmarkPerformanceService, "_benchmark_series", return_value=benchmark_points):
+            for period in BenchmarkPerformanceService.PERIOD_DAYS:
+                result = BenchmarkPerformanceService.calculate(product, period)
+                self.assertTrue(result["available"])
+                self.assertGreaterEqual(len(result["chart"]["aligned_points"]), 2)
+                self.assertEqual(
+                    result["chart"]["fund"][0]["value"],
+                    result["chart"]["aligned_points"][0]["product_value"],
+                )
+                self.assertEqual(
+                    result["chart"]["benchmark"][0]["value"],
+                    result["chart"]["aligned_points"][0]["benchmark_value"],
+                )
+
+    def test_chart_uses_shared_amfi_master_nav_for_mutual_fund(self):
+        product = InvestmentProduct.objects.create(
+            product_type=ProductType.MUTUAL_FUND,
+            name="Master NAV Chart Fund",
+            identity_key="MUTUAL_FUND:SCHEME:MASTER-CHART",
+            source="AMFI",
+        )
+        scheme = AMFIMasterScheme.objects.create(
+            scheme_code="MASTER-CHART",
+            scheme_name="Master NAV Chart Fund",
+        )
+        MutualFundProduct.objects.create(
+            product=product,
+            scheme_code="MASTER-CHART",
+            benchmark="Nifty 50",
+        )
+        AMFIMasterNAV.objects.create(
+            scheme=scheme,
+            date="2026-09-15",
+            nav=Decimal("100.25"),
+            source="AMFI",
+        )
+        AMFIMasterNAV.objects.create(
+            scheme=scheme,
+            date="2026-09-16",
+            nav=Decimal("101.25"),
+            source="AMFI",
+        )
+
+        series = BenchmarkPerformanceService._fund_series(
+            product, date(2026, 9, 1), date(2026, 9, 30)
+        )
+        self.assertEqual(
+            series,
+            [
+                {"date": "2026-09-15", "value": 100.25},
+                {"date": "2026-09-16", "value": 101.25},
+            ],
+        )
+
 
 
 class APMIPMSDiscoveryTests(TestCase):

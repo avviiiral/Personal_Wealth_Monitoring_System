@@ -15,6 +15,7 @@ from watchlist.services.ownership import OwnershipService
 from watchlist.services.pms import APMIPMSDiscoveryService
 from watchlist.services.benchmark import BenchmarkPerformanceService
 from watchlist.services.universe import AMFIUniverseService
+from watchlist.services.amfi_history import prepare_mutual_fund_watchlist_history
 
 
 class WatchListPagination(PageNumberPagination):
@@ -42,6 +43,35 @@ def _watchlist_user_ids(request):
 
 def _filtered_products(request, product_type=None):
     queryset = InvestmentProduct.objects.filter(is_active=True).select_related("mutual_fund", "pms")
+
+    # Presentation filter: a raw NAV/value alone is not enough to make a
+    # product displayable because it does not populate any Watch List return
+    # column. AUM or a displayed performance metric is required.
+    displayable_snapshot = PerformanceSnapshot.objects.filter(
+        product_id=OuterRef("pk"),
+    ).filter(
+        Q(aum__isnull=False)
+        | Q(return_1d__isnull=False)
+        | Q(return_1w__isnull=False)
+        | Q(return_1m__isnull=False)
+        | Q(return_3m__isnull=False)
+        | Q(return_6m__isnull=False)
+        | Q(return_1y__isnull=False)
+        | Q(return_3y__isnull=False)
+        | Q(return_5y__isnull=False)
+        | Q(return_since_inception__isnull=False)
+        | Q(cagr__isnull=False)
+    )
+    # OWNED is an ownership view, so an owned product remains visible even
+    # before its first performance snapshot has been imported.
+    status = request.query_params.get("status", "").upper()
+    if status != "OWNED":
+        queryset = queryset.filter(
+            Q(mutual_fund__aum__isnull=False)
+            | Q(pms__aum__isnull=False)
+            | Exists(displayable_snapshot)
+        )
+
     if product_type:
         queryset = queryset.filter(product_type=product_type)
     params = request.query_params
@@ -370,6 +400,10 @@ def watch_list_toggle(request, product_id):
         ],
         ignore_conflicts=True,
     )
+
+    if product.product_type == ProductType.MUTUAL_FUND:
+        prepare_mutual_fund_watchlist_history(product)
+
     return Response({"id": product.id, "is_watchlisted": True})
 
 
@@ -410,6 +444,14 @@ def watch_list_bulk_add(request):
         ],
         ignore_conflicts=True,
     )
+
+    new_mutual_funds = products.filter(
+        product_type=ProductType.MUTUAL_FUND,
+        id__in=valid_ids - existing_ids,
+    ).select_related("mutual_fund")
+    for product in new_mutual_funds:
+        prepare_mutual_fund_watchlist_history(product)
+
     return Response({
         "selected": len(valid_ids),
         "added": len(valid_ids - existing_ids),
@@ -449,3 +491,31 @@ def watch_list_refresh(request):
         mf_result = AMFIUniverseService.refresh()
         pms_result = APMIPMSDiscoveryService.refresh()
     return Response({"mutual_funds": mf_result, "pms": pms_result})
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def prepare_watch_list(request):
+    if not request.user.is_staff:
+        return Response({"detail": "Staff permission required."}, status=403)
+
+    days = int(request.data.get("days", 7))
+    dry_run = str(request.data.get("dry_run", "")).lower() in {"1", "true", "yes"}
+    result = {
+        "amfi": AMFIUniverseService.prepare_watchlist_history(days=days, dry_run=dry_run),
+        "pms": APMIPMSDiscoveryService.prepare_watchlist_history(days=days, dry_run=dry_run),
+    }
+    return Response(result)
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def prepare_watch_list_benchmark(request):
+    if not request.user.is_staff:
+        return Response({"detail": "Staff permission required."}, status=403)
+
+    days = int(request.data.get("days", 7))
+    dry_run = str(request.data.get("dry_run", "")).lower() in {"1", "true", "yes"}
+    with DATABASE_SCHEDULER_LOCK:
+        result = BenchmarkPerformanceService.prepare_benchmark_history(days=days, dry_run=dry_run)
+    return Response(result)

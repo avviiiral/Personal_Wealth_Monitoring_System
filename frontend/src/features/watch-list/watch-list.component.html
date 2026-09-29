@@ -294,17 +294,17 @@
                   [style.top.px]="tooltip.y"
                 >
                   <div class="benchmark-chart-tooltip-date">{{ tooltip.date | date:'dd MMM yyyy' }}</div>
-                  <div class="benchmark-chart-tooltip-row">
-                    <span>{{ benchmarkChartProductLabel() }}<small>{{ benchmarkChartProductUnit() }}</small></span>
-                    <strong>{{ formatChartValue(tooltip.productValue) }}</strong>
+                  <div class="benchmark-chart-tooltip-base">
+                    <span>Value of ₹100 invested</span>
+                    <small>Starting from {{ benchmarkChartStartDate() }}</small>
                   </div>
                   <div class="benchmark-chart-tooltip-row">
-                    <span>{{ benchmarkDisplayName(benchmarkData.benchmark || benchmarkModalProduct.benchmark) }}<small>Benchmark value</small></span>
-                    <strong>{{ formatChartValue(tooltip.benchmarkValue) }}</strong>
+                    <span>{{ benchmarkChartProductLabel() }}<small>{{ benchmarkChartProductUnit() }}: {{ formatChartValue(tooltip.productValue) }}</small></span>
+                    <strong>₹{{ tooltip.productIndexed.toFixed(2) }}</strong>
                   </div>
-                  <div class="benchmark-chart-tooltip-index">
-                    <span>Indexed performance</span>
-                    <strong>{{ tooltip.productIndexed.toFixed(3) }} / {{ tooltip.benchmarkIndexed.toFixed(3) }}</strong>
+                  <div class="benchmark-chart-tooltip-row">
+                    <span>{{ benchmarkDisplayName(benchmarkData.benchmark || benchmarkModalProduct.benchmark) }}<small>Benchmark value: {{ formatChartValue(tooltip.benchmarkValue) }}</small></span>
+                    <strong>₹{{ tooltip.benchmarkIndexed.toFixed(2) }}</strong>
                   </div>
                 </div>
 

@@ -227,21 +227,22 @@ class AMFIService:
     @staticmethod
     def _parse_historical_record(parts):
         """
-        Parse AMFI historical NAV format.
+        Parse AMFI's historical NAV text format.
 
-        Current AMFI historical downloads use:
+        AMFI's date-range endpoint currently returns:
         0 = Scheme Code
-        1 = NAV Name
-        2 = Plan
-        3 = Option
-        4 = ISIN Div Payout / ISIN Growth
-        5 = ISIN Div Reinvestment
-        6 = Net Asset Value
+        1 = Scheme Name
+        2 = ISIN Div Payout / ISIN Growth
+        3 = ISIN Div Reinvestment
+        4 = Net Asset Value
+        5 = Repurchase Price
+        6 = Sale Price
         7 = Date
 
-        The legacy historical format placed the two ISIN columns at indexes
-        2/3 and NAV at index 4. Support both layouts so the master importer
-        remains compatible with AMFI's transition between formats.
+        Older responses and some AMFI variants can contain additional
+        columns, so the parser anchors the stable fields (scheme code,
+        scheme name, NAV, and final date) instead of treating repurchase
+        or sale price as NAV.
         """
 
         if len(parts) < 8:
@@ -262,40 +263,30 @@ class AMFIService:
         except ValueError:
             return None
 
-        # Current format: NAV is index 6 and ISINs are indexes 4/5.
-        # Legacy format: NAV is index 4 and ISINs are indexes 2/3.
-        if len(parts) > 6:
+        # AMFI's historical report places NAV at index 4.  Keep a narrow
+        # fallback for legacy variants that exposed the NAV later in the row.
+        nav = None
+        for nav_index in (4, 6):
+            if nav_index >= len(parts):
+                continue
             try:
-                nav = Decimal(parts[6])
-                current_format = True
+                candidate = Decimal(parts[nav_index])
             except (
                 InvalidOperation,
                 ValueError,
                 TypeError,
             ):
-                current_format = False
-        else:
-            current_format = False
+                continue
 
-        if not current_format:
-            try:
-                nav = Decimal(parts[4])
-            except (
-                InvalidOperation,
-                ValueError,
-                TypeError,
-            ):
-                return None
+            if candidate >= 0:
+                nav = candidate
+                break
 
-        if nav < 0:
+        if nav is None:
             return None
 
-        if current_format:
-            isin_first = parts[4]
-            isin_second = parts[5]
-        else:
-            isin_first = parts[2]
-            isin_second = parts[3]
+        isin_first = parts[2]
+        isin_second = parts[3]
 
         return AMFIService._build_record(
             scheme_code=scheme_code,

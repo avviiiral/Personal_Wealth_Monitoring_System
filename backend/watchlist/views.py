@@ -423,7 +423,7 @@ def watch_list_bulk_add(request):
     for product in new_mutual_funds:
         prepare_mutual_fund_watchlist_history(product)
 
-    return Response({}
+    return Response({
         "selected": len(valid_ids),
         "added": len(valid_ids - existing_ids),
         "already_watchlisted": len(existing_ids),

@@ -67,6 +67,245 @@ class AMFIService:
         return response.text
 
     @staticmethod
+    def _api_headers():
+        return {
+            **AMFIService._headers(),
+            "Accept": "application/json, text/plain, */*",
+            "Referer": "https://www.amfiindia.com/net-asset-value",
+        }
+
+    @staticmethod
+    def _normalize_name(value):
+        return " ".join(str(value or "").lower().split())
+
+    @staticmethod
+    def _flatten_latest_api(data):
+        records = []
+
+        def add(record, mf_id=None):
+            if not isinstance(record, dict):
+                return
+            code = (
+                record.get("schemeId")
+                or record.get("Scheme_Code")
+                or record.get("scheme_code")
+                or record.get("schemeCode")
+            )
+            name = (
+                record.get("schemeName")
+                or record.get("Scheme_Name")
+                or record.get("scheme_name")
+                or record.get("nav_name")
+            )
+            current_mf_id = (
+                record.get("mutualFundId")
+                or record.get("MF_ID")
+                or record.get("mf_id")
+                or mf_id
+            )
+            if code and name and current_mf_id:
+                records.append({
+                    "scheme_code": str(code).strip(),
+                    "scheme_name": str(name).strip(),
+                    "mf_id": str(current_mf_id).strip(),
+                })
+
+        def walk(node, mf_id=None):
+            if isinstance(node, dict):
+                inherited_mf_id = (
+                    node.get("mutualFundId")
+                    or node.get("MF_ID")
+                    or node.get("mf_id")
+                    or mf_id
+                )
+                add(node, inherited_mf_id)
+                for key, value in node.items():
+                    walk(
+                        value,
+                        value if key in {"mutualFundId", "MF_ID", "mf_id"}
+                        else inherited_mf_id,
+                    )
+            elif isinstance(node, list):
+                for item in node:
+                    walk(item, mf_id)
+
+        walk(data)
+        deduped = {}
+        for record in records:
+            deduped.setdefault(record["scheme_code"], record)
+        return deduped
+
+    @staticmethod
+    def _resolve_nav_ids(scheme_codes):
+        codes = {str(code).strip() for code in scheme_codes}
+        if not codes:
+            return {}
+
+        response = requests.get(
+            AMFIService.AMFI_LATEST_API,
+            params={"mfid": "all", "type": ""},
+            headers=AMFIService._api_headers(),
+            timeout=60,
+        )
+        response.raise_for_status()
+        latest_by_code = AMFIService._flatten_latest_api(response.json())
+
+        requested = {
+            code: latest_by_code[code]
+            for code in codes
+            if code in latest_by_code
+        }
+        if len(requested) != len(codes):
+            missing = sorted(codes - requested.keys())
+            raise RuntimeError(
+                "AMFI current API did not resolve scheme codes: "
+                + ", ".join(missing)
+            )
+
+        scheme_lists = {}
+        for mf_id in {item["mf_id"] for item in requested.values()}:
+            response = requests.get(
+                AMFIService.AMFI_SCHEME_LIST_API,
+                params={"mf_id": mf_id},
+                headers=AMFIService._api_headers(),
+                timeout=60,
+            )
+            response.raise_for_status()
+            payload = response.json()
+            scheme_lists[mf_id] = (
+                payload.get("data", payload)
+                if isinstance(payload, dict)
+                else payload
+            )
+
+        result = {}
+        for code, metadata in requested.items():
+            target = AMFIService._normalize_name(metadata["scheme_name"])
+            candidates = [
+                item for item in scheme_lists[metadata["mf_id"]]
+                if isinstance(item, dict)
+            ]
+            matches = [
+                item for item in candidates
+                if AMFIService._normalize_name(
+                    item.get("nav_name") or item.get("scheme_name")
+                ) == target
+            ]
+            if not matches:
+                matches = [
+                    item for item in candidates
+                    if target and target in AMFIService._normalize_name(
+                        item.get("nav_name") or item.get("scheme_name")
+                    )
+                ]
+            if not matches:
+                raise RuntimeError(
+                    f"AMFI current API did not resolve nav_id for scheme {code}."
+                )
+
+            if len(matches) > 1:
+                matches.sort(
+                    key=lambda item: (
+                        int(
+                            "direct" in target
+                            and "direct" in AMFIService._normalize_name(
+                                item.get("nav_name") or item.get("scheme_name")
+                            )
+                        ),
+                        int(
+                            "growth" in target
+                            and "growth" in AMFIService._normalize_name(
+                                item.get("nav_name") or item.get("scheme_name")
+                            )
+                        ),
+                        -abs(
+                            len(
+                                AMFIService._normalize_name(
+                                    item.get("nav_name") or item.get("scheme_name")
+                                )
+                            )
+                            - len(target)
+                        ),
+                    ),
+                    reverse=True,
+                )
+
+            nav_id = matches[0].get("nav_id")
+            if not nav_id:
+                raise RuntimeError(
+                    f"AMFI current API returned no nav_id for scheme {code}."
+                )
+            result[code] = {
+                "nav_id": str(nav_id),
+                "scheme_name": metadata["scheme_name"],
+            }
+
+        return result
+
+    @staticmethod
+    def _download_historical_api_records(from_date, to_date, scheme_codes):
+        if from_date > to_date:
+            raise ValueError("From date cannot be after to date.")
+
+        nav_ids = AMFIService._resolve_nav_ids(scheme_codes)
+        records = []
+
+        for scheme_code, metadata in nav_ids.items():
+            response = requests.get(
+                AMFIService.AMFI_HISTORY_API,
+                params={
+                    "query_type": "historical_period",
+                    "sd_id": metadata["nav_id"],
+                    "from_date": from_date.strftime("%Y-%m-%d"),
+                    "to_date": to_date.strftime("%Y-%m-%d"),
+                },
+                headers=AMFIService._api_headers(),
+                timeout=60,
+            )
+            response.raise_for_status()
+            payload = response.json()
+            data = payload.get("data", payload) if isinstance(payload, dict) else payload
+            groups = data.get("nav_groups", []) if isinstance(data, dict) else []
+
+            if not groups:
+                logger.warning(
+                    "AMFI historical API returned no nav_groups for scheme %s",
+                    scheme_code,
+                )
+                continue
+
+            target = AMFIService._normalize_name(metadata["scheme_name"])
+            groups = [
+                group for group in groups
+                if target == AMFIService._normalize_name(group.get("nav_name"))
+            ] or groups[:1]
+
+            for group in groups:
+                for item in group.get("historical_records", []):
+                    try:
+                        nav = Decimal(str(item.get("nav")))
+                        nav_date = datetime.strptime(
+                            str(item.get("date")),
+                            "%Y-%m-%d",
+                        ).date()
+                    except (InvalidOperation, ValueError, TypeError):
+                        continue
+                    if nav < 0:
+                        continue
+                    records.append(
+                        AMFIService._build_record(
+                            scheme_code=scheme_code,
+                            isin_first=None,
+                            isin_second=None,
+                            scheme_name=metadata["scheme_name"],
+                            nav=nav,
+                            nav_date=nav_date,
+                        )
+                    )
+
+        return records
+
+    @staticmethod
     def download_historical_nav(
         from_date,
         to_date,

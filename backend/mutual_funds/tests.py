@@ -511,99 +511,109 @@ class AMFIHistoricalMasterImportTests(TestCase):
 
         self.assertEqual([record["scheme_code"] for record in records], ["119551"])
 
-    def test_historical_download_retries_when_amfi_returns_html_page(self):
+    def test_current_api_history_resolves_scheme_code_to_nav_id(self):
         class FakeResponse:
-            def __init__(self, text, status_code=200, content_type="text/html"):
-                self.text = text
-                self.status_code = status_code
-                self.headers = {"Content-Type": content_type}
-                self.content = text.encode("utf-8")
-                self.url = "https://portal.amfiindia.com/DownloadNAVHistoryReport_Po.aspx"
-
-            @property
-            def ok(self):
-                return 200 <= self.status_code < 400
-
-            def raise_for_status(self):
-                if not self.ok:
-                    raise RuntimeError(f"HTTP {self.status_code}")
-
-        class FakeSession:
-            responses = [
-                FakeResponse("<html><body>View/Download NAV History</body></html>"),
-                FakeResponse(
-                    "Scheme Code;Scheme Name;ISIN Div Payout/ISIN Growth;"
-                    "ISIN Div Reinvestment;Net Asset Value;Repurchase Price;"
-                    "Sale Price;Date\n"
-                    "119551;Requested Fund;INF000000001;-;10.00;10.00;10.00;29-Sep-2026\n",
-                    content_type="text/plain",
-                ),
-            ]
-
-            def __enter__(self):
-                return self
-
-            def __exit__(self, exc_type, exc, tb):
-                return False
-
-            def get(self, *args, **kwargs):
-                return self.responses.pop(0)
-
-        with patch("mutual_funds.services.amfi.requests.Session", return_value=FakeSession()):
-            text = AMFIService.download_historical_nav(
-                date(2026, 9, 1),
-                date(2026, 9, 29),
-            )
-
-        self.assertIn("Scheme Code;Scheme Name", text)
-        self.assertTrue(AMFIService._is_historical_report(text))
-
-    def test_historical_download_requests_all_schemes_mode(self):
-        class FakeResponse:
-            text = (
-                "Scheme Code;Scheme Name;ISIN Div Payout/ISIN Growth;"
-                "ISIN Div Reinvestment;Net Asset Value;Repurchase Price;"
-                "Sale Price;Date\n"
-                "119551;Requested Fund;INF000000001;-;10.00;10.00;10.00;29-Sep-2026\n"
-            )
-            status_code = 200
-            headers = {"Content-Type": "text/plain"}
-            content = text.encode("utf-8")
-            url = "https://portal.amfiindia.com/DownloadNAVHistoryReport_Po.aspx"
-
-            @property
-            def ok(self):
-                return True
+            def __init__(self, payload):
+                self.payload = payload
+                self.status_code = 200
+                self.headers = {"Content-Type": "application/json"}
 
             def raise_for_status(self):
                 return None
 
-        class FakeSession:
-            params = None
+            def json(self):
+                return self.payload
 
-            def __enter__(self):
-                return self
+        responses = [
+            FakeResponse({
+                "data": [{
+                    "type": "Open Ended",
+                    "categories": [{
+                        "category": "Equity Scheme",
+                        "groups": [{
+                            "mutualFundId": "85",
+                            "schemes": [{
+                                "schemeId": "119551",
+                                "schemeName": "Requested Fund",
+                            }],
+                        }],
+                    }],
+                }]
+            }),
+            FakeResponse({
+                "data": [{
+                    "nav_id": "154043",
+                    "nav_name": "Requested Fund",
+                    "MF_ID": "85",
+                }]
+            }),
+            FakeResponse({
+                "data": {
+                    "mf_name": "Test Mutual Fund",
+                    "scheme_name": "Requested Fund",
+                    "nav_groups": [{
+                        "nav_name": "Requested Fund",
+                        "historical_records": [
+                            {
+                                "date": "2026-09-28",
+                                "nav": "101.25",
+                                "repurchase_price": "101.25",
+                                "sale_price": "101.25",
+                            },
+                            {
+                                "date": "2026-09-29",
+                                "nav": "102.50",
+                                "repurchase_price": "102.50",
+                                "sale_price": "102.50",
+                            },
+                        ],
+                    }],
+                },
+            }),
+        ]
 
-            def __exit__(self, exc_type, exc, tb):
-                return False
-
-            def get(self, url, params=None, headers=None, timeout=None):
-                self.params = params
-                return FakeResponse()
-
-        session = FakeSession()
         with patch(
-            "mutual_funds.services.amfi.requests.Session",
-            return_value=session,
-        ):
-            text = AMFIService.download_historical_nav(
+            "mutual_funds.services.amfi.requests.get",
+            side_effect=responses,
+        ) as mock_get:
+            records = AMFIService.download_historical_nav(
                 date(2026, 9, 1),
                 date(2026, 9, 29),
+                scheme_codes={"119551"},
             )
 
-        self.assertEqual(session.params["mf"], "0")
-        self.assertEqual(session.params["tp"], "1")
-        self.assertIn("Scheme Code;Scheme Name", text)
+        self.assertEqual(len(records), 2)
+        self.assertEqual(records[0]["scheme_code"], "119551")
+        self.assertEqual(records[0]["nav"], Decimal("101.25"))
+        self.assertEqual(records[0]["date"], date(2026, 9, 28))
+        self.assertEqual(records[1]["nav"], Decimal("102.50"))
+        self.assertEqual(mock_get.call_count, 3)
+
+        history_call = mock_get.call_args_list[-1]
+        self.assertEqual(
+            history_call.kwargs["params"]["query_type"],
+            "historical_period",
+        )
+        self.assertEqual(history_call.kwargs["params"]["sd_id"], "154043")
+
+    def test_legacy_historical_download_rejects_html(self):
+        class FakeResponse:
+            text = "<html><body>View/Download NAV History</body></html>"
+            status_code = 200
+            headers = {"Content-Type": "text/html"}
+
+            def raise_for_status(self):
+                return None
+
+        with patch(
+            "mutual_funds.services.amfi.requests.get",
+            return_value=FakeResponse(),
+        ):
+            with self.assertRaises(RuntimeError):
+                AMFIService.download_historical_nav(
+                    date(2026, 9, 1),
+                    date(2026, 9, 29),
+                )
 
     def test_historical_report_detection_rejects_html(self):
         self.assertFalse(

@@ -309,6 +309,7 @@ class AMFIService:
     def download_historical_nav(
         from_date,
         to_date,
+        scheme_codes=None,
     ):
         """
         Download the real AMFI historical NAV report.
@@ -319,6 +320,13 @@ class AMFIService:
         status as insufficient: only a response containing the AMFI
         historical header is accepted as report data.
         """
+        if scheme_codes:
+            return AMFIService._download_historical_api_records(
+                from_date,
+                to_date,
+                scheme_codes,
+            )
+
         if from_date > to_date:
             raise ValueError("From date cannot be after to_date.")
 
@@ -1060,6 +1068,14 @@ class AMFIService:
         before the database upsert keeps the shared master authoritative
         without duplicating unrelated historical rows.
         """
+        if scheme_codes:
+            records = AMFIService.download_historical_nav(
+                from_date,
+                to_date,
+                scheme_codes=scheme_codes,
+            )
+            return AMFIService._import_master_records(records)
+
         text = AMFIService.download_historical_nav(from_date, to_date)
         records = AMFIService.parse_nav_file(
             text,

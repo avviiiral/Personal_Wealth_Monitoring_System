@@ -72,49 +72,18 @@ class Command(BaseCommand):
                     f"from {benchmark_start} to {today}..."
                 )
 
-                cursor = benchmark_start
-                imported_windows = 0
-                while cursor <= today:
-                    window_end = min(cursor + timedelta(days=6), today)
-                    existing_codes = set(
-                        AMFIMasterNAV.objects.filter(
-                            scheme__scheme_code__in=watchlisted_scheme_codes,
-                            source="AMFI",
-                            date__gte=cursor,
-                            date__lte=window_end,
-                        )
-                        .values("scheme__scheme_code")
-                        .annotate(observation_count=Count("id"))
-                        .filter(observation_count__gte=2)
-                        .values_list("scheme__scheme_code", flat=True)
-                    )
-                    missing_codes = watchlisted_scheme_codes - existing_codes
-
-                    if missing_codes:
-                        result = AMFIService.import_historical_master_navs(
-                            cursor,
-                            window_end,
-                            scheme_codes=watchlisted_scheme_codes,
-                        )
-                        imported_windows += 1
-                        self.stdout.write(
-                            f"  AMFI {cursor} -> {window_end}: "
-                            f"{result['nav_records']} watchlist NAV rows imported"
-                        )
-                    else:
-                        self.stdout.write(
-                            f"  AMFI {cursor} -> {window_end}: already populated"
-                        )
-
-                    cursor = window_end + timedelta(days=1)
-
+                result = AMFIService.import_historical_master_navs(
+                    benchmark_start,
+                    today,
+                    scheme_codes=watchlisted_scheme_codes,
+                )
                 self.stdout.write(
                     self.style.SUCCESS(
-                        f"AMFI historical NAV preparation complete; "
-                        f"{imported_windows} windows refreshed for "
-                        f"{len(watchlisted_scheme_codes)} watchlisted schemes."
+                        f"  AMFI historical API: "
+                        f"{result['nav_records']} watchlist NAV rows imported"
                     )
                 )
+
             else:
                 self.stdout.write(
                     "No active Mutual Fund products are currently watchlisted; "

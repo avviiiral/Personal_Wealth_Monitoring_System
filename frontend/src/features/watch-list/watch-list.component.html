@@ -195,23 +195,17 @@
             </div>
 
             <div class="relative-chart">
-              <div class="chart-title">Historical Value — {{ benchmarkPeriod }}</div>
+              <div class="chart-title">Indexed Performance — {{ benchmarkPeriod }}</div>
+              <div class="chart-subtitle">Both series start at 100 on the first available date</div>
               <div class="chart-legend">
                 <span><i class="legend-fund"></i>{{ benchmarkChartProductLabel() }} — {{ benchmarkChartProductUnit() }}</span>
-                <span><i class="legend-benchmark"></i>{{ benchmarkDisplayName(benchmarkData.benchmark || benchmarkModalProduct.benchmark) }} — Value</span>
+                <span><i class="legend-benchmark"></i>{{ benchmarkDisplayName(benchmarkData.benchmark || benchmarkModalProduct.benchmark) }}</span>
               </div>
 
               <div class="relative-chart-area" *ngIf="benchmarkChartHasData(); else benchmarkChartUnavailable">
-                <div class="chart-y-label chart-y-label-left">{{ benchmarkChartProductUnit() }}</div>
+                <div class="chart-y-label chart-y-label-left">Indexed Value</div>
                 <div class="chart-y-axis chart-y-axis-left" aria-hidden="true">
-                  <span *ngFor="let tick of benchmarkChartYTicks('product')" [style.top.%]="tick.top">
-                    {{ benchmarkChartYLabel(tick.value) }}
-                  </span>
-                </div>
-
-                <div class="chart-y-label chart-y-label-right">Benchmark Value</div>
-                <div class="chart-y-axis chart-y-axis-right" aria-hidden="true">
-                  <span *ngFor="let tick of benchmarkChartYTicks('benchmark')" [style.top.%]="tick.top">
+                  <span *ngFor="let tick of benchmarkChartYTicks()" [style.top.%]="tick.top">
                     {{ benchmarkChartYLabel(tick.value) }}
                   </span>
                 </div>
@@ -220,10 +214,10 @@
                   viewBox="0 0 100 100"
                   preserveAspectRatio="none"
                   role="img"
-                  [attr.aria-label]="'Historical value chart for ' + benchmarkChartProductLabel() + ' and ' + benchmarkDisplayName(benchmarkData.benchmark || benchmarkModalProduct.benchmark)"
+                  [attr.aria-label]="'Indexed performance chart for ' + benchmarkChartProductLabel() + ' and ' + benchmarkDisplayName(benchmarkData.benchmark || benchmarkModalProduct.benchmark)"
                 >
                   <line
-                    *ngFor="let tick of benchmarkChartYTicks('product')"
+                    *ngFor="let tick of benchmarkChartYTicks()"
                     x1="8"
                     x2="92"
                     [attr.y1]="tick.top"
@@ -234,7 +228,7 @@
                   ></line>
 
                   <polyline
-                    [attr.points]="benchmarkPolyline(benchmarkData.chart?.fund, 'product')"
+                    [attr.points]="benchmarkPolyline('product')"
                     fill="none"
                     stroke="var(--accent)"
                     stroke-width="1.5"
@@ -242,20 +236,20 @@
                   ></polyline>
 
                   <polyline
-                    [attr.points]="benchmarkPolyline(benchmarkData.chart?.benchmark, 'benchmark')"
+                    [attr.points]="benchmarkPolyline('benchmark')"
                     fill="none"
                     stroke="var(--negative)"
                     stroke-width="1.5"
                     vector-effect="non-scaling-stroke"
                   ></polyline>
 
-                  <g *ngFor="let point of benchmarkChartCirclePoints(benchmarkData.chart?.fund, 'product')">
+                  <g *ngFor="let point of benchmarkChartCirclePoints('product')">
                     <circle [attr.cx]="point.x" [attr.cy]="point.y" r="0.65" fill="var(--accent)">
                       <title>{{ point.title }}</title>
                     </circle>
                   </g>
 
-                  <g *ngFor="let point of benchmarkChartCirclePoints(benchmarkData.chart?.benchmark, 'benchmark')">
+                  <g *ngFor="let point of benchmarkChartCirclePoints('benchmark')">
                     <circle [attr.cx]="point.x" [attr.cy]="point.y" r="0.65" fill="var(--negative)">
                       <title>{{ point.title }}</title>
                     </circle>
@@ -274,6 +268,7 @@
                   Historical data is unavailable for {{ benchmarkChartProductLabel() }} or the selected benchmark for {{ benchmarkPeriod }}.
                 </div>
               </ng-template>
+            </div>
             </div>
           </ng-container>
         </ng-container>

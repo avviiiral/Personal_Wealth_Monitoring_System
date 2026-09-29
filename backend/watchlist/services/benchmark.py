@@ -1061,14 +1061,14 @@ class BenchmarkPerformanceService:
             end=timezone.now().date(),
         )
 
-        # Chart requests are read-only. Historical AMFI master data is
-        # prepared by the dedicated management command, not downloaded from
-        # this API request.
-        benchmark_chart_start = history_start - timedelta(days=10)
+        # Benchmark history is shared master data. Do not restrict the chart
+        # to whatever benchmark subset happened to be returned by an earlier
+        # product-specific bootstrap. Use the requested chart range and let
+        # _aligned_chart_series trim it to the product valuation dates.
         benchmark_chart = [
             point
             for point in benchmark_series
-            if benchmark_chart_start <= date.fromisoformat(point["date"])
+            if date.fromisoformat(point["date"]) <= timezone.now().date()
         ]
         aligned_chart = cls._aligned_chart_series(
             product_chart,

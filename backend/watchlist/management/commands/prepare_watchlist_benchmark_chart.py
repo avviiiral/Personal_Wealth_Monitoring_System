@@ -39,6 +39,12 @@ class Command(BaseCommand):
 
         today = timezone.now().date()
         days = BenchmarkPerformanceService.PERIOD_DAYS[period]
+        # Prepare the shared benchmark master for the full supported chart
+        # range, regardless of the currently selected product period. This
+        # prevents switching from 1Y/3Y to 5Y from exposing a partial series.
+        benchmark_start = today - timedelta(
+            days=BenchmarkPerformanceService.PERIOD_DAYS["5Y"] + 31
+        )
         start = today - timedelta(days=days + 31)
 
         if product.product_type == ProductType.MUTUAL_FUND:
@@ -89,19 +95,24 @@ class Command(BaseCommand):
         benchmark_count = BenchmarkMasterPoint.objects.filter(
             benchmark=benchmark,
             source="MASTER",
-            date__gte=start,
+            date__gte=benchmark_start,
             date__lte=today,
         ).count()
-        expected_benchmark = max(5, int((today - start).days * 0.5))
+        expected_benchmark = max(
+            5, int((today - benchmark_start).days * 0.5)
+        )
 
         if benchmark_count < expected_benchmark:
             self.stdout.write(
-                f"Preparing {benchmark} master history from {start} to {today}..."
+                f"Preparing {benchmark} master history from "
+                f"{benchmark_start} to {today}..."
             )
             if benchmark == "BSE 500":
-                points = BenchmarkPerformanceService._bse_series(start)
+                points = BenchmarkPerformanceService._bse_series(benchmark_start)
             elif benchmark == "Nifty 50":
-                points = BenchmarkPerformanceService._nifty_tri_series(start, today)
+                points = BenchmarkPerformanceService._nifty_tri_series(
+                    benchmark_start, today
+                )
             else:
                 points = []
             saved = BenchmarkPerformanceService.save_benchmark_master(

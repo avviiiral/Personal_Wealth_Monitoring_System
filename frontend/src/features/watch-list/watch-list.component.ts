@@ -630,6 +630,16 @@ export class WatchListComponent implements OnInit, OnDestroy {
     return this.benchmarkModalProduct?.product_type === 'PMS' ? 'NAV / Value' : 'NAV';
   }
 
+  benchmarkChartStartDate(): string {
+    const points = this.benchmarkChartAlignedPoints();
+    if (!points.length) return '';
+    return new Intl.DateTimeFormat('en-IN', {
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric',
+    }).format(new Date(points[0].date));
+  }
+
   private benchmarkChartValues(axis: 'product' | 'benchmark'): number[] {
     return this.benchmarkChartIndexedSeries(axis).map(point => point.value);
   }

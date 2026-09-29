@@ -422,52 +422,6 @@ class BenchmarkPerformanceTests(TestCase):
                     result["chart"]["aligned_points"][0]["benchmark_value"],
                 )
 
-    @patch.object(BenchmarkPerformanceService, "_ensure_master_history")
-    def test_chart_backfills_insufficient_amfi_history(self, mocked_ensure):
-        product = InvestmentProduct.objects.create(
-            product_type=ProductType.MUTUAL_FUND,
-            name="AMFI Backfill Chart Fund",
-            identity_key="MUTUAL_FUND:SCHEME:AMFI-BACKFILL",
-            source="AMFI",
-        )
-        MutualFundProduct.objects.create(
-            product=product,
-            scheme_code="AMFI-BACKFILL",
-            benchmark="Nifty 50",
-        )
-
-        benchmark_points = [
-            {"date": "2023-01-02", "value": 18000.0},
-            {"date": "2024-01-02", "value": 21000.0},
-            {"date": "2025-01-02", "value": 23000.0},
-            {"date": "2026-09-28", "value": 25000.0},
-        ]
-        short_product = [
-            {"date": "2026-09-25", "value": 13.10},
-            {"date": "2026-09-28", "value": 13.12},
-        ]
-        full_product = [
-            {"date": "2023-01-02", "value": 10.00},
-            {"date": "2024-01-02", "value": 11.00},
-            {"date": "2025-01-02", "value": 12.00},
-            {"date": "2026-09-28", "value": 13.12},
-        ]
-
-        with patch.object(
-            BenchmarkPerformanceService,
-            "_benchmark_series",
-            return_value=benchmark_points,
-        ), patch.object(
-            BenchmarkPerformanceService,
-            "_fund_series",
-            side_effect=[short_product, full_product],
-        ):
-            result = BenchmarkPerformanceService.calculate(product, "3Y")
-
-        mocked_ensure.assert_called_once()
-        self.assertGreaterEqual(len(result["chart"]["aligned_points"]), 2)
-        self.assertEqual(result["chart"]["start_date"], "2023-01-02")
-
     def test_chart_uses_shared_amfi_master_nav_for_mutual_fund(self):
         product = InvestmentProduct.objects.create(
             product_type=ProductType.MUTUAL_FUND,

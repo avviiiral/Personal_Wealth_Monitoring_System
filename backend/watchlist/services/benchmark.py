@@ -9,6 +9,7 @@ from typing import Any
 import requests
 import yfinance as yf
 from curl_cffi import requests as curl_requests
+from django.db import models
 from django.utils import timezone
 
 from mutual_funds.models import AMFIMasterNAV

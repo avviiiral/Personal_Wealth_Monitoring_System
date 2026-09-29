@@ -44,27 +44,6 @@ def _watchlist_user_ids(request):
 def _filtered_products(request, product_type=None):
     queryset = InvestmentProduct.objects.filter(is_active=True).select_related("mutual_fund", "pms")
 
-    # Do not display products that have no usable performance/AUM data at all.
-    # Keep the underlying products in the database; this is only a Watch List
-    # presentation filter. A product is visible when it has at least one of the
-    # displayed return metrics or an AUM value.
-    displayable_snapshot = PerformanceSnapshot.objects.filter(
-        product_id=OuterRef("pk"),
-    ).filter(
-        Q(return_1m__isnull=False)
-        | Q(return_3m__isnull=False)
-        | Q(return_6m__isnull=False)
-        | Q(return_1y__isnull=False)
-        | Q(return_3y__isnull=False)
-        | Q(return_5y__isnull=False)
-        | Q(cagr__isnull=False)
-    )
-    queryset = queryset.filter(
-        Q(mutual_fund__aum__isnull=False)
-        | Q(pms__aum__isnull=False)
-        | Exists(displayable_snapshot)
-    )
-
     if product_type:
         queryset = queryset.filter(product_type=product_type)
     params = request.query_params

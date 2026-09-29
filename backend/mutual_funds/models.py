@@ -193,6 +193,10 @@ class MutualFundTransaction(models.Model):
         ]
         indexes = [
             models.Index(fields=["family", "source_key"], name="mf_tx_family_source_key_idx"),
+            models.Index(
+                fields=["family", "family_name", "scheme", "transaction_date", "created_at", "id"],
+                name="mf_tx_family_scheme_order_idx",
+            ),
         ]
 
     def __str__(self):

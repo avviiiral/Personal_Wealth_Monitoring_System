@@ -256,13 +256,26 @@ function getAllocationComment(
 ): string {
   const difference = percentage - standard;
 
+  // Keep the PDF comments identical to the Dashboard:
+  // within +/- 2 percentage points = Neutral;
+  // below standard = Underweight;
+  // above standard = Overweight.
   if (Math.abs(difference) <= 2) {
     return 'Neutral';
   }
 
-  return difference > 2
-    ? 'Invest Less in Other Asset Category'
-    : 'Invest More in this Category';
+  return difference < 0 ? 'Underweight' : 'Overweight';
+}
+
+function formatLakhs(value: number | null | undefined): string {
+  if (value === null || value === undefined || Number.isNaN(value)) {
+    return '-';
+  }
+
+  return (value / 100000).toLocaleString('en-IN', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }) + ' L';
 }
 
 function buildCategoryAllocationRows(data: PortfolioReviewReportData): Array<{
@@ -464,7 +477,7 @@ function drawExecutiveSummaryPage(
 
   const allocationRows = buildCategoryAllocationRows(data).map((row) => [
     row.category,
-    formatInr(row.value),
+    formatLakhs(row.value),
     formatPercent(row.percentage),
     formatPercent(row.standard),
     row.comment,
@@ -473,7 +486,7 @@ function drawExecutiveSummaryPage(
   autoTable(doc, {
     startY: 52,
     margin: { left: PAGE_W / 2 + 4, right: MARGIN },
-    head: [['Asset Allocation', 'Value', '%', 'Standard', 'Comments']],
+    head: [['Asset Allocation', 'Value (Lakhs)', '%', 'Standard', 'Comments']],
     body: allocationRows,
     theme: 'plain',
     headStyles: {

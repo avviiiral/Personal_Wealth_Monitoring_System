@@ -596,6 +596,99 @@ class AMFIHistoricalMasterImportTests(TestCase):
         )
         self.assertEqual(history_call.kwargs["params"]["sd_id"], "154043")
 
+    def test_current_api_history_falls_back_to_explicit_fund_type(self):
+        class FakeResponse:
+            def __init__(self, payload):
+                self.payload = payload
+                self.status_code = 200
+                self.headers = {"Content-Type": "application/json"}
+
+            def raise_for_status(self):
+                return None
+
+            def json(self):
+                return self.payload
+
+        responses = [
+            FakeResponse({"data": []}),
+            FakeResponse({"data": []}),
+            FakeResponse({
+                "data": [{
+                    "type": "Close Ended",
+                    "categories": [{
+                        "category": "Other ETFs",
+                        "groups": [{
+                            "mutualFundId": "62",
+                            "schemes": [{
+                                "schemeId": "153357",
+                                "schemeName": "360 ONE Gold ETF",
+                            }],
+                        }],
+                    }],
+                }]
+            }),
+            FakeResponse({
+                "data": [{
+                    "nav_id": "198765",
+                    "nav_name": "360 ONE Gold ETF - Direct Plan - Growth Option",
+                    "MF_ID": "62",
+                }]
+            }),
+            FakeResponse({
+                "data": {
+                    "mf_name": "360 ONE Mutual Fund",
+                    "scheme_name": "360 ONE Gold ETF",
+                    "nav_groups": [{
+                        "nav_name": "360 ONE Gold ETF - Direct Plan - Growth Option",
+                        "historical_records": [{
+                            "date": "2026-09-29",
+                            "nav": "101.25",
+                            "repurchase_price": "101.25",
+                            "sale_price": "101.25",
+                        }],
+                    }],
+                },
+            }),
+        ]
+
+        from mutual_funds.models import AMFIMasterScheme
+
+        AMFIMasterScheme.objects.create(
+            scheme_code="153357",
+            scheme_name="360 ONE Gold ETF - Direct Plan - Growth Option",
+            is_active=True,
+        )
+
+        with patch(
+            "mutual_funds.services.amfi.requests.get",
+            side_effect=responses,
+        ) as mock_get:
+            records = AMFIService.download_historical_nav(
+                date(2026, 9, 1),
+                date(2026, 9, 29),
+                scheme_codes={"153357"},
+            )
+
+        self.assertEqual(len(records), 1)
+        self.assertEqual(records[0]["scheme_code"], "153357")
+        self.assertEqual(records[0]["nav"], Decimal("101.25"))
+
+        self.assertEqual(mock_get.call_count, 5)
+        latest_types = [
+            call.kwargs["params"]["type"]
+            for call in mock_get.call_args_list[:3]
+        ]
+        self.assertEqual(
+            latest_types,
+            ["", "Open Ended", "Close Ended"],
+        )
+
+        history_call = mock_get.call_args_list[-1]
+        self.assertEqual(
+            history_call.kwargs["params"]["sd_id"],
+            "198765",
+        )
+
     def test_legacy_historical_download_rejects_html(self):
         class FakeResponse:
             text = "<html><body>View/Download NAV History</body></html>"

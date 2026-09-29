@@ -149,13 +149,23 @@ class BenchmarkPerformanceService:
                 results[benchmark] = {"downloaded": False, "rows": count}
                 continue
 
-            points = (
-                cls._nifty_tri_series(start, end)
-                if benchmark == "Nifty 50"
-                else cls._bse_series(start)
-            )
-            saved = cls.save_benchmark_master(benchmark, points)
-            results[benchmark] = {"downloaded": True, "rows": saved}
+            try:
+                points = (
+                    cls._nifty_tri_series(start, end)
+                    if benchmark == "Nifty 50"
+                    else cls._bse_series(start)
+                )
+                saved = cls.save_benchmark_master(benchmark, points)
+                results[benchmark] = {"downloaded": True, "rows": saved}
+            except Exception as exc:
+                # One unavailable provider must not prevent the other
+                # benchmark from bootstrapping.
+                results[benchmark] = {
+                    "downloaded": False,
+                    "rows": count,
+                    "error": str(exc),
+                }
+
 
         return results
 

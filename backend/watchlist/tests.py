@@ -63,10 +63,52 @@ class WatchListTests(TestCase):
         for index in range(3):
             product = InvestmentProduct.objects.create(product_type=ProductType.MUTUAL_FUND, name=f"Fund {index}", identity_key=f"MUTUAL_FUND:SCHEME:{index}", source="AMFI")
             MutualFundProduct.objects.create(product=product, scheme_code=str(index))
+            PerformanceSnapshot.objects.create(
+                product=product,
+                date="2026-09-15",
+                nav_or_value=Decimal("10"),
+                return_1m=Decimal(str(index + 1)),
+                source="AMFI",
+            )
         response = self.client.get("/api/watch-list/products/?product_type=MUTUAL_FUND&page_size=2")
         self.assertEqual(response.status_code, 200)
         self.assertEqual(len(response.data["results"]), 2)
         self.assertEqual(response.data["count"], 3)
+
+    def test_api_hides_products_with_no_displayable_values(self):
+        visible = InvestmentProduct.objects.create(
+            product_type=ProductType.MUTUAL_FUND,
+            name="Visible Fund",
+            identity_key="MUTUAL_FUND:SCHEME:VISIBLE",
+            source="AMFI",
+        )
+        MutualFundProduct.objects.create(
+            product=visible,
+            scheme_code="VISIBLE",
+            aum=Decimal("100"),
+        )
+
+        hidden = InvestmentProduct.objects.create(
+            product_type=ProductType.MUTUAL_FUND,
+            name="Empty Fund",
+            identity_key="MUTUAL_FUND:SCHEME:EMPTY",
+            source="AMFI",
+        )
+        MutualFundProduct.objects.create(product=hidden, scheme_code="EMPTY")
+        PerformanceSnapshot.objects.create(
+            product=hidden,
+            date="2026-09-15",
+            nav_or_value=Decimal("10"),
+            source="AMFI",
+        )
+
+        response = self.client.get(
+            "/api/watch-list/products/?product_type=MUTUAL_FUND&page_size=100"
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["count"], 1)
+        self.assertEqual(response.data["results"][0]["name"], "Visible Fund")
 
     def test_watch_list_uses_latest_snapshot_for_metrics_and_performance(self):
         product = InvestmentProduct.objects.create(product_type=ProductType.MUTUAL_FUND, name="Snapshot Fund", identity_key="MUTUAL_FUND:SCHEME:SNAPSHOT", source="AMFI")

@@ -155,6 +155,20 @@ class AMFIService:
             for code in codes
             if code in latest_by_code
         }
+
+        # The current API may expose a generic Scheme_Name while NAVAll/master
+        # retains the exact option name (for example Direct - Growth). Prefer
+        # that stored authoritative name when it exists.
+        master_names = dict(
+            AMFIMasterScheme.objects.filter(
+                scheme_code__in=codes,
+            ).values_list("scheme_code", "scheme_name")
+        )
+        for code, metadata in requested.items():
+            metadata["scheme_name"] = (
+                master_names.get(code) or metadata["scheme_name"]
+            )
+
         if len(requested) != len(codes):
             missing = sorted(codes - requested.keys())
             raise RuntimeError(

@@ -10,8 +10,7 @@ import yfinance as yf
 from django.utils import timezone
 
 from mutual_funds.models import AMFIMasterNAV
-from mutual_funds.services.amfi import AMFIService
-from watchlist.models import PerformanceSnapshot
+from watchlist.models import BenchmarkMasterPoint, PerformanceSnapshot
 
 
 class BenchmarkPerformanceService:
@@ -364,9 +363,53 @@ class BenchmarkPerformanceService:
 
     @classmethod
     def _benchmark_series(cls, benchmark, start):
-        if benchmark == "BSE 500":
-            return cls._bse_series(start)
-        return cls._series(cls._ticker(benchmark), start)
+        """Read benchmark history from the shared local master only.
+
+        The Watch List GET endpoint is intentionally read-only. Network
+        ingestion is performed by the benchmark master refresh command and
+        persisted here so every product/family reuses the same history.
+        """
+        points = (
+            BenchmarkMasterPoint.objects
+            .filter(
+                benchmark=benchmark,
+                source="MASTER",
+                date__gte=start,
+            )
+            .order_by("date", "id")
+            .values("date", "value")
+        )
+        return [
+            {
+                "date": point["date"].isoformat(),
+                "value": float(point["value"]),
+            }
+            for point in points
+            if point["value"] is not None and float(point["value"]) > 0
+        ]
+
+    @classmethod
+    def save_benchmark_master(cls, benchmark, points):
+        """Persist an externally fetched benchmark series as shared master data."""
+        objects = [
+            BenchmarkMasterPoint(
+                benchmark=benchmark,
+                date=date.fromisoformat(point["date"]),
+                value=point["value"],
+                source="MASTER",
+            )
+            for point in points
+            if point.get("date") and point.get("value") is not None
+        ]
+        if objects:
+            BenchmarkMasterPoint.objects.bulk_create(
+                objects,
+                batch_size=1000,
+                update_conflicts=True,
+                unique_fields=["benchmark", "date", "source"],
+                update_fields=["value"],
+            )
+        return len(objects)
 
     @staticmethod
     def _period_return_detail(points, days, annualize_long_periods=True):
@@ -517,46 +560,6 @@ class BenchmarkPerformanceService:
             or getattr(product, "external_identifier", None)
             or ""
         ).strip() or None
-
-    @classmethod
-    def _ensure_master_history(cls, product, start, end):
-        """Backfill the shared AMFI master only for the requested scheme/window.
-
-        AMFI's public historical endpoint accepts at most 90 days per request.
-        The response contains all schemes, so the importer filters it before
-        writing; no per-user AMFI download or family-level NAV duplication is
-        performed.
-        """
-        scheme_code = cls._fund_scheme_code(product)
-        if not scheme_code or start > end:
-            return
-
-        # Do not make a network call when a window already contains a normal
-        # business-day density of observations. The latest NAV import can leave
-        # only one observation in the most recent window, so checking only for
-        # existence is insufficient.
-        window_start = start
-        while window_start <= end:
-            window_end = min(window_start + timedelta(days=89), end)
-            expected_minimum = max(
-                5,
-                int((window_end - window_start).days * 0.5),
-            )
-            existing_count = AMFIMasterNAV.objects.filter(
-                scheme__scheme_code=scheme_code,
-                source="AMFI",
-                date__gte=window_start,
-                date__lte=window_end,
-            ).count()
-
-            if existing_count < expected_minimum:
-                AMFIService.import_historical_master_navs(
-                    window_start,
-                    window_end,
-                    scheme_codes={scheme_code},
-                )
-
-            window_start = window_end + timedelta(days=1)
 
     @classmethod
     def _fund_series(cls, product, start, end=None):
@@ -832,48 +835,9 @@ class BenchmarkPerformanceService:
             end=timezone.now().date(),
         )
 
-        # A Watch List chart must not silently fall back to the latest few
-        # snapshots when the shared AMFI master does not yet contain the
-        # requested historical window. For real AMFI growth products, lazily
-        # backfill only when the local chart history is clearly insufficient,
-        # then read the newly persisted master data. This is a one-time
-        # write-side repair; subsequent chart GETs use the shared master.
-        if (
-            getattr(product, "product_type", None) == "MUTUAL_FUND"
-            and getattr(product, "source", None) == "AMFI"
-            and not is_idcw
-        ):
-            requested_history_start = timezone.now().date() - timedelta(
-                days=chart_days + 31
-            )
-            first_product_date = (
-                date.fromisoformat(product_chart[0]["date"])
-                if product_chart
-                else None
-            )
-            history_is_insufficient = (
-                len(product_chart) < 2
-                or first_product_date is None
-                or first_product_date > requested_history_start
-            )
-            if history_is_insufficient:
-                try:
-                    cls._ensure_master_history(
-                        product,
-                        requested_history_start,
-                        timezone.now().date(),
-                    )
-                    product_chart = cls._fund_series(
-                        product,
-                        requested_history_start,
-                        end=timezone.now().date(),
-                    )
-                except Exception:
-                    # Keep the existing local snapshot fallback if AMFI is
-                    # temporarily unavailable. The graph should never fail
-                    # solely because historical backfill is unavailable.
-                    pass
-
+        # Chart requests are read-only. Historical AMFI master data is
+        # prepared by the dedicated management command, not downloaded from
+        # this API request.
         benchmark_chart_start = history_start - timedelta(days=10)
         benchmark_chart = [
             point

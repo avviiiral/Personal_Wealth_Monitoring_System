@@ -739,8 +739,8 @@ export class WatchListComponent implements OnInit, OnDestroy {
         y: Math.max(5, Math.min(94, y)),
         date: point.date,
         value: point.value,
-        productValue,
-        benchmarkValue,
+        productValue: productActual,
+        benchmarkValue: benchmarkActual,
         productIndexed,
         benchmarkIndexed,
         title,
@@ -785,7 +785,7 @@ export class WatchListComponent implements OnInit, OnDestroy {
     this.changeDetector.markForCheck();
   }
 
-  private formatChartValue(value: number): string {
+  formatChartValue(value: number): string {
     return new Intl.NumberFormat('en-IN', {
       minimumFractionDigits: 2,
       maximumFractionDigits: 2,

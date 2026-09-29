@@ -100,27 +100,6 @@ def _filtered_products(request, product_type=None):
 
     queryset = queryset.order_by(prefix + ordering_field, "id")
 
-    if status not in {"OWNED", "UNIVERSAL"}:
-        # Keep the existing Watch List presentation rule for the normal
-        # catalogue. Ownership views must evaluate ownership before this
-        # presentation filter so newly imported/held assets are discoverable.
-        displayable_snapshot = PerformanceSnapshot.objects.filter(
-            product_id=OuterRef("pk"),
-        ).filter(
-            Q(return_1m__isnull=False)
-            | Q(return_3m__isnull=False)
-            | Q(return_6m__isnull=False)
-            | Q(return_1y__isnull=False)
-            | Q(return_3y__isnull=False)
-            | Q(return_5y__isnull=False)
-            | Q(cagr__isnull=False)
-        )
-        queryset = queryset.filter(
-            Q(mutual_fund__aum__isnull=False)
-            | Q(pms__aum__isnull=False)
-            | Exists(displayable_snapshot)
-        )
-
     if status == "WATCHLIST":
         # Watch List is shared by every active member of the caller's
         # currently selected family.

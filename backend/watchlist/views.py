@@ -119,8 +119,9 @@ def _filtered_products(request, product_type=None):
         scoped_positions = family_scope(PortfolioPosition.objects, request.user).filter(active_position)
 
         # Resolve ownership from the same family-scoped positions used by
-        # OwnershipService.bulk_enrich(). Keeping this status filter as an
-        # explicit product-id set avoids brittle nested OuterRef correlation.
+        # OwnershipService.bulk_enrich(). Use the complete filtered product
+        # set here so OWNED/UNIVERSAL status is independent of catalogue
+        # displayability data.
         products_for_ownership = list(queryset)
         scoped_positions = list(
             scoped_positions.select_related("asset").only(

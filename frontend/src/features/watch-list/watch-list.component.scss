@@ -362,6 +362,26 @@ html.dark-theme .watch-list-page .status.owned {
   color: var(--ink);
 }
 
+.benchmark-chart-tooltip-base {
+  margin-bottom: 2px;
+  padding-bottom: 7px;
+  color: var(--ink);
+  font-size: 10px;
+  font-weight: 650;
+}
+
+.benchmark-chart-tooltip-base span {
+  display: block;
+}
+
+.benchmark-chart-tooltip-base small {
+  display: block;
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 400;
+}
+
 .benchmark-chart-tooltip-row {
   display: flex;
   align-items: center;

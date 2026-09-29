@@ -464,3 +464,103 @@ class AMFINavImportBatchingTests(TestCase):
 
         self.assertEqual(result["schemes"], 0)
         self.assertEqual(result["nav_records"], 0)
+
+
+
+class AMFIHistoricalMasterImportTests(TestCase):
+    """Regression coverage for the live AMFI historical report contract."""
+
+    def test_historical_report_parser_uses_report_header_positions(self):
+        text = (
+            "Scheme Code;Scheme Name;ISIN Div Payout/ISIN Growth;"
+            "ISIN Div Reinvestment;Net Asset Value;Repurchase Price;"
+            "Sale Price;Date\n"
+            "119551;SBI Bluechip Fund - Direct Plan - Growth;"
+            "INF200K01A11;-;123.4567;123.4567;123.4567;29-Sep-2026\n"
+            "120503;ICICI Prudential Bluechip Fund - Direct Plan - Growth;"
+            "INF109K01X12;-;234.5678;234.5678;234.5678;29-Sep-2026\n"
+        )
+
+        records = AMFIService.parse_nav_file(
+            text,
+            historical=True,
+            scheme_codes={"119551", "120503"},
+        )
+
+        self.assertEqual(len(records), 2)
+        self.assertEqual(records[0]["scheme_code"], "119551")
+        self.assertEqual(records[0]["nav"], Decimal("123.4567"))
+        self.assertEqual(records[0]["date"], date(2026, 9, 29))
+        self.assertEqual(records[1]["scheme_code"], "120503")
+        self.assertEqual(records[1]["nav"], Decimal("234.5678"))
+
+    def test_historical_report_filter_does_not_match_unrequested_scheme(self):
+        text = (
+            "Scheme Code;Scheme Name;ISIN Div Payout/ISIN Growth;"
+            "ISIN Div Reinvestment;Net Asset Value;Repurchase Price;"
+            "Sale Price;Date\n"
+            "119551;Requested Fund;INF000000001;-;10.00;10.00;10.00;29-Sep-2026\n"
+            "999999;Other Fund;INF000000999;-;20.00;20.00;20.00;29-Sep-2026\n"
+        )
+
+        records = AMFIService.parse_nav_file(
+            text,
+            historical=True,
+            scheme_codes={"119551"},
+        )
+
+        self.assertEqual([record["scheme_code"] for record in records], ["119551"])
+
+    def test_historical_download_retries_when_amfi_returns_html_page(self):
+        class FakeResponse:
+            def __init__(self, text, status_code=200, content_type="text/html"):
+                self.text = text
+                self.status_code = status_code
+                self.headers = {"Content-Type": content_type}
+                self.content = text.encode("utf-8")
+                self.url = "https://portal.amfiindia.com/DownloadNAVHistoryReport_Po.aspx"
+
+            @property
+            def ok(self):
+                return 200 <= self.status_code < 400
+
+            def raise_for_status(self):
+                if not self.ok:
+                    raise RuntimeError(f"HTTP {self.status_code}")
+
+        class FakeSession:
+            responses = [
+                FakeResponse("<html><body>View/Download NAV History</body></html>"),
+                FakeResponse(
+                    "Scheme Code;Scheme Name;ISIN Div Payout/ISIN Growth;"
+                    "ISIN Div Reinvestment;Net Asset Value;Repurchase Price;"
+                    "Sale Price;Date\n"
+                    "119551;Requested Fund;INF000000001;-;10.00;10.00;10.00;29-Sep-2026\n",
+                    content_type="text/plain",
+                ),
+            ]
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+            def get(self, *args, **kwargs):
+                return self.responses.pop(0)
+
+        with patch("mutual_funds.services.amfi.requests.Session", return_value=FakeSession()):
+            text = AMFIService.download_historical_nav(
+                date(2026, 9, 1),
+                date(2026, 9, 29),
+            )
+
+        self.assertIn("Scheme Code;Scheme Name", text)
+        self.assertTrue(AMFIService._is_historical_report(text))
+
+    def test_historical_report_detection_rejects_html(self):
+        self.assertFalse(
+            AMFIService._is_historical_report(
+                "<html><body>Application Error! Please try again later.</body></html>"
+            )
+        )

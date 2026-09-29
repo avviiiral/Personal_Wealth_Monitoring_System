@@ -244,17 +244,55 @@
                   ></polyline>
 
                   <g *ngFor="let point of benchmarkChartCirclePoints('product')">
-                    <circle [attr.cx]="point.x" [attr.cy]="point.y" r="0.65" fill="var(--accent)">
-                      <title>{{ point.title }}</title>
-                    </circle>
+                    <circle
+                      [attr.cx]="point.x"
+                      [attr.cy]="point.y"
+                      r="1.1"
+                      fill="var(--accent)"
+                      pointer-events="all"
+                      tabindex="0"
+                      (mouseenter)="showBenchmarkPointTooltip(point, $event)"
+                      (mouseleave)="hideBenchmarkPointTooltip()"
+                      (focus)="showBenchmarkPointTooltip(point, $event)"
+                      (blur)="hideBenchmarkPointTooltip()"
+                    ></circle>
                   </g>
 
                   <g *ngFor="let point of benchmarkChartCirclePoints('benchmark')">
-                    <circle [attr.cx]="point.x" [attr.cy]="point.y" r="0.65" fill="var(--negative)">
-                      <title>{{ point.title }}</title>
-                    </circle>
+                    <circle
+                      [attr.cx]="point.x"
+                      [attr.cy]="point.y"
+                      r="1.1"
+                      fill="var(--negative)"
+                      pointer-events="all"
+                      tabindex="0"
+                      (mouseenter)="showBenchmarkPointTooltip(point, $event)"
+                      (mouseleave)="hideBenchmarkPointTooltip()"
+                      (focus)="showBenchmarkPointTooltip(point, $event)"
+                      (blur)="hideBenchmarkPointTooltip()"
+                    ></circle>
                   </g>
                 </svg>
+
+                <div
+                  *ngIf="benchmarkTooltip?.visible"
+                  class="benchmark-chart-tooltip"
+                  [style.left.px]="benchmarkTooltip.x"
+                  [style.top.px]="benchmarkTooltip.y"
+                >
+                  <div class="benchmark-chart-tooltip-date">{{ benchmarkTooltip.date }}</div>
+                  <div>
+                    <span>{{ benchmarkChartProductLabel() }}</span>
+                    <strong>{{ formatChartValue(benchmarkTooltip.productValue) }}</strong>
+                  </div>
+                  <div>
+                    <span>{{ benchmarkDisplayName(benchmarkData.benchmark || benchmarkModalProduct.benchmark) }}</span>
+                    <strong>{{ formatChartValue(benchmarkTooltip.benchmarkValue) }}</strong>
+                  </div>
+                  <div class="benchmark-chart-tooltip-index">
+                    Index: {{ benchmarkTooltip.productIndexed.toFixed(3) }} / {{ benchmarkTooltip.benchmarkIndexed.toFixed(3) }}
+                  </div>
+                </div>
 
                 <div class="chart-x-axis" aria-hidden="true">
                   <span *ngFor="let tick of benchmarkChartXAxisTicks()" [style.left.%]="tick.left">

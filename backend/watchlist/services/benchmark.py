@@ -415,11 +415,16 @@ class BenchmarkPerformanceService:
             points = cls._load_bse_csv(
                 source_file.read_text(encoding="utf-8-sig")
             )
-            return [
+            filtered = [
                 point
                 for point in points
                 if date.fromisoformat(point["date"]) >= start
             ]
+            # A bundled CSV is authoritative only when it actually covers the
+            # requested start date. Otherwise continue to the live sources so
+            # 5Y/other long periods are not silently truncated.
+            if points and date.fromisoformat(points[0]["date"]) <= start:
+                return filtered
 
         # First try the BSE historical endpoint. If the public endpoint does
         # not provide BSE500T, fall back to exchange-traded products that

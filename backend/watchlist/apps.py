@@ -39,8 +39,19 @@ class WatchlistConfig(AppConfig):
 
     @classmethod
     def _watchlist_refresh_loop(cls):
-        # Do not perform a large Watch List refresh during Django startup.
-        # The daily schedule below is the single automatic refresh path.
+        # Bootstrap shared benchmark history asynchronously so a fresh clone
+        # never requires a manual benchmark download before the Watch List
+        # comparison chart can be opened.
+        try:
+            from watchlist.services.benchmark import BenchmarkPerformanceService
+
+            result = BenchmarkPerformanceService.ensure_benchmark_master_history()
+            logger.info("Automatic benchmark master bootstrap completed: %s", result)
+        except Exception:
+            logger.exception("Automatic benchmark master bootstrap failed.")
+        finally:
+            close_old_connections()
+
         now = datetime.now(cls.IST)
         next_run = now.replace(hour=6, minute=0, second=0, microsecond=0)
         if now >= next_run:

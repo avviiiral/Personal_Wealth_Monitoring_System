@@ -214,6 +214,8 @@
                   viewBox="0 0 100 100"
                   preserveAspectRatio="none"
                   role="img"
+                  (mousemove)="handleBenchmarkChartMove($event)"
+                  (mouseleave)="hideBenchmarkChartTooltip()"
                   [attr.aria-label]="'Indexed performance chart for ' + benchmarkChartProductLabel() + ' and ' + benchmarkDisplayName(benchmarkData.benchmark || benchmarkModalProduct.benchmark)"
                 >
                   <line
@@ -222,8 +224,8 @@
                     x2="92"
                     [attr.y1]="tick.top"
                     [attr.y2]="tick.top"
-                    stroke="var(--surface-line)"
-                    stroke-width="0.25"
+                    [attr.stroke]="tick.value === 100 ? 'var(--muted)' : 'var(--surface-line)'"
+                    [attr.stroke-width]="tick.value === 100 ? '0.45' : '0.25'"
                     vector-effect="non-scaling-stroke"
                   ></line>
 
@@ -231,7 +233,7 @@
                     [attr.points]="benchmarkPolyline('product')"
                     fill="none"
                     stroke="var(--accent)"
-                    stroke-width="1.5"
+                    stroke-width="1.35"
                     vector-effect="non-scaling-stroke"
                   ></polyline>
 
@@ -239,33 +241,50 @@
                     [attr.points]="benchmarkPolyline('benchmark')"
                     fill="none"
                     stroke="var(--negative)"
-                    stroke-width="1.5"
+                    stroke-width="1.35"
                     vector-effect="non-scaling-stroke"
                   ></polyline>
 
-                  <g *ngFor="let point of benchmarkChartCirclePoints('product')">
+                  <ng-container *ngIf="benchmarkTooltip as tooltip">
+                    <line
+                      [attr.x1]="tooltip.chartX"
+                      [attr.x2]="tooltip.chartX"
+                      y1="5"
+                      y2="94"
+                      stroke="var(--muted)"
+                      stroke-width="0.35"
+                      stroke-dasharray="1.5 1.5"
+                      opacity="0.65"
+                      vector-effect="non-scaling-stroke"
+                    ></line>
                     <circle
-                      [attr.cx]="point.x"
-                      [attr.cy]="point.y"
-                      r="1.1"
+                      [attr.cx]="tooltip.chartX"
+                      [attr.cy]="tooltip.productY"
+                      r="1.9"
                       fill="var(--accent)"
-                      pointer-events="all"
-                      (mouseenter)="showBenchmarkPointTooltip(point, $event)"
-                      (mouseleave)="hideBenchmarkPointTooltip()"
+                      stroke="var(--surface)"
+                      stroke-width="0.8"
+                      vector-effect="non-scaling-stroke"
                     ></circle>
-                  </g>
-
-                  <g *ngFor="let point of benchmarkChartCirclePoints('benchmark')">
                     <circle
-                      [attr.cx]="point.x"
-                      [attr.cy]="point.y"
-                      r="1.1"
+                      [attr.cx]="tooltip.chartX"
+                      [attr.cy]="tooltip.benchmarkY"
+                      r="1.9"
                       fill="var(--negative)"
-                      pointer-events="all"
-                      (mouseenter)="showBenchmarkPointTooltip(point, $event)"
-                      (mouseleave)="hideBenchmarkPointTooltip()"
+                      stroke="var(--surface)"
+                      stroke-width="0.8"
+                      vector-effect="non-scaling-stroke"
                     ></circle>
-                  </g>
+                  </ng-container>
+
+                  <rect
+                    x="8"
+                    y="5"
+                    width="84"
+                    height="89"
+                    fill="transparent"
+                    pointer-events="all"
+                  ></rect>
                 </svg>
 
                 <div
@@ -274,17 +293,18 @@
                   [style.left.px]="tooltip.x"
                   [style.top.px]="tooltip.y"
                 >
-                  <div class="benchmark-chart-tooltip-date">{{ tooltip.date }}</div>
-                  <div>
-                    <span>{{ benchmarkChartProductLabel() }}</span>
+                  <div class="benchmark-chart-tooltip-date">{{ tooltip.date | date:'dd MMM yyyy' }}</div>
+                  <div class="benchmark-chart-tooltip-row">
+                    <span>{{ benchmarkChartProductLabel() }}<small>{{ benchmarkChartProductUnit() }}</small></span>
                     <strong>{{ formatChartValue(tooltip.productValue) }}</strong>
                   </div>
-                  <div>
-                    <span>{{ benchmarkDisplayName(benchmarkData.benchmark || benchmarkModalProduct.benchmark) }}</span>
+                  <div class="benchmark-chart-tooltip-row">
+                    <span>{{ benchmarkDisplayName(benchmarkData.benchmark || benchmarkModalProduct.benchmark) }}<small>Benchmark value</small></span>
                     <strong>{{ formatChartValue(tooltip.benchmarkValue) }}</strong>
                   </div>
                   <div class="benchmark-chart-tooltip-index">
-                    Index: {{ tooltip.productIndexed.toFixed(3) }} / {{ tooltip.benchmarkIndexed.toFixed(3) }}
+                    <span>Indexed performance</span>
+                    <strong>{{ tooltip.productIndexed.toFixed(3) }} / {{ tooltip.benchmarkIndexed.toFixed(3) }}</strong>
                   </div>
                 </div>
 

@@ -748,38 +748,74 @@ export class WatchListComponent implements OnInit, OnDestroy {
     });
   }
 
-  showBenchmarkPointTooltip(
-    point: {
-      date: string;
-      productValue: number;
-      benchmarkValue: number;
-      productIndexed: number;
-      benchmarkIndexed: number;
-    },
-    event: MouseEvent,
-  ): void {
-    const target = event.currentTarget as Element | null;
-    const chartArea = target?.closest('.relative-chart-area') as HTMLElement | null;
-    if (!chartArea) return;
+  handleBenchmarkChartMove(event: MouseEvent): void {
+    const svg = event.currentTarget as SVGElement | null;
+    const chartArea = svg?.closest('.relative-chart-area') as HTMLElement | null;
+    if (!svg || !chartArea) return;
 
-    const rect = chartArea.getBoundingClientRect();
-    const maxX = Math.max(12, rect.width - 290);
-    const maxY = Math.max(12, rect.height - 112);
+    const svgRect = svg.getBoundingClientRect();
+    const areaRect = chartArea.getBoundingClientRect();
+    if (!svgRect.width || !svgRect.height) return;
+
+    const localX = event.clientX - svgRect.left;
+    const localY = event.clientY - svgRect.top;
+    const plotLeft = svgRect.width * 0.08;
+    const plotRight = svgRect.width * 0.92;
+    const plotTop = svgRect.height * 0.05;
+    const plotBottom = svgRect.height * 0.94;
+
+    if (localX < plotLeft || localX > plotRight || localY < plotTop || localY > plotBottom) {
+      this.hideBenchmarkChartTooltip();
+      return;
+    }
+
+    const targetX = 8 + ((localX - plotLeft) / Math.max(plotRight - plotLeft, 1)) * 84;
+    const productPoints = this.benchmarkChartCirclePoints('product');
+    const benchmarkPoints = this.benchmarkChartCirclePoints('benchmark');
+    if (!productPoints.length || productPoints.length !== benchmarkPoints.length) return;
+
+    let nearestIndex = 0;
+    let nearestDistance = Number.POSITIVE_INFINITY;
+    productPoints.forEach((point, index) => {
+      const distance = Math.abs(point.x - targetX);
+      if (distance < nearestDistance) {
+        nearestDistance = distance;
+        nearestIndex = index;
+      }
+    });
+
+    const productPoint = productPoints[nearestIndex];
+    const benchmarkPoint = benchmarkPoints[nearestIndex];
+    if (!productPoint || !benchmarkPoint) return;
+
+    const tooltipWidth = 282;
+    const tooltipHeight = 126;
+    const pointerX = event.clientX - areaRect.left;
+    const pointerY = event.clientY - areaRect.top;
+    const x = pointerX > areaRect.width - tooltipWidth - 20
+      ? pointerX - tooltipWidth - 14
+      : pointerX + 14;
+    const y = pointerY > areaRect.height - tooltipHeight - 16
+      ? pointerY - tooltipHeight - 14
+      : pointerY + 14;
 
     this.benchmarkTooltip = {
       visible: true,
-      x: Math.min(Math.max(12, event.clientX - rect.left + 12), maxX),
-      y: Math.min(Math.max(12, event.clientY - rect.top + 12), maxY),
-      date: point.date,
-      productValue: point.productValue,
-      benchmarkValue: point.benchmarkValue,
-      productIndexed: point.productIndexed,
-      benchmarkIndexed: point.benchmarkIndexed,
+      x: Math.min(Math.max(8, x), Math.max(8, areaRect.width - tooltipWidth - 8)),
+      y: Math.min(Math.max(8, y), Math.max(8, areaRect.height - tooltipHeight - 8)),
+      chartX: productPoint.x,
+      productY: productPoint.y,
+      benchmarkY: benchmarkPoint.y,
+      date: productPoint.date,
+      productValue: productPoint.productValue,
+      benchmarkValue: productPoint.benchmarkValue,
+      productIndexed: productPoint.productIndexed,
+      benchmarkIndexed: productPoint.benchmarkIndexed,
     };
     this.changeDetector.markForCheck();
   }
 
-  hideBenchmarkPointTooltip(): void {
+  hideBenchmarkChartTooltip(): void {
     if (!this.benchmarkTooltip) return;
     this.benchmarkTooltip = null;
     this.changeDetector.markForCheck();
@@ -814,7 +850,10 @@ export class WatchListComponent implements OnInit, OnDestroy {
   }
 
   benchmarkChartYLabel(value: number): string {
-    return Number(value).toFixed(2);
+    const rounded = Math.round(Number(value));
+    return Math.abs(Number(value) - rounded) < 1e-8
+      ? String(rounded)
+      : Number(value).toFixed(1);
   }
 
   benchmarkChartXAxisTicks(): Array<{ label: string; left: number }> {
@@ -833,7 +872,6 @@ export class WatchListComponent implements OnInit, OnDestroy {
       : 6;
 
     const formatter = new Intl.DateTimeFormat('en-IN', {
-      day: '2-digit',
       month: 'short',
       year: 'numeric',
     });

@@ -47,6 +47,10 @@ class Command(BaseCommand):
         )
         start = today - timedelta(days=days + 31)
 
+        unresolved_schemes = []
+        resolved_scheme_count = 0
+        imported_nav_rows = 0
+
         if product is None:
             # Historical charts are displayed for the Watch List, so scope the
             # AMFI backfill to currently watchlisted Mutual Fund schemes.
@@ -63,10 +67,6 @@ class Command(BaseCommand):
                 .exclude(mutual_fund__scheme_code="")
                 .values_list("mutual_fund__scheme_code", flat=True)
             )
-
-            unresolved_schemes = []
-            resolved_scheme_count = 0
-            imported_nav_rows = 0
 
             if watchlisted_scheme_codes:
                 self.stdout.write(

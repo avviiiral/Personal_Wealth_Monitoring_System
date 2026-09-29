@@ -64,27 +64,32 @@ describe('WatchListComponent benchmark chart', () => {
     };
   }
 
-  it('renders mutual-fund NAV and benchmark values on independent axes', () => {
+  it('indexes mutual-fund NAV and benchmark from a shared base of 100', () => {
     setChart('MUTUAL_FUND');
 
     expect(component.benchmarkChartProductUnit()).toBe('NAV');
     expect(component.benchmarkChartHasData()).toBe(true);
-    expect(component.benchmarkChartRange('product').max).toBeLessThan(1000);
-    expect(component.benchmarkChartRange('benchmark').min).toBeGreaterThan(20000);
-    expect(component.benchmarkChartYTicks('product').length).toBeGreaterThan(1);
-    expect(component.benchmarkChartYTicks('benchmark').length).toBeGreaterThan(1);
-    expect(component.benchmarkPolyline(component.benchmarkData.chart.fund, 'product')).toContain(',');
+    expect(component.benchmarkChartRange().min).toBeLessThan(100);
+    expect(component.benchmarkChartRange().max).toBeGreaterThan(108);
+    expect(component.benchmarkChartYTicks().length).toBeGreaterThan(1);
+
+    const product = component.benchmarkPolyline('product');
+    const benchmark = component.benchmarkPolyline('benchmark');
+    expect(product).toContain(',');
+    expect(benchmark).toContain(',');
   });
 
-  it('renders PMS NAV/value and exact tooltip values from loaded chart data', () => {
+  it('renders PMS NAV/value and actual plus indexed values in the tooltip', () => {
     setChart('PMS');
 
     expect(component.benchmarkChartProductUnit()).toBe('NAV / Value');
-    const points = component.benchmarkChartCirclePoints(component.benchmarkData.chart.fund, 'product');
+    const points = component.benchmarkChartCirclePoints('product');
 
     expect(points[0].title).toContain('Test PMS — NAV / Value: 100.00');
-    expect(points[0].title).toContain('Nifty 50 — Value: 25,000.00');
+    expect(points[0].title).toContain('Index 100.000');
+    expect(points[0].title).toContain('Nifty 50: 25,000.00');
     expect(points[1].title).toContain('2026-09-15');
+    expect(points[1].title).toContain('Index 110.000');
   });
 
   it('formats historical dates for the X axis across the selected period', () => {

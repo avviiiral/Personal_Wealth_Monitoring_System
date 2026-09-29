@@ -68,6 +68,20 @@ It is built for **households, not just individuals**: a four-tier role hierarchy
 
 ---
 
+## 🔗 Data sources
+
+The application uses the following external data sources for market and investment data:
+
+| Data | Source |
+| --- | --- |
+| Stocks and ETFs | [Yahoo Finance](https://finance.yahoo.com/) via `yfinance` |
+| Mutual-fund latest NAVs | [AMFI India](https://www.amfiindia.com/) — AMFI latest NAV feed |
+| Mutual-fund historical NAVs | [AMFI India](https://www.amfiindia.com/) — AMFI historical NAV report |
+| Nifty 50 TRI | [NSE Indices](https://www.niftyindices.com/) — official Nifty 50 Total Return Index historical data |
+| BSE 500 TRI | [BSE India](https://www.bseindia.com/) — BSE500T historical data; deployments may also use the configured BSE 500 TRI CSV/URL or the supported TRI-tracking ETF fallback |
+| Portfolio news | [Google News](https://news.google.com/) RSS |
+| AI explanations | [Google Gemini](https://ai.google.dev/) |
+
 ## 🚀 Quick start
 
 > Full walkthrough with troubleshooting: **[SETUP.md](./SETUP.md)**. Prerequisites: Git, Python 3.12 (3.11+), Node.js 20+ (22 recommended).

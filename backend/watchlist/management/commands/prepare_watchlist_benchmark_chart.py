@@ -118,7 +118,7 @@ class Command(BaseCommand):
             self.stdout.write(
                 self.style.SUCCESS(
                     f"AMFI master preparation complete; "
-                    f"{imported_windows} historical windows refreshed."
+                    f"{result['nav_records']} historical NAV rows refreshed."
                 )
             )
 

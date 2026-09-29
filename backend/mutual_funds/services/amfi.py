@@ -33,6 +33,10 @@ class AMFIService:
         "https://portal.amfiindia.com/"
         "DownloadNAVHistoryReport_Po.aspx"
     )
+    AMFI_API_URL = "https://www.amfiindia.com"
+    AMFI_LATEST_API = f"{AMFI_API_URL}/api/latest-nav"
+    AMFI_SCHEME_LIST_API = f"{AMFI_API_URL}/api/get-nav-history/navs"
+    AMFI_HISTORY_API = f"{AMFI_API_URL}/api/nav-history"
 
     @staticmethod
     def _headers():

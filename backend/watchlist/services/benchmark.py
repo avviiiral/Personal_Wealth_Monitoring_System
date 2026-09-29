@@ -131,24 +131,24 @@ class BenchmarkPerformanceService:
                     )
 
                 raw_rows = payload.get("d", "[]")
-            rows = json.loads(raw_rows) if isinstance(raw_rows, str) else raw_rows
-            if isinstance(rows, str):
-                rows = json.loads(rows)
+                rows = json.loads(raw_rows) if isinstance(raw_rows, str) else raw_rows
+                if isinstance(rows, str):
+                    rows = json.loads(rows)
 
-            for row in rows or []:
-                point_date = cls._parse_date(row.get("Date"))
-                raw_value = row.get("TotalReturnsIndex")
-                if point_date is None or raw_value in (None, ""):
-                    continue
-                try:
-                    value = float(str(raw_value).replace(",", "").strip())
-                except (TypeError, ValueError):
-                    continue
-                if value > 0 and start <= point_date <= end:
-                    all_points[point_date.isoformat()] = {
-                        "date": point_date.isoformat(),
-                        "value": value,
-                    }
+                for row in rows or []:
+                    point_date = cls._parse_date(row.get("Date"))
+                    raw_value = row.get("TotalReturnsIndex")
+                    if point_date is None or raw_value in (None, ""):
+                        continue
+                    try:
+                        value = float(str(raw_value).replace(",", "").strip())
+                    except (TypeError, ValueError):
+                        continue
+                    if value > 0 and start <= point_date <= end:
+                        all_points[point_date.isoformat()] = {
+                            "date": point_date.isoformat(),
+                            "value": value,
+                        }
 
                 cursor = window_end + timedelta(days=1)
         finally:

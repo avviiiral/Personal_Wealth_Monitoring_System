@@ -1,5 +1,6 @@
 from datetime import datetime
 from decimal import Decimal, InvalidOperation
+import logging
 import time
 
 import requests
@@ -13,6 +14,9 @@ from mutual_funds.models import (
     MutualFundNAV,
     MutualFundScheme,
 )
+
+
+logger = logging.getLogger(__name__)
 
 
 class AMFIService:
@@ -64,55 +68,106 @@ class AMFIService:
         to_date,
     ):
         """
-        Download historical NAV data from AMFI.
+        Download the real AMFI historical NAV report.
 
-        AMFI historical NAV downloads support a maximum
-        period of 90 days at a time.
+        AMFI documents a maximum 90-day range. The historical download
+        endpoint is a text report even though AMFI can return an HTML
+        WebForms page for an unsuccessful request. Treat a successful HTTP
+        status as insufficient: only a response containing the AMFI
+        historical header is accepted as report data.
         """
-
         if from_date > to_date:
+            raise ValueError("From date cannot be after to_date.")
+
+        if (to_date - from_date).days > 90:
             raise ValueError(
-                "From date cannot be after to date."
+                "AMFI historical NAV download supports a maximum period "
+                "of 90 days at a time."
             )
 
-        if (
-            to_date - from_date
-        ).days > 90:
-            raise ValueError(
-                "AMFI historical NAV download supports "
-                "a maximum period of 90 days at a time."
-            )
+        date_params = {
+            "frmdt": from_date.strftime("%d-%b-%Y"),
+            "todt": to_date.strftime("%d-%b-%Y"),
+        }
+        headers = {
+            **AMFIService._headers(),
+            "Accept": "text/plain,text/csv,text/*;q=0.9,*/*;q=0.8",
+            "Referer": "https://www.amfiindia.com/net-asset-value/nav-download",
+        }
 
-        response = requests.get(
-            AMFIService.NAV_HISTORY_URL,
-            params={
-                "tp": "1",
-                "frmdt": from_date.strftime("%d-%b-%Y"),
-                "todt": to_date.strftime("%d-%b-%Y"),
-            },
-            headers=AMFIService._headers(),
-            timeout=60,
+        attempts = (
+            {"tp": "1", **date_params},
+            date_params,
         )
+        last_response = None
 
-        # AMFI's historical form endpoint has changed between deployments.
-        # The download endpoint used by the public NAV History page accepts
-        # the same dates using frmdate/todt, with the historical report mode.
-        if not response.ok or not response.text.strip():
-            response = requests.get(
-                "https://portal.amfiindia.com/NavHistoryReport_Rpt_Po.aspx",
-                params={
-                    "frmdate": from_date.strftime("%d-%b-%Y"),
-                    "todt": to_date.strftime("%d-%b-%Y"),
-                    "mf": "all",
-                    "rpt": "dn",
-                },
-                headers=AMFIService._headers(),
-                timeout=60,
+        with requests.Session() as session:
+            for params in attempts:
+                response = session.get(
+                    AMFIService.NAV_HISTORY_URL,
+                    params=params,
+                    headers=headers,
+                    timeout=60,
+                )
+                last_response = response
+                text = response.text or ""
+
+                # Do not accept an HTTP 200 WebForms/error page as if it
+                # were the downloadable report. This was the reason the
+                # previous importer could silently return zero records.
+                if response.ok and AMFIService._is_historical_report(text):
+                    return text
+
+                preview = " ".join(text.split())[:240]
+                logger.warning(
+                    "AMFI historical response was not a NAV report: "
+                    "endpoint=%s status=%s content_type=%s "
+                    "from=%s to=%s bytes=%s preview=%r",
+                    response.url,
+                    response.status_code,
+                    response.headers.get("Content-Type", ""),
+                    from_date,
+                    to_date,
+                    len(response.content),
+                    preview,
+                )
+
+        if last_response is not None:
+            last_response.raise_for_status()
+            raise RuntimeError(
+                "AMFI historical endpoint returned an unexpected response "
+                f"for {from_date} to {to_date} "
+                f"(status={last_response.status_code}, "
+                f"content_type={last_response.headers.get('Content-Type', '')}, "
+                f"bytes={len(last_response.content)})."
             )
 
-        response.raise_for_status()
+        raise RuntimeError("AMFI historical endpoint returned no response.")
 
-        return response.text
+    @staticmethod
+    def _is_historical_report(text):
+        """Return True only for AMFI's semicolon-delimited historical report."""
+        if not text:
+            return False
+
+        lines = [
+            line.strip().replace("\ufeff", "")
+            for line in text.splitlines()
+            if line.strip()
+        ]
+        if not lines:
+            return False
+
+        header_tokens = {
+            token.strip().lower()
+            for token in lines[0].split(";")
+        }
+        required = {
+            "scheme code",
+            "net asset value",
+            "date",
+        }
+        return required.issubset(header_tokens)
 
     @staticmethod
     def _build_record(
@@ -237,79 +292,58 @@ class AMFIService:
         )
 
     @staticmethod
-    def _parse_historical_record(parts):
-        """
-        Parse AMFI's historical NAV text format.
-
-        AMFI's date-range endpoint currently returns:
-        0 = Scheme Code
-        1 = Scheme Name
-        2 = ISIN Div Payout / ISIN Growth
-        3 = ISIN Div Reinvestment
-        4 = Net Asset Value
-        5 = Repurchase Price
-        6 = Sale Price
-        7 = Date
-
-        Older responses and some AMFI variants can contain additional
-        columns, so the parser anchors the stable fields (scheme code,
-        scheme name, NAV, and final date) instead of treating repurchase
-        or sale price as NAV.
-        """
-
+    def _parse_historical_record(parts, positions=None):
+        """Parse one row from AMFI's current historical text report."""
         if len(parts) < 8:
             return None
 
-        scheme_code = parts[0]
-        scheme_name = parts[1]
-        date_text = parts[-1]
+        if positions:
+            scheme_index = positions.get("scheme_code", 0)
+            name_index = positions.get("scheme_name", 1)
+            nav_index = positions.get("nav", 4)
+            date_index = positions.get("date", len(parts) - 1)
+            isin_first_index = positions.get("isin_first", 2)
+            isin_second_index = positions.get("isin_second", 3)
+        else:
+            scheme_index = 0
+            name_index = 1
+            nav_index = 4
+            date_index = len(parts) - 1
+            isin_first_index = 2
+            isin_second_index = 3
 
+        if max(
+            scheme_index,
+            name_index,
+            nav_index,
+            date_index,
+            isin_first_index,
+            isin_second_index,
+        ) >= len(parts):
+            return None
+
+        scheme_code = parts[scheme_index]
+        scheme_name = parts[name_index]
         if not scheme_code.isdigit() or not scheme_name:
             return None
 
         try:
+            nav = Decimal(parts[nav_index])
+        except (InvalidOperation, ValueError, TypeError):
+            return None
+        if nav < 0:
+            return None
+
+        try:
             nav_date = datetime.strptime(
-                date_text,
+                parts[date_index],
                 "%d-%b-%Y",
             ).date()
         except ValueError:
             return None
 
-        # AMFI's current historical report places NAV at index 4, but
-        # older/alternate exports can shift the NAV field. Validate a
-        # candidate using the surrounding price fields: repurchase and sale
-        # prices immediately follow NAV in the current format. This prevents
-        # mistakenly treating a price/other numeric field as NAV.
-        nav = None
-        for nav_index in (4, 6):
-            if nav_index >= len(parts):
-                continue
-            try:
-                candidate = Decimal(parts[nav_index])
-            except (
-                InvalidOperation,
-                ValueError,
-                TypeError,
-            ):
-                continue
-
-            if candidate < 0:
-                continue
-
-            if nav_index == 4:
-                nav = candidate
-                break
-
-            # Legacy fallback: accept index 6 only when index 4 is clearly
-            # not a numeric NAV.
-            nav = candidate
-            break
-
-        if nav is None:
-            return None
-
-        isin_first = parts[2] if len(parts) > 2 else None
-        isin_second = parts[3] if len(parts) > 3 else None
+        isin_first = parts[isin_first_index] or None
+        isin_second = parts[isin_second_index] or None
 
         return AMFIService._build_record(
             scheme_code=scheme_code,
@@ -338,20 +372,50 @@ class AMFIService:
             if scheme_codes
             else None
         )
+        historical_positions = None
 
         for raw_line in text.splitlines():
-            line = raw_line.strip()
+            line = raw_line.strip().replace("\ufeff", "")
             if not line or ";" not in line:
                 continue
 
-            if historical and normalized_codes:
-                raw_scheme_code = line.partition(";")[0].strip()
-                if raw_scheme_code not in normalized_codes:
-                    continue
-
             parts = [part.strip() for part in line.split(";")]
+
+            if historical and parts[0].strip().lower() == "scheme code":
+                normalized = [part.lower() for part in parts]
+                historical_positions = {
+                    "scheme_code": normalized.index("scheme code"),
+                    "scheme_name": (
+                        normalized.index("scheme name")
+                        if "scheme name" in normalized
+                        else normalized.index("nav name")
+                    ),
+                    "nav": normalized.index("net asset value"),
+                    "date": normalized.index("date"),
+                    "isin_first": (
+                        normalized.index("isin div payout/isin growth")
+                        if "isin div payout/isin growth" in normalized
+                        else 2
+                    ),
+                    "isin_second": (
+                        normalized.index("isin div reinvestment")
+                        if "isin div reinvestment" in normalized
+                        else 3
+                    ),
+                }
+                continue
+
+            if not parts[0].isdigit():
+                continue
+
+            if historical and normalized_codes and parts[0] not in normalized_codes:
+                continue
+
             record = (
-                AMFIService._parse_historical_record(parts)
+                AMFIService._parse_historical_record(
+                    parts,
+                    positions=historical_positions,
+                )
                 if historical
                 else AMFIService._parse_latest_record(parts)
             )

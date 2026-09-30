@@ -1,0 +1,13 @@
+{
+  "include": [
+    "backend"
+  ],
+  "exclude": [
+    "**/__pycache__",
+    "**/tests.py",
+    "**/tests/**"
+  ],
+  "reportAttributeAccessIssue": "none",
+  "reportOptionalMemberAccess": "none",
+  "reportIncompatibleMethodOverride": "none"
+}

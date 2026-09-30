@@ -723,8 +723,16 @@ class InvestmentSummaryService:
 
         for holding, fi_weight in fi_holdings:
             current_value = (holding.current_value or cls.ZERO) * fi_weight
-            sm = sm_by_asset_id.get(holding.asset_id, {})
-            rating_label = cls.CREDIT_RATING_LABELS.get(sm.get("credit_rating"), "Unrated")
+            if holding.asset_id is None:
+                continue
+            asset_id = int(holding.asset_id)
+            sm = sm_by_asset_id.get(asset_id, {})
+            credit_rating = sm.get("credit_rating")
+            rating_label = (
+                cls.CREDIT_RATING_LABELS.get(credit_rating, "Unrated")
+                if isinstance(credit_rating, str)
+                else "Unrated"
+            )
             rating_totals[rating_label] = rating_totals.get(rating_label, cls.ZERO) + current_value
 
             for field in ("ytm", "modified_duration", "average_maturity"):

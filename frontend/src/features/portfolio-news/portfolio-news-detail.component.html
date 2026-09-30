@@ -25,12 +25,22 @@
         {{ a.impact.replace('_', ' ') }} impact
       </span>
 
-      <span class="category-pill">{{ a.category }}</span>
+      <span class="category-pill">{{ isFiling() ? 'EXCHANGE FILING' : a.category }}</span>
     </div>
 
     <h1 class="detail-holding-name">{{ a.holding_display_name }}</h1>
 
-    <h2 class="detail-headline">{{ a.article_title }}</h2>
+    <h2 class="detail-headline">{{ isFiling() && a.filing_subject ? a.filing_subject : a.article_title }}</h2>
+
+    <div class="detail-section" *ngIf="isFiling()">
+      <h3>Filing facts</h3>
+      <p><strong>Company:</strong> {{ a.filing_company || a.holding_display_name }}</p>
+      <p><strong>Exchange:</strong> {{ a.filing_exchange || 'Exchange' }}</p>
+      <p *ngIf="a.filing_symbol"><strong>Symbol:</strong> {{ a.filing_symbol }}</p>
+      <p><strong>Event:</strong> {{ a.filing_event_type || 'Unclassified filing' }}</p>
+      <p><strong>System severity:</strong> {{ a.filing_severity || a.impact }}</p>
+      <p class="disclaimer">This is the exchange/company disclosure. Severity is a deterministic PWMS classification, not a market prediction.</p>
+    </div>
 
     <div class="detail-meta">
       <span>{{ a.article_source }}</span>
@@ -39,7 +49,7 @@
     </div>
 
     <a class="read-original-button" [href]="a.article_url" target="_blank" rel="noopener noreferrer">
-      Read Original Article
+      {{ isFiling() ? 'Open Original Filing' : 'Read Original Article' }}
       <span class="sr-only">(opens in new tab)</span>
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
         <path d="M7 17 17 7M9 7h8v8" stroke-linecap="round" stroke-linejoin="round" />

@@ -24,6 +24,7 @@ peewee==4.3.0
 platformdirs==4.11.1
 protobuf==7.35.1
 psycopg[binary]>=3.2,<4
+pywebpush==2.5.0
 pycparser==3.0
 pyright==1.1.411
 python-dateutil==2.9.0.post0

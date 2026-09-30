@@ -2,6 +2,7 @@ from io import StringIO
 from pathlib import Path
 
 import pandas as pd
+from typing import Any
 import requests
 from django.conf import settings
 
@@ -467,12 +468,10 @@ class SecurityMasterGenerator:
             else ""
         )
 
-        return output[
+        filtered_output: Any = output[
             output["ISIN"] != ""
-        ].drop_duplicates(
-            subset=["ISIN"],
-            keep="first",
-        )
+        ]
+        return filtered_output.drop_duplicates(subset=["ISIN"])
 
     @classmethod
     def _load_nse_master(cls):

@@ -1,6 +1,7 @@
 from datetime import date
 from decimal import Decimal
 from unittest.mock import patch
+from datetime import timedelta
 
 from django.contrib.auth.models import User
 from django.test import TestCase
@@ -286,8 +287,8 @@ class BenchmarkPerformanceTests(TestCase):
     def test_bse500_fetches_automatically(self, mocked_get):
         mocked_get.return_value.text = (
             "Index Name,Date,Open,High,Low,Close\n"
-            "BSE500,01/01/2021,100,101,99,100\n"
-            "BSE500,04/01/2021,100,102,99,101\n"
+            "BSE500T,01/01/2021,100,101,99,100\n"
+            "BSE500T,04/01/2021,100,102,99,101\n"
         )
         mocked_get.return_value.raise_for_status.return_value = None
         points = BenchmarkPerformanceService._fetch_bse_points(
@@ -295,7 +296,7 @@ class BenchmarkPerformanceTests(TestCase):
         )
         mocked_get.assert_called_once()
         self.assertEqual(
-            mocked_get.call_args.kwargs["params"]["strIndex"], "BSE500"
+            mocked_get.call_args.kwargs["params"]["strIndex"], "BSE500T"
         )
         self.assertEqual(points[-1]["value"], 101.0)
 
@@ -324,7 +325,7 @@ class BenchmarkPerformanceTests(TestCase):
             {"date": "2021-01-01", "value": 100.0},
             {"date": "2026-01-01", "value": 150.0},
         ]
-        with patch.object(BenchmarkPerformanceService, "_series", return_value=points):
+        with patch.object(BenchmarkPerformanceService, "_nifty_tri_series", return_value=points):
             result = BenchmarkPerformanceService.calculate(product)
         self.assertTrue(result["available"])
         self.assertEqual(result["benchmark"], "Nifty 50")
@@ -383,7 +384,7 @@ class BenchmarkPerformanceTests(TestCase):
         )
         with patch.object(
             BenchmarkPerformanceService,
-            "_series",
+            "_nifty_tri_series",
             return_value=points,
         ):
             result = BenchmarkPerformanceService.calculate(product)
@@ -417,6 +418,9 @@ class BenchmarkPerformanceTests(TestCase):
             source="TEST",
         )
         MutualFundProduct.objects.create(product=product, scheme_code="API-BSETRI", benchmark="BSE 500")
+        self.client.force_authenticate(
+            user=User.objects.create_user(username="benchmark-api-user")
+        )
         with patch.object(
             BenchmarkPerformanceService,
             "_bse_series",
@@ -425,7 +429,9 @@ class BenchmarkPerformanceTests(TestCase):
                 {"date": "2026-01-01", "value": 150.0},
             ],
         ):
-            response = self.client.get(f"/api/watch-list/products/{product.id}/benchmark-performance/?period=1Y")
+            response = self.client.get(
+                f"/api/watch-list/products/{product.id}/benchmark-performance/?period=1Y"
+            )
         self.assertEqual(response.status_code, 200)
         self.assertTrue(response.data["available"])
         self.assertEqual(response.data["benchmark"], "BSE 500")
@@ -477,7 +483,7 @@ class BenchmarkPerformanceTests(TestCase):
             "_series",
             side_effect=AssertionError("chart endpoint attempted a network fetch"),
         ):
-            result = BenchmarkPerformanceService.calculate(product, "1Y")
+            result = BenchmarkPerformanceService.calculate(product, "3Y")
 
         self.assertTrue(result["available"])
         self.assertGreaterEqual(len(result["chart"]["aligned_points"]), 2)

@@ -17,6 +17,8 @@ export class BrowserNotificationService {
     return typeof window !== 'undefined' && 'Notification' in window;
   }
 
+  private readonly serviceWorkerPath = '/push-sw.js';
+
   getPermission(): NotificationPermission | 'unsupported' {
     if (!this.isSupported()) {
       return 'unsupported';
@@ -72,11 +74,92 @@ export class BrowserNotificationService {
   }
 
   /**
-   * Shows a browser notification if supported and permitted. Silently
-   * does nothing otherwise (denied permission, unsupported browser, or
-   * any runtime error) - the dashboard notification center is always
-   * the fallback, so this must never throw or block the caller.
+   * Requests browser notification permission when needed and returns the
+   * resulting permission state. Unlike requestPermissionIfNeeded(), this
+   * method intentionally does not persist a separate "prompted" flag because
+   * callers may explicitly request permission from a user action.
    */
+  async requestPermission(): Promise<NotificationPermission | 'unsupported'> {
+    if (!this.isSupported()) {
+      return 'unsupported';
+    }
+
+    if (Notification.permission === 'default') {
+      try {
+        return await Notification.requestPermission();
+      } catch (error) {
+        console.error('Notification permission request failed:', error);
+      }
+    }
+
+    return Notification.permission;
+  }
+
+  async subscribeToPush(publicKey: string): Promise<PushSubscriptionJSON | null> {
+    if (!this.isSupported() || !('serviceWorker' in navigator) || !('PushManager' in window)) {
+      return null;
+    }
+
+    if (!publicKey) {
+      return null;
+    }
+
+    try {
+      const registration = await navigator.serviceWorker.register(this.serviceWorkerPath);
+      const existing = await registration.pushManager.getSubscription();
+
+      if (existing) {
+        return existing.toJSON();
+      }
+
+      const subscription = await registration.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: this.base64UrlToArrayBuffer(publicKey),
+      });
+
+      return subscription.toJSON();
+    } catch (error) {
+      console.error('Web Push subscription failed:', error);
+      return null;
+    }
+  }
+
+  async unsubscribeFromPush(): Promise<PushSubscriptionJSON | null> {
+    if (!('serviceWorker' in navigator)) {
+      return null;
+    }
+
+    try {
+      const registration = await navigator.serviceWorker.getRegistration(this.serviceWorkerPath);
+      const subscription = await registration?.pushManager.getSubscription();
+
+      if (!subscription) {
+        return null;
+      }
+
+      const payload = subscription.toJSON();
+      await subscription.unsubscribe();
+      return payload;
+    } catch (error) {
+      console.error('Web Push unsubscribe failed:', error);
+      return null;
+    }
+  }
+
+  private base64UrlToArrayBuffer(value: string): ArrayBuffer {
+    const padding = '='.repeat((4 - (value.length % 4)) % 4);
+    const normalized = (value + padding).replace(/-/g, '+').replace(/_/g, '/');
+    const raw = window.atob(normalized);
+    const buffer = new ArrayBuffer(raw.length);
+    const output = new Uint8Array(buffer);
+
+    for (let index = 0; index < raw.length; index += 1) {
+      output[index] = raw.charCodeAt(index);
+    }
+
+    return buffer;
+  }
+
   showNotification(options: BrowserNotificationOptions): void {
     if (!this.isSupported() || Notification.permission !== 'granted') {
       return;

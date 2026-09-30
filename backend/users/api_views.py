@@ -392,7 +392,8 @@ def reset_user_password(request, user_id):
         )
 
     with transaction.atomic():
-        target_user.set_password(serializer.validated_data["new_password"])
+        new_password = str(serializer.validated_data.get("new_password") or "")
+        target_user.set_password(new_password)
         target_user.save(update_fields=["password"])
 
     return Response({"message": "Password reset successfully."})

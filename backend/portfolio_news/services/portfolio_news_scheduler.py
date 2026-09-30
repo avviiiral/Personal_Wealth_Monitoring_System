@@ -6,6 +6,7 @@ import time
 from django.db import close_old_connections
 
 from portfolio_news.services.pipeline import run_portfolio_news_monitor
+from filing_intelligence.services.pipeline import ingest_exchange_filings
 
 
 logger = logging.getLogger(__name__)
@@ -56,6 +57,8 @@ class PortfolioNewsScheduler:
                 close_old_connections()
                 stats = run_portfolio_news_monitor()
 
+                filing_stats = ingest_exchange_filings() if os.environ.get("FILING_INTELLIGENCE_ENABLED", "false").lower() in ("1", "true", "yes") else None
+
                 logger.info(
                     "Portfolio news monitor run complete: users=%s, holdings=%s, "
                     "articles_matched=%s, new_articles=%s, alerts_created=%s, "
@@ -67,6 +70,9 @@ class PortfolioNewsScheduler:
                     stats["alerts_created"],
                     stats["notifications_sent"],
                 )
+
+                if filing_stats is not None:
+                    logger.info("Exchange filing monitor complete: %s", filing_stats)
             except Exception as exc:
                 logger.exception(
                     "Portfolio news scheduler run failed: %s. Will retry after the next interval.",

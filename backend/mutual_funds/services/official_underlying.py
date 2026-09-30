@@ -263,8 +263,8 @@ class OfficialMutualFundUnderlyingService(MutualFundUnderlyingService):
             "records": len(objects),
         }
 
-    @classmethod
-    def _valid_http_url(cls, url):
+    @staticmethod
+    def _valid_http_url(url):
         try:
             from urllib.parse import urlparse
             parsed = urlparse(url)

@@ -273,6 +273,10 @@ summary described in rule 16) follows.
 
     model = get_gemini_model()
 
+    # Initialized before the request so the HTTPError handler can safely
+    # inspect it even when the request fails before a response is assigned.
+    response = None
+
     gemini_url = (
         f"{GEMINI_API_BASE}/{model}:generateContent"
     )
@@ -355,7 +359,7 @@ summary described in rule 16) follows.
 
     except requests.exceptions.HTTPError as exc:
         try:
-            error_data = response.json()
+            error_data = response.json() if response is not None else {}
         except Exception:
             error_data = {}
 

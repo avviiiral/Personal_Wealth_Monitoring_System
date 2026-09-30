@@ -646,15 +646,18 @@ class BenchmarkPerformanceService:
         end = points[-1]
         end_date = date.fromisoformat(end["date"])
         cutoff = end_date - timedelta(days=days)
+        # Use the first available observation inside the requested window.
+        # This avoids reaching backward beyond the requested period when the
+        # exact cutoff date is a non-trading day or is otherwise unavailable.
         eligible = [
             point
             for point in points
-            if date.fromisoformat(point["date"]) <= cutoff
+            if date.fromisoformat(point["date"]) >= cutoff
         ]
         if not eligible:
             return None
 
-        start = eligible[-1]
+        start = eligible[0]
         start_date = date.fromisoformat(start["date"])
         start_value = float(start["value"])
         end_value = float(end["value"])
@@ -665,7 +668,7 @@ class BenchmarkPerformanceService:
         ratio = end_value / start_value
         if days > 365 and annualize_long_periods:
             return {
-                "return": (ratio ** (365.25 / elapsed_days) - 1.0) * 100.0,
+                "return": round((ratio ** (365.25 / elapsed_days) - 1.0) * 100.0, 10),
                 "start_date": start["date"],
                 "end_date": end["date"],
                 "start_value": start_value,
@@ -675,7 +678,7 @@ class BenchmarkPerformanceService:
             }
 
         return {
-            "return": (ratio - 1.0) * 100.0,
+            "return": round((ratio - 1.0) * 100.0, 10),
             "start_date": start["date"],
             "end_date": end["date"],
             "start_value": start_value,
@@ -1091,15 +1094,15 @@ class BenchmarkPerformanceService:
             period: detail["return"] if detail else None
             for period, detail in benchmark_return_details.items()
         }
-        differences = {
-            period: (
-                fund_metrics[period] - benchmark_metrics[period]
-                if fund_metrics.get(period) is not None
-                and benchmark_metrics.get(period) is not None
+        differences = {}
+        for period in cls.PERIOD_DAYS:
+            fund_return = fund_metrics.get(period)
+            benchmark_return = benchmark_metrics.get(period)
+            differences[period] = (
+                fund_return - benchmark_return
+                if fund_return is not None and benchmark_return is not None
                 else None
             )
-            for period in cls.PERIOD_DAYS
-        }
         comparison = {}
         for period in cls.PERIOD_DAYS:
             difference = differences.get(period)

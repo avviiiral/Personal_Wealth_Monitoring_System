@@ -62,6 +62,7 @@ INSTALLED_APPS = [
     'mutual_funds',
     'portfolio_news',
     'watchlist',
+    'filing_intelligence',
 ]
 
 MIDDLEWARE = [
@@ -170,6 +171,17 @@ SESSION_COOKIE_SECURE = _env_bool('SESSION_COOKIE_SECURE', False)
 CSRF_COOKIE_SECURE = _env_bool('CSRF_COOKIE_SECURE', False)
 SECURE_SSL_REDIRECT = _env_bool('SECURE_SSL_REDIRECT', False)
 
+# Browser Web Push (VAPID). Keep the private key server-side only.
+WEB_PUSH_VAPID_PUBLIC_KEY = os.environ.get("WEB_PUSH_VAPID_PUBLIC_KEY", "").strip()
+WEB_PUSH_VAPID_PRIVATE_KEY = os.environ.get("WEB_PUSH_VAPID_PRIVATE_KEY", "").strip()
+WEB_PUSH_VAPID_SUBJECT = os.environ.get(
+    "WEB_PUSH_VAPID_SUBJECT",
+    "mailto:admin@example.com",
+).strip()
+WEB_PUSH_ENABLED = bool(
+    WEB_PUSH_VAPID_PUBLIC_KEY and WEB_PUSH_VAPID_PRIVATE_KEY
+)
+
 LOGS_DIR = BASE_DIR / 'logs'
 LOGS_DIR.mkdir(exist_ok=True)
 
@@ -212,6 +224,7 @@ LOGGING = {
         'mutual_funds_file': _rotating_log_handler('mutual_funds.log'),
         'watchlist_file': _rotating_log_handler('watchlist.log'),
         'news_file': _rotating_log_handler('news.log'),
+        'filings_file': _rotating_log_handler('filings.log'),
         'authentication_file': _rotating_log_handler('authentication.log'),
         'imports_file': _rotating_log_handler('imports.log'),
     },
@@ -250,6 +263,11 @@ LOGGING = {
         },
         'portfolio_news': {
             'handlers': ['console', 'news_file', 'errors_file'],
+            'level': 'INFO',
+            'propagate': False,
+        },
+        'filing_intelligence': {
+            'handlers': ['console', 'filings_file', 'errors_file'],
             'level': 'INFO',
             'propagate': False,
         },

@@ -1,21 +1,10 @@
 import logging
-
 from typing import TYPE_CHECKING, Tuple
 
-from .alert_scoring import (
-    compute_alert_score,
-    determine_notification_tier,
-    should_send_immediate_notification,
-)
+from .alert_scoring import compute_alert_score, determine_notification_tier
 
 if TYPE_CHECKING:
-    # Only imported for type-checking (Pylance/Pyright/mypy).
-    # TYPE_CHECKING is always False at runtime, so this never
-    # actually executes and cannot reintroduce the circular-import
-    # problem the real, function-local import below was written to
-    # avoid.
     from ..models import PortfolioNewsAlert
-
 
 logger = logging.getLogger(__name__)
 
@@ -27,15 +16,13 @@ def create_alert_from_analysis(
     analysis,
 ) -> Tuple["PortfolioNewsAlert", bool]:
     """
-    Create (or fetch the existing) PortfolioNewsAlert for this
-    exact (user, article, holding) combination.
+    Create (or fetch) the PortfolioNewsAlert for one
+    (user, article, holding) combination.
 
-    Idempotent by design: the model's unique constraint on
-    (user, article, holding_type, holding_id) means calling
-    this twice for the same combination returns the existing
-    row on the second call instead of creating a duplicate -
-    this is what makes `monitor_portfolio_news` safe to run
-    repeatedly.
+    Notification eligibility and notification delivery are separate:
+    notification_tier records whether the alert qualifies for immediate
+    notification, while notification_sent remains False until a real
+    delivery mechanism confirms that notification delivery occurred.
     """
 
     from ..models import PortfolioNewsAlert
@@ -48,13 +35,7 @@ def create_alert_from_analysis(
         published_at=article.published_at,
     )
 
-    notification_tier = determine_notification_tier(
-        analysis.impact
-    )
-
-    notification_sent = should_send_immediate_notification(
-        notification_tier
-    )
+    notification_tier = determine_notification_tier(analysis.impact)
 
     alert, created = PortfolioNewsAlert.objects.get_or_create(
         user=user,
@@ -77,7 +58,7 @@ def create_alert_from_analysis(
             "summary": analysis.summary,
             "portfolio_implication": analysis.portfolio_implication,
             "reason": analysis.reason,
-            "notification_sent": notification_sent,
+            "notification_sent": False,
             "materiality": analysis.materiality,
             "key_facts": analysis.key_facts,
             "interpretation": analysis.interpretation,
@@ -87,8 +68,7 @@ def create_alert_from_analysis(
 
     if created:
         logger.info(
-            "Created alert id=%s user=%s holding=%r tier=%s "
-            "score=%s",
+            "Created alert id=%s user=%s holding=%r tier=%s score=%s",
             alert.pk,
             user.id,
             holding.display_name,

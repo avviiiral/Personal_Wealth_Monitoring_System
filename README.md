@@ -226,7 +226,7 @@ A background agent that:
 4. scores each alert by **`impact × portfolio_weight × confidence`**,
 5. raises a **browser notification** for Critical / High items.
 
-It is fully automatic — no scheduled task, no `.bat` file, nothing to configure beyond a Gemini key.
+It is fully automatic — no scheduled task, no `.bat` file, nothing to configure beyond a Gemini key and, for browser push delivery, VAPID keys. Critical / High alerts can be delivered through the browser Push API even when the Angular page is closed.
 
 ---
 
@@ -320,7 +320,7 @@ flowchart TD
     G --> S["Score = impact × portfolio weight × confidence"]
     S --> A["PortfolioNewsAlert<br/>unique per user, article, holding"]
     A --> C{"Critical or High?"}
-    C -- yes --> N["Browser notification<br/>polled every 60 seconds"]
+    C -- yes --> N["Web Push<br/>service worker + VAPID"]
     C -- no --> P["Listed on the Portfolio News page"]
 ```
 
@@ -637,7 +637,9 @@ All endpoints require an authenticated Django session unless noted. Auth uses **
 - **Standalone Angular components** throughout — no `NgModule`s.
 - `core/services/rbac.service.ts` is the single source of role / permission / family state. It hides controls, but every action is still independently authorized by the backend.
 - **One API client service per backend area** under `core/services/`, each reading its base URL from `environment.apiUrl` — nothing hardcodes a host.
-- `core/services/browser-notification.service.ts` shows native browser notifications for new **Critical / High** news alerts, polled every **60 seconds**.
+- `core/services/browser-notification.service.ts` manages browser notification permission and Web Push subscriptions for **Critical / High** news alerts.
+- `frontend/public/push-sw.js` is the service worker that receives push events and displays notifications even when the Angular page is closed.
+- The backend stores browser subscriptions in `PushSubscription` and sends qualifying alerts through VAPID/Web Push when `WEB_PUSH_ENABLED=True`.
 - `auth.guard` protects every route and loads the RBAC role before rendering.
 
 | Route             | Screen                                                        |
@@ -670,6 +672,71 @@ There is no Task Scheduler entry, cron job or `.bat` file to configure — the j
 
 ---
 
+## 🔔 Background Web Push notifications
+
+PWMS supports **Web Push notifications** for newly created **Critical** and **High** Portfolio News alerts. The browser registers `/push-sw.js`, stores its Push API subscription in Django, and the backend sends a push message using VAPID credentials.
+
+### Setup
+
+From `backend/` with the virtual environment active:
+
+```powershell
+python manage.py migrate
+python manage.py generate_web_push_keys
+```
+
+Copy the generated values into your local `backend/.env`:
+
+```ini
+WEB_PUSH_VAPID_PUBLIC_KEY=<generated-public-key>
+WEB_PUSH_VAPID_PRIVATE_KEY=<generated-private-key>
+WEB_PUSH_VAPID_SUBJECT=mailto:your-email@example.com
+```
+
+Restart Django after changing `.env`.
+
+> **Security:** the public VAPID key is sent to the browser and is safe to expose. The private VAPID key is a server secret and must never be committed to Git or exposed to frontend code.
+
+### Browser subscription
+
+1. Start the Django backend and Angular frontend.
+2. Open `http://localhost:4200` in a supported browser.
+3. Sign in and open the notification center / Portfolio News area.
+4. Grant browser notification permission when prompted.
+5. The Angular service registers `/push-sw.js`, creates a Push API subscription, and sends that subscription to Django.
+6. Django stores the subscription in `portfolio_news.PushSubscription`.
+
+Verify from the Django shell:
+
+```python
+from portfolio_news.models import PushSubscription
+PushSubscription.objects.all().values("user_id", "endpoint", "enabled")
+```
+
+### End-to-end background test
+
+After the subscription exists:
+
+1. Leave the browser running but close the PWMS tab.
+2. Trigger or ingest a new qualifying **Critical / High** Portfolio News alert.
+3. Confirm the operating system/browser displays the notification while the Angular page is closed.
+4. Re-open PWMS and verify the alert is also present in the in-app notification feed.
+5. Check `PortfolioNewsAlert.notification_sent` if you need to confirm that the backend recorded a successful push delivery.
+
+The backend disables stale subscriptions when a push provider returns HTTP **404** or **410**.
+
+### Troubleshooting
+
+- **No permission prompt:** check the browser's site notification settings and make sure the browser supports Notifications, Service Workers and Push API.
+- **No service worker:** check browser DevTools → **Application → Service Workers** and confirm `/push-sw.js` is registered.
+- **Subscription missing:** confirm `WEB_PUSH_VAPID_PUBLIC_KEY` and `WEB_PUSH_VAPID_PRIVATE_KEY` are both configured and restart Django.
+- **Alert appears in PWMS but no popup:** verify the alert is newly created and has **Critical** or **High** notification tier; lower tiers are intentionally not pushed.
+- **Production deployment:** serve the frontend over **HTTPS**. Do not use the development `ng serve` server as an internet-facing production server.
+
+See [SETUP.md](./SETUP.md#84-background-web-push-notifications) for the full setup and troubleshooting checklist.
+
+---
+
 ## 🔧 Configuration
 
 Settings load from **`backend/.env`** (template: [`backend/.env.example`](./backend/.env.example)). Every value has a development-safe default baked into `config/settings.py`, so **local development works with no `.env` at all**; you only need real values for a deployment.
@@ -690,6 +757,9 @@ Settings load from **`backend/.env`** (template: [`backend/.env.example`](./back
 | `NEWS_MONITOR_INTERVAL`                                                                   | Seconds between automatic news runs                         | `1800`                                      | Tune as needed                                                                                                |
 | `NEWS_MONITOR_AI_CALL_DELAY_SECONDS`                                                      | Pause between Gemini calls in a news run                    | —                                           | Raise (e.g. `6`) if you hit rate-limit errors                                                                 |
 | `WATCHLIST_PMS_SOURCE_URLS`                                                               | Optional comma-separated authoritative PMS source endpoints | _(blank)_                                   | Leave blank when no reliable source exists — no PMS values are ever fabricated                                |
+| `WEB_PUSH_VAPID_PUBLIC_KEY`                                                                | Browser Web Push public VAPID key                          | _(blank)_                                   | Generate with `python manage.py generate_web_push_keys`                                                      |
+| `WEB_PUSH_VAPID_PRIVATE_KEY`                                                               | Browser Web Push private VAPID key                         | _(blank)_                                   | Keep secret; never commit it                                                                                   |
+| `WEB_PUSH_VAPID_SUBJECT`                                                                   | VAPID contact / application subject                        | `mailto:admin@example.com`                | Use a real maintainer email or HTTPS subject                                                                    |
 
 > ⚠️ **Turn the `*_SECURE` flags and `SECURE_SSL_REDIRECT` on only after HTTPS is working.** Browsers refuse `Secure` cookies over plain HTTP, so enabling them early breaks login.
 
@@ -712,7 +782,7 @@ Run from `backend/` with the virtual environment active: `python manage.py <comm
 | `load_security_master_data`      | `investments`    | Load researched sector / cap-type / P/E / P/B / ROE data into SecurityMaster |
 | `link_security_master`           | `investments`    | Link Assets to their SecurityMaster row by ISIN _(dry-run by default)_       |
 | `import_amfi_cap_classification` | `investments`    | Classify stocks Large / Mid / Small Cap by AMFI rank _(dry-run by default)_  |
-
+| `generate_web_push_keys`           | `portfolio_news` | Generate URL-safe VAPID keys for browser Web Push |
 Standard Django commands you'll use as well: `migrate`, `check`, `createsuperuser`, `changepassword <username>`, `shell`, `test`.
 
 > Tip: run any command with `--help` to see its options — including how to apply the _dry-run by default_ commands.
@@ -752,6 +822,7 @@ Prefer to keep everything local? Leave `GEMINI_API_KEY` unset — every feature 
 ```bash
 python manage.py test                       # everything
 python manage.py test users portfolio -v 2  # RBAC + portfolio, verbose
+python manage.py test portfolio_news.test_web_push -v 2 # Web Push delivery behavior
 ```
 
 | Suite                   | Covers                                                                |
@@ -759,6 +830,7 @@ python manage.py test users portfolio -v 2  # RBAC + portfolio, verbose
 | `users/tests.py`        | Every role × capability combination and privilege-escalation attempts |
 | `mutual_funds/tests.py` | Batched AMFI NAV import                                               |
 | `investments/tests.py`  | The transaction importer and AMC-name / quant auto-enrichment         |
+| `portfolio_news/test_web_push.py` | VAPID/Web Push delivery, subscription handling and notification_sent semantics |
 
 **Frontend** — from `frontend/`:
 
@@ -776,7 +848,9 @@ npm run build     # verifies the whole app compiles
 | **SQLite is the default database**           | WAL mode + busy-timeout reduce — but do not eliminate — write contention under concurrent load, and there is no automated backup yet. Fine for a household; for many concurrent writers use PostgreSQL. |
 | **Schedulers assume one server process**     | If deployed behind multiple worker _processes_ (not threads), each process would start its own copy of every scheduler. Run a single process.                                                           |
 | **Single owning user per record**            | `Asset` / `Transaction` are stored against one owning `User`; family sharing is a visibility layer on top.                                                                                              |
-| **News notifications are polling, not push** | Browser notifications are polled every 60 seconds and only fire while the Angular app is open.                                                                                                          |
+| **Web Push requires VAPID configuration**     | Background browser delivery requires `WEB_PUSH_VAPID_PUBLIC_KEY`, `WEB_PUSH_VAPID_PRIVATE_KEY` and `WEB_PUSH_VAPID_SUBJECT`. Without them, news alerts still appear in the in-app notification feed but no push is sent. |
+| **Browser permission is required**             | The user must grant notification permission and allow the service worker to subscribe. |
+| **HTTPS is required outside localhost**        | Service workers and Push API require a secure context in production. Localhost is suitable for development. |
 | **Some SIP tests drift with the calendar**   | A few SIP-scheduling tests compare against today's real date; this is a known fixture limitation that does not affect the running app.                                                                  |
 | **Third-party data can lag or fail**         | Yahoo Finance, AMFI and Google News are external sources; use **manual prices** when a quote is missing.                                                                                                |
 

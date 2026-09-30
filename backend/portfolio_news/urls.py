@@ -7,6 +7,9 @@ from .views import (
     portfolio_news_digest,
     portfolio_news_list,
     portfolio_notifications_list,
+    push_config,
+    push_subscribe,
+    push_unsubscribe,
 )
 
 
@@ -46,5 +49,23 @@ urlpatterns = [
         "notifications/read-all/",
         mark_all_notifications_read,
         name="portfolio-news-notifications-read-all",
+    ),
+
+    path(
+        "notifications/push/config/",
+        push_config,
+        name="portfolio-news-push-config",
+    ),
+
+    path(
+        "notifications/push/subscribe/",
+        push_subscribe,
+        name="portfolio-news-push-subscribe",
+    ),
+
+    path(
+        "notifications/push/unsubscribe/",
+        push_unsubscribe,
+        name="portfolio-news-push-unsubscribe",
     ),
 ]

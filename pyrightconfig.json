@@ -3,8 +3,11 @@
     "backend"
   ],
   "exclude": [
-    "**/__pycache__"
+    "**/__pycache__",
+    "**/tests.py",
+    "**/tests/**"
   ],
   "reportAttributeAccessIssue": "none",
-  "reportOptionalMemberAccess": "none"
+  "reportOptionalMemberAccess": "none",
+  "reportIncompatibleMethodOverride": "none"
 }

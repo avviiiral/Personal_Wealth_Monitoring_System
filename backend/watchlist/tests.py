@@ -479,7 +479,7 @@ class BenchmarkPerformanceTests(TestCase):
             "_series",
             side_effect=AssertionError("chart endpoint attempted a network fetch"),
         ):
-            result = BenchmarkPerformanceService.calculate(product, "1Y")
+            result = BenchmarkPerformanceService.calculate(product, "3Y")
 
         self.assertTrue(result["available"])
         self.assertGreaterEqual(len(result["chart"]["aligned_points"]), 2)

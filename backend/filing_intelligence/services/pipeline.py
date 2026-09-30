@@ -7,7 +7,8 @@ from django.utils import timezone
 from investments.models import Holding
 from portfolio_news.constants import AlertSourceType, HoldingType, ImpactLevel, Materiality, NewsCategory, NotificationTier, Sentiment, TimeHorizon
 from portfolio_news.models import NewsArticle, PortfolioNewsAlert
-from portfolio_news.services.alert_scoring import determine_notification_tier, should_send_immediate_notification
+from portfolio_news.services.alert_scoring import determine_notification_tier
+from portfolio_news.services.web_push import deliver_alert_notification
 from ..models import Filing, FilingProcessingStatus
 from ..providers.official import NSEFilingProvider, BSEFilingProvider
 from .classifier import classify, SEVERITY_SCORE
@@ -22,13 +23,61 @@ def _store_article(filing):
     return article
 
 def _create_alert(user, holding_type, holding_id, display_name, filing, article, cls, weight=0.0):
-    impact=cls.impact
-    tier=determine_notification_tier(impact)
-    materiality=cls.materiality if cls.materiality in {x.value for x in Materiality} else Materiality.TRIVIAL
-    category=cls.category if cls.category in {x.value for x in NewsCategory} else NewsCategory.OTHER
-    score=float(SEVERITY_SCORE[cls.severity])
-    return PortfolioNewsAlert.objects.get_or_create(user=user,article=article,holding_type=holding_type,holding_id=holding_id,defaults={
-        "source_type":AlertSourceType.EXCHANGE_FILING,"filing":filing,"holding_display_name":display_name,"relevant":True,"category":category,"sentiment":Sentiment.NEUTRAL,"time_horizon":TimeHorizon.UNSPECIFIED,"relevance_score":100,"impact":impact,"impact_score":SEVERITY_SCORE[cls.severity],"confidence":1.0,"portfolio_weight_at_alert":weight,"alert_score":score,"notification_tier":tier,"summary":f"The {filing.exchange} filing reports: {filing.subject}.","portfolio_implication":"This filing is associated with a security in your monitored portfolio or watchlist.","reason":cls.reason,"notification_sent":should_send_immediate_notification(tier),"materiality":materiality,"key_facts":" ".join(cls.facts)[:5000],"interpretation":"","uncertainty_notes":"The severity is a deterministic PWMS classification of the filing text; no market outcome is inferred."})
+    impact = cls.impact
+    tier = determine_notification_tier(impact)
+    materiality = (
+        cls.materiality
+        if cls.materiality in {x.value for x in Materiality}
+        else Materiality.TRIVIAL
+    )
+    category = (
+        cls.category
+        if cls.category in {x.value for x in NewsCategory}
+        else NewsCategory.OTHER
+    )
+    score = float(SEVERITY_SCORE[cls.severity])
+
+    alert, created = PortfolioNewsAlert.objects.get_or_create(
+        user=user,
+        article=article,
+        holding_type=holding_type,
+        holding_id=holding_id,
+        defaults={
+            "source_type": AlertSourceType.EXCHANGE_FILING,
+            "filing": filing,
+            "holding_display_name": display_name,
+            "relevant": True,
+            "category": category,
+            "sentiment": Sentiment.NEUTRAL,
+            "time_horizon": TimeHorizon.UNSPECIFIED,
+            "relevance_score": 100,
+            "impact": impact,
+            "impact_score": SEVERITY_SCORE[cls.severity],
+            "confidence": 1.0,
+            "portfolio_weight_at_alert": weight,
+            "alert_score": score,
+            "notification_tier": tier,
+            "summary": f"The {filing.exchange} filing reports: {filing.subject}.",
+            "portfolio_implication": (
+                "This filing is associated with a security in your monitored "
+                "portfolio or watchlist."
+            ),
+            "reason": cls.reason,
+            "notification_sent": False,
+            "materiality": materiality,
+            "key_facts": " ".join(cls.facts)[:5000],
+            "interpretation": "",
+            "uncertainty_notes": (
+                "The severity is a deterministic PWMS classification of the "
+                "filing text; no market outcome is inferred."
+            ),
+        },
+    )
+
+    if created:
+        deliver_alert_notification(alert)
+
+    return alert, created
 
 def _process(item,dry_run=False):
     content_hash=_hash(item)

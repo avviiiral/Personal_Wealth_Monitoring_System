@@ -1094,15 +1094,15 @@ class BenchmarkPerformanceService:
             period: detail["return"] if detail else None
             for period, detail in benchmark_return_details.items()
         }
-        differences = {
-            period: (
-                fund_metrics[period] - benchmark_metrics[period]
-                if fund_metrics.get(period) is not None
-                and benchmark_metrics.get(period) is not None
+        differences = {}
+        for period in cls.PERIOD_DAYS:
+            fund_return = fund_metrics.get(period)
+            benchmark_return = benchmark_metrics.get(period)
+            differences[period] = (
+                fund_return - benchmark_return
+                if fund_return is not None and benchmark_return is not None
                 else None
             )
-            for period in cls.PERIOD_DAYS
-        }
         comparison = {}
         for period in cls.PERIOD_DAYS:
             difference = differences.get(period)

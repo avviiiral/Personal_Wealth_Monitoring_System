@@ -41,9 +41,6 @@ export class HeaderComponent implements OnInit, OnDestroy {
 
   private static readonly POLL_INTERVAL_MS = 60000;
 
-  private knownAlertIds = new Set<number>();
-  private notificationsBaselineEstablished = false;
-
   profileMenuOpen = false;
   loggingOut = false;
 
@@ -293,36 +290,12 @@ export class HeaderComponent implements OnInit, OnDestroy {
   refreshNotifications(): void {
     this.newsApi.getNotifications(10).subscribe({
       next: (response) => {
-        const newItems = response.results.filter((item) => !this.knownAlertIds.has(item.id));
-
-        if (this.notificationsBaselineEstablished) {
-          for (const item of newItems) {
-            this.fireBrowserNotification(item);
-          }
-        }
-
-        this.knownAlertIds = new Set(response.results.map((item) => item.id));
-        this.notificationsBaselineEstablished = true;
-
         this.notifications = response.results;
         this.unreadCount = response.unread_count;
       },
 
       error: (error) => {
         console.error('Failed to load notifications:', error);
-      },
-    });
-  }
-
-  private fireBrowserNotification(item: PortfolioNewsAlertListItem): void {
-    const tierLabel = item.notification_tier === 'critical' ? 'Critical Impact' : 'High Impact';
-
-    this.browserNotifications.showNotification({
-      title: `${tierLabel} - ${item.holding_display_name}`,
-      body: item.article_title,
-      tag: `pwms-alert-${item.id}`,
-      onClick: () => {
-        this.router.navigate(['/portfolio-news', item.id]);
       },
     });
   }
@@ -337,8 +310,40 @@ export class HeaderComponent implements OnInit, OnDestroy {
       this.chatOpen = false;
       this.profileMenuOpen = false;
       this.refreshNotifications();
-      void this.browserNotifications.requestPermission();
+      void this.enablePushNotifications();
     }
+  }
+
+  private enablePushNotifications(): void {
+    void this.browserNotifications.requestPermission().then((permission) => {
+      if (permission !== 'granted') {
+        return;
+      }
+
+      this.newsApi.getPushConfig().subscribe({
+        next: (config) => {
+          if (!config.enabled || !config.public_key) {
+            console.warn('Web Push is not configured on the server.');
+            return;
+          }
+
+          void this.browserNotifications.subscribeToPush(config.public_key).then((subscription) => {
+            if (!subscription) {
+              return;
+            }
+
+            this.newsApi.savePushSubscription(subscription).subscribe({
+              error: (error) => {
+                console.error('Failed to save Web Push subscription:', error);
+              },
+            });
+          });
+        },
+        error: (error) => {
+          console.error('Failed to load Web Push configuration:', error);
+        },
+      });
+    });
   }
 
   closeNotifications(): void {

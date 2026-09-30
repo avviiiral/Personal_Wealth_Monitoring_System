@@ -77,7 +77,7 @@ export class BrowserNotificationService {
    * any runtime error) - the dashboard notification center is always
    * the fallback, so this must never throw or block the caller.
    */
-  showNotification(options: BrowserNotificationOptions): void {
+  async requestPermission(): Promise<NotificationPermission | 'unsupported'> {\n    if (!this.isSupported()) {\n      return 'unsupported';\n    }\n\n    if (Notification.permission === 'default') {\n      try {\n        return await Notification.requestPermission();\n      } catch (error) {\n        console.error('Notification permission request failed:', error);\n      }\n    }\n\n    return Notification.permission;\n  }\n\n  showNotification(options: BrowserNotificationOptions): void {
     if (!this.isSupported() || Notification.permission !== 'granted') {
       return;
     }

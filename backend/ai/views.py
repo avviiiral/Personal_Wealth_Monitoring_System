@@ -359,7 +359,7 @@ summary described in rule 16) follows.
 
     except requests.exceptions.HTTPError as exc:
         try:
-            error_data = response.json()
+            error_data = response.json() if response is not None else {}
         except Exception:
             error_data = {}
 

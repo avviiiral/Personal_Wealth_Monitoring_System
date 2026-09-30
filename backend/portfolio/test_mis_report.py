@@ -128,9 +128,12 @@ class MISReportAPITests(TestCase):
     def test_unrelated_family_is_not_accessible(self):
         other_family = FamilyGroup.objects.create(name="Other Family")
         self.user.profile.role = Role.VIEWER
-        self.user.profile.family_groups.add(other_family)
+
+        # Simulate a stale/forged active-family selection. The user is
+        # deliberately NOT a member of the selected family.
+        self.user.profile.family_groups.remove(self.family)
         self.user.profile.active_family_group = other_family
-        self.user.profile.save(update_fields=["active_family_group"])
+        self.user.profile.save(update_fields=["role", "active_family_group"])
 
         response = self.client.get("/api/portfolio/mis-report/")
         self.assertEqual(response.status_code, 403)

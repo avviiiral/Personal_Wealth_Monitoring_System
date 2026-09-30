@@ -325,7 +325,7 @@ class BenchmarkPerformanceTests(TestCase):
             {"date": "2021-01-01", "value": 100.0},
             {"date": "2026-01-01", "value": 150.0},
         ]
-        with patch.object(BenchmarkPerformanceService, "_series", return_value=points):
+        with patch.object(BenchmarkPerformanceService, "_nifty_tri_series", return_value=points):
             result = BenchmarkPerformanceService.calculate(product)
         self.assertTrue(result["available"])
         self.assertEqual(result["benchmark"], "Nifty 50")
@@ -418,6 +418,9 @@ class BenchmarkPerformanceTests(TestCase):
             source="TEST",
         )
         MutualFundProduct.objects.create(product=product, scheme_code="API-BSETRI", benchmark="BSE 500")
+        self.client.force_authenticate(
+            user=User.objects.create_user(username="benchmark-api-user")
+        )
         with patch.object(
             BenchmarkPerformanceService,
             "_bse_series",
@@ -426,8 +429,9 @@ class BenchmarkPerformanceTests(TestCase):
                 {"date": "2026-01-01", "value": 150.0},
             ],
         ):
-            self.client.force_authenticate(user=User.objects.create_user(username="benchmark-api-user"))
-        response = self.client.get(f"/api/watch-list/products/{product.id}/benchmark-performance/?period=1Y")
+            response = self.client.get(
+                f"/api/watch-list/products/{product.id}/benchmark-performance/?period=1Y"
+            )
         self.assertEqual(response.status_code, 200)
         self.assertTrue(response.data["available"])
         self.assertEqual(response.data["benchmark"], "BSE 500")

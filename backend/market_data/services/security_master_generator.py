@@ -469,10 +469,7 @@ class SecurityMasterGenerator:
 
         return output[
             output["ISIN"] != ""
-        ].drop_duplicates(
-            subset=["ISIN"],
-            keep="first",
-        )
+        ].drop_duplicates(subset="ISIN")
 
     @classmethod
     def _load_nse_master(cls):

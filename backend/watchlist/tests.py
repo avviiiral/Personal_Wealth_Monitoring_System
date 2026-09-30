@@ -287,8 +287,8 @@ class BenchmarkPerformanceTests(TestCase):
     def test_bse500_fetches_automatically(self, mocked_get):
         mocked_get.return_value.text = (
             "Index Name,Date,Open,High,Low,Close\n"
-            "BSE500,01/01/2021,100,101,99,100\n"
-            "BSE500,04/01/2021,100,102,99,101\n"
+            "BSE500T,01/01/2021,100,101,99,100\n"
+            "BSE500T,04/01/2021,100,102,99,101\n"
         )
         mocked_get.return_value.raise_for_status.return_value = None
         points = BenchmarkPerformanceService._fetch_bse_points(
@@ -296,7 +296,7 @@ class BenchmarkPerformanceTests(TestCase):
         )
         mocked_get.assert_called_once()
         self.assertEqual(
-            mocked_get.call_args.kwargs["params"]["strIndex"], "BSE500"
+            mocked_get.call_args.kwargs["params"]["strIndex"], "BSE500T"
         )
         self.assertEqual(points[-1]["value"], 101.0)
 
@@ -384,7 +384,7 @@ class BenchmarkPerformanceTests(TestCase):
         )
         with patch.object(
             BenchmarkPerformanceService,
-            "_series",
+            "_nifty_tri_series",
             return_value=points,
         ):
             result = BenchmarkPerformanceService.calculate(product)
@@ -426,7 +426,8 @@ class BenchmarkPerformanceTests(TestCase):
                 {"date": "2026-01-01", "value": 150.0},
             ],
         ):
-            response = self.client.get(f"/api/watch-list/products/{product.id}/benchmark-performance/?period=1Y")
+            self.client.force_authenticate(user=User.objects.create_user(username="benchmark-api-user"))
+        response = self.client.get(f"/api/watch-list/products/{product.id}/benchmark-performance/?period=1Y")
         self.assertEqual(response.status_code, 200)
         self.assertTrue(response.data["available"])
         self.assertEqual(response.data["benchmark"], "BSE 500")

@@ -330,7 +330,7 @@ class ArticleAnalysis:
                     ImpactLevel.MODERATE: Materiality.MODERATE,
                     ImpactLevel.LOW: Materiality.LOW,
                     ImpactLevel.VERY_LOW: Materiality.TRIVIAL,
-                }.get(impact, Materiality.MODERATE),
+                }.get(str(impact), Materiality.MODERATE),
             ),
             key_facts=str(data.get("key_facts", "")).strip(),
             interpretation=str(data.get("interpretation", "")).strip(),

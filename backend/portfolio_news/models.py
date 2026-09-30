@@ -408,3 +408,54 @@ class PortfolioNewsAlert(models.Model):
             f"{self.holding_display_name} - "
             f"{self.article.title} ({self.notification_tier})"
         )
+
+class PushSubscription(models.Model):
+    """
+    Browser Web Push subscription owned by one authenticated user.
+
+    The endpoint and client keys are the exact values returned by the
+    browser PushManager subscription. Multiple devices/browsers can be
+    registered for the same user.
+    """
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="portfolio_news_push_subscriptions",
+    )
+
+    endpoint = models.URLField(
+        max_length=2000,
+        unique=True,
+    )
+
+    p256dh = models.TextField()
+    auth = models.TextField()
+
+    user_agent = models.TextField(
+        blank=True,
+    )
+
+    enabled = models.BooleanField(
+        default=True,
+    )
+
+    created_at = models.DateTimeField(
+        auto_now_add=True,
+    )
+
+    updated_at = models.DateTimeField(
+        auto_now=True,
+    )
+
+    class Meta:
+        ordering = ["-updated_at"]
+        indexes = [
+            models.Index(
+                fields=["user", "enabled"],
+                name="push_sub_user_enabled_idx",
+            ),
+        ]
+
+    def __str__(self):
+        return f"PushSubscription(user_id={self.user_id}, endpoint={self.endpoint[:60]})"

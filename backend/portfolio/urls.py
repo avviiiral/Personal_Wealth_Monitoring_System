@@ -108,6 +108,6 @@ urlpatterns = [
     path(
         "assets/<int:asset_id>/manual-price/",
         manual_asset_price,
-        name="portfolio-asset-manual-price",
+        name="manual-asset-price",
     ),
 ]

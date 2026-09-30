@@ -17,6 +17,8 @@ export class BrowserNotificationService {
     return typeof window !== 'undefined' && 'Notification' in window;
   }
 
+  private readonly serviceWorkerPath = '/push-sw.js';
+
   getPermission(): NotificationPermission | 'unsupported' {
     if (!this.isSupported()) {
       return 'unsupported';
@@ -91,6 +93,70 @@ export class BrowserNotificationService {
     }
 
     return Notification.permission;
+  }
+
+  async subscribeToPush(publicKey: string): Promise<PushSubscriptionJSON | null> {
+    if (!this.isSupported() || !('serviceWorker' in navigator) || !('PushManager' in window)) {
+      return null;
+    }
+
+    if (!publicKey) {
+      return null;
+    }
+
+    try {
+      const registration = await navigator.serviceWorker.register(this.serviceWorkerPath);
+      const existing = await registration.pushManager.getSubscription();
+
+      if (existing) {
+        return existing.toJSON();
+      }
+
+      const subscription = await registration.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: this.base64UrlToUint8Array(publicKey),
+      });
+
+      return subscription.toJSON();
+    } catch (error) {
+      console.error('Web Push subscription failed:', error);
+      return null;
+    }
+  }
+
+  async unsubscribeFromPush(): Promise<PushSubscriptionJSON | null> {
+    if (!('serviceWorker' in navigator)) {
+      return null;
+    }
+
+    try {
+      const registration = await navigator.serviceWorker.getRegistration(this.serviceWorkerPath);
+      const subscription = await registration?.pushManager.getSubscription();
+
+      if (!subscription) {
+        return null;
+      }
+
+      const payload = subscription.toJSON();
+      await subscription.unsubscribe();
+      return payload;
+    } catch (error) {
+      console.error('Web Push unsubscribe failed:', error);
+      return null;
+    }
+  }
+
+  private base64UrlToUint8Array(value: string): Uint8Array {
+    const padding = '='.repeat((4 - (value.length % 4)) % 4);
+    const normalized = (value + padding).replace(/-/g, '+').replace(/_/g, '/');
+    const raw = window.atob(normalized);
+    const output = new Uint8Array(raw.length);
+
+    for (let index = 0; index < raw.length; index += 1) {
+      output[index] = raw.charCodeAt(index);
+    }
+
+    return output;
   }
 
   showNotification(options: BrowserNotificationOptions): void {

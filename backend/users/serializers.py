@@ -560,7 +560,7 @@ class UserUpdateSerializer(serializers.ModelSerializer):
             if old_role != role:
                 _log(
                     requesting_user, instance, UserAuditLog.Action.ROLE_CHANGED,
-                    old_value=old_role, new_value=role,
+                    old_value=old_role or "", new_value=role,
                 )
 
         if family_groups is not None:

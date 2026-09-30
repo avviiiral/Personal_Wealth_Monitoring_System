@@ -74,6 +74,11 @@ def _apply_common_filters(queryset, request):
     if holding_type:
         queryset = queryset.filter(holding_type=holding_type)
 
+    source_type = request.query_params.get("source_type")
+
+    if source_type:
+        queryset = queryset.filter(source_type=source_type)
+
     holding_id = request.query_params.get("holding_id")
 
     if holding_id:
@@ -111,7 +116,7 @@ def portfolio_news_list(request):
     queryset = (
         PortfolioNewsAlert.objects
         .filter(user=request.user, relevant=True)
-        .select_related("article")
+        .select_related("article", "filing")
     )
 
     tier = request.query_params.get("tier")
@@ -151,7 +156,7 @@ def portfolio_news_detail(request, alert_id):
     """
 
     alert = get_object_or_404(
-        PortfolioNewsAlert.objects.select_related("article"),
+        PortfolioNewsAlert.objects.select_related("article", "filing"),
         id=alert_id,
         user=request.user,
         relevant=True,
@@ -191,7 +196,7 @@ def portfolio_notifications_list(request):
 
     items = list(
         base_queryset
-        .select_related("article")
+        .select_related("article", "filing")
         .order_by("-alert_score", "-created_at")[:limit]
     )
 

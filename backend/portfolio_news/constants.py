@@ -4,6 +4,12 @@ from django.db import models
 class HoldingType(models.TextChoices):
     EQUITY = "EQUITY", "Equity"
     MUTUAL_FUND = "MUTUAL_FUND", "Mutual Fund"
+    WATCHLIST = "WATCHLIST", "Watchlist"
+
+
+class AlertSourceType(models.TextChoices):
+    NEWS = "NEWS", "News"
+    EXCHANGE_FILING = "EXCHANGE_FILING", "Exchange Filing"
 
 
 class NewsCategory(models.TextChoices):

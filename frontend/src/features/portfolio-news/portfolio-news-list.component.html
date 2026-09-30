@@ -54,6 +54,13 @@
 
     <div class="secondary-filters">
       <div class="filter-group">
+        <span class="filter-group-label">Type</span>
+        <button type="button" *ngFor="let source of sources" class="secondary-filter-button" [class.active]="activeSource === source.value" (click)="selectSource(source.value)">
+          {{ source.label }}
+        </button>
+      </div>
+
+      <div class="filter-group">
         <span class="filter-group-label">Sentiment</span>
         <button
           type="button"
@@ -115,11 +122,11 @@
         <div class="news-card-body">
           <div class="news-card-top">
             <strong>{{ item.holding_display_name }}</strong>
-            <span class="news-card-category">{{ item.category }}</span>
+            <span class="news-card-category">{{ item.source_type === 'EXCHANGE_FILING' ? 'EXCHANGE FILING' : item.category }}</span>
             <span [class]="materialityBadgeClass(item.materiality)">{{ item.materiality }}</span>
           </div>
 
-          <span class="news-card-title">{{ item.article_title }}</span>
+          <span class="news-card-title">{{ item.source_type === 'EXCHANGE_FILING' && item.filing_subject ? item.filing_subject : item.article_title }}</span>
 
           <div class="news-card-meta">
             <span>{{ item.article_source }}</span>

@@ -6,7 +6,7 @@ import { environment } from '../../environments/environment';
 export interface PortfolioNewsAlertListItem {
   id: number;
   holding_display_name: string;
-  holding_type: 'EQUITY' | 'MUTUAL_FUND';
+  holding_type: 'EQUITY' | 'MUTUAL_FUND' | 'WATCHLIST';
   category: string;
   sentiment: 'positive' | 'negative' | 'neutral' | 'mixed';
   impact: 'very_low' | 'low' | 'moderate' | 'high' | 'critical';
@@ -22,6 +22,13 @@ export interface PortfolioNewsAlertListItem {
   is_read: boolean;
   notification_sent: boolean;
   created_at: string;
+  source_type: 'NEWS' | 'EXCHANGE_FILING';
+  filing_exchange?: string | null;
+  filing_company?: string | null;
+  filing_symbol?: string | null;
+  filing_subject?: string | null;
+  filing_event_type?: string | null;
+  filing_severity?: string | null;
 }
 
 export interface NewsArticleSource {
@@ -45,6 +52,7 @@ export interface PortfolioNewsAlertDetail extends PortfolioNewsAlertListItem {
   article_url: string;
   article_description: string;
   sources: NewsArticleSource[];
+  filing_url?: string | null;
 }
 
 export interface PortfolioNewsListResponse {
@@ -126,6 +134,7 @@ export class NewsApiService {
     holdingType?: string;
     holdingId?: number;
     dateRange?: string;
+    sourceType?: string;
   }): Observable<PortfolioNewsListResponse> {
     let params = new HttpParams();
 
@@ -159,6 +168,9 @@ export class NewsApiService {
 
     if (options?.dateRange) {
       params = params.set('date_range', options.dateRange);
+    }
+    if (options?.sourceType) {
+      params = params.set('source_type', options.sourceType);
     }
 
     return this.http.get<PortfolioNewsListResponse>(`${this.baseUrl}/news/`, {

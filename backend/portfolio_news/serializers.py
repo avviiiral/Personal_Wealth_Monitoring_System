@@ -34,11 +34,19 @@ class PortfolioNewsAlertListSerializer(serializers.ModelSerializer):
         read_only=True,
     )
 
+    filing_exchange = serializers.CharField(source="filing.exchange", read_only=True, allow_null=True)
+    filing_company = serializers.CharField(source="filing.company_name", read_only=True, allow_null=True)
+    filing_symbol = serializers.CharField(source="filing.symbol", read_only=True, allow_null=True)
+    filing_subject = serializers.CharField(source="filing.subject", read_only=True, allow_null=True)
+    filing_event_type = serializers.CharField(source="filing.event_type", read_only=True, allow_null=True)
+    filing_severity = serializers.CharField(source="filing.severity", read_only=True, allow_null=True)
+
     class Meta:
         model = PortfolioNewsAlert
 
         fields = [
             "id",
+            "source_type",
             "holding_display_name",
             "holding_type",
             "category",
@@ -56,6 +64,12 @@ class PortfolioNewsAlertListSerializer(serializers.ModelSerializer):
             "is_read",
             "notification_sent",
             "created_at",
+            "filing_exchange",
+            "filing_company",
+            "filing_symbol",
+            "filing_subject",
+            "filing_event_type",
+            "filing_severity",
         ]
 
 
@@ -102,6 +116,14 @@ class PortfolioNewsDigestSerializer(serializers.Serializer):
 
 
 class PortfolioNewsAlertDetailSerializer(serializers.ModelSerializer):
+    filing_exchange = serializers.CharField(source="filing.exchange", read_only=True, allow_null=True)
+    filing_company = serializers.CharField(source="filing.company_name", read_only=True, allow_null=True)
+    filing_symbol = serializers.CharField(source="filing.symbol", read_only=True, allow_null=True)
+    filing_subject = serializers.CharField(source="filing.subject", read_only=True, allow_null=True)
+    filing_event_type = serializers.CharField(source="filing.event_type", read_only=True, allow_null=True)
+    filing_severity = serializers.CharField(source="filing.severity", read_only=True, allow_null=True)
+    filing_url = serializers.URLField(source="filing.filing_url", read_only=True, allow_null=True)
+
     """
     Full representation for the news detail page - includes
     the AI's reasoning, the portfolio-weight context behind
@@ -155,6 +177,7 @@ class PortfolioNewsAlertDetailSerializer(serializers.ModelSerializer):
 
         fields = [
             "id",
+            "source_type",
             "holding_display_name",
             "holding_type",
             "category",
@@ -185,4 +208,11 @@ class PortfolioNewsAlertDetailSerializer(serializers.ModelSerializer):
             "source_quality",
             "source_count",
             "sources",
+            "filing_exchange",
+            "filing_company",
+            "filing_symbol",
+            "filing_subject",
+            "filing_event_type",
+            "filing_severity",
+            "filing_url",
         ]

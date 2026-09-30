@@ -15,6 +15,7 @@ type SentimentFilter = 'all' | 'positive' | 'negative' | 'neutral' | 'mixed';
 type DateRangeFilter = 'all' | 'today' | '3d' | '7d' | '30d';
 
 type ViewMode = 'feed' | 'digest';
+type SourceFilter = 'all' | 'NEWS' | 'EXCHANGE_FILING';
 
 @Component({
   selector: 'app-portfolio-news-list',
@@ -34,6 +35,7 @@ export class PortfolioNewsListComponent implements OnInit {
   activeTier: TierFilter = 'all';
   activeSentiment: SentimentFilter = 'all';
   activeDateRange: DateRangeFilter = 'all';
+  activeSource: SourceFilter = 'all';
 
   viewMode: ViewMode = 'feed';
 
@@ -54,6 +56,12 @@ export class PortfolioNewsListComponent implements OnInit {
     { value: 'positive', label: 'Positive' },
     { value: 'negative', label: 'Negative' },
     { value: 'neutral', label: 'Neutral' },
+  ];
+
+  readonly sources: { value: SourceFilter; label: string }[] = [
+    { value: 'all', label: 'All' },
+    { value: 'NEWS', label: 'News' },
+    { value: 'EXCHANGE_FILING', label: 'Exchange Filings' },
   ];
 
   readonly dateRanges: { value: DateRangeFilter; label: string }[] = [
@@ -77,6 +85,7 @@ export class PortfolioNewsListComponent implements OnInit {
         tier: this.activeTier === 'all' ? undefined : this.activeTier,
         sentiment: this.activeSentiment === 'all' ? undefined : this.activeSentiment,
         dateRange: this.activeDateRange === 'all' ? undefined : this.activeDateRange,
+        sourceType: this.activeSource === 'all' ? undefined : this.activeSource,
         limit: 100,
       })
       .subscribe({
@@ -108,6 +117,12 @@ export class PortfolioNewsListComponent implements OnInit {
     }
 
     this.activeSentiment = sentiment;
+    this.loadNews();
+  }
+
+  selectSource(source: SourceFilter): void {
+    if (this.activeSource === source) return;
+    this.activeSource = source;
     this.loadNews();
   }
 

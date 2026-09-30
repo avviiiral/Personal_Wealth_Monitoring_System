@@ -65,4 +65,6 @@ urlpatterns = [
         "api/watch-list/",
         include("watchlist.urls"),
     ),
+
+    path("api/filings/", include("filing_intelligence.urls")),
 ]

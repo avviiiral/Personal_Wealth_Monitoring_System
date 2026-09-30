@@ -62,6 +62,7 @@ INSTALLED_APPS = [
     'mutual_funds',
     'portfolio_news',
     'watchlist',
+    'filing_intelligence',
 ]
 
 MIDDLEWARE = [
@@ -212,6 +213,7 @@ LOGGING = {
         'mutual_funds_file': _rotating_log_handler('mutual_funds.log'),
         'watchlist_file': _rotating_log_handler('watchlist.log'),
         'news_file': _rotating_log_handler('news.log'),
+        'filings_file': _rotating_log_handler('filings.log'),
         'authentication_file': _rotating_log_handler('authentication.log'),
         'imports_file': _rotating_log_handler('imports.log'),
     },
@@ -250,6 +252,11 @@ LOGGING = {
         },
         'portfolio_news': {
             'handlers': ['console', 'news_file', 'errors_file'],
+            'level': 'INFO',
+            'propagate': False,
+        },
+        'filing_intelligence': {
+            'handlers': ['console', 'filings_file', 'errors_file'],
             'level': 'INFO',
             'propagate': False,
         },

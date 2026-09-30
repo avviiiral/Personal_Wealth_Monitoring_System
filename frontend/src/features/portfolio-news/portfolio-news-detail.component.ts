@@ -52,6 +52,10 @@ export class PortfolioNewsDetailComponent implements OnInit {
     return this.alert ? Math.round(this.alert.confidence * 100) : 0;
   }
 
+  isFiling(): boolean {
+    return this.alert?.source_type === 'EXCHANGE_FILING';
+  }
+
   formattedPublishedAt(): string {
     if (!this.alert?.article_published_at) {
       return 'Publication time unavailable';

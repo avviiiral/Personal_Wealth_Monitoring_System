@@ -2,6 +2,7 @@ from django.conf import settings
 from django.db import models
 
 from .constants import (
+    AlertSourceType,
     HoldingType,
     ImpactLevel,
     Materiality,
@@ -213,6 +214,13 @@ class PortfolioNewsAlert(models.Model):
         related_name="portfolio_news_alerts",
     )
 
+    source_type = models.CharField(max_length=30, choices=AlertSourceType.choices, default=AlertSourceType.NEWS, db_index=True)
+
+    filing = models.ForeignKey(
+        "filing_intelligence.Filing", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="portfolio_news_alerts",
+    )
+
     article = models.ForeignKey(
         NewsArticle,
         on_delete=models.CASCADE,
@@ -392,6 +400,7 @@ class PortfolioNewsAlert(models.Model):
                 fields=["user", "notification_tier"],
                 name="news_alert_user_tier_idx",
             ),
+            models.Index(fields=["user", "source_type", "-created_at"], name="news_alert_user_source_idx"),
         ]
 
     def __str__(self):

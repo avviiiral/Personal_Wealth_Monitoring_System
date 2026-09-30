@@ -155,7 +155,7 @@ class NotificationTier(models.TextChoices):
     @classmethod
     def from_impact_level(cls, impact_level: str) -> str:
 
-        mapping = {
+        mapping: dict[str, str] = {
             ImpactLevel.CRITICAL: cls.CRITICAL,
             ImpactLevel.HIGH: cls.HIGH,
             ImpactLevel.MODERATE: cls.MODERATE,

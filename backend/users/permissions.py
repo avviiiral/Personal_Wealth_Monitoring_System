@@ -376,7 +376,7 @@ class IsViewer(BasePermission):
 
     message = "You must be logged in to access this resource."
 
-    def has_permission(self, request, view):
+    def has_permission(self, request, view) -> bool:
         return get_role(request.user) is not None
 
 

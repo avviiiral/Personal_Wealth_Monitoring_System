@@ -81,7 +81,7 @@ class APMIPMSDiscoveryService:
             if not provider or not ia_name or provider.lower() == "nan" or ia_name.lower() == "nan":
                 continue
 
-            iaid_match = re.search(r"IAID=([^&#\"']+)", ia_link.get("href", ""), re.IGNORECASE)
+            iaid_match = re.search(r"IAID=([^&#\"']+)", str(ia_link.get("href") or ""), re.IGNORECASE)
             iaid = iaid_match.group(1) if iaid_match else None
             identity = (provider.upper(), iaid or ia_name.upper())
             if identity in seen:

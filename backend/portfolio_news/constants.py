@@ -127,7 +127,7 @@ class SourceQualityTier(models.TextChoices):
     def weight(cls, tier: str) -> float:
         """Multiplier used by alert scoring (0-1)."""
 
-        mapping = {
+        mapping: dict[str, float] = {
             cls.TIER_1: 1.0,
             cls.TIER_2: 0.75,
             cls.TIER_3: 0.5,
@@ -155,7 +155,7 @@ class NotificationTier(models.TextChoices):
     @classmethod
     def from_impact_level(cls, impact_level: str) -> str:
 
-        mapping = {
+        mapping: dict[str, str] = {
             ImpactLevel.CRITICAL: cls.CRITICAL,
             ImpactLevel.HIGH: cls.HIGH,
             ImpactLevel.MODERATE: cls.MODERATE,

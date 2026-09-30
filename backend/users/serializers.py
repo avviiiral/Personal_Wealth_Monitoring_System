@@ -1,3 +1,5 @@
+from typing import Any, cast
+
 from django.contrib.auth import get_user_model
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError as DjangoValidationError
@@ -560,7 +562,7 @@ class UserUpdateSerializer(serializers.ModelSerializer):
             if old_role != role:
                 _log(
                     requesting_user, instance, UserAuditLog.Action.ROLE_CHANGED,
-                    old_value=old_role, new_value=role,
+                    old_value=old_role or "", new_value=role,
                 )
 
         if family_groups is not None:
@@ -629,11 +631,12 @@ class ActiveFamilySerializer(serializers.Serializer):
 
         return value
 
-    def save(self):
+    def save(self, **kwargs):
         request = self.context["request"]
         profile = request.user.profile
 
-        profile.active_family_group = self.validated_data["family_id"]
+        validated_data = cast(dict[str, Any], self.validated_data)
+        profile.active_family_group = validated_data["family_id"]
         profile.save(update_fields=["active_family_group", "updated_at"])
 
         return profile

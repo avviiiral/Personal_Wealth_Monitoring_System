@@ -145,7 +145,16 @@ class YahooFinanceService:
 
         for index, row in data.iterrows():
 
-            market_date = index.date()
+            market_date = pd.Timestamp(str(index)).date()
+            volume_value = row.get("Volume")
+            volume = None
+            if volume_value is not None:
+                volume_text = str(volume_value).strip()
+                if volume_text and volume_text.lower() not in {"nan", "nat"}:
+                    try:
+                        volume = int(float(volume_text))
+                    except (TypeError, ValueError):
+                        volume = None
 
             MarketPrice.objects.update_or_create(
                 asset=asset,
@@ -172,11 +181,7 @@ class YahooFinanceService:
                         row.get("Adj Close")
                     ),
 
-                    "volume": (
-                        int(row["Volume"])
-                        if not pd.isna(row.get("Volume"))
-                        else None
-                    ),
+                    "volume": volume,
                 },
             )
 

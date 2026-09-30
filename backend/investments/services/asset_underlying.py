@@ -117,21 +117,21 @@ class AssetUnderlyingImporter:
 
         rows = []
         by_name, by_compact_name, by_isin = cls._classification_maps(family)
-        for index, raw in frame.iterrows():
+        for row_number, (_, raw) in enumerate(frame.iterrows(), start=2):
             stock_name = str(raw.get(stock_column, "")).strip()
             if not stock_name or stock_name.lower() == "nan":
                 continue
             raw_percentage = raw.get(percent_column)
             try:
-                if pd.isna(raw_percentage):
+                if raw_percentage is None or str(raw_percentage).strip().lower() == "nan":
                     raise ValueError
                 percentage = Decimal(str(raw_percentage).replace("%", "").strip())
                 if Decimal("0") <= percentage <= Decimal("1"):
                     percentage *= Decimal("100")
             except (InvalidOperation, TypeError, ValueError):
-                raise AssetUnderlyingImportError(f"Invalid holding percentage on Excel row {index + 2}.")
+                raise AssetUnderlyingImportError(f"Invalid holding percentage on Excel row {row_number}.")
             if percentage < 0 or percentage > 100:
-                raise AssetUnderlyingImportError(f"Holding percentage must be between 0 and 100 on Excel row {index + 2}.")
+                raise AssetUnderlyingImportError(f"Holding percentage must be between 0 and 100 on Excel row {row_number}.")
             isin = UnderlyingSecurityClassifier.resolve_isin(stock_name)
             sector = None
             cap_type = None

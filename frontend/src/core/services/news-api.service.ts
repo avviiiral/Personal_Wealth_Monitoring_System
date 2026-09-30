@@ -60,6 +60,11 @@ export interface PortfolioNewsListResponse {
   count: number;
 }
 
+export interface PushConfigResponse {
+  enabled: boolean;
+  public_key: string;
+}
+
 export interface PortfolioNotificationsResponse {
   unread_count: number;
   results: PortfolioNewsAlertListItem[];
@@ -230,6 +235,45 @@ export class NewsApiService {
     return this.http.post<{ updated: number }>(
       `${this.baseUrl}/notifications/read-all/`,
       {},
+      {
+        withCredentials: true,
+        headers: this.postHeaders(),
+      },
+    );
+  }
+
+  getPushConfig(): Observable<PushConfigResponse> {
+    return this.http.get<PushConfigResponse>(
+      `${this.baseUrl}/notifications/push/config/`,
+      {
+        withCredentials: true,
+      },
+    );
+  }
+
+  savePushSubscription(subscription: PushSubscriptionJSON): Observable<{
+    id: number;
+    created: boolean;
+    enabled: boolean;
+  }> {
+    return this.http.post<{
+      id: number;
+      created: boolean;
+      enabled: boolean;
+    }>(
+      `${this.baseUrl}/notifications/push/subscribe/`,
+      subscription,
+      {
+        withCredentials: true,
+        headers: this.postHeaders(),
+      },
+    );
+  }
+
+  disablePushSubscription(endpoint: string): Observable<{ updated: number }> {
+    return this.http.post<{ updated: number }>(
+      `${this.baseUrl}/notifications/push/unsubscribe/`,
+      { endpoint },
       {
         withCredentials: true,
         headers: this.postHeaders(),

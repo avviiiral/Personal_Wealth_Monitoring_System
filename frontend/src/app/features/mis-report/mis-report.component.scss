@@ -1,0 +1,184 @@
+.mis-page {
+  padding: 28px;
+  max-width: 1500px;
+  margin: 0 auto;
+}
+
+.page-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 24px;
+  align-items: flex-start;
+  margin-bottom: 24px;
+}
+
+.eyebrow {
+  margin: 0 0 6px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  opacity: .6;
+}
+
+h1 {
+  margin: 0;
+  font-size: 30px;
+}
+
+.subtitle {
+  margin: 8px 0 0;
+  opacity: .72;
+}
+
+.separator {
+  margin: 0 8px;
+}
+
+.download-button,
+.state-card button {
+  border: 0;
+  border-radius: 10px;
+  padding: 11px 16px;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.download-button {
+  background: #111827;
+  color: #fff;
+}
+
+.download-button:disabled {
+  opacity: .55;
+  cursor: not-allowed;
+}
+
+.summary-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+  margin-bottom: 18px;
+}
+
+.summary-card,
+.report-card,
+.state-card {
+  border: 1px solid rgba(127, 127, 127, .2);
+  border-radius: 14px;
+  background: var(--surface, #fff);
+}
+
+.summary-card {
+  padding: 18px;
+}
+
+.summary-card span,
+.summary-card small {
+  display: block;
+  opacity: .65;
+}
+
+.summary-card strong {
+  display: block;
+  margin-top: 8px;
+  font-size: 23px;
+}
+
+.report-card {
+  margin-bottom: 18px;
+  overflow: hidden;
+}
+
+.section-header {
+  padding: 18px 20px;
+  border-bottom: 1px solid rgba(127, 127, 127, .16);
+}
+
+.section-header h2 {
+  margin: 0;
+  font-size: 18px;
+}
+
+.section-header span {
+  display: block;
+  margin-top: 4px;
+  font-size: 13px;
+  opacity: .62;
+}
+
+.table-wrap {
+  overflow-x: auto;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 760px;
+}
+
+th,
+td {
+  padding: 13px 16px;
+  border-bottom: 1px solid rgba(127, 127, 127, .12);
+  text-align: left;
+  white-space: nowrap;
+}
+
+th {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  opacity: .65;
+}
+
+td small {
+  display: block;
+  margin-top: 3px;
+  opacity: .55;
+  font-size: 11px;
+}
+
+.number {
+  text-align: right;
+}
+
+.empty {
+  text-align: center;
+  padding: 28px;
+  opacity: .65;
+}
+
+.state-card {
+  padding: 28px;
+  display: flex;
+  gap: 10px;
+  flex-direction: column;
+}
+
+.state-card.error {
+  border-color: rgba(220, 38, 38, .3);
+}
+
+.state-card button {
+  align-self: flex-start;
+}
+
+@media (max-width: 900px) {
+  .mis-page {
+    padding: 18px;
+  }
+
+  .page-header {
+    flex-direction: column;
+  }
+
+  .summary-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .download-button {
+    width: 100%;
+  }
+}

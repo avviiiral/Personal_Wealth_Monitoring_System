@@ -1,0 +1,119 @@
+<section class="mis-page">
+  <div class="page-header">
+    <div>
+      <p class="eyebrow">Portfolio</p>
+      <h1>MIS Report</h1>
+      <p class="subtitle" *ngIf="report">
+        Family: <strong>{{ report.family_name }}</strong>
+        <span class="separator">•</span>
+        Reporting date: {{ report.reporting_date | date: 'dd MMM yyyy' }}
+      </p>
+    </div>
+
+    <button class="download-button" type="button" (click)="downloadExcel()" [disabled]="loading || downloading || !report">
+      <span>{{ downloading ? 'Preparing Excel…' : 'Download Excel' }}</span>
+    </button>
+  </div>
+
+  <div class="state-card" *ngIf="loading">Loading MIS Report…</div>
+
+  <div class="state-card error" *ngIf="!loading && error">
+    <strong>Unable to load the report.</strong>
+    <span>{{ error }}</span>
+    <button type="button" (click)="loadReport()">Retry</button>
+  </div>
+
+  <ng-container *ngIf="!loading && report && !error">
+    <div class="summary-grid">
+      <article class="summary-card">
+        <span>Total Invested</span>
+        <strong>{{ formatCurrency(report.summary.total_invested) }}</strong>
+      </article>
+      <article class="summary-card">
+        <span>Current Value</span>
+        <strong>{{ formatCurrency(report.summary.total_current_value) }}</strong>
+      </article>
+      <article class="summary-card">
+        <span>Total P&amp;L</span>
+        <strong>{{ formatCurrency(report.summary.total_pnl) }}</strong>
+        <small>{{ formatPercent(report.summary.pnl_percentage) }}</small>
+      </article>
+    </div>
+
+    <section class="report-card">
+      <div class="section-header">
+        <div>
+          <h2>Asset Class Summary</h2>
+          <span>{{ report.summary.number_of_holdings }} holdings</span>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Asset Class</th>
+              <th class="number">Invested Value</th>
+              <th class="number">Current Value</th>
+              <th class="number">P&amp;L</th>
+              <th class="number">P&amp;L %</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr *ngFor="let row of report.asset_class_summary">
+              <td>{{ row.asset_class }}</td>
+              <td class="number">{{ formatCurrency(row.invested_value) }}</td>
+              <td class="number">{{ formatCurrency(row.current_value) }}</td>
+              <td class="number">{{ formatCurrency(row.pnl) }}</td>
+              <td class="number">{{ formatPercent(row.pnl_percentage) }}</td>
+            </tr>
+            <tr *ngIf="report.asset_class_summary.length === 0">
+              <td colspan="5" class="empty">No holdings available for this family.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="report-card" *ngFor="let entry of groups | keyvalue">
+      <div class="section-header">
+        <div>
+          <h2>{{ entry.key }}</h2>
+          <span>{{ entry.value.length }} holdings</span>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Holding / Investment</th>
+              <th>Portfolio</th>
+              <th>Sub Class</th>
+              <th class="number">Invested Value</th>
+              <th class="number">Current Value</th>
+              <th class="number">P&amp;L</th>
+              <th class="number">P&amp;L %</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr *ngFor="let holding of entry.value; trackBy: trackByHolding">
+              <td>
+                <strong>{{ holding.asset_name }}</strong>
+                <small *ngIf="holding.isin">{{ holding.isin }}</small>
+              </td>
+              <td>{{ holding.portfolio }}</td>
+              <td>{{ holding.sub_class }}</td>
+              <td class="number">{{ formatCurrency(holding.invested_value) }}</td>
+              <td class="number">{{ formatCurrency(holding.current_value) }}</td>
+              <td class="number">{{ formatCurrency(holding.pnl) }}</td>
+              <td class="number">{{ formatPercent(holding.pnl_percentage) }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <div class="state-card" *ngIf="report.holdings.length === 0">
+      This family currently has no holdings to report.
+    </div>
+  </ng-container>
+</section>

@@ -84,6 +84,7 @@ class AMFIUniverseService:
             # code;isin1;isin2;name;plan;option;nav;date
             if len(parts) >= 8:
                 nav = cls._decimal(parts[6])
+                nav_date = None
                 try:
                     nav_date = datetime.strptime(parts[7], "%d-%b-%Y").date()
                 except (ValueError, TypeError):

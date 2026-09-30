@@ -28,7 +28,7 @@ Commands are shown for **Windows (PowerShell)** first, with the **macOS / Linux*
 | [6 · First login, users and families](#6--first-login-users-and-families) | [15 · Troubleshooting](#15--troubleshooting)                         |
 | [7 · Getting your data in](#7--getting-your-data-in)                      | [16 · Cheat sheet](#16--cheat-sheet)                                 |
 | [8 · Background jobs](#8--background-jobs)                                | [17 · Reset or uninstall](#17--reset-or-uninstall)                   |
-| [9 · Everyday startup](#9--everyday-startup)                              |                                                                      |
+| [9 · Everyday startup](#9--everyday-startup)                              | [8.4 · Background Web Push](#84-background-web-push-notifications) |
 
 ---
 
@@ -442,6 +442,88 @@ python manage.py monitor_portfolio_news      # one full news pass
 ```
 
 Read the printed statistics (`Holdings processed`, `Articles retrieved`, `Alerts created`, …). `Alerts created: 0` is often perfectly normal on a fresh portfolio with no recent matching news.
+
+---
+
+## 8.4 · Background Web Push notifications
+
+PWMS can deliver newly created **Critical** and **High** Portfolio News alerts through the browser's Web Push API. This uses a service worker and VAPID credentials, so the Angular page does not need to remain open for the notification to be displayed.
+
+### Generate VAPID keys
+
+From `backend/` with the virtual environment active:
+
+```powershell
+python manage.py generate_web_push_keys
+```
+
+The command prints the public key, private key and VAPID subject. Add them to **`backend/.env`**:
+
+```ini
+WEB_PUSH_VAPID_PUBLIC_KEY=<generated-public-key>
+WEB_PUSH_VAPID_PRIVATE_KEY=<generated-private-key>
+WEB_PUSH_VAPID_SUBJECT=mailto:your-email@example.com
+```
+
+Restart Django after changing `.env`.
+
+> **Never commit the private VAPID key.** The public key is intentionally sent to browsers. The private key stays on the Django server.
+
+### Subscribe a browser
+
+1. Start Django with migrations applied.
+2. Start Angular with `npm start`.
+3. Open **http://localhost:4200** and sign in.
+4. Open the notification center / Portfolio News area.
+5. Grant browser notification permission.
+6. PWMS registers **`/push-sw.js`**, creates a browser Push API subscription and sends it to Django.
+7. Django stores the subscription in `portfolio_news.PushSubscription`.
+
+Verify it from the Django shell:
+
+```python
+from portfolio_news.models import PushSubscription
+PushSubscription.objects.all().values("user_id", "endpoint", "enabled")
+```
+
+You should see an enabled subscription for your user.
+
+### Test background delivery
+
+Once subscribed:
+
+1. Close the PWMS tab while leaving the browser running.
+2. Create or ingest a new qualifying **Critical / High** Portfolio News alert.
+3. Confirm the browser/OS displays the notification while the PWMS tab is closed.
+4. Re-open PWMS and confirm the alert is present in the in-app notification feed.
+5. If needed, inspect `PortfolioNewsAlert.notification_sent` to confirm successful push delivery.
+
+The backend automatically disables stale subscriptions when the push provider returns HTTP **404** or **410**.
+
+### Browser/service-worker checks
+
+In Chrome or Edge:
+
+1. Press **F12**.
+2. Open **Application → Service Workers**.
+3. Confirm **`/push-sw.js`** is registered.
+4. Check the site's notification permission.
+5. If the subscription is missing, confirm the VAPID variables are present in `backend/.env` and restart Django.
+
+### Production requirements
+
+- **HTTPS is required in production.** Service workers and Push API require a secure context; `localhost` is allowed for local development.
+- Do not expose Django's development `runserver` directly to the internet.
+- Keep `WEB_PUSH_VAPID_PRIVATE_KEY` in server-side environment configuration only.
+- If push is not configured, Portfolio News continues to work through the in-app notification feed; no push delivery is attempted.
+
+### Web Push API endpoints
+
+| Method | Endpoint | Purpose |
+| --- | --- | --- |
+| `GET` | `/api/ai/notifications/push/config/` | Return Web Push configuration and the public VAPID key |
+| `POST` | `/api/ai/notifications/push/subscribe/` | Save/update the authenticated user's browser subscription |
+| `POST` | `/api/ai/notifications/push/unsubscribe/` | Disable the authenticated user's browser subscription |
 
 ---
 
@@ -1071,11 +1153,19 @@ Check your usage any time with `python manage.py gemini_usage`.
 </details>
 
 <details>
-<summary><b>No browser popup, even though an alert shows on the Portfolio News page</b></summary>
+<summary><b>No browser push notification, even though an alert shows on the Portfolio News page</b></summary>
 
-You need: a supported browser; notification permission granted for the PWMS URL (check the browser's site settings); an alert that is **newly created** at Critical / High tier (not one that existed at your last visit); and the Angular app **open** — notifications are polled every 60 seconds, not pushed.
+Check these in order:
 
-</details>
+1. `WEB_PUSH_VAPID_PUBLIC_KEY` and `WEB_PUSH_VAPID_PRIVATE_KEY` are present in `backend/.env`.
+2. Django was restarted after changing `.env`.
+3. Browser notification permission is **Allowed** for the PWMS origin.
+4. DevTools → **Application → Service Workers** shows `/push-sw.js` registered.
+5. The Django shell shows an enabled `PushSubscription` for your user.
+6. The alert is **newly created** and has **Critical** or **High** notification tier. Lower tiers are intentionally not pushed.
+7. For production, the frontend is served over **HTTPS**.
+
+If these are correct, inspect `backend/logs/pwms.log` for Web Push delivery errors. A 404/410 from the push provider causes the stale subscription to be disabled automatically.</details>
 
 ### 🗄️ Database
 

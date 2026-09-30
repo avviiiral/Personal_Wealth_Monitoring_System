@@ -822,6 +822,7 @@ Prefer to keep everything local? Leave `GEMINI_API_KEY` unset — every feature 
 ```bash
 python manage.py test                       # everything
 python manage.py test users portfolio -v 2  # RBAC + portfolio, verbose
+python manage.py test portfolio_news.test_web_push -v 2 # Web Push delivery behavior
 ```
 
 | Suite                   | Covers                                                                |
@@ -829,6 +830,7 @@ python manage.py test users portfolio -v 2  # RBAC + portfolio, verbose
 | `users/tests.py`        | Every role × capability combination and privilege-escalation attempts |
 | `mutual_funds/tests.py` | Batched AMFI NAV import                                               |
 | `investments/tests.py`  | The transaction importer and AMC-name / quant auto-enrichment         |
+| `portfolio_news/test_web_push.py` | VAPID/Web Push delivery, subscription handling and notification_sent semantics |
 
 **Frontend** — from `frontend/`:
 

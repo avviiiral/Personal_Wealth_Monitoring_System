@@ -33,7 +33,7 @@ class Command(BaseCommand):
 
         symbol = options.get("symbol")
         asset_id = options.get("asset_id")
-        period = options.get("period")
+        period = options.get("period") or "1y"
 
         if not symbol:
             raise CommandError(

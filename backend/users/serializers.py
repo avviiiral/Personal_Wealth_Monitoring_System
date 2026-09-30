@@ -629,7 +629,7 @@ class ActiveFamilySerializer(serializers.Serializer):
 
         return value
 
-    def save(self):
+    def save(self, **kwargs):
         request = self.context["request"]
         profile = request.user.profile
 

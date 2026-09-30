@@ -128,6 +128,7 @@ class MISReportAPITests(TestCase):
     def test_unrelated_family_is_not_accessible(self):
         other_family = FamilyGroup.objects.create(name="Other Family")
         self.user.profile.role = Role.VIEWER
+        self.user.profile.family_groups.add(other_family)
         self.user.profile.active_family_group = other_family
         self.user.profile.save(update_fields=["active_family_group"])
 
@@ -136,6 +137,7 @@ class MISReportAPITests(TestCase):
 
     def test_empty_family_returns_empty_report(self):
         empty_family = FamilyGroup.objects.create(name="Empty MIS Family")
+        self.user.profile.family_groups.add(empty_family)
         self.user.profile.active_family_group = empty_family
         self.user.profile.save(update_fields=["active_family_group"])
 

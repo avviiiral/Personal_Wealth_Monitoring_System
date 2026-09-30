@@ -14,6 +14,7 @@ from .holding_matcher import HoldingMatcher
 from .holdings_registry import get_monitored_holdings
 from .news_provider import NewsProvider
 from .notification_creation import create_alert_from_analysis
+from .web_push import deliver_alert_notification
 from .query_builder import QueryBuilder
 
 
@@ -443,7 +444,7 @@ def _create_alerts_from_analyses(
                 ]
             )
 
-        if alert.notification_sent:
+        if alert.relevant and deliver_alert_notification(alert):
             stats["notifications_sent"] += 1
 
 

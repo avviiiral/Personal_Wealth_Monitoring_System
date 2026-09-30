@@ -72,12 +72,28 @@ export class BrowserNotificationService {
   }
 
   /**
-   * Shows a browser notification if supported and permitted. Silently
-   * does nothing otherwise (denied permission, unsupported browser, or
-   * any runtime error) - the dashboard notification center is always
-   * the fallback, so this must never throw or block the caller.
+   * Requests browser notification permission when needed and returns the
+   * resulting permission state. Unlike requestPermissionIfNeeded(), this
+   * method intentionally does not persist a separate "prompted" flag because
+   * callers may explicitly request permission from a user action.
    */
-  async requestPermission(): Promise<NotificationPermission | 'unsupported'> {\n    if (!this.isSupported()) {\n      return 'unsupported';\n    }\n\n    if (Notification.permission === 'default') {\n      try {\n        return await Notification.requestPermission();\n      } catch (error) {\n        console.error('Notification permission request failed:', error);\n      }\n    }\n\n    return Notification.permission;\n  }\n\n  showNotification(options: BrowserNotificationOptions): void {
+  async requestPermission(): Promise<NotificationPermission | 'unsupported'> {
+    if (!this.isSupported()) {
+      return 'unsupported';
+    }
+
+    if (Notification.permission === 'default') {
+      try {
+        return await Notification.requestPermission();
+      } catch (error) {
+        console.error('Notification permission request failed:', error);
+      }
+    }
+
+    return Notification.permission;
+  }
+
+  showNotification(options: BrowserNotificationOptions): void {
     if (!this.isSupported() || Notification.permission !== 'granted') {
       return;
     }

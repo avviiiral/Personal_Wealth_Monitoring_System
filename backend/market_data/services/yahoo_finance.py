@@ -145,7 +145,7 @@ class YahooFinanceService:
 
         for index, row in data.iterrows():
 
-            market_date = pd.Timestamp(index).date()
+            market_date = pd.Timestamp(str(index)).date()
             volume_value = row.get("Volume")
             volume = None
             if volume_value is not None:

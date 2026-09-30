@@ -6,7 +6,6 @@ from .alert_scoring import compute_alert_score, determine_notification_tier
 if TYPE_CHECKING:
     from ..models import PortfolioNewsAlert
 
-
 logger = logging.getLogger(__name__)
 
 
@@ -17,13 +16,13 @@ def create_alert_from_analysis(
     analysis,
 ) -> Tuple["PortfolioNewsAlert", bool]:
     """
-    Create (or fetch the existing) PortfolioNewsAlert for this
-    exact (user, article, holding) combination.
+    Create (or fetch) the PortfolioNewsAlert for one
+    (user, article, holding) combination.
 
-    The alert row records that an immediate notification is required
-    through its notification_tier. Delivery is a separate concern:
-    notification_sent stays False until the client/server notification
-    delivery layer actually confirms delivery.
+    Notification eligibility and notification delivery are separate:
+    notification_tier records whether the alert qualifies for immediate
+    notification, while notification_sent remains False until a real
+    delivery mechanism confirms that notification delivery occurred.
     """
 
     from ..models import PortfolioNewsAlert

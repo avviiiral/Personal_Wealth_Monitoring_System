@@ -337,7 +337,7 @@ export class HeaderComponent implements OnInit, OnDestroy {
       this.chatOpen = false;
       this.profileMenuOpen = false;
       this.refreshNotifications();
-      void this.browserNotifications.requestPermissionIfNeeded();
+      void this.browserNotifications.requestPermission();
     }
   }
 

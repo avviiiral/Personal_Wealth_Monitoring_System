@@ -146,11 +146,11 @@ export class BrowserNotificationService {
     }
   }
 
-  private base64UrlToUint8Array(value: string): Uint8Array {
+  private base64UrlToUint8Array(value: string): Uint8Array<ArrayBuffer> {
     const padding = '='.repeat((4 - (value.length % 4)) % 4);
     const normalized = (value + padding).replace(/-/g, '+').replace(/_/g, '/');
     const raw = window.atob(normalized);
-    const output = new Uint8Array(raw.length);
+    const output = new Uint8Array<ArrayBuffer>(raw.length);
 
     for (let index = 0; index < raw.length; index += 1) {
       output[index] = raw.charCodeAt(index);

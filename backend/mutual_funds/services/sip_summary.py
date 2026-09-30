@@ -79,30 +79,28 @@ class SIPSummaryService:
 
         for frequency, amount in active_sip_amounts:
 
-            if sip.frequency == "MONTHLY":
+            if frequency == "MONTHLY":
+
+                monthly_commitment += amount
+
+            elif frequency == "WEEKLY":
 
                 monthly_commitment += (
-                    sip.amount
-                )
-
-            elif sip.frequency == "WEEKLY":
-
-                monthly_commitment += (
-                    sip.amount * Decimal("52")
+                    amount * Decimal("52")
                     / Decimal("12")
                 )
 
-            elif sip.frequency == "QUARTERLY":
+            elif frequency == "QUARTERLY":
 
                 monthly_commitment += (
-                    sip.amount
+                    amount
                     / Decimal("3")
                 )
 
-            elif sip.frequency == "YEARLY":
+            elif frequency == "YEARLY":
 
                 monthly_commitment += (
-                    sip.amount
+                    amount
                     / Decimal("12")
                 )
 

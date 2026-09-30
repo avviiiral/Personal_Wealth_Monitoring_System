@@ -114,7 +114,7 @@ export class BrowserNotificationService {
 
       const subscription = await registration.pushManager.subscribe({
         userVisibleOnly: true,
-        applicationServerKey: this.base64UrlToUint8Array(publicKey),
+        applicationServerKey: this.base64UrlToArrayBuffer(publicKey),
       });
 
       return subscription.toJSON();
@@ -146,17 +146,18 @@ export class BrowserNotificationService {
     }
   }
 
-  private base64UrlToUint8Array(value: string): Uint8Array<ArrayBuffer> {
+  private base64UrlToArrayBuffer(value: string): ArrayBuffer {
     const padding = '='.repeat((4 - (value.length % 4)) % 4);
     const normalized = (value + padding).replace(/-/g, '+').replace(/_/g, '/');
     const raw = window.atob(normalized);
-    const output = new Uint8Array<ArrayBuffer>(raw.length);
+    const buffer = new ArrayBuffer(raw.length);
+    const output = new Uint8Array(buffer);
 
     for (let index = 0; index < raw.length; index += 1) {
       output[index] = raw.charCodeAt(index);
     }
 
-    return output;
+    return buffer;
   }
 
   showNotification(options: BrowserNotificationOptions): void {

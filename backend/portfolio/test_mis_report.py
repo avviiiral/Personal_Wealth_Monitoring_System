@@ -15,7 +15,7 @@ from mutual_funds.models import (
     MutualFundTransaction,
     MutualFundTransactionType,
 )
-from users.models import FamilyGroup
+from users.models import FamilyGroup, Role
 
 
 class MISReportAPITests(TestCase):
@@ -127,6 +127,7 @@ class MISReportAPITests(TestCase):
 
     def test_unrelated_family_is_not_accessible(self):
         other_family = FamilyGroup.objects.create(name="Other Family")
+        self.user.profile.role = Role.VIEWER
         self.user.profile.active_family_group = other_family
         self.user.profile.save(update_fields=["active_family_group"])
 
@@ -134,8 +135,9 @@ class MISReportAPITests(TestCase):
         self.assertEqual(response.status_code, 403)
 
     def test_empty_family_returns_empty_report(self):
-        self.asset.is_active = False
-        self.asset.save(update_fields=["is_active"])
+        empty_family = FamilyGroup.objects.create(name="Empty MIS Family")
+        self.user.profile.active_family_group = empty_family
+        self.user.profile.save(update_fields=["active_family_group"])
 
         response = self.client.get("/api/portfolio/mis-report/")
         self.assertEqual(response.status_code, 200)

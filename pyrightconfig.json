@@ -1,0 +1,10 @@
+{
+  "include": [
+    "backend"
+  ],
+  "exclude": [
+    "**/__pycache__"
+  ],
+  "reportAttributeAccessIssue": "none",
+  "reportOptionalMemberAccess": "none"
+}

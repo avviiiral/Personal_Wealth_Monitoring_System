@@ -11,7 +11,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from .constants import NotificationTier
-from .models import PortfolioNewsAlert
+from .models import PortfolioNewsAlert, PushSubscription
 from .serializers import (
     PortfolioNewsAlertDetailSerializer,
     PortfolioNewsAlertListSerializer,
@@ -287,3 +287,94 @@ def portfolio_news_digest(request):
     serializer = PortfolioNewsDigestSerializer(digest)
 
     return Response(serializer.data)
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def push_config(request):
+    """
+    Return the public VAPID key needed by the browser to create a
+    Web Push subscription. The private key is never exposed.
+    """
+    from django.conf import settings
+
+    return Response(
+        {
+            "enabled": bool(getattr(settings, "WEB_PUSH_ENABLED", False)),
+            "public_key": getattr(settings, "WEB_PUSH_VAPID_PUBLIC_KEY", ""),
+        }
+    )
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def push_subscribe(request):
+    payload = request.data or {}
+    endpoint = payload.get("endpoint")
+    keys = payload.get("keys") or {}
+
+    if not isinstance(endpoint, str) or not endpoint.strip():
+        return Response(
+            {"detail": "A push subscription endpoint is required."},
+            status=400,
+        )
+
+    if not isinstance(keys, dict):
+        return Response(
+            {"detail": "Push subscription keys are required."},
+            status=400,
+        )
+
+    p256dh = keys.get("p256dh")
+    auth = keys.get("auth")
+
+    if not isinstance(p256dh, str) or not p256dh.strip():
+        return Response(
+            {"detail": "The p256dh subscription key is required."},
+            status=400,
+        )
+
+    if not isinstance(auth, str) or not auth.strip():
+        return Response(
+            {"detail": "The auth subscription key is required."},
+            status=400,
+        )
+
+    subscription, created = PushSubscription.objects.update_or_create(
+        endpoint=endpoint.strip(),
+        defaults={
+            "user": request.user,
+            "p256dh": p256dh.strip(),
+            "auth": auth.strip(),
+            "user_agent": request.META.get("HTTP_USER_AGENT", "")[:1000],
+            "enabled": True,
+        },
+    )
+
+    return Response(
+        {
+            "id": subscription.id,
+            "created": created,
+            "enabled": subscription.enabled,
+        },
+        status=201 if created else 200,
+    )
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def push_unsubscribe(request):
+    endpoint = request.data.get("endpoint")
+
+    if not isinstance(endpoint, str) or not endpoint.strip():
+        return Response(
+            {"detail": "A push subscription endpoint is required."},
+            status=400,
+        )
+
+    updated = PushSubscription.objects.filter(
+        user=request.user,
+        endpoint=endpoint.strip(),
+    ).update(enabled=False)
+
+    return Response({"updated": updated})

@@ -272,7 +272,7 @@ def watch_list_products(request):
     queryset = _filtered_products(request, product_type if product_type in ProductType.values else None)
     paginator = WatchListPagination()
     page = paginator.paginate_queryset(queryset, request)
-    page = list(page)
+    page = list(page or [])
     latest_snapshots, metric_snapshots = _latest_snapshots(page)
     ownership_cache = _ownership_cache(page, request)
     serializer = WatchListProductSerializer(

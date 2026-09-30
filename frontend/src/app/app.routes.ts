@@ -31,6 +31,11 @@ export const routes: Routes = [
           import('../features/portfolio/portfolio.component').then((m) => m.PortfolioComponent),
       },
       {
+        path: 'mis-report',
+        loadComponent: () =>
+          import('../features/mis-report/mis-report.component').then((m) => m.MISReportComponent),
+      },
+      {
         path: 'reports',
         loadComponent: () =>
           import('../features/reports/reports.component').then((m) => m.ReportsComponent),

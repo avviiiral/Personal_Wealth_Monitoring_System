@@ -53,7 +53,7 @@ def _process(item,dry_run=False):
             weight=(float(holding.current_value or 0)/total*100) if total else 0
             _,created=_create_alert(user,HoldingType.EQUITY,holding.asset_id,holding.asset.name,filing,article,cls,weight); alerts+=int(created)
     if assets:
-        filing.security_id=assets[0].id
+        filing.security = assets[0]
     entries=match_user_watchlists(filing); matched+=len(entries)
     for entry in entries:
         _,created=_create_alert(entry.user,HoldingType.WATCHLIST,entry.product_id,entry.product.name,filing,article,cls); alerts+=int(created)

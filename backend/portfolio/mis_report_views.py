@@ -10,8 +10,18 @@ from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment
 from openpyxl.utils import get_column_letter
 
-from users.permissions import require_active_family
+from users.permissions import is_system_owner, require_active_family
 from .mis_report_service import MISReportService
+
+
+def _authorized_active_family(user):
+    family = require_active_family(user)
+    if is_system_owner(user):
+        return family
+    if not user.profile.family_groups.filter(pk=family.pk).exists():
+        from rest_framework.exceptions import PermissionDenied
+        raise PermissionDenied("The selected family is not available to this user.")
+    return family
 
 
 def _json_safe(value):
@@ -30,7 +40,7 @@ def _sanitize_filename(value):
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def mis_report(request):
-    family = require_active_family(request.user)
+    family = _authorized_active_family(request.user)
     report = MISReportService.build(family)
 
     report["reporting_date"] = report["reporting_date"].isoformat()
@@ -49,7 +59,7 @@ def mis_report(request):
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def mis_report_download(request):
-    family = require_active_family(request.user)
+    family = _authorized_active_family(request.user)
     report = MISReportService.build(family)
 
     workbook = Workbook()

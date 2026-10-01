@@ -57,6 +57,7 @@ export interface MISNoteSection {
   unit_label: string;
   change_label: string;
   items: MISNoteItem[];
+  note?: string | null;
 }
 
 export interface MISNotes {

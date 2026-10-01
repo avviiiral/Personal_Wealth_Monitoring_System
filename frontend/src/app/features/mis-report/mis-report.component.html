@@ -215,11 +215,9 @@
                 </tbody>
               </table>
             </div>
+            <p class="notes-note" *ngIf="section.note">{{ section.note }}</p>
           </div>
         </ng-container>
-        <div class="notes-empty" *ngIf="report.notes.sections.length === 0">
-          No rate movement data is available for the selected reporting period.
-        </div>
       </div>
     </section>
 

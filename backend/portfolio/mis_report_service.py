@@ -370,13 +370,12 @@ class MISReportService:
                 "difference": grand_total - prior_total,
             })
 
-        # The workbook calls this Fund Type.V2 and shows Fund Name + Market Value.
-        # In the current data model the closest explicit V2 classification is the
-        # mutual-fund scheme category.
-        mf_rows = [row for row in data_rows if row["asset_class"] == "Mutual Funds"]
+        # Fund Type.V2 in the workbook maps to the report's asset-class hierarchy.
+        # Each asset class contains the individual asset names and their current
+        # market value at the reporting date.
         fund_groups = defaultdict(list)
-        for row in mf_rows:
-            fund_groups[row["sub_class"]].append(row)
+        for row in data_rows:
+            fund_groups[row["asset_class"]].append(row)
 
         fund_type_summary = []
         for fund_type in sorted(fund_groups, key=str.casefold):
@@ -384,16 +383,16 @@ class MISReportService:
                 fund_groups[fund_type],
                 key=lambda row: row["asset_name"].casefold(),
             )
-            subtotal = sum((Decimal(str(row["closing_amount"] or 0)) for row in fund_rows), Decimal("0"))
+            subtotal = sum(
+                (Decimal(str(row["closing_amount"] or 0)) for row in fund_rows),
+                Decimal("0"),
+            )
             fund_type_summary.append({
                 "fund_type": fund_type,
                 "rows": [
                     {
                         "fund_name": row["asset_name"],
                         "total": row["closing_amount"],
-                        "market_value_label": "Market Value",
-                        "asset_class": row["asset_class"],
-                        "asset_name": row["asset_name"],
                     }
                     for row in fund_rows
                 ],

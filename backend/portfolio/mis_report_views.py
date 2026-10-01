@@ -356,22 +356,6 @@ def mis_report(request):
     return Response(_serialize_report(report))
 
 
-@api_view(["GET"])
-@permission_classes([IsAuthenticated])
-def mis_report_download(request):
-    family = _authorized_active_family(request.user)
-    from_date, to_date = _parse_report_dates(request)
-    display_unit = _parse_display_unit(request)
-    try:
-        report = MISReportService.build(family, from_date, to_date)
-    except ValueError as exc:
-        raise ValidationError({"detail": str(exc)})
-
-    workbook = Workbook()
-    default = workbook.active
-    workbook.remove(default)
-    _build_ips_sheet(workbook, report, display_unit)
-    _build_data_sheet(workbook, report)
 def _build_notes_sheet(workbook, report):
     ws = workbook.create_sheet("Notes")
     notes = report["notes"]
@@ -411,9 +395,9 @@ def _build_notes_sheet(workbook, report):
             values = [
                 index,
                 item["name"],
-                float(item["opening_rate"]),
-                float(item["closing_rate"]),
-                float(item["change"]),
+                float(item["opening_rate"]) if item["opening_rate"] is not None else None,
+                float(item["closing_rate"]) if item["closing_rate"] is not None else None,
+                float(item["change"]) if item["change"] is not None else None,
                 float(item["percent_change"]) / 100 if item["percent_change"] is not None else None,
             ]
             for col, value in enumerate(values, 1):
@@ -426,15 +410,17 @@ def _build_notes_sheet(workbook, report):
             ws.cell(cursor, 6).number_format = '0.00%'
             cursor += 1
 
-        cursor += 1
+        if section.get("note"):
+            ws.cell(cursor, 2, section["note"])
+            ws.merge_cells(start_row=cursor, start_column=2, end_row=cursor, end_column=6)
+            ws.cell(cursor, 2).alignment = Alignment(vertical="top", wrap_text=True)
+            cursor += 1
 
-    if not notes["sections"]:
-        ws["A3"] = "No rate movement data is available for the selected reporting period."
-        ws.merge_cells("A3:F3")
-        ws["A3"].alignment = Alignment(horizontal="left", vertical="center")
+        cursor += 1
 
     _autosize(ws, 12, 42)
     ws.column_dimensions["A"].width = 10
+    ws.column_dimensions["B"].width = 42
     ws.column_dimensions["C"].width = 20
     ws.column_dimensions["D"].width = 20
     ws.column_dimensions["E"].width = 18
@@ -443,6 +429,22 @@ def _build_notes_sheet(workbook, report):
     return ws
 
 
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def mis_report_download(request):
+    family = _authorized_active_family(request.user)
+    from_date, to_date = _parse_report_dates(request)
+    display_unit = _parse_display_unit(request)
+    try:
+        report = MISReportService.build(family, from_date, to_date)
+    except ValueError as exc:
+        raise ValidationError({"detail": str(exc)})
+
+    workbook = Workbook()
+    default = workbook.active
+    workbook.remove(default)
+    _build_ips_sheet(workbook, report, display_unit)
+    _build_data_sheet(workbook, report)
     _build_fund_summary_sheet(workbook, report, display_unit)
     _build_notes_sheet(workbook, report)
 

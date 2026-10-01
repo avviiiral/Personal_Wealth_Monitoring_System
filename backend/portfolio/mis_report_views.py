@@ -173,13 +173,13 @@ def _build_ips_sheet(workbook, report, display_unit="lakhs"):
     unit_labels = {"amount": "₹ Amount", "lakhs": "₹ Lakhs", "crores": "₹ Crores"}
     ws.cell(2, 1, f"Values in {unit_labels[display_unit]}")
     ws.cell(2, 1).font = Font(italic=True, size=10)
-    ws.freeze_panes = "C4"
     for row_cells in ws.iter_rows(min_row=4, max_row=ws.max_row, min_col=3, max_col=len(families) + 3):
         for cell in row_cells:
             cell.number_format = '#,##0' if display_unit == 'amount' else '#,##0.00'
     ws.freeze_panes = "C4"
     _autosize(ws, 14, 32)
     return ws
+
 
 def _build_data_sheet(workbook, report):
     ws = workbook.create_sheet("Data Sheet")

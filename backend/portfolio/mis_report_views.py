@@ -130,7 +130,7 @@ def _build_ips_sheet(workbook, report):
 
 def _build_data_sheet(workbook, report):
     ws = workbook.create_sheet("Data Sheet")
-    ws["A1"] = "Sheet 2 - Data Sheet"
+    ws["A1"] = "Data Sheet"
     _style_title(ws["A1"])
     ws.merge_cells("A1:P1")
 

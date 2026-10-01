@@ -124,6 +124,9 @@ export class SettingsComponent implements OnInit {
     this.rbac.setActiveFamily(familyId).subscribe({
       next: () => {
         this.profileMessage = 'Now viewing data for the selected family.';
+        if (this.activeTab === 'tax-rates') {
+          this.loadTaxRateSettings();
+        }
         this.cdr.detectChanges();
       },
       error: (error) => {

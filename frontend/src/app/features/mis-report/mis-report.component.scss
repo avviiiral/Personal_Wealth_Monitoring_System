@@ -219,3 +219,37 @@ th {
   .page-header { flex-direction: column; }
   .download-button { width: 100%; }
 }
+
+.display-unit-inline {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 190px;
+}
+
+.display-unit-inline > span {
+  font-size: 12px;
+  font-weight: 700;
+  color: #344054;
+}
+
+.display-unit-buttons {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.display-unit-button {
+  border: 1px solid #d9dee7;
+  background: #fff;
+  border-radius: 6px;
+  padding: 8px 12px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.display-unit-button.active {
+  background: #111827;
+  color: #fff;
+  border-color: #111827;
+}

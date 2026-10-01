@@ -22,6 +22,9 @@ export class DashboardComponent extends BaseDashboardComponent {
 
   override standardAllocations: Record<string, number> = {};
   override standardAllocationDraft: Record<string, number> = {};
+  standardAllocationAmounts: Record<string, number> = {};
+  standardAllocationAmountDraft: Record<string, number> = {};
+  standardAllocationTotalValue = 0;
   override standardAllocationEditing = false;
   override standardAllocationSaving = false;
   override standardAllocationError = '';
@@ -181,8 +184,26 @@ export class DashboardComponent extends BaseDashboardComponent {
 
     this.dashboardWealthApi.getStandardAllocations(this.selectedFamily || undefined).subscribe({
       next: (data) => {
-        this.standardAllocations = this.normalizeAllocationMap(data?.allocations);
+        const allocationResponse = data?.allocations ?? {};
+        this.standardAllocations = this.normalizeAllocationMap(
+          Object.fromEntries(
+            Object.entries(allocationResponse).map(([category, value]) => [
+              category,
+              typeof value === 'object' && value !== null ? (value as any).percent : value,
+            ]),
+          ),
+        );
+        this.standardAllocationAmounts = this.normalizeAllocationMap(
+          Object.fromEntries(
+            Object.entries(allocationResponse).map(([category, value]) => [
+              category,
+              typeof value === 'object' && value !== null ? (value as any).amount : 0,
+            ]),
+          ),
+        );
+        this.standardAllocationTotalValue = this.toNumber(data?.total_current_value);
         this.standardAllocationDraft = { ...this.standardAllocations };
+        this.standardAllocationAmountDraft = { ...this.standardAllocationAmounts };
       },
       error: (error) => {
         console.error('STANDARD ALLOCATION API ERROR:', error);
@@ -195,9 +216,12 @@ export class DashboardComponent extends BaseDashboardComponent {
 
   override startStandardAllocationEdit(): void {
     this.standardAllocationDraft = {};
+    this.standardAllocationAmountDraft = {};
 
     for (const group of this.investmentSummaryGroups) {
-      this.standardAllocationDraft[group.asset_category] = this.getStandardAllocation(group.asset_category);
+      const category = group.asset_category;
+      this.standardAllocationDraft[category] = this.getStandardAllocation(category);
+      this.standardAllocationAmountDraft[category] = this.getStandardAllocationAmount(category);
     }
 
     this.standardAllocationEditing = true;
@@ -206,6 +230,7 @@ export class DashboardComponent extends BaseDashboardComponent {
 
   override cancelStandardAllocationEdit(): void {
     this.standardAllocationDraft = { ...this.standardAllocations };
+    this.standardAllocationAmountDraft = { ...this.standardAllocationAmounts };
     this.standardAllocationEditing = false;
     this.standardAllocationError = '';
   }
@@ -215,6 +240,35 @@ export class DashboardComponent extends BaseDashboardComponent {
     this.standardAllocationDraft[category] = Number.isFinite(parsed)
       ? Math.max(0, Math.min(100, parsed))
       : 0;
+  }
+
+  getStandardAllocationAmount(category: string): number {
+    const value = Number(
+      this.standardAllocationEditing
+        ? this.standardAllocationAmountDraft[category]
+        : this.standardAllocationAmounts[category],
+    );
+    return Number.isFinite(value) ? value : 0;
+  }
+
+  updateStandardAllocationAmount(category: string, rawValue: string): void {
+    const amount = Number(rawValue);
+    const safeAmount = Number.isFinite(amount) ? Math.max(0, amount) : 0;
+    this.standardAllocationAmountDraft[category] = safeAmount;
+
+    if (this.standardAllocationTotalValue > 0) {
+      this.standardAllocationDraft[category] =
+        Math.round((safeAmount / this.standardAllocationTotalValue) * 10000) / 100;
+    }
+  }
+
+  updateStandardAllocationPercent(category: string, rawValue: string): void {
+    const percent = Number(rawValue);
+    const safePercent = Number.isFinite(percent) ? Math.max(0, Math.min(100, percent)) : 0;
+    this.standardAllocationDraft[category] = safePercent;
+
+    this.standardAllocationAmountDraft[category] =
+      Math.round((this.standardAllocationTotalValue * safePercent) * 100) / 10000;
   }
 
   override getStandardAllocation(category: string): number {
@@ -247,14 +301,18 @@ export class DashboardComponent extends BaseDashboardComponent {
   }
 
   override saveStandardAllocations(): void {
-    const allocations: Record<string, number> = {};
+    const allocations: Record<string, { percent: number; amount: number }> = {};
 
     for (const group of this.investmentSummaryGroups) {
-      allocations[group.asset_category] = this.getStandardAllocation(group.asset_category);
+      const category = group.asset_category;
+      allocations[category] = {
+        percent: this.getStandardAllocation(category),
+        amount: this.getStandardAllocationAmount(category),
+      };
     }
 
     const total = Math.round(
-      Object.values(allocations).reduce((sum, value) => sum + value, 0) * 100,
+      Object.values(allocations).reduce((sum, value) => sum + value.percent, 0) * 100,
     ) / 100;
 
     if (total !== 100) {
@@ -269,8 +327,26 @@ export class DashboardComponent extends BaseDashboardComponent {
       .saveStandardAllocations(allocations, this.selectedFamily || undefined)
       .subscribe({
         next: (data) => {
-          this.standardAllocations = this.normalizeAllocationMap(data?.allocations);
+          const allocationResponse = data?.allocations ?? {};
+          this.standardAllocations = this.normalizeAllocationMap(
+            Object.fromEntries(
+              Object.entries(allocationResponse).map(([category, value]) => [
+                category,
+                typeof value === 'object' && value !== null ? (value as any).percent : value,
+              ]),
+            ),
+          );
+          this.standardAllocationAmounts = this.normalizeAllocationMap(
+            Object.fromEntries(
+              Object.entries(allocationResponse).map(([category, value]) => [
+                category,
+                typeof value === 'object' && value !== null ? (value as any).amount : 0,
+              ]),
+            ),
+          );
+          this.standardAllocationTotalValue = this.toNumber(data?.total_current_value);
           this.standardAllocationDraft = { ...this.standardAllocations };
+          this.standardAllocationAmountDraft = { ...this.standardAllocationAmounts };
           this.standardAllocationEditing = false;
           this.standardAllocationSaving = false;
         },

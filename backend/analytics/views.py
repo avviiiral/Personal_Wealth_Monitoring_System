@@ -124,12 +124,20 @@ def _standard_allocation_family(request):
 def wealth_standard_allocations(request):
     family = _standard_allocation_family(request)
     rows = StandardAllocation.objects.filter(family=family)
+    investment_summary = InvestmentSummaryService.calculate(request.user, family_name=family.name)
+    total_current_value = Decimal(str(investment_summary.get("total_current_value") or 0))
+
+    allocations = {}
+    for row in rows:
+        allocations[row.asset_category] = {
+            "percent": float(row.allocation_percent),
+            "amount": float(row.allocation_amount),
+        }
+
     return Response({
         "family": family.name,
-        "allocations": {
-            row.asset_category: float(row.allocation_percent)
-            for row in rows
-        },
+        "total_current_value": float(total_current_value),
+        "allocations": allocations,
     })
 
 
@@ -145,21 +153,45 @@ def wealth_standard_allocations_update(request):
             status=status.HTTP_400_BAD_REQUEST,
         )
 
+    investment_summary = InvestmentSummaryService.calculate(request.user, family_name=family.name)
+    total_current_value = Decimal(str(investment_summary.get("total_current_value") or 0))
+
     allocations = {}
     try:
         for category, raw_value in raw_allocations.items():
             category = str(category).strip()
-            value = Decimal(str(raw_value))
-            if not category or value < 0 or value > 100:
+            if not category or not isinstance(raw_value, dict):
                 raise ValueError
-            allocations[category] = value.quantize(Decimal("0.01"))
+
+            raw_percent = raw_value.get("percent")
+            raw_amount = raw_value.get("amount")
+            percent = None if raw_percent in (None, "") else Decimal(str(raw_percent))
+            amount = None if raw_amount in (None, "") else Decimal(str(raw_amount))
+
+            if percent is None and amount is None:
+                raise ValueError
+
+            if percent is None:
+                if total_current_value <= 0 or amount is None:
+                    raise ValueError
+                percent = (amount / total_current_value) * Decimal("100")
+            elif amount is None:
+                amount = (total_current_value * percent) / Decimal("100")
+
+            percent = percent.quantize(Decimal("0.01"))
+            amount = amount.quantize(Decimal("0.01"))
+
+            if percent < 0 or percent > 100 or amount < 0:
+                raise ValueError
+
+            allocations[category] = {"percent": percent, "amount": amount}
     except (InvalidOperation, TypeError, ValueError):
         return Response(
-            {"detail": "Each Standard Allocation must be a number between 0 and 100."},
+            {"detail": "Each Standard Allocation must contain valid percent and/or amount values."},
             status=status.HTTP_400_BAD_REQUEST,
         )
 
-    total = sum(allocations.values(), Decimal("0"))
+    total = sum((item["percent"] for item in allocations.values()), Decimal("0"))
     if total != Decimal("100.00"):
         return Response(
             {"detail": f"Standard Allocation must total exactly 100%. Current total is {total}%."},
@@ -172,14 +204,22 @@ def wealth_standard_allocations_update(request):
         StandardAllocation(
             family=family,
             asset_category=category,
-            allocation_percent=value,
+            allocation_percent=item["percent"],
+            allocation_amount=item["amount"],
         )
-        for category, value in allocations.items()
+        for category, item in allocations.items()
     ])
 
     return Response({
         "family": family.name,
-        "allocations": {category: float(value) for category, value in allocations.items()},
+        "total_current_value": float(total_current_value),
+        "allocations": {
+            category: {
+                "percent": float(item["percent"]),
+                "amount": float(item["amount"]),
+            }
+            for category, item in allocations.items()
+        },
     })
 
 

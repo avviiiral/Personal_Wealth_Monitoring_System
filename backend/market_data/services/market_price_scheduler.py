@@ -50,8 +50,8 @@ class MarketPriceScheduler:
 
             time.sleep(UPDATE_INTERVAL_SECONDS)
 
-    @with_postgres_advisory_lock("pwms_refresh_pipeline")
     @classmethod
+    @with_postgres_advisory_lock("pwms_refresh_pipeline")
     def update_prices(cls):
         assets = (
             Asset.objects

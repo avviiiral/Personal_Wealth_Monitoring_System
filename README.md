@@ -209,14 +209,16 @@ Export **transactions, holdings and portfolio summaries** to **Excel or PDF** �
 
 ### 📑 MIS Report
 
-The **MIS Report** is available at **Portfolio → MIS Report** and contains three logical sections:
+The **MIS Report** is available at **Portfolio → MIS Report** and contains four logical sections:
 
 - **IPS** — current and prior-period market values by asset class and family, including differences and grand totals.
 - **Data Sheet** — investment cost, opening MTM, period transactions, and closing MTM with grouped section headers from the MIS format.
 - **Fund Type-wise Summary** — `Fund Type.V2` maps to **Asset class**, `Fund Name` maps to **Asset name**, and `Total` is the **Current Market Value**.
+- **Notes** — standard MIS reference-rate observations for REITs/InvITs, Sovereign Gold Bonds, Silver ETF, Nifty 50, BSE 500 and Dollar Rate, including opening/closing values, change and percentage change where source data is available.
 - **Custom date range** — select `From Date` and `To Date`; opening valuation is reconstructed from the day before the selected start date and closing valuation is calculated as of the selected end date.
 - **Display As** — **Amount**, **Lakhs**, or **Crores**. Conversion is presentation-only; source financial values remain in rupees.
-- **Download Excel** — exports `IPS`, `Data Sheet`, and `Fund Type Summary` in `.xlsx` format.
+- **Download Excel** — exports `IPS`, `Data Sheet`, `Fund Type Summary`, and `Notes` in `.xlsx` format.
+- **Automatic reference-price refresh** — MIS reference prices are refreshed automatically by the background scheduler every 30 minutes, are included in the scheduled refresh flow, and are refreshed again immediately before an MIS Excel download. The refresh uses stored market history and supported Yahoo Finance symbols; unavailable third-party data is not fabricated.
 
 ### 🔐 Settings
 

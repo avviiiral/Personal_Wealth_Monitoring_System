@@ -23,7 +23,7 @@ class TaxRateSettingsApiTests(TestCase):
         )
         self.assertEqual(create.status_code, 201)
         self.assertEqual(create.data["asset_name"], "HDFC Bank")
-        self.assertEqual(create.data["tax_rate"], "15.5000")
+        self.assertEqual(create.data["tax_rate"], "15.50")
 
         listing = self.client.get("/api/settings/tax-rates/")
         self.assertEqual(listing.status_code, 200)
@@ -36,7 +36,7 @@ class TaxRateSettingsApiTests(TestCase):
             format="json",
         )
         self.assertEqual(update.status_code, 200)
-        self.assertEqual(update.data["tax_rate"], "20.0000")
+        self.assertEqual(update.data["tax_rate"], "20")
 
         delete = self.client.delete(f"/api/settings/tax-rates/{tax_id}/")
         self.assertEqual(delete.status_code, 200)

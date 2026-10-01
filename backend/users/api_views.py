@@ -10,6 +10,8 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
+from investments.models import Asset
+
 from .models import FamilyGroup, Role, TaxRateSetting, UserAuditLog, UserProfile
 from .permissions import (
     IsAdminOrSuperUser,
@@ -17,6 +19,7 @@ from .permissions import (
     get_manageable_users_queryset,
     get_role,
     is_admin_or_above,
+    require_active_family,
 )
 from .serializers import (
     ActiveFamilySerializer,
@@ -117,47 +120,116 @@ def set_active_family(request):
 @api_view(["GET", "POST"])
 @permission_classes([IsAuthenticated])
 def tax_rate_list(request):
-    """GET/POST /api/settings/tax-rates/ for the authenticated user."""
+    """GET/POST /api/settings/tax-rates/ for the authenticated user's active family."""
+
+    family = require_active_family(request.user)
 
     if request.method == "GET":
-        rows = TaxRateSetting.objects.filter(user=request.user).order_by("asset_name")
+        assets = (
+            Asset.objects
+            .filter(family=family, is_active=True)
+            .order_by("name", "id")
+        )
+        settings_by_asset = {
+            row.asset_id: row
+            for row in TaxRateSetting.objects.filter(
+                family=family,
+                asset__in=assets,
+            )
+        }
+
         return Response([
             {
-                "id": row.id,
-                "asset_name": row.asset_name,
-                "tax_rate": str(row.tax_rate),
-                "created_at": row.created_at,
-                "updated_at": row.updated_at,
+                "id": row.id if row else None,
+                "asset_id": asset.id,
+                "asset_name": asset.name,
+                "family_id": family.id,
+                "family_name": family.name,
+                "tenure_months": row.tenure_months if row else None,
+                "short_term_tax_rate": (
+                    str(row.short_term_tax_rate)
+                    if row and row.short_term_tax_rate is not None
+                    else None
+                ),
+                "long_term_tax_rate": (
+                    str(row.long_term_tax_rate)
+                    if row and row.long_term_tax_rate is not None
+                    else None
+                ),
+                "updated_at": row.updated_at if row else None,
             }
-            for row in rows
+            for asset in assets
+            for row in [settings_by_asset.get(asset.id)]
         ])
 
-    asset_name = str(request.data.get("asset_name") or "").strip()
-    if not asset_name:
-        return Response({"detail": "Asset Name is required."}, status=status.HTTP_400_BAD_REQUEST)
-    if len(asset_name) > 255:
-        return Response({"detail": "Asset Name is too long."}, status=status.HTTP_400_BAD_REQUEST)
+    asset_id = request.data.get("asset_id")
+    try:
+        asset_id = int(asset_id)
+    except (TypeError, ValueError):
+        return Response({"detail": "Asset is required."}, status=status.HTTP_400_BAD_REQUEST)
+
+    asset = Asset.objects.filter(
+        pk=asset_id,
+        family=family,
+        is_active=True,
+    ).first()
+    if asset is None:
+        return Response(
+            {"detail": "Asset is not part of the active family."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    tenure_months = request.data.get("tenure_months")
+    if tenure_months in ("", None):
+        return Response(
+            {"detail": "Tenure is required and must be in months."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    try:
+        tenure_months = int(tenure_months)
+    except (TypeError, ValueError):
+        return Response({"detail": "Tenure must be a whole number of months."}, status=status.HTTP_400_BAD_REQUEST)
+    if tenure_months < 0:
+        return Response({"detail": "Tenure cannot be negative."}, status=status.HTTP_400_BAD_REQUEST)
+
+    def parse_tax_rate(field_name):
+        value = request.data.get(field_name)
+        if value in ("", None):
+            raise ValueError(f"{field_name} is required.")
+        try:
+            parsed = Decimal(str(value))
+        except (InvalidOperation, TypeError, ValueError):
+            raise ValueError(f"{field_name} must be a valid number.")
+        if parsed < 0 or parsed > 100:
+            raise ValueError(f"{field_name} must be between 0 and 100 percent.")
+        return parsed
 
     try:
-        tax_rate = Decimal(str(request.data.get("tax_rate")))
-    except (InvalidOperation, TypeError, ValueError):
-        return Response({"detail": "Tax Rate must be a valid number."}, status=status.HTTP_400_BAD_REQUEST)
-
-    if tax_rate < 0 or tax_rate > 100:
-        return Response({"detail": "Tax Rate must be between 0 and 100 percent."}, status=status.HTTP_400_BAD_REQUEST)
+        short_term_tax_rate = parse_tax_rate("short_term_tax_rate")
+        long_term_tax_rate = parse_tax_rate("long_term_tax_rate")
+    except ValueError as exc:
+        return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
 
     row, created = TaxRateSetting.objects.update_or_create(
-        user=request.user,
-        asset_name=asset_name,
-        defaults={"tax_rate": tax_rate},
+        family=family,
+        asset=asset,
+        defaults={
+            "tenure_months": tenure_months,
+            "short_term_tax_rate": short_term_tax_rate,
+            "long_term_tax_rate": long_term_tax_rate,
+        },
     )
 
     return Response(
         {
             "id": row.id,
-            "asset_name": row.asset_name,
-            "tax_rate": str(row.tax_rate),
-            "created_at": row.created_at,
+            "asset_id": asset.id,
+            "asset_name": asset.name,
+            "family_id": family.id,
+            "family_name": family.name,
+            "tenure_months": row.tenure_months,
+            "short_term_tax_rate": str(row.short_term_tax_rate),
+            "long_term_tax_rate": str(row.long_term_tax_rate),
             "updated_at": row.updated_at,
         },
         status=status.HTTP_201_CREATED if created else status.HTTP_200_OK,
@@ -167,55 +239,66 @@ def tax_rate_list(request):
 @api_view(["PATCH", "DELETE"])
 @permission_classes([IsAuthenticated])
 def tax_rate_detail(request, tax_rate_id):
-    """PATCH/DELETE /api/settings/tax-rates/<id>/ for the authenticated user."""
+    """PATCH/DELETE /api/settings/tax-rates/<id>/ for the active family."""
+
+    family = require_active_family(request.user)
 
     try:
-        row = TaxRateSetting.objects.get(pk=tax_rate_id, user=request.user)
+        row = TaxRateSetting.objects.select_related("asset").get(
+            pk=tax_rate_id,
+            family=family,
+        )
     except TaxRateSetting.DoesNotExist:
-        return Response({"detail": "Tax rate setting not found."}, status=status.HTTP_404_NOT_FOUND)
+        return Response({"detail": "Tax setting not found."}, status=status.HTTP_404_NOT_FOUND)
 
     if request.method == "DELETE":
         row.delete()
-        return Response({"message": "Tax rate setting deleted successfully."})
+        return Response({"message": "Tax setting cleared successfully."})
 
-    if "asset_name" in request.data:
-        asset_name = str(request.data.get("asset_name") or "").strip()
-        if not asset_name:
-            return Response({"detail": "Asset Name is required."}, status=status.HTTP_400_BAD_REQUEST)
-        if len(asset_name) > 255:
-            return Response({"detail": "Asset Name is too long."}, status=status.HTTP_400_BAD_REQUEST)
-        row.asset_name = asset_name
+    updates = {}
 
-    if "tax_rate" in request.data:
+    if "tenure_months" in request.data:
         try:
-            tax_rate = Decimal(str(request.data.get("tax_rate")))
-        except (InvalidOperation, TypeError, ValueError):
-            return Response({"detail": "Tax Rate must be a valid number."}, status=status.HTTP_400_BAD_REQUEST)
-        if tax_rate < 0 or tax_rate > 100:
-            return Response({"detail": "Tax Rate must be between 0 and 100 percent."}, status=status.HTTP_400_BAD_REQUEST)
-        row.tax_rate = tax_rate
+            tenure_months = int(request.data["tenure_months"])
+        except (TypeError, ValueError):
+            return Response({"detail": "Tenure must be a whole number of months."}, status=status.HTTP_400_BAD_REQUEST)
+        if tenure_months < 0:
+            return Response({"detail": "Tenure cannot be negative."}, status=status.HTTP_400_BAD_REQUEST)
+        updates["tenure_months"] = tenure_months
 
-    try:
-        row.save()
-    except IntegrityError:
-        return Response({"detail": "A tax rate for this Asset Name already exists."}, status=status.HTTP_400_BAD_REQUEST)
+    for field_name in ("short_term_tax_rate", "long_term_tax_rate"):
+        if field_name in request.data:
+            try:
+                value = Decimal(str(request.data[field_name]))
+            except (InvalidOperation, TypeError, ValueError):
+                return Response({"detail": f"{field_name} must be a valid number."}, status=status.HTTP_400_BAD_REQUEST)
+            if value < 0 or value > 100:
+                return Response({"detail": f"{field_name} must be between 0 and 100 percent."}, status=status.HTTP_400_BAD_REQUEST)
+            updates[field_name] = value
 
-    return Response({
-        "id": row.id,
-        "asset_name": row.asset_name,
-        "tax_rate": str(row.tax_rate),
-        "created_at": row.created_at,
-        "updated_at": row.updated_at,
-    })
+    if not updates:
+        return Response({"detail": "No tax settings were supplied."}, status=status.HTTP_400_BAD_REQUEST)
+
+    for field_name, value in updates.items():
+        setattr(row, field_name, value)
+
+    row.save(update_fields=[*updates.keys(), "updated_at"])
+
+    return Response(
+        {
+            "id": row.id,
+            "asset_id": row.asset_id,
+            "asset_name": row.asset.name,
+            "family_id": family.id,
+            "family_name": family.name,
+            "tenure_months": row.tenure_months,
+            "short_term_tax_rate": str(row.short_term_tax_rate),
+            "long_term_tax_rate": str(row.long_term_tax_rate),
+            "updated_at": row.updated_at,
+        }
+    )
 
 
-# ==================================================================
-# USER LIST / CREATE
-# ==================================================================
-
-
-@api_view(["GET", "POST"])
-@permission_classes([IsAuthenticated, IsAdminOrSuperUser])
 def user_list(request):
     """
     GET  /api/settings/users/   - list users this requester may

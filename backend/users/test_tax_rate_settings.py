@@ -43,7 +43,7 @@ class TaxRateSettingsApiTests(TestCase):
         self.assertFalse(TaxRateSetting.objects.filter(pk=tax_id).exists())
 
     def test_tax_rate_is_scoped_to_authenticated_user(self):
-        TaxRateSetting.objects.create(
+        row = TaxRateSetting.objects.create(
             user=self.user1,
             asset_name="HDFC Bank",
             tax_rate=Decimal("15"),
@@ -55,7 +55,7 @@ class TaxRateSettingsApiTests(TestCase):
         self.assertEqual(listing.data, [])
 
         detail = self.client.patch(
-            "/api/settings/tax-rates/1/",
+            f"/api/settings/tax-rates/{row.id}/",
             {"tax_rate": "20"},
             format="json",
         )

@@ -2,9 +2,10 @@ from decimal import Decimal
 
 from django.contrib.auth.models import User
 from django.test import TestCase
+from datetime import date
 from rest_framework.test import APIClient
 
-from investments.models import Asset, AssetCategory
+from investments.models import Asset, AssetCategory, Transaction, TransactionType
 from users.models import FamilyGroup, TaxRateChangeLog, TaxRateSetting
 
 
@@ -34,6 +35,43 @@ class TaxRateSettingsApiTests(TestCase):
             category=AssetCategory.MUTUAL_FUND,
         )
 
+        Transaction.objects.create(
+            owner=self.user1,
+            family=self.family,
+            family_name="Test",
+            portfolio="Test Portfolio",
+            asset_class="EQUITY",
+            sub_class="Direct Equity",
+            asset_name="Family Portfolio - HDFC Bank",
+            underlying="HDFC Bank",
+            advisors="Test Advisor",
+            asset=self.asset1,
+            transaction_type=TransactionType.BUY,
+            transaction_date=date(2026, 1, 1),
+            quantity=Decimal("10"),
+            price_per_unit=Decimal("100"),
+            amount=Decimal("1000"),
+            source="MANUAL",
+        )
+        Transaction.objects.create(
+            owner=self.user1,
+            family=self.family,
+            family_name="Test",
+            portfolio="Test Portfolio",
+            asset_class="MUTUAL FUND",
+            sub_class="Mutual Fund",
+            asset_name="Nippon India Growth - Direct Growth",
+            underlying="Nippon India Growth",
+            advisors="Test Advisor",
+            asset=self.asset2,
+            transaction_type=TransactionType.BUY,
+            transaction_date=date(2026, 1, 1),
+            quantity=Decimal("10"),
+            price_per_unit=Decimal("100"),
+            amount=Decimal("1000"),
+            source="MANUAL",
+        )
+
     def test_all_family_assets_are_listed_before_configuration(self):
         self.client.force_authenticate(self.user1)
 
@@ -41,8 +79,8 @@ class TaxRateSettingsApiTests(TestCase):
 
         self.assertEqual(listing.status_code, 200)
         self.assertEqual([row["asset_name"] for row in listing.data], [
-            "HDFC Bank",
-            "Nippon India Growth",
+            "Family Portfolio - HDFC Bank",
+            "Nippon India Growth - Direct Growth",
         ])
         self.assertIsNone(listing.data[0]["id"])
         self.assertIsNone(listing.data[0]["tenure_months"])

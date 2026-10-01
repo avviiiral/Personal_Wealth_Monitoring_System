@@ -98,7 +98,7 @@ class TaxRateSettingsApiTests(TestCase):
         self.assertEqual(logs[1].change_from["tenure_months"], 12)
         self.assertEqual(logs[1].change_to["tenure_months"], 24)
         self.assertEqual(logs[1].change_from["long_term_tax_rate"], "10.0000")
-        self.assertEqual(logs[1].change_to["long_term_tax_rate"], "8.5000")
+        self.assertEqual(logs[1].change_to["long_term_tax_rate"], "8.50")
 
         self.client.force_authenticate(self.user2)
         listing = self.client.get("/api/settings/tax-rates/")

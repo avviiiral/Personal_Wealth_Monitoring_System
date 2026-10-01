@@ -309,8 +309,8 @@ class MISReportAPITests(TestCase):
         self.assertEqual(notes_ws["B3"].value, "REITS Rate movement are as below:")
         self.assertEqual(notes_ws["A5"].value, 1)
         self.assertEqual(notes_ws["B5"].value, "Mindspace Business Parks")
-        self.assertEqual(notes_ws["A13"].value, 2)
-        self.assertEqual(notes_ws["B13"].value, "Sovereign Gold Bonds rate movement are as below:")
+        self.assertEqual(notes_ws["A15"].value, 2)
+        self.assertEqual(notes_ws["B15"].value, "Sovereign Gold Bonds rate movement are as below:")
         self.assertEqual(workbook["IPS"]["C7"].value, 0.0125)
 
     def test_fund_type_summary_groups_all_asset_classes_by_current_market_value(self):

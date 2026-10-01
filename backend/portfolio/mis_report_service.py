@@ -360,7 +360,7 @@ class MISReportService:
                 "unit_label": "Unit Rate",
                 "change_label": "Change in Level",
                 "particulars": [
-                    ("NSE", ("nse",)),
+                    ("NSE", ("nse", "national stock exchange")),
                     ("Sterlite Electrical Ltd (Power Transmission)", ("sterlite electrical ltd", "sterlite electrical", "power transmission")),
                     ("Sterlite Grid 5 Ltd Unlisted Shares", ("sterlite grid 5", "sterlite grid 5 ltd")),
                 ],
@@ -391,17 +391,19 @@ class MISReportService:
         def find_row(aliases):
             aliases = [normalize(alias) for alias in aliases]
             matches = []
-            for text, row in searchable_rows:
-                if any(alias and alias in text for alias in aliases):
-                    matches.append(row)
-            if not matches:
-                return None
-            # Prefer an exact asset-name match when several rows contain the alias.
+            # First prefer exact asset-name matches.
             for alias in aliases:
-                for row in matches:
+                for text, row in searchable_rows:
                     if normalize(row.get("asset_name")) == alias:
                         return row
-            return matches[0]
+
+            # For longer names, allow a controlled contains match across the
+            # asset/class/sub-class fields. Short aliases such as NSE are kept
+            # exact to avoid false matches (for example, "Sensex").
+            for text, row in searchable_rows:
+                if any(len(alias) > 3 and alias in text for alias in aliases):
+                    matches.append(row)
+            return matches[0] if matches else None
 
         def movement(row):
             if not row:

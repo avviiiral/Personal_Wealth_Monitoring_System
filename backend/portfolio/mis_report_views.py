@@ -5,7 +5,7 @@ import re
 
 from django.http import HttpResponse
 from openpyxl import Workbook
-from openpyxl.styles import Alignment, Font, Border, Side
+from openpyxl.styles import Alignment, Font, Border, Side, PatternFill
 from openpyxl.utils import get_column_letter
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
@@ -49,15 +49,31 @@ def _serialize_report(report):
     return serialize(report)
 
 
-def _style_header(cell):
+_TITLE_FILL = PatternFill(fill_type="solid", fgColor="D9EAF7")
+_HEADER_FILL = PatternFill(fill_type="solid", fgColor="B4C7E7")
+_SECTION_FILL = PatternFill(fill_type="solid", fgColor="DDEBF7")
+_SUBHEADER_FILL = PatternFill(fill_type="solid", fgColor="E2F0D9")
+_SUBTOTAL_FILL = PatternFill(fill_type="solid", fgColor="FFF2CC")
+_GRAND_TOTAL_FILL = PatternFill(fill_type="solid", fgColor="C6E0B4")
+_DIFF_FILL = PatternFill(fill_type="solid", fgColor="FCE4D6")
+_BORDER = Border(
+    left=Side(style="thin"),
+    right=Side(style="thin"),
+    top=Side(style="thin"),
+    bottom=Side(style="thin"),
+)
+
+def _style_header(cell, fill=_HEADER_FILL):
     cell.font = Font(bold=True, size=12)
     cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
-    cell.border = Border(bottom=Side(style="thin"))
+    cell.fill = fill
+    cell.border = _BORDER
 
 
 def _style_title(cell):
     cell.font = Font(bold=True, size=14)
     cell.alignment = Alignment(horizontal="left", vertical="center")
+    cell.fill = _TITLE_FILL
 
 
 def _autosize(ws, minimum=12, maximum=36):
@@ -99,6 +115,10 @@ def _build_ips_sheet(workbook, report):
             for offset, family in enumerate(families, 3):
                 ws.cell(cursor, offset, values.get(family, 0))
             ws.cell(cursor, len(families) + 3, total)
+            fill = _SECTION_FILL if label == current_date else _SUBHEADER_FILL if label == prior_date else _DIFF_FILL
+            for col in range(1, len(families) + 4):
+                ws.cell(cursor, col).fill = fill
+                ws.cell(cursor, col).border = _BORDER
             cursor += 1
 
     if not report["ips"]:
@@ -127,7 +147,9 @@ def _build_data_sheet(workbook, report):
     ws["K3"] = f"Transactions- Buy/Sell upto {closing_label}"
     ws["N3"] = f"{closing_label} Closing MTM"
     for cell in ("E3", "H3", "K3", "N3"):
-        _style_header(ws[cell])
+        _style_header(ws[cell], _SECTION_FILL)
+    for col in range(1, 17):
+        ws.cell(3, col).fill = _SECTION_FILL
 
     headers = [
         "Fund Name", "FILE", "Fund Type.V1", "Advisor",
@@ -149,6 +171,8 @@ def _build_data_sheet(workbook, report):
     for col, value in enumerate(subheaders, 1):
         ws.cell(5, col, value)
         ws.cell(5, col).alignment = Alignment(vertical="top", wrap_text=True)
+        ws.cell(5, col).fill = _SUBHEADER_FILL
+        ws.cell(5, col).border = _BORDER
 
     for row_idx, row in enumerate(report["data_sheet"], 6):
         values = [
@@ -161,6 +185,7 @@ def _build_data_sheet(workbook, report):
         for col, value in enumerate(values, 1):
             ws.cell(row_idx, col, value)
             ws.cell(row_idx, col).alignment = Alignment(vertical="top", wrap_text=(col <= 4))
+            ws.cell(row_idx, col).border = _BORDER
 
     ws.freeze_panes = "A6"
     _autosize(ws, 12, 34)
@@ -190,9 +215,14 @@ def _build_fund_summary_sheet(workbook, report):
             ws.cell(row_idx, 2, item["fund_name"])
             ws.cell(row_idx, 3, item["total"])
             ws.cell(row_idx, 4, item["market_value_label"])
+            for col in range(1, 5):
+                ws.cell(row_idx, col).border = _BORDER
             row_idx += 1
         ws.cell(row_idx, 1, f"{group['fund_type']} Subtotal")
         ws.cell(row_idx, 3, group["subtotal"])
+        for col in range(1, 5):
+            ws.cell(row_idx, col).fill = _SUBTOTAL_FILL
+            ws.cell(row_idx, col).border = _BORDER
         ws.cell(row_idx, 1).font = Font(bold=True)
         ws.cell(row_idx, 3).font = Font(bold=True)
         grand_total += Decimal(str(group["subtotal"] or 0))
@@ -200,6 +230,9 @@ def _build_fund_summary_sheet(workbook, report):
 
     ws.cell(row_idx, 1, "Grand Total")
     ws.cell(row_idx, 3, grand_total)
+    for col in range(1, 5):
+        ws.cell(row_idx, col).fill = _GRAND_TOTAL_FILL
+        ws.cell(row_idx, col).border = _BORDER
     ws.cell(row_idx, 1).font = Font(bold=True)
     ws.cell(row_idx, 3).font = Font(bold=True)
     ws.cell(row_idx + 1, 1, "Asset class")

@@ -34,8 +34,8 @@ export interface TaxRateSetting {
   family_id: number;
   family_name: string;
   tenure_months: number | null;
-  short_term_tax_rate: string | null;
-  long_term_tax_rate: string | null;
+  short_term_tax_rate: string | number | null;
+  long_term_tax_rate: string | number | null;
   updated_at: string | null;
 }
 export interface ChangePasswordResponse {

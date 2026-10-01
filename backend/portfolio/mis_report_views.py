@@ -86,7 +86,7 @@ def _autosize(ws, minimum=12, maximum=36):
 def _build_ips_sheet(workbook, report):
     ws = workbook.create_sheet("IPS")
     families = report["family_names"]
-    ws["A1"] = "Sheet 1 - IPS"
+    ws["A1"] = "IPS"
     _style_title(ws["A1"])
     ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=max(2, len(families) + 3))
 

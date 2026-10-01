@@ -1,3 +1,5 @@
+from decimal import Decimal, InvalidOperation
+from django.db import IntegrityError
 from django.contrib.auth import get_user_model
 from django.db import transaction
 from django.db.models.deletion import ProtectedError
@@ -104,6 +106,106 @@ def set_active_family(request):
     serializer.save()
 
     return Response(CurrentUserSerializer(request.user).data)
+
+
+# ==================================================================
+# TAX RATE SETTINGS
+# ==================================================================
+
+
+@api_view(["GET", "POST"])
+@permission_classes([IsAuthenticated])
+def tax_rate_list(request):
+    """GET/POST /api/settings/tax-rates/ for the authenticated user."""
+
+    if request.method == "GET":
+        rows = TaxRateSetting.objects.filter(user=request.user).order_by("asset_name")
+        return Response([
+            {
+                "id": row.id,
+                "asset_name": row.asset_name,
+                "tax_rate": str(row.tax_rate),
+                "created_at": row.created_at,
+                "updated_at": row.updated_at,
+            }
+            for row in rows
+        ])
+
+    asset_name = str(request.data.get("asset_name") or "").strip()
+    if not asset_name:
+        return Response({"detail": "Asset Name is required."}, status=status.HTTP_400_BAD_REQUEST)
+    if len(asset_name) > 255:
+        return Response({"detail": "Asset Name is too long."}, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        tax_rate = Decimal(str(request.data.get("tax_rate")))
+    except (InvalidOperation, TypeError, ValueError):
+        return Response({"detail": "Tax Rate must be a valid number."}, status=status.HTTP_400_BAD_REQUEST)
+
+    if tax_rate < 0 or tax_rate > 100:
+        return Response({"detail": "Tax Rate must be between 0 and 100 percent."}, status=status.HTTP_400_BAD_REQUEST)
+
+    row, created = TaxRateSetting.objects.update_or_create(
+        user=request.user,
+        asset_name=asset_name,
+        defaults={"tax_rate": tax_rate},
+    )
+
+    return Response(
+        {
+            "id": row.id,
+            "asset_name": row.asset_name,
+            "tax_rate": str(row.tax_rate),
+            "created_at": row.created_at,
+            "updated_at": row.updated_at,
+        },
+        status=status.HTTP_201_CREATED if created else status.HTTP_200_OK,
+    )
+
+
+@api_view(["PATCH", "DELETE"])
+@permission_classes([IsAuthenticated])
+def tax_rate_detail(request, tax_rate_id):
+    """PATCH/DELETE /api/settings/tax-rates/<id>/ for the authenticated user."""
+
+    try:
+        row = TaxRateSetting.objects.get(pk=tax_rate_id, user=request.user)
+    except TaxRateSetting.DoesNotExist:
+        return Response({"detail": "Tax rate setting not found."}, status=status.HTTP_404_NOT_FOUND)
+
+    if request.method == "DELETE":
+        row.delete()
+        return Response({"message": "Tax rate setting deleted successfully."})
+
+    if "asset_name" in request.data:
+        asset_name = str(request.data.get("asset_name") or "").strip()
+        if not asset_name:
+            return Response({"detail": "Asset Name is required."}, status=status.HTTP_400_BAD_REQUEST)
+        if len(asset_name) > 255:
+            return Response({"detail": "Asset Name is too long."}, status=status.HTTP_400_BAD_REQUEST)
+        row.asset_name = asset_name
+
+    if "tax_rate" in request.data:
+        try:
+            tax_rate = Decimal(str(request.data.get("tax_rate")))
+        except (InvalidOperation, TypeError, ValueError):
+            return Response({"detail": "Tax Rate must be a valid number."}, status=status.HTTP_400_BAD_REQUEST)
+        if tax_rate < 0 or tax_rate > 100:
+            return Response({"detail": "Tax Rate must be between 0 and 100 percent."}, status=status.HTTP_400_BAD_REQUEST)
+        row.tax_rate = tax_rate
+
+    try:
+        row.save()
+    except IntegrityError:
+        return Response({"detail": "A tax rate for this Asset Name already exists."}, status=status.HTTP_400_BAD_REQUEST)
+
+    return Response({
+        "id": row.id,
+        "asset_name": row.asset_name,
+        "tax_rate": str(row.tax_rate),
+        "created_at": row.created_at,
+        "updated_at": row.updated_at,
+    })
 
 
 # ==================================================================

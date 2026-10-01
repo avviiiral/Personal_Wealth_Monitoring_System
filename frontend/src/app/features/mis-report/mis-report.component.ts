@@ -96,6 +96,11 @@ export class MISReportComponent implements OnInit {
     return new Intl.NumberFormat('en-IN', { minimumFractionDigits: digits, maximumFractionDigits: digits }).format(value);
   }
 
+  formatLakhs(value: number | null | undefined, digits = 2): string {
+    if (value === null || value === undefined) return '—';
+    return new Intl.NumberFormat('en-IN', { minimumFractionDigits: digits, maximumFractionDigits: digits }).format(value / 100000);
+  }
+
   formatDate(value: string | null | undefined): string {
     if (!value) return '—';
     const parsed = new Date(value + 'T00:00:00');

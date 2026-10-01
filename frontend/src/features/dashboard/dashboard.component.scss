@@ -90,6 +90,7 @@
 .header-filter-stack .family-filter-inline {
   display: flex;
   flex-direction: column;
+  align-items: center;
   gap: 7px;
   padding: 10px 12px;
   border: 1px solid var(--surface-line);
@@ -212,6 +213,7 @@
 .header-control-inline {
   display: flex;
   flex-direction: column;
+  align-items: center;
   gap: 7px;
   padding: 10px 12px;
   border: 1px solid var(--surface-line);
@@ -224,6 +226,7 @@
 .header-control-label,
 .family-filter-label {
   color: var(--muted);
+  text-align: center;
   font-size: 11px;
   font-weight: 700;
   letter-spacing: .02em;
@@ -232,6 +235,7 @@
 
 .header-control-buttons {
   display: flex;
+  justify-content: center;
   gap: 4px;
   flex-wrap: wrap;
 }

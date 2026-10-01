@@ -1,5 +1,5 @@
 import { CommonModule } from '@angular/common';
-import { Component, inject, OnInit } from '@angular/core';
+import { ChangeDetectorRef, Component, inject, OnInit } from '@angular/core';
 
 import { MISHolding, MISReport, MISReportService } from '../../core/services/mis-report.service';
 
@@ -12,6 +12,7 @@ import { MISHolding, MISReport, MISReportService } from '../../core/services/mis
 })
 export class MISReportComponent implements OnInit {
   private readonly service = inject(MISReportService);
+  private readonly cdr = inject(ChangeDetectorRef);
 
   report: MISReport | null = null;
   loading = true;
@@ -33,12 +34,14 @@ export class MISReportComponent implements OnInit {
         this.report = report;
         this.rebuildGroups();
         this.loading = false;
+        this.cdr.markForCheck();
       },
       error: (error) => {
         this.loading = false;
         this.error = error?.status === 403
           ? 'You do not have access to an active family portfolio.'
           : 'Unable to load the MIS Report. Please try again.';
+        this.cdr.markForCheck();
       },
     });
   }
@@ -68,10 +71,12 @@ export class MISReportComponent implements OnInit {
         anchor.click();
         URL.revokeObjectURL(url);
         this.downloading = false;
+        this.cdr.markForCheck();
       },
       error: () => {
         this.downloading = false;
         this.error = 'Unable to download the MIS Report Excel file. Please try again.';
+        this.cdr.markForCheck();
       },
     });
   }

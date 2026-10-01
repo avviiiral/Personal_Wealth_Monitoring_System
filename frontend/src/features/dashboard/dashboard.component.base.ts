@@ -166,7 +166,7 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
   xirrPerformanceAssetCategoryIndex = 0;
 
   /*
-   * Currently selected Family Name filter.
+   * Currently selected Family Member filter.
    *
    * Empty string means "All Families". Changing this triggers a
    * full reload: Summary/XIRR/Investment Summary/Historical are all
@@ -196,7 +196,7 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
   }
 
   /**
-   * Distinct Family Names for the filter bar, alphabetically sorted.
+   * Distinct Family Members for the filter bar, alphabetically sorted.
    *
    * Sourced from the Portfolio Tree (always unfiltered), the same
    * way Portfolio/Reports build their Family filter options - so the
@@ -414,7 +414,7 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
      * asset already contains its calculated XIRR and Underlying.
      *
      * This is used for the Dashboard XIRR Performance section AND
-     * as the source of Family Names for the filter bar - it is
+     * as the source of Family Members for the filter bar - it is
      * intentionally NOT scoped by ?family= (the tree endpoint has no
      * such param), so the filter's own option list always shows
      * every Family regardless of which one is currently selected.

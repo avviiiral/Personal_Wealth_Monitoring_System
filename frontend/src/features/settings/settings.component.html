@@ -24,6 +24,7 @@
       <button type="button" class="tab-button" [class.tab-active]="activeTab === 'account'" (click)="setTab('account')">Account</button>
       <button type="button" class="tab-button" [class.tab-active]="activeTab === 'security'" (click)="setTab('security')">Security</button>
       <button type="button" class="tab-button" [class.tab-active]="activeTab === 'tax-rates'" (click)="setTab('tax-rates')">Tax Settings</button>
+      <button type="button" class="tab-button" [class.tab-active]="activeTab === 'tax-updates'" (click)="setTab('tax-updates')">Tax Update</button>
       <button type="button" class="tab-button" [class.tab-active]="activeTab === 'transaction-history'" (click)="setTab('transaction-history')">Transaction Edit History</button>
       <button type="button" class="tab-button" *ngIf="canManageUsers()" [class.tab-active]="activeTab === 'users'" (click)="setTab('users')">User Management</button>
       <button type="button" class="tab-button" *ngIf="canManageFamilies()" [class.tab-active]="activeTab === 'families'" (click)="setTab('families')">Family Management</button>
@@ -87,7 +88,6 @@
               <th>Tenure (Months)</th>
               <th>Short Term Tax (%)</th>
               <th>Long Term Tax (%)</th>
-              <th>Updated</th>
               <th>Actions</th>
             </tr>
           </thead>
@@ -128,9 +128,6 @@
                   placeholder="0.00"
                 />
               </td>
-              <td class="tax-updated">
-                {{ row.updated_at ? (row.updated_at | date:'dd MMM yyyy, HH:mm') : 'Not configured' }}
-              </td>
               <td>
                 <div class="tax-rate-row-actions">
                   <button
@@ -160,6 +157,50 @@
       <div class="tax-empty-state" *ngIf="!taxRateLoading && !taxRateSettings.length">
         <strong>No assets found for the active family.</strong>
         <span>Import or create an asset for this family first.</span>
+      </div>
+    </section>
+
+    <section class="settings-card tax-update-card" *ngIf="activeTab === 'tax-updates'">
+      <div class="card-header">
+        <div>
+          <h2>Tax Update</h2>
+          <p>Audit history of changes made to the tax settings for the active family.</p>
+        </div>
+        <span class="section-badge">{{ taxUpdateHistory.length }} Updates</span>
+      </div>
+
+      <div class="error-card" *ngIf="!taxUpdateLoading && taxUpdateError">{{ taxUpdateError }}</div>
+
+      <div class="loading-card history-loading" *ngIf="taxUpdateLoading">
+        <div class="loading-spinner"></div>
+        <span>Loading tax update history...</span>
+      </div>
+
+      <div class="tax-update-empty" *ngIf="!taxUpdateLoading && !taxUpdateError && !taxUpdateHistory.length">
+        No tax setting changes have been recorded for this family yet.
+      </div>
+
+      <div class="tax-update-table-wrap" *ngIf="!taxUpdateLoading && !taxUpdateError && taxUpdateHistory.length">
+        <table class="tax-update-table">
+          <thead>
+            <tr>
+              <th>User</th>
+              <th>Date &amp; Time</th>
+              <th>Asset Name</th>
+              <th>Change From</th>
+              <th>Change To</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr *ngFor="let update of taxUpdateHistory">
+              <td class="tax-update-user">{{ update.user }}</td>
+              <td class="tax-update-datetime">{{ update.date_time | date:'dd MMM yyyy, hh:mm a' }}</td>
+              <td class="tax-update-asset">{{ update.asset_name }}</td>
+              <td class="tax-update-change">{{ formatTaxChange(update.change_from) }}</td>
+              <td class="tax-update-change">{{ formatTaxChange(update.change_to) }}</td>
+            </tr>
+          </tbody>
+        </table>
       </div>
     </section>
 

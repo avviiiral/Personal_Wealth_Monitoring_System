@@ -67,11 +67,8 @@ export class SettingsComponent implements OnInit {
 
   taxRateSettings: TaxRateSetting[] = [];
   taxRateLoading = false;
-  taxRateSaving = false;
+  taxRateSavingAssetId: number | null = null;
   taxRateError = '';
-  taxAssetName = '';
-  taxRateValue: number | null = null;
-  editingTaxRateId: number | null = null;
 
   transactionHistory: TransactionEditHistory[] = [];
   transactionHistoryLoading = false;
@@ -169,75 +166,102 @@ export class SettingsComponent implements OnInit {
       },
       error: (error) => {
         this.taxRateLoading = false;
-        this.taxRateError = error?.error?.detail || 'Unable to load tax rate settings.';
+        this.taxRateError =
+          error?.error?.detail || 'Unable to load tax settings for the active family.';
         this.cdr.detectChanges();
       },
     });
   }
 
-  saveTaxRate(): void {
-    const assetName = this.taxAssetName.trim();
-    const taxRate = Number(this.taxRateValue);
+  saveTaxRate(row: TaxRateSetting): void {
+    if (this.taxRateSavingAssetId !== null) return;
 
-    if (!assetName) {
-      this.taxRateError = 'Enter an Asset Name.';
+    const tenureMonths = Number(row.tenure_months);
+    const shortTermTaxRate = Number(row.short_term_tax_rate);
+    const longTermTaxRate = Number(row.long_term_tax_rate);
+
+    if (!Number.isInteger(tenureMonths) || tenureMonths < 0) {
+      this.taxRateError = `Enter a valid non-negative tenure in months for "${row.asset_name}".`;
       return;
     }
 
-    if (!Number.isFinite(taxRate) || taxRate < 0 || taxRate > 100) {
-      this.taxRateError = 'Tax Rate must be between 0 and 100 percent.';
+    if (!Number.isFinite(shortTermTaxRate) || shortTermTaxRate < 0 || shortTermTaxRate > 100) {
+      this.taxRateError = `Short Term Tax must be between 0 and 100 percent for "${row.asset_name}".`;
       return;
     }
 
-    this.taxRateSaving = true;
+    if (!Number.isFinite(longTermTaxRate) || longTermTaxRate < 0 || longTermTaxRate > 100) {
+      this.taxRateError = `Long Term Tax must be between 0 and 100 percent for "${row.asset_name}".`;
+      return;
+    }
+
+    this.taxRateSavingAssetId = row.asset_id;
     this.taxRateError = '';
 
-    const request$ = this.editingTaxRateId === null
-      ? this.settingsApi.saveTaxRateSetting(assetName, taxRate)
-      : this.settingsApi.updateTaxRateSetting(this.editingTaxRateId, assetName, taxRate);
+    const request$ = row.id === null
+      ? this.settingsApi.saveTaxRateSetting(
+          row.asset_id,
+          tenureMonths,
+          shortTermTaxRate,
+          longTermTaxRate,
+        )
+      : this.settingsApi.updateTaxRateSetting(
+          row.id,
+          tenureMonths,
+          shortTermTaxRate,
+          longTermTaxRate,
+        );
 
     request$.subscribe({
-      next: () => {
-        this.taxRateSaving = false;
-        this.resetTaxRateForm();
-        this.loadTaxRateSettings();
+      next: (saved) => {
+        const index = this.taxRateSettings.findIndex((item) => item.asset_id === saved.asset_id);
+        if (index >= 0) {
+          this.taxRateSettings[index] = saved;
+        }
+        this.taxRateSavingAssetId = null;
+        this.taxRateError = '';
+        this.cdr.detectChanges();
       },
       error: (error) => {
-        this.taxRateSaving = false;
-        this.taxRateError = error?.error?.detail || 'Unable to save tax rate setting.';
+        this.taxRateSavingAssetId = null;
+        this.taxRateError =
+          error?.error?.detail || `Unable to save tax settings for "${row.asset_name}".`;
         this.cdr.detectChanges();
       },
     });
   }
 
-  editTaxRate(row: TaxRateSetting): void {
-    this.editingTaxRateId = row.id;
-    this.taxAssetName = row.asset_name;
-    this.taxRateValue = Number(row.tax_rate);
-    this.taxRateError = '';
-  }
+  clearTaxRate(row: TaxRateSetting): void {
+    if (row.id === null || this.taxRateSavingAssetId !== null) return;
 
-  deleteTaxRate(row: TaxRateSetting): void {
-    if (!window.confirm('Delete the tax rate for "' + row.asset_name + '"?')) return;
+    if (!window.confirm(`Clear tax settings for "${row.asset_name}"?`)) return;
+
+    this.taxRateSavingAssetId = row.asset_id;
+    this.taxRateError = '';
 
     this.settingsApi.deleteTaxRateSetting(row.id).subscribe({
       next: () => {
-        if (this.editingTaxRateId === row.id) this.resetTaxRateForm();
-        this.loadTaxRateSettings();
+        const index = this.taxRateSettings.findIndex((item) => item.asset_id === row.asset_id);
+        if (index >= 0) {
+          this.taxRateSettings[index] = {
+            ...this.taxRateSettings[index],
+            id: null,
+            tenure_months: null,
+            short_term_tax_rate: null,
+            long_term_tax_rate: null,
+            updated_at: null,
+          };
+        }
+        this.taxRateSavingAssetId = null;
+        this.cdr.detectChanges();
       },
       error: (error) => {
-        this.taxRateError = error?.error?.detail || 'Unable to delete tax rate setting.';
+        this.taxRateSavingAssetId = null;
+        this.taxRateError =
+          error?.error?.detail || `Unable to clear tax settings for "${row.asset_name}".`;
         this.cdr.detectChanges();
       },
     });
-  }
-
-  resetTaxRateForm(): void {
-    this.editingTaxRateId = null;
-    this.taxAssetName = '';
-    this.taxRateValue = null;
-    this.taxRateError = '';
-    this.cdr.detectChanges();
   }
 
   loadTransactionHistory(): void {

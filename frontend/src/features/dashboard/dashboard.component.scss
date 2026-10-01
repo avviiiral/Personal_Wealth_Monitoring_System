@@ -177,15 +177,53 @@
    Family Name filter box, just sized to sit in the header.
 ----------------------------- */
 
-.display-unit-inline {
+ .header-control-inline {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  background: var(--surface);
+  gap: 7px;
+  padding: 10px 12px;
   border: 1px solid var(--surface-line);
   border-radius: var(--radius-sm);
-  padding: 10px 14px;
+  background: var(--surface);
   box-shadow: var(--shadow-sm);
+  min-width: max-content;
+}
+
+.header-control-label,
+.family-filter-label {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .02em;
+}
+
+.header-control-buttons {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.header-control-button {
+  border: 1px solid #d9dee7;
+  background: #fff;
+  color: #344054;
+  border-radius: 6px;
+  padding: 7px 11px;
+  min-height: 32px;
+  font-size: 12px;
+  font-weight: 650;
+  cursor: pointer;
+  transition: background-color .15s ease, border-color .15s ease, color .15s ease;
+}
+
+.header-control-button:hover {
+  background: #f5f7fa;
+}
+
+.header-control-button.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
 }
 
 .family-filter-inline {
@@ -211,27 +249,6 @@
   display: flex;
   gap: 6px;
   flex-wrap: wrap;
-}
-
-.family-filter-button {
-  border: 1px solid #d9dee7;
-  background: #ffffff;
-  border-radius: 6px;
-  padding: 8px 14px;
-  font-size: 13px;
-  cursor: pointer;
-  white-space: nowrap;
-  transition: 0.15s ease;
-
-  &:hover {
-    background: #f5f7fa;
-  }
-
-  &.active {
-    background: var(--ink);
-    color: #ffffff;
-    border-color: var(--ink);
-  }
 }
 
 /* -----------------------------
@@ -1085,13 +1102,14 @@
     align-items: stretch;
   }
 
+  .header-control-inline,
   .family-filter-inline {
     flex-direction: column;
     align-items: flex-start;
     width: 100%;
   }
 
-  .family-filter-buttons {
+  .header-control-buttons {
     width: 100%;
   }
 
@@ -1213,158 +1231,28 @@
   color: var(--ink-soft);
 }
 
-:host-context(html.dark-theme) .family-filter-button {
-  background: var(--surface);
-  border-color: var(--surface-line);
-  color: var(--ink);
+:host-context(html.dark-theme) .header-control-label,
+:host-context(html.dark-theme) .family-filter-label {
+  color: var(--muted);
 }
 
-:host-context(html.dark-theme) .family-filter-button:hover {
-  background: var(--accent-soft);
-}
-
-:host-context(html.dark-theme) .family-filter-button.active {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: #ffffff;
-}
-
-/* Cards */
-:host-context(html.dark-theme) .kpi-card,
-:host-context(html.dark-theme) .dashboard-card,
-:host-context(html.dark-theme) .family-filter-inline,
-:host-context(html.dark-theme) .loading-card {
+:host-context(html.dark-theme) .header-control-inline,
+:host-context(html.dark-theme) .family-filter-inline {
   background: var(--surface);
   border-color: var(--surface-line);
 }
 
-/* Card text */
-:host-context(html.dark-theme) .card-header h2,
-:host-context(html.dark-theme) .kpi-card strong {
-  color: var(--ink);
-}
-
-:host-context(html.dark-theme) .card-header p {
-  color: var(--muted);
-}
-
-:host-context(html.dark-theme) .kpi-label {
-  color: var(--muted);
-}
-
-:host-context(html.dark-theme) .kpi-subtitle {
-  color: var(--muted-soft);
-}
-
-/* Period badge */
-:host-context(html.dark-theme) .period-badge {
-  background: #242832;
-  color: var(--muted);
-}
-
-/* Investment summary */
-:host-context(html.dark-theme) .investment-summary-table th {
-  background: var(--surface);
-  color: var(--muted);
-  border-color: var(--surface-line);
-}
-
-:host-context(html.dark-theme) .investment-summary-table td {
-  color: var(--ink);
-  border-color: var(--surface-line);
-}
-
-:host-context(html.dark-theme) .investment-summary-table .category-cell {
-  background: #1b1f27;
-  color: var(--ink);
-  border-color: var(--surface-line);
-}
-
-/* Loading */
-:host-context(html.dark-theme) .loading-card {
-  color: var(--muted);
-}
-
-:host-context(html.dark-theme) .loading-spinner {
-  border-color: var(--surface-line);
-  border-top-color: var(--accent);
-}
-
-/* Error */
-:host-context(html.dark-theme) .error-card {
-  border-color: #5a2925;
-}
-
-/* Buttons */
-:host-context(html.dark-theme) .refresh-button {
-  background: #e5e7eb;
-  color: #111827;
-}
-
-:host-context(html.dark-theme) .refresh-button:hover {
-  background: #ffffff;
-}
-
-/* ==========================================================
-   DARK MODE
-   ========================================================== */
-
-:host-context(html.dark-theme) {
-  --ink: #e5e7eb;
-  --ink-soft: #cbd5e1;
-
-  --canvas-from: #12151c;
-  --canvas-to: #0b0d12;
-
-  --surface: #171a21;
-  --surface-line: #2a2e38;
-
-  --muted: #a1aaba;
-  --muted-soft: #7d8798;
-
-  --accent: #2fbf8f;
-  --accent-soft: #123329;
-  --accent-line: #1f4d3d;
-
-  --negative: #f2685c;
-  --negative-soft: #3a1a17;
-}
-
-:host-context(html.dark-theme) .dashboard-page {
-  background: linear-gradient(180deg, var(--canvas-from) 0%, var(--canvas-to) 100%);
-}
-
-:host-context(html.dark-theme) .family-filter-inline,
-:host-context(html.dark-theme) .kpi-card,
-:host-context(html.dark-theme) .dashboard-card,
-:host-context(html.dark-theme) .investment-summary-card {
-  background: var(--surface);
-  border-color: var(--surface-line);
-}
-
-:host-context(html.dark-theme) .family-filter-label,
-:host-context(html.dark-theme) .card-header h2,
-:host-context(html.dark-theme) .kpi-card strong {
-  color: var(--ink);
-}
-
-:host-context(html.dark-theme) .card-header p,
-:host-context(html.dark-theme) .kpi-label,
-:host-context(html.dark-theme) .kpi-subtitle {
-  color: var(--muted);
-}
-
-:host-context(html.dark-theme) .family-filter-button {
+:host-context(html.dark-theme) .header-control-button {
   background: #1b1f27;
   border-color: #3a414e;
   color: #e5e7eb;
 }
 
-:host-context(html.dark-theme) .family-filter-button:hover {
+:host-context(html.dark-theme) .header-control-button:hover {
   background: var(--accent-soft);
 }
 
-:host-context(html.dark-theme) .family-filter-button.active {
+:host-context(html.dark-theme) .header-control-button.active {
   background: var(--accent);
   border-color: var(--accent);
   color: #07140f;

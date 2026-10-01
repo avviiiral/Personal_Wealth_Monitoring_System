@@ -177,7 +177,7 @@
    Family Name filter box, just sized to sit in the header.
 ----------------------------- */
 
- .header-control-inline {
+.header-control-inline {
   display: flex;
   flex-direction: column;
   gap: 7px;
@@ -190,66 +190,6 @@
 }
 
 .header-control-label,
-.family-filter-label {
-  color: var(--muted);
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: .02em;
-}
-
-.header-control-buttons {
-  display: flex;
-  gap: 4px;
-  flex-wrap: wrap;
-}
-
-.header-control-button {
-  border: 1px solid #d9dee7;
-  background: #fff;
-  color: #344054;
-  border-radius: 6px;
-  padding: 7px 11px;
-  min-height: 32px;
-  font-size: 12px;
-  font-weight: 650;
-  cursor: pointer;
-  transition: background-color .15s ease, border-color .15s ease, color .15s ease;
-}
-
-.header-control-button:hover {
-  background: #f5f7fa;
-}
-
-.header-control-button.active {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: #fff;
-}
-
-.family-filter-inline {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  background: var(--surface);
-  border: 1px solid var(--surface-line);
-  border-radius: var(--radius-sm);
-  padding: 10px 14px;
-
-  box-shadow: var(--shadow-sm);
-}
-
-.family-filter-label {
-  font-size: 12px;
-  font-weight: 700;
-  color: #344054;
-  white-space: nowrap;
-}
-
-.family-filter-buttons {
-  display: flex;
-  gap: 6px;
-  flex-wrap: wrap;
-}
 
 /* -----------------------------
    LOADING

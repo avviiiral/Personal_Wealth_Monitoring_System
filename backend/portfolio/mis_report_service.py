@@ -296,99 +296,181 @@ class MISReportService:
     @classmethod
     def _build_notes(cls, data_rows, opening_date, as_of):
         """
-        Build the Notes section from the same historical unit rates used by the
-        Data Sheet. Only instruments that match the standard MIS note categories
-        are included; no external or hard-coded market values are introduced.
+        Build the fixed six-section Notes to MIS format from historical values
+        already reconstructed for the MIS Data Sheet.
+
+        The section/particular list is intentionally fixed to the supplied MIS
+        standard. Missing instruments remain in the standard report with blank
+        rates rather than being replaced by dynamically discovered instruments.
         """
-        categories = [
+        standard_sections = [
             {
-                "key": "reits",
+                "section": "reits",
+                "section_number": 1,
                 "title": "REITS Rate movement are as below:",
                 "unit_label": "Unit Rate",
                 "change_label": "Change In Rate",
-                "keywords": ("reit", "invit", "infrastructure investment trust"),
+                "particulars": [
+                    ("Mindspace Business Parks", ("mindspace business parks",)),
+                    ("Embassy Office Parks", ("embassy office parks",)),
+                    ("Brookfield India Real Estate Trust", ("brookfield india real estate trust", "brookfield india reit")),
+                    ("National Highways Infra Trust", ("national highways infra trust", "nhit")),
+                    ("Nexus Select Trust", ("nexus select trust",)),
+                    ("Knowledge Realty Trust", ("knowledge realty trust",)),
+                    ("Bagmane Prime Office Reit", ("bagmane prime office reit",)),
+                    ("NDR InvIT", ("ndr invit",)),
+                    ("Cube InvIT", ("cube invit",)),
+                ],
             },
             {
-                "key": "sgb",
+                "section": "sgb",
+                "section_number": 2,
                 "title": "Sovereign Gold Bonds rate movement are as below:",
                 "unit_label": "Rate/grm",
                 "change_label": "Change In Rate",
-                "keywords": ("sovereign gold bond", "sgb"),
+                "particulars": [
+                    ("Sovereign Gold Bonds - 48Kg", ("sovereign gold bonds - 48kg", "sovereign gold bonds 48kg", "sovereign gold bond - 48kg")),
+                ],
             },
             {
-                "key": "silver",
+                "section": "silver",
+                "section_number": 3,
                 "title": "Silver ETF",
                 "unit_label": "Rate/Unit",
                 "change_label": "Change in Level",
-                "keywords": ("silver etf",),
+                "particulars": [
+                    ("ICICI Prudential Silver ETF Rate/Unit", ("icici prudential silver etf", "icici prudential silver etf rate/unit")),
+                ],
             },
             {
-                "key": "indices",
+                "section": "indices",
+                "section_number": 4,
                 "title": "Nifty 50 & BSE 500 Level",
                 "unit_label": "Level",
                 "change_label": "Change in Level",
-                "keywords": ("nifty 50", "nifty50", "bse 500", "bse500"),
+                "particulars": [
+                    ("Nifty 50", ("nifty 50", "nifty50")),
+                    ("BSE 500", ("bse 500", "bse500")),
+                ],
             },
             {
-                "key": "unlisted",
+                "section": "unlisted",
+                "section_number": 5,
                 "title": "Unlisted Shares - Price considered below for MIS",
                 "unit_label": "Unit Rate",
                 "change_label": "Change in Level",
-                "keywords": ("unlisted", "private share", "private equity"),
+                "particulars": [
+                    ("NSE", ("nse",)),
+                    ("Sterlite Electrical Ltd (Power Transmission)", ("sterlite electrical ltd", "sterlite electrical", "power transmission")),
+                    ("Sterlite Grid 5 Ltd Unlisted Shares", ("sterlite grid 5", "sterlite grid 5 ltd")),
+                ],
             },
             {
-                "key": "dollar",
+                "section": "dollar",
+                "section_number": 6,
                 "title": "Dollar Rate",
                 "unit_label": "Rate",
                 "change_label": "Change in Level",
-                "keywords": ("dollar rate", "usd/inr", "usd inr", "us dollar", "$ rate"),
+                "particulars": [
+                    ("$ Rate", ("$ rate", "dollar rate", "usd/inr", "usd inr", "us dollar")),
+                ],
             },
         ]
 
-        def searchable(row):
-            return " ".join(
-                str(row.get(field) or "").lower()
+        def normalize(value):
+            return "".join(character for character in str(value or "").lower() if character.isalnum())
+
+        searchable_rows = []
+        for row in data_rows:
+            haystack = " ".join(
+                str(row.get(field) or "")
                 for field in ("asset_name", "asset_class", "sub_class")
             )
+            searchable_rows.append((normalize(haystack), row))
+
+        def find_row(aliases):
+            aliases = [normalize(alias) for alias in aliases]
+            matches = []
+            for text, row in searchable_rows:
+                if any(alias and alias in text for alias in aliases):
+                    matches.append(row)
+            if not matches:
+                return None
+            # Prefer an exact asset-name match when several rows contain the alias.
+            for alias in aliases:
+                for row in matches:
+                    if normalize(row.get("asset_name")) == alias:
+                        return row
+            return matches[0]
+
+        def movement(row):
+            if not row:
+                return {
+                    "opening_rate": None,
+                    "closing_rate": None,
+                    "change": None,
+                    "percent_change": None,
+                }
+
+            opening_rate = row.get("opening_nav")
+            closing_rate = row.get("closing_nav")
+            if opening_rate is None or closing_rate is None:
+                return {
+                    "opening_rate": None,
+                    "closing_rate": None,
+                    "change": None,
+                    "percent_change": None,
+                }
+
+            opening_rate = Decimal(str(opening_rate))
+            closing_rate = Decimal(str(closing_rate))
+            change = closing_rate - opening_rate
+            percent_change = (
+                (change / opening_rate) * Decimal("100")
+                if opening_rate != 0
+                else None
+            )
+            return {
+                "opening_rate": opening_rate,
+                "closing_rate": closing_rate,
+                "change": change,
+                "percent_change": percent_change,
+            }
 
         notes = []
-        for category in categories:
+        for section in standard_sections:
             items = []
-            for row in data_rows:
-                opening_rate = row.get("opening_nav")
-                closing_rate = row.get("closing_nav")
-                if opening_rate is None or closing_rate is None:
-                    continue
-                text = searchable(row)
-                if not any(keyword in text for keyword in category["keywords"]):
-                    continue
+            for name, aliases in section["particulars"]:
+                item = {"name": name}
+                item.update(movement(find_row(aliases)))
+                items.append(item)
 
-                opening_rate = Decimal(str(opening_rate))
-                closing_rate = Decimal(str(closing_rate))
-                change = closing_rate - opening_rate
-                percent_change = (
-                    (change / opening_rate) * Decimal("100")
-                    if opening_rate != 0
-                    else None
+            notes.append({
+                "section": section["section"],
+                "section_number": section["section_number"],
+                "title": section["title"],
+                "unit_label": section["unit_label"],
+                "change_label": section["change_label"],
+                "items": items,
+            })
+
+        silver_item = notes[2]["items"][0]
+        silver_row = find_row(standard_sections[2]["particulars"][0][1])
+        silver_note = None
+        if silver_row and silver_row.get("rate") is not None:
+            invested_rate = Decimal(str(silver_row["rate"]))
+            closing_rate = silver_item["closing_rate"]
+            multiple = (
+                closing_rate / invested_rate
+                if closing_rate is not None and invested_rate != 0
+                else None
+            )
+            if multiple is not None:
+                silver_note = (
+                    f"We have invested at rate of {invested_rate:.2f}/Unit. "
+                    f"Up from our buying {multiple:.2f}X."
                 )
-                items.append({
-                    "name": row["asset_name"],
-                    "opening_rate": opening_rate,
-                    "closing_rate": closing_rate,
-                    "change": change,
-                    "percent_change": percent_change,
-                })
-
-            if items:
-                items.sort(key=lambda item: item["name"].casefold())
-                notes.append({
-                    "section": category["key"],
-                    "section_number": len(notes) + 1,
-                    "title": category["title"],
-                    "unit_label": category["unit_label"],
-                    "change_label": category["change_label"],
-                    "items": items,
-                })
+        notes[2]["note"] = silver_note
 
         return {
             "title": f"Notes to MIS {as_of.strftime('%B-%Y').upper()}",

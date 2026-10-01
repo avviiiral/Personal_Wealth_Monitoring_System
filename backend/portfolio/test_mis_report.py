@@ -109,6 +109,10 @@ class MISReportAPITests(TestCase):
         self.assertEqual(data["fund_type_summary"][0]["rows"][0]["fund_name"], "MIS Equity")
         self.assertEqual(data["fund_type_summary"][0]["rows"][0]["total"], 1250.0)
         self.assertEqual(data["fund_type_summary"][0]["subtotal"], 1250.0)
+        self.assertIn("notes", data)
+        self.assertEqual(data["notes"]["title"], "Notes to MIS OCTOBER-2026")
+        self.assertEqual(data["notes"]["opening_label"], "SEP-26")
+        self.assertEqual(data["notes"]["closing_label"], "OCT-26")
 
     def test_same_asset_name_is_consolidated_across_positions(self):
         second_asset = Asset.objects.create(
@@ -243,9 +247,10 @@ class MISReportAPITests(TestCase):
         workbook = load_workbook(BytesIO(response.content), data_only=False)
         self.assertEqual(
             workbook.sheetnames,
-            ["IPS", "Data Sheet", "Fund Type Summary"],
+            ["IPS", "Data Sheet", "Fund Type Summary", "Notes"],
         )
         self.assertEqual(workbook["IPS"]["A1"].value, "IPS")
+        self.assertEqual(workbook["Notes"]["A1"].value, "Notes to MIS OCTOBER-2026")
         self.assertEqual(workbook["Data Sheet"]["A1"].value, "Data Sheet")
         self.assertEqual(workbook["Data Sheet"]["E3"].value, "Investment Cost 01.10.2026")
         self.assertEqual(workbook["Data Sheet"]["H3"].value, "SEP-26 Closing MTM")
@@ -273,6 +278,7 @@ class MISReportAPITests(TestCase):
         self.assertEqual(workbook["IPS"]["C4"].value, 0.0125)
         self.assertEqual(workbook["IPS"]["E4"].value, 0.0125)
         self.assertEqual(workbook["IPS"]["A7"].value, "Grand Total")
+        self.assertEqual(workbook["Notes"]["A3"].value, "No rate movement data is available for the selected reporting period.")
         self.assertEqual(workbook["IPS"]["C7"].value, 0.0125)
 
     def test_fund_type_summary_groups_all_asset_classes_by_current_market_value(self):

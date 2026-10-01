@@ -71,6 +71,107 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
   investmentSummary: any = null;
   investmentSummaryError = '';
   standardAllocations: Record<string, number> = {};
+  standardAllocationAmounts: Record<string, number> = {};
+  standardAllocationAmountDraft: Record<string, number> = {};
+  standardAllocationTotalValue = 0;
+
+  displayUnit: 'amount' | 'lakhs' | 'crores' = 'lakhs';
+
+  readonly displayUnits: Array<{ value: 'amount' | 'lakhs' | 'crores'; label: string }> = [
+    { value: 'amount', label: 'Amount' },
+    { value: 'lakhs', label: 'Lakhs' },
+    { value: 'crores', label: 'Crores' },
+  ];
+
+  setDisplayUnit(unit: 'amount' | 'lakhs' | 'crores'): void {
+    this.displayUnit = unit;
+    setTimeout(() => {
+      if (this.historical) this.renderWealthChart();
+      if (this.investmentSummary) this.renderAllocationChart();
+      this.cdr.markForCheck();
+    });
+  }
+
+  get displayUnitLabel(): string {
+    return this.displayUnit === 'amount'
+      ? '₹ Amount'
+      : this.displayUnit === 'lakhs'
+        ? '₹ Lakhs'
+        : '₹ Crores';
+  }
+
+  formatDisplayAmount(value: number | null | undefined, digits = 2): string {
+    if (value === null || value === undefined) return '—';
+    const numericValue = Number(value);
+    if (!Number.isFinite(numericValue)) return '—';
+
+    const divisor = this.displayUnit === 'amount'
+      ? 1
+      : this.displayUnit === 'lakhs'
+        ? 100000
+        : 10000000;
+    const suffix = this.displayUnit === 'amount' ? '' : this.displayUnit === 'lakhs' ? ' L' : ' Cr';
+    return `₹${(numericValue / divisor).toLocaleString('en-IN', {
+      minimumFractionDigits: this.displayUnit === 'amount' ? 0 : digits,
+      maximumFractionDigits: this.displayUnit === 'amount' ? 0 : digits,
+    })}${suffix}`;
+  }
+
+  getStandardAllocationAmount(category: string): number {
+    if ((this as any).standardAllocationEditing) {
+      const draftAmount = Number(this.standardAllocationAmountDraft[category]);
+      return Number.isFinite(draftAmount) ? draftAmount : 0;
+    }
+
+    const percent = Number((this as any).standardAllocations?.[category]);
+    const total = this.getStandardAllocationBaseTotal();
+
+    if (Number.isFinite(percent) && total > 0) {
+      return Math.round((total * percent) * 100) / 10000;
+    }
+
+    const storedAmount = Number(this.standardAllocationAmounts[category]);
+    return Number.isFinite(storedAmount) ? storedAmount : 0;
+  }
+
+  private getStandardAllocationBaseTotal(): number {
+    const summaryTotal = (this.investmentSummaryGroups ?? []).reduce(
+      (total, group) => total + Number(group.current_value || 0),
+      0,
+    );
+
+    if (Number.isFinite(summaryTotal) && summaryTotal > 0) {
+      return summaryTotal;
+    }
+
+    return this.standardAllocationTotalValue > 0 ? this.standardAllocationTotalValue : 0;
+  }
+
+  updateStandardAllocationAmount(category: string, rawValue: string): void {
+    const amount = Number(rawValue);
+    const safeAmount = Number.isFinite(amount) ? Math.max(0, amount) : 0;
+    this.standardAllocationAmountDraft[category] = safeAmount;
+
+    const total = this.getStandardAllocationBaseTotal();
+
+    if (total > 0) {
+      (this as any).standardAllocationDraft[category] =
+        Math.round((safeAmount / total) * 10000) / 100;
+    }
+  }
+
+  updateStandardAllocationPercent(category: string, rawValue: string): void {
+    const percent = Number(rawValue);
+    const safePercent = Number.isFinite(percent) ? Math.max(0, Math.min(100, percent)) : 0;
+    (this as any).standardAllocationDraft[category] = safePercent;
+
+    const total = this.getStandardAllocationBaseTotal();
+
+    this.standardAllocationAmountDraft[category] =
+      total > 0
+        ? Math.round((total * safePercent) * 100) / 10000
+        : 0;
+  }
 
   /*
    * Allocation/performance by Advisor - fetched alongside the rest
@@ -107,7 +208,7 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
   xirrPerformanceAssetCategoryIndex = 0;
 
   /*
-   * Currently selected Family Name filter.
+   * Currently selected Family Member filter.
    *
    * Empty string means "All Families". Changing this triggers a
    * full reload: Summary/XIRR/Investment Summary/Historical are all
@@ -116,7 +217,7 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
    * client-side from the already-loaded Portfolio Tree, the same way
    * Portfolio/Reports filter by Family.
    */
-  selectedFamily = '';
+  selectedFamilyMember = '';
   reportAssetClass = '';
   reportLevel: 'asset_class' | 'sub_class' | 'asset_name' | 'underlying' = 'asset_class';
   reportScope = '';
@@ -137,14 +238,14 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
   }
 
   /**
-   * Distinct Family Names for the filter bar, alphabetically sorted.
+   * Distinct Family Members for the filter bar, alphabetically sorted.
    *
    * Sourced from the Portfolio Tree (always unfiltered), the same
    * way Portfolio/Reports build their Family filter options - so the
    * option list stays complete no matter which Family is currently
    * selected.
    */
-  get familyOptions(): string[] {
+  get familyMemberOptions(): string[] {
     const names = new Set<string>();
 
     for (const family of this.portfolioTree?.families ?? []) {
@@ -159,7 +260,7 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
   get reportScopeOptions(): Array<{ value: string; label: string }> {
     const options = new Map<string, string>();
     for (const family of this.portfolioTree?.families ?? []) {
-      if (this.selectedFamily && family.family_name !== this.selectedFamily) continue;
+      if (this.selectedFamilyMember && family.family_name !== this.selectedFamilyMember) continue;
       for (const portfolio of family.portfolios ?? []) {
         for (const assetClass of portfolio.asset_classes ?? []) {
           const ac = (assetClass.asset_class || 'Unassigned').trim() || 'Unassigned';
@@ -216,28 +317,28 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
     this.reportAssetClass = this.reportScope.split('::')[0] || '';
   }
 
-  isFamilySelected(family: string): boolean {
-    return this.selectedFamily === family;
+  isFamilyMemberSelected(family: string): boolean {
+    return this.selectedFamilyMember === family;
   }
 
   /**
    * Select a Family filter (or toggle it off if already selected)
    * and reload every family-aware section of the Dashboard.
    */
-  selectFamily(family: string): void {
-    this.selectedFamily = this.selectedFamily === family ? '' : family;
+  selectFamilyMember(family: string): void {
+    this.selectedFamilyMember = this.selectedFamilyMember === family ? '' : family;
 
     this.xirrPerformanceAssetCategoryIndex = 0;
 
     this.loadDashboard();
   }
 
-  clearFamily(): void {
-    if (!this.selectedFamily) {
+  clearFamilyMember(): void {
+    if (!this.selectedFamilyMember) {
       return;
     }
 
-    this.selectedFamily = '';
+    this.selectedFamilyMember = '';
 
     this.xirrPerformanceAssetCategoryIndex = 0;
 
@@ -252,7 +353,7 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
 
     this.destroyCharts();
 
-    const family = this.selectedFamily || undefined;
+    const family = this.selectedFamilyMember || undefined;
 
     // SUMMARY
     this.wealthApi.getSummary(family).subscribe({
@@ -355,12 +456,12 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
      * asset already contains its calculated XIRR and Underlying.
      *
      * This is used for the Dashboard XIRR Performance section AND
-     * as the source of Family Names for the filter bar - it is
+     * as the source of Family Members for the filter bar - it is
      * intentionally NOT scoped by ?family= (the tree endpoint has no
      * such param), so the filter's own option list always shows
      * every Family regardless of which one is currently selected.
      * The XIRR Performance getters below filter it client-side by
-     * selectedFamily, the same way Portfolio/Reports do.
+     * selectedFamilyMember, the same way Portfolio/Reports do.
      */
     this.portfolioApi.getPortfolioTree().subscribe({
       next: (data) => {
@@ -511,7 +612,7 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
               label: (context) => {
                 const value = context.parsed.y ?? 0;
 
-                return `${context.dataset.label}: ${this.formatCurrency(value)}`;
+                return `${context.dataset.label}: ${this.formatDisplayAmount(value)}`;
               },
             },
           },
@@ -545,7 +646,7 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
                 ? '#8a93a6'
                 : '#667085',
 
-              callback: (value) => this.formatAxisCurrency(Number(value)),
+              callback: (value) => this.formatDisplayAmount(Number(value), 1),
             },
           },
         },
@@ -633,7 +734,7 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
                 const index = context.dataIndex;
                 const percentage = percentages[index] ?? 0;
 
-                return `${context.label}: ${this.formatCurrency(
+                return `${context.label}: ${this.formatDisplayAmount(
                   Number(context.raw),
                 )} (${percentage.toFixed(2)}%)`;
               },
@@ -668,6 +769,10 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
     return `₹${value.toLocaleString('en-IN', {
       maximumFractionDigits: 0,
     })}`;
+  }
+
+  formatLakhs(value: number | null | undefined, digits = 2): string {
+    return this.formatDisplayAmount(value, digits);
   }
 
   formatPercentage(value: number): string {
@@ -971,7 +1076,7 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
     }> = [];
 
     for (const family of this.portfolioTree.families ?? []) {
-      if (this.selectedFamily && family.family_name !== this.selectedFamily) {
+      if (this.selectedFamilyMember && family.family_name !== this.selectedFamilyMember) {
         continue;
       }
 
@@ -1040,7 +1145,7 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
     }
 
     for (const family of this.portfolioTree.families ?? []) {
-      if (this.selectedFamily && family.family_name !== this.selectedFamily) {
+      if (this.selectedFamilyMember && family.family_name !== this.selectedFamilyMember) {
         continue;
       }
 
@@ -1206,7 +1311,7 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
     }>();
 
     for (const family of this.portfolioTree?.families ?? []) {
-      if (this.selectedFamily && family.family_name !== this.selectedFamily) continue;
+      if (this.selectedFamilyMember && family.family_name !== this.selectedFamilyMember) continue;
 
       for (const portfolio of family.portfolios) {
         for (const assetClass of portfolio.asset_classes) {
@@ -1284,7 +1389,7 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
     const bySubClass = new Map<string, SubClassDetail>();
 
     for (const family of this.portfolioTree?.families ?? []) {
-      if (this.selectedFamily && family.family_name !== this.selectedFamily) {
+      if (this.selectedFamilyMember && family.family_name !== this.selectedFamilyMember) {
         continue;
       }
 
@@ -1353,7 +1458,7 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
 
     try {
       this.reportPdf.generate({
-        familyName: this.selectedFamily,
+        familyName: this.selectedFamilyMember,
         totalWealth: this.summary?.total_current_value ?? this.summary?.total_wealth ?? 0,
         totalInvested: this.summary?.total_invested ?? this.summary?.invested_value ?? 0,
         totalPnl: this.summary?.total_pnl ?? this.summary?.pnl ?? 0,

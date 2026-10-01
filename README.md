@@ -56,6 +56,8 @@ It is built for **households, not just individuals**: a four-tier role hierarchy
 | 📰  | **News that matters**         | An agent reads your _actual_ holdings, matches articles deterministically, then scores impact |
 | 🪶  | **Zero infrastructure tax**   | SQLite by default, in-process schedulers — no Celery, no Redis, no cron                       |
 | 📤  | **Export anything**           | Transactions, holdings and summaries to Excel or PDF                                          |
+| 📊  | **MIS reporting**             | IPS, Data Sheet and Fund Type-wise Summary with historical valuation and Excel download       |
+| 🔢  | **Flexible display units**    | View monetary values as Amount, Lakhs or Crores without changing stored rupee values          |
 | 🔐  | **Backend-enforced security** | Every request re-derives role and family scope from the database                              |
 
 ### Design principles
@@ -204,6 +206,17 @@ Net worth, asset allocation, key portfolio metrics and an **Investment Summary**
 ### 📄 Reports
 
 Export **transactions, holdings and portfolio summaries** to **Excel or PDF** — matching exactly what the Portfolio and Dashboard pages show.
+
+### 📑 MIS Report
+
+The **MIS Report** is available at **Portfolio → MIS Report** and contains three logical sections:
+
+- **IPS** — current and prior-period market values by asset class and family, including differences and grand totals.
+- **Data Sheet** — investment cost, opening MTM, period transactions, and closing MTM with grouped section headers from the MIS format.
+- **Fund Type-wise Summary** — `Fund Type.V2` maps to **Asset class**, `Fund Name` maps to **Asset name**, and `Total` is the **Current Market Value**.
+- **Custom date range** — select `From Date` and `To Date`; opening valuation is reconstructed from the day before the selected start date and closing valuation is calculated as of the selected end date.
+- **Display As** — **Amount**, **Lakhs**, or **Crores**. Conversion is presentation-only; source financial values remain in rupees.
+- **Download Excel** — exports `IPS`, `Data Sheet`, and `Fund Type Summary` in `.xlsx` format.
 
 ### 🔐 Settings
 
@@ -446,9 +459,10 @@ Personal_Wealth_Monitoring_System/
 │       ├── app/                Shell, layout (sidebar / header with family switcher), routing
 │       ├── core/
 │       │   ├── services/       One API client per backend area + RBAC service
+│       │   │                       includes MIS Report API / Excel download service
 │       │   └── guards/         auth.guard (also loads the RBAC role)
 │       ├── features/
-│       │   ├── dashboard/  portfolio/  analytics/  reports/
+│       │   ├── dashboard/  portfolio/  mis-report/  analytics/  reports/
 │       │   ├── ai-chat/  portfolio-news/  login/
 │       │   └── settings/
 │       │       ├── user-management/
@@ -577,6 +591,8 @@ All endpoints require an authenticated Django session unless noted. Auth uses **
 | `GET`                        | `/api/portfolio/holdings/`                 | Holdings                                 |
 | `GET`                        | `/api/portfolio/tree/`                     | Hierarchical portfolio tree              |
 | `PUT` `PATCH` `DELETE`       | `/api/portfolio/assets/<id>/manual-price/` | Manual price override                    |
+| `GET`                        | `/api/portfolio/mis-report/`              | MIS Report data                           |
+| `GET`                        | `/api/portfolio/mis-report/download/`    | Download MIS Report Excel                |
 
 </details>
 
@@ -647,6 +663,7 @@ All endpoints require an authenticated Django session unless noted. Auth uses **
 | `/login`          | Sign in                                                       |
 | `/dashboard`      | Net worth, allocation, investment summary                     |
 | `/portfolio`      | Holdings tree, transactions, import, manual price override    |
+| `/mis-report`     | IPS, Data Sheet, Fund Type-wise Summary, Excel download       |
 | `/analytics`      | Allocation, performance, XIRR, historical wealth              |
 | `/reports`        | Excel / PDF exports                                           |
 | `/ai-chat`        | Gemini portfolio assistant                                    |
@@ -831,6 +848,7 @@ python manage.py test portfolio_news.test_web_push -v 2 # Web Push delivery beha
 | `mutual_funds/tests.py` | Batched AMFI NAV import                                               |
 | `investments/tests.py`  | The transaction importer and AMC-name / quant auto-enrichment         |
 | `portfolio_news/test_web_push.py` | VAPID/Web Push delivery, subscription handling and notification_sent semantics |
+| `portfolio/test_mis_report.py` | MIS Report API, historical valuation, Excel structure, display units, and family authorization |
 
 **Frontend** — from `frontend/`:
 
@@ -853,6 +871,7 @@ npm run build     # verifies the whole app compiles
 | **HTTPS is required outside localhost**        | Service workers and Push API require a secure context in production. Localhost is suitable for development. |
 | **Some SIP tests drift with the calendar**   | A few SIP-scheduling tests compare against today's real date; this is a known fixture limitation that does not affect the running app.                                                                  |
 | **Third-party data can lag or fail**         | Yahoo Finance, AMFI and Google News are external sources; use **manual prices** when a quote is missing.                                                                                                |
+| **MIS valuation depends on available market data** | Historical MIS valuation uses the latest available market price / NAV on or before the requested valuation date; missing valuation data may result in an unavailable market-value figure. |
 
 See [SETUP.md](./SETUP.md) for what to configure before any real deployment (`.env`, `environment.prod.ts` and the WSGI / ASGI options).
 

@@ -7,44 +7,60 @@
     </div>
 
     <div class="page-header-actions">
-      <div class="family-filter-inline" *ngIf="familyOptions.length > 0">
-        <span class="family-filter-label">Family Name</span>
+      <div class="header-action-row">
+        <button class="refresh-button" type="button" (click)="loadDashboard()">
+          <svg class="refresh-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+            <path d="M20 11A8 8 0 1 0 18.5 16" stroke-linecap="round" stroke-linejoin="round" />
+            <path d="M20 5v6h-6" stroke-linecap="round" stroke-linejoin="round" />
+          </svg>
+          Refresh
+        </button>
 
-        <div class="family-filter-buttons">
-          <button type="button" class="family-filter-button" [class.active]="!selectedFamily" (click)="clearFamily()">
-            All
-          </button>
-
-          <button
-            *ngFor="let family of familyOptions"
-            type="button"
-            class="family-filter-button"
-            [class.active]="isFamilySelected(family)"
-            (click)="selectFamily(family)"
-          >
-            {{ family }}
-          </button>
-        </div>
+        <button class="download-report-button" type="button" [disabled]="loading || generatingReport" (click)="downloadPortfolioReview()">
+          <svg class="button-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+            <path d="M12 15V4M12 15 8.5 11.5M12 15l3.5-3.5" stroke-linecap="round" stroke-linejoin="round" />
+            <path d="M4 16v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2" stroke-linecap="round" stroke-linejoin="round" />
+          </svg>
+          {{ generatingReport ? 'Generating…' : 'Download Report' }}
+        </button>
       </div>
 
-      <button class="refresh-button" type="button" (click)="loadDashboard()">
-        <svg class="refresh-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
-          <path d="M20 11A8 8 0 1 0 18.5 16" stroke-linecap="round" stroke-linejoin="round" />
-          <path d="M20 5v6h-6" stroke-linecap="round" stroke-linejoin="round" />
-        </svg>
-        Refresh
-      </button>
+      <div class="header-filter-stack">
+        <div class="family-filter-inline" *ngIf="familyMemberOptions.length > 0">
+          <span class="header-control-label">Family Member</span>
+          <div class="header-control-buttons">
+            <button type="button" class="header-control-button" [class.active]="!selectedFamilyMember" (click)="clearFamilyMember()">
+              All
+            </button>
+            <button
+              *ngFor="let family of familyMemberOptions"
+              type="button"
+              class="header-control-button"
+              [class.active]="isFamilyMemberSelected(family)"
+              (click)="selectFamilyMember(family)"
+            >
+              {{ family }}
+            </button>
+          </div>
+        </div>
 
-      <button class="download-report-button" type="button" [disabled]="loading || generatingReport" (click)="downloadPortfolioReview()">
-        <svg class="button-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
-          <path d="M12 15V4M12 15 8.5 11.5M12 15l3.5-3.5" stroke-linecap="round" stroke-linejoin="round" />
-          <path d="M4 16v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2" stroke-linecap="round" stroke-linejoin="round" />
-        </svg>
-        {{ generatingReport ? 'Generating…' : 'Download Report' }}
-      </button>
+        <div class="header-control-inline">
+          <span class="header-control-label">Display As</span>
+          <div class="header-control-buttons">
+            <button
+              *ngFor="let unit of displayUnits"
+              type="button"
+              class="header-control-button"
+              [class.active]="displayUnit === unit.value"
+              (click)="setDisplayUnit(unit.value)"
+            >
+              {{ unit.label }}
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
   </div>
-
   <!-- LOADING -->
   <div class="loading-card" *ngIf="loading">
     <div class="loading-spinner"></div>
@@ -71,7 +87,7 @@
           </span>
           <span class="kpi-label">Total Wealth</span>
         </div>
-        <strong>{{ formatCurrency(summary?.total_current_value ?? summary?.total_wealth ?? 0) }}</strong>
+        <strong>{{ formatDisplayAmount(summary?.total_current_value ?? summary?.total_wealth ?? 0) }}</strong>
         <span class="kpi-subtitle"> Current portfolio value </span>
       </div>
 
@@ -85,7 +101,7 @@
           </span>
           <span class="kpi-label">Invested Value</span>
         </div>
-        <strong>{{ formatCurrency(summary?.total_invested ?? summary?.invested_value ?? 0) }}</strong>
+        <strong>{{ formatDisplayAmount(summary?.total_invested ?? summary?.invested_value ?? 0) }}</strong>
         <span class="kpi-subtitle"> Total invested </span>
       </div>
 
@@ -104,7 +120,7 @@
           <span class="kpi-label">Profit / Loss</span>
         </div>
         <strong [class.positive]="(summary?.total_pnl ?? summary?.pnl ?? 0) >= 0" [class.negative]="(summary?.total_pnl ?? summary?.pnl ?? 0) < 0">
-          {{ formatCurrency(summary?.total_pnl ?? summary?.pnl ?? 0) }}
+          {{ formatDisplayAmount(summary?.total_pnl ?? summary?.pnl ?? 0) }}
         </strong>
         <span class="kpi-subtitle"> Overall P&amp;L </span>
       </div>
@@ -177,7 +193,7 @@
           </span>
           <div>
             <h2>Investment Summary</h2>
-            <p>Current value by asset category and asset class</p>
+            <p>All monetary values are shown in {{ displayUnitLabel }}</p>
           </div>
         </div>
       </div>
@@ -185,9 +201,9 @@
       <div class="standard-allocation-toolbar" *ngIf="!investmentSummaryError && investmentSummary && investmentSummaryGroups.length > 0">
         <div class="standard-allocation-toolbar-info">
           <strong>Standard Allocation</strong>
-          <span>Set your target allocation. The total must always equal 100%.</span>
+          <span>Set target allocation by amount or percentage. Both fields stay synchronized.</span>
           <span class="standard-allocation-total" [ngClass]="getStandardAllocationTotalClass()">
-            Total: {{ getStandardAllocationDraftTotal() | number:'1.0-2' }}%
+            Portfolio Total: {{ formatDisplayAmount(standardAllocationTotalValue, 0) }} &nbsp; • &nbsp; Target Total: {{ getStandardAllocationDraftTotal() | number:'1.0-2' }}%
           </span>
         </div>
         <div class="standard-allocation-actions">
@@ -234,7 +250,8 @@
               <th>Asset Category</th>
               <th class="align-right">Current Value</th>
               <th class="align-right">% of Total Investment</th>
-              <th class="align-right">Standard Allocation</th>
+              <th class="align-right">Standard Allocation (Amount)</th>
+              <th class="align-right">Standard Allocation (%)</th>
               <th>Comments</th>
               <th class="arrow-column"></th>
             </tr>
@@ -252,8 +269,24 @@
                   {{ group.asset_category }}
                 </td>
 
-                <td class="align-right">{{ formatCurrency(group.current_value) }}</td>
+                <td class="align-right">{{ formatDisplayAmount(group.current_value) }}</td>
                 <td class="align-right">{{ formatPercentage(group.percentage_of_total) }}</td>
+
+                <td class="align-right standard-allocation-cell" (click)="$event.stopPropagation()">
+                  <input
+                    *ngIf="standardAllocationEditing"
+                    type="number"
+                    class="standard-allocation-input"
+                    min="0"
+                    step="0.01"
+                    [value]="getStandardAllocationAmount(group.asset_category)"
+                    (input)="updateStandardAllocationAmount(group.asset_category, $any($event.target).value)"
+                    (click)="$event.stopPropagation()"
+                  />
+                  <span *ngIf="!standardAllocationEditing">
+                    {{ formatDisplayAmount(getStandardAllocationAmount(group.asset_category)) }}
+                  </span>
+                </td>
 
                 <td class="align-right standard-allocation-cell" (click)="$event.stopPropagation()">
                   <input
@@ -264,7 +297,7 @@
                     max="100"
                     step="0.01"
                     [value]="getStandardAllocation(group.asset_category)"
-                    (input)="updateStandardAllocation(group.asset_category, $any($event.target).value)"
+                    (input)="updateStandardAllocationPercent(group.asset_category, $any($event.target).value)"
                     (click)="$event.stopPropagation()"
                   />
                   <span *ngIf="!standardAllocationEditing">
@@ -285,7 +318,7 @@
 
               <!-- LEVEL 2: ASSET CLASS -->
               <tr *ngIf="expandedInvestmentCategory === group.asset_category" class="asset-class-detail-row">
-                <td colspan="6">
+                <td colspan="7">
                   <div class="asset-class-detail-container">
                     <table class="asset-class-table">
                       <thead>
@@ -298,7 +331,7 @@
                       <tbody>
                         <tr *ngFor="let assetClass of group.asset_classes; trackBy: trackByInvestmentAssetClass" class="asset-class-detail-item">
                           <td>{{ assetClass.asset_class }}</td>
-                          <td class="align-right">{{ formatCurrency(assetClass.current_value) }}</td>
+                          <td class="align-right">{{ formatDisplayAmount(assetClass.current_value) }}</td>
                           <td class="align-right">{{ formatPercentage(assetClass.percentage_of_total) }}</td>
                         </tr>
                       </tbody>

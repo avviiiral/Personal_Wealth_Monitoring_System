@@ -65,7 +65,7 @@ export class DashboardComponent extends BaseDashboardComponent {
     >();
 
     for (const family of this.portfolioTree?.families ?? []) {
-      if (this.selectedFamily && family.family_name !== this.selectedFamily) {
+      if (this.selectedFamilyMember && family.family_name !== this.selectedFamilyMember) {
         continue;
       }
 
@@ -162,6 +162,7 @@ export class DashboardComponent extends BaseDashboardComponent {
       }
 
       if (!this.loading && this.investmentSummary && this.portfolioTree) {
+        this.refreshStandardAllocationTotalValue();
         (this as any).renderAllocationChart();
         return;
       }
@@ -179,10 +180,29 @@ export class DashboardComponent extends BaseDashboardComponent {
   private loadStandardAllocations(): void {
     this.standardAllocationError = '';
 
-    this.dashboardWealthApi.getStandardAllocations(this.selectedFamily || undefined).subscribe({
+    this.dashboardWealthApi.getStandardAllocations(this.selectedFamilyMember || undefined).subscribe({
       next: (data) => {
-        this.standardAllocations = this.normalizeAllocationMap(data?.allocations);
+        const allocationResponse = data?.allocations ?? {};
+        this.standardAllocations = this.normalizeAllocationMap(
+          Object.fromEntries(
+            Object.entries(allocationResponse).map(([category, value]) => [
+              category,
+              typeof value === 'object' && value !== null ? (value as any).percent : value,
+            ]),
+          ),
+        );
+        this.standardAllocationAmounts = this.normalizeAllocationMap(
+          Object.fromEntries(
+            Object.entries(allocationResponse).map(([category, value]) => [
+              category,
+              typeof value === 'object' && value !== null ? (value as any).amount : 0,
+            ]),
+          ),
+        );
+        this.standardAllocationTotalValue = this.getInvestmentSummaryTotal();
+        this.syncStandardAllocationAmounts();
         this.standardAllocationDraft = { ...this.standardAllocations };
+        this.standardAllocationAmountDraft = { ...this.standardAllocationAmounts };
       },
       error: (error) => {
         console.error('STANDARD ALLOCATION API ERROR:', error);
@@ -193,11 +213,45 @@ export class DashboardComponent extends BaseDashboardComponent {
     });
   }
 
+  private getInvestmentSummaryTotal(): number {
+    const total = this.investmentSummaryGroups.reduce(
+      (sum, group) => sum + Number(group.current_value || 0),
+      0,
+    );
+
+    return Number.isFinite(total) && total > 0 ? total : 0;
+  }
+
+  private refreshStandardAllocationTotalValue(): void {
+    const total = this.getInvestmentSummaryTotal();
+
+    if (total > 0) {
+      this.standardAllocationTotalValue = total;
+      this.syncStandardAllocationAmounts();
+    }
+  }
+
+  private syncStandardAllocationAmounts(): void {
+    if (this.standardAllocationTotalValue <= 0) {
+      return;
+    }
+
+    for (const category of Object.keys(this.standardAllocations)) {
+      const percent = Number(this.standardAllocations[category]) || 0;
+
+      this.standardAllocationAmounts[category] =
+        Math.round((this.standardAllocationTotalValue * percent) * 100) / 10000;
+    }
+  }
+
   override startStandardAllocationEdit(): void {
     this.standardAllocationDraft = {};
+    this.standardAllocationAmountDraft = {};
 
     for (const group of this.investmentSummaryGroups) {
-      this.standardAllocationDraft[group.asset_category] = this.getStandardAllocation(group.asset_category);
+      const category = group.asset_category;
+      this.standardAllocationDraft[category] = this.getStandardAllocation(category);
+      this.standardAllocationAmountDraft[category] = this.getStandardAllocationAmount(category);
     }
 
     this.standardAllocationEditing = true;
@@ -206,6 +260,7 @@ export class DashboardComponent extends BaseDashboardComponent {
 
   override cancelStandardAllocationEdit(): void {
     this.standardAllocationDraft = { ...this.standardAllocations };
+    this.standardAllocationAmountDraft = { ...this.standardAllocationAmounts };
     this.standardAllocationEditing = false;
     this.standardAllocationError = '';
   }
@@ -247,14 +302,18 @@ export class DashboardComponent extends BaseDashboardComponent {
   }
 
   override saveStandardAllocations(): void {
-    const allocations: Record<string, number> = {};
+    const allocations: Record<string, { percent: number; amount: number }> = {};
 
     for (const group of this.investmentSummaryGroups) {
-      allocations[group.asset_category] = this.getStandardAllocation(group.asset_category);
+      const category = group.asset_category;
+      allocations[category] = {
+        percent: this.getStandardAllocation(category),
+        amount: this.getStandardAllocationAmount(category),
+      };
     }
 
     const total = Math.round(
-      Object.values(allocations).reduce((sum, value) => sum + value, 0) * 100,
+      Object.values(allocations).reduce((sum, value) => sum + value.percent, 0) * 100,
     ) / 100;
 
     if (total !== 100) {
@@ -266,11 +325,30 @@ export class DashboardComponent extends BaseDashboardComponent {
     this.standardAllocationError = '';
 
     this.dashboardWealthApi
-      .saveStandardAllocations(allocations, this.selectedFamily || undefined)
+      .saveStandardAllocations(allocations, this.selectedFamilyMember || undefined)
       .subscribe({
         next: (data) => {
-          this.standardAllocations = this.normalizeAllocationMap(data?.allocations);
+          const allocationResponse = data?.allocations ?? {};
+          this.standardAllocations = this.normalizeAllocationMap(
+            Object.fromEntries(
+              Object.entries(allocationResponse).map(([category, value]) => [
+                category,
+                typeof value === 'object' && value !== null ? (value as any).percent : value,
+              ]),
+            ),
+          );
+          this.standardAllocationAmounts = this.normalizeAllocationMap(
+            Object.fromEntries(
+              Object.entries(allocationResponse).map(([category, value]) => [
+                category,
+                typeof value === 'object' && value !== null ? (value as any).amount : 0,
+              ]),
+            ),
+          );
+          this.standardAllocationTotalValue = this.getInvestmentSummaryTotal();
+          this.syncStandardAllocationAmounts();
           this.standardAllocationDraft = { ...this.standardAllocations };
+          this.standardAllocationAmountDraft = { ...this.standardAllocationAmounts };
           this.standardAllocationEditing = false;
           this.standardAllocationSaving = false;
         },
@@ -363,7 +441,7 @@ export class DashboardComponent extends BaseDashboardComponent {
     }>();
 
     for (const family of this.portfolioTree.families ?? []) {
-      if (this.selectedFamily && family.family_name !== this.selectedFamily) {
+      if (this.selectedFamilyMember && family.family_name !== this.selectedFamilyMember) {
         continue;
       }
 
@@ -410,7 +488,7 @@ export class DashboardComponent extends BaseDashboardComponent {
     }
 
     for (const family of this.portfolioTree.families ?? []) {
-      if (this.selectedFamily && family.family_name !== this.selectedFamily) {
+      if (this.selectedFamilyMember && family.family_name !== this.selectedFamilyMember) {
         continue;
       }
 

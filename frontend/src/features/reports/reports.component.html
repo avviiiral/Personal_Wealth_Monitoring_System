@@ -44,14 +44,14 @@
        ========================================================== -->
   <div *ngIf="summaryFamilyModalOpen" class="modal-overlay" (click)="cancelSummaryFamilyModal()">
     <div class="modal-card" (click)="$event.stopPropagation()">
-      <div class="modal-title">Summary View — Select Family</div>
+      <div class="modal-title">Summary View — Select Family Member</div>
       <div class="modal-subtitle">Leave as "All Families" to include everyone.</div>
 
       <div class="modal-field">
-        <label for="summary-family">Family</label>
+        <label for="summary-family">Family Member</label>
         <select id="summary-family" class="modal-select" [(ngModel)]="summaryFamily">
           <option value="">All Families</option>
-          <option *ngFor="let family of familyOptions" [value]="family">
+          <option *ngFor="let family of familyMemberOptions" [value]="family">
             {{ family }}
           </option>
         </select>
@@ -81,10 +81,10 @@
       <div class="modal-subtitle">Only transactions within this range will be included.</div>
 
       <div class="modal-field">
-        <label for="detailed-range-family">Family</label>
+        <label for="detailed-range-family">Family Member</label>
         <select id="detailed-range-family" class="modal-select" [(ngModel)]="detailedRangeFamily">
           <option value="">All Families</option>
-          <option *ngFor="let family of familyOptions" [value]="family">
+          <option *ngFor="let family of familyMemberOptions" [value]="family">
             {{ family }}
           </option>
         </select>
@@ -139,10 +139,10 @@
 
       <div class="transaction-edit-grid">
         <div class="modal-field">
-          <label>Family Name</label>
+          <label>Family Member</label>
           <select class="modal-select" [(ngModel)]="editingTransaction.family_name">
             <option value="">Unassigned</option>
-            <option *ngFor="let family of familyOptions" [value]="family">
+            <option *ngFor="let family of familyMemberOptions" [value]="family">
               {{ family }}
             </option>
           </select>
@@ -283,29 +283,29 @@
   <!-- ==========================================================
        FILTERS
        Same layout/behavior as the Portfolio page's selection-area
-       (Family Name / Asset Class buttons).
+       (Family Member / Asset Class buttons).
        ========================================================== -->
   <div *ngIf="!loading && !error" class="selection-area">
     <!-- FAMILY -->
     <div class="selection-box">
-      <div class="selection-title">Family Name</div>
+      <div class="selection-title">Family Member</div>
 
       <div class="selection-buttons">
         <button
           type="button"
           class="selection-button"
-          [class.active]="!selectedFamily"
-          (click)="clearFamily()"
+          [class.active]="!selectedFamilyMember"
+          (click)="clearFamilyMember()"
         >
           All
         </button>
 
         <button
-          *ngFor="let family of familyOptions"
+          *ngFor="let family of familyMemberOptions"
           type="button"
           class="selection-button"
-          [class.active]="isFamilySelected(family)"
-          (click)="selectFamily(family)"
+          [class.active]="isFamilyMemberSelected(family)"
+          (click)="selectFamilyMember(family)"
         >
           {{ family }}
         </button>

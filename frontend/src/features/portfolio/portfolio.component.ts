@@ -25,7 +25,7 @@ export class PortfolioComponent implements OnInit, OnDestroy {
   readonly rbac = inject(RbacService);
   private refreshSubscription: Subscription | null = null;
   families: FamilyNode[] = [];
-  selectedFamily = '';
+  selectedFamilyMember = '';
   selectedAssetClass = '';
   selectedAdvisor = '';
   expandedSubClass = '';
@@ -54,7 +54,7 @@ export class PortfolioComponent implements OnInit, OnDestroy {
 
   loadPortfolio(silent = false): void {
     if (!silent) { this.loading = true; this.error = ''; }
-    this.portfolioApi.getPortfolioTree({ family: this.selectedFamily, asset_class: this.selectedAssetClass, advisor: this.selectedAdvisor }).subscribe({
+    this.portfolioApi.getPortfolioTree({ family: this.selectedFamilyMember, asset_class: this.selectedAssetClass, advisor: this.selectedAdvisor }).subscribe({
       next: (response) => { this.families = response.families ?? []; this.validateSelections(); this.loading = false; this.cdr.detectChanges(); },
       error: (error) => { console.error('Portfolio API error:', error); this.loading = false; this.error = error?.status === 401 || error?.status === 403 ? 'Authentication failed. Please log in again.' : 'Unable to load portfolio data.'; this.cdr.detectChanges(); },
     });
@@ -174,7 +174,7 @@ export class PortfolioComponent implements OnInit, OnDestroy {
     this.selectedUnderlyingAssetId = null;
     this.selectedUnderlyingFile = null;
   }
-  get familyOptions(): string[] { return this.families.map((family) => family.family_name).filter(Boolean).sort((a, b) => a.localeCompare(b)); }
+  get familyMemberOptions(): string[] { return this.families.map((family) => family.family_name).filter(Boolean).sort((a, b) => a.localeCompare(b)); }
   get assetClassOptions(): string[] {
     const classes = new Set<string>();
     for (const family of this.filteredFamilies) for (const portfolio of family.portfolios) for (const assetClass of portfolio.asset_classes) if (assetClass.asset_class) classes.add(assetClass.asset_class);
@@ -183,7 +183,7 @@ export class PortfolioComponent implements OnInit, OnDestroy {
   get advisorOptions(): string[] {
     const advisors = new Set<string>();
     for (const family of this.families) {
-      if (this.selectedFamily && family.family_name !== this.selectedFamily) continue;
+      if (this.selectedFamilyMember && family.family_name !== this.selectedFamilyMember) continue;
       for (const portfolio of family.portfolios) for (const assetClass of portfolio.asset_classes) {
         if (this.selectedAssetClass && assetClass.asset_class !== this.selectedAssetClass) continue;
         for (const subClass of assetClass.sub_classes) for (const asset of subClass.assets) { const advisor = asset.advisors?.trim(); if (advisor) advisors.add(advisor); }
@@ -191,7 +191,7 @@ export class PortfolioComponent implements OnInit, OnDestroy {
     }
     return Array.from(advisors).sort((a, b) => a.localeCompare(b));
   }
-  get filteredFamilies(): FamilyNode[] { return this.selectedFamily ? this.families.filter((family) => family.family_name === this.selectedFamily) : this.families; }
+  get filteredFamilies(): FamilyNode[] { return this.selectedFamilyMember ? this.families.filter((family) => family.family_name === this.selectedFamilyMember) : this.families; }
 
   get subClassSummaries(): SubClassSummary[] {
     const summaryMap = new Map<string, SubClassSummary>();
@@ -242,14 +242,14 @@ export class PortfolioComponent implements OnInit, OnDestroy {
   getUnderlyingName(asset: PortfolioAssetNode): string { return asset.underlying?.trim() || asset.asset_name; }
   getUnderlyingInvested(asset: PortfolioAssetNode): number { return this.toNumber(asset.invested_value); }
 
-  selectFamily(family: string): void { this.selectedFamily = this.selectedFamily === family ? '' : family; this.selectedAssetClass = ''; this.selectedAdvisor = ''; this.resetExpansion(); this.loadPortfolio(true); }
+  selectFamilyMember(family: string): void { this.selectedFamilyMember = this.selectedFamilyMember === family ? '' : family; this.selectedAssetClass = ''; this.selectedAdvisor = ''; this.resetExpansion(); this.loadPortfolio(true); }
   selectAssetClass(assetClass: string): void { this.selectedAssetClass = this.selectedAssetClass === assetClass ? '' : assetClass; this.selectedAdvisor = ''; this.resetExpansion(); this.loadPortfolio(true); }
   selectAdvisor(advisor: string): void { this.selectedAdvisor = this.selectedAdvisor === advisor ? '' : advisor; this.resetExpansion(); this.loadPortfolio(true); }
-  clearFamily(): void { this.selectedFamily = ''; this.selectedAssetClass = ''; this.selectedAdvisor = ''; this.resetExpansion(); this.loadPortfolio(true); }
+  clearFamilyMember(): void { this.selectedFamilyMember = ''; this.selectedAssetClass = ''; this.selectedAdvisor = ''; this.resetExpansion(); this.loadPortfolio(true); }
   clearAssetClass(): void { this.selectedAssetClass = ''; this.selectedAdvisor = ''; this.resetExpansion(); this.loadPortfolio(true); }
   clearAdvisor(): void { this.selectedAdvisor = ''; this.resetExpansion(); this.loadPortfolio(true); }
   private resetExpansion(): void { this.expandedSubClass = ''; this.expandedAsset = ''; this.expandedQuantsAssetId = null; }
-  isFamilySelected(family: string): boolean { return this.selectedFamily === family; }
+  isFamilyMemberSelected(family: string): boolean { return this.selectedFamilyMember === family; }
   isAssetClassSelected(assetClass: string): boolean { return this.selectedAssetClass === assetClass; }
   isAdvisorSelected(advisor: string): boolean { return this.selectedAdvisor === advisor; }
   trackBySubClass(_index: number, summary: SubClassSummary): string { return summary.sub_class; }
@@ -301,7 +301,7 @@ export class PortfolioComponent implements OnInit, OnDestroy {
   private calculateXirr(_assets: PortfolioAssetNode[]): number | null { return null; }
   private toNumber(value: number | null | undefined): number { if (value === null || value === undefined) return 0; const numberValue = Number(value); return Number.isFinite(numberValue) ? numberValue : 0; }
   private validateSelections(): void {
-    if (this.selectedFamily && !this.familyOptions.includes(this.selectedFamily)) this.selectedFamily = '';
+    if (this.selectedFamilyMember && !this.familyMemberOptions.includes(this.selectedFamilyMember)) this.selectedFamilyMember = '';
     if (this.selectedAssetClass && !this.assetClassOptions.includes(this.selectedAssetClass)) this.selectedAssetClass = '';
     if (this.selectedAdvisor && !this.advisorOptions.includes(this.selectedAdvisor)) this.selectedAdvisor = '';
     if (this.expandedSubClass && !this.subClassSummaries.some((summary) => summary.sub_class === this.expandedSubClass)) this.resetExpansion();

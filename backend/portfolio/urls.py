@@ -13,6 +13,7 @@ from .views import (
 )
 from .holding_report_views import holding_report, holding_matrix_report
 from .equity_market_cap_views import equity_market_cap_report
+from .mis_report_views import mis_report, mis_report_download
 
 from .manual_price_views import (
     manual_asset_price,
@@ -78,6 +79,18 @@ urlpatterns = [
         "equity-market-cap/",
         equity_market_cap_report,
         name="equity-market-cap",
+    ),
+
+    path(
+        "mis-report/",
+        mis_report,
+        name="mis-report",
+    ),
+
+    path(
+        "mis-report/download/",
+        mis_report_download,
+        name="mis-report-download",
     ),
 
     path(

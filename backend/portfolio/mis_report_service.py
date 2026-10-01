@@ -4,10 +4,11 @@ from decimal import Decimal
 
 from django.db.models import Max
 
-from investments.models import Transaction, TransactionType
-from market_data.models import MarketPrice
+from investments.models import Asset, Transaction, TransactionType
+from market_data.models import MarketPrice, ManualAssetPrice
 from mutual_funds.models import MutualFundNAV, MutualFundTransaction, MutualFundHolding
 from portfolio.services.portfolio_tree_service import PortfolioTreeService
+from market_data.services.yahoo_finance import YahooFinanceService
 
 
 class MISReportService:
@@ -294,14 +295,145 @@ class MISReportService:
         }
 
     @classmethod
-    def _build_notes(cls, data_rows, opening_date, as_of):
+    def _ensure_reference_history(cls, name, symbol, opening_date, as_of, cache):
         """
-        Build the fixed six-section Notes to MIS format from historical values
-        already reconstructed for the MIS Data Sheet.
+        Resolve a standard MIS reference instrument to a global Asset and make
+        sure its Yahoo historical prices are available for the requested dates.
+        Reference assets are not family holdings and therefore never affect
+        portfolio ownership or valuation.
+        """
+        cache_key = (symbol, opening_date, as_of)
+        if cache_key in cache:
+            return cache[cache_key]
 
-        The section/particular list is intentionally fixed to the supplied MIS
-        standard. Missing instruments remain in the standard report with blank
-        rates rather than being replaced by dynamically discovered instruments.
+        asset = (
+            Asset.objects
+            .filter(family__isnull=True, symbol=symbol)
+            .order_by("id")
+            .first()
+        )
+        if asset is None:
+            asset = Asset.objects.create(
+                owner=None,
+                family=None,
+                name=name,
+                category="OTHER",
+                symbol=symbol,
+                currency="INR",
+                is_active=True,
+            )
+
+        has_opening = MarketPrice.objects.filter(
+            asset=asset,
+            date__lte=opening_date,
+        ).exists()
+        has_closing = MarketPrice.objects.filter(
+            asset=asset,
+            date__lte=as_of,
+        ).exists()
+
+        if not (has_opening and has_closing):
+            try:
+                YahooFinanceService.save_history(
+                    asset=asset,
+                    symbol=symbol,
+                    start=opening_date,
+                    end=as_of + timedelta(days=1),
+                )
+            except Exception:
+                # Existing stored history remains usable even when an external
+                # source is temporarily unavailable.
+                pass
+
+        cache[cache_key] = asset
+        return asset
+
+    @classmethod
+    def _reference_rate(cls, name, symbol, as_of, opening_date, cache):
+        asset = cls._ensure_reference_history(
+            name=name,
+            symbol=symbol,
+            opening_date=opening_date,
+            as_of=as_of,
+            cache=cache,
+        )
+
+        def value_for(target_date):
+            return (
+                MarketPrice.objects
+                .filter(asset=asset, date__lte=target_date)
+                .order_by("-date", "-id")
+                .values_list("close_price", flat=True)
+                .first()
+            )
+
+        opening = value_for(opening_date)
+        closing = value_for(as_of)
+        return opening, closing
+
+    @staticmethod
+    def _normalize_note_name(value):
+        return "".join(
+            character
+            for character in str(value or "").lower()
+            if character.isalnum()
+        )
+
+    @classmethod
+    def _family_note_rate(cls, family, aliases, opening_date, as_of):
+        """
+        Look up a standard note item against the family's actual assets first.
+        This fixes cases where the uploaded/transaction asset name differs from
+        the display name in the standard MIS template.
+        """
+        aliases = [cls._normalize_note_name(alias) for alias in aliases]
+        assets = Asset.objects.filter(family=family, is_active=True)
+
+        candidates = []
+        for asset in assets:
+            name = cls._normalize_note_name(asset.name)
+            symbol = cls._normalize_note_name(asset.symbol)
+            if any(
+                alias and (name == alias or (len(alias) > 4 and alias in name))
+                for alias in aliases
+            ) or any(
+                alias and symbol == alias
+                for alias in aliases
+            ):
+                candidates.append(asset)
+
+        if not candidates:
+            return None, None
+
+        def price_for(target_date):
+            values = []
+            for asset in candidates:
+                value = (
+                    MarketPrice.objects
+                    .filter(asset=asset, date__lte=target_date)
+                    .order_by("-date", "-id")
+                    .values_list("close_price", flat=True)
+                    .first()
+                )
+                if value is not None:
+                    values.append(Decimal(str(value)))
+            if not values:
+                return None
+            if len(set(values)) == 1:
+                return values[0]
+            return sum(values) / Decimal(len(values))
+
+        return price_for(opening_date), price_for(as_of)
+
+    @classmethod
+    def _build_notes(cls, family, data_rows, opening_date, as_of):
+        """
+        Build the fixed six-section Notes to MIS format.
+
+        Listed reference instruments use the application's historical Yahoo
+        Finance price store when the family does not already contain the
+        instrument. Family-owned/unlisted instruments use their stored
+        MarketPrice history. The fixed display list is never expanded.
         """
         standard_sections = [
             {
@@ -311,15 +443,15 @@ class MISReportService:
                 "unit_label": "Unit Rate",
                 "change_label": "Change In Rate",
                 "particulars": [
-                    ("Mindspace Business Parks", ("mindspace business parks",)),
-                    ("Embassy Office Parks", ("embassy office parks",)),
-                    ("Brookfield India Real Estate Trust", ("brookfield india real estate trust", "brookfield india reit")),
-                    ("National Highways Infra Trust", ("national highways infra trust", "nhit")),
-                    ("Nexus Select Trust", ("nexus select trust",)),
-                    ("Knowledge Realty Trust", ("knowledge realty trust",)),
-                    ("Bagmane Prime Office Reit", ("bagmane prime office reit",)),
-                    ("NDR InvIT", ("ndr invit",)),
-                    ("Cube InvIT", ("cube invit",)),
+                    ("Mindspace Business Parks", ("mindspace business parks", "MINDSPACE.NS")),
+                    ("Embassy Office Parks", ("embassy office parks", "EMBASSY.NS")),
+                    ("Brookfield India Real Estate Trust", ("brookfield india real estate trust", "brookfield india reit", "BIRET.NS")),
+                    ("National Highways Infra Trust", ("national highways infra trust", "NHIT", "NHIT.NS")),
+                    ("Nexus Select Trust", ("nexus select trust", "NXST.NS")),
+                    ("Knowledge Realty Trust", ("knowledge realty trust", "KRT", "KRT.NS")),
+                    ("Bagmane Prime Office Reit", ("bagmane prime office reit", "BAGMANE", "BAGMANE.NS")),
+                    ("NDR InvIT", ("ndr invit", "NDRINVIT", "NDRINVIT.NS")),
+                    ("Cube InvIT", ("cube invit", "cube highways trust", "CUBEINVIT", "CUBEINVIT.NS")),
                 ],
             },
             {
@@ -329,7 +461,7 @@ class MISReportService:
                 "unit_label": "Rate/grm",
                 "change_label": "Change In Rate",
                 "particulars": [
-                    ("Sovereign Gold Bonds - 48Kg", ("sovereign gold bonds - 48kg", "sovereign gold bonds 48kg", "sovereign gold bond - 48kg")),
+                    ("Sovereign Gold Bonds - 48Kg", ("sovereign gold bonds", "sovereign gold bond", "sgb")),
                 ],
             },
             {
@@ -349,8 +481,8 @@ class MISReportService:
                 "unit_label": "Level",
                 "change_label": "Change in Level",
                 "particulars": [
-                    ("Nifty 50", ("nifty 50", "nifty50")),
-                    ("BSE 500", ("bse 500", "bse500")),
+                    ("Nifty 50", ("nifty 50", "^NSEI")),
+                    ("BSE 500", ("bse 500", "BSE500")),
                 ],
             },
             {
@@ -372,80 +504,83 @@ class MISReportService:
                 "unit_label": "Rate",
                 "change_label": "Change in Level",
                 "particulars": [
-                    ("$ Rate", ("$ rate", "dollar rate", "usd/inr", "usd inr", "us dollar")),
+                    ("$ Rate", ("usd/inr", "usd inr", "usd inr=x", "USDINR=X")),
                 ],
             },
         ]
 
-        def normalize(value):
-            return "".join(character for character in str(value or "").lower() if character.isalnum())
+        reference_symbols = {
+            "Mindspace Business Parks": "MINDSPACE.NS",
+            "Embassy Office Parks": "EMBASSY.NS",
+            "Brookfield India Real Estate Trust": "BIRET.NS",
+            "National Highways Infra Trust": "NHIT.NS",
+            "Nexus Select Trust": "NXST.NS",
+            "Knowledge Realty Trust": "KRT.NS",
+            "Bagmane Prime Office Reit": "BAGMANE.NS",
+            "NDR InvIT": "NDRINVIT.NS",
+            "Cube InvIT": "CUBEINVIT.NS",
+            "Nifty 50": "^NSEI",
+            "$ Rate": "USDINR=X",
+        }
 
-        searchable_rows = []
-        for row in data_rows:
-            haystack = " ".join(
-                str(row.get(field) or "")
-                for field in ("asset_name", "asset_class", "sub_class")
-            )
-            searchable_rows.append((normalize(haystack), row))
-
-        def find_row(aliases):
-            aliases = [normalize(alias) for alias in aliases]
-            matches = []
-            # First prefer exact asset-name matches.
-            for alias in aliases:
-                for text, row in searchable_rows:
-                    if normalize(row.get("asset_name")) == alias:
-                        return row
-
-            # For longer names, allow a controlled contains match across the
-            # asset/class/sub-class fields. Short aliases such as NSE are kept
-            # exact to avoid false matches (for example, "Sensex").
-            for text, row in searchable_rows:
-                if any(len(alias) > 3 and alias in text for alias in aliases):
-                    matches.append(row)
-            return matches[0] if matches else None
-
-        def movement(row):
-            if not row:
-                return {
-                    "opening_rate": None,
-                    "closing_rate": None,
-                    "change": None,
-                    "percent_change": None,
-                }
-
-            opening_rate = row.get("opening_nav")
-            closing_rate = row.get("closing_nav")
-            if opening_rate is None or closing_rate is None:
-                return {
-                    "opening_rate": None,
-                    "closing_rate": None,
-                    "change": None,
-                    "percent_change": None,
-                }
-
-            opening_rate = Decimal(str(opening_rate))
-            closing_rate = Decimal(str(closing_rate))
-            change = closing_rate - opening_rate
-            percent_change = (
-                (change / opening_rate) * Decimal("100")
-                if opening_rate != 0
-                else None
-            )
-            return {
-                "opening_rate": opening_rate,
-                "closing_rate": closing_rate,
-                "change": change,
-                "percent_change": percent_change,
-            }
-
+        history_cache = {}
         notes = []
+
         for section in standard_sections:
             items = []
             for name, aliases in section["particulars"]:
-                item = {"name": name}
-                item.update(movement(find_row(aliases)))
-                items.append(item)
+                opening_rate, closing_rate = cls._family_note_rate(
+                    family,
+                    aliases,
+                    opening_date,
+                    as_of,
+                )
+
+                if opening_rate is None or closing_rate is None:
+                    symbol = reference_symbols.get(name)
+                    if symbol:
+                        try:
+                            ref_opening, ref_closing = cls._reference_rate(
+                                name=name,
+                                symbol=symbol,
+                                opening_date=opening_date,
+                                as_of=as_of,
+                                cache=history_cache,
+                            )
+                            opening_rate = opening_rate or ref_opening
+                            closing_rate = closing_rate or ref_closing
+                        except Exception:
+                            pass
+
+                # Silver ETF can also be resolved from the existing MIS rows,
+                # preserving the historical value already used by the report.
+                if name.startswith("ICICI Prudential Silver ETF") and (
+                    opening_rate is None or closing_rate is None
+                ):
+                    normalized_aliases = [cls._normalize_note_name(alias) for alias in aliases]
+                    for row in data_rows:
+                        row_name = cls._normalize_note_name(row.get("asset_name"))
+                        if any(alias in row_name for alias in normalized_aliases):
+                            opening_rate = opening_rate or row.get("opening_nav")
+                            closing_rate = closing_rate or row.get("closing_nav")
+                            break
+
+                change = None
+                percent_change = None
+                if opening_rate is not None and closing_rate is not None:
+                    opening_rate = Decimal(str(opening_rate))
+                    closing_rate = Decimal(str(closing_rate))
+                    change = closing_rate - opening_rate
+                    if opening_rate != 0:
+                        percent_change = (change / opening_rate) * Decimal("100")
+
+                items.append({
+                    "name": name,
+                    "opening_rate": opening_rate,
+                    "closing_rate": closing_rate,
+                    "change": change,
+                    "percent_change": percent_change,
+                })
 
             notes.append({
                 "section": section["section"],
@@ -457,22 +592,24 @@ class MISReportService:
             })
 
         silver_item = notes[2]["items"][0]
-        silver_row = find_row(standard_sections[2]["particulars"][0][1])
-        silver_note = None
-        if silver_row and silver_row.get("rate") is not None:
+        silver_row = None
+        for row in data_rows:
+            if "icici prudential silver etf" in cls._normalize_note_name(row.get("asset_name")):
+                silver_row = row
+                break
+
+        if silver_row and silver_row.get("rate") is not None and silver_item["closing_rate"] is not None:
             invested_rate = Decimal(str(silver_row["rate"]))
-            closing_rate = silver_item["closing_rate"]
-            multiple = (
-                closing_rate / invested_rate
-                if closing_rate is not None and invested_rate != 0
-                else None
-            )
-            if multiple is not None:
-                silver_note = (
+            closing_rate = Decimal(str(silver_item["closing_rate"]))
+            if invested_rate != 0:
+                notes[2]["note"] = (
                     f"We have invested at rate of {invested_rate:.2f}/Unit. "
-                    f"Up from our buying {multiple:.2f}X."
+                    f"Up from our buying {(closing_rate / invested_rate):.2f}X."
                 )
-        notes[2]["note"] = silver_note
+            else:
+                notes[2]["note"] = None
+        else:
+            notes[2]["note"] = None
 
         return {
             "title": f"Notes to MIS {as_of.strftime('%B-%Y').upper()}",
@@ -598,7 +735,7 @@ class MISReportService:
             "ips": ips_rows,
             "data_sheet": data_rows,
             "fund_type_summary": fund_type_summary,
-            "notes": cls._build_notes(data_rows, opening_date, as_of),
+            "notes": cls._build_notes(family, data_rows, opening_date, as_of),
             "summary": {
                 "total_current_value": sum((Decimal(str(row["closing_amount"] or 0)) for row in data_rows), Decimal("0")),
                 "number_of_rows": len(data_rows),

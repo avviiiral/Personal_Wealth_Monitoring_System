@@ -1,6 +1,9 @@
 from collections import defaultdict
 from datetime import date, timedelta
 from decimal import Decimal
+import re
+
+import requests
 
 from django.db.models import Max
 
@@ -349,6 +352,70 @@ class MISReportService:
         return asset
 
     @classmethod
+    def _bse500_rate(cls, target_date, cache):
+        """
+        Read the BSE 500 price-return index from the official BSE Indices
+        chart page. The page exposes recent daily chart points as
+        'Date: DD Mon YYYY - Value: ...'. Values are never inferred from
+        another index.
+        """
+        cache_key = ("BSE500", target_date)
+        if cache_key in cache:
+            return cache[cache_key]
+
+        try:
+            response = requests.get(
+                "https://www.bseindices.com/indices-details/code/17/",
+                headers={
+                    "User-Agent": "Mozilla/5.0",
+                    "Accept": "text/html,application/xhtml+xml",
+                },
+                timeout=10,
+            )
+            response.raise_for_status()
+            html = response.text
+
+            patterns = [
+                r"Date\s*:\s*(\d{1,2})\s+([A-Za-z]{3,9})\s+(\d{4})\s*[–-]\s*Value\s*:\s*([\d,]+(?:\.\d+)?)",
+                r"(\d{1,2})\s+([A-Za-z]{3,9})\s+(\d{4}).{0,80}?Value\s*:\s*([\d,]+(?:\.\d+)?)",
+            ]
+            month_map = {
+                "jan": 1, "feb": 2, "mar": 3, "apr": 4,
+                "may": 5, "jun": 6, "jul": 7, "aug": 8,
+                "sep": 9, "sept": 9, "oct": 10, "nov": 11, "dec": 12,
+            }
+
+            found = {}
+            for pattern in patterns:
+                for day, month_text, year, value in re.findall(pattern, html, flags=re.IGNORECASE):
+                    month = month_map.get(month_text[:3].lower())
+                    if not month:
+                        continue
+                    try:
+                        point_date = date(int(year), month, int(day))
+                        found[point_date] = Decimal(value.replace(",", ""))
+                    except (TypeError, ValueError, ArithmeticError):
+                        continue
+
+                if found:
+                    break
+
+            if found:
+                eligible = [
+                    (point_date, value)
+                    for point_date, value in found.items()
+                    if point_date <= target_date
+                ]
+                result = max(eligible, key=lambda item: item[0])[1] if eligible else None
+            else:
+                result = None
+        except Exception:
+            result = None
+
+        cache[cache_key] = result
+        return result
+
+    @classmethod
     def _reference_rate(cls, name, symbol, as_of, opening_date, cache):
         asset = cls._ensure_reference_history(
             name=name,
@@ -537,20 +604,24 @@ class MISReportService:
                 )
 
                 if opening_rate is None or closing_rate is None:
-                    symbol = reference_symbols.get(name)
-                    if symbol:
-                        try:
-                            ref_opening, ref_closing = cls._reference_rate(
-                                name=name,
-                                symbol=symbol,
-                                opening_date=opening_date,
-                                as_of=as_of,
-                                cache=history_cache,
-                            )
-                            opening_rate = opening_rate or ref_opening
-                            closing_rate = closing_rate or ref_closing
-                        except Exception:
-                            pass
+                    if name == "BSE 500":
+                        opening_rate = opening_rate or cls._bse500_rate(opening_date, history_cache)
+                        closing_rate = closing_rate or cls._bse500_rate(as_of, history_cache)
+                    else:
+                        symbol = reference_symbols.get(name)
+                        if symbol:
+                            try:
+                                ref_opening, ref_closing = cls._reference_rate(
+                                    name=name,
+                                    symbol=symbol,
+                                    opening_date=opening_date,
+                                    as_of=as_of,
+                                    cache=history_cache,
+                                )
+                                opening_rate = opening_rate or ref_opening
+                                closing_rate = closing_rate or ref_closing
+                            except Exception:
+                                pass
 
                 # Silver ETF can also be resolved from the existing MIS rows,
                 # preserving the historical value already used by the report.

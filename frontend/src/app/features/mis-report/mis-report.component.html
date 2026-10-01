@@ -185,10 +185,7 @@
               <td></td>
               <td class="number">
                 {{ formatNumber(
-                  report.fund_type_summary.reduce(
-                    (total, group) => total + group.subtotal,
-                    0
-                  ),
+                  fundSummaryGrandTotal,
                   2
                 ) }}
               </td>

@@ -997,25 +997,71 @@ class MISReportService:
             )
             for row in rows
         ]
+        # Keep the complete set of report rows before applying the Data Sheet
+        # display filter. A Tax Report must also retain positions that were fully
+        # sold during the selected period because those rows can have realized
+        # P/L/tax even when their closing units and market value are zero.
+        all_data_rows = [
+            cls._build_data_row(
+                row,
+                opening_date,
+                as_of,
+                period_start,
+                price_cache,
+                nav_cache,
+            )
+            for row in rows
+        ]
         data_rows = [
-            row for row in data_rows
+            row for row in all_data_rows
             if row["closing_units"] > 0 or row["total_cost"] > 0 or row["closing_amount"] > 0
         ]
         data_rows.sort(key=lambda row: (row["asset_class"].casefold(), row["asset_name"].casefold(), row["family_name"].casefold()))
 
-        # Tax Report uses the exact same rows as the Data Sheet and appends
-        # FIFO realized/unrealized P&L plus tax calculated from the family's
-        # Asset Name tax settings.
+        # Tax Report uses the same valuation rows as the Data Sheet, but it also
+        # includes rows with a transaction in the selected period when the
+        # position was fully exited. This preserves realized FIFO P/L/tax.
         tax_settings_by_id, tax_settings_by_name = cls._tax_settings(family, rows)
         data_row_by_key = {
             (row["family_name"], row["sub_class"], row["asset_name"]): row
-            for row in data_rows
+            for row in all_data_rows
         }
         tax_rows = []
         for base_row in rows:
             data_row = data_row_by_key.get(base_row["key"])
             if data_row is None:
                 continue
+
+            has_period_transaction = any(
+                period_start <= tx.transaction_date <= as_of
+                and (
+                    (
+                        base_row["kind"] == "asset"
+                        and tx.transaction_type in (
+                            TransactionType.BUY,
+                            TransactionType.SIP,
+                            TransactionType.SELL,
+                        )
+                    )
+                    or (
+                        base_row["kind"] == "mutual_fund"
+                        and tx.transaction_type in (
+                            "PURCHASE",
+                            "SIP",
+                            "REDEMPTION",
+                        )
+                    )
+                )
+                for tx in base_row["transactions"]
+            )
+            has_closing_position = (
+                data_row["closing_units"] > 0
+                or data_row["total_cost"] > 0
+                or data_row["closing_amount"] > 0
+            )
+            if not has_closing_position and not has_period_transaction:
+                continue
+
             tax_setting = None
             for asset_id in base_row.get("asset_ids", []):
                 tax_setting = tax_settings_by_id.get(asset_id)

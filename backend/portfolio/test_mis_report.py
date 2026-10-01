@@ -358,6 +358,72 @@ class MISReportAPITests(TestCase):
             {150.0},
         )
 
+    def test_tax_report_keeps_fully_exited_positions_for_realized_pnl(self):
+        exited_asset = Asset.objects.create(
+            owner=self.user,
+            family=self.family,
+            name="Fully Exited Equity",
+            category="STOCK",
+            isin="INE000EXITED1",
+            symbol="EXITED1",
+        )
+        TaxRateSetting.objects.create(
+            family=self.family,
+            asset=exited_asset,
+            tenure_months=12,
+            short_term_tax_rate=Decimal("15"),
+            long_term_tax_rate=Decimal("10"),
+        )
+        Transaction.objects.create(
+            owner=self.user,
+            family=self.family,
+            asset=exited_asset,
+            family_name="DAJ",
+            portfolio="Core",
+            asset_class="Equity",
+            sub_class="Large Cap",
+            asset_name="Fully Exited Equity",
+            transaction_date=date(2026, 1, 10),
+            transaction_type="BUY",
+            quantity=Decimal("10"),
+            price_per_unit=Decimal("100"),
+            amount=Decimal("1000"),
+            fees=Decimal("0"),
+        )
+        Transaction.objects.create(
+            owner=self.user,
+            family=self.family,
+            asset=exited_asset,
+            family_name="DAJ",
+            portfolio="Core",
+            asset_class="Equity",
+            sub_class="Large Cap",
+            asset_name="Fully Exited Equity",
+            transaction_date=date(2026, 9, 30),
+            transaction_type="SELL",
+            quantity=Decimal("10"),
+            price_per_unit=Decimal("200"),
+            amount=Decimal("2000"),
+            fees=Decimal("0"),
+        )
+
+        response = self.client.get(
+            "/api/portfolio/mis-report/",
+            {"from_date": "2026-09-30", "to_date": "2026-10-01"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        row = next(
+            item
+            for item in response.json()["tax_report"]
+            if item["asset_name"] == "Fully Exited Equity"
+        )
+        self.assertEqual(row["qty_units"], 0.0)
+        self.assertEqual(row["realized_pnl"], 1000.0)
+        self.assertEqual(row["realized_tax"], 150.0)
+        self.assertEqual(row["unrealized_pnl"], 0.0)
+        self.assertEqual(row["unrealized_tax"], 0.0)
+
     def test_same_asset_name_is_consolidated_across_positions(self):
         second_asset = Asset.objects.create(
             owner=self.user,

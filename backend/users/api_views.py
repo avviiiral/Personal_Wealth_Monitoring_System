@@ -158,7 +158,7 @@ def _log_tax_change(user, family, asset, before, after):
         family=family,
         family_name=family.name,
         asset=asset,
-        asset_name=asset.name,
+        asset_name=_portfolio_asset_name(family, asset),
         change_from=_tax_values(before),
         change_to=_tax_values(after),
     )

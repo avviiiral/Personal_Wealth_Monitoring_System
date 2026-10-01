@@ -23,11 +23,11 @@
     <nav class="settings-tabs">
       <button type="button" class="tab-button" [class.tab-active]="activeTab === 'account'" (click)="setTab('account')">Account</button>
       <button type="button" class="tab-button" [class.tab-active]="activeTab === 'security'" (click)="setTab('security')">Security</button>
+      <button type="button" class="tab-button" [class.tab-active]="activeTab === 'tax-rates'" (click)="setTab('tax-rates')">Tax Settings</button>
       <button type="button" class="tab-button" [class.tab-active]="activeTab === 'transaction-history'" (click)="setTab('transaction-history')">Transaction Edit History</button>
       <button type="button" class="tab-button" *ngIf="canManageUsers()" [class.tab-active]="activeTab === 'users'" (click)="setTab('users')">User Management</button>
       <button type="button" class="tab-button" *ngIf="canManageFamilies()" [class.tab-active]="activeTab === 'families'" (click)="setTab('families')">Family Management</button>
       <button type="button" class="tab-button" *ngIf="canEditPrices()" [class.tab-active]="activeTab === 'prices'" (click)="setTab('prices')">Manual Prices</button>
-      <button type="button" class="tab-button" [class.tab-active]="activeTab === 'tax-rates'" (click)="setTab('tax-rates')">Tax Settings</button>
     </nav>
 
     <section class="settings-card" *ngIf="activeTab === 'account'">

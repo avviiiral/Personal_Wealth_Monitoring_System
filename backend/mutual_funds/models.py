@@ -158,6 +158,7 @@ class MutualFundTransaction(models.Model):
         related_name="mutual_fund_transactions",
     )
     family = models.ForeignKey(FamilyGroup, on_delete=models.PROTECT, related_name="mutual_fund_transactions", null=True, blank=True, db_index=True)
+    # Legacy field name retained for DB/API compatibility; the value is the Family Member label.
     family_name = models.CharField(max_length=255, blank=True, null=True)
     portfolio = models.CharField(max_length=255, blank=True, null=True)
     scheme = models.ForeignKey(

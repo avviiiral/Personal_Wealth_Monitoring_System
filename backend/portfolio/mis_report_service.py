@@ -25,6 +25,22 @@ class MISReportService:
 
     ZERO = Decimal("0")
 
+    # Standard external market references used by the MIS Notes sheet.
+    REFERENCE_SYMBOLS = {
+        "Mindspace Business Parks": ("MINDSPACE.NS", "MINDSPACE.BO"),
+        "Embassy Office Parks": ("EMBASSY.NS", "EMBASSY.BO"),
+        "Brookfield India Real Estate Trust": ("BIRET.NS", "BIRET.BO"),
+        "National Highways Infra Trust": ("NHIT.NS", "NHIT.BO"),
+        "Nexus Select Trust": ("NXST.NS", "NXST.BO"),
+        "Knowledge Realty Trust": ("KRT.NS", "KRT.BO"),
+        "Bagmane Prime Office Reit": ("BAGMANE.NS", "BAGMANERR.NS", "BAGMANE.BO"),
+        "NDR InvIT": ("NDRINVIT.NS", "NDRINVIT.BO"),
+        "Cube InvIT": ("CUBEINVIT.NS", "CUBEINVIT.BO"),
+        "Nifty 50": "^NSEI",
+        "$ Rate": "USDINR=X",
+        "BSE 500": "BSE-500.BO",
+    }
+
     @staticmethod
     def _clean(value, default="Unassigned"):
         value = str(value or "").strip()
@@ -295,6 +311,67 @@ class MISReportService:
             "closing_units": closing_qty,
             "closing_nav": closing_rate,
             "closing_amount": closing_mtm,
+        }
+
+    @classmethod
+    def refresh_reference_prices(cls, lookback_days=7):
+        """Refresh the shared Yahoo history used by MIS Notes."""
+        today = date.today()
+        refreshed = 0
+        failed = 0
+        records = 0
+
+        for name, symbols in cls.REFERENCE_SYMBOLS.items():
+            candidates = symbols if isinstance(symbols, (tuple, list)) else (symbols,)
+            success = False
+            for symbol in candidates:
+                try:
+                    asset = (
+                        Asset.objects
+                        .filter(family__isnull=True, symbol=symbol)
+                        .order_by("id")
+                        .first()
+                    )
+                    if asset is None:
+                        asset = Asset.objects.create(
+                            owner=None,
+                            family=None,
+                            name=name,
+                            category="OTHER",
+                            symbol=symbol,
+                            currency="INR",
+                            is_active=True,
+                        )
+
+                    latest_date = (
+                        MarketPrice.objects
+                        .filter(asset=asset)
+                        .order_by("-date", "-id")
+                        .values_list("date", flat=True)
+                        .first()
+                    )
+                    start = max(today - timedelta(days=lookback_days), latest_date) if latest_date else today - timedelta(days=lookback_days)
+                    saved = YahooFinanceService.save_history(
+                        asset=asset,
+                        symbol=symbol,
+                        start=start,
+                        end=today + timedelta(days=1),
+                    )
+                    records += saved
+                    refreshed += 1
+                    success = True
+                    break
+                except Exception:
+                    continue
+
+            if not success:
+                failed += 1
+
+        return {
+            "references": len(cls.REFERENCE_SYMBOLS),
+            "refreshed": refreshed,
+            "failed": failed,
+            "records": records,
         }
 
     @classmethod
@@ -585,22 +662,8 @@ class MISReportService:
             },
         ]
 
-        reference_symbols = {
-            "Mindspace Business Parks": ("MINDSPACE.NS", "MINDSPACE.BO"),
-            "Embassy Office Parks": ("EMBASSY.NS", "EMBASSY.BO"),
-            "Brookfield India Real Estate Trust": ("BIRET.NS", "BIRET.BO"),
-            "National Highways Infra Trust": ("NHIT.NS", "NHIT.BO"),
-            "Nexus Select Trust": ("NXST.NS", "NXST.BO"),
-            "Knowledge Realty Trust": ("KRT.NS", "KRT.BO"),
-            "Bagmane Prime Office Reit": ("BAGMANE.NS", "BAGMANERR.NS", "BAGMANE.BO"),
-            "NDR InvIT": ("NDRINVIT.NS", "NDRINVIT.BO"),
-            "Cube InvIT": ("CUBEINVIT.NS", "CUBEINVIT.BO"),
-            "Nifty 50": "^NSEI",
-            "$ Rate": "USDINR=X",
-            "BSE 500": "BSE-500.BO",
-        }
+        reference_symbols = cls.REFERENCE_SYMBOLS
 
-        history_cache = {}
         notes = []
 
         for section in standard_sections:

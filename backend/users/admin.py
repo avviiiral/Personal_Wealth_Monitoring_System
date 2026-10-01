@@ -9,6 +9,13 @@ from .models import (
 )
 
 
+@admin.register(TaxRateSetting)
+class TaxRateSettingAdmin(admin.ModelAdmin):
+    list_display = ("user", "asset_name", "tax_rate", "updated_at")
+    search_fields = ("user__username", "asset_name")
+    ordering = ("user__username", "asset_name")
+
+
 @admin.register(UserPreference)
 class UserPreferenceAdmin(admin.ModelAdmin):
 

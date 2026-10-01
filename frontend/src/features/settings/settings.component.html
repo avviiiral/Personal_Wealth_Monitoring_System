@@ -45,7 +45,7 @@
       <div class="card-actions"><button type="button" class="primary-button" (click)="saveSettings()" [disabled]="saving"><span *ngIf="!saving"> Save Changes </span><span *ngIf="saving"> Saving... </span></button></div>
     </section>
 
-    <section class="settings-card" *ngIf="activeTab === 'security'>
+    <section class="settings-card" *ngIf="activeTab === 'security'">
       <div class="card-header"><div><h2>Security</h2><p>Manage your account password.</p></div><span class="section-badge"> Security </span></div>
       <div class="password-grid">
         <div class="form-field"><label> Current Password </label><input type="password" [(ngModel)]="currentPassword" autocomplete="current-password" /></div>

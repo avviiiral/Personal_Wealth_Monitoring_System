@@ -10,6 +10,7 @@ import {
   SettingsApiService,
   SettingsProfile,
   TaxRateSetting,
+  TaxRateChangeLog,
   TransactionEditHistory,
 } from '../../core/services/settings-api.service';
 
@@ -24,6 +25,7 @@ type SettingsTab =
   | 'families'
   | 'prices'
   | 'tax-rates'
+  | 'tax-updates'
   | 'transaction-history';
 
 @Component({
@@ -70,6 +72,10 @@ export class SettingsComponent implements OnInit {
   taxRateSavingAssetId: number | null = null;
   taxRateError = '';
 
+  taxUpdateHistory: TaxRateChangeLog[] = [];
+  taxUpdateLoading = false;
+  taxUpdateError = '';
+
   transactionHistory: TransactionEditHistory[] = [];
   transactionHistoryLoading = false;
   transactionHistoryError = '';
@@ -99,6 +105,10 @@ export class SettingsComponent implements OnInit {
       this.loadTaxRateSettings();
     }
 
+    if (tab === 'tax-updates' && !this.taxUpdateHistory.length) {
+      this.loadTaxUpdateHistory();
+    }
+
     if (tab === 'transaction-history' && !this.transactionHistory.length) {
       this.loadTransactionHistory();
     }
@@ -126,6 +136,9 @@ export class SettingsComponent implements OnInit {
         this.profileMessage = 'Now viewing data for the selected family.';
         if (this.activeTab === 'tax-rates') {
           this.loadTaxRateSettings();
+        }
+        if (this.activeTab === 'tax-updates') {
+          this.loadTaxUpdateHistory();
         }
         this.cdr.detectChanges();
       },
@@ -265,6 +278,33 @@ export class SettingsComponent implements OnInit {
         this.cdr.detectChanges();
       },
     });
+  }
+
+  loadTaxUpdateHistory(): void {
+    this.taxUpdateLoading = true;
+    this.taxUpdateError = '';
+
+    this.settingsApi.getTaxRateChangeHistory().subscribe({
+      next: (rows) => {
+        this.taxUpdateHistory = rows || [];
+        this.taxUpdateLoading = false;
+        this.cdr.detectChanges();
+      },
+      error: (error) => {
+        this.taxUpdateLoading = false;
+        this.taxUpdateError =
+          error?.error?.detail || 'Unable to load tax update history.';
+        this.cdr.detectChanges();
+      },
+    });
+  }
+
+  formatTaxChange(change: TaxRateChangeLog['change_from']): string {
+    const tenure = change.tenure_months === null ? '—' : `${change.tenure_months} months`;
+    const shortTerm = change.short_term_tax_rate === null ? '—' : `${change.short_term_tax_rate}%`;
+    const longTerm = change.long_term_tax_rate === null ? '—' : `${change.long_term_tax_rate}%`;
+
+    return `Tenure: ${tenure} · Short Term: ${shortTerm} · Long Term: ${longTerm}`;
   }
 
   loadTransactionHistory(): void {
@@ -497,6 +537,10 @@ export class SettingsComponent implements OnInit {
 
     if (this.activeTab === 'tax-rates') {
       this.loadTaxRateSettings();
+    }
+
+    if (this.activeTab === 'tax-updates') {
+      this.loadTaxUpdateHistory();
     }
 
     if (this.activeTab === 'transaction-history') {

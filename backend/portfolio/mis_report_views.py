@@ -105,7 +105,7 @@ def _autosize(ws, minimum=12, maximum=36):
         ws.column_dimensions[letter].width = min(max(length + 2, minimum), maximum)
 
 
-def _build_ips_sheet(workbook, report):
+def _build_ips_sheet(workbook, report, display_unit="lakhs"):
     ws = workbook.create_sheet("IPS")
     families = report["family_names"]
     ws["A1"] = "IPS"
@@ -120,9 +120,10 @@ def _build_ips_sheet(workbook, report):
     current_date = report["reporting_date"].strftime("%d.%m.%Y")
     prior_date = report["prior_month_date"].strftime("%d.%m.%Y")
     cursor = 4
-    lakhs = Decimal("100000")
+    divisors = {"amount": Decimal("1"), "lakhs": Decimal("100000"), "crores": Decimal("10000000")}
+    divisor = divisors[display_unit]
 
-    # IPS is displayed in lakhs; source values remain in rupees elsewhere in the report.
+    # IPS display unit is presentation-only; source values remain in rupees.
     current_totals = {family: Decimal("0") for family in families}
     prior_totals = {family: Decimal("0") for family in families}
 
@@ -141,12 +142,12 @@ def _build_ips_sheet(workbook, report):
             ws.cell(cursor, 2, label)
             for offset, family in enumerate(families, 3):
                 value = Decimal(str(values.get(family, 0) or 0))
-                ws.cell(cursor, offset, float(value / lakhs))
+                ws.cell(cursor, offset, float(value / divisor))
                 if label == current_date:
                     current_totals[family] += value
                 elif label == prior_date:
                     prior_totals[family] += value
-            ws.cell(cursor, len(families) + 3, float(Decimal(str(total or 0)) / lakhs))
+            ws.cell(cursor, len(families) + 3, float(Decimal(str(total or 0)) / divisor))
             for col in range(1, len(families) + 4):
                 ws.cell(cursor, col).fill = fill
                 ws.cell(cursor, col).border = _BORDER
@@ -156,9 +157,9 @@ def _build_ips_sheet(workbook, report):
         ws.cell(cursor, 1, "Grand Total")
         ws.cell(cursor, 2, "Overall")
         for offset, family in enumerate(families, 3):
-            ws.cell(cursor, offset, float(current_totals[family] / lakhs))
+            ws.cell(cursor, offset, float(current_totals[family] / divisor))
         overall_total = sum(current_totals.values(), Decimal("0"))
-        ws.cell(cursor, len(families) + 3, float(overall_total / lakhs))
+        ws.cell(cursor, len(families) + 3, float(overall_total / divisor))
         for col in range(1, len(families) + 4):
             ws.cell(cursor, col).fill = _GRAND_TOTAL_FILL
             ws.cell(cursor, col).border = _BORDER
@@ -169,8 +170,13 @@ def _build_ips_sheet(workbook, report):
     else:
         ws.cell(4, 1, "No data available")
 
-    ws.cell(2, 1, "Values in ₹ Lakhs")
+    unit_labels = {"amount": "₹ Amount", "lakhs": "₹ Lakhs", "crores": "₹ Crores"}
+    ws.cell(2, 1, f"Values in {unit_labels[display_unit]}")
     ws.cell(2, 1).font = Font(italic=True, size=10)
+    ws.freeze_panes = "C4"
+    for row_cells in ws.iter_rows(min_row=4, max_row=ws.max_row, min_col=3, max_col=len(families) + 3):
+        for cell in row_cells:
+            cell.number_format = '#,##0' if display_unit == 'amount' else '#,##0.00'
     ws.freeze_panes = "C4"
     _autosize(ws, 14, 32)
     return ws
@@ -290,6 +296,13 @@ def _build_fund_summary_sheet(workbook, report):
     return ws
 
 
+def _parse_display_unit(request):
+    display_unit = (request.query_params.get("display_unit") or "lakhs").strip().lower()
+    if display_unit not in {"amount", "lakhs", "crores"}:
+        raise ValidationError({"display_unit": "display_unit must be one of: amount, lakhs, crores."})
+    return display_unit
+
+
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def mis_report(request):
@@ -307,6 +320,7 @@ def mis_report(request):
 def mis_report_download(request):
     family = _authorized_active_family(request.user)
     from_date, to_date = _parse_report_dates(request)
+    display_unit = _parse_display_unit(request)
     try:
         report = MISReportService.build(family, from_date, to_date)
     except ValueError as exc:
@@ -315,7 +329,7 @@ def mis_report_download(request):
     workbook = Workbook()
     default = workbook.active
     workbook.remove(default)
-    _build_ips_sheet(workbook, report)
+    _build_ips_sheet(workbook, report, display_unit)
     _build_data_sheet(workbook, report)
     _build_fund_summary_sheet(workbook, report)
 

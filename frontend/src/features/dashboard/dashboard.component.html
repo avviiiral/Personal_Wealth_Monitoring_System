@@ -185,9 +185,9 @@
       <div class="standard-allocation-toolbar" *ngIf="!investmentSummaryError && investmentSummary && investmentSummaryGroups.length > 0">
         <div class="standard-allocation-toolbar-info">
           <strong>Standard Allocation</strong>
-          <span>Set your target allocation. The total must always equal 100%.</span>
+          <span>Set target allocation by amount or percentage. Both fields stay synchronized.</span>
           <span class="standard-allocation-total" [ngClass]="getStandardAllocationTotalClass()">
-            Total: {{ getStandardAllocationDraftTotal() | number:'1.0-2' }}%
+            Portfolio Total: {{ standardAllocationTotalValue | number:'1.0-2' }} &nbsp; • &nbsp; Target Total: {{ getStandardAllocationDraftTotal() | number:'1.0-2' }}%
           </span>
         </div>
         <div class="standard-allocation-actions">
@@ -234,7 +234,8 @@
               <th>Asset Category</th>
               <th class="align-right">Current Value</th>
               <th class="align-right">% of Total Investment</th>
-              <th class="align-right">Standard Allocation</th>
+              <th class="align-right">Standard Allocation (Amount)</th>
+              <th class="align-right">Standard Allocation (%)</th>
               <th>Comments</th>
               <th class="arrow-column"></th>
             </tr>
@@ -261,10 +262,26 @@
                     type="number"
                     class="standard-allocation-input"
                     min="0"
+                    step="0.01"
+                    [value]="getStandardAllocationAmount(group.asset_category)"
+                    (input)="updateStandardAllocationAmount(group.asset_category, $any($event.target).value)"
+                    (click)="$event.stopPropagation()"
+                  />
+                  <span *ngIf="!standardAllocationEditing">
+                    {{ getStandardAllocationAmount(group.asset_category) | number:'1.0-2' }}
+                  </span>
+                </td>
+
+                <td class="align-right standard-allocation-cell" (click)="$event.stopPropagation()">
+                  <input
+                    *ngIf="standardAllocationEditing"
+                    type="number"
+                    class="standard-allocation-input"
+                    min="0"
                     max="100"
                     step="0.01"
                     [value]="getStandardAllocation(group.asset_category)"
-                    (input)="updateStandardAllocation(group.asset_category, $any($event.target).value)"
+                    (input)="updateStandardAllocationPercent(group.asset_category, $any($event.target).value)"
                     (click)="$event.stopPropagation()"
                   />
                   <span *ngIf="!standardAllocationEditing">
@@ -285,7 +302,7 @@
 
               <!-- LEVEL 2: ASSET CLASS -->
               <tr *ngIf="expandedInvestmentCategory === group.asset_category" class="asset-class-detail-row">
-                <td colspan="6">
+                <td colspan="7">
                   <div class="asset-class-detail-container">
                     <table class="asset-class-table">
                       <thead>

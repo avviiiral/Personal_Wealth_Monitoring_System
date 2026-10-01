@@ -212,7 +212,7 @@ class TaxRateSettingsApiTests(TestCase):
         )
 
         listing = self.client.get("/api/settings/tax-rates/")
-        hdfc_rows = [row for row in listing.data if row["asset_name"] == "HDFC Bank"]
+        hdfc_rows = [row for row in listing.data if row["asset_name"] == "Family Portfolio - HDFC Bank"]
         self.assertEqual(len(hdfc_rows), 1)
         self.assertEqual(hdfc_rows[0]["tenure_months"], 12)
 

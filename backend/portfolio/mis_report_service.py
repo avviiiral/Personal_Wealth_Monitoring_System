@@ -34,7 +34,7 @@ class MISReportService:
         "Nexus Select Trust": ("NXST.NS", "NXST.BO"),
         "Knowledge Realty Trust": ("KRT.NS", "KRT.BO"),
         "Bagmane Prime Office Reit": ("BAGMANE.NS", "BAGMANERR.NS", "BAGMANE.BO"),
-        "NDR InvIT": ("NDRINVIT.NS", "NDRINVIT.BO"),
+        "NDR InvIT": ("NDRI.NS", "NDRINVIT.NS", "NDRINVIT.BO"),
         "Cube InvIT": ("CUBEINVIT.NS", "CUBEINVIT.BO"),
         "Nifty 50": "^NSEI",
         "$ Rate": "USDINR=X",

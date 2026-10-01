@@ -74,7 +74,7 @@ class TaxRateSettingsApiTests(TestCase):
         self.assertEqual(first_log.change_from["tenure_months"], None)
         self.assertEqual(first_log.change_to["tenure_months"], 12)
         self.assertEqual(first_log.change_from["short_term_tax_rate"], None)
-        self.assertEqual(first_log.change_to["short_term_tax_rate"], "20.0000")
+        self.assertEqual(first_log.change_to["short_term_tax_rate"], "20.00")
 
         tax_id = create.data["id"]
 

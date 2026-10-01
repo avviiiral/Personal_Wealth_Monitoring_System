@@ -91,6 +91,14 @@ export class MISReportComponent implements OnInit {
     return (this.report?.fund_type_summary ?? []).reduce((total, group) => total + Number(group.subtotal || 0), 0);
   }
 
+  ipsGrandTotal(family?: string): number {
+    const rows = this.report?.ips ?? [];
+    if (family) {
+      return rows.reduce((total, row) => total + Number(row.family_values?.[family] || 0), 0);
+    }
+    return rows.reduce((total, row) => total + Number(row.grand_total || 0), 0);
+  }
+
   formatNumber(value: number | null | undefined, digits = 2): string {
     if (value === null || value === undefined) return '—';
     return new Intl.NumberFormat('en-IN', { minimumFractionDigits: digits, maximumFractionDigits: digits }).format(value);

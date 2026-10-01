@@ -4,7 +4,7 @@
       <p class="eyebrow">Portfolio</p>
       <h1>MIS Report</h1>
       <p class="subtitle" *ngIf="report">
-        Family: <strong>{{ selectedFamily || 'All Families' }}</strong>
+        Family Member: <strong>{{ selectedFamilyMember || 'All Families' }}</strong>
         <span class="separator">•</span>
         Reporting date: {{ report.reporting_date | date: 'dd MMM yyyy' }}
       </p>
@@ -25,23 +25,23 @@
 
   <ng-container *ngIf="!loading && report && !error">
     <section class="family-filter">
-      <div class="selection-title">Family Name</div>
+      <div class="selection-title">Family Member</div>
       <div class="selection-buttons">
         <button
           type="button"
           class="selection-button"
-          [class.active]="!selectedFamily"
-          (click)="clearFamily()"
+          [class.active]="!selectedFamilyMember"
+          (click)="clearFamilyMember()"
         >
           All
         </button>
 
         <button
-          *ngFor="let family of familyOptions"
+          *ngFor="let family of familyMemberOptions"
           type="button"
           class="selection-button"
-          [class.active]="isFamilySelected(family)"
-          (click)="selectFamily(family)"
+          [class.active]="isFamilyMemberSelected(family)"
+          (click)="selectFamilyMember(family)"
         >
           {{ family }}
         </button>
@@ -110,7 +110,7 @@
           <thead>
             <tr>
               <th>Asset Name</th>
-              <th>Family Name</th>
+              <th>Family Member</th>
               <th>Portfolio</th>
               <th class="number">Quantity</th>
               <th class="number">Invested Value</th>

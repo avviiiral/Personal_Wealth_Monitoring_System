@@ -280,6 +280,17 @@ class TransactionImporter:
         )
 
     @staticmethod
+    def _normalize_family_member_column(dataframe):
+        """
+        Accept the new user-facing "Family Member" column name while
+        preserving the existing "Family Name" column internally for
+        backward compatibility with existing uploads and stored data.
+        """
+        if dataframe is not None and "Family Member" in dataframe.columns and "Family Name" not in dataframe.columns:
+            dataframe.rename(columns={"Family Member": "Family Name"}, inplace=True)
+        return dataframe
+
+    @staticmethod
     def _validate_transaction_columns(dataframe):
         missing_columns = [
             column
@@ -321,6 +332,8 @@ class TransactionImporter:
             raise TransactionImportError(
                 "The transaction file contains no data."
             )
+
+        TransactionImporter._normalize_family_member_column(dataframe)
 
         TransactionImporter._validate_transaction_columns(
             dataframe
@@ -1015,6 +1028,8 @@ class TransactionImporter:
         TransactionImporter._validate_dataframe(
             dataframe
         )
+
+        TransactionImporter._normalize_family_member_column(summary)
 
         TransactionImporter._validate_summary_columns(
             summary

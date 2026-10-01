@@ -36,7 +36,7 @@ export class HoldingReportsComponent implements OnInit {
   private readonly changeDetectorRef = inject(ChangeDetectorRef);
   holdingRows: HoldingReportRow[] = [];
   loading = true; error = '';
-  selectedFamily = ''; selectedAssetClass = ''; expandedAssetClass = ''; expandedSubClass = ''; expandedAssetName = '';
+  selectedFamilyMember = ''; selectedAssetClass = ''; expandedAssetClass = ''; expandedSubClass = ''; expandedAssetName = '';
   downloading = false;
 
   ngOnInit(): void { this.loadHoldings(); }
@@ -83,9 +83,9 @@ export class HoldingReportsComponent implements OnInit {
     const underlyingXirr = underlyingEntries.find(entry => entry.xirr !== null && entry.xirr !== undefined)?.xirr;
     return underlyingXirr === undefined ? fallback : Number(underlyingXirr);
   }
-  get familyOptions(): string[] { return Array.from(new Set(this.holdingRows.map(row => this.clean(row.family_name)))).sort((a,b) => a.localeCompare(b)); }
+  get familyMemberOptions(): string[] { return Array.from(new Set(this.holdingRows.map(row => this.clean(row.family_name)))).sort((a,b) => a.localeCompare(b)); }
   get assetClassOptions(): string[] { return Array.from(new Set(this.filteredRows.map(row => this.clean(row.asset_class)))).sort((a,b) => a.localeCompare(b)); }
-  private get filteredRows(): HoldingReportRow[] { return this.holdingRows.filter(row => (!this.selectedFamily || this.clean(row.family_name) === this.selectedFamily) && (!this.selectedAssetClass || this.clean(row.asset_class) === this.selectedAssetClass)); }
+  private get filteredRows(): HoldingReportRow[] { return this.holdingRows.filter(row => (!this.selectedFamilyMember || this.clean(row.family_name) === this.selectedFamilyMember) && (!this.selectedAssetClass || this.clean(row.asset_class) === this.selectedAssetClass)); }
   get assetClassGroups(): AssetClassGroup[] {
     const groups = new Map<string, HoldingReportRow[]>();
     for (const row of this.filteredRows) {
@@ -144,11 +144,11 @@ export class HoldingReportsComponent implements OnInit {
   trackByAssetClass(_index: number, group: AssetClassGroup): string { return group.asset_class; }
 
   get holdingCount(): number { return this.filteredRows.length; }
-  selectFamily(family: string): void { this.selectedFamily = this.selectedFamily === family ? '' : family; this.selectedAssetClass = ''; this.resetExpansion(); }
+  selectFamilyMember(family: string): void { this.selectedFamilyMember = this.selectedFamilyMember === family ? '' : family; this.selectedAssetClass = ''; this.resetExpansion(); }
   selectAssetClass(assetClass: string): void { this.selectedAssetClass = this.selectedAssetClass === assetClass ? '' : assetClass; this.resetExpansion(); }
-  clearFamily(): void { this.selectedFamily = ''; this.selectedAssetClass = ''; this.resetExpansion(); }
+  clearFamilyMember(): void { this.selectedFamilyMember = ''; this.selectedAssetClass = ''; this.resetExpansion(); }
   clearAssetClass(): void { this.selectedAssetClass = ''; this.resetExpansion(); }
-  isFamilySelected(family: string): boolean { return this.selectedFamily === family; }
+  isFamilyMemberSelected(family: string): boolean { return this.selectedFamilyMember === family; }
   isAssetClassSelected(assetClass: string): boolean { return this.selectedAssetClass === assetClass; }
   toggleAssetClass(assetClass: string): void { this.expandedAssetClass = this.expandedAssetClass === assetClass ? '' : assetClass; this.expandedSubClass = ''; this.expandedAssetName = ''; }
   toggleSubClass(assetClass: string, subClass: string): void { const key = assetClass + '::' + subClass; this.expandedSubClass = this.expandedSubClass === key ? '' : key; this.expandedAssetName = ''; }
@@ -314,13 +314,13 @@ export class HoldingReportsComponent implements OnInit {
   private toExportRow(row: HoldingReportRow, xirr: number | null, includeAssetName: boolean): HoldingExportRow {
     return {family_name:this.clean(row.family_name),portfolio:this.clean(row.portfolio),asset_class:this.clean(row.asset_class),sub_class:this.clean(row.sub_class),asset_name:includeAssetName?this.clean(row.asset_name):'',underlying:this.clean(row.underlying,''),isin:row.isin||'-',advisors:this.clean(row.advisors,''),quantity:this.toNumber(row.quantity),average_cost:this.toNumber(row.average_cost),invested_value:this.toNumber(row.invested_value),current_price:this.toNumber(row.current_price),current_value:this.toNumber(row.current_value),gain:this.toNumber(row.gain),pnl_percentage:this.toNumber(row.gain_percentage),xirr,sector:row.sector||'-',cap_type:row.cap_type||'-',amc_name:row.amc_name||'-'};
   }
-  private reportScope(): string { return `${this.selectedFamily || 'All Families'} — ${this.selectedAssetClass || 'All Asset Classes'}`; }
-  private fileSuffix(): string { return `${this.selectedFamily?'_'+this.slugify(this.selectedFamily):''}${this.selectedAssetClass?'_'+this.slugify(this.selectedAssetClass):''}`; }
+  private reportScope(): string { return `${this.selectedFamilyMember || 'All Families'} — ${this.selectedAssetClass || 'All Asset Classes'}`; }
+  private fileSuffix(): string { return `${this.selectedFamilyMember?'_'+this.slugify(this.selectedFamilyMember):''}${this.selectedAssetClass?'_'+this.slugify(this.selectedAssetClass):''}`; }
   private slugify(value:string):string { return value.trim().toLowerCase().replace(/[^a-z0-9]+/g,'_').replace(/^_+|_+$/g,''); }
   private todayStamp(): string { const now=new Date(); return `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`; }
   private todayLabel(): string { return new Intl.DateTimeFormat('en-IN',{day:'2-digit',month:'short',year:'numeric'}).format(new Date()); }
   private firstNumber(values: Array<number|null|undefined>): number|null { const value=values.find(item => item !== null && item !== undefined); return value === undefined ? null : Number(value); }
   private toNumber(value:number|null|undefined):number { if(value===null||value===undefined)return 0; const n=Number(value); return Number.isFinite(n)?n:0; }
-  private validateSelections(): void { if(this.selectedFamily&&!this.familyOptions.includes(this.selectedFamily)){this.selectedFamily='';this.selectedAssetClass='';} if(this.selectedAssetClass&&!this.assetClassOptions.includes(this.selectedAssetClass))this.selectedAssetClass=''; }
+  private validateSelections(): void { if(this.selectedFamilyMember&&!this.familyMemberOptions.includes(this.selectedFamilyMember)){this.selectedFamilyMember='';this.selectedAssetClass='';} if(this.selectedAssetClass&&!this.assetClassOptions.includes(this.selectedAssetClass))this.selectedAssetClass=''; }
   private resetExpansion(): void { this.expandedAssetClass=''; this.expandedSubClass=''; this.expandedAssetName=''; }
 }

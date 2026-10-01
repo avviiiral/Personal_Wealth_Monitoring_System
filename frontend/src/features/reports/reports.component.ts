@@ -107,7 +107,7 @@ export class ReportsComponent implements OnInit {
      Same pattern as portfolio.component.ts: Family Name / Asset
      Class selection buttons above the table.
      ============================================================ */
-  selectedFamily = '';
+  selectedFamilyMember = '';
   selectedAssetClass = '';
 
   /* ============================================================
@@ -312,7 +312,7 @@ export class ReportsComponent implements OnInit {
    * top filter buttons (Portfolio-style) and by the download
    * modals' Family selects, exactly as before.
    */
-  get familyOptions(): string[] {
+  get familyMemberOptions(): string[] {
     const names = new Set<string>();
 
     for (const tx of this.transactions) {
@@ -338,11 +338,11 @@ export class ReportsComponent implements OnInit {
   }
 
   private get transactionsFilteredByFamily(): Transaction[] {
-    if (!this.selectedFamily) {
+    if (!this.selectedFamilyMember) {
       return this.transactions;
     }
 
-    return this.transactions.filter((tx) => this.clean(tx.family_name) === this.selectedFamily);
+    return this.transactions.filter((tx) => this.clean(tx.family_name) === this.selectedFamilyMember);
   }
 
   get filteredTransactions(): Transaction[] {
@@ -546,8 +546,8 @@ export class ReportsComponent implements OnInit {
      FILTER SELECTION (mirrors portfolio.component.ts)
      ============================================================ */
 
-  selectFamily(family: string): void {
-    this.selectedFamily = this.selectedFamily === family ? '' : family;
+  selectFamilyMember(family: string): void {
+    this.selectedFamilyMember = this.selectedFamilyMember === family ? '' : family;
 
     this.selectedAssetClass = '';
     this.resetExpansion();
@@ -559,8 +559,8 @@ export class ReportsComponent implements OnInit {
     this.resetExpansion();
   }
 
-  clearFamily(): void {
-    this.selectedFamily = '';
+  clearFamilyMember(): void {
+    this.selectedFamilyMember = '';
     this.selectedAssetClass = '';
     this.resetExpansion();
   }
@@ -570,8 +570,8 @@ export class ReportsComponent implements OnInit {
     this.resetExpansion();
   }
 
-  isFamilySelected(family: string): boolean {
-    return this.selectedFamily === family;
+  isFamilyMemberSelected(family: string): boolean {
+    return this.selectedFamilyMember === family;
   }
 
   isAssetClassSelected(assetClass: string): boolean {
@@ -585,8 +585,8 @@ export class ReportsComponent implements OnInit {
   }
 
   private validateSelections(): void {
-    if (this.selectedFamily && !this.familyOptions.includes(this.selectedFamily)) {
-      this.selectedFamily = '';
+    if (this.selectedFamilyMember && !this.familyMemberOptions.includes(this.selectedFamilyMember)) {
+      this.selectedFamilyMember = '';
       this.selectedAssetClass = '';
     }
 

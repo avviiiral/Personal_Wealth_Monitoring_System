@@ -166,7 +166,7 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
   xirrPerformanceAssetCategoryIndex = 0;
 
   /*
-   * Currently selected Family Name filter.
+   * Currently selected Family Member filter.
    *
    * Empty string means "All Families". Changing this triggers a
    * full reload: Summary/XIRR/Investment Summary/Historical are all
@@ -175,7 +175,7 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
    * client-side from the already-loaded Portfolio Tree, the same way
    * Portfolio/Reports filter by Family.
    */
-  selectedFamily = '';
+  selectedFamilyMember = '';
   reportAssetClass = '';
   reportLevel: 'asset_class' | 'sub_class' | 'asset_name' | 'underlying' = 'asset_class';
   reportScope = '';
@@ -196,14 +196,14 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
   }
 
   /**
-   * Distinct Family Names for the filter bar, alphabetically sorted.
+   * Distinct Family Members for the filter bar, alphabetically sorted.
    *
    * Sourced from the Portfolio Tree (always unfiltered), the same
    * way Portfolio/Reports build their Family filter options - so the
    * option list stays complete no matter which Family is currently
    * selected.
    */
-  get familyOptions(): string[] {
+  get familyMemberOptions(): string[] {
     const names = new Set<string>();
 
     for (const family of this.portfolioTree?.families ?? []) {
@@ -218,7 +218,7 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
   get reportScopeOptions(): Array<{ value: string; label: string }> {
     const options = new Map<string, string>();
     for (const family of this.portfolioTree?.families ?? []) {
-      if (this.selectedFamily && family.family_name !== this.selectedFamily) continue;
+      if (this.selectedFamilyMember && family.family_name !== this.selectedFamilyMember) continue;
       for (const portfolio of family.portfolios ?? []) {
         for (const assetClass of portfolio.asset_classes ?? []) {
           const ac = (assetClass.asset_class || 'Unassigned').trim() || 'Unassigned';
@@ -275,28 +275,28 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
     this.reportAssetClass = this.reportScope.split('::')[0] || '';
   }
 
-  isFamilySelected(family: string): boolean {
-    return this.selectedFamily === family;
+  isFamilyMemberSelected(family: string): boolean {
+    return this.selectedFamilyMember === family;
   }
 
   /**
    * Select a Family filter (or toggle it off if already selected)
    * and reload every family-aware section of the Dashboard.
    */
-  selectFamily(family: string): void {
-    this.selectedFamily = this.selectedFamily === family ? '' : family;
+  selectFamilyMember(family: string): void {
+    this.selectedFamilyMember = this.selectedFamilyMember === family ? '' : family;
 
     this.xirrPerformanceAssetCategoryIndex = 0;
 
     this.loadDashboard();
   }
 
-  clearFamily(): void {
-    if (!this.selectedFamily) {
+  clearFamilyMember(): void {
+    if (!this.selectedFamilyMember) {
       return;
     }
 
-    this.selectedFamily = '';
+    this.selectedFamilyMember = '';
 
     this.xirrPerformanceAssetCategoryIndex = 0;
 
@@ -311,7 +311,7 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
 
     this.destroyCharts();
 
-    const family = this.selectedFamily || undefined;
+    const family = this.selectedFamilyMember || undefined;
 
     // SUMMARY
     this.wealthApi.getSummary(family).subscribe({
@@ -414,12 +414,12 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
      * asset already contains its calculated XIRR and Underlying.
      *
      * This is used for the Dashboard XIRR Performance section AND
-     * as the source of Family Names for the filter bar - it is
+     * as the source of Family Members for the filter bar - it is
      * intentionally NOT scoped by ?family= (the tree endpoint has no
      * such param), so the filter's own option list always shows
      * every Family regardless of which one is currently selected.
      * The XIRR Performance getters below filter it client-side by
-     * selectedFamily, the same way Portfolio/Reports do.
+     * selectedFamilyMember, the same way Portfolio/Reports do.
      */
     this.portfolioApi.getPortfolioTree().subscribe({
       next: (data) => {
@@ -1030,7 +1030,7 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
     }> = [];
 
     for (const family of this.portfolioTree.families ?? []) {
-      if (this.selectedFamily && family.family_name !== this.selectedFamily) {
+      if (this.selectedFamilyMember && family.family_name !== this.selectedFamilyMember) {
         continue;
       }
 
@@ -1099,7 +1099,7 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
     }
 
     for (const family of this.portfolioTree.families ?? []) {
-      if (this.selectedFamily && family.family_name !== this.selectedFamily) {
+      if (this.selectedFamilyMember && family.family_name !== this.selectedFamilyMember) {
         continue;
       }
 
@@ -1265,7 +1265,7 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
     }>();
 
     for (const family of this.portfolioTree?.families ?? []) {
-      if (this.selectedFamily && family.family_name !== this.selectedFamily) continue;
+      if (this.selectedFamilyMember && family.family_name !== this.selectedFamilyMember) continue;
 
       for (const portfolio of family.portfolios) {
         for (const assetClass of portfolio.asset_classes) {
@@ -1343,7 +1343,7 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
     const bySubClass = new Map<string, SubClassDetail>();
 
     for (const family of this.portfolioTree?.families ?? []) {
-      if (this.selectedFamily && family.family_name !== this.selectedFamily) {
+      if (this.selectedFamilyMember && family.family_name !== this.selectedFamilyMember) {
         continue;
       }
 
@@ -1412,7 +1412,7 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
 
     try {
       this.reportPdf.generate({
-        familyName: this.selectedFamily,
+        familyName: this.selectedFamilyMember,
         totalWealth: this.summary?.total_current_value ?? this.summary?.total_wealth ?? 0,
         totalInvested: this.summary?.total_invested ?? this.summary?.invested_value ?? 0,
         totalPnl: this.summary?.total_pnl ?? this.summary?.pnl ?? 0,

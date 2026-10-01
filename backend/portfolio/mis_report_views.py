@@ -74,7 +74,7 @@ def mis_report_download(request):
     summary_sheet["A1"] = "MIS Report"
     summary_sheet["A1"].font = Font(bold=True, size=16, color="FFFFFF")
     summary_sheet["A1"].fill = title_fill
-    summary_sheet["A2"] = "Family Name"
+    summary_sheet["A2"] = "Family Member"
     summary_sheet["B2"] = report["family_name"]
     summary_sheet["A3"] = "Reporting Date"
     summary_sheet["B3"] = report["reporting_date"]
@@ -108,7 +108,7 @@ def mis_report_download(request):
             summary_sheet.cell(row_index, col, value)
 
     holdings_headers = [
-        "Family Name", "Asset Name", "Portfolio", "Asset Class", "Sub Class",
+        "Family Member", "Asset Name", "Portfolio", "Asset Class", "Sub Class",
         "Asset ID", "ISIN / Scheme Code",
         "Symbol", "Quantity", "Average Cost", "Invested Value",
         "Current Price", "Current Value", "P&L", "P&L %", "XIRR",

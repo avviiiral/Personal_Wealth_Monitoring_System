@@ -20,7 +20,7 @@ export class MISReportComponent implements OnInit {
   error = '';
 
   readonly groups = new Map<string, MISHolding[]>();
-  selectedFamily = '';
+  selectedFamilyMember = '';
 
   ngOnInit(): void {
     this.loadReport();
@@ -33,7 +33,7 @@ export class MISReportComponent implements OnInit {
     this.service.getReport().subscribe({
       next: (report) => {
         this.report = report;
-        this.selectedFamily = '';
+        this.selectedFamilyMember = '';
         this.rebuildGroups();
         this.loading = false;
         this.cdr.markForCheck();
@@ -48,7 +48,7 @@ export class MISReportComponent implements OnInit {
     });
   }
 
-  get familyOptions(): string[] {
+  get familyMemberOptions(): string[] {
     const names = new Set<string>();
 
     for (const holding of this.report?.holdings ?? []) {
@@ -64,12 +64,12 @@ export class MISReportComponent implements OnInit {
   get filteredHoldings(): MISHolding[] {
     const holdings = this.report?.holdings ?? [];
 
-    if (!this.selectedFamily) {
+    if (!this.selectedFamilyMember) {
       return holdings;
     }
 
     return holdings.filter(
-      (holding) => (holding.family_name || '').trim() === this.selectedFamily,
+      (holding) => (holding.family_name || '').trim() === this.selectedFamilyMember,
     );
   }
 
@@ -113,20 +113,20 @@ export class MISReportComponent implements OnInit {
       .sort((a, b) => a.asset_class.localeCompare(b.asset_class));
   }
 
-  selectFamily(family: string): void {
-    this.selectedFamily = this.selectedFamily === family ? '' : family;
+  selectFamilyMember(family: string): void {
+    this.selectedFamilyMember = this.selectedFamilyMember === family ? '' : family;
     this.rebuildGroups();
     this.cdr.markForCheck();
   }
 
-  clearFamily(): void {
-    this.selectedFamily = '';
+  clearFamilyMember(): void {
+    this.selectedFamilyMember = '';
     this.rebuildGroups();
     this.cdr.markForCheck();
   }
 
-  isFamilySelected(family: string): boolean {
-    return this.selectedFamily === family;
+  isFamilyMemberSelected(family: string): boolean {
+    return this.selectedFamilyMember === family;
   }
 
   rebuildGroups(): void {

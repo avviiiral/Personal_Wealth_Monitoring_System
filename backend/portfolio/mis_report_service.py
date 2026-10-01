@@ -95,7 +95,7 @@ class MISReportService:
 
         # Match the Portfolio page's Asset Name level: positions are
         # consolidated by Sub Class + Asset Name, rather than exposing
-        # each underlying/position row separately. Family Name remains
+        # each underlying/position row separately. Family Member remains
         # visible on the consolidated holding row.
         consolidated = {}
         for item in holdings:

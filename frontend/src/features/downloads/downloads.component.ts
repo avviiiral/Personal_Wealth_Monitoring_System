@@ -58,7 +58,7 @@ export class DownloadsComponent implements OnInit {
   marketCapRows: MarketCapReportRow[] = [];
 
   selectedReport: ReportId = 'portfolio-detailed';
-  selectedFamily = '';
+  selectedFamilyMember = '';
   selectedAssetClass = '';
   selectedSubClass = '';
   selectedAssetName = '';
@@ -131,7 +131,7 @@ export class DownloadsComponent implements OnInit {
     this.toDate = dates[dates.length - 1] ?? '';
   }
 
-  get familyOptions(): string[] {
+  get familyMemberOptions(): string[] {
     return Array.from(new Set([
       ...this.transactions.map(tx => this.clean(tx.family_name)),
       ...this.holdingRows.map(row => this.clean(row.family_name)),
@@ -140,14 +140,14 @@ export class DownloadsComponent implements OnInit {
 
   get assetClassOptions(): string[] {
     return Array.from(new Set(this.holdingRows
-      .filter(row => !this.selectedFamily || this.clean(row.family_name) === this.selectedFamily)
+      .filter(row => !this.selectedFamilyMember || this.clean(row.family_name) === this.selectedFamilyMember)
       .map(row => this.clean(row.asset_class))))
       .sort((a, b) => a.localeCompare(b));
   }
 
   get subClassOptions(): string[] {
     return Array.from(new Set(this.holdingRows
-      .filter(row => (!this.selectedFamily || this.clean(row.family_name) === this.selectedFamily)
+      .filter(row => (!this.selectedFamilyMember || this.clean(row.family_name) === this.selectedFamilyMember)
         && (!this.selectedAssetClass || this.clean(row.asset_class) === this.selectedAssetClass))
       .map(row => this.clean(row.sub_class))))
       .sort((a, b) => a.localeCompare(b));
@@ -155,7 +155,7 @@ export class DownloadsComponent implements OnInit {
 
   get assetNameOptions(): string[] {
     return Array.from(new Set(this.holdingRows
-      .filter(row => (!this.selectedFamily || this.clean(row.family_name) === this.selectedFamily)
+      .filter(row => (!this.selectedFamilyMember || this.clean(row.family_name) === this.selectedFamilyMember)
         && (!this.selectedAssetClass || this.clean(row.asset_class) === this.selectedAssetClass)
         && (!this.selectedSubClass || this.clean(row.sub_class) === this.selectedSubClass))
       .map(row => this.clean(row.asset_name))))
@@ -187,7 +187,7 @@ export class DownloadsComponent implements OnInit {
   }
 
   clearFilters(): void {
-    this.selectedFamily = '';
+    this.selectedFamilyMember = '';
     this.selectedAssetClass = '';
     this.selectedSubClass = '';
     this.selectedAssetName = '';
@@ -578,7 +578,7 @@ export class DownloadsComponent implements OnInit {
     const response = await firstValueFrom(this.portfolioApi.getEquityMarketCapReport(this.selectedReportDate));
     this.marketCapRows = response.results ?? [];
     const rows: Record<string, unknown>[] = this.marketCapRows
-      .filter(row => !this.selectedFamily || this.clean(row.family_name) === this.selectedFamily)
+      .filter(row => !this.selectedFamilyMember || this.clean(row.family_name) === this.selectedFamilyMember)
       .map(row => ({
         family_name: this.clean(row.family_name),
         sub_class: this.clean(row.sub_class),
@@ -884,7 +884,7 @@ export class DownloadsComponent implements OnInit {
 
   private filteredHoldingRows(): HoldingReportRow[] {
     return this.holdingRows.filter(row =>
-      (!this.selectedFamily || this.clean(row.family_name) === this.selectedFamily) &&
+      (!this.selectedFamilyMember || this.clean(row.family_name) === this.selectedFamilyMember) &&
       (!this.selectedAssetClass || this.clean(row.asset_class) === this.selectedAssetClass) &&
       (!this.selectedSubClass || this.clean(row.sub_class) === this.selectedSubClass) &&
       (!this.selectedAssetName || this.clean(row.asset_name) === this.selectedAssetName)
@@ -892,7 +892,7 @@ export class DownloadsComponent implements OnInit {
   }
 
   private matchesTransaction(tx: Transaction): boolean {
-    return (!this.selectedFamily || this.clean(tx.family_name) === this.selectedFamily)
+    return (!this.selectedFamilyMember || this.clean(tx.family_name) === this.selectedFamilyMember)
       && (!this.selectedAssetClass || this.clean(tx.asset_class) === this.selectedAssetClass)
       && (!this.selectedSubClass || this.clean(tx.sub_class) === this.selectedSubClass);
   }
@@ -1077,7 +1077,7 @@ export class DownloadsComponent implements OnInit {
   }
 
   private validateSelections(): void {
-    if (this.selectedFamily && !this.familyOptions.includes(this.selectedFamily)) this.selectedFamily = '';
+    if (this.selectedFamilyMember && !this.familyMemberOptions.includes(this.selectedFamilyMember)) this.selectedFamilyMember = '';
     if (this.selectedAssetClass && !this.assetClassOptions.includes(this.selectedAssetClass)) this.selectedAssetClass = '';
     if (this.selectedSubClass && !this.subClassOptions.includes(this.selectedSubClass)) this.selectedSubClass = '';
     if (this.selectedAssetName && !this.assetNameOptions.includes(this.selectedAssetName)) this.selectedAssetName = '';

@@ -62,6 +62,7 @@ class TransactionSource(models.TextChoices):
 class Transaction(models.Model):
     owner = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name="transactions")
     family = models.ForeignKey(FamilyGroup, on_delete=models.PROTECT, related_name="transactions", null=True, blank=True, db_index=True)
+    # Legacy field name retained for DB/API compatibility; the value is the Family Member label.
     family_name = models.CharField(max_length=255, blank=True, null=True)
     portfolio = models.CharField(max_length=255, blank=True, null=True)
     asset_class = models.CharField(max_length=255, blank=True, null=True)
@@ -175,6 +176,7 @@ class Holding(models.Model):
 class PortfolioPosition(models.Model):
     owner = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name="portfolio_positions")
     family = models.ForeignKey(FamilyGroup, on_delete=models.PROTECT, related_name="portfolio_positions", null=True, blank=True, db_index=True)
+    # Legacy field name retained for DB/API compatibility; the value is the Family Member label.
     family_name = models.CharField(max_length=255)
     portfolio = models.CharField(max_length=255)
     asset = models.ForeignKey(Asset, on_delete=models.CASCADE, related_name="portfolio_positions")

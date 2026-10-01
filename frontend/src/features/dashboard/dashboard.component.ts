@@ -65,7 +65,7 @@ export class DashboardComponent extends BaseDashboardComponent {
     >();
 
     for (const family of this.portfolioTree?.families ?? []) {
-      if (this.selectedFamily && family.family_name !== this.selectedFamily) {
+      if (this.selectedFamilyMember && family.family_name !== this.selectedFamilyMember) {
         continue;
       }
 
@@ -180,7 +180,7 @@ export class DashboardComponent extends BaseDashboardComponent {
   private loadStandardAllocations(): void {
     this.standardAllocationError = '';
 
-    this.dashboardWealthApi.getStandardAllocations(this.selectedFamily || undefined).subscribe({
+    this.dashboardWealthApi.getStandardAllocations(this.selectedFamilyMember || undefined).subscribe({
       next: (data) => {
         const allocationResponse = data?.allocations ?? {};
         this.standardAllocations = this.normalizeAllocationMap(
@@ -325,7 +325,7 @@ export class DashboardComponent extends BaseDashboardComponent {
     this.standardAllocationError = '';
 
     this.dashboardWealthApi
-      .saveStandardAllocations(allocations, this.selectedFamily || undefined)
+      .saveStandardAllocations(allocations, this.selectedFamilyMember || undefined)
       .subscribe({
         next: (data) => {
           const allocationResponse = data?.allocations ?? {};
@@ -441,7 +441,7 @@ export class DashboardComponent extends BaseDashboardComponent {
     }>();
 
     for (const family of this.portfolioTree.families ?? []) {
-      if (this.selectedFamily && family.family_name !== this.selectedFamily) {
+      if (this.selectedFamilyMember && family.family_name !== this.selectedFamilyMember) {
         continue;
       }
 
@@ -488,7 +488,7 @@ export class DashboardComponent extends BaseDashboardComponent {
     }
 
     for (const family of this.portfolioTree.families ?? []) {
-      if (this.selectedFamily && family.family_name !== this.selectedFamily) {
+      if (this.selectedFamilyMember && family.family_name !== this.selectedFamilyMember) {
         continue;
       }
 

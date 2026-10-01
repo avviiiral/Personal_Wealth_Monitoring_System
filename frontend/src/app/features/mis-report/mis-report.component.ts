@@ -27,12 +27,6 @@ export class MISReportComponent implements OnInit {
   todayDate = '';
   displayUnit: 'amount' | 'lakhs' | 'crores' = 'lakhs';
 
-  readonly displayUnits: Array<{ value: 'amount' | 'lakhs' | 'crores'; label: string }> = [
-    { value: 'amount', label: 'Amount' },
-    { value: 'lakhs', label: 'Lakhs' },
-    { value: 'crores', label: 'Crores' },
-  ];
-
   readonly sheets: Array<{ key: MISSheet; label: string }> = [
     { key: 'ips', label: 'IPS' },
     { key: 'data', label: 'Data Sheet' },

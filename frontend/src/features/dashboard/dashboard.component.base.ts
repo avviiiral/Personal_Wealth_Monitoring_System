@@ -729,6 +729,22 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
     })}`;
   }
 
+  formatLakhs(value: number | null | undefined, digits = 2): string {
+    if (value === null || value === undefined) {
+      return '—';
+    }
+
+    const numericValue = Number(value);
+    if (!Number.isFinite(numericValue)) {
+      return '—';
+    }
+
+    return `₹${(numericValue / 100000).toLocaleString('en-IN', {
+      minimumFractionDigits: digits,
+      maximumFractionDigits: digits,
+    })}`;
+  }
+
   formatPercentage(value: number): string {
     return `${this.toNumber(value).toFixed(2)}%`;
   }

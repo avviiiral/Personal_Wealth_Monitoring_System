@@ -190,10 +190,26 @@ def _build_data_sheet(workbook, report):
     report_date = report["reporting_date"].strftime("%d.%m.%Y")
     opening_label = report["opening_date"].strftime("%b-%y").upper()
     closing_label = report["reporting_date"].strftime("%b-%y").upper()
+    period_start = report["period_start"].strftime("%d.%m.%Y")
+    period_end = report["period_end"].strftime("%d.%m.%Y")
 
-    # Keep the downloaded Data Sheet to one clean, actionable header row.
-    # The grouped/explanatory rows from the source template are intentionally
-    # omitted; the actual report values and date-specific fields remain unchanged.
+    # Keep the four grouped section headers from the MIS template, but omit
+    # the additional explanatory/subheader row.
+    ws.merge_cells("E3:G3")
+    ws.merge_cells("H3:J3")
+    ws.merge_cells("K3:M3")
+    ws.merge_cells("N3:P3")
+    ws["E3"] = f"Investment Cost {report_date}"
+    ws["H3"] = f"{opening_label} Closing MTM"
+    ws["K3"] = f"Transactions- Buy/Sell {period_start} to {period_end}"
+    ws["N3"] = f"{closing_label} Closing MTM"
+
+    for col in range(1, 17):
+        ws.cell(3, col).fill = _SECTION_FILL
+        ws.cell(3, col).border = _BORDER
+    for cell in ("E3", "H3", "K3", "N3"):
+        _style_header(ws[cell])
+
     headers = [
         "Fund Name",
         "Family Name",
@@ -201,23 +217,23 @@ def _build_data_sheet(workbook, report):
         "Advisor",
         "Qty/Units",
         "Rate",
-        f"Investment Cost {report_date}",
-        f"Opening Units - {opening_label}",
-        f"Opening NAV - {opening_label}",
-        f"Opening Amount - {opening_label} MTM",
-        f"Transaction Units - {report['period_start'].strftime('%d.%m.%Y')} to {report_date}",
-        f"Transaction NAV - {report['period_start'].strftime('%d.%m.%Y')} to {report_date}",
-        f"Transaction Amount - {report['period_start'].strftime('%d.%m.%Y')} to {report_date}",
-        f"Closing Units - {closing_label}",
-        f"Closing NAV - {closing_label}",
-        f"Closing Amount - {closing_label} MTM",
+        f"Total Cost Dt.{report_date}",
+        f"Units - Closing {opening_label}",
+        f"NAV- {opening_label}",
+        f"Amount-{opening_label} MTM",
+        "Units",
+        "NAV",
+        "Amount",
+        f"Units - Closing {closing_label}",
+        f"NAV- {closing_label}",
+        f"Amount-{closing_label} MTM",
     ]
     for col, value in enumerate(headers, 1):
-        ws.cell(3, col, value)
-        _style_header(ws.cell(3, col))
-        ws.cell(3, col).alignment = Alignment(vertical="top", wrap_text=True)
+        ws.cell(4, col, value)
+        _style_header(ws.cell(4, col))
+        ws.cell(4, col).alignment = Alignment(vertical="top", wrap_text=True)
 
-    for row_idx, row in enumerate(report["data_sheet"], 4):
+    for row_idx, row in enumerate(report["data_sheet"], 5):
         values = [
             row["asset_name"],
             row["family_name"],
@@ -241,10 +257,10 @@ def _build_data_sheet(workbook, report):
             ws.cell(row_idx, col).alignment = Alignment(vertical="top", wrap_text=(col <= 4))
             ws.cell(row_idx, col).border = _BORDER
 
-    ws.freeze_panes = "A4"
+    ws.freeze_panes = "A5"
     _autosize(ws, 12, 34)
     for col in range(5, 17):
-        for cell in ws.iter_cols(min_col=col, max_col=col, min_row=4, max_row=ws.max_row):
+        for cell in ws.iter_cols(min_col=col, max_col=col, min_row=5, max_row=ws.max_row):
             for item in cell:
                 item.number_format = '#,##0.00'
     return ws

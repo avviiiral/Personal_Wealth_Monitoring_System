@@ -14,6 +14,7 @@ from mutual_funds.models import (
     MutualFundScheme,
     MutualFundTransaction,
     MutualFundTransactionType,
+    MutualFundNAV,
 )
 from users.models import FamilyGroup, Role
 
@@ -160,6 +161,12 @@ class MISReportAPITests(TestCase):
             current_value=Decimal("1200"),
             unrealized_pnl=Decimal("200"),
         )
+        MutualFundNAV.objects.create(
+            scheme=scheme,
+            date=date.today(),
+            nav=Decimal("120"),
+            source="AMFI",
+        )
 
         response = self.client.get("/api/portfolio/mis-report/")
         self.assertEqual(response.status_code, 200)
@@ -168,6 +175,8 @@ class MISReportAPITests(TestCase):
         mf_rows = [row for row in data["data_sheet"] if row["asset_class"] == "Mutual Funds"]
         self.assertEqual(len(mf_rows), 1)
         self.assertEqual(mf_rows[0]["asset_name"], "MIS Equity Fund")
+        self.assertEqual(mf_rows[0]["qty_units"], 10.0)
+        self.assertEqual(mf_rows[0]["closing_amount"], 1200.0)
         self.assertEqual(data["fund_type_summary"][0]["fund_type"], "Equity")
         self.assertEqual(data["fund_type_summary"][0]["rows"][0]["fund_name"], "MIS Equity Fund")
 

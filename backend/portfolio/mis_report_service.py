@@ -37,25 +37,32 @@ class MISReportService:
         return Decimal("0"), Decimal("0")
 
     @classmethod
-    def _position_at(cls, transactions, as_of):
+    def _position_at(cls, transactions, as_of, kind="asset"):
         quantity = cls.ZERO
         invested = cls.ZERO
         for tx in sorted(
             (tx for tx in transactions if tx.transaction_date <= as_of),
             key=lambda item: (item.transaction_date, item.created_at, item.id),
         ):
-            tx_qty = Decimal(str(tx.quantity or 0))
+            tx_qty = Decimal(str(getattr(tx, "quantity", getattr(tx, "units", 0)) or 0))
             tx_amount = Decimal(str(tx.amount or 0))
 
-            if tx.transaction_type in (TransactionType.BUY, TransactionType.SIP):
+            if kind == "mutual_fund":
+                is_buy = tx.transaction_type in ("PURCHASE", "SIP")
+                is_sell = tx.transaction_type == "REDEMPTION"
+            else:
+                is_buy = tx.transaction_type in (TransactionType.BUY, TransactionType.SIP)
+                is_sell = tx.transaction_type == TransactionType.SELL
+
+            if is_buy:
                 quantity += tx_qty
                 invested += tx_amount
-            elif tx.transaction_type == TransactionType.SELL:
+            elif is_sell:
                 sell_qty = min(tx_qty, quantity)
                 avg_cost = invested / quantity if quantity > 0 else cls.ZERO
                 quantity -= sell_qty
                 invested -= avg_cost * sell_qty
-            elif tx.transaction_type in (TransactionType.BONUS, TransactionType.SPLIT):
+            elif kind == "asset" and tx.transaction_type in (TransactionType.BONUS, TransactionType.SPLIT):
                 quantity += tx_qty
 
         if quantity < 0:
@@ -200,8 +207,8 @@ class MISReportService:
     @classmethod
     def _build_data_row(cls, row, opening_date, as_of, period_start, price_cache, nav_cache):
         txs = row["transactions"]
-        opening_qty, _opening_cost = cls._position_at(txs, opening_date)
-        closing_qty, closing_cost = cls._position_at(txs, as_of)
+        opening_qty, _opening_cost = cls._position_at(txs, opening_date, row["kind"])
+        closing_qty, closing_cost = cls._position_at(txs, as_of, row["kind"])
 
         if row["kind"] == "asset":
             asset_ids = row["asset_ids"]

@@ -436,6 +436,10 @@ def mis_report_download(request):
     from_date, to_date = _parse_report_dates(request)
     display_unit = _parse_display_unit(request)
     try:
+        # Excel export must be self-contained: do not depend on the background
+        # scheduler having run since the last request. Refresh the shared MIS
+        # reference prices immediately before constructing the workbook.
+        MISReportService.refresh_reference_prices()
         report = MISReportService.build(family, from_date, to_date)
     except ValueError as exc:
         raise ValidationError({"detail": str(exc)})

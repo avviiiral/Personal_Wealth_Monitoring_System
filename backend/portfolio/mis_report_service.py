@@ -989,6 +989,37 @@ class MISReportService:
         ]
         data_rows.sort(key=lambda row: (row["asset_class"].casefold(), row["asset_name"].casefold(), row["family_name"].casefold()))
 
+        # Tax Report uses the exact same rows as the Data Sheet and appends
+        # FIFO realized/unrealized P&L plus tax calculated from the family's
+        # Asset Name tax settings.
+        tax_settings_by_id, tax_settings_by_name = cls._tax_settings(family, rows)
+        data_row_by_key = {
+            (row["family_name"], row["sub_class"], row["asset_name"]): row
+            for row in data_rows
+        }
+        tax_rows = []
+        for base_row in rows:
+            data_row = data_row_by_key.get(base_row["key"])
+            if data_row is None:
+                continue
+            tax_setting = None
+            for asset_id in base_row.get("asset_ids", []):
+                tax_setting = tax_settings_by_id.get(asset_id)
+                if tax_setting is not None:
+                    break
+            if tax_setting is None:
+                tax_setting = tax_settings_by_name.get(base_row["asset_name"])
+            tax_rows.append(
+                cls._build_tax_row(
+                    base_row,
+                    data_row,
+                    as_of,
+                    period_start,
+                    tax_setting,
+                )
+            )
+        tax_rows.sort(key=lambda row: (row["asset_class"].casefold(), row["asset_name"].casefold(), row["family_name"].casefold()))
+
         # IPS is a direct aggregation of the Data Sheet closing MTM, with the
         # previous-month closing MTM reconstructed using the same valuation logic.
         current_by_family_asset_class = defaultdict(Decimal)
@@ -1068,6 +1099,7 @@ class MISReportService:
             "family_names": family_names,
             "ips": ips_rows,
             "data_sheet": data_rows,
+            "tax_report": tax_rows,
             "fund_type_summary": fund_type_summary,
             "notes": cls._build_notes(family, data_rows, opening_date, as_of),
             "summary": {

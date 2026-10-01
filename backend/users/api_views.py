@@ -10,7 +10,7 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
-from investments.models import Asset
+from investments.models import Asset, Transaction
 
 from .models import FamilyGroup, Role, TaxRateChangeLog, TaxRateSetting, UserAuditLog, UserProfile
 from .permissions import (
@@ -117,6 +117,18 @@ def set_active_family(request):
 # ==================================================================
 
 
+def _portfolio_asset_name(family, asset):
+    name = (
+        Transaction.objects
+        .filter(family=family, asset=asset, asset_name__isnull=False)
+        .exclude(asset_name="")
+        .order_by("id")
+        .values_list("asset_name", flat=True)
+        .first()
+    )
+    return name or asset.name
+
+
 def _tax_values(row):
     if row is None:
         return {
@@ -166,30 +178,49 @@ def tax_rate_list(request):
     family = require_active_family(request.user)
 
     if request.method == "GET":
-        assets = list(
-            Asset.objects
-            .filter(family=family, is_active=True)
-            .order_by("name", "id")
+        transactions = (
+            Transaction.objects
+            .filter(family=family, asset_name__isnull=False)
+            .exclude(asset_name="")
+            .order_by("asset_name", "id")
+            .values("asset_name", "asset_id")
         )
 
-        # One row per Asset Name, never per underlying/security record.
-        first_asset_by_name = {}
-        for asset in assets:
-            first_asset_by_name.setdefault(asset.name, asset)
+        # The Portfolio Asset Name from the uploaded Transactions sheet
+        # is the authoritative label. Underlying is deliberately ignored.
+        logical_assets = {}
+        for item in transactions:
+            logical_assets.setdefault(item["asset_name"], item["asset_id"])
 
-        asset_names = list(first_asset_by_name.keys())
-        settings_by_name = {}
-        for row in TaxRateSetting.objects.filter(
-            family=family,
-            asset__name__in=asset_names,
-        ).select_related("asset").order_by("asset__name", "-updated_at"):
-            settings_by_name.setdefault(row.asset.name, row)
+        settings_rows = list(
+            TaxRateSetting.objects
+            .filter(family=family)
+            .select_related("asset")
+            .order_by("-updated_at", "-id")
+        )
+        settings_by_asset_id = {}
+        for row in settings_rows:
+            settings_by_asset_id.setdefault(row.asset_id, row)
 
-        return Response([
-            {
+        results = []
+        for asset_name, asset_id in logical_assets.items():
+            matching_ids = list(
+                Transaction.objects
+                .filter(family=family, asset_name=asset_name)
+                .values_list("asset_id", flat=True)
+                .distinct()
+            )
+            row = settings_by_asset_id.get(asset_id)
+            if row is None:
+                for matching_id in matching_ids:
+                    row = settings_by_asset_id.get(matching_id)
+                    if row is not None:
+                        break
+
+            results.append({
                 "id": row.id if row else None,
-                "asset_id": asset.id,
-                "asset_name": asset.name,
+                "asset_id": asset_id,
+                "asset_name": asset_name,
                 "family_id": family.id,
                 "family_name": family.name,
                 "tenure_months": row.tenure_months if row else None,
@@ -204,10 +235,11 @@ def tax_rate_list(request):
                     else None
                 ),
                 "updated_at": row.updated_at if row else None,
-            }
-            for asset in first_asset_by_name.values()
-            for row in [settings_by_name.get(asset.name)]
-        ])
+            })
+
+        results.sort(key=lambda item: item["asset_name"].lower())
+        return Response(results)
+
 
     asset_id = request.data.get("asset_id")
     try:
@@ -296,7 +328,7 @@ def tax_rate_list(request):
         {
             "id": row.id,
             "asset_id": asset.id,
-            "asset_name": asset.name,
+            "asset_name": _portfolio_asset_name(family, asset),
             "family_id": family.id,
             "family_name": family.name,
             "tenure_months": row.tenure_months,
@@ -323,9 +355,19 @@ def tax_rate_detail(request, tax_rate_id):
     except TaxRateSetting.DoesNotExist:
         return Response({"detail": "Tax setting not found."}, status=status.HTTP_404_NOT_FOUND)
 
+    asset_name = _portfolio_asset_name(family, row.asset)
+    matching_asset_ids = list(
+        Transaction.objects
+        .filter(family=family, asset_name=asset_name)
+        .values_list("asset_id", flat=True)
+        .distinct()
+    )
+    if row.asset_id not in matching_asset_ids:
+        matching_asset_ids.append(row.asset_id)
+
     matching_rows = TaxRateSetting.objects.filter(
         family=family,
-        asset__name=row.asset.name,
+        asset_id__in=matching_asset_ids,
     ).select_related("asset")
 
     if request.method == "DELETE":
@@ -378,7 +420,7 @@ def tax_rate_detail(request, tax_rate_id):
         {
             "id": row.id,
             "asset_id": row.asset_id,
-            "asset_name": row.asset.name,
+            "asset_name": asset_name,
             "family_id": family.id,
             "family_name": family.name,
             "tenure_months": row.tenure_months,

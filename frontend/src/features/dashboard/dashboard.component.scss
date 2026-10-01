@@ -177,6 +177,17 @@
    Family Name filter box, just sized to sit in the header.
 ----------------------------- */
 
+.display-unit-inline {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: var(--surface);
+  border: 1px solid var(--surface-line);
+  border-radius: var(--radius-sm);
+  padding: 10px 14px;
+  box-shadow: var(--shadow-sm);
+}
+
 .family-filter-inline {
   display: flex;
   flex-direction: column;

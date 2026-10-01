@@ -1,6 +1,7 @@
 from decimal import Decimal
 from datetime import date
 from io import BytesIO
+from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
 from django.test import TestCase
@@ -17,6 +18,7 @@ from mutual_funds.models import (
     MutualFundNAV,
 )
 from users.models import FamilyGroup, Role
+from portfolio.mis_report_service import MISReportService
 
 
 class MISReportAPITests(TestCase):
@@ -65,6 +67,20 @@ class MISReportAPITests(TestCase):
 
         self.client = APIClient()
         self.client.force_authenticate(user=self.user)
+        self.reference_rate_patcher = patch.object(
+            MISReportService,
+            "_reference_rate",
+            return_value=(None, None),
+        )
+        self.bse500_rate_patcher = patch.object(
+            MISReportService,
+            "_bse500_rate",
+            return_value=None,
+        )
+        self.reference_rate_patcher.start()
+        self.bse500_rate_patcher.start()
+        self.addCleanup(self.reference_rate_patcher.stop)
+        self.addCleanup(self.bse500_rate_patcher.stop)
 
     def test_report_requires_authentication(self):
         self.client.force_authenticate(user=None)

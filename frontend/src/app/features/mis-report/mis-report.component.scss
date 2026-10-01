@@ -220,36 +220,62 @@ th {
   .download-button { width: 100%; }
 }
 
-.display-unit-inline {
+
+/* Header display-unit control: intentionally matches the date inputs and page controls. */
+.header-control-inline {
   display: flex;
   flex-direction: column;
   gap: 6px;
   min-width: 190px;
 }
 
-.display-unit-inline > span {
+.header-control-label {
   font-size: 12px;
   font-weight: 700;
-  color: #344054;
+  opacity: .65;
 }
 
-.display-unit-buttons {
+.header-control-buttons {
   display: flex;
-  gap: 6px;
-  flex-wrap: wrap;
+  gap: 4px;
+  flex-wrap: nowrap;
 }
 
-.display-unit-button {
-  border: 1px solid #d9dee7;
-  background: #fff;
-  border-radius: 6px;
-  padding: 8px 12px;
+.header-control-button {
+  border: 1px solid rgba(127,127,127,.25);
+  border-radius: 8px;
+  min-height: 40px;
+  padding: 9px 13px;
+  background: var(--surface, #fff);
+  color: inherit;
+  font: inherit;
   font-size: 13px;
+  font-weight: 650;
   cursor: pointer;
+  transition: background-color .15s ease, border-color .15s ease, color .15s ease;
 }
 
-.display-unit-button.active {
-  background: #111827;
+.header-control-button:hover {
+  background: rgba(127,127,127,.08);
+}
+
+.header-control-button.active {
+  background: #1fbd8b;
+  border-color: #1fbd8b;
   color: #fff;
-  border-color: #111827;
+}
+
+@media (max-width: 900px) {
+  .header-control-inline {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .header-control-buttons {
+    width: 100%;
+  }
+
+  .header-control-button {
+    flex: 1;
+  }
 }

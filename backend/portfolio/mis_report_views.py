@@ -78,6 +78,7 @@ _SUBHEADER_FILL = PatternFill(fill_type="solid", fgColor="E2F0D9")
 _SUBTOTAL_FILL = PatternFill(fill_type="solid", fgColor="FFF2CC")
 _GRAND_TOTAL_FILL = PatternFill(fill_type="solid", fgColor="C6E0B4")
 _DIFF_FILL = PatternFill(fill_type="solid", fgColor="FCE4D6")
+_INR_NUMBER_FORMAT = '₹#,##,##0.00;[Red]-₹#,##,##0.00'
 _BORDER = Border(
     left=Side(style="thin"),
     right=Side(style="thin"),
@@ -259,7 +260,12 @@ def _build_data_sheet(workbook, report):
 
     ws.freeze_panes = "A5"
     _autosize(ws, 12, 34)
-    for col in range(5, 17):
+    # Monetary columns use INR with Indian lakh/crore comma grouping; unit columns stay numeric.
+    for col in (6, 7, 9, 10, 12, 13, 15, 16):
+        for cell in ws.iter_cols(min_col=col, max_col=col, min_row=5, max_row=ws.max_row):
+            for item in cell:
+                item.number_format = _INR_NUMBER_FORMAT
+    for col in (5, 8, 11, 14):
         for cell in ws.iter_cols(min_col=col, max_col=col, min_row=5, max_row=ws.max_row):
             for item in cell:
                 item.number_format = '#,##0.00'
@@ -358,10 +364,15 @@ def _build_tax_report_sheet(workbook, report):
 
     ws.freeze_panes = "A5"
     _autosize(ws, 12, 34)
-    for col in range(5, 21):
+    # Monetary columns use INR with Indian lakh/crore comma grouping; unit columns stay numeric.
+    for col in (6, 7, 9, 10, 12, 13, 15, 16, 17, 18, 19, 20):
         for cell in ws.iter_cols(min_col=col, max_col=col, min_row=5, max_row=ws.max_row):
             for item in cell:
-                item.number_format = '#,##0.00;(#,##0.00)'
+                item.number_format = _INR_NUMBER_FORMAT
+    for col in (5, 8, 11, 14):
+        for cell in ws.iter_cols(min_col=col, max_col=col, min_row=5, max_row=ws.max_row):
+            for item in cell:
+                item.number_format = '#,##0.00'
     return ws
 
 

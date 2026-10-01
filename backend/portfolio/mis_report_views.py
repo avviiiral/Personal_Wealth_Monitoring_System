@@ -10,9 +10,31 @@ from openpyxl.utils import get_column_letter
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
+from rest_framework.exceptions import ValidationError
 
 from users.permissions import is_system_owner, require_active_family
 from .mis_report_service import MISReportService
+
+
+
+
+def _parse_report_dates(request):
+    from_value = request.query_params.get("from_date")
+    to_value = request.query_params.get("to_date")
+    if not from_value and not to_value:
+        return None, None
+    if not from_value or not to_value:
+        raise ValidationError({"detail": "Both from_date and to_date are required."})
+    try:
+        from_date = date.fromisoformat(from_value)
+        to_date = date.fromisoformat(to_value)
+    except ValueError:
+        raise ValidationError({"detail": "Dates must be in YYYY-MM-DD format."})
+    if from_date > to_date:
+        raise ValidationError({"detail": "From date cannot be after to date."})
+    if to_date > date.today():
+        raise ValidationError({"detail": "To date cannot be in the future."})
+    return from_date, to_date
 
 
 def _authorized_active_family(user):
@@ -144,7 +166,7 @@ def _build_data_sheet(workbook, report):
     ws.merge_cells("N3:P3")
     ws["E3"] = f"Investment Cost {report_date}"
     ws["H3"] = f"{opening_label} Closing MTM"
-    ws["K3"] = f"Transactions- Buy/Sell upto {closing_label}"
+    ws["K3"] = f"Transactions- Buy/Sell {report['period_start'].strftime('%d.%m.%Y')} to {report_date}"
     ws["N3"] = f"{closing_label} Closing MTM"
     for cell in ("E3", "H3", "K3", "N3"):
         _style_header(ws[cell], _SECTION_FILL)
@@ -247,7 +269,11 @@ def _build_fund_summary_sheet(workbook, report):
 @permission_classes([IsAuthenticated])
 def mis_report(request):
     family = _authorized_active_family(request.user)
-    report = MISReportService.build(family)
+    from_date, to_date = _parse_report_dates(request)
+    try:
+        report = MISReportService.build(family, from_date, to_date)
+    except ValueError as exc:
+        raise ValidationError({"detail": str(exc)})
     return Response(_serialize_report(report))
 
 
@@ -255,7 +281,11 @@ def mis_report(request):
 @permission_classes([IsAuthenticated])
 def mis_report_download(request):
     family = _authorized_active_family(request.user)
-    report = MISReportService.build(family)
+    from_date, to_date = _parse_report_dates(request)
+    try:
+        report = MISReportService.build(family, from_date, to_date)
+    except ValueError as exc:
+        raise ValidationError({"detail": str(exc)})
 
     workbook = Workbook()
     default = workbook.active

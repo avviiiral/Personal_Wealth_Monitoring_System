@@ -7,6 +7,21 @@
     </div>
 
     <div class="page-header-actions">
+      <div class="display-unit-inline">
+        <span class="family-filter-label">Display As</span>
+        <div class="family-filter-buttons">
+          <button
+            *ngFor="let unit of displayUnits"
+            type="button"
+            class="family-filter-button"
+            [class.active]="displayUnit === unit.value"
+            (click)="setDisplayUnit(unit.value)"
+          >
+            {{ unit.label }}
+          </button>
+        </div>
+      </div>
+
       <div class="family-filter-inline" *ngIf="familyMemberOptions.length > 0">
         <span class="family-filter-label">Family Member</span>
 
@@ -71,7 +86,7 @@
           </span>
           <span class="kpi-label">Total Wealth</span>
         </div>
-        <strong>{{ formatCurrency(summary?.total_current_value ?? summary?.total_wealth ?? 0) }}</strong>
+        <strong>{{ formatDisplayAmount(summary?.total_current_value ?? summary?.total_wealth ?? 0) }}</strong>
         <span class="kpi-subtitle"> Current portfolio value </span>
       </div>
 
@@ -85,7 +100,7 @@
           </span>
           <span class="kpi-label">Invested Value</span>
         </div>
-        <strong>{{ formatCurrency(summary?.total_invested ?? summary?.invested_value ?? 0) }}</strong>
+        <strong>{{ formatDisplayAmount(summary?.total_invested ?? summary?.invested_value ?? 0) }}</strong>
         <span class="kpi-subtitle"> Total invested </span>
       </div>
 
@@ -104,7 +119,7 @@
           <span class="kpi-label">Profit / Loss</span>
         </div>
         <strong [class.positive]="(summary?.total_pnl ?? summary?.pnl ?? 0) >= 0" [class.negative]="(summary?.total_pnl ?? summary?.pnl ?? 0) < 0">
-          {{ formatCurrency(summary?.total_pnl ?? summary?.pnl ?? 0) }}
+          {{ formatDisplayAmount(summary?.total_pnl ?? summary?.pnl ?? 0) }}
         </strong>
         <span class="kpi-subtitle"> Overall P&amp;L </span>
       </div>
@@ -177,7 +192,7 @@
           </span>
           <div>
             <h2>Investment Summary</h2>
-            <p>All monetary values are in ₹ Lakhs</p>
+            <p>All monetary values are shown in {{ displayUnitLabel }}</p>
           </div>
         </div>
       </div>
@@ -253,7 +268,7 @@
                   {{ group.asset_category }}
                 </td>
 
-                <td class="align-right">{{ formatLakhs(group.current_value) }}</td>
+                <td class="align-right">{{ formatDisplayAmount(group.current_value) }}</td>
                 <td class="align-right">{{ formatPercentage(group.percentage_of_total) }}</td>
 
                 <td class="align-right standard-allocation-cell" (click)="$event.stopPropagation()">
@@ -268,7 +283,7 @@
                     (click)="$event.stopPropagation()"
                   />
                   <span *ngIf="!standardAllocationEditing">
-                    {{ formatLakhs(getStandardAllocationAmount(group.asset_category)) }}
+                    {{ formatDisplayAmount(getStandardAllocationAmount(group.asset_category)) }}
                   </span>
                 </td>
 
@@ -315,7 +330,7 @@
                       <tbody>
                         <tr *ngFor="let assetClass of group.asset_classes; trackBy: trackByInvestmentAssetClass" class="asset-class-detail-item">
                           <td>{{ assetClass.asset_class }}</td>
-                          <td class="align-right">{{ formatLakhs(assetClass.current_value) }}</td>
+                          <td class="align-right">{{ formatDisplayAmount(assetClass.current_value) }}</td>
                           <td class="align-right">{{ formatPercentage(assetClass.percentage_of_total) }}</td>
                         </tr>
                       </tbody>

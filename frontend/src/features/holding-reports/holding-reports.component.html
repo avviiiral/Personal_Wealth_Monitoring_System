@@ -27,8 +27,8 @@
     <div class="selection-box">
       <div class="selection-title">Family Member</div>
       <div class="selection-buttons">
-        <button type="button" class="selection-button" [class.active]="!selectedFamily" (click)="clearFamily()">All</button>
-        <button *ngFor="let family of familyOptions" type="button" class="selection-button" [class.active]="isFamilySelected(family)" (click)="selectFamily(family)">{{ family }}</button>
+        <button type="button" class="selection-button" [class.active]="!selectedFamilyMember" (click)="clearFamilyMember()">All</button>
+        <button *ngFor="let family of familyMemberOptions" type="button" class="selection-button" [class.active]="isFamilyMemberSelected(family)" (click)="selectFamilyMember(family)">{{ family }}</button>
       </div>
     </div>
     <div class="selection-box">

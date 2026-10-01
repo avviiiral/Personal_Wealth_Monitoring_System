@@ -5,7 +5,7 @@ from django.test import TestCase
 from rest_framework.test import APIClient
 
 from investments.models import Asset, AssetCategory
-from users.models import FamilyGroup, TaxRateSetting
+from users.models import FamilyGroup, TaxRateChangeLog, TaxRateSetting
 
 
 class TaxRateSettingsApiTests(TestCase):
@@ -68,6 +68,14 @@ class TaxRateSettingsApiTests(TestCase):
         self.assertEqual(create.data["short_term_tax_rate"], "20.0000")
         self.assertEqual(create.data["long_term_tax_rate"], "10.0000")
 
+        first_log = TaxRateChangeLog.objects.get()
+        self.assertEqual(first_log.username, self.user1.username)
+        self.assertEqual(first_log.asset_name, "HDFC Bank")
+        self.assertEqual(first_log.change_from["tenure_months"], None)
+        self.assertEqual(first_log.change_to["tenure_months"], 12)
+        self.assertEqual(first_log.change_from["short_term_tax_rate"], None)
+        self.assertEqual(first_log.change_to["short_term_tax_rate"], "20.0000")
+
         tax_id = create.data["id"]
 
         update = self.client.patch(
@@ -85,6 +93,13 @@ class TaxRateSettingsApiTests(TestCase):
         self.assertEqual(update.data["short_term_tax_rate"], "15.5000")
         self.assertEqual(update.data["long_term_tax_rate"], "8.5000")
 
+        logs = TaxRateChangeLog.objects.filter(asset=self.asset1).order_by("id")
+        self.assertEqual(logs.count(), 2)
+        self.assertEqual(logs[1].change_from["tenure_months"], 12)
+        self.assertEqual(logs[1].change_to["tenure_months"], 24)
+        self.assertEqual(logs[1].change_from["long_term_tax_rate"], "10.0000")
+        self.assertEqual(logs[1].change_to["long_term_tax_rate"], "8.5000")
+
         self.client.force_authenticate(self.user2)
         listing = self.client.get("/api/settings/tax-rates/")
         self.assertEqual(listing.status_code, 200)
@@ -96,6 +111,11 @@ class TaxRateSettingsApiTests(TestCase):
         delete = self.client.delete(f"/api/settings/tax-rates/{tax_id}/")
         self.assertEqual(delete.status_code, 200)
         self.assertFalse(TaxRateSetting.objects.filter(pk=tax_id).exists())
+
+        logs = TaxRateChangeLog.objects.filter(asset=self.asset1).order_by("id")
+        self.assertEqual(logs.count(), 3)
+        self.assertEqual(logs[2].change_from["tenure_months"], 24)
+        self.assertEqual(logs[2].change_to["tenure_months"], None)
 
     def test_tax_settings_cannot_target_an_asset_from_another_family(self):
         other_family = FamilyGroup.objects.create(name="Other Family")

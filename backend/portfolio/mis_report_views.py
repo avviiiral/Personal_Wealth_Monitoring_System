@@ -72,7 +72,7 @@ def _build_ips_sheet(workbook, report):
     families = report["family_names"]
     ws["A1"] = "Sheet 1 - IPS"
     _style_title(ws["A1"])
-    ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=max(2, len(families) + 2))
+    ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=max(2, len(families) + 3))
 
     headers = ["Nature of Investment", "Date", *families, "Grand Total"]
     for col, value in enumerate(headers, 1):
@@ -81,78 +81,32 @@ def _build_ips_sheet(workbook, report):
 
     current_date = report["reporting_date"].strftime("%d.%m.%Y")
     prior_date = report["prior_month_date"].strftime("%d.%m.%Y")
-    ws.cell(4, 1, "Asset Class (Eq, Debt, etc")
-    ws.cell(4, 2, current_date)
-    ws.cell(5, 2, prior_date)
-    ws.cell(6, 2, f"Diff- {current_date}")
-
-    for row_idx, row in enumerate(report["ips"], 4):
-        ws.cell(row_idx, 1, row["asset_class"])
-        for offset, family in enumerate(families, 3):
-            ws.cell(row_idx, offset, row["family_values"].get(family, 0))
-        ws.cell(row_idx, len(families) + 3, row["grand_total"])
-
-    # Add prior and difference lines immediately below each asset class, matching
-    # the supplied workbook's date/difference convention.
-    data_start = 4
-    rebuilt = []
-    for row in report["ips"]:
-        rebuilt.append(("current", row))
-        rebuilt.append(("prior", row))
-        rebuilt.append(("difference", row))
-
-    for index, (kind, row) in enumerate(rebuilt, data_start):
-        ws.cell(index, 1, row["asset_class"] if kind == "current" else "")
-        if kind == "current":
-            ws.cell(index, 2, current_date)
-            values = row["family_values"]
-            total = row["grand_total"]
-        elif kind == "prior":
-            ws.cell(index, 2, prior_date)
-            values = row["prior_family_values"]
-            total = row["prior_total"]
-        else:
-            ws.cell(index, 2, f"Diff- {current_date}")
-            values = {
-                family: row["family_values"].get(family, 0) - row["prior_family_values"].get(family, 0)
-                for family in families
-            }
-            total = row["difference"]
-        for offset, family in enumerate(families, 3):
-            ws.cell(index, offset, values.get(family, 0))
-        ws.cell(index, len(families) + 3, total)
-
-    # Remove the initially written duplicate rows and keep only the workbook layout.
-    for row_num in range(4, 4 + len(report["ips"])):
-        ws.delete_rows(4)
-
-    # Reinsert the intended rows cleanly after deletion.
     cursor = 4
+
     for row in report["ips"]:
-        for kind in ("current", "prior", "difference"):
-            ws.cell(cursor, 1, row["asset_class"] if kind == "current" else "")
-            if kind == "current":
-                ws.cell(cursor, 2, current_date)
-                values, total = row["family_values"], row["grand_total"]
-            elif kind == "prior":
-                ws.cell(cursor, 2, prior_date)
-                values, total = row["prior_family_values"], row["prior_total"]
-            else:
-                ws.cell(cursor, 2, f"Diff- {current_date}")
-                values = {
-                    family: row["family_values"].get(family, 0) - row["prior_family_values"].get(family, 0)
-                    for family in families
-                }
-                total = row["difference"]
+        difference_values = {
+            family: row["family_values"].get(family, 0) - row["prior_family_values"].get(family, 0)
+            for family in families
+        }
+        lines = [
+            (row["asset_class"], current_date, row["family_values"], row["grand_total"]),
+            ("", prior_date, row["prior_family_values"], row["prior_total"]),
+            ("", "Diff- " + current_date, difference_values, row["difference"]),
+        ]
+        for asset_class, label, values, total in lines:
+            ws.cell(cursor, 1, asset_class)
+            ws.cell(cursor, 2, label)
             for offset, family in enumerate(families, 3):
                 ws.cell(cursor, offset, values.get(family, 0))
             ws.cell(cursor, len(families) + 3, total)
             cursor += 1
 
+    if not report["ips"]:
+        ws.cell(4, 1, "No data available")
+
     ws.freeze_panes = "C4"
     _autosize(ws, 14, 32)
     return ws
-
 
 def _build_data_sheet(workbook, report):
     ws = workbook.create_sheet("Data Sheet")

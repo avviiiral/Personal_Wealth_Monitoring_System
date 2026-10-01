@@ -1,17 +1,30 @@
 <section class="mis-page">
-  <div class="page-header">
+  <header class="page-header">
     <div>
       <p class="eyebrow">Portfolio</p>
       <h1>MIS Report</h1>
       <p class="subtitle" *ngIf="report">
-        Family Member: <strong>{{ selectedFamilyMember || 'All Families' }}</strong>
-        <span class="separator">•</span>
-        Reporting date: {{ report.reporting_date | date: 'dd MMM yyyy' }}
+        Family: <strong>{{ report.family_name }}</strong>
+        <span>•</span>
+        Reporting date: {{ formatDate(report.reporting_date) }}
+        <span>•</span>
+        Opening: {{ formatDate(report.opening_date) }}
       </p>
     </div>
-
     <button class="download-button" type="button" (click)="downloadExcel()" [disabled]="loading || downloading || !report">
-      <span>{{ downloading ? 'Preparing Excel…' : 'Download Excel' }}</span>
+      {{ downloading ? 'Preparing Excel…' : 'Download Excel' }}
+    </button>
+  </header>
+
+  <div class="sheet-tabs" *ngIf="report && !loading && !error">
+    <button
+      *ngFor="let sheet of sheets"
+      type="button"
+      class="sheet-tab"
+      [class.active]="activeSheet === sheet.key"
+      (click)="selectSheet(sheet.key)"
+    >
+      {{ sheet.label }}
     </button>
   </div>
 
@@ -24,122 +37,169 @@
   </div>
 
   <ng-container *ngIf="!loading && report && !error">
-    <section class="family-filter">
-      <div class="selection-title">Family Member</div>
-      <div class="selection-buttons">
-        <button
-          type="button"
-          class="selection-button"
-          [class.active]="!selectedFamilyMember"
-          (click)="clearFamilyMember()"
-        >
-          All
-        </button>
-
-        <button
-          *ngFor="let family of familyMemberOptions"
-          type="button"
-          class="selection-button"
-          [class.active]="isFamilyMemberSelected(family)"
-          (click)="selectFamilyMember(family)"
-        >
-          {{ family }}
-        </button>
-      </div>
-    </section>
-
-    <div class="summary-grid">
-      <article class="summary-card">
-        <span>Total Invested</span>
-        <strong>{{ formatCurrency(filteredSummary.total_invested) }}</strong>
-      </article>
-      <article class="summary-card">
-        <span>Current Value</span>
-        <strong>{{ formatCurrency(filteredSummary.total_current_value) }}</strong>
-      </article>
-      <article class="summary-card">
-        <span>Total P&amp;L</span>
-        <strong>{{ formatCurrency(filteredSummary.total_pnl) }}</strong>
-        <small>{{ formatPercent(filteredSummary.pnl_percentage) }}</small>
-      </article>
-    </div>
-
-    <section class="report-card">
+    <!-- IPS -->
+    <section class="report-card" *ngIf="activeSheet === 'ips'">
       <div class="section-header">
         <div>
-          <h2>Asset Class Summary</h2>
-          <span>{{ filteredSummary.number_of_holdings }} holdings</span>
+          <h2>Sheet 1 - IPS</h2>
+          <span>Closing MTM by asset class and family member</span>
         </div>
       </div>
       <div class="table-wrap">
-        <table>
+        <table class="ips-table">
           <thead>
             <tr>
-              <th>Asset Class</th>
-              <th class="number">Invested Value</th>
-              <th class="number">Current Value</th>
-              <th class="number">P&amp;L</th>
-              <th class="number">P&amp;L %</th>
+              <th>Nature of Investment</th>
+              <th>Date</th>
+              <th *ngFor="let family of report.family_names">{{ family }}</th>
+              <th>Grand Total</th>
             </tr>
           </thead>
           <tbody>
-            <tr *ngFor="let row of filteredAssetClassSummary">
+            <ng-container *ngFor="let row of report.ips">
+              <tr class="current-row">
+                <td>{{ row.asset_class }}</td>
+                <td>{{ formatDate(report.reporting_date) }}</td>
+                <td class="number" *ngFor="let family of report.family_names">
+                  {{ formatNumber(row.family_values[family], 2) }}
+                </td>
+                <td class="number">{{ formatNumber(row.grand_total, 2) }}</td>
+              </tr>
+              <tr>
+                <td></td>
+                <td>{{ formatDate(report.prior_month_date) }}</td>
+                <td class="number" *ngFor="let family of report.family_names">
+                  {{ formatNumber(row.prior_family_values[family], 2) }}
+                </td>
+                <td class="number">{{ formatNumber(row.prior_total, 2) }}</td>
+              </tr>
+              <tr class="difference-row">
+                <td></td>
+                <td>Diff- {{ formatDate(report.reporting_date) }}</td>
+                <td class="number" *ngFor="let family of report.family_names">
+                  {{ formatNumber(row.family_values[family] - row.prior_family_values[family], 2) }}
+                </td>
+                <td class="number">{{ formatNumber(row.difference, 2) }}</td>
+              </tr>
+            </ng-container>
+            <tr *ngIf="report.ips.length === 0">
+              <td [attr.colspan]="report.family_names.length + 3" class="empty">No IPS data available.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- Data Sheet -->
+    <section class="report-card" *ngIf="activeSheet === 'data'">
+      <div class="section-header">
+        <div>
+          <h2>Sheet 2 - Data Sheet</h2>
+          <span>{{ report.data_sheet.length }} asset rows</span>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Fund Name</th>
+              <th>FILE</th>
+              <th>Fund Type.V1</th>
+              <th>Advisor</th>
+              <th>Qty/Units</th>
+              <th>Rate</th>
+              <th>Total Cost</th>
+              <th>Opening Units</th>
+              <th>Opening NAV</th>
+              <th>Opening MTM</th>
+              <th>Transaction Units</th>
+              <th>Transaction NAV</th>
+              <th>Transaction Amount</th>
+              <th>Closing Units</th>
+              <th>Closing NAV</th>
+              <th>Closing MTM</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr *ngFor="let row of dataRows; trackBy: trackByDataRow">
+              <td><strong>{{ row.asset_name }}</strong></td>
+              <td>{{ row.family_name }}</td>
               <td>{{ row.asset_class }}</td>
-              <td class="number">{{ formatCurrency(row.invested_value) }}</td>
-              <td class="number">{{ formatCurrency(row.current_value) }}</td>
-              <td class="number">{{ formatCurrency(row.pnl) }}</td>
-              <td class="number">{{ formatPercent(row.pnl_percentage) }}</td>
+              <td>{{ row.advisor || '—' }}</td>
+              <td class="number">{{ formatNumber(row.qty_units, 4) }}</td>
+              <td class="number">{{ formatNumber(row.rate, 2) }}</td>
+              <td class="number">{{ formatNumber(row.total_cost, 2) }}</td>
+              <td class="number">{{ formatNumber(row.opening_units, 4) }}</td>
+              <td class="number">{{ formatNumber(row.opening_nav, 4) }}</td>
+              <td class="number">{{ formatNumber(row.opening_amount, 2) }}</td>
+              <td class="number">{{ formatNumber(row.transaction_units, 4) }}</td>
+              <td class="number">{{ formatNumber(row.transaction_nav, 4) }}</td>
+              <td class="number">{{ formatNumber(row.transaction_amount, 2) }}</td>
+              <td class="number">{{ formatNumber(row.closing_units, 4) }}</td>
+              <td class="number">{{ formatNumber(row.closing_nav, 4) }}</td>
+              <td class="number">{{ formatNumber(row.closing_amount, 2) }}</td>
             </tr>
-            <tr *ngIf="filteredAssetClassSummary.length === 0">
-              <td colspan="5" class="empty">No holdings available for this family.</td>
+            <tr *ngIf="dataRows.length === 0">
+              <td colspan="16" class="empty">No Data Sheet rows available.</td>
             </tr>
           </tbody>
         </table>
       </div>
     </section>
 
-    <section class="report-card" *ngFor="let entry of groups | keyvalue">
+    <!-- Fund Type Summary -->
+    <section class="report-card" *ngIf="activeSheet === 'fund-summary'">
       <div class="section-header">
         <div>
-          <h2>{{ entry.key }}</h2>
-          <span>{{ entry.value.length }} asset names</span>
+          <h2>Sheet 3 - Fund Type wise Summary</h2>
+          <span>Fund Type.V2 with subtotal for each category and grand total</span>
         </div>
       </div>
       <div class="table-wrap">
-        <table>
+        <table class="summary-table">
           <thead>
             <tr>
-              <th>Asset Name</th>
-              <th>Family Member</th>
-              <th>Portfolio</th>
-              <th class="number">Quantity</th>
-              <th class="number">Invested Value</th>
-              <th class="number">Current Value</th>
-              <th class="number">Gain</th>
-              <th class="number">XIRR</th>
+              <th>Fund Type.V2</th>
+              <th>Fund Name</th>
+              <th class="number">Total</th>
+              <th>Market Value</th>
             </tr>
           </thead>
           <tbody>
-            <tr *ngFor="let holding of entry.value; trackBy: trackByHolding">
-              <td>
-                <strong>{{ holding.asset_name }}</strong>
-                <small *ngIf="holding.isin">{{ holding.isin }}</small>
+            <ng-container *ngFor="let group of report.fund_type_summary">
+              <tr *ngFor="let row of group.rows">
+                <td>{{ group.fund_type }}</td>
+                <td>{{ row.fund_name }}</td>
+                <td class="number">{{ formatNumber(row.total, 2) }}</td>
+                <td>{{ row.market_value_label }}</td>
+              </tr>
+              <tr class="subtotal-row">
+                <td>{{ group.fund_type }} Subtotal</td>
+                <td></td>
+                <td class="number">{{ formatNumber(group.subtotal, 2) }}</td>
+                <td>Market Value</td>
+              </tr>
+            </ng-container>
+            <tr class="grand-total-row" *ngIf="report.fund_type_summary.length">
+              <td>Grand Total</td>
+              <td></td>
+              <td class="number">
+                {{ formatNumber(
+                  report.fund_type_summary.reduce(
+                    (total, group) => total + group.subtotal,
+                    0
+                  ),
+                  2
+                ) }}
               </td>
-              <td>{{ holding.family_name }}</td>
-              <td>{{ holding.portfolio }}</td>
-              <td class="number">{{ holding.quantity === null ? '—' : holding.quantity }}</td>
-              <td class="number">{{ formatCurrency(holding.invested_value) }}</td>
-              <td class="number">{{ formatCurrency(holding.current_value) }}</td>
-              <td class="number">{{ formatCurrency(holding.pnl) }}</td>
-              <td class="number">{{ formatPercent(holding.xirr) }}</td>
+              <td>Market Value</td>
+            </tr>
+            <tr *ngIf="report.fund_type_summary.length === 0">
+              <td colspan="4" class="empty">No mutual-fund data available.</td>
             </tr>
           </tbody>
         </table>
       </div>
     </section>
-
-    <div class="state-card" *ngIf="filteredHoldings.length === 0">
-      This family currently has no holdings to report.
-    </div>
   </ng-container>
 </section>

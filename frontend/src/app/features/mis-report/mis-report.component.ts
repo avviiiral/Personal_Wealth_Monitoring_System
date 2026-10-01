@@ -23,6 +23,7 @@ export class MISReportComponent implements OnInit {
   error = '';
   fromDate = '';
   toDate = '';
+  todayDate = '';
 
   readonly sheets: Array<{ key: MISSheet; label: string }> = [
     { key: 'ips', label: 'IPS' },
@@ -32,7 +33,8 @@ export class MISReportComponent implements OnInit {
 
   ngOnInit(): void {
     const today = new Date();
-    this.toDate = this.toInputDate(today);
+    this.todayDate = this.toInputDate(today);
+    this.toDate = this.todayDate;
     const start = new Date(today.getFullYear(), today.getMonth(), 1);
     this.fromDate = this.toInputDate(start);
     this.loadReport();

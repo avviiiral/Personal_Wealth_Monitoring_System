@@ -63,29 +63,49 @@ class UserPreference(models.Model):
 
 
 class TaxRateSetting(models.Model):
-    """Per-user tax rate configuration keyed by exact portfolio Asset Name."""
+    """Family-shared tax configuration for a portfolio Asset."""
 
-    user = models.ForeignKey(
-        settings.AUTH_USER_MODEL,
+    family = models.ForeignKey(
+        "FamilyGroup",
         on_delete=models.CASCADE,
         related_name="tax_rate_settings",
     )
-    asset_name = models.CharField(max_length=255)
-    tax_rate = models.DecimalField(max_digits=7, decimal_places=4, default=0)
+    asset = models.ForeignKey(
+        "investments.Asset",
+        on_delete=models.CASCADE,
+        related_name="tax_rate_settings",
+    )
+    tenure_months = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+        help_text="Holding tenure in months used to classify short-term vs long-term gains.",
+    )
+    short_term_tax_rate = models.DecimalField(
+        max_digits=7,
+        decimal_places=4,
+        null=True,
+        blank=True,
+    )
+    long_term_tax_rate = models.DecimalField(
+        max_digits=7,
+        decimal_places=4,
+        null=True,
+        blank=True,
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
-        ordering = ["asset_name"]
+        ordering = ["asset__name"]
         constraints = [
             models.UniqueConstraint(
-                fields=["user", "asset_name"],
-                name="unique_user_tax_rate_asset_name",
+                fields=["family", "asset"],
+                name="unique_family_tax_rate_asset",
             )
         ]
 
     def __str__(self):
-        return f"{self.user.username} - {self.asset_name} ({self.tax_rate}%)"
+        return f"{self.family.name} - {self.asset.name}"
 
 
 # ==============================================================

@@ -191,59 +191,60 @@ def _build_data_sheet(workbook, report):
     opening_label = report["opening_date"].strftime("%b-%y").upper()
     closing_label = report["reporting_date"].strftime("%b-%y").upper()
 
-    ws.merge_cells("E3:G3")
-    ws.merge_cells("H3:J3")
-    ws.merge_cells("K3:M3")
-    ws.merge_cells("N3:P3")
-    ws["E3"] = f"Investment Cost {report_date}"
-    ws["H3"] = f"{opening_label} Closing MTM"
-    ws["K3"] = f"Transactions- Buy/Sell {report['period_start'].strftime('%d.%m.%Y')} to {report_date}"
-    ws["N3"] = f"{closing_label} Closing MTM"
-    for cell in ("E3", "H3", "K3", "N3"):
-        _style_header(ws[cell], _SECTION_FILL)
-    for col in range(1, 17):
-        ws.cell(3, col).fill = _SECTION_FILL
-
+    # Keep the downloaded Data Sheet to one clean, actionable header row.
+    # The grouped/explanatory rows from the source template are intentionally
+    # omitted; the actual report values and date-specific fields remain unchanged.
     headers = [
-        "Fund Name", "FILE", "Fund Type.V1", "Advisor",
-        "Qty/Units", "Rate", f"Total Cost Dt.{report_date}",
-        f"Units - Closing {opening_label}", f"NAV- {opening_label}", f"Amount-{opening_label} MTM",
-        "Units", "NAV", "Amount",
-        f"Units - Closing {closing_label}", f"NAV- {closing_label}", f"Amount-{closing_label} MTM",
+        "Fund Name",
+        "Family Name",
+        "Asset Class",
+        "Advisor",
+        "Qty/Units",
+        "Rate",
+        f"Investment Cost {report_date}",
+        f"Opening Units - {opening_label}",
+        f"Opening NAV - {opening_label}",
+        f"Opening Amount - {opening_label} MTM",
+        f"Transaction Units - {report['period_start'].strftime('%d.%m.%Y')} to {report_date}",
+        f"Transaction NAV - {report['period_start'].strftime('%d.%m.%Y')} to {report_date}",
+        f"Transaction Amount - {report['period_start'].strftime('%d.%m.%Y')} to {report_date}",
+        f"Closing Units - {closing_label}",
+        f"Closing NAV - {closing_label}",
+        f"Closing Amount - {closing_label} MTM",
     ]
     for col, value in enumerate(headers, 1):
-        ws.cell(4, col, value)
-        _style_header(ws.cell(4, col))
+        ws.cell(3, col, value)
+        _style_header(ws.cell(3, col))
+        ws.cell(3, col).alignment = Alignment(vertical="top", wrap_text=True)
 
-    subheaders = [
-        "Asset Names (CARNELLIAN PMS, ETC)", "Family name (DAJ, etc)", "Asset Class", "",
-        "(Investment cost)", "", "", f"(Opening Bal for the year at market value)", "", "",
-        "(Transactions for the year at transaction value)", "", "",
-        "(Closing Bal for the period at market value)", "", "",
-    ]
-    for col, value in enumerate(subheaders, 1):
-        ws.cell(5, col, value)
-        ws.cell(5, col).alignment = Alignment(vertical="top", wrap_text=True)
-        ws.cell(5, col).fill = _SUBHEADER_FILL
-        ws.cell(5, col).border = _BORDER
-
-    for row_idx, row in enumerate(report["data_sheet"], 6):
+    for row_idx, row in enumerate(report["data_sheet"], 4):
         values = [
-            row["asset_name"], row["family_name"], row["asset_class"], row["advisor"],
-            row["qty_units"], row["rate"], row["total_cost"],
-            row["opening_units"], row["opening_nav"], row["opening_amount"],
-            row["transaction_units"], row["transaction_nav"], row["transaction_amount"],
-            row["closing_units"], row["closing_nav"], row["closing_amount"],
+            row["asset_name"],
+            row["family_name"],
+            row["asset_class"],
+            row["advisor"],
+            row["qty_units"],
+            row["rate"],
+            row["total_cost"],
+            row["opening_units"],
+            row["opening_nav"],
+            row["opening_amount"],
+            row["transaction_units"],
+            row["transaction_nav"],
+            row["transaction_amount"],
+            row["closing_units"],
+            row["closing_nav"],
+            row["closing_amount"],
         ]
         for col, value in enumerate(values, 1):
             ws.cell(row_idx, col, value)
             ws.cell(row_idx, col).alignment = Alignment(vertical="top", wrap_text=(col <= 4))
             ws.cell(row_idx, col).border = _BORDER
 
-    ws.freeze_panes = "A6"
+    ws.freeze_panes = "A4"
     _autosize(ws, 12, 34)
     for col in range(5, 17):
-        for cell in ws.iter_cols(min_col=col, max_col=col, min_row=6, max_row=ws.max_row):
+        for cell in ws.iter_cols(min_col=col, max_col=col, min_row=4, max_row=ws.max_row):
             for item in cell:
                 item.number_format = '#,##0.00'
     return ws

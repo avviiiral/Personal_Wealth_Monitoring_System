@@ -25,6 +25,13 @@ export class MISReportComponent implements OnInit {
   fromDate = '';
   toDate = '';
   todayDate = '';
+  displayUnit: 'amount' | 'lakhs' | 'crores' = 'lakhs';
+
+  readonly displayUnits: Array<{ value: 'amount' | 'lakhs' | 'crores'; label: string }> = [
+    { value: 'amount', label: 'Amount' },
+    { value: 'lakhs', label: 'Lakhs' },
+    { value: 'crores', label: 'Crores' },
+  ];
 
   readonly sheets: Array<{ key: MISSheet; label: string }> = [
     { key: 'ips', label: 'IPS' },
@@ -48,7 +55,7 @@ export class MISReportComponent implements OnInit {
     }
     this.loading = true;
     this.error = '';
-    this.service.getReport(this.fromDate, this.toDate).subscribe({
+    this.service.getReport(this.fromDate, this.toDate, this.displayUnit).subscribe({
       next: (report) => { this.report = report; this.loading = false; this.cdr.markForCheck(); },
       error: (error) => {
         this.loading = false;
@@ -69,7 +76,7 @@ export class MISReportComponent implements OnInit {
       return;
     }
     this.downloading = true;
-    this.service.downloadReport(this.fromDate, this.toDate).subscribe({
+    this.service.downloadReport(this.fromDate, this.toDate, this.displayUnit).subscribe({
       next: (blob) => {
         const filename = 'MIS_Report_' + this.safeFilename(this.report?.family_name ?? 'Family') + '_' + (this.report?.reporting_date ?? '') + '.xlsx';
         const url = URL.createObjectURL(blob);
@@ -104,9 +111,27 @@ export class MISReportComponent implements OnInit {
     return new Intl.NumberFormat('en-IN', { minimumFractionDigits: digits, maximumFractionDigits: digits }).format(value);
   }
 
-  formatLakhs(value: number | null | undefined, digits = 2): string {
+  setDisplayUnit(unit: 'amount' | 'lakhs' | 'crores'): void {
+    this.displayUnit = unit;
+  }
+
+  get displayUnitLabel(): string {
+    return this.displayUnit === 'amount' ? '₹ Amount' : this.displayUnit === 'lakhs' ? '₹ Lakhs' : '₹ Crores';
+  }
+
+  formatDisplayAmount(value: number | null | undefined, digits = 2): string {
     if (value === null || value === undefined) return '—';
-    return new Intl.NumberFormat('en-IN', { minimumFractionDigits: digits, maximumFractionDigits: digits }).format(value / 100000);
+    const numericValue = Number(value);
+    if (!Number.isFinite(numericValue)) return '—';
+    const divisor = this.displayUnit === 'amount' ? 1 : this.displayUnit === 'lakhs' ? 100000 : 10000000;
+    return new Intl.NumberFormat('en-IN', {
+      minimumFractionDigits: this.displayUnit === 'amount' ? 0 : digits,
+      maximumFractionDigits: this.displayUnit === 'amount' ? 0 : digits,
+    }).format(numericValue / divisor);
+  }
+
+  formatLakhs(value: number | null | undefined, digits = 2): string {
+    return this.formatDisplayAmount(value, digits);
   }
 
   formatDate(value: string | null | undefined): string {

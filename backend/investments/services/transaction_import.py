@@ -58,29 +58,6 @@ SUMMARY_REQUIRED_COLUMNS = [
 ]
 
 
-ASSET_CLASS_MAP = {
-    "EQUITY": AssetCategory.STOCK,
-    "STOCK": AssetCategory.STOCK,
-    "DEBT": AssetCategory.BOND,
-    "BOND": AssetCategory.BOND,
-    "CASH": AssetCategory.CASH,
-    "COMMODITY": AssetCategory.ETF,
-    "REITS/INVITS": AssetCategory.ETF,
-    "REIT": AssetCategory.ETF,
-    "INVIT": AssetCategory.ETF,
-    "AIF": AssetCategory.OTHER,
-    "ALTERNATE": AssetCategory.OTHER,
-    "LRS": AssetCategory.OTHER,
-    "MUTUAL FUND": AssetCategory.MUTUAL_FUND,
-    "MUTUAL_FUND": AssetCategory.MUTUAL_FUND,
-    "ETF": AssetCategory.ETF,
-    "GOLD": AssetCategory.GOLD,
-    "REAL ESTATE": AssetCategory.REAL_ESTATE,
-    "CRYPTO": AssetCategory.CRYPTO,
-    "OTHER": AssetCategory.OTHER,
-}
-
-
 INVESTMENT_TRANSACTION_MAP = {
     "BUY": TransactionType.BUY,
     "SELL": TransactionType.SELL,
@@ -564,33 +541,6 @@ class TransactionImporter:
         )
 
     @staticmethod
-    def _fallback_portfolio(
-        asset_class,
-        sub_class,
-        asset_name,
-        underlying,
-    ):
-        subclass = (
-            TransactionImporter
-            ._normalize(sub_class)
-        )
-
-        if subclass in {
-            "EQUITY PMS",
-            "EQUITY AIF (CATEGORY III)",
-        }:
-            return (
-                asset_name
-                or sub_class
-                or asset_class
-            )
-
-        return (
-            sub_class
-            or asset_class
-            or "Unassigned"
-        )
-
     @staticmethod
     def _get_or_create_asset(
         owner,
@@ -602,34 +552,32 @@ class TransactionImporter:
     ):
         normalized_isin = isin.strip()
 
-        normalized_sub_class = (
-            sub_class.strip().upper()
-            if sub_class
-            else ""
-        )
+        # Keep the user-provided Asset Class and Sub Class as data.
+        # Internal market-data routing uses the technical AssetCategory,
+        # which is intentionally independent from uploaded classifications.
+        category = AssetCategory.OTHER
 
-        if "MUTUAL FUND" in normalized_sub_class:
-            category = AssetCategory.MUTUAL_FUND
+        asset_class_normalized = TransactionImporter._normalize(asset_class)
+        sub_class_normalized = TransactionImporter._normalize(sub_class)
 
-        elif (
-            "GOLD BOND" in normalized_sub_class
-            or normalized_sub_class in {
-                "SGB",
-                "SOVEREIGN GOLD BOND",
-            }
-        ):
+        internal_category_overrides = {
+            "MUTUAL_FUND": AssetCategory.MUTUAL_FUND,
+            "ETF": AssetCategory.ETF,
+            "GOLD": AssetCategory.GOLD,
+            "REAL ESTATE": AssetCategory.REAL_ESTATE,
+            "CRYPTO": AssetCategory.CRYPTO,
+        }
+
+        if asset_class_normalized in internal_category_overrides:
+            category = internal_category_overrides[asset_class_normalized]
+        elif asset_class_normalized in {"DEBT", "BOND"}:
             category = AssetCategory.BOND
-
-        else:
-            category = ASSET_CLASS_MAP.get(
-                asset_class.upper()
-            )
-
-        if category is None:
-            raise TransactionImportError(
-                f"Unsupported Asset Class: "
-                f"{asset_class}"
-            )
+        elif asset_class_normalized == "CASH":
+            category = AssetCategory.CASH
+        elif asset_class_normalized in {"EQUITY", "STOCK"}:
+            category = AssetCategory.STOCK
+        elif sub_class_normalized in {"MUTUAL FUND", "MUTUAL_FUND"}:
+            category = AssetCategory.MUTUAL_FUND
 
         asset = None
 

@@ -12,6 +12,8 @@ from .api_views import (
     set_active_family,
     user_detail,
     user_list,
+    tax_rate_list,
+    tax_rate_detail,
 )
 
 from portfolio.manual_price_views import manual_asset_price
@@ -34,6 +36,22 @@ urlpatterns = [
         "me/active-family/",
         set_active_family,
         name="settings-me-active-family",
+    ),
+
+    # ------------------------------------------------------
+    # TAX RATE SETTINGS
+    # ------------------------------------------------------
+
+    path(
+        "tax-rates/",
+        tax_rate_list,
+        name="settings-tax-rates",
+    ),
+
+    path(
+        "tax-rates/<int:tax_rate_id>/",
+        tax_rate_detail,
+        name="settings-tax-rate-detail",
     ),
 
     # ------------------------------------------------------

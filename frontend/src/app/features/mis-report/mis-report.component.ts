@@ -21,6 +21,8 @@ export class MISReportComponent implements OnInit {
   loading = true;
   downloading = false;
   error = '';
+  fromDate = '';
+  toDate = '';
 
   readonly sheets: Array<{ key: MISSheet; label: string }> = [
     { key: 'ips', label: 'IPS' },
@@ -28,12 +30,22 @@ export class MISReportComponent implements OnInit {
     { key: 'fund-summary', label: 'Fund Type-wise Summary' },
   ];
 
-  ngOnInit(): void { this.loadReport(); }
+  ngOnInit(): void {
+    const today = new Date();
+    this.toDate = this.toInputDate(today);
+    const start = new Date(today.getFullYear(), today.getMonth(), 1);
+    this.fromDate = this.toInputDate(start);
+    this.loadReport();
+  }
 
   loadReport(): void {
+    if (this.fromDate && this.toDate && this.fromDate > this.toDate) {
+      this.error = 'From date cannot be after To date.';
+      return;
+    }
     this.loading = true;
     this.error = '';
-    this.service.getReport().subscribe({
+    this.service.getReport(this.fromDate, this.toDate).subscribe({
       next: (report) => { this.report = report; this.loading = false; this.cdr.markForCheck(); },
       error: (error) => {
         this.loading = false;
@@ -49,8 +61,12 @@ export class MISReportComponent implements OnInit {
 
   downloadExcel(): void {
     if (this.downloading || !this.report) return;
+    if (!this.fromDate || !this.toDate || this.fromDate > this.toDate) {
+      this.error = 'Please select a valid date range.';
+      return;
+    }
     this.downloading = true;
-    this.service.downloadReport().subscribe({
+    this.service.downloadReport(this.fromDate, this.toDate).subscribe({
       next: (blob) => {
         const filename = 'MIS_Report_' + this.safeFilename(this.report?.family_name ?? 'Family') + '_' + (this.report?.reporting_date ?? '') + '.xlsx';
         const url = URL.createObjectURL(blob);
@@ -85,6 +101,10 @@ export class MISReportComponent implements OnInit {
 
   trackByDataRow(index: number, row: MISDataSheetRow): string {
     return row.family_name + '-' + row.asset_class + '-' + row.asset_name + '-' + index;
+  }
+
+  private toInputDate(value: Date): string {
+    return value.toISOString().slice(0, 10);
   }
 
   private safeFilename(value: string): string {

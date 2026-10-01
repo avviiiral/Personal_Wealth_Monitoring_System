@@ -95,6 +95,14 @@
                 <td class="number">{{ formatLakhs(row.difference, 2) }}</td>
               </tr>
             </ng-container>
+            <tr class="grand-total-row" *ngIf="report.ips.length">
+              <td><strong>Grand Total</strong></td>
+              <td>Overall</td>
+              <td class="number" *ngFor="let family of report.family_names">
+                {{ formatLakhs(ipsGrandTotal(family), 2) }}
+              </td>
+              <td class="number"><strong>{{ formatLakhs(ipsGrandTotal(), 2) }}</strong></td>
+            </tr>
             <tr *ngIf="report.ips.length === 0">
               <td [attr.colspan]="report.family_names.length + 3" class="empty">No IPS data available.</td>
             </tr>

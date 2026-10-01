@@ -97,8 +97,8 @@ class TaxRateSettingsApiTests(TestCase):
         self.assertEqual(logs.count(), 2)
         self.assertEqual(logs[1].change_from["tenure_months"], 12)
         self.assertEqual(logs[1].change_to["tenure_months"], 24)
-        self.assertEqual(logs[1].change_from["long_term_tax_rate"], "10.00")
-        self.assertEqual(logs[1].change_to["long_term_tax_rate"], "8.50")
+        self.assertEqual(logs[1].change_from["long_term_tax_rate"], "10.0000")
+        self.assertEqual(logs[1].change_to["long_term_tax_rate"], "8.5000")
 
         self.client.force_authenticate(self.user2)
         listing = self.client.get("/api/settings/tax-rates/")
@@ -255,5 +255,5 @@ class TaxRateSettingsApiTests(TestCase):
         self.assertEqual(listing.status_code, 200)
         configured = next(row for row in listing.data if row["asset_id"] == self.asset1.id)
         self.assertEqual(configured["tenure_months"], 36)
-        self.assertEqual(configured["short_term_tax_rate"], "17.50")
-        self.assertEqual(configured["long_term_tax_rate"], "7.50")
+        self.assertEqual(configured["short_term_tax_rate"], "17.5000")
+        self.assertEqual(configured["long_term_tax_rate"], "7.5000")

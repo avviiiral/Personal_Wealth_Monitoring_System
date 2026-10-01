@@ -142,6 +142,43 @@ class TaxRateSettingsApiTests(TestCase):
         self.assertEqual(history.data[0]["change_to"]["tenure_months"], 12)
 
 
+    def test_duplicate_asset_names_are_returned_once_and_share_settings(self):
+        duplicate = Asset.objects.create(
+            owner=self.user1,
+            family=self.family,
+            name="HDFC Bank",
+            category=AssetCategory.STOCK,
+        )
+
+        self.client.force_authenticate(self.user1)
+        listing = self.client.get("/api/settings/tax-rates/")
+
+        self.assertEqual(listing.status_code, 200)
+        hdfc_rows = [row for row in listing.data if row["asset_name"] == "HDFC Bank"]
+        self.assertEqual(len(hdfc_rows), 1)
+
+        response = self.client.post(
+            "/api/settings/tax-rates/",
+            {
+                "asset_id": duplicate.id,
+                "tenure_months": 12,
+                "short_term_tax_rate": "20",
+                "long_term_tax_rate": "10",
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(
+            TaxRateSetting.objects.filter(family=self.family, asset__name="HDFC Bank").count(),
+            1,
+        )
+
+        listing = self.client.get("/api/settings/tax-rates/")
+        hdfc_rows = [row for row in listing.data if row["asset_name"] == "HDFC Bank"]
+        self.assertEqual(len(hdfc_rows), 1)
+        self.assertEqual(hdfc_rows[0]["tenure_months"], 12)
+
+
     def test_tax_settings_cannot_target_an_asset_from_another_family(self):
         other_family = FamilyGroup.objects.create(name="Other Family")
         other_asset = Asset.objects.create(

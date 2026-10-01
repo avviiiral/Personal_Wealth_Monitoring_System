@@ -34,6 +34,16 @@ def _env_list(name, default):
         return default
     return [item.strip() for item in value.split(",") if item.strip()]
 
+def _env_int(name, default):
+    """Parse an integer environment variable with a safe fallback."""
+    value = os.environ.get(name)
+    if value is None:
+        return default
+    try:
+        return int(value.strip())
+    except (TypeError, ValueError):
+        return default
+
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/5.2/howto/deployment/checklist/
 
@@ -106,6 +116,12 @@ if DATABASE_ENGINE in ('postgresql', 'postgres'):
             'PASSWORD': os.environ.get('POSTGRES_PASSWORD', ''),
             'HOST': os.environ.get('POSTGRES_HOST', 'localhost'),
             'PORT': os.environ.get('POSTGRES_PORT', '5432'),
+            # Reuse healthy PostgreSQL connections across requests. This
+            # reduces connection setup overhead under concurrent users while
+            # remaining deployment-configurable (set POSTGRES_CONN_MAX_AGE=0
+            # when an external pooler should own connection lifetime).
+            'CONN_MAX_AGE': _env_int('POSTGRES_CONN_MAX_AGE', 60),
+            'CONN_HEALTH_CHECKS': True,
         }
     }
 else:

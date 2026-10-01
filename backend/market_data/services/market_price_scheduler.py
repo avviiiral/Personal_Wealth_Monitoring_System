@@ -1,3 +1,4 @@
+from config.postgres_advisory_lock import with_postgres_advisory_lock
 import logging
 import threading
 import time
@@ -49,6 +50,7 @@ class MarketPriceScheduler:
 
             time.sleep(UPDATE_INTERVAL_SECONDS)
 
+    @with_postgres_advisory_lock("pwms_refresh_pipeline")
     @classmethod
     def update_prices(cls):
         assets = (

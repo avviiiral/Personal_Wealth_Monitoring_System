@@ -55,7 +55,7 @@
       <div class="section-header">
         <div>
           <h2>IPS</h2>
-          <span>Closing MTM by asset class and family member</span>
+          <span>Closing MTM by asset class and family member (₹ Lakhs)</span>
         </div>
       </div>
       <div class="table-wrap">
@@ -74,25 +74,25 @@
                 <td>{{ row.asset_class }}</td>
                 <td>{{ formatDate(report.reporting_date) }}</td>
                 <td class="number" *ngFor="let family of report.family_names">
-                  {{ formatNumber(row.family_values[family], 2) }}
+                  {{ formatLakhs(row.family_values[family], 2) }}
                 </td>
-                <td class="number">{{ formatNumber(row.grand_total, 2) }}</td>
+                <td class="number">{{ formatLakhs(row.grand_total, 2) }}</td>
               </tr>
               <tr>
                 <td></td>
                 <td>{{ formatDate(report.prior_month_date) }}</td>
                 <td class="number" *ngFor="let family of report.family_names">
-                  {{ formatNumber(row.prior_family_values[family], 2) }}
+                  {{ formatLakhs(row.prior_family_values[family], 2) }}
                 </td>
-                <td class="number">{{ formatNumber(row.prior_total, 2) }}</td>
+                <td class="number">{{ formatLakhs(row.prior_total, 2) }}</td>
               </tr>
               <tr class="difference-row">
                 <td></td>
                 <td>Diff- {{ formatDate(report.reporting_date) }}</td>
                 <td class="number" *ngFor="let family of report.family_names">
-                  {{ formatNumber(row.family_values[family] - row.prior_family_values[family], 2) }}
+                  {{ formatLakhs(row.family_values[family] - row.prior_family_values[family], 2) }}
                 </td>
-                <td class="number">{{ formatNumber(row.difference, 2) }}</td>
+                <td class="number">{{ formatLakhs(row.difference, 2) }}</td>
               </tr>
             </ng-container>
             <tr *ngIf="report.ips.length === 0">

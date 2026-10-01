@@ -97,7 +97,7 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
 
   updateStandardAllocationPercent(category: string, rawValue: string): void {
     const percent = Number(rawValue);
-    const safePercent = Number.isFinite(percent) ? Math.max(0, Math.min(100, percent)) : 0);
+    const safePercent = Number.isFinite(percent) ? Math.max(0, Math.min(100, percent)) : 0;
     (this as any).standardAllocationDraft[category] = safePercent;
 
     this.standardAllocationAmountDraft[category] =

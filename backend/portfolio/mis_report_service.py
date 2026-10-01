@@ -417,26 +417,31 @@ class MISReportService:
 
     @classmethod
     def _reference_rate(cls, name, symbol, as_of, opening_date, cache):
-        asset = cls._ensure_reference_history(
-            name=name,
-            symbol=symbol,
-            opening_date=opening_date,
-            as_of=as_of,
-            cache=cache,
-        )
-
-        def value_for(target_date):
-            return (
-                MarketPrice.objects
-                .filter(asset=asset, date__lte=target_date)
-                .order_by("-date", "-id")
-                .values_list("close_price", flat=True)
-                .first()
+        symbols = symbol if isinstance(symbol, (tuple, list)) else (symbol,)
+        for candidate_symbol in symbols:
+            asset = cls._ensure_reference_history(
+                name=name,
+                symbol=candidate_symbol,
+                opening_date=opening_date,
+                as_of=as_of,
+                cache=cache,
             )
 
-        opening = value_for(opening_date)
-        closing = value_for(as_of)
-        return opening, closing
+            def value_for(target_date):
+                return (
+                    MarketPrice.objects
+                    .filter(asset=asset, date__lte=target_date)
+                    .order_by("-date", "-id")
+                    .values_list("close_price", flat=True)
+                    .first()
+                )
+
+            opening = value_for(opening_date)
+            closing = value_for(as_of)
+            if opening is not None or closing is not None:
+                return opening, closing
+
+        return None, None
 
     @staticmethod
     def _normalize_note_name(value):
@@ -583,7 +588,7 @@ class MISReportService:
             "National Highways Infra Trust": "NHIT.NS",
             "Nexus Select Trust": "NXST.NS",
             "Knowledge Realty Trust": "KRT.NS",
-            "Bagmane Prime Office Reit": "BAGMANERR.NS",
+            "Bagmane Prime Office Reit": ("BAGMANE.NS", "BAGMANERR.NS"),
             "NDR InvIT": "NDRINVIT.NS",
             "Cube InvIT": "CUBEINVIT.NS",
             "Nifty 50": "^NSEI",

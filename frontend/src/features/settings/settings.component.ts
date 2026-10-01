@@ -10,6 +10,7 @@ import {
   SettingsApiService,
   SettingsProfile,
   SettingsPreferences,
+  TaxRateSetting,
   TransactionEditHistory,
 } from '../../core/services/settings-api.service';
 
@@ -24,6 +25,7 @@ type SettingsTab =
   | 'users'
   | 'families'
   | 'prices'
+  | 'tax-rates'
   | 'transaction-history';
 
 @Component({
@@ -70,6 +72,14 @@ export class SettingsComponent implements OnInit {
   passwordMessage = '';
   passwordError = '';
 
+  taxRateSettings: TaxRateSetting[] = [];
+  taxRateLoading = false;
+  taxRateSaving = false;
+  taxRateError = '';
+  taxAssetName = '';
+  taxRateValue: number | null = null;
+  editingTaxRateId: number | null = null;
+
   transactionHistory: TransactionEditHistory[] = [];
   transactionHistoryLoading = false;
   transactionHistoryError = '';
@@ -94,6 +104,10 @@ export class SettingsComponent implements OnInit {
 
   setTab(tab: SettingsTab): void {
     this.activeTab = tab;
+
+    if (tab === 'tax-rates' && !this.taxRateSettings.length) {
+      this.loadTaxRateSettings();
+    }
 
     if (tab === 'transaction-history' && !this.transactionHistory.length) {
       this.loadTransactionHistory();
@@ -148,6 +162,90 @@ export class SettingsComponent implements OnInit {
         this.cdr.detectChanges();
       },
     });
+  }
+
+
+  loadTaxRateSettings(): void {
+    this.taxRateLoading = true;
+    this.taxRateError = '';
+
+    this.settingsApi.getTaxRateSettings().subscribe({
+      next: (rows) => {
+        this.taxRateSettings = rows || [];
+        this.taxRateLoading = false;
+        this.cdr.detectChanges();
+      },
+      error: (error) => {
+        this.taxRateLoading = false;
+        this.taxRateError = error?.error?.detail || 'Unable to load tax rate settings.';
+        this.cdr.detectChanges();
+      },
+    });
+  }
+
+  saveTaxRate(): void {
+    const assetName = this.taxAssetName.trim();
+    const taxRate = Number(this.taxRateValue);
+
+    if (!assetName) {
+      this.taxRateError = 'Enter an Asset Name.';
+      return;
+    }
+
+    if (!Number.isFinite(taxRate) || taxRate < 0 || taxRate > 100) {
+      this.taxRateError = 'Tax Rate must be between 0 and 100 percent.';
+      return;
+    }
+
+    this.taxRateSaving = true;
+    this.taxRateError = '';
+
+    const request$ = this.editingTaxRateId === null
+      ? this.settingsApi.saveTaxRateSetting(assetName, taxRate)
+      : this.settingsApi.updateTaxRateSetting(this.editingTaxRateId, assetName, taxRate);
+
+    request$.subscribe({
+      next: () => {
+        this.taxRateSaving = false;
+        this.resetTaxRateForm();
+        this.loadTaxRateSettings();
+      },
+      error: (error) => {
+        this.taxRateSaving = false;
+        this.taxRateError = error?.error?.detail || 'Unable to save tax rate setting.';
+        this.cdr.detectChanges();
+      },
+    });
+  }
+
+  editTaxRate(row: TaxRateSetting): void {
+    this.editingTaxRateId = row.id;
+    this.taxAssetName = row.asset_name;
+    this.taxRateValue = Number(row.tax_rate);
+    this.taxRateError = '';
+  }
+
+  deleteTaxRate(row: TaxRateSetting): void {
+    if (!window.confirm('Delete the tax rate for "' + row.asset_name + '"?')) return;
+
+    this.settingsApi.deleteTaxRateSetting(row.id).subscribe({
+      next: () => {
+        if (this.editingTaxRateId === row.id) this.resetTaxRateForm();
+        this.loadTaxRateSettings();
+      },
+      error: (error) => {
+        this.taxRateError = error?.error?.detail || 'Unable to delete tax rate setting.';
+        this.cdr.detectChanges();
+      },
+    });
+  }
+
+  resetTaxRateForm(): void {
+    this.editingTaxRateId = null;
+    this.taxAssetName = '';
+    this.taxRateValue = null;
+    this.taxRateError = '';
+    this.cdr.detectChanges();
   }
 
   loadTransactionHistory(): void {
@@ -381,6 +479,10 @@ export class SettingsComponent implements OnInit {
   refresh(): void {
     this.loadSettings();
     this.rbac.load().subscribe();
+
+    if (this.activeTab === 'tax-rates') {
+      this.loadTaxRateSettings();
+    }
 
     if (this.activeTab === 'transaction-history') {
       this.loadTransactionHistory();

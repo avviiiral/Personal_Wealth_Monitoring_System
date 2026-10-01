@@ -1,13 +1,17 @@
 from collections import defaultdict
 from datetime import date, timedelta
 from decimal import Decimal
+import re
+
+import requests
 
 from django.db.models import Max
 
-from investments.models import Transaction, TransactionType
-from market_data.models import MarketPrice
+from investments.models import Asset, Transaction, TransactionType
+from market_data.models import MarketPrice, ManualAssetPrice
 from mutual_funds.models import MutualFundNAV, MutualFundTransaction, MutualFundHolding
 from portfolio.services.portfolio_tree_service import PortfolioTreeService
+from market_data.services.yahoo_finance import YahooFinanceService
 
 
 class MISReportService:
@@ -20,6 +24,22 @@ class MISReportService:
     """
 
     ZERO = Decimal("0")
+
+    # Standard external market references used by the MIS Notes sheet.
+    REFERENCE_SYMBOLS = {
+        "Mindspace Business Parks": ("MINDSPACE.NS", "MINDSPACE.BO"),
+        "Embassy Office Parks": ("EMBASSY.NS", "EMBASSY.BO"),
+        "Brookfield India Real Estate Trust": ("BIRET.NS", "BIRET.BO"),
+        "National Highways Infra Trust": ("NHIT.NS", "NHIT.BO"),
+        "Nexus Select Trust": ("NXST.NS", "NXST.BO"),
+        "Knowledge Realty Trust": ("KRT.NS", "KRT.BO"),
+        "Bagmane Prime Office Reit": ("BAGMANE.NS", "BAGMANE.BO"),
+        "NDR InvIT": ("NDRI.NS", "NDRINVIT.NS", "NDRINVIT.BO"),
+        "Cube InvIT": ("CUBEINVIT.NS", "CUBEINVIT.BO"),
+        "Nifty 50": "^NSEI",
+        "$ Rate": "USDINR=X",
+        "BSE 500": "BSE-500.BO",
+    }
 
     @staticmethod
     def _clean(value, default="Unassigned"):
@@ -294,6 +314,505 @@ class MISReportService:
         }
 
     @classmethod
+    def refresh_reference_prices(cls, lookback_days=7):
+        """Refresh the shared Yahoo history used by MIS Notes."""
+        today = date.today()
+        refreshed = 0
+        failed = 0
+        records = 0
+
+        for name, symbols in cls.REFERENCE_SYMBOLS.items():
+            candidates = symbols if isinstance(symbols, (tuple, list)) else (symbols,)
+            success = False
+            for symbol in candidates:
+                try:
+                    asset = (
+                        Asset.objects
+                        .filter(family__isnull=True, symbol=symbol)
+                        .order_by("id")
+                        .first()
+                    )
+                    if asset is None:
+                        asset = Asset.objects.create(
+                            owner=None,
+                            family=None,
+                            name=name,
+                            category="OTHER",
+                            symbol=symbol,
+                            currency="INR",
+                            is_active=True,
+                        )
+
+                    latest_date = (
+                        MarketPrice.objects
+                        .filter(asset=asset)
+                        .order_by("-date", "-id")
+                        .values_list("date", flat=True)
+                        .first()
+                    )
+                    start = max(today - timedelta(days=lookback_days), latest_date) if latest_date else today - timedelta(days=lookback_days)
+                    saved = YahooFinanceService.save_history(
+                        asset=asset,
+                        symbol=symbol,
+                        start=start,
+                        end=today + timedelta(days=1),
+                    )
+                    records += saved
+                    refreshed += 1
+                    success = True
+                    break
+                except Exception:
+                    continue
+
+            if not success:
+                failed += 1
+
+        return {
+            "references": len(cls.REFERENCE_SYMBOLS),
+            "refreshed": refreshed,
+            "failed": failed,
+            "records": records,
+        }
+
+    @classmethod
+    def _ensure_reference_history(cls, name, symbol, opening_date, as_of, cache):
+        """
+        Resolve a standard MIS reference instrument to a global Asset and make
+        sure its Yahoo historical prices are available for the requested dates.
+        Reference assets are not family holdings and therefore never affect
+        portfolio ownership or valuation.
+        """
+        cache_key = (symbol, opening_date, as_of)
+        if cache_key in cache:
+            return cache[cache_key]
+
+        asset = (
+            Asset.objects
+            .filter(family__isnull=True, symbol=symbol)
+            .order_by("id")
+            .first()
+        )
+        if asset is None:
+            asset = Asset.objects.create(
+                owner=None,
+                family=None,
+                name=name,
+                category="OTHER",
+                symbol=symbol,
+                currency="INR",
+                is_active=True,
+            )
+
+        has_opening = MarketPrice.objects.filter(
+            asset=asset,
+            date__lte=opening_date,
+        ).exists()
+        has_closing = MarketPrice.objects.filter(
+            asset=asset,
+            date__lte=as_of,
+        ).exists()
+
+        if not (has_opening and has_closing):
+            try:
+                # REIT/InvIT units can be thinly traded. Fetch a look-back
+                # window so a prior trading day is available when the requested
+                # opening date itself has no trade.
+                history_start = opening_date - timedelta(days=30)
+                YahooFinanceService.save_history(
+                    asset=asset,
+                    symbol=symbol,
+                    start=history_start,
+                    end=as_of + timedelta(days=1),
+                )
+            except Exception:
+                # Existing stored history remains usable even when an external
+                # source is temporarily unavailable.
+                pass
+
+        cache[cache_key] = asset
+        return asset
+
+    @classmethod
+    def _bse500_rate(cls, target_date, cache):
+        """
+        Read the BSE 500 price-return index from the official BSE Indices
+        chart page. The page exposes recent daily chart points as
+        'Date: DD Mon YYYY - Value: ...'. Values are never inferred from
+        another index.
+        """
+        cache_key = ("BSE500", target_date)
+        if cache_key in cache:
+            return cache[cache_key]
+
+        try:
+            response = requests.get(
+                "https://www.bseindices.com/indices-details/code/17/",
+                headers={
+                    "User-Agent": "Mozilla/5.0",
+                    "Accept": "text/html,application/xhtml+xml",
+                },
+                timeout=10,
+            )
+            response.raise_for_status()
+            html = response.text
+
+            patterns = [
+                r"Date\s*:\s*(\d{1,2})\s+([A-Za-z]{3,9})\s+(\d{4})\s*[–-]\s*Value\s*:\s*([\d,]+(?:\.\d+)?)",
+                r"(\d{1,2})\s+([A-Za-z]{3,9})\s+(\d{4}).{0,80}?Value\s*:\s*([\d,]+(?:\.\d+)?)",
+            ]
+            month_map = {
+                "jan": 1, "feb": 2, "mar": 3, "apr": 4,
+                "may": 5, "jun": 6, "jul": 7, "aug": 8,
+                "sep": 9, "sept": 9, "oct": 10, "nov": 11, "dec": 12,
+            }
+
+            found = {}
+            for pattern in patterns:
+                for day, month_text, year, value in re.findall(pattern, html, flags=re.IGNORECASE):
+                    month = month_map.get(month_text[:3].lower())
+                    if not month:
+                        continue
+                    try:
+                        point_date = date(int(year), month, int(day))
+                        found[point_date] = Decimal(value.replace(",", ""))
+                    except (TypeError, ValueError, ArithmeticError):
+                        continue
+
+                if found:
+                    break
+
+            if found:
+                eligible = [
+                    (point_date, value)
+                    for point_date, value in found.items()
+                    if point_date <= target_date
+                ]
+                result = max(eligible, key=lambda item: item[0])[1] if eligible else None
+            else:
+                result = None
+        except Exception:
+            result = None
+
+        cache[cache_key] = result
+        return result
+
+    @classmethod
+    def _reference_rate(cls, name, symbol, as_of, opening_date, cache):
+        symbols = symbol if isinstance(symbol, (tuple, list)) else (symbol,)
+        for candidate_symbol in symbols:
+            asset = cls._ensure_reference_history(
+                name=name,
+                symbol=candidate_symbol,
+                opening_date=opening_date,
+                as_of=as_of,
+                cache=cache,
+            )
+
+            def value_for(target_date):
+                return (
+                    MarketPrice.objects
+                    .filter(asset=asset, date__lte=target_date)
+                    .order_by("-date", "-id")
+                    .values_list("close_price", flat=True)
+                    .first()
+                )
+
+            opening = value_for(opening_date)
+            closing = value_for(as_of)
+            if opening is not None or closing is not None:
+                return opening, closing
+
+        return None, None
+
+    @staticmethod
+    def _normalize_note_name(value):
+        return "".join(
+            character
+            for character in str(value or "").lower()
+            if character.isalnum()
+        )
+
+    @classmethod
+    def _family_note_rate(cls, family, aliases, opening_date, as_of):
+        """
+        Look up a standard note item against the family's actual assets first.
+        This fixes cases where the uploaded/transaction asset name differs from
+        the display name in the standard MIS template.
+        """
+        aliases = [cls._normalize_note_name(alias) for alias in aliases]
+        assets = Asset.objects.filter(family=family, is_active=True)
+
+        candidates = []
+        for asset in assets:
+            name = cls._normalize_note_name(asset.name)
+            symbol = cls._normalize_note_name(asset.symbol)
+            if any(
+                alias and (name == alias or (len(alias) > 4 and alias in name))
+                for alias in aliases
+            ) or any(
+                alias and symbol == alias
+                for alias in aliases
+            ):
+                candidates.append(asset)
+
+        if not candidates:
+            return None, None
+
+        def price_for(target_date):
+            values = []
+            for asset in candidates:
+                value = (
+                    MarketPrice.objects
+                    .filter(asset=asset, date__lte=target_date)
+                    .order_by("-date", "-id")
+                    .values_list("close_price", flat=True)
+                    .first()
+                )
+                if value is not None:
+                    values.append(Decimal(str(value)))
+            if not values:
+                return None
+            if len(set(values)) == 1:
+                return values[0]
+            return sum(values) / Decimal(len(values))
+
+        return price_for(opening_date), price_for(as_of)
+
+    @classmethod
+    def _build_notes(cls, family, data_rows, opening_date, as_of):
+        """
+        Build the fixed six-section Notes to MIS format.
+
+        Listed reference instruments use the application's historical Yahoo
+        Finance price store when the family does not already contain the
+        instrument. Family-owned/unlisted instruments use their stored
+        MarketPrice history. The fixed display list is never expanded.
+        """
+        standard_sections = [
+            {
+                "section": "reits",
+                "section_number": 1,
+                "title": "REITS Rate movement are as below:",
+                "unit_label": "Unit Rate",
+                "change_label": "Change In Rate",
+                "particulars": [
+                    ("Mindspace Business Parks", ("mindspace business parks", "MINDSPACE.NS")),
+                    ("Embassy Office Parks", ("embassy office parks", "EMBASSY.NS")),
+                    ("Brookfield India Real Estate Trust", ("brookfield india real estate trust", "brookfield india reit", "BIRET.NS")),
+                    ("National Highways Infra Trust", ("national highways infra trust", "NHIT", "NHIT.NS")),
+                    ("Nexus Select Trust", ("nexus select trust", "NXST.NS")),
+                    ("Knowledge Realty Trust", ("knowledge realty trust", "KRT", "KRT.NS")),
+                    ("Bagmane Prime Office Reit", ("bagmane prime office reit", "BAGMANE", "BAGMANERR.NS")),
+                    ("NDR InvIT", ("ndr invit", "NDRINVIT", "NDRINVIT.NS")),
+                    ("Cube InvIT", ("cube invit", "cube highways trust", "CUBEINVIT", "CUBEINVIT.NS")),
+                ],
+            },
+            {
+                "section": "sgb",
+                "section_number": 2,
+                "title": "Sovereign Gold Bonds rate movement are as below:",
+                "unit_label": "Rate/grm",
+                "change_label": "Change In Rate",
+                "particulars": [
+                    ("Sovereign Gold Bonds - 48Kg", ("sovereign gold bonds", "sovereign gold bond", "sgb")),
+                ],
+            },
+            {
+                "section": "silver",
+                "section_number": 3,
+                "title": "Silver ETF",
+                "unit_label": "Rate/Unit",
+                "change_label": "Change in Level",
+                "particulars": [
+                    ("ICICI Prudential Silver ETF Rate/Unit", ("icici prudential silver etf", "icici prudential silver etf rate/unit")),
+                ],
+            },
+            {
+                "section": "indices",
+                "section_number": 4,
+                "title": "Nifty 50 & BSE 500 Level",
+                "unit_label": "Level",
+                "change_label": "Change in Level",
+                "particulars": [
+                    ("Nifty 50", ("nifty 50", "^NSEI")),
+                    ("BSE 500", ("bse 500", "BSE500")),
+                ],
+            },
+            {
+                "section": "unlisted",
+                "section_number": 5,
+                "title": "Unlisted Shares - Price considered below for MIS",
+                "unit_label": "Unit Rate",
+                "change_label": "Change in Level",
+                "particulars": [
+                    ("NSE", ("nse", "national stock exchange")),
+                    ("Sterlite Electrical Ltd (Power Transmission)", ("sterlite electrical ltd", "sterlite electrical", "power transmission")),
+                    ("Sterlite Grid 5 Ltd Unlisted Shares", ("sterlite grid 5", "sterlite grid 5 ltd")),
+                ],
+            },
+            {
+                "section": "dollar",
+                "section_number": 6,
+                "title": "Dollar Rate",
+                "unit_label": "Rate",
+                "change_label": "Change in Level",
+                "particulars": [
+                    ("$ Rate", ("usd/inr", "usd inr", "usd inr=x", "USDINR=X")),
+                ],
+            },
+        ]
+
+        reference_symbols = cls.REFERENCE_SYMBOLS
+        history_cache = {}
+
+        notes = []
+
+        for section in standard_sections:
+            items = []
+            for name, aliases in section["particulars"]:
+                opening_rate, closing_rate = cls._family_note_rate(
+                    family,
+                    aliases,
+                    opening_date,
+                    as_of,
+                )
+
+                # SGBs and other manually valued instruments may have a
+                # ManualAssetPrice but no daily MarketPrice history. If the
+                # stored manual valuation predates the requested closing date,
+                # use it as the MIS reference valuation for both endpoints.
+                if (
+                    (opening_rate is None or closing_rate is None)
+                    and name == "Sovereign Gold Bonds - 48Kg"
+                ):
+                    aliases_normalized = [
+                        cls._normalize_note_name(alias)
+                        for alias in aliases
+                    ]
+                    manual_assets = []
+                    for asset in Asset.objects.filter(
+                        family=family,
+                        is_active=True,
+                    ):
+                        normalized_name = cls._normalize_note_name(asset.name)
+                        if any(
+                            alias
+                            and (
+                                normalized_name == alias
+                                or (len(alias) > 4 and alias in normalized_name)
+                            )
+                            for alias in aliases_normalized
+                        ):
+                            manual_assets.append(asset)
+
+                    manual_values = [
+                        (
+                            asset.manual_price.price,
+                            asset.manual_price.price_date,
+                        )
+                        for asset in manual_assets
+                        if hasattr(asset, "manual_price")
+                        and asset.manual_price.price_date <= as_of
+                    ]
+                    if manual_values:
+                        manual_values.sort(
+                            key=lambda item: item[1],
+                            reverse=True,
+                        )
+                        manual_price, manual_date = manual_values[0]
+                        # A static MIS valuation is valid for the opening
+                        # endpoint only when it was already effective then.
+                        if manual_date <= opening_date:
+                            opening_rate = opening_rate or manual_price
+                        closing_rate = closing_rate or manual_price
+
+                if opening_rate is None or closing_rate is None:
+                    symbol = reference_symbols.get(name)
+                    if symbol:
+                        try:
+                            ref_opening, ref_closing = cls._reference_rate(
+                                name=name,
+                                symbol=symbol,
+                                opening_date=opening_date,
+                                as_of=as_of,
+                                cache=history_cache,
+                            )
+                            opening_rate = opening_rate or ref_opening
+                            closing_rate = closing_rate or ref_closing
+                        except Exception:
+                            pass
+
+                if name == "BSE 500" and (opening_rate is None or closing_rate is None):
+                    opening_rate = opening_rate or cls._bse500_rate(opening_date, history_cache)
+                    closing_rate = closing_rate or cls._bse500_rate(as_of, history_cache)
+
+                # Silver ETF can also be resolved from the existing MIS rows,
+                # preserving the historical value already used by the report.
+                if name.startswith("ICICI Prudential Silver ETF") and (
+                    opening_rate is None or closing_rate is None
+                ):
+                    normalized_aliases = [cls._normalize_note_name(alias) for alias in aliases]
+                    for row in data_rows:
+                        row_name = cls._normalize_note_name(row.get("asset_name"))
+                        if any(alias in row_name for alias in normalized_aliases):
+                            opening_rate = opening_rate or row.get("opening_nav")
+                            closing_rate = closing_rate or row.get("closing_nav")
+                            break
+
+                change = None
+                percent_change = None
+                if opening_rate is not None and closing_rate is not None:
+                    opening_rate = Decimal(str(opening_rate))
+                    closing_rate = Decimal(str(closing_rate))
+                    change = closing_rate - opening_rate
+                    if opening_rate != 0:
+                        percent_change = (change / opening_rate) * Decimal("100")
+
+                items.append({
+                    "name": name,
+                    "opening_rate": opening_rate,
+                    "closing_rate": closing_rate,
+                    "change": change,
+                    "percent_change": percent_change,
+                })
+
+            notes.append({
+                "section": section["section"],
+                "section_number": section["section_number"],
+                "title": section["title"],
+                "unit_label": section["unit_label"],
+                "change_label": section["change_label"],
+                "items": items,
+            })
+
+        silver_item = notes[2]["items"][0]
+        silver_row = None
+        for row in data_rows:
+            if "icici prudential silver etf" in cls._normalize_note_name(row.get("asset_name")):
+                silver_row = row
+                break
+
+        if silver_row and silver_row.get("rate") is not None and silver_item["closing_rate"] is not None:
+            invested_rate = Decimal(str(silver_row["rate"]))
+            closing_rate = Decimal(str(silver_item["closing_rate"]))
+            if invested_rate != 0:
+                notes[2]["note"] = (
+                    f"We have invested at rate of {invested_rate:.2f}/Unit. "
+                    f"Up from our buying {(closing_rate / invested_rate):.2f}X."
+                )
+            else:
+                notes[2]["note"] = None
+        else:
+            notes[2]["note"] = None
+
+        return {
+            "title": f"Notes to MIS {as_of.strftime('%B-%Y').upper()}",
+            "opening_label": opening_date.strftime("%b-%y").upper(),
+            "closing_label": as_of.strftime("%b-%y").upper(),
+            "sections": notes,
+        }
+
+    @classmethod
     def build(cls, family, from_date=None, to_date=None):
         if from_date is None and to_date is None:
             to_date = cls._latest_reporting_date(family)
@@ -410,6 +929,7 @@ class MISReportService:
             "ips": ips_rows,
             "data_sheet": data_rows,
             "fund_type_summary": fund_type_summary,
+            "notes": cls._build_notes(family, data_rows, opening_date, as_of),
             "summary": {
                 "total_current_value": sum((Decimal(str(row["closing_amount"] or 0)) for row in data_rows), Decimal("0")),
                 "number_of_rows": len(data_rows),

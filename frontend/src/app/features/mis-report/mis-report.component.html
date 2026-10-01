@@ -176,6 +176,51 @@
       </div>
     </section>
 
+    <!-- Notes -->
+    <section class="report-card" *ngIf="activeSheet === 'notes'">
+      <div class="section-header">
+        <div>
+          <h2>{{ report.notes.title }}</h2>
+          <span>Unit-rate movement from {{ report.notes.opening_label }} to {{ report.notes.closing_label }}</span>
+        </div>
+      </div>
+      <div class="notes-content">
+        <ng-container *ngFor="let section of report.notes.sections">
+          <div class="notes-section">
+            <div class="notes-section-title">
+              <strong>{{ section.section_number }}</strong>
+              <span>{{ section.title }}</span>
+            </div>
+            <div class="table-wrap">
+              <table class="notes-table">
+                <thead>
+                  <tr>
+                    <th>Sr. No</th>
+                    <th>Particulars</th>
+                    <th>{{ section.unit_label }} {{ report.notes.opening_label }}</th>
+                    <th>{{ section.unit_label }} {{ report.notes.closing_label }}</th>
+                    <th>{{ section.change_label }}</th>
+                    <th>% Change</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr *ngFor="let item of section.items; let i = index">
+                    <td>{{ i + 1 }}</td>
+                    <td>{{ item.name }}</td>
+                    <td class="number">{{ formatNumber(item.opening_rate, 2) }}</td>
+                    <td class="number">{{ formatNumber(item.closing_rate, 2) }}</td>
+                    <td class="number">{{ formatNumber(item.change, 2) }}</td>
+                    <td class="number">{{ formatNumber(item.percent_change, 2) }}%</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <p class="notes-note" *ngIf="section.note">{{ section.note }}</p>
+          </div>
+        </ng-container>
+      </div>
+    </section>
+
     <!-- Fund Type Summary -->
     <section class="report-card" *ngIf="activeSheet === 'fund-summary'">
       <div class="section-header">

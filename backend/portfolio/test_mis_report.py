@@ -1,6 +1,7 @@
 from decimal import Decimal
 from datetime import date
 from io import BytesIO
+from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
 from django.test import TestCase
@@ -17,6 +18,7 @@ from mutual_funds.models import (
     MutualFundNAV,
 )
 from users.models import FamilyGroup, Role
+from portfolio.mis_report_service import MISReportService
 
 
 class MISReportAPITests(TestCase):
@@ -65,6 +67,20 @@ class MISReportAPITests(TestCase):
 
         self.client = APIClient()
         self.client.force_authenticate(user=self.user)
+        self.reference_rate_patcher = patch.object(
+            MISReportService,
+            "_reference_rate",
+            return_value=(None, None),
+        )
+        self.bse500_rate_patcher = patch.object(
+            MISReportService,
+            "_bse500_rate",
+            return_value=None,
+        )
+        self.reference_rate_patcher.start()
+        self.bse500_rate_patcher.start()
+        self.addCleanup(self.reference_rate_patcher.stop)
+        self.addCleanup(self.bse500_rate_patcher.stop)
 
     def test_report_requires_authentication(self):
         self.client.force_authenticate(user=None)
@@ -109,6 +125,36 @@ class MISReportAPITests(TestCase):
         self.assertEqual(data["fund_type_summary"][0]["rows"][0]["fund_name"], "MIS Equity")
         self.assertEqual(data["fund_type_summary"][0]["rows"][0]["total"], 1250.0)
         self.assertEqual(data["fund_type_summary"][0]["subtotal"], 1250.0)
+        self.assertIn("notes", data)
+        self.assertEqual(data["notes"]["title"], "Notes to MIS OCTOBER-2026")
+        self.assertEqual(data["notes"]["opening_label"], "SEP-26")
+        self.assertEqual(data["notes"]["closing_label"], "OCT-26")
+        self.assertEqual(
+            [section["section_number"] for section in data["notes"]["sections"]],
+            [1, 2, 3, 4, 5, 6],
+        )
+        self.assertEqual(
+            [item["name"] for item in data["notes"]["sections"][0]["items"]],
+            [
+                "Mindspace Business Parks",
+                "Embassy Office Parks",
+                "Brookfield India Real Estate Trust",
+                "National Highways Infra Trust",
+                "Nexus Select Trust",
+                "Knowledge Realty Trust",
+                "Bagmane Prime Office Reit",
+                "NDR InvIT",
+                "Cube InvIT",
+            ],
+        )
+        self.assertEqual(
+            [item["name"] for item in data["notes"]["sections"][4]["items"]],
+            [
+                "NSE",
+                "Sterlite Electrical Ltd (Power Transmission)",
+                "Sterlite Grid 5 Ltd Unlisted Shares",
+            ],
+        )
 
     def test_same_asset_name_is_consolidated_across_positions(self):
         second_asset = Asset.objects.create(
@@ -243,9 +289,10 @@ class MISReportAPITests(TestCase):
         workbook = load_workbook(BytesIO(response.content), data_only=False)
         self.assertEqual(
             workbook.sheetnames,
-            ["IPS", "Data Sheet", "Fund Type Summary"],
+            ["IPS", "Data Sheet", "Fund Type Summary", "Notes"],
         )
         self.assertEqual(workbook["IPS"]["A1"].value, "IPS")
+        self.assertEqual(workbook["Notes"]["A1"].value, "Notes to MIS OCTOBER-2026")
         self.assertEqual(workbook["Data Sheet"]["A1"].value, "Data Sheet")
         self.assertEqual(workbook["Data Sheet"]["E3"].value, "Investment Cost 01.10.2026")
         self.assertEqual(workbook["Data Sheet"]["H3"].value, "SEP-26 Closing MTM")
@@ -273,6 +320,13 @@ class MISReportAPITests(TestCase):
         self.assertEqual(workbook["IPS"]["C4"].value, 0.0125)
         self.assertEqual(workbook["IPS"]["E4"].value, 0.0125)
         self.assertEqual(workbook["IPS"]["A7"].value, "Grand Total")
+        notes_ws = workbook["Notes"]
+        self.assertEqual(notes_ws["A3"].value, 1)
+        self.assertEqual(notes_ws["B3"].value, "REITS Rate movement are as below:")
+        self.assertEqual(notes_ws["A5"].value, 1)
+        self.assertEqual(notes_ws["B5"].value, "Mindspace Business Parks")
+        self.assertEqual(notes_ws["A15"].value, 2)
+        self.assertEqual(notes_ws["B15"].value, "Sovereign Gold Bonds rate movement are as below:")
         self.assertEqual(workbook["IPS"]["C7"].value, 0.0125)
 
     def test_fund_type_summary_groups_all_asset_classes_by_current_market_value(self):

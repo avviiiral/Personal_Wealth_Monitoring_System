@@ -23,13 +23,13 @@ class Command(BaseCommand):
                                             auto-refreshes
                                             security_master.xlsx if
                                             a new ISIN shows up.
-        3. refresh_security_master
+        4. refresh_security_master
            --apply                       - sector/pe_ratio/
                                             pb_ratio/roe (Yahoo).
                                             Runs after prices/NAV so
                                             the day's holdings are
                                             already current.
-        4. sync_sip_installments
+        5. sync_sip_installments
            (per user)                    - generate/reconcile due
                                             SIP installments.
         5. execute_sips (per user)       - execute installments
@@ -69,6 +69,7 @@ class Command(BaseCommand):
     GLOBAL_STEPS = [
         ("refresh_amfi_master", {}),
         ("update_market_prices", {}),
+        ("refresh_mis_reference_prices", {}),
     ]
 
     # Commands that require --user-id and must be run once per

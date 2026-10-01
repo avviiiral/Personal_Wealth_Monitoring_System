@@ -4,7 +4,7 @@ import { ChangeDetectorRef, Component, inject, OnInit } from '@angular/core';
 
 import { MISDataSheetRow, MISReport, MISReportService } from '../../core/services/mis-report.service';
 
-type MISSheet = 'ips' | 'data' | 'fund-summary';
+type MISSheet = 'ips' | 'data' | 'fund-summary' | 'notes';
 
 @Component({
   selector: 'app-mis-report',
@@ -37,6 +37,7 @@ export class MISReportComponent implements OnInit {
     { key: 'ips', label: 'IPS' },
     { key: 'data', label: 'Data Sheet' },
     { key: 'fund-summary', label: 'Fund Type-wise Summary' },
+    { key: 'notes', label: 'Notes' },
   ];
 
   ngOnInit(): void {

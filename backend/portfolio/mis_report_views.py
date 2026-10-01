@@ -356,6 +356,79 @@ def mis_report(request):
     return Response(_serialize_report(report))
 
 
+def _build_notes_sheet(workbook, report):
+    ws = workbook.create_sheet("Notes")
+    notes = report["notes"]
+
+    ws["A1"] = notes["title"]
+    _style_title(ws["A1"])
+    ws.merge_cells("A1:F1")
+    ws["A1"].alignment = Alignment(horizontal="center", vertical="center")
+    ws.row_dimensions[1].height = 24
+
+    cursor = 3
+    for section in notes["sections"]:
+        ws.cell(cursor, 1, section["section_number"])
+        ws.cell(cursor, 2, section["title"])
+        ws.merge_cells(start_row=cursor, start_column=2, end_row=cursor, end_column=6)
+        for col in range(1, 7):
+            ws.cell(cursor, col).fill = _SECTION_FILL
+            ws.cell(cursor, col).border = _BORDER
+        ws.cell(cursor, 1).font = Font(bold=True)
+        ws.cell(cursor, 2).font = Font(bold=True, size=12)
+        cursor += 1
+
+        headers = [
+            "Sr. No",
+            "Particulars",
+            f"{section['unit_label']} {notes['opening_label']}",
+            f"{section['unit_label']} {notes['closing_label']}",
+            section["change_label"],
+            "% Change",
+        ]
+        for col, value in enumerate(headers, 1):
+            ws.cell(cursor, col, value)
+            _style_header(ws.cell(cursor, col), fill=_SUBHEADER_FILL)
+        cursor += 1
+
+        for index, item in enumerate(section["items"], 1):
+            values = [
+                index,
+                item["name"],
+                float(item["opening_rate"]) if item["opening_rate"] is not None else None,
+                float(item["closing_rate"]) if item["closing_rate"] is not None else None,
+                float(item["change"]) if item["change"] is not None else None,
+                float(item["percent_change"]) / 100 if item["percent_change"] is not None else None,
+            ]
+            for col, value in enumerate(values, 1):
+                ws.cell(cursor, col, value)
+                ws.cell(cursor, col).border = _BORDER
+                ws.cell(cursor, col).alignment = Alignment(vertical="top", wrap_text=(col == 2))
+            ws.cell(cursor, 3).number_format = '#,##0.00'
+            ws.cell(cursor, 4).number_format = '#,##0.00'
+            ws.cell(cursor, 5).number_format = '#,##0.00;(#,##0.00)'
+            ws.cell(cursor, 6).number_format = '0.00%'
+            cursor += 1
+
+        if section.get("note"):
+            ws.cell(cursor, 2, section["note"])
+            ws.merge_cells(start_row=cursor, start_column=2, end_row=cursor, end_column=6)
+            ws.cell(cursor, 2).alignment = Alignment(vertical="top", wrap_text=True)
+            cursor += 1
+
+        cursor += 1
+
+    _autosize(ws, 12, 42)
+    ws.column_dimensions["A"].width = 10
+    ws.column_dimensions["B"].width = 42
+    ws.column_dimensions["C"].width = 20
+    ws.column_dimensions["D"].width = 20
+    ws.column_dimensions["E"].width = 18
+    ws.column_dimensions["F"].width = 14
+    ws.freeze_panes = "A3"
+    return ws
+
+
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def mis_report_download(request):
@@ -363,6 +436,10 @@ def mis_report_download(request):
     from_date, to_date = _parse_report_dates(request)
     display_unit = _parse_display_unit(request)
     try:
+        # Excel export must be self-contained: do not depend on the background
+        # scheduler having run since the last request. Refresh the shared MIS
+        # reference prices immediately before constructing the workbook.
+        MISReportService.refresh_reference_prices()
         report = MISReportService.build(family, from_date, to_date)
     except ValueError as exc:
         raise ValidationError({"detail": str(exc)})
@@ -373,6 +450,7 @@ def mis_report_download(request):
     _build_ips_sheet(workbook, report, display_unit)
     _build_data_sheet(workbook, report)
     _build_fund_summary_sheet(workbook, report, display_unit)
+    _build_notes_sheet(workbook, report)
 
     output = BytesIO()
     workbook.save(output)

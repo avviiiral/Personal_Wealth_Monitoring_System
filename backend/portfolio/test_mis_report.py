@@ -103,7 +103,11 @@ class MISReportAPITests(TestCase):
         self.assertEqual(data["data_sheet"][0]["qty_units"], 10.0)
         self.assertEqual(data["data_sheet"][0]["closing_amount"], 1250.0)
         self.assertEqual(data["data_sheet"][0]["advisor"], "Advisor A")
-        self.assertEqual(data["fund_type_summary"], [])
+        self.assertEqual(len(data["fund_type_summary"]), 1)
+        self.assertEqual(data["fund_type_summary"][0]["fund_type"], "Equity")
+        self.assertEqual(data["fund_type_summary"][0]["rows"][0]["fund_name"], "MIS Equity")
+        self.assertEqual(data["fund_type_summary"][0]["rows"][0]["total"], 1250.0)
+        self.assertEqual(data["fund_type_summary"][0]["subtotal"], 1250.0)
 
     def test_same_asset_name_is_consolidated_across_positions(self):
         second_asset = Asset.objects.create(
@@ -195,8 +199,12 @@ class MISReportAPITests(TestCase):
         self.assertEqual(mf_rows[0]["asset_name"], "MIS Equity Fund")
         self.assertEqual(mf_rows[0]["qty_units"], 10.0)
         self.assertEqual(mf_rows[0]["closing_amount"], 1200.0)
-        self.assertEqual(data["fund_type_summary"][0]["fund_type"], "Equity")
-        self.assertEqual(data["fund_type_summary"][0]["rows"][0]["fund_name"], "MIS Equity Fund")
+        equity_group = next(group for group in data["fund_type_summary"] if group["fund_type"] == "Equity")
+        mf_group = next(group for group in data["fund_type_summary"] if group["fund_type"] == "Mutual Funds")
+        self.assertEqual(equity_group["rows"][0]["fund_name"], "MIS Equity")
+        self.assertEqual(equity_group["rows"][0]["total"], 1250.0)
+        self.assertEqual(mf_group["rows"][0]["fund_name"], "MIS Equity Fund")
+        self.assertEqual(mf_group["rows"][0]["total"], 1200.0)
 
     def test_unrelated_family_is_not_accessible(self):
         other_family = FamilyGroup.objects.create(name="Other Family")
@@ -247,12 +255,34 @@ class MISReportAPITests(TestCase):
         self.assertEqual(workbook["Data Sheet"]["A5"].value, "MIS Equity")
         self.assertEqual(workbook["Data Sheet"]["A2"].value, None)
         self.assertEqual(workbook["Data Sheet"]["A6"].value, None)
-        self.assertEqual(workbook["Fund Type Summary"]["A1"].value, "Fund Type wise Summary")
+        fund_summary_ws = workbook["Fund Type Summary"]
+        self.assertEqual(fund_summary_ws["A1"].value, "Fund Type wise Summary")
+        self.assertEqual(fund_summary_ws["A2"].value, "Values in ₹ Lakhs")
+        self.assertEqual(fund_summary_ws["A3"].value, "Fund Type.V2")
+        self.assertEqual(fund_summary_ws["B3"].value, "Fund Name")
+        self.assertEqual(fund_summary_ws["C3"].value, "Total")
+        self.assertEqual(fund_summary_ws["A4"].value, "Asset class")
+        self.assertEqual(fund_summary_ws["B4"].value, "Asset name")
+        self.assertEqual(fund_summary_ws["C4"].value, "Current Market Value")
+        self.assertEqual(fund_summary_ws["A5"].value, "Equity")
+        self.assertEqual(fund_summary_ws["B5"].value, "MIS Equity")
+        self.assertAlmostEqual(fund_summary_ws["C5"].value, 0.0125, places=8)
+        self.assertEqual(fund_summary_ws.max_column, 3)
         self.assertEqual(workbook["IPS"]["A2"].value, "Values in ₹ Lakhs")
         self.assertEqual(workbook["IPS"]["C4"].value, 0.0125)
         self.assertEqual(workbook["IPS"]["E4"].value, 0.0125)
         self.assertEqual(workbook["IPS"]["A7"].value, "Grand Total")
         self.assertEqual(workbook["IPS"]["C7"].value, 0.0125)
+
+    def test_fund_type_summary_groups_all_asset_classes_by_current_market_value(self):
+        response = self.client.get("/api/portfolio/mis-report/")
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+
+        groups = {group["fund_type"]: group for group in data["fund_type_summary"]}
+        self.assertIn("Equity", groups)
+        self.assertEqual(groups["Equity"]["rows"][0]["fund_name"], "MIS Equity")
+        self.assertEqual(groups["Equity"]["rows"][0]["total"], 1250.0)
 
     def test_excel_download_supports_amount_and_crores_display_units(self):
         for unit, expected_label, expected_value in [

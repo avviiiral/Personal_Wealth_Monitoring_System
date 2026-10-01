@@ -247,3 +247,18 @@ class MISReportAPITests(TestCase):
         self.assertEqual(workbook["IPS"]["E4"].value, 0.0125)
         self.assertEqual(workbook["IPS"]["A7"].value, "Grand Total")
         self.assertEqual(workbook["IPS"]["C7"].value, 0.0125)
+
+    def test_excel_download_supports_amount_and_crores_display_units(self):
+        for unit, expected_label, expected_value in [
+            ("amount", "Values in ₹ Amount", 1250.0),
+            ("crores", "Values in ₹ Crores", 0.000125),
+        ]:
+            response = self.client.get("/api/portfolio/mis-report/download/", {"display_unit": unit})
+            self.assertEqual(response.status_code, 200)
+            workbook = load_workbook(BytesIO(response.content), data_only=False)
+            self.assertEqual(workbook["IPS"]["A2"].value, expected_label)
+            self.assertAlmostEqual(workbook["IPS"]["C4"].value, expected_value, places=8)
+
+    def test_invalid_excel_display_unit_is_rejected(self):
+        response = self.client.get("/api/portfolio/mis-report/download/", {"display_unit": "millions"})
+        self.assertEqual(response.status_code, 400)

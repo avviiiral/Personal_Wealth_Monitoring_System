@@ -79,10 +79,10 @@ def holding_report(request):
     xirr_transactions = {}
 
     for tx in transactions:
-        tx_family = str(tx.family_name or "").strip() or "Unassigned"
-        portfolio = str(tx.portfolio or "").strip() or "Unassigned"
-        asset_class = str(tx.asset_class or "").strip() or "Unassigned"
-        sub_class = str(tx.sub_class or "").strip() or "Unassigned"
+        tx_family = str(tx.family_name or "").strip() or ""
+        portfolio = str(tx.portfolio or "").strip() or ""
+        asset_class = str(tx.asset_class or "").strip() or ""
+        sub_class = str(tx.sub_class or "").strip() or ""
         asset_name = str(tx.asset_name or "").strip()
 
         base_key = (tx_family, portfolio, asset_class, sub_class)
@@ -327,8 +327,8 @@ def holding_matrix_report(request):
     grouped_transactions = {}
     for transaction in transactions_as_of:
         key = (
-            clean_matrix(transaction.family_name, "Unassigned"),
-            clean_matrix(transaction.portfolio, "Unassigned"),
+            clean_matrix(transaction.family_name, ""),
+            clean_matrix(transaction.portfolio, ""),
             transaction.asset_id,
         )
         grouped_transactions[key] = transaction

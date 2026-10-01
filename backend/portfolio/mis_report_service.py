@@ -33,7 +33,7 @@ class MISReportService:
         "National Highways Infra Trust": ("NHIT.NS", "NHIT.BO"),
         "Nexus Select Trust": ("NXST.NS", "NXST.BO"),
         "Knowledge Realty Trust": ("KRT.NS", "KRT.BO"),
-        "Bagmane Prime Office Reit": ("BAGMANE.NS", "BAGMANERR.NS", "BAGMANE.BO"),
+        "Bagmane Prime Office Reit": ("BAGMANE.NS", "BAGMANE.BO"),
         "NDR InvIT": ("NDRI.NS", "NDRINVIT.NS", "NDRINVIT.BO"),
         "Cube InvIT": ("CUBEINVIT.NS", "CUBEINVIT.BO"),
         "Nifty 50": "^NSEI",
@@ -663,6 +663,7 @@ class MISReportService:
         ]
 
         reference_symbols = cls.REFERENCE_SYMBOLS
+        history_cache = {}
 
         notes = []
 
@@ -740,6 +741,10 @@ class MISReportService:
                             closing_rate = closing_rate or ref_closing
                         except Exception:
                             pass
+
+                if name == "BSE 500" and (opening_rate is None or closing_rate is None):
+                    opening_rate = opening_rate or cls._bse500_rate(opening_date, history_cache)
+                    closing_rate = closing_rate or cls._bse500_rate(as_of, history_cache)
 
                 # Silver ETF can also be resolved from the existing MIS rows,
                 # preserving the historical value already used by the report.

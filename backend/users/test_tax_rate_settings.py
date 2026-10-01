@@ -117,6 +117,31 @@ class TaxRateSettingsApiTests(TestCase):
         self.assertEqual(logs[2].change_from["tenure_months"], 24)
         self.assertEqual(logs[2].change_to["tenure_months"], None)
 
+    def test_tax_update_history_returns_user_datetime_asset_and_changes(self):
+        self.client.force_authenticate(self.user1)
+
+        response = self.client.post(
+            "/api/settings/tax-rates/",
+            {
+                "asset_id": self.asset1.id,
+                "tenure_months": 12,
+                "short_term_tax_rate": "20",
+                "long_term_tax_rate": "10",
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, 201)
+
+        history = self.client.get("/api/settings/tax-rates/history/")
+        self.assertEqual(history.status_code, 200)
+        self.assertEqual(len(history.data), 1)
+        self.assertEqual(history.data[0]["user"], self.user1.username)
+        self.assertEqual(history.data[0]["asset_name"], "HDFC Bank")
+        self.assertIn("date_time", history.data[0])
+        self.assertEqual(history.data[0]["change_from"]["tenure_months"], None)
+        self.assertEqual(history.data[0]["change_to"]["tenure_months"], 12)
+
+
     def test_tax_settings_cannot_target_an_asset_from_another_family(self):
         other_family = FamilyGroup.objects.create(name="Other Family")
         other_asset = Asset.objects.create(

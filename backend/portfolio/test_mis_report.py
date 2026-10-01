@@ -71,6 +71,24 @@ class MISReportAPITests(TestCase):
         response = self.client.get("/api/portfolio/mis-report/")
         self.assertIn(response.status_code, [401, 403])
 
+    def test_custom_date_range_changes_report_dates_and_transaction_period(self):
+        response = self.client.get(
+            "/api/portfolio/mis-report/",
+            {"from_date": "2026-02-01", "to_date": "2026-03-31"},
+        )
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data["period_start"], "2026-02-01")
+        self.assertEqual(data["reporting_date"], "2026-03-31")
+        self.assertEqual(data["opening_date"], "2026-01-31")
+
+    def test_custom_date_range_rejects_invalid_dates(self):
+        response = self.client.get(
+            "/api/portfolio/mis-report/",
+            {"from_date": "2026-04-01", "to_date": "2026-03-31"},
+        )
+        self.assertEqual(response.status_code, 400)
+
     def test_report_exposes_workbook_sections(self):
         response = self.client.get("/api/portfolio/mis-report/")
 

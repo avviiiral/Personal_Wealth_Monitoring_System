@@ -88,8 +88,15 @@
 
 .header-filter-stack .header-control-inline,
 .header-filter-stack .family-filter-inline {
-  width: 100%;
-  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding: 10px 12px;
+  border: 1px solid var(--surface-line);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
+  min-width: 0;
 }
 
 .header-action-row {

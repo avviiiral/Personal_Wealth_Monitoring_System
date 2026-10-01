@@ -9,7 +9,6 @@ import { RbacService } from '../../core/services/rbac.service';
 import {
   SettingsApiService,
   SettingsProfile,
-  SettingsPreferences,
   TaxRateSetting,
   TransactionEditHistory,
 } from '../../core/services/settings-api.service';
@@ -20,7 +19,6 @@ import { ManualPricesComponent } from './manual-prices/manual-prices.component';
 
 type SettingsTab =
   | 'account'
-  | 'preferences'
   | 'security'
   | 'users'
   | 'families'
@@ -51,11 +49,6 @@ export class SettingsComponent implements OnInit {
   activeTab: SettingsTab = 'account';
   profile: SettingsProfile | null = null;
 
-  preferences: SettingsPreferences = {
-    currency: 'INR',
-    date_format: 'DD MMM YYYY',
-    default_analytics_period: 30,
-  };
 
   email = '';
   currentPassword = '';
@@ -150,7 +143,6 @@ export class SettingsComponent implements OnInit {
     this.settingsApi.getSettings().subscribe({
       next: (response) => {
         this.profile = response.profile;
-        this.preferences = { ...response.preferences };
         this.email = response.profile.email;
         this.loading = false;
         this.cdr.detectChanges();
@@ -385,13 +377,9 @@ export class SettingsComponent implements OnInit {
 
     this.settingsApi.updateSettings({
       email: this.email,
-      currency: this.preferences.currency,
-      date_format: this.preferences.date_format,
-      default_analytics_period: this.preferences.default_analytics_period,
     }).subscribe({
       next: (response) => {
         this.profile = response.profile;
-        this.preferences = { ...response.preferences };
         this.email = response.profile.email;
         this.saving = false;
         this.profileMessage = 'Settings saved successfully.';

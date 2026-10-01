@@ -201,7 +201,7 @@ export class DashboardComponent extends BaseDashboardComponent {
             ]),
           ),
         );
-        this.standardAllocationTotalValue = this.toNumber(data?.total_current_value);
+        this.standardAllocationTotalValue = Number(data?.total_current_value) || 0;
         this.standardAllocationDraft = { ...this.standardAllocations };
         this.standardAllocationAmountDraft = { ...this.standardAllocationAmounts };
       },
@@ -344,7 +344,7 @@ export class DashboardComponent extends BaseDashboardComponent {
               ]),
             ),
           );
-          this.standardAllocationTotalValue = this.toNumber(data?.total_current_value);
+          this.standardAllocationTotalValue = Number(data?.total_current_value) || 0;
           this.standardAllocationDraft = { ...this.standardAllocations };
           this.standardAllocationAmountDraft = { ...this.standardAllocationAmounts };
           this.standardAllocationEditing = false;

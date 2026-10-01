@@ -116,18 +116,18 @@
         <button
           type="button"
           class="selection-button"
-          [class.active]="!selectedFamily"
-          (click)="clearFamily()"
+          [class.active]="!selectedFamilyMember"
+          (click)="clearFamilyMember()"
         >
           All
         </button>
 
         <button
-          *ngFor="let family of familyOptions"
+          *ngFor="let family of familyMemberOptions"
           type="button"
           class="selection-button"
-          [class.active]="isFamilySelected(family)"
-          (click)="selectFamily(family)"
+          [class.active]="isFamilyMemberSelected(family)"
+          (click)="selectFamilyMember(family)"
         >
           {{ family }}
         </button>

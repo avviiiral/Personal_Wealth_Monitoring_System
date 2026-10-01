@@ -236,9 +236,14 @@ class MISReportAPITests(TestCase):
             workbook.sheetnames,
             ["IPS", "Data Sheet", "Fund Type Summary"],
         )
-        self.assertEqual(workbook["IPS"]["A1"].value, "Sheet 1 - IPS")
-        self.assertEqual(workbook["Data Sheet"]["A1"].value, "Sheet 2 - Data Sheet")
+        self.assertEqual(workbook["IPS"]["A1"].value, "IPS")
+        self.assertEqual(workbook["Data Sheet"]["A1"].value, "Data Sheet")
         self.assertEqual(workbook["Data Sheet"]["A4"].value, "Fund Name")
         self.assertEqual(workbook["Data Sheet"]["B6"].value, "DAJ")
         self.assertEqual(workbook["Data Sheet"]["A6"].value, "MIS Equity")
-        self.assertEqual(workbook["Fund Type Summary"]["A1"].value, "Sheet 3 - Fund Type wise Summary")
+        self.assertEqual(workbook["Fund Type Summary"]["A1"].value, "Fund Type wise Summary")
+        self.assertEqual(workbook["IPS"]["A2"].value, "Values in ₹ Lakhs")
+        self.assertEqual(workbook["IPS"]["C4"].value, 0.0125)
+        self.assertEqual(workbook["IPS"]["E4"].value, 0.0125)
+        self.assertEqual(workbook["IPS"]["A7"].value, "Grand Total")
+        self.assertEqual(workbook["IPS"]["C7"].value, 0.0125)

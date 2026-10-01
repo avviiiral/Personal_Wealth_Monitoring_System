@@ -76,25 +76,33 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
   standardAllocationTotalValue = 0;
 
   getStandardAllocationAmount(category: string): number {
-    const value = Number(
-      (this as any).standardAllocationEditing
-        ? this.standardAllocationAmountDraft[category]
-        : this.standardAllocationAmounts[category],
-    );
-    return Number.isFinite(value) ? value : 0;
+    if ((this as any).standardAllocationEditing) {
+      const draftAmount = Number(this.standardAllocationAmountDraft[category]);
+      return Number.isFinite(draftAmount) ? draftAmount : 0;
+    }
+
+    const percent = Number((this as any).standardAllocations?.[category]);
+    const total = this.getStandardAllocationBaseTotal();
+
+    if (Number.isFinite(percent) && total > 0) {
+      return Math.round((total * percent) * 100) / 10000;
+    }
+
+    const storedAmount = Number(this.standardAllocationAmounts[category]);
+    return Number.isFinite(storedAmount) ? storedAmount : 0;
   }
 
   private getStandardAllocationBaseTotal(): number {
-    if (this.standardAllocationTotalValue > 0) {
-      return this.standardAllocationTotalValue;
-    }
-
     const summaryTotal = (this.investmentSummaryGroups ?? []).reduce(
       (total, group) => total + Number(group.current_value || 0),
       0,
     );
 
-    return Number.isFinite(summaryTotal) && summaryTotal > 0 ? summaryTotal : 0;
+    if (Number.isFinite(summaryTotal) && summaryTotal > 0) {
+      return summaryTotal;
+    }
+
+    return this.standardAllocationTotalValue > 0 ? this.standardAllocationTotalValue : 0;
   }
 
   updateStandardAllocationAmount(category: string, rawValue: string): void {

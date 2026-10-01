@@ -1,4 +1,6 @@
 from decimal import Decimal, InvalidOperation
+from decimal import Decimal, InvalidOperation
+
 from django.db import IntegrityError
 from django.contrib.auth import get_user_model
 from django.db import transaction
@@ -9,7 +11,7 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
-from .models import FamilyGroup, Role, UserAuditLog, UserProfile
+from .models import FamilyGroup, Role, TaxRateSetting, UserAuditLog, UserProfile
 from .permissions import (
     IsAdminOrSuperUser,
     IsSystemOwner,

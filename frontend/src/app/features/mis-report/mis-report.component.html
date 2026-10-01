@@ -191,7 +191,11 @@
               <th>Fund Type.V2</th>
               <th>Fund Name</th>
               <th class="number">Total</th>
-              <th>Market Value</th>
+            </tr>
+            <tr class="secondary-header">
+              <th>Asset class</th>
+              <th>Asset name</th>
+              <th class="number">Current Market Value</th>
             </tr>
           </thead>
           <tbody>
@@ -199,29 +203,21 @@
               <tr *ngFor="let row of group.rows">
                 <td>{{ group.fund_type }}</td>
                 <td>{{ row.fund_name }}</td>
-                <td class="number">{{ formatNumber(row.total, 2) }}</td>
-                <td>{{ row.market_value_label }}</td>
+                <td class="number">{{ formatDisplayAmount(row.total, 2) }}</td>
               </tr>
               <tr class="subtotal-row">
                 <td>{{ group.fund_type }} Subtotal</td>
                 <td></td>
-                <td class="number">{{ formatNumber(group.subtotal, 2) }}</td>
-                <td>Market Value</td>
+                <td class="number">{{ formatDisplayAmount(group.subtotal, 2) }}</td>
               </tr>
             </ng-container>
             <tr class="grand-total-row" *ngIf="report.fund_type_summary.length">
               <td>Grand Total</td>
               <td></td>
-              <td class="number">
-                {{ formatNumber(
-                  fundSummaryGrandTotal,
-                  2
-                ) }}
-              </td>
-              <td>Market Value</td>
+              <td class="number">{{ formatDisplayAmount(fundSummaryGrandTotal, 2) }}</td>
             </tr>
             <tr *ngIf="report.fund_type_summary.length === 0">
-              <td colspan="4" class="empty">No mutual-fund data available.</td>
+              <td colspan="3" class="empty">No investment data available.</td>
             </tr>
           </tbody>
         </table>

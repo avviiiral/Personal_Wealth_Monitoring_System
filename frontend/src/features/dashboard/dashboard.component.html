@@ -177,7 +177,7 @@
           </span>
           <div>
             <h2>Investment Summary</h2>
-            <p>Current value by asset category and asset class</p>
+            <p>All monetary values are in ₹ Lakhs</p>
           </div>
         </div>
       </div>
@@ -253,7 +253,7 @@
                   {{ group.asset_category }}
                 </td>
 
-                <td class="align-right">{{ formatCurrency(group.current_value) }}</td>
+                <td class="align-right">{{ formatLakhs(group.current_value) }}</td>
                 <td class="align-right">{{ formatPercentage(group.percentage_of_total) }}</td>
 
                 <td class="align-right standard-allocation-cell" (click)="$event.stopPropagation()">
@@ -268,7 +268,7 @@
                     (click)="$event.stopPropagation()"
                   />
                   <span *ngIf="!standardAllocationEditing">
-                    {{ getStandardAllocationAmount(group.asset_category) | currency:'INR':'symbol':'1.2-2':'en-IN' }}
+                    {{ formatLakhs(getStandardAllocationAmount(group.asset_category)) }}
                   </span>
                 </td>
 
@@ -315,7 +315,7 @@
                       <tbody>
                         <tr *ngFor="let assetClass of group.asset_classes; trackBy: trackByInvestmentAssetClass" class="asset-class-detail-item">
                           <td>{{ assetClass.asset_class }}</td>
-                          <td class="align-right">{{ formatCurrency(assetClass.current_value) }}</td>
+                          <td class="align-right">{{ formatLakhs(assetClass.current_value) }}</td>
                           <td class="align-right">{{ formatPercentage(assetClass.percentage_of_total) }}</td>
                         </tr>
                       </tbody>

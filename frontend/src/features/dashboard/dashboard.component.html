@@ -7,13 +7,13 @@
     </div>
 
     <div class="page-header-actions">
-      <div class="display-unit-inline">
-        <span class="family-filter-label">Display As</span>
-        <div class="family-filter-buttons">
+      <div class="header-control-inline">
+        <span class="header-control-label">Display As</span>
+        <div class="header-control-buttons">
           <button
             *ngFor="let unit of displayUnits"
             type="button"
-            class="family-filter-button"
+            class="header-control-button"
             [class.active]="displayUnit === unit.value"
             (click)="setDisplayUnit(unit.value)"
           >
@@ -23,17 +23,17 @@
       </div>
 
       <div class="family-filter-inline" *ngIf="familyMemberOptions.length > 0">
-        <span class="family-filter-label">Family Member</span>
+        <span class="header-control-label">Family Member</span>
 
-        <div class="family-filter-buttons">
-          <button type="button" class="family-filter-button" [class.active]="!selectedFamilyMember" (click)="clearFamilyMember()">
+        <div class="header-control-buttons">
+          <button type="button" class="header-control-button" [class.active]="!selectedFamilyMember" (click)="clearFamilyMember()">
             All
           </button>
 
           <button
             *ngFor="let family of familyMemberOptions"
             type="button"
-            class="family-filter-button"
+            class="header-control-button"
             [class.active]="isFamilyMemberSelected(family)"
             (click)="selectFamilyMember(family)"
           >
@@ -202,7 +202,7 @@
           <strong>Standard Allocation</strong>
           <span>Set target allocation by amount or percentage. Both fields stay synchronized.</span>
           <span class="standard-allocation-total" [ngClass]="getStandardAllocationTotalClass()">
-            Portfolio Total: {{ standardAllocationTotalValue | number:'1.0-2' }} &nbsp; • &nbsp; Target Total: {{ getStandardAllocationDraftTotal() | number:'1.0-2' }}%
+            Portfolio Total: {{ formatDisplayAmount(standardAllocationTotalValue, 0) }} &nbsp; • &nbsp; Target Total: {{ getStandardAllocationDraftTotal() | number:'1.0-2' }}%
           </span>
         </div>
         <div class="standard-allocation-actions">

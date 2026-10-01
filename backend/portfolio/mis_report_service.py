@@ -588,6 +588,7 @@ class MISReportService:
             "Cube InvIT": "CUBEINVIT.NS",
             "Nifty 50": "^NSEI",
             "$ Rate": "USDINR=X",
+            "BSE 500": "BSE-500.BO",
         }
 
         history_cache = {}
@@ -653,24 +654,20 @@ class MISReportService:
                         closing_rate = closing_rate or manual_price
 
                 if opening_rate is None or closing_rate is None:
-                    if name == "BSE 500":
-                        opening_rate = opening_rate or cls._bse500_rate(opening_date, history_cache)
-                        closing_rate = closing_rate or cls._bse500_rate(as_of, history_cache)
-                    else:
-                        symbol = reference_symbols.get(name)
-                        if symbol:
-                            try:
-                                ref_opening, ref_closing = cls._reference_rate(
-                                    name=name,
-                                    symbol=symbol,
-                                    opening_date=opening_date,
-                                    as_of=as_of,
-                                    cache=history_cache,
-                                )
-                                opening_rate = opening_rate or ref_opening
-                                closing_rate = closing_rate or ref_closing
-                            except Exception:
-                                pass
+                    symbol = reference_symbols.get(name)
+                    if symbol:
+                        try:
+                            ref_opening, ref_closing = cls._reference_rate(
+                                name=name,
+                                symbol=symbol,
+                                opening_date=opening_date,
+                                as_of=as_of,
+                                cache=history_cache,
+                            )
+                            opening_rate = opening_rate or ref_opening
+                            closing_rate = closing_rate or ref_closing
+                        except Exception:
+                            pass
 
                 # Silver ETF can also be resolved from the existing MIS rows,
                 # preserving the historical value already used by the report.

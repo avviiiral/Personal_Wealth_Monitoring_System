@@ -289,20 +289,23 @@ def tax_rate_list(request):
     except ValueError as exc:
         return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
 
-    matching_assets = list(
-        Asset.objects.filter(
-            family=family,
-            name=asset.name,
-            is_active=True,
-        ).order_by("id")
+    asset_name = _portfolio_asset_name(family, asset)
+    matching_asset_ids = list(
+        Transaction.objects
+        .filter(family=family, asset_name=asset_name)
+        .values_list("asset_id", flat=True)
+        .distinct()
     )
+    if asset.id not in matching_asset_ids:
+        matching_asset_ids.append(asset.id)
+
     existing_rows = list(
-        TaxRateSetting.objects.filter(
-            family=family,
-            asset__in=matching_assets,
-        ).select_related("asset")
+        TaxRateSetting.objects
+        .filter(family=family, asset_id__in=matching_asset_ids)
+        .select_related("asset")
+        .order_by("-updated_at", "-id")
     )
-    before = next((row for row in existing_rows if row.asset_id == asset.id), existing_rows[0] if existing_rows else None)
+    before = existing_rows[0] if existing_rows else None
 
     if existing_rows:
         TaxRateSetting.objects.filter(pk__in=[row.pk for row in existing_rows]).update(
@@ -328,7 +331,7 @@ def tax_rate_list(request):
         {
             "id": row.id,
             "asset_id": asset.id,
-            "asset_name": _portfolio_asset_name(family, asset),
+            "asset_name": asset_name,
             "family_id": family.id,
             "family_name": family.name,
             "tenure_months": row.tenure_months,

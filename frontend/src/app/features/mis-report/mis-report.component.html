@@ -78,20 +78,21 @@
       <div class="section-header">
         <div>
           <h2>{{ entry.key }}</h2>
-          <span>{{ entry.value.length }} holdings</span>
+          <span>{{ entry.value.length }} asset names</span>
         </div>
       </div>
       <div class="table-wrap">
         <table>
           <thead>
             <tr>
-              <th>Holding / Investment</th>
+              <th>Asset Name</th>
+              <th>Family Name</th>
               <th>Portfolio</th>
-              <th>Sub Class</th>
+              <th class="number">Quantity</th>
               <th class="number">Invested Value</th>
               <th class="number">Current Value</th>
-              <th class="number">P&amp;L</th>
-              <th class="number">P&amp;L %</th>
+              <th class="number">Gain</th>
+              <th class="number">XIRR</th>
             </tr>
           </thead>
           <tbody>
@@ -100,12 +101,13 @@
                 <strong>{{ holding.asset_name }}</strong>
                 <small *ngIf="holding.isin">{{ holding.isin }}</small>
               </td>
+              <td>{{ holding.family_name }}</td>
               <td>{{ holding.portfolio }}</td>
-              <td>{{ holding.sub_class }}</td>
+              <td class="number">{{ holding.quantity === null ? '—' : holding.quantity }}</td>
               <td class="number">{{ formatCurrency(holding.invested_value) }}</td>
               <td class="number">{{ formatCurrency(holding.current_value) }}</td>
               <td class="number">{{ formatCurrency(holding.pnl) }}</td>
-              <td class="number">{{ formatPercent(holding.pnl_percentage) }}</td>
+              <td class="number">{{ formatPercent(holding.xirr) }}</td>
             </tr>
           </tbody>
         </table>

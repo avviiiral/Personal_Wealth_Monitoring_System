@@ -49,9 +49,12 @@ export class MISReportComponent implements OnInit {
   rebuildGroups(): void {
     this.groups.clear();
     for (const holding of this.report?.holdings ?? []) {
-      const existing = this.groups.get(holding.asset_class) ?? [];
+      // Match Portfolio page hierarchy: Asset Name rows are shown
+      // under their Sub Class, with Family Name alongside the Asset Name.
+      const groupKey = holding.sub_class || 'Unassigned';
+      const existing = this.groups.get(groupKey) ?? [];
       existing.push(holding);
-      this.groups.set(holding.asset_class, existing);
+      this.groups.set(groupKey, existing);
     }
   }
 

@@ -80,6 +80,8 @@ class MISReportAPITests(TestCase):
         self.assertEqual(data["summary"]["total_pnl"], 250.0)
         self.assertEqual(data["holdings"][0]["asset_class"], "Equity")
         self.assertEqual(data["holdings"][0]["asset_name"], "MIS Equity")
+        self.assertEqual(data["holdings"][0]["family_name"], "MIS Test Family")
+        self.assertEqual(data["holdings"][0]["quantity"], 10.0)
 
     def test_mutual_fund_holdings_are_included(self):
         scheme = MutualFundScheme.objects.create(

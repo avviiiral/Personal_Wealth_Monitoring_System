@@ -93,9 +93,79 @@ class MISReportService:
                 "xirr": None,
             })
 
+        # Match the Portfolio page's Asset Name level: positions are
+        # consolidated by Sub Class + Asset Name, rather than exposing
+        # each underlying/position row separately. Family Name remains
+        # visible on the consolidated holding row.
+        consolidated = {}
+        for item in holdings:
+            key = (
+                cls._clean(item.get("sub_class")),
+                cls._clean(item.get("asset_name")),
+            )
+            bucket = consolidated.setdefault(
+                key,
+                {
+                    **item,
+                    "portfolio_names": set(),
+                    "asset_classes": set(),
+                    "asset_ids": set(),
+                    "isins": set(),
+                    "symbols": set(),
+                    "quantity": Decimal("0"),
+                    "invested_value": Decimal("0"),
+                    "current_value": Decimal("0"),
+                    "pnl": Decimal("0"),
+                },
+            )
+
+            if item.get("portfolio"):
+                bucket["portfolio_names"].add(str(item["portfolio"]).strip())
+            if item.get("asset_class"):
+                bucket["asset_classes"].add(str(item["asset_class"]).strip())
+            if item.get("asset_id") is not None:
+                bucket["asset_ids"].add(item["asset_id"])
+            if item.get("isin"):
+                bucket["isins"].add(str(item["isin"]).strip())
+            if item.get("symbol"):
+                bucket["symbols"].add(str(item["symbol"]).strip())
+
+            bucket["quantity"] += Decimal(str(item.get("quantity") or 0))
+            bucket["invested_value"] += Decimal(str(item.get("invested_value") or 0))
+            bucket["current_value"] += Decimal(str(item.get("current_value") or 0))
+            bucket["pnl"] += Decimal(str(item.get("pnl") or 0))
+
+            if bucket.get("xirr") is None and item.get("xirr") is not None:
+                bucket["xirr"] = item["xirr"]
+
+        holdings = []
+        for bucket in consolidated.values():
+            quantity = bucket["quantity"]
+            invested = bucket["invested_value"]
+            current = bucket["current_value"]
+            pnl = bucket["pnl"]
+
+            bucket["portfolio"] = ", ".join(sorted(bucket["portfolio_names"], key=str.casefold)) or "Unassigned"
+            bucket["asset_class"] = ", ".join(sorted(bucket["asset_classes"], key=str.casefold)) or "Unassigned"
+            bucket["asset_id"] = next(iter(bucket["asset_ids"])) if len(bucket["asset_ids"]) == 1 else None
+            bucket["isin"] = next(iter(bucket["isins"])) if len(bucket["isins"]) == 1 else None
+            bucket["symbol"] = next(iter(bucket["symbols"])) if len(bucket["symbols"]) == 1 else None
+            bucket["quantity"] = float(quantity)
+            bucket["invested_value"] = float(invested)
+            bucket["current_value"] = float(current)
+            bucket["pnl"] = float(pnl)
+            bucket["average_cost"] = float(invested / quantity) if quantity else None
+            bucket["current_price"] = float(current / quantity) if quantity else None
+            bucket["pnl_percentage"] = float(pnl / invested * Decimal("100")) if invested else 0
+            bucket["portfolio_names"] = None
+            bucket["asset_classes"] = None
+            bucket["asset_ids"] = None
+            bucket["isins"] = None
+            bucket["symbols"] = None
+            holdings.append(bucket)
+
         holdings.sort(
             key=lambda item: (
-                str(item["asset_class"]).casefold(),
                 str(item["sub_class"]).casefold(),
                 str(item["asset_name"]).casefold(),
             )

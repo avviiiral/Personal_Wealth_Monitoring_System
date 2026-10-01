@@ -4,7 +4,7 @@
       <p class="eyebrow">Portfolio</p>
       <h1>MIS Report</h1>
       <p class="subtitle" *ngIf="report">
-        Family: <strong>{{ report.family_name }}</strong>
+        Family: <strong>{{ selectedFamily || 'All Families' }}</strong>
         <span class="separator">•</span>
         Reporting date: {{ report.reporting_date | date: 'dd MMM yyyy' }}
       </p>
@@ -24,19 +24,43 @@
   </div>
 
   <ng-container *ngIf="!loading && report && !error">
+    <section class="family-filter">
+      <div class="selection-title">Family Name</div>
+      <div class="selection-buttons">
+        <button
+          type="button"
+          class="selection-button"
+          [class.active]="!selectedFamily"
+          (click)="clearFamily()"
+        >
+          All
+        </button>
+
+        <button
+          *ngFor="let family of familyOptions"
+          type="button"
+          class="selection-button"
+          [class.active]="isFamilySelected(family)"
+          (click)="selectFamily(family)"
+        >
+          {{ family }}
+        </button>
+      </div>
+    </section>
+
     <div class="summary-grid">
       <article class="summary-card">
         <span>Total Invested</span>
-        <strong>{{ formatCurrency(report.summary.total_invested) }}</strong>
+        <strong>{{ formatCurrency(filteredSummary.total_invested) }}</strong>
       </article>
       <article class="summary-card">
         <span>Current Value</span>
-        <strong>{{ formatCurrency(report.summary.total_current_value) }}</strong>
+        <strong>{{ formatCurrency(filteredSummary.total_current_value) }}</strong>
       </article>
       <article class="summary-card">
         <span>Total P&amp;L</span>
-        <strong>{{ formatCurrency(report.summary.total_pnl) }}</strong>
-        <small>{{ formatPercent(report.summary.pnl_percentage) }}</small>
+        <strong>{{ formatCurrency(filteredSummary.total_pnl) }}</strong>
+        <small>{{ formatPercent(filteredSummary.pnl_percentage) }}</small>
       </article>
     </div>
 
@@ -44,7 +68,7 @@
       <div class="section-header">
         <div>
           <h2>Asset Class Summary</h2>
-          <span>{{ report.summary.number_of_holdings }} holdings</span>
+          <span>{{ filteredSummary.number_of_holdings }} holdings</span>
         </div>
       </div>
       <div class="table-wrap">
@@ -59,14 +83,14 @@
             </tr>
           </thead>
           <tbody>
-            <tr *ngFor="let row of report.asset_class_summary">
+            <tr *ngFor="let row of filteredAssetClassSummary">
               <td>{{ row.asset_class }}</td>
               <td class="number">{{ formatCurrency(row.invested_value) }}</td>
               <td class="number">{{ formatCurrency(row.current_value) }}</td>
               <td class="number">{{ formatCurrency(row.pnl) }}</td>
               <td class="number">{{ formatPercent(row.pnl_percentage) }}</td>
             </tr>
-            <tr *ngIf="report.asset_class_summary.length === 0">
+            <tr *ngIf="filteredAssetClassSummary.length === 0">
               <td colspan="5" class="empty">No holdings available for this family.</td>
             </tr>
           </tbody>
@@ -114,7 +138,7 @@
       </div>
     </section>
 
-    <div class="state-card" *ngIf="report.holdings.length === 0">
+    <div class="state-card" *ngIf="filteredHoldings.length === 0">
       This family currently has no holdings to report.
     </div>
   </ng-container>

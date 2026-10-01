@@ -80,8 +80,11 @@ class MISReportAPITests(TestCase):
         self.assertEqual(data["summary"]["total_pnl"], 250.0)
         self.assertEqual(data["holdings"][0]["asset_class"], "Equity")
         self.assertEqual(data["holdings"][0]["asset_name"], "MIS Equity")
-        self.assertEqual(data["holdings"][0]["family_name"], "MIS Test Family")
+        self.assertEqual(data["holdings"][0]["family_name"], "Legacy Family Label")
         self.assertEqual(data["holdings"][0]["quantity"], 10.0)
+        self.assertIn("Legacy Family Label", {
+            row["family_name"] for row in data["holdings"]
+        })
 
     def test_same_asset_name_is_consolidated_across_positions(self):
         second_asset = Asset.objects.create(

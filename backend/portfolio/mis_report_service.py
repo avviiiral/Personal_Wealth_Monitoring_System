@@ -29,7 +29,7 @@ class MISReportService:
                         sub_class = cls._clean(subclass_node.get("sub_class"))
                         for asset in subclass_node.get("assets", []):
                             holdings.append({
-                                "family_name": family.name,
+                                "family_name": cls._clean(asset.get("family_name"), cls._clean(family_node.get("family_name"), family.name)),
                                 "portfolio": cls._clean(portfolio_node.get("portfolio")),
                                 "asset_class": asset_class,
                                 "sub_class": sub_class,
@@ -75,7 +75,7 @@ class MISReportService:
             current = Decimal(holding.current_value or 0)
             pnl = Decimal(holding.unrealized_pnl or 0)
             holdings.append({
-                "family_name": family.name,
+                "family_name": cls._clean(holding.latest_family_name, family.name),
                 "portfolio": cls._clean(holding.latest_portfolio),
                 "asset_class": "Mutual Funds",
                 "sub_class": cls._clean(holding.scheme.category),
@@ -100,6 +100,7 @@ class MISReportService:
         consolidated = {}
         for item in holdings:
             key = (
+                cls._clean(item.get("family_name")),
                 cls._clean(item.get("sub_class")),
                 cls._clean(item.get("asset_name")),
             )

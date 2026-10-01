@@ -20,6 +20,7 @@ export class MISReportComponent implements OnInit {
   error = '';
 
   readonly groups = new Map<string, MISHolding[]>();
+  selectedFamily = '';
 
   ngOnInit(): void {
     this.loadReport();
@@ -32,6 +33,7 @@ export class MISReportComponent implements OnInit {
     this.service.getReport().subscribe({
       next: (report) => {
         this.report = report;
+        this.selectedFamily = '';
         this.rebuildGroups();
         this.loading = false;
         this.cdr.markForCheck();
@@ -46,11 +48,93 @@ export class MISReportComponent implements OnInit {
     });
   }
 
+  get familyOptions(): string[] {
+    const names = new Set<string>();
+
+    for (const holding of this.report?.holdings ?? []) {
+      const name = (holding.family_name || '').trim();
+      if (name) {
+        names.add(name);
+      }
+    }
+
+    return Array.from(names).sort((a, b) => a.localeCompare(b));
+  }
+
+  get filteredHoldings(): MISHolding[] {
+    const holdings = this.report?.holdings ?? [];
+
+    if (!this.selectedFamily) {
+      return holdings;
+    }
+
+    return holdings.filter(
+      (holding) => (holding.family_name || '').trim() === this.selectedFamily,
+    );
+  }
+
+  get filteredSummary(): MISReport['summary'] {
+    const holdings = this.filteredHoldings;
+    const totalInvested = holdings.reduce((sum, row) => sum + Number(row.invested_value || 0), 0);
+    const totalCurrentValue = holdings.reduce((sum, row) => sum + Number(row.current_value || 0), 0);
+    const totalPnl = totalCurrentValue - totalInvested;
+
+    return {
+      total_invested: totalInvested,
+      total_current_value: totalCurrentValue,
+      total_pnl: totalPnl,
+      pnl_percentage: totalInvested ? (totalPnl / totalInvested) * 100 : 0,
+      number_of_holdings: holdings.length,
+    };
+  }
+
+  get filteredAssetClassSummary(): MISReport['asset_class_summary'] {
+    const buckets = new Map<string, { invested_value: number; current_value: number }>();
+
+    for (const row of this.filteredHoldings) {
+      const name = row.asset_class || 'Unassigned';
+      const bucket = buckets.get(name) ?? { invested_value: 0, current_value: 0 };
+      bucket.invested_value += Number(row.invested_value || 0);
+      bucket.current_value += Number(row.current_value || 0);
+      buckets.set(name, bucket);
+    }
+
+    return Array.from(buckets.entries())
+      .map(([asset_class, values]) => {
+        const pnl = values.current_value - values.invested_value;
+        return {
+          asset_class,
+          invested_value: values.invested_value,
+          current_value: values.current_value,
+          pnl,
+          pnl_percentage: values.invested_value ? (pnl / values.invested_value) * 100 : 0,
+        };
+      })
+      .sort((a, b) => a.asset_class.localeCompare(b.asset_class));
+  }
+
+  selectFamily(family: string): void {
+    this.selectedFamily = this.selectedFamily === family ? '' : family;
+    this.rebuildGroups();
+    this.cdr.markForCheck();
+  }
+
+  clearFamily(): void {
+    this.selectedFamily = '';
+    this.rebuildGroups();
+    this.cdr.markForCheck();
+  }
+
+  isFamilySelected(family: string): boolean {
+    return this.selectedFamily === family;
+  }
+
   rebuildGroups(): void {
     this.groups.clear();
-    for (const holding of this.report?.holdings ?? []) {
-      // Match Portfolio page hierarchy: Asset Name rows are shown
-      // under their Sub Class, with Family Name alongside the Asset Name.
+
+    for (const holding of this.filteredHoldings) {
+      // Match the Portfolio page hierarchy: Sub Class -> Asset Name,
+      // with the uploaded Excel Family Name shown on every asset row.
       const groupKey = holding.sub_class || 'Unassigned';
       const existing = this.groups.get(groupKey) ?? [];
       existing.push(holding);

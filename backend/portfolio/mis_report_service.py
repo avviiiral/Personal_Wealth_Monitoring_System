@@ -337,10 +337,14 @@ class MISReportService:
 
         if not (has_opening and has_closing):
             try:
+                # REIT/InvIT units can be thinly traded. Fetch a look-back
+                # window so a prior trading day is available when the requested
+                # opening date itself has no trade.
+                history_start = opening_date - timedelta(days=30)
                 YahooFinanceService.save_history(
                     asset=asset,
                     symbol=symbol,
-                    start=opening_date,
+                    start=history_start,
                     end=as_of + timedelta(days=1),
                 )
             except Exception:

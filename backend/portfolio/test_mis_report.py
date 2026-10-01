@@ -79,6 +79,7 @@ class MISReportAPITests(TestCase):
         self.assertEqual(response.status_code, 200)
         data = response.json()
         self.assertEqual(data["period_start"], "2026-02-01")
+        self.assertEqual(data["period_end"], "2026-03-31")
         self.assertEqual(data["reporting_date"], "2026-03-31")
         self.assertEqual(data["opening_date"], "2026-01-31")
 

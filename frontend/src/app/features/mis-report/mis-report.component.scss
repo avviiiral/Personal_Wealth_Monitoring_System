@@ -30,6 +30,53 @@ h1 { margin: 0; font-size: 30px; }
 
 .subtitle span { margin: 0 7px; }
 
+.date-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: flex-end;
+  margin-top: 16px;
+}
+
+.date-filters label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 170px;
+}
+
+.date-filters label span {
+  font-size: 12px;
+  font-weight: 700;
+  opacity: .65;
+}
+
+.date-filters input {
+  border: 1px solid rgba(127,127,127,.25);
+  border-radius: 8px;
+  padding: 9px 10px;
+  background: var(--surface, #fff);
+  color: inherit;
+  font: inherit;
+}
+
+.generate-button {
+  border: 0;
+  border-radius: 8px;
+  padding: 10px 15px;
+  background: #1fbd8b;
+  color: #fff;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.generate-button:disabled {
+  opacity: .55;
+  cursor: not-allowed;
+}
+
+
 .download-button,
 .state-card button {
   border: 0;

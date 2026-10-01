@@ -1,4 +1,5 @@
 import { CommonModule } from '@angular/common';
+import { FormsModule } from '@angular/forms';
 import { ChangeDetectorRef, Component, inject, OnInit } from '@angular/core';
 
 import { MISDataSheetRow, MISReport, MISReportService } from '../../core/services/mis-report.service';
@@ -8,7 +9,7 @@ type MISSheet = 'ips' | 'data' | 'fund-summary';
 @Component({
   selector: 'app-mis-report',
   standalone: true,
-  imports: [CommonModule],
+  imports: [CommonModule, FormsModule],
   templateUrl: './mis-report.component.html',
   styleUrl: './mis-report.component.scss',
 })

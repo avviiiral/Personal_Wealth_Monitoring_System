@@ -541,7 +541,6 @@ class TransactionImporter:
         )
 
     @staticmethod
-    @staticmethod
     def _get_or_create_asset(
         owner,
         asset_name,

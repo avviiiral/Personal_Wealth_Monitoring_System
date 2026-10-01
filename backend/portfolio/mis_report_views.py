@@ -198,7 +198,7 @@ def _build_data_sheet(workbook, report):
 
 def _build_fund_summary_sheet(workbook, report):
     ws = workbook.create_sheet("Fund Type Summary")
-    ws["A1"] = "Sheet 3 - Fund Type wise Summary"
+    ws["A1"] = "Fund Type wise Summary"
     _style_title(ws["A1"])
     ws.merge_cells("A1:D1")
 

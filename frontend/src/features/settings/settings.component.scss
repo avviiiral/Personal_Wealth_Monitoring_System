@@ -1131,6 +1131,72 @@
   }
 }
 
+.tax-update-table-wrap {
+  overflow-x: auto;
+}
+
+.tax-update-table {
+  width: 100%;
+  min-width: 980px;
+  border-collapse: collapse;
+}
+
+.tax-update-table th,
+.tax-update-table td {
+  padding: 12px 10px;
+  border-bottom: 1px solid rgba(127, 127, 127, 0.2);
+  text-align: left;
+  vertical-align: top;
+}
+
+.tax-update-table th {
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.tax-update-user,
+.tax-update-asset {
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.tax-update-datetime {
+  white-space: nowrap;
+  color: #667085;
+  font-size: 12px;
+}
+
+.tax-update-change {
+  min-width: 260px;
+  color: #4b5563;
+  line-height: 1.5;
+}
+
+.tax-update-empty {
+  padding: 38px 20px;
+  border: 1px solid rgba(127, 127, 127, 0.2);
+  border-radius: 10px;
+  color: #667085;
+  text-align: center;
+}
+
+@media (max-width: 900px) {
+  .tax-update-table {
+    min-width: 980px;
+  }
+}
+
+:host-context(html.dark-theme) .tax-update-table th,
+:host-context(html.dark-theme) .tax-update-table td {
+  border-bottom-color: #2a2e37;
+}
+
+:host-context(html.dark-theme) .tax-update-datetime,
+:host-context(html.dark-theme) .tax-update-change,
+:host-context(html.dark-theme) .tax-update-empty {
+  color: #8890a0;
+}
+
 :host-context(html.dark-theme) .tax-rate-table th,
 :host-context(html.dark-theme) .tax-rate-table td {
   border-bottom-color: #2a2e37;

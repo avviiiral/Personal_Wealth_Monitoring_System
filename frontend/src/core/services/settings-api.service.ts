@@ -27,6 +27,14 @@ export interface UpdateSettingsResponse extends SettingsResponse {
   message: string;
 }
 
+export interface TaxRateSetting {
+  id: number;
+  asset_name: string;
+  tax_rate: string;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface ChangePasswordResponse {
   message: string;
 }
@@ -81,6 +89,46 @@ export class SettingsApiService {
 
   getSettings(): Observable<SettingsResponse> {
     return this.http.get<SettingsResponse>(`${this.baseUrl}/settings/`, this.requestOptions);
+  }
+
+
+  getTaxRateSettings(): Observable<TaxRateSetting[]> {
+    return this.http.get<TaxRateSetting[]>(`${this.baseUrl}/settings/tax-rates/`, this.requestOptions);
+  }
+
+  saveTaxRateSetting(assetName: string, taxRate: number): Observable<TaxRateSetting> {
+    const csrfToken = this.readCsrfToken();
+    const headers = csrfToken
+      ? new HttpHeaders({ 'X-CSRFToken': csrfToken, 'Content-Type': 'application/json' })
+      : undefined;
+    return this.http.post<TaxRateSetting>(
+      `${this.baseUrl}/settings/tax-rates/`,
+      { asset_name: assetName, tax_rate: taxRate },
+      { withCredentials: true, headers },
+    );
+  }
+
+  updateTaxRateSetting(id: number, assetName: string, taxRate: number): Observable<TaxRateSetting> {
+    const csrfToken = this.readCsrfToken();
+    const headers = csrfToken
+      ? new HttpHeaders({ 'X-CSRFToken': csrfToken, 'Content-Type': 'application/json' })
+      : undefined;
+    return this.http.patch<TaxRateSetting>(
+      `${this.baseUrl}/settings/tax-rates/${id}/`,
+      { asset_name: assetName, tax_rate: taxRate },
+      { withCredentials: true, headers },
+    );
+  }
+
+  deleteTaxRateSetting(id: number): Observable<{ message: string }> {
+    const csrfToken = this.readCsrfToken();
+    const headers = csrfToken
+      ? new HttpHeaders({ 'X-CSRFToken': csrfToken, 'Content-Type': 'application/json' })
+      : undefined;
+    return this.http.delete<{ message: string }>(
+      `${this.baseUrl}/settings/tax-rates/${id}/`,
+      { withCredentials: true, headers },
+    );
   }
 
   getTransactionEditHistory(): Observable<TransactionEditHistoryResponse> {

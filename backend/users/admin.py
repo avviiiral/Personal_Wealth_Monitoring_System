@@ -4,6 +4,7 @@ from .models import (
     FamilyGroup,
     FamilyMembership,
     UserAuditLog,
+    TaxRateSetting,
     UserPreference,
     UserProfile,
 )

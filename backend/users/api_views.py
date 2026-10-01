@@ -413,8 +413,16 @@ def tax_rate_detail(request, tax_rate_id):
         .values_list("asset_id", flat=True)
         .distinct()
     )
-    if row.asset_id not in matching_asset_ids:
-        matching_asset_ids.append(row.asset_id)
+    matching_asset_ids.extend(
+        Asset.objects
+        .filter(
+            family=family,
+            name=row.asset.name,
+            is_active=True,
+        )
+        .values_list("id", flat=True)
+    )
+    matching_asset_ids = list(dict.fromkeys(matching_asset_ids))
 
     matching_rows = TaxRateSetting.objects.filter(
         family=family,

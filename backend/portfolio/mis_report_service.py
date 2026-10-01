@@ -405,6 +405,7 @@ class MISReportService:
             "opening_date": opening_date,
             "prior_month_date": prior_month_end,
             "period_start": period_start,
+            "period_end": as_of,
             "family_names": family_names,
             "ips": ips_rows,
             "data_sheet": data_rows,

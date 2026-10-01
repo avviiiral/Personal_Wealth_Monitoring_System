@@ -84,14 +84,29 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
     return Number.isFinite(value) ? value : 0;
   }
 
+  private getStandardAllocationBaseTotal(): number {
+    if (this.standardAllocationTotalValue > 0) {
+      return this.standardAllocationTotalValue;
+    }
+
+    const summaryTotal = (this.investmentSummaryGroups ?? []).reduce(
+      (total, group) => total + Number(group.current_value || 0),
+      0,
+    );
+
+    return Number.isFinite(summaryTotal) && summaryTotal > 0 ? summaryTotal : 0;
+  }
+
   updateStandardAllocationAmount(category: string, rawValue: string): void {
     const amount = Number(rawValue);
     const safeAmount = Number.isFinite(amount) ? Math.max(0, amount) : 0;
     this.standardAllocationAmountDraft[category] = safeAmount;
 
-    if (this.standardAllocationTotalValue > 0) {
+    const total = this.getStandardAllocationBaseTotal();
+
+    if (total > 0) {
       (this as any).standardAllocationDraft[category] =
-        Math.round((safeAmount / this.standardAllocationTotalValue) * 10000) / 100;
+        Math.round((safeAmount / total) * 10000) / 100;
     }
   }
 
@@ -100,8 +115,12 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
     const safePercent = Number.isFinite(percent) ? Math.max(0, Math.min(100, percent)) : 0;
     (this as any).standardAllocationDraft[category] = safePercent;
 
+    const total = this.getStandardAllocationBaseTotal();
+
     this.standardAllocationAmountDraft[category] =
-      Math.round((this.standardAllocationTotalValue * safePercent) * 100) / 10000;
+      total > 0
+        ? Math.round((total * safePercent) * 100) / 10000
+        : 0;
   }
 
   /*

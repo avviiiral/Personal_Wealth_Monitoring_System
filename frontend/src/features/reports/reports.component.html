@@ -44,11 +44,11 @@
        ========================================================== -->
   <div *ngIf="summaryFamilyModalOpen" class="modal-overlay" (click)="cancelSummaryFamilyModal()">
     <div class="modal-card" (click)="$event.stopPropagation()">
-      <div class="modal-title">Summary View — Select Family</div>
+      <div class="modal-title">Summary View — Select Family Member</div>
       <div class="modal-subtitle">Leave as "All Families" to include everyone.</div>
 
       <div class="modal-field">
-        <label for="summary-family">Family</label>
+        <label for="summary-family">Family Member</label>
         <select id="summary-family" class="modal-select" [(ngModel)]="summaryFamily">
           <option value="">All Families</option>
           <option *ngFor="let family of familyMemberOptions" [value]="family">
@@ -81,7 +81,7 @@
       <div class="modal-subtitle">Only transactions within this range will be included.</div>
 
       <div class="modal-field">
-        <label for="detailed-range-family">Family</label>
+        <label for="detailed-range-family">Family Member</label>
         <select id="detailed-range-family" class="modal-select" [(ngModel)]="detailedRangeFamily">
           <option value="">All Families</option>
           <option *ngFor="let family of familyMemberOptions" [value]="family">

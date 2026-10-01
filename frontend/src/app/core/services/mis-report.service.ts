@@ -42,6 +42,30 @@ export interface MISFundSummaryRow {
   subtotal: number;
 }
 
+export interface MISNoteItem {
+  name: string;
+  opening_rate: number;
+  closing_rate: number;
+  change: number;
+  percent_change: number | null;
+}
+
+export interface MISNoteSection {
+  section: string;
+  section_number: number;
+  title: string;
+  unit_label: string;
+  change_label: string;
+  items: MISNoteItem[];
+}
+
+export interface MISNotes {
+  title: string;
+  opening_label: string;
+  closing_label: string;
+  sections: MISNoteSection[];
+}
+
 export interface MISReport {
   family_name: string;
   reporting_date: string;
@@ -52,6 +76,7 @@ export interface MISReport {
   ips: MISIPSRow[];
   data_sheet: MISDataSheetRow[];
   fund_type_summary: MISFundSummaryRow[];
+  notes: MISNotes;
   summary: {
     total_current_value: number;
     number_of_rows: number;

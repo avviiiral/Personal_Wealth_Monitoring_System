@@ -294,6 +294,110 @@ class MISReportService:
         }
 
     @classmethod
+    def _build_notes(cls, data_rows, opening_date, as_of):
+        """
+        Build the Notes section from the same historical unit rates used by the
+        Data Sheet. Only instruments that match the standard MIS note categories
+        are included; no external or hard-coded market values are introduced.
+        """
+        categories = [
+            {
+                "key": "reits",
+                "title": "REITS Rate movement are as below:",
+                "unit_label": "Unit Rate",
+                "change_label": "Change In Rate",
+                "keywords": ("reit", "invit", "infrastructure investment trust"),
+            },
+            {
+                "key": "sgb",
+                "title": "Sovereign Gold Bonds rate movement are as below:",
+                "unit_label": "Rate/grm",
+                "change_label": "Change In Rate",
+                "keywords": ("sovereign gold bond", "sgb"),
+            },
+            {
+                "key": "silver",
+                "title": "Silver ETF",
+                "unit_label": "Rate/Unit",
+                "change_label": "Change in Level",
+                "keywords": ("silver etf",),
+            },
+            {
+                "key": "indices",
+                "title": "Nifty 50 & BSE 500 Level",
+                "unit_label": "Level",
+                "change_label": "Change in Level",
+                "keywords": ("nifty 50", "nifty50", "bse 500", "bse500"),
+            },
+            {
+                "key": "unlisted",
+                "title": "Unlisted Shares - Price considered below for MIS",
+                "unit_label": "Unit Rate",
+                "change_label": "Change in Level",
+                "keywords": ("unlisted", "private share", "private equity"),
+            },
+            {
+                "key": "dollar",
+                "title": "Dollar Rate",
+                "unit_label": "Rate",
+                "change_label": "Change in Level",
+                "keywords": ("dollar rate", "usd/inr", "usd inr", "us dollar", "$ rate"),
+            },
+        ]
+
+        def searchable(row):
+            return " ".join(
+                str(row.get(field) or "").lower()
+                for field in ("asset_name", "asset_class", "sub_class")
+            )
+
+        notes = []
+        for category in categories:
+            items = []
+            for row in data_rows:
+                opening_rate = row.get("opening_nav")
+                closing_rate = row.get("closing_nav")
+                if opening_rate is None or closing_rate is None:
+                    continue
+                text = searchable(row)
+                if not any(keyword in text for keyword in category["keywords"]):
+                    continue
+
+                opening_rate = Decimal(str(opening_rate))
+                closing_rate = Decimal(str(closing_rate))
+                change = closing_rate - opening_rate
+                percent_change = (
+                    (change / opening_rate) * Decimal("100")
+                    if opening_rate != 0
+                    else None
+                )
+                items.append({
+                    "name": row["asset_name"],
+                    "opening_rate": opening_rate,
+                    "closing_rate": closing_rate,
+                    "change": change,
+                    "percent_change": percent_change,
+                })
+
+            if items:
+                items.sort(key=lambda item: item["name"].casefold())
+                notes.append({
+                    "section": category["key"],
+                    "section_number": len(notes) + 1,
+                    "title": category["title"],
+                    "unit_label": category["unit_label"],
+                    "change_label": category["change_label"],
+                    "items": items,
+                })
+
+        return {
+            "title": f"Notes to MIS {as_of.strftime('%B-%Y').upper()}",
+            "opening_label": opening_date.strftime("%b-%y").upper(),
+            "closing_label": as_of.strftime("%b-%y").upper(),
+            "sections": notes,
+        }
+
+    @classmethod
     def build(cls, family, from_date=None, to_date=None):
         if from_date is None and to_date is None:
             to_date = cls._latest_reporting_date(family)
@@ -410,6 +514,7 @@ class MISReportService:
             "ips": ips_rows,
             "data_sheet": data_rows,
             "fund_type_summary": fund_type_summary,
+            "notes": cls._build_notes(data_rows, opening_date, as_of),
             "summary": {
                 "total_current_value": sum((Decimal(str(row["closing_amount"] or 0)) for row in data_rows), Decimal("0")),
                 "number_of_rows": len(data_rows),

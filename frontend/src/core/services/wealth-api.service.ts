@@ -54,7 +54,7 @@ export class WealthApiService {
   }
 
   saveStandardAllocations(
-    allocations: Record<string, number>,
+    allocations: Record<string, { percent: number; amount: number }>,
     family?: string,
   ): Observable<any> {
     let params = new HttpParams();

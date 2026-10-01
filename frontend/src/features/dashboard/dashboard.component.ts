@@ -162,6 +162,7 @@ export class DashboardComponent extends BaseDashboardComponent {
       }
 
       if (!this.loading && this.investmentSummary && this.portfolioTree) {
+        this.refreshStandardAllocationTotalValue();
         (this as any).renderAllocationChart();
         return;
       }
@@ -198,7 +199,7 @@ export class DashboardComponent extends BaseDashboardComponent {
             ]),
           ),
         );
-        this.standardAllocationTotalValue = Number(data?.total_current_value) || 0;
+        this.standardAllocationTotalValue = this.getInvestmentSummaryTotal();
         this.syncStandardAllocationAmounts();
         this.standardAllocationDraft = { ...this.standardAllocations };
         this.standardAllocationAmountDraft = { ...this.standardAllocationAmounts };
@@ -212,20 +213,34 @@ export class DashboardComponent extends BaseDashboardComponent {
     });
   }
 
+  private getInvestmentSummaryTotal(): number {
+    const total = this.investmentSummaryGroups.reduce(
+      (sum, group) => sum + Number(group.current_value || 0),
+      0,
+    );
+
+    return Number.isFinite(total) && total > 0 ? total : 0;
+  }
+
+  private refreshStandardAllocationTotalValue(): void {
+    const total = this.getInvestmentSummaryTotal();
+
+    if (total > 0) {
+      this.standardAllocationTotalValue = total;
+      this.syncStandardAllocationAmounts();
+    }
+  }
+
   private syncStandardAllocationAmounts(): void {
+    if (this.standardAllocationTotalValue <= 0) {
+      return;
+    }
+
     for (const category of Object.keys(this.standardAllocations)) {
       const percent = Number(this.standardAllocations[category]) || 0;
-      const amount = Number(this.standardAllocationAmounts[category]) || 0;
 
-      if (this.standardAllocationTotalValue > 0) {
-        if (amount <= 0 && percent > 0) {
-          this.standardAllocationAmounts[category] =
-            Math.round((this.standardAllocationTotalValue * percent) * 100) / 10000;
-        } else if (percent <= 0 && amount > 0) {
-          this.standardAllocations[category] =
-            Math.round((amount / this.standardAllocationTotalValue) * 10000) / 100;
-        }
-      }
+      this.standardAllocationAmounts[category] =
+        Math.round((this.standardAllocationTotalValue * percent) * 100) / 10000;
     }
   }
 

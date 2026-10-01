@@ -430,9 +430,23 @@ class MISReportService:
 
         by_asset_id = {}
         by_asset_name = {}
+
+        # Tax settings are driven by the report/display Asset Name, not by
+        # the internal Asset row. Multiple internal Asset records can represent
+        # the same displayed asset name (for example, separate Direct Equity
+        # positions). A setting saved against any one of those records must
+        # therefore apply to every matching report row.
+        display_names_by_asset_id = defaultdict(set)
+        for row in rows:
+            for asset_id in row.get("asset_ids", []):
+                display_names_by_asset_id[asset_id].add(row["asset_name"])
+
         for setting in settings:
             by_asset_id.setdefault(setting.asset_id, setting)
             by_asset_name.setdefault(setting.asset.name, setting)
+            for display_name in display_names_by_asset_id.get(setting.asset_id, set()):
+                by_asset_name.setdefault(display_name, setting)
+
         return by_asset_id, by_asset_name
 
     @classmethod

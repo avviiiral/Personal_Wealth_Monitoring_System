@@ -5,13 +5,14 @@ import re
 
 import requests
 
-from django.db.models import Max
+from django.db.models import Max, Q
 
 from investments.models import Asset, Transaction, TransactionType
 from market_data.models import MarketPrice, ManualAssetPrice
 from mutual_funds.models import MutualFundNAV, MutualFundTransaction, MutualFundHolding
 from portfolio.services.portfolio_tree_service import PortfolioTreeService
 from market_data.services.yahoo_finance import YahooFinanceService
+from users.models import TaxRateSetting
 
 
 class MISReportService:
@@ -311,6 +312,159 @@ class MISReportService:
             "closing_units": closing_qty,
             "closing_nav": closing_rate,
             "closing_amount": closing_mtm,
+        }
+
+    @staticmethod
+    def _holding_months(acquired_on, disposed_on):
+        months = (disposed_on.year - acquired_on.year) * 12 + (disposed_on.month - acquired_on.month)
+        if disposed_on.day < acquired_on.day:
+            months -= 1
+        return max(months, 0)
+
+    @classmethod
+    def _tax_rate_for_lot(cls, lot, tax_setting, as_of):
+        if tax_setting is None or tax_setting.tenure_months is None:
+            return cls.ZERO
+        holding_months = cls._holding_months(lot["acquired_on"], as_of)
+        rate = (
+            tax_setting.short_term_tax_rate
+            if holding_months <= tax_setting.tenure_months
+            else tax_setting.long_term_tax_rate
+        )
+        return Decimal(str(rate or 0)) / Decimal("100")
+
+    @classmethod
+    def _fifo_tax_metrics(cls, transactions, kind, as_of, period_start, tax_setting, market_rate):
+        lots = []
+        realized_pnl = cls.ZERO
+        realized_tax = cls.ZERO
+
+        ordered = sorted(
+            (tx for tx in transactions if tx.transaction_date <= as_of),
+            key=lambda item: (item.transaction_date, item.created_at, item.id),
+        )
+
+        for tx in ordered:
+            qty = Decimal(str(getattr(tx, "quantity", getattr(tx, "units", 0)) or 0))
+            amount = Decimal(str(tx.amount or 0))
+
+            if kind == "mutual_fund":
+                is_buy = tx.transaction_type in ("PURCHASE", "SIP")
+                is_sell = tx.transaction_type == "REDEMPTION"
+            else:
+                is_buy = tx.transaction_type in (TransactionType.BUY, TransactionType.SIP)
+                is_sell = tx.transaction_type == TransactionType.SELL
+
+            if is_buy and qty > 0:
+                lots.append({
+                    "remaining_qty": qty,
+                    "unit_cost": amount / qty if amount else cls.ZERO,
+                    "acquired_on": tx.transaction_date,
+                })
+                continue
+
+            if kind == "asset" and tx.transaction_type in (TransactionType.BONUS, TransactionType.SPLIT) and qty > 0:
+                lots.append({
+                    "remaining_qty": qty,
+                    "unit_cost": cls.ZERO,
+                    "acquired_on": tx.transaction_date,
+                })
+                continue
+
+            if not is_sell or qty <= 0:
+                continue
+
+            sale_unit_value = amount / qty if amount else Decimal(
+                str(getattr(tx, "price_per_unit", getattr(tx, "nav", 0)) or 0)
+            )
+            remaining_to_sell = qty
+            while remaining_to_sell > 0 and lots:
+                lot = lots[0]
+                matched_qty = min(remaining_to_sell, lot["remaining_qty"])
+                gain = (sale_unit_value - lot["unit_cost"]) * matched_qty
+
+                if period_start <= tx.transaction_date <= as_of:
+                    realized_pnl += gain
+                    if gain > 0:
+                        realized_tax += gain * cls._tax_rate_for_lot(
+                            lot, tax_setting, tx.transaction_date
+                        )
+
+                lot["remaining_qty"] -= matched_qty
+                remaining_to_sell -= matched_qty
+                if lot["remaining_qty"] <= 0:
+                    lots.pop(0)
+
+        unrealized_pnl = cls.ZERO
+        unrealized_tax = cls.ZERO
+        if market_rate is not None:
+            market_rate = Decimal(str(market_rate))
+            for lot in lots:
+                gain = (market_rate - lot["unit_cost"]) * lot["remaining_qty"]
+                unrealized_pnl += gain
+                if gain > 0:
+                    unrealized_tax += gain * cls._tax_rate_for_lot(
+                        lot, tax_setting, as_of
+                    )
+
+        return {
+            "realized_pnl": realized_pnl,
+            "unrealized_pnl": unrealized_pnl,
+            "realized_tax": realized_tax,
+            "unrealized_tax": unrealized_tax,
+        }
+
+    @classmethod
+    def _tax_settings(cls, family, rows):
+        asset_ids = {
+            asset_id
+            for row in rows
+            for asset_id in row.get("asset_ids", [])
+        }
+        asset_names = {row["asset_name"] for row in rows}
+
+        filters = Q(asset_id__in=asset_ids) | Q(asset__name__in=asset_names)
+        settings = TaxRateSetting.objects.filter(
+            family=family
+        ).filter(filters).select_related("asset").order_by("-updated_at", "-id")
+
+        by_asset_id = {}
+        by_asset_name = {}
+
+        # Tax settings are driven by the report/display Asset Name, not by
+        # the internal Asset row. Multiple internal Asset records can represent
+        # the same displayed asset name (for example, separate Direct Equity
+        # positions). A setting saved against any one of those records must
+        # therefore apply to every matching report row.
+        display_names_by_asset_id = defaultdict(set)
+        for row in rows:
+            for asset_id in row.get("asset_ids", []):
+                display_names_by_asset_id[asset_id].add(row["asset_name"])
+
+        for setting in settings:
+            by_asset_id.setdefault(setting.asset_id, setting)
+            by_asset_name.setdefault(setting.asset.name, setting)
+            for display_name in display_names_by_asset_id.get(setting.asset_id, set()):
+                by_asset_name.setdefault(display_name, setting)
+
+        return by_asset_id, by_asset_name
+
+    @classmethod
+    def _build_tax_row(cls, row, data_row, as_of, period_start, tax_setting):
+        metrics = cls._fifo_tax_metrics(
+            row["transactions"],
+            row["kind"],
+            as_of,
+            period_start,
+            tax_setting,
+            data_row["closing_nav"],
+        )
+        return {
+            **data_row,
+            "realized_pnl": metrics["realized_pnl"],
+            "unrealized_pnl": metrics["unrealized_pnl"],
+            "realized_tax": metrics["realized_tax"],
+            "unrealized_tax": metrics["unrealized_tax"],
         }
 
     @classmethod
@@ -849,6 +1003,37 @@ class MISReportService:
         ]
         data_rows.sort(key=lambda row: (row["asset_class"].casefold(), row["asset_name"].casefold(), row["family_name"].casefold()))
 
+        # Tax Report uses the exact same rows as the Data Sheet and appends
+        # FIFO realized/unrealized P&L plus tax calculated from the family's
+        # Asset Name tax settings.
+        tax_settings_by_id, tax_settings_by_name = cls._tax_settings(family, rows)
+        data_row_by_key = {
+            (row["family_name"], row["sub_class"], row["asset_name"]): row
+            for row in data_rows
+        }
+        tax_rows = []
+        for base_row in rows:
+            data_row = data_row_by_key.get(base_row["key"])
+            if data_row is None:
+                continue
+            tax_setting = None
+            for asset_id in base_row.get("asset_ids", []):
+                tax_setting = tax_settings_by_id.get(asset_id)
+                if tax_setting is not None:
+                    break
+            if tax_setting is None:
+                tax_setting = tax_settings_by_name.get(base_row["asset_name"])
+            tax_rows.append(
+                cls._build_tax_row(
+                    base_row,
+                    data_row,
+                    as_of,
+                    period_start,
+                    tax_setting,
+                )
+            )
+        tax_rows.sort(key=lambda row: (row["asset_class"].casefold(), row["asset_name"].casefold(), row["family_name"].casefold()))
+
         # IPS is a direct aggregation of the Data Sheet closing MTM, with the
         # previous-month closing MTM reconstructed using the same valuation logic.
         current_by_family_asset_class = defaultdict(Decimal)
@@ -928,6 +1113,7 @@ class MISReportService:
             "family_names": family_names,
             "ips": ips_rows,
             "data_sheet": data_rows,
+            "tax_report": tax_rows,
             "fund_type_summary": fund_type_summary,
             "notes": cls._build_notes(family, data_rows, opening_date, as_of),
             "summary": {

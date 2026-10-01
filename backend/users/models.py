@@ -62,6 +62,90 @@ class UserPreference(models.Model):
         return f"Preferences - {self.user.username}"
 
 
+class TaxRateSetting(models.Model):
+    """Family-shared tax configuration for a portfolio Asset."""
+
+    family = models.ForeignKey(
+        "FamilyGroup",
+        on_delete=models.CASCADE,
+        related_name="tax_rate_settings",
+    )
+    asset = models.ForeignKey(
+        "investments.Asset",
+        on_delete=models.CASCADE,
+        related_name="tax_rate_settings",
+    )
+    tenure_months = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+        help_text="Holding tenure in months used to classify short-term vs long-term gains.",
+    )
+    short_term_tax_rate = models.DecimalField(
+        max_digits=7,
+        decimal_places=4,
+        null=True,
+        blank=True,
+    )
+    long_term_tax_rate = models.DecimalField(
+        max_digits=7,
+        decimal_places=4,
+        null=True,
+        blank=True,
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["asset__name"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["family", "asset"],
+                name="unique_family_tax_rate_asset",
+            )
+        ]
+
+    def __str__(self):
+        return f"{self.family.name} - {self.asset.name}"
+
+
+class TaxRateChangeLog(models.Model):
+    """Append-only audit trail for family tax-setting changes."""
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="tax_rate_change_logs",
+    )
+    username = models.CharField(max_length=150)
+    family = models.ForeignKey(
+        "FamilyGroup",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="tax_rate_change_logs",
+    )
+    family_name = models.CharField(max_length=100, blank=True, default="")
+    asset = models.ForeignKey(
+        "investments.Asset",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="tax_rate_change_logs",
+    )
+    asset_name = models.CharField(max_length=255)
+    changed_at = models.DateTimeField(auto_now_add=True)
+    change_from = models.JSONField(default=dict)
+    change_to = models.JSONField(default=dict)
+
+    class Meta:
+        ordering = ["-changed_at", "-id"]
+
+    def __str__(self):
+        return f"{self.username} - {self.asset_name} @ {self.changed_at:%Y-%m-%d %H:%M:%S}"
+
+
 # ==============================================================
 # ROLE-BASED ACCESS CONTROL (RBAC)
 # ==============================================================

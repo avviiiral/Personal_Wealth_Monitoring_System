@@ -33,6 +33,13 @@ export interface MISDataSheetRow {
   closing_amount: number;
 }
 
+export interface MISTaxReportRow extends MISDataSheetRow {
+  realized_pnl: number;
+  unrealized_pnl: number;
+  realized_tax: number;
+  unrealized_tax: number;
+}
+
 export interface MISFundSummaryRow {
   fund_type: string;
   rows: Array<{
@@ -76,6 +83,7 @@ export interface MISReport {
   family_names: string[];
   ips: MISIPSRow[];
   data_sheet: MISDataSheetRow[];
+  tax_report: MISTaxReportRow[];
   fund_type_summary: MISFundSummaryRow[];
   notes: MISNotes;
   summary: {

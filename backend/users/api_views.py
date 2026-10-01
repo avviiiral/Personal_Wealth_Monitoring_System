@@ -1,3 +1,6 @@
+from decimal import Decimal, InvalidOperation
+
+from django.db import IntegrityError
 from django.contrib.auth import get_user_model
 from django.db import transaction
 from django.db.models.deletion import ProtectedError
@@ -7,13 +10,16 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
-from .models import FamilyGroup, Role, UserAuditLog, UserProfile
+from investments.models import Asset, Transaction
+
+from .models import FamilyGroup, Role, TaxRateChangeLog, TaxRateSetting, UserAuditLog, UserProfile
 from .permissions import (
     IsAdminOrSuperUser,
     IsSystemOwner,
     get_manageable_users_queryset,
     get_role,
     is_admin_or_above,
+    require_active_family,
 )
 from .serializers import (
     ActiveFamilySerializer,
@@ -107,8 +113,407 @@ def set_active_family(request):
 
 
 # ==================================================================
-# USER LIST / CREATE
+# TAX RATE SETTINGS
 # ==================================================================
+
+
+def _portfolio_asset_name(family, asset):
+    # Prefer the Portfolio Asset Name recorded on this exact asset.
+    name = (
+        Transaction.objects
+        .filter(family=family, asset=asset, asset_name__isnull=False)
+        .exclude(asset_name="")
+        .order_by("id")
+        .values_list("asset_name", flat=True)
+        .first()
+    )
+    if name:
+        return name
+
+    # Asset records can be duplicated for the same internal security
+    # name. In that case inherit the Portfolio Asset Name from the
+    # family transaction using the same internal Asset.name.
+    return (
+        Transaction.objects
+        .filter(
+            family=family,
+            asset__name=asset.name,
+            asset_name__isnull=False,
+        )
+        .exclude(asset_name="")
+        .order_by("id")
+        .values_list("asset_name", flat=True)
+        .first()
+        or asset.name
+    )
+
+
+def _tax_values(row):
+    if row is None:
+        return {
+            "tenure_months": None,
+            "short_term_tax_rate": None,
+            "long_term_tax_rate": None,
+        }
+    return {
+        "tenure_months": row.tenure_months,
+        "short_term_tax_rate": (
+            str(row.short_term_tax_rate)
+            if row.short_term_tax_rate is not None
+            else None
+        ),
+        "long_term_tax_rate": (
+            str(row.long_term_tax_rate)
+            if row.long_term_tax_rate is not None
+            else None
+        ),
+    }
+
+
+def _log_tax_change(user, family, asset, before, after):
+    TaxRateChangeLog.objects.create(
+        user=user,
+        username=user.username,
+        family=family,
+        family_name=family.name,
+        asset=asset,
+        asset_name=_portfolio_asset_name(family, asset),
+        change_from=_tax_values(before),
+        change_to=_tax_values(after),
+    )
+
+
+@api_view(["GET", "POST"])
+@permission_classes([IsAuthenticated])
+def tax_rate_list(request):
+    """GET/POST /api/settings/tax-rates/ for the active family.
+
+    Tax configuration is keyed by Asset Name within the family. If
+    the same Asset Name exists on multiple Asset records, it is shown
+    once and the saved tax configuration is applied consistently to
+    all matching records.
+    """
+
+    family = require_active_family(request.user)
+
+    if request.method == "GET":
+        transactions = (
+            Transaction.objects
+            .filter(family=family, asset_name__isnull=False)
+            .exclude(asset_name="")
+            .order_by("asset_name", "id")
+            .values("asset_name", "asset_id")
+        )
+
+        # The Portfolio Asset Name from the uploaded Transactions sheet
+        # is the authoritative label. Underlying is deliberately ignored.
+        logical_assets = {}
+        for item in transactions:
+            logical_assets.setdefault(item["asset_name"], item["asset_id"])
+
+        settings_rows = list(
+            TaxRateSetting.objects
+            .filter(family=family)
+            .select_related("asset")
+            .order_by("-updated_at", "-id")
+        )
+        settings_by_asset_id = {}
+        for row in settings_rows:
+            settings_by_asset_id.setdefault(row.asset_id, row)
+
+        results = []
+        for asset_name, asset_id in logical_assets.items():
+            matching_ids = list(
+                Transaction.objects
+                .filter(family=family, asset_name=asset_name)
+                .values_list("asset_id", flat=True)
+                .distinct()
+            )
+            # Include duplicate internal Asset records representing the
+            # same security so a setting saved against one record is
+            # still visible on the single logical Portfolio Asset Name row.
+            base_asset = Asset.objects.filter(
+                pk=asset_id,
+                family=family,
+            ).first()
+            if base_asset is not None:
+                matching_ids.extend(
+                    Asset.objects
+                    .filter(
+                        family=family,
+                        name=base_asset.name,
+                        is_active=True,
+                    )
+                    .values_list("id", flat=True)
+                )
+                matching_ids = list(dict.fromkeys(matching_ids))
+
+            row = settings_by_asset_id.get(asset_id)
+            if row is None:
+                for matching_id in matching_ids:
+                    row = settings_by_asset_id.get(matching_id)
+                    if row is not None:
+                        break
+
+            results.append({
+                "id": row.id if row else None,
+                "asset_id": asset_id,
+                "asset_name": asset_name,
+                "family_id": family.id,
+                "family_name": family.name,
+                "tenure_months": row.tenure_months if row else None,
+                "short_term_tax_rate": (
+                    str(row.short_term_tax_rate)
+                    if row and row.short_term_tax_rate is not None
+                    else None
+                ),
+                "long_term_tax_rate": (
+                    str(row.long_term_tax_rate)
+                    if row and row.long_term_tax_rate is not None
+                    else None
+                ),
+                "updated_at": row.updated_at if row else None,
+            })
+
+        results.sort(key=lambda item: item["asset_name"].lower())
+        return Response(results)
+
+
+    asset_id = request.data.get("asset_id")
+    try:
+        asset_id = int(asset_id)
+    except (TypeError, ValueError):
+        return Response({"detail": "Asset is required."}, status=status.HTTP_400_BAD_REQUEST)
+
+    asset = Asset.objects.filter(
+        pk=asset_id,
+        family=family,
+        is_active=True,
+    ).first()
+    if asset is None:
+        return Response(
+            {"detail": "Asset is not part of the active family."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    tenure_months = request.data.get("tenure_months")
+    if tenure_months in ("", None):
+        return Response(
+            {"detail": "Tenure is required and must be in months."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    try:
+        tenure_months = int(tenure_months)
+    except (TypeError, ValueError):
+        return Response({"detail": "Tenure must be a whole number of months."}, status=status.HTTP_400_BAD_REQUEST)
+    if tenure_months < 0:
+        return Response({"detail": "Tenure cannot be negative."}, status=status.HTTP_400_BAD_REQUEST)
+
+    def parse_tax_rate(field_name):
+        value = request.data.get(field_name)
+        if value in ("", None):
+            raise ValueError(f"{field_name} is required.")
+        try:
+            parsed = Decimal(str(value))
+        except (InvalidOperation, TypeError, ValueError):
+            raise ValueError(f"{field_name} must be a valid number.")
+        if parsed < 0 or parsed > 100:
+            raise ValueError(f"{field_name} must be between 0 and 100 percent.")
+        return parsed
+
+    try:
+        short_term_tax_rate = parse_tax_rate("short_term_tax_rate")
+        long_term_tax_rate = parse_tax_rate("long_term_tax_rate")
+    except ValueError as exc:
+        return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+
+    asset_name = _portfolio_asset_name(family, asset)
+    matching_asset_ids = list(
+        Transaction.objects
+        .filter(family=family, asset_name=asset_name)
+        .values_list("asset_id", flat=True)
+        .distinct()
+    )
+    matching_asset_ids.extend(
+        Asset.objects
+        .filter(
+            family=family,
+            name=asset.name,
+            is_active=True,
+        )
+        .values_list("id", flat=True)
+    )
+    matching_asset_ids = list(dict.fromkeys(matching_asset_ids))
+    if asset.id not in matching_asset_ids:
+        matching_asset_ids.append(asset.id)
+
+    existing_rows = list(
+        TaxRateSetting.objects
+        .filter(family=family, asset_id__in=matching_asset_ids)
+        .select_related("asset")
+        .order_by("-updated_at", "-id")
+    )
+    before = existing_rows[0] if existing_rows else None
+
+    if existing_rows:
+        TaxRateSetting.objects.filter(pk__in=[row.pk for row in existing_rows]).update(
+            tenure_months=tenure_months,
+            short_term_tax_rate=short_term_tax_rate,
+            long_term_tax_rate=long_term_tax_rate,
+        )
+        row = TaxRateSetting.objects.get(pk=before.pk)
+        created = False
+    else:
+        row = TaxRateSetting.objects.create(
+            family=family,
+            asset=asset,
+            tenure_months=tenure_months,
+            short_term_tax_rate=short_term_tax_rate,
+            long_term_tax_rate=long_term_tax_rate,
+        )
+        created = True
+
+    _log_tax_change(request.user, family, asset, before, row)
+
+    return Response(
+        {
+            "id": row.id,
+            "asset_id": asset.id,
+            "asset_name": asset_name,
+            "family_id": family.id,
+            "family_name": family.name,
+            "tenure_months": row.tenure_months,
+            "short_term_tax_rate": str(row.short_term_tax_rate),
+            "long_term_tax_rate": str(row.long_term_tax_rate),
+            "updated_at": row.updated_at,
+        },
+        status=status.HTTP_201_CREATED if created else status.HTTP_200_OK,
+    )
+
+
+@api_view(["PATCH", "DELETE"])
+@permission_classes([IsAuthenticated])
+def tax_rate_detail(request, tax_rate_id):
+    """PATCH/DELETE /api/settings/tax-rates/<id>/ for the active family."""
+
+    family = require_active_family(request.user)
+
+    try:
+        row = TaxRateSetting.objects.select_related("asset").get(
+            pk=tax_rate_id,
+            family=family,
+        )
+    except TaxRateSetting.DoesNotExist:
+        return Response({"detail": "Tax setting not found."}, status=status.HTTP_404_NOT_FOUND)
+
+    asset_name = _portfolio_asset_name(family, row.asset)
+    matching_asset_ids = list(
+        Transaction.objects
+        .filter(family=family, asset_name=asset_name)
+        .values_list("asset_id", flat=True)
+        .distinct()
+    )
+    matching_asset_ids.extend(
+        Asset.objects
+        .filter(
+            family=family,
+            name=row.asset.name,
+            is_active=True,
+        )
+        .values_list("id", flat=True)
+    )
+    matching_asset_ids = list(dict.fromkeys(matching_asset_ids))
+
+    matching_rows = TaxRateSetting.objects.filter(
+        family=family,
+        asset_id__in=matching_asset_ids,
+    ).select_related("asset")
+
+    if request.method == "DELETE":
+        before = row
+        _log_tax_change(request.user, family, row.asset, before, None)
+        matching_rows.delete()
+        return Response({"message": "Tax setting cleared successfully."})
+
+    updates = {}
+
+    if "tenure_months" in request.data:
+        try:
+            tenure_months = int(request.data["tenure_months"])
+        except (TypeError, ValueError):
+            return Response({"detail": "Tenure must be a whole number of months."}, status=status.HTTP_400_BAD_REQUEST)
+        if tenure_months < 0:
+            return Response({"detail": "Tenure cannot be negative."}, status=status.HTTP_400_BAD_REQUEST)
+        updates["tenure_months"] = tenure_months
+
+    for field_name in ("short_term_tax_rate", "long_term_tax_rate"):
+        if field_name in request.data:
+            try:
+                value = Decimal(str(request.data[field_name]))
+            except (InvalidOperation, TypeError, ValueError):
+                return Response({"detail": f"{field_name} must be a valid number."}, status=status.HTTP_400_BAD_REQUEST)
+            if value < 0 or value > 100:
+                return Response({"detail": f"{field_name} must be between 0 and 100 percent."}, status=status.HTTP_400_BAD_REQUEST)
+            updates[field_name] = value
+
+    if not updates:
+        return Response({"detail": "No tax settings were supplied."}, status=status.HTTP_400_BAD_REQUEST)
+
+    before = TaxRateSetting.objects.get(pk=row.pk)
+
+    for field_name, value in updates.items():
+        setattr(row, field_name, value)
+
+    row.save(update_fields=[*updates.keys(), "updated_at"])
+
+    # Keep duplicate Asset records with the same Asset Name synchronized.
+    duplicate_ids = list(matching_rows.values_list("id", flat=True))
+    if duplicate_ids:
+        TaxRateSetting.objects.filter(pk__in=duplicate_ids).update(
+            **updates,
+        )
+
+    _log_tax_change(request.user, family, row.asset, before, row)
+
+    return Response(
+        {
+            "id": row.id,
+            "asset_id": row.asset_id,
+            "asset_name": asset_name,
+            "family_id": family.id,
+            "family_name": family.name,
+            "tenure_months": row.tenure_months,
+            "short_term_tax_rate": str(row.short_term_tax_rate),
+            "long_term_tax_rate": str(row.long_term_tax_rate),
+            "updated_at": row.updated_at,
+        }
+    )
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def tax_rate_change_history(request):
+    """GET /api/settings/tax-rates/history/ for the active family."""
+
+    family = require_active_family(request.user)
+    rows = (
+        TaxRateChangeLog.objects
+        .filter(family=family)
+        .order_by("-changed_at", "-id")
+    )
+
+    return Response([
+        {
+            "id": row.id,
+            "user": row.username,
+            "date_time": row.changed_at,
+            "asset_name": _portfolio_asset_name(family, row.asset) if row.asset_id else row.asset_name,
+            "change_from": row.change_from,
+            "change_to": row.change_to,
+        }
+        for row in rows
+    ])
+
 
 
 @api_view(["GET", "POST"])
@@ -161,6 +566,7 @@ def user_list(request):
 # ==================================================================
 # USER DETAIL / UPDATE
 # ==================================================================
+
 
 
 @api_view(["GET", "PUT", "PATCH", "DELETE"])

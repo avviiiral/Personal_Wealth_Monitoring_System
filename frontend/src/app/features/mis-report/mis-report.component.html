@@ -176,6 +176,75 @@
       </div>
     </section>
 
+    <!-- Tax Report -->
+    <section class="report-card" *ngIf="activeSheet === 'tax'">
+      <div class="section-header">
+        <div>
+          <h2>Tax Report</h2>
+          <span>{{ taxRows.length }} asset rows • FIFO realized P/L and tenure-based taxation</span>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table class="data-table tax-table">
+          <thead>
+            <tr>
+              <th colspan="16"></th>
+              <th colspan="4">Taxation</th>
+            </tr>
+            <tr>
+              <th>Fund Name</th>
+              <th>FILE</th>
+              <th>Fund Type.V1</th>
+              <th>Advisor</th>
+              <th>Qty/Units</th>
+              <th>Rate</th>
+              <th>Total Cost</th>
+              <th>Opening Units</th>
+              <th>Opening NAV</th>
+              <th>Opening MTM</th>
+              <th>Transaction Units</th>
+              <th>Transaction NAV</th>
+              <th>Transaction Amount</th>
+              <th>Closing Units</th>
+              <th>Closing NAV</th>
+              <th>Closing MTM</th>
+              <th>Realized P/L</th>
+              <th>Unrealized P/L</th>
+              <th>Realized Tax</th>
+              <th>Unrealized Tax</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr *ngFor="let row of taxRows; trackBy: trackByDataRow">
+              <td><strong>{{ row.asset_name }}</strong></td>
+              <td>{{ row.family_name }}</td>
+              <td>{{ row.asset_class }}</td>
+              <td>{{ row.advisor || '—' }}</td>
+              <td class="number">{{ formatNumber(row.qty_units, 4) }}</td>
+              <td class="number">{{ formatNumber(row.rate, 2) }}</td>
+              <td class="number">{{ formatNumber(row.total_cost, 2) }}</td>
+              <td class="number">{{ formatNumber(row.opening_units, 4) }}</td>
+              <td class="number">{{ formatNumber(row.opening_nav, 4) }}</td>
+              <td class="number">{{ formatNumber(row.opening_amount, 2) }}</td>
+              <td class="number">{{ formatNumber(row.transaction_units, 4) }}</td>
+              <td class="number">{{ formatNumber(row.transaction_nav, 4) }}</td>
+              <td class="number">{{ formatNumber(row.transaction_amount, 2) }}</td>
+              <td class="number">{{ formatNumber(row.closing_units, 4) }}</td>
+              <td class="number">{{ formatNumber(row.closing_nav, 4) }}</td>
+              <td class="number">{{ formatNumber(row.closing_amount, 2) }}</td>
+              <td class="number">{{ formatNumber(row.realized_pnl, 2) }}</td>
+              <td class="number">{{ formatNumber(row.unrealized_pnl, 2) }}</td>
+              <td class="number">{{ formatNumber(row.realized_tax, 2) }}</td>
+              <td class="number">{{ formatNumber(row.unrealized_tax, 2) }}</td>
+            </tr>
+            <tr *ngIf="taxRows.length === 0">
+              <td colspan="20" class="empty">No Tax Report rows available.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
     <!-- Notes -->
     <section class="report-card" *ngIf="activeSheet === 'notes'">
       <div class="section-header">

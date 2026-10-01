@@ -9,7 +9,8 @@ import { RbacService } from '../../core/services/rbac.service';
 import {
   SettingsApiService,
   SettingsProfile,
-  SettingsPreferences,
+  TaxRateSetting,
+  TaxRateChangeLog,
   TransactionEditHistory,
 } from '../../core/services/settings-api.service';
 
@@ -19,11 +20,12 @@ import { ManualPricesComponent } from './manual-prices/manual-prices.component';
 
 type SettingsTab =
   | 'account'
-  | 'preferences'
   | 'security'
   | 'users'
   | 'families'
   | 'prices'
+  | 'tax-rates'
+  | 'tax-updates'
   | 'transaction-history';
 
 @Component({
@@ -49,11 +51,6 @@ export class SettingsComponent implements OnInit {
   activeTab: SettingsTab = 'account';
   profile: SettingsProfile | null = null;
 
-  preferences: SettingsPreferences = {
-    currency: 'INR',
-    date_format: 'DD MMM YYYY',
-    default_analytics_period: 30,
-  };
 
   email = '';
   currentPassword = '';
@@ -69,6 +66,15 @@ export class SettingsComponent implements OnInit {
   profileMessage = '';
   passwordMessage = '';
   passwordError = '';
+
+  taxRateSettings: TaxRateSetting[] = [];
+  taxRateLoading = false;
+  taxRateSavingAssetId: number | null = null;
+  taxRateError = '';
+
+  taxUpdateHistory: TaxRateChangeLog[] = [];
+  taxUpdateLoading = false;
+  taxUpdateError = '';
 
   transactionHistory: TransactionEditHistory[] = [];
   transactionHistoryLoading = false;
@@ -95,6 +101,14 @@ export class SettingsComponent implements OnInit {
   setTab(tab: SettingsTab): void {
     this.activeTab = tab;
 
+    if (tab === 'tax-rates' && !this.taxRateSettings.length) {
+      this.loadTaxRateSettings();
+    }
+
+    if (tab === 'tax-updates' && !this.taxUpdateHistory.length) {
+      this.loadTaxUpdateHistory();
+    }
+
     if (tab === 'transaction-history' && !this.transactionHistory.length) {
       this.loadTransactionHistory();
     }
@@ -120,6 +134,12 @@ export class SettingsComponent implements OnInit {
     this.rbac.setActiveFamily(familyId).subscribe({
       next: () => {
         this.profileMessage = 'Now viewing data for the selected family.';
+        if (this.activeTab === 'tax-rates') {
+          this.loadTaxRateSettings();
+        }
+        if (this.activeTab === 'tax-updates') {
+          this.loadTaxUpdateHistory();
+        }
         this.cdr.detectChanges();
       },
       error: (error) => {
@@ -136,7 +156,6 @@ export class SettingsComponent implements OnInit {
     this.settingsApi.getSettings().subscribe({
       next: (response) => {
         this.profile = response.profile;
-        this.preferences = { ...response.preferences };
         this.email = response.profile.email;
         this.loading = false;
         this.cdr.detectChanges();
@@ -148,6 +167,144 @@ export class SettingsComponent implements OnInit {
         this.cdr.detectChanges();
       },
     });
+  }
+
+
+  loadTaxRateSettings(): void {
+    this.taxRateLoading = true;
+    this.taxRateError = '';
+
+    this.settingsApi.getTaxRateSettings().subscribe({
+      next: (rows) => {
+        this.taxRateSettings = rows || [];
+        this.taxRateLoading = false;
+        this.cdr.detectChanges();
+      },
+      error: (error) => {
+        this.taxRateLoading = false;
+        this.taxRateError =
+          error?.error?.detail || 'Unable to load tax settings for the active family.';
+        this.cdr.detectChanges();
+      },
+    });
+  }
+
+  saveTaxRate(row: TaxRateSetting): void {
+    if (this.taxRateSavingAssetId !== null) return;
+
+    const tenureMonths = Number(row.tenure_months);
+    const shortTermTaxRate = Number(row.short_term_tax_rate);
+    const longTermTaxRate = Number(row.long_term_tax_rate);
+
+    if (!Number.isInteger(tenureMonths) || tenureMonths < 0) {
+      this.taxRateError = `Enter a valid non-negative tenure in months for "${row.asset_name}".`;
+      return;
+    }
+
+    if (!Number.isFinite(shortTermTaxRate) || shortTermTaxRate < 0 || shortTermTaxRate > 100) {
+      this.taxRateError = `Short Term Tax must be between 0 and 100 percent for "${row.asset_name}".`;
+      return;
+    }
+
+    if (!Number.isFinite(longTermTaxRate) || longTermTaxRate < 0 || longTermTaxRate > 100) {
+      this.taxRateError = `Long Term Tax must be between 0 and 100 percent for "${row.asset_name}".`;
+      return;
+    }
+
+    this.taxRateSavingAssetId = row.asset_id;
+    this.taxRateError = '';
+
+    const request$ = row.id === null
+      ? this.settingsApi.saveTaxRateSetting(
+          row.asset_id,
+          tenureMonths,
+          shortTermTaxRate,
+          longTermTaxRate,
+        )
+      : this.settingsApi.updateTaxRateSetting(
+          row.id,
+          tenureMonths,
+          shortTermTaxRate,
+          longTermTaxRate,
+        );
+
+    request$.subscribe({
+      next: (saved) => {
+        const index = this.taxRateSettings.findIndex((item) => item.asset_id === saved.asset_id);
+        if (index >= 0) {
+          this.taxRateSettings[index] = saved;
+        }
+        this.taxRateSavingAssetId = null;
+        this.taxRateError = '';
+        this.cdr.detectChanges();
+      },
+      error: (error) => {
+        this.taxRateSavingAssetId = null;
+        this.taxRateError =
+          error?.error?.detail || `Unable to save tax settings for "${row.asset_name}".`;
+        this.cdr.detectChanges();
+      },
+    });
+  }
+
+  clearTaxRate(row: TaxRateSetting): void {
+    if (row.id === null || this.taxRateSavingAssetId !== null) return;
+
+    if (!window.confirm(`Clear tax settings for "${row.asset_name}"?`)) return;
+
+    this.taxRateSavingAssetId = row.asset_id;
+    this.taxRateError = '';
+
+    this.settingsApi.deleteTaxRateSetting(row.id).subscribe({
+      next: () => {
+        const index = this.taxRateSettings.findIndex((item) => item.asset_id === row.asset_id);
+        if (index >= 0) {
+          this.taxRateSettings[index] = {
+            ...this.taxRateSettings[index],
+            id: null,
+            tenure_months: null,
+            short_term_tax_rate: null,
+            long_term_tax_rate: null,
+            updated_at: null,
+          };
+        }
+        this.taxRateSavingAssetId = null;
+        this.cdr.detectChanges();
+      },
+      error: (error) => {
+        this.taxRateSavingAssetId = null;
+        this.taxRateError =
+          error?.error?.detail || `Unable to clear tax settings for "${row.asset_name}".`;
+        this.cdr.detectChanges();
+      },
+    });
+  }
+
+  loadTaxUpdateHistory(): void {
+    this.taxUpdateLoading = true;
+    this.taxUpdateError = '';
+
+    this.settingsApi.getTaxRateChangeHistory().subscribe({
+      next: (rows) => {
+        this.taxUpdateHistory = rows || [];
+        this.taxUpdateLoading = false;
+        this.cdr.detectChanges();
+      },
+      error: (error) => {
+        this.taxUpdateLoading = false;
+        this.taxUpdateError =
+          error?.error?.detail || 'Unable to load tax update history.';
+        this.cdr.detectChanges();
+      },
+    });
+  }
+
+  formatTaxChange(change: TaxRateChangeLog['change_from']): string {
+    const tenure = change.tenure_months === null ? '—' : `${change.tenure_months} months`;
+    const shortTerm = change.short_term_tax_rate === null ? '—' : `${change.short_term_tax_rate}%`;
+    const longTerm = change.long_term_tax_rate === null ? '—' : `${change.long_term_tax_rate}%`;
+
+    return `Tenure: ${tenure} · Short Term: ${shortTerm} · Long Term: ${longTerm}`;
   }
 
   loadTransactionHistory(): void {
@@ -287,13 +444,9 @@ export class SettingsComponent implements OnInit {
 
     this.settingsApi.updateSettings({
       email: this.email,
-      currency: this.preferences.currency,
-      date_format: this.preferences.date_format,
-      default_analytics_period: this.preferences.default_analytics_period,
     }).subscribe({
       next: (response) => {
         this.profile = response.profile;
-        this.preferences = { ...response.preferences };
         this.email = response.profile.email;
         this.saving = false;
         this.profileMessage = 'Settings saved successfully.';
@@ -381,6 +534,14 @@ export class SettingsComponent implements OnInit {
   refresh(): void {
     this.loadSettings();
     this.rbac.load().subscribe();
+
+    if (this.activeTab === 'tax-rates') {
+      this.loadTaxRateSettings();
+    }
+
+    if (this.activeTab === 'tax-updates') {
+      this.loadTaxUpdateHistory();
+    }
 
     if (this.activeTab === 'transaction-history') {
       this.loadTransactionHistory();

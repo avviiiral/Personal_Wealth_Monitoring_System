@@ -78,6 +78,7 @@ _SUBHEADER_FILL = PatternFill(fill_type="solid", fgColor="E2F0D9")
 _SUBTOTAL_FILL = PatternFill(fill_type="solid", fgColor="FFF2CC")
 _GRAND_TOTAL_FILL = PatternFill(fill_type="solid", fgColor="C6E0B4")
 _DIFF_FILL = PatternFill(fill_type="solid", fgColor="FCE4D6")
+_INR_NUMBER_FORMAT = '₹#,##,##0.00;[Red]-₹#,##,##0.00'
 _BORDER = Border(
     left=Side(style="thin"),
     right=Side(style="thin"),
@@ -259,7 +260,116 @@ def _build_data_sheet(workbook, report):
 
     ws.freeze_panes = "A5"
     _autosize(ws, 12, 34)
-    for col in range(5, 17):
+    # Monetary columns use INR with Indian lakh/crore comma grouping; unit columns stay numeric.
+    for col in (6, 7, 9, 10, 12, 13, 15, 16):
+        for cell in ws.iter_cols(min_col=col, max_col=col, min_row=5, max_row=ws.max_row):
+            for item in cell:
+                item.number_format = _INR_NUMBER_FORMAT
+    for col in (5, 8, 11, 14):
+        for cell in ws.iter_cols(min_col=col, max_col=col, min_row=5, max_row=ws.max_row):
+            for item in cell:
+                item.number_format = '#,##0.00'
+    return ws
+
+
+def _build_tax_report_sheet(workbook, report):
+    ws = workbook.create_sheet("Tax Report")
+    ws["A1"] = "Tax Report"
+    _style_title(ws["A1"])
+    ws.merge_cells("A1:T1")
+
+    report_date = report["reporting_date"].strftime("%d.%m.%Y")
+    opening_label = report["opening_date"].strftime("%b-%y").upper()
+    closing_label = report["reporting_date"].strftime("%b-%y").upper()
+    period_start = report["period_start"].strftime("%d.%m.%Y")
+    period_end = report["period_end"].strftime("%d.%m.%Y")
+
+    ws.merge_cells("E3:G3")
+    ws.merge_cells("H3:J3")
+    ws.merge_cells("K3:M3")
+    ws.merge_cells("N3:P3")
+    ws.merge_cells("Q3:T3")
+    ws["E3"] = f"Investment Cost {report_date}"
+    ws["H3"] = f"{opening_label} Closing MTM"
+    ws["K3"] = f"Transactions- Buy/Sell {period_start} to {period_end}"
+    ws["N3"] = f"{closing_label} Closing MTM"
+    ws["Q3"] = "Taxation"
+
+    for col in range(1, 21):
+        ws.cell(3, col).fill = _SECTION_FILL
+        ws.cell(3, col).border = _BORDER
+    for cell in ("E3", "H3", "K3", "N3", "Q3"):
+        _style_header(ws[cell])
+
+    headers = [
+        "Fund Name",
+        "Family Name",
+        "Asset Class",
+        "Advisor",
+        "Qty/Units",
+        "Rate",
+        "Total Cost",
+        f"Units - Closing {opening_label}",
+        f"NAV- {opening_label}",
+        f"Amount-{opening_label} MTM",
+        "Transaction Units",
+        "Transaction NAV",
+        "Transaction Amount",
+        f"Units - Closing {closing_label}",
+        f"NAV- {closing_label}",
+        f"Amount-{closing_label} MTM",
+        "Realized P/L",
+        "Unrealized P/L",
+        "Realized Tax",
+        "Unrealized Tax",
+    ]
+    for col, value in enumerate(headers, 1):
+        ws.cell(4, col, value)
+        _style_header(ws.cell(4, col))
+        ws.cell(4, col).alignment = Alignment(vertical="top", wrap_text=True)
+
+    for row_idx, row in enumerate(report["tax_report"], 5):
+        values = [
+            row["asset_name"],
+            row["family_name"],
+            row["asset_class"],
+            row["advisor"],
+            row["qty_units"],
+            row["rate"],
+            row["total_cost"],
+            row["opening_units"],
+            row["opening_nav"],
+            row["opening_amount"],
+            row["transaction_units"],
+            row["transaction_nav"],
+            row["transaction_amount"],
+            row["closing_units"],
+            row["closing_nav"],
+            row["closing_amount"],
+            row["realized_pnl"],
+            row["unrealized_pnl"],
+            row["realized_tax"],
+            row["unrealized_tax"],
+        ]
+        for col, value in enumerate(values, 1):
+            ws.cell(row_idx, col, value)
+            ws.cell(row_idx, col).alignment = Alignment(vertical="top", wrap_text=(col <= 4))
+            ws.cell(row_idx, col).border = _BORDER
+
+    if not report["tax_report"]:
+        ws.cell(5, 1, "No Tax Report rows available.")
+        ws.merge_cells("A5:T5")
+        ws.cell(5, 1).alignment = Alignment(horizontal="center", vertical="center")
+        ws.cell(5, 1).border = _BORDER
+
+    ws.freeze_panes = "A5"
+    _autosize(ws, 12, 34)
+    # Monetary columns use INR with Indian lakh/crore comma grouping; unit columns stay numeric.
+    for col in (6, 7, 9, 10, 12, 13, 15, 16, 17, 18, 19, 20):
+        for cell in ws.iter_cols(min_col=col, max_col=col, min_row=5, max_row=ws.max_row):
+            for item in cell:
+                item.number_format = _INR_NUMBER_FORMAT
+    for col in (5, 8, 11, 14):
         for cell in ws.iter_cols(min_col=col, max_col=col, min_row=5, max_row=ws.max_row):
             for item in cell:
                 item.number_format = '#,##0.00'
@@ -449,6 +559,7 @@ def mis_report_download(request):
     workbook.remove(default)
     _build_ips_sheet(workbook, report, display_unit)
     _build_data_sheet(workbook, report)
+    _build_tax_report_sheet(workbook, report)
     _build_fund_summary_sheet(workbook, report, display_unit)
     _build_notes_sheet(workbook, report)
 

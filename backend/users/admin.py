@@ -4,9 +4,30 @@ from .models import (
     FamilyGroup,
     FamilyMembership,
     UserAuditLog,
+    TaxRateSetting,
     UserPreference,
     UserProfile,
 )
+
+
+@admin.register(TaxRateSetting)
+class TaxRateSettingAdmin(admin.ModelAdmin):
+    list_display = (
+        "family",
+        "asset",
+        "tenure_months",
+        "short_term_tax_rate",
+        "long_term_tax_rate",
+        "updated_at",
+    )
+    search_fields = (
+        "family__name",
+        "asset__name",
+    )
+    list_filter = (
+        "family",
+    )
+    ordering = ("family__name", "asset__name")
 
 
 @admin.register(UserPreference)

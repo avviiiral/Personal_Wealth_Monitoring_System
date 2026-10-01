@@ -2,7 +2,7 @@
   <header class="page-header">
     <div>
       <h1>Settings</h1>
-      <p>Manage your PWMS account and application preferences.</p>
+      <p>Manage your PWMS account and security settings.</p>
     </div>
 
     <button type="button" class="refresh-button" (click)="refresh()" [disabled]="loading">
@@ -22,8 +22,9 @@
   <ng-container *ngIf="!loading && profile">
     <nav class="settings-tabs">
       <button type="button" class="tab-button" [class.tab-active]="activeTab === 'account'" (click)="setTab('account')">Account</button>
-      <button type="button" class="tab-button" [class.tab-active]="activeTab === 'preferences'" (click)="setTab('preferences')">Preferences</button>
       <button type="button" class="tab-button" [class.tab-active]="activeTab === 'security'" (click)="setTab('security')">Security</button>
+      <button type="button" class="tab-button" [class.tab-active]="activeTab === 'tax-rates'" (click)="setTab('tax-rates')">Tax Settings</button>
+      <button type="button" class="tab-button" [class.tab-active]="activeTab === 'tax-updates'" (click)="setTab('tax-updates')">Tax Update</button>
       <button type="button" class="tab-button" [class.tab-active]="activeTab === 'transaction-history'" (click)="setTab('transaction-history')">Transaction Edit History</button>
       <button type="button" class="tab-button" *ngIf="canManageUsers()" [class.tab-active]="activeTab === 'users'" (click)="setTab('users')">User Management</button>
       <button type="button" class="tab-button" *ngIf="canManageFamilies()" [class.tab-active]="activeTab === 'families'" (click)="setTab('families')">Family Management</button>
@@ -45,17 +46,6 @@
       <div class="card-actions"><button type="button" class="primary-button" (click)="saveSettings()" [disabled]="saving"><span *ngIf="!saving"> Save Changes </span><span *ngIf="saving"> Saving... </span></button></div>
     </section>
 
-    <section class="settings-card" *ngIf="activeTab === 'preferences'">
-      <div class="card-header"><div><h2>Preferences</h2><p>Configure how financial information is displayed.</p></div><span class="section-badge"> Preferences </span></div>
-      <div class="form-grid">
-        <div class="form-field"><label> Currency </label><select [(ngModel)]="preferences.currency"><option value="INR">Indian Rupee (₹)</option><option value="USD">US Dollar ($)</option><option value="EUR">Euro (€)</option><option value="GBP">British Pound (£)</option></select></div>
-        <div class="form-field"><label> Date Format </label><select [(ngModel)]="preferences.date_format"><option value="DD MMM YYYY">12 Aug 2026</option><option value="DD/MM/YYYY">12/08/2026</option><option value="YYYY-MM-DD">2026-08-12</option></select></div>
-        <div class="form-field"><label> Default Analytics Period </label><select [(ngModel)]="preferences.default_analytics_period"><option [ngValue]="30">30 Days</option><option [ngValue]="90">90 Days</option><option [ngValue]="180">180 Days</option><option [ngValue]="365">1 Year</option></select></div>
-      </div>
-      <div class="success-message" *ngIf="profileMessage">{{ profileMessage }}</div>
-      <div class="card-actions"><button type="button" class="primary-button" (click)="saveSettings()" [disabled]="saving"><span *ngIf="!saving"> Save Changes </span><span *ngIf="saving"> Saving... </span></button></div>
-    </section>
-
     <section class="settings-card" *ngIf="activeTab === 'security'">
       <div class="card-header"><div><h2>Security</h2><p>Manage your account password.</p></div><span class="section-badge"> Security </span></div>
       <div class="password-grid">
@@ -66,6 +56,152 @@
       <div class="error-message" *ngIf="passwordError">{{ passwordError }}</div>
       <div class="success-message" *ngIf="passwordMessage">{{ passwordMessage }}</div>
       <div class="card-actions"><button type="button" class="secondary-button" (click)="changePassword()" [disabled]="changingPassword"><span *ngIf="!changingPassword"> Change Password </span><span *ngIf="changingPassword"> Updating... </span></button></div>
+    </section>
+
+
+    <section class="settings-card tax-settings-card" *ngIf="activeTab === 'tax-rates'">
+      <div class="card-header">
+        <div>
+          <h2>Tax Settings</h2>
+          <p>
+            Configure tenure and Short Term / Long Term tax rates for every Asset Name in the active family.
+            These settings are shared across the family and used by the Tax Report.
+          </p>
+        </div>
+        <span class="section-badge">
+          {{ rbac.activeFamily()?.name || 'No active family' }} · {{ taxRateSettings.length }} Assets
+        </span>
+      </div>
+
+      <div class="error-message" *ngIf="taxRateError">{{ taxRateError }}</div>
+
+      <div class="loading-card history-loading" *ngIf="taxRateLoading">
+        <div class="loading-spinner"></div>
+        <span>Loading tax settings...</span>
+      </div>
+
+      <div class="tax-rate-table-wrap" *ngIf="!taxRateLoading && taxRateSettings.length">
+        <table class="tax-rate-table">
+          <thead>
+            <tr>
+              <th>Asset Name</th>
+              <th>Tenure (Months)</th>
+              <th>Short Term Tax (%)</th>
+              <th>Long Term Tax (%)</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr *ngFor="let row of taxRateSettings">
+              <td class="tax-asset-name">
+                <strong>{{ row.asset_name }}</strong>
+              </td>
+              <td>
+                <input
+                  class="tax-rate-input"
+                  type="number"
+                  min="0"
+                  step="1"
+                  [(ngModel)]="row.tenure_months"
+                  placeholder="Months"
+                />
+              </td>
+              <td>
+                <input
+                  class="tax-rate-input"
+                  type="number"
+                  min="0"
+                  max="100"
+                  step="0.01"
+                  [(ngModel)]="row.short_term_tax_rate"
+                  placeholder="0.00"
+                />
+              </td>
+              <td>
+                <input
+                  class="tax-rate-input"
+                  type="number"
+                  min="0"
+                  max="100"
+                  step="0.01"
+                  [(ngModel)]="row.long_term_tax_rate"
+                  placeholder="0.00"
+                />
+              </td>
+              <td>
+                <div class="tax-rate-row-actions">
+                  <button
+                    type="button"
+                    class="primary-button tax-save-button"
+                    (click)="saveTaxRate(row)"
+                    [disabled]="taxRateSavingAssetId !== null"
+                  >
+                    {{ taxRateSavingAssetId === row.asset_id ? 'Saving...' : 'Save' }}
+                  </button>
+                  <button
+                    type="button"
+                    class="secondary-button tax-clear-button"
+                    *ngIf="row.id !== null"
+                    (click)="clearTaxRate(row)"
+                    [disabled]="taxRateSavingAssetId !== null"
+                  >
+                    Clear
+                  </button>
+                </div>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="tax-empty-state" *ngIf="!taxRateLoading && !taxRateSettings.length">
+        <strong>No assets found for the active family.</strong>
+        <span>Import or create an asset for this family first.</span>
+      </div>
+    </section>
+
+    <section class="settings-card tax-update-card" *ngIf="activeTab === 'tax-updates'">
+      <div class="card-header">
+        <div>
+          <h2>Tax Update</h2>
+          <p>Audit history of changes made to the tax settings for the active family.</p>
+        </div>
+        <span class="section-badge">{{ taxUpdateHistory.length }} Updates</span>
+      </div>
+
+      <div class="error-card" *ngIf="!taxUpdateLoading && taxUpdateError">{{ taxUpdateError }}</div>
+
+      <div class="loading-card history-loading" *ngIf="taxUpdateLoading">
+        <div class="loading-spinner"></div>
+        <span>Loading tax update history...</span>
+      </div>
+
+      <div class="tax-update-empty" *ngIf="!taxUpdateLoading && !taxUpdateError && !taxUpdateHistory.length">
+        No tax setting changes have been recorded for this family yet.
+      </div>
+
+      <div class="tax-update-table-wrap" *ngIf="!taxUpdateLoading && !taxUpdateError && taxUpdateHistory.length">
+        <table class="tax-update-table">
+          <thead>
+            <tr>
+              <th>User</th>
+              <th>Date &amp; Time</th>
+              <th>Asset Name</th>
+              <th>Change From</th>
+              <th>Change To</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr *ngFor="let update of taxUpdateHistory">
+              <td class="tax-update-user">{{ update.user }}</td>
+              <td class="tax-update-datetime">{{ update.date_time | date:'dd MMM yyyy, hh:mm a' }}</td>
+              <td class="tax-update-asset">{{ update.asset_name }}</td>
+              <td class="tax-update-change">{{ formatTaxChange(update.change_from) }}</td>
+              <td class="tax-update-change">{{ formatTaxChange(update.change_to) }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
     </section>
 
     <section class="settings-card transaction-history-card" *ngIf="activeTab === 'transaction-history'">

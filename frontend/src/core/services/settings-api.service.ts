@@ -27,6 +27,34 @@ export interface UpdateSettingsResponse extends SettingsResponse {
   message: string;
 }
 
+export interface TaxRateSetting {
+  id: number | null;
+  asset_id: number;
+  asset_name: string;
+  family_id: number;
+  family_name: string;
+  tenure_months: number | null;
+  short_term_tax_rate: string | number | null;
+  long_term_tax_rate: string | number | null;
+  updated_at: string | null;
+}
+export interface TaxRateChangeLog {
+  id: number;
+  user: string;
+  date_time: string;
+  asset_name: string;
+  change_from: {
+    tenure_months: number | null;
+    short_term_tax_rate: string | null;
+    long_term_tax_rate: string | null;
+  };
+  change_to: {
+    tenure_months: number | null;
+    short_term_tax_rate: string | null;
+    long_term_tax_rate: string | null;
+  };
+}
+
 export interface ChangePasswordResponse {
   message: string;
 }
@@ -81,6 +109,75 @@ export class SettingsApiService {
 
   getSettings(): Observable<SettingsResponse> {
     return this.http.get<SettingsResponse>(`${this.baseUrl}/settings/`, this.requestOptions);
+  }
+
+
+  getTaxRateSettings(): Observable<TaxRateSetting[]> {
+    return this.http.get<TaxRateSetting[]>(`${this.baseUrl}/settings/tax-rates/`, this.requestOptions);
+  }
+
+  saveTaxRateSetting(
+    assetId: number,
+    tenureMonths: number,
+    shortTermTaxRate: number,
+    longTermTaxRate: number,
+  ): Observable<TaxRateSetting> {
+    const csrfToken = this.readCsrfToken();
+    const headers = csrfToken
+      ? new HttpHeaders({ 'X-CSRFToken': csrfToken, 'Content-Type': 'application/json' })
+      : undefined;
+
+    return this.http.post<TaxRateSetting>(
+      `${this.baseUrl}/settings/tax-rates/`,
+      {
+        asset_id: assetId,
+        tenure_months: tenureMonths,
+        short_term_tax_rate: shortTermTaxRate,
+        long_term_tax_rate: longTermTaxRate,
+      },
+      { withCredentials: true, headers },
+    );
+  }
+
+  updateTaxRateSetting(
+    id: number,
+    tenureMonths: number,
+    shortTermTaxRate: number,
+    longTermTaxRate: number,
+  ): Observable<TaxRateSetting> {
+    const csrfToken = this.readCsrfToken();
+    const headers = csrfToken
+      ? new HttpHeaders({ 'X-CSRFToken': csrfToken, 'Content-Type': 'application/json' })
+      : undefined;
+
+    return this.http.patch<TaxRateSetting>(
+      `${this.baseUrl}/settings/tax-rates/${id}/`,
+      {
+        tenure_months: tenureMonths,
+        short_term_tax_rate: shortTermTaxRate,
+        long_term_tax_rate: longTermTaxRate,
+      },
+      { withCredentials: true, headers },
+    );
+  }
+
+  deleteTaxRateSetting(id: number): Observable<{ message: string }> {
+    const csrfToken = this.readCsrfToken();
+    const headers = csrfToken
+      ? new HttpHeaders({ 'X-CSRFToken': csrfToken, 'Content-Type': 'application/json' })
+      : undefined;
+
+    return this.http.delete<{ message: string }>(
+      `${this.baseUrl}/settings/tax-rates/${id}/`,
+      { withCredentials: true, headers },
+    );
+  }
+
+  getTaxRateChangeHistory(): Observable<TaxRateChangeLog[]> {
+    return this.http.get<TaxRateChangeLog[]>(
+      `${this.baseUrl}/settings/tax-rates/history/`,
+      this.requestOptions,
+    );
   }
 
   getTransactionEditHistory(): Observable<TransactionEditHistoryResponse> {

@@ -17,7 +17,7 @@ from mutual_funds.models import (
     MutualFundTransactionType,
     MutualFundNAV,
 )
-from users.models import FamilyGroup, Role
+from users.models import FamilyGroup, Role, TaxRateSetting
 from portfolio.mis_report_service import MISReportService
 
 
@@ -119,6 +119,11 @@ class MISReportAPITests(TestCase):
         self.assertEqual(data["data_sheet"][0]["family_name"], "DAJ")
         self.assertEqual(data["data_sheet"][0]["qty_units"], 10.0)
         self.assertEqual(data["data_sheet"][0]["closing_amount"], 1250.0)
+        self.assertIn("tax_report", data)
+        self.assertEqual(data["tax_report"][0]["realized_pnl"], 0.0)
+        self.assertEqual(data["tax_report"][0]["unrealized_pnl"], 250.0)
+        self.assertEqual(data["tax_report"][0]["realized_tax"], 0.0)
+        self.assertEqual(data["tax_report"][0]["unrealized_tax"], 0.0)
         self.assertEqual(data["data_sheet"][0]["advisor"], "Advisor A")
         self.assertEqual(len(data["fund_type_summary"]), 1)
         self.assertEqual(data["fund_type_summary"][0]["fund_type"], "Equity")
@@ -154,6 +159,203 @@ class MISReportAPITests(TestCase):
                 "Sterlite Electrical Ltd (Power Transmission)",
                 "Sterlite Grid 5 Ltd Unlisted Shares",
             ],
+        )
+
+    def test_tax_report_uses_fifo_and_tenure_based_tax_rates(self):
+        fifo_asset = Asset.objects.create(
+            owner=self.user,
+            family=self.family,
+            name="FIFO Equity",
+            category="STOCK",
+            isin="INE000FIFO1",
+            symbol="FIFO1",
+        )
+        TaxRateSetting.objects.create(
+            family=self.family,
+            asset=fifo_asset,
+            tenure_months=12,
+            short_term_tax_rate=Decimal("15"),
+            long_term_tax_rate=Decimal("10"),
+        )
+        Transaction.objects.create(
+            owner=self.user,
+            family=self.family,
+            asset=fifo_asset,
+            family_name="DAJ",
+            portfolio="Core",
+            asset_class="Equity",
+            sub_class="Large Cap",
+            asset_name="FIFO Equity",
+            transaction_date=date(2025, 1, 1),
+            transaction_type="BUY",
+            quantity=Decimal("10"),
+            price_per_unit=Decimal("100"),
+            amount=Decimal("1000"),
+            fees=Decimal("0"),
+        )
+        Transaction.objects.create(
+            owner=self.user,
+            family=self.family,
+            asset=fifo_asset,
+            family_name="DAJ",
+            portfolio="Core",
+            asset_class="Equity",
+            sub_class="Large Cap",
+            asset_name="FIFO Equity",
+            transaction_date=date(2026, 1, 1),
+            transaction_type="BUY",
+            quantity=Decimal("10"),
+            price_per_unit=Decimal("200"),
+            amount=Decimal("2000"),
+            fees=Decimal("0"),
+        )
+        Transaction.objects.create(
+            owner=self.user,
+            family=self.family,
+            asset=fifo_asset,
+            family_name="DAJ",
+            portfolio="Core",
+            asset_class="Equity",
+            sub_class="Large Cap",
+            asset_name="FIFO Equity",
+            transaction_date=date(2026, 9, 1),
+            transaction_type="SELL",
+            quantity=Decimal("15"),
+            price_per_unit=Decimal("300"),
+            amount=Decimal("4500"),
+            fees=Decimal("0"),
+        )
+        MarketPrice.objects.create(
+            asset=fifo_asset,
+            date=date(2026, 9, 30),
+            close_price=Decimal("300"),
+            source=DataSource.MANUAL,
+        )
+
+        response = self.client.get(
+            "/api/portfolio/mis-report/",
+            {"from_date": "2026-04-01", "to_date": "2026-09-30"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        row = next(item for item in response.json()["tax_report"] if item["asset_name"] == "FIFO Equity")
+        self.assertEqual(row["qty_units"], 5.0)
+        self.assertEqual(row["realized_pnl"], 2500.0)
+        self.assertEqual(row["unrealized_pnl"], 500.0)
+        self.assertEqual(row["realized_tax"], 275.0)
+        self.assertEqual(row["unrealized_tax"], 75.0)
+
+        Transaction.objects.create(
+            owner=self.user,
+            family=self.family,
+            asset=fifo_asset,
+            family_name="DAJ",
+            portfolio="Core",
+            asset_class="Equity",
+            sub_class="Large Cap",
+            asset_name="FIFO Equity",
+            transaction_date=date(2026, 9, 15),
+            transaction_type="BUY",
+            quantity=Decimal("5"),
+            price_per_unit=Decimal("500"),
+            amount=Decimal("2500"),
+            fees=Decimal("0"),
+        )
+        Transaction.objects.create(
+            owner=self.user,
+            family=self.family,
+            asset=fifo_asset,
+            family_name="DAJ",
+            portfolio="Core",
+            asset_class="Equity",
+            sub_class="Large Cap",
+            asset_name="FIFO Equity",
+            transaction_date=date(2026, 9, 20),
+            transaction_type="SELL",
+            quantity=Decimal("5"),
+            price_per_unit=Decimal("100"),
+            amount=Decimal("500"),
+            fees=Decimal("0"),
+        )
+
+        response = self.client.get(
+            "/api/portfolio/mis-report/",
+            {"from_date": "2026-04-01", "to_date": "2026-09-30"},
+        )
+        row = next(item for item in response.json()["tax_report"] if item["asset_name"] == "FIFO Equity")
+        self.assertEqual(row["realized_pnl"], 2000.0)
+        self.assertEqual(row["realized_tax"], 275.0)
+
+    def test_tax_setting_applies_to_same_display_asset_name_across_positions(self):
+        first_asset = Asset.objects.create(
+            owner=self.user,
+            family=self.family,
+            name="Direct Equity",
+            category="STOCK",
+            isin="INE000DIRECT1",
+            symbol="DIRECT1",
+        )
+        second_asset = Asset.objects.create(
+            owner=self.user,
+            family=self.family,
+            name="Internal Direct Equity Position",
+            category="STOCK",
+            isin="INE000DIRECT2",
+            symbol="DIRECT2",
+        )
+        TaxRateSetting.objects.create(
+            family=self.family,
+            asset=first_asset,
+            tenure_months=12,
+            short_term_tax_rate=Decimal("15"),
+            long_term_tax_rate=Decimal("10"),
+        )
+
+        for asset, family_name, isin in (
+            (first_asset, "DAJ", "INE000DIRECT1"),
+            (second_asset, "DJT", "INE000DIRECT2"),
+        ):
+            Transaction.objects.create(
+                owner=self.user,
+                family=self.family,
+                asset=asset,
+                family_name=family_name,
+                portfolio="Core",
+                asset_class="Equity",
+                sub_class="Large Cap",
+                asset_name="Direct Equity",
+                transaction_date=date(2026, 1, 10),
+                transaction_type="BUY",
+                quantity=Decimal("10"),
+                price_per_unit=Decimal("100"),
+                amount=Decimal("1000"),
+                fees=Decimal("0"),
+            )
+            MarketPrice.objects.create(
+                asset=asset,
+                date=date(2026, 10, 1),
+                close_price=Decimal("200"),
+                source=DataSource.MANUAL,
+            )
+
+        response = self.client.get(
+            "/api/portfolio/mis-report/",
+            {"from_date": "2026-01-01", "to_date": "2026-10-01"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        rows = [
+            item for item in response.json()["tax_report"]
+            if item["asset_name"] == "Direct Equity"
+        ]
+        self.assertEqual(len(rows), 2)
+        self.assertEqual(
+            {item["family_name"] for item in rows},
+            {"DAJ", "DJT"},
+        )
+        self.assertEqual(
+            {item["unrealized_tax"] for item in rows},
+            {150.0},
         )
 
     def test_same_asset_name_is_consolidated_across_positions(self):
@@ -276,6 +478,7 @@ class MISReportAPITests(TestCase):
         self.assertEqual(data["ips"], [])
         self.assertEqual(data["data_sheet"], [])
         self.assertEqual(data["fund_type_summary"], [])
+        self.assertEqual(data["tax_report"], [])
 
     def test_excel_download_contains_three_workbook_sheets_in_template_order(self):
         response = self.client.get("/api/portfolio/mis-report/download/")
@@ -289,7 +492,7 @@ class MISReportAPITests(TestCase):
         workbook = load_workbook(BytesIO(response.content), data_only=False)
         self.assertEqual(
             workbook.sheetnames,
-            ["IPS", "Data Sheet", "Fund Type Summary", "Notes"],
+            ["IPS", "Data Sheet", "Tax Report", "Fund Type Summary", "Notes"],
         )
         self.assertEqual(workbook["IPS"]["A1"].value, "IPS")
         self.assertEqual(workbook["Notes"]["A1"].value, "Notes to MIS OCTOBER-2026")
@@ -303,6 +506,14 @@ class MISReportAPITests(TestCase):
         self.assertEqual(workbook["Data Sheet"]["A5"].value, "MIS Equity")
         self.assertEqual(workbook["Data Sheet"]["A2"].value, None)
         self.assertEqual(workbook["Data Sheet"]["A6"].value, None)
+        tax_ws = workbook["Tax Report"]
+        self.assertEqual(tax_ws["A1"].value, "Tax Report")
+        self.assertEqual(tax_ws["Q3"].value, "Taxation")
+        self.assertEqual(tax_ws["Q4"].value, "Realized P/L")
+        self.assertEqual(tax_ws["R4"].value, "Unrealized P/L")
+        self.assertEqual(tax_ws["S4"].value, "Realized Tax")
+        self.assertEqual(tax_ws["T4"].value, "Unrealized Tax")
+        self.assertEqual(tax_ws["A5"].value, "MIS Equity")
         fund_summary_ws = workbook["Fund Type Summary"]
         self.assertEqual(fund_summary_ws["A1"].value, "Fund Type wise Summary")
         self.assertEqual(fund_summary_ws["A2"].value, "Values in ₹ Lakhs")

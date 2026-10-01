@@ -266,49 +266,73 @@ def _build_data_sheet(workbook, report):
     return ws
 
 
-def _build_fund_summary_sheet(workbook, report):
+def _build_fund_summary_sheet(workbook, report, display_unit="lakhs"):
     ws = workbook.create_sheet("Fund Type Summary")
     ws["A1"] = "Fund Type wise Summary"
     _style_title(ws["A1"])
-    ws.merge_cells("A1:D1")
+    ws.merge_cells("A1:C1")
 
-    headers = ["Fund Type.V2", "Fund Name", "Total", "Market Value"]
-    for col, value in enumerate(headers, 1):
+    unit_labels = {
+        "amount": "₹ Amount",
+        "lakhs": "₹ Lakhs",
+        "crores": "₹ Crores",
+    }
+    divisors = {
+        "amount": Decimal("1"),
+        "lakhs": Decimal("100000"),
+        "crores": Decimal("10000000"),
+    }
+    divisor = divisors[display_unit]
+
+    ws["A2"] = f"Values in {unit_labels[display_unit]}"
+    ws.merge_cells("A2:C2")
+    ws["A2"].font = Font(italic=True, size=10)
+    ws["A2"].alignment = Alignment(horizontal="left", vertical="center")
+
+    top_headers = ["Fund Type.V2", "Fund Name", "Total"]
+    detail_headers = ["Asset class", "Asset name", "Current Market Value"]
+    for col, value in enumerate(top_headers, 1):
         ws.cell(3, col, value)
         _style_header(ws.cell(3, col))
+    for col, value in enumerate(detail_headers, 1):
+        ws.cell(4, col, value)
+        _style_header(ws.cell(4, col), fill=_SECTION_FILL)
 
-    row_idx = 4
+    row_idx = 5
     grand_total = Decimal("0")
     for group in report["fund_type_summary"]:
         for item in group["rows"]:
+            value = Decimal(str(item["total"] or 0))
             ws.cell(row_idx, 1, group["fund_type"])
             ws.cell(row_idx, 2, item["fund_name"])
-            ws.cell(row_idx, 3, item["total"])
-            ws.cell(row_idx, 4, item["market_value_label"])
-            for col in range(1, 5):
+            ws.cell(row_idx, 3, float(value / divisor))
+            for col in range(1, 4):
                 ws.cell(row_idx, col).border = _BORDER
             row_idx += 1
+
+        subtotal = Decimal(str(group["subtotal"] or 0))
         ws.cell(row_idx, 1, f"{group['fund_type']} Subtotal")
-        ws.cell(row_idx, 3, group["subtotal"])
-        for col in range(1, 5):
+        ws.cell(row_idx, 3, float(subtotal / divisor))
+        for col in range(1, 4):
             ws.cell(row_idx, col).fill = _SUBTOTAL_FILL
             ws.cell(row_idx, col).border = _BORDER
         ws.cell(row_idx, 1).font = Font(bold=True)
         ws.cell(row_idx, 3).font = Font(bold=True)
-        grand_total += Decimal(str(group["subtotal"] or 0))
+        grand_total += subtotal
         row_idx += 1
 
     ws.cell(row_idx, 1, "Grand Total")
-    ws.cell(row_idx, 3, grand_total)
-    for col in range(1, 5):
+    ws.cell(row_idx, 3, float(grand_total / divisor))
+    for col in range(1, 4):
         ws.cell(row_idx, col).fill = _GRAND_TOTAL_FILL
         ws.cell(row_idx, col).border = _BORDER
     ws.cell(row_idx, 1).font = Font(bold=True)
     ws.cell(row_idx, 3).font = Font(bold=True)
-    ws.cell(row_idx + 1, 1, "Asset class")
-    ws.cell(row_idx + 1, 2, "Asset name")
-    ws.cell(row_idx + 2, 1, "(With subtotal for each asset class and grand total at end)")
-    ws.freeze_panes = "A4"
+
+    for row_cells in ws.iter_rows(min_row=5, max_row=ws.max_row, min_col=3, max_col=3):
+        for cell in row_cells:
+            cell.number_format = '#,##0' if display_unit == 'amount' else '#,##0.00'
+    ws.freeze_panes = "A5"
     _autosize(ws, 14, 48)
     return ws
 
@@ -348,7 +372,7 @@ def mis_report_download(request):
     workbook.remove(default)
     _build_ips_sheet(workbook, report, display_unit)
     _build_data_sheet(workbook, report)
-    _build_fund_summary_sheet(workbook, report)
+    _build_fund_summary_sheet(workbook, report, display_unit)
 
     output = BytesIO()
     workbook.save(output)

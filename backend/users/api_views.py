@@ -507,7 +507,7 @@ def tax_rate_change_history(request):
             "id": row.id,
             "user": row.username,
             "date_time": row.changed_at,
-            "asset_name": row.asset_name,
+            "asset_name": _portfolio_asset_name(family, row.asset) if row.asset_id else row.asset_name,
             "change_from": row.change_from,
             "change_to": row.change_to,
         }

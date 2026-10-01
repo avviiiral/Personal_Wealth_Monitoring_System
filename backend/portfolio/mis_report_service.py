@@ -8,7 +8,7 @@ import requests
 from django.db.models import Max
 
 from investments.models import Asset, Transaction, TransactionType
-from market_data.models import MarketPrice
+from market_data.models import MarketPrice, ManualAssetPrice
 from mutual_funds.models import MutualFundNAV, MutualFundTransaction, MutualFundHolding
 from portfolio.services.portfolio_tree_service import PortfolioTreeService
 from market_data.services.yahoo_finance import YahooFinanceService
@@ -516,7 +516,7 @@ class MISReportService:
                     ("National Highways Infra Trust", ("national highways infra trust", "NHIT", "NHIT.NS")),
                     ("Nexus Select Trust", ("nexus select trust", "NXST.NS")),
                     ("Knowledge Realty Trust", ("knowledge realty trust", "KRT", "KRT.NS")),
-                    ("Bagmane Prime Office Reit", ("bagmane prime office reit", "BAGMANE", "BAGMANE.NS")),
+                    ("Bagmane Prime Office Reit", ("bagmane prime office reit", "BAGMANE", "BAGMANERR.NS")),
                     ("NDR InvIT", ("ndr invit", "NDRINVIT", "NDRINVIT.NS")),
                     ("Cube InvIT", ("cube invit", "cube highways trust", "CUBEINVIT", "CUBEINVIT.NS")),
                 ],
@@ -583,7 +583,7 @@ class MISReportService:
             "National Highways Infra Trust": "NHIT.NS",
             "Nexus Select Trust": "NXST.NS",
             "Knowledge Realty Trust": "KRT.NS",
-            "Bagmane Prime Office Reit": "BAGMANE.NS",
+            "Bagmane Prime Office Reit": "BAGMANERR.NS",
             "NDR InvIT": "NDRINVIT.NS",
             "Cube InvIT": "CUBEINVIT.NS",
             "Nifty 50": "^NSEI",
@@ -602,6 +602,55 @@ class MISReportService:
                     opening_date,
                     as_of,
                 )
+
+                # SGBs and other manually valued instruments may have a
+                # ManualAssetPrice but no daily MarketPrice history. If the
+                # stored manual valuation predates the requested closing date,
+                # use it as the MIS reference valuation for both endpoints.
+                if (
+                    (opening_rate is None or closing_rate is None)
+                    and name == "Sovereign Gold Bonds - 48Kg"
+                ):
+                    aliases_normalized = [
+                        cls._normalize_note_name(alias)
+                        for alias in aliases
+                    ]
+                    manual_assets = []
+                    for asset in Asset.objects.filter(
+                        family=family,
+                        is_active=True,
+                    ):
+                        normalized_name = cls._normalize_note_name(asset.name)
+                        if any(
+                            alias
+                            and (
+                                normalized_name == alias
+                                or (len(alias) > 4 and alias in normalized_name)
+                            )
+                            for alias in aliases_normalized
+                        ):
+                            manual_assets.append(asset)
+
+                    manual_values = [
+                        (
+                            asset.manual_price.price,
+                            asset.manual_price.price_date,
+                        )
+                        for asset in manual_assets
+                        if hasattr(asset, "manual_price")
+                        and asset.manual_price.price_date <= as_of
+                    ]
+                    if manual_values:
+                        manual_values.sort(
+                            key=lambda item: item[1],
+                            reverse=True,
+                        )
+                        manual_price, manual_date = manual_values[0]
+                        # A static MIS valuation is valid for the opening
+                        # endpoint only when it was already effective then.
+                        if manual_date <= opening_date:
+                            opening_rate = opening_rate or manual_price
+                        closing_rate = closing_rate or manual_price
 
                 if opening_rate is None or closing_rate is None:
                     if name == "BSE 500":

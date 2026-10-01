@@ -3,6 +3,19 @@
     <div>
       <p class="eyebrow">Portfolio</p>
       <h1>MIS Report</h1>
+      <div class="date-filters">
+        <label>
+          <span>From Date</span>
+          <input type="date" [(ngModel)]="fromDate" [max]="toDate" />
+        </label>
+        <label>
+          <span>To Date</span>
+          <input type="date" [(ngModel)]="toDate" [max]="todayDate" />
+        </label>
+        <button type="button" class="generate-button" (click)="loadReport()" [disabled]="loading || !fromDate || !toDate">
+          {{ loading ? 'Generating…' : 'Generate Report' }}
+        </button>
+      </div>
       <p class="subtitle" *ngIf="report">
         Family: <strong>{{ report.family_name }}</strong>
         <span>•</span>

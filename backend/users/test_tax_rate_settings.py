@@ -105,7 +105,7 @@ class TaxRateSettingsApiTests(TestCase):
         self.assertEqual(listing.status_code, 200)
         configured = next(row for row in listing.data if row["asset_id"] == self.asset1.id)
         self.assertEqual(configured["tenure_months"], 24)
-        self.assertEqual(configured["long_term_tax_rate"], "8.50")
+        self.assertEqual(configured["long_term_tax_rate"], "8.5000")
 
         self.client.force_authenticate(self.user1)
         delete = self.client.delete(f"/api/settings/tax-rates/{tax_id}/")

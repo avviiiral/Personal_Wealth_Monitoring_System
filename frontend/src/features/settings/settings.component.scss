@@ -1042,27 +1042,13 @@
 
 
 
-.tax-rate-form {
-  display: grid;
-  grid-template-columns: minmax(240px, 1fr) 180px auto;
-  gap: 16px;
-  align-items: end;
-  margin-bottom: 18px;
-}
-
-.tax-rate-actions,
-.tax-rate-row-actions {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-}
-
 .tax-rate-table-wrap {
   overflow-x: auto;
 }
 
 .tax-rate-table {
   width: 100%;
+  min-width: 980px;
   border-collapse: collapse;
 }
 
@@ -1071,29 +1057,109 @@
   padding: 12px 10px;
   border-bottom: 1px solid rgba(127, 127, 127, 0.2);
   text-align: left;
+  vertical-align: middle;
 }
 
 .tax-rate-table th {
   font-weight: 600;
+  white-space: nowrap;
 }
 
-.empty-state {
-  text-align: center !important;
-  opacity: 0.7;
-  padding: 28px !important;
+.tax-asset-name {
+  min-width: 220px;
 }
 
-.danger-button {
-  border: 1px solid #dc2626;
-  color: #dc2626;
-  background: transparent;
-  border-radius: 6px;
-  padding: 7px 10px;
-  cursor: pointer;
+.tax-asset-name strong {
+  font-weight: 600;
+}
+
+.tax-rate-input {
+  width: 125px;
+  box-sizing: border-box;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  background: white;
+  color: #111827;
+  padding: 9px 10px;
+  font-size: 13px;
+  outline: none;
+}
+
+.tax-rate-input:focus {
+  border-color: #6b7280;
+  box-shadow: 0 0 0 3px rgba(17, 24, 39, 0.06);
+}
+
+.tax-updated {
+  white-space: nowrap;
+  color: #667085;
+  font-size: 12px;
+}
+
+.tax-rate-row-actions {
+  display: flex;
+  gap: 7px;
+  align-items: center;
+  white-space: nowrap;
+}
+
+.tax-save-button,
+.tax-clear-button {
+  padding: 8px 12px;
+  font-size: 12px;
+}
+
+.tax-empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 38px 20px;
+  border: 1px solid rgba(127, 127, 127, 0.2);
+  border-radius: 10px;
+  color: #667085;
+  text-align: center;
+}
+
+.tax-empty-state strong {
+  color: #374151;
 }
 
 @media (max-width: 900px) {
-  .tax-rate-form {
-    grid-template-columns: 1fr;
+  .tax-rate-table {
+    min-width: 980px;
   }
+}
+
+:host-context(html.dark-theme) .tax-rate-table th,
+:host-context(html.dark-theme) .tax-rate-table td {
+  border-bottom-color: #2a2e37;
+}
+
+:host-context(html.dark-theme) .tax-rate-input {
+  background: #12151b;
+  border-color: #3a414e;
+  color: #e5e7eb;
+}
+
+:host-context(html.dark-theme) .tax-rate-input::placeholder {
+  color: #6f7888;
+}
+
+:host-context(html.dark-theme) .tax-rate-input:focus {
+  border-color: #6b7280;
+  box-shadow: 0 0 0 3px rgba(148, 163, 184, 0.12);
+}
+
+:host-context(html.dark-theme) .tax-updated {
+  color: #8890a0;
+}
+
+:host-context(html.dark-theme) .tax-empty-state {
+  border-color: #2a2e37;
+  color: #8890a0;
+}
+
+:host-context(html.dark-theme) .tax-empty-state strong {
+  color: #cbd5e1;
 }

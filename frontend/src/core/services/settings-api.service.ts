@@ -38,6 +38,23 @@ export interface TaxRateSetting {
   long_term_tax_rate: string | number | null;
   updated_at: string | null;
 }
+export interface TaxRateChangeLog {
+  id: number;
+  user: string;
+  date_time: string;
+  asset_name: string;
+  change_from: {
+    tenure_months: number | null;
+    short_term_tax_rate: string | null;
+    long_term_tax_rate: string | null;
+  };
+  change_to: {
+    tenure_months: number | null;
+    short_term_tax_rate: string | null;
+    long_term_tax_rate: string | null;
+  };
+}
+
 export interface ChangePasswordResponse {
   message: string;
 }
@@ -153,6 +170,13 @@ export class SettingsApiService {
     return this.http.delete<{ message: string }>(
       `${this.baseUrl}/settings/tax-rates/${id}/`,
       { withCredentials: true, headers },
+    );
+  }
+
+  getTaxRateChangeHistory(): Observable<TaxRateChangeLog[]> {
+    return this.http.get<TaxRateChangeLog[]>(
+      `${this.baseUrl}/settings/tax-rates/history/`,
+      this.requestOptions,
     );
   }
 

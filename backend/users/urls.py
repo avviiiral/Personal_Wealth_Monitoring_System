@@ -14,6 +14,7 @@ from .api_views import (
     user_list,
     tax_rate_list,
     tax_rate_detail,
+    tax_rate_change_history,
 )
 
 from portfolio.manual_price_views import manual_asset_price
@@ -52,6 +53,12 @@ urlpatterns = [
         "tax-rates/<int:tax_rate_id>/",
         tax_rate_detail,
         name="settings-tax-rate-detail",
+    ),
+
+    path(
+        "tax-rates/history/",
+        tax_rate_change_history,
+        name="settings-tax-rate-history",
     ),
 
     # ------------------------------------------------------

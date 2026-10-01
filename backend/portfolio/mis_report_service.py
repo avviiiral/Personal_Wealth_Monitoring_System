@@ -436,11 +436,11 @@ class MISReportService:
         return by_asset_id, by_asset_name
 
     @classmethod
-    def _build_tax_row(cls, row, data_row, period_start, tax_setting):
+    def _build_tax_row(cls, row, data_row, as_of, period_start, tax_setting):
         metrics = cls._fifo_tax_metrics(
             row["transactions"],
             row["kind"],
-            date.fromisoformat(str(data_row["closing_nav"])) if False else cls.ZERO,
+            as_of,
             period_start,
             tax_setting,
             data_row["closing_nav"],

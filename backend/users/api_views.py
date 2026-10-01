@@ -118,6 +118,7 @@ def set_active_family(request):
 
 
 def _portfolio_asset_name(family, asset):
+    # Prefer the Portfolio Asset Name recorded on this exact asset.
     name = (
         Transaction.objects
         .filter(family=family, asset=asset, asset_name__isnull=False)
@@ -126,7 +127,25 @@ def _portfolio_asset_name(family, asset):
         .values_list("asset_name", flat=True)
         .first()
     )
-    return name or asset.name
+    if name:
+        return name
+
+    # Asset records can be duplicated for the same internal security
+    # name. In that case inherit the Portfolio Asset Name from the
+    # family transaction using the same internal Asset.name.
+    return (
+        Transaction.objects
+        .filter(
+            family=family,
+            asset__name=asset.name,
+            asset_name__isnull=False,
+        )
+        .exclude(asset_name="")
+        .order_by("id")
+        .values_list("asset_name", flat=True)
+        .first()
+        or asset.name
+    )
 
 
 def _tax_values(row):
@@ -210,6 +229,25 @@ def tax_rate_list(request):
                 .values_list("asset_id", flat=True)
                 .distinct()
             )
+            # Include duplicate internal Asset records representing the
+            # same security so a setting saved against one record is
+            # still visible on the single logical Portfolio Asset Name row.
+            base_asset = Asset.objects.filter(
+                pk=asset_id,
+                family=family,
+            ).first()
+            if base_asset is not None:
+                matching_ids.extend(
+                    Asset.objects
+                    .filter(
+                        family=family,
+                        name=base_asset.name,
+                        is_active=True,
+                    )
+                    .values_list("id", flat=True)
+                )
+                matching_ids = list(dict.fromkeys(matching_ids))
+
             row = settings_by_asset_id.get(asset_id)
             if row is None:
                 for matching_id in matching_ids:
@@ -296,6 +334,16 @@ def tax_rate_list(request):
         .values_list("asset_id", flat=True)
         .distinct()
     )
+    matching_asset_ids.extend(
+        Asset.objects
+        .filter(
+            family=family,
+            name=asset.name,
+            is_active=True,
+        )
+        .values_list("id", flat=True)
+    )
+    matching_asset_ids = list(dict.fromkeys(matching_asset_ids))
     if asset.id not in matching_asset_ids:
         matching_asset_ids.append(asset.id)
 

@@ -66,16 +66,24 @@ export class MISReportService {
   private readonly http = inject(HttpClient);
   private readonly baseUrl = environment.apiUrl;
 
-  getReport(): Observable<MISReport> {
+  getReport(fromDate?: string, toDate?: string): Observable<MISReport> {
+    const params: Record<string, string> = {};
+    if (fromDate) params['from_date'] = fromDate;
+    if (toDate) params['to_date'] = toDate;
     return this.http.get<MISReport>(this.baseUrl + '/api/portfolio/mis-report/', {
       withCredentials: true,
+      params,
     });
   }
 
-  downloadReport(): Observable<Blob> {
+  downloadReport(fromDate?: string, toDate?: string): Observable<Blob> {
+    const params: Record<string, string> = {};
+    if (fromDate) params['from_date'] = fromDate;
+    if (toDate) params['to_date'] = toDate;
     return this.http.get(this.baseUrl + '/api/portfolio/mis-report/download/', {
       responseType: 'blob',
       withCredentials: true,
+      params,
     });
   }
 }

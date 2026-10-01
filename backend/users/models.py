@@ -108,6 +108,44 @@ class TaxRateSetting(models.Model):
         return f"{self.family.name} - {self.asset.name}"
 
 
+class TaxRateChangeLog(models.Model):
+    """Append-only audit trail for family tax-setting changes."""
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="tax_rate_change_logs",
+    )
+    username = models.CharField(max_length=150)
+    family = models.ForeignKey(
+        "FamilyGroup",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="tax_rate_change_logs",
+    )
+    family_name = models.CharField(max_length=100, blank=True, default="")
+    asset = models.ForeignKey(
+        "investments.Asset",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="tax_rate_change_logs",
+    )
+    asset_name = models.CharField(max_length=255)
+    changed_at = models.DateTimeField(auto_now_add=True)
+    change_from = models.JSONField(default=dict)
+    change_to = models.JSONField(default=dict)
+
+    class Meta:
+        ordering = ["-changed_at", "-id"]
+
+    def __str__(self):
+        return f"{self.username} - {self.asset_name} @ {self.changed_at:%Y-%m-%d %H:%M:%S}"
+
+
 # ==============================================================
 # ROLE-BASED ACCESS CONTROL (RBAC)
 # ==============================================================

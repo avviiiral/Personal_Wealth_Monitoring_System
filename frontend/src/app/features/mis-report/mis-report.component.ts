@@ -68,6 +68,10 @@ export class MISReportComponent implements OnInit {
 
   get dataRows(): MISDataSheetRow[] { return this.report?.data_sheet ?? []; }
 
+  get fundSummaryGrandTotal(): number {
+    return (this.report?.fund_type_summary ?? []).reduce((total, group) => total + Number(group.subtotal || 0), 0);
+  }
+
   formatNumber(value: number | null | undefined, digits = 2): string {
     if (value === null || value === undefined) return '—';
     return new Intl.NumberFormat('en-IN', { minimumFractionDigits: digits, maximumFractionDigits: digits }).format(value);

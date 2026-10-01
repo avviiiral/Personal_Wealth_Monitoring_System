@@ -294,11 +294,21 @@ class MISReportService:
         }
 
     @classmethod
-    def build(cls, family):
-        as_of = cls._latest_reporting_date(family)
+    def build(cls, family, from_date=None, to_date=None):
+        if from_date is None and to_date is None:
+            to_date = cls._latest_reporting_date(family)
+            from_date = cls._period_start(to_date)
+        elif from_date is None or to_date is None:
+            raise ValueError("Both from_date and to_date are required.")
+        elif from_date > to_date:
+            raise ValueError("From date cannot be after to date.")
+        elif to_date > date.today():
+            raise ValueError("To date cannot be in the future.")
+
+        as_of = to_date
+        opening_date = from_date - timedelta(days=1)
         prior_month_end = cls._prior_month_end(as_of)
-        opening_date = cls._opening_date(as_of)
-        period_start = cls._period_start(as_of)
+        period_start = from_date
 
         rows = cls._base_rows(family)
         price_cache = {}

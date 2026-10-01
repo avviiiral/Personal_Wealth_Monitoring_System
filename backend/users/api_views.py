@@ -12,7 +12,7 @@ from rest_framework.response import Response
 
 from investments.models import Asset
 
-from .models import FamilyGroup, Role, TaxRateSetting, UserAuditLog, UserProfile
+from .models import FamilyGroup, Role, TaxRateChangeLog, TaxRateSetting, UserAuditLog, UserProfile
 from .permissions import (
     IsAdminOrSuperUser,
     IsSystemOwner,
@@ -119,6 +119,35 @@ def set_active_family(request):
 
 @api_view(["GET", "POST"])
 @permission_classes([IsAuthenticated])
+
+
+def _tax_values(row):
+    if row is None:
+        return {
+            "tenure_months": None,
+            "short_term_tax_rate": None,
+            "long_term_tax_rate": None,
+        }
+    return {
+        "tenure_months": row.tenure_months,
+        "short_term_tax_rate": str(row.short_term_tax_rate) if row.short_term_tax_rate is not None else None,
+        "long_term_tax_rate": str(row.long_term_tax_rate) if row.long_term_tax_rate is not None else None,
+    }
+
+
+def _log_tax_change(user, family, asset, before, after):
+    TaxRateChangeLog.objects.create(
+        user=user,
+        username=user.username,
+        family=family,
+        family_name=family.name,
+        asset=asset,
+        asset_name=asset.name,
+        change_from=_tax_values(before),
+        change_to=_tax_values(after),
+    )
+
+
 def tax_rate_list(request):
     """GET/POST /api/settings/tax-rates/ for the authenticated user's active family."""
 
@@ -210,15 +239,25 @@ def tax_rate_list(request):
     except ValueError as exc:
         return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
 
-    row, created = TaxRateSetting.objects.update_or_create(
-        family=family,
-        asset=asset,
-        defaults={
-            "tenure_months": tenure_months,
-            "short_term_tax_rate": short_term_tax_rate,
-            "long_term_tax_rate": long_term_tax_rate,
-        },
-    )
+    row = TaxRateSetting.objects.filter(family=family, asset=asset).first()
+    before = row
+
+    if row is None:
+        row = TaxRateSetting(
+            family=family,
+            asset=asset,
+            tenure_months=tenure_months,
+            short_term_tax_rate=short_term_tax_rate,
+            long_term_tax_rate=long_term_tax_rate,
+        )
+    else:
+        row.tenure_months = tenure_months
+        row.short_term_tax_rate = short_term_tax_rate
+        row.long_term_tax_rate = long_term_tax_rate
+
+    row.save()
+    _log_tax_change(request.user, family, asset, before, row)
+    created = before is None
 
     return Response(
         {
@@ -252,6 +291,8 @@ def tax_rate_detail(request, tax_rate_id):
         return Response({"detail": "Tax setting not found."}, status=status.HTTP_404_NOT_FOUND)
 
     if request.method == "DELETE":
+        before = row
+        _log_tax_change(request.user, family, row.asset, before, None)
         row.delete()
         return Response({"message": "Tax setting cleared successfully."})
 
@@ -279,10 +320,13 @@ def tax_rate_detail(request, tax_rate_id):
     if not updates:
         return Response({"detail": "No tax settings were supplied."}, status=status.HTTP_400_BAD_REQUEST)
 
+    before = TaxRateSetting.objects.get(pk=row.pk)
+
     for field_name, value in updates.items():
         setattr(row, field_name, value)
 
     row.save(update_fields=[*updates.keys(), "updated_at"])
+    _log_tax_change(request.user, family, row.asset, before, row)
 
     return Response(
         {
@@ -347,6 +391,32 @@ def user_list(request):
 # ==================================================================
 # USER DETAIL / UPDATE
 # ==================================================================
+
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def tax_rate_change_history(request):
+    """GET /api/settings/tax-rates/history/ for the active family."""
+
+    family = require_active_family(request.user)
+    rows = (
+        TaxRateChangeLog.objects
+        .filter(family=family)
+        .order_by("-changed_at", "-id")
+    )
+
+    return Response([
+        {
+            "id": row.id,
+            "user": row.username,
+            "date_time": row.changed_at,
+            "asset_name": row.asset_name,
+            "change_from": row.change_from,
+            "change_to": row.change_to,
+        }
+        for row in rows
+    ])
 
 
 @api_view(["GET", "PUT", "PATCH", "DELETE"])

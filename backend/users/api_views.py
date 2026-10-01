@@ -119,6 +119,41 @@ def set_active_family(request):
 
 @api_view(["GET", "POST"])
 @permission_classes([IsAuthenticated])
+def _tax_values(row):
+    if row is None:
+        return {
+            "tenure_months": None,
+            "short_term_tax_rate": None,
+            "long_term_tax_rate": None,
+        }
+    return {
+        "tenure_months": row.tenure_months,
+        "short_term_tax_rate": (
+            str(row.short_term_tax_rate)
+            if row.short_term_tax_rate is not None
+            else None
+        ),
+        "long_term_tax_rate": (
+            str(row.long_term_tax_rate)
+            if row.long_term_tax_rate is not None
+            else None
+        ),
+    }
+
+
+def _log_tax_change(user, family, asset, before, after):
+    TaxRateChangeLog.objects.create(
+        user=user,
+        username=user.username,
+        family=family,
+        family_name=family.name,
+        asset=asset,
+        asset_name=asset.name,
+        change_from=_tax_values(before),
+        change_to=_tax_values(after),
+    )
+
+
 def tax_rate_list(request):
     """GET/POST /api/settings/tax-rates/ for the active family.
 

@@ -100,7 +100,7 @@ class TaxRateSettingsApiTests(TestCase):
         )
 
         self.assertEqual(create.status_code, 201)
-        self.assertEqual(create.data["asset_name"], "HDFC Bank")
+        self.assertEqual(create.data["asset_name"], "Family Portfolio - HDFC Bank")
         self.assertEqual(create.data["family_name"], "Tax Family")
         self.assertEqual(create.data["tenure_months"], 12)
         self.assertEqual(create.data["short_term_tax_rate"], "20.00")
@@ -108,7 +108,7 @@ class TaxRateSettingsApiTests(TestCase):
 
         first_log = TaxRateChangeLog.objects.get()
         self.assertEqual(first_log.username, self.user1.username)
-        self.assertEqual(first_log.asset_name, "HDFC Bank")
+        self.assertEqual(first_log.asset_name, "Family Portfolio - HDFC Bank")
         self.assertEqual(first_log.change_from["tenure_months"], None)
         self.assertEqual(first_log.change_to["tenure_months"], 12)
         self.assertEqual(first_log.change_from["short_term_tax_rate"], None)
@@ -174,7 +174,7 @@ class TaxRateSettingsApiTests(TestCase):
         self.assertEqual(history.status_code, 200)
         self.assertEqual(len(history.data), 1)
         self.assertEqual(history.data[0]["user"], self.user1.username)
-        self.assertEqual(history.data[0]["asset_name"], "HDFC Bank")
+        self.assertEqual(history.data[0]["asset_name"], "Family Portfolio - HDFC Bank")
         self.assertIn("date_time", history.data[0])
         self.assertEqual(history.data[0]["change_from"]["tenure_months"], None)
         self.assertEqual(history.data[0]["change_to"]["tenure_months"], 12)
@@ -192,7 +192,7 @@ class TaxRateSettingsApiTests(TestCase):
         listing = self.client.get("/api/settings/tax-rates/")
 
         self.assertEqual(listing.status_code, 200)
-        hdfc_rows = [row for row in listing.data if row["asset_name"] == "HDFC Bank"]
+        hdfc_rows = [row for row in listing.data if row["asset_name"] == "Family Portfolio - HDFC Bank"]
         self.assertEqual(len(hdfc_rows), 1)
 
         response = self.client.post(

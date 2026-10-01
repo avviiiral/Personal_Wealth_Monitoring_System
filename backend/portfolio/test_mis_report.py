@@ -83,6 +83,49 @@ class MISReportAPITests(TestCase):
         self.assertEqual(data["holdings"][0]["family_name"], "MIS Test Family")
         self.assertEqual(data["holdings"][0]["quantity"], 10.0)
 
+    def test_same_asset_name_is_consolidated_across_positions(self):
+        second_asset = Asset.objects.create(
+            owner=self.user,
+            family=self.family,
+            name="MIS Equity Duplicate Position",
+            category="STOCK",
+            isin="INE000MISTEST2",
+            symbol="MISTEST2",
+        )
+        Transaction.objects.create(
+            owner=self.user,
+            family=self.family,
+            asset=second_asset,
+            family_name="MIS Test Family",
+            portfolio="Core",
+            asset_class="Equity",
+            sub_class="Large Cap",
+            asset_name="MIS Equity",
+            transaction_date=date(2026, 2, 10),
+            transaction_type="BUY",
+            quantity=Decimal("5"),
+            price_per_unit=Decimal("100"),
+            amount=Decimal("500"),
+            fees=Decimal("0"),
+        )
+        MarketPrice.objects.create(
+            asset=second_asset,
+            date=date.today(),
+            close_price=Decimal("125"),
+            source=DataSource.MANUAL,
+        )
+
+        response = self.client.get("/api/portfolio/mis-report/")
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        rows = [row for row in data["holdings"] if row["asset_name"] == "MIS Equity"]
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["family_name"], "MIS Test Family")
+        self.assertEqual(rows[0]["quantity"], 15.0)
+        self.assertEqual(rows[0]["invested_value"], 1500.0)
+        self.assertEqual(rows[0]["current_value"], 1875.0)
+
     def test_mutual_fund_holdings_are_included(self):
         scheme = MutualFundScheme.objects.create(
             owner=self.user,

@@ -108,8 +108,8 @@ def mis_report_download(request):
             summary_sheet.cell(row_index, col, value)
 
     holdings_headers = [
-        "Family Name", "Portfolio", "Asset Class", "Sub Class",
-        "Holding / Investment Name", "Asset ID", "ISIN / Scheme Code",
+        "Family Name", "Asset Name", "Portfolio", "Asset Class", "Sub Class",
+        "Asset ID", "ISIN / Scheme Code",
         "Symbol", "Quantity", "Average Cost", "Invested Value",
         "Current Price", "Current Value", "P&L", "P&L %", "XIRR",
     ]
@@ -121,8 +121,8 @@ def mis_report_download(request):
 
     for row_index, row in enumerate(report["holdings"], 2):
         values = [
-            row["family_name"], row["portfolio"], row["asset_class"], row["sub_class"],
-            row["asset_name"], row["asset_id"], row["isin"], row["symbol"],
+            row["family_name"], row["asset_name"], row["portfolio"], row["asset_class"], row["sub_class"],
+            row["asset_id"], row["isin"], row["symbol"],
             row["quantity"], row["average_cost"], row["invested_value"],
             row["current_price"], row["current_value"], row["pnl"],
             row["pnl_percentage"], row["xirr"],

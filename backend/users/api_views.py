@@ -431,31 +431,6 @@ def user_list(request):
 
 
 
-@api_view(["GET"])
-@permission_classes([IsAuthenticated])
-def tax_rate_change_history(request):
-    """GET /api/settings/tax-rates/history/ for the active family."""
-
-    family = require_active_family(request.user)
-    rows = (
-        TaxRateChangeLog.objects
-        .filter(family=family)
-        .order_by("-changed_at", "-id")
-    )
-
-    return Response([
-        {
-            "id": row.id,
-            "user": row.username,
-            "date_time": row.changed_at,
-            "asset_name": row.asset_name,
-            "change_from": row.change_from,
-            "change_to": row.change_to,
-        }
-        for row in rows
-    ])
-
-
 @api_view(["GET", "PUT", "PATCH", "DELETE"])
 @permission_classes([IsAuthenticated])
 def user_detail(request, user_id):

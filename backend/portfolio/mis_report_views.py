@@ -120,6 +120,11 @@ def _build_ips_sheet(workbook, report):
     current_date = report["reporting_date"].strftime("%d.%m.%Y")
     prior_date = report["prior_month_date"].strftime("%d.%m.%Y")
     cursor = 4
+    lakhs = Decimal("100000")
+
+    # IPS is displayed in lakhs; source values remain in rupees elsewhere in the report.
+    current_totals = {family: Decimal("0") for family in families}
+    prior_totals = {family: Decimal("0") for family in families}
 
     for row in report["ips"]:
         difference_values = {
@@ -127,25 +132,45 @@ def _build_ips_sheet(workbook, report):
             for family in families
         }
         lines = [
-            (row["asset_class"], current_date, row["family_values"], row["grand_total"]),
-            ("", prior_date, row["prior_family_values"], row["prior_total"]),
-            ("", "Diff- " + current_date, difference_values, row["difference"]),
+            (row["asset_class"], current_date, row["family_values"], row["grand_total"], _SECTION_FILL),
+            ("", prior_date, row["prior_family_values"], row["prior_total"], _SUBHEADER_FILL),
+            ("", "Diff- " + current_date, difference_values, row["difference"], _DIFF_FILL),
         ]
-        for asset_class, label, values, total in lines:
+        for asset_class, label, values, total, fill in lines:
             ws.cell(cursor, 1, asset_class)
             ws.cell(cursor, 2, label)
             for offset, family in enumerate(families, 3):
-                ws.cell(cursor, offset, values.get(family, 0))
-            ws.cell(cursor, len(families) + 3, total)
-            fill = _SECTION_FILL if label == current_date else _SUBHEADER_FILL if label == prior_date else _DIFF_FILL
+                value = Decimal(str(values.get(family, 0) or 0))
+                ws.cell(cursor, offset, float(value / lakhs))
+                if label == current_date:
+                    current_totals[family] += value
+                elif label == prior_date:
+                    prior_totals[family] += value
+            ws.cell(cursor, len(families) + 3, float(Decimal(str(total or 0)) / lakhs))
             for col in range(1, len(families) + 4):
                 ws.cell(cursor, col).fill = fill
                 ws.cell(cursor, col).border = _BORDER
             cursor += 1
 
-    if not report["ips"]:
+    if report["ips"]:
+        ws.cell(cursor, 1, "Grand Total")
+        ws.cell(cursor, 2, "Overall")
+        for offset, family in enumerate(families, 3):
+            ws.cell(cursor, offset, float(current_totals[family] / lakhs))
+        overall_total = sum(current_totals.values(), Decimal("0"))
+        ws.cell(cursor, len(families) + 3, float(overall_total / lakhs))
+        for col in range(1, len(families) + 4):
+            ws.cell(cursor, col).fill = _GRAND_TOTAL_FILL
+            ws.cell(cursor, col).border = _BORDER
+        ws.cell(cursor, 1).font = Font(bold=True)
+        ws.cell(cursor, 2).font = Font(bold=True)
+        for col in range(3, len(families) + 4):
+            ws.cell(cursor, col).font = Font(bold=True)
+    else:
         ws.cell(4, 1, "No data available")
 
+    ws.cell(2, 1, "Values in ₹ Lakhs")
+    ws.cell(2, 1).font = Font(italic=True, size=10)
     ws.freeze_panes = "C4"
     _autosize(ws, 14, 32)
     return ws

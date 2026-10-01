@@ -415,6 +415,8 @@ def tax_rate_change_history(request):
 
 
 
+@api_view(["GET", "POST"])
+@permission_classes([IsAuthenticated, IsAdminOrSuperUser])
 def user_list(request):
     """
     GET  /api/settings/users/   - list users this requester may

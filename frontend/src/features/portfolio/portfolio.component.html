@@ -110,7 +110,7 @@
   <div *ngIf="!loading && !error" class="selection-area">
     <!-- FAMILY -->
     <div class="selection-box">
-      <div class="selection-title">Family Name</div>
+      <div class="selection-title">Family Member</div>
 
       <div class="selection-buttons">
         <button
@@ -337,7 +337,7 @@
                       class="asset-group-col sortable-header"
                       (click)="cycleSort('asset', 'family_name', summary.sub_class)"
                     >
-                      Family Name
+                      Family Member
                       <span class="sort-indicator">
                         {{ getSortIndicator('asset', 'family_name', summary.sub_class) }}
                       </span>

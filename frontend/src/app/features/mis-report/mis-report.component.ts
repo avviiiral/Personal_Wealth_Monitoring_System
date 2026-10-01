@@ -2,9 +2,9 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ChangeDetectorRef, Component, inject, OnInit } from '@angular/core';
 
-import { MISDataSheetRow, MISReport, MISReportService } from '../../core/services/mis-report.service';
+import { MISDataSheetRow, MISTaxReportRow, MISReport, MISReportService } from '../../core/services/mis-report.service';
 
-type MISSheet = 'ips' | 'data' | 'fund-summary' | 'notes';
+type MISSheet = 'ips' | 'data' | 'tax' | 'fund-summary' | 'notes';
 
 @Component({
   selector: 'app-mis-report',
@@ -36,6 +36,7 @@ export class MISReportComponent implements OnInit {
   readonly sheets: Array<{ key: MISSheet; label: string }> = [
     { key: 'ips', label: 'IPS' },
     { key: 'data', label: 'Data Sheet' },
+    { key: 'tax', label: 'Tax Report' },
     { key: 'fund-summary', label: 'Fund Type-wise Summary' },
     { key: 'notes', label: 'Notes' },
   ];
@@ -94,6 +95,8 @@ export class MISReportComponent implements OnInit {
   }
 
   get dataRows(): MISDataSheetRow[] { return this.report?.data_sheet ?? []; }
+
+  get taxRows(): MISTaxReportRow[] { return this.report?.tax_report ?? []; }
 
   get fundSummaryGrandTotal(): number {
     return (this.report?.fund_type_summary ?? []).reduce((total, group) => total + Number(group.subtotal || 0), 0);

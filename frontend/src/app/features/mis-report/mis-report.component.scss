@@ -285,3 +285,42 @@ th {
     flex: 1;
   }
 }
+
+
+.notes-content {
+  padding: 20px;
+}
+
+.notes-section {
+  border: 1px solid rgba(127,127,127,.16);
+  border-radius: 10px;
+  overflow: hidden;
+  margin-bottom: 18px;
+}
+
+.notes-section-title {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  padding: 12px 14px;
+  background: rgba(127,127,127,.045);
+  border-bottom: 1px solid rgba(127,127,127,.12);
+}
+
+.notes-section-title strong {
+  min-width: 24px;
+}
+
+.notes-table {
+  min-width: 760px;
+}
+
+.notes-table th {
+  text-transform: none;
+}
+
+.notes-empty {
+  padding: 28px;
+  text-align: center;
+  opacity: .65;
+}

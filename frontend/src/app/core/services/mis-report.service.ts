@@ -38,9 +38,6 @@ export interface MISFundSummaryRow {
   rows: Array<{
     fund_name: string;
     total: number;
-    market_value_label: string;
-    asset_class: string;
-    asset_name: string;
   }>;
   subtotal: number;
 }

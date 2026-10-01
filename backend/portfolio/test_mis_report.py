@@ -273,8 +273,8 @@ class MISReportAPITests(TestCase):
             transaction_date=date(2026, 9, 20),
             transaction_type="SELL",
             quantity=Decimal("5"),
-            price_per_unit=Decimal("400"),
-            amount=Decimal("2000"),
+            price_per_unit=Decimal("100"),
+            amount=Decimal("500"),
             fees=Decimal("0"),
         )
 
@@ -284,7 +284,7 @@ class MISReportAPITests(TestCase):
         )
         row = next(item for item in response.json()["tax_report"] if item["asset_name"] == "FIFO Equity")
         self.assertEqual(row["realized_pnl"], 2000.0)
-        self.assertEqual(row["realized_tax"], 200.0)
+        self.assertEqual(row["realized_tax"], 275.0)
 
     def test_same_asset_name_is_consolidated_across_positions(self):
         second_asset = Asset.objects.create(

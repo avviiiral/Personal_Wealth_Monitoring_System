@@ -28,6 +28,7 @@
       <button type="button" class="tab-button" *ngIf="canManageUsers()" [class.tab-active]="activeTab === 'users'" (click)="setTab('users')">User Management</button>
       <button type="button" class="tab-button" *ngIf="canManageFamilies()" [class.tab-active]="activeTab === 'families'" (click)="setTab('families')">Family Management</button>
       <button type="button" class="tab-button" *ngIf="canEditPrices()" [class.tab-active]="activeTab === 'prices'" (click)="setTab('prices')">Manual Prices</button>
+      <button type="button" class="tab-button" [class.tab-active]="activeTab === 'tax-rates'" (click)="setTab('tax-rates')">Tax Settings</button>
     </nav>
 
     <section class="settings-card" *ngIf="activeTab === 'account'">
@@ -66,6 +67,56 @@
       <div class="error-message" *ngIf="passwordError">{{ passwordError }}</div>
       <div class="success-message" *ngIf="passwordMessage">{{ passwordMessage }}</div>
       <div class="card-actions"><button type="button" class="secondary-button" (click)="changePassword()" [disabled]="changingPassword"><span *ngIf="!changingPassword"> Change Password </span><span *ngIf="changingPassword"> Updating... </span></button></div>
+    </section>
+
+
+    <section class="settings-card tax-settings-card" *ngIf="activeTab === 'tax-rates'">
+      <div class="card-header">
+        <div><h2>Tax Settings</h2><p>Set the tax rate for each portfolio Asset Name. These settings are stored per user and will be used by the Tax Report.</p></div>
+        <span class="section-badge">{{ taxRateSettings.length }} Assets</span>
+      </div>
+
+      <div class="tax-rate-form">
+        <div class="form-field">
+          <label>Asset Name</label>
+          <input type="text" [(ngModel)]="taxAssetName" placeholder="Exact portfolio Asset Name" maxlength="255" />
+        </div>
+        <div class="form-field">
+          <label>Tax Rate (%)</label>
+          <input type="number" [(ngModel)]="taxRateValue" min="0" max="100" step="0.01" placeholder="0.00" />
+        </div>
+        <div class="tax-rate-actions">
+          <button type="button" class="primary-button" (click)="saveTaxRate()" [disabled]="taxRateSaving">
+            {{ taxRateSaving ? 'Saving...' : (editingTaxRateId === null ? 'Add Tax Rate' : 'Update Tax Rate') }}
+          </button>
+          <button type="button" class="secondary-button" *ngIf="editingTaxRateId !== null" (click)="resetTaxRateForm()">Cancel</button>
+        </div>
+      </div>
+
+      <div class="error-message" *ngIf="taxRateError">{{ taxRateError }}</div>
+      <div class="loading-card history-loading" *ngIf="taxRateLoading"><div class="loading-spinner"></div><span> Loading tax settings... </span></div>
+
+      <div class="tax-rate-table-wrap" *ngIf="!taxRateLoading">
+        <table class="tax-rate-table">
+          <thead><tr><th>Asset Name</th><th>Tax Rate</th><th>Updated</th><th>Actions</th></tr></thead>
+          <tbody>
+            <tr *ngFor="let row of taxRateSettings">
+              <td>{{ row.asset_name }}</td>
+              <td>{{ row.tax_rate }}%</td>
+              <td>{{ row.updated_at | date:'dd MMM yyyy, HH:mm' }}</td>
+              <td>
+                <div class="tax-rate-row-actions">
+                  <button type="button" class="secondary-button" (click)="editTaxRate(row)">Edit</button>
+                  <button type="button" class="danger-button" (click)="deleteTaxRate(row)">Delete</button>
+                </div>
+              </td>
+            </tr>
+            <tr *ngIf="!taxRateSettings.length">
+              <td colspan="4" class="empty-state">No asset tax rates configured yet.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
     </section>
 
     <section class="settings-card transaction-history-card" *ngIf="activeTab === 'transaction-history'">

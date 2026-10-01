@@ -4,45 +4,61 @@ import { Observable } from 'rxjs';
 
 import { environment } from '../../../environments/environment';
 
-export interface MISHolding {
-  family_name: string;
-  portfolio: string;
+export interface MISIPSRow {
   asset_class: string;
-  sub_class: string;
-  asset_name: string;
-  asset_id: number | null;
-  isin: string | null;
-  symbol: string | null;
-  quantity: number | null;
-  average_cost: number | null;
-  invested_value: number;
-  current_price: number | null;
-  current_value: number;
-  pnl: number;
-  pnl_percentage: number | null;
-  xirr: number | null;
+  family_values: Record<string, number>;
+  grand_total: number;
+  prior_family_values: Record<string, number>;
+  prior_total: number;
+  difference: number;
 }
 
-export interface MISAssetClassSummary {
+export interface MISDataSheetRow {
+  asset_name: string;
+  family_name: string;
   asset_class: string;
-  invested_value: number;
-  current_value: number;
-  pnl: number;
-  pnl_percentage: number;
+  sub_class: string;
+  advisor: string;
+  qty_units: number;
+  rate: number;
+  total_cost: number;
+  opening_units: number;
+  opening_nav: number | null;
+  opening_amount: number;
+  transaction_units: number;
+  transaction_nav: number | null;
+  transaction_amount: number;
+  closing_units: number;
+  closing_nav: number | null;
+  closing_amount: number;
+}
+
+export interface MISFundSummaryRow {
+  fund_type: string;
+  rows: Array<{
+    fund_name: string;
+    total: number;
+    market_value_label: string;
+    asset_class: string;
+    asset_name: string;
+  }>;
+  subtotal: number;
 }
 
 export interface MISReport {
   family_name: string;
   reporting_date: string;
+  opening_date: string;
+  prior_month_date: string;
+  period_start: string;
+  family_names: string[];
+  ips: MISIPSRow[];
+  data_sheet: MISDataSheetRow[];
+  fund_type_summary: MISFundSummaryRow[];
   summary: {
-    total_invested: number;
     total_current_value: number;
-    total_pnl: number;
-    pnl_percentage: number;
-    number_of_holdings: number;
+    number_of_rows: number;
   };
-  asset_class_summary: MISAssetClassSummary[];
-  holdings: MISHolding[];
 }
 
 @Injectable({ providedIn: 'root' })

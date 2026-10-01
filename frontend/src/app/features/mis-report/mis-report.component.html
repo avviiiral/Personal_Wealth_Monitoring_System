@@ -12,16 +12,10 @@
           <span>To Date</span>
           <input type="date" [(ngModel)]="toDate" [max]="todayDate" />
         </label>
-        <div class="display-unit-inline">
-          <span>Display As</span>
-          <div class="display-unit-buttons">
-            <button
-              *ngFor="let unit of displayUnits"
-              type="button"
-              class="display-unit-button"
-              [class.active]="displayUnit === unit.value"
-              (click)="setDisplayUnit(unit.value)"
-            >
+        <div class="header-control-inline">
+          <span class="header-control-label">Display As</span>
+          <div class="header-control-buttons">
+            <button *ngFor="let unit of displayUnits" type="button" class="header-control-button" [class.active]="displayUnit === unit.value" (click)="setDisplayUnit(unit.value)">
               {{ unit.label }}
             </button>
           </div>

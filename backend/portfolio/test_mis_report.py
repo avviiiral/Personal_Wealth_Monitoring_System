@@ -14,6 +14,7 @@ from mutual_funds.models import (
     MutualFundScheme,
     MutualFundTransaction,
     MutualFundTransactionType,
+    MutualFundNAV,
 )
 from users.models import FamilyGroup, Role
 
@@ -42,11 +43,12 @@ class MISReportAPITests(TestCase):
             owner=self.user,
             family=self.family,
             asset=self.asset,
-            family_name="Legacy Family Label",
+            family_name="DAJ",
             portfolio="Core",
             asset_class="Equity",
             sub_class="Large Cap",
             asset_name="MIS Equity",
+            advisors="Advisor A",
             transaction_date=date(2026, 1, 10),
             transaction_type="BUY",
             quantity=Decimal("10"),
@@ -69,22 +71,44 @@ class MISReportAPITests(TestCase):
         response = self.client.get("/api/portfolio/mis-report/")
         self.assertIn(response.status_code, [401, 403])
 
-    def test_report_uses_active_family_scope_and_existing_values(self):
+    def test_custom_date_range_changes_report_dates_and_transaction_period(self):
+        response = self.client.get(
+            "/api/portfolio/mis-report/",
+            {"from_date": "2026-02-01", "to_date": "2026-03-31"},
+        )
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data["period_start"], "2026-02-01")
+        self.assertEqual(data["period_end"], "2026-03-31")
+        self.assertEqual(data["reporting_date"], "2026-03-31")
+        self.assertEqual(data["opening_date"], "2026-01-31")
+
+    def test_custom_date_range_rejects_invalid_dates(self):
+        response = self.client.get(
+            "/api/portfolio/mis-report/",
+            {"from_date": "2026-04-01", "to_date": "2026-03-31"},
+        )
+        self.assertEqual(response.status_code, 400)
+
+    def test_report_exposes_workbook_sections(self):
         response = self.client.get("/api/portfolio/mis-report/")
 
         self.assertEqual(response.status_code, 200)
         data = response.json()
         self.assertEqual(data["family_name"], "MIS Test Family")
-        self.assertEqual(data["summary"]["total_invested"], 1000.0)
-        self.assertEqual(data["summary"]["total_current_value"], 1250.0)
-        self.assertEqual(data["summary"]["total_pnl"], 250.0)
-        self.assertEqual(data["holdings"][0]["asset_class"], "Equity")
-        self.assertEqual(data["holdings"][0]["asset_name"], "MIS Equity")
-        self.assertEqual(data["holdings"][0]["family_name"], "Legacy Family Label")
-        self.assertEqual(data["holdings"][0]["quantity"], 10.0)
-        self.assertIn("Legacy Family Label", {
-            row["family_name"] for row in data["holdings"]
-        })
+        self.assertEqual(data["family_names"], ["DAJ"])
+        self.assertEqual(len(data["ips"]), 1)
+        self.assertEqual(data["ips"][0]["asset_class"], "Equity")
+        self.assertEqual(data["data_sheet"][0]["asset_name"], "MIS Equity")
+        self.assertEqual(data["data_sheet"][0]["family_name"], "DAJ")
+        self.assertEqual(data["data_sheet"][0]["qty_units"], 10.0)
+        self.assertEqual(data["data_sheet"][0]["closing_amount"], 1250.0)
+        self.assertEqual(data["data_sheet"][0]["advisor"], "Advisor A")
+        self.assertEqual(len(data["fund_type_summary"]), 1)
+        self.assertEqual(data["fund_type_summary"][0]["fund_type"], "Equity")
+        self.assertEqual(data["fund_type_summary"][0]["rows"][0]["fund_name"], "MIS Equity")
+        self.assertEqual(data["fund_type_summary"][0]["rows"][0]["total"], 1250.0)
+        self.assertEqual(data["fund_type_summary"][0]["subtotal"], 1250.0)
 
     def test_same_asset_name_is_consolidated_across_positions(self):
         second_asset = Asset.objects.create(
@@ -99,7 +123,7 @@ class MISReportAPITests(TestCase):
             owner=self.user,
             family=self.family,
             asset=second_asset,
-            family_name="MIS Test Family",
+            family_name="DAJ",
             portfolio="Core",
             asset_class="Equity",
             sub_class="Large Cap",
@@ -121,15 +145,13 @@ class MISReportAPITests(TestCase):
         response = self.client.get("/api/portfolio/mis-report/")
 
         self.assertEqual(response.status_code, 200)
-        data = response.json()
-        rows = [row for row in data["holdings"] if row["asset_name"] == "MIS Equity"]
+        rows = [row for row in response.json()["data_sheet"] if row["asset_name"] == "MIS Equity"]
         self.assertEqual(len(rows), 1)
-        self.assertEqual(rows[0]["family_name"], "MIS Test Family")
-        self.assertEqual(rows[0]["quantity"], 15.0)
-        self.assertEqual(rows[0]["invested_value"], 1500.0)
-        self.assertEqual(rows[0]["current_value"], 1875.0)
+        self.assertEqual(rows[0]["qty_units"], 15.0)
+        self.assertEqual(rows[0]["total_cost"], 1500.0)
+        self.assertEqual(rows[0]["closing_amount"], 1875.0)
 
-    def test_mutual_fund_holdings_are_included(self):
+    def test_mutual_fund_data_sheet_and_fund_summary_are_included(self):
         scheme = MutualFundScheme.objects.create(
             owner=self.user,
             family=self.family,
@@ -141,7 +163,7 @@ class MISReportAPITests(TestCase):
         MutualFundTransaction.objects.create(
             owner=self.user,
             family=self.family,
-            family_name="MIS Test Family",
+            family_name="DAJ",
             portfolio="Core",
             scheme=scheme,
             transaction_type=MutualFundTransactionType.PURCHASE,
@@ -162,23 +184,32 @@ class MISReportAPITests(TestCase):
             current_value=Decimal("1200"),
             unrealized_pnl=Decimal("200"),
         )
+        MutualFundNAV.objects.create(
+            scheme=scheme,
+            date=date.today(),
+            nav=Decimal("120"),
+            source="AMFI",
+        )
 
         response = self.client.get("/api/portfolio/mis-report/")
         self.assertEqual(response.status_code, 200)
 
-        mf_rows = [
-            row for row in response.json()["holdings"]
-            if row["asset_class"] == "Mutual Funds"
-        ]
+        data = response.json()
+        mf_rows = [row for row in data["data_sheet"] if row["asset_class"] == "Mutual Funds"]
         self.assertEqual(len(mf_rows), 1)
-        self.assertEqual(mf_rows[0]["current_value"], 1200.0)
+        self.assertEqual(mf_rows[0]["asset_name"], "MIS Equity Fund")
+        self.assertEqual(mf_rows[0]["qty_units"], 10.0)
+        self.assertEqual(mf_rows[0]["closing_amount"], 1200.0)
+        equity_group = next(group for group in data["fund_type_summary"] if group["fund_type"] == "Equity")
+        mf_group = next(group for group in data["fund_type_summary"] if group["fund_type"] == "Mutual Funds")
+        self.assertEqual(equity_group["rows"][0]["fund_name"], "MIS Equity")
+        self.assertEqual(equity_group["rows"][0]["total"], 1250.0)
+        self.assertEqual(mf_group["rows"][0]["fund_name"], "MIS Equity Fund")
+        self.assertEqual(mf_group["rows"][0]["total"], 1200.0)
 
     def test_unrelated_family_is_not_accessible(self):
         other_family = FamilyGroup.objects.create(name="Other Family")
         self.user.profile.role = Role.VIEWER
-
-        # Simulate a stale/forged active-family selection. The user is
-        # deliberately NOT a member of the selected family.
         self.user.profile.family_groups.remove(self.family)
         self.user.profile.active_family_group = other_family
         self.user.profile.save(update_fields=["role", "active_family_group"])
@@ -186,7 +217,7 @@ class MISReportAPITests(TestCase):
         response = self.client.get("/api/portfolio/mis-report/")
         self.assertEqual(response.status_code, 403)
 
-    def test_empty_family_returns_empty_report(self):
+    def test_empty_family_returns_empty_sections(self):
         empty_family = FamilyGroup.objects.create(name="Empty MIS Family")
         self.user.profile.family_groups.add(empty_family)
         self.user.profile.active_family_group = empty_family
@@ -194,12 +225,13 @@ class MISReportAPITests(TestCase):
 
         response = self.client.get("/api/portfolio/mis-report/")
         self.assertEqual(response.status_code, 200)
-        data = response.json()
-        self.assertEqual(data["holdings"], [])
-        self.assertEqual(data["summary"]["total_invested"], 0.0)
-        self.assertEqual(data["summary"]["total_current_value"], 0.0)
 
-    def test_excel_download_is_xlsx_and_contains_expected_sheets(self):
+        data = response.json()
+        self.assertEqual(data["ips"], [])
+        self.assertEqual(data["data_sheet"], [])
+        self.assertEqual(data["fund_type_summary"], [])
+
+    def test_excel_download_contains_three_workbook_sheets_in_template_order(self):
         response = self.client.get("/api/portfolio/mis-report/download/")
 
         self.assertEqual(response.status_code, 200)
@@ -208,9 +240,62 @@ class MISReportAPITests(TestCase):
             "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         )
 
-        workbook = load_workbook(BytesIO(response.content))
-        self.assertEqual(workbook.sheetnames, ["MIS Summary", "Holdings"])
-        self.assertEqual(workbook["MIS Summary"]["B2"].value, "MIS Test Family")
-        self.assertEqual(workbook["Holdings"]["A2"].value, "Legacy Family Label")
-        self.assertEqual(workbook["Holdings"]["C2"].value, "Equity")
-        self.assertEqual(workbook["Holdings"]["E2"].value, "MIS Equity")
+        workbook = load_workbook(BytesIO(response.content), data_only=False)
+        self.assertEqual(
+            workbook.sheetnames,
+            ["IPS", "Data Sheet", "Fund Type Summary"],
+        )
+        self.assertEqual(workbook["IPS"]["A1"].value, "IPS")
+        self.assertEqual(workbook["Data Sheet"]["A1"].value, "Data Sheet")
+        self.assertEqual(workbook["Data Sheet"]["E3"].value, "Investment Cost 01.10.2026")
+        self.assertEqual(workbook["Data Sheet"]["H3"].value, "SEP-26 Closing MTM")
+        self.assertEqual(workbook["Data Sheet"]["K3"].value, "Transactions- Buy/Sell 30.09.2026 to 01.10.2026")
+        self.assertEqual(workbook["Data Sheet"]["N3"].value, "OCT-26 Closing MTM")
+        self.assertEqual(workbook["Data Sheet"]["A4"].value, "Fund Name")
+        self.assertEqual(workbook["Data Sheet"]["B5"].value, "DAJ")
+        self.assertEqual(workbook["Data Sheet"]["A5"].value, "MIS Equity")
+        self.assertEqual(workbook["Data Sheet"]["A2"].value, None)
+        self.assertEqual(workbook["Data Sheet"]["A6"].value, None)
+        fund_summary_ws = workbook["Fund Type Summary"]
+        self.assertEqual(fund_summary_ws["A1"].value, "Fund Type wise Summary")
+        self.assertEqual(fund_summary_ws["A2"].value, "Values in ₹ Lakhs")
+        self.assertEqual(fund_summary_ws["A3"].value, "Fund Type.V2")
+        self.assertEqual(fund_summary_ws["B3"].value, "Fund Name")
+        self.assertEqual(fund_summary_ws["C3"].value, "Total")
+        self.assertEqual(fund_summary_ws["A4"].value, "Asset class")
+        self.assertEqual(fund_summary_ws["B4"].value, "Asset name")
+        self.assertEqual(fund_summary_ws["C4"].value, "Current Market Value")
+        self.assertEqual(fund_summary_ws["A5"].value, "Equity")
+        self.assertEqual(fund_summary_ws["B5"].value, "MIS Equity")
+        self.assertAlmostEqual(fund_summary_ws["C5"].value, 0.0125, places=8)
+        self.assertEqual(fund_summary_ws.max_column, 3)
+        self.assertEqual(workbook["IPS"]["A2"].value, "Values in ₹ Lakhs")
+        self.assertEqual(workbook["IPS"]["C4"].value, 0.0125)
+        self.assertEqual(workbook["IPS"]["E4"].value, 0.0125)
+        self.assertEqual(workbook["IPS"]["A7"].value, "Grand Total")
+        self.assertEqual(workbook["IPS"]["C7"].value, 0.0125)
+
+    def test_fund_type_summary_groups_all_asset_classes_by_current_market_value(self):
+        response = self.client.get("/api/portfolio/mis-report/")
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+
+        groups = {group["fund_type"]: group for group in data["fund_type_summary"]}
+        self.assertIn("Equity", groups)
+        self.assertEqual(groups["Equity"]["rows"][0]["fund_name"], "MIS Equity")
+        self.assertEqual(groups["Equity"]["rows"][0]["total"], 1250.0)
+
+    def test_excel_download_supports_amount_and_crores_display_units(self):
+        for unit, expected_label, expected_value in [
+            ("amount", "Values in ₹ Amount", 1250.0),
+            ("crores", "Values in ₹ Crores", 0.000125),
+        ]:
+            response = self.client.get("/api/portfolio/mis-report/download/", {"display_unit": unit})
+            self.assertEqual(response.status_code, 200)
+            workbook = load_workbook(BytesIO(response.content), data_only=False)
+            self.assertEqual(workbook["IPS"]["A2"].value, expected_label)
+            self.assertAlmostEqual(workbook["IPS"]["C4"].value, expected_value, places=8)
+
+    def test_invalid_excel_display_unit_is_rejected(self):
+        response = self.client.get("/api/portfolio/mis-report/download/", {"display_unit": "millions"})
+        self.assertEqual(response.status_code, 400)

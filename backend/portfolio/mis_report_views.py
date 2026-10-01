@@ -1,17 +1,40 @@
-import re
 from datetime import date
+from decimal import Decimal
+from io import BytesIO
+import re
 
 from django.http import HttpResponse
+from openpyxl import Workbook
+from openpyxl.styles import Alignment, Font, Border, Side, PatternFill
+from openpyxl.utils import get_column_letter
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
-
-from openpyxl import Workbook
-from openpyxl.styles import Font, PatternFill, Alignment
-from openpyxl.utils import get_column_letter
+from rest_framework.exceptions import ValidationError
 
 from users.permissions import is_system_owner, require_active_family
 from .mis_report_service import MISReportService
+
+
+
+
+def _parse_report_dates(request):
+    from_value = request.query_params.get("from_date")
+    to_value = request.query_params.get("to_date")
+    if not from_value and not to_value:
+        return None, None
+    if not from_value or not to_value:
+        raise ValidationError({"detail": "Both from_date and to_date are required."})
+    try:
+        from_date = date.fromisoformat(from_value)
+        to_date = date.fromisoformat(to_value)
+    except ValueError:
+        raise ValidationError({"detail": "Dates must be in YYYY-MM-DD format."})
+    if from_date > to_date:
+        raise ValidationError({"detail": "From date cannot be after to date."})
+    if to_date > date.today():
+        raise ValidationError({"detail": "To date cannot be in the future."})
+    return from_date, to_date
 
 
 def _authorized_active_family(user):
@@ -25,121 +48,343 @@ def _authorized_active_family(user):
 
 
 def _json_safe(value):
+    if isinstance(value, Decimal):
+        return float(value)
     if hasattr(value, "isoformat"):
         return value.isoformat()
-    if hasattr(value, "as_tuple"):
-        return float(value)
     return value
 
 
-def _sanitize_filename(value):
+def _safe_filename(value):
     cleaned = re.sub(r"[^A-Za-z0-9._-]+", "_", str(value or "Family"))
     return cleaned.strip("._") or "Family"
+
+
+def _serialize_report(report):
+    def serialize(value):
+        if isinstance(value, dict):
+            return {key: serialize(item) for key, item in value.items()}
+        if isinstance(value, list):
+            return [serialize(item) for item in value]
+        return _json_safe(value)
+
+    return serialize(report)
+
+
+_TITLE_FILL = PatternFill(fill_type="solid", fgColor="D9EAF7")
+_HEADER_FILL = PatternFill(fill_type="solid", fgColor="B4C7E7")
+_SECTION_FILL = PatternFill(fill_type="solid", fgColor="DDEBF7")
+_SUBHEADER_FILL = PatternFill(fill_type="solid", fgColor="E2F0D9")
+_SUBTOTAL_FILL = PatternFill(fill_type="solid", fgColor="FFF2CC")
+_GRAND_TOTAL_FILL = PatternFill(fill_type="solid", fgColor="C6E0B4")
+_DIFF_FILL = PatternFill(fill_type="solid", fgColor="FCE4D6")
+_BORDER = Border(
+    left=Side(style="thin"),
+    right=Side(style="thin"),
+    top=Side(style="thin"),
+    bottom=Side(style="thin"),
+)
+
+def _style_header(cell, fill=_HEADER_FILL):
+    cell.font = Font(bold=True, size=12)
+    cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+    cell.fill = fill
+    cell.border = _BORDER
+
+
+def _style_title(cell):
+    cell.font = Font(bold=True, size=14)
+    cell.alignment = Alignment(horizontal="left", vertical="center")
+    cell.fill = _TITLE_FILL
+
+
+def _autosize(ws, minimum=12, maximum=36):
+    for column_cells in ws.columns:
+        letter = get_column_letter(column_cells[0].column)
+        length = max(len(str(cell.value or "")) for cell in column_cells)
+        ws.column_dimensions[letter].width = min(max(length + 2, minimum), maximum)
+
+
+def _build_ips_sheet(workbook, report, display_unit="lakhs"):
+    ws = workbook.create_sheet("IPS")
+    families = report["family_names"]
+    ws["A1"] = "IPS"
+    _style_title(ws["A1"])
+    ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=max(2, len(families) + 3))
+
+    headers = ["Nature of Investment", "Date", *families, "Grand Total"]
+    for col, value in enumerate(headers, 1):
+        ws.cell(3, col, value)
+        _style_header(ws.cell(3, col))
+
+    current_date = report["reporting_date"].strftime("%d.%m.%Y")
+    prior_date = report["prior_month_date"].strftime("%d.%m.%Y")
+    cursor = 4
+    divisors = {"amount": Decimal("1"), "lakhs": Decimal("100000"), "crores": Decimal("10000000")}
+    divisor = divisors[display_unit]
+
+    # IPS display unit is presentation-only; source values remain in rupees.
+    current_totals = {family: Decimal("0") for family in families}
+    prior_totals = {family: Decimal("0") for family in families}
+
+    for row in report["ips"]:
+        difference_values = {
+            family: row["family_values"].get(family, 0) - row["prior_family_values"].get(family, 0)
+            for family in families
+        }
+        lines = [
+            (row["asset_class"], current_date, row["family_values"], row["grand_total"], _SECTION_FILL),
+            ("", prior_date, row["prior_family_values"], row["prior_total"], _SUBHEADER_FILL),
+            ("", "Diff- " + current_date, difference_values, row["difference"], _DIFF_FILL),
+        ]
+        for asset_class, label, values, total, fill in lines:
+            ws.cell(cursor, 1, asset_class)
+            ws.cell(cursor, 2, label)
+            for offset, family in enumerate(families, 3):
+                value = Decimal(str(values.get(family, 0) or 0))
+                ws.cell(cursor, offset, float(value / divisor))
+                if label == current_date:
+                    current_totals[family] += value
+                elif label == prior_date:
+                    prior_totals[family] += value
+            ws.cell(cursor, len(families) + 3, float(Decimal(str(total or 0)) / divisor))
+            for col in range(1, len(families) + 4):
+                ws.cell(cursor, col).fill = fill
+                ws.cell(cursor, col).border = _BORDER
+            cursor += 1
+
+    if report["ips"]:
+        ws.cell(cursor, 1, "Grand Total")
+        ws.cell(cursor, 2, "Overall")
+        for offset, family in enumerate(families, 3):
+            ws.cell(cursor, offset, float(current_totals[family] / divisor))
+        overall_total = sum(current_totals.values(), Decimal("0"))
+        ws.cell(cursor, len(families) + 3, float(overall_total / divisor))
+        for col in range(1, len(families) + 4):
+            ws.cell(cursor, col).fill = _GRAND_TOTAL_FILL
+            ws.cell(cursor, col).border = _BORDER
+        ws.cell(cursor, 1).font = Font(bold=True)
+        ws.cell(cursor, 2).font = Font(bold=True)
+        for col in range(3, len(families) + 4):
+            ws.cell(cursor, col).font = Font(bold=True)
+    else:
+        ws.cell(4, 1, "No data available")
+
+    unit_labels = {"amount": "₹ Amount", "lakhs": "₹ Lakhs", "crores": "₹ Crores"}
+    ws.cell(2, 1, f"Values in {unit_labels[display_unit]}")
+    ws.cell(2, 1).font = Font(italic=True, size=10)
+    for row_cells in ws.iter_rows(min_row=4, max_row=ws.max_row, min_col=3, max_col=len(families) + 3):
+        for cell in row_cells:
+            cell.number_format = '#,##0' if display_unit == 'amount' else '#,##0.00'
+    ws.freeze_panes = "C4"
+    _autosize(ws, 14, 32)
+    return ws
+
+
+def _build_data_sheet(workbook, report):
+    ws = workbook.create_sheet("Data Sheet")
+    ws["A1"] = "Data Sheet"
+    _style_title(ws["A1"])
+    ws.merge_cells("A1:P1")
+
+    report_date = report["reporting_date"].strftime("%d.%m.%Y")
+    opening_label = report["opening_date"].strftime("%b-%y").upper()
+    closing_label = report["reporting_date"].strftime("%b-%y").upper()
+    period_start = report["period_start"].strftime("%d.%m.%Y")
+    period_end = report["period_end"].strftime("%d.%m.%Y")
+
+    # Keep the four grouped section headers from the MIS template, but omit
+    # the additional explanatory/subheader row.
+    ws.merge_cells("E3:G3")
+    ws.merge_cells("H3:J3")
+    ws.merge_cells("K3:M3")
+    ws.merge_cells("N3:P3")
+    ws["E3"] = f"Investment Cost {report_date}"
+    ws["H3"] = f"{opening_label} Closing MTM"
+    ws["K3"] = f"Transactions- Buy/Sell {period_start} to {period_end}"
+    ws["N3"] = f"{closing_label} Closing MTM"
+
+    for col in range(1, 17):
+        ws.cell(3, col).fill = _SECTION_FILL
+        ws.cell(3, col).border = _BORDER
+    for cell in ("E3", "H3", "K3", "N3"):
+        _style_header(ws[cell])
+
+    headers = [
+        "Fund Name",
+        "Family Name",
+        "Asset Class",
+        "Advisor",
+        "Qty/Units",
+        "Rate",
+        f"Total Cost Dt.{report_date}",
+        f"Units - Closing {opening_label}",
+        f"NAV- {opening_label}",
+        f"Amount-{opening_label} MTM",
+        "Units",
+        "NAV",
+        "Amount",
+        f"Units - Closing {closing_label}",
+        f"NAV- {closing_label}",
+        f"Amount-{closing_label} MTM",
+    ]
+    for col, value in enumerate(headers, 1):
+        ws.cell(4, col, value)
+        _style_header(ws.cell(4, col))
+        ws.cell(4, col).alignment = Alignment(vertical="top", wrap_text=True)
+
+    for row_idx, row in enumerate(report["data_sheet"], 5):
+        values = [
+            row["asset_name"],
+            row["family_name"],
+            row["asset_class"],
+            row["advisor"],
+            row["qty_units"],
+            row["rate"],
+            row["total_cost"],
+            row["opening_units"],
+            row["opening_nav"],
+            row["opening_amount"],
+            row["transaction_units"],
+            row["transaction_nav"],
+            row["transaction_amount"],
+            row["closing_units"],
+            row["closing_nav"],
+            row["closing_amount"],
+        ]
+        for col, value in enumerate(values, 1):
+            ws.cell(row_idx, col, value)
+            ws.cell(row_idx, col).alignment = Alignment(vertical="top", wrap_text=(col <= 4))
+            ws.cell(row_idx, col).border = _BORDER
+
+    ws.freeze_panes = "A5"
+    _autosize(ws, 12, 34)
+    for col in range(5, 17):
+        for cell in ws.iter_cols(min_col=col, max_col=col, min_row=5, max_row=ws.max_row):
+            for item in cell:
+                item.number_format = '#,##0.00'
+    return ws
+
+
+def _build_fund_summary_sheet(workbook, report, display_unit="lakhs"):
+    ws = workbook.create_sheet("Fund Type Summary")
+    ws["A1"] = "Fund Type wise Summary"
+    _style_title(ws["A1"])
+    ws.merge_cells("A1:C1")
+
+    unit_labels = {
+        "amount": "₹ Amount",
+        "lakhs": "₹ Lakhs",
+        "crores": "₹ Crores",
+    }
+    divisors = {
+        "amount": Decimal("1"),
+        "lakhs": Decimal("100000"),
+        "crores": Decimal("10000000"),
+    }
+    divisor = divisors[display_unit]
+
+    ws["A2"] = f"Values in {unit_labels[display_unit]}"
+    ws.merge_cells("A2:C2")
+    ws["A2"].font = Font(italic=True, size=10)
+    ws["A2"].alignment = Alignment(horizontal="left", vertical="center")
+
+    top_headers = ["Fund Type.V2", "Fund Name", "Total"]
+    detail_headers = ["Asset class", "Asset name", "Current Market Value"]
+    for col, value in enumerate(top_headers, 1):
+        ws.cell(3, col, value)
+        _style_header(ws.cell(3, col))
+    for col, value in enumerate(detail_headers, 1):
+        ws.cell(4, col, value)
+        _style_header(ws.cell(4, col), fill=_SECTION_FILL)
+
+    row_idx = 5
+    grand_total = Decimal("0")
+    for group in report["fund_type_summary"]:
+        for item in group["rows"]:
+            value = Decimal(str(item["total"] or 0))
+            ws.cell(row_idx, 1, group["fund_type"])
+            ws.cell(row_idx, 2, item["fund_name"])
+            ws.cell(row_idx, 3, float(value / divisor))
+            for col in range(1, 4):
+                ws.cell(row_idx, col).border = _BORDER
+            row_idx += 1
+
+        subtotal = Decimal(str(group["subtotal"] or 0))
+        ws.cell(row_idx, 1, f"{group['fund_type']} Subtotal")
+        ws.cell(row_idx, 3, float(subtotal / divisor))
+        for col in range(1, 4):
+            ws.cell(row_idx, col).fill = _SUBTOTAL_FILL
+            ws.cell(row_idx, col).border = _BORDER
+        ws.cell(row_idx, 1).font = Font(bold=True)
+        ws.cell(row_idx, 3).font = Font(bold=True)
+        grand_total += subtotal
+        row_idx += 1
+
+    ws.cell(row_idx, 1, "Grand Total")
+    ws.cell(row_idx, 3, float(grand_total / divisor))
+    for col in range(1, 4):
+        ws.cell(row_idx, col).fill = _GRAND_TOTAL_FILL
+        ws.cell(row_idx, col).border = _BORDER
+    ws.cell(row_idx, 1).font = Font(bold=True)
+    ws.cell(row_idx, 3).font = Font(bold=True)
+
+    for row_cells in ws.iter_rows(min_row=5, max_row=ws.max_row, min_col=3, max_col=3):
+        for cell in row_cells:
+            cell.number_format = '#,##0' if display_unit == 'amount' else '#,##0.00'
+    ws.freeze_panes = "A5"
+    _autosize(ws, 14, 48)
+    return ws
+
+
+def _parse_display_unit(request):
+    display_unit = (request.query_params.get("display_unit") or "lakhs").strip().lower()
+    if display_unit not in {"amount", "lakhs", "crores"}:
+        raise ValidationError({"display_unit": "display_unit must be one of: amount, lakhs, crores."})
+    return display_unit
 
 
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def mis_report(request):
     family = _authorized_active_family(request.user)
-    report = MISReportService.build(family)
-
-    report["reporting_date"] = report["reporting_date"].isoformat()
-    report["summary"] = {key: _json_safe(value) for key, value in report["summary"].items()}
-    report["asset_class_summary"] = [
-        {key: _json_safe(value) for key, value in row.items()}
-        for row in report["asset_class_summary"]
-    ]
-    report["holdings"] = [
-        {key: _json_safe(value) for key, value in row.items()}
-        for row in report["holdings"]
-    ]
-    return Response(report)
+    from_date, to_date = _parse_report_dates(request)
+    try:
+        report = MISReportService.build(family, from_date, to_date)
+    except ValueError as exc:
+        raise ValidationError({"detail": str(exc)})
+    return Response(_serialize_report(report))
 
 
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def mis_report_download(request):
     family = _authorized_active_family(request.user)
-    report = MISReportService.build(family)
+    from_date, to_date = _parse_report_dates(request)
+    display_unit = _parse_display_unit(request)
+    try:
+        report = MISReportService.build(family, from_date, to_date)
+    except ValueError as exc:
+        raise ValidationError({"detail": str(exc)})
 
     workbook = Workbook()
-    summary_sheet = workbook.active
-    summary_sheet.title = "MIS Summary"
-    holdings_sheet = workbook.create_sheet("Holdings")
+    default = workbook.active
+    workbook.remove(default)
+    _build_ips_sheet(workbook, report, display_unit)
+    _build_data_sheet(workbook, report)
+    _build_fund_summary_sheet(workbook, report, display_unit)
 
-    header_fill = PatternFill("solid", fgColor="374151")
-    title_fill = PatternFill("solid", fgColor="1F2937")
-    white_font = Font(color="FFFFFF", bold=True)
+    output = BytesIO()
+    workbook.save(output)
+    output.seek(0)
 
-    summary_sheet["A1"] = "MIS Report"
-    summary_sheet["A1"].font = Font(bold=True, size=16, color="FFFFFF")
-    summary_sheet["A1"].fill = title_fill
-    summary_sheet["A2"] = "Family Member"
-    summary_sheet["B2"] = report["family_name"]
-    summary_sheet["A3"] = "Reporting Date"
-    summary_sheet["B3"] = report["reporting_date"]
-    summary_sheet["A5"] = "Total Invested Value"
-    summary_sheet["B5"] = float(report["summary"]["total_invested"])
-    summary_sheet["A6"] = "Total Current Value"
-    summary_sheet["B6"] = float(report["summary"]["total_current_value"])
-    summary_sheet["A7"] = "Total P&L"
-    summary_sheet["B7"] = float(report["summary"]["total_pnl"])
-    summary_sheet["A8"] = "P&L %"
-    summary_sheet["B8"] = float(report["summary"]["pnl_percentage"])
-
-    summary_sheet["A10"] = "Asset Class Summary"
-    summary_sheet["A10"].font = Font(bold=True)
-
-    summary_headers = ["Asset Class", "Invested Value", "Current Value", "P&L", "P&L %"]
-    for col, header in enumerate(summary_headers, 1):
-        cell = summary_sheet.cell(11, col, header)
-        cell.fill = header_fill
-        cell.font = white_font
-
-    for row_index, row in enumerate(report["asset_class_summary"], 12):
-        values = [
-            row["asset_class"],
-            float(row["invested_value"]),
-            float(row["current_value"]),
-            float(row["pnl"]),
-            float(row["pnl_percentage"]),
-        ]
-        for col, value in enumerate(values, 1):
-            summary_sheet.cell(row_index, col, value)
-
-    holdings_headers = [
-        "Family Member", "Asset Name", "Portfolio", "Asset Class", "Sub Class",
-        "Asset ID", "ISIN / Scheme Code",
-        "Symbol", "Quantity", "Average Cost", "Invested Value",
-        "Current Price", "Current Value", "P&L", "P&L %", "XIRR",
-    ]
-    for col, header in enumerate(holdings_headers, 1):
-        cell = holdings_sheet.cell(1, col, header)
-        cell.fill = header_fill
-        cell.font = white_font
-        cell.alignment = Alignment(horizontal="center")
-
-    for row_index, row in enumerate(report["holdings"], 2):
-        values = [
-            row["family_name"], row["asset_name"], row["portfolio"], row["asset_class"], row["sub_class"],
-            row["asset_id"], row["isin"], row["symbol"],
-            row["quantity"], row["average_cost"], row["invested_value"],
-            row["current_price"], row["current_value"], row["pnl"],
-            row["pnl_percentage"], row["xirr"],
-        ]
-        for col, value in enumerate(values, 1):
-            holdings_sheet.cell(row_index, col, value)
-
-    for sheet in (summary_sheet, holdings_sheet):
-        sheet.freeze_panes = "A2"
-        for column_cells in sheet.columns:
-            max_length = max(len(str(cell.value or "")) for cell in column_cells)
-            sheet.column_dimensions[get_column_letter(column_cells[0].column)].width = min(max(max_length + 2, 12), 32)
-
-    filename = f"MIS_Report_{_sanitize_filename(family.name)}_{date.today().isoformat()}.xlsx"
+    filename = (
+        f"MIS_Report_{_safe_filename(family.name)}_"
+        f"{report['reporting_date'].isoformat()}.xlsx"
+    )
     response = HttpResponse(
-        content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        output.getvalue(),
+        content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     )
     response["Content-Disposition"] = f'attachment; filename="{filename}"'
-    workbook.save(response)
     return response

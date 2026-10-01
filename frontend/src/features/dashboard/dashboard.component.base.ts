@@ -75,6 +75,48 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
   standardAllocationAmountDraft: Record<string, number> = {};
   standardAllocationTotalValue = 0;
 
+  displayUnit: 'amount' | 'lakhs' | 'crores' = 'lakhs';
+
+  readonly displayUnits: Array<{ value: 'amount' | 'lakhs' | 'crores'; label: string }> = [
+    { value: 'amount', label: 'Amount' },
+    { value: 'lakhs', label: 'Lakhs' },
+    { value: 'crores', label: 'Crores' },
+  ];
+
+  setDisplayUnit(unit: 'amount' | 'lakhs' | 'crores'): void {
+    this.displayUnit = unit;
+    setTimeout(() => {
+      if (this.historical) this.renderWealthChart();
+      if (this.investmentSummary) this.renderAllocationChart();
+      this.cdr.markForCheck();
+    });
+  }
+
+  get displayUnitLabel(): string {
+    return this.displayUnit === 'amount'
+      ? '₹ Amount'
+      : this.displayUnit === 'lakhs'
+        ? '₹ Lakhs'
+        : '₹ Crores';
+  }
+
+  formatDisplayAmount(value: number | null | undefined, digits = 2): string {
+    if (value === null || value === undefined) return '—';
+    const numericValue = Number(value);
+    if (!Number.isFinite(numericValue)) return '—';
+
+    const divisor = this.displayUnit === 'amount'
+      ? 1
+      : this.displayUnit === 'lakhs'
+        ? 100000
+        : 10000000;
+    const suffix = this.displayUnit === 'amount' ? '' : this.displayUnit === 'lakhs' ? ' L' : ' Cr';
+    return `₹${(numericValue / divisor).toLocaleString('en-IN', {
+      minimumFractionDigits: this.displayUnit === 'amount' ? 0 : digits,
+      maximumFractionDigits: this.displayUnit === 'amount' ? 0 : digits,
+    })}${suffix}`;
+  }
+
   getStandardAllocationAmount(category: string): number {
     if ((this as any).standardAllocationEditing) {
       const draftAmount = Number(this.standardAllocationAmountDraft[category]);
@@ -570,7 +612,7 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
               label: (context) => {
                 const value = context.parsed.y ?? 0;
 
-                return `${context.dataset.label}: ${this.formatCurrency(value)}`;
+                return `${context.dataset.label}: ${this.formatDisplayAmount(value)}`;
               },
             },
           },
@@ -604,7 +646,7 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
                 ? '#8a93a6'
                 : '#667085',
 
-              callback: (value) => this.formatAxisCurrency(Number(value)),
+              callback: (value) => this.formatDisplayAmount(Number(value), 1),
             },
           },
         },
@@ -692,7 +734,7 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
                 const index = context.dataIndex;
                 const percentage = percentages[index] ?? 0;
 
-                return `${context.label}: ${this.formatCurrency(
+                return `${context.label}: ${this.formatDisplayAmount(
                   Number(context.raw),
                 )} (${percentage.toFixed(2)}%)`;
               },
@@ -727,6 +769,10 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
     return `₹${value.toLocaleString('en-IN', {
       maximumFractionDigits: 0,
     })}`;
+  }
+
+  formatLakhs(value: number | null | undefined, digits = 2): string {
+    return this.formatDisplayAmount(value, digits);
   }
 
   formatPercentage(value: number): string {

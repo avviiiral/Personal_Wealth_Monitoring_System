@@ -62,6 +62,32 @@ class UserPreference(models.Model):
         return f"Preferences - {self.user.username}"
 
 
+class TaxRateSetting(models.Model):
+    """Per-user tax rate configuration keyed by exact portfolio Asset Name."""
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="tax_rate_settings",
+    )
+    asset_name = models.CharField(max_length=255)
+    tax_rate = models.DecimalField(max_digits=7, decimal_places=4, default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["asset_name"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["user", "asset_name"],
+                name="unique_user_tax_rate_asset_name",
+            )
+        ]
+
+    def __str__(self):
+        return f"{self.user.username} - {self.asset_name} ({self.tax_rate}%)"
+
+
 # ==============================================================
 # ROLE-BASED ACCESS CONTROL (RBAC)
 # ==============================================================

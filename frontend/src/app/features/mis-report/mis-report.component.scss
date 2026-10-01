@@ -179,6 +179,12 @@ th {
 
 .number { text-align: right; }
 
+.summary-table .secondary-header th {
+  text-transform: none;
+  font-size: 11px;
+  opacity: .65;
+}
+
 .current-row td { font-weight: 600; }
 
 .difference-row td {

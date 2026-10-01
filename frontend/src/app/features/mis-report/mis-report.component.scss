@@ -182,3 +182,42 @@ td small {
     width: 100%;
   }
 }
+
+
+.family-filter {
+  margin-bottom: 18px;
+  padding: 14px 16px;
+  border: 1px solid rgba(127, 127, 127, .2);
+  border-radius: 12px;
+  background: var(--surface, #fff);
+}
+
+.selection-title {
+  margin-bottom: 9px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-primary, inherit);
+}
+
+.selection-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.selection-button {
+  border: 1px solid rgba(127, 127, 127, .22);
+  border-radius: 8px;
+  padding: 7px 13px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.selection-button.active {
+  background: #1fbd8b;
+  border-color: #1fbd8b;
+  color: #fff;
+}

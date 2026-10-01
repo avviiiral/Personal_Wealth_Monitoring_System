@@ -211,6 +211,6 @@ class MISReportAPITests(TestCase):
         workbook = load_workbook(BytesIO(response.content))
         self.assertEqual(workbook.sheetnames, ["MIS Summary", "Holdings"])
         self.assertEqual(workbook["MIS Summary"]["B2"].value, "MIS Test Family")
-        self.assertEqual(workbook["Holdings"]["A2"].value, "MIS Test Family")
+        self.assertEqual(workbook["Holdings"]["A2"].value, "Legacy Family Label")
         self.assertEqual(workbook["Holdings"]["C2"].value, "Equity")
         self.assertEqual(workbook["Holdings"]["E2"].value, "MIS Equity")

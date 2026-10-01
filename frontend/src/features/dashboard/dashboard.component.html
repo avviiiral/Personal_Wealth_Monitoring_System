@@ -268,7 +268,7 @@
                     (click)="$event.stopPropagation()"
                   />
                   <span *ngIf="!standardAllocationEditing">
-                    {{ getStandardAllocationAmount(group.asset_category) | number:'1.0-2' }}
+                    {{ getStandardAllocationAmount(group.asset_category) | currency:'INR':'symbol':'1.2-2':'en-IN' }}
                   </span>
                 </td>
 

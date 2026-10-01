@@ -117,8 +117,6 @@ def set_active_family(request):
 # ==================================================================
 
 
-@api_view(["GET", "POST"])
-@permission_classes([IsAuthenticated])
 def _tax_values(row):
     if row is None:
         return {
@@ -154,6 +152,8 @@ def _log_tax_change(user, family, asset, before, after):
     )
 
 
+@api_view(["GET", "POST"])
+@permission_classes([IsAuthenticated])
 def tax_rate_list(request):
     """GET/POST /api/settings/tax-rates/ for the active family.
 

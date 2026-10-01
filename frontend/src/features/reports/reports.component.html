@@ -139,7 +139,7 @@
 
       <div class="transaction-edit-grid">
         <div class="modal-field">
-          <label>Family Name</label>
+          <label>Family Member</label>
           <select class="modal-select" [(ngModel)]="editingTransaction.family_name">
             <option value="">Unassigned</option>
             <option *ngFor="let family of familyOptions" [value]="family">
@@ -283,12 +283,12 @@
   <!-- ==========================================================
        FILTERS
        Same layout/behavior as the Portfolio page's selection-area
-       (Family Name / Asset Class buttons).
+       (Family Member / Asset Class buttons).
        ========================================================== -->
   <div *ngIf="!loading && !error" class="selection-area">
     <!-- FAMILY -->
     <div class="selection-box">
-      <div class="selection-title">Family Name</div>
+      <div class="selection-title">Family Member</div>
 
       <div class="selection-buttons">
         <button

@@ -1,5 +1,4 @@
 from decimal import Decimal, InvalidOperation
-from decimal import Decimal, InvalidOperation
 
 from django.db import IntegrityError
 from django.contrib.auth import get_user_model

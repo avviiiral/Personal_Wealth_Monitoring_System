@@ -40,9 +40,9 @@
         <div class="filters">
           <div class="filter-field" *ngIf="selectedReport !== 'watch-list'">
             <label>Family Member</label>
-            <select [(ngModel)]="selectedFamily" (ngModelChange)="onFamilyChange()">
+            <select [(ngModel)]="selectedFamilyMember" (ngModelChange)="onFamilyChange()">
               <option value="">All Families</option>
-              <option *ngFor="let family of familyOptions" [value]="family">{{ family }}</option>
+              <option *ngFor="let family of familyMemberOptions" [value]="family">{{ family }}</option>
             </select>
           </div>
 

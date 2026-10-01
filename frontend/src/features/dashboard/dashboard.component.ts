@@ -345,7 +345,7 @@ export class DashboardComponent extends BaseDashboardComponent {
               ]),
             ),
           );
-          this.standardAllocationTotalValue = Number(data?.total_current_value) || 0;
+          this.standardAllocationTotalValue = this.getInvestmentSummaryTotal();
           this.syncStandardAllocationAmounts();
           this.standardAllocationDraft = { ...this.standardAllocations };
           this.standardAllocationAmountDraft = { ...this.standardAllocationAmounts };

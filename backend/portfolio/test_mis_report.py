@@ -286,6 +286,78 @@ class MISReportAPITests(TestCase):
         self.assertEqual(row["realized_pnl"], 2000.0)
         self.assertEqual(row["realized_tax"], 275.0)
 
+    def test_tax_setting_applies_to_same_display_asset_name_across_positions(self):
+        first_asset = Asset.objects.create(
+            owner=self.user,
+            family=self.family,
+            name="Direct Equity",
+            category="STOCK",
+            isin="INE000DIRECT1",
+            symbol="DIRECT1",
+        )
+        second_asset = Asset.objects.create(
+            owner=self.user,
+            family=self.family,
+            name="Internal Direct Equity Position",
+            category="STOCK",
+            isin="INE000DIRECT2",
+            symbol="DIRECT2",
+        )
+        TaxRateSetting.objects.create(
+            family=self.family,
+            asset=first_asset,
+            tenure_months=12,
+            short_term_tax_rate=Decimal("15"),
+            long_term_tax_rate=Decimal("10"),
+        )
+
+        for asset, family_name, isin in (
+            (first_asset, "DAJ", "INE000DIRECT1"),
+            (second_asset, "DJT", "INE000DIRECT2"),
+        ):
+            Transaction.objects.create(
+                owner=self.user,
+                family=self.family,
+                asset=asset,
+                family_name=family_name,
+                portfolio="Core",
+                asset_class="Equity",
+                sub_class="Large Cap",
+                asset_name="Direct Equity",
+                transaction_date=date(2026, 1, 10),
+                transaction_type="BUY",
+                quantity=Decimal("10"),
+                price_per_unit=Decimal("100"),
+                amount=Decimal("1000"),
+                fees=Decimal("0"),
+            )
+            MarketPrice.objects.create(
+                asset=asset,
+                date=date(2026, 10, 1),
+                close_price=Decimal("200"),
+                source=DataSource.MANUAL,
+            )
+
+        response = self.client.get(
+            "/api/portfolio/mis-report/",
+            {"from_date": "2026-01-01", "to_date": "2026-10-01"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        rows = [
+            item for item in response.json()["tax_report"]
+            if item["asset_name"] == "Direct Equity"
+        ]
+        self.assertEqual(len(rows), 2)
+        self.assertEqual(
+            {item["family_name"] for item in rows},
+            {"DAJ", "DJT"},
+        )
+        self.assertEqual(
+            {item["unrealized_tax"] for item in rows},
+            {150.0},
+        )
+
     def test_same_asset_name_is_consolidated_across_positions(self):
         second_asset = Asset.objects.create(
             owner=self.user,

@@ -92,7 +92,7 @@ def holding_report(request):
         asset_key = ("asset_name", *base_key, asset_name)
         xirr_transactions.setdefault(asset_key, []).append(tx)
 
-    def clean(value, default="Unassigned"):
+    def clean(value, default=""):
         value = str(value or "").strip()
         return value or default
 

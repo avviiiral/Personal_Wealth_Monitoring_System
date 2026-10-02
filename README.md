@@ -387,6 +387,21 @@ The Portfolio News pipeline separates deterministic news retrieval and portfolio
 
 This separation means a news article can appear in **All News** even when Gemini is unavailable, not configured, rate-limited, or otherwise unable to analyze that article.
 
+### Family-scoped Portfolio News
+
+Portfolio News follows the same family boundary used by the portfolio and analytics views.
+
+- The **active family** is the authoritative scope for **All News** for users who belong to a family.
+- Deterministic matches are stored with a **FamilyGroup** reference in `PortfolioNewsMatch`.
+- The same article/holding combination is stored only once per family, even when multiple family members own the same holding or the monitoring pass encounters the same match through multiple members.
+- The raw endpoint `/api/ai/news/raw/` returns only the currently selected family's deterministic news for normal users.
+- The response includes `family_id` and `family_name` so the UI can make the active family scope explicit.
+- A user with no family retains access to legacy user-scoped raw matches; this is a compatibility path and does not weaken family authorization.
+- System Owners can view stored family-scoped raw news across families.
+- Family membership controls **visibility**; role-based permissions continue to control what users can do. Client-supplied family IDs are not trusted for authorization.
+- **All News remains Gemini-independent.** Gemini enrichment continues to produce the separate `PortfolioNewsAlert` records used by AI Feed and Today's Digest.
+
+
 
 ### Portfolio News data flow details
 

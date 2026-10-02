@@ -468,3 +468,32 @@ th {
     flex: 1;
   }
 }
+
+.notes-main-title-input {
+  max-width: 520px;
+  font-size: 18px;
+}
+
+.notes-note-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 14px 14px;
+}
+
+.notes-note-editor label {
+  font-size: 12px;
+  font-weight: 700;
+  opacity: .65;
+}
+
+.notes-note-editor textarea {
+  min-height: 60px;
+  resize: vertical;
+  border: 1px solid rgba(127,127,127,.25);
+  border-radius: 7px;
+  padding: 8px;
+  background: var(--surface, #fff);
+  color: inherit;
+  font: inherit;
+}

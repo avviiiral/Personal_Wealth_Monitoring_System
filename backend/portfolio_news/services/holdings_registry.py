@@ -132,7 +132,7 @@ def _build_equity_holding(holding, portfolio_weight: float) -> MonitoredHolding:
 
     underlying_rows = (
         AssetUnderlyingHolding.objects
-        .filter(family=holding.family, asset=asset)
+        .filter(family=asset.family, asset=asset)
         .order_by("-holding_percentage", "stock_name")
     )
 

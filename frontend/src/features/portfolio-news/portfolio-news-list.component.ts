@@ -222,6 +222,17 @@ export class PortfolioNewsListComponent implements OnInit {
       .join(', ');
   }
 
+  rawUnderlyingConnections(item: PortfolioNewsRawItem): string[] {
+    return item.matched_holdings
+      .filter((holding) => holding.connection_type === 'underlying' && holding.underlying_name)
+      .map((holding) => {
+        const weight = holding.underlying_weight;
+        return weight === null
+          ? 'Underlying: ' + holding.underlying_name
+          : 'Underlying: ' + holding.underlying_name + ' (' + Number(weight).toFixed(2) + '%)';
+      });
+  }
+
   rawSourceCountLabel(item: PortfolioNewsRawItem): string {
     if (item.source_count <= 1) {
       return '';

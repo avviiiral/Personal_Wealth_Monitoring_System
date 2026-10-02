@@ -1,3 +1,4 @@
+from config.postgres_advisory_lock import with_postgres_advisory_lock
 from django.contrib.auth.models import User
 from django.core.management.base import BaseCommand
 
@@ -90,6 +91,7 @@ class Command(BaseCommand):
                 )
             )
 
+    @with_postgres_advisory_lock("pwms_refresh_pipeline")
     def handle(self, *args, **options):
 
         user_id = options.get("user_id")

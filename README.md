@@ -56,6 +56,7 @@ It is built for **households, not just individuals**: a four-tier role hierarchy
 | 📰  | **News that matters**         | An agent reads your _actual_ holdings, matches articles deterministically, then scores impact |
 | 🪶  | **Zero infrastructure tax**   | SQLite by default, in-process schedulers — no Celery, no Redis, no cron                       |
 | 📤  | **Export anything**           | Transactions, holdings and summaries to Excel or PDF                                          |
+| 📥  | **Controlled transaction imports** | Upload history, row-level failures and a downloadable standard transaction format              |
 | 📊  | **MIS reporting**             | IPS, Data Sheet and Fund Type-wise Summary with historical valuation and Excel download       |
 | 🔢  | **Flexible display units**    | View monetary values as Amount, Lakhs or Crores without changing stored rupee values          |
 | 🔐  | **Backend-enforced security** | Every request re-derives role and family scope from the database                              |
@@ -187,7 +188,39 @@ Net worth, asset allocation, key portfolio metrics and an **Investment Summary**
 - Quantity, invested value, current value, P&L and **XIRR per node**
 - Full transaction history, create / edit / delete
 - **Excel transaction import** (a _Transactions_ sheet is required; a _Summary_ sheet is optional)
+- **Standard transaction format download** from Settings for consistent transaction uploads
+- **Transaction upload history** with upload status, imported/failed row counts and row-level failure details
+- **Data-driven classification** — Family Member, Asset Class, Sub Class, Asset Name, Underlying and Advisors are sourced from uploaded transaction/database records rather than hard-coded user-facing classification lists
 - Inline **manual price override** for Admin and above, for any asset in your visible family scope
+
+### 📥 Transaction Uploads
+
+Transaction imports are tracked as auditable upload records so users can review what happened after an Excel upload.
+
+- Upload history is available from **Settings → Transaction Uploads**.
+- Each upload records its processing status and row-level import statistics.
+- Failed rows can be inspected through the upload details view.
+- Users can download the **Standard Transaction Format** directly from Settings.
+- The standard workbook includes the transaction fields expected by the importer and supports the existing `Summary` / portfolio-mapping structure.
+- Transaction upload failures are recorded without silently treating invalid rows as successful imports.
+- The importer accepts uploaded classification values as authoritative application data; it does not replace them with hard-coded asset-class or family-name values.
+
+### 🧩 Data-driven portfolio classification
+
+Portfolio hierarchy and MIS grouping are driven by transaction/database data uploaded by the user.
+
+The following user-facing fields are sourced from uploaded transaction records:
+
+| Field | Source |
+| --- | --- |
+| **Family Member** | Uploaded transaction data |
+| **Asset Class** | Uploaded transaction data |
+| **Sub Class** | Uploaded transaction data |
+| **Asset Name** | Uploaded transaction data |
+| **Underlying** | Uploaded transaction data |
+| **Advisors** | Uploaded transaction data |
+
+The application no longer uses synthetic `Unassigned` values or hard-coded user-facing asset-class mappings for these fields. Internal technical asset categories may still be used by market-data services to decide which external price/NAV provider to call; those technical categories are separate from the user uploaded portfolio classification.
 
 ### 📈 Analytics
 
@@ -221,6 +254,9 @@ The **MIS Report** is available at **Portfolio → MIS Report** and contains the
 - **FIFO taxation** — realized P/L is calculated using **First-In, First-Out (FIFO)** transaction matching. Tax is calculated separately for realized and unrealized gains using the configured asset-specific tenure and tax rates; negative P/L produces **₹0 tax**.
 - **Tax Settings** — taxation settings are configured by **Asset Name** for the active family, including **Tenure (Months)**, **Short Term Tax**, and **Long Term Tax**. The settings apply consistently to matching asset names within the family.
 - **Download Excel** — exports `IPS`, `Data Sheet`, `Tax Report`, `Fund Type Summary`, and `Notes` in `.xlsx` format.
+- **Uploaded classification source** — IPS and related MIS grouping use the stored/uploaded family and asset classification data rather than synthetic classification defaults.
+- **Asset-name basis** — MIS grouping uses the stored/uploaded **Asset Name** and **Family Member** values where those fields are part of the report grouping.
+- **Standard transaction workbook** — the separate transaction template download is available from Settings and is intended for future transaction imports.
 - **Indian INR formatting** — monetary values in the downloaded **Data Sheet** and **Tax Report** use the **₹ symbol with Indian lakh/crore comma grouping** (for example, `₹1,20,880.00`). Quantity/unit columns remain numeric without the currency symbol.
 - **Automatic reference-price refresh** — MIS reference prices are refreshed automatically by the background scheduler every 30 minutes, are included in the scheduled refresh flow, and are refreshed again immediately before an MIS Excel download. The refresh uses stored market history and supported Yahoo Finance symbols; unavailable third-party data is not fabricated.
 
@@ -230,6 +266,7 @@ The **MIS Report** is available at **Portfolio → MIS Report** and contains the
 - **User Management** — role-scoped: you only see and manage the roles you're allowed to
 - **Family Management** — System Owner only
 - **Manual Prices** — override any asset's price within your visible family scope; every override is **audit-logged** (who, when, from what)
+- **Transaction Uploads** — review transaction upload history, inspect failed rows, and download the standard transaction upload format
 
 ### 🤖 AI Portfolio Chat
 
@@ -286,7 +323,8 @@ flowchart LR
 
 ```mermaid
 flowchart TD
-    A["Excel import<br/>or manual entry"] --> B["Transactions<br/>source of truth"]
+    A["Excel import<br/>or manual entry"] --> U["Upload audit<br/>status + failures"]
+    U --> B["Transactions<br/>source of truth"]
     B --> C["Holdings<br/>derived and rebuildable"]
     C --> D["Post-import price refresh"]
     D --> E["MarketPrice<br/>Yahoo · AMFI · Manual"]
@@ -760,6 +798,22 @@ See [SETUP.md](./SETUP.md#84-background-web-push-notifications) for the full set
 
 ---
 
+## 🚀 Deployment and refresh performance
+
+The deployment refresh path includes protections for production-style multi-worker environments and avoids unnecessary market-data work.
+
+- **PostgreSQL advisory locks** prevent concurrent scheduled/manual market refresh workers from performing the same refresh simultaneously.
+- Advisory locking is applied to the scheduled refresh command, one-off market-price updates, and the market-price scheduler.
+- **PostgreSQL connection reuse** uses `CONN_MAX_AGE` through `POSTGRES_CONN_MAX_AGE`, with Django connection health checks enabled.
+- **Current-data reuse** avoids recreating an existing holding/data record when the required market data is already current.
+- **Historical Yahoo Finance writes** use bulk upsert-style persistence rather than one database operation per historical price row.
+- **Angular route preloading** uses `PreloadAllModules` to reduce navigation latency after the application starts.
+- These changes do not introduce Celery, Redis, cron, or a new background-job architecture; they harden the existing in-process refresh flow.
+
+> **PostgreSQL note:** advisory-lock coordination is available when the application is running against PostgreSQL. SQLite remains supported for local development, but it does not provide PostgreSQL advisory-lock semantics.
+
+---
+
 ## 🔧 Configuration
 
 Settings load from **`backend/.env`** (template: [`backend/.env.example`](./backend/.env.example)). Every value has a development-safe default baked into `config/settings.py`, so **local development works with no `.env` at all**; you only need real values for a deployment.
@@ -776,6 +830,7 @@ Settings load from **`backend/.env`** (template: [`backend/.env.example`](./back
 | `SECURE_SSL_REDIRECT`                                                                     | Redirect HTTP → HTTPS                                       | `False`                                     | `True`                                                                                                        |
 | `DATABASE_ENGINE`                                                                         | `sqlite` or `postgresql`                                    | `sqlite`                                    | `sqlite` until your PostgreSQL migration is validated                                                         |
 | `POSTGRES_DB` · `POSTGRES_USER` · `POSTGRES_PASSWORD` · `POSTGRES_HOST` · `POSTGRES_PORT` | PostgreSQL connection                                       | used only when `DATABASE_ENGINE=postgresql` | template: `pwms` · `pwms_user` · _(set a password)_ · `localhost` · `5432`                                    |
+| `POSTGRES_CONN_MAX_AGE`                                                                   | Persistent PostgreSQL connection lifetime                    | `60` seconds when PostgreSQL is enabled       | Tune for the deployment; database health checks remain enabled                                                    |
 | `GEMINI_API_KEY` _(or `GOOGLE_API_KEY`)_                                                  | Enables AI Chat and Portfolio News analysis                 | —                                           | Your key from Google AI Studio. Without it those features log a warning and skip analysis rather than failing |
 | `NEWS_MONITOR_INTERVAL`                                                                   | Seconds between automatic news runs                         | `1800`                                      | Tune as needed                                                                                                |
 | `NEWS_MONITOR_AI_CALL_DELAY_SECONDS`                                                      | Pause between Gemini calls in a news run                    | —                                           | Raise (e.g. `6`) if you hit rate-limit errors                                                                 |
@@ -853,6 +908,7 @@ python manage.py test portfolio_news.test_web_push -v 2 # Web Push delivery beha
 | `users/tests.py`        | Every role × capability combination and privilege-escalation attempts |
 | `mutual_funds/tests.py` | Batched AMFI NAV import                                               |
 | `investments/tests.py`  | The transaction importer and AMC-name / quant auto-enrichment         |
+| Transaction upload workflow | Upload audit/history, standard template endpoints, row-level failure handling, and transaction import behavior |
 | `portfolio_news/test_web_push.py` | VAPID/Web Push delivery, subscription handling and notification_sent semantics |
 | `portfolio/test_mis_report.py` | MIS Report API, historical valuation, Excel structure, display units, and family authorization |
 
@@ -870,7 +926,7 @@ npm run build     # verifies the whole app compiles
 | Limitation                                   | Details                                                                                                                                                                                                 |
 | -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **SQLite is the default database**           | WAL mode + busy-timeout reduce — but do not eliminate — write contention under concurrent load, and there is no automated backup yet. Fine for a household; for many concurrent writers use PostgreSQL. |
-| **Schedulers assume one server process**     | If deployed behind multiple worker _processes_ (not threads), each process would start its own copy of every scheduler. Run a single process.                                                           |
+| **Schedulers use in-process execution**     | The application still uses in-process schedulers. PostgreSQL advisory locks prevent duplicate market-refresh work across workers, but this does not turn the scheduler into a distributed job queue; use the documented deployment model and validate any multi-process topology. |
 | **Single owning user per record**            | `Asset` / `Transaction` are stored against one owning `User`; family sharing is a visibility layer on top.                                                                                              |
 | **Web Push requires VAPID configuration**     | Background browser delivery requires `WEB_PUSH_VAPID_PUBLIC_KEY`, `WEB_PUSH_VAPID_PRIVATE_KEY` and `WEB_PUSH_VAPID_SUBJECT`. Without them, news alerts still appear in the in-app notification feed but no push is sent. |
 | **Browser permission is required**             | The user must grant notification permission and allow the service worker to subscribe. |

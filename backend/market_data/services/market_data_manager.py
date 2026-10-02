@@ -2,7 +2,7 @@ from datetime import timedelta
 
 from django.utils import timezone
 
-from investments.models import Asset, Transaction
+from investments.models import Asset, Holding, Transaction
 from market_data.models import MarketPrice, DataSource
 from market_data.services.security_resolver import (
     SecurityResolver,
@@ -137,6 +137,31 @@ class MarketDataManager:
             HoldingCalculationEngine
             .rebuild_holding(asset)
         )
+
+    @staticmethod
+    def _get_existing_holding(asset):
+        return (
+            Holding.objects
+            .filter(asset=asset)
+            .first()
+        )
+
+    @classmethod
+    def _holding_for_current_data(cls, asset):
+        """Reuse a current holding when no market data changed.
+
+        Transaction mutations already rebuild holdings, so a market refresh
+        that discovers no newer price does not need to repeat the same
+        calculation. If the holding is missing, rebuild it to preserve the
+        existing recovery behaviour.
+        """
+
+        holding = cls._get_existing_holding(asset)
+
+        if holding is None:
+            return cls._rebuild_holding(asset)
+
+        return holding
 
     @classmethod
     def _fetch_mutual_fund(
@@ -305,7 +330,7 @@ class MarketDataManager:
             if latest_date is not None:
 
                 holding = (
-                    cls._rebuild_holding(
+                    cls._holding_for_current_data(
                         asset
                     )
                 )
@@ -370,7 +395,7 @@ class MarketDataManager:
         ):
 
             holding = (
-                cls._rebuild_holding(
+                cls._holding_for_current_data(
                     asset
                 )
             )
@@ -799,7 +824,7 @@ class MarketDataManager:
                 if start_date > today:
 
                     holding = (
-                        cls._rebuild_holding(
+                        cls._holding_for_current_data(
                             asset
                         )
                     )

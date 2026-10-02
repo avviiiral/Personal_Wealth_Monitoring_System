@@ -141,56 +141,74 @@ class YahooFinanceService:
             end=end,
         )
 
-        saved_count = 0
+        records = []
 
         for index, row in data.iterrows():
-
             market_date = pd.Timestamp(str(index)).date()
+
             volume_value = row.get("Volume")
             volume = None
+
             if volume_value is not None:
                 volume_text = str(volume_value).strip()
+
                 if volume_text and volume_text.lower() not in {"nan", "nat"}:
                     try:
                         volume = int(float(volume_text))
                     except (TypeError, ValueError):
                         volume = None
 
-            MarketPrice.objects.update_or_create(
-                asset=asset,
-                date=market_date,
-                source=DataSource.YAHOO_FINANCE,
-                defaults={
-                    "open_price": YahooFinanceService._to_decimal(
+            records.append(
+                MarketPrice(
+                    asset=asset,
+                    date=market_date,
+                    source=DataSource.YAHOO_FINANCE,
+                    open_price=YahooFinanceService._to_decimal(
                         row.get("Open")
                     ),
-
-                    "high_price": YahooFinanceService._to_decimal(
+                    high_price=YahooFinanceService._to_decimal(
                         row.get("High")
                     ),
-
-                    "low_price": YahooFinanceService._to_decimal(
+                    low_price=YahooFinanceService._to_decimal(
                         row.get("Low")
                     ),
-
-                    "close_price": YahooFinanceService._to_decimal(
+                    close_price=YahooFinanceService._to_decimal(
                         row.get("Close")
                     ),
-
-                    "adjusted_close": YahooFinanceService._to_decimal(
+                    adjusted_close=YahooFinanceService._to_decimal(
                         row.get("Adj Close")
                     ),
-
-                    "volume": volume,
-                },
+                    volume=volume,
+                )
             )
 
-            saved_count += 1
-
-        if saved_count == 0:
+        if not records:
             raise ValueError(
                 f"No usable market-price records returned "
                 f"for symbol: {symbol}"
             )
 
-        return saved_count
+        # PostgreSQL handles the unique constraint
+        # (asset, date, source) in one bulk operation. This preserves the
+        # existing upsert semantics while avoiding one SELECT + one write
+        # round trip for every historical row.
+        MarketPrice.objects.bulk_create(
+            records,
+            update_conflicts=True,
+            update_fields=[
+                "open_price",
+                "high_price",
+                "low_price",
+                "close_price",
+                "adjusted_close",
+                "volume",
+            ],
+            unique_fields=[
+                "asset",
+                "date",
+                "source",
+            ],
+            batch_size=1000,
+        )
+
+        return len(records)

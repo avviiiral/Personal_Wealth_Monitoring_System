@@ -17,11 +17,10 @@ class PortfolioTreeService:
     ZERO = Decimal("0")
 
     @staticmethod
-    def _clean(value, default="Unassigned"):
+    def _clean(value, default=""):
         if value is None:
             return default
-        value = str(value).strip()
-        return value or default
+        return str(value).strip() or default
 
     @staticmethod
     def _decimal_to_float(value):
@@ -178,7 +177,7 @@ class PortfolioTreeService:
             security_master = security_master_cache.get(security_key)
         if security_master is None:
             security_master = SecurityMasterService.get_for_asset(owner=asset.owner, asset=asset, family=asset.family)
-        asset_name = cls._clean(first.asset_name, getattr(asset, "name", "Unassigned"))
+        asset_name = cls._clean(first.asset_name)
         return {
             "id": asset.id,
             "family_name": cls._clean(first.family_name),
@@ -230,7 +229,7 @@ class PortfolioTreeService:
             portfolio = cls._clean(tx.portfolio)
             asset_class = cls._clean(tx.asset_class)
             sub_class = cls._clean(tx.sub_class)
-            asset_name = cls._clean(tx.asset_name, getattr(tx.asset, "name", "Unassigned"))
+            asset_name = cls._clean(tx.asset_name)
             group_key = (family, portfolio, asset_class, sub_class, tx.asset_id)
             grouped.setdefault(group_key, []).append(tx)
 
@@ -240,7 +239,7 @@ class PortfolioTreeService:
             portfolio = cls._clean(tx.portfolio)
             asset_class = cls._clean(tx.asset_class)
             sub_class = cls._clean(tx.sub_class)
-            asset_name = cls._clean(tx.asset_name, getattr(tx.asset, "name", "Unassigned"))
+            asset_name = cls._clean(tx.asset_name)
             group_key = (family, portfolio, asset_class, sub_class, tx.asset_id)
             filtered_grouped.setdefault(group_key, []).append(tx)
 
@@ -292,7 +291,7 @@ class PortfolioTreeService:
 
         for (family, portfolio, asset_class, sub_class, asset_id), asset_transactions in filtered_grouped.items():
             first = asset_transactions[0]
-            asset_name = cls._clean(first.asset_name, getattr(first.asset, "name", "Unassigned"))
+            asset_name = cls._clean(first.asset_name)
             asset_name_key = (sub_class, asset_name)
             sub_class_key = sub_class
             position = cls._calculate_position(asset_transactions)
@@ -325,7 +324,7 @@ class PortfolioTreeService:
         for (family, portfolio, asset_class, sub_class, asset_id), asset_transactions in grouped.items():
             first = asset_transactions[0]
             xirr_key = (family, portfolio, asset_class, sub_class, asset_id)
-            asset_name = cls._clean(first.asset_name, getattr(first.asset, "name", "Unassigned"))
+            asset_name = cls._clean(first.asset_name)
             asset_name_key = (sub_class, asset_name)
             sub_class_key = sub_class
             asset_data = cls._build_asset(

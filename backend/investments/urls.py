@@ -2,6 +2,9 @@ from django.urls import path
 
 from .views import (
     import_transactions,
+    transaction_upload_history,
+    transaction_upload_detail,
+    download_transaction_template,
     security_master_list,
     security_master_detail,
 )
@@ -12,6 +15,24 @@ urlpatterns = [
         "import/",
         import_transactions,
         name="import-transactions",
+    ),
+
+    path(
+        "upload-history/",
+        transaction_upload_history,
+        name="transaction-upload-history",
+    ),
+
+    path(
+        "upload-history/<int:upload_id>/",
+        transaction_upload_detail,
+        name="transaction-upload-detail",
+    ),
+
+    path(
+        "transaction-template/",
+        download_transaction_template,
+        name="transaction-template",
     ),
 
     path(

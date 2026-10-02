@@ -479,8 +479,8 @@ def _auto_fill_notes_document(document, base_notes, data_rows):
                 source_row = data_known.get(name)
                 if source_row is not None:
                     source = {
-                        "opening_rate": source_row.get("opening_nav"),
-                        "closing_rate": source_row.get("closing_nav"),
+                        "opening_rate": float(source_row.get("opening_nav")) if source_row.get("opening_nav") is not None else None,
+                        "closing_rate": float(source_row.get("closing_nav")) if source_row.get("closing_nav") is not None else None,
                     }
                     opening = source.get("opening_rate")
                     closing = source.get("closing_rate")

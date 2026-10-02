@@ -11,7 +11,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from .constants import NotificationTier
-from users.permissions import get_active_family_group, get_visible_owner_ids, is_system_owner
+from users.permissions import get_active_family_group, is_system_owner
 from .models import PortfolioNewsAlert, PortfolioNewsMatch, PushSubscription
 from .serializers import (
     PortfolioNewsAlertDetailSerializer,

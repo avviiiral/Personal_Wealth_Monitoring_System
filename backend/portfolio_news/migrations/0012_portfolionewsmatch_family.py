@@ -71,6 +71,18 @@ class Migration(migrations.Migration):
             backfill_family_scope,
             migrations.RunPython.noop,
         ),
+        migrations.RemoveConstraint(
+            model_name="portfolionewsmatch",
+            name="unique_raw_news_match_per_holding",
+        ),
+        migrations.AddConstraint(
+            model_name="portfolionewsmatch",
+            constraint=models.UniqueConstraint(
+                condition=models.Q(family__isnull=True),
+                fields=("user", "article", "holding_type", "holding_id"),
+                name="unique_legacy_raw_news_match_per_holding",
+            ),
+        ),
         migrations.AddConstraint(
             model_name="portfolionewsmatch",
             constraint=models.UniqueConstraint(

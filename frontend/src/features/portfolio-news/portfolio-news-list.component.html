@@ -50,6 +50,87 @@
     </button>
   </div>
 
+  <ng-container *ngIf="viewMode === 'all'">
+    <div class="raw-news-note">
+      <span class="raw-news-note-dot"></span>
+      Showing portfolio-matched news fetched from Google News RSS. This view does not require Gemini.
+    </div>
+
+    <div class="secondary-filters">
+      <div class="filter-group">
+        <span class="filter-group-label">Date</span>
+        <button
+          type="button"
+          *ngFor="let range of dateRanges"
+          class="secondary-filter-button"
+          [class.active]="activeDateRange === range.value"
+          (click)="selectDateRange(range.value)"
+        >
+          {{ range.label }}
+        </button>
+      </div>
+    </div>
+
+    <div class="news-loading" *ngIf="rawLoading">
+      <span class="loading-spinner"></span>
+      Loading all portfolio news...
+    </div>
+
+    <div class="news-error" *ngIf="rawError && !rawLoading">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+        <circle cx="12" cy="12" r="9" />
+        <path d="M12 8v5M12 16h.01" stroke-linecap="round" />
+      </svg>
+      {{ rawError }}
+    </div>
+
+    <div class="news-empty" *ngIf="!rawLoading && !rawError && rawItems.length === 0">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
+        <path d="M4 5.5A1.5 1.5 0 0 1 5.5 4H15l5 5v9.5a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 4 18.5Z" stroke-linejoin="round" />
+        <path d="M15 4v4.5a1 1 0 0 0 1 1H20" stroke-linejoin="round" />
+      </svg>
+      No portfolio-matched news has been fetched yet.
+    </div>
+
+    <div class="news-list" *ngIf="!rawLoading && !rawError && rawItems.length > 0">
+      <button
+        type="button"
+        class="news-card raw-news-card"
+        *ngFor="let item of rawItems"
+        (click)="openRawArticle(item)"
+      >
+        <span class="raw-news-source-dot"></span>
+
+        <div class="news-card-body">
+          <div class="news-card-top">
+            <strong>{{ rawHoldingNames(item) }}</strong>
+            <span class="news-card-category">NEWS</span>
+          </div>
+
+          <span class="news-card-title">{{ item.title }}</span>
+
+          <div class="news-card-meta">
+            <span>{{ item.source }}</span>
+            <span class="dot-sep">&middot;</span>
+            <span>{{ timeAgo(item.published_at) }}</span>
+            <ng-container *ngIf="rawSourceCountLabel(item) as sourcesLabel">
+              <span class="dot-sep">&middot;</span>
+              <span class="source-count-label">{{ sourcesLabel }}</span>
+            </ng-container>
+          </div>
+
+          <span class="raw-news-query" *ngIf="item.matched_query">
+            Matched by: {{ item.matched_query }}
+          </span>
+        </div>
+
+        <div class="news-card-impact raw-news-open">
+          Read article
+        </div>
+      </button>
+    </div>
+  </ng-container>
+
   <ng-container *ngIf="viewMode === 'feed'">
     <div class="tier-filters">
       <button

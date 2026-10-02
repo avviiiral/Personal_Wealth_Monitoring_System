@@ -12,6 +12,7 @@ from users.models import FamilyGroup
 import requests
 
 from portfolio_news.models import NewsArticle, PortfolioNewsAlert, PortfolioNewsMatch
+from investments.models import AssetUnderlyingHolding
 from portfolio_news.services.article_store import store_article
 from portfolio_news.services.deduplication import (
     ArticleDeduplicator,

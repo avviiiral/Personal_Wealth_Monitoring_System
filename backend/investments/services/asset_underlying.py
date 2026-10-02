@@ -169,6 +169,7 @@ class AssetUnderlyingImporter:
                     owner=owner,
                     family=family,
                     asset=asset,
+                    uploaded_by=owner,
                     stock_name=stock_name,
                     isin=isin,
                     holding_percentage=percentage.quantize(Decimal("0.0001")),

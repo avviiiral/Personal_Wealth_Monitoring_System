@@ -454,6 +454,118 @@ def _parse_display_unit(request):
     return display_unit
 
 
+def _auto_fill_notes_document(document, base_notes, data_rows):
+    """Fill blank standard rate cells when a newly added row matches known MIS data."""
+    normalized = lambda value: re.sub(r"\\s+", " ", str(value or "").strip().casefold())
+    known = {}
+    for section in base_notes.get("sections", []):
+        for item in section.get("items", []):
+            known[normalized(item.get("name"))] = item
+
+    data_known = {
+        normalized(row.get("asset_name")): row
+        for row in data_rows
+        if row.get("asset_name")
+    }
+
+    for section in document.get("sections", []):
+        for row in section.get("rows", []):
+            cells = row.setdefault("cells", {})
+            name = normalized(cells.get("particulars"))
+            if not name:
+                continue
+            source = known.get(name)
+            if source is None:
+                source_row = data_known.get(name)
+                if source_row is not None:
+                    source = {
+                        "opening_rate": source_row.get("opening_nav"),
+                        "closing_rate": source_row.get("closing_nav"),
+                    }
+                    opening = source.get("opening_rate")
+                    closing = source.get("closing_rate")
+                    if opening is not None and closing is not None:
+                        change = Decimal(str(closing)) - Decimal(str(opening))
+                        source["change"] = change
+                        source["percent_change"] = (
+                            change / Decimal(str(opening)) * Decimal("100")
+                            if Decimal(str(opening)) != 0 else None
+                        )
+            if source is None:
+                continue
+            for key in ("opening_rate", "closing_rate", "change", "percent_change"):
+                if cells.get(key) in (None, "") and source.get(key) is not None:
+                    cells[key] = source.get(key)
+    return document
+
+
+@api_view(["GET", "PUT", "PATCH"])
+@permission_classes([IsAuthenticated])
+def mis_report_notes(request):
+    family = _authorized_active_family(request.user)
+    from_date, to_date = _parse_report_dates(request)
+    report = MISReportService.build(family, from_date, to_date)
+    if request.method == "GET":
+        return Response({"notes": _serialize_report(report["notes"])})
+
+    document = request.data.get("notes", request.data)
+    auto_fill = bool(request.data.get("auto_fill", True)) if isinstance(request.data, dict) else True
+    if auto_fill:
+        document = _auto_fill_notes_document(
+            document,
+            MISReportService._build_notes(
+                family,
+                report["data_sheet"],
+                report["opening_date"],
+                report["reporting_date"],
+            ),
+            report["data_sheet"],
+        )
+    try:
+        notes, changed = MISReportService.save_editable_notes(
+            family,
+            request.user,
+            document,
+            MISReportService._build_notes(
+                family,
+                report["data_sheet"],
+                report["opening_date"],
+                report["reporting_date"],
+            ),
+        )
+    except ValueError as exc:
+        raise ValidationError({"detail": str(exc)})
+    return Response({
+        "notes": _serialize_report(notes),
+        "changed": changed,
+    })
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def mis_report_notes_history(request):
+    from .models import FamilyMISNotesChangeLog
+    family = _authorized_active_family(request.user)
+    rows = (
+        FamilyMISNotesChangeLog.objects
+        .filter(family=family)
+        .select_related("user")
+        .order_by("-created_at", "-id")
+    )
+    return Response({
+        "count": rows.count(),
+        "results": [
+            {
+                "id": row.id,
+                "user": row.user.get_username() if row.user else "Deleted user",
+                "date_time": row.created_at,
+                "changes": row.changes,
+            }
+            for row in rows
+        ],
+    })
+
+
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def mis_report(request):

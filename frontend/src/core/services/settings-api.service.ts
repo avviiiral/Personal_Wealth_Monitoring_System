@@ -243,7 +243,7 @@ export class SettingsApiService {
 
   getTransactionUnderlyings(): Observable<TransactionUnderlyingResponse> {
     return this.http.get<TransactionUnderlyingResponse>(
-      ${environment.apiUrl}/api/investments/underlyings/,
+      `${environment.apiUrl}/api/investments/underlyings/`,
       this.requestOptions,
     );
   }

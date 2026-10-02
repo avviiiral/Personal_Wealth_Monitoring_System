@@ -15,6 +15,7 @@ import {
   TransactionUploadHistory,
   TransactionUploadDetail,
   UnderlyingUploadHistory,
+  MISNotesHistoryEntry,
 } from '../../core/services/settings-api.service';
 
 import { UserManagementComponent } from './user-management/user-management.component';
@@ -31,7 +32,8 @@ type SettingsTab =
   | 'tax-updates'
   | 'transaction-history'
   | 'upload-history'
-  | 'underlyings';
+  | 'underlyings'
+  | 'mis-history';
 
 @Component({
   selector: 'app-settings',
@@ -97,6 +99,10 @@ export class SettingsComponent implements OnInit {
   underlyingUploadLoading = false;
   underlyingUploadError = '';
 
+  misNotesHistory: MISNotesHistoryEntry[] = [];
+  misNotesHistoryLoading = false;
+  misNotesHistoryError = '';
+
   historySearch = '';
   historyEditorFilter = '';
   historyDateFilter = '';
@@ -136,6 +142,10 @@ export class SettingsComponent implements OnInit {
     if (tab === 'underlyings' && !this.underlyingUploads.length) {
       this.loadUnderlyingUploads();
     }
+
+    if (tab === 'mis-history' && !this.misNotesHistory.length) {
+      this.loadMISNotesHistory();
+    }
   }
 
   canManageUsers(): boolean {
@@ -169,6 +179,9 @@ export class SettingsComponent implements OnInit {
         }
         if (this.activeTab === 'underlyings') {
           this.loadUnderlyingUploads();
+        }
+        if (this.activeTab === 'mis-history') {
+          this.loadMISNotesHistory();
         }
         this.cdr.detectChanges();
       },
@@ -428,6 +441,39 @@ export class SettingsComponent implements OnInit {
       this.expandedHistoryId === historyId ? null : historyId;
   }
 
+
+  loadMISNotesHistory(): void {
+    this.misNotesHistoryLoading = true;
+    this.misNotesHistoryError = '';
+
+    this.settingsApi.getMISNotesHistory().subscribe({
+      next: (response) => {
+        this.misNotesHistory = response.results || [];
+        this.misNotesHistoryLoading = false;
+        this.cdr.detectChanges();
+      },
+      error: (error) => {
+        this.misNotesHistoryLoading = false;
+        this.misNotesHistoryError =
+          error?.error?.detail || 'Unable to load MIS Notes edit history.';
+        this.cdr.detectChanges();
+      },
+    });
+  }
+
+  formatMISNotesChanges(entry: MISNotesHistoryEntry): string {
+    return entry.changes.map((change) => {
+      const type = String(change['type'] || 'edited').replace(/_/g, ' ');
+      const oldValue = change['old'];
+      const newValue = change['new'];
+      if (oldValue !== undefined || newValue !== undefined) {
+        return `${type}: ${oldValue ?? '—'} → ${newValue ?? '—'}`;
+      }
+      const label = change['new'] || change['old'] || change['section_id'] || '';
+      return `${type}: ${label}`;
+    }).join('; ');
+  }
+
   loadTransactionUploadHistory(): void {
     this.transactionUploadLoading = true;
     this.transactionUploadError = '';
@@ -682,6 +728,10 @@ export class SettingsComponent implements OnInit {
 
     if (this.activeTab === 'underlyings') {
       this.loadUnderlyingUploads();
+    }
+
+    if (this.activeTab === 'mis-history') {
+      this.loadMISNotesHistory();
     }
   }
 }

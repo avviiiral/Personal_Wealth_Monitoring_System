@@ -95,11 +95,13 @@ export class PortfolioNewsListComponent implements OnInit {
         next: (response) => {
           this.rawItems = response.results;
           this.rawLoading = false;
+          this.changeDetector.detectChanges();
         },
         error: (error) => {
           console.error('Failed to load raw portfolio news:', error);
           this.rawError = 'Unable to load all portfolio news right now.';
           this.rawLoading = false;
+          this.changeDetector.detectChanges();
         },
       });
   }

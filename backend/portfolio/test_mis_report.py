@@ -1,5 +1,5 @@
 from decimal import Decimal
-from datetime import date
+from datetime import date, timedelta
 from io import BytesIO
 from unittest.mock import patch
 
@@ -131,9 +131,11 @@ class MISReportAPITests(TestCase):
         self.assertEqual(data["fund_type_summary"][0]["rows"][0]["total"], 1250.0)
         self.assertEqual(data["fund_type_summary"][0]["subtotal"], 1250.0)
         self.assertIn("notes", data)
-        self.assertEqual(data["notes"]["title"], "Notes to MIS OCTOBER-2026")
-        self.assertEqual(data["notes"]["opening_label"], "SEP-26")
-        self.assertEqual(data["notes"]["closing_label"], "OCT-26")
+        reporting_date = date.today()
+        opening_date = MISReportService._prior_month_end(reporting_date)
+        self.assertEqual(data["notes"]["title"], f"Notes to MIS {reporting_date.strftime('%B-%Y').upper()}")
+        self.assertEqual(data["notes"]["opening_label"], opening_date.strftime("%b-%y").upper())
+        self.assertEqual(data["notes"]["closing_label"], reporting_date.strftime("%b-%y").upper())
         self.assertEqual(
             [section["section_number"] for section in data["notes"]["sections"]],
             [1, 2, 3, 4, 5, 6],
@@ -561,12 +563,15 @@ class MISReportAPITests(TestCase):
             ["IPS", "Data Sheet", "Tax Report", "Fund Type Summary", "Notes"],
         )
         self.assertEqual(workbook["IPS"]["A1"].value, "IPS")
-        self.assertEqual(workbook["Notes"]["A1"].value, "Notes to MIS OCTOBER-2026")
+        reporting_date = date.today()
+        opening_date = MISReportService._prior_month_end(reporting_date)
+        period_start = MISReportService._period_start(reporting_date)
+        self.assertEqual(workbook["Notes"]["A1"].value, f"Notes to MIS {reporting_date.strftime('%B-%Y').upper()}")
         self.assertEqual(workbook["Data Sheet"]["A1"].value, "Data Sheet")
-        self.assertEqual(workbook["Data Sheet"]["E3"].value, "Investment Cost 01.10.2026")
-        self.assertEqual(workbook["Data Sheet"]["H3"].value, "SEP-26 Closing MTM")
-        self.assertEqual(workbook["Data Sheet"]["K3"].value, "Transactions- Buy/Sell 30.09.2026 to 01.10.2026")
-        self.assertEqual(workbook["Data Sheet"]["N3"].value, "OCT-26 Closing MTM")
+        self.assertEqual(workbook["Data Sheet"]["E3"].value, f"Investment Cost {reporting_date.strftime('%d.%m.%Y')}")
+        self.assertEqual(workbook["Data Sheet"]["H3"].value, f"{opening_date.strftime('%b-%y').upper()} Closing MTM")
+        self.assertEqual(workbook["Data Sheet"]["K3"].value, f"Transactions- Buy/Sell {period_start.strftime('%d.%m.%Y')} to {reporting_date.strftime('%d.%m.%Y')}")
+        self.assertEqual(workbook["Data Sheet"]["N3"].value, f"{reporting_date.strftime('%b-%y').upper()} Closing MTM")
         self.assertEqual(workbook["Data Sheet"]["A4"].value, "Fund Name")
         self.assertEqual(workbook["Data Sheet"]["B5"].value, "DAJ")
         self.assertEqual(workbook["Data Sheet"]["A5"].value, "MIS Equity")

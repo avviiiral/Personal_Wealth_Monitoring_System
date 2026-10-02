@@ -197,14 +197,16 @@ class NewsArticleSource(models.Model):
 
 class PortfolioNewsMatch(models.Model):
     """
-    Deterministic relationship between a fetched news article and one
-    user's live portfolio holding.
+    Deterministic relationship between a fetched news article and a
+    portfolio holding inside a family.
 
     This is intentionally independent of Gemini. It records that the
     article was fetched and matched by HoldingMatcher, so the raw
-    portfolio-news feed can show the article even when AI analysis is
+    family-news feed can show the article even when AI analysis is
     unavailable or the article is not important enough to become an
-    alert.
+    alert. The user field is retained as the member through whose
+    monitoring pass the match was first persisted; family is the
+    authoritative scope for new family-scoped matches.
     """
 
     user = models.ForeignKey(

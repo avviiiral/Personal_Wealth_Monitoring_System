@@ -98,13 +98,7 @@ def wealth_investment_summary(request):
     return Response(InvestmentSummaryService.calculate(request.user, family_name=family_name))
 
 
-def _standard_allocation_reference_family(request):
-    """Resolve a family only for calculating the displayed rupee amounts.
-
-    The allocation percentages themselves are global and are never scoped to
-    this family. The optional family query parameter only determines which
-    portfolio total is used to calculate allocation amounts on screen.
-    """
+def _standard_allocation_family(request):
     requested_name = (request.GET.get("family") or "").strip()
 
     if requested_name:
@@ -117,23 +111,21 @@ def _standard_allocation_reference_family(request):
             raise PermissionDenied("You do not have access to this family.")
         return family
 
-    return get_active_family_group(request.user)
+    family = get_active_family_group(request.user)
+    if family is None:
+        from rest_framework.exceptions import PermissionDenied
+        raise PermissionDenied("You must belong to an active family to access Standard Allocation.")
+    return family
 
 
 @ensure_csrf_cookie
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def wealth_standard_allocations(request):
-    family = _standard_allocation_reference_family(request)
-    rows = StandardAllocation.objects.all()
-
-    total_current_value = Decimal("0")
-    if family is not None:
-        investment_summary = InvestmentSummaryService.calculate(
-            request.user,
-            family_name=family.name,
-        )
-        total_current_value = Decimal(str(investment_summary.get("total_current_value") or 0))
+    family = _standard_allocation_family(request)
+    rows = StandardAllocation.objects.filter(family=family)
+    investment_summary = InvestmentSummaryService.calculate(request.user, family_name=family.name)
+    total_current_value = Decimal(str(investment_summary.get("total_current_value") or 0))
 
     allocations = {}
     for row in rows:
@@ -143,7 +135,7 @@ def wealth_standard_allocations(request):
         }
 
     return Response({
-        "family": family.name if family is not None else None,
+        "family": family.name,
         "total_current_value": float(total_current_value),
         "allocations": allocations,
     })
@@ -152,7 +144,7 @@ def wealth_standard_allocations(request):
 @api_view(["PUT"])
 @permission_classes([IsAuthenticated])
 def wealth_standard_allocations_update(request):
-    family = _standard_allocation_reference_family(request)
+    family = _standard_allocation_family(request)
     raw_allocations = request.data.get("allocations")
 
     if not isinstance(raw_allocations, dict) or not raw_allocations:
@@ -161,13 +153,8 @@ def wealth_standard_allocations_update(request):
             status=status.HTTP_400_BAD_REQUEST,
         )
 
-    total_current_value = Decimal("0")
-    if family is not None:
-        investment_summary = InvestmentSummaryService.calculate(
-            request.user,
-            family_name=family.name,
-        )
-        total_current_value = Decimal(str(investment_summary.get("total_current_value") or 0))
+    investment_summary = InvestmentSummaryService.calculate(request.user, family_name=family.name)
+    total_current_value = Decimal(str(investment_summary.get("total_current_value") or 0))
 
     allocations = {}
     try:
@@ -211,13 +198,11 @@ def wealth_standard_allocations_update(request):
             status=status.HTTP_400_BAD_REQUEST,
         )
 
-    # Standard Allocation is global. Replace the shared targets atomically;
-    # the amount is retained only as the latest reference value and is
-    # recalculated for each family's portfolio when read.
-    StandardAllocation.objects.all().delete()
+    StandardAllocation.objects.filter(family=family).delete()
 
     StandardAllocation.objects.bulk_create([
         StandardAllocation(
+            family=family,
             asset_category=category,
             allocation_percent=item["percent"],
             allocation_amount=item["amount"],
@@ -226,7 +211,7 @@ def wealth_standard_allocations_update(request):
     ])
 
     return Response({
-        "family": family.name if family is not None else None,
+        "family": family.name,
         "total_current_value": float(total_current_value),
         "allocations": {
             category: {

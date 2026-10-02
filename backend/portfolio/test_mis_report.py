@@ -630,3 +630,99 @@ class MISReportAPITests(TestCase):
     def test_invalid_excel_display_unit_is_rejected(self):
         response = self.client.get("/api/portfolio/mis-report/download/", {"display_unit": "millions"})
         self.assertEqual(response.status_code, 400)
+
+
+    def test_notes_can_be_edited_and_are_family_scoped(self):
+        response = self.client.get("/api/portfolio/mis-report/")
+        self.assertEqual(response.status_code, 200)
+        document = response.json()["notes"]["editable"]
+
+        section = document["sections"][0]
+        section["title"] = "Custom REIT Section"
+        section["columns"][1]["label"] = "Investment Name"
+        section["columns"].append({
+            "id": "custom-value",
+            "label": "Custom Value",
+            "type": "number",
+        })
+        section["rows"][0]["cells"]["custom-value"] = 123.45
+
+        response = self.client.put(
+            "/api/portfolio/mis-report/notes/",
+            {"notes": document, "auto_fill": False},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.json()["changed"])
+
+        response = self.client.get("/api/portfolio/mis-report/")
+        self.assertEqual(response.status_code, 200)
+        saved = response.json()["notes"]["editable"]
+        self.assertEqual(saved["sections"][0]["title"], "Custom REIT Section")
+        self.assertEqual(saved["sections"][0]["columns"][1]["label"], "Investment Name")
+        self.assertEqual(saved["sections"][0]["rows"][0]["cells"]["custom-value"], 123.45)
+
+        history = self.client.get("/api/portfolio/mis-report/notes/history/")
+        self.assertEqual(history.status_code, 200)
+        self.assertGreaterEqual(history.json()["count"], 1)
+        self.assertEqual(history.json()["results"][0]["user"], self.user.username)
+
+    def test_new_note_row_can_auto_fill_from_existing_asset(self):
+        response = self.client.get("/api/portfolio/mis-report/")
+        self.assertEqual(response.status_code, 200)
+        document = response.json()["notes"]["editable"]
+
+        section = document["sections"][0]
+        section["rows"].append({
+            "id": "new-row",
+            "cells": {
+                "sr_no": 99,
+                "particulars": "MIS Equity",
+                "opening_rate": None,
+                "closing_rate": None,
+                "change": None,
+                "percent_change": None,
+            },
+        })
+
+        response = self.client.put(
+            "/api/portfolio/mis-report/notes/",
+            {"notes": document, "auto_fill": True},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200)
+        row = next(
+            item for item in response.json()["notes"]["editable"]["sections"][0]["rows"]
+            if item["id"] == "new-row"
+        )
+        self.assertEqual(row["cells"]["opening_rate"], 125.0)
+        self.assertEqual(row["cells"]["closing_rate"], 125.0)
+        self.assertEqual(row["cells"]["change"], 0.0)
+
+    def test_notes_edits_are_not_visible_to_another_family(self):
+        other_family = FamilyGroup.objects.create(name="Other MIS Family")
+        other_user = get_user_model().objects.create_user(
+            username="other_mis_user",
+            password="test-password",
+        )
+        other_user.profile.family_groups.add(other_family)
+        other_user.profile.active_family_group = other_family
+        other_user.profile.save(update_fields=["active_family_group"])
+
+        response = self.client.get("/api/portfolio/mis-report/")
+        document = response.json()["notes"]["editable"]
+        document["title"] = "Family One Custom Notes"
+        self.client.put(
+            "/api/portfolio/mis-report/notes/",
+            {"notes": document},
+            format="json",
+        )
+
+        other_client = APIClient()
+        other_client.force_authenticate(user=other_user)
+        response = other_client.get("/api/portfolio/mis-report/")
+        self.assertEqual(response.status_code, 200)
+        self.assertNotEqual(
+            response.json()["notes"]["title"],
+            "Family One Custom Notes",
+        )

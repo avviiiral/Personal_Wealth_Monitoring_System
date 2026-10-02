@@ -64,6 +64,9 @@ export interface PortfolioNewsRawHolding {
   holding_type: 'EQUITY' | 'MUTUAL_FUND' | 'WATCHLIST';
   holding_id: number;
   holding_display_name: string;
+  connection_type: 'direct' | 'underlying';
+  underlying_name: string;
+  underlying_weight: number | null;
 }
 
 export interface PortfolioNewsRawItem {

@@ -269,7 +269,8 @@ class PortfolioNewsMatch(models.Model):
                     "holding_type",
                     "holding_id",
                 ],
-                name="unique_raw_news_match_per_holding",
+                condition=models.Q(family__isnull=True),
+                name="unique_legacy_raw_news_match_per_holding",
             ),
             models.UniqueConstraint(
                 fields=[

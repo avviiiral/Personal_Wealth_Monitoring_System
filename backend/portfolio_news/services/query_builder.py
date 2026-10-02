@@ -37,7 +37,9 @@ class QueryBuilder:
         "order",
     ]
 
-    MAX_QUERIES_PER_HOLDING = 10
+    MAX_QUERIES_PER_HOLDING = 15
+
+    MAX_UNDERLYING_QUERIES_PER_HOLDING = 5
 
     MIN_SYMBOL_LENGTH_FOR_STANDALONE_QUERY = 3
 
@@ -137,6 +139,31 @@ class QueryBuilder:
         return query in cls.macro_terms_for_sector(holding.sector)
 
     @classmethod
+    def underlying_queries(cls, holding: MonitoredHolding) -> List[str]:
+        """Return bounded queries for the largest uploaded underlyings."""
+        seen = set()
+        queries = []
+        for underlying in holding.underlyings:
+            name = (underlying.name or "").strip()
+            if not name or name.lower() in seen:
+                continue
+            seen.add(name.lower())
+            queries.append(name)
+            if len(queries) >= cls.MAX_UNDERLYING_QUERIES_PER_HOLDING:
+                break
+        return queries
+
+    @classmethod
+    def underlying_for_query(cls, query: str, holding: MonitoredHolding):
+        query_lower = (query or "").strip().lower()
+        if not query_lower:
+            return None
+        for underlying in holding.underlyings:
+            if (underlying.name or "").strip().lower() == query_lower:
+                return underlying
+        return None
+
+    @classmethod
     def build_queries(cls, holding: MonitoredHolding) -> List[str]:
 
         queries: List[str] = []
@@ -159,6 +186,10 @@ class QueryBuilder:
             and symbol.lower() != primary_term.lower()
         ):
             queries.append(f"{symbol} share")
+
+        # Explicit underlying relationships take priority over broad
+        # sector/macro queries.
+        queries.extend(cls.underlying_queries(holding))
 
         sector_query = cls.sector_query(holding)
 

@@ -7,6 +7,8 @@ from typing import Optional
 from django.contrib.auth.models import User
 from django.utils import timezone
 
+from users.permissions import get_active_family_group
+
 from .article_store import store_article
 from .gemini_analyzer import GeminiArticleAnalyzer
 from .google_news_provider import GoogleNewsRSSProvider
@@ -16,6 +18,7 @@ from .news_provider import NewsProvider
 from .notification_creation import create_alert_from_analysis
 from .web_push import deliver_alert_notification
 from .query_builder import QueryBuilder
+from ..models import PortfolioNewsMatch
 
 
 logger = logging.getLogger(__name__)
@@ -150,6 +153,7 @@ def _process_holding(
     max_articles_per_holding: Optional[int] = None,
     min_relevance_score: Optional[int] = None,
     min_alert_score: Optional[float] = None,
+    family=None,
 ) -> list:
     """
     Fetch, filter, store and select news articles for one holding.
@@ -228,6 +232,13 @@ def _process_holding(
         ):
             continue
 
+        connection = HoldingMatcher.connection_for_article(
+            candidate.title,
+            candidate.description,
+            holding,
+            matched_query=candidate.matched_query,
+        )
+
         stats["articles_matched"] += 1
 
         try:
@@ -282,7 +293,7 @@ def _process_holding(
         ):
             continue
 
-        selected_pairs.append((article, holding))
+        selected_pairs.append((article, holding, connection))
         articles_selected_this_holding += 1
         stats["articles_sent_to_ai"] += 1
 
@@ -336,6 +347,7 @@ def _analyze_batches_for_user(
         batch = article_holding_pairs[
             start : start + max_batch_articles
         ]
+        analyzer_batch = batch
 
         logger.info(
             "Running Gemini batch analysis for user_id=%s batch=%d-%d "
@@ -349,12 +361,12 @@ def _analyze_batches_for_user(
         try:
             if callable(getattr(analyzer, "analyze_batch", None)):
                 batch_results = analyzer.analyze_batch(
-                    batch,
+                    analyzer_batch,
                     user=user,
                 )
             else:
                 batch_results = {}
-                for article, holding in batch:
+                for article, holding, _ in batch:
                     analysis = _analyze_one_pair_compatibly(
                         analyzer,
                         article,
@@ -401,7 +413,7 @@ def _create_alerts_from_analyses(
     stats: dict,
 ) -> None:
     """Create the existing PortfolioNewsAlert rows from batch results."""
-    for article, holding in article_holding_pairs:
+    for article, holding, connection in article_holding_pairs:
         key = (
             article.id,
             holding.holding_type,
@@ -424,6 +436,7 @@ def _create_alerts_from_analyses(
                 article,
                 holding,
                 analysis,
+                connection=connection,
             )
         except Exception:
             logger.exception(
@@ -577,6 +590,8 @@ def run_portfolio_news_monitor(
             len(holdings),
         )
 
+        family = get_active_family_group(user)
+
         # First collect articles across ALL holdings. Gemini is called
         # only after the entire user's deterministic filtering stage is
         # complete, allowing different holdings to share a request.
@@ -596,6 +611,7 @@ def run_portfolio_news_monitor(
                 max_articles_per_holding=resolved_max_articles_per_holding,
                 min_relevance_score=resolved_min_relevance_score,
                 min_alert_score=resolved_min_alert_score,
+                family=family,
             )
 
             if holding_pairs:

@@ -28,6 +28,7 @@
       <button type="button" class="tab-button" [class.tab-active]="activeTab === 'transaction-history'" (click)="setTab('transaction-history')">Transaction Edit History</button>
       <button type="button" class="tab-button" [class.tab-active]="activeTab === 'upload-history'" (click)="setTab('upload-history')">Transaction Uploads</button>
       <button type="button" class="tab-button" [class.tab-active]="activeTab === 'underlyings'" (click)="setTab('underlyings')">Underlyings</button>
+      <button type="button" class="tab-button" [class.tab-active]="activeTab === 'mis-history'" (click)="setTab('mis-history')">MIS Edit History</button>
       <button type="button" class="tab-button" *ngIf="canManageUsers()" [class.tab-active]="activeTab === 'users'" (click)="setTab('users')">User Management</button>
       <button type="button" class="tab-button" *ngIf="canManageFamilies()" [class.tab-active]="activeTab === 'families'" (click)="setTab('families')">Family Management</button>
       <button type="button" class="tab-button" *ngIf="canEditPrices()" [class.tab-active]="activeTab === 'prices'" (click)="setTab('prices')">Manual Prices</button>
@@ -200,6 +201,48 @@
               <td class="tax-update-asset">{{ update.asset_name }}</td>
               <td class="tax-update-change">{{ formatTaxChange(update.change_from) }}</td>
               <td class="tax-update-change">{{ formatTaxChange(update.change_to) }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="settings-card transaction-history-card" *ngIf="activeTab === 'mis-history'">
+      <div class="card-header">
+        <div>
+          <h2>MIS Edit History</h2>
+          <p>Family-wide audit trail of changes made to the editable MIS Notes sheet.</p>
+        </div>
+        <span class="section-badge">{{ misNotesHistory.length }} Edits</span>
+      </div>
+
+      <div class="loading-card history-loading" *ngIf="misNotesHistoryLoading">
+        <div class="loading-spinner"></div>
+        <span>Loading MIS edit history...</span>
+      </div>
+
+      <div class="error-card" *ngIf="!misNotesHistoryLoading && misNotesHistoryError">
+        {{ misNotesHistoryError }}
+      </div>
+
+      <div class="tax-update-empty" *ngIf="!misNotesHistoryLoading && !misNotesHistoryError && !misNotesHistory.length">
+        No MIS Notes edits have been recorded for this family yet.
+      </div>
+
+      <div class="tax-update-table-wrap" *ngIf="!misNotesHistoryLoading && !misNotesHistoryError && misNotesHistory.length">
+        <table class="tax-update-table">
+          <thead>
+            <tr>
+              <th>User</th>
+              <th>Date &amp; Time</th>
+              <th>Changes</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr *ngFor="let entry of misNotesHistory">
+              <td>{{ entry.user }}</td>
+              <td>{{ entry.date_time | date:'dd MMM yyyy, hh:mm a' }}</td>
+              <td class="tax-update-change">{{ formatMISNotesChanges(entry) }}</td>
             </tr>
           </tbody>
         </table>

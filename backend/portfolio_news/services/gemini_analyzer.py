@@ -96,6 +96,12 @@ IMPORTANT RULES:
 
 18. The number of returned results MUST equal the number of
     supplied articles.
+
+19. If a deterministic portfolio connection is supplied, treat it
+    as authoritative context. "underlying" means the article was
+    deterministically connected to an uploaded underlying holding
+    of the supplied parent asset. Do not invent a different asset
+    or underlying relationship.
 """
 
 
@@ -523,7 +529,9 @@ class GeminiArticleAnalyzer:
 
         batch_items = []
 
-        for article, holding in article_holding_pairs:
+        for pair in article_holding_pairs:
+            article, holding = pair[:2]
+            connection = pair[2] if len(pair) > 2 else None
             batch_items.append(
                 {
                     "article_id": article.id,
@@ -536,6 +544,11 @@ class GeminiArticleAnalyzer:
                         "portfolio_weight_percent": round(
                             holding.portfolio_weight, 2
                         ),
+                    },
+                    "portfolio_connection": connection or {
+                        "connection_type": "direct",
+                        "underlying_name": "",
+                        "underlying_weight": None,
                     },
                     "article": {
                         "title": article.title,

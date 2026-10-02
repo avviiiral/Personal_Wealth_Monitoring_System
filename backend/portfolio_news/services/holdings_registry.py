@@ -10,6 +10,7 @@ from decimal import Decimal
 from typing import List
 
 from analytics.services.unified_wealth import UnifiedWealthAnalytics
+from investments.models import AssetUnderlyingHolding
 
 from ..constants import HoldingType
 
@@ -71,6 +72,13 @@ def _strip_mf_boilerplate(name: str) -> str:
 
 
 @dataclass
+class UnderlyingHolding:
+    name: str
+    isin: str = ""
+    weight: Decimal = Decimal("0")
+
+
+@dataclass
 class MonitoredHolding:
     """
     A single holding to monitor for news, with everything the
@@ -101,6 +109,7 @@ class MonitoredHolding:
     current_value: Decimal = Decimal("0")
 
     portfolio_weight: float = 0.0
+    underlyings: List[UnderlyingHolding] = field(default_factory=list)
 
     def identifier_terms(self) -> List[str]:
         """
@@ -120,6 +129,12 @@ class MonitoredHolding:
 def _build_equity_holding(holding, portfolio_weight: float) -> MonitoredHolding:
 
     asset = holding.asset
+
+    underlying_rows = (
+        AssetUnderlyingHolding.objects
+        .filter(family=asset.family, asset=asset)
+        .order_by("-holding_percentage", "stock_name")
+    )
 
     aliases = []
 
@@ -143,6 +158,15 @@ def _build_equity_holding(holding, portfolio_weight: float) -> MonitoredHolding:
         sector=sector,
         current_value=holding.current_value,
         portfolio_weight=portfolio_weight,
+        underlyings=[
+            UnderlyingHolding(
+                name=row.stock_name.strip(),
+                isin=(row.isin or "").strip(),
+                weight=row.holding_percentage,
+            )
+            for row in underlying_rows
+            if row.stock_name and row.stock_name.strip()
+        ],
     )
 
 

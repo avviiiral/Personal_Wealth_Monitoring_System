@@ -220,6 +220,12 @@
 
           <span class="news-card-title">{{ item.source_type === 'EXCHANGE_FILING' && item.filing_subject ? item.filing_subject : item.article_title }}</span>
 
+          <ng-container *ngIf="item.connection_type === 'underlying' && item.underlying_name">
+            <span class="raw-news-query">
+              Underlying: {{ item.underlying_name }}<ng-container *ngIf="item.underlying_weight !== null"> ({{ item.underlying_weight | number:'1.2-2' }}%)</ng-container>
+            </span>
+          </ng-container>
+
           <div class="news-card-meta">
             <span>{{ item.article_source }}</span>
             <span class="dot-sep">&middot;</span>

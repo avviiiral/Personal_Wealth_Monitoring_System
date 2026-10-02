@@ -21,6 +21,9 @@ export interface PortfolioNewsAlertListItem {
   source_count: number;
   is_read: boolean;
   notification_sent: boolean;
+  connection_type: 'direct' | 'underlying';
+  underlying_name: string;
+  underlying_weight: string | null;
   created_at: string;
   source_type: 'NEWS' | 'EXCHANGE_FILING';
   filing_exchange?: string | null;

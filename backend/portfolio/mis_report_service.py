@@ -13,6 +13,7 @@ from mutual_funds.models import MutualFundNAV, MutualFundTransaction, MutualFund
 from portfolio.services.portfolio_tree_service import PortfolioTreeService
 from market_data.services.yahoo_finance import YahooFinanceService
 from users.models import TaxRateSetting
+from .models import FamilyMISNotes
 
 
 class MISReportService:
@@ -966,6 +967,299 @@ class MISReportService:
             "sections": notes,
         }
 
+    @staticmethod
+    def _editable_notes_from_report(notes):
+        columns = [
+            {"id": "sr_no", "label": "Sr. No", "type": "number"},
+            {"id": "particulars", "label": "Particulars", "type": "text"},
+            {"id": "opening_rate", "label": "", "type": "number"},
+            {"id": "closing_rate", "label": "", "type": "number"},
+            {"id": "change", "label": "", "type": "number"},
+            {"id": "percent_change", "label": "% Change", "type": "number"},
+        ]
+        sections = []
+        for section in notes["sections"]:
+            section_columns = [dict(column) for column in columns]
+            section_columns[2]["label"] = f"{section['unit_label']} {notes['opening_label']}"
+            section_columns[3]["label"] = f"{section['unit_label']} {notes['closing_label']}"
+            section_columns[4]["label"] = section["change_label"]
+            rows = []
+            for index, item in enumerate(section["items"], 1):
+                rows.append({
+                    "id": f"row-{section['section']}-{index}",
+                    "cells": {
+                        "sr_no": index,
+                        "particulars": item["name"],
+                        "opening_rate": item["opening_rate"],
+                        "closing_rate": item["closing_rate"],
+                        "change": item["change"],
+                        "percent_change": item["percent_change"],
+                    },
+                })
+            sections.append({
+                "id": section["section"],
+                "section_number": section["section_number"],
+                "title": section["title"],
+                "note": section.get("note"),
+                "columns": section_columns,
+                "rows": rows,
+            })
+        return {
+            "title": notes["title"],
+            "opening_label": notes["opening_label"],
+            "closing_label": notes["closing_label"],
+            "sections": sections,
+        }
+
+    @staticmethod
+    def _clean_editable_notes(document):
+        if not isinstance(document, dict):
+            raise ValueError("Notes document must be an object.")
+        sections = document.get("sections")
+        if not isinstance(sections, list):
+            raise ValueError("Notes sections must be a list.")
+        if len(sections) > 100:
+            raise ValueError("Notes cannot contain more than 100 sections.")
+
+        cleaned_sections = []
+        for section_index, section in enumerate(sections, 1):
+            if not isinstance(section, dict):
+                raise ValueError("Each Notes section must be an object.")
+            section_id = str(section.get("id") or f"section-{section_index}")[:100]
+            title = str(section.get("title") or f"Section {section_index}")[:500]
+            columns = section.get("columns") or []
+            rows = section.get("rows") or []
+            if not isinstance(columns, list) or not isinstance(rows, list):
+                raise ValueError("Notes columns and rows must be lists.")
+            if len(columns) > 50:
+                raise ValueError("A Notes section cannot contain more than 50 columns.")
+            if len(rows) > 1000:
+                raise ValueError("A Notes section cannot contain more than 1000 rows.")
+
+            cleaned_columns = []
+            seen_column_ids = set()
+            for column_index, column in enumerate(columns, 1):
+                if not isinstance(column, dict):
+                    raise ValueError("Each Notes column must be an object.")
+                column_id = str(column.get("id") or f"column-{column_index}")[:100]
+                if column_id in seen_column_ids:
+                    raise ValueError("Notes column IDs must be unique within a section.")
+                seen_column_ids.add(column_id)
+                cleaned_columns.append({
+                    "id": column_id,
+                    "label": str(column.get("label") or f"Column {column_index}")[:300],
+                    "type": str(column.get("type") or "text")[:30],
+                })
+
+            cleaned_rows = []
+            valid_column_ids = {column["id"] for column in cleaned_columns}
+            for row_index, row in enumerate(rows, 1):
+                if not isinstance(row, dict):
+                    raise ValueError("Each Notes row must be an object.")
+                cells = row.get("cells") or {}
+                if not isinstance(cells, dict):
+                    raise ValueError("Notes row cells must be an object.")
+                cleaned_rows.append({
+                    "id": str(row.get("id") or f"row-{section_id}-{row_index}")[:120],
+                    "cells": {
+                        key: value
+                        for key, value in cells.items()
+                        if key in valid_column_ids
+                    },
+                })
+
+            cleaned_sections.append({
+                "id": section_id,
+                "section_number": section.get("section_number", section_index),
+                "title": title,
+                "note": section.get("note"),
+                "columns": cleaned_columns,
+                "rows": cleaned_rows,
+            })
+
+        return {
+            "title": str(document.get("title") or "Notes to MIS")[:500],
+            "opening_label": str(document.get("opening_label") or "")[:100],
+            "closing_label": str(document.get("closing_label") or "")[:100],
+            "sections": cleaned_sections,
+        }
+
+    @staticmethod
+    def _notes_change_summary(before, after):
+        if before == after:
+            return []
+        changes = []
+        before_sections = {str(item.get("id")): item for item in before.get("sections", [])}
+        after_sections = {str(item.get("id")): item for item in after.get("sections", [])}
+
+        for section_id in sorted(set(before_sections) | set(after_sections)):
+            old = before_sections.get(section_id)
+            new = after_sections.get(section_id)
+            if old is None:
+                changes.append({
+                    "type": "section_added",
+                    "section_id": section_id,
+                    "new": new.get("title", ""),
+                })
+                continue
+            if new is None:
+                changes.append({
+                    "type": "section_removed",
+                    "section_id": section_id,
+                    "old": old.get("title", ""),
+                })
+                continue
+
+            section_name = new.get("title") or old.get("title") or section_id
+            if old.get("title") != new.get("title"):
+                changes.append({
+                    "type": "section_renamed",
+                    "section_id": section_id,
+                    "section": section_name,
+                    "old": old.get("title"),
+                    "new": new.get("title"),
+                })
+
+            old_cols = {str(c.get("id")): c for c in old.get("columns", [])}
+            new_cols = {str(c.get("id")): c for c in new.get("columns", [])}
+            for column_id in sorted(set(old_cols) | set(new_cols)):
+                if column_id not in old_cols:
+                    changes.append({
+                        "type": "column_added",
+                        "section_id": section_id,
+                        "section": section_name,
+                        "column_id": column_id,
+                        "new": new_cols[column_id].get("label"),
+                    })
+                elif column_id not in new_cols:
+                    changes.append({
+                        "type": "column_removed",
+                        "section_id": section_id,
+                        "section": section_name,
+                        "column_id": column_id,
+                        "old": old_cols[column_id].get("label"),
+                    })
+                elif old_cols[column_id].get("label") != new_cols[column_id].get("label"):
+                    changes.append({
+                        "type": "column_renamed",
+                        "section_id": section_id,
+                        "section": section_name,
+                        "column_id": column_id,
+                        "old": old_cols[column_id].get("label"),
+                        "new": new_cols[column_id].get("label"),
+                    })
+
+            old_rows = {str(row.get("id")): row for row in old.get("rows", [])}
+            new_rows = {str(row.get("id")): row for row in new.get("rows", [])}
+            column_labels = {
+                str(column.get("id")): column.get("label", "")
+                for column in new.get("columns", [])
+            }
+            for row_id in sorted(set(old_rows) | set(new_rows)):
+                if row_id not in old_rows:
+                    cells = new_rows[row_id].get("cells", {})
+                    changes.append({
+                        "type": "row_added",
+                        "section_id": section_id,
+                        "section": section_name,
+                        "row_id": row_id,
+                        "new": cells.get("particulars") or row_id,
+                    })
+                elif row_id not in new_rows:
+                    cells = old_rows[row_id].get("cells", {})
+                    changes.append({
+                        "type": "row_removed",
+                        "section_id": section_id,
+                        "section": section_name,
+                        "row_id": row_id,
+                        "old": cells.get("particulars") or row_id,
+                    })
+                else:
+                    old_cells = old_rows[row_id].get("cells", {})
+                    new_cells = new_rows[row_id].get("cells", {})
+                    row_name = (
+                        new_cells.get("particulars")
+                        or old_cells.get("particulars")
+                        or row_id
+                    )
+                    for field in sorted(set(old_cells) | set(new_cells)):
+                        if old_cells.get(field) != new_cells.get(field):
+                            changes.append({
+                                "type": "cell_edited",
+                                "section_id": section_id,
+                                "section": section_name,
+                                "row_id": row_id,
+                                "row": row_name,
+                                "column_id": field,
+                                "column": column_labels.get(field, field),
+                                "old": old_cells.get(field),
+                                "new": new_cells.get(field),
+                            })
+        return changes
+
+    @classmethod
+    def _apply_saved_notes(cls, report_notes, document):
+        editable = cls._clean_editable_notes(document)
+        sections = []
+        for section in editable["sections"]:
+            columns = section["columns"]
+            items = []
+            for row in section["rows"]:
+                cells = row["cells"]
+                items.append({
+                    "name": cells.get("particulars", ""),
+                    "opening_rate": cells.get("opening_rate"),
+                    "closing_rate": cells.get("closing_rate"),
+                    "change": cells.get("change"),
+                    "percent_change": cells.get("percent_change"),
+                })
+            sections.append({
+                "section": section["id"],
+                "section_number": section["section_number"],
+                "title": section["title"],
+                "unit_label": next((c["label"] for c in columns if c["id"] == "opening_rate"), ""),
+                "change_label": next((c["label"] for c in columns if c["id"] == "change"), ""),
+                "items": items,
+                "note": section.get("note"),
+            })
+        report_notes["title"] = editable["title"]
+        report_notes["opening_label"] = editable["opening_label"]
+        report_notes["closing_label"] = editable["closing_label"]
+        report_notes["sections"] = sections
+        report_notes["editable"] = editable
+        return report_notes
+
+    @classmethod
+    def editable_notes(cls, family, base_notes):
+        saved = FamilyMISNotes.objects.filter(family=family).first()
+        if saved and saved.document:
+            return cls._apply_saved_notes(base_notes, saved.document)
+        editable = cls._editable_notes_from_report(base_notes)
+        base_notes["editable"] = editable
+        return base_notes
+
+    @classmethod
+    def save_editable_notes(cls, family, user, document, base_notes):
+        cleaned = cls._clean_editable_notes(document)
+        saved = FamilyMISNotes.objects.filter(family=family).first()
+        before = saved.document if saved else cls._editable_notes_from_report(base_notes)
+        changes = cls._notes_change_summary(before, cleaned)
+        if not changes:
+            return cls._apply_saved_notes(base_notes, before), False
+
+        if saved is None:
+            saved = FamilyMISNotes(family=family)
+        saved.document = cleaned
+        saved.updated_by = user
+        saved.save()
+        from .models import FamilyMISNotesChangeLog
+        FamilyMISNotesChangeLog.objects.create(
+            family=family,
+            user=user,
+            changes=changes,
+        )
+        return cls._apply_saved_notes(base_notes, cleaned), True
+
     @classmethod
     def build(cls, family, from_date=None, to_date=None):
         if from_date is None and to_date is None:
@@ -1161,7 +1455,7 @@ class MISReportService:
             "data_sheet": data_rows,
             "tax_report": tax_rows,
             "fund_type_summary": fund_type_summary,
-            "notes": cls._build_notes(family, data_rows, opening_date, as_of),
+            "notes": cls.editable_notes(family, cls._build_notes(family, data_rows, opening_date, as_of)),
             "summary": {
                 "total_current_value": sum((Decimal(str(row["closing_amount"] or 0)) for row in data_rows), Decimal("0")),
                 "number_of_rows": len(data_rows),

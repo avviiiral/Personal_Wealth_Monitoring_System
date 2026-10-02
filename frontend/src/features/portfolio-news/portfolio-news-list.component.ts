@@ -1,4 +1,4 @@
-import { Component, OnInit, inject } from '@angular/core';
+import { ChangeDetectorRef, Component, OnInit, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { Router } from '@angular/router';
 
@@ -28,6 +28,7 @@ type SourceFilter = 'all' | 'NEWS' | 'EXCHANGE_FILING';
 export class PortfolioNewsListComponent implements OnInit {
   private readonly newsApi = inject(NewsApiService);
   private readonly router = inject(Router);
+  private readonly changeDetector = inject(ChangeDetectorRef);
 
   items: PortfolioNewsAlertListItem[] = [];
   loading = true;

@@ -290,9 +290,9 @@ The Portfolio News pipeline separates deterministic news retrieval and portfolio
 
 ```text
 ┌──────────────────────────────┐
-│       USER PORTFOLIO         │
+│       ACTIVE FAMILY          │
 │                              │
-│ Stocks / Mutual Funds        │
+│ Family Stocks / Mutual Funds │
 └──────────────┬───────────────┘
                │
                ▼
@@ -374,13 +374,13 @@ The Portfolio News pipeline separates deterministic news retrieval and portfolio
 
 **Workflow summary:**
 
-1. The **User Portfolio** supplies the current stocks and mutual funds.
-2. The **Holdings Registry** builds the live holding set and its searchable identifiers, including names, aliases, symbols, ISINs and scheme information where available.
+1. The **Active Family** supplies the current stocks and mutual funds across the family-scoped portfolio.
+2. The **Holdings Registry** builds the live family holding set and its searchable identifiers, including names, aliases, symbols, ISINs and scheme information where available.
 3. The **Query Builder** creates search queries for each portfolio holding.
 4. **Google News RSS** retrieves matching articles.
 5. The **Holding Matcher** deterministically associates retrieved articles with portfolio holdings.
 6. Each deterministic association is persisted as a **PortfolioNewsMatch** record.
-7. **All News** reads these raw portfolio matches through `/api/ai/news/raw/` and does not require Gemini.
+7. **All News** reads these raw family matches through `/api/ai/news/raw/` and does not require Gemini.
 8. The optional **Gemini AI Analysis** layer enriches matched articles with relevance, sentiment, impact and category information and stores the resulting **PortfolioNewsAlert** records.
 9. The enriched records power the **AI Feed** and **Digest** views.
 10. The **Portfolio News UI** presents the three layers as **All News**, **AI Feed**, and **Today's Digest**.

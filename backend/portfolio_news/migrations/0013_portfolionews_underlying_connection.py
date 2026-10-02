@@ -9,7 +9,7 @@ class Migration(migrations.Migration):
 
     operations = [
         migrations.AddField(
-            model_name="portfolionewsmatch",
+            model_name="portfolionewsalert",
             name="connection_type",
             field=models.CharField(
                 choices=[

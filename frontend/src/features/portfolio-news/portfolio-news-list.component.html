@@ -110,6 +110,10 @@
 
           <span class="news-card-title">{{ item.title }}</span>
 
+          <ng-container *ngFor="let connection of rawUnderlyingConnections(item)">
+            <span class="raw-news-query">{{ connection }}</span>
+          </ng-container>
+
           <div class="news-card-meta">
             <span>{{ item.source }}</span>
             <span class="dot-sep">&middot;</span>

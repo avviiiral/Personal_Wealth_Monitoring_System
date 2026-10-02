@@ -257,6 +257,13 @@ export class SettingsApiService {
     );
   }
 
+  downloadUnderlyingTemplate(): Observable<Blob> {
+    return this.http.get(
+      `${environment.apiUrl}/api/portfolio/underlying-template/`,
+      { ...this.requestOptions, responseType: 'blob' },
+    );
+  }
+
   downloadTransactionTemplate(): Observable<Blob> {
     return this.http.get(
       `${environment.apiUrl}/api/investments/transaction-template/`,

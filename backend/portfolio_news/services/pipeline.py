@@ -260,6 +260,12 @@ def _process_holding(
         # before any Gemini work. This is the source for the raw
         # portfolio-news feed and therefore remains available even when
         # Gemini is unavailable or does not produce an alert.
+        connection = HoldingMatcher.connection_for_article(
+            candidate.title,
+            candidate.description,
+            holding,
+            matched_query=candidate.matched_query,
+        )
         PortfolioNewsMatch.objects.get_or_create(
             user=user,
             article=article,
@@ -268,6 +274,9 @@ def _process_holding(
             defaults={
                 "holding_display_name": holding.display_name,
                 "matched_query": candidate.matched_query[:255],
+                "connection_type": connection["connection_type"],
+                "underlying_name": connection["underlying_name"],
+                "underlying_weight": connection["underlying_weight"],
             },
         )
 

@@ -168,17 +168,29 @@ export class MISReportComponent implements OnInit {
   }
 
   removeColumn(section: MISEditableSection, index: number): void {
+    const column = section.columns[index];
+    if (this.isCalculatedColumn(column)) {
+      this.notesError = 'Sr. No, Change In Rate and % Change are calculated automatically and cannot be removed.';
+      return;
+    }
     if (section.columns.length <= 1) {
       this.notesError = 'A Notes section must keep at least one column.';
       return;
     }
-    const [column] = section.columns.splice(index, 1);
-    section.rows.forEach((row) => delete row.cells[column.id]);
+    const [removedColumn] = section.columns.splice(index, 1);
+    section.rows.forEach((row) => delete row.cells[removedColumn.id]);
+  }
+
+  isCalculatedColumn(column: MISEditableColumn): boolean {
+    return ['sr_no', 'change', 'percent_change'].includes(column.id);
   }
 
   addRow(section: MISEditableSection): void {
     const cells: Record<string, string | number | null> = {};
     section.columns.forEach((column) => {
+      if (this.isCalculatedColumn(column)) {
+        return;
+      }
       cells[column.id] = column.type === 'number' ? null : '';
     });
     section.rows.push({

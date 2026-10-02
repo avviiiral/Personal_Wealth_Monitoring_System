@@ -393,7 +393,7 @@ Portfolio News follows the same family boundary used by the portfolio and analyt
 
 - The **active family** is the authoritative scope for **All News** for users who belong to a family.
 - Deterministic matches are stored with a **FamilyGroup** reference in `PortfolioNewsMatch`.
-- The same article/holding combination is stored only once per family, even when multiple family members own the same holding or the monitoring pass encounters the same match through multiple members.
+- The same article/holding/connection combination is stored only once per family, while separate underlying relationships can be retained when one article is connected through more than one uploaded underlying.
 - The raw endpoint `/api/ai/news/raw/` returns only the currently selected family's deterministic news for normal users.
 - The response includes `family_id` and `family_name` so the UI can make the active family scope explicit.
 - A user with no family retains access to legacy user-scoped raw matches; this is a compatibility path and does not weaken family authorization.

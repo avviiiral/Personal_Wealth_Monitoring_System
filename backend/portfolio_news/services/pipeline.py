@@ -365,7 +365,7 @@ def _analyze_batches_for_user(
         batch = article_holding_pairs[
             start : start + max_batch_articles
         ]
-        analyzer_batch = [(article, holding) for article, holding, _ in batch]
+        analyzer_batch = batch
 
         logger.info(
             "Running Gemini batch analysis for user_id=%s batch=%d-%d "

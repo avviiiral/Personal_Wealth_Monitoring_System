@@ -9,11 +9,22 @@
     </div>
     <div>
       <h1>Portfolio News</h1>
-      <p>AI-assessed news specifically matched to the holdings you actually own.</p>
+      <p>News fetched and matched to the holdings you actually own, with AI analysis available as a separate layer.</p>
     </div>
   </div>
 
   <div class="view-mode-toggle">
+    <button
+      type="button"
+      class="view-mode-button"
+      [class.active]="viewMode === 'all'"
+      (click)="setViewMode('all')"
+    >
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+        <path d="M4 6h16M4 12h16M4 18h16" stroke-linecap="round" />
+      </svg>
+      All News
+    </button>
     <button
       type="button"
       class="view-mode-button"
@@ -23,7 +34,7 @@
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
         <path d="M4 6h16M4 12h16M4 18h10" stroke-linecap="round" />
       </svg>
-      Feed
+      AI Feed
     </button>
     <button
       type="button"

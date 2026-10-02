@@ -306,13 +306,7 @@
                       [ngModel]="row.cells[column.id]"
                       (ngModelChange)="row.cells[column.id] = coerceCellValue(column, $event)"
                     />
-                    <span *ngIf="!editingNotes || isCalculatedColumn(column)">{{
-                      row.cells[column.id] === null || row.cells[column.id] === '' || row.cells[column.id] === undefined
-                        ? '—'
-                        : isCalculatedColumn(column) && (column.id === 'change' || column.id === 'percent_change')
-                          ? formatNumber(row.cells[column.id] as number, 2) + (column.id === 'percent_change' ? '%' : '')
-                          : row.cells[column.id]
-                    }}</span>
+                    <span *ngIf="!editingNotes || isCalculatedColumn(column)">{{ formatNotesCalculatedValue(column, row.cells[column.id]) }}</span>
                   </td>
                   <td *ngIf="editingNotes" class="notes-row-actions">
                     <button type="button" class="notes-danger-button" (click)="removeRow(section, rowIndex)">Remove</button>

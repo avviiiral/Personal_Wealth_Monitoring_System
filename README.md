@@ -289,6 +289,8 @@ A **Gemini-backed** assistant scoped to the logged-in user's own portfolio. The 
 
 ### 📰 Portfolio News Intelligence
 
+Portfolio News now has two layers. **All News** shows every article that the deterministic portfolio matcher fetched and associated with the user's holdings, without requiring Gemini. **AI Feed** and the digest retain the existing Gemini enrichment, impact scoring, and notification behavior. The raw layer stores only article metadata/snippets and links users to the original publisher.
+
 A background agent that:
 
 1. reads each user's **actual holdings** (there is no hard-coded stock list),

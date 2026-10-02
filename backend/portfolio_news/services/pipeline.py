@@ -7,6 +7,8 @@ from typing import Optional
 from django.contrib.auth.models import User
 from django.utils import timezone
 
+from users.permissions import get_active_family_group
+
 from .article_store import store_article
 from .gemini_analyzer import GeminiArticleAnalyzer
 from .google_news_provider import GoogleNewsRSSProvider
@@ -16,6 +18,7 @@ from .news_provider import NewsProvider
 from .notification_creation import create_alert_from_analysis
 from .web_push import deliver_alert_notification
 from .query_builder import QueryBuilder
+from ..models import PortfolioNewsMatch
 
 
 logger = logging.getLogger(__name__)
@@ -249,16 +252,33 @@ def _process_holding(
         # before any Gemini work. This is the source for the raw
         # portfolio-news feed and therefore remains available even when
         # Gemini is unavailable or does not produce an alert.
-        PortfolioNewsMatch.objects.get_or_create(
-            user=user,
-            article=article,
-            holding_type=holding.holding_type,
-            holding_id=holding.holding_id,
-            defaults={
-                "holding_display_name": holding.display_name,
-                "matched_query": candidate.matched_query[:255],
-            },
-        )
+        family = get_active_family_group(user)
+
+        match_defaults = {
+            "holding_display_name": holding.display_name,
+            "matched_query": candidate.matched_query[:255],
+            "family": family,
+        }
+
+        if family is not None:
+            PortfolioNewsMatch.objects.get_or_create(
+                family=family,
+                article=article,
+                holding_type=holding.holding_type,
+                holding_id=holding.holding_id,
+                defaults={
+                    **match_defaults,
+                    "user": user,
+                },
+            )
+        else:
+            PortfolioNewsMatch.objects.get_or_create(
+                user=user,
+                article=article,
+                holding_type=holding.holding_type,
+                holding_id=holding.holding_id,
+                defaults=match_defaults,
+            )
 
         # Never re-analyze an article already processed for this exact
         # (user, holding) pair, regardless of the previous relevance.

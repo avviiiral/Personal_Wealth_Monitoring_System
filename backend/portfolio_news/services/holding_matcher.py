@@ -68,6 +68,25 @@ class HoldingMatcher:
         ):
             return True
 
+        # Uploaded underlying holdings are an explicit portfolio
+        # relationship. Only accept an underlying match when the
+        # article text contains that underlying's name/ISIN and the
+        # search query was generated for that same underlying.
+        underlying = QueryBuilder.underlying_for_query(
+            matched_query,
+            holding,
+        )
+        if underlying is not None:
+            underlying_name = (underlying.name or "").strip()
+            if underlying_name and _contains_phrase(searchable, underlying_name):
+                return True
+            if (
+                underlying.isin
+                and len(underlying.isin) >= MIN_ISIN_LENGTH
+                and underlying.isin.lower() in searchable
+            ):
+                return True
+
         # Sector/macro fallback: a genuine macro or sector story
         # (e.g. "RBI raises repo rate") will never mention a
         # specific company by name, so the checks above are
@@ -93,6 +112,49 @@ class HoldingMatcher:
                     return True
 
         return False
+
+    @classmethod
+    def connection_for_article(
+        cls,
+        title: str,
+        description: str,
+        holding: MonitoredHolding,
+        matched_query: str = "",
+    ) -> dict:
+        """
+        Return the deterministic relationship explaining why an article
+        matched this portfolio holding.
+        """
+        searchable = f"{title} {description}".lower()
+
+        underlying = QueryBuilder.underlying_for_query(
+            matched_query,
+            holding,
+        )
+        if underlying is not None:
+            underlying_name = (underlying.name or "").strip()
+            if underlying_name and _contains_phrase(searchable, underlying_name):
+                return {
+                    "connection_type": "underlying",
+                    "underlying_name": underlying_name,
+                    "underlying_weight": underlying.weight,
+                }
+            if (
+                underlying.isin
+                and len(underlying.isin) >= MIN_ISIN_LENGTH
+                and underlying.isin.lower() in searchable
+            ):
+                return {
+                    "connection_type": "underlying",
+                    "underlying_name": underlying_name,
+                    "underlying_weight": underlying.weight,
+                }
+
+        return {
+            "connection_type": "direct",
+            "underlying_name": "",
+            "underlying_weight": None,
+        }
 
     @classmethod
     def match_holdings(

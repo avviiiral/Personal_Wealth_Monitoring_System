@@ -285,7 +285,7 @@
               <thead>
                 <tr>
                   <th *ngFor="let column of section.columns; let columnIndex = index; trackBy: trackByEditableColumn">
-                    <ng-container *ngIf="editingNotes; else readonlyColumn">
+                    <ng-container *ngIf="editingNotes && !isCalculatedColumn(column); else readonlyColumn">
                       <div class="notes-column-editor">
                         <input class="notes-column-input" [(ngModel)]="column.label" />
                         <button type="button" class="notes-icon-button" title="Remove column" (click)="removeColumn(section, columnIndex)">×</button>
@@ -300,13 +300,13 @@
                 <tr *ngFor="let row of section.rows; let rowIndex = index; trackBy: trackByEditableRow">
                   <td *ngFor="let column of section.columns; trackBy: trackByEditableColumn">
                     <input
-                      *ngIf="editingNotes"
+                      *ngIf="editingNotes && !isCalculatedColumn(column)"
                       class="notes-cell-input"
                       [type]="column.type === 'number' ? 'number' : 'text'"
                       [ngModel]="row.cells[column.id]"
                       (ngModelChange)="row.cells[column.id] = coerceCellValue(column, $event)"
                     />
-                    <span *ngIf="!editingNotes">{{ row.cells[column.id] === null || row.cells[column.id] === '' || row.cells[column.id] === undefined ? '—' : row.cells[column.id] }}</span>
+                    <span *ngIf="!editingNotes || isCalculatedColumn(column)">{{ row.cells[column.id] === null || row.cells[column.id] === '' || row.cells[column.id] === undefined ? '—' : row.cells[column.id] }}</span>
                   </td>
                   <td *ngIf="editingNotes" class="notes-row-actions">
                     <button type="button" class="notes-danger-button" (click)="removeRow(section, rowIndex)">Remove</button>

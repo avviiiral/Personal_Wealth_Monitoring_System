@@ -1096,41 +1096,102 @@ class MISReportService:
             old = before_sections.get(section_id)
             new = after_sections.get(section_id)
             if old is None:
-                changes.append({"type": "section_added", "section_id": section_id, "new": new.get("title", "")})
+                changes.append({
+                    "type": "section_added",
+                    "section_id": section_id,
+                    "new": new.get("title", ""),
+                })
                 continue
             if new is None:
-                changes.append({"type": "section_removed", "section_id": section_id, "old": old.get("title", "")})
+                changes.append({
+                    "type": "section_removed",
+                    "section_id": section_id,
+                    "old": old.get("title", ""),
+                })
                 continue
+
+            section_name = new.get("title") or old.get("title") or section_id
             if old.get("title") != new.get("title"):
-                changes.append({"type": "section_renamed", "section_id": section_id, "old": old.get("title"), "new": new.get("title")})
+                changes.append({
+                    "type": "section_renamed",
+                    "section_id": section_id,
+                    "section": section_name,
+                    "old": old.get("title"),
+                    "new": new.get("title"),
+                })
 
             old_cols = {str(c.get("id")): c for c in old.get("columns", [])}
             new_cols = {str(c.get("id")): c for c in new.get("columns", [])}
             for column_id in sorted(set(old_cols) | set(new_cols)):
                 if column_id not in old_cols:
-                    changes.append({"type": "column_added", "section_id": section_id, "column_id": column_id, "new": new_cols[column_id].get("label")})
+                    changes.append({
+                        "type": "column_added",
+                        "section_id": section_id,
+                        "section": section_name,
+                        "column_id": column_id,
+                        "new": new_cols[column_id].get("label"),
+                    })
                 elif column_id not in new_cols:
-                    changes.append({"type": "column_removed", "section_id": section_id, "column_id": column_id, "old": old_cols[column_id].get("label")})
+                    changes.append({
+                        "type": "column_removed",
+                        "section_id": section_id,
+                        "section": section_name,
+                        "column_id": column_id,
+                        "old": old_cols[column_id].get("label"),
+                    })
                 elif old_cols[column_id].get("label") != new_cols[column_id].get("label"):
-                    changes.append({"type": "column_renamed", "section_id": section_id, "column_id": column_id, "old": old_cols[column_id].get("label"), "new": new_cols[column_id].get("label")})
+                    changes.append({
+                        "type": "column_renamed",
+                        "section_id": section_id,
+                        "section": section_name,
+                        "column_id": column_id,
+                        "old": old_cols[column_id].get("label"),
+                        "new": new_cols[column_id].get("label"),
+                    })
 
             old_rows = {str(row.get("id")): row for row in old.get("rows", [])}
             new_rows = {str(row.get("id")): row for row in new.get("rows", [])}
+            column_labels = {
+                str(column.get("id")): column.get("label", "")
+                for column in new.get("columns", [])
+            }
             for row_id in sorted(set(old_rows) | set(new_rows)):
                 if row_id not in old_rows:
-                    changes.append({"type": "row_added", "section_id": section_id, "row_id": row_id})
+                    cells = new_rows[row_id].get("cells", {})
+                    changes.append({
+                        "type": "row_added",
+                        "section_id": section_id,
+                        "section": section_name,
+                        "row_id": row_id,
+                        "new": cells.get("particulars") or row_id,
+                    })
                 elif row_id not in new_rows:
-                    changes.append({"type": "row_removed", "section_id": section_id, "row_id": row_id})
+                    cells = old_rows[row_id].get("cells", {})
+                    changes.append({
+                        "type": "row_removed",
+                        "section_id": section_id,
+                        "section": section_name,
+                        "row_id": row_id,
+                        "old": cells.get("particulars") or row_id,
+                    })
                 else:
                     old_cells = old_rows[row_id].get("cells", {})
                     new_cells = new_rows[row_id].get("cells", {})
+                    row_name = (
+                        new_cells.get("particulars")
+                        or old_cells.get("particulars")
+                        or row_id
+                    )
                     for field in sorted(set(old_cells) | set(new_cells)):
                         if old_cells.get(field) != new_cells.get(field):
                             changes.append({
                                 "type": "cell_edited",
                                 "section_id": section_id,
+                                "section": section_name,
                                 "row_id": row_id,
+                                "row": row_name,
                                 "column_id": field,
+                                "column": column_labels.get(field, field),
                                 "old": old_cells.get(field),
                                 "new": new_cells.get(field),
                             })

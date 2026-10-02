@@ -102,22 +102,33 @@ def store_article(
     normalized_title = normalize_title(candidate.title)
     tier = classify_source(candidate.source)
 
-    article = NewsArticle.objects.create(
-        title=candidate.title[:500],
-        normalized_title=normalized_title[:500],
-        url=candidate.url[:1000],
-        url_hash=compute_url_hash(candidate.url),
-        source=candidate.source[:200],
-        description=strip_html(candidate.description),
-        published_at=candidate.published_at,
-        fingerprint=compute_fingerprint(
-            normalized_title,
-            candidate.published_at,
-        ),
-        matched_query=candidate.matched_query[:255],
-        source_quality=tier,
-        source_count=1,
-    )
+    url_hash = compute_url_hash(candidate.url)
+    try:
+        article = NewsArticle.objects.create(
+            title=candidate.title[:500],
+            normalized_title=normalized_title[:500],
+            url=candidate.url[:1000],
+            url_hash=url_hash,
+            source=candidate.source[:200],
+            description=strip_html(candidate.description),
+            published_at=candidate.published_at,
+            fingerprint=compute_fingerprint(
+                normalized_title,
+                candidate.published_at,
+            ),
+            matched_query=candidate.matched_query[:255],
+            source_quality=tier,
+            source_count=1,
+        )
+    except IntegrityError:
+        # Another monitoring pass can insert the same URL after the
+        # deduplication lookup but before this INSERT. Treat that as a
+        # normal idempotent race and attach this candidate as a source.
+        article = NewsArticle.objects.filter(url_hash=url_hash).first()
+        if article is None:
+            raise
+        _attach_source(article, candidate)
+        return article, False
 
     _attach_source(article, candidate)
 

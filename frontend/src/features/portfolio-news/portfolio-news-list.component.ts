@@ -89,7 +89,7 @@ export class PortfolioNewsListComponent implements OnInit {
     this.newsApi
       .getRawNews({
         dateRange: this.activeDateRange === 'all' ? undefined : this.activeDateRange,
-        limit: 100,
+        limit: 25,
       })
       .subscribe({
         next: (response) => {

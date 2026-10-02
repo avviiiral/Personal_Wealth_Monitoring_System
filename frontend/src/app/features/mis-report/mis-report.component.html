@@ -249,7 +249,8 @@
     <section class="report-card" *ngIf="activeSheet === 'notes'">
       <div class="section-header notes-editor-header">
         <div>
-          <h2>{{ report.notes.title }}</h2>
+          <input *ngIf="editingNotes && editableNotes" class="notes-title-input notes-main-title-input" [(ngModel)]="editableNotes.title" />
+          <h2 *ngIf="!editingNotes">{{ report.notes.title }}</h2>
           <span>Family-wide editable MIS Notes. Changes are shared with the active family.</span>
         </div>
         <div class="notes-actions">
@@ -323,7 +324,11 @@
             <button type="button" class="secondary-button" (click)="addColumn(section)">Add Column</button>
           </div>
 
-          <p class="notes-note" *ngIf="section.note">{{ section.note }}</p>
+          <div class="notes-note-editor" *ngIf="editingNotes">
+            <label>Section Note</label>
+            <textarea [(ngModel)]="section.note" placeholder="Optional note"></textarea>
+          </div>
+          <p class="notes-note" *ngIf="!editingNotes && section.note">{{ section.note }}</p>
         </div>
 
         <div class="notes-empty" *ngIf="!notes.sections.length">

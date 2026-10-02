@@ -11,6 +11,7 @@ from users.models import FamilyGroup
 
 import requests
 
+from investments.models import AssetUnderlyingHolding
 from portfolio_news.models import NewsArticle, PortfolioNewsAlert, PortfolioNewsMatch
 from portfolio_news.services.article_store import store_article
 from portfolio_news.services.deduplication import (
@@ -2571,6 +2572,62 @@ class PortfolioNewsPipelineTests(TestCase):
             reason="Regulatory development.",
             confidence=0.91,
         )
+
+    def test_underlying_news_is_connected_to_parent_asset(self):
+        AssetUnderlyingHolding.objects.create(
+            owner=self.user,
+            family=self.family,
+            asset=self.asset,
+            stock_name="Sun Pharma Limited",
+            isin="INE044A01036",
+            holding_percentage=Decimal("8.25"),
+            uploaded_by=self.user,
+        )
+
+        underlying_article = NewsArticleResult(
+            title="Sun Pharma receives important regulatory update",
+            url="https://reuters.com/pipeline-underlying-1",
+            source="Reuters",
+            description="Sun Pharma Limited received a regulatory update.",
+            published_at=dj_timezone.now(),
+            matched_query="Sun Pharma Limited",
+        )
+
+        provider = _FakeProvider(
+            results_by_query={
+                "Sun Pharma Limited": [underlying_article],
+            }
+        )
+        analyzer = _FakeAnalyzer(analysis=self.high_impact_analysis)
+
+        stats = run_portfolio_news_monitor(
+            provider=provider,
+            analyzer=analyzer,
+        )
+
+        self.assertEqual(stats["articles_matched"], 1)
+
+        match = PortfolioNewsMatch.objects.get()
+        self.assertEqual(match.holding_display_name, self.asset.name)
+        self.assertEqual(match.connection_type, "underlying")
+        self.assertEqual(match.underlying_name, "Sun Pharma Limited")
+        self.assertEqual(match.underlying_weight, Decimal("8.2500"))
+
+        alert = PortfolioNewsAlert.objects.get()
+        self.assertEqual(alert.connection_type, "underlying")
+        self.assertEqual(alert.underlying_name, "Sun Pharma Limited")
+        self.assertEqual(alert.underlying_weight, Decimal("8.2500"))
+
+        client = APIClient()
+        client.force_authenticate(user=self.user)
+        response = client.get("/api/ai/news/raw/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["count"], 1)
+        matched_holding = response.data["results"][0]["matched_holdings"][0]
+        self.assertEqual(matched_holding["connection_type"], "underlying")
+        self.assertEqual(matched_holding["underlying_name"], "Sun Pharma Limited")
+        self.assertEqual(matched_holding["underlying_weight"], "8.2500")
 
     def test_end_to_end_creates_alert_for_relevant_article(self):
         provider = _FakeProvider(

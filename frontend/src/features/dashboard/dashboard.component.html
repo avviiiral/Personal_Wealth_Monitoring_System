@@ -200,8 +200,8 @@
 
       <div class="standard-allocation-toolbar" *ngIf="!investmentSummaryError && investmentSummary && investmentSummaryGroups.length > 0">
         <div class="standard-allocation-toolbar-info">
-          <strong>Standard Allocation — Shared Across All Families &amp; Members</strong>
-          <span>Set the common target allocation by amount or percentage. The same percentages apply to every family and family member.</span>
+          <strong>Standard Allocation</strong>
+          <span>Set target allocation by amount or percentage. All members of the selected family share the same allocation.</span>
           <span class="standard-allocation-total" [ngClass]="getStandardAllocationTotalClass()">
             Portfolio Total: {{ formatDisplayAmount(standardAllocationTotalValue, 0) }} &nbsp; • &nbsp; Target Total: {{ getStandardAllocationDraftTotal() | number:'1.0-2' }}%
           </span>

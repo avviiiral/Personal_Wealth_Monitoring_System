@@ -507,6 +507,20 @@ class TransactionImporter:
         return None
 
     @staticmethod
+    def _fallback_portfolio(
+        asset_class,
+        sub_class,
+        asset_name,
+        underlying,
+    ):
+        """Return a deterministic portfolio label when Summary is absent."""
+        for value in (asset_name, underlying, sub_class, asset_class):
+            cleaned = TransactionImporter._clean_string(value)
+            if cleaned:
+                return cleaned
+        return "Unassigned"
+
+    @staticmethod
     def resolve_security_identity_name(
         asset_name,
         underlying,

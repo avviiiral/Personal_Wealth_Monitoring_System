@@ -27,10 +27,10 @@ class StandardAllocation(models.Model):
         ordering = ["asset_category"]
         constraints = [
             models.UniqueConstraint(
-                fields=["family", "asset_category"],
-                name="unique_family_standard_allocation",
+                fields=["asset_category"],
+                name="unique_global_standard_allocation",
             ),
         ]
 
     def __str__(self):
-        return f"{self.family.name} - {self.asset_category}: {self.allocation_percent}%"
+        return f"{self.asset_category}: {self.allocation_percent}%"

@@ -187,6 +187,13 @@ export class MISReportComponent implements OnInit {
     });
   }
 
+  coerceCellValue(column: MISEditableColumn, value: string): string | number | null {
+    if (column.type !== 'number') return value;
+    if (value === '') return null;
+    const numeric = Number(value);
+    return Number.isFinite(numeric) ? numeric : null;
+  }
+
   removeRow(section: MISEditableSection, index: number): void {
     section.rows.splice(index, 1);
   }

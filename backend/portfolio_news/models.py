@@ -254,6 +254,27 @@ class PortfolioNewsMatch(models.Model):
         blank=True,
     )
 
+    connection_type = models.CharField(
+        max_length=20,
+        choices=[
+            ("direct", "Direct asset"),
+            ("underlying", "Underlying holding"),
+        ],
+        default="direct",
+    )
+
+    underlying_name = models.CharField(
+        max_length=300,
+        blank=True,
+    )
+
+    underlying_weight = models.DecimalField(
+        max_digits=10,
+        decimal_places=4,
+        null=True,
+        blank=True,
+    )
+
     created_at = models.DateTimeField(
         auto_now_add=True,
     )
@@ -401,6 +422,27 @@ class PortfolioNewsAlert(models.Model):
     impact_score = models.PositiveSmallIntegerField()
 
     confidence = models.FloatField()
+
+    connection_type = models.CharField(
+        max_length=20,
+        choices=[
+            ("direct", "Direct asset"),
+            ("underlying", "Underlying holding"),
+        ],
+        default="direct",
+    )
+
+    underlying_name = models.CharField(
+        max_length=300,
+        blank=True,
+    )
+
+    underlying_weight = models.DecimalField(
+        max_digits=10,
+        decimal_places=4,
+        null=True,
+        blank=True,
+    )
 
     portfolio_weight_at_alert = models.FloatField(
         help_text=(

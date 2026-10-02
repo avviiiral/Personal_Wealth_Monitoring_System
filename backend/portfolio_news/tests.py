@@ -2647,6 +2647,45 @@ class PortfolioNewsPipelineTests(TestCase):
         )
 
 
+    def test_raw_news_feed_includes_active_family_members(self):
+        provider = _FakeProvider(
+            results_by_query={
+                "Aurobindo Pharma Limited": [
+                    self.relevant_article_result,
+                ]
+            }
+        )
+
+        analyzer = _FakeAnalyzer(
+            analysis=self.high_impact_analysis,
+        )
+
+        run_portfolio_news_monitor(
+            provider=provider,
+            analyzer=analyzer,
+        )
+
+        PortfolioNewsAlert.objects.all().delete()
+
+        other_user = User.objects.create_user(
+            username="family-news-viewer",
+            password="testpassword",
+        )
+        other_user.profile.family_groups.add(self.family)
+
+        client = APIClient()
+        client.force_authenticate(user=other_user)
+
+        response = client.get("/api/ai/news/raw/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["count"], 1)
+        self.assertEqual(
+            response.data["results"][0]["title"],
+            self.relevant_article_result.title,
+        )
+
+
     def test_irrelevant_article_alone_creates_no_alert(self):
         provider = _FakeProvider(
             results_by_query={

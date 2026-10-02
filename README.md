@@ -283,6 +283,109 @@ The **MIS Report** is available at **Portfolio → MIS Report** and contains the
 - **Transaction Uploads** — review transaction upload history, inspect failed rows, and download the standard transaction upload format
 - **Underlyings** — review the latest uploaded underlying snapshot per asset, see who uploaded it and when, expand underlying holdings, and download the sample underlying Excel format
 
+### 📰 Portfolio News workflow
+
+
+The Portfolio News pipeline separates deterministic news retrieval and portfolio matching from optional Gemini analysis. The **All News** layer does not require Gemini; Gemini is used only for AI enrichment such as relevance, sentiment, impact and category analysis.
+
+```text
+┌──────────────────────────────┐
+│       USER PORTFOLIO         │
+│                              │
+│ Stocks / Mutual Funds        │
+└──────────────┬───────────────┘
+               │
+               ▼
+┌──────────────────────────────┐
+│   HOLDINGS REGISTRY          │
+│                              │
+│ Builds live holdings         │
+│ + names / aliases / symbols  │
+│ + ISIN / scheme information  │
+└──────────────┬───────────────┘
+               │
+               ▼
+┌──────────────────────────────┐
+│       QUERY BUILDER          │
+│                              │
+│ Creates search queries       │
+│ for each portfolio holding   │
+└──────────────┬───────────────┘
+               │
+               ▼
+┌──────────────────────────────┐
+│     GOOGLE NEWS RSS          │
+│                              │
+│ Fetches matching news        │
+│ articles                     │
+└──────────────┬───────────────┘
+               │
+               ▼
+┌──────────────────────────────┐
+│      HOLDING MATCHER         │
+│                              │
+│ Deterministically checks     │
+│ article ↔ portfolio holding  │
+└──────────────┬───────────────┘
+               │
+               ▼
+        ┌─────────────────┐
+        │ PortfolioNews   │
+        │     Match       │
+        └────────┬────────┘
+                 │
+                 │
+       ┌─────────┴──────────┐
+       │                    │
+       ▼                    ▼
+┌───────────────┐   ┌──────────────────┐
+│   ALL NEWS    │   │      GEMINI       │
+│               │   │   AI ANALYSIS     │
+│ No Gemini     │   │                  │
+│ required      │   │ Relevance        │
+│               │   │ Sentiment        │
+│ Raw matched   │   │ Impact           │
+│ articles      │   │ Category         │
+└───────┬───────┘   └────────┬─────────┘
+        │                    │
+        ▼                    ▼
+┌───────────────┐   ┌──────────────────┐
+│ /news/raw/    │   │ PortfolioNews    │
+│               │   │ Alert            │
+└───────┬───────┘   └────────┬─────────┘
+        │                    │
+        │                    ▼
+        │             ┌──────────────┐
+        │             │   AI FEED    │
+        │             └──────┬───────┘
+        │                    │
+        │                    ▼
+        │             ┌──────────────┐
+        │             │    DIGEST    │
+        │             └──────────────┘
+        │
+        ▼
+┌────────────────────────────────────┐
+│          PORTFOLIO NEWS UI         │
+│                                    │
+│  [ All News ] [ AI Feed ] [Digest] │
+└────────────────────────────────────┘
+```
+
+**Workflow summary:**
+
+1. The **User Portfolio** supplies the current stocks and mutual funds.
+2. The **Holdings Registry** builds the live holding set and its searchable identifiers, including names, aliases, symbols, ISINs and scheme information where available.
+3. The **Query Builder** creates search queries for each portfolio holding.
+4. **Google News RSS** retrieves matching articles.
+5. The **Holding Matcher** deterministically associates retrieved articles with portfolio holdings.
+6. Each deterministic association is persisted as a **PortfolioNewsMatch** record.
+7. **All News** reads these raw portfolio matches through `/api/ai/news/raw/` and does not require Gemini.
+8. The optional **Gemini AI Analysis** layer enriches matched articles with relevance, sentiment, impact and category information and stores the resulting **PortfolioNewsAlert** records.
+9. The enriched records power the **AI Feed** and **Digest** views.
+10. The **Portfolio News UI** presents the three layers as **All News**, **AI Feed**, and **Today's Digest**.
+
+This separation means a news article can appear in **All News** even when Gemini is unavailable, not configured, rate-limited, or otherwise unable to analyze that article.
 ### 🤖 AI Portfolio Chat
 
 A **Gemini-backed** assistant scoped to the logged-in user's own portfolio. The backend builds a structured context (holdings, allocation, recent performance) and hands it to Gemini. **Gemini interprets the numbers it is given — it never computes or invents them.** Token usage is logged per call.

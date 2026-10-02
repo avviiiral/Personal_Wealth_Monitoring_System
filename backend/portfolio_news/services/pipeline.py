@@ -249,6 +249,13 @@ def _process_holding(
         else:
             stats["duplicates_skipped"] += 1
 
+        connection = HoldingMatcher.connection_for_article(
+            candidate.title,
+            candidate.description,
+            holding,
+            matched_query=candidate.matched_query,
+        )
+
         # Persist the deterministic portfolio-to-article relationship
         # before any Gemini work. This is the source for the raw
         # portfolio-news feed and therefore remains available even when

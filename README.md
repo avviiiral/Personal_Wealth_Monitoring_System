@@ -428,11 +428,11 @@ PortfolioNewsMatch
                 └──→ Today's Digest
 ```
 
-- **`PortfolioNewsMatch` is the raw-news persistence layer.** A match is created for a user, article, holding type/id, holding display name and matched query. A uniqueness constraint prevents the same article from being associated with the same holding more than once for the same user.
+- **`PortfolioNewsMatch` is the raw-news persistence layer.** A match stores the article, holding type/id, holding display name, matched query and, for family-scoped matches, the authoritative `FamilyGroup`. The database prevents the same article/holding combination from being stored more than once within the same family. Users without a family retain the legacy user-scoped uniqueness path.
 - **Gemini is not part of article retrieval.** Google News RSS retrieves articles and the deterministic matcher associates them with portfolio holdings before any Gemini call is made.
 - **AI usage limits do not remove raw matches.** Articles matched by the deterministic layer remain available to **All News** even when an AI-analysis limit is reached or Gemini is unavailable.
 - **All News is metadata-first.** The raw endpoint returns the article title, original URL, source, description, publication time, source quality/count, matched query and matched holdings; users can open the original publisher article from the UI.
-- **Family visibility is enforced server-side.** The raw endpoint scopes matches using the application's visible-owner/family authorization rules rather than trusting a user-supplied owner or family ID.
+- **Family visibility is enforced server-side.** For normal users, the raw endpoint derives the active family from the authenticated user and returns only that family's deterministic matches. System Owners can view stored family-scoped matches across families. Users without a family use the legacy user-scoped path. Client-supplied family IDs are not trusted for authorization.
 - **Monitoring is automatic.** The `monitor_portfolio_news` management command performs the news-monitoring pass and is also used by the application's background scheduler.
 - **Gemini remains optional for the raw layer.** A Gemini API key is only needed for AI enrichment such as relevance, sentiment, impact, category analysis and the resulting AI Feed/Digest behavior.
 

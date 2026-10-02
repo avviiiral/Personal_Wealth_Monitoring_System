@@ -530,7 +530,10 @@ class BenchmarkPerformanceService:
     @classmethod
     def _bse_series(cls, start):
         source_file = Path(cls.BSE500_FILE)
-        if source_file.exists():
+        # Only read the configured CSV when the path points to a regular file.
+        # A misconfigured value such as "." is a directory on Windows and
+        # attempting read_text() on it raises PermissionError: [Errno 13].
+        if source_file.is_file():
             points = cls._load_bse_csv(
                 source_file.read_text(encoding="utf-8-sig")
             )

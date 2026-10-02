@@ -38,6 +38,7 @@ export class PortfolioComponent implements OnInit, OnDestroy {
   private readonly underlyingSort = new Map<string, PortfolioSortState>();
   editingAssetId: number | null = null;
   manualPriceInput = '';
+  manualPriceDate = '';
   savingManualPriceAssetId: number | null = null;
   manualPriceErrors: Record<number, string> = {};
   uploadingTransactions = false;
@@ -257,14 +258,14 @@ export class PortfolioComponent implements OnInit, OnDestroy {
   trackByAssetId(_index: number, asset: PortfolioAssetNode): number { return asset.id; }
 
   onManualPriceEdit(event: MouseEvent, asset: PortfolioAssetNode): void { event.preventDefault(); event.stopPropagation(); if (!this.rbac.canEditPrices()) { this.toast.error('You do not have permission to edit prices.'); return; } this.startEditingPrice(asset); }
-  startEditingPrice(asset: PortfolioAssetNode): void { this.editingAssetId = asset.id; this.manualPriceInput = asset.current_price !== null && asset.current_price !== undefined ? String(asset.current_price) : ''; this.manualPriceErrors[asset.id] = ''; this.cdr.detectChanges(); }
-  cancelEditingPrice(asset: PortfolioAssetNode): void { this.editingAssetId = null; this.manualPriceInput = ''; this.manualPriceErrors[asset.id] = ''; }
+  startEditingPrice(asset: PortfolioAssetNode): void { this.editingAssetId = asset.id; this.manualPriceInput = asset.current_price !== null && asset.current_price !== undefined ? String(asset.current_price) : ''; this.manualPriceDate = this.getManualPriceDate(asset) || this.getTodayIsoDate(); this.manualPriceErrors[asset.id] = ''; this.cdr.detectChanges(); }
+  cancelEditingPrice(asset: PortfolioAssetNode): void { this.editingAssetId = null; this.manualPriceInput = ''; this.manualPriceDate = ''; this.manualPriceErrors[asset.id] = ''; }
   saveManualPrice(asset: PortfolioAssetNode): void {
     const price = Number(this.manualPriceInput);
     if (!Number.isFinite(price) || price <= 0) { this.manualPriceErrors[asset.id] = 'Enter a valid price greater than 0.'; return; }
     this.manualPriceErrors[asset.id] = ''; this.savingManualPriceAssetId = asset.id;
-    this.manualPriceService.updatePrice(asset.id, price).subscribe({
-      next: (response) => { this.savingManualPriceAssetId = null; if (!response.success) { this.manualPriceErrors[asset.id] = response.message || 'Unable to update price.'; this.cdr.detectChanges(); return; } this.editingAssetId = null; this.manualPriceInput = ''; this.loadPortfolio(true); },
+    this.manualPriceService.updatePrice(asset.id, price, this.manualPriceDate).subscribe({
+      next: (response) => { this.savingManualPriceAssetId = null; if (!response.success) { this.manualPriceErrors[asset.id] = response.message || 'Unable to update price.'; this.cdr.detectChanges(); return; } this.editingAssetId = null; this.manualPriceInput = ''; this.manualPriceDate = ''; this.loadPortfolio(true); },
       error: (error) => { console.error('Manual price update failed:', error); this.savingManualPriceAssetId = null; this.manualPriceErrors[asset.id] = error?.error?.message || 'Unable to update manual price.'; this.cdr.detectChanges(); },
     });
   }
@@ -274,6 +275,8 @@ export class PortfolioComponent implements OnInit, OnDestroy {
   assetGroupHasManualPrice(assetGroup: AssetGroup): boolean { return assetGroup.assets.some((asset) => this.isManualPrice(asset)); }
   isSavingManualPrice(asset: PortfolioAssetNode): boolean { return this.savingManualPriceAssetId === asset.id; }
   getManualPriceError(asset: PortfolioAssetNode): string { return this.manualPriceErrors[asset.id] || ''; }
+  getManualPriceDate(asset: PortfolioAssetNode): string { const extendedAsset = asset as PortfolioAssetNode & { price_date?: string | null }; return extendedAsset.price_date ? String(extendedAsset.price_date).slice(0, 10) : ''; }
+  getTodayIsoDate(): string { const now = new Date(); const offset = now.getTimezoneOffset(); return new Date(now.getTime() - offset * 60000).toISOString().slice(0, 10); }
   formatAbsoluteCurrency(value: number): string { return this.formatCurrency(Math.abs(this.toNumber(value))); }
   formatCurrency(value: number): string { return new Intl.NumberFormat('en-IN', { maximumFractionDigits: 0 }).format(this.toNumber(value)); }
   formatNumber(value: number): string { return new Intl.NumberFormat('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 }).format(this.toNumber(value)); }

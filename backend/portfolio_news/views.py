@@ -161,9 +161,11 @@ def portfolio_news_raw_list(request):
     sentiment, impact, and alert tiers are deliberately not required.
     """
 
+    visible_owner_ids = get_visible_owner_ids(request.user)
+
     queryset = (
         PortfolioNewsMatch.objects
-        .filter(user=request.user)
+        .filter(user_id__in=visible_owner_ids)
         .select_related("article")
         .order_by(
             "-article__published_at",
@@ -208,7 +210,7 @@ def portfolio_news_raw_list(request):
     matches = list(
         PortfolioNewsMatch.objects
         .filter(
-            user=request.user,
+            user_id__in=visible_owner_ids,
             article_id__in=article_ids,
         )
         .select_related("article")

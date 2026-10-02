@@ -1,5 +1,6 @@
 from datetime import timedelta
 
+from django.db.models import Exists, OuterRef
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 
@@ -151,54 +152,53 @@ def portfolio_news_list(request):
 @permission_classes([IsAuthenticated])
 def portfolio_news_raw_list(request):
     """
-    Return all deterministic portfolio-news matches for the
-    authenticated user, without requiring Gemini analysis.
+    Return deterministic portfolio-news matches without requiring Gemini.
 
-    Articles are deduplicated at the event level and include every
-    portfolio holding that the deterministic matcher associated with
-    the article. This feed is the raw retrieval layer; AI relevance,
-    sentiment, impact, and alert tiers are deliberately not required.
+    The article page is driven from NewsArticle rather than sorting a large
+    PortfolioNewsMatch queryset and then applying DISTINCT. An EXISTS
+    subquery lets the database stop at the first matching holding row for
+    each article, while NewsArticle's publication index handles the feed
+    ordering efficiently.
     """
 
-    queryset = (
-        PortfolioNewsMatch.objects
-        .filter(user=request.user)
-        .select_related("article")
-        .order_by(
-            "-article__published_at",
-            "-article__created_at",
-            "-id",
-        )
-    )
+    limit = _parse_limit(request)
+
+    match_filter = {
+        "user": request.user,
+        "article_id": OuterRef("pk"),
+    }
 
     holding_type = request.query_params.get("holding_type")
     if holding_type:
-        queryset = queryset.filter(holding_type=holding_type)
+        match_filter["holding_type"] = holding_type
 
     holding_id = request.query_params.get("holding_id")
     if holding_id:
         try:
-            queryset = queryset.filter(holding_id=int(holding_id))
+            match_filter["holding_id"] = int(holding_id)
         except (TypeError, ValueError):
             pass
 
+    matching_articles = PortfolioNewsMatch.objects.filter(**match_filter)
+
+    articles = (
+        NewsArticle.objects
+        .filter(Exists(matching_articles))
+    )
+
     date_range = request.query_params.get("date_range")
     if date_range == "today":
-        queryset = queryset.filter(
-            article__published_at__date=timezone.localdate()
+        articles = articles.filter(
+            published_at__date=timezone.localdate()
         )
     elif date_range in DATE_RANGE_DAYS:
         cutoff = timezone.now() - timedelta(days=DATE_RANGE_DAYS[date_range])
-        queryset = queryset.filter(
-            article__published_at__gte=cutoff
-        )
+        articles = articles.filter(published_at__gte=cutoff)
 
-    # First identify unique articles so the API's limit represents
-    # news stories rather than repeated rows for multiple holdings.
     article_ids = list(
-        queryset
-        .values_list("article_id", flat=True)
-        .distinct()[:_parse_limit(request)]
+        articles
+        .order_by("-published_at", "-created_at", "-id")
+        .values_list("id", flat=True)[:limit]
     )
 
     if not article_ids:

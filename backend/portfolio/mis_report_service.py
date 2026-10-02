@@ -1045,11 +1045,23 @@ class MISReportService:
                 if column_id in seen_column_ids:
                     raise ValueError("Notes column IDs must be unique within a section.")
                 seen_column_ids.add(column_id)
-                cleaned_columns.append({
-                    "id": column_id,
-                    "label": str(column.get("label") or f"Column {column_index}")[:300],
-                    "type": str(column.get("type") or "text")[:30],
-                })
+                fixed_labels = {
+                    "sr_no": "Sr. No",
+                    "change": "Change In Rate",
+                    "percent_change": "% Change",
+                }
+                if column_id in fixed_labels:
+                    cleaned_columns.append({
+                        "id": column_id,
+                        "label": fixed_labels[column_id],
+                        "type": "number",
+                    })
+                else:
+                    cleaned_columns.append({
+                        "id": column_id,
+                        "label": str(column.get("label") or f"Column {column_index}")[:300],
+                        "type": str(column.get("type") or "text")[:30],
+                    })
 
             cleaned_rows = []
             valid_column_ids = {column["id"] for column in cleaned_columns}
@@ -1059,14 +1071,44 @@ class MISReportService:
                 cells = row.get("cells") or {}
                 if not isinstance(cells, dict):
                     raise ValueError("Notes row cells must be an object.")
+                cleaned_cells = {
+                    key: value
+                    for key, value in cells.items()
+                    if key in valid_column_ids
+                }
+                # These fields are report-derived and can never be persisted from
+                # user input. Sr. No is regenerated below and rate changes are
+                # calculated from the opening/closing rates.
+                cleaned_cells.pop("sr_no", None)
+                cleaned_cells.pop("change", None)
+                cleaned_cells.pop("percent_change", None)
                 cleaned_rows.append({
                     "id": str(row.get("id") or f"row-{section_id}-{row_index}")[:120],
-                    "cells": {
-                        key: value
-                        for key, value in cells.items()
-                        if key in valid_column_ids
-                    },
+                    "cells": cleaned_cells,
                 })
+
+            # Rebuild calculated Notes fields so clients cannot override them.
+            for row_number, cleaned_row in enumerate(cleaned_rows, 1):
+                cells = cleaned_row["cells"]
+                cells["sr_no"] = row_number
+                opening = cells.get("opening_rate")
+                closing = cells.get("closing_rate")
+                try:
+                    opening_value = Decimal(str(opening)) if opening not in (None, "") else None
+                    closing_value = Decimal(str(closing)) if closing not in (None, "") else None
+                except Exception:
+                    opening_value = None
+                    closing_value = None
+                if opening_value is not None and closing_value is not None:
+                    change = closing_value - opening_value
+                    cells["change"] = change
+                    cells["percent_change"] = (
+                        (change / opening_value) * Decimal("100")
+                        if opening_value != 0 else None
+                    )
+                else:
+                    cells["change"] = None
+                    cells["percent_change"] = None
 
             cleaned_sections.append({
                 "id": section_id,

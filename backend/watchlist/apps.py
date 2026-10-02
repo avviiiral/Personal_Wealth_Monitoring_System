@@ -60,7 +60,14 @@ class WatchlistConfig(AppConfig):
 
         while True:
             try:
+                from watchlist.services.benchmark import BenchmarkPerformanceService
                 from watchlist.services.background_refresh import BackgroundWatchListRefreshService
+
+                # Keep the shared benchmark master current as part of the same
+                # daily background cycle. The service skips a download when
+                # existing history already has sufficient recent coverage.
+                benchmark_result = BenchmarkPerformanceService.ensure_benchmark_master_history()
+                logger.info("Automatic benchmark master refresh completed: %s", benchmark_result)
 
                 # The worker fetches/parses external data first and only then
                 # performs short autocommit ORM writes. No global scheduler

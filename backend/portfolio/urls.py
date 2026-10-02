@@ -11,6 +11,7 @@ from .views import (
     portfolio_tree,
     portfolio_asset_underlying_import,
     portfolio_underlying_uploads,
+    portfolio_underlying_template,
 )
 from .holding_report_views import holding_report, holding_matrix_report
 from .equity_market_cap_views import equity_market_cap_report
@@ -100,6 +101,12 @@ urlpatterns = [
         name="portfolio-tree",
     ),
 
+
+    path(
+        "underlying-template/",
+        portfolio_underlying_template,
+        name="portfolio-underlying-template",
+    ),
     path(
         "underlying-uploads/",
         portfolio_underlying_uploads,

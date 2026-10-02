@@ -2645,6 +2645,14 @@ class PortfolioNewsPipelineTests(TestCase):
             response.data["results"][0]["url"],
             self.relevant_article_result.url,
         )
+        self.assertEqual(
+            response.data["results"][0]["family_id"],
+            self.family.id,
+        )
+        self.assertEqual(
+            response.data["results"][0]["family_name"],
+            self.family.name,
+        )
 
 
     def test_raw_news_feed_includes_active_family_members(self):

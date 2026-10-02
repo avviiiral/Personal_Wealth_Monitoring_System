@@ -67,11 +67,47 @@ export interface MISNoteSection {
   note?: string | null;
 }
 
+
+export interface MISEditableColumn {
+  id: string;
+  label: string;
+  type: string;
+}
+
+export interface MISEditableRow {
+  id: string;
+  cells: Record<string, string | number | null>;
+}
+
+export interface MISEditableSection {
+  id: string;
+  section_number: number;
+  title: string;
+  note?: string | null;
+  columns: MISEditableColumn[];
+  rows: MISEditableRow[];
+}
+
+export interface MISEditableNotes {
+  title: string;
+  opening_label: string;
+  closing_label: string;
+  sections: MISEditableSection[];
+}
+
+export interface MISNotesHistoryEntry {
+  id: number;
+  user: string;
+  date_time: string;
+  changes: Array<Record<string, unknown>>;
+}
+
 export interface MISNotes {
   title: string;
   opening_label: string;
   closing_label: string;
   sections: MISNoteSection[];
+  editable: MISEditableNotes;
 }
 
 export interface MISReport {
@@ -105,6 +141,34 @@ export class MISReportService {
     return this.http.get<MISReport>(this.baseUrl + '/api/portfolio/mis-report/', {
       withCredentials: true,
       params,
+    });
+  }
+
+  getNotes(fromDate?: string, toDate?: string): Observable<{ notes: MISNotes }> {
+    const params: Record<string, string> = {};
+    if (fromDate) params['from_date'] = fromDate;
+    if (toDate) params['to_date'] = toDate;
+    return this.http.get<{ notes: MISNotes }>(this.baseUrl + '/api/portfolio/mis-report/notes/', {
+      withCredentials: true,
+      params,
+    });
+  }
+
+  saveNotes(notes: MISEditableNotes, fromDate?: string, toDate?: string, autoFill = true): Observable<{ notes: MISNotes; changed: boolean }> {
+    const params: Record<string, string> = {};
+    if (fromDate) params['from_date'] = fromDate;
+    if (toDate) params['to_date'] = toDate;
+    const csrfToken = this.readCsrfToken();
+    const headers = csrfToken ? new HttpHeaders({ 'X-CSRFToken': csrfToken, 'Content-Type': 'application/json' }) : undefined;
+    return this.http.put<{ notes: MISNotes; changed: boolean }>(this.baseUrl + '/api/portfolio/mis-report/notes/', {
+      notes,
+      auto_fill: autoFill,
+    }, { withCredentials: true, headers, params });
+  }
+
+  getNotesHistory(): Observable<{ count: number; results: MISNotesHistoryEntry[] }> {
+    return this.http.get<{ count: number; results: MISNotesHistoryEntry[] }>(this.baseUrl + '/api/portfolio/mis-report/notes/history/', {
+      withCredentials: true,
     });
   }
 

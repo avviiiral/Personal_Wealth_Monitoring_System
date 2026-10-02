@@ -85,6 +85,25 @@ export interface TransactionUploadHistoryResponse {
   results: TransactionUploadHistory[];
 }
 
+export interface UnderlyingUploadRow {
+  stock_name: string;
+  holding_percentage: string | number;
+  isin: string | null;
+}
+
+export interface UnderlyingUploadHistory {
+  asset_id: number;
+  asset_name: string;
+  uploaded_by: string;
+  uploaded_at: string;
+  underlyings: UnderlyingUploadRow[];
+}
+
+export interface UnderlyingUploadHistoryResponse {
+  count: number;
+  results: UnderlyingUploadHistory[];
+}
+
 export interface ChangePasswordResponse {
   message: string;
 }
@@ -224,10 +243,24 @@ export class SettingsApiService {
     );
   }
 
+  getUnderlyingUploadHistory(): Observable<UnderlyingUploadHistoryResponse> {
+    return this.http.get<UnderlyingUploadHistoryResponse>(
+      `${environment.apiUrl}/api/portfolio/underlying-uploads/`,
+      this.requestOptions,
+    );
+  }
+
   getTransactionUploadDetail(id: number): Observable<TransactionUploadDetail> {
     return this.http.get<TransactionUploadDetail>(
       `${environment.apiUrl}/api/investments/upload-history/${id}/`,
       this.requestOptions,
+    );
+  }
+
+  downloadUnderlyingTemplate(): Observable<Blob> {
+    return this.http.get(
+      `${environment.apiUrl}/api/portfolio/underlying-template/`,
+      { ...this.requestOptions, responseType: 'blob' },
     );
   }
 

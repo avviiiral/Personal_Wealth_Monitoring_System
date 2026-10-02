@@ -1,14 +1,17 @@
 import logging
 import traceback
+from openpyxl import Workbook
 from decimal import Decimal
 from typing import cast
 
+from django.http import HttpResponse
 from django.db import transaction
 from django.db.models import Count, Sum
 
 from investments.models import (
     Asset,
     AssetCategory,
+    AssetUnderlyingHolding,
     Holding,
     Transaction,
     TransactionEditHistory,
@@ -258,6 +261,77 @@ def portfolio_tree(request):
             status=status.HTTP_500_INTERNAL_SERVER_ERROR,
         )
     return Response({"success": True, **tree}, status=status.HTTP_200_OK)
+
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def portfolio_underlying_uploads(request):
+    """Return the latest underlying upload per portfolio asset for the active family."""
+    family = require_active_family(request.user)
+    rows = (
+        AssetUnderlyingHolding.objects
+        .filter(family=family)
+        .select_related("asset", "uploaded_by")
+        .order_by("asset_id", "-uploaded_at", "-id")
+    )
+
+    latest_by_asset = {}
+    underlying_rows = {}
+    for row in rows:
+        latest_by_asset.setdefault(row.asset_id, row)
+        underlying_rows.setdefault(row.asset_id, []).append(row)
+
+    results = []
+    for asset_id, latest in latest_by_asset.items():
+        results.append({
+            "asset_id": asset_id,
+            "asset_name": latest.asset.name,
+            "uploaded_by": latest.uploaded_by.username if latest.uploaded_by else (
+                latest.owner.username if latest.owner else "Deleted User"
+            ),
+            "uploaded_at": latest.uploaded_at,
+            "underlyings": [
+                {
+                    "stock_name": row.stock_name,
+                    "holding_percentage": str(row.holding_percentage),
+                    "isin": row.isin,
+                }
+                for row in sorted(
+                    underlying_rows[asset_id],
+                    key=lambda item: (-item.holding_percentage, item.stock_name.casefold()),
+                )
+            ],
+        })
+
+    results.sort(key=lambda item: item["asset_name"].casefold())
+    return Response({"count": len(results), "results": results})
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def portfolio_underlying_template(request):
+    """Return the Excel template used by Portfolio underlying uploads."""
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.title = "Underlying"
+    sheet.append(["Stocks", "% Holding"])
+    sheet.append(["HDFC Bank", 25])
+    sheet.append(["ICICI Bank", 20])
+    sheet.append(["Reliance Industries", 15])
+
+    instructions = workbook.create_sheet("Instructions")
+    instructions.append(["Column", "Description"])
+    instructions.append(["Stocks", "Name of the underlying security."])
+    instructions.append(["% Holding", "Holding percentage of the underlying security (0 to 100)."])
+    instructions.append(["", "Upload one row per underlying security. Keep the headers unchanged."])
+
+    response = HttpResponse(
+        content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
+    response["Content-Disposition"] = 'attachment; filename="sample_underlying_format.xlsx"'
+    workbook.save(response)
+    return response
 
 
 @api_view(["POST"])

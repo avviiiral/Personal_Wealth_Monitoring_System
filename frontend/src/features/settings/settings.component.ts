@@ -14,6 +14,7 @@ import {
   TransactionEditHistory,
   TransactionUploadHistory,
   TransactionUploadDetail,
+  UnderlyingUploadHistory,
 } from '../../core/services/settings-api.service';
 
 import { UserManagementComponent } from './user-management/user-management.component';
@@ -29,7 +30,8 @@ type SettingsTab =
   | 'tax-rates'
   | 'tax-updates'
   | 'transaction-history'
-  | 'upload-history';
+  | 'upload-history'
+  | 'underlyings';
 
 @Component({
   selector: 'app-settings',
@@ -91,6 +93,10 @@ export class SettingsComponent implements OnInit {
   selectedUpload: TransactionUploadDetail | null = null;
   uploadDetailLoading = false;
 
+  underlyingUploads: UnderlyingUploadHistory[] = [];
+  underlyingUploadLoading = false;
+  underlyingUploadError = '';
+
   historySearch = '';
   historyEditorFilter = '';
   historyDateFilter = '';
@@ -126,6 +132,10 @@ export class SettingsComponent implements OnInit {
     if (tab === 'upload-history' && !this.transactionUploads.length) {
       this.loadTransactionUploadHistory();
     }
+
+    if (tab === 'underlyings' && !this.underlyingUploads.length) {
+      this.loadUnderlyingUploads();
+    }
   }
 
   canManageUsers(): boolean {
@@ -156,6 +166,9 @@ export class SettingsComponent implements OnInit {
         }
         if (this.activeTab === 'upload-history') {
           this.loadTransactionUploadHistory();
+        }
+        if (this.activeTab === 'underlyings') {
+          this.loadUnderlyingUploads();
         }
         this.cdr.detectChanges();
       },
@@ -434,6 +447,25 @@ export class SettingsComponent implements OnInit {
     });
   }
 
+  loadUnderlyingUploads(): void {
+    this.underlyingUploadLoading = true;
+    this.underlyingUploadError = '';
+
+    this.settingsApi.getUnderlyingUploadHistory().subscribe({
+      next: (response) => {
+        this.underlyingUploads = response.results || [];
+        this.underlyingUploadLoading = false;
+        this.cdr.detectChanges();
+      },
+      error: (error) => {
+        this.underlyingUploadLoading = false;
+        this.underlyingUploadError =
+          error?.error?.detail || 'Unable to load underlying upload history.';
+        this.cdr.detectChanges();
+      },
+    });
+  }
+
   toggleUpload(uploadId: number): void {
     if (this.expandedUploadId === uploadId) {
       this.expandedUploadId = null;
@@ -452,6 +484,23 @@ export class SettingsComponent implements OnInit {
       error: () => {
         this.uploadDetailLoading = false;
         this.transactionUploadError = 'Unable to load failed transaction details.';
+        this.cdr.detectChanges();
+      },
+    });
+  }
+
+  downloadUnderlyingTemplate(): void {
+    this.settingsApi.downloadUnderlyingTemplate().subscribe({
+      next: (blob) => {
+        const url = window.URL.createObjectURL(blob);
+        const anchor = document.createElement('a');
+        anchor.href = url;
+        anchor.download = 'sample_underlying_format.xlsx';
+        anchor.click();
+        window.URL.revokeObjectURL(url);
+      },
+      error: () => {
+        this.underlyingUploadError = 'Unable to download the sample underlying Excel format.';
         this.cdr.detectChanges();
       },
     });
@@ -629,6 +678,10 @@ export class SettingsComponent implements OnInit {
 
     if (this.activeTab === 'upload-history') {
       this.loadTransactionUploadHistory();
+    }
+
+    if (this.activeTab === 'underlyings') {
+      this.loadUnderlyingUploads();
     }
   }
 }

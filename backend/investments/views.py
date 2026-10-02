@@ -171,6 +171,77 @@ def download_transaction_template(request):
 
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
+def transaction_underlyings(request):
+    """Return distinct underlying classifications stored on transactions for the active family."""
+    family = require_active_family(request.user)
+
+    from .models import Transaction
+
+    transactions = (
+        Transaction.objects
+        .filter(family=family)
+        .exclude(underlying__isnull=True)
+        .exclude(underlying__exact="")
+        .order_by("underlying", "asset_name", "transaction_date")
+    )
+
+    grouped = {}
+    for transaction in transactions:
+        underlying = transaction.underlying.strip()
+        if not underlying:
+            continue
+
+        key = underlying.casefold()
+        item = grouped.setdefault(key, {
+            "underlying": underlying,
+            "asset_names": set(),
+            "asset_classes": set(),
+            "sub_classes": set(),
+            "advisors": set(),
+            "family_members": set(),
+            "transaction_count": 0,
+            "first_transaction_date": None,
+            "last_transaction_date": None,
+        })
+
+        if transaction.asset_name:
+            item["asset_names"].add(transaction.asset_name.strip())
+        if transaction.asset_class:
+            item["asset_classes"].add(transaction.asset_class.strip())
+        if transaction.sub_class:
+            item["sub_classes"].add(transaction.sub_class.strip())
+        if transaction.advisors:
+            item["advisors"].add(transaction.advisors.strip())
+        if transaction.family_name:
+            item["family_members"].add(transaction.family_name.strip())
+
+        item["transaction_count"] += 1
+        date = transaction.transaction_date
+        if item["first_transaction_date"] is None or date < item["first_transaction_date"]:
+            item["first_transaction_date"] = date
+        if item["last_transaction_date"] is None or date > item["last_transaction_date"]:
+            item["last_transaction_date"] = date
+
+    results = []
+    for item in grouped.values():
+        results.append({
+            "underlying": item["underlying"],
+            "asset_names": sorted(item["asset_names"], key=str.casefold),
+            "asset_classes": sorted(item["asset_classes"], key=str.casefold),
+            "sub_classes": sorted(item["sub_classes"], key=str.casefold),
+            "advisors": sorted(item["advisors"], key=str.casefold),
+            "family_members": sorted(item["family_members"], key=str.casefold),
+            "transaction_count": item["transaction_count"],
+            "first_transaction_date": item["first_transaction_date"],
+            "last_transaction_date": item["last_transaction_date"],
+        })
+
+    results.sort(key=lambda row: row["underlying"].casefold())
+    return Response({"count": len(results), "results": results})
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
 def security_master_list(request):
     """
     Return Security Master records belonging to

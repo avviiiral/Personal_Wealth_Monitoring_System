@@ -392,51 +392,61 @@
     <section class="settings-card transaction-upload-card" *ngIf="activeTab === 'underlyings'">
       <div class="card-header">
         <div>
-          <h2>Underlyings</h2>
-          <p>View distinct Underlying values stored in transactions for the active family.</p>
+          <h2>Underlying Uploads</h2>
+          <p>Assets from Portfolio for which an underlying file has been uploaded.</p>
         </div>
-        <span class="section-badge">{{ transactionUnderlyings.length }} Underlyings</span>
+        <div class="upload-history-actions">
+          <span class="section-badge">{{ underlyingUploads.length }} Assets</span>
+          <button type="button" class="secondary-button" (click)="downloadUnderlyingTemplate()">Sample Underlying Format</button>
+        </div>
       </div>
 
-      <div class="loading-card history-loading" *ngIf="transactionUnderlyingLoading">
+      <div class="loading-card history-loading" *ngIf="underlyingUploadLoading">
         <div class="loading-spinner"></div>
-        <span>Loading transaction underlyings...</span>
+        <span>Loading underlying uploads...</span>
       </div>
 
-      <div class="error-card" *ngIf="!transactionUnderlyingLoading && transactionUnderlyingError">
-        {{ transactionUnderlyingError }}
+      <div class="error-card" *ngIf="!underlyingUploadLoading && underlyingUploadError">
+        {{ underlyingUploadError }}
       </div>
 
-      <div class="upload-history-empty" *ngIf="!transactionUnderlyingLoading && !transactionUnderlyingError && !transactionUnderlyings.length">
-        No Underlying values have been recorded for the active family.
+      <div class="upload-history-empty" *ngIf="!underlyingUploadLoading && !underlyingUploadError && !underlyingUploads.length">
+        No underlying uploads have been recorded for the active family.
       </div>
 
-      <div class="upload-history-table-wrap" *ngIf="!transactionUnderlyingLoading && transactionUnderlyings.length">
+      <div class="upload-history-table-wrap" *ngIf="!underlyingUploadLoading && underlyingUploads.length">
         <table class="upload-history-table">
           <thead>
             <tr>
-              <th>Underlying</th>
               <th>Asset Name</th>
-              <th>Asset Class</th>
-              <th>Sub Class</th>
-              <th>Family Member</th>
-              <th>Advisor</th>
-              <th>Transactions</th>
-              <th>First Transaction</th>
-              <th>Last Transaction</th>
+              <th>Uploaded By</th>
+              <th>Uploaded At</th>
+              <th>Underlying</th>
             </tr>
           </thead>
           <tbody>
-            <tr *ngFor="let row of transactionUnderlyings">
-              <td><strong>{{ row.underlying }}</strong></td>
-              <td>{{ formatUnderlyingList(row.asset_names) }}</td>
-              <td>{{ formatUnderlyingList(row.asset_classes) }}</td>
-              <td>{{ formatUnderlyingList(row.sub_classes) }}</td>
-              <td>{{ formatUnderlyingList(row.family_members) }}</td>
-              <td>{{ formatUnderlyingList(row.advisors) }}</td>
-              <td>{{ row.transaction_count }}</td>
-              <td>{{ row.first_transaction_date ? (row.first_transaction_date | date:'dd MMM yyyy') : '—' }}</td>
-              <td>{{ row.last_transaction_date ? (row.last_transaction_date | date:'dd MMM yyyy') : '—' }}</td>
+            <tr *ngFor="let upload of underlyingUploads">
+              <td><strong>{{ upload.asset_name }}</strong></td>
+              <td>{{ upload.uploaded_by }}</td>
+              <td>{{ upload.uploaded_at | date:'dd MMM yyyy, hh:mm a' }}</td>
+              <td>
+                <details *ngIf="upload.underlyings.length">
+                  <summary>{{ upload.underlyings.length }} holdings</summary>
+                  <div class="upload-failures-table-wrap" style="margin-top:10px;">
+                    <table class="upload-failures-table">
+                      <thead><tr><th>Underlying</th><th>% Holding</th><th>ISIN</th></tr></thead>
+                      <tbody>
+                        <tr *ngFor="let underlying of upload.underlyings">
+                          <td>{{ underlying.stock_name }}</td>
+                          <td>{{ underlying.holding_percentage }}%</td>
+                          <td>{{ underlying.isin || '—' }}</td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </details>
+                <span *ngIf="!upload.underlyings.length">—</span>
+              </td>
             </tr>
           </tbody>
         </table>

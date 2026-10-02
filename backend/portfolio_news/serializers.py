@@ -118,6 +118,8 @@ class PortfolioNewsRawItemSerializer(serializers.Serializer):
     source_count = serializers.IntegerField()
     matched_query = serializers.CharField()
     created_at = serializers.DateTimeField()
+    family_id = serializers.IntegerField(allow_null=True)
+    family_name = serializers.CharField(allow_blank=True)
     matched_holdings = PortfolioNewsRawHoldingSerializer(many=True)
 
 

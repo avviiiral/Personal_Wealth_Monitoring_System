@@ -925,6 +925,27 @@ class HoldingMatcherTests(TestCase):
             )
         )
 
+    def test_company_name_in_body_matches_when_headline_does_not(self):
+        self.assertTrue(
+            HoldingMatcher.is_relevant(
+                "Indian pharma stocks see mixed trading",
+                (
+                    "Aurobindo Pharma Limited announced a new regulatory "
+                    "development during the session."
+                ),
+                self.holding,
+            )
+        )
+
+    def test_unrelated_headline_and_body_do_not_match(self):
+        self.assertFalse(
+            HoldingMatcher.is_relevant(
+                "Indian pharma stocks see mixed trading",
+                "Analysts discussed sector-wide demand and margins.",
+                self.holding,
+            )
+        )
+
     def test_ticker_match(self):
         self.assertTrue(
             HoldingMatcher.is_relevant(

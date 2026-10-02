@@ -150,6 +150,55 @@ class TransactionEditHistory(models.Model):
         return f"Transaction {transaction_id} edited by {self.edited_by.username}"
 
 
+class TransactionUpload(models.Model):
+    STATUS_CHOICES = [
+        ("PROCESSING", "Processing"),
+        ("COMPLETED", "Completed"),
+        ("PARTIAL", "Partial"),
+        ("FAILED", "Failed"),
+    ]
+
+    owner = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name="transaction_uploads")
+    family = models.ForeignKey(FamilyGroup, on_delete=models.PROTECT, related_name="transaction_uploads", db_index=True)
+    file_name = models.CharField(max_length=255)
+    total_rows = models.PositiveIntegerField(default=0)
+    imported_rows = models.PositiveIntegerField(default=0)
+    failed_rows = models.PositiveIntegerField(default=0)
+    duplicate_rows = models.PositiveIntegerField(default=0)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="PROCESSING")
+    error_message = models.TextField(blank=True, null=True)
+    uploaded_at = models.DateTimeField(auto_now_add=True)
+    completed_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-uploaded_at"]
+        indexes = [
+            models.Index(fields=["family", "-uploaded_at"], name="tx_upload_family_date_idx"),
+            models.Index(fields=["owner", "-uploaded_at"], name="tx_upload_owner_date_idx"),
+        ]
+
+    def __str__(self):
+        return f"{self.file_name} - {self.uploaded_at}"
+
+
+class TransactionUploadFailure(models.Model):
+    upload = models.ForeignKey(TransactionUpload, on_delete=models.CASCADE, related_name="failures")
+    row_number = models.PositiveIntegerField()
+    reason = models.TextField()
+    field_name = models.CharField(max_length=100, blank=True, null=True)
+    row_data = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["row_number", "id"]
+        indexes = [
+            models.Index(fields=["upload", "row_number"], name="tx_upload_failure_row_idx"),
+        ]
+
+    def __str__(self):
+        return f"Upload {self.upload_id} row {self.row_number}: {self.reason}"
+
+
 class Holding(models.Model):
     owner = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name="holdings")
     family = models.ForeignKey(FamilyGroup, on_delete=models.PROTECT, related_name="holdings", null=True, blank=True, db_index=True)

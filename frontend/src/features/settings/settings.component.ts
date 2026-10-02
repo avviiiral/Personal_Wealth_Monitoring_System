@@ -12,6 +12,8 @@ import {
   TaxRateSetting,
   TaxRateChangeLog,
   TransactionEditHistory,
+  TransactionUploadHistory,
+  TransactionUploadDetail,
 } from '../../core/services/settings-api.service';
 
 import { UserManagementComponent } from './user-management/user-management.component';
@@ -26,7 +28,8 @@ type SettingsTab =
   | 'prices'
   | 'tax-rates'
   | 'tax-updates'
-  | 'transaction-history';
+  | 'transaction-history'
+  | 'upload-history';
 
 @Component({
   selector: 'app-settings',
@@ -81,6 +84,13 @@ export class SettingsComponent implements OnInit {
   transactionHistoryError = '';
   expandedHistoryId: number | null = null;
 
+  transactionUploads: TransactionUploadHistory[] = [];
+  transactionUploadLoading = false;
+  transactionUploadError = '';
+  expandedUploadId: number | null = null;
+  selectedUpload: TransactionUploadDetail | null = null;
+  uploadDetailLoading = false;
+
   historySearch = '';
   historyEditorFilter = '';
   historyDateFilter = '';
@@ -112,6 +122,10 @@ export class SettingsComponent implements OnInit {
     if (tab === 'transaction-history' && !this.transactionHistory.length) {
       this.loadTransactionHistory();
     }
+
+    if (tab === 'upload-history' && !this.transactionUploads.length) {
+      this.loadTransactionUploadHistory();
+    }
   }
 
   canManageUsers(): boolean {
@@ -139,6 +153,9 @@ export class SettingsComponent implements OnInit {
         }
         if (this.activeTab === 'tax-updates') {
           this.loadTaxUpdateHistory();
+        }
+        if (this.activeTab === 'upload-history') {
+          this.loadTransactionUploadHistory();
         }
         this.cdr.detectChanges();
       },
@@ -398,6 +415,69 @@ export class SettingsComponent implements OnInit {
       this.expandedHistoryId === historyId ? null : historyId;
   }
 
+  loadTransactionUploadHistory(): void {
+    this.transactionUploadLoading = true;
+    this.transactionUploadError = '';
+    this.settingsApi.getTransactionUploadHistory().subscribe({
+      next: (response) => {
+        this.transactionUploads = response.results || [];
+        this.transactionUploadLoading = false;
+        this.expandedUploadId = null;
+        this.selectedUpload = null;
+        this.cdr.detectChanges();
+      },
+      error: (error) => {
+        this.transactionUploadLoading = false;
+        this.transactionUploadError = error?.error?.detail || 'Unable to load transaction upload history.';
+        this.cdr.detectChanges();
+      },
+    });
+  }
+
+  toggleUpload(uploadId: number): void {
+    if (this.expandedUploadId === uploadId) {
+      this.expandedUploadId = null;
+      this.selectedUpload = null;
+      return;
+    }
+    this.expandedUploadId = uploadId;
+    this.selectedUpload = null;
+    this.uploadDetailLoading = true;
+    this.settingsApi.getTransactionUploadDetail(uploadId).subscribe({
+      next: (detail) => {
+        this.selectedUpload = detail;
+        this.uploadDetailLoading = false;
+        this.cdr.detectChanges();
+      },
+      error: () => {
+        this.uploadDetailLoading = false;
+        this.transactionUploadError = 'Unable to load failed transaction details.';
+        this.cdr.detectChanges();
+      },
+    });
+  }
+
+  downloadTransactionTemplate(): void {
+    this.settingsApi.downloadTransactionTemplate().subscribe({
+      next: (blob) => {
+        const url = window.URL.createObjectURL(blob);
+        const anchor = document.createElement('a');
+        anchor.href = url;
+        anchor.download = 'standard_transactions_format.xlsx';
+        anchor.click();
+        window.URL.revokeObjectURL(url);
+      },
+      error: () => {
+        this.transactionUploadError = 'Unable to download the standard transaction format.';
+        this.cdr.detectChanges();
+      },
+    });
+  }
+
+  getUploadStatusLabel(status: string): string {
+    return status === 'PARTIAL' ? 'Partial' : status.charAt(0) + status.slice(1).toLowerCase();
+  }
+
   formatChangedFields(history: TransactionEditHistory): string {
     return history.changed_fields.map((field) => this.formatHistoryField(field)).join(', ');
   }
@@ -545,6 +625,10 @@ export class SettingsComponent implements OnInit {
 
     if (this.activeTab === 'transaction-history') {
       this.loadTransactionHistory();
+    }
+
+    if (this.activeTab === 'upload-history') {
+      this.loadTransactionUploadHistory();
     }
   }
 }

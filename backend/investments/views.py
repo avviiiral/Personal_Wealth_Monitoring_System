@@ -6,8 +6,12 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.exceptions import PermissionDenied
 from rest_framework import status
+from django.http import HttpResponse
+from django.utils import timezone
+from openpyxl import Workbook
+from openpyxl.styles import Font, PatternFill, Alignment
 
-from .models import SecurityMaster
+from .models import SecurityMaster, TransactionUpload, TransactionUploadFailure
 
 from .services.transaction_import import (
     TransactionImportError,
@@ -28,97 +32,141 @@ from users.permissions import family_scope, require_active_family
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def import_transactions(request):
-    """
-    Import transaction data from an Excel or CSV file.
-
-    Expected multipart/form-data field:
-        file
-    """
-
+    """Import transaction data and persist an auditable upload summary."""
     uploaded_file = request.FILES.get("file")
-
     if uploaded_file is None:
-        return Response(
-            {
-                "success": False,
-                "message": (
-                    "Please upload an Excel or CSV "
-                    "file using the 'file' field."
-                ),
-            },
-            status=400,
-        )
+        return Response({"success": False, "message": "Please upload an Excel or CSV file using the 'file' field."}, status=400)
 
     filename = uploaded_file.name.lower()
+    if not (filename.endswith(".xlsx") or filename.endswith(".csv")):
+        return Response({"success": False, "message": "Only .xlsx and .csv files are supported."}, status=400)
 
-    if not (
-        filename.endswith(".xlsx")
-        or filename.endswith(".csv")
-    ):
-        return Response(
-            {
-                "success": False,
-                "message": (
-                    "Only .xlsx and .csv files are supported."
-                ),
-            },
-            status=400,
-        )
+    family = require_active_family(request.user)
+    upload = TransactionUpload.objects.create(
+        owner=request.user,
+        family=family,
+        file_name=uploaded_file.name,
+    )
 
     try:
         result = TransactionImporter.import_file(
             file=uploaded_file,
             owner=request.user,
+            upload_batch=upload,
         )
-
     except PermissionDenied as exc:
-        return Response(
-            {
-                "success": False,
-                "message": str(exc.detail) if hasattr(exc, "detail") else str(exc),
-            },
-            status=status.HTTP_403_FORBIDDEN,
-        )
-
+        upload.status = "FAILED"
+        upload.error_message = str(exc.detail) if hasattr(exc, "detail") else str(exc)
+        upload.completed_at = timezone.now()
+        upload.save(update_fields=["status", "error_message", "completed_at"])
+        return Response({"success": False, "message": upload.error_message}, status=status.HTTP_403_FORBIDDEN)
     except TransactionImportError as exc:
-        return Response(
-            {
-                "success": False,
-                "message": str(exc),
-            },
-            status=400,
-        )
-
+        upload.status = "FAILED"
+        upload.error_message = str(exc)
+        upload.completed_at = timezone.now()
+        upload.save(update_fields=["status", "error_message", "completed_at"])
+        return Response({"success": False, "message": str(exc), "upload_id": upload.id}, status=400)
     except Exception as exc:
-        return Response(
-            {
-                "success": False,
-                "message": (
-                    "Unexpected error while importing "
-                    "the transaction file."
-                ),
-                "error": str(exc),
-            },
-            status=500,
-        )
+        upload.status = "FAILED"
+        upload.error_message = "Unexpected error while importing the transaction file."
+        upload.completed_at = timezone.now()
+        upload.save(update_fields=["status", "error_message", "completed_at"])
+        return Response({"success": False, "message": upload.error_message, "error": str(exc), "upload_id": upload.id}, status=500)
 
-    # Kick off an immediate price refresh for every asset this
-    # import touched, on a background thread - see
-    # services.auto_price_refresh. The import itself already
-    # committed, so this can never affect the response below or
-    # the (already-saved) transactions/assets.
     refresh_assets_async(result.get("touched_asset_ids", []))
 
-    return Response(
-        {
-            "success": True,
-            "message": (
-                "Transaction file imported successfully."
-            ),
-            "data": result,
-        },
-        status=201,
+    return Response({
+        "success": True,
+        "message": "Transaction file processed successfully.",
+        "data": result,
+        "upload_id": upload.id,
+    }, status=201)
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def transaction_upload_history(request):
+    family = require_active_family(request.user)
+    uploads = TransactionUpload.objects.filter(family=family).select_related("owner")
+    results = []
+    for upload in uploads:
+        results.append({
+            "id": upload.id,
+            "file_name": upload.file_name,
+            "uploaded_by": upload.owner.username if upload.owner else "Deleted User",
+            "uploaded_at": upload.uploaded_at,
+            "total_rows": upload.total_rows,
+            "imported_rows": upload.imported_rows,
+            "failed_rows": upload.failed_rows,
+            "duplicate_rows": upload.duplicate_rows,
+            "status": upload.status,
+            "error_message": upload.error_message,
+        })
+    return Response({"count": len(results), "results": results})
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def transaction_upload_detail(request, upload_id):
+    family = require_active_family(request.user)
+    upload = TransactionUpload.objects.filter(id=upload_id, family=family).select_related("owner").first()
+    if upload is None:
+        return Response({"detail": "Transaction upload not found."}, status=404)
+
+    failures = TransactionUploadFailure.objects.filter(upload=upload).values(
+        "id", "row_number", "reason", "field_name", "row_data"
     )
+    return Response({
+        "id": upload.id,
+        "file_name": upload.file_name,
+        "uploaded_by": upload.owner.username if upload.owner else "Deleted User",
+        "uploaded_at": upload.uploaded_at,
+        "total_rows": upload.total_rows,
+        "imported_rows": upload.imported_rows,
+        "failed_rows": upload.failed_rows,
+        "duplicate_rows": upload.duplicate_rows,
+        "status": upload.status,
+        "error_message": upload.error_message,
+        "failures": list(failures),
+    })
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def download_transaction_template(request):
+    workbook = Workbook()
+    transactions = workbook.active
+    transactions.title = "Transactions"
+    transaction_headers = [
+        "Family Member", "Asset Class", "Sub Class", "Asset Name", "Underlying",
+        "Advisors", "ISIN", "Date", "Trans. Type", "Quantity", "Price", "Amount",
+    ]
+    transactions.append(transaction_headers)
+
+    summary = workbook.create_sheet("Summary")
+    summary.append(["Portfolio Mapping"])
+    summary.append(["Family Name", "Portfolio Name", "Asset Class", "Advisors", "Asset Name", "ISIN"])
+
+    instructions = workbook.create_sheet("Instructions")
+    instructions.append(["Standard Transaction Upload Format"])
+    instructions.append(["Use the Transactions sheet for transaction rows. The Summary sheet is optional and maps rows to Portfolio Name."])
+    instructions.append(["Do not rename the required headers. Family Member is accepted as the user-facing replacement for Family Name."])
+
+    for sheet in (transactions, summary, instructions):
+        for cell in sheet[1]:
+            cell.font = Font(bold=True)
+        sheet.freeze_panes = "A2"
+        sheet.auto_filter.ref = sheet.dimensions
+        for column in sheet.columns:
+            width = min(max(len(str(cell.value or "")) for cell in column) + 2, 35)
+            sheet.column_dimensions[column[0].column_letter].width = width
+
+    response = HttpResponse(
+        content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
+    response["Content-Disposition"] = 'attachment; filename="standard_transactions_format.xlsx"'
+    workbook.save(response)
+    return response
 
 
 @api_view(["GET"])

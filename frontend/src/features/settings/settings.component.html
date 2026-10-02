@@ -26,6 +26,7 @@
       <button type="button" class="tab-button" [class.tab-active]="activeTab === 'tax-rates'" (click)="setTab('tax-rates')">Tax Settings</button>
       <button type="button" class="tab-button" [class.tab-active]="activeTab === 'tax-updates'" (click)="setTab('tax-updates')">Tax Update</button>
       <button type="button" class="tab-button" [class.tab-active]="activeTab === 'transaction-history'" (click)="setTab('transaction-history')">Transaction Edit History</button>
+      <button type="button" class="tab-button" [class.tab-active]="activeTab === 'upload-history'" (click)="setTab('upload-history')">Transaction Uploads</button>
       <button type="button" class="tab-button" *ngIf="canManageUsers()" [class.tab-active]="activeTab === 'users'" (click)="setTab('users')">User Management</button>
       <button type="button" class="tab-button" *ngIf="canManageFamilies()" [class.tab-active]="activeTab === 'families'" (click)="setTab('families')">Family Management</button>
       <button type="button" class="tab-button" *ngIf="canEditPrices()" [class.tab-active]="activeTab === 'prices'" (click)="setTab('prices')">Manual Prices</button>
@@ -302,6 +303,87 @@
           </div>
         </div>
       </ng-container>
+    </section>
+
+
+    <section class="settings-card transaction-upload-card" *ngIf="activeTab === 'upload-history'">
+      <div class="card-header">
+        <div>
+          <h2>Transaction Upload History</h2>
+          <p>See who uploaded transaction files, how many rows were imported, duplicates skipped, and which rows failed.</p>
+        </div>
+        <div class="upload-history-actions">
+          <span class="section-badge">{{ transactionUploads.length }} Uploads</span>
+          <button type="button" class="secondary-button" (click)="downloadTransactionTemplate()">Download Standard Format</button>
+        </div>
+      </div>
+
+      <div class="loading-card history-loading" *ngIf="transactionUploadLoading"><div class="loading-spinner"></div><span>Loading transaction upload history...</span></div>
+      <div class="error-card" *ngIf="!transactionUploadLoading && transactionUploadError">{{ transactionUploadError }}</div>
+
+      <div class="upload-history-empty" *ngIf="!transactionUploadLoading && !transactionUploadError && !transactionUploads.length">
+        No transaction uploads have been recorded for the active family.
+      </div>
+
+      <div class="upload-history-table-wrap" *ngIf="!transactionUploadLoading && transactionUploads.length">
+        <table class="upload-history-table">
+          <thead>
+            <tr>
+              <th>Uploaded At</th>
+              <th>Uploaded By</th>
+              <th>File</th>
+              <th>Total Rows</th>
+              <th>Uploaded</th>
+              <th>Failed</th>
+              <th>Duplicates</th>
+              <th>Status</th>
+              <th>Details</th>
+            </tr>
+          </thead>
+          <tbody>
+            <ng-container *ngFor="let upload of transactionUploads">
+              <tr>
+                <td>{{ upload.uploaded_at | date:'dd MMM yyyy, hh:mm a' }}</td>
+                <td><strong>{{ upload.uploaded_by }}</strong></td>
+                <td>{{ upload.file_name }}</td>
+                <td>{{ upload.total_rows }}</td>
+                <td class="upload-success-count">{{ upload.imported_rows }}</td>
+                <td class="upload-failed-count">{{ upload.failed_rows }}</td>
+                <td>{{ upload.duplicate_rows }}</td>
+                <td><span class="upload-status" [class.partial]="upload.status === 'PARTIAL'" [class.failed]="upload.status === 'FAILED'">{{ getUploadStatusLabel(upload.status) }}</span></td>
+                <td><button type="button" class="secondary-button upload-detail-button" (click)="toggleUpload(upload.id)">{{ expandedUploadId === upload.id ? 'Hide' : 'View' }}</button></td>
+              </tr>
+              <tr *ngIf="expandedUploadId === upload.id" class="upload-detail-row">
+                <td colspan="9">
+                  <div class="upload-detail-panel" *ngIf="uploadDetailLoading">Loading failed transaction details...</div>
+                  <div class="upload-detail-panel" *ngIf="!uploadDetailLoading && selectedUpload">
+                    <div class="upload-summary-grid">
+                      <div><span>Total Rows</span><strong>{{ selectedUpload.total_rows }}</strong></div>
+                      <div><span>Successfully Uploaded</span><strong>{{ selectedUpload.imported_rows }}</strong></div>
+                      <div><span>Failed</span><strong>{{ selectedUpload.failed_rows }}</strong></div>
+                      <div><span>Duplicates Skipped</span><strong>{{ selectedUpload.duplicate_rows }}</strong></div>
+                    </div>
+                    <div class="upload-error-message" *ngIf="selectedUpload.error_message">{{ selectedUpload.error_message }}</div>
+                    <div class="upload-failures-empty" *ngIf="!selectedUpload.failures.length">No failed transaction rows.</div>
+                    <div class="upload-failures-table-wrap" *ngIf="selectedUpload.failures.length">
+                      <table class="upload-failures-table">
+                        <thead><tr><th>Excel Row</th><th>Reason</th><th>Details</th></tr></thead>
+                        <tbody>
+                          <tr *ngFor="let failure of selectedUpload.failures">
+                            <td>#{{ failure.row_number }}</td>
+                            <td>{{ failure.reason }}</td>
+                            <td><details><summary>View row</summary><pre>{{ failure.row_data | json }}</pre></details></td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </td>
+              </tr>
+            </ng-container>
+          </tbody>
+        </table>
+      </div>
     </section>
 
     <section class="settings-card" *ngIf="activeTab === 'users' && canManageUsers()"><app-user-management></app-user-management></section>

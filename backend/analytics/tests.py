@@ -1,8 +1,10 @@
 from django.contrib.auth.models import User
 from django.test import TestCase
+from rest_framework.test import APIClient
 
 from users.models import FamilyGroup
 
+from .models import StandardAllocation
 from .services.investment_summary import InvestmentSummaryService
 
 from decimal import Decimal 
@@ -344,3 +346,87 @@ class InvestmentSummaryServiceTests(TestCase):
                 row["percentage_of_total"],
                 Decimal("0"),
             )
+
+
+
+class GlobalStandardAllocationApiTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(
+            username="global_allocation_user",
+            password="testpassword123",
+        )
+        self.family_a = FamilyGroup.objects.create(
+            name="Global Allocation Family A",
+            created_by=self.user,
+        )
+        self.family_b = FamilyGroup.objects.create(
+            name="Global Allocation Family B",
+            created_by=self.user,
+        )
+        self.user.profile.family_groups.add(self.family_a, self.family_b)
+        self.user.profile.active_family_group = self.family_a
+        self.user.profile.save(update_fields=["active_family_group"])
+
+        self.client = APIClient()
+        self.client.force_authenticate(user=self.user)
+
+    def test_standard_allocation_is_shared_across_families(self):
+        StandardAllocation.objects.create(
+            asset_category="Equities",
+            allocation_percent=Decimal("60.00"),
+            allocation_amount=Decimal("600000.00"),
+        )
+        StandardAllocation.objects.create(
+            asset_category="Fixed Income",
+            allocation_percent=Decimal("40.00"),
+            allocation_amount=Decimal("400000.00"),
+        )
+
+        response_a = self.client.get(
+            "/api/analytics/wealth/standard-allocations/",
+            {"family": self.family_a.name},
+        )
+        response_b = self.client.get(
+            "/api/analytics/wealth/standard-allocations/",
+            {"family": self.family_b.name},
+        )
+
+        self.assertEqual(response_a.status_code, 200)
+        self.assertEqual(response_b.status_code, 200)
+        self.assertEqual(
+            response_a.data["allocations"]["Equities"]["percent"],
+            60.0,
+        )
+        self.assertEqual(
+            response_b.data["allocations"]["Equities"]["percent"],
+            60.0,
+        )
+
+    def test_updating_one_family_view_updates_the_global_target(self):
+        response = self.client.put(
+            "/api/analytics/wealth/standard-allocations/update/",
+            {
+                "allocations": {
+                    "Equities": {"percent": 70, "amount": 700000},
+                    "Fixed Income": {"percent": 30, "amount": 300000},
+                }
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+
+        family_b_response = self.client.get(
+            "/api/analytics/wealth/standard-allocations/",
+            {"family": self.family_b.name},
+        )
+
+        self.assertEqual(family_b_response.status_code, 200)
+        self.assertEqual(
+            family_b_response.data["allocations"]["Equities"]["percent"],
+            70.0,
+        )
+        self.assertEqual(
+            family_b_response.data["allocations"]["Fixed Income"]["percent"],
+            30.0,
+        )

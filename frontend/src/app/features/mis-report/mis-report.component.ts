@@ -185,6 +185,13 @@ export class MISReportComponent implements OnInit {
     return ['sr_no', 'change', 'percent_change'].includes(column.id);
   }
 
+  formatNotesCalculatedValue(column: MISEditableColumn, value: string | number | null | undefined): string {
+    if (value === null || value === undefined || value === '') return '—';
+    if (column.id === 'change') return this.formatNumber(Number(value), 2);
+    if (column.id === 'percent_change') return this.formatNumber(Number(value), 2) + '%';
+    return String(value);
+  }
+
   addRow(section: MISEditableSection): void {
     const cells: Record<string, string | number | null> = {};
     section.columns.forEach((column) => {

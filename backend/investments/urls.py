@@ -4,6 +4,7 @@ from .views import (
     import_transactions,
     transaction_upload_history,
     transaction_upload_detail,
+    transaction_underlyings,
     download_transaction_template,
     security_master_list,
     security_master_detail,
@@ -27,6 +28,12 @@ urlpatterns = [
         "upload-history/<int:upload_id>/",
         transaction_upload_detail,
         name="transaction-upload-detail",
+    ),
+
+    path(
+        "underlyings/",
+        transaction_underlyings,
+        name="transaction-underlyings",
     ),
 
     path(

@@ -192,6 +192,9 @@ Net worth, asset allocation, key portfolio metrics and an **Investment Summary**
 - **Transaction upload history** with upload status, imported/failed row counts and row-level failure details
 - **Data-driven classification** — Family Member, Asset Class, Sub Class, Asset Name, Underlying and Advisors are sourced from uploaded transaction/database records rather than hard-coded user-facing classification lists
 - Inline **manual price override** for Admin and above, for any asset in your visible family scope
+- **Asset Underlying uploads** from Portfolio for supported assets using the standard Excel format (`Stocks`, `% Holding`)
+- **Underlying upload visibility in Settings** with asset name, uploader, upload timestamp, and expandable underlying holdings
+- **Sample Underlying Format** download from Settings as an Excel workbook with an `Underlying` sheet and upload instructions
 
 ### 📥 Transaction Uploads
 
@@ -204,6 +207,17 @@ Transaction imports are tracked as auditable upload records so users can review 
 - The standard workbook includes the transaction fields expected by the importer and supports the existing `Summary` / portfolio-mapping structure.
 - Transaction upload failures are recorded without silently treating invalid rows as successful imports.
 - The importer accepts uploaded classification values as authoritative application data; it does not replace them with hard-coded asset-class or family-name values.
+
+### 🧩 Asset Underlying management
+
+Asset-level underlying holdings can be uploaded from the Portfolio page using an Excel workbook.
+
+- The upload format uses **`Stocks`** and **`% Holding`** columns.
+- Uploading an underlying replaces the current underlying snapshot for that asset/family.
+- Each imported holding stores the uploader and upload timestamp for audit visibility.
+- **Settings → Underlyings** shows the latest underlying upload for each asset in the active family, including uploader, upload time, and the underlying rows.
+- The Settings page provides a downloadable **Sample Underlying Format** Excel workbook with example rows and a separate instructions sheet.
+- Underlying holdings are stored as the current snapshot; the application does not currently retain every prior upload as a separate historical version.
 
 ### 🧩 Data-driven portfolio classification
 
@@ -267,6 +281,7 @@ The **MIS Report** is available at **Portfolio → MIS Report** and contains the
 - **Family Management** — System Owner only
 - **Manual Prices** — override any asset's price within your visible family scope; every override is **audit-logged** (who, when, from what)
 - **Transaction Uploads** — review transaction upload history, inspect failed rows, and download the standard transaction upload format
+- **Underlyings** — review the latest uploaded underlying snapshot per asset, see who uploaded it and when, expand underlying holdings, and download the sample underlying Excel format
 
 ### 🤖 AI Portfolio Chat
 
@@ -633,6 +648,9 @@ All endpoints require an authenticated Django session unless noted. Auth uses **
 | `GET` `PUT` `PATCH` `DELETE` | `/api/portfolio/transactions/<id>/`        | Retrieve / update / delete a transaction |
 | `GET`                        | `/api/portfolio/summary/`                  | Portfolio summary                        |
 | `GET`                        | `/api/portfolio/holdings/`                 | Holdings                                 |
+| `GET`                        | `/api/portfolio/underlying-uploads/`       | Latest underlying upload snapshot per asset |
+| `GET`                        | `/api/portfolio/underlying-template/`      | Download sample underlying Excel format   |
+| `POST`                       | `/api/portfolio/assets/<id>/underlying/import/` | Upload underlying holdings for an asset |
 | `GET`                        | `/api/portfolio/tree/`                     | Hierarchical portfolio tree              |
 | `PUT` `PATCH` `DELETE`       | `/api/portfolio/assets/<id>/manual-price/` | Manual price override                    |
 | `GET`                        | `/api/portfolio/mis-report/`              | MIS Report data                           |
@@ -725,11 +743,13 @@ Four independent, **in-process** mechanisms start automatically from each app's 
 | #   | Job                        | Cadence                                        | What it does                                                      |
 | --- | -------------------------- | ---------------------------------------------- | ----------------------------------------------------------------- |
 | 1   | **Market price refresh**   | Every 15 minutes                               | Stock / ETF prices (Yahoo Finance) and mutual-fund NAVs (AMFI)    |
-| 2   | **Daily refresh**          | Once per calendar day of uptime                | AMFI NAV, security-master ratios, SIP sync and execute            |
+| 2   | **Daily refresh**          | Once per calendar day of uptime                | AMFI NAV, security-master ratios, benchmark master coverage, SIP sync and execute |
 | 3   | **Post-import refresh**    | Right after an import commits                  | Immediate live price for any newly added asset                    |
 | 4   | **Portfolio News monitor** | Every `NEWS_MONITOR_INTERVAL` (default 30 min) | Full news discovery → match → analyze → alert pass for every user |
 
 There is no Task Scheduler entry, cron job or `.bat` file to configure — the jobs run for exactly as long as the server process is up. Check `backend/logs/pwms.log` to watch them work.
+
+The daily refresh also runs the **benchmark master coverage check** for Nifty 50 and BSE 500 before the normal daily refresh. The BSE 500 loader only reads the configured local source when it is a regular file, so a directory or invalid file-path setting does not cause the scheduler to fail; supported remote/fallback benchmark sources remain available.
 
 ---
 

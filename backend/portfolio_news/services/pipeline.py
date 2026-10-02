@@ -163,7 +163,7 @@ def _process_holding(
     signature for compatibility with existing callers/tests. AI work
     is performed centrally by run_portfolio_news_monitor().
     """
-    from ..models import PortfolioNewsAlert
+    from ..models import PortfolioNewsAlert, PortfolioNewsMatch
 
     resolved_max_articles = (
         max_articles_per_holding
@@ -245,6 +245,21 @@ def _process_holding(
         else:
             stats["duplicates_skipped"] += 1
 
+        # Persist the deterministic portfolio-to-article relationship
+        # before any Gemini work. This is the source for the raw
+        # portfolio-news feed and therefore remains available even when
+        # Gemini is unavailable or does not produce an alert.
+        PortfolioNewsMatch.objects.get_or_create(
+            user=user,
+            article=article,
+            holding_type=holding.holding_type,
+            holding_id=holding.holding_id,
+            defaults={
+                "holding_display_name": holding.display_name,
+                "matched_query": candidate.matched_query[:255],
+            },
+        )
+
         # Never re-analyze an article already processed for this exact
         # (user, holding) pair, regardless of the previous relevance.
         already_processed = PortfolioNewsAlert.objects.filter(
@@ -257,18 +272,15 @@ def _process_holding(
         if already_processed:
             continue
 
+        # The AI cap controls Gemini usage only. We deliberately keep
+        # storing every deterministic match discovered in this run so
+        # the raw feed can show all matched articles without depending
+        # on Gemini.
         if (
             resolved_max_articles > 0
             and articles_selected_this_holding >= resolved_max_articles
         ):
-            logger.info(
-                "user_id=%s holding=%r reached max_articles_per_holding=%s, "
-                "deferring remaining candidates to next run",
-                user.id,
-                holding.display_name,
-                resolved_max_articles,
-            )
-            break
+            continue
 
         selected_pairs.append((article, holding))
         articles_selected_this_holding += 1

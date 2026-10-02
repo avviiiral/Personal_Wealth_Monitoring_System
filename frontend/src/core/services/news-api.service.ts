@@ -66,7 +66,7 @@ export interface PortfolioNewsRawHolding {
   holding_display_name: string;
   connection_type: 'direct' | 'underlying';
   underlying_name: string;
-  underlying_weight: number | null;
+  underlying_weight: string | null;
 }
 
 export interface PortfolioNewsRawItem {

@@ -303,7 +303,7 @@
                       class="notes-cell-input"
                       [type]="column.type === 'number' ? 'number' : 'text'"
                       [ngModel]="row.cells[column.id]"
-                      (ngModelChange)="row.cells[column.id] = column.type === 'number' && $event !== '' ? Number($event) : $event"
+                      (ngModelChange)="row.cells[column.id] = coerceCellValue(column, $event)"
                     />
                     <span *ngIf="!editingNotes">{{ row.cells[column.id] === null || row.cells[column.id] === '' || row.cells[column.id] === undefined ? '—' : row.cells[column.id] }}</span>
                   </td>

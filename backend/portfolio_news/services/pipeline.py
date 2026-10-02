@@ -232,6 +232,13 @@ def _process_holding(
         ):
             continue
 
+        connection = HoldingMatcher.connection_for_article(
+            candidate.title,
+            candidate.description,
+            holding,
+            matched_query=candidate.matched_query,
+        )
+
         stats["articles_matched"] += 1
 
         try:
@@ -257,6 +264,9 @@ def _process_holding(
             "holding_display_name": holding.display_name,
             "matched_query": candidate.matched_query[:255],
             "family": family,
+            "connection_type": connection["connection_type"],
+            "underlying_name": connection["underlying_name"],
+            "underlying_weight": connection["underlying_weight"],
         }
 
         if family is not None:
@@ -301,7 +311,7 @@ def _process_holding(
         ):
             continue
 
-        selected_pairs.append((article, holding))
+        selected_pairs.append((article, holding, connection))
         articles_selected_this_holding += 1
         stats["articles_sent_to_ai"] += 1
 
@@ -355,6 +365,7 @@ def _analyze_batches_for_user(
         batch = article_holding_pairs[
             start : start + max_batch_articles
         ]
+        analyzer_batch = [(article, holding) for article, holding, _ in batch]
 
         logger.info(
             "Running Gemini batch analysis for user_id=%s batch=%d-%d "
@@ -368,12 +379,12 @@ def _analyze_batches_for_user(
         try:
             if callable(getattr(analyzer, "analyze_batch", None)):
                 batch_results = analyzer.analyze_batch(
-                    batch,
+                    analyzer_batch,
                     user=user,
                 )
             else:
                 batch_results = {}
-                for article, holding in batch:
+                for article, holding, _ in batch:
                     analysis = _analyze_one_pair_compatibly(
                         analyzer,
                         article,
@@ -420,7 +431,7 @@ def _create_alerts_from_analyses(
     stats: dict,
 ) -> None:
     """Create the existing PortfolioNewsAlert rows from batch results."""
-    for article, holding in article_holding_pairs:
+    for article, holding, connection in article_holding_pairs:
         key = (
             article.id,
             holding.holding_type,
@@ -443,6 +454,7 @@ def _create_alerts_from_analyses(
                 article,
                 holding,
                 analysis,
+                connection=connection,
             )
         except Exception:
             logger.exception(

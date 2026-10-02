@@ -322,7 +322,7 @@ class BenchmarkPerformanceTests(TestCase):
         )
         MutualFundProduct.objects.create(product=product, scheme_code="NIFTY", benchmark="Nifty 50")
         points = [
-            {"date": "2021-01-01", "value": 100.0},
+            {"date": "2021-01-02", "value": 100.0},
             {"date": "2026-01-01", "value": 150.0},
         ]
         with patch.object(BenchmarkPerformanceService, "_nifty_tri_series", return_value=points):
@@ -355,7 +355,7 @@ class BenchmarkPerformanceTests(TestCase):
             BenchmarkPerformanceService,
             "_bse_series",
             return_value=[
-                {"date": "2025-09-25", "value": 100.0},
+                {"date": "2025-09-28", "value": 100.0},
                 {"date": "2026-09-28", "value": 98.0},
             ],
         ):
@@ -404,7 +404,7 @@ class BenchmarkPerformanceTests(TestCase):
             {"date": "2026-09-28", "value": 106.0},
         ]
         detail = BenchmarkPerformanceService._period_return_detail(points, 365)
-        self.assertEqual(detail["start_date"], "2025-09-25")
+        self.assertEqual(detail["start_date"], "2026-09-25")
         self.assertEqual(detail["end_date"], "2026-09-28")
         self.assertEqual(detail["start_value"], 105.0)
         self.assertEqual(detail["end_value"], 106.0)

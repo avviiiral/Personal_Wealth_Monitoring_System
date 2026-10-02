@@ -324,6 +324,14 @@ class AssetUnderlyingHolding(models.Model):
     sector = models.CharField(max_length=150, blank=True, null=True)
     cap_type = models.CharField(max_length=50, blank=True, null=True)
     source = models.CharField(max_length=30, default="EXCEL")
+    uploaded_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="uploaded_asset_underlyings",
+    )
+    uploaded_at = models.DateTimeField(auto_now_add=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

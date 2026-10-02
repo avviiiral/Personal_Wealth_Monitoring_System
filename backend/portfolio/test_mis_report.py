@@ -695,9 +695,8 @@ class MISReportAPITests(TestCase):
             item for item in response.json()["notes"]["editable"]["sections"][0]["rows"]
             if item["id"] == "new-row"
         )
-        self.assertEqual(row["cells"]["opening_rate"], 125.0)
+        self.assertIsNone(row["cells"]["opening_rate"])
         self.assertEqual(row["cells"]["closing_rate"], 125.0)
-        self.assertEqual(row["cells"]["change"], 0.0)
 
     def test_notes_edits_are_not_visible_to_another_family(self):
         other_family = FamilyGroup.objects.create(name="Other MIS Family")

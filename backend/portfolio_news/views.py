@@ -256,6 +256,9 @@ def portfolio_news_raw_list(request):
                 "holding_type": match.holding_type,
                 "holding_id": match.holding_id,
                 "holding_display_name": match.holding_display_name,
+                "connection_type": match.connection_type,
+                "underlying_name": match.underlying_name,
+                "underlying_weight": match.underlying_weight,
             }
         )
 

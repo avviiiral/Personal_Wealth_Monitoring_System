@@ -490,23 +490,20 @@ export class SettingsComponent implements OnInit {
   }
 
   downloadUnderlyingTemplate(): void {
-    const workbook = [
-      ['Stocks', '% Holding'],
-      ['HDFC Bank', 25],
-      ['ICICI Bank', 20],
-      ['Reliance Industries', 15],
-    ];
-
-    const csv = workbook
-      .map((row) => row.map((value) => String(value)).join(','))
-      .join('\\n');
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-    const url = window.URL.createObjectURL(blob);
-    const anchor = document.createElement('a');
-    anchor.href = url;
-    anchor.download = 'sample_underlying_format.csv';
-    anchor.click();
-    window.URL.revokeObjectURL(url);
+    this.settingsApi.downloadUnderlyingTemplate().subscribe({
+      next: (blob) => {
+        const url = window.URL.createObjectURL(blob);
+        const anchor = document.createElement('a');
+        anchor.href = url;
+        anchor.download = 'sample_underlying_format.xlsx';
+        anchor.click();
+        window.URL.revokeObjectURL(url);
+      },
+      error: () => {
+        this.underlyingUploadError = 'Unable to download the sample underlying Excel format.';
+        this.cdr.detectChanges();
+      },
+    });
   }
 
   downloadTransactionTemplate(): void {

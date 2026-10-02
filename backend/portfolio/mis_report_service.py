@@ -217,7 +217,7 @@ class MISReportService:
                 "key": key,
                 "family_name": key[0],
                 "asset_name": key[2],
-                "asset_class": cls._clean(first.asset_class),
+                "asset_class": "Mutual Funds",
                 "sub_class": key[1],
                 "advisor": "",
                 "scheme_ids": sorted({tx.scheme_id for tx in txs}),

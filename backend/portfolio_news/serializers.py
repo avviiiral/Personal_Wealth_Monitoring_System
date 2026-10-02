@@ -86,6 +86,31 @@ class NewsArticleSourceSerializer(serializers.Serializer):
     published_at = serializers.DateTimeField()
 
 
+class PortfolioNewsRawHoldingSerializer(serializers.Serializer):
+    holding_type = serializers.CharField()
+    holding_id = serializers.IntegerField()
+    holding_display_name = serializers.CharField()
+
+
+class PortfolioNewsRawItemSerializer(serializers.Serializer):
+    """
+    Metadata-only representation of a deterministic portfolio-news match.
+    No Gemini analysis is required for this feed.
+    """
+
+    id = serializers.IntegerField()
+    title = serializers.CharField()
+    url = serializers.URLField()
+    source = serializers.CharField()
+    description = serializers.CharField()
+    published_at = serializers.DateTimeField(allow_null=True)
+    source_quality = serializers.CharField()
+    source_count = serializers.IntegerField()
+    matched_query = serializers.CharField()
+    created_at = serializers.DateTimeField()
+    matched_holdings = PortfolioNewsRawHoldingSerializer(many=True)
+
+
 class PortfolioNewsDigestItemSerializer(serializers.Serializer):
     """
     Plain Serializer for one entry in a PortfolioNewsDigest

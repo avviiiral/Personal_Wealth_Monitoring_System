@@ -349,18 +349,18 @@ class InvestmentSummaryServiceTests(TestCase):
 
 
 
-class GlobalStandardAllocationApiTests(TestCase):
+class FamilyStandardAllocationApiTests(TestCase):
     def setUp(self):
         self.user = User.objects.create_user(
-            username="global_allocation_user",
+            username="family_allocation_user",
             password="testpassword123",
         )
         self.family_a = FamilyGroup.objects.create(
-            name="Global Allocation Family A",
+            name="Family Allocation A",
             created_by=self.user,
         )
         self.family_b = FamilyGroup.objects.create(
-            name="Global Allocation Family B",
+            name="Family Allocation B",
             created_by=self.user,
         )
         self.user.profile.family_groups.add(self.family_a, self.family_b)
@@ -370,14 +370,35 @@ class GlobalStandardAllocationApiTests(TestCase):
         self.client = APIClient()
         self.client.force_authenticate(user=self.user)
 
-    def test_standard_allocation_is_shared_across_families(self):
+    def test_all_members_of_a_family_share_one_allocation(self):
         StandardAllocation.objects.create(
+            family=self.family_a,
+            asset_category="Equities",
+            allocation_percent=Decimal("60.00"),
+            allocation_amount=Decimal("600000.00"),
+        )
+
+        response = self.client.get(
+            "/api/analytics/wealth/standard-allocations/",
+            {"family": self.family_a.name},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            response.data["allocations"]["Equities"]["percent"],
+            60.0,
+        )
+
+    def test_different_families_can_have_different_allocations(self):
+        StandardAllocation.objects.create(
+            family=self.family_a,
             asset_category="Equities",
             allocation_percent=Decimal("60.00"),
             allocation_amount=Decimal("600000.00"),
         )
         StandardAllocation.objects.create(
-            asset_category="Fixed Income",
+            family=self.family_b,
+            asset_category="Equities",
             allocation_percent=Decimal("40.00"),
             allocation_amount=Decimal("400000.00"),
         )
@@ -399,34 +420,5 @@ class GlobalStandardAllocationApiTests(TestCase):
         )
         self.assertEqual(
             response_b.data["allocations"]["Equities"]["percent"],
-            60.0,
-        )
-
-    def test_updating_one_family_view_updates_the_global_target(self):
-        response = self.client.put(
-            "/api/analytics/wealth/standard-allocations/update/",
-            {
-                "allocations": {
-                    "Equities": {"percent": 70, "amount": 700000},
-                    "Fixed Income": {"percent": 30, "amount": 300000},
-                }
-            },
-            format="json",
-        )
-
-        self.assertEqual(response.status_code, 200)
-
-        family_b_response = self.client.get(
-            "/api/analytics/wealth/standard-allocations/",
-            {"family": self.family_b.name},
-        )
-
-        self.assertEqual(family_b_response.status_code, 200)
-        self.assertEqual(
-            family_b_response.data["allocations"]["Equities"]["percent"],
-            70.0,
-        )
-        self.assertEqual(
-            family_b_response.data["allocations"]["Fixed Income"]["percent"],
-            30.0,
+            40.0,
         )

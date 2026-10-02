@@ -68,6 +68,8 @@ export interface PortfolioNewsRawHolding {
 
 export interface PortfolioNewsRawItem {
   id: number;
+  family_id: number | null;
+  family_name: string;
   title: string;
   url: string;
   source: string;

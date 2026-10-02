@@ -3,16 +3,12 @@ from django.db import models
 
 class StandardAllocation(models.Model):
     """
-    Shared target allocation for one Dashboard Asset Category within a family.
-    Standard Allocation is family-owned so every family member sees and edits
-    the same target percentages.
+    Global target allocation for one Dashboard Asset Category.
+    The same target percentages are shared by every family and every family
+    member. The displayed rupee amount is calculated from the selected
+    family's current portfolio value.
     """
 
-    family = models.ForeignKey(
-        "users.FamilyGroup",
-        on_delete=models.CASCADE,
-        related_name="standard_allocations",
-    )
     asset_category = models.CharField(max_length=100)
     allocation_percent = models.DecimalField(
         max_digits=6,

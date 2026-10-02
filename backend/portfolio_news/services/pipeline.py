@@ -153,6 +153,7 @@ def _process_holding(
     max_articles_per_holding: Optional[int] = None,
     min_relevance_score: Optional[int] = None,
     min_alert_score: Optional[float] = None,
+    family=None,
 ) -> list:
     """
     Fetch, filter, store and select news articles for one holding.
@@ -252,8 +253,6 @@ def _process_holding(
         # before any Gemini work. This is the source for the raw
         # portfolio-news feed and therefore remains available even when
         # Gemini is unavailable or does not produce an alert.
-        family = get_active_family_group(user)
-
         match_defaults = {
             "holding_display_name": holding.display_name,
             "matched_query": candidate.matched_query[:255],
@@ -597,6 +596,8 @@ def run_portfolio_news_monitor(
             len(holdings),
         )
 
+        family = get_active_family_group(user)
+
         # First collect articles across ALL holdings. Gemini is called
         # only after the entire user's deterministic filtering stage is
         # complete, allowing different holdings to share a request.
@@ -616,6 +617,7 @@ def run_portfolio_news_monitor(
                 max_articles_per_holding=resolved_max_articles_per_holding,
                 min_relevance_score=resolved_min_relevance_score,
                 min_alert_score=resolved_min_alert_score,
+                family=family,
             )
 
             if holding_pairs:

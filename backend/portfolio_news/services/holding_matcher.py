@@ -11,6 +11,19 @@ MIN_TERM_LENGTH_FOR_MATCH = 3
 MIN_ISIN_LENGTH = 8
 
 
+def _build_searchable_text(title: str, description: str) -> str:
+    """
+    Build the deterministic matching surface from the news headline and
+    the provider-supplied article body/description.
+
+    Google News RSS does not provide the full publisher article body, so
+    the description is the deepest body text available to this layer.
+    Gemini still receives the stored article description for enrichment.
+    """
+
+    return f"{title or ''} {description or ''}".lower()
+
+
 def _contains_phrase(haystack_lower: str, phrase: str) -> bool:
     """
     Word-boundary substring match, case-insensitive. Prevents
@@ -44,7 +57,11 @@ class HoldingMatcher:
         matched_query: str = "",
     ) -> bool:
 
-        searchable = f"{title} {description}".lower()
+        # Deterministic matching considers both the headline and the
+        # provider-supplied article body/description. This keeps the
+        # matcher broader than headline-only matching without requiring
+        # a second full-article fetch.
+        searchable = _build_searchable_text(title, description)
 
         for term in holding.identifier_terms():
 
@@ -125,7 +142,7 @@ class HoldingMatcher:
         Return the deterministic relationship explaining why an article
         matched this portfolio holding.
         """
-        searchable = f"{title} {description}".lower()
+        searchable = _build_searchable_text(title, description)
 
         underlying = QueryBuilder.underlying_for_query(
             matched_query,

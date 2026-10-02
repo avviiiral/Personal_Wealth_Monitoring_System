@@ -464,15 +464,19 @@ export class SettingsComponent implements OnInit {
   formatMISNotesChanges(entry: MISNotesHistoryEntry): string {
     return entry.changes.map((change) => {
       const type = String(change['type'] || 'edited').replace(/_/g, ' ');
+      const section = change['section'] ? `[Section: ${change['section']}] ` : '';
+      const row = change['row'] ? `[Row: ${change['row']}] ` : '';
+      const column = change['column'] ? `[Column: ${change['column']}] ` : '';
       const oldValue = change['old'];
       const newValue = change['new'];
       if (oldValue !== undefined || newValue !== undefined) {
-        return `${type}: ${oldValue ?? '—'} → ${newValue ?? '—'}`;
+        return `${type}: ${section}${row}${column}${oldValue ?? '—'} → ${newValue ?? '—'}`;
       }
-      const label = change['new'] || change['old'] || change['section_id'] || '';
-      return `${type}: ${label}`;
+      const label = newValue || oldValue || change['section'] || change['section_id'] || '';
+      return `${type}: ${section}${label}`;
     }).join('; ');
   }
+
 
   loadTransactionUploadHistory(): void {
     this.transactionUploadLoading = true;

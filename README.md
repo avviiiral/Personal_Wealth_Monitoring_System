@@ -400,6 +400,9 @@ Portfolio News follows the same family boundary used by the portfolio and analyt
 - System Owners can view stored family-scoped raw news across families.
 - Family membership controls **visibility**; role-based permissions continue to control what users can do. Client-supplied family IDs are not trusted for authorization.
 - **All News remains Gemini-independent.** Gemini enrichment continues to produce the separate `PortfolioNewsAlert` records used by AI Feed and Today's Digest.
+- **Asset-underlying relationships are explicit.** Uploaded `AssetUnderlyingHolding` rows are loaded into the news holdings registry. The monitor issues bounded queries for the largest uploaded underlyings and only accepts an underlying match when the article text contains that underlying's name or ISIN.
+- **News connection metadata is persisted.** Each raw/AI relationship records `connection_type` (`direct` or `underlying`), the matched `underlying_name`, and the uploaded `underlying_weight`. The UI displays this connection so users can see why an article is associated with an asset.
+- **Underlying news is deterministic first.** Gemini receives the deterministic connection as context and may interpret its significance, but it does not invent the asset-to-underlying relationship.
 
 
 

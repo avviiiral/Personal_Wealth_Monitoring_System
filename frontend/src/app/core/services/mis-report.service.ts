@@ -1,5 +1,5 @@
 import { Injectable, inject } from '@angular/core';
-import { HttpClient } from '@angular/common/http';
+import { HttpClient, HttpHeaders } from '@angular/common/http';
 import { Observable } from 'rxjs';
 
 import { environment } from '../../../environments/environment';
@@ -132,6 +132,15 @@ export interface MISReport {
 export class MISReportService {
   private readonly http = inject(HttpClient);
   private readonly baseUrl = environment.apiUrl;
+
+  private readCsrfToken(): string | null {
+    const cookies = document.cookie.split(';');
+    for (const cookie of cookies) {
+      const [name, ...valueParts] = cookie.trim().split('=');
+      if (name === 'csrftoken') return decodeURIComponent(valueParts.join('='));
+    }
+    return null;
+  }
 
   getReport(fromDate?: string, toDate?: string, displayUnit = 'lakhs'): Observable<MISReport> {
     const params: Record<string, string> = {};

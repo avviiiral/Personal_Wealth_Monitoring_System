@@ -55,6 +55,36 @@ export interface TaxRateChangeLog {
   };
 }
 
+export interface TransactionUploadHistory {
+  id: number;
+  file_name: string;
+  uploaded_by: string;
+  uploaded_at: string;
+  total_rows: number;
+  imported_rows: number;
+  failed_rows: number;
+  duplicate_rows: number;
+  status: string;
+  error_message: string | null;
+}
+
+export interface TransactionUploadFailure {
+  id: number;
+  row_number: number;
+  reason: string;
+  field_name: string | null;
+  row_data: Record<string, string | null>;
+}
+
+export interface TransactionUploadDetail extends TransactionUploadHistory {
+  failures: TransactionUploadFailure[];
+}
+
+export interface TransactionUploadHistoryResponse {
+  count: number;
+  results: TransactionUploadHistory[];
+}
+
 export interface ChangePasswordResponse {
   message: string;
 }
@@ -184,6 +214,27 @@ export class SettingsApiService {
     return this.http.get<TransactionEditHistoryResponse>(
       `${environment.apiUrl}/api/portfolio/transactions/edit-history/`,
       this.requestOptions,
+    );
+  }
+
+  getTransactionUploadHistory(): Observable<TransactionUploadHistoryResponse> {
+    return this.http.get<TransactionUploadHistoryResponse>(
+      `${environment.apiUrl}/api/investments/upload-history/`,
+      this.requestOptions,
+    );
+  }
+
+  getTransactionUploadDetail(id: number): Observable<TransactionUploadDetail> {
+    return this.http.get<TransactionUploadDetail>(
+      `${environment.apiUrl}/api/investments/upload-history/${id}/`,
+      this.requestOptions,
+    );
+  }
+
+  downloadTransactionTemplate(): Observable<Blob> {
+    return this.http.get(
+      `${environment.apiUrl}/api/investments/transaction-template/`,
+      { ...this.requestOptions, responseType: 'blob' },
     );
   }
 

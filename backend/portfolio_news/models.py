@@ -289,9 +289,11 @@ class PortfolioNewsMatch(models.Model):
                     "article",
                     "holding_type",
                     "holding_id",
+                    "connection_type",
+                    "underlying_name",
                 ],
                 condition=models.Q(family__isnull=True),
-                name="unique_legacy_raw_news_match_per_holding",
+                name="unique_legacy_raw_news_match_connection",
             ),
             models.UniqueConstraint(
                 fields=[
@@ -299,9 +301,11 @@ class PortfolioNewsMatch(models.Model):
                     "article",
                     "holding_type",
                     "holding_id",
+                    "connection_type",
+                    "underlying_name",
                 ],
                 condition=models.Q(family__isnull=False),
-                name="unique_family_raw_news_match_per_holding",
+                name="unique_family_raw_news_match_connection",
             ),
         ]
 

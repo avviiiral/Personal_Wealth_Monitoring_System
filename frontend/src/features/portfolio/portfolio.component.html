@@ -753,6 +753,15 @@
                                             [disabled]="isSavingManualPrice(asset)"
                                           />
 
+                                          <input
+                                            type="date"
+                                            class="manual-price-input manual-price-date-input"
+                                            [(ngModel)]="manualPriceDate"
+                                            [max]="getTodayIsoDate()"
+                                            aria-label="As on date"
+                                            [disabled]="isSavingManualPrice(asset)"
+                                          />
+
                                           <div class="manual-price-actions">
                                             <button
                                               type="button"

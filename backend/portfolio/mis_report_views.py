@@ -486,9 +486,9 @@ def _auto_fill_notes_document(document, base_notes, data_rows):
                     closing = source.get("closing_rate")
                     if opening is not None and closing is not None:
                         change = Decimal(str(closing)) - Decimal(str(opening))
-                        source["change"] = change
+                        source["change"] = float(change)
                         source["percent_change"] = (
-                            change / Decimal(str(opening)) * Decimal("100")
+                            float(change / Decimal(str(opening)) * Decimal("100"))
                             if Decimal(str(opening)) != 0 else None
                         )
             if source is None:

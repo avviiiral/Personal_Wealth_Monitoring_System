@@ -213,6 +213,18 @@ class PortfolioNewsMatch(models.Model):
         related_name="portfolio_news_matches",
     )
 
+    family = models.ForeignKey(
+        "users.FamilyGroup",
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="portfolio_news_matches",
+        help_text=(
+            "Family scope for this deterministic news match. New matches "
+            "are created in the user's active family."
+        ),
+    )
+
     article = models.ForeignKey(
         NewsArticle,
         on_delete=models.CASCADE,
@@ -257,6 +269,16 @@ class PortfolioNewsMatch(models.Model):
                 ],
                 name="unique_raw_news_match_per_holding",
             ),
+            models.UniqueConstraint(
+                fields=[
+                    "family",
+                    "article",
+                    "holding_type",
+                    "holding_id",
+                ],
+                condition=models.Q(family__isnull=False),
+                name="unique_family_raw_news_match_per_holding",
+            ),
         ]
 
         indexes = [
@@ -267,6 +289,14 @@ class PortfolioNewsMatch(models.Model):
             models.Index(
                 fields=["user", "holding_type", "holding_id"],
                 name="news_match_user_holding_idx",
+            ),
+            models.Index(
+                fields=["family", "-created_at"],
+                name="news_match_family_created_idx",
+            ),
+            models.Index(
+                fields=["family", "article"],
+                name="news_match_family_article_idx",
             ),
         ]
 

@@ -1,8 +1,10 @@
 import logging
 import traceback
+from openpyxl import Workbook
 from decimal import Decimal
 from typing import cast
 
+from django.http import HttpResponse
 from django.db import transaction
 from django.db.models import Count, Sum
 
@@ -304,6 +306,32 @@ def portfolio_underlying_uploads(request):
 
     results.sort(key=lambda item: item["asset_name"].casefold())
     return Response({"count": len(results), "results": results})
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def portfolio_underlying_template(request):
+    """Return the Excel template used by Portfolio underlying uploads."""
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.title = "Underlying"
+    sheet.append(["Stocks", "% Holding"])
+    sheet.append(["HDFC Bank", 25])
+    sheet.append(["ICICI Bank", 20])
+    sheet.append(["Reliance Industries", 15])
+
+    instructions = workbook.create_sheet("Instructions")
+    instructions.append(["Column", "Description"])
+    instructions.append(["Stocks", "Name of the underlying security."])
+    instructions.append(["% Holding", "Holding percentage of the underlying security (0 to 100)."])
+    instructions.append(["", "Upload one row per underlying security. Keep the headers unchanged."])
+
+    response = HttpResponse(
+        content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
+    response["Content-Disposition"] = 'attachment; filename="sample_underlying_format.xlsx"'
+    workbook.save(response)
+    return response
 
 
 @api_view(["POST"])

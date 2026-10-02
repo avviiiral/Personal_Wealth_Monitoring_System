@@ -325,7 +325,8 @@ The Portfolio News pipeline separates deterministic news retrieval and portfolio
 │      HOLDING MATCHER         │
 │                              │
 │ Deterministically checks     │
-│ article ↔ portfolio holding  │
+│ headline + body/description  │
+│ ↔ portfolio holding          │
 └──────────────┬───────────────┘
                │
                ▼
@@ -378,7 +379,7 @@ The Portfolio News pipeline separates deterministic news retrieval and portfolio
 2. The **Holdings Registry** builds the live family holding set and its searchable identifiers, including names, aliases, symbols, ISINs and scheme information where available.
 3. The **Query Builder** creates search queries for each portfolio holding.
 4. **Google News RSS** retrieves matching articles.
-5. The **Holding Matcher** deterministically associates retrieved articles with portfolio holdings.
+5. The **Holding Matcher** deterministically checks both the news headline and the provider-supplied article body/description against the holding's names, aliases, ticker and ISIN. For underlying queries it applies the same headline/body check to the requested underlying name or ISIN.
 6. Each deterministic association is persisted as a **PortfolioNewsMatch** record.
 7. **All News** reads these raw family matches through `/api/ai/news/raw/` and does not require Gemini.
 8. The optional **Gemini AI Analysis** layer enriches matched articles with relevance, sentiment, impact and category information and stores the resulting **PortfolioNewsAlert** records.
@@ -400,7 +401,8 @@ Portfolio News follows the same family boundary used by the portfolio and analyt
 - System Owners can view stored family-scoped raw news across families.
 - Family membership controls **visibility**; role-based permissions continue to control what users can do. Client-supplied family IDs are not trusted for authorization.
 - **All News remains Gemini-independent.** Gemini enrichment continues to produce the separate `PortfolioNewsAlert` records used by AI Feed and Today's Digest.
-- **Asset-underlying relationships are explicit.** Uploaded `AssetUnderlyingHolding` rows are loaded into the news holdings registry. The monitor issues bounded queries for the largest uploaded underlyings and only accepts an underlying match when the article text contains that underlying's name or ISIN.
+- **Asset-underlying relationships are explicit.** Uploaded `AssetUnderlyingHolding` rows are loaded into the news holdings registry. The monitor issues bounded queries for the largest uploaded underlyings and only accepts an underlying match when that underlying's name or ISIN appears in the news headline or provider-supplied body/description.
+- **Deterministic matching uses headline + body/description.** Portfolio News does not rely on headline-only matching. A holding can match when its identifier appears in either the headline or the provider-supplied article description/body snippet. Google News RSS does not provide the publisher's complete article body, so this layer does not perform an additional full-article fetch just for deterministic matching.
 - **News connection metadata is persisted.** Each raw/AI relationship records `connection_type` (`direct` or `underlying`), the matched `underlying_name`, and the uploaded `underlying_weight`. The UI displays this connection so users can see why an article is associated with an asset.
 - **Underlying news is deterministic first.** Gemini receives the deterministic connection as context and may interpret its significance, but it does not invent the asset-to-underlying relationship.
 
@@ -420,6 +422,7 @@ Query Builder
 Google News RSS
       ↓
 Holding Matcher
+(headline + body/description)
       ↓
 PortfolioNewsMatch
       ├──→ /api/ai/news/raw/ → All News

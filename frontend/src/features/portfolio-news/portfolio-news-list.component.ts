@@ -1,4 +1,4 @@
-import { Component, OnInit, inject } from '@angular/core';
+import { ChangeDetectorRef, Component, OnInit, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { Router } from '@angular/router';
 
@@ -28,6 +28,7 @@ type SourceFilter = 'all' | 'NEWS' | 'EXCHANGE_FILING';
 export class PortfolioNewsListComponent implements OnInit {
   private readonly newsApi = inject(NewsApiService);
   private readonly router = inject(Router);
+  private readonly changeDetector = inject(ChangeDetectorRef);
 
   items: PortfolioNewsAlertListItem[] = [];
   loading = true;
@@ -92,13 +93,16 @@ export class PortfolioNewsListComponent implements OnInit {
       })
       .subscribe({
         next: (response) => {
-          this.rawItems = response.results;
+          this.rawItems = Array.isArray(response?.results) ? response.results : [];
           this.rawLoading = false;
+          this.changeDetector.detectChanges();
         },
         error: (error) => {
           console.error('Failed to load raw portfolio news:', error);
+          this.rawItems = [];
           this.rawError = 'Unable to load all portfolio news right now.';
           this.rawLoading = false;
+          this.changeDetector.detectChanges();
         },
       });
   }

@@ -27,6 +27,7 @@
       <button type="button" class="tab-button" [class.tab-active]="activeTab === 'tax-updates'" (click)="setTab('tax-updates')">Tax Update</button>
       <button type="button" class="tab-button" [class.tab-active]="activeTab === 'transaction-history'" (click)="setTab('transaction-history')">Transaction Edit History</button>
       <button type="button" class="tab-button" [class.tab-active]="activeTab === 'upload-history'" (click)="setTab('upload-history')">Transaction Uploads</button>
+      <button type="button" class="tab-button" [class.tab-active]="activeTab === 'underlyings'" (click)="setTab('underlyings')">Underlyings</button>
       <button type="button" class="tab-button" *ngIf="canManageUsers()" [class.tab-active]="activeTab === 'users'" (click)="setTab('users')">User Management</button>
       <button type="button" class="tab-button" *ngIf="canManageFamilies()" [class.tab-active]="activeTab === 'families'" (click)="setTab('families')">Family Management</button>
       <button type="button" class="tab-button" *ngIf="canEditPrices()" [class.tab-active]="activeTab === 'prices'" (click)="setTab('prices')">Manual Prices</button>
@@ -381,6 +382,62 @@
                 </td>
               </tr>
             </ng-container>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+
+
+    <section class="settings-card transaction-upload-card" *ngIf="activeTab === 'underlyings'">
+      <div class="card-header">
+        <div>
+          <h2>Underlyings</h2>
+          <p>View distinct Underlying values stored in transactions for the active family.</p>
+        </div>
+        <span class="section-badge">{{ transactionUnderlyings.length }} Underlyings</span>
+      </div>
+
+      <div class="loading-card history-loading" *ngIf="transactionUnderlyingLoading">
+        <div class="loading-spinner"></div>
+        <span>Loading transaction underlyings...</span>
+      </div>
+
+      <div class="error-card" *ngIf="!transactionUnderlyingLoading && transactionUnderlyingError">
+        {{ transactionUnderlyingError }}
+      </div>
+
+      <div class="upload-history-empty" *ngIf="!transactionUnderlyingLoading && !transactionUnderlyingError && !transactionUnderlyings.length">
+        No Underlying values have been recorded for the active family.
+      </div>
+
+      <div class="upload-history-table-wrap" *ngIf="!transactionUnderlyingLoading && transactionUnderlyings.length">
+        <table class="upload-history-table">
+          <thead>
+            <tr>
+              <th>Underlying</th>
+              <th>Asset Name</th>
+              <th>Asset Class</th>
+              <th>Sub Class</th>
+              <th>Family Member</th>
+              <th>Advisor</th>
+              <th>Transactions</th>
+              <th>First Transaction</th>
+              <th>Last Transaction</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr *ngFor="let row of transactionUnderlyings">
+              <td><strong>{{ row.underlying }}</strong></td>
+              <td>{{ formatUnderlyingList(row.asset_names) }}</td>
+              <td>{{ formatUnderlyingList(row.asset_classes) }}</td>
+              <td>{{ formatUnderlyingList(row.sub_classes) }}</td>
+              <td>{{ formatUnderlyingList(row.family_members) }}</td>
+              <td>{{ formatUnderlyingList(row.advisors) }}</td>
+              <td>{{ row.transaction_count }}</td>
+              <td>{{ row.first_transaction_date ? (row.first_transaction_date | date:'dd MMM yyyy') : '—' }}</td>
+              <td>{{ row.last_transaction_date ? (row.last_transaction_date | date:'dd MMM yyyy') : '—' }}</td>
+            </tr>
           </tbody>
         </table>
       </div>

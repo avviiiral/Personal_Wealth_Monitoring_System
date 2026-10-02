@@ -133,7 +133,7 @@ export class SettingsComponent implements OnInit {
       this.loadTransactionUploadHistory();
     }
 
-    if (tab === 'underlyings' && !this.transactionUnderlyings.length) {
+    if (tab === 'underlyings' && !this.underlyingUploads.length) {
       this.loadUnderlyingUploads();
     }
   }
@@ -487,6 +487,26 @@ export class SettingsComponent implements OnInit {
         this.cdr.detectChanges();
       },
     });
+  }
+
+  downloadUnderlyingTemplate(): void {
+    const workbook = [
+      ['Stocks', '% Holding'],
+      ['HDFC Bank', 25],
+      ['ICICI Bank', 20],
+      ['Reliance Industries', 15],
+    ];
+
+    const csv = workbook
+      .map((row) => row.map((value) => String(value)).join(','))
+      .join('\\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = window.URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = 'sample_underlying_format.csv';
+    anchor.click();
+    window.URL.revokeObjectURL(url);
   }
 
   downloadTransactionTemplate(): void {

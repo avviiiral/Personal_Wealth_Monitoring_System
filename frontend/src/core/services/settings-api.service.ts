@@ -85,6 +85,23 @@ export interface TransactionUploadHistoryResponse {
   results: TransactionUploadHistory[];
 }
 
+export interface TransactionUnderlying {
+  underlying: string;
+  asset_names: string[];
+  asset_classes: string[];
+  sub_classes: string[];
+  advisors: string[];
+  family_members: string[];
+  transaction_count: number;
+  first_transaction_date: string | null;
+  last_transaction_date: string | null;
+}
+
+export interface TransactionUnderlyingResponse {
+  count: number;
+  results: TransactionUnderlying[];
+}
+
 export interface ChangePasswordResponse {
   message: string;
 }
@@ -220,6 +237,13 @@ export class SettingsApiService {
   getTransactionUploadHistory(): Observable<TransactionUploadHistoryResponse> {
     return this.http.get<TransactionUploadHistoryResponse>(
       `${environment.apiUrl}/api/investments/upload-history/`,
+      this.requestOptions,
+    );
+  }
+
+  getTransactionUnderlyings(): Observable<TransactionUnderlyingResponse> {
+    return this.http.get<TransactionUnderlyingResponse>(
+      ${environment.apiUrl}/api/investments/underlyings/,
       this.requestOptions,
     );
   }

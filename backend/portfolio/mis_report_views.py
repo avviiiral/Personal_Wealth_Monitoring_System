@@ -456,7 +456,7 @@ def _parse_display_unit(request):
 
 def _auto_fill_notes_document(document, base_notes, data_rows):
     """Fill blank standard rate cells when a newly added row matches known MIS data."""
-    normalized = lambda value: re.sub(r"\\s+", " ", str(value or "").strip().casefold())
+    normalized = lambda value: re.sub(r"\s+", " ", str(value or "").strip().casefold())
     known = {}
     for section in base_notes.get("sections", []):
         for item in section.get("items", []):

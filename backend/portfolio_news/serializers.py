@@ -49,6 +49,9 @@ class PortfolioNewsAlertListSerializer(serializers.ModelSerializer):
             "source_type",
             "holding_display_name",
             "holding_type",
+            "connection_type",
+            "underlying_name",
+            "underlying_weight",
             "category",
             "sentiment",
             "impact",
@@ -90,6 +93,13 @@ class PortfolioNewsRawHoldingSerializer(serializers.Serializer):
     holding_type = serializers.CharField()
     holding_id = serializers.IntegerField()
     holding_display_name = serializers.CharField()
+    connection_type = serializers.CharField()
+    underlying_name = serializers.CharField(allow_blank=True)
+    underlying_weight = serializers.DecimalField(
+        max_digits=10,
+        decimal_places=4,
+        allow_null=True,
+    )
 
 
 class PortfolioNewsRawItemSerializer(serializers.Serializer):
@@ -205,6 +215,9 @@ class PortfolioNewsAlertDetailSerializer(serializers.ModelSerializer):
             "source_type",
             "holding_display_name",
             "holding_type",
+            "connection_type",
+            "underlying_name",
+            "underlying_weight",
             "category",
             "sentiment",
             "time_horizon",

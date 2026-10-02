@@ -11,10 +11,11 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from .constants import NotificationTier
-from .models import PortfolioNewsAlert, PushSubscription
+from .models import PortfolioNewsAlert, PortfolioNewsMatch, PushSubscription
 from .serializers import (
     PortfolioNewsAlertDetailSerializer,
     PortfolioNewsAlertListSerializer,
+    PortfolioNewsRawItemSerializer,
     PortfolioNewsDigestSerializer,
 )
 from .services.digest import build_daily_digest
@@ -135,6 +136,124 @@ def portfolio_news_list(request):
 
     serializer = PortfolioNewsAlertListSerializer(
         items,
+        many=True,
+    )
+
+    return Response(
+        {
+            "results": serializer.data,
+            "count": len(serializer.data),
+        }
+    )
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def portfolio_news_raw_list(request):
+    """
+    Return all deterministic portfolio-news matches for the
+    authenticated user, without requiring Gemini analysis.
+
+    Articles are deduplicated at the event level and include every
+    portfolio holding that the deterministic matcher associated with
+    the article. This feed is the raw retrieval layer; AI relevance,
+    sentiment, impact, and alert tiers are deliberately not required.
+    """
+
+    queryset = (
+        PortfolioNewsMatch.objects
+        .filter(user=request.user)
+        .select_related("article")
+        .order_by(
+            "-article__published_at",
+            "-article__created_at",
+            "-id",
+        )
+    )
+
+    holding_type = request.query_params.get("holding_type")
+    if holding_type:
+        queryset = queryset.filter(holding_type=holding_type)
+
+    holding_id = request.query_params.get("holding_id")
+    if holding_id:
+        try:
+            queryset = queryset.filter(holding_id=int(holding_id))
+        except (TypeError, ValueError):
+            pass
+
+    date_range = request.query_params.get("date_range")
+    if date_range == "today":
+        queryset = queryset.filter(
+            article__published_at__date=timezone.localdate()
+        )
+    elif date_range in DATE_RANGE_DAYS:
+        cutoff = timezone.now() - timedelta(days=DATE_RANGE_DAYS[date_range])
+        queryset = queryset.filter(
+            article__published_at__gte=cutoff
+        )
+
+    # First identify unique articles so the API's limit represents
+    # news stories rather than repeated rows for multiple holdings.
+    article_ids = list(
+        queryset
+        .values_list("article_id", flat=True)
+        .distinct()[:_parse_limit(request)]
+    )
+
+    if not article_ids:
+        return Response({"results": [], "count": 0})
+
+    matches = list(
+        PortfolioNewsMatch.objects
+        .filter(
+            user=request.user,
+            article_id__in=article_ids,
+        )
+        .select_related("article")
+        .order_by(
+            "-article__published_at",
+            "-article__created_at",
+            "holding_display_name",
+        )
+    )
+
+    grouped = {}
+    for match in matches:
+        article = match.article
+        item = grouped.setdefault(
+            article.id,
+            {
+                "id": article.id,
+                "title": article.title,
+                "url": article.url,
+                "source": article.source,
+                "description": article.description,
+                "published_at": article.published_at,
+                "source_quality": article.source_quality,
+                "source_count": article.source_count,
+                "matched_query": article.matched_query,
+                "created_at": article.created_at,
+                "matched_holdings": [],
+            },
+        )
+
+        item["matched_holdings"].append(
+            {
+                "holding_type": match.holding_type,
+                "holding_id": match.holding_id,
+                "holding_display_name": match.holding_display_name,
+            }
+        )
+
+    ordered_items = [
+        grouped[article_id]
+        for article_id in article_ids
+        if article_id in grouped
+    ]
+
+    serializer = PortfolioNewsRawItemSerializer(
+        ordered_items,
         many=True,
     )
 

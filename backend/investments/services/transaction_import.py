@@ -2,6 +2,8 @@ from decimal import Decimal, InvalidOperation
 import hashlib
 import logging
 
+from django.utils import timezone
+
 import pandas as pd
 from django.db import transaction as db_transaction
 
@@ -11,6 +13,8 @@ from investments.models import (
     Asset,
     AssetCategory,
     SecurityMaster,
+    TransactionUpload,
+    TransactionUploadFailure,
     Transaction,
     TransactionType,
 )
@@ -56,29 +60,6 @@ SUMMARY_REQUIRED_COLUMNS = [
     "Asset Name",
     "ISIN",
 ]
-
-
-ASSET_CLASS_MAP = {
-    "EQUITY": AssetCategory.STOCK,
-    "STOCK": AssetCategory.STOCK,
-    "DEBT": AssetCategory.BOND,
-    "BOND": AssetCategory.BOND,
-    "CASH": AssetCategory.CASH,
-    "COMMODITY": AssetCategory.ETF,
-    "REITS/INVITS": AssetCategory.ETF,
-    "REIT": AssetCategory.ETF,
-    "INVIT": AssetCategory.ETF,
-    "AIF": AssetCategory.OTHER,
-    "ALTERNATE": AssetCategory.OTHER,
-    "LRS": AssetCategory.OTHER,
-    "MUTUAL FUND": AssetCategory.MUTUAL_FUND,
-    "MUTUAL_FUND": AssetCategory.MUTUAL_FUND,
-    "ETF": AssetCategory.ETF,
-    "GOLD": AssetCategory.GOLD,
-    "REAL ESTATE": AssetCategory.REAL_ESTATE,
-    "CRYPTO": AssetCategory.CRYPTO,
-    "OTHER": AssetCategory.OTHER,
-}
 
 
 INVESTMENT_TRANSACTION_MAP = {
@@ -564,34 +545,6 @@ class TransactionImporter:
         )
 
     @staticmethod
-    def _fallback_portfolio(
-        asset_class,
-        sub_class,
-        asset_name,
-        underlying,
-    ):
-        subclass = (
-            TransactionImporter
-            ._normalize(sub_class)
-        )
-
-        if subclass in {
-            "EQUITY PMS",
-            "EQUITY AIF (CATEGORY III)",
-        }:
-            return (
-                asset_name
-                or sub_class
-                or asset_class
-            )
-
-        return (
-            sub_class
-            or asset_class
-            or "Unassigned"
-        )
-
-    @staticmethod
     def _get_or_create_asset(
         owner,
         asset_name,
@@ -602,34 +555,32 @@ class TransactionImporter:
     ):
         normalized_isin = isin.strip()
 
-        normalized_sub_class = (
-            sub_class.strip().upper()
-            if sub_class
-            else ""
-        )
+        # Keep the user-provided Asset Class and Sub Class as data.
+        # Internal market-data routing uses the technical AssetCategory,
+        # which is intentionally independent from uploaded classifications.
+        category = AssetCategory.OTHER
 
-        if "MUTUAL FUND" in normalized_sub_class:
-            category = AssetCategory.MUTUAL_FUND
+        asset_class_normalized = TransactionImporter._normalize(asset_class)
+        sub_class_normalized = TransactionImporter._normalize(sub_class)
 
-        elif (
-            "GOLD BOND" in normalized_sub_class
-            or normalized_sub_class in {
-                "SGB",
-                "SOVEREIGN GOLD BOND",
-            }
-        ):
+        internal_category_overrides = {
+            "MUTUAL_FUND": AssetCategory.MUTUAL_FUND,
+            "ETF": AssetCategory.ETF,
+            "GOLD": AssetCategory.GOLD,
+            "REAL ESTATE": AssetCategory.REAL_ESTATE,
+            "CRYPTO": AssetCategory.CRYPTO,
+        }
+
+        if asset_class_normalized in internal_category_overrides:
+            category = internal_category_overrides[asset_class_normalized]
+        elif asset_class_normalized in {"DEBT", "BOND"}:
             category = AssetCategory.BOND
-
-        else:
-            category = ASSET_CLASS_MAP.get(
-                asset_class.upper()
-            )
-
-        if category is None:
-            raise TransactionImportError(
-                f"Unsupported Asset Class: "
-                f"{asset_class}"
-            )
+        elif asset_class_normalized == "CASH":
+            category = AssetCategory.CASH
+        elif asset_class_normalized in {"EQUITY", "STOCK"}:
+            category = AssetCategory.STOCK
+        elif sub_class_normalized in {"MUTUAL FUND", "MUTUAL_FUND"}:
+            category = AssetCategory.MUTUAL_FUND
 
         asset = None
 
@@ -890,41 +841,8 @@ class TransactionImporter:
                 f"Excel row {row_number}."
             )
 
-        if asset_class.upper() not in ASSET_CLASS_MAP:
-            raise TransactionImportError(
-                "Unsupported Asset Class at "
-                f"Excel row {row_number}: "
-                f"{asset_class}"
-            )
-
-        # ---------------------------------------------------------
-        # PMS/AIF strategy rows MUST identify the actual underlying
-        # security (via Underlying or ISIN). Without one, the row
-        # would silently be filed under the strategy's own name,
-        # merging unrelated stocks into a single fake "asset" with
-        # no real ISIN/market price -- which corrupts quantity,
-        # invested value, and XIRR for every stock caught in it.
-        # ---------------------------------------------------------
-        normalized_sub_class = sub_class.strip().upper()
-
-        if (
-            normalized_sub_class in {
-                "EQUITY PMS",
-                "EQUITY AIF (CATEGORY III)",
-            }
-            and not underlying
-            and not isin
-        ):
-            logger.warning(
-                "Row identifies neither an Underlying "
-                "nor an ISIN for a PMS/AIF strategy at "
-                "Excel row %s (%s). Imported using Asset "
-                "Name as identity — verify this isn't a "
-                "look-through holding that needs a real "
-                "underlying security.",
-                row_number,
-                asset_name,
-            )
+        # These user-facing classification values originate from the uploaded file.
+        # No application-owned classification list is used to accept/reject them.
 
         raw_date = row["Date"]
 
@@ -1018,352 +936,252 @@ class TransactionImporter:
 
     @staticmethod
     @db_transaction.atomic
-    def import_file(file, owner):
+    def import_file(file, owner, upload_batch=None):
         family = require_active_family(owner)
-        dataframe, summary = (
-            TransactionImporter
-            ._read_file(file)
-        )
+        dataframe, summary = TransactionImporter._read_file(file)
 
-        TransactionImporter._validate_dataframe(
-            dataframe
-        )
-
+        TransactionImporter._validate_dataframe(dataframe)
         TransactionImporter._normalize_family_member_column(summary)
+        TransactionImporter._validate_summary_columns(summary)
 
-        TransactionImporter._validate_summary_columns(
-            summary
-        )
-
+        total_rows = len(dataframe.index)
         rows = []
-        errors = []
+        failures = []
 
-        for row_number, (_, row) in enumerate(
-            dataframe.iterrows(),
-            start=2,
-        ):
+        def record_failure(row_number, message, row):
+            row_data = {}
+            if hasattr(row, "to_dict"):
+                for key, value in row.to_dict().items():
+                    if pd.isna(value):
+                        row_data[str(key)] = None
+                    elif hasattr(value, "isoformat"):
+                        row_data[str(key)] = value.isoformat()
+                    else:
+                        row_data[str(key)] = str(value)
+            failures.append({
+                "row": row_number,
+                "message": str(message),
+                "row_data": row_data,
+            })
+
+        for row_number, (_, row) in enumerate(dataframe.iterrows(), start=2):
             try:
-                parsed = (
-                    TransactionImporter
-                    ._validate_row(
-                        row,
-                        row_number,
-                    )
-                )
+                parsed = TransactionImporter._validate_row(row, row_number)
 
-                portfolio = (
-                    TransactionImporter
-                    ._resolve_portfolio_from_summary(
-                        summary=summary,
-                        family_name=parsed["family_name"],
-                        asset_class=parsed["asset_class"],
-                        asset_name=parsed["asset_name"],
-                        underlying=parsed["underlying"],
-                        advisors=parsed["advisors"],
-                        isin=parsed["isin"],
-                    )
+                portfolio = TransactionImporter._resolve_portfolio_from_summary(
+                    summary=summary,
+                    family_name=parsed["family_name"],
+                    asset_class=parsed["asset_class"],
+                    asset_name=parsed["asset_name"],
+                    underlying=parsed["underlying"],
+                    advisors=parsed["advisors"],
+                    isin=parsed["isin"],
                 )
 
                 if not portfolio:
-                    portfolio = (
-                        TransactionImporter
-                        ._fallback_portfolio(
-                            asset_class=parsed["asset_class"],
-                            sub_class=parsed["sub_class"],
-                            asset_name=parsed["asset_name"],
-                            underlying=parsed["underlying"],
-                        )
-                    )
-
-                parsed["portfolio"] = portfolio
-
-                parsed["source_key"] = (
-                    TransactionImporter
-                    ._build_source_key(
-                        family_name=parsed["family_name"],
+                    portfolio = TransactionImporter._fallback_portfolio(
                         asset_class=parsed["asset_class"],
                         sub_class=parsed["sub_class"],
                         asset_name=parsed["asset_name"],
                         underlying=parsed["underlying"],
-                        advisors=parsed["advisors"],
-                        isin=parsed["isin"],
-                        transaction_date=parsed["transaction_date"],
-                        transaction_type=parsed["transaction_type"],
-                        quantity=parsed["quantity"],
-                        price=parsed["price"],
-                        amount=parsed["amount"],
                     )
+
+                parsed["portfolio"] = portfolio
+                parsed["source_key"] = TransactionImporter._build_source_key(
+                    family_name=parsed["family_name"],
+                    asset_class=parsed["asset_class"],
+                    sub_class=parsed["sub_class"],
+                    asset_name=parsed["asset_name"],
+                    underlying=parsed["underlying"],
+                    advisors=parsed["advisors"],
+                    isin=parsed["isin"],
+                    transaction_date=parsed["transaction_date"],
+                    transaction_type=parsed["transaction_type"],
+                    quantity=parsed["quantity"],
+                    price=parsed["price"],
+                    amount=parsed["amount"],
                 )
-
-                rows.append(parsed)
-
+                rows.append((row_number, parsed, row))
             except TransactionImportError as exc:
-                errors.append(
-                    {
-                        "row": row_number,
-                        "message": str(exc),
-                    }
-                )
-
-        if errors:
-            raise TransactionImportError(
-                "Transaction import failed: "
-                + "; ".join(
-                    (
-                        f"Row {error['row']}: "
-                        f"{error['message']}"
-                    )
-                    for error in errors
-                )
-            )
+                record_failure(row_number, exc, row)
 
         imported_investments = 0
         imported_mutual_funds = 0
         skipped_duplicates = 0
-
         seen_source_keys = set()
         seen_mutual_fund_keys = set()
         touched_asset_ids = set()
 
-        for parsed in rows:
-            source_key = parsed["source_key"]
-
-            mapped_asset_class = ASSET_CLASS_MAP[
-                parsed["asset_class"].upper()
-            ]
-
-            if (
-                mapped_asset_class
-                == AssetCategory.MUTUAL_FUND
-            ):
-                mapped_type = (
-                    MUTUAL_FUND_TRANSACTION_MAP.get(
-                        parsed["transaction_type"]
-                    )
-                )
-
-                if mapped_type is None:
-                    raise TransactionImportError(
-                        "Unsupported Mutual Fund "
-                        "transaction type: "
-                        f"{parsed['transaction_type']}"
+        for row_number, parsed, original_row in rows:
+            try:
+                with db_transaction.atomic():
+                    source_key = parsed["source_key"]
+                    asset_class_normalized = TransactionImporter._normalize(parsed["asset_class"])
+                    sub_class_normalized = TransactionImporter._normalize(parsed["sub_class"])
+                    is_mutual_fund = (
+                        asset_class_normalized in {"MUTUAL_FUND", "MUTUAL FUND"}
+                        or sub_class_normalized in {"MUTUAL FUND", "MUTUAL_FUND"}
                     )
 
-                scheme = (
-                    TransactionImporter
-                    ._get_or_create_mutual_fund_scheme(
-                        owner=owner,
-                        family=family,
-                        asset_name=parsed["asset_name"],
+                    if is_mutual_fund:
+                        mapped_type = MUTUAL_FUND_TRANSACTION_MAP.get(parsed["transaction_type"])
+                        if mapped_type is None:
+                            raise TransactionImportError(
+                                f"Unsupported Mutual Fund transaction type: {parsed['transaction_type']}"
+                            )
+
+                        scheme = TransactionImporter._get_or_create_mutual_fund_scheme(
+                            owner=owner,
+                            family=family,
+                            asset_name=parsed["asset_name"],
+                            isin=parsed["isin"],
+                        )
+
+                        duplicate_key = (
+                            parsed["family_name"], parsed["portfolio"], scheme.id,
+                            mapped_type, parsed["transaction_date"], parsed["quantity"],
+                            parsed["price"], parsed["amount"],
+                        )
+                        if duplicate_key in seen_mutual_fund_keys:
+                            skipped_duplicates += 1
+                            continue
+
+                        existing = TransactionImporter._find_existing_mutual_fund_transaction(
+                            owner=owner,
+                            family=family,
+                            family_name=parsed["family_name"],
+                            portfolio=parsed["portfolio"],
+                            scheme=scheme,
+                            transaction_type=mapped_type,
+                            transaction_date=parsed["transaction_date"],
+                            quantity=parsed["quantity"],
+                            price=parsed["price"],
+                            amount=parsed["amount"],
+                            source_key=source_key,
+                        )
+                        if existing is not None:
+                            skipped_duplicates += 1
+                            seen_mutual_fund_keys.add(duplicate_key)
+                            continue
+
+                        MutualFundTransaction.objects.create(
+                            owner=owner, family=family,
+                            family_name=parsed["family_name"], portfolio=parsed["portfolio"],
+                            scheme=scheme, transaction_type=mapped_type,
+                            transaction_date=parsed["transaction_date"], units=parsed["quantity"],
+                            nav=parsed["price"], amount=parsed["amount"], fees=Decimal("0"),
+                            source_key=source_key,
+                        )
+                        seen_mutual_fund_keys.add(duplicate_key)
+                        imported_mutual_funds += 1
+                        continue
+
+                    if source_key in seen_source_keys:
+                        skipped_duplicates += 1
+                        continue
+
+                    existing = TransactionImporter._find_existing_investment_transaction(
+                        owner=owner, family=family, source_key=source_key,
+                    )
+                    if existing is not None:
+                        skipped_duplicates += 1
+                        seen_source_keys.add(source_key)
+                        continue
+
+                    security_identity_name = TransactionImporter.resolve_security_identity_name(
+                        asset_name=parsed["asset_name"], underlying=parsed["underlying"],
+                    )
+                    asset = TransactionImporter._get_or_create_asset(
+                        owner=owner, family=family,
+                        asset_name=security_identity_name,
                         isin=parsed["isin"],
+                        asset_class=parsed["asset_class"],
+                        sub_class=parsed["sub_class"],
                     )
-                )
 
-                duplicate_key = (
-                    parsed["family_name"],
-                    parsed["portfolio"],
-                    scheme.id,
-                    mapped_type,
-                    parsed["transaction_date"],
-                    parsed["quantity"],
-                    parsed["price"],
-                    parsed["amount"],
-                )
+                    mapped_transaction_type = INVESTMENT_TRANSACTION_MAP.get(parsed["transaction_type"])
+                    if mapped_transaction_type is None:
+                        raise TransactionImportError(
+                            f"Unsupported investment transaction type: {parsed['transaction_type']}"
+                        )
 
-                if duplicate_key in seen_mutual_fund_keys:
-                    skipped_duplicates += 1
-                    continue
-
-                existing = (
-                    TransactionImporter
-                    ._find_existing_mutual_fund_transaction(
-                        owner=owner,
-                        family=family,
-                        family_name=parsed["family_name"],
-                        portfolio=parsed["portfolio"],
-                        scheme=scheme,
-                        transaction_type=mapped_type,
-                        transaction_date=parsed["transaction_date"],
-                        quantity=parsed["quantity"],
-                        price=parsed["price"],
-                        amount=parsed["amount"],
-                        source_key=source_key,
+                    Transaction.objects.create(
+                        owner=owner, family=family,
+                        family_name=parsed["family_name"], portfolio=parsed["portfolio"],
+                        asset_class=parsed["asset_class"], sub_class=parsed["sub_class"],
+                        asset_name=parsed["asset_name"], underlying=parsed["underlying"],
+                        advisors=parsed["advisors"], asset=asset,
+                        transaction_type=mapped_transaction_type,
+                        transaction_date=parsed["transaction_date"], quantity=parsed["quantity"],
+                        price_per_unit=parsed["price"], amount=parsed["amount"], fees=Decimal("0"),
+                        source="EXCEL", source_key=source_key,
                     )
-                )
+                    seen_source_keys.add(source_key)
+                    touched_asset_ids.add(asset.id)
+                    imported_investments += 1
 
-                if existing is not None:
-                    skipped_duplicates += 1
-                    seen_mutual_fund_keys.add(
-                        duplicate_key
-                    )
-                    continue
+            except Exception as exc:
+                record_failure(row_number, exc, original_row)
 
-                MutualFundTransaction.objects.create(
-                    owner=owner,
-                    family=family,
-                    family_name=parsed["family_name"],
-                    portfolio=parsed["portfolio"],
-                    scheme=scheme,
-                    transaction_type=mapped_type,
-                    transaction_date=parsed["transaction_date"],
-                    units=parsed["quantity"],
-                    nav=parsed["price"],
-                    amount=parsed["amount"],
-                    fees=Decimal("0"),
-                    source_key=source_key,
-                )
-
-                seen_mutual_fund_keys.add(
-                    duplicate_key
-                )
-
-                imported_mutual_funds += 1
-                continue
-
-            if source_key in seen_source_keys:
-                skipped_duplicates += 1
-                continue
-
-            existing = (
-                TransactionImporter
-                ._find_existing_investment_transaction(
-                    owner=owner,
-                    family=family,
-                    source_key=source_key,
-                )
-            )
-
-            if existing is not None:
-                skipped_duplicates += 1
-                seen_source_keys.add(source_key)
-                continue
-
-            security_identity_name = (
-                TransactionImporter
-                .resolve_security_identity_name(
-                    asset_name=parsed["asset_name"],
-                    underlying=parsed["underlying"],
-                )
-            )
-
-            asset = TransactionImporter._get_or_create_asset(
-                owner=owner,
-                family=family,
-                asset_name=security_identity_name,
-                isin=parsed["isin"],
-                asset_class=parsed["asset_class"],
-                sub_class=parsed["sub_class"],
-            )
-
-            touched_asset_ids.add(asset.id)
-
-            mapped_transaction_type = (
-                INVESTMENT_TRANSACTION_MAP.get(
-                    parsed["transaction_type"]
-                )
-            )
-
-            if mapped_transaction_type is None:
-                raise TransactionImportError(
-                    "Unsupported investment "
-                    "transaction type: "
-                    f"{parsed['transaction_type']}"
-                )
-
-            Transaction.objects.create(
-                owner=owner,
-                family=family,
-                family_name=parsed["family_name"],
-                portfolio=parsed["portfolio"],
-                asset_class=parsed["asset_class"],
-                sub_class=parsed["sub_class"],
-                asset_name=parsed["asset_name"],
-                underlying=parsed["underlying"],
-                advisors=parsed["advisors"],
-                asset=asset,
-                transaction_type=mapped_transaction_type,
-                transaction_date=parsed["transaction_date"],
-                quantity=parsed["quantity"],
-                price_per_unit=parsed["price"],
-                amount=parsed["amount"],
-                fees=Decimal("0"),
-                source="EXCEL",
-                source_key=source_key,
-            )
-
-            seen_source_keys.add(source_key)
-            imported_investments += 1
-
-        # Enrich every stock/ETF touched by this upload immediately.
-        # This keeps Sector, Cap Type, P/E, P/B, PEG and ROE populated
-        # without requiring a separate command after upload.
-        # enrich_quant_fields skips mutual funds, PMS and other classes.
         for asset_id in touched_asset_ids:
-            asset = Asset.objects.filter(
-                id=asset_id,
-                family=family,
-                is_active=True,
-            ).first()
-
+            asset = Asset.objects.filter(id=asset_id, family=family, is_active=True).first()
             if asset is None:
                 continue
-
             try:
                 yahoo_symbol = SecurityResolver.resolve_yahoo_symbol(
-                    symbol=asset.symbol,
-                    isin=asset.isin,
-                    name=asset.name,
+                    symbol=asset.symbol, isin=asset.isin, name=asset.name,
                 )
-
                 if yahoo_symbol and asset.symbol != yahoo_symbol:
                     asset.symbol = yahoo_symbol
                     asset.save(update_fields=["symbol"])
-
-                security = (
-                    asset.security_master
-                    or SecurityMasterService.get_or_create(
-                        owner=owner,
-                        asset=asset,
-                        family=family,
-                    )
+                security = asset.security_master or SecurityMasterService.get_or_create(
+                    owner=owner, asset=asset, family=family,
                 )
-
                 if asset.security_master_id != security.id:
                     asset.security_master = security
                     asset.save(update_fields=["security_master"])
-
-                enrich_quant_fields(
-                    asset,
-                    security,
-                    force_refresh=True,
-                )
-
+                enrich_quant_fields(asset, security, force_refresh=True)
             except Exception:
                 logger.exception(
-                    "[TRANSACTION IMPORT] Security metrics enrichment "
-                    "failed for asset %s (%s). Import will continue.",
-                    asset.id,
-                    asset.name,
+                    "[TRANSACTION IMPORT] Security metrics enrichment failed for asset %s (%s). Import will continue.",
+                    asset.id, asset.name,
                 )
 
-        # Keep Holding Reports in sync with imported investment
-        # transactions. Mutual-fund transactions are handled by
-        # their dedicated holdings pipeline and are intentionally
-        # excluded from PortfolioPosition.
-        PortfolioPositionEngine.rebuild_all_for_user(owner)
+        if imported_investments:
+            PortfolioPositionEngine.rebuild_all_for_user(owner)
+
+        imported_total = imported_investments + imported_mutual_funds
+        failed_total = len(failures)
+        status = "FAILED" if imported_total == 0 and failed_total > 0 else ("PARTIAL" if failed_total else "COMPLETED")
+
+        if upload_batch is not None:
+            TransactionUploadFailure.objects.bulk_create([
+                TransactionUploadFailure(
+                    upload=upload_batch,
+                    row_number=item["row"],
+                    reason=item["message"],
+                    row_data=item["row_data"],
+                )
+                for item in failures
+            ])
+            upload_batch.total_rows = total_rows
+            upload_batch.imported_rows = imported_total
+            upload_batch.failed_rows = failed_total
+            upload_batch.duplicate_rows = skipped_duplicates
+            upload_batch.status = status
+            upload_batch.completed_at = timezone.now()
+            upload_batch.save(update_fields=[
+                "total_rows", "imported_rows", "failed_rows", "duplicate_rows", "status", "completed_at",
+            ])
 
         return {
             "imported_investments": imported_investments,
             "imported_mutual_funds": imported_mutual_funds,
             "skipped_duplicates": skipped_duplicates,
-            "total_imported": (
-                imported_investments
-                + imported_mutual_funds
-            ),
-            # Every investment-side Asset this import created or
-            # matched (new or pre-existing) - used to trigger an
-            # immediate price refresh right after import instead of
-            # waiting for the next scheduled run. See
-            # investments.services.auto_price_refresh.
+            "total_imported": imported_total,
+            "total_rows": total_rows,
+            "failed_rows": failed_total,
+            "failures": failures,
             "touched_asset_ids": list(touched_asset_ids),
         }
+

@@ -43,7 +43,7 @@ class MISReportService:
     }
 
     @staticmethod
-    def _clean(value, default="Unassigned"):
+    def _clean(value, default=""):
         value = str(value or "").strip()
         return value or default
 
@@ -172,8 +172,8 @@ class MISReportService:
         )
         tx_groups = defaultdict(list)
         for tx in transactions:
-            family_name = cls._clean(tx.family_name, family.name)
-            asset_name = cls._clean(tx.asset_name, getattr(tx.asset, "name", "Unassigned"))
+            family_name = cls._clean(tx.family_name)
+            asset_name = cls._clean(tx.asset_name)
             sub_class = cls._clean(tx.sub_class)
             key = (family_name, sub_class, asset_name)
             tx_groups[key].append(tx)
@@ -204,7 +204,7 @@ class MISReportService:
         )
         mf_groups = defaultdict(list)
         for tx in mf_transactions:
-            family_name = cls._clean(tx.family_name, family.name)
+            family_name = cls._clean(tx.family_name)
             asset_name = cls._clean(tx.scheme.scheme_name)
             sub_class = cls._clean(tx.scheme.category)
             mf_groups[(family_name, sub_class, asset_name)].append(tx)
@@ -216,7 +216,7 @@ class MISReportService:
                 "key": key,
                 "family_name": key[0],
                 "asset_name": key[2],
-                "asset_class": "Mutual Funds",
+                "asset_class": cls._clean(first.asset_class),
                 "sub_class": key[1],
                 "advisor": "",
                 "scheme_ids": sorted({tx.scheme_id for tx in txs}),

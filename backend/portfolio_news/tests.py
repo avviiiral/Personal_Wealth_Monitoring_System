@@ -5,12 +5,13 @@ from unittest.mock import (
 )
 
 from django.test import TestCase
+from rest_framework.test import APIClient
 
 from users.models import FamilyGroup
 
 import requests
 
-from portfolio_news.models import NewsArticle
+from portfolio_news.models import NewsArticle, PortfolioNewsAlert, PortfolioNewsMatch
 from portfolio_news.services.article_store import store_article
 from portfolio_news.services.deduplication import (
     ArticleDeduplicator,
@@ -2600,6 +2601,51 @@ class PortfolioNewsPipelineTests(TestCase):
             alert.holding_display_name, "Aurobindo Pharma Limited"
         )
         self.assertTrue(alert.relevant)
+
+    def test_raw_news_feed_shows_matched_article_without_gemini(self):
+        provider = _FakeProvider(
+            results_by_query={
+                "Aurobindo Pharma Limited": [
+                    self.relevant_article_result,
+                ]
+            }
+        )
+
+        analyzer = _FakeAnalyzer(
+            analysis=self.high_impact_analysis,
+        )
+
+        run_portfolio_news_monitor(
+            provider=provider,
+            analyzer=analyzer,
+        )
+
+        # Remove the AI alert to prove the raw feed is independent
+        # from Gemini analysis.
+        PortfolioNewsAlert.objects.all().delete()
+
+        client = APIClient()
+        client.force_authenticate(user=self.user)
+
+        response = client.get("/api/ai/news/raw/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["count"], 1)
+        self.assertEqual(
+            response.data["results"][0]["title"],
+            self.relevant_article_result.title,
+        )
+        self.assertEqual(
+            response.data["results"][0]["matched_holdings"][0][
+                "holding_display_name"
+            ],
+            "Aurobindo Pharma Limited",
+        )
+        self.assertEqual(
+            response.data["results"][0]["url"],
+            self.relevant_article_result.url,
+        )
+
 
     def test_irrelevant_article_alone_creates_no_alert(self):
         provider = _FakeProvider(

@@ -581,72 +581,71 @@ def mis_report(request):
 def _build_notes_sheet(workbook, report):
     ws = workbook.create_sheet("Notes")
     notes = report["notes"]
+    editable = notes.get("editable") or MISReportService._editable_notes_from_report(notes)
+    columns_count = max((len(section.get("columns", [])) for section in editable.get("sections", [])), default=1)
 
-    ws["A1"] = notes["title"]
+    ws["A1"] = editable["title"]
     _style_title(ws["A1"])
-    ws.merge_cells("A1:F1")
+    ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=columns_count)
     ws["A1"].alignment = Alignment(horizontal="center", vertical="center")
     ws.row_dimensions[1].height = 24
 
     cursor = 3
-    for section in notes["sections"]:
-        ws.cell(cursor, 1, section["section_number"])
-        ws.cell(cursor, 2, section["title"])
-        ws.merge_cells(start_row=cursor, start_column=2, end_row=cursor, end_column=6)
-        for col in range(1, 7):
+    for section in editable["sections"]:
+        columns = section.get("columns", [])
+        column_count = max(len(columns), 1)
+
+        ws.cell(cursor, 1, section.get("section_number", cursor - 2))
+        if column_count > 1:
+            ws.merge_cells(
+                start_row=cursor,
+                start_column=2,
+                end_row=cursor,
+                end_column=column_count,
+            )
+        ws.cell(cursor, 2 if column_count > 1 else 1, section.get("title", ""))
+        for col in range(1, column_count + 1):
             ws.cell(cursor, col).fill = _SECTION_FILL
             ws.cell(cursor, col).border = _BORDER
         ws.cell(cursor, 1).font = Font(bold=True)
-        ws.cell(cursor, 2).font = Font(bold=True, size=12)
+        ws.cell(cursor, 2 if column_count > 1 else 1).font = Font(bold=True, size=12)
         cursor += 1
 
-        headers = [
-            "Sr. No",
-            "Particulars",
-            f"{section['unit_label']} {notes['opening_label']}",
-            f"{section['unit_label']} {notes['closing_label']}",
-            section["change_label"],
-            "% Change",
-        ]
-        for col, value in enumerate(headers, 1):
-            ws.cell(cursor, col, value)
+        for col, column in enumerate(columns, 1):
+            ws.cell(cursor, col, column.get("label", ""))
             _style_header(ws.cell(cursor, col), fill=_SUBHEADER_FILL)
         cursor += 1
 
-        for index, item in enumerate(section["items"], 1):
-            values = [
-                index,
-                item["name"],
-                float(item["opening_rate"]) if item["opening_rate"] is not None else None,
-                float(item["closing_rate"]) if item["closing_rate"] is not None else None,
-                float(item["change"]) if item["change"] is not None else None,
-                float(item["percent_change"]) / 100 if item["percent_change"] is not None else None,
-            ]
-            for col, value in enumerate(values, 1):
+        for row in section.get("rows", []):
+            cells = row.get("cells", {})
+            for col, column in enumerate(columns, 1):
+                value = cells.get(column.get("id"))
                 ws.cell(cursor, col, value)
                 ws.cell(cursor, col).border = _BORDER
-                ws.cell(cursor, col).alignment = Alignment(vertical="top", wrap_text=(col == 2))
-            ws.cell(cursor, 3).number_format = '#,##0.00'
-            ws.cell(cursor, 4).number_format = '#,##0.00'
-            ws.cell(cursor, 5).number_format = '#,##0.00;(#,##0.00)'
-            ws.cell(cursor, 6).number_format = '0.00%'
+                ws.cell(cursor, col).alignment = Alignment(
+                    vertical="top",
+                    wrap_text=(column.get("type") == "text"),
+                )
+                if column.get("type") == "number":
+                    ws.cell(cursor, col).number_format = '#,##0.00;(#,##0.00)'
             cursor += 1
 
         if section.get("note"):
-            ws.cell(cursor, 2, section["note"])
-            ws.merge_cells(start_row=cursor, start_column=2, end_row=cursor, end_column=6)
-            ws.cell(cursor, 2).alignment = Alignment(vertical="top", wrap_text=True)
+            note_col = 2 if column_count > 1 else 1
+            ws.cell(cursor, note_col, section["note"])
+            if column_count > 1:
+                ws.merge_cells(
+                    start_row=cursor,
+                    start_column=note_col,
+                    end_row=cursor,
+                    end_column=column_count,
+                )
+            ws.cell(cursor, note_col).alignment = Alignment(vertical="top", wrap_text=True)
             cursor += 1
 
         cursor += 1
 
     _autosize(ws, 12, 42)
-    ws.column_dimensions["A"].width = 10
-    ws.column_dimensions["B"].width = 42
-    ws.column_dimensions["C"].width = 20
-    ws.column_dimensions["D"].width = 20
-    ws.column_dimensions["E"].width = 18
-    ws.column_dimensions["F"].width = 14
     ws.freeze_panes = "A3"
     return ws
 

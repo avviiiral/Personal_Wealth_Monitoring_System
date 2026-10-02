@@ -14,6 +14,7 @@ import {
   TransactionEditHistory,
   TransactionUploadHistory,
   TransactionUploadDetail,
+  TransactionUnderlying,
 } from '../../core/services/settings-api.service';
 
 import { UserManagementComponent } from './user-management/user-management.component';
@@ -29,7 +30,8 @@ type SettingsTab =
   | 'tax-rates'
   | 'tax-updates'
   | 'transaction-history'
-  | 'upload-history';
+  | 'upload-history'
+  | 'underlyings';
 
 @Component({
   selector: 'app-settings',
@@ -91,6 +93,10 @@ export class SettingsComponent implements OnInit {
   selectedUpload: TransactionUploadDetail | null = null;
   uploadDetailLoading = false;
 
+  transactionUnderlyings: TransactionUnderlying[] = [];
+  transactionUnderlyingLoading = false;
+  transactionUnderlyingError = '';
+
   historySearch = '';
   historyEditorFilter = '';
   historyDateFilter = '';
@@ -126,6 +132,10 @@ export class SettingsComponent implements OnInit {
     if (tab === 'upload-history' && !this.transactionUploads.length) {
       this.loadTransactionUploadHistory();
     }
+
+    if (tab === 'underlyings' && !this.transactionUnderlyings.length) {
+      this.loadTransactionUnderlyings();
+    }
   }
 
   canManageUsers(): boolean {
@@ -156,6 +166,9 @@ export class SettingsComponent implements OnInit {
         }
         if (this.activeTab === 'upload-history') {
           this.loadTransactionUploadHistory();
+        }
+        if (this.activeTab === 'underlyings') {
+          this.loadTransactionUnderlyings();
         }
         this.cdr.detectChanges();
       },
@@ -434,6 +447,29 @@ export class SettingsComponent implements OnInit {
     });
   }
 
+  loadTransactionUnderlyings(): void {
+    this.transactionUnderlyingLoading = true;
+    this.transactionUnderlyingError = '';
+
+    this.settingsApi.getTransactionUnderlyings().subscribe({
+      next: (response) => {
+        this.transactionUnderlyings = response.results || [];
+        this.transactionUnderlyingLoading = false;
+        this.cdr.detectChanges();
+      },
+      error: (error) => {
+        this.transactionUnderlyingLoading = false;
+        this.transactionUnderlyingError =
+          error?.error?.detail || 'Unable to load transaction underlyings.';
+        this.cdr.detectChanges();
+      },
+    });
+  }
+
+  formatUnderlyingList(values: string[]): string {
+    return values?.length ? values.join(', ') : '—';
+  }
+
   toggleUpload(uploadId: number): void {
     if (this.expandedUploadId === uploadId) {
       this.expandedUploadId = null;
@@ -629,6 +665,10 @@ export class SettingsComponent implements OnInit {
 
     if (this.activeTab === 'upload-history') {
       this.loadTransactionUploadHistory();
+    }
+
+    if (this.activeTab === 'underlyings') {
+      this.loadTransactionUnderlyings();
     }
   }
 }

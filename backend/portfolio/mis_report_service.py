@@ -1101,9 +1101,9 @@ class MISReportService:
                     closing_value = None
                 if opening_value is not None and closing_value is not None:
                     change = closing_value - opening_value
-                    cells["change"] = change
+                    cells["change"] = float(change)
                     cells["percent_change"] = (
-                        (change / opening_value) * Decimal("100")
+                        float((change / opening_value) * Decimal("100"))
                         if opening_value != 0 else None
                     )
                 else:

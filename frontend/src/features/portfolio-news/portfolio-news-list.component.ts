@@ -93,16 +93,13 @@ export class PortfolioNewsListComponent implements OnInit {
       })
       .subscribe({
         next: (response) => {
-          this.rawItems = Array.isArray(response?.results) ? response.results : [];
+          this.rawItems = response.results;
           this.rawLoading = false;
-          this.changeDetector.detectChanges();
         },
         error: (error) => {
           console.error('Failed to load raw portfolio news:', error);
-          this.rawItems = [];
           this.rawError = 'Unable to load all portfolio news right now.';
           this.rawLoading = false;
-          this.changeDetector.detectChanges();
         },
       });
   }
@@ -220,17 +217,6 @@ export class PortfolioNewsListComponent implements OnInit {
     return item.matched_holdings
       .map((holding) => holding.holding_display_name)
       .join(', ');
-  }
-
-  rawUnderlyingConnections(item: PortfolioNewsRawItem): string[] {
-    return item.matched_holdings
-      .filter((holding) => holding.connection_type === 'underlying' && holding.underlying_name)
-      .map((holding) => {
-        const weight = holding.underlying_weight;
-        return weight === null
-          ? 'Underlying: ' + holding.underlying_name
-          : 'Underlying: ' + holding.underlying_name + ' (' + Number(weight).toFixed(2) + '%)';
-      });
   }
 
   rawSourceCountLabel(item: PortfolioNewsRawItem): string {

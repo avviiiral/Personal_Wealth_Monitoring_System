@@ -197,34 +197,20 @@ class NewsArticleSource(models.Model):
 
 class PortfolioNewsMatch(models.Model):
     """
-    Deterministic relationship between a fetched news article and a
-    portfolio holding inside a family.
+    Deterministic relationship between a fetched news article and one
+    user's live portfolio holding.
 
     This is intentionally independent of Gemini. It records that the
     article was fetched and matched by HoldingMatcher, so the raw
-    family-news feed can show the article even when AI analysis is
+    portfolio-news feed can show the article even when AI analysis is
     unavailable or the article is not important enough to become an
-    alert. The user field is retained as the member through whose
-    monitoring pass the match was first persisted; family is the
-    authoritative scope for new family-scoped matches.
+    alert.
     """
 
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
         related_name="portfolio_news_matches",
-    )
-
-    family = models.ForeignKey(
-        "users.FamilyGroup",
-        on_delete=models.CASCADE,
-        null=True,
-        blank=True,
-        related_name="portfolio_news_matches",
-        help_text=(
-            "Family scope for this deterministic news match. New matches "
-            "are created in the user's active family."
-        ),
     )
 
     article = models.ForeignKey(
@@ -254,27 +240,6 @@ class PortfolioNewsMatch(models.Model):
         blank=True,
     )
 
-    connection_type = models.CharField(
-        max_length=20,
-        choices=[
-            ("direct", "Direct asset"),
-            ("underlying", "Underlying holding"),
-        ],
-        default="direct",
-    )
-
-    underlying_name = models.CharField(
-        max_length=300,
-        blank=True,
-    )
-
-    underlying_weight = models.DecimalField(
-        max_digits=10,
-        decimal_places=4,
-        null=True,
-        blank=True,
-    )
-
     created_at = models.DateTimeField(
         auto_now_add=True,
     )
@@ -289,23 +254,8 @@ class PortfolioNewsMatch(models.Model):
                     "article",
                     "holding_type",
                     "holding_id",
-                    "connection_type",
-                    "underlying_name",
                 ],
-                condition=models.Q(family__isnull=True),
-                name="unique_legacy_raw_news_match_connection",
-            ),
-            models.UniqueConstraint(
-                fields=[
-                    "family",
-                    "article",
-                    "holding_type",
-                    "holding_id",
-                    "connection_type",
-                    "underlying_name",
-                ],
-                condition=models.Q(family__isnull=False),
-                name="unique_family_raw_news_match_connection",
+                name="unique_raw_news_match_per_holding",
             ),
         ]
 
@@ -317,14 +267,6 @@ class PortfolioNewsMatch(models.Model):
             models.Index(
                 fields=["user", "holding_type", "holding_id"],
                 name="news_match_user_holding_idx",
-            ),
-            models.Index(
-                fields=["family", "-created_at"],
-                name="news_match_family_created_idx",
-            ),
-            models.Index(
-                fields=["family", "article"],
-                name="news_match_family_article_idx",
             ),
         ]
 

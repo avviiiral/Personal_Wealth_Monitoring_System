@@ -11,7 +11,6 @@ from users.models import FamilyGroup
 
 import requests
 
-from investments.models import AssetUnderlyingHolding
 from portfolio_news.models import NewsArticle, PortfolioNewsAlert, PortfolioNewsMatch
 from portfolio_news.services.article_store import store_article
 from portfolio_news.services.deduplication import (
@@ -2724,53 +2723,6 @@ class PortfolioNewsPipelineTests(TestCase):
         self.assertEqual(
             response.data["results"][0]["url"],
             self.relevant_article_result.url,
-        )
-        self.assertEqual(
-            response.data["results"][0]["family_id"],
-            self.family.id,
-        )
-        self.assertEqual(
-            response.data["results"][0]["family_name"],
-            self.family.name,
-        )
-
-
-    def test_raw_news_feed_includes_active_family_members(self):
-        provider = _FakeProvider(
-            results_by_query={
-                "Aurobindo Pharma Limited": [
-                    self.relevant_article_result,
-                ]
-            }
-        )
-
-        analyzer = _FakeAnalyzer(
-            analysis=self.high_impact_analysis,
-        )
-
-        run_portfolio_news_monitor(
-            provider=provider,
-            analyzer=analyzer,
-        )
-
-        PortfolioNewsAlert.objects.all().delete()
-
-        other_user = User.objects.create_user(
-            username="family-news-viewer",
-            password="testpassword",
-        )
-        other_user.profile.family_groups.add(self.family)
-
-        client = APIClient()
-        client.force_authenticate(user=other_user)
-
-        response = client.get("/api/ai/news/raw/")
-
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.data["count"], 1)
-        self.assertEqual(
-            response.data["results"][0]["title"],
-            self.relevant_article_result.title,
         )
 
 

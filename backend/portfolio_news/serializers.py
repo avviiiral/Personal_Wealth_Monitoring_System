@@ -93,13 +93,6 @@ class PortfolioNewsRawHoldingSerializer(serializers.Serializer):
     holding_type = serializers.CharField()
     holding_id = serializers.IntegerField()
     holding_display_name = serializers.CharField()
-    connection_type = serializers.CharField()
-    underlying_name = serializers.CharField(allow_blank=True)
-    underlying_weight = serializers.DecimalField(
-        max_digits=10,
-        decimal_places=4,
-        allow_null=True,
-    )
 
 
 class PortfolioNewsRawItemSerializer(serializers.Serializer):
@@ -118,8 +111,6 @@ class PortfolioNewsRawItemSerializer(serializers.Serializer):
     source_count = serializers.IntegerField()
     matched_query = serializers.CharField()
     created_at = serializers.DateTimeField()
-    family_id = serializers.IntegerField(allow_null=True)
-    family_name = serializers.CharField(allow_blank=True)
     matched_holdings = PortfolioNewsRawHoldingSerializer(many=True)
 
 

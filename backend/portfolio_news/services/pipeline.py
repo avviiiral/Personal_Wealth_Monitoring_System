@@ -260,57 +260,16 @@ def _process_holding(
         # before any Gemini work. This is the source for the raw
         # portfolio-news feed and therefore remains available even when
         # Gemini is unavailable or does not produce an alert.
-        match_defaults = {
-            "holding_display_name": holding.display_name,
-            "matched_query": candidate.matched_query[:255],
-            "family": family,
-            "connection_type": connection["connection_type"],
-            "underlying_name": connection["underlying_name"],
-            "underlying_weight": connection["underlying_weight"],
-        }
-
-        if family is not None:
-            match, _ = PortfolioNewsMatch.objects.get_or_create(
-                family=family,
-                article=article,
-                holding_type=holding.holding_type,
-                holding_id=holding.holding_id,
-                connection_type=connection["connection_type"],
-                underlying_name=connection["underlying_name"],
-                defaults={
-                    **match_defaults,
-                    "user": user,
-                },
-            )
-        else:
-            match, _ = PortfolioNewsMatch.objects.get_or_create(
-                user=user,
-                article=article,
-                holding_type=holding.holding_type,
-                holding_id=holding.holding_id,
-                connection_type=connection["connection_type"],
-                underlying_name=connection["underlying_name"],
-                defaults=match_defaults,
-            )
-
-        # Keep legacy/pre-existing rows populated with the deterministic
-        # connection metadata. This also makes the monitoring pass safe
-        # across databases created before the connection fields existed.
-        update_fields = []
-        for field_name in (
-            "holding_display_name",
-            "matched_query",
-            "family",
-            "connection_type",
-            "underlying_name",
-            "underlying_weight",
-        ):
-            value = match_defaults[field_name]
-            if getattr(match, field_name) != value:
-                setattr(match, field_name, value)
-                update_fields.append(field_name)
-        if update_fields:
-            match.save(update_fields=update_fields)
+        PortfolioNewsMatch.objects.get_or_create(
+            user=user,
+            article=article,
+            holding_type=holding.holding_type,
+            holding_id=holding.holding_id,
+            defaults={
+                "holding_display_name": holding.display_name,
+                "matched_query": candidate.matched_query[:255],
+            },
+        )
 
         # Never re-analyze an article already processed for this exact
         # (user, holding) pair, regardless of the previous relevance.

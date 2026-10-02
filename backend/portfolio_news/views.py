@@ -11,7 +11,6 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from .constants import NotificationTier
-from users.permissions import get_active_family_group, is_system_owner
 from .models import PortfolioNewsAlert, PortfolioNewsMatch, PushSubscription
 from .serializers import (
     PortfolioNewsAlertDetailSerializer,
@@ -152,39 +151,24 @@ def portfolio_news_list(request):
 @permission_classes([IsAuthenticated])
 def portfolio_news_raw_list(request):
     """
-    Return deterministic news for the authenticated user's active family.
+    Return all deterministic portfolio-news matches for the
+    authenticated user, without requiring Gemini analysis.
 
-    Family is the authoritative news scope for users who belong to a
-    family. Users without a family retain access to their legacy
-    user-scoped matches, and System Owners can see all stored family
-    matches. Gemini is not required.
+    Articles are deduplicated at the event level and include every
+    portfolio holding that the deterministic matcher associated with
+    the article. This feed is the raw retrieval layer; AI relevance,
+    sentiment, impact, and alert tiers are deliberately not required.
     """
 
-    active_family = get_active_family_group(request.user)
-
-    if is_system_owner(request.user):
-        queryset = (
-            PortfolioNewsMatch.objects
-            .filter(family__isnull=False)
-            .select_related("article", "family")
+    queryset = (
+        PortfolioNewsMatch.objects
+        .filter(user=request.user)
+        .select_related("article")
+        .order_by(
+            "-article__published_at",
+            "-article__created_at",
+            "-id",
         )
-    elif active_family is not None:
-        queryset = (
-            PortfolioNewsMatch.objects
-            .filter(family=active_family)
-            .select_related("article", "family")
-        )
-    else:
-        queryset = (
-            PortfolioNewsMatch.objects
-            .filter(user=request.user, family__isnull=True)
-            .select_related("article")
-        )
-
-    queryset = queryset.order_by(
-        "-article__published_at",
-        "-article__created_at",
-        "-id",
     )
 
     holding_type = request.query_params.get("holding_type")
@@ -209,6 +193,8 @@ def portfolio_news_raw_list(request):
             article__published_at__gte=cutoff
         )
 
+    # First identify unique articles so the API's limit represents
+    # news stories rather than repeated rows for multiple holdings.
     article_ids = list(
         queryset
         .values_list("article_id", flat=True)
@@ -219,9 +205,12 @@ def portfolio_news_raw_list(request):
         return Response({"results": [], "count": 0})
 
     matches = list(
-        queryset
-        .filter(article_id__in=article_ids)
-        .select_related("article", "family")
+        PortfolioNewsMatch.objects
+        .filter(
+            user=request.user,
+            article_id__in=article_ids,
+        )
+        .select_related("article")
         .order_by(
             "-article__published_at",
             "-article__created_at",
@@ -236,8 +225,6 @@ def portfolio_news_raw_list(request):
             article.id,
             {
                 "id": article.id,
-                "family_id": match.family_id,
-                "family_name": match.family.name if match.family_id else "",
                 "title": article.title,
                 "url": article.url,
                 "source": article.source,
@@ -256,9 +243,6 @@ def portfolio_news_raw_list(request):
                 "holding_type": match.holding_type,
                 "holding_id": match.holding_id,
                 "holding_display_name": match.holding_display_name,
-                "connection_type": match.connection_type,
-                "underlying_name": match.underlying_name,
-                "underlying_weight": match.underlying_weight,
             }
         )
 

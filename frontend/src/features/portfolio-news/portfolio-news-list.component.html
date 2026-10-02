@@ -9,7 +9,7 @@
     </div>
     <div>
       <h1>Portfolio News</h1>
-      <p>News fetched and matched to the holdings in your active family, with AI analysis available as a separate layer.</p>
+      <p>News fetched and matched to the holdings you actually own, with AI analysis available as a separate layer.</p>
     </div>
   </div>
 
@@ -53,7 +53,7 @@
   <ng-container *ngIf="viewMode === 'all'">
     <div class="raw-news-note">
       <span class="raw-news-note-dot"></span>
-      Showing news matched to the currently selected family. Articles are fetched from Google News RSS and this view does not require Gemini.
+      Showing portfolio-matched news fetched from Google News RSS. This view does not require Gemini.
     </div>
 
     <div class="secondary-filters">
@@ -104,15 +104,10 @@
         <div class="news-card-body">
           <div class="news-card-top">
             <strong>{{ rawHoldingNames(item) }}</strong>
-            <span class="news-card-category" *ngIf="item.family_name">{{ item.family_name }}</span>
             <span class="news-card-category">NEWS</span>
           </div>
 
           <span class="news-card-title">{{ item.title }}</span>
-
-          <ng-container *ngFor="let connection of rawUnderlyingConnections(item)">
-            <span class="raw-news-query">{{ connection }}</span>
-          </ng-container>
 
           <div class="news-card-meta">
             <span>{{ item.source }}</span>

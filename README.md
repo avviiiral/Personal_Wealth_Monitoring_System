@@ -821,6 +821,7 @@ All endpoints require an authenticated Django session unless noted. Auth uses **
 | `GET` `PUT` `PATCH` `DELETE` | `/api/portfolio/assets/<id>/`              | Retrieve / update / delete an asset      |
 | `GET` `POST`                 | `/api/portfolio/transactions/`             | List / create transactions               |
 | `GET` `PUT` `PATCH` `DELETE` | `/api/portfolio/transactions/<id>/`        | Retrieve / update / delete a transaction |
+| `GET`                        | `/api/portfolio/transactions/edit-history/` | Transaction edit and deletion audit history |
 | `GET`                        | `/api/portfolio/summary/`                  | Portfolio summary                        |
 | `GET`                        | `/api/portfolio/holdings/`                 | Holdings                                 |
 | `GET`                        | `/api/portfolio/underlying-uploads/`       | Latest underlying upload snapshot per asset |
@@ -830,6 +831,8 @@ All endpoints require an authenticated Django session unless noted. Auth uses **
 | `PUT` `PATCH` `DELETE`       | `/api/portfolio/assets/<id>/manual-price/` | Manual price override                    |
 | `GET`                        | `/api/portfolio/mis-report/`              | MIS Report data                           |
 | `GET`                        | `/api/portfolio/mis-report/download/`    | Download MIS Report Excel                |
+| `GET`                        | `/api/portfolio/mis-report/notes/`       | MIS Notes                                 |
+| `GET`                        | `/api/portfolio/mis-report/notes/history/` | MIS Notes edit history                 |
 
 </details>
 

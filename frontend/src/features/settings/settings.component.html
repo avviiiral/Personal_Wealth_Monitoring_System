@@ -303,7 +303,7 @@
                   <td class="tx-history-td tx-history-td-strong">{{ history.asset_name || '—' }}</td>
                   <td class="tx-history-td">{{ history.new_values['transaction_date'] || history.old_values['transaction_date'] || '—' }}</td>
                   <td class="tx-history-td">{{ history.new_values['transaction_type'] || history.old_values['transaction_type'] || '—' }}</td>
-                  <td class="tx-history-td">{{ history.changed_fields.map(formatHistoryField).join(', ') }}</td>
+                  <td class="tx-history-td">{{ history.transaction_id === null ? 'Transaction Deleted' : history.changed_fields.map(formatHistoryField).join(', ') }}</td>
                   <td class="tx-history-td">
                     <button type="button" class="secondary-button" style="padding:7px 12px;font-size:12px;" (click)="toggleHistory(history.id)">
                       {{ expandedHistoryId === history.id ? 'Hide' : 'View' }}

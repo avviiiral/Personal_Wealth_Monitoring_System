@@ -217,11 +217,21 @@ class Command(BaseCommand):
             missing.append("filing ISIN")
         if not filing.symbol:
             missing.append("filing symbol")
-        if not filing.bse_code:
+        # BSE code is optional for NSE filings because the built-in NSE
+        # provider does not receive a BSE identifier from the public feed.
+        if filing.exchange != "NSE" and not filing.bse_code:
             missing.append("BSE code")
 
         if missing:
             reason = "missing " + ", ".join(missing)
+        elif isin_candidates:
+            reason = "ISIN candidate exists but matcher did not select it"
+        elif symbol_candidates:
+            reason = "symbol candidate exists but matcher did not select it"
+        elif bse_candidates:
+            reason = "BSE-code candidate exists but matcher did not select it"
+        elif name_candidates:
+            reason = "company-name candidate exists but matcher did not select it"
         else:
             reason = "no active STOCK/ETF identifier matched"
 

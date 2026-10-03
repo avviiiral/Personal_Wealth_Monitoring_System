@@ -30,7 +30,7 @@ DEFAULT_LOOKBACK_DAYS = 3
 # Keep this at zero by default because batching already provides the
 # request-rate reduction that the old per-article delay was intended to
 # provide.
-DEFAULT_AI_CALL_DELAY_SECONDS = 0.0
+DEFAULT_ANALYSIS_DELAY_SECONDS = 0.0
 
 # Cost control: even after the deterministic HoldingMatcher filter, a
 # single holding can surface many candidate articles. This caps how many
@@ -38,7 +38,7 @@ DEFAULT_AI_CALL_DELAY_SECONDS = 0.0
 # run. Remaining candidates are deferred to the next run.
 DEFAULT_MAX_ARTICLES_PER_HOLDING = 15
 
-# Safety limit for Gemini request size. Multiple holdings are combined
+# Safety limit for analysis batch size. Multiple holdings are combined
 # into batches, but a single request should not contain an unbounded
 # number of articles.
 DEFAULT_MAX_BATCH_ARTICLES = 50
@@ -133,9 +133,9 @@ def _empty_stats() -> dict:
         "articles_matched": 0,
         "articles_stored_new": 0,
         "duplicates_skipped": 0,
-        "articles_sent_to_ai": 0,
-        "ai_batch_requests": 0,
-        "ai_failures": 0,
+        "articles_analyzed": 0,
+        "analysis_batch_requests": 0,
+        "analysis_failures": 0,
         "alerts_created": 0,
         "notifications_sent": 0,
         "provider_failures": 0,
@@ -149,7 +149,7 @@ def _process_holding(
     analyzer: RuleBasedArticleAnalyzer,
     from_date,
     stats: dict,
-    ai_call_delay_seconds: float = 0.0,
+    analysis_delay_seconds: float = 0.0,
     max_articles_per_holding: Optional[int] = None,
     min_relevance_score: Optional[int] = None,
     min_alert_score: Optional[float] = None,
@@ -163,7 +163,7 @@ def _process_holding(
     pipeline so the deterministic analyzer can process them consistently.
 
     The analyzer and analysis threshold arguments remain in the
-    signature for compatibility with existing callers/tests. AI work
+    signature for compatibility with existing callers/tests. analysis work
     is performed centrally by run_portfolio_news_monitor().
     """
     from ..models import PortfolioNewsAlert, PortfolioNewsMatch
@@ -258,7 +258,7 @@ def _process_holding(
         # Persist the deterministic portfolio-to-article relationship
         # before any analysis work. This is the source for the raw
         # portfolio-news feed and therefore remains available even when
-        # Gemini is unavailable or does not produce an alert.
+        # the local analyzer is unavailable or does not produce an alert.
         PortfolioNewsMatch.objects.get_or_create(
             user=user,
             article=article,
@@ -282,10 +282,10 @@ def _process_holding(
         if already_processed:
             continue
 
-        # The AI cap controls Gemini usage only. We deliberately keep
+        # The analysis cap controls local analysis only. We deliberately keep
         # storing every deterministic match discovered in this run so
         # the raw feed can show all matched articles without depending
-        # on Gemini.
+        # on the local analyzer.
         if (
             resolved_max_articles > 0
             and articles_selected_this_holding >= resolved_max_articles
@@ -474,7 +474,7 @@ def _create_alerts_from_analyses(
 
 def run_portfolio_news_monitor(
     provider: Optional[NewsProvider] = None,
-    analyzer: Optional[GeminiArticleAnalyzer] = None,
+    analyzer: Optional[RuleBasedArticleAnalyzer] = None,
     lookback_days: Optional[int] = None,
     ai_call_delay_seconds: Optional[float] = None,
     max_articles_per_holding: Optional[int] = None,
@@ -525,7 +525,7 @@ def run_portfolio_news_monitor(
     resolved_analysis_delay_seconds = (
         ai_call_delay_seconds
         if ai_call_delay_seconds is not None
-        else _get_ai_call_delay_seconds()
+        else _get_analysis_delay_seconds()
     )
 
     resolved_max_articles_per_holding = (
@@ -556,7 +556,7 @@ def run_portfolio_news_monitor(
 
     logger.info(
         "Portfolio news monitoring started (lookback_days=%s, "
-        "ai_call_delay_seconds=%s, max_articles_per_holding=%s, "
+        "analysis_delay_seconds=%s, max_articles_per_holding=%s, "
         "max_batch_articles=%s, min_relevance_score=%s, "
         "min_alert_score=%s)",
         resolved_lookback_days,
@@ -620,7 +620,7 @@ def run_portfolio_news_monitor(
             continue
 
         logger.info(
-            "user_id=%s selected %d article/holding pairs for Gemini batch "
+            "user_id=%s selected %d article/holding pairs for rule-based batch "
             "analysis",
             user.id,
             len(user_article_holding_pairs),

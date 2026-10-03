@@ -368,7 +368,7 @@ class BenchmarkPerformanceTests(TestCase):
 
     def test_benchmark_long_periods_are_cumulative_not_cagr(self):
         points = [
-            {"date": "2021-01-01", "value": 100.0},
+            {"date": "2021-01-02", "value": 100.0},
             {"date": "2026-01-01", "value": 150.0},
         ]
         product = InvestmentProduct.objects.create(
@@ -418,7 +418,8 @@ class BenchmarkPerformanceTests(TestCase):
             source="TEST",
         )
         MutualFundProduct.objects.create(product=product, scheme_code="API-BSETRI", benchmark="BSE 500")
-        self.client.force_authenticate(
+        api_client = APIClient()
+        api_client.force_authenticate(
             user=User.objects.create_user(username="benchmark-api-user")
         )
         with patch.object(
@@ -429,7 +430,7 @@ class BenchmarkPerformanceTests(TestCase):
                 {"date": "2026-01-01", "value": 150.0},
             ],
         ):
-            response = self.client.get(
+            response = api_client.get(
                 f"/api/watch-list/products/{product.id}/benchmark-performance/?period=1Y"
             )
         self.assertEqual(response.status_code, 200)

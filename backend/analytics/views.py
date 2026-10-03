@@ -9,6 +9,8 @@ from rest_framework.response import Response
 from rest_framework import status
 
 from .models import StandardAllocation
+from investments.models import Transaction
+from mutual_funds.models import MutualFundTransaction
 from .services.investment_summary import InvestmentSummaryService
 from .services.portfolio_analytics import PortfolioAnalytics
 from .services.unified_wealth import UnifiedWealthAnalytics
@@ -98,52 +100,68 @@ def wealth_investment_summary(request):
     return Response(InvestmentSummaryService.calculate(request.user, family_name=family_name))
 
 
-def _standard_allocation_family(request):
+def _standard_allocation_family_name(request):
     requested_name = (request.GET.get("family") or "").strip()
 
-    if requested_name:
-        families = FamilyGroup.objects.filter(name=requested_name)
-        if not is_system_owner(request.user):
-            families = families.filter(id__in=get_family_group_ids(request.user))
-        family = families.order_by("id").first()
-        if family is None:
+    if not requested_name:
+        if not is_system_owner(request.user) and not get_family_group_ids(request.user):
             from rest_framework.exceptions import PermissionDenied
-            raise PermissionDenied("You do not have access to this family.")
-        return family
+            raise PermissionDenied("You must belong to a family to access Standard Allocation.")
+        return None
 
-    # No family means the user selected "All". This is the shared
-    # Standard Allocation baseline; a specific family can override it.
-    if not is_system_owner(request.user) and not get_family_group_ids(request.user):
+    if is_system_owner(request.user):
+        return requested_name
+
+    family_ids = get_family_group_ids(request.user)
+    if not family_ids:
         from rest_framework.exceptions import PermissionDenied
-        raise PermissionDenied("You must belong to a family to access Standard Allocation.")
+        raise PermissionDenied("You do not have access to this family.")
 
-    return None
+    # The Dashboard's Family Member selector is based on the legacy
+    # family_name label stored on transactions, not FamilyGroup.name.
+    # Validate the requested label against data in the user's permitted
+    # family groups so Standard Allocation follows the same scope as the
+    # rest of the Dashboard.
+    has_equity_label = Transaction.objects.filter(
+        family_id__in=family_ids,
+        family_name=requested_name,
+    ).exists()
+    has_mf_label = MutualFundTransaction.objects.filter(
+        family_id__in=family_ids,
+        family_name=requested_name,
+    ).exists()
+
+    if not (has_equity_label or has_mf_label):
+        from rest_framework.exceptions import PermissionDenied
+        raise PermissionDenied("You do not have access to this family member.")
+
+    return requested_name
 
 
 @ensure_csrf_cookie
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def wealth_standard_allocations(request):
-    family = _standard_allocation_family(request)
+    family_name = _standard_allocation_family_name(request)
 
-    if family is None:
-        rows = StandardAllocation.objects.filter(family__isnull=True)
+    if family_name is None:
+        rows = StandardAllocation.objects.filter(family_name__isnull=True)
         family_label = "All Families"
         investment_summary = InvestmentSummaryService.calculate(request.user)
     else:
         family_rows = {
             row.asset_category: row
-            for row in StandardAllocation.objects.filter(family=family)
+            for row in StandardAllocation.objects.filter(family_name=family_name)
         }
         global_rows = {
             row.asset_category: row
-            for row in StandardAllocation.objects.filter(family__isnull=True)
+            for row in StandardAllocation.objects.filter(family_name__isnull=True)
         }
         rows = {**global_rows, **family_rows}.values()
-        family_label = family.name
+        family_label = family_name
         investment_summary = InvestmentSummaryService.calculate(
             request.user,
-            family_name=family.name,
+            family_name=family_name,
         )
 
     total_current_value = Decimal(str(investment_summary.get("total_current_value") or 0))
@@ -168,7 +186,7 @@ def wealth_standard_allocations(request):
 @api_view(["PUT"])
 @permission_classes([IsAuthenticated])
 def wealth_standard_allocations_update(request):
-    family = _standard_allocation_family(request)
+    family_name = _standard_allocation_family_name(request)
     raw_allocations = request.data.get("allocations")
 
     if not isinstance(raw_allocations, dict) or not raw_allocations:
@@ -179,7 +197,7 @@ def wealth_standard_allocations_update(request):
 
     investment_summary = InvestmentSummaryService.calculate(
         request.user,
-        family_name=family.name if family is not None else None,
+        family_name=family_name,
     )
     total_current_value = Decimal(str(investment_summary.get("total_current_value") or 0))
 
@@ -225,11 +243,11 @@ def wealth_standard_allocations_update(request):
             status=status.HTTP_400_BAD_REQUEST,
         )
 
-    StandardAllocation.objects.filter(family=family).delete()
+    StandardAllocation.objects.filter(family_name=family_name).delete()
 
     StandardAllocation.objects.bulk_create([
         StandardAllocation(
-            family=family,
+            family_name=family_name,
             asset_category=category,
             allocation_percent=item["percent"],
             allocation_amount=item["amount"],
@@ -238,8 +256,8 @@ def wealth_standard_allocations_update(request):
     ])
 
     return Response({
-        "family": family.name if family is not None else "All Families",
-        "scope": "global" if family is None else "family",
+        "family": family_name or "All Families",
+        "scope": "global" if family_name is None else "family",
         "total_current_value": float(total_current_value),
         "allocations": {
             category: {

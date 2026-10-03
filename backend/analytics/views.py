@@ -16,8 +16,7 @@ from .services.portfolio_analytics import PortfolioAnalytics
 from .services.unified_wealth import UnifiedWealthAnalytics
 from .services.equity_analysis import EquityAnalysisService
 from .services.mutual_fund_lookthrough import MutualFundLookThroughService
-from users.models import FamilyGroup
-from users.permissions import get_active_family_group, get_family_group_ids, is_system_owner
+from users.permissions import get_family_group_ids, is_system_owner
 
 
 

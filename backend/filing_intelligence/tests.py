@@ -1,7 +1,7 @@
 from django.contrib.auth.models import User
 from django.test import TestCase
 from django.utils import timezone
-from investments.models import Asset, AssetCategory, Holding
+from investments.models import Asset, AssetCategory, Holding, SecurityMaster
 from portfolio_news.constants import AlertSourceType, HoldingType
 from portfolio_news.models import PortfolioNewsAlert
 from watchlist.models import InvestmentProduct, ProductType, WatchListEntry
@@ -90,6 +90,91 @@ class FilingClassifierTests(TestCase):
         self.assertEqual(classify("SEBI action").severity, FilingSeverity.HIGH)
         self.assertEqual(classify("Fraud detected").severity, FilingSeverity.CRITICAL)
 
+
+
+class FilingMatchingTests(TestCase):
+    def test_etf_matches_by_isin(self):
+        asset = Asset.objects.create(
+            name="Example Gold ETF",
+            category=AssetCategory.ETF,
+            symbol="GOLDETF",
+            isin="INF123456789",
+            is_active=True,
+        )
+        filing = NormalizedFiling(
+            "NSE",
+            "Example Gold ETF",
+            "GOLDETF",
+            "INF123456789",
+            "",
+            "Corporate Announcement",
+            "Dividend declared",
+            "Dividend declared",
+            "https://example.com/filing/etf",
+            "https://example.com/feed",
+            "ETF-1",
+            timezone.now(),
+        )
+        from .services.matching import match_assets
+        assets, method = match_assets(filing)
+        self.assertEqual(method, "ISIN")
+        self.assertEqual([asset.id], [item.id for item in assets])
+
+    def test_etf_matches_by_security_master_isin(self):
+        master = SecurityMaster.objects.create(
+            asset_name="Example Gold ETF",
+            isin="INF987654321",
+        )
+        asset = Asset.objects.create(
+            name="Example Gold ETF",
+            category=AssetCategory.ETF,
+            symbol="GOLDETF",
+            security_master=master,
+            is_active=True,
+        )
+        filing = NormalizedFiling(
+            "NSE",
+            "Example Gold ETF",
+            "GOLDETF",
+            "INF987654321",
+            "",
+            "Corporate Announcement",
+            "Dividend declared",
+            "Dividend declared",
+            "https://example.com/filing/etf2",
+            "https://example.com/feed",
+            "ETF-2",
+            timezone.now(),
+        )
+        from .services.matching import match_assets
+        assets, method = match_assets(filing)
+        self.assertEqual(method, "ISIN")
+        self.assertEqual([asset.id], [item.id for item in assets])
+
+    def test_non_listed_asset_is_not_matched_by_company_name(self):
+        asset = Asset.objects.create(
+            name="Example Industries",
+            category=AssetCategory.MUTUAL_FUND,
+            is_active=True,
+        )
+        filing = NormalizedFiling(
+            "NSE",
+            "Example Industries",
+            "EXAMPLE",
+            "",
+            "",
+            "Corporate Announcement",
+            "Dividend declared",
+            "Dividend declared",
+            "https://example.com/filing/mf",
+            "https://example.com/feed",
+            "MF-1",
+            timezone.now(),
+        )
+        from .services.matching import match_assets
+        assets, method = match_assets(filing)
+        self.assertEqual(method, "UNMATCHED")
+        self.assertEqual(assets, [])
 
 class FilingPipelineTests(TestCase):
     def setUp(self):

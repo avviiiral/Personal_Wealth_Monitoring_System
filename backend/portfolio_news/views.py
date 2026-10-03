@@ -1,6 +1,7 @@
 from datetime import timedelta
 
 from django.db.models import Exists, OuterRef, Q
+from django.db.models.functions import TruncDate
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 
@@ -110,7 +111,8 @@ def _apply_common_filters(queryset, request):
 
     if date_range == "today":
         queryset = queryset.filter(
-            created_at__date=timezone.localdate()
+            created_at__gte=timezone.localdate(),
+            created_at__lt=timezone.localdate() + timedelta(days=1),
         )
     elif date_range in DATE_RANGE_DAYS:
         cutoff = timezone.now() - timedelta(
@@ -213,8 +215,17 @@ def portfolio_news_raw_list(request):
 
     date_range = request.query_params.get("date_range")
     if date_range == "today":
+        today_start = timezone.localdate()
+        tomorrow_start = today_start + timedelta(days=1)
         articles = articles.filter(
-            published_at__date=timezone.localdate()
+            published_at__gte=timezone.make_aware(
+                timezone.datetime.combine(today_start, timezone.datetime.min.time()),
+                timezone.get_current_timezone(),
+            ),
+            published_at__lt=timezone.make_aware(
+                timezone.datetime.combine(tomorrow_start, timezone.datetime.min.time()),
+                timezone.get_current_timezone(),
+            ),
         )
     elif date_range in DATE_RANGE_DAYS:
         cutoff = timezone.now() - timedelta(days=DATE_RANGE_DAYS[date_range])

@@ -175,7 +175,10 @@ def wealth_standard_allocations_update(request):
             status=status.HTTP_400_BAD_REQUEST,
         )
 
-    investment_summary = InvestmentSummaryService.calculate(request.user, family_name=family.name)
+    investment_summary = InvestmentSummaryService.calculate(
+        request.user,
+        family_name=family.name if family is not None else None,
+    )
     total_current_value = Decimal(str(investment_summary.get("total_current_value") or 0))
 
     allocations = {}

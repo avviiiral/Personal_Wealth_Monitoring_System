@@ -47,6 +47,32 @@ class RuleBasedArticleAnalyzerTests(SimpleTestCase):
         self.assertGreaterEqual(result.relevance_score, 70)
         self.assertTrue(result.relevant)
 
+    def test_critical_risk_event_reaches_critical_impact(self):
+        result = self.analyzer.analyze(
+            self.article(
+                "ABC Bank faces accounting fraud and debt default",
+                "Regulatory action follows an accounting irregularity.",
+            ),
+            self.holding,
+        )
+
+        self.assertEqual(result.impact, ImpactLevel.CRITICAL)
+        self.assertGreaterEqual(result.impact_score, 81)
+        self.assertTrue(result.relevant)
+
+    def test_major_business_event_reaches_high_impact(self):
+        result = self.analyzer.analyze(
+            self.article(
+                "ABC Bank CEO resigns after major investigation",
+                "The company also withdrew its guidance.",
+            ),
+            self.holding,
+        )
+
+        self.assertEqual(result.impact, ImpactLevel.HIGH)
+        self.assertGreaterEqual(result.impact_score, 61)
+        self.assertTrue(result.relevant)
+
     def test_neutral_sector_story_stays_conservative(self):
         result = self.analyzer.analyze(
             self.article(

@@ -269,13 +269,34 @@
 
       <div *ngIf="editTransactionError" class="modal-error">{{ editTransactionError }}</div>
 
-      <div class="modal-actions">
-        <button type="button" class="modal-button" [disabled]="editTransactionSaving" (click)="cancelEditTransaction()">
-          Cancel
+      <div class="modal-actions transaction-edit-actions">
+        <button
+          type="button"
+          class="modal-button modal-button-danger"
+          [disabled]="editTransactionSaving || editTransactionDeleting"
+          (click)="deleteEditingTransaction()"
+        >
+          {{ editTransactionDeleting ? 'Deleting...' : 'Delete Transaction' }}
         </button>
-        <button type="button" class="modal-button modal-button-primary" [disabled]="editTransactionSaving" (click)="saveEditTransaction()">
-          {{ editTransactionSaving ? 'Saving...' : 'Save Changes' }}
-        </button>
+
+        <div class="transaction-edit-actions-right">
+          <button
+            type="button"
+            class="modal-button"
+            [disabled]="editTransactionSaving || editTransactionDeleting"
+            (click)="cancelEditTransaction()"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            class="modal-button modal-button-primary"
+            [disabled]="editTransactionSaving || editTransactionDeleting"
+            (click)="saveEditTransaction()"
+          >
+            {{ editTransactionSaving ? 'Saving...' : 'Save Changes' }}
+          </button>
+        </div>
       </div>
     </div>
   </div>

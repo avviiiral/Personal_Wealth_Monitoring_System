@@ -4,9 +4,12 @@ from django.db.models import Q
 
 class StandardAllocation(models.Model):
     """
-    Shared target allocation for one Dashboard Asset Category within a family.
-    Standard Allocation is family-owned so every family member sees and edits
-    the same target percentages.
+    Standard Allocation target for one Dashboard Asset Category.
+
+    A null family is the shared baseline for all families. A non-null family
+    row is an override for that family only. The percentage is authoritative;
+    allocation_amount is retained as a compatibility/cache field and is
+    recalculated from the current portfolio total when allocations are read.
     """
 
     family = models.ForeignKey(

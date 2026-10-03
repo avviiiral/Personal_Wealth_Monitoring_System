@@ -1385,22 +1385,34 @@ class MISReportService:
         return report_notes
 
     @classmethod
-    def editable_notes(cls, family, base_notes):
+    def editable_notes(cls, family, base_notes, opening_date=None, as_of=None):
         saved = FamilyMISNotes.objects.filter(family=family).first()
         if saved and saved.document:
-            return cls._apply_saved_notes(base_notes, saved.document, family=family, opening_date=None, as_of=None)
+            return cls._apply_saved_notes(
+                base_notes,
+                saved.document,
+                family=family,
+                opening_date=opening_date,
+                as_of=as_of,
+            )
         editable = cls._editable_notes_from_report(base_notes)
         base_notes["editable"] = editable
         return base_notes
 
     @classmethod
-    def save_editable_notes(cls, family, user, document, base_notes):
+    def save_editable_notes(cls, family, user, document, base_notes, opening_date=None, as_of=None):
         cleaned = cls._clean_editable_notes(document)
         saved = FamilyMISNotes.objects.filter(family=family).first()
         before = saved.document if saved else cls._editable_notes_from_report(base_notes)
         changes = cls._notes_change_summary(before, cleaned)
         if not changes:
-            return cls._apply_saved_notes(base_notes, before, family=family, opening_date=None, as_of=None), False
+            return cls._apply_saved_notes(
+                base_notes,
+                before,
+                family=family,
+                opening_date=opening_date,
+                as_of=as_of,
+            ), False
 
         if saved is None:
             saved = FamilyMISNotes(family=family)
@@ -1413,7 +1425,13 @@ class MISReportService:
             user=user,
             changes=changes,
         )
-        return cls._apply_saved_notes(base_notes, cleaned), True
+        return cls._apply_saved_notes(
+            base_notes,
+            cleaned,
+            family=family,
+            opening_date=opening_date,
+            as_of=as_of,
+        ), True
 
     @classmethod
     def build(cls, family, from_date=None, to_date=None):
@@ -1610,7 +1628,12 @@ class MISReportService:
             "data_sheet": data_rows,
             "tax_report": tax_rows,
             "fund_type_summary": fund_type_summary,
-            "notes": cls.editable_notes(family, cls._build_notes(family, data_rows, opening_date, as_of)),
+            "notes": cls.editable_notes(
+                family,
+                cls._build_notes(family, data_rows, opening_date, as_of),
+                opening_date=opening_date,
+                as_of=as_of,
+            ),
             "summary": {
                 "total_current_value": sum((Decimal(str(row["closing_amount"] or 0)) for row in data_rows), Decimal("0")),
                 "number_of_rows": len(data_rows),

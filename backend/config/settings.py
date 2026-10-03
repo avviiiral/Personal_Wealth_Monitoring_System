@@ -198,8 +198,9 @@ WEB_PUSH_ENABLED = bool(
     WEB_PUSH_VAPID_PUBLIC_KEY and WEB_PUSH_VAPID_PRIVATE_KEY
 )
 
-# Zero-cost corporate filing intelligence. Official exchange feeds are opt-in;
-# the application never requires paid credentials or a hosted AI model.
+# Zero-cost corporate filing intelligence. NSE uses its public corporate-
+# announcement feed by default; BSE can be enabled when an authorized feed URL
+# is configured. The application never requires paid credentials or a hosted AI model.
 NEWS_CORPORATE_FILINGS_ENABLED = _env_bool("NEWS_CORPORATE_FILINGS_ENABLED", True)
 NEWS_NSE_FILINGS_ENABLED = _env_bool("NEWS_NSE_FILINGS_ENABLED", True)
 NEWS_BSE_FILINGS_ENABLED = _env_bool("NEWS_BSE_FILINGS_ENABLED", True)

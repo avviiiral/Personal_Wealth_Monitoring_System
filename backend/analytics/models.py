@@ -1,4 +1,5 @@
 from django.db import models
+from django.db.models import Q
 
 
 class StandardAllocation(models.Model):
@@ -11,7 +12,10 @@ class StandardAllocation(models.Model):
     family = models.ForeignKey(
         "users.FamilyGroup",
         on_delete=models.CASCADE,
+        null=True,
+        blank=True,
         related_name="standard_allocations",
+        help_text="Null means this is the global Standard Allocation shared by all families.",
     )
     asset_category = models.CharField(max_length=100)
     allocation_percent = models.DecimalField(
@@ -32,9 +36,16 @@ class StandardAllocation(models.Model):
         constraints = [
             models.UniqueConstraint(
                 fields=["family", "asset_category"],
+                condition=Q(family__isnull=False),
                 name="unique_family_standard_allocation",
+            ),
+            models.UniqueConstraint(
+                fields=["asset_category"],
+                condition=Q(family__isnull=True),
+                name="unique_global_standard_allocation",
             ),
         ]
 
     def __str__(self):
-        return f"{self.family.name} - {self.asset_category}: {self.allocation_percent}%"
+        scope = self.family.name if self.family_id else "All Families"
+        return f"{scope} - {self.asset_category}: {self.allocation_percent}%"

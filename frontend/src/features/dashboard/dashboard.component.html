@@ -5,23 +5,6 @@
       <h1>Dashboard</h1>
       <p>Overview of your personal wealth and investments.</p>
 
-      <div class="family-filter-inline" *ngIf="familyMemberOptions.length > 0">
-        <span class="header-control-label">Family Member</span>
-        <div class="header-control-buttons">
-          <button type="button" class="header-control-button" [class.active]="!selectedFamilyMember" (click)="clearFamilyMember()">
-            All
-          </button>
-          <button
-            *ngFor="let family of familyMemberOptions"
-            type="button"
-            class="header-control-button"
-            [class.active]="isFamilyMemberSelected(family)"
-            (click)="selectFamilyMember(family)"
-          >
-            {{ family }}
-          </button>
-        </div>
-      </div>
     </div>
 
     <div class="page-header-actions">
@@ -43,20 +26,39 @@
         </button>
       </div>
 
-      <div class="header-filter-stack">
-        <div class="header-control-inline">
-          <span class="header-control-label">Display As</span>
-          <div class="header-control-buttons">
-            <button
-              *ngFor="let unit of displayUnits"
-              type="button"
-              class="header-control-button"
-              [class.active]="displayUnit === unit.value"
-              (click)="setDisplayUnit(unit.value)"
-            >
-              {{ unit.label }}
-            </button>
-          </div>
+    </div>
+
+    <div class="header-controls-row">
+      <div class="family-filter-inline" *ngIf="familyMemberOptions.length > 0">
+        <span class="header-control-label">Family Member</span>
+        <div class="header-control-buttons">
+          <button type="button" class="header-control-button" [class.active]="!selectedFamilyMember" (click)="clearFamilyMember()">
+            All
+          </button>
+          <button
+            *ngFor="let family of familyMemberOptions"
+            type="button"
+            class="header-control-button"
+            [class.active]="isFamilyMemberSelected(family)"
+            (click)="selectFamilyMember(family)"
+          >
+            {{ family }}
+          </button>
+        </div>
+      </div>
+
+      <div class="header-control-inline display-unit-filter">
+        <span class="header-control-label">Display As</span>
+        <div class="header-control-buttons">
+          <button
+            *ngFor="let unit of displayUnits"
+            type="button"
+            class="header-control-button"
+            [class.active]="displayUnit === unit.value"
+            (click)="setDisplayUnit(unit.value)"
+          >
+            {{ unit.label }}
+          </button>
         </div>
       </div>
     </div>

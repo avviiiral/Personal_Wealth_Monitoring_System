@@ -11,7 +11,7 @@ from filing_intelligence.services.matching import (
     match_user_watchlists,
     users_for_holding,
 )
-from investments.models import Holding
+from investments.models import Holding, Asset
 
 
 class Command(BaseCommand):
@@ -180,8 +180,6 @@ class Command(BaseCommand):
 
     @staticmethod
     def _unmatched_detail(filing):
-        from investments.models import Asset
-
         assets = Asset.objects.filter(
             is_active=True,
             category__in=FILING_MATCHABLE_CATEGORIES,

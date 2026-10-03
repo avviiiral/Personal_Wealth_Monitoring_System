@@ -74,8 +74,8 @@ class Command(BaseCommand):
                 f"  Articles matched:       {stats['articles_matched']}\n"
                 f"  New articles stored:    {stats['articles_stored_new']}\n"
                 f"  Duplicates skipped:     {stats['duplicates_skipped']}\n"
-                f"  Articles sent to AI:    {stats['articles_sent_to_ai']}\n"
-                f"  AI failures:            {stats['ai_failures']}\n"
+                f"  Articles analyzed:    {stats['articles_analyzed']}\n"
+                f"  Analysis failures:            {stats['analysis_failures']}\n"
                 f"  Alerts created:         {stats['alerts_created']}\n"
                 f"  Notifications sent:     {stats['notifications_sent']}"
             )

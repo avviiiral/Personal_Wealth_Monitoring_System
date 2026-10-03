@@ -334,8 +334,8 @@ class FilingPipelineTests(TestCase):
             "Corporate Announcement",
             "Example Industries to acquire ABC",
             "Example Industries to acquire ABC",
-            first.filing_url,
             "https://bse.example/filing/acquisition-1",
+            "https://bse.example/feed",
             "BSE-ACQ-1",
             timezone.now(),
         )

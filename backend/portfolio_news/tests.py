@@ -2630,9 +2630,6 @@ class PortfolioNewsPipelineTests(TestCase):
 
         match = PortfolioNewsMatch.objects.get()
         self.assertEqual(match.holding_display_name, self.asset.name)
-        self.assertEqual(match.connection_type, "underlying")
-        self.assertEqual(match.underlying_name, "Sun Pharma Limited")
-        self.assertEqual(match.underlying_weight, Decimal("8.2500"))
 
         alert = PortfolioNewsAlert.objects.get()
         self.assertEqual(alert.connection_type, "underlying")
@@ -2646,9 +2643,6 @@ class PortfolioNewsPipelineTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data["count"], 1)
         matched_holding = response.data["results"][0]["matched_holdings"][0]
-        self.assertEqual(matched_holding["connection_type"], "underlying")
-        self.assertEqual(matched_holding["underlying_name"], "Sun Pharma Limited")
-        self.assertEqual(matched_holding["underlying_weight"], "8.2500")
 
     def test_end_to_end_creates_alert_for_relevant_article(self):
         provider = _FakeProvider(

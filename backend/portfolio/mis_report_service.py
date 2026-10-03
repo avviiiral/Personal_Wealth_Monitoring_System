@@ -386,10 +386,12 @@ class MISReportService:
 
                 if period_start <= tx.transaction_date <= as_of:
                     realized_pnl += gain
-                    if gain > 0:
-                        realized_tax += gain * cls._tax_rate_for_lot(
-                            lot, tax_setting, tx.transaction_date
-                        )
+                    # Tax follows the P/L sign. Losses therefore produce a
+                    # negative tax amount (tax benefit) using the same
+                    # tenure-based ST/LT rate as gains.
+                    realized_tax += gain * cls._tax_rate_for_lot(
+                        lot, tax_setting, tx.transaction_date
+                    )
 
                 lot["remaining_qty"] -= matched_qty
                 remaining_to_sell -= matched_qty
@@ -403,10 +405,11 @@ class MISReportService:
             for lot in lots:
                 gain = (market_rate - lot["unit_cost"]) * lot["remaining_qty"]
                 unrealized_pnl += gain
-                if gain > 0:
-                    unrealized_tax += gain * cls._tax_rate_for_lot(
-                        lot, tax_setting, as_of
-                    )
+                # Apply the same tenure-based tax rate to unrealized losses,
+                # producing a negative tax amount for a tax benefit.
+                unrealized_tax += gain * cls._tax_rate_for_lot(
+                    lot, tax_setting, as_of
+                )
 
         return {
             "realized_pnl": realized_pnl,

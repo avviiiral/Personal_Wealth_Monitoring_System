@@ -2796,7 +2796,7 @@ class PortfolioNewsPipelineTests(TestCase):
             provider=provider, analyzer=analyzer
         )
 
-        self.assertEqual(stats["ai_failures"], 1)
+        self.assertEqual(stats["analysis_failures"], 1)
         self.assertEqual(stats["alerts_created"], 0)
         # The article itself is still stored for future runs.
         self.assertEqual(NewsArticle.objects.count(), 1)
@@ -3014,7 +3014,7 @@ class PortfolioNewsPipelineTests(TestCase):
         # only 1 was sent to the AI this run - the cap applies
         # after matching, before the (expensive) AI call.
         self.assertEqual(stats["articles_matched"], 2)
-        self.assertEqual(stats["articles_sent_to_ai"], 1)
+        self.assertEqual(stats["articles_analyzed"], 1)
         self.assertEqual(analyzer.call_count, 1)
 
         # Both articles are still stored, though - nothing is

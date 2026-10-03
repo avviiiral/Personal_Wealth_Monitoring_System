@@ -182,6 +182,12 @@ Log in with the account you just created, open **Portfolio → Import** and load
 
 Net worth, asset allocation, key portfolio metrics and an **Investment Summary** table broken down by asset class — all computed server-side and scoped to your own data plus your currently active family's data (or everyone's, for a System Owner).
 
+- **Standard Allocation** supports both **Amount** and **Percentage** views.
+- The **percentage allocation is authoritative**; the amount is recalculated from the current scoped total wealth.
+- A global allocation can be shared across family members, while selecting a family member can create an independent family-specific allocation override.
+- Family-specific amounts recalculate against that family member's current portfolio total without changing the configured allocation percentages.
+- Standard Allocation percentages are validated to total **100%** before saving.
+
 ### 📁 Portfolio
 
 - A hierarchical tree of holdings: **Family → Portfolio → Asset class → Sub-class → Asset**
@@ -195,6 +201,7 @@ Net worth, asset allocation, key portfolio metrics and an **Investment Summary**
 - **Asset Underlying uploads** from Portfolio for supported assets using the standard Excel format (`Stocks`, `% Holding`)
 - **Underlying upload visibility in Settings** with asset name, uploader, upload timestamp, and expandable underlying holdings
 - **Sample Underlying Format** download from Settings as an Excel workbook with an `Underlying` sheet and upload instructions
+- **Transaction Edit History** records edits made from Transaction Reports and retains a durable audit record when a transaction is deleted. Deleted transactions remain visible in the audit history with their previous values.
 
 ### 📥 Transaction Uploads
 
@@ -265,7 +272,7 @@ The **MIS Report** is available at **Portfolio → MIS Report** and contains the
 - **Notes** — standard MIS reference-rate observations for REITs/InvITs, Sovereign Gold Bonds, Silver ETF, Nifty 50, BSE 500 and Dollar Rate, including opening/closing values, change and percentage change where source data is available.
 - **Custom date range** — select `From Date` and `To Date`; opening valuation is reconstructed from the day before the selected start date and closing valuation is calculated as of the selected end date.
 - **Display As** — **Amount**, **Lakhs**, or **Crores**. Conversion is presentation-only; source financial values remain in rupees.
-- **FIFO taxation** — realized P/L is calculated using **First-In, First-Out (FIFO)** transaction matching. Tax is calculated separately for realized and unrealized gains using the configured asset-specific tenure and tax rates; negative P/L produces **₹0 tax**.
+- **FIFO taxation** — realized P/L is calculated using **First-In, First-Out (FIFO)** transaction matching. Tax is calculated separately for realized and unrealized P/L using the configured asset-specific tenure and tax rates. The same tenure-based rate is applied regardless of P/L sign, so a negative realized or unrealized P/L produces a **negative tax value (tax benefit)** in the report.
 - **Tax Settings** — taxation settings are configured by **Asset Name** for the active family, including **Tenure (Months)**, **Short Term Tax**, and **Long Term Tax**. The settings apply consistently to matching asset names within the family.
 - **Download Excel** — exports `IPS`, `Data Sheet`, `Tax Report`, `Fund Type Summary`, and `Notes` in `.xlsx` format.
 - **Uploaded classification source** — IPS and related MIS grouping use the stored/uploaded family and asset classification data rather than synthetic classification defaults.
@@ -277,11 +284,16 @@ The **MIS Report** is available at **Portfolio → MIS Report** and contains the
 ### 🔐 Settings
 
 - **Account and preferences**, including password change
+- **Tax Settings** — configure asset-name-specific tenure, Short Term Tax and Long Term Tax rates for the active family.
 - **User Management** — role-scoped: you only see and manage the roles you're allowed to
 - **Family Management** — System Owner only
-- **Manual Prices** — override any asset's price within your visible family scope; every override is **audit-logged** (who, when, from what)
-- **Transaction Uploads** — review transaction upload history, inspect failed rows, and download the standard transaction upload format
-- **Underlyings** — review the latest uploaded underlying snapshot per asset, see who uploaded it and when, expand underlying holdings, and download the sample underlying Excel format
+- **Logs** — operational and audit history is grouped under one Settings entry. Logs contains:
+  - **Tax Update** — history of tax-setting changes, including user, timestamp, asset name, previous values and new values.
+  - **Transaction Edit History** — audit history of transaction edits and deletions. A deleted transaction is retained as an audit record and displayed as **Transaction Deleted**, with the original transaction values available from **View**.
+  - **Transaction Uploads** — upload status, imported/failed/duplicate counts, row-level failures and standard transaction template download.
+  - **Underlyings** — latest underlying upload per asset, uploader, upload time, underlying rows and sample Excel format.
+  - **MIS Edit History** — audit history of editable MIS Notes changes.
+  - **Manual Prices** — override any asset's price within your visible family scope; every override is **audit-logged** (who, when, from what).
 
 ### 📰 Portfolio News workflow
 
@@ -795,6 +807,8 @@ All endpoints require an authenticated Django session unless noted. Auth uses **
 | `POST` `DELETE`              | `/api/settings/groups/<id>/members/[<user_id>/]` | Add / remove a family member         |
 | `GET`                        | `/api/settings/prices/`                          | List overridable prices              |
 | `PUT` `PATCH` `DELETE`       | `/api/settings/prices/<asset_id>/`               | Set / clear a manual price           |
+| `GET`                        | `/api/settings/tax-rates/`                      | List asset-name tax settings         |
+| `GET`                        | `/api/settings/tax-rates/history/`              | Tax-setting change history            |
 
 </details>
 
@@ -829,6 +843,8 @@ All endpoints require an authenticated Django session unless noted. Auth uses **
 | `GET`  | `/api/analytics/wealth/performance/`           |
 | `GET`  | `/api/analytics/wealth/xirr/`                  |
 | `GET`  | `/api/analytics/wealth/investment-summary/`    |
+| `GET`  | `/api/analytics/wealth/standard-allocations/`  | Read global/family Standard Allocation        |
+| `POST` | `/api/analytics/wealth/standard-allocations/update/` | Save global/family Standard Allocation |
 | `GET`  | `/api/analytics/wealth/sector-allocation/`     |
 | `GET`  | `/api/analytics/wealth/market-cap-allocation/` |
 | `GET`  | `/api/analytics/wealth/equity-analysis/`       |
@@ -891,7 +907,7 @@ All endpoints require an authenticated Django session unless noted. Auth uses **
 | `/reports`        | Excel / PDF exports                                           |
 | `/ai-chat`        | Gemini portfolio assistant                                    |
 | `/portfolio-news` | News alerts for your holdings                                 |
-| `/settings`       | Account · User Management · Family Management · Manual Prices |
+| `/settings`       | Account · Security · Tax Settings · Logs · User Management · Family Management |
 
 All authenticated routes sit under a `ShellComponent` (sidebar + header with the family switcher).
 
@@ -1091,7 +1107,7 @@ python manage.py test portfolio_news.test_web_push -v 2 # Web Push delivery beha
 | `investments/tests.py`  | The transaction importer and AMC-name / quant auto-enrichment         |
 | Transaction upload workflow | Upload audit/history, standard template endpoints, row-level failure handling, and transaction import behavior |
 | `portfolio_news/test_web_push.py` | VAPID/Web Push delivery, subscription handling and notification_sent semantics |
-| `portfolio/test_mis_report.py` | MIS Report API, historical valuation, Excel structure, display units, and family authorization |
+| `portfolio/test_mis_report.py` | MIS Report API, historical valuation, Excel structure, display units, FIFO taxation, negative-loss tax benefits, and family authorization |
 
 **Frontend** — from `frontend/`:
 

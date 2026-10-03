@@ -57,7 +57,7 @@ def _get_analysis_delay_seconds() -> float:
         return float(
             os.environ.get(
                 "NEWS_MONITOR_ANALYSIS_DELAY_SECONDS",
-                DEFAULT_AI_CALL_DELAY_SECONDS,
+                DEFAULT_ANALYSIS_DELAY_SECONDS,
             )
         )
     except (TypeError, ValueError):

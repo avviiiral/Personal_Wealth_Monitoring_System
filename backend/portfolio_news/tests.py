@@ -7,7 +7,7 @@ from unittest.mock import (
 from django.test import TestCase
 from rest_framework.test import APIClient
 
-from users.models import FamilyGroup
+from users.models import FamilyGroup, User
 
 import requests
 
@@ -53,6 +53,70 @@ SAMPLE_FEED_XML = b"""<?xml version="1.0" encoding="UTF-8"?>
 """
 
 MALFORMED_FEED_XML = b"not a valid feed at all <<<>>>"
+
+
+class PortfolioNewsIncrementalFeedTests(TestCase):
+
+    def setUp(self):
+        self.client = APIClient()
+        self.user = User.objects.create_user(
+            username="live-news-user",
+            password="test-password",
+        )
+        self.client.force_authenticate(user=self.user)
+
+    def _article(self, title, article_id=None):
+        article = NewsArticle.objects.create(
+            title=title,
+            url=f"https://news.example.com/{title.lower().replace(' ', '-')}",
+            source="Reuters",
+            description=title,
+            published_at=datetime(2026, 10, 3, 9, 0, tzinfo=timezone.utc),
+            matched_query="Test Company",
+        )
+        if article_id is not None:
+            article.id = article_id
+            article.save(update_fields=["id"])
+        return article
+
+    def test_raw_feed_supports_after_id_cursor(self):
+        first = self._article("First article")
+        second = self._article("Second article")
+
+        response = self.client.get(
+            "/api/ai/news/raw/",
+            {"after_id": first.id},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        returned_ids = [item["id"] for item in response.data["results"]]
+        self.assertIn(second.id, returned_ids)
+        self.assertNotIn(first.id, returned_ids)
+
+    def test_alert_feed_supports_after_id_cursor(self):
+        first = self._article("First alert article")
+        second = self._article("Second alert article")
+
+        PortfolioNewsAlert.objects.create(
+            user=self.user,
+            article=first,
+            relevant=True,
+        )
+        PortfolioNewsAlert.objects.create(
+            user=self.user,
+            article=second,
+            relevant=True,
+        )
+
+        response = self.client.get(
+            "/api/ai/news/",
+            {"after_id": first.id},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        returned_ids = [item["id"] for item in response.data["results"]]
+        self.assertIn(second.id, returned_ids)
+        self.assertNotIn(first.id, returned_ids)
 
 
 class GoogleNewsRSSProviderTests(TestCase):

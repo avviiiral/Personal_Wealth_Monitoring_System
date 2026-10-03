@@ -333,3 +333,75 @@ class FilingPipelineTests(TestCase):
         stats = self.ingest()
         self.assertEqual(stats["provider_failures"], 0)
         self.assertEqual(PortfolioNewsAlert.objects.filter(user=self.other).count(), 0)
+
+
+class FilingDiagnosticsCommandTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(
+            username="diagnostic-user",
+            password="x",
+        )
+        self.asset = Asset.objects.create(
+            owner=self.user,
+            name="Diagnostic Industries Limited",
+            category=AssetCategory.STOCK,
+            symbol="DIAG",
+            isin="INE999999999",
+            is_active=True,
+        )
+        Holding.objects.create(
+            owner=self.user,
+            asset=self.asset,
+            quantity=10,
+            current_value=1000,
+        )
+
+    def _filing(self, *, symbol, isin, company_name, external_id):
+        return Filing.objects.create(
+            exchange="NSE",
+            company_name=company_name,
+            symbol=symbol,
+            isin=isin,
+            subject="Corporate announcement",
+            details="Diagnostic filing",
+            filing_url=f"https://example.com/{external_id}",
+            source_url="https://example.com/feed",
+            external_filing_id=external_id,
+            published_at=timezone.now(),
+            content_hash=external_id,
+        )
+
+    def test_command_reports_match_and_unmatched_filings(self):
+        self._filing(
+            symbol="DIAG",
+            isin="INE999999999",
+            company_name="Diagnostic Industries Limited",
+            external_id="DIAG-1",
+        )
+        self._filing(
+            symbol="UNKNOWN",
+            isin="INE000000000",
+            company_name="Unknown Industries Limited",
+            external_id="DIAG-2",
+        )
+
+        from io import StringIO
+        from django.core.management import call_command
+
+        output = StringIO()
+        call_command(
+            "diagnose_corporate_filings",
+            hours=24,
+            exchange=["nse"],
+            limit=10,
+            stdout=output,
+        )
+        text = output.getvalue()
+
+        self.assertIn("Stored filings inspected: 2", text)
+        self.assertIn("ISIN matches:            1", text)
+        self.assertIn("unmatched:               1", text)
+        self.assertIn("DIAG-2", text)
+        self.assertIn("no active STOCK/ETF identifier matched", text)
+        self.assertIn("holding-user matches:    1", text)
+        self.assertIn("No database records are modified", text)

@@ -150,9 +150,11 @@ def wealth_standard_allocations(request):
 
     allocations = {}
     for row in rows:
+        percent = Decimal(str(row.allocation_percent))
+        amount = (total_current_value * percent / Decimal("100")).quantize(Decimal("0.01"))
         allocations[row.asset_category] = {
-            "percent": float(row.allocation_percent),
-            "amount": float(row.allocation_amount),
+            "percent": float(percent),
+            "amount": float(amount),
         }
 
     return Response({

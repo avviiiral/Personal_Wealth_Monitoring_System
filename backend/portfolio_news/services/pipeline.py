@@ -4,6 +4,7 @@ import os
 from datetime import timedelta
 from typing import Optional
 
+from django.conf import settings
 from django.contrib.auth.models import User
 from django.utils import timezone
 
@@ -18,6 +19,7 @@ from .news_provider import NewsProvider
 from .notification_creation import create_alert_from_analysis
 from .web_push import deliver_alert_notification
 from .query_builder import QueryBuilder
+from .unusual_activity import detect_unusual_activity
 from ..models import PortfolioNewsMatch
 
 
@@ -221,6 +223,16 @@ def _process_holding(
 
     selected_pairs = []
     articles_selected_this_holding = 0
+
+    candidates.sort(
+        key=lambda candidate: HoldingMatcher.match_score(
+            candidate.title,
+            candidate.description,
+            holding,
+            matched_query=candidate.matched_query,
+        ),
+        reverse=True,
+    )
 
     for candidate in candidates:
         if not HoldingMatcher.is_relevant(
@@ -447,10 +459,8 @@ def _create_alerts_from_analyses(
             )
             continue
 
-        if not alert_created:
-            continue
-
-        stats["alerts_created"] += 1
+        if alert_created:
+            stats["alerts_created"] += 1
 
         # Notification behavior is tier-based, not score-floor-based:
         #   HIGH/CRITICAL -> immediate Web Push
@@ -462,7 +472,17 @@ def _create_alerts_from_analyses(
         # smaller holding produces a low portfolio-weighted score.
         immediate_tier = alert.notification_tier in ("high", "critical")
 
-        if immediate_tier and alert.relevant:
+        cooldown_seconds = max(
+            0,
+            int(getattr(settings, "NEWS_NOTIFICATION_COOLDOWN", 86400)),
+        )
+        alert_age = (timezone.now() - alert.created_at).total_seconds()
+        if (
+            immediate_tier
+            and alert.relevant
+            and not alert.notification_sent
+            and (alert_created or alert_age <= cooldown_seconds)
+        ):
             if deliver_alert_notification(alert):
                 stats["notifications_sent"] += 1
             else:
@@ -618,6 +638,19 @@ def run_portfolio_news_monitor(
 
             if holding_pairs:
                 user_article_holding_pairs.extend(holding_pairs)
+
+        for monitored_holding in holdings:
+            signal = detect_unusual_activity(user, monitored_holding)
+            if signal:
+                logger.info(
+                    "unusual news activity user_id=%s holding=%r recent=%s "
+                    "baseline_daily=%s ratio=%s; informational only",
+                    user.id,
+                    signal.holding_display_name,
+                    signal.recent_count,
+                    signal.baseline_daily_average,
+                    signal.ratio,
+                )
 
         if not user_article_holding_pairs:
             continue

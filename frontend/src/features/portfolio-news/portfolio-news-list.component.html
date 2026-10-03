@@ -9,7 +9,7 @@
     </div>
     <div>
       <h1>Portfolio News</h1>
-      <p>News fetched and matched to the holdings you actually own, with AI analysis available as a separate layer.</p>
+      <p>News and corporate filings matched deterministically to the holdings you actually own.</p>
     </div>
   </div>
 
@@ -23,7 +23,7 @@
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
         <path d="M4 6h16M4 12h16M4 18h16" stroke-linecap="round" />
       </svg>
-      All News
+      News
     </button>
     <button
       type="button"
@@ -34,7 +34,7 @@
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
         <path d="M4 6h16M4 12h16M4 18h10" stroke-linecap="round" />
       </svg>
-      AI Feed
+      Alerts
     </button>
     <button
       type="button"
@@ -53,7 +53,7 @@
   <ng-container *ngIf="viewMode === 'all'">
     <div class="raw-news-note">
       <span class="raw-news-note-dot"></span>
-      Showing portfolio-matched news fetched from Google News RSS. This view does not require Gemini.
+      Showing portfolio-matched news fetched from Google News RSS. This view is based on deterministic portfolio matching.
     </div>
 
     <div class="secondary-filters">
@@ -214,11 +214,11 @@
         <div class="news-card-body">
           <div class="news-card-top">
             <strong>{{ item.holding_display_name }}</strong>
-            <span class="news-card-category">{{ item.source_type === 'EXCHANGE_FILING' ? 'EXCHANGE FILING' : item.category }}</span>
+            <span class="news-card-category">{{ (item.source_type === 'EXCHANGE_FILING' || item.source_type === 'CORPORATE_FILING') ? 'CORPORATE FILING' : item.category }}</span>
             <span [class]="materialityBadgeClass(item.materiality)">{{ item.materiality }}</span>
           </div>
 
-          <span class="news-card-title">{{ item.source_type === 'EXCHANGE_FILING' && item.filing_subject ? item.filing_subject : item.article_title }}</span>
+          <span class="news-card-title">{{ (item.source_type === 'EXCHANGE_FILING' || item.source_type === 'CORPORATE_FILING') && item.filing_subject ? item.filing_subject : item.article_title }}</span>
 
           <ng-container *ngIf="item.connection_type === 'underlying' && item.underlying_name">
             <span class="raw-news-query">

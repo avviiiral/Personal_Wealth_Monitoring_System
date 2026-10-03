@@ -25,7 +25,7 @@ export interface PortfolioNewsAlertListItem {
   underlying_name: string;
   underlying_weight: string | null;
   created_at: string;
-  source_type: 'NEWS' | 'EXCHANGE_FILING';
+  source_type: 'NEWS' | 'EXCHANGE_FILING' | 'CORPORATE_FILING';
   filing_exchange?: string | null;
   filing_company?: string | null;
   filing_symbol?: string | null;

@@ -16,7 +16,7 @@ type SentimentFilter = 'all' | 'positive' | 'negative' | 'neutral' | 'mixed';
 type DateRangeFilter = 'all' | 'today' | '3d' | '7d' | '30d';
 
 type ViewMode = 'all' | 'feed' | 'digest';
-type SourceFilter = 'all' | 'NEWS' | 'EXCHANGE_FILING';
+type SourceFilter = 'all' | 'NEWS' | 'CORPORATE_FILING';
 
 @Component({
   selector: 'app-portfolio-news-list',
@@ -67,7 +67,7 @@ export class PortfolioNewsListComponent implements OnInit {
   readonly sources: { value: SourceFilter; label: string }[] = [
     { value: 'all', label: 'All' },
     { value: 'NEWS', label: 'News' },
-    { value: 'EXCHANGE_FILING', label: 'Exchange Filings' },
+    { value: 'CORPORATE_FILING', label: 'Corporate Filings' },
   ];
 
   readonly dateRanges: { value: DateRangeFilter; label: string }[] = [

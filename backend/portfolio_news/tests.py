@@ -222,6 +222,26 @@ class DeduplicationLogicTests(TestCase):
 
         self.assertEqual(fp1, fp2)
 
+    def test_event_family_clusters_different_acquisition_headlines(self):
+        first = self._result(
+            "XYZ approves acquisition of ABC",
+            "https://news.example.com/acq-1",
+            "Reuters",
+        )
+        second = self._result(
+            "XYZ to acquire ABC",
+            "https://news.example.com/acq-2",
+            "Economic Times",
+        )
+
+        article_one, created_one = store_article(first)
+        article_two, created_two = store_article(second)
+
+        self.assertTrue(created_one)
+        self.assertFalse(created_two)
+        self.assertEqual(article_one.id, article_two.id)
+        self.assertEqual(article_one.source_count, 2)
+
     def test_compute_url_hash_deterministic(self):
         url = "https://news.example.com/article-1"
 

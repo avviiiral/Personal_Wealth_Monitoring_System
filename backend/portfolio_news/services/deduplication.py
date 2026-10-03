@@ -1,4 +1,5 @@
 import hashlib
+import re
 
 from datetime import timedelta
 
@@ -6,11 +7,45 @@ from difflib import SequenceMatcher
 
 from typing import Optional
 
+from django.conf import settings
 from django.db.models import Q
 from django.utils import timezone
 
 from .news_provider import NewsArticleResult
 from .text_utils import normalize_title
+
+_EVENT_FAMILIES = {
+    "acquisition": ("acquisition", "acquire", "takeover"),
+    "merger": ("merger", "amalgamation"),
+    "demerger": ("demerger", "scheme of arrangement"),
+    "results": ("results", "profit", "revenue", "ebitda", "eps"),
+    "dividend": ("dividend",),
+    "buyback": ("buyback", "buy-back"),
+    "split": ("stock split", "split of shares"),
+    "bonus": ("bonus issue", "bonus shares"),
+    "fundraising": ("fund raise", "fundraising", "qip", "preferential issue"),
+    "management": ("ceo", "cfo", "resign", "appointment", "director"),
+    "regulatory": ("sebi", "rbi", "regulatory", "penalty", "ban", "investigation"),
+    "litigation": ("litigation", "lawsuit", "court", "legal proceeding"),
+    "order": ("order win", "large order", "material order", "purchase order"),
+    "contract": ("contract", "agreement", "partnership"),
+    "pledge": ("promoter pledge", "pledge", "pledged"),
+}
+
+_STOPWORDS = {"the", "and", "of", "for", "to", "a", "an", "with", "on", "in", "from", "limited", "ltd", "company"}
+
+
+def _event_family(text: str) -> str:
+    value = (text or "").lower()
+    scores = [(sum(1 for phrase in phrases if phrase in value), family) for family, phrases in _EVENT_FAMILIES.items()]
+    score, family = max(scores, default=(0, ""))
+    return family if score else ""
+
+
+def _entity_tokens(candidate: NewsArticleResult) -> set[str]:
+    raw = " ".join((candidate.matched_query or "", candidate.title or ""))
+    return {token for token in re.findall(r"[a-z0-9]+", raw.lower()) if len(token) >= 4 and token not in _STOPWORDS}
+
 
 
 def compute_url_hash(url: str) -> str:
@@ -107,13 +142,9 @@ class ArticleDeduplicator:
             or timezone.now()
         )
 
-        window_start = reference_date - timedelta(
-            days=cls.RECENT_WINDOW_DAYS
-        )
-
-        window_end = reference_date + timedelta(
-            days=cls.RECENT_WINDOW_DAYS
-        )
+        window_days = max(1, int(getattr(settings, "NEWS_EVENT_CLUSTER_WINDOW", cls.RECENT_WINDOW_DAYS)))
+        window_start = reference_date - timedelta(days=window_days)
+        window_end = reference_date + timedelta(days=window_days)
 
         recent_candidates = NewsArticle.objects.filter(
             published_at__gte=window_start,
@@ -130,5 +161,19 @@ class ArticleDeduplicator:
                 threshold=cls.NEAR_DUPLICATE_THRESHOLD,
             ):
                 return article
+
+        candidate_family = _event_family(candidate.title)
+        candidate_entities = _entity_tokens(candidate)
+        if candidate_family and candidate_entities:
+            for article in recent_candidates:
+                if _event_family(article.normalized_title) != candidate_family:
+                    continue
+                article_entities = {
+                    token
+                    for token in re.findall(r"[a-z0-9]+", article.normalized_title.lower())
+                    if len(token) >= 4 and token not in _STOPWORDS
+                }
+                if candidate_entities & article_entities:
+                    return article
 
         return None

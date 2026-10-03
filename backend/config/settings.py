@@ -198,6 +198,14 @@ WEB_PUSH_ENABLED = bool(
     WEB_PUSH_VAPID_PUBLIC_KEY and WEB_PUSH_VAPID_PRIVATE_KEY
 )
 
+# Zero-cost corporate filing intelligence. Official exchange feeds are opt-in;
+# the application never requires paid credentials or a hosted AI model.
+NEWS_CORPORATE_FILINGS_ENABLED = _env_bool("NEWS_CORPORATE_FILINGS_ENABLED", False)
+NEWS_NSE_FILINGS_ENABLED = _env_bool("NEWS_NSE_FILINGS_ENABLED", True)
+NEWS_BSE_FILINGS_ENABLED = _env_bool("NEWS_BSE_FILINGS_ENABLED", True)
+NEWS_EVENT_CLUSTER_WINDOW = _env_int("NEWS_EVENT_CLUSTER_WINDOW", 3)
+NEWS_NOTIFICATION_COOLDOWN = _env_int("NEWS_NOTIFICATION_COOLDOWN", 86400)
+
 LOGS_DIR = BASE_DIR / 'logs'
 LOGS_DIR.mkdir(exist_ok=True)
 

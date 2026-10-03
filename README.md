@@ -15,7 +15,6 @@
 ![TypeScript](https://img.shields.io/badge/TypeScript-Angular-3178C6?style=for-the-badge&logo=typescript&logoColor=white)
 ![SQLite](https://img.shields.io/badge/SQLite-default-003B57?style=for-the-badge&logo=sqlite&logoColor=white)
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-optional-4169E1?style=for-the-badge&logo=postgresql&logoColor=white)
-![Gemini](https://img.shields.io/badge/Gemini-AI%20layer-8E75B2?style=for-the-badge&logo=googlegemini&logoColor=white)
 ![License](https://img.shields.io/badge/License-Proprietary-red?style=for-the-badge)
 
 [🚀 Quick start](#-quick-start) &nbsp;·&nbsp; [✨ Features](#-features) &nbsp;·&nbsp; [🧭 How it works](#-how-it-works) &nbsp;·&nbsp; [🔑 Roles](#-roles-and-permissions) &nbsp;·&nbsp; [🔌 API](#-api-reference) &nbsp;·&nbsp; [📘 Setup guide](./SETUP.md)
@@ -52,7 +51,7 @@ It is built for **households, not just individuals**: a four-tier role hierarchy
 | 📈  | **Real returns**              | XIRR, CAGR and realized / unrealized P&L computed from actual transactions                    |
 | 🇮🇳  | **Built for India**           | Stocks, ETFs, bonds, SGBs, mutual funds and SIPs; Yahoo Finance + AMFI data                   |
 | 👨‍👩‍👧  | **Family-ready**              | Four roles, many-to-many families, and an active-family switcher                              |
-| 🤖  | **AI on a leash**             | Gemini explains the numbers it is handed — it never computes them                             |
+| 🤖  | **Deterministic intelligence** | Portfolio News classification and alerting run locally with rules; no AI API key is required |
 | 📰  | **News that matters**         | An agent reads your _actual_ holdings, matches articles deterministically, then scores impact |
 | 🪶  | **Zero infrastructure tax**   | SQLite by default, in-process schedulers — no Celery, no Redis, no cron                       |
 | 📤  | **Export anything**           | Transactions, holdings and summaries to Excel or PDF                                          |
@@ -83,7 +82,7 @@ The application uses the following external data sources for market and investme
 | Nifty 50 TRI | [NSE Indices](https://www.niftyindices.com/) — official Nifty 50 Total Return Index historical data |
 | BSE 500 TRI | [BSE India](https://www.bseindia.com/) — BSE500T historical data; deployments may also use the configured BSE 500 TRI CSV/URL or the supported TRI-tracking ETF fallback |
 | Portfolio news | [Google News](https://news.google.com/) RSS — no API key required |
-| AI explanations | [Google Gemini](https://ai.google.dev/) — optional, only for AI Chat |
+| AI explanations | [Google Gemini](https://ai.google.dev/) — optional, only for Portfolio Chat; not required by Portfolio News |
 
 ## 🚀 Quick start
 
@@ -108,10 +107,10 @@ python -m venv venv
 python -m pip install --upgrade pip
 python -m pip install -r requirements.txt
 
-# Minimal local .env (optional Gemini key enables AI Chat + Portfolio News)
+# Minimal local .env (Gemini is optional and only enables Portfolio Chat)
 @"
 DEBUG=True
-GEMINI_API_KEY=paste-your-key-here
+GEMINI_API_KEY=paste-your-key-here  # optional: Portfolio Chat only
 "@ | Set-Content .env
 
 python manage.py migrate
@@ -131,8 +130,8 @@ source venv/bin/activate
 python -m pip install --upgrade pip
 python -m pip install -r requirements.txt
 
-# Minimal local .env (optional Gemini key enables AI Chat + Portfolio News)
-printf 'DEBUG=True\nGEMINI_API_KEY=paste-your-key-here\n' > .env
+# Minimal local .env (Gemini is optional and only enables Portfolio Chat)
+printf 'DEBUG=True\nGEMINI_API_KEY=paste-your-key-here  # optional: Portfolio Chat only\n' > .env
 
 python manage.py migrate
 python manage.py createsuperuser
@@ -298,7 +297,7 @@ The **MIS Report** is available at **Portfolio → MIS Report** and contains the
 ### 📰 Portfolio News workflow
 
 
-The Portfolio News pipeline separates deterministic news retrieval and portfolio matching from local rule-based analysis. The **All News** layer is metadata-first; the alert layer is classified locally without an AI API.
+The Portfolio News pipeline is fully deterministic: retrieval, portfolio matching, event classification, alert scoring and notification tiering run locally without a hosted AI model. The **News** layer is metadata-first; the alert layer is classified locally without an AI API.
 
 ```text
 ┌──────────────────────────────┐
@@ -381,7 +380,7 @@ The Portfolio News pipeline separates deterministic news retrieval and portfolio
 ┌────────────────────────────────────┐
 │          PORTFOLIO NEWS UI         │
 │                                    │
-│  [ All News ] [ AI Feed ] [Digest] │
+│  [ News ] [ Alerts ] [Digest] │
 └────────────────────────────────────┘
 ```
 
@@ -393,18 +392,41 @@ The Portfolio News pipeline separates deterministic news retrieval and portfolio
 4. **Google News RSS** retrieves matching articles.
 5. The **Holding Matcher** deterministically checks both the news headline and the provider-supplied article body/description against the holding's names, aliases, ticker and ISIN. For underlying queries it applies the same headline/body check to the requested underlying name or ISIN.
 6. Each deterministic association is persisted as a **PortfolioNewsMatch** record.
-7. **All News** reads these raw family matches through `/api/ai/news/raw/` and does not require paid AI.
-8. The optional **Gemini AI Analysis** layer enriches matched articles with relevance, sentiment, impact and category information and stores the resulting **PortfolioNewsAlert** records.
-9. The enriched records power the **AI Feed** and **Digest** views.
-10. The **Portfolio News UI** presents the three layers as **All News**, **AI Feed**, and **Today's Digest**.
+7. **News** reads these raw family matches through `/api/ai/news/raw/` and does not require paid AI.
+8. The local **RuleBasedArticleAnalyzer** enriches matched articles with relevance, sentiment, impact and category information and stores the resulting **PortfolioNewsAlert** records.
+9. The enriched records power the **Alerts** and **Digest** views.
+10. The **Portfolio News UI** presents the three layers as **News**, **Alerts**, and **Today's Digest**.
 
-This separation means a news article can appear in **All News** independently of analysis; the alert layer is now generated by the local rule-based analyzer.
+This separation means a news article can appear in **News** independently of analysis; the alert layer is now generated by the local rule-based analyzer.
+
+
+### Corporate Filing Intelligence
+
+Corporate filings are first-class Portfolio News inputs, distinct from ordinary news. The existing `filing_intelligence` app stores filing metadata, performs deterministic classification, matches securities by ISIN/symbol/company identity, and feeds the existing PortfolioNewsAlert/Web Push/digest path.
+
+**Supported event families include:** financial results, board meetings, dividends, bonus issues, stock splits, buybacks, acquisitions, mergers, demergers, fund raising, preferential issues, promoter pledges/releases, management/auditor changes, regulatory action, credit-rating downgrades, defaults, litigation, material contracts/orders, shareholding/promoter transactions, investor presentations, earnings calls and routine announcements.
+
+**Event clustering:** NSE/BSE/company filings and independent news reports are stored through the same `NewsArticle`/`NewsArticleSource` layer. URL, normalized-title, recent fuzzy-title and conservative event-family/entity matching collapse reports of the same event into one underlying article while retaining supporting source URLs and source count. A later primary filing can upgrade an existing clustered alert rather than creating another notification.
+
+**Source priority:** exchange/company/regulatory evidence is treated as Tier 1. Cross-source confidence increases only when distinct URLs/publishers are attached; syndicated copies are not intentionally counted as independent confirmation.
+
+**Official-source limitation:** NSE publicly exposes Corporate Filings/Announcements pages with CSV download controls, while BSE exposes Corporate Data through its official market-data products. This branch does not bypass anti-bot controls or claim an undocumented production endpoint is available. The production adapters therefore accept an authorized HTTP/CSV/JSON feed via `EXCHANGE_FILING_FEED_URL_NSE` / `EXCHANGE_FILING_FEED_URL_BSE`. If a feed is unavailable, that exchange fails independently and no fake filing is created.
+
+**Commands:**
+
+```powershell
+python manage.py ingest_exchange_filings --exchange=nse --hours=24 --dry-run
+python manage.py ingest_exchange_filings --exchange=bse --hours=24 --dry-run
+python manage.py ingest_exchange_filings --hours=24
+```
+
+The background scheduler runs filing ingestion only when corporate filing intelligence is enabled and an exchange feed is configured. This keeps the default deployment zero-cost and quiet when no authorized feed endpoint is available.
 
 ### Family-scoped Portfolio News
 
 Portfolio News follows the same family boundary used by the portfolio and analytics views.
 
-- The **active family** is the authoritative scope for **All News** for users who belong to a family.
+- The **active family** is the authoritative scope for **News** for users who belong to a family.
 - Deterministic matches are stored with a **FamilyGroup** reference in `PortfolioNewsMatch`.
 - The same article/holding/connection combination is stored only once per family, while separate underlying relationships can be retained when one article is connected through more than one uploaded underlying.
 - The raw endpoint `/api/ai/news/raw/` returns only the currently selected family's deterministic news for normal users.
@@ -412,7 +434,7 @@ Portfolio News follows the same family boundary used by the portfolio and analyt
 - A user with no family retains access to legacy user-scoped raw matches; this is a compatibility path and does not weaken family authorization.
 - System Owners can view stored family-scoped raw news across families.
 - Family membership controls **visibility**; role-based permissions continue to control what users can do. Client-supplied family IDs are not trusted for authorization.
-- **All News remains analysis-independent.** The local rule-based analyzer produces the `PortfolioNewsAlert` records used by AI Feed and Today's Digest.
+- **News remains analysis-independent.** The local rule-based analyzer produces the `PortfolioNewsAlert` records used by Alerts and Today's Digest.
 - **Asset-underlying relationships are explicit.** Uploaded `AssetUnderlyingHolding` rows are loaded into the news holdings registry. The monitor issues bounded queries for the largest uploaded underlyings and only accepts an underlying match when that underlying's name or ISIN appears in the news headline or provider-supplied body/description.
 - **Deterministic matching uses headline + body/description.** Portfolio News does not rely on headline-only matching. A holding can match when its identifier appears in either the headline or the provider-supplied article description/body snippet. Google News RSS does not provide the publisher's complete article body, so this layer does not perform an additional full-article fetch just for deterministic matching.
 - **News connection metadata is persisted.** Each raw/AI relationship records `connection_type` (`direct` or `underlying`), the matched `underlying_name`, and the uploaded `underlying_weight`. The UI displays this connection so users can see why an article is associated with an asset.
@@ -437,19 +459,19 @@ Holding Matcher
 (headline + body/description)
       ↓
 PortfolioNewsMatch
-      ├──→ /api/ai/news/raw/ → All News
+      ├──→ /api/ai/news/raw/ → News
       │
       └──→ local rule-based analysis
                 ↓
           PortfolioNewsAlert
-                ├──→ AI Feed
+                ├──→ Alerts
                 └──→ Today's Digest
 ```
 
 - **`PortfolioNewsMatch` is the raw-news persistence layer.** A match stores the article, holding type/id, holding display name, matched query and, for family-scoped matches, the authoritative `FamilyGroup`. The database prevents the same article/holding combination from being stored more than once within the same family. Users without a family retain the legacy user-scoped uniqueness path.
 - **No paid AI call is part of article retrieval or analysis.** Google News RSS retrieves articles, the deterministic matcher associates them with portfolio holdings, and the local analyzer classifies them.
-- **Analysis limits do not remove raw matches.** Articles matched by the deterministic layer remain available to **All News** even if local analysis is disabled or fails.
-- **All News is metadata-first.** The raw endpoint returns the article title, original URL, source, description, publication time, source quality/count, matched query and matched holdings; users can open the original publisher article from the UI.
+- **Analysis limits do not remove raw matches.** Articles matched by the deterministic layer remain available to **News** even if local analysis is disabled or fails.
+- **News is metadata-first.** The raw endpoint returns the article title, original URL, source, description, publication time, source quality/count, matched query and matched holdings; users can open the original publisher article from the UI.
 - **Family visibility is enforced server-side.** For normal users, the raw endpoint derives the active family from the authenticated user and returns only that family's deterministic matches. System Owners can view stored family-scoped matches across families. Users without a family use the legacy user-scoped path. Client-supplied family IDs are not trusted for authorization.
 - **Monitoring is automatic.** The `monitor_portfolio_news` management command performs the news-monitoring pass and is also used by the application's background scheduler.
 - **Gemini is not required for Portfolio News.** A Gemini key is only used by the separate Portfolio Chat feature.
@@ -460,7 +482,7 @@ A **Gemini-backed** assistant scoped to the logged-in user's own portfolio. The 
 
 ### 📰 Portfolio News Intelligence
 
-Portfolio News has two layers. **All News** shows every article that the deterministic portfolio matcher fetched and associated with the user's holdings. **AI Feed** and the digest use the same stored alerts, now enriched by the zero-cost rule-based analyzer. The raw layer stores only article metadata/snippets and links users to the original publisher.
+Portfolio News has deterministic news, corporate filings, alerts and digest layers. **News** shows every article that the deterministic portfolio matcher fetched and associated with the user's holdings. **Alerts** and the digest use the same stored alerts, now enriched by the zero-cost rule-based analyzer. The raw layer stores only article metadata/snippets and links users to the original publisher.
 
 A background agent that:
 
@@ -563,7 +585,7 @@ flowchart TD
     R --> D["De-duplicate<br/>NewsArticle + NewsArticleSource"]
     D --> M{"Deterministic match<br/>to a holding?"}
     M -- no --> X["Discard<br/>no AI call spent"]
-    M -- yes --> G["Gemini analysis<br/>impact + confidence"]
+    M -- yes --> G["Local rule-based analysis<br/>impact + confidence"]
     G --> S["Score = impact × portfolio weight × confidence"]
     S --> A["PortfolioNewsAlert<br/>unique per user, article, holding"]
     A --> C{"Critical or High?"}
@@ -655,7 +677,7 @@ A user may belong to **zero, one or many** families. A personal **active-family 
 | PDF export            | `jspdf` + `jspdf-autotable` (frontend)                                                                                                   |
 | Market data           | Yahoo Finance (`yfinance` + `curl_cffi`), AMFI NAV feed over HTTP                                                                        |
 | News retrieval        | Google News RSS via `feedparser` — no paid news API                                                                                      |
-| AI                    | Google Gemini REST API — optional for Portfolio Chat; Portfolio News uses local rule-based NLP                                                                 |
+| AI                    | Google Gemini REST API — optional for Portfolio Chat; Portfolio News uses local rule-based NLP only                                                                 |
 | Background scheduling | In-process Python threads — **no Celery, no Redis**                                                                                      |
 | Logging               | Centralized rotating file handler (`backend/logs/pwms.log`)                                                                              |
 
@@ -1033,7 +1055,14 @@ Settings load from **`backend/.env`** (template: [`backend/.env.example`](./back
 | `DATABASE_ENGINE`                                                                         | `sqlite` or `postgresql`                                    | `sqlite`                                    | `sqlite` until your PostgreSQL migration is validated                                                         |
 | `POSTGRES_DB` · `POSTGRES_USER` · `POSTGRES_PASSWORD` · `POSTGRES_HOST` · `POSTGRES_PORT` | PostgreSQL connection                                       | used only when `DATABASE_ENGINE=postgresql` | template: `pwms` · `pwms_user` · _(set a password)_ · `localhost` · `5432`                                    |
 | `POSTGRES_CONN_MAX_AGE`                                                                   | Persistent PostgreSQL connection lifetime                    | `60` seconds when PostgreSQL is enabled       | Tune for the deployment; database health checks remain enabled                                                    |
-| `GEMINI_API_KEY` _(or `GOOGLE_API_KEY`)_                                                  | Enables AI Chat and Portfolio News analysis                 | —                                           | Your key from Google AI Studio. Without it AI Chat is unavailable; Portfolio News continues using the zero-cost rule-based analyzer |
+| `GEMINI_API_KEY` _(or `GOOGLE_API_KEY`)_                                                  | Enables Portfolio Chat only                                  | —                                           | Optional; Portfolio News does not use this key |
+| `NEWS_CORPORATE_FILINGS_ENABLED` | Enable corporate filing ingestion in the scheduler | `False` | Enable only when an authorized feed is configured |
+| `NEWS_NSE_FILINGS_ENABLED` | Enable NSE filing adapter | `True` | Applies only when corporate filing intelligence is enabled |
+| `NEWS_BSE_FILINGS_ENABLED` | Enable BSE filing adapter | `True` | Applies only when corporate filing intelligence is enabled |
+| `EXCHANGE_FILING_FEED_URL_NSE` | Authorized NSE HTTP/CSV/JSON feed or mirror | — | No credentials are hard-coded |
+| `EXCHANGE_FILING_FEED_URL_BSE` | Authorized BSE HTTP/CSV/JSON feed or mirror | — | No credentials are hard-coded |
+| `NEWS_EVENT_CLUSTER_WINDOW` | Recent event-clustering window in days | `3` | Conservative cross-source clustering |
+| `NEWS_NOTIFICATION_COOLDOWN` | Maximum age for retrying an unsent immediate notification | `86400` | Prevents stale push retries; does not suppress new events |
 | `NEWS_MONITOR_INTERVAL`                                                                   | Seconds between automatic news runs                         | `1800`                                      | Tune as needed                                                                                                |
 | `NEWS_MONITOR_ANALYSIS_DELAY_SECONDS`                                                      | Optional pause between local analysis batches              | `0`                                         | Usually leave at `0`; no external AI rate limit exists                                                            |
 | `WATCHLIST_PMS_SOURCE_URLS`                                                               | Optional comma-separated authoritative PMS source endpoints | _(blank)_                                   | Leave blank when no reliable source exists — no PMS values are ever fabricated                                |

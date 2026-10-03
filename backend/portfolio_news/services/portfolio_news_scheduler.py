@@ -3,6 +3,7 @@ import os
 import threading
 import time
 
+from django.conf import settings
 from django.db import close_old_connections
 
 from portfolio_news.services.pipeline import run_portfolio_news_monitor
@@ -57,7 +58,20 @@ class PortfolioNewsScheduler:
                 close_old_connections()
                 stats = run_portfolio_news_monitor()
 
-                filing_stats = ingest_exchange_filings() if os.environ.get("FILING_INTELLIGENCE_ENABLED", "false").lower() in ("1", "true", "yes") else None
+                filing_enabled = (
+                    getattr(settings, "NEWS_CORPORATE_FILINGS_ENABLED", True)
+                    and os.environ.get("FILING_INTELLIGENCE_ENABLED", "true").lower() in ("1", "true", "yes")
+                )
+                filing_exchanges = []
+                if getattr(settings, "NEWS_NSE_FILINGS_ENABLED", True):
+                    filing_exchanges.append("NSE")
+                if getattr(settings, "NEWS_BSE_FILINGS_ENABLED", True):
+                    filing_exchanges.append("BSE")
+                filing_stats = (
+                    ingest_exchange_filings(exchanges=filing_exchanges)
+                    if filing_enabled and filing_exchanges
+                    else None
+                )
 
                 logger.info(
                     "Portfolio news monitor run complete: users=%s, holdings=%s, "

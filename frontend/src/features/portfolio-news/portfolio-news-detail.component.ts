@@ -53,7 +53,7 @@ export class PortfolioNewsDetailComponent implements OnInit {
   }
 
   isFiling(): boolean {
-    return this.alert?.source_type === 'EXCHANGE_FILING';
+    return this.alert?.source_type === 'EXCHANGE_FILING' || this.alert?.source_type === 'CORPORATE_FILING';
   }
 
   formattedPublishedAt(): string {

@@ -25,7 +25,7 @@
         {{ a.impact.replace('_', ' ') }} impact
       </span>
 
-      <span class="category-pill">{{ isFiling() ? 'EXCHANGE FILING' : a.category }}</span>
+      <span class="category-pill">{{ isFiling() ? 'CORPORATE FILING' : a.category }}</span>
     </div>
 
     <h1 class="detail-holding-name">{{ a.holding_display_name }}</h1>
@@ -74,15 +74,15 @@
       <p>{{ a.reason }}</p>
 
       <p>
-        The AI assessment classifies the potential impact as
+        The Rule-based assessment classifies the potential impact as
         <strong>{{ a.impact.replace('_', ' ') }}</strong>
         with <strong>{{ confidencePercent() }}%</strong> confidence.
       </p>
     </div>
 
-    <!-- AI SUMMARY -->
+    <!-- DETERMINISTIC SUMMARY -->
     <div class="detail-section">
-      <h3>AI Summary</h3>
+      <h3>Deterministic Summary</h3>
       <p>{{ a.summary }}</p>
     </div>
 
@@ -96,7 +96,7 @@
       <div class="fact-block" *ngIf="a.interpretation">
         <h4 class="fact-block-label fact-block-label--interpretation">What this could mean</h4>
         <p>{{ a.interpretation }}</p>
-        <p class="disclaimer">Speculative AI interpretation, not a confirmed outcome.</p>
+        <p class="disclaimer">Speculative interpretation, not a confirmed outcome.</p>
       </div>
 
       <div class="fact-block" *ngIf="a.uncertainty_notes">
@@ -110,7 +110,7 @@
       <h3>Potential Portfolio Implication</h3>
       <p>{{ a.portfolio_implication }}</p>
       <p class="disclaimer">
-        This is an AI-generated assessment based on the available article, not investment advice or
+        This is a rule-based assessment based on the available article, not investment advice or
         a prediction of future returns.
       </p>
     </div>
@@ -167,7 +167,7 @@
       </div>
 
       <div class="metric">
-        <span class="metric-label">AI Confidence</span>
+        <span class="metric-label">Confidence</span>
         <span class="metric-value">{{ confidencePercent() }}%</span>
       </div>
 

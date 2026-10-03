@@ -1,6 +1,6 @@
 from datetime import timedelta
 
-from django.db.models import Exists, OuterRef
+from django.db.models import Exists, OuterRef, Q
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 
@@ -79,7 +79,13 @@ def _apply_common_filters(queryset, request):
     source_type = request.query_params.get("source_type")
 
     if source_type:
-        queryset = queryset.filter(source_type=source_type)
+        if source_type == "CORPORATE_FILING":
+            queryset = queryset.filter(
+                Q(source_type="CORPORATE_FILING")
+                | Q(source_type="EXCHANGE_FILING")
+            )
+        else:
+            queryset = queryset.filter(source_type=source_type)
 
     holding_id = request.query_params.get("holding_id")
 

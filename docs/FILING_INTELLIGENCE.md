@@ -4,7 +4,7 @@ Exchange filing intelligence is integrated into the existing Portfolio News aler
 
 ## Official source verification
 
-As of 30 September 2026, the exchanges expose corporate filing information through their official sites/data products:
+As of 3 October 2026, the exchanges expose corporate filing information through their official sites/data products:
 
 - NSE: the official Corporate Filings / Announcements pages expose current announcements and a CSV download control. NSE also documents an End of Day Corporate Announcement data product delivered via SFTP.
 - BSE: the official BSE market-data portal lists Corporate Data with API delivery covering corporate announcements, while BSE's information-products documentation describes corporate announcements as a subscribed data product.
@@ -40,7 +40,9 @@ Add the approved feed URLs to backend/.env:
 
     EXCHANGE_FILING_FEED_URL_NSE=<approved-NSE-HTTP-feed-or-authorized-mirror>
     EXCHANGE_FILING_FEED_URL_BSE=<approved-BSE-API-or-feed-endpoint>
-    FILING_INTELLIGENCE_ENABLED=True
+    NEWS_CORPORATE_FILINGS_ENABLED=True
+NEWS_NSE_FILINGS_ENABLED=True
+NEWS_BSE_FILINGS_ENABLED=True
 
 The placeholders are intentional. There is no single universally valid public production URL that PWMS can safely claim for both exchanges without the corresponding exchange data entitlement/feed contract.
 
@@ -77,7 +79,7 @@ Dry-run performs provider fetch and classification without creating Filing or Po
 
 ## Background processing
 
-The existing PortfolioNewsScheduler remains the scheduler. Set FILING_INTELLIGENCE_ENABLED=true and configure the provider feeds; filing ingestion then runs in the same scheduler cycle as Portfolio News. No second scheduler is introduced.
+The existing PortfolioNewsScheduler remains the scheduler. Set NEWS_CORPORATE_FILINGS_ENABLED=true and configure the provider feeds; filing ingestion then runs in the same scheduler cycle as Portfolio News. No second scheduler is introduced.
 
 ## AI
 

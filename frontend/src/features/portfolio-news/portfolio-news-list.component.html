@@ -11,6 +11,10 @@
       <h1>Portfolio News</h1>
       <p>News and corporate filings matched deterministically to the holdings you actually own.</p>
     </div>
+    <div class="live-status" title="Portfolio News checks for newly analysed items every 10 seconds">
+      <span class="live-status-dot"></span>
+      Live
+    </div>
   </div>
 
   <div class="view-mode-toggle">
@@ -53,7 +57,8 @@
   <ng-container *ngIf="viewMode === 'all'">
     <div class="raw-news-note">
       <span class="raw-news-note-dot"></span>
-      Showing portfolio-matched news fetched from Google News RSS. This view is based on deterministic portfolio matching.
+      <span>Showing portfolio-matched news fetched from Google News RSS. This view is based on deterministic portfolio matching.</span>
+      <span class="live-update-note">Auto-updating every 10 seconds</span>
     </div>
 
     <div class="secondary-filters">

@@ -4,9 +4,8 @@ import re
 
 
 _RANGE_RE = re.compile(
-    r"(?P<label>guidance|outlook|margin|growth)[^.%]{0,80}?"
-    r"(?P<old>d+(?:.d+)?s*[-–]s*d+(?:.d+)?)s*%",
-    re.IGNORECASE,
+    r"(?P<label>guidance|outlook|margin|growth)[^0-9%]{0,80}?"
+    r"(?P<old>\d+(?:\.\d+)?\s*[-–]\s*\d+(?:\.\d+)?)\s*%"
 )
 
 

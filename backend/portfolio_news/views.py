@@ -52,6 +52,17 @@ def _parse_limit(request):
     return max(1, min(limit, MAX_LIST_LIMIT))
 
 
+def _parse_after_id(request):
+    """Return a positive incremental-feed cursor, or None."""
+
+    try:
+        after_id = int(request.query_params.get("after_id", ""))
+    except (TypeError, ValueError):
+        return None
+
+    return after_id if after_id > 0 else None
+
+
 def _apply_common_filters(queryset, request):
     """
     Shared filter logic for the news feed. Every filter is
@@ -127,6 +138,10 @@ def portfolio_news_list(request):
         .select_related("article", "filing")
     )
 
+    after_id = _parse_after_id(request)
+    if after_id is not None:
+        queryset = queryset.filter(id__gt=after_id)
+
     tier = request.query_params.get("tier")
 
     if tier:
@@ -191,6 +206,10 @@ def portfolio_news_raw_list(request):
         NewsArticle.objects
         .filter(Exists(matching_articles))
     )
+
+    after_id = _parse_after_id(request)
+    if after_id is not None:
+        articles = articles.filter(id__gt=after_id)
 
     date_range = request.query_params.get("date_range")
     if date_range == "today":

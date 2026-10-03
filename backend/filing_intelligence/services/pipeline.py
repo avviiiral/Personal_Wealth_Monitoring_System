@@ -1,5 +1,6 @@
 import hashlib
 import logging
+from django.conf import settings
 from datetime import timedelta
 from django.contrib.auth.models import User
 from django.db.models import Sum

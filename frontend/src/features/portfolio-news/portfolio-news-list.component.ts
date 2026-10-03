@@ -1,4 +1,4 @@
-import { ChangeDetectorRef, Component, OnInit, inject } from '@angular/core';
+import { ChangeDetectorRef, Component, OnDestroy, OnInit, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { Router } from '@angular/router';
 
@@ -25,10 +25,14 @@ type SourceFilter = 'all' | 'NEWS' | 'CORPORATE_FILING';
   templateUrl: './portfolio-news-list.component.html',
   styleUrl: './portfolio-news-list.component.scss',
 })
-export class PortfolioNewsListComponent implements OnInit {
+export class PortfolioNewsListComponent implements OnInit, OnDestroy {
   private readonly newsApi = inject(NewsApiService);
   private readonly router = inject(Router);
   private readonly changeDetector = inject(ChangeDetectorRef);
+
+  private readonly livePollIntervalMs = 10_000;
+  private livePollTimer: ReturnType<typeof setInterval> | null = null;
+  private livePollInFlight = false;
 
   items: PortfolioNewsAlertListItem[] = [];
   loading = true;
@@ -80,6 +84,128 @@ export class PortfolioNewsListComponent implements OnInit {
 
   ngOnInit(): void {
     this.loadRawNews();
+    this.startLivePolling();
+  }
+
+  ngOnDestroy(): void {
+    if (this.livePollTimer !== null) {
+      clearInterval(this.livePollTimer);
+      this.livePollTimer = null;
+    }
+  }
+
+  private startLivePolling(): void {
+    this.livePollTimer = setInterval(() => {
+      this.pollForNewNews();
+    }, this.livePollIntervalMs);
+  }
+
+  private pollForNewNews(): void {
+    if (this.livePollInFlight || this.viewMode === 'digest') {
+      return;
+    }
+
+    this.livePollInFlight = true;
+
+    if (this.viewMode === 'all') {
+      const viewAtStart = this.viewMode;
+      const dateAtStart = this.activeDateRange;
+      const afterId = this.latestRawNewsId();
+
+      this.newsApi
+        .getRawNews({
+          dateRange: dateAtStart === 'all' ? undefined : dateAtStart,
+          limit: 25,
+          afterId,
+        })
+        .subscribe({
+          next: (response) => {
+            if (this.viewMode === viewAtStart && this.activeDateRange === dateAtStart) {
+              this.mergeRawNews(response.results);
+            }
+            this.livePollInFlight = false;
+          },
+          error: (error) => {
+            console.warn('Live portfolio news update failed:', error);
+            this.livePollInFlight = false;
+          },
+        });
+
+      return;
+    }
+
+    const viewAtStart = this.viewMode;
+    const tierAtStart = this.activeTier;
+    const sentimentAtStart = this.activeSentiment;
+    const sourceAtStart = this.activeSource;
+    const dateAtStart = this.activeDateRange;
+    const afterId = this.latestAlertId();
+
+    this.newsApi
+      .getNews({
+        tier: tierAtStart === 'all' ? undefined : tierAtStart,
+        sentiment: sentimentAtStart === 'all' ? undefined : sentimentAtStart,
+        dateRange: dateAtStart === 'all' ? undefined : dateAtStart,
+        sourceType: sourceAtStart === 'all' ? undefined : sourceAtStart,
+        limit: 100,
+        afterId,
+      })
+      .subscribe({
+        next: (response) => {
+          if (
+            this.viewMode === viewAtStart &&
+            this.activeTier === tierAtStart &&
+            this.activeSentiment === sentimentAtStart &&
+            this.activeSource === sourceAtStart &&
+            this.activeDateRange === dateAtStart
+          ) {
+            this.mergeAlerts(response.results);
+          }
+          this.livePollInFlight = false;
+        },
+        error: (error) => {
+          console.warn('Live portfolio alert update failed:', error);
+          this.livePollInFlight = false;
+        },
+      });
+  }
+
+  private latestRawNewsId(): number {
+    return this.rawItems.reduce((max, item) => Math.max(max, item.id), 0);
+  }
+
+  private latestAlertId(): number {
+    return this.items.reduce((max, item) => Math.max(max, item.id), 0);
+  }
+
+  private mergeRawNews(newItems: PortfolioNewsRawItem[]): void {
+    if (!newItems.length) {
+      return;
+    }
+
+    const byId = new Map<number, PortfolioNewsRawItem>();
+    [...newItems, ...this.rawItems].forEach((item) => byId.set(item.id, item));
+
+    this.rawItems = Array.from(byId.values())
+      .sort((a, b) => b.id - a.id)
+      .slice(0, 25);
+
+    this.changeDetector.detectChanges();
+  }
+
+  private mergeAlerts(newItems: PortfolioNewsAlertListItem[]): void {
+    if (!newItems.length) {
+      return;
+    }
+
+    const byId = new Map<number, PortfolioNewsAlertListItem>();
+    [...newItems, ...this.items].forEach((item) => byId.set(item.id, item));
+
+    this.items = Array.from(byId.values())
+      .sort((a, b) => b.id - a.id)
+      .slice(0, 100);
+
+    this.changeDetector.detectChanges();
   }
 
   loadRawNews(): void {

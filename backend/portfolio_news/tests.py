@@ -137,18 +137,18 @@ class PortfolioNewsIncrementalFeedTests(TestCase):
                 reason="Test reason",
             )
 
-        create_alert(first)
-        create_alert(second)
+        first_alert = create_alert(first)
+        second_alert = create_alert(second)
 
         response = self.client.get(
             "/api/ai/news/",
-            {"after_id": first.id},
+            {"after_id": first_alert.id},
         )
 
         self.assertEqual(response.status_code, 200)
         returned_ids = [item["id"] for item in response.data["results"]]
-        self.assertIn(second.id, returned_ids)
-        self.assertNotIn(first.id, returned_ids)
+        self.assertIn(second_alert.id, returned_ids)
+        self.assertNotIn(first_alert.id, returned_ids)
 
 
 class GoogleNewsRSSProviderTests(TestCase):

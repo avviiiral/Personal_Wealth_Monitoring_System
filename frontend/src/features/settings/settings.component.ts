@@ -27,13 +27,16 @@ type SettingsTab =
   | 'security'
   | 'users'
   | 'families'
-  | 'prices'
-  | 'tax-rates'
+  | 'logs'
+  | 'tax-rates';
+
+type LogsTab =
   | 'tax-updates'
   | 'transaction-history'
   | 'upload-history'
   | 'underlyings'
-  | 'mis-history';
+  | 'mis-history'
+  | 'prices';
 
 @Component({
   selector: 'app-settings',
@@ -56,6 +59,7 @@ export class SettingsComponent implements OnInit {
   private readonly cdr = inject(ChangeDetectorRef);
 
   activeTab: SettingsTab = 'account';
+  activeLogTab: LogsTab = 'tax-updates';
   profile: SettingsProfile | null = null;
 
 
@@ -127,23 +131,34 @@ export class SettingsComponent implements OnInit {
       this.loadTaxRateSettings();
     }
 
-    if (tab === 'tax-updates' && !this.taxUpdateHistory.length) {
+    if (tab === 'logs') {
+      this.loadActiveLogTab();
+    }
+  }
+
+  setLogTab(tab: LogsTab): void {
+    this.activeLogTab = tab;
+    this.loadActiveLogTab();
+  }
+
+  private loadActiveLogTab(): void {
+    if (this.activeLogTab === 'tax-updates' && !this.taxUpdateHistory.length) {
       this.loadTaxUpdateHistory();
     }
 
-    if (tab === 'transaction-history' && !this.transactionHistory.length) {
+    if (this.activeLogTab === 'transaction-history' && !this.transactionHistory.length) {
       this.loadTransactionHistory();
     }
 
-    if (tab === 'upload-history' && !this.transactionUploads.length) {
+    if (this.activeLogTab === 'upload-history' && !this.transactionUploads.length) {
       this.loadTransactionUploadHistory();
     }
 
-    if (tab === 'underlyings' && !this.underlyingUploads.length) {
+    if (this.activeLogTab === 'underlyings' && !this.underlyingUploads.length) {
       this.loadUnderlyingUploads();
     }
 
-    if (tab === 'mis-history' && !this.misNotesHistory.length) {
+    if (this.activeLogTab === 'mis-history' && !this.misNotesHistory.length) {
       this.loadMISNotesHistory();
     }
   }
@@ -171,17 +186,8 @@ export class SettingsComponent implements OnInit {
         if (this.activeTab === 'tax-rates') {
           this.loadTaxRateSettings();
         }
-        if (this.activeTab === 'tax-updates') {
-          this.loadTaxUpdateHistory();
-        }
-        if (this.activeTab === 'upload-history') {
-          this.loadTransactionUploadHistory();
-        }
-        if (this.activeTab === 'underlyings') {
-          this.loadUnderlyingUploads();
-        }
-        if (this.activeTab === 'mis-history') {
-          this.loadMISNotesHistory();
+        if (this.activeTab === 'logs') {
+          this.loadActiveLogTab();
         }
         this.cdr.detectChanges();
       },
@@ -718,24 +724,8 @@ export class SettingsComponent implements OnInit {
       this.loadTaxRateSettings();
     }
 
-    if (this.activeTab === 'tax-updates') {
-      this.loadTaxUpdateHistory();
-    }
-
-    if (this.activeTab === 'transaction-history') {
-      this.loadTransactionHistory();
-    }
-
-    if (this.activeTab === 'upload-history') {
-      this.loadTransactionUploadHistory();
-    }
-
-    if (this.activeTab === 'underlyings') {
-      this.loadUnderlyingUploads();
-    }
-
-    if (this.activeTab === 'mis-history') {
-      this.loadMISNotesHistory();
+    if (this.activeTab === 'logs') {
+      this.loadActiveLogTab();
     }
   }
 }

@@ -48,13 +48,23 @@ def titles_are_similar(
     if not normalized_a or not normalized_b:
         return False
 
-    ratio = SequenceMatcher(
+    matcher = SequenceMatcher(
         None,
         normalized_a,
         normalized_b,
-    ).ratio()
+    )
 
-    return ratio >= threshold
+    # ratio() is the expensive call. real_quick_ratio() and
+    # quick_ratio() are cheap upper bounds on it, so when either is
+    # already below the threshold the answer is certainly "not similar"
+    # and the result is identical to computing ratio() directly.
+    if matcher.real_quick_ratio() < threshold:
+        return False
+
+    if matcher.quick_ratio() < threshold:
+        return False
+
+    return matcher.ratio() >= threshold
 
 
 class ArticleDeduplicator:

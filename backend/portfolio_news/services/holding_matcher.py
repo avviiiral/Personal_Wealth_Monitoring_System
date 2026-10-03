@@ -1,5 +1,6 @@
 import re
 
+from functools import lru_cache
 from typing import List
 
 from .holdings_registry import MonitoredHolding
@@ -9,6 +10,11 @@ from .query_builder import QueryBuilder
 MIN_TERM_LENGTH_FOR_MATCH = 3
 
 MIN_ISIN_LENGTH = 8
+
+# Very short tickers ("IT", "ON", "ALL") are also ordinary English words,
+# so a case-insensitive match produces false positives. Tickers up to this
+# length must appear in capitals in the original text to count as a match.
+SHORT_SYMBOL_MAX_LENGTH = 3
 
 
 def _build_searchable_text(title: str, description: str) -> str:
@@ -24,6 +30,12 @@ def _build_searchable_text(title: str, description: str) -> str:
     return f"{title or ''} {description or ''}".lower()
 
 
+@lru_cache(maxsize=4096)
+def _phrase_pattern(phrase_lower: str):
+    """Compiled word-boundary pattern, cached across articles."""
+    return re.compile(r"\b" + re.escape(phrase_lower) + r"\b")
+
+
 def _contains_phrase(haystack_lower: str, phrase: str) -> bool:
     """
     Word-boundary substring match, case-insensitive. Prevents
@@ -34,9 +46,32 @@ def _contains_phrase(haystack_lower: str, phrase: str) -> bool:
     if not phrase:
         return False
 
-    pattern = r"\b" + re.escape(phrase.lower()) + r"\b"
+    return _phrase_pattern(phrase.lower()).search(haystack_lower) is not None
 
-    return re.search(pattern, haystack_lower) is not None
+
+@lru_cache(maxsize=1024)
+def _exact_case_symbol_pattern(symbol_upper: str):
+    return re.compile(r"\b" + re.escape(symbol_upper) + r"\b")
+
+
+def _contains_symbol(
+    original_text: str,
+    searchable_lower: str,
+    symbol: str,
+) -> bool:
+    """
+    Ticker match. Short tickers must appear in capitals in the original
+    (non-lowercased) text; longer tickers keep the case-insensitive
+    word-boundary match.
+    """
+
+    if len(symbol) <= SHORT_SYMBOL_MAX_LENGTH:
+        return (
+            _exact_case_symbol_pattern(symbol.upper()).search(original_text)
+            is not None
+        )
+
+    return _contains_phrase(searchable_lower, symbol)
 
 
 class HoldingMatcher:
@@ -62,6 +97,7 @@ class HoldingMatcher:
         # matcher broader than headline-only matching without requiring
         # a second full-article fetch.
         searchable = _build_searchable_text(title, description)
+        original_text = f"{title or ''} {description or ''}"
 
         for term in holding.identifier_terms():
 
@@ -74,7 +110,7 @@ class HoldingMatcher:
         if (
             holding.symbol
             and len(holding.symbol) >= 2
-            and _contains_phrase(searchable, holding.symbol)
+            and _contains_symbol(original_text, searchable, holding.symbol)
         ):
             return True
 

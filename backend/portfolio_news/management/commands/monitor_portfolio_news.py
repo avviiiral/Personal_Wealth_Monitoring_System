@@ -1,10 +1,12 @@
 import logging
-import os
 import time
 
 from django.core.management.base import BaseCommand
 
-from portfolio_news.services.pipeline import run_portfolio_news_monitor
+from portfolio_news.services.pipeline import (
+    get_monitor_interval_seconds,
+    run_portfolio_news_monitor,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -13,15 +15,9 @@ DEFAULT_INTERVAL_SECONDS = 1800  # 30 minutes
 
 
 def _get_interval_seconds() -> int:
-    try:
-        return int(
-            os.environ.get(
-                "NEWS_MONITOR_INTERVAL",
-                DEFAULT_INTERVAL_SECONDS,
-            )
-        )
-    except (TypeError, ValueError):
-        return DEFAULT_INTERVAL_SECONDS
+    # Invalid values fall back to the default and tiny values are raised
+    # to a safe minimum so --loop can never spin in a busy loop.
+    return get_monitor_interval_seconds()
 
 
 class Command(BaseCommand):
@@ -71,6 +67,10 @@ class Command(BaseCommand):
                 f"  Search queries run:     {stats['queries_run']}\n"
                 f"  Articles retrieved:     {stats['articles_retrieved']}\n"
                 f"  Provider failures:      {stats['provider_failures']}\n"
+                f"  Query cache hits:       {stats.get('query_cache_hits', 0)}\n"
+                f"  Stale articles skipped: {stats.get('stale_skipped', 0)}\n"
+                f"  Holding failures:       {stats.get('holding_failures', 0)}\n"
+                f"  User failures:          {stats.get('user_failures', 0)}\n"
                 f"  Articles matched:       {stats['articles_matched']}\n"
                 f"  New articles stored:    {stats['articles_stored_new']}\n"
                 f"  Duplicates skipped:     {stats['duplicates_skipped']}\n"

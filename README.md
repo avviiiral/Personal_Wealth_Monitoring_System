@@ -400,6 +400,33 @@ The Portfolio News pipeline separates deterministic news retrieval and portfolio
 
 This separation means a news article can appear in **All News** even when Gemini is unavailable, not configured, rate-limited, or otherwise unable to analyze that article.
 
+### Portfolio News reliability, accuracy and speed
+
+The monitor is designed so that one bad query, holding or user never stops the rest of a run, and so repeated work is avoided.
+
+**Reliability**
+
+- **Retries with backoff.** `GoogleNewsRSSProvider` retries transient failures (timeouts, connection errors, HTTP `429` and `5xx`) up to 3 times with exponential backoff (1 s, 2 s). Other HTTP errors are not retried.
+- **Circuit breaker.** After 5 consecutive failed queries the provider pauses Google News requests for 60 seconds, so an outage fails fast instead of spending the full timeout on every remaining query.
+- **Failure isolation.** A failure while processing one holding is logged and skipped (`holding_failures`), and a failure for one user is logged and skipped (`user_failures`); the remaining holdings and users are still processed.
+- **Scheduler isolation.** In the background scheduler the news pass and the optional exchange-filing pass run in separate error handlers, so a failure in one never skips the other or stops the loop.
+- **Safe interval.** `NEWS_MONITOR_INTERVAL` is validated for both the scheduler and `monitor_portfolio_news --loop`: invalid values fall back to `1800`, and values below `60` seconds are raised to `60` so a misconfiguration cannot cause a busy loop.
+- **AI call delay.** `NEWS_MONITOR_AI_CALL_DELAY_SECONDS` now uses the same batch analysis path as the default run, so alerts are created correctly when a delay is configured.
+
+**Accuracy**
+
+- **Stale-article guard.** Google News date filters work by calendar day, so articles older than the lookback window plus a one-day grace period are skipped before matching, storing or any AI call (`stale_skipped`). Articles without a publish date are kept.
+- **Short-ticker matching.** Tickers of three characters or fewer (for example `TCS`) must appear in capitals in the headline or description. This stops tickers that are ordinary words from matching unrelated articles. Longer tickers remain case-insensitive.
+- **Defensive scoring.** `compute_alert_score` clamps impact to `0-100` and confidence to `0-1` so an out-of-range value cannot inflate an alert's ranking. In-range scores are unchanged.
+
+**Speed**
+
+- **Per-run query cache.** Identical searches (for example the same stock held by several family members) are fetched once per run and reused (`query_cache_hits`). Failed searches are never cached, and the cache is discarded when the run ends.
+- **Cheaper near-duplicate check.** Title similarity first applies inexpensive upper bounds before the full comparison. Results are identical to the full comparison; only the work is reduced.
+- **Cached matching patterns.** Word-boundary patterns used by the Holding Matcher are compiled once and reused across articles.
+
+Each run logs these counters (`query_cache_hits`, `stale_skipped`, `holding_failures`, `user_failures`, `provider_failures`) and `monitor_portfolio_news` prints them in its summary.
+
 ### Family-scoped Portfolio News
 
 Portfolio News follows the same family boundary used by the portfolio and analytics views.
@@ -452,6 +479,7 @@ PortfolioNewsMatch
 - **All News is metadata-first.** The raw endpoint returns the article title, original URL, source, description, publication time, source quality/count, matched query and matched holdings; users can open the original publisher article from the UI.
 - **Family visibility is enforced server-side.** For normal users, the raw endpoint derives the active family from the authenticated user and returns only that family's deterministic matches. System Owners can view stored family-scoped matches across families. Users without a family use the legacy user-scoped path. Client-supplied family IDs are not trusted for authorization.
 - **Monitoring is automatic.** The `monitor_portfolio_news` management command performs the news-monitoring pass and is also used by the application's background scheduler.
+- **Searches are shared within a run.** Identical Google News queries are served from a per-run cache, and failed searches are retried by the provider and never cached.
 - **Gemini remains optional for the raw layer.** A Gemini API key is only needed for AI enrichment such as relevance, sentiment, impact, category analysis and the resulting AI Feed/Digest behavior.
 
 ### 🤖 AI Portfolio Chat
@@ -557,8 +585,12 @@ sequenceDiagram
 flowchart TD
     T["Timer<br/>every NEWS_MONITOR_INTERVAL"] --> H["Read each user's active holdings"]
     H --> Q["Build search queries<br/>from real holdings"]
-    Q --> R["Google News RSS<br/>via feedparser"]
-    R --> D["De-duplicate<br/>NewsArticle + NewsArticleSource"]
+    Q --> K{"Query already<br/>fetched this run?"}
+    K -- yes --> R2["Reuse cached results"]
+    K -- no --> R["Google News RSS<br/>via feedparser<br/>retry + circuit breaker"]
+    R --> F["Skip articles older than<br/>lookback window"]
+    R2 --> F
+    F --> D["De-duplicate<br/>NewsArticle + NewsArticleSource"]
     D --> M{"Deterministic match<br/>to a holding?"}
     M -- no --> X["Discard<br/>no AI call spent"]
     M -- yes --> G["Gemini analysis<br/>impact + confidence"]
@@ -925,7 +957,7 @@ Four independent, **in-process** mechanisms start automatically from each app's 
 | 1   | **Market price refresh**   | Every 15 minutes                               | Stock / ETF prices (Yahoo Finance) and mutual-fund NAVs (AMFI)    |
 | 2   | **Daily refresh**          | Once per calendar day of uptime                | AMFI NAV, security-master ratios, benchmark master coverage, SIP sync and execute |
 | 3   | **Post-import refresh**    | Right after an import commits                  | Immediate live price for any newly added asset                    |
-| 4   | **Portfolio News monitor** | Every `NEWS_MONITOR_INTERVAL` (default 30 min) | Full news discovery → match → analyze → alert pass for every user |
+| 4   | **Portfolio News monitor** | Every `NEWS_MONITOR_INTERVAL` (default 30 min, minimum 60 s) | Full news discovery → match → analyze → alert pass for every user; one failing holding or user never stops the run |
 
 There is no Task Scheduler entry, cron job or `.bat` file to configure — the jobs run for exactly as long as the server process is up. Check `backend/logs/pwms.log` to watch them work.
 
@@ -1032,7 +1064,7 @@ Settings load from **`backend/.env`** (template: [`backend/.env.example`](./back
 | `POSTGRES_DB` · `POSTGRES_USER` · `POSTGRES_PASSWORD` · `POSTGRES_HOST` · `POSTGRES_PORT` | PostgreSQL connection                                       | used only when `DATABASE_ENGINE=postgresql` | template: `pwms` · `pwms_user` · _(set a password)_ · `localhost` · `5432`                                    |
 | `POSTGRES_CONN_MAX_AGE`                                                                   | Persistent PostgreSQL connection lifetime                    | `60` seconds when PostgreSQL is enabled       | Tune for the deployment; database health checks remain enabled                                                    |
 | `GEMINI_API_KEY` _(or `GOOGLE_API_KEY`)_                                                  | Enables AI Chat and Portfolio News analysis                 | —                                           | Your key from Google AI Studio. Without it those features log a warning and skip analysis rather than failing |
-| `NEWS_MONITOR_INTERVAL`                                                                   | Seconds between automatic news runs                         | `1800`                                      | Tune as needed                                                                                                |
+| `NEWS_MONITOR_INTERVAL`                                                                   | Seconds between automatic news runs                         | `1800`                                      | Minimum `60`; invalid values use `1800` and smaller values are raised to `60`                                 |
 | `NEWS_MONITOR_AI_CALL_DELAY_SECONDS`                                                      | Pause between Gemini calls in a news run                    | —                                           | Raise (e.g. `6`) if you hit rate-limit errors                                                                 |
 | `WATCHLIST_PMS_SOURCE_URLS`                                                               | Optional comma-separated authoritative PMS source endpoints | _(blank)_                                   | Leave blank when no reliable source exists — no PMS values are ever fabricated                                |
 | `WEB_PUSH_VAPID_PUBLIC_KEY`                                                                | Browser Web Push public VAPID key                          | _(blank)_                                   | Generate with `python manage.py generate_web_push_keys`                                                      |

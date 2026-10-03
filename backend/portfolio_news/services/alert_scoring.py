@@ -84,6 +84,11 @@ def compute_alert_score(
         (Company B ranks higher, as intended.)
     """
 
+    # Defensive input clamping: the analyzer already validates these, but
+    # a stray out-of-range value must not inflate the ranking.
+    impact_score = max(0, min(100, impact_score))
+    confidence = max(0.0, min(1.0, confidence))
+
     weight_fraction = max(0.0, portfolio_weight_percent) / 100.0
 
     source_quality_weight = (

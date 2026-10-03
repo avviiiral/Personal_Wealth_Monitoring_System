@@ -60,6 +60,14 @@ class GoogleNewsRSSProviderTests(TestCase):
     def setUp(self):
         self.provider = GoogleNewsRSSProvider()
 
+        # Transient failures are retried with backoff; never really sleep
+        # in unit tests.
+        sleep_patcher = patch(
+            "portfolio_news.services.google_news_provider.time.sleep"
+        )
+        sleep_patcher.start()
+        self.addCleanup(sleep_patcher.stop)
+
     def _mock_response(self, content, status_ok=True):
         response = MagicMock()
         response.content = content

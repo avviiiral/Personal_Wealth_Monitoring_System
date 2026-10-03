@@ -68,6 +68,29 @@
   }
 }
 
+.page-header-copy {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+.page-header-copy .family-filter-inline {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  max-width: 390px;
+  box-sizing: border-box;
+  margin-top: 16px;
+  padding: 10px 12px;
+  border: 1px solid var(--surface-line);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
+  min-width: 0;
+}
+
 .page-header-actions {
   display: flex;
   flex-direction: column;
@@ -204,10 +227,7 @@
 }
 
 /* -----------------------------
-   FAMILY FILTER
-   Bordered box next to the Refresh button, label above the
-   buttons - same look/pattern as the Portfolio and Reports pages'
-   Family Name filter box, just sized to sit in the header.
+   FAMILY / DISPLAY FILTERS
 ----------------------------- */
 
 .header-control-inline {
@@ -1097,6 +1117,14 @@
 @media (max-width: 700px) {
   .dashboard-page {
     padding: 20px;
+  }
+
+  .page-header-copy {
+    width: 100%;
+  }
+
+  .page-header-copy .family-filter-inline {
+    max-width: none;
   }
 
   .kpi-grid {

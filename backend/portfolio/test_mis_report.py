@@ -872,7 +872,7 @@ class MISReportAPITests(TestCase):
             "id": "new-row",
             "cells": {
                 "sr_no": 99,
-                "particulars": "Tracked Note Equity",
+                "particulars": "MIS Equity",
                 "opening_rate": None,
                 "closing_rate": None,
                 "change": None,

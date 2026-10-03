@@ -251,6 +251,13 @@ def classify(subject: str, details: str = "", filing_type: str = "") -> FilingCl
             [subject] if subject else [],
         )
 
+    # Prefer specific event labels over generic umbrella matches when the same
+    # filing triggers both rules.
+    if any(event == "PROMOTER_PLEDGE_RELEASE" for _, event, _, _ in hits):
+        hits = [hit for hit in hits if hit[1] != "PROMOTER_PLEDGE"]
+    if any(event == "SHAREHOLDING_PATTERN" for _, event, _, _ in hits):
+        hits = [hit for hit in hits if hit[1] != "CHANGE_IN_SHAREHOLDING"]
+
     hits.sort(reverse=True)
     score, event_type, category, evidence = hits[0]
 
@@ -259,17 +266,6 @@ def classify(subject: str, details: str = "", filing_type: str = "") -> FilingCl
     # still take precedence.
     if event_type == "REGULATION_32_DEVIATION" and _is_explicitly_routine_regulation_32(full_text):
         score = 28
-
-    # Prefer a specific promoter pledge release over the generic pledge rule.
-    if any(event == "PROMOTER_PLEDGE_RELEASE" for _, event, _, _ in hits):
-        hits = [
-            hit for hit in hits
-            if hit[1] != "PROMOTER_PLEDGE"
-        ]
-
-    # Prefer a specific promoter pledge release over the generic pledge rule.
-    if any(event == "PROMOTER_PLEDGE_RELEASE" for _, event, _, _ in hits):
-        hits = [hit for hit in hits if hit[1] != "PROMOTER_PLEDGE"]
 
     # Combined signals: independent adverse developments materially increase severity.
     adverse = {
@@ -284,7 +280,9 @@ def classify(subject: str, details: str = "", filing_type: str = "") -> FilingCl
     has_management_exit = bool(re.search(r"ceo.{0,50}resign|cfo.{0,50}resign|management.{0,50}resign", full_text))
 
     if has_profit_pressure and has_guidance_cut:
-        score += 15
+        # Profit deterioration plus a guidance reduction crosses the
+        # deterministic CRITICAL threshold.
+        score += 33
         evidence += "; combined profit pressure + guidance cut"
     if has_investigation and has_management_exit:
         score += 12

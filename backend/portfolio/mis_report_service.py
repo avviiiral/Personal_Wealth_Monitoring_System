@@ -1428,7 +1428,7 @@ class MISReportService:
         for row in rows:
             prior = cls._build_data_row(
                 row,
-                opening_date,
+                prior_month_end,
                 prior_month_end,
                 period_start,
                 price_cache,

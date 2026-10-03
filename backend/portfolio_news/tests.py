@@ -191,6 +191,16 @@ class TextUtilsTests(TestCase):
 
 class DeduplicationLogicTests(TestCase):
 
+    def _result(self, title, url, source):
+        return NewsArticleResult(
+            title=title,
+            url=url,
+            source=source,
+            description=title,
+            published_at=datetime(2026, 8, 24, 9, 0, tzinfo=timezone.utc),
+            matched_query="XYZ",
+        )
+
     def test_titles_are_similar_true_for_near_duplicates(self):
         a = normalize_title(
             "Aurobindo Pharma receives USFDA approval - Reuters"

@@ -1315,7 +1315,7 @@ class MISReportService:
             raise ValueError("To date cannot be in the future.")
 
         as_of = to_date
-        opening_date = from_date - timedelta(days=1)
+        opening_date = cls._prior_month_end(as_of) if from_date == cls._period_start(as_of) else from_date - timedelta(days=1)
         prior_month_end = cls._prior_month_end(as_of)
         period_start = from_date
 

@@ -304,11 +304,15 @@ export class DashboardComponent extends BaseDashboardComponent {
   override saveStandardAllocations(): void {
     const allocations: Record<string, { percent: number; amount: number }> = {};
 
+    const baseTotal = this.getInvestmentSummaryTotal();
+
     for (const group of this.investmentSummaryGroups) {
       const category = group.asset_category;
+      const percent = this.getStandardAllocation(category);
       allocations[category] = {
-        percent: this.getStandardAllocation(category),
-        amount: this.getStandardAllocationAmount(category),
+        percent,
+        // Amount remains an API compatibility field; the UI is percentage-only.
+        amount: baseTotal > 0 ? Math.round((baseTotal * percent) * 100) / 10000 : 0,
       };
     }
 

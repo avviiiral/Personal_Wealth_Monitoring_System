@@ -177,7 +177,7 @@ def wealth_standard_allocations(request):
 
     return Response({
         "family": family_label,
-        "scope": "global" if family is None else "family",
+        "scope": "global" if family_name is None else "family",
         "total_current_value": float(total_current_value),
         "allocations": allocations,
     })

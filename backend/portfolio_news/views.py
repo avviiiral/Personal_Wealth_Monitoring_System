@@ -311,10 +311,17 @@ def portfolio_news_detail(request, alert_id):
     """
 
     alert = get_object_or_404(
-        PortfolioNewsAlert.objects.select_related("article", "filing"),
+        PortfolioNewsAlert.objects
+        .filter(
+            id=alert_id,
+            user=request.user,
+            relevant=True,
+        )
+        .select_related("article", "filing")
+        .prefetch_related(
+            "article__sources",
+        ),
         id=alert_id,
-        user=request.user,
-        relevant=True,
     )
 
     serializer = PortfolioNewsAlertDetailSerializer(alert)

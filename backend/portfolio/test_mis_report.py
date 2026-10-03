@@ -790,7 +790,7 @@ class MISReportAPITests(TestCase):
             "id": "tracked-row",
             "cells": {
                 "sr_no": 99,
-                "particulars": "MIS Equity",
+                "particulars": "Tracked Note Equity",
                 "opening_rate": None,
                 "closing_rate": None,
                 "change": None,
@@ -825,7 +825,7 @@ class MISReportAPITests(TestCase):
             for section in saved["sections"]
             for row in section["rows"]
         ]
-        self.assertNotIn("MIS Equity", all_names)
+        self.assertNotIn("Tracked Note Equity", all_names)
 
     def test_notes_can_be_edited_and_are_family_scoped(self):
         response = self.client.get("/api/portfolio/mis-report/")
@@ -872,7 +872,7 @@ class MISReportAPITests(TestCase):
             "id": "new-row",
             "cells": {
                 "sr_no": 99,
-                "particulars": "MIS Equity",
+                "particulars": "Tracked Note Equity",
                 "opening_rate": None,
                 "closing_rate": None,
                 "change": None,

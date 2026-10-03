@@ -65,7 +65,7 @@ RULES = [
     ("DIVIDEND", 45, "CAPITAL_ALLOCATION", (r"dividend declared", r"interim dividend", r"final dividend", r"dividend")),
     ("PREFERENTIAL_ALLOTMENT", 50, "CAPITAL_ALLOCATION", (r"preferential allotment",)),
     ("SIGNIFICANT_PROMOTER_PLEDGE", 66, "PROMOTER", (r"significant promoter pledge increase", r"major promoter pledge", r"substantial promoter pledge")),
-    ("PROMOTER_PLEDGE_RELEASE", 48, "PROMOTER", (r"promoter.{0,50}(?:pledge release|release of pledge)", r"pledge.{0,50}released")),
+    ("PROMOTER_PLEDGE_RELEASE", 58, "PROMOTER", (r"promoter.{0,50}(?:pledge release|release of pledge)", r"pledge.{0,50}released")),
     ("PROMOTER_PLEDGE", 50, "PROMOTER", (r"promoter.{0,50}pledge", r"pledge.{0,50}promoter", r"invocation of pledged")),
     ("CHANGE_IN_SHAREHOLDING", 48, "PROMOTER", (r"change in shareholding", r"shareholding pattern", r"change in promoter holding")),
     ("PROMOTER_TRANSACTION", 50, "PROMOTER", (r"promoter.{0,50}(?:buy|sell|purchase|sale|transaction)", r"promoter transaction")),
@@ -260,6 +260,13 @@ def classify(subject: str, details: str = "", filing_type: str = "") -> FilingCl
     if event_type == "REGULATION_32_DEVIATION" and _is_explicitly_routine_regulation_32(full_text):
         score = 28
 
+    # Prefer a specific promoter pledge release over the generic pledge rule.
+    if any(event == "PROMOTER_PLEDGE_RELEASE" for _, event, _, _ in hits):
+        hits = [
+            hit for hit in hits
+            if hit[1] != "PROMOTER_PLEDGE"
+        ]
+
     # Combined signals: independent adverse developments materially increase severity.
     adverse = {
         "FRAUD", "INSOLVENCY", "BANKRUPTCY", "DEFAULT", "REGULATORY_BAN",
@@ -273,7 +280,7 @@ def classify(subject: str, details: str = "", filing_type: str = "") -> FilingCl
     has_management_exit = bool(re.search(r"ceo.{0,50}resign|cfo.{0,50}resign|management.{0,50}resign", full_text))
 
     if has_profit_pressure and has_guidance_cut:
-        score += 12
+        score += 15
         evidence += "; combined profit pressure + guidance cut"
     if has_investigation and has_management_exit:
         score += 12

@@ -600,7 +600,7 @@ class MISReportAPITests(TestCase):
         self.assertEqual(fund_summary_ws.max_column, 3)
         self.assertEqual(workbook["IPS"]["A2"].value, "Values in ₹ Lakhs")
         self.assertEqual(workbook["IPS"]["C4"].value, 0.0125)
-        self.assertEqual(workbook["IPS"]["E4"].value, 0.0125)
+        self.assertEqual(workbook["IPS"]["D4"].value, 0.0125)
         self.assertEqual(workbook["IPS"]["A7"].value, "Grand Total")
         notes_ws = workbook["Notes"]
         self.assertEqual(notes_ws["A3"].value, 1)

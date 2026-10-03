@@ -313,12 +313,18 @@ export class PortfolioNewsListComponent implements OnInit, OnDestroy {
       next: (digest) => {
         this.digest = digest;
         this.digestLoading = false;
+        // Explicitly trigger rendering after the async digest request.
+        // Portfolio News also uses OnPush/zoneless-compatible change
+        // detection paths, so do not leave the spinner dependent on an
+        // implicit zone tick.
+        this.changeDetector.detectChanges();
       },
 
       error: (error) => {
         console.error('Failed to load portfolio news digest:', error);
         this.digestError = 'Unable to load today\u2019s digest right now.';
         this.digestLoading = false;
+        this.changeDetector.detectChanges();
       },
     });
   }

@@ -1243,21 +1243,130 @@ class MISReportService:
         return changes
 
     @classmethod
-    def _apply_saved_notes(cls, report_notes, document):
+    def _saved_note_live_rates(cls, family, name, opening_date, as_of, base_rates):
+        """
+        Resolve a saved Notes row against the current market data instead of
+        treating the rates stored in FamilyMISNotes as the source of truth.
+
+        The Notes row's Particulars identify what should be tracked. The
+        section/column where the user places it is presentation only. This
+        allows a user to put, for example, "ICICI Prudential Gold ETF" in the
+        Silver ETF section and still receive the Gold ETF's live price.
+
+        Existing standard/reference rows continue to use the already-built
+        report rates (for example Nifty 50 and BSE 500). Custom rows are
+        resolved against the family's active Asset records by name/symbol.
+        """
+        normalized_name = cls._normalize_note_name(name)
+        if not normalized_name:
+            return None, None
+
+        standard = base_rates.get(normalized_name)
+        if standard is not None:
+            return standard
+
+        # Also accept the common display suffixes used in Notes, such as
+        # "Rate/Unit", "Unit Rate", "Rate", "Level", and "Price".
+        aliases = [name]
+        for suffix in (
+            "rate/unit",
+            "unit rate",
+            "change in level",
+            "change in rate",
+            "level",
+            "rate",
+            "price",
+        ):
+            suffix_normalized = cls._normalize_note_name(suffix)
+            if normalized_name.endswith(suffix_normalized):
+                trimmed = normalized_name[:-len(suffix_normalized)]
+                if trimmed:
+                    aliases.append(trimmed)
+
+        opening, closing = cls._family_note_rate(
+            family,
+            aliases,
+            opening_date,
+            as_of,
+        )
+        if opening is not None or closing is not None:
+            return opening, closing
+
+        return None, None
+
+    @classmethod
+    def _apply_saved_notes(cls, report_notes, document, family=None, opening_date=None, as_of=None):
         editable = cls._clean_editable_notes(document)
+
+        # Build a lookup from the freshly calculated standard Notes. Saved
+        # documents contain the previous rates, so using those values directly
+        # would freeze a row forever after the first save.
+        base_rates = {}
+        for base_section in report_notes.get("sections", []):
+            for item in base_section.get("items", []):
+                normalized_name = cls._normalize_note_name(item.get("name"))
+                if normalized_name:
+                    base_rates[normalized_name] = (
+                        item.get("opening_rate"),
+                        item.get("closing_rate"),
+                    )
+
         sections = []
         for section in editable["sections"]:
             columns = section["columns"]
             items = []
             for row in section["rows"]:
                 cells = row["cells"]
+                name = cells.get("particulars", "")
+                opening_rate = cells.get("opening_rate")
+                closing_rate = cells.get("closing_rate")
+
+                if family is not None and opening_date is not None and as_of is not None:
+                    live_opening, live_closing = cls._saved_note_live_rates(
+                        family,
+                        name,
+                        opening_date,
+                        as_of,
+                        base_rates,
+                    )
+                    if live_opening is not None:
+                        opening_rate = live_opening
+                    if live_closing is not None:
+                        closing_rate = live_closing
+
+                change = None
+                percent_change = None
+                if opening_rate not in (None, "") and closing_rate not in (None, ""):
+                    try:
+                        opening_value = Decimal(str(opening_rate))
+                        closing_value = Decimal(str(closing_rate))
+                        change_value = closing_value - opening_value
+                        change = float(change_value)
+                        percent_change = (
+                            float((change_value / opening_value) * Decimal("100"))
+                            if opening_value != 0
+                            else None
+                        )
+                    except (TypeError, ValueError, ArithmeticError):
+                        change = None
+                        percent_change = None
+
                 items.append({
-                    "name": cells.get("particulars", ""),
-                    "opening_rate": cells.get("opening_rate"),
-                    "closing_rate": cells.get("closing_rate"),
-                    "change": cells.get("change"),
-                    "percent_change": cells.get("percent_change"),
+                    "name": name,
+                    "opening_rate": opening_rate,
+                    "closing_rate": closing_rate,
+                    "change": change,
+                    "percent_change": percent_change,
                 })
+
+                # Keep the editable representation synchronized with the live
+                # values returned above. This prevents the UI from showing a
+                # stale stored rate immediately after a refresh.
+                cells["opening_rate"] = opening_rate
+                cells["closing_rate"] = closing_rate
+                cells["change"] = change
+                cells["percent_change"] = percent_change
+
             sections.append({
                 "section": section["id"],
                 "section_number": section["section_number"],
@@ -1267,6 +1376,7 @@ class MISReportService:
                 "items": items,
                 "note": section.get("note"),
             })
+
         report_notes["title"] = editable["title"]
         report_notes["opening_label"] = editable["opening_label"]
         report_notes["closing_label"] = editable["closing_label"]
@@ -1278,7 +1388,7 @@ class MISReportService:
     def editable_notes(cls, family, base_notes):
         saved = FamilyMISNotes.objects.filter(family=family).first()
         if saved and saved.document:
-            return cls._apply_saved_notes(base_notes, saved.document)
+            return cls._apply_saved_notes(base_notes, saved.document, family=family, opening_date=None, as_of=None)
         editable = cls._editable_notes_from_report(base_notes)
         base_notes["editable"] = editable
         return base_notes
@@ -1290,7 +1400,7 @@ class MISReportService:
         before = saved.document if saved else cls._editable_notes_from_report(base_notes)
         changes = cls._notes_change_summary(before, cleaned)
         if not changes:
-            return cls._apply_saved_notes(base_notes, before), False
+            return cls._apply_saved_notes(base_notes, before, family=family, opening_date=None, as_of=None), False
 
         if saved is None:
             saved = FamilyMISNotes(family=family)

@@ -87,7 +87,7 @@ class FilingClassifierTests(TestCase):
             "Profit falls and guidance cut",
             "Quarterly results show lower profit and management reduced guidance.",
         )
-        self.assertEqual(result.severity, FilingSeverity.HIGH)
+        self.assertEqual(result.severity, FilingSeverity.CRITICAL)
 
     def test_material_change_detection_is_conservative(self):
         self.assertEqual(
@@ -109,7 +109,7 @@ class FilingClassifierTests(TestCase):
             "Investigation after CFO resignation",
             "Regulatory investigation is ongoing.",
         )
-        self.assertEqual(result.severity, FilingSeverity.HIGH)
+        self.assertEqual(result.severity, FilingSeverity.CRITICAL)
 
     def test_severity_levels(self):
         self.assertEqual(classify("Dividend declared").severity, FilingSeverity.MEDIUM)
@@ -335,7 +335,7 @@ class FilingPipelineTests(TestCase):
             "Example Industries to acquire ABC",
             "Example Industries to acquire ABC",
             first.filing_url,
-            "https://bse.example/feed",
+            "https://bse.example/filing/acquisition-1",
             "BSE-ACQ-1",
             timezone.now(),
         )
@@ -429,7 +429,7 @@ class FilingDiagnosticsCommandTests(TestCase):
         self.assertIn("Stored filings inspected: 2", text)
         self.assertIn("ISIN matches:            1", text)
         self.assertIn("unmatched:               1", text)
-        self.assertIn("DIAG-2", text)
+        self.assertIn("filing_id=DIAG-2", text)
         self.assertIn("no active STOCK/ETF identifier matched", text)
         self.assertIn("holding-user matches:    1", text)
         self.assertIn("No database records are modified", text)

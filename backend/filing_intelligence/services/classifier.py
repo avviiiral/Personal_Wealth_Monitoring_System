@@ -69,6 +69,18 @@ RULES = [
 ]
 
 
+# Representative deterministic impact scores used when converting filing
+# severity into the shared Portfolio News alert-scoring model. The values
+# preserve the ordering of FilingSeverity without requiring a model/API.
+SEVERITY_SCORE = {
+    FilingSeverity.INFO: 20,
+    FilingSeverity.LOW: 30,
+    FilingSeverity.MEDIUM: 50,
+    FilingSeverity.HIGH: 70,
+    FilingSeverity.CRITICAL: 90,
+}
+
+
 NEGATION_PREFIXES = (
     "risk of",
     "potential",

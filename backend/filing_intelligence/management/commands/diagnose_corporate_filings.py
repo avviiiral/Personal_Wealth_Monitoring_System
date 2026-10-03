@@ -140,7 +140,7 @@ class Command(BaseCommand):
         self.stdout.write("")
         self.stdout.write("Downstream coverage:")
         self.stdout.write(
-            f"  unique holding users:    {counters['holding_matches']}"
+            f"  holding-user matches:    {counters['holding_matches']}"
         )
         self.stdout.write(
             f"  unique watchlist users:  {counters['watchlist_matches']}"
@@ -171,7 +171,7 @@ class Command(BaseCommand):
         self.stdout.write("")
         self.stdout.write(
             "Matching scope: active assets in categories "
-            + ", ".join(FILING_MATCHABLE_CATEGORIES)
+            + ", ".join(category.value for category in FILING_MATCHABLE_CATEGORIES)
             + "."
         )
         self.stdout.write(
@@ -180,7 +180,6 @@ class Command(BaseCommand):
 
     @staticmethod
     def _unmatched_detail(filing):
-        base = Filing.objects.none()
         from investments.models import Asset
 
         assets = Asset.objects.filter(

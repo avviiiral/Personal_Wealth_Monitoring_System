@@ -532,6 +532,8 @@ def mis_report_notes(request):
                 report["opening_date"],
                 report["reporting_date"],
             ),
+            opening_date=report["opening_date"],
+            as_of=report["reporting_date"],
         )
     except ValueError as exc:
         raise ValidationError({"detail": str(exc)})

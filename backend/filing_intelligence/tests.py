@@ -50,9 +50,37 @@ class FilingClassifierTests(TestCase):
             "Change in shareholding": "CHANGE_IN_SHAREHOLDING",
             "Investor presentation": "INVESTOR_PRESENTATION",
             "Earnings call": "EARNINGS_CALL",
+            "ESOP/ESOS/ESPS": "EMPLOYEE_STOCK_OPTION_ALLOTMENT",
+            "Allotment of equity shares pursuant to exercise of stock options": "EMPLOYEE_STOCK_OPTION_ALLOTMENT",
+            "Statement of deviation(s) or variation(s) under Reg. 32": "REGULATION_32_DEVIATION",
+            "Disclosure under Regulation30 of SEBI LODR": "REGULATION_30_DISCLOSURE",
+            "Credit rating reaffirmed by agency": "CREDIT_RATING",
+            "Shareholding Pattern": "SHAREHOLDING_PATTERN",
+            "Related Party Transactions": "RELATED_PARTY_TRANSACTION",
+            "Press Release": "PRESS_RELEASE",
+            "General Updates": "GENERAL_UPDATE",
         }
         for subject, event in cases.items():
             self.assertEqual(classify(subject).event_type, event)
+
+    def test_new_event_scores_are_intentional(self):
+        self.assertEqual(classify("ESOP/ESOS/ESPS").severity, FilingSeverity.MEDIUM)
+        self.assertEqual(
+            classify(
+                "Statement of deviation(s) or variation(s) under Reg. 32",
+                "Routine statement of deviation(s) or variation(s) with no deviation.",
+            ).severity,
+            FilingSeverity.LOW,
+        )
+        self.assertEqual(
+            classify(
+                "Statement of deviation(s) or variation(s) under Reg. 32",
+                "Material deviation in utilization of proceeds was identified.",
+            ).severity,
+            FilingSeverity.MEDIUM,
+        )
+        self.assertEqual(classify("Credit rating reaffirmed by agency").severity, FilingSeverity.MEDIUM)
+        self.assertEqual(classify("General Updates").severity, FilingSeverity.LOW)
 
     def test_combined_signals_raise_severity(self):
         result = classify(
@@ -89,7 +117,6 @@ class FilingClassifierTests(TestCase):
         self.assertEqual(classify("Promoter pledge").severity, FilingSeverity.MEDIUM)
         self.assertEqual(classify("SEBI action").severity, FilingSeverity.HIGH)
         self.assertEqual(classify("Fraud detected").severity, FilingSeverity.CRITICAL)
-
 
 
 class FilingMatchingTests(TestCase):
@@ -175,6 +202,7 @@ class FilingMatchingTests(TestCase):
         assets, method = match_assets(filing)
         self.assertEqual(method, "UNMATCHED")
         self.assertEqual(assets, [])
+
 
 class FilingPipelineTests(TestCase):
     def setUp(self):

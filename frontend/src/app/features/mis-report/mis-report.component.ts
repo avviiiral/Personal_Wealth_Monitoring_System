@@ -187,8 +187,9 @@ export class MISReportComponent implements OnInit {
 
   formatNotesCalculatedValue(column: MISEditableColumn, value: string | number | null | undefined): string {
     if (value === null || value === undefined || value === '') return '—';
-    if (column.id === 'change') return this.formatNumber(Number(value), 2);
+    if (column.id === 'sr_no') return String(value);
     if (column.id === 'percent_change') return this.formatNumber(Number(value), 2) + '%';
+    if (column.type === 'number' || column.id === 'change') return this.formatNumber(Number(value), 2);
     return String(value);
   }
 

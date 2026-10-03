@@ -298,7 +298,7 @@ The **MIS Report** is available at **Portfolio → MIS Report** and contains the
 ### 📰 Portfolio News workflow
 
 
-The Portfolio News pipeline separates deterministic news retrieval and portfolio matching from optional Gemini analysis. The **All News** layer does not require Gemini; Gemini is used only for AI enrichment such as relevance, sentiment, impact and category analysis.
+The Portfolio News pipeline separates deterministic news retrieval and portfolio matching from local rule-based analysis. The **All News** layer is metadata-first; the alert layer is classified locally without an AI API.
 
 ```text
 ┌──────────────────────────────┐
@@ -393,7 +393,7 @@ The Portfolio News pipeline separates deterministic news retrieval and portfolio
 4. **Google News RSS** retrieves matching articles.
 5. The **Holding Matcher** deterministically checks both the news headline and the provider-supplied article body/description against the holding's names, aliases, ticker and ISIN. For underlying queries it applies the same headline/body check to the requested underlying name or ISIN.
 6. Each deterministic association is persisted as a **PortfolioNewsMatch** record.
-7. **All News** reads these raw family matches through `/api/ai/news/raw/` and does not require Gemini.
+7. **All News** reads these raw family matches through `/api/ai/news/raw/` and does not require paid AI.
 8. The optional **Gemini AI Analysis** layer enriches matched articles with relevance, sentiment, impact and category information and stores the resulting **PortfolioNewsAlert** records.
 9. The enriched records power the **AI Feed** and **Digest** views.
 10. The **Portfolio News UI** presents the three layers as **All News**, **AI Feed**, and **Today's Digest**.
@@ -1035,7 +1035,7 @@ Settings load from **`backend/.env`** (template: [`backend/.env.example`](./back
 | `POSTGRES_CONN_MAX_AGE`                                                                   | Persistent PostgreSQL connection lifetime                    | `60` seconds when PostgreSQL is enabled       | Tune for the deployment; database health checks remain enabled                                                    |
 | `GEMINI_API_KEY` _(or `GOOGLE_API_KEY`)_                                                  | Enables AI Chat and Portfolio News analysis                 | —                                           | Your key from Google AI Studio. Without it AI Chat is unavailable; Portfolio News continues using the zero-cost rule-based analyzer |
 | `NEWS_MONITOR_INTERVAL`                                                                   | Seconds between automatic news runs                         | `1800`                                      | Tune as needed                                                                                                |
-| `NEWS_MONITOR_ANALYSIS_DELAY_SECONDS`                                                      | Pause between Gemini calls in a news run                    | —                                           | Raise (e.g. `6`) if you hit rate-limit errors                                                                 |
+| `NEWS_MONITOR_ANALYSIS_DELAY_SECONDS`                                                      | Optional pause between local analysis batches              | `0`                                         | Usually leave at `0`; no external AI rate limit exists                                                            |
 | `WATCHLIST_PMS_SOURCE_URLS`                                                               | Optional comma-separated authoritative PMS source endpoints | _(blank)_                                   | Leave blank when no reliable source exists — no PMS values are ever fabricated                                |
 | `WEB_PUSH_VAPID_PUBLIC_KEY`                                                                | Browser Web Push public VAPID key                          | _(blank)_                                   | Generate with `python manage.py generate_web_push_keys`                                                      |
 | `WEB_PUSH_VAPID_PRIVATE_KEY`                                                               | Browser Web Push private VAPID key                         | _(blank)_                                   | Keep secret; never commit it                                                                                   |

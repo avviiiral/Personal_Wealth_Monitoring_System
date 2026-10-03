@@ -294,7 +294,7 @@ def _process_holding(
 
         selected_pairs.append((article, holding, connection))
         articles_selected_this_holding += 1
-        stats["articles_sent_to_ai"] += 1
+        stats["articles_analyzed"] += 1
 
     return selected_pairs
 
@@ -392,10 +392,10 @@ def _analyze_batches_for_user(
             )
             batch_results = {}
 
-        stats["ai_batch_requests"] += 1
+        stats["analysis_batch_requests"] += 1
 
         if not batch_results:
-            stats["ai_failures"] += len(batch)
+            stats["analysis_failures"] += len(batch)
             continue
 
         analyses.update(batch_results)
@@ -422,7 +422,7 @@ def _create_alerts_from_analyses(
         analysis = analyses.get(key)
 
         if analysis is None:
-            # Missing result means Gemini did not return a usable
+            # Missing result means the local analyzer did not return a usable
             # analysis for this pair. Do not manufacture an alert.
             continue
 
@@ -476,7 +476,7 @@ def run_portfolio_news_monitor(
     provider: Optional[NewsProvider] = None,
     analyzer: Optional[RuleBasedArticleAnalyzer] = None,
     lookback_days: Optional[int] = None,
-    ai_call_delay_seconds: Optional[float] = None,
+    analysis_delay_seconds: Optional[float] = None,
     max_articles_per_holding: Optional[int] = None,
     min_relevance_score: Optional[int] = None,
     min_alert_score: Optional[float] = None,
@@ -488,7 +488,7 @@ def run_portfolio_news_monitor(
     batch AI analysis -> portfolio-weighted alert creation.
 
     Rule-based analysis is performed in bounded batches across ALL holdings
-    belonging to the same user. This avoids one Gemini request per
+    belonging to the same user. This avoids one the local analyzer request per
     article/holding pair and substantially reduces request-per-minute
     pressure.
 
@@ -523,8 +523,8 @@ def run_portfolio_news_monitor(
     # Kept for compatibility with deployments that already set the old
     # delay; no paid service is contacted by the local analyzer.
     resolved_analysis_delay_seconds = (
-        ai_call_delay_seconds
-        if ai_call_delay_seconds is not None
+        analysis_delay_seconds
+        if analysis_delay_seconds is not None
         else _get_analysis_delay_seconds()
     )
 
@@ -560,7 +560,7 @@ def run_portfolio_news_monitor(
         "max_batch_articles=%s, min_relevance_score=%s, "
         "min_alert_score=%s)",
         resolved_lookback_days,
-        resolved_ai_call_delay_seconds,
+        resolved_analysis_delay_seconds,
         resolved_max_articles_per_holding,
         resolved_max_batch_articles,
         resolved_min_relevance_score,
@@ -606,7 +606,7 @@ def run_portfolio_news_monitor(
                 analyzer,
                 from_date,
                 stats,
-                ai_call_delay_seconds=0.0,
+                analysis_delay_seconds=0.0,
                 max_articles_per_holding=resolved_max_articles_per_holding,
                 min_relevance_score=resolved_min_relevance_score,
                 min_alert_score=resolved_min_alert_score,
@@ -629,7 +629,7 @@ def run_portfolio_news_monitor(
         # Apply the old delay, if explicitly configured, once per batch
         # instead of once per article. The default is zero because the
         # batching itself is the request-rate optimization.
-        if resolved_ai_call_delay_seconds > 0:
+        if resolved_analysis_delay_seconds > 0:
             import time
 
             analyses = {}
@@ -643,7 +643,7 @@ def run_portfolio_news_monitor(
                     start : start + max(1, resolved_max_batch_articles)
                 ]
 
-                time.sleep(resolved_ai_call_delay_seconds)
+                time.sleep(resolved_analysis_delay_seconds)
 
                 try:
                     if callable(getattr(analyzer, "analyze_batch", None)):
@@ -678,10 +678,10 @@ def run_portfolio_news_monitor(
                     )
                     batch_results = {}
 
-                stats["ai_batch_requests"] += 1
+                stats["analysis_batch_requests"] += 1
 
                 if not batch_results:
-                    stats["ai_failures"] += len(batch)
+                    stats["analysis_failures"] += len(batch)
                 else:
                     analyses.update(batch_results)
         else:

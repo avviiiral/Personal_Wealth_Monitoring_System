@@ -61,7 +61,7 @@ def _get_analysis_delay_seconds() -> float:
             )
         )
     except (TypeError, ValueError):
-        return DEFAULT_AI_CALL_DELAY_SECONDS
+        return DEFAULT_ANALYSIS_DELAY_SECONDS
 
 
 def _get_lookback_days() -> int:

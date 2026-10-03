@@ -84,6 +84,9 @@ The application uses the following external data sources for market and investme
 | Portfolio news | [Google News](https://news.google.com/) RSS — no API key required |
 | AI explanations | [Google Gemini](https://ai.google.dev/) — optional, only for Portfolio Chat; not required by Portfolio News |
 
+| Corporate filings | NSE public Corporate Announcements feed; BSE via an authorized/configured feed |
+| Portfolio News analysis | Deterministic local rules — no hosted AI model or paid AI API required |
+
 ## 🚀 Quick start
 
 > Full walkthrough with troubleshooting: **[SETUP.md](./SETUP.md)**. Prerequisites: Git, Python 3.12 (3.11+), Node.js 20+ (22 recommended).
@@ -241,6 +244,79 @@ The following user-facing fields are sourced from uploaded transaction records:
 | **Advisors** | Uploaded transaction data |
 
 The application no longer uses synthetic `Unassigned` values or hard-coded user-facing asset-class mappings for these fields. Internal technical asset categories may still be used by market-data services to decide which external price/NAV provider to call; those technical categories are separate from the user uploaded portfolio classification.
+
+### 📰 Portfolio News & Corporate Filing Intelligence
+
+The **Portfolio News** feature is a deterministic, portfolio-aware news and corporate-filing monitoring layer. It does **not** require an AI model API key and does not add a hosted AI inference cost.
+
+#### News monitoring
+
+- Builds news searches from the securities actually held in the user's visible portfolio scope.
+- Uses **Google News RSS** for general news discovery; no Google News API key is required.
+- Matches articles to holdings using deterministic identifiers and text signals.
+- Uses event clustering and source aggregation to avoid creating duplicate alerts when multiple sources report the same event.
+- Classifies sentiment, impact, materiality, confidence and time horizon using transparent rule-based analysis.
+- Calculates portfolio-aware alert priority from impact, holding weight, confidence, source quality and recency.
+- Supports notification tiers:
+  - **Critical / High** — eligible for immediate Web Push notification.
+  - **Moderate** — stored for digest handling.
+  - **Low / Very Low** — retained in the feed without an immediate notification.
+- Includes an unusual-activity signal based on recent deterministic article-match volume versus the holding's baseline.
+- The Portfolio News list supports live polling and incrementally refreshes recently changed alerts without requiring a full page reload.
+
+#### Corporate filing intelligence
+
+Corporate announcements are processed through a separate deterministic filing pipeline and can enrich an existing Portfolio News event instead of creating a duplicate alert.
+
+Supported filing/event categories include, among others:
+
+- Financial results and earnings-related announcements
+- Board meetings and board-meeting outcomes
+- Dividends, bonus issues and stock splits
+- Buybacks, acquisitions, mergers and demergers
+- Fundraising, preferential issues, warrants and capital allotments
+- Promoter pledge / pledge release and shareholding changes
+- CEO, CFO, director and auditor changes
+- Auditor qualifications and regulatory actions
+- Credit-rating changes and defaults
+- Insolvency / bankruptcy and litigation
+- Material contracts, orders and other material disclosures
+- Investor presentations and earnings calls
+- Shareholding patterns, related-party transactions and trading-window disclosures
+- Regulation 30 / Regulation 32 disclosures and routine corporate updates
+
+Filing severity is determined by deterministic event rules, including combined adverse signals where applicable. Filing sources contribute to event confidence, and the pipeline records the source and external filing identifiers for diagnostics.
+
+#### Exchange feed behavior
+
+- **NSE** uses the public NSE Corporate Announcements endpoint and establishes the required public session before requesting announcements.
+- **BSE** is supported through an authorized/configured feed. The application skips an unconfigured BSE provider rather than failing the entire monitoring run.
+- Filing ingestion is deduplicated using stable filing/source identifiers.
+- Portfolio matching prioritizes **ISIN**, exchange symbol/BSE code and exact security/company identity. Generic company-name matching is deliberately conservative so similarly named securities are not incorrectly linked.
+- Filing matching is limited to listed **stocks and ETFs**; mutual funds and non-listed portfolio assets are not treated as exchange-filing holdings.
+
+#### Portfolio News detail experience
+
+The detail page exposes:
+
+- Why the event matters to the portfolio
+- Deterministic source-reported summary
+- Potential portfolio implication
+- Sentiment, impact, materiality and impact score
+- Relevance score, portfolio weight and confidence
+- Time horizon and internal alert priority
+- Source links and source tiers
+- Deterministic interpretation and uncertainty notes
+
+The frontend uses the shared light/dark design tokens, renders asynchronous API responses explicitly, and keeps the detail metrics responsive across desktop, tablet and mobile layouts.
+
+#### Zero-cost design
+
+Portfolio News and corporate filing intelligence are intentionally implemented without an LLM dependency:
+
+`NewsArticle`, source records, event clustering, deterministic classification, filing intelligence, portfolio matching, scoring and notification decisions all execute in the application/backend.
+
+Optional **Gemini** remains separate for Portfolio Chat and is not required for Portfolio News.
 
 ### 📈 Analytics
 
@@ -1056,11 +1132,11 @@ Settings load from **`backend/.env`** (template: [`backend/.env.example`](./back
 | `POSTGRES_DB` · `POSTGRES_USER` · `POSTGRES_PASSWORD` · `POSTGRES_HOST` · `POSTGRES_PORT` | PostgreSQL connection                                       | used only when `DATABASE_ENGINE=postgresql` | template: `pwms` · `pwms_user` · _(set a password)_ · `localhost` · `5432`                                    |
 | `POSTGRES_CONN_MAX_AGE`                                                                   | Persistent PostgreSQL connection lifetime                    | `60` seconds when PostgreSQL is enabled       | Tune for the deployment; database health checks remain enabled                                                    |
 | `GEMINI_API_KEY` _(or `GOOGLE_API_KEY`)_                                                  | Enables Portfolio Chat only                                  | —                                           | Optional; Portfolio News does not use this key |
-| `NEWS_CORPORATE_FILINGS_ENABLED` | Enable corporate filing ingestion in the scheduler | `False` | Enable only when an authorized feed is configured |
+| `NEWS_CORPORATE_FILINGS_ENABLED` | Enable corporate filing ingestion in the scheduler | `True` | Enabled by default; disable only when filing monitoring is not required |
 | `NEWS_NSE_FILINGS_ENABLED` | Enable NSE filing adapter | `True` | Applies only when corporate filing intelligence is enabled |
 | `NEWS_BSE_FILINGS_ENABLED` | Enable BSE filing adapter | `True` | Applies only when corporate filing intelligence is enabled |
-| `EXCHANGE_FILING_FEED_URL_NSE` | Authorized NSE HTTP/CSV/JSON feed or mirror | — | No credentials are hard-coded |
-| `EXCHANGE_FILING_FEED_URL_BSE` | Authorized BSE HTTP/CSV/JSON feed or mirror | — | No credentials are hard-coded |
+| `EXCHANGE_FILING_FEED_URL_NSE` | Optional configured NSE HTTP/CSV/JSON feed or mirror | — | The built-in NSE public Corporate Announcements adapter is used when this is not set |
+| `EXCHANGE_FILING_FEED_URL_BSE` | Authorized BSE HTTP/CSV/JSON feed or mirror | — | BSE ingestion requires a configured/authorized feed; an unconfigured BSE provider is skipped |
 | `NEWS_EVENT_CLUSTER_WINDOW` | Recent event-clustering window in days | `3` | Conservative cross-source clustering |
 | `NEWS_NOTIFICATION_COOLDOWN` | Maximum age for retrying an unsent immediate notification | `86400` | Prevents stale push retries; does not suppress new events |
 | `NEWS_MONITOR_INTERVAL`                                                                   | Seconds between automatic news runs                         | `1800`                                      | Tune as needed                                                                                                |
@@ -1084,6 +1160,8 @@ Run from `backend/` with the virtual environment active: `python manage.py <comm
 | -------------------------------- | ---------------- | ---------------------------------------------------------------------------- |
 | `update_market_prices`           | `market_data`    | One-off price refresh (also runs automatically every 15 min)                 |
 | `monitor_portfolio_news`         | `portfolio_news` | One full news-monitoring pass for every user (also automatic)                |
+| `ingest_exchange_filings`         | `filing_intelligence` | Ingest corporate filings for a selected exchange; supports `--exchange nse|bse`, `--hours` and dry-run workflows |
+| `diagnose_corporate_filings`      | `filing_intelligence` | Read-only diagnostics for filing identifier coverage, portfolio matches, holding-user matches, watchlists and existing filing alerts |
 | `gemini_usage`                   | `ai`             | Summary of Gemini token usage                                                |
 | `fetch_amfi_nav`                 | `mutual_funds`   | Download and import the current AMFI NAV file (batched commits)              |
 | `execute_sips`                   | `mutual_funds`   | Execute all due SIP installments for a user                                  |
@@ -1142,6 +1220,7 @@ python manage.py test portfolio_news.test_web_push -v 2 # Web Push delivery beha
 | Transaction upload workflow | Upload audit/history, standard template endpoints, row-level failure handling, and transaction import behavior |
 | `portfolio_news/test_web_push.py` | VAPID/Web Push delivery, subscription handling and notification_sent semantics |
 | `portfolio/test_mis_report.py` | MIS Report API, historical valuation, Excel structure, display units, FIFO taxation, negative-loss tax benefits, and family authorization |
+| `filing_intelligence` | Corporate filing classifier, event precedence, material-change detection, deterministic portfolio matching, filing ingestion, deduplication, cross-source clustering and alert creation. Current branch verification: **20 tests, all passing** |
 
 **Frontend** — from `frontend/`:
 
@@ -1165,6 +1244,8 @@ npm run build     # verifies the whole app compiles
 | **Some SIP tests drift with the calendar**   | A few SIP-scheduling tests compare against today's real date; this is a known fixture limitation that does not affect the running app.                                                                  |
 | **Third-party data can lag or fail**         | Yahoo Finance, AMFI and Google News are external sources; use **manual prices** when a quote is missing.                                                                                                |
 | **MIS valuation depends on available market data** | Historical MIS valuation uses the latest available market price / NAV on or before the requested valuation date; missing valuation data may result in an unavailable market-value figure. |
+| **Corporate filing coverage depends on exchange feeds** | NSE uses the built-in public Corporate Announcements adapter; BSE requires an authorized/configured feed. Unconfigured BSE ingestion is skipped rather than treated as a provider failure. |
+| **Deterministic news is intentionally not LLM-generated** | Portfolio News classifications, filing categories, scoring and notification tiers use transparent rules. This avoids hosted AI cost but cannot provide open-ended semantic reasoning. |
 
 See [SETUP.md](./SETUP.md) for what to configure before any real deployment (`.env`, `environment.prod.ts` and the WSGI / ASGI options).
 

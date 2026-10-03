@@ -4,10 +4,11 @@ from unittest.mock import (
     patch,
 )
 
+from django.contrib.auth import get_user_model
 from django.test import TestCase
 from rest_framework.test import APIClient
 
-from users.models import FamilyGroup, User
+from users.models import FamilyGroup
 
 import requests
 
@@ -59,6 +60,7 @@ class PortfolioNewsIncrementalFeedTests(TestCase):
 
     def setUp(self):
         self.client = APIClient()
+        User = get_user_model()
         self.user = User.objects.create_user(
             username="live-news-user",
             password="test-password",
@@ -83,6 +85,23 @@ class PortfolioNewsIncrementalFeedTests(TestCase):
         first = self._article("First article")
         second = self._article("Second article")
 
+        PortfolioNewsMatch.objects.create(
+            user=self.user,
+            article=first,
+            holding_type="EQUITY",
+            holding_id=1,
+            holding_display_name="Test Company",
+            matched_query="Test Company",
+        )
+        PortfolioNewsMatch.objects.create(
+            user=self.user,
+            article=second,
+            holding_type="EQUITY",
+            holding_id=1,
+            holding_display_name="Test Company",
+            matched_query="Test Company",
+        )
+
         response = self.client.get(
             "/api/ai/news/raw/",
             {"after_id": first.id},
@@ -97,16 +116,31 @@ class PortfolioNewsIncrementalFeedTests(TestCase):
         first = self._article("First alert article")
         second = self._article("Second alert article")
 
-        PortfolioNewsAlert.objects.create(
-            user=self.user,
-            article=first,
-            relevant=True,
-        )
-        PortfolioNewsAlert.objects.create(
-            user=self.user,
-            article=second,
-            relevant=True,
-        )
+        def create_alert(article):
+            return PortfolioNewsAlert.objects.create(
+                user=self.user,
+                article=article,
+                holding_type="EQUITY",
+                holding_id=1,
+                holding_display_name="Test Company",
+                relevant=True,
+                category="OTHER",
+                sentiment="neutral",
+                time_horizon="unspecified",
+                relevance_score=80,
+                impact="high",
+                impact_score=70,
+                confidence=0.8,
+                portfolio_weight_at_alert=10.0,
+                alert_score=5.0,
+                notification_tier="high",
+                summary="Test alert",
+                portfolio_implication="Test implication",
+                reason="Test reason",
+            )
+
+        create_alert(first)
+        create_alert(second)
 
         response = self.client.get(
             "/api/ai/news/",

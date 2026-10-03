@@ -267,6 +267,10 @@ def classify(subject: str, details: str = "", filing_type: str = "") -> FilingCl
             if hit[1] != "PROMOTER_PLEDGE"
         ]
 
+    # Prefer a specific promoter pledge release over the generic pledge rule.
+    if any(event == "PROMOTER_PLEDGE_RELEASE" for _, event, _, _ in hits):
+        hits = [hit for hit in hits if hit[1] != "PROMOTER_PLEDGE"]
+
     # Combined signals: independent adverse developments materially increase severity.
     adverse = {
         "FRAUD", "INSOLVENCY", "BANKRUPTCY", "DEFAULT", "REGULATORY_BAN",

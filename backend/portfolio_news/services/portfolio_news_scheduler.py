@@ -65,8 +65,17 @@ class PortfolioNewsScheduler:
                 filing_exchanges = []
                 if getattr(settings, "NEWS_NSE_FILINGS_ENABLED", True):
                     filing_exchanges.append("NSE")
-                if getattr(settings, "NEWS_BSE_FILINGS_ENABLED", True):
+                if (
+                    getattr(settings, "NEWS_BSE_FILINGS_ENABLED", True)
+                    and os.environ.get("EXCHANGE_FILING_FEED_URL_BSE", "").strip()
+                ):
                     filing_exchanges.append("BSE")
+                elif getattr(settings, "NEWS_BSE_FILINGS_ENABLED", True):
+                    logger.info(
+                        "BSE corporate filings are enabled but no "
+                        "EXCHANGE_FILING_FEED_URL_BSE is configured; skipping BSE "
+                        "until an authorized feed is configured."
+                    )
                 filing_stats = (
                     ingest_exchange_filings(exchanges=filing_exchanges)
                     if filing_enabled and filing_exchanges

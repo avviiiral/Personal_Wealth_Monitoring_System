@@ -118,20 +118,42 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
   }
 
   getStandardAllocationAmount(category: string): number {
-    if ((this as any).standardAllocationEditing) {
-      const draftAmount = Number(this.standardAllocationAmountDraft[category]);
-      return Number.isFinite(draftAmount) ? draftAmount : 0;
-    }
-
     const percent = Number((this as any).standardAllocations?.[category]);
     const total = this.getStandardAllocationBaseTotal();
 
+    // Standard Allocation is stored as a percentage. The amount is always
+    // derived from the currently selected family's current total, so the
+    // same 12% target displays a different amount for different families.
     if (Number.isFinite(percent) && total > 0) {
-      return Math.round((total * percent) * 100) / 10000;
+      return Math.round(((total * percent) / 100) * 100) / 100;
+    }
+
+    const draftAmount = Number(this.standardAllocationAmountDraft[category]);
+    if ((this as any).standardAllocationEditing && Number.isFinite(draftAmount)) {
+      return draftAmount;
     }
 
     const storedAmount = Number(this.standardAllocationAmounts[category]);
     return Number.isFinite(storedAmount) ? storedAmount : 0;
+  }
+
+  getStandardAllocationAmountInputValue(category: string): number {
+    const amount = this.getStandardAllocationAmount(category);
+    const divisor = this.getDisplayUnitDivisor();
+
+    if (divisor <= 0) {
+      return amount;
+    }
+
+    return Math.round((amount / divisor) * 100) / 100;
+  }
+
+  private getDisplayUnitDivisor(): number {
+    return this.displayUnit === 'amount'
+      ? 1
+      : this.displayUnit === 'lakhs'
+        ? 100000
+        : 10000000;
   }
 
   private getStandardAllocationBaseTotal(): number {
@@ -148,15 +170,17 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
   }
 
   updateStandardAllocationAmount(category: string, rawValue: string): void {
-    const amount = Number(rawValue);
-    const safeAmount = Number.isFinite(amount) ? Math.max(0, amount) : 0;
-    this.standardAllocationAmountDraft[category] = safeAmount;
+    const displayAmount = Number(rawValue);
+    const safeDisplayAmount = Number.isFinite(displayAmount) ? Math.max(0, displayAmount) : 0;
+    const amount = safeDisplayAmount * this.getDisplayUnitDivisor();
+
+    this.standardAllocationAmountDraft[category] = amount;
 
     const total = this.getStandardAllocationBaseTotal();
 
     if (total > 0) {
       (this as any).standardAllocationDraft[category] =
-        Math.round((safeAmount / total) * 10000) / 100;
+        Math.round((amount / total) * 10000) / 100;
     }
   }
 

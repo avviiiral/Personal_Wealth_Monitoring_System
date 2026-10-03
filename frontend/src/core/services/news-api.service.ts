@@ -21,6 +21,9 @@ export interface PortfolioNewsAlertListItem {
   source_count: number;
   is_read: boolean;
   notification_sent: boolean;
+  connection_type: 'direct' | 'underlying';
+  underlying_name: string;
+  underlying_weight: string | null;
   created_at: string;
   source_type: 'NEWS' | 'EXCHANGE_FILING';
   filing_exchange?: string | null;
@@ -59,6 +62,32 @@ export interface PortfolioNewsListResponse {
   results: PortfolioNewsAlertListItem[];
   count: number;
 }
+
+export interface PortfolioNewsRawHolding {
+  holding_type: 'EQUITY' | 'MUTUAL_FUND' | 'WATCHLIST';
+  holding_id: number;
+  holding_display_name: string;
+}
+
+export interface PortfolioNewsRawItem {
+  id: number;
+  title: string;
+  url: string;
+  source: string;
+  description: string;
+  published_at: string | null;
+  source_quality: 'tier_1' | 'tier_2' | 'tier_3';
+  source_count: number;
+  matched_query: string;
+  created_at: string;
+  matched_holdings: PortfolioNewsRawHolding[];
+}
+
+export interface PortfolioNewsRawListResponse {
+  results: PortfolioNewsRawItem[];
+  count: number;
+}
+
 
 export interface PushConfigResponse {
   enabled: boolean;
@@ -182,6 +211,39 @@ export class NewsApiService {
       withCredentials: true,
       params,
     });
+  }
+
+  getRawNews(options?: {
+    limit?: number;
+    holdingType?: string;
+    holdingId?: number;
+    dateRange?: string;
+  }): Observable<PortfolioNewsRawListResponse> {
+    let params = new HttpParams();
+
+    if (options?.limit) {
+      params = params.set('limit', String(options.limit));
+    }
+
+    if (options?.holdingType) {
+      params = params.set('holding_type', options.holdingType);
+    }
+
+    if (options?.holdingId) {
+      params = params.set('holding_id', String(options.holdingId));
+    }
+
+    if (options?.dateRange) {
+      params = params.set('date_range', options.dateRange);
+    }
+
+    return this.http.get<PortfolioNewsRawListResponse>(
+      `${this.baseUrl}/news/raw/`,
+      {
+        withCredentials: true,
+        params,
+      },
+    );
   }
 
   getNewsDetail(id: number): Observable<PortfolioNewsAlertDetail> {

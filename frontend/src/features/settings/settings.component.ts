@@ -15,6 +15,7 @@ import {
   TransactionUploadHistory,
   TransactionUploadDetail,
   UnderlyingUploadHistory,
+  MISNotesHistoryEntry,
 } from '../../core/services/settings-api.service';
 
 import { UserManagementComponent } from './user-management/user-management.component';
@@ -26,12 +27,16 @@ type SettingsTab =
   | 'security'
   | 'users'
   | 'families'
-  | 'prices'
-  | 'tax-rates'
+  | 'logs'
+  | 'tax-rates';
+
+type LogsTab =
   | 'tax-updates'
   | 'transaction-history'
   | 'upload-history'
-  | 'underlyings';
+  | 'underlyings'
+  | 'mis-history'
+  | 'prices';
 
 @Component({
   selector: 'app-settings',
@@ -54,6 +59,7 @@ export class SettingsComponent implements OnInit {
   private readonly cdr = inject(ChangeDetectorRef);
 
   activeTab: SettingsTab = 'account';
+  activeLogTab: LogsTab = 'tax-updates';
   profile: SettingsProfile | null = null;
 
 
@@ -97,6 +103,10 @@ export class SettingsComponent implements OnInit {
   underlyingUploadLoading = false;
   underlyingUploadError = '';
 
+  misNotesHistory: MISNotesHistoryEntry[] = [];
+  misNotesHistoryLoading = false;
+  misNotesHistoryError = '';
+
   historySearch = '';
   historyEditorFilter = '';
   historyDateFilter = '';
@@ -121,20 +131,35 @@ export class SettingsComponent implements OnInit {
       this.loadTaxRateSettings();
     }
 
-    if (tab === 'tax-updates' && !this.taxUpdateHistory.length) {
+    if (tab === 'logs') {
+      this.loadActiveLogTab();
+    }
+  }
+
+  setLogTab(tab: LogsTab): void {
+    this.activeLogTab = tab;
+    this.loadActiveLogTab();
+  }
+
+  private loadActiveLogTab(): void {
+    if (this.activeLogTab === 'tax-updates' && !this.taxUpdateHistory.length) {
       this.loadTaxUpdateHistory();
     }
 
-    if (tab === 'transaction-history' && !this.transactionHistory.length) {
+    if (this.activeLogTab === 'transaction-history' && !this.transactionHistory.length) {
       this.loadTransactionHistory();
     }
 
-    if (tab === 'upload-history' && !this.transactionUploads.length) {
+    if (this.activeLogTab === 'upload-history' && !this.transactionUploads.length) {
       this.loadTransactionUploadHistory();
     }
 
-    if (tab === 'underlyings' && !this.underlyingUploads.length) {
+    if (this.activeLogTab === 'underlyings' && !this.underlyingUploads.length) {
       this.loadUnderlyingUploads();
+    }
+
+    if (this.activeLogTab === 'mis-history' && !this.misNotesHistory.length) {
+      this.loadMISNotesHistory();
     }
   }
 
@@ -161,14 +186,8 @@ export class SettingsComponent implements OnInit {
         if (this.activeTab === 'tax-rates') {
           this.loadTaxRateSettings();
         }
-        if (this.activeTab === 'tax-updates') {
-          this.loadTaxUpdateHistory();
-        }
-        if (this.activeTab === 'upload-history') {
-          this.loadTransactionUploadHistory();
-        }
-        if (this.activeTab === 'underlyings') {
-          this.loadUnderlyingUploads();
+        if (this.activeTab === 'logs') {
+          this.loadActiveLogTab();
         }
         this.cdr.detectChanges();
       },
@@ -428,6 +447,43 @@ export class SettingsComponent implements OnInit {
       this.expandedHistoryId === historyId ? null : historyId;
   }
 
+
+  loadMISNotesHistory(): void {
+    this.misNotesHistoryLoading = true;
+    this.misNotesHistoryError = '';
+
+    this.settingsApi.getMISNotesHistory().subscribe({
+      next: (response) => {
+        this.misNotesHistory = response.results || [];
+        this.misNotesHistoryLoading = false;
+        this.cdr.detectChanges();
+      },
+      error: (error) => {
+        this.misNotesHistoryLoading = false;
+        this.misNotesHistoryError =
+          error?.error?.detail || 'Unable to load MIS Notes edit history.';
+        this.cdr.detectChanges();
+      },
+    });
+  }
+
+  formatMISNotesChanges(entry: MISNotesHistoryEntry): string {
+    return entry.changes.map((change) => {
+      const type = String(change['type'] || 'edited').replace(/_/g, ' ');
+      const section = change['section'] ? `[Section: ${change['section']}] ` : '';
+      const row = change['row'] ? `[Row: ${change['row']}] ` : '';
+      const column = change['column'] ? `[Column: ${change['column']}] ` : '';
+      const oldValue = change['old'];
+      const newValue = change['new'];
+      if (oldValue !== undefined || newValue !== undefined) {
+        return `${type}: ${section}${row}${column}${oldValue ?? '—'} → ${newValue ?? '—'}`;
+      }
+      const label = newValue || oldValue || change['section'] || change['section_id'] || '';
+      return `${type}: ${section}${label}`;
+    }).join('; ');
+  }
+
+
   loadTransactionUploadHistory(): void {
     this.transactionUploadLoading = true;
     this.transactionUploadError = '';
@@ -668,20 +724,8 @@ export class SettingsComponent implements OnInit {
       this.loadTaxRateSettings();
     }
 
-    if (this.activeTab === 'tax-updates') {
-      this.loadTaxUpdateHistory();
-    }
-
-    if (this.activeTab === 'transaction-history') {
-      this.loadTransactionHistory();
-    }
-
-    if (this.activeTab === 'upload-history') {
-      this.loadTransactionUploadHistory();
-    }
-
-    if (this.activeTab === 'underlyings') {
-      this.loadUnderlyingUploads();
+    if (this.activeTab === 'logs') {
+      this.loadActiveLogTab();
     }
   }
 }

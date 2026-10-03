@@ -101,4 +101,15 @@ export class PortfolioApiService {
   updateTransaction(transactionId: number, payload: UpdateTransactionRequest): Observable<Transaction> {
     return this.getCsrfToken().pipe(switchMap(() => this.http.patch<Transaction>(`${this.baseUrl}/transactions/${transactionId}/`, payload, { headers: this.getCsrfHeaders(), withCredentials: true })));
   }
+
+  deleteTransaction(transactionId: number): Observable<void> {
+    return this.getCsrfToken().pipe(
+      switchMap(() =>
+        this.http.delete<void>(`${this.baseUrl}/transactions/${transactionId}/`, {
+          headers: this.getCsrfHeaders(),
+          withCredentials: true,
+        }),
+      ),
+    );
+  }
 }

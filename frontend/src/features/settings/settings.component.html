@@ -24,14 +24,19 @@
       <button type="button" class="tab-button" [class.tab-active]="activeTab === 'account'" (click)="setTab('account')">Account</button>
       <button type="button" class="tab-button" [class.tab-active]="activeTab === 'security'" (click)="setTab('security')">Security</button>
       <button type="button" class="tab-button" [class.tab-active]="activeTab === 'tax-rates'" (click)="setTab('tax-rates')">Tax Settings</button>
-      <button type="button" class="tab-button" [class.tab-active]="activeTab === 'tax-updates'" (click)="setTab('tax-updates')">Tax Update</button>
-      <button type="button" class="tab-button" [class.tab-active]="activeTab === 'transaction-history'" (click)="setTab('transaction-history')">Transaction Edit History</button>
-      <button type="button" class="tab-button" [class.tab-active]="activeTab === 'upload-history'" (click)="setTab('upload-history')">Transaction Uploads</button>
-      <button type="button" class="tab-button" [class.tab-active]="activeTab === 'underlyings'" (click)="setTab('underlyings')">Underlyings</button>
+      <button type="button" class="tab-button" [class.tab-active]="activeTab === 'logs'" (click)="setTab('logs')">Logs</button>
       <button type="button" class="tab-button" *ngIf="canManageUsers()" [class.tab-active]="activeTab === 'users'" (click)="setTab('users')">User Management</button>
       <button type="button" class="tab-button" *ngIf="canManageFamilies()" [class.tab-active]="activeTab === 'families'" (click)="setTab('families')">Family Management</button>
-      <button type="button" class="tab-button" *ngIf="canEditPrices()" [class.tab-active]="activeTab === 'prices'" (click)="setTab('prices')">Manual Prices</button>
     </nav>
+
+    <div class="settings-log-tabs" *ngIf="activeTab === 'logs'">
+      <button type="button" class="tab-button" [class.tab-active]="activeLogTab === 'tax-updates'" (click)="setLogTab('tax-updates')">Tax Update</button>
+      <button type="button" class="tab-button" [class.tab-active]="activeLogTab === 'transaction-history'" (click)="setLogTab('transaction-history')">Transaction Edit History</button>
+      <button type="button" class="tab-button" [class.tab-active]="activeLogTab === 'upload-history'" (click)="setLogTab('upload-history')">Transaction Uploads</button>
+      <button type="button" class="tab-button" [class.tab-active]="activeLogTab === 'underlyings'" (click)="setLogTab('underlyings')">Underlyings</button>
+      <button type="button" class="tab-button" [class.tab-active]="activeLogTab === 'mis-history'" (click)="setLogTab('mis-history')">MIS Edit History</button>
+      <button type="button" class="tab-button" *ngIf="canEditPrices()" [class.tab-active]="activeLogTab === 'prices'" (click)="setLogTab('prices')">Manual Prices</button>
+    </div>
 
     <section class="settings-card" *ngIf="activeTab === 'account'">
       <div class="card-header"><div><h2>Profile</h2><p>Your PWMS account information.</p></div><span class="section-badge"> Account </span></div>
@@ -162,7 +167,7 @@
       </div>
     </section>
 
-    <section class="settings-card tax-update-card" *ngIf="activeTab === 'tax-updates'">
+    <section class="settings-card tax-update-card" *ngIf="activeTab === 'logs' && activeLogTab === 'tax-updates'">
       <div class="card-header">
         <div>
           <h2>Tax Update</h2>
@@ -206,7 +211,49 @@
       </div>
     </section>
 
-    <section class="settings-card transaction-history-card" *ngIf="activeTab === 'transaction-history'">
+    <section class="settings-card transaction-history-card" *ngIf="activeTab === 'logs' && activeLogTab === 'mis-history'">
+      <div class="card-header">
+        <div>
+          <h2>MIS Edit History</h2>
+          <p>Family-wide audit trail of changes made to the editable MIS Notes sheet.</p>
+        </div>
+        <span class="section-badge">{{ misNotesHistory.length }} Edits</span>
+      </div>
+
+      <div class="loading-card history-loading" *ngIf="misNotesHistoryLoading">
+        <div class="loading-spinner"></div>
+        <span>Loading MIS edit history...</span>
+      </div>
+
+      <div class="error-card" *ngIf="!misNotesHistoryLoading && misNotesHistoryError">
+        {{ misNotesHistoryError }}
+      </div>
+
+      <div class="tax-update-empty" *ngIf="!misNotesHistoryLoading && !misNotesHistoryError && !misNotesHistory.length">
+        No MIS Notes edits have been recorded for this family yet.
+      </div>
+
+      <div class="tax-update-table-wrap" *ngIf="!misNotesHistoryLoading && !misNotesHistoryError && misNotesHistory.length">
+        <table class="tax-update-table">
+          <thead>
+            <tr>
+              <th>User</th>
+              <th>Date &amp; Time</th>
+              <th>Changes</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr *ngFor="let entry of misNotesHistory">
+              <td>{{ entry.user }}</td>
+              <td>{{ entry.date_time | date:'dd MMM yyyy, hh:mm a' }}</td>
+              <td class="tax-update-change">{{ formatMISNotesChanges(entry) }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="settings-card transaction-history-card" *ngIf="activeTab === 'logs' && activeLogTab === 'transaction-history'">
       <div class="card-header">
         <div><h2>Transaction Edit History</h2><p>Audit trail of transactions edited from the Report page.</p></div>
         <span class="section-badge"> {{ filteredTransactionHistory.length }} of {{ transactionHistory.length }} Edits </span>
@@ -260,7 +307,7 @@
                   <td class="tx-history-td tx-history-td-strong">{{ history.asset_name || '—' }}</td>
                   <td class="tx-history-td">{{ history.new_values['transaction_date'] || history.old_values['transaction_date'] || '—' }}</td>
                   <td class="tx-history-td">{{ history.new_values['transaction_type'] || history.old_values['transaction_type'] || '—' }}</td>
-                  <td class="tx-history-td">{{ history.changed_fields.map(formatHistoryField).join(', ') }}</td>
+                  <td class="tx-history-td">{{ history.transaction_id === null ? 'Transaction Deleted' : history.changed_fields.map(formatHistoryField).join(', ') }}</td>
                   <td class="tx-history-td">
                     <button type="button" class="secondary-button" style="padding:7px 12px;font-size:12px;" (click)="toggleHistory(history.id)">
                       {{ expandedHistoryId === history.id ? 'Hide' : 'View' }}
@@ -307,7 +354,7 @@
     </section>
 
 
-    <section class="settings-card transaction-upload-card" *ngIf="activeTab === 'upload-history'">
+    <section class="settings-card transaction-upload-card" *ngIf="activeTab === 'logs' && activeLogTab === 'upload-history'">
       <div class="card-header">
         <div>
           <h2>Transaction Upload History</h2>
@@ -389,7 +436,7 @@
 
 
 
-    <section class="settings-card transaction-upload-card" *ngIf="activeTab === 'underlyings'">
+    <section class="settings-card transaction-upload-card" *ngIf="activeTab === 'logs' && activeLogTab === 'underlyings'">
       <div class="card-header">
         <div>
           <h2>Underlying Uploads</h2>
@@ -455,7 +502,7 @@
 
     <section class="settings-card" *ngIf="activeTab === 'users' && canManageUsers()"><app-user-management></app-user-management></section>
     <section class="settings-card" *ngIf="activeTab === 'families' && canManageFamilies()"><app-family-management></app-family-management></section>
-    <section class="settings-card" *ngIf="activeTab === 'prices' && canEditPrices()"><app-manual-prices></app-manual-prices></section>
+    <section class="settings-card" *ngIf="activeTab === 'logs' && activeLogTab === 'prices' && canEditPrices()"><app-manual-prices></app-manual-prices></section>
 
     <section class="settings-card danger-card" *ngIf="activeTab === 'account'">
       <div class="card-header"><div><h2>Session</h2><p>End your current PWMS session.</p></div></div>

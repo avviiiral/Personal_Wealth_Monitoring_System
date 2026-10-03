@@ -322,7 +322,7 @@ class BenchmarkPerformanceTests(TestCase):
         )
         MutualFundProduct.objects.create(product=product, scheme_code="NIFTY", benchmark="Nifty 50")
         points = [
-            {"date": "2021-01-01", "value": 100.0},
+            {"date": "2021-01-02", "value": 100.0},
             {"date": "2026-01-01", "value": 150.0},
         ]
         with patch.object(BenchmarkPerformanceService, "_nifty_tri_series", return_value=points):
@@ -355,7 +355,7 @@ class BenchmarkPerformanceTests(TestCase):
             BenchmarkPerformanceService,
             "_bse_series",
             return_value=[
-                {"date": "2025-09-25", "value": 100.0},
+                {"date": "2025-09-28", "value": 100.0},
                 {"date": "2026-09-28", "value": 98.0},
             ],
         ):
@@ -368,7 +368,7 @@ class BenchmarkPerformanceTests(TestCase):
 
     def test_benchmark_long_periods_are_cumulative_not_cagr(self):
         points = [
-            {"date": "2021-01-01", "value": 100.0},
+            {"date": "2021-01-02", "value": 100.0},
             {"date": "2026-01-01", "value": 150.0},
         ]
         product = InvestmentProduct.objects.create(
@@ -404,7 +404,7 @@ class BenchmarkPerformanceTests(TestCase):
             {"date": "2026-09-28", "value": 106.0},
         ]
         detail = BenchmarkPerformanceService._period_return_detail(points, 365)
-        self.assertEqual(detail["start_date"], "2025-09-25")
+        self.assertEqual(detail["start_date"], "2026-09-25")
         self.assertEqual(detail["end_date"], "2026-09-28")
         self.assertEqual(detail["start_value"], 105.0)
         self.assertEqual(detail["end_value"], 106.0)
@@ -418,7 +418,8 @@ class BenchmarkPerformanceTests(TestCase):
             source="TEST",
         )
         MutualFundProduct.objects.create(product=product, scheme_code="API-BSETRI", benchmark="BSE 500")
-        self.client.force_authenticate(
+        api_client = APIClient()
+        api_client.force_authenticate(
             user=User.objects.create_user(username="benchmark-api-user")
         )
         with patch.object(
@@ -429,7 +430,7 @@ class BenchmarkPerformanceTests(TestCase):
                 {"date": "2026-01-01", "value": 150.0},
             ],
         ):
-            response = self.client.get(
+            response = api_client.get(
                 f"/api/watch-list/products/{product.id}/benchmark-performance/?period=1Y"
             )
         self.assertEqual(response.status_code, 200)

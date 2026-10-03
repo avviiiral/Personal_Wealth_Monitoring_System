@@ -46,11 +46,13 @@
 }
 
 .page-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    "copy actions"
+    "controls controls";
+  align-items: start;
   margin-bottom: 28px;
-  flex-wrap: wrap;
   gap: 16px;
 
   h1 {
@@ -68,36 +70,56 @@
   }
 }
 
+.page-header-copy {
+  grid-area: copy;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  min-width: 0;
+}
+
 .page-header-actions {
+  grid-area: actions;
   display: flex;
   flex-direction: column;
   align-items: flex-end;
   justify-content: flex-start;
-  gap: 10px;
   min-width: 330px;
 }
 
-.header-filter-stack {
+.header-controls-row {
+  grid-area: controls;
   display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  gap: 10px;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
   width: 100%;
-  max-width: 390px;
 }
 
-.header-filter-stack .header-control-inline,
-.header-filter-stack .family-filter-inline {
+.family-filter-inline,
+.display-unit-filter {
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 7px;
+  box-sizing: border-box;
   padding: 10px 12px;
   border: 1px solid var(--surface-line);
   border-radius: var(--radius-sm);
   background: var(--surface);
   box-shadow: var(--shadow-sm);
   min-width: 0;
+}
+
+.family-filter-inline {
+  width: 100%;
+  max-width: 390px;
+}
+
+.display-unit-filter {
+  width: 100%;
+  max-width: 330px;
+  margin-left: auto;
 }
 
 .header-action-row {
@@ -204,10 +226,7 @@
 }
 
 /* -----------------------------
-   FAMILY FILTER
-   Bordered box next to the Refresh button, label above the
-   buttons - same look/pattern as the Portfolio and Reports pages'
-   Family Name filter box, just sized to sit in the header.
+   FAMILY / DISPLAY FILTERS
 ----------------------------- */
 
 .header-control-inline {
@@ -1099,6 +1118,27 @@
     padding: 20px;
   }
 
+  .page-header-copy {
+    width: 100%;
+  }
+
+  .page-header-copy .family-filter-inline {
+    max-width: none;
+  }
+
+  .header-controls-row {
+    width: 100%;
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .family-filter-inline,
+  .display-unit-filter {
+    max-width: none;
+    width: 100%;
+    margin-left: 0;
+  }
+
   .kpi-grid {
     grid-template-columns: 1fr;
   }
@@ -1113,10 +1153,6 @@
     width: 100%;
     flex-direction: column;
     align-items: stretch;
-  }
-
-  .header-filter-stack {
-    max-width: none;
   }
 
   .header-control-inline,

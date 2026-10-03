@@ -104,6 +104,19 @@ export interface UnderlyingUploadHistoryResponse {
   results: UnderlyingUploadHistory[];
 }
 
+
+export interface MISNotesHistoryEntry {
+  id: number;
+  user: string;
+  date_time: string;
+  changes: Array<Record<string, unknown>>;
+}
+
+export interface MISNotesHistoryResponse {
+  count: number;
+  results: MISNotesHistoryEntry[];
+}
+
 export interface ChangePasswordResponse {
   message: string;
 }
@@ -225,6 +238,13 @@ export class SettingsApiService {
   getTaxRateChangeHistory(): Observable<TaxRateChangeLog[]> {
     return this.http.get<TaxRateChangeLog[]>(
       `${this.baseUrl}/settings/tax-rates/history/`,
+      this.requestOptions,
+    );
+  }
+
+  getMISNotesHistory(): Observable<MISNotesHistoryResponse> {
+    return this.http.get<MISNotesHistoryResponse>(
+      `${environment.apiUrl}/api/portfolio/mis-report/notes/history/`,
       this.requestOptions,
     );
   }

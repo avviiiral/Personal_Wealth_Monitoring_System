@@ -182,6 +182,12 @@ Log in with the account you just created, open **Portfolio → Import** and load
 
 Net worth, asset allocation, key portfolio metrics and an **Investment Summary** table broken down by asset class — all computed server-side and scoped to your own data plus your currently active family's data (or everyone's, for a System Owner).
 
+- **Standard Allocation** supports both **Amount** and **Percentage** views.
+- The **percentage allocation is authoritative**; the amount is recalculated from the current scoped total wealth.
+- A global allocation can be shared across family members, while selecting a family member can create an independent family-specific allocation override.
+- Family-specific amounts recalculate against that family member's current portfolio total without changing the configured allocation percentages.
+- Standard Allocation percentages are validated to total **100%** before saving.
+
 ### 📁 Portfolio
 
 - A hierarchical tree of holdings: **Family → Portfolio → Asset class → Sub-class → Asset**
@@ -195,6 +201,7 @@ Net worth, asset allocation, key portfolio metrics and an **Investment Summary**
 - **Asset Underlying uploads** from Portfolio for supported assets using the standard Excel format (`Stocks`, `% Holding`)
 - **Underlying upload visibility in Settings** with asset name, uploader, upload timestamp, and expandable underlying holdings
 - **Sample Underlying Format** download from Settings as an Excel workbook with an `Underlying` sheet and upload instructions
+- **Transaction Edit History** records edits made from Transaction Reports and retains a durable audit record when a transaction is deleted. Deleted transactions remain visible in the audit history with their previous values.
 
 ### 📥 Transaction Uploads
 
@@ -265,7 +272,7 @@ The **MIS Report** is available at **Portfolio → MIS Report** and contains the
 - **Notes** — standard MIS reference-rate observations for REITs/InvITs, Sovereign Gold Bonds, Silver ETF, Nifty 50, BSE 500 and Dollar Rate, including opening/closing values, change and percentage change where source data is available.
 - **Custom date range** — select `From Date` and `To Date`; opening valuation is reconstructed from the day before the selected start date and closing valuation is calculated as of the selected end date.
 - **Display As** — **Amount**, **Lakhs**, or **Crores**. Conversion is presentation-only; source financial values remain in rupees.
-- **FIFO taxation** — realized P/L is calculated using **First-In, First-Out (FIFO)** transaction matching. Tax is calculated separately for realized and unrealized gains using the configured asset-specific tenure and tax rates; negative P/L produces **₹0 tax**.
+- **FIFO taxation** — realized P/L is calculated using **First-In, First-Out (FIFO)** transaction matching. Tax is calculated separately for realized and unrealized P/L using the configured asset-specific tenure and tax rates. The same tenure-based rate is applied regardless of P/L sign, so a negative realized or unrealized P/L produces a **negative tax value (tax benefit)** in the report.
 - **Tax Settings** — taxation settings are configured by **Asset Name** for the active family, including **Tenure (Months)**, **Short Term Tax**, and **Long Term Tax**. The settings apply consistently to matching asset names within the family.
 - **Download Excel** — exports `IPS`, `Data Sheet`, `Tax Report`, `Fund Type Summary`, and `Notes` in `.xlsx` format.
 - **Uploaded classification source** — IPS and related MIS grouping use the stored/uploaded family and asset classification data rather than synthetic classification defaults.
@@ -277,17 +284,183 @@ The **MIS Report** is available at **Portfolio → MIS Report** and contains the
 ### 🔐 Settings
 
 - **Account and preferences**, including password change
+- **Tax Settings** — configure asset-name-specific tenure, Short Term Tax and Long Term Tax rates for the active family.
 - **User Management** — role-scoped: you only see and manage the roles you're allowed to
 - **Family Management** — System Owner only
-- **Manual Prices** — override any asset's price within your visible family scope; every override is **audit-logged** (who, when, from what)
-- **Transaction Uploads** — review transaction upload history, inspect failed rows, and download the standard transaction upload format
-- **Underlyings** — review the latest uploaded underlying snapshot per asset, see who uploaded it and when, expand underlying holdings, and download the sample underlying Excel format
+- **Logs** — operational and audit history is grouped under one Settings entry. Logs contains:
+  - **Tax Update** — history of tax-setting changes, including user, timestamp, asset name, previous values and new values.
+  - **Transaction Edit History** — audit history of transaction edits and deletions. A deleted transaction is retained as an audit record and displayed as **Transaction Deleted**, with the original transaction values available from **View**.
+  - **Transaction Uploads** — upload status, imported/failed/duplicate counts, row-level failures and standard transaction template download.
+  - **Underlyings** — latest underlying upload per asset, uploader, upload time, underlying rows and sample Excel format.
+  - **MIS Edit History** — audit history of editable MIS Notes changes.
+  - **Manual Prices** — override any asset's price within your visible family scope; every override is **audit-logged** (who, when, from what).
+
+### 📰 Portfolio News workflow
+
+
+The Portfolio News pipeline separates deterministic news retrieval and portfolio matching from optional Gemini analysis. The **All News** layer does not require Gemini; Gemini is used only for AI enrichment such as relevance, sentiment, impact and category analysis.
+
+```text
+┌──────────────────────────────┐
+│       ACTIVE FAMILY          │
+│                              │
+│ Family Stocks / Mutual Funds │
+└──────────────┬───────────────┘
+               │
+               ▼
+┌──────────────────────────────┐
+│   HOLDINGS REGISTRY          │
+│                              │
+│ Builds live holdings         │
+│ + names / aliases / symbols  │
+│ + ISIN / scheme information  │
+└──────────────┬───────────────┘
+               │
+               ▼
+┌──────────────────────────────┐
+│       QUERY BUILDER          │
+│                              │
+│ Creates search queries       │
+│ for each portfolio holding   │
+└──────────────┬───────────────┘
+               │
+               ▼
+┌──────────────────────────────┐
+│     GOOGLE NEWS RSS          │
+│                              │
+│ Fetches matching news        │
+│ articles                     │
+└──────────────┬───────────────┘
+               │
+               ▼
+┌──────────────────────────────┐
+│      HOLDING MATCHER         │
+│                              │
+│ Deterministically checks     │
+│ headline + body/description  │
+│ ↔ portfolio holding          │
+└──────────────┬───────────────┘
+               │
+               ▼
+        ┌─────────────────┐
+        │ PortfolioNews   │
+        │     Match       │
+        └────────┬────────┘
+                 │
+                 │
+       ┌─────────┴──────────┐
+       │                    │
+       ▼                    ▼
+┌───────────────┐   ┌──────────────────┐
+│   ALL NEWS    │   │      GEMINI       │
+│               │   │   AI ANALYSIS     │
+│ No Gemini     │   │                  │
+│ required      │   │ Relevance        │
+│               │   │ Sentiment        │
+│ Raw matched   │   │ Impact           │
+│ articles      │   │ Category         │
+└───────┬───────┘   └────────┬─────────┘
+        │                    │
+        ▼                    ▼
+┌───────────────┐   ┌──────────────────┐
+│ /news/raw/    │   │ PortfolioNews    │
+│               │   │ Alert            │
+└───────┬───────┘   └────────┬─────────┘
+        │                    │
+        │                    ▼
+        │             ┌──────────────┐
+        │             │   AI FEED    │
+        │             └──────┬───────┘
+        │                    │
+        │                    ▼
+        │             ┌──────────────┐
+        │             │    DIGEST    │
+        │             └──────────────┘
+        │
+        ▼
+┌────────────────────────────────────┐
+│          PORTFOLIO NEWS UI         │
+│                                    │
+│  [ All News ] [ AI Feed ] [Digest] │
+└────────────────────────────────────┘
+```
+
+**Workflow summary:**
+
+1. The **Active Family** supplies the current stocks and mutual funds across the family-scoped portfolio.
+2. The **Holdings Registry** builds the live family holding set and its searchable identifiers, including names, aliases, symbols, ISINs and scheme information where available.
+3. The **Query Builder** creates search queries for each portfolio holding.
+4. **Google News RSS** retrieves matching articles.
+5. The **Holding Matcher** deterministically checks both the news headline and the provider-supplied article body/description against the holding's names, aliases, ticker and ISIN. For underlying queries it applies the same headline/body check to the requested underlying name or ISIN.
+6. Each deterministic association is persisted as a **PortfolioNewsMatch** record.
+7. **All News** reads these raw family matches through `/api/ai/news/raw/` and does not require Gemini.
+8. The optional **Gemini AI Analysis** layer enriches matched articles with relevance, sentiment, impact and category information and stores the resulting **PortfolioNewsAlert** records.
+9. The enriched records power the **AI Feed** and **Digest** views.
+10. The **Portfolio News UI** presents the three layers as **All News**, **AI Feed**, and **Today's Digest**.
+
+This separation means a news article can appear in **All News** even when Gemini is unavailable, not configured, rate-limited, or otherwise unable to analyze that article.
+
+### Family-scoped Portfolio News
+
+Portfolio News follows the same family boundary used by the portfolio and analytics views.
+
+- The **active family** is the authoritative scope for **All News** for users who belong to a family.
+- Deterministic matches are stored with a **FamilyGroup** reference in `PortfolioNewsMatch`.
+- The same article/holding/connection combination is stored only once per family, while separate underlying relationships can be retained when one article is connected through more than one uploaded underlying.
+- The raw endpoint `/api/ai/news/raw/` returns only the currently selected family's deterministic news for normal users.
+- The response includes `family_id` and `family_name` so the UI can make the active family scope explicit.
+- A user with no family retains access to legacy user-scoped raw matches; this is a compatibility path and does not weaken family authorization.
+- System Owners can view stored family-scoped raw news across families.
+- Family membership controls **visibility**; role-based permissions continue to control what users can do. Client-supplied family IDs are not trusted for authorization.
+- **All News remains Gemini-independent.** Gemini enrichment continues to produce the separate `PortfolioNewsAlert` records used by AI Feed and Today's Digest.
+- **Asset-underlying relationships are explicit.** Uploaded `AssetUnderlyingHolding` rows are loaded into the news holdings registry. The monitor issues bounded queries for the largest uploaded underlyings and only accepts an underlying match when that underlying's name or ISIN appears in the news headline or provider-supplied body/description.
+- **Deterministic matching uses headline + body/description.** Portfolio News does not rely on headline-only matching. A holding can match when its identifier appears in either the headline or the provider-supplied article description/body snippet. Google News RSS does not provide the publisher's complete article body, so this layer does not perform an additional full-article fetch just for deterministic matching.
+- **News connection metadata is persisted.** Each raw/AI relationship records `connection_type` (`direct` or `underlying`), the matched `underlying_name`, and the uploaded `underlying_weight`. The UI displays this connection so users can see why an article is associated with an asset.
+- **Underlying news is deterministic first.** Gemini receives the deterministic connection as context and may interpret its significance, but it does not invent the asset-to-underlying relationship.
+
+
+
+### Portfolio News data flow details
+
+The raw and AI paths intentionally share the same deterministic retrieval stage:
+
+```text
+Portfolio holdings
+      ↓
+Holdings Registry
+      ↓
+Query Builder
+      ↓
+Google News RSS
+      ↓
+Holding Matcher
+(headline + body/description)
+      ↓
+PortfolioNewsMatch
+      ├──→ /api/ai/news/raw/ → All News
+      │
+      └──→ optional Gemini analysis
+                ↓
+          PortfolioNewsAlert
+                ├──→ AI Feed
+                └──→ Today's Digest
+```
+
+- **`PortfolioNewsMatch` is the raw-news persistence layer.** A match stores the article, holding type/id, holding display name, matched query and, for family-scoped matches, the authoritative `FamilyGroup`. The database prevents the same article/holding combination from being stored more than once within the same family. Users without a family retain the legacy user-scoped uniqueness path.
+- **Gemini is not part of article retrieval.** Google News RSS retrieves articles and the deterministic matcher associates them with portfolio holdings before any Gemini call is made.
+- **AI usage limits do not remove raw matches.** Articles matched by the deterministic layer remain available to **All News** even when an AI-analysis limit is reached or Gemini is unavailable.
+- **All News is metadata-first.** The raw endpoint returns the article title, original URL, source, description, publication time, source quality/count, matched query and matched holdings; users can open the original publisher article from the UI.
+- **Family visibility is enforced server-side.** For normal users, the raw endpoint derives the active family from the authenticated user and returns only that family's deterministic matches. System Owners can view stored family-scoped matches across families. Users without a family use the legacy user-scoped path. Client-supplied family IDs are not trusted for authorization.
+- **Monitoring is automatic.** The `monitor_portfolio_news` management command performs the news-monitoring pass and is also used by the application's background scheduler.
+- **Gemini remains optional for the raw layer.** A Gemini API key is only needed for AI enrichment such as relevance, sentiment, impact, category analysis and the resulting AI Feed/Digest behavior.
 
 ### 🤖 AI Portfolio Chat
 
 A **Gemini-backed** assistant scoped to the logged-in user's own portfolio. The backend builds a structured context (holdings, allocation, recent performance) and hands it to Gemini. **Gemini interprets the numbers it is given — it never computes or invents them.** Token usage is logged per call.
 
 ### 📰 Portfolio News Intelligence
+
+Portfolio News now has two layers. **All News** shows every article that the deterministic portfolio matcher fetched and associated with the user's holdings, without requiring Gemini. **AI Feed** and the digest retain the existing Gemini enrichment, impact scoring, and notification behavior. The raw layer stores only article metadata/snippets and links users to the original publisher.
 
 A background agent that:
 
@@ -634,6 +807,8 @@ All endpoints require an authenticated Django session unless noted. Auth uses **
 | `POST` `DELETE`              | `/api/settings/groups/<id>/members/[<user_id>/]` | Add / remove a family member         |
 | `GET`                        | `/api/settings/prices/`                          | List overridable prices              |
 | `PUT` `PATCH` `DELETE`       | `/api/settings/prices/<asset_id>/`               | Set / clear a manual price           |
+| `GET`                        | `/api/settings/tax-rates/`                      | List asset-name tax settings         |
+| `GET`                        | `/api/settings/tax-rates/history/`              | Tax-setting change history            |
 
 </details>
 
@@ -646,6 +821,7 @@ All endpoints require an authenticated Django session unless noted. Auth uses **
 | `GET` `PUT` `PATCH` `DELETE` | `/api/portfolio/assets/<id>/`              | Retrieve / update / delete an asset      |
 | `GET` `POST`                 | `/api/portfolio/transactions/`             | List / create transactions               |
 | `GET` `PUT` `PATCH` `DELETE` | `/api/portfolio/transactions/<id>/`        | Retrieve / update / delete a transaction |
+| `GET`                        | `/api/portfolio/transactions/edit-history/` | Transaction edit and deletion audit history |
 | `GET`                        | `/api/portfolio/summary/`                  | Portfolio summary                        |
 | `GET`                        | `/api/portfolio/holdings/`                 | Holdings                                 |
 | `GET`                        | `/api/portfolio/underlying-uploads/`       | Latest underlying upload snapshot per asset |
@@ -655,6 +831,8 @@ All endpoints require an authenticated Django session unless noted. Auth uses **
 | `PUT` `PATCH` `DELETE`       | `/api/portfolio/assets/<id>/manual-price/` | Manual price override                    |
 | `GET`                        | `/api/portfolio/mis-report/`              | MIS Report data                           |
 | `GET`                        | `/api/portfolio/mis-report/download/`    | Download MIS Report Excel                |
+| `GET`                        | `/api/portfolio/mis-report/notes/`       | MIS Notes                                 |
+| `GET`                        | `/api/portfolio/mis-report/notes/history/` | MIS Notes edit history                 |
 
 </details>
 
@@ -668,6 +846,8 @@ All endpoints require an authenticated Django session unless noted. Auth uses **
 | `GET`  | `/api/analytics/wealth/performance/`           |
 | `GET`  | `/api/analytics/wealth/xirr/`                  |
 | `GET`  | `/api/analytics/wealth/investment-summary/`    |
+| `GET`  | `/api/analytics/wealth/standard-allocations/`  | Read global/family Standard Allocation        |
+| `POST` | `/api/analytics/wealth/standard-allocations/update/` | Save global/family Standard Allocation |
 | `GET`  | `/api/analytics/wealth/sector-allocation/`     |
 | `GET`  | `/api/analytics/wealth/market-cap-allocation/` |
 | `GET`  | `/api/analytics/wealth/equity-analysis/`       |
@@ -730,7 +910,7 @@ All endpoints require an authenticated Django session unless noted. Auth uses **
 | `/reports`        | Excel / PDF exports                                           |
 | `/ai-chat`        | Gemini portfolio assistant                                    |
 | `/portfolio-news` | News alerts for your holdings                                 |
-| `/settings`       | Account · User Management · Family Management · Manual Prices |
+| `/settings`       | Account · Security · Tax Settings · Logs · User Management · Family Management |
 
 All authenticated routes sit under a `ShellComponent` (sidebar + header with the family switcher).
 
@@ -930,7 +1110,7 @@ python manage.py test portfolio_news.test_web_push -v 2 # Web Push delivery beha
 | `investments/tests.py`  | The transaction importer and AMC-name / quant auto-enrichment         |
 | Transaction upload workflow | Upload audit/history, standard template endpoints, row-level failure handling, and transaction import behavior |
 | `portfolio_news/test_web_push.py` | VAPID/Web Push delivery, subscription handling and notification_sent semantics |
-| `portfolio/test_mis_report.py` | MIS Report API, historical valuation, Excel structure, display units, and family authorization |
+| `portfolio/test_mis_report.py` | MIS Report API, historical valuation, Excel structure, display units, FIFO taxation, negative-loss tax benefits, and family authorization |
 
 **Frontend** — from `frontend/`:
 

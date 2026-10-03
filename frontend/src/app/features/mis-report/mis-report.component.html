@@ -247,46 +247,93 @@
 
     <!-- Notes -->
     <section class="report-card" *ngIf="activeSheet === 'notes'">
-      <div class="section-header">
+      <div class="section-header notes-editor-header">
         <div>
-          <h2>{{ report.notes.title }}</h2>
-          <span>Unit-rate movement from {{ report.notes.opening_label }} to {{ report.notes.closing_label }}</span>
+          <input *ngIf="editingNotes && editableNotes" class="notes-title-input notes-main-title-input" [(ngModel)]="editableNotes.title" />
+          <h2 *ngIf="!editingNotes">{{ report.notes.title }}</h2>
+          <span>Family-wide editable MIS Notes. Changes are shared with the active family.</span>
+        </div>
+        <div class="notes-actions">
+          <button *ngIf="!editingNotes" type="button" class="secondary-button" (click)="startNotesEditing()">Edit Notes</button>
+          <ng-container *ngIf="editingNotes">
+            <label class="auto-fill-toggle">
+              <input type="checkbox" [(ngModel)]="autoFillNewRows" />
+              Auto-fill recognized values
+            </label>
+            <button type="button" class="secondary-button" (click)="addSection()">Add Section</button>
+            <button type="button" class="secondary-button" (click)="cancelNotesEditing()" [disabled]="savingNotes">Cancel</button>
+            <button type="button" class="primary-button" (click)="saveNotes()" [disabled]="savingNotes">
+              {{ savingNotes ? 'Saving...' : 'Save Notes' }}
+            </button>
+          </ng-container>
         </div>
       </div>
-      <div class="notes-content">
-        <ng-container *ngFor="let section of report.notes.sections">
-          <div class="notes-section">
-            <div class="notes-section-title">
-              <strong>{{ section.section_number }}</strong>
-              <span>{{ section.title }}</span>
-            </div>
-            <div class="table-wrap">
-              <table class="notes-table">
-                <thead>
-                  <tr>
-                    <th>Sr. No</th>
-                    <th>Particulars</th>
-                    <th>{{ section.unit_label }} {{ report.notes.opening_label }}</th>
-                    <th>{{ section.unit_label }} {{ report.notes.closing_label }}</th>
-                    <th>{{ section.change_label }}</th>
-                    <th>% Change</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr *ngFor="let item of section.items; let i = index">
-                    <td>{{ i + 1 }}</td>
-                    <td>{{ item.name }}</td>
-                    <td class="number">{{ formatNumber(item.opening_rate, 2) }}</td>
-                    <td class="number">{{ formatNumber(item.closing_rate, 2) }}</td>
-                    <td class="number">{{ formatNumber(item.change, 2) }}</td>
-                    <td class="number">{{ formatNumber(item.percent_change, 2) }}%</td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-            <p class="notes-note" *ngIf="section.note">{{ section.note }}</p>
+
+      <div class="notes-editor-error" *ngIf="notesError">{{ notesError }}</div>
+
+      <div class="notes-content" *ngIf="editableNotes as notes">
+        <div class="notes-section" *ngFor="let section of notes.sections; let sectionIndex = index">
+          <div class="notes-section-title">
+            <strong>{{ section.section_number }}</strong>
+            <input *ngIf="editingNotes" class="notes-title-input" [(ngModel)]="section.title" />
+            <span *ngIf="!editingNotes">{{ section.title }}</span>
+            <button *ngIf="editingNotes" type="button" class="notes-danger-button" (click)="removeSection(sectionIndex)">Remove Section</button>
           </div>
-        </ng-container>
+
+          <div class="table-wrap">
+            <table class="notes-table editable-notes-table">
+              <thead>
+                <tr>
+                  <th *ngFor="let column of section.columns; let columnIndex = index; trackBy: trackByEditableColumn">
+                    <ng-container *ngIf="editingNotes && !isCalculatedColumn(column); else readonlyColumn">
+                      <div class="notes-column-editor">
+                        <input class="notes-column-input" [(ngModel)]="column.label" />
+                        <button type="button" class="notes-icon-button" title="Remove column" (click)="removeColumn(section, columnIndex)">×</button>
+                      </div>
+                    </ng-container>
+                    <ng-template #readonlyColumn>{{ column.label }}</ng-template>
+                  </th>
+                  <th *ngIf="editingNotes" class="notes-actions-column">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr *ngFor="let row of section.rows; let rowIndex = index; trackBy: trackByEditableRow">
+                  <td *ngFor="let column of section.columns; trackBy: trackByEditableColumn">
+                    <input
+                      *ngIf="editingNotes && !isCalculatedColumn(column)"
+                      class="notes-cell-input"
+                      [type]="column.type === 'number' ? 'number' : 'text'"
+                      [ngModel]="row.cells[column.id]"
+                      (ngModelChange)="row.cells[column.id] = coerceCellValue(column, $event)"
+                    />
+                    <span *ngIf="!editingNotes || isCalculatedColumn(column)">{{ formatNotesCalculatedValue(column, row.cells[column.id]) }}</span>
+                  </td>
+                  <td *ngIf="editingNotes" class="notes-row-actions">
+                    <button type="button" class="notes-danger-button" (click)="removeRow(section, rowIndex)">Remove</button>
+                  </td>
+                </tr>
+                <tr *ngIf="!section.rows.length">
+                  <td [attr.colspan]="section.columns.length + (editingNotes ? 1 : 0)" class="empty">No rows in this section.</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <div class="notes-section-toolbar" *ngIf="editingNotes">
+            <button type="button" class="secondary-button" (click)="addRow(section)">Add Row</button>
+            <button type="button" class="secondary-button" (click)="addColumn(section)">Add Column</button>
+          </div>
+
+          <div class="notes-note-editor" *ngIf="editingNotes">
+            <label>Section Note</label>
+            <textarea [(ngModel)]="section.note" placeholder="Optional note"></textarea>
+          </div>
+          <p class="notes-note" *ngIf="!editingNotes && section.note">{{ section.note }}</p>
+        </div>
+
+        <div class="notes-empty" *ngIf="!notes.sections.length">
+          No Notes sections. Use <strong>Add Section</strong> to create one.
+        </div>
       </div>
     </section>
 

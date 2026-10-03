@@ -75,6 +75,20 @@
   overflow-x: auto;
 }
 
+.settings-log-tabs {
+  display: flex;
+  gap: 6px;
+  margin: -10px 0 24px;
+  padding: 0 8px;
+  border-bottom: 1px solid #e5e7eb;
+  overflow-x: auto;
+}
+
+.settings-log-tabs .tab-button {
+  font-size: 13px;
+  padding: 10px 14px;
+}
+
 .tab-button {
   border: 0;
 

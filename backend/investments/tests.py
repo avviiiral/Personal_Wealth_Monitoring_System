@@ -464,6 +464,55 @@ class TransactionImportExcelShapeTests(TestCase):
 
         self.assertEqual(result["imported_investments"], 1)
 
+    def test_import_accepts_family_member_and_empty_summary_mapping(self):
+        workbook = openpyxl.Workbook()
+        transactions_sheet = workbook.active
+        transactions_sheet.title = "Transactions"
+        transactions_sheet.append([
+            "Family Member", "Asset Class", "Sub Class", "Asset Name",
+            "Underlying", "Advisors", "ISIN", "Date", "Trans. Type",
+            "Quantity", "Price", "Amount",
+        ])
+        transactions_sheet.append([
+            "Test", "Test", "Test", "Test", "", "Test", "",
+            "2026-10-01", "buy", 10, 10, 100,
+        ])
+
+        summary_sheet = workbook.create_sheet("Summary")
+        summary_sheet.append(["Portfolio Mapping"])
+        summary_sheet.append([
+            "Family Name", "Portfolio Name", "Asset Class",
+            "Advisors", "Asset Name", "ISIN",
+        ])
+
+        buffer = io.BytesIO()
+        workbook.save(buffer)
+        buffer.seek(0)
+        upload = SimpleUploadedFile(
+            "transaction.xlsx",
+            buffer.read(),
+            content_type=(
+                "application/vnd.openxmlformats-officedocument"
+                ".spreadsheetml.sheet"
+            ),
+        )
+
+        result = TransactionImporter.import_file(
+            file=upload,
+            owner=self.user,
+        )
+
+        self.assertEqual(result["imported_investments"], 1)
+        self.assertEqual(result["failed_rows"], 0)
+        self.assertTrue(
+            Transaction.objects.filter(
+                owner=self.user,
+                family_name="Test",
+                asset_name="Test",
+                portfolio="Test",
+            ).exists()
+        )
+
     def test_import_returns_touched_asset_ids(self):
         upload = _build_transactions_workbook(include_summary=False)
 

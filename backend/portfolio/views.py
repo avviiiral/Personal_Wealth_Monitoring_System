@@ -142,9 +142,31 @@ def portfolio_transaction_detail(request, transaction_id):
         return Response(TransactionSerializer(transaction_obj).data, status=status.HTTP_200_OK)
     if request.method == "DELETE":
         old_asset = transaction_obj.asset
+        old_values = _transaction_history_snapshot(transaction_obj)
+        deleted_fields = [
+            "advisors",
+            "quantity",
+            "price_per_unit",
+            "amount",
+        ]
+
         with transaction.atomic():
             transaction_id = transaction_obj.id
             asset_id = old_asset.id
+
+            # Keep an audit record before deleting the transaction. The
+            # transaction FK is SET_NULL, so the audit row survives and
+            # the UI can display it as a deleted transaction.
+            TransactionEditHistory.objects.create(
+                transaction=transaction_obj,
+                owner=transaction_obj.owner,
+                family=transaction_obj.family,
+                edited_by=request.user,
+                old_values={field: old_values[field] for field in deleted_fields},
+                new_values={field: None for field in deleted_fields},
+                changed_fields=deleted_fields,
+            )
+
             transaction_obj.delete()
             logger.info("Transaction deleted: id=%s asset_id=%s user_id=%s", transaction_id, asset_id, request.user.id)
             HoldingCalculationEngine.rebuild_holding(old_asset)

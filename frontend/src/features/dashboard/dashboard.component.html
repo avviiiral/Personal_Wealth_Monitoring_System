@@ -1,9 +1,10 @@
 <div class="dashboard-page">
   <!-- HEADER -->
   <div class="page-header">
-    <div>
+    <div class="page-header-copy">
       <h1>Dashboard</h1>
       <p>Overview of your personal wealth and investments.</p>
+
     </div>
 
     <div class="page-header-actions">
@@ -25,38 +26,39 @@
         </button>
       </div>
 
-      <div class="header-filter-stack">
-        <div class="family-filter-inline" *ngIf="familyMemberOptions.length > 0">
-          <span class="header-control-label">Family Member</span>
-          <div class="header-control-buttons">
-            <button type="button" class="header-control-button" [class.active]="!selectedFamilyMember" (click)="clearFamilyMember()">
-              All
-            </button>
-            <button
-              *ngFor="let family of familyMemberOptions"
-              type="button"
-              class="header-control-button"
-              [class.active]="isFamilyMemberSelected(family)"
-              (click)="selectFamilyMember(family)"
-            >
-              {{ family }}
-            </button>
-          </div>
-        </div>
+    </div>
 
-        <div class="header-control-inline">
-          <span class="header-control-label">Display As</span>
-          <div class="header-control-buttons">
-            <button
-              *ngFor="let unit of displayUnits"
-              type="button"
-              class="header-control-button"
-              [class.active]="displayUnit === unit.value"
-              (click)="setDisplayUnit(unit.value)"
-            >
-              {{ unit.label }}
-            </button>
-          </div>
+    <div class="header-controls-row">
+      <div class="family-filter-inline" *ngIf="familyMemberOptions.length > 0">
+        <span class="header-control-label">Family Member</span>
+        <div class="header-control-buttons">
+          <button type="button" class="header-control-button" [class.active]="!selectedFamilyMember" (click)="clearFamilyMember()">
+            All
+          </button>
+          <button
+            *ngFor="let family of familyMemberOptions"
+            type="button"
+            class="header-control-button"
+            [class.active]="isFamilyMemberSelected(family)"
+            (click)="selectFamilyMember(family)"
+          >
+            {{ family }}
+          </button>
+        </div>
+      </div>
+
+      <div class="header-control-inline display-unit-filter">
+        <span class="header-control-label">Display As</span>
+        <div class="header-control-buttons">
+          <button
+            *ngFor="let unit of displayUnits"
+            type="button"
+            class="header-control-button"
+            [class.active]="displayUnit === unit.value"
+            (click)="setDisplayUnit(unit.value)"
+          >
+            {{ unit.label }}
+          </button>
         </div>
       </div>
     </div>
@@ -201,7 +203,8 @@
       <div class="standard-allocation-toolbar" *ngIf="!investmentSummaryError && investmentSummary && investmentSummaryGroups.length > 0">
         <div class="standard-allocation-toolbar-info">
           <strong>Standard Allocation</strong>
-          <span>Set target allocation by amount or percentage. Both fields stay synchronized.</span>
+          <span *ngIf="!selectedFamilyMember">Set the shared Standard Allocation for all family members. Enter an amount or percentage; the other value is calculated from the current total.</span>
+          <span *ngIf="selectedFamilyMember">Set this family member's Standard Allocation independently. Enter an amount or percentage; the other value is calculated from this family's current total.</span>
           <span class="standard-allocation-total" [ngClass]="getStandardAllocationTotalClass()">
             Portfolio Total: {{ formatDisplayAmount(standardAllocationTotalValue, 0) }} &nbsp; • &nbsp; Target Total: {{ getStandardAllocationDraftTotal() | number:'1.0-2' }}%
           </span>
@@ -279,7 +282,7 @@
                     class="standard-allocation-input"
                     min="0"
                     step="0.01"
-                    [value]="getStandardAllocationAmount(group.asset_category)"
+                    [value]="getStandardAllocationAmountInputValue(group.asset_category)"
                     (input)="updateStandardAllocationAmount(group.asset_category, $any($event.target).value)"
                     (click)="$event.stopPropagation()"
                   />

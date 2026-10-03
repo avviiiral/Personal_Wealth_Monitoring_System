@@ -1,8 +1,10 @@
 from django.contrib.auth.models import User
 from django.test import TestCase
+from rest_framework.test import APIClient
 
 from users.models import FamilyGroup
 
+from .models import StandardAllocation
 from .services.investment_summary import InvestmentSummaryService
 
 from decimal import Decimal 
@@ -344,3 +346,79 @@ class InvestmentSummaryServiceTests(TestCase):
                 row["percentage_of_total"],
                 Decimal("0"),
             )
+
+
+
+class FamilyStandardAllocationApiTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(
+            username="family_allocation_user",
+            password="testpassword123",
+        )
+        self.family_a = FamilyGroup.objects.create(
+            name="Family Allocation A",
+            created_by=self.user,
+        )
+        self.family_b = FamilyGroup.objects.create(
+            name="Family Allocation B",
+            created_by=self.user,
+        )
+        self.user.profile.family_groups.add(self.family_a, self.family_b)
+        self.user.profile.active_family_group = self.family_a
+        self.user.profile.save(update_fields=["active_family_group"])
+
+        self.client = APIClient()
+        self.client.force_authenticate(user=self.user)
+
+    def test_all_members_of_a_family_share_one_allocation(self):
+        StandardAllocation.objects.create(
+            family=self.family_a,
+            asset_category="Equities",
+            allocation_percent=Decimal("60.00"),
+            allocation_amount=Decimal("600000.00"),
+        )
+
+        response = self.client.get(
+            "/api/analytics/wealth/standard-allocations/",
+            {"family": self.family_a.name},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            response.data["allocations"]["Equities"]["percent"],
+            60.0,
+        )
+
+    def test_different_families_can_have_different_allocations(self):
+        StandardAllocation.objects.create(
+            family=self.family_a,
+            asset_category="Equities",
+            allocation_percent=Decimal("60.00"),
+            allocation_amount=Decimal("600000.00"),
+        )
+        StandardAllocation.objects.create(
+            family=self.family_b,
+            asset_category="Equities",
+            allocation_percent=Decimal("40.00"),
+            allocation_amount=Decimal("400000.00"),
+        )
+
+        response_a = self.client.get(
+            "/api/analytics/wealth/standard-allocations/",
+            {"family": self.family_a.name},
+        )
+        response_b = self.client.get(
+            "/api/analytics/wealth/standard-allocations/",
+            {"family": self.family_b.name},
+        )
+
+        self.assertEqual(response_a.status_code, 200)
+        self.assertEqual(response_b.status_code, 200)
+        self.assertEqual(
+            response_a.data["allocations"]["Equities"]["percent"],
+            60.0,
+        )
+        self.assertEqual(
+            response_b.data["allocations"]["Equities"]["percent"],
+            40.0,
+        )

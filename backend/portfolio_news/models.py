@@ -195,6 +195,88 @@ class NewsArticleSource(models.Model):
         return f"{self.publisher_name} -> article_id={self.article_id}"
 
 
+class PortfolioNewsMatch(models.Model):
+    """
+    Deterministic relationship between a fetched news article and one
+    user's live portfolio holding.
+
+    This is intentionally independent of Gemini. It records that the
+    article was fetched and matched by HoldingMatcher, so the raw
+    portfolio-news feed can show the article even when AI analysis is
+    unavailable or the article is not important enough to become an
+    alert.
+    """
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="portfolio_news_matches",
+    )
+
+    article = models.ForeignKey(
+        NewsArticle,
+        on_delete=models.CASCADE,
+        related_name="portfolio_matches",
+    )
+
+    holding_type = models.CharField(
+        max_length=20,
+        choices=HoldingType.choices,
+    )
+
+    holding_id = models.PositiveIntegerField(
+        help_text=(
+            "Primary key of the Asset or MutualFundScheme matched by "
+            "the deterministic portfolio-news matcher."
+        ),
+    )
+
+    holding_display_name = models.CharField(
+        max_length=300,
+    )
+
+    matched_query = models.CharField(
+        max_length=255,
+        blank=True,
+    )
+
+    created_at = models.DateTimeField(
+        auto_now_add=True,
+    )
+
+    class Meta:
+        ordering = ["-created_at"]
+
+        constraints = [
+            models.UniqueConstraint(
+                fields=[
+                    "user",
+                    "article",
+                    "holding_type",
+                    "holding_id",
+                ],
+                name="unique_raw_news_match_per_holding",
+            ),
+        ]
+
+        indexes = [
+            models.Index(
+                fields=["user", "-created_at"],
+                name="news_match_user_created_idx",
+            ),
+            models.Index(
+                fields=["user", "holding_type", "holding_id"],
+                name="news_match_user_holding_idx",
+            ),
+        ]
+
+    def __str__(self):
+        return (
+            f"{self.holding_display_name} - "
+            f"{self.article.title}"
+        )
+
+
 class PortfolioNewsAlert(models.Model):
     """
     A news article's impact on one specific user's specific
@@ -286,6 +368,27 @@ class PortfolioNewsAlert(models.Model):
     impact_score = models.PositiveSmallIntegerField()
 
     confidence = models.FloatField()
+
+    connection_type = models.CharField(
+        max_length=20,
+        choices=[
+            ("direct", "Direct asset"),
+            ("underlying", "Underlying holding"),
+        ],
+        default="direct",
+    )
+
+    underlying_name = models.CharField(
+        max_length=300,
+        blank=True,
+    )
+
+    underlying_weight = models.DecimalField(
+        max_digits=10,
+        decimal_places=4,
+        null=True,
+        blank=True,
+    )
 
     portfolio_weight_at_alert = models.FloatField(
         help_text=(

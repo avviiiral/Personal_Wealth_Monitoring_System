@@ -14,6 +14,7 @@ def create_alert_from_analysis(
     article,
     holding,
     analysis,
+    connection=None,
 ) -> Tuple["PortfolioNewsAlert", bool]:
     """
     Create (or fetch) the PortfolioNewsAlert for one
@@ -44,6 +45,9 @@ def create_alert_from_analysis(
         holding_id=holding.holding_id,
         defaults={
             "holding_display_name": holding.display_name,
+            "connection_type": (connection or {}).get("connection_type", "direct"),
+            "underlying_name": (connection or {}).get("underlying_name", ""),
+            "underlying_weight": (connection or {}).get("underlying_weight"),
             "relevant": analysis.relevant,
             "category": analysis.category,
             "sentiment": analysis.sentiment,

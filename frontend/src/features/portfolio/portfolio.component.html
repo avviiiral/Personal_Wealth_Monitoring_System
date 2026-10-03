@@ -724,8 +724,7 @@
                                           *ngIf="hasPriceDate(asset)"
                                           class="price-update-date"
                                         >
-                                          Updated
-                                          {{ formatPriceDate(getPriceDate(asset)) }}
+                                          As on Date {{ formatPriceDate(getPriceDate(asset)) }}
                                         </small>
 
                                         <button
@@ -752,6 +751,18 @@
                                             placeholder="Price"
                                             [disabled]="isSavingManualPrice(asset)"
                                           />
+
+                                          <label class="manual-price-date-label">
+                                            As on date
+                                            <input
+                                              type="date"
+                                              class="manual-price-input manual-price-date-input"
+                                              [(ngModel)]="manualPriceDate"
+                                              [max]="getTodayIsoDate()"
+                                              aria-label="As on date"
+                                              [disabled]="isSavingManualPrice(asset)"
+                                            />
+                                          </label>
 
                                           <div class="manual-price-actions">
                                             <button

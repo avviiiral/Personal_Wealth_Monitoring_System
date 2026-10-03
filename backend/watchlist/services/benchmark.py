@@ -657,6 +657,20 @@ class BenchmarkPerformanceService:
             for point in points
             if date.fromisoformat(point["date"]) >= cutoff
         ]
+
+        # If the requested window contains fewer than two observations,
+        # retain the latest observation immediately before the cutoff.
+        # This handles non-trading-day boundaries without changing the
+        # existing preference for an observation inside the requested window.
+        if len(eligible) < 2:
+            prior = [
+                point
+                for point in points
+                if date.fromisoformat(point["date"]) < cutoff
+            ]
+            if prior:
+                eligible.insert(0, prior[-1])
+
         if not eligible:
             return None
 

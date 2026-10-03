@@ -6,6 +6,7 @@ from .views import (
     portfolio_news_detail,
     portfolio_news_digest,
     portfolio_news_list,
+    portfolio_news_raw_list,
     portfolio_notifications_list,
     push_config,
     push_subscribe,
@@ -19,6 +20,12 @@ urlpatterns = [
         "news/",
         portfolio_news_list,
         name="portfolio-news-list",
+    ),
+
+    path(
+        "news/raw/",
+        portfolio_news_raw_list,
+        name="portfolio-news-raw-list",
     ),
 
     path(

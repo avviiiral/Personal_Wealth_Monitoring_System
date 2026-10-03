@@ -5,12 +5,14 @@ from unittest.mock import (
 )
 
 from django.test import TestCase
+from rest_framework.test import APIClient
 
 from users.models import FamilyGroup
 
 import requests
 
-from portfolio_news.models import NewsArticle
+from portfolio_news.models import NewsArticle, PortfolioNewsAlert, PortfolioNewsMatch
+from investments.models import AssetUnderlyingHolding
 from portfolio_news.services.article_store import store_article
 from portfolio_news.services.deduplication import (
     ArticleDeduplicator,
@@ -923,6 +925,27 @@ class HoldingMatcherTests(TestCase):
             )
         )
 
+    def test_company_name_in_body_matches_when_headline_does_not(self):
+        self.assertTrue(
+            HoldingMatcher.is_relevant(
+                "Indian pharma stocks see mixed trading",
+                (
+                    "Aurobindo Pharma Limited announced a new regulatory "
+                    "development during the session."
+                ),
+                self.holding,
+            )
+        )
+
+    def test_unrelated_headline_and_body_do_not_match(self):
+        self.assertFalse(
+            HoldingMatcher.is_relevant(
+                "Indian pharma stocks see mixed trading",
+                "Analysts discussed sector-wide demand and margins.",
+                self.holding,
+            )
+        )
+
     def test_ticker_match(self):
         self.assertTrue(
             HoldingMatcher.is_relevant(
@@ -1787,7 +1810,7 @@ class NotificationCreationTests(TestCase):
             "Aurobindo Pharma Limited",
         )
         self.assertEqual(alert.notification_tier, "high")
-        self.assertTrue(alert.notification_sent)
+        self.assertFalse(alert.notification_sent)
         self.assertFalse(alert.is_read)
 
     def test_critical_impact_high_weight_gets_notified(self):
@@ -1799,7 +1822,7 @@ class NotificationCreationTests(TestCase):
         )
 
         self.assertEqual(alert.notification_tier, "critical")
-        self.assertTrue(alert.notification_sent)
+        self.assertFalse(alert.notification_sent)
 
     def test_moderate_impact_is_not_sent_as_immediate_notification(self):
         alert, _ = create_alert_from_analysis(
@@ -2571,6 +2594,56 @@ class PortfolioNewsPipelineTests(TestCase):
             confidence=0.91,
         )
 
+    def test_underlying_news_is_connected_to_parent_asset(self):
+        AssetUnderlyingHolding.objects.create(
+            owner=self.user,
+            family=self.family,
+            asset=self.asset,
+            stock_name="Sun Pharma Limited",
+            isin="INE044A01036",
+            holding_percentage=Decimal("8.25"),
+            uploaded_by=self.user,
+        )
+
+        underlying_article = NewsArticleResult(
+            title="Sun Pharma receives important regulatory update",
+            url="https://reuters.com/pipeline-underlying-1",
+            source="Reuters",
+            description="Sun Pharma Limited received a regulatory update.",
+            published_at=dj_timezone.now(),
+            matched_query="Sun Pharma Limited",
+        )
+
+        provider = _FakeProvider(
+            results_by_query={
+                "Sun Pharma Limited": [underlying_article],
+            }
+        )
+        analyzer = _FakeAnalyzer(analysis=self.high_impact_analysis)
+
+        stats = run_portfolio_news_monitor(
+            provider=provider,
+            analyzer=analyzer,
+        )
+
+        self.assertEqual(stats["articles_matched"], 1)
+
+        match = PortfolioNewsMatch.objects.get()
+        self.assertEqual(match.holding_display_name, self.asset.name)
+
+        alert = PortfolioNewsAlert.objects.get()
+        self.assertEqual(alert.connection_type, "underlying")
+        self.assertEqual(alert.underlying_name, "Sun Pharma Limited")
+        self.assertEqual(alert.underlying_weight, Decimal("8.2500"))
+
+        client = APIClient()
+        client.force_authenticate(user=self.user)
+        response = client.get("/api/ai/news/raw/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["count"], 1)
+        matched_holding = response.data["results"][0]["matched_holdings"][0]
+
     def test_end_to_end_creates_alert_for_relevant_article(self):
         provider = _FakeProvider(
             results_by_query={
@@ -2591,7 +2664,9 @@ class PortfolioNewsPipelineTests(TestCase):
         self.assertEqual(stats["holdings_processed"], 1)
         self.assertEqual(stats["articles_matched"], 1)
         self.assertEqual(stats["alerts_created"], 1)
-        self.assertEqual(stats["notifications_sent"], 1)
+        # Web Push is not configured in this test environment, so the
+        # alert is created but no notification is reported as delivered.
+        self.assertEqual(stats["notifications_sent"], 0)
 
         self.assertEqual(PortfolioNewsAlert.objects.count(), 1)
 
@@ -2600,6 +2675,51 @@ class PortfolioNewsPipelineTests(TestCase):
             alert.holding_display_name, "Aurobindo Pharma Limited"
         )
         self.assertTrue(alert.relevant)
+
+    def test_raw_news_feed_shows_matched_article_without_gemini(self):
+        provider = _FakeProvider(
+            results_by_query={
+                "Aurobindo Pharma Limited": [
+                    self.relevant_article_result,
+                ]
+            }
+        )
+
+        analyzer = _FakeAnalyzer(
+            analysis=self.high_impact_analysis,
+        )
+
+        run_portfolio_news_monitor(
+            provider=provider,
+            analyzer=analyzer,
+        )
+
+        # Remove the AI alert to prove the raw feed is independent
+        # from Gemini analysis.
+        PortfolioNewsAlert.objects.all().delete()
+
+        client = APIClient()
+        client.force_authenticate(user=self.user)
+
+        response = client.get("/api/ai/news/raw/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["count"], 1)
+        self.assertEqual(
+            response.data["results"][0]["title"],
+            self.relevant_article_result.title,
+        )
+        self.assertEqual(
+            response.data["results"][0]["matched_holdings"][0][
+                "holding_display_name"
+            ],
+            "Aurobindo Pharma Limited",
+        )
+        self.assertEqual(
+            response.data["results"][0]["url"],
+            self.relevant_article_result.url,
+        )
+
 
     def test_irrelevant_article_alone_creates_no_alert(self):
         provider = _FakeProvider(

@@ -2,7 +2,16 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ChangeDetectorRef, Component, inject, OnInit } from '@angular/core';
 
-import { MISDataSheetRow, MISTaxReportRow, MISReport, MISReportService } from '../../core/services/mis-report.service';
+import {
+  MISDataSheetRow,
+  MISTaxReportRow,
+  MISReport,
+  MISReportService,
+  MISEditableNotes,
+  MISEditableSection,
+  MISEditableColumn,
+  MISEditableRow,
+} from '../../core/services/mis-report.service';
 
 type MISSheet = 'ips' | 'data' | 'tax' | 'fund-summary' | 'notes';
 
@@ -21,11 +30,16 @@ export class MISReportComponent implements OnInit {
   activeSheet: MISSheet = 'ips';
   loading = true;
   downloading = false;
+  savingNotes = false;
+  editingNotes = false;
+  autoFillNewRows = true;
   error = '';
+  notesError = '';
   fromDate = '';
   toDate = '';
   todayDate = '';
   displayUnit: 'amount' | 'lakhs' | 'crores' = 'lakhs';
+  editableNotes: MISEditableNotes | null = null;
 
   readonly sheets: Array<{ key: MISSheet; label: string }> = [
     { key: 'ips', label: 'IPS' },
@@ -51,8 +65,15 @@ export class MISReportComponent implements OnInit {
     }
     this.loading = true;
     this.error = '';
+    this.notesError = '';
     this.service.getReport(this.fromDate, this.toDate, this.displayUnit).subscribe({
-      next: (report) => { this.report = report; this.loading = false; this.cdr.markForCheck(); },
+      next: (report) => {
+        this.report = report;
+        this.editableNotes = this.cloneNotes(report.notes.editable);
+        this.editingNotes = false;
+        this.loading = false;
+        this.cdr.markForCheck();
+      },
       error: (error) => {
         this.loading = false;
         this.error = error?.status === 403
@@ -63,7 +84,138 @@ export class MISReportComponent implements OnInit {
     });
   }
 
-  selectSheet(sheet: MISSheet): void { this.activeSheet = sheet; }
+  selectSheet(sheet: MISSheet): void {
+    this.activeSheet = sheet;
+    if (sheet !== 'notes') this.editingNotes = false;
+  }
+
+  startNotesEditing(): void {
+    if (!this.report) return;
+    this.editableNotes = this.cloneNotes(this.report.notes.editable);
+    this.notesError = '';
+    this.editingNotes = true;
+  }
+
+  cancelNotesEditing(): void {
+    if (!this.report) return;
+    this.editableNotes = this.cloneNotes(this.report.notes.editable);
+    this.notesError = '';
+    this.editingNotes = false;
+  }
+
+  saveNotes(): void {
+    if (!this.editableNotes || this.savingNotes) return;
+    this.savingNotes = true;
+    this.notesError = '';
+
+    this.service.saveNotes(
+      this.editableNotes,
+      this.fromDate,
+      this.toDate,
+      this.autoFillNewRows,
+    ).subscribe({
+      next: (response) => {
+        if (this.report) this.report.notes = response.notes;
+        this.editableNotes = this.cloneNotes(response.notes.editable);
+        this.editingNotes = false;
+        this.savingNotes = false;
+        this.cdr.markForCheck();
+      },
+      error: (error) => {
+        this.savingNotes = false;
+        this.notesError = error?.error?.detail || 'Unable to save MIS Notes changes.';
+        this.cdr.markForCheck();
+      },
+    });
+  }
+
+  addSection(): void {
+    if (!this.editableNotes) return;
+    const number = this.editableNotes.sections.length + 1;
+    const section: MISEditableSection = {
+      id: this.newId('section'),
+      section_number: number,
+      title: 'New Section',
+      note: null,
+      columns: [
+        { id: this.newId('column'), label: 'Particulars', type: 'text' },
+        { id: this.newId('column'), label: 'Value', type: 'number' },
+      ],
+      rows: [],
+    };
+    this.editableNotes.sections.push(section);
+  }
+
+  removeSection(index: number): void {
+    if (!this.editableNotes) return;
+    this.editableNotes.sections.splice(index, 1);
+    this.editableNotes.sections.forEach((section, i) => section.section_number = i + 1);
+  }
+
+  addColumn(section: MISEditableSection): void {
+    const label = window.prompt('Column name:', 'New Column');
+    if (!label?.trim()) return;
+    const type = window.prompt('Column type (text or number):', 'text')?.trim().toLowerCase() === 'number'
+      ? 'number'
+      : 'text';
+    const column: MISEditableColumn = {
+      id: this.newId('column'),
+      label: label.trim(),
+      type,
+    };
+    section.columns.push(column);
+    section.rows.forEach((row) => row.cells[column.id] = type === 'number' ? null : '');
+  }
+
+  removeColumn(section: MISEditableSection, index: number): void {
+    const column = section.columns[index];
+    if (this.isCalculatedColumn(column)) {
+      this.notesError = 'Sr. No, Change In Rate and % Change are calculated automatically and cannot be removed.';
+      return;
+    }
+    if (section.columns.length <= 1) {
+      this.notesError = 'A Notes section must keep at least one column.';
+      return;
+    }
+    const [removedColumn] = section.columns.splice(index, 1);
+    section.rows.forEach((row) => delete row.cells[removedColumn.id]);
+  }
+
+  isCalculatedColumn(column: MISEditableColumn): boolean {
+    return ['sr_no', 'change', 'percent_change'].includes(column.id);
+  }
+
+  formatNotesCalculatedValue(column: MISEditableColumn, value: string | number | null | undefined): string {
+    if (value === null || value === undefined || value === '') return '—';
+    if (column.id === 'change') return this.formatNumber(Number(value), 2);
+    if (column.id === 'percent_change') return this.formatNumber(Number(value), 2) + '%';
+    return String(value);
+  }
+
+  addRow(section: MISEditableSection): void {
+    const cells: Record<string, string | number | null> = {};
+    section.columns.forEach((column) => {
+      if (this.isCalculatedColumn(column)) {
+        return;
+      }
+      cells[column.id] = column.type === 'number' ? null : '';
+    });
+    section.rows.push({
+      id: this.newId('row'),
+      cells,
+    });
+  }
+
+  coerceCellValue(column: MISEditableColumn, value: string): string | number | null {
+    if (column.type !== 'number') return value;
+    if (value === '') return null;
+    const numeric = Number(value);
+    return Number.isFinite(numeric) ? numeric : null;
+  }
+
+  removeRow(section: MISEditableSection, index: number): void {
+    section.rows.splice(index, 1);
+  }
 
   downloadExcel(): void {
     if (this.downloading || !this.report) return;
@@ -77,8 +229,12 @@ export class MISReportComponent implements OnInit {
         const filename = 'MIS_Report_' + this.safeFilename(this.report?.family_name ?? 'Family') + '_' + (this.report?.reporting_date ?? '') + '.xlsx';
         const url = URL.createObjectURL(blob);
         const anchor = document.createElement('a');
-        anchor.href = url; anchor.download = filename; anchor.click(); URL.revokeObjectURL(url);
-        this.downloading = false; this.cdr.markForCheck();
+        anchor.href = url;
+        anchor.download = filename;
+        anchor.click();
+        URL.revokeObjectURL(url);
+        this.downloading = false;
+        this.cdr.markForCheck();
       },
       error: () => {
         this.downloading = false;
@@ -89,7 +245,6 @@ export class MISReportComponent implements OnInit {
   }
 
   get dataRows(): MISDataSheetRow[] { return this.report?.data_sheet ?? []; }
-
   get taxRows(): MISTaxReportRow[] { return this.report?.tax_report ?? []; }
 
   get fundSummaryGrandTotal(): number {
@@ -98,9 +253,7 @@ export class MISReportComponent implements OnInit {
 
   ipsGrandTotal(family?: string): number {
     const rows = this.report?.ips ?? [];
-    if (family) {
-      return rows.reduce((total, row) => total + Number(row.family_values?.[family] || 0), 0);
-    }
+    if (family) return rows.reduce((total, row) => total + Number(row.family_values?.[family] || 0), 0);
     return rows.reduce((total, row) => total + Number(row.grand_total || 0), 0);
   }
 
@@ -128,10 +281,6 @@ export class MISReportComponent implements OnInit {
     }).format(numericValue / divisor);
   }
 
-  formatLakhs(value: number | null | undefined, digits = 2): string {
-    return this.formatDisplayAmount(value, digits);
-  }
-
   formatDate(value: string | null | undefined): string {
     if (!value) return '—';
     const parsed = new Date(value + 'T00:00:00');
@@ -140,6 +289,22 @@ export class MISReportComponent implements OnInit {
 
   trackByDataRow(index: number, row: MISDataSheetRow): string {
     return row.family_name + '-' + row.asset_class + '-' + row.asset_name + '-' + index;
+  }
+
+  trackByEditableRow(index: number, row: MISEditableRow): string {
+    return row.id + '-' + index;
+  }
+
+  trackByEditableColumn(index: number, column: MISEditableColumn): string {
+    return column.id + '-' + index;
+  }
+
+  private cloneNotes(notes: MISEditableNotes): MISEditableNotes {
+    return JSON.parse(JSON.stringify(notes)) as MISEditableNotes;
+  }
+
+  private newId(prefix: string): string {
+    return prefix + '-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8);
   }
 
   private toInputDate(value: Date): string {

@@ -361,6 +361,36 @@
   }
 }
 
+.transaction-edit-actions {
+  justify-content: space-between;
+  align-items: center;
+}
+
+.transaction-edit-actions-right {
+  display: flex;
+  gap: 8px;
+}
+
+.modal-button-danger {
+  border-color: #dc2626;
+  background: #ffffff;
+  color: #b42318;
+
+  &:hover {
+    background: #fef2f2;
+  }
+}
+
+:host-context(html.dark-theme) .modal-button-danger {
+  border-color: #7f1d1d;
+  background: #1b1f27;
+  color: #fca5a5;
+
+  &:hover {
+    background: #3b1616;
+  }
+}
+
 /* ==========================================================
    FILTERS
    Same layout/behavior as the Portfolio page's selection-area

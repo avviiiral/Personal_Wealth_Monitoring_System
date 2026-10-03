@@ -1,4 +1,4 @@
-import { Component, OnInit, inject } from '@angular/core';
+import { ChangeDetectorRef, Component, OnInit, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { Router } from '@angular/router';
 
@@ -6,6 +6,7 @@ import {
   NewsApiService,
   PortfolioNewsAlertListItem,
   PortfolioNewsDigest,
+  PortfolioNewsRawItem,
 } from '../../core/services/news-api.service';
 
 type TierFilter = 'all' | 'critical' | 'high' | 'moderate' | 'low';
@@ -14,7 +15,7 @@ type SentimentFilter = 'all' | 'positive' | 'negative' | 'neutral' | 'mixed';
 
 type DateRangeFilter = 'all' | 'today' | '3d' | '7d' | '30d';
 
-type ViewMode = 'feed' | 'digest';
+type ViewMode = 'all' | 'feed' | 'digest';
 type SourceFilter = 'all' | 'NEWS' | 'EXCHANGE_FILING';
 
 @Component({
@@ -27,17 +28,22 @@ type SourceFilter = 'all' | 'NEWS' | 'EXCHANGE_FILING';
 export class PortfolioNewsListComponent implements OnInit {
   private readonly newsApi = inject(NewsApiService);
   private readonly router = inject(Router);
+  private readonly changeDetector = inject(ChangeDetectorRef);
 
   items: PortfolioNewsAlertListItem[] = [];
   loading = true;
   error = '';
+
+  rawItems: PortfolioNewsRawItem[] = [];
+  rawLoading = true;
+  rawError = '';
 
   activeTier: TierFilter = 'all';
   activeSentiment: SentimentFilter = 'all';
   activeDateRange: DateRangeFilter = 'all';
   activeSource: SourceFilter = 'all';
 
-  viewMode: ViewMode = 'feed';
+  viewMode: ViewMode = 'all';
 
   digest: PortfolioNewsDigest | null = null;
   digestLoading = false;
@@ -73,7 +79,31 @@ export class PortfolioNewsListComponent implements OnInit {
   ];
 
   ngOnInit(): void {
-    this.loadNews();
+    this.loadRawNews();
+  }
+
+  loadRawNews(): void {
+    this.rawLoading = true;
+    this.rawError = '';
+
+    this.newsApi
+      .getRawNews({
+        dateRange: this.activeDateRange === 'all' ? undefined : this.activeDateRange,
+        limit: 25,
+      })
+      .subscribe({
+        next: (response) => {
+          this.rawItems = response.results;
+          this.rawLoading = false;
+          this.changeDetector.detectChanges();
+        },
+        error: (error) => {
+          console.error('Failed to load raw portfolio news:', error);
+          this.rawError = 'Unable to load all portfolio news right now.';
+          this.rawLoading = false;
+          this.changeDetector.detectChanges();
+        },
+      });
   }
 
   loadNews(): void {
@@ -132,7 +162,11 @@ export class PortfolioNewsListComponent implements OnInit {
     }
 
     this.activeDateRange = dateRange;
-    this.loadNews();
+    if (this.viewMode === 'all') {
+      this.loadRawNews();
+    } else {
+      this.loadNews();
+    }
   }
 
   setViewMode(mode: ViewMode): void {
@@ -141,6 +175,14 @@ export class PortfolioNewsListComponent implements OnInit {
     }
 
     this.viewMode = mode;
+
+    if (mode === 'all' && !this.rawItems.length && !this.rawLoading) {
+      this.loadRawNews();
+    }
+
+    if (mode === 'feed' && !this.items.length && !this.loading) {
+      this.loadNews();
+    }
 
     if (mode === 'digest' && !this.digest && !this.digestLoading) {
       this.loadDigest();
@@ -167,6 +209,24 @@ export class PortfolioNewsListComponent implements OnInit {
 
   openItem(item: PortfolioNewsAlertListItem): void {
     this.router.navigate(['/portfolio-news', item.id]);
+  }
+
+  openRawArticle(item: PortfolioNewsRawItem): void {
+    window.open(item.url, '_blank', 'noopener,noreferrer');
+  }
+
+  rawHoldingNames(item: PortfolioNewsRawItem): string {
+    return item.matched_holdings
+      .map((holding) => holding.holding_display_name)
+      .join(', ');
+  }
+
+  rawSourceCountLabel(item: PortfolioNewsRawItem): string {
+    if (item.source_count <= 1) {
+      return '';
+    }
+
+    return `Reported by ${item.source_count} sources`;
   }
 
   openDigestItem(alertId: number): void {

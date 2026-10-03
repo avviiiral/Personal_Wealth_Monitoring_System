@@ -1,17 +1,24 @@
 from django.db import models
+from django.db.models import Q
 
 
 class StandardAllocation(models.Model):
     """
-    Shared target allocation for one Dashboard Asset Category within a family.
-    Standard Allocation is family-owned so every family member sees and edits
-    the same target percentages.
+    Standard Allocation target for one Dashboard Asset Category.
+
+    A null family_name is the shared baseline for all family members. A
+    non-null family_name row is an override for that Family Member label only.
+    The percentage is authoritative; allocation_amount is retained as a
+    compatibility/cache field and is recalculated from the current portfolio
+    total when allocations are read.
     """
 
-    family = models.ForeignKey(
-        "users.FamilyGroup",
-        on_delete=models.CASCADE,
-        related_name="standard_allocations",
+    family_name = models.CharField(
+        max_length=255,
+        null=True,
+        blank=True,
+        db_index=True,
+        help_text="Null means this is the global Standard Allocation shared by all Family Members.",
     )
     asset_category = models.CharField(max_length=100)
     allocation_percent = models.DecimalField(
@@ -31,10 +38,17 @@ class StandardAllocation(models.Model):
         ordering = ["asset_category"]
         constraints = [
             models.UniqueConstraint(
-                fields=["family", "asset_category"],
+                fields=["family_name", "asset_category"],
+                condition=Q(family_name__isnull=False),
                 name="unique_family_standard_allocation",
+            ),
+            models.UniqueConstraint(
+                fields=["asset_category"],
+                condition=Q(family_name__isnull=True),
+                name="unique_global_standard_allocation",
             ),
         ]
 
     def __str__(self):
-        return f"{self.family.name} - {self.asset_category}: {self.allocation_percent}%"
+        scope = self.family_name or "All Families"
+        return f"{scope} - {self.asset_category}: {self.allocation_percent}%"

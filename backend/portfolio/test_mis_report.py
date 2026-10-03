@@ -288,6 +288,76 @@ class MISReportAPITests(TestCase):
         self.assertEqual(row["realized_pnl"], 2000.0)
         self.assertEqual(row["realized_tax"], 275.0)
 
+    def test_tax_is_negative_for_realized_and_unrealized_losses_with_tenure_rate(self):
+        loss_asset = Asset.objects.create(
+            owner=self.user,
+            family=self.family,
+            name="Loss Equity",
+            category="STOCK",
+            isin="INE000LOSS1",
+            symbol="LOSS1",
+        )
+        TaxRateSetting.objects.create(
+            family=self.family,
+            asset=loss_asset,
+            tenure_months=12,
+            short_term_tax_rate=Decimal("15"),
+            long_term_tax_rate=Decimal("10"),
+        )
+        Transaction.objects.create(
+            owner=self.user,
+            family=self.family,
+            asset=loss_asset,
+            family_name="DAJ",
+            portfolio="Core",
+            asset_class="Equity",
+            sub_class="Large Cap",
+            asset_name="Loss Equity",
+            transaction_date=date(2026, 1, 10),
+            transaction_type="BUY",
+            quantity=Decimal("100"),
+            price_per_unit=Decimal("100"),
+            amount=Decimal("10000"),
+            fees=Decimal("0"),
+        )
+        Transaction.objects.create(
+            owner=self.user,
+            family=self.family,
+            asset=loss_asset,
+            family_name="DAJ",
+            portfolio="Core",
+            asset_class="Equity",
+            sub_class="Large Cap",
+            asset_name="Loss Equity",
+            transaction_date=date(2026, 9, 1),
+            transaction_type="SELL",
+            quantity=Decimal("50"),
+            price_per_unit=Decimal("80"),
+            amount=Decimal("4000"),
+            fees=Decimal("0"),
+        )
+        MarketPrice.objects.create(
+            asset=loss_asset,
+            date=date(2026, 9, 30),
+            close_price=Decimal("70"),
+            source=DataSource.MANUAL,
+        )
+
+        response = self.client.get(
+            "/api/portfolio/mis-report/",
+            {"from_date": "2026-04-01", "to_date": "2026-09-30"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        row = next(
+            item for item in response.json()["tax_report"]
+            if item["asset_name"] == "Loss Equity"
+        )
+        self.assertEqual(row["realized_pnl"], -1000.0)
+        self.assertEqual(row["realized_tax"], -150.0)
+        self.assertEqual(row["unrealized_pnl"], -1500.0)
+        self.assertEqual(row["unrealized_tax"], -225.0)
+
     def test_tax_setting_applies_to_same_display_asset_name_across_positions(self):
         first_asset = Asset.objects.create(
             owner=self.user,

@@ -173,7 +173,11 @@ export class PortfolioNewsListComponent implements OnInit, OnDestroy {
     [...newItems, ...this.rawItems].forEach((item) => byId.set(item.id, item));
 
     this.rawItems = Array.from(byId.values())
-      .sort((a, b) => b.id - a.id)
+      .sort((a, b) => {
+        const aTime = a.published_at ? new Date(a.published_at).getTime() : 0;
+        const bTime = b.published_at ? new Date(b.published_at).getTime() : 0;
+        return (bTime - aTime) || (b.id - a.id);
+      })
       .slice(0, 25);
 
     this.changeDetector.detectChanges();

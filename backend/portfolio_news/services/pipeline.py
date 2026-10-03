@@ -452,12 +452,17 @@ def _create_alerts_from_analyses(
 
         stats["alerts_created"] += 1
 
-        # Apply the deterministic final alert-score floor exactly as
-        # before. The alert row remains for idempotency but is hidden
-        # from the feed and cannot trigger a notification.
+        # HIGH/CRITICAL events must remain eligible for immediate push
+        # notification even when the holding has a small portfolio weight.
+        # The score floor is still used to suppress low-priority items from
+        # the user-facing alert feed, but it must not cancel a material
+        # HIGH/CRITICAL event before Web Push gets a chance to deliver it.
+        immediate_tier = alert.notification_tier in ("high", "critical")
+
         if (
             alert.relevant
             and alert.alert_score < min_alert_score
+            and not immediate_tier
         ):
             alert.relevant = False
             alert.notification_sent = False
@@ -468,7 +473,18 @@ def _create_alerts_from_analyses(
                 ]
             )
 
-        if alert.relevant and deliver_alert_notification(alert):
+        if immediate_tier and alert.relevant:
+            if deliver_alert_notification(alert):
+                stats["notifications_sent"] += 1
+            else:
+                logger.info(
+                    "Immediate notification not delivered alert_id=%s "
+                    "tier=%s score=%s; feed alert retained for retry/inspection",
+                    alert.pk,
+                    alert.notification_tier,
+                    alert.alert_score,
+                )
+        elif alert.relevant and deliver_alert_notification(alert):
             stats["notifications_sent"] += 1
 
 

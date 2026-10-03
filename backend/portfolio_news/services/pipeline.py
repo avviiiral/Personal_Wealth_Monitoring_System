@@ -462,6 +462,13 @@ def _create_alerts_from_analyses(
         if alert_created:
             stats["alerts_created"] += 1
 
+        # min_alert_score is an explicit visibility threshold. Keep the
+        # alert row for idempotency/auditability, but mark it non-relevant so
+        # it is excluded from the user-facing feed and cannot trigger push.
+        if alert.alert_score < min_alert_score and alert.relevant:
+            alert.relevant = False
+            alert.save(update_fields=["relevant"])
+
         # Notification behavior is tier-based, not score-floor-based:
         #   HIGH/CRITICAL -> immediate Web Push
         #   MODERATE      -> daily digest

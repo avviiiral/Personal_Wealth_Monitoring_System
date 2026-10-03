@@ -30,6 +30,11 @@ def create_global_defaults_from_family_rows(apps, schema_editor):
 
 
 class Migration(migrations.Migration):
+    # PostgreSQL does not allow CREATE INDEX/UNIQUE CONSTRAINT while the
+    # preceding data migration has pending trigger events on the same table.
+    # Run this migration non-atomically so the data-copy operation commits
+    # before the conditional unique indexes are created.
+    atomic = False
 
     dependencies = [
         ("analytics", "0005_family_standardallocation"),

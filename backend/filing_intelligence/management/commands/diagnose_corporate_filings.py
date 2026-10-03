@@ -160,6 +160,7 @@ class Command(BaseCommand):
                 self.stdout.write(
                     "  "
                     f"{example['exchange']} {example['symbol'] or example['company_name']} "
+                    f"| filing_id={example['external_filing_id'] or '-'} "
                     f"| ISIN={example['isin'] or '-'} "
                     f"| symbol_candidates={example['symbol_candidates']} "
                     f"| isin_candidates={example['isin_candidates']} "
@@ -237,6 +238,7 @@ class Command(BaseCommand):
 
         return {
             "exchange": filing.exchange,
+            "external_filing_id": filing.external_filing_id,
             "symbol": filing.symbol,
             "company_name": filing.company_name,
             "isin": filing.isin,

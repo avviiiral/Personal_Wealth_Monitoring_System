@@ -138,6 +138,7 @@ export class ReportsComponent implements OnInit {
   editingTransaction: Transaction | null = null;
   editTransactionError = '';
   editTransactionSaving = false;
+  editTransactionDeleting = false;
 
   ngOnInit(): void {
     this.loadReports();
@@ -205,12 +206,59 @@ export class ReportsComponent implements OnInit {
   }
 
   cancelEditTransaction(): void {
-    if (this.editTransactionSaving) {
+    if (this.editTransactionSaving || this.editTransactionDeleting) {
       return;
     }
 
     this.editingTransaction = null;
     this.editTransactionError = '';
+  }
+
+  deleteEditingTransaction(): void {
+    const tx = this.editingTransaction;
+
+    if (!tx || this.editTransactionSaving || this.editTransactionDeleting) {
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Delete this transaction permanently?\\n\\nTransaction ID: ${tx.id}\\nDate: ${tx.transaction_date}\\nType: ${tx.transaction_type_display || tx.transaction_type}\\nAmount: ₹${this.formatCurrency(tx.amount)}\\n\\nThis will recalculate the affected holding and cannot be undone.`,
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    this.editTransactionDeleting = true;
+    this.editTransactionError = '';
+
+    this.portfolioApi.deleteTransaction(tx.id).subscribe({
+      next: () => {
+        this.editTransactionDeleting = false;
+        this.editingTransaction = null;
+        this.editTransactionError = '';
+        this.loadReports();
+      },
+      error: (error) => {
+        console.error('Transaction delete API error:', error);
+        this.editTransactionDeleting = false;
+
+        if (error?.status === 401 || error?.status === 403) {
+          this.editTransactionError = 'You are not authorized to delete this transaction.';
+        } else if (error?.status === 404) {
+          this.editTransactionError = 'This transaction no longer exists.';
+        } else if (error?.status === 400) {
+          this.editTransactionError =
+            error?.error?.detail ||
+            error?.error?.message ||
+            'The transaction could not be deleted.';
+        } else {
+          this.editTransactionError = 'Unable to delete the transaction. Please try again.';
+        }
+
+        this.cdr.detectChanges();
+      },
+    });
   }
 
   saveEditTransaction(): void {

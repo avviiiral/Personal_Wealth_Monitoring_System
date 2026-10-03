@@ -68,7 +68,7 @@ class PortfolioNewsIncrementalFeedTests(TestCase):
         self.client.force_authenticate(user=self.user)
 
     def _article(self, title, article_id=None):
-        article = NewsArticle.objects.create(
+        candidate = NewsArticleResult(
             title=title,
             url=f"https://news.example.com/{title.lower().replace(' ', '-')}",
             source="Reuters",
@@ -76,9 +76,7 @@ class PortfolioNewsIncrementalFeedTests(TestCase):
             published_at=datetime(2026, 10, 3, 9, 0, tzinfo=timezone.utc),
             matched_query="Test Company",
         )
-        if article_id is not None:
-            article.id = article_id
-            article.save(update_fields=["id"])
+        article, _ = store_article(candidate)
         return article
 
     def test_raw_feed_supports_after_id_cursor(self):

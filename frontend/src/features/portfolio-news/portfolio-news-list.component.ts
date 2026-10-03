@@ -110,13 +110,10 @@ export class PortfolioNewsListComponent implements OnInit, OnDestroy {
     if (this.viewMode === 'all') {
       const viewAtStart = this.viewMode;
       const dateAtStart = this.activeDateRange;
-      const afterId = this.latestRawNewsId();
-
       this.newsApi
         .getRawNews({
           dateRange: dateAtStart === 'all' ? undefined : dateAtStart,
           limit: 25,
-          afterId,
         })
         .subscribe({
           next: (response) => {
@@ -139,16 +136,13 @@ export class PortfolioNewsListComponent implements OnInit, OnDestroy {
     const sentimentAtStart = this.activeSentiment;
     const sourceAtStart = this.activeSource;
     const dateAtStart = this.activeDateRange;
-    const afterId = this.latestAlertId();
-
     this.newsApi
       .getNews({
         tier: tierAtStart === 'all' ? undefined : tierAtStart,
         sentiment: sentimentAtStart === 'all' ? undefined : sentimentAtStart,
         dateRange: dateAtStart === 'all' ? undefined : dateAtStart,
         sourceType: sourceAtStart === 'all' ? undefined : sourceAtStart,
-        limit: 100,
-        afterId,
+        limit: 25,
       })
       .subscribe({
         next: (response) => {
@@ -168,14 +162,6 @@ export class PortfolioNewsListComponent implements OnInit, OnDestroy {
           this.livePollInFlight = false;
         },
       });
-  }
-
-  private latestRawNewsId(): number {
-    return this.rawItems.reduce((max, item) => Math.max(max, item.id), 0);
-  }
-
-  private latestAlertId(): number {
-    return this.items.reduce((max, item) => Math.max(max, item.id), 0);
   }
 
   private mergeRawNews(newItems: PortfolioNewsRawItem[]): void {
@@ -202,7 +188,7 @@ export class PortfolioNewsListComponent implements OnInit, OnDestroy {
     [...newItems, ...this.items].forEach((item) => byId.set(item.id, item));
 
     this.items = Array.from(byId.values())
-      .sort((a, b) => b.id - a.id)
+      .sort((a, b) => (b.alert_score - a.alert_score) || (b.id - a.id))
       .slice(0, 100);
 
     this.changeDetector.detectChanges();

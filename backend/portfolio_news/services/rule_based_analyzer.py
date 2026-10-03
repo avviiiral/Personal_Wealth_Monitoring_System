@@ -132,7 +132,21 @@ class RuleBasedArticleAnalyzer:
     def _impact_score(self, text: str, source_quality: Optional[str]) -> int:
         critical = _score_hits(text, self.CRITICAL_IMPACT)
         high = _score_hits(text, self.HIGH_IMPACT)
-        medium = _score_hits(text, self.MEDIUM_IMPACT)
+
+        # Avoid double-counting a generic medium signal when it is already
+        # represented by a more specific high-impact phrase. For example,
+        # "major investigation" should not score both "major investigation"
+        # and the generic "investigation" rule; likewise "withdraws guidance"
+        # should not receive an additional generic "guidance" point.
+        medium = sum(
+            1
+            for phrase in self.MEDIUM_IMPACT
+            if phrase in text
+            and not any(
+                phrase in high_phrase and high_phrase in text
+                for high_phrase in self.HIGH_IMPACT
+            )
+        )
 
         # Keep ordinary earnings/orders/news in the moderate range while
         # allowing clearly material events to become HIGH/CRITICAL.

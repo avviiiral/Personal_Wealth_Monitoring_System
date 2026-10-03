@@ -82,14 +82,30 @@ class RuleBasedArticleAnalyzer:
         "investigation", "lawsuit", "resigns", "plant shutdown", "warning",
         "margin contracts", "cuts guidance", "negative outlook", "default",
     )
+    # Critical events should be capable of reaching CRITICAL even for
+    # smaller portfolio weights. These are intentionally limited to events
+    # that can materially change the risk profile of a holding.
+    CRITICAL_IMPACT = (
+        "fraud", "accounting fraud", "accounting irregularity",
+        "insolvency", "bankruptcy", "default", "debt default",
+        "license cancelled", "license revoked", "business licence cancelled",
+        "major regulatory action", "regulatory ban", "trading ban",
+    )
     HIGH_IMPACT = (
-        "fraud", "default", "insolvency", "bankruptcy", "license cancelled",
-        "license revoked", "major penalty", "material litigation", "accounting irregularity",
-        "regulatory action", "merger", "acquisition", "takeover", "ceo resigns",
+        "major penalty", "material litigation", "regulatory action",
+        "merger", "acquisition", "takeover", "ceo resigns", "cfo resigns",
+        "guidance cut", "cuts guidance", "withdraws guidance",
+        "plant shutdown", "business shutdown", "major order win",
+        "large order win", "significant order", "material order",
+        "major contract", "material contract", "promoter pledge",
+        "pledge increase", "major investigation",
     )
     MEDIUM_IMPACT = (
-        "earnings", "guidance", "order win", "large order", "dividend", "buyback",
-        "approval", "fund raise", "downgrade", "upgrade", "lawsuit", "investigation",
+        "earnings", "quarterly results", "guidance", "order win",
+        "large order", "dividend", "buyback", "approval", "fund raise",
+        "downgrade", "upgrade", "lawsuit", "investigation", "probe",
+        "profit falls", "profit drops", "revenue falls", "revenue drops",
+        "margin contracts", "margin falls", "plant closure",
     )
     LONG_HORIZON = ("capex", "capacity expansion", "long-term", "strategic investment", "new plant")
     SHORT_HORIZON = ("today", "surges", "falls", "intraday", "breaking", "immediate", "effective immediately")
@@ -114,9 +130,18 @@ class RuleBasedArticleAnalyzer:
         return Sentiment.NEUTRAL
 
     def _impact_score(self, text: str, source_quality: Optional[str]) -> int:
+        critical = _score_hits(text, self.CRITICAL_IMPACT)
         high = _score_hits(text, self.HIGH_IMPACT)
         medium = _score_hits(text, self.MEDIUM_IMPACT)
-        score = 20 + min(high, 3) * 25 + min(medium, 4) * 10
+
+        # Keep ordinary earnings/orders/news in the moderate range while
+        # allowing clearly material events to become HIGH/CRITICAL.
+        score = (
+            20
+            + min(critical, 2) * 38
+            + min(high, 3) * 22
+            + min(medium, 4) * 8
+        )
 
         quality = (source_quality or "").lower()
         if "tier_1" in quality:

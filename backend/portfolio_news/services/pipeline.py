@@ -452,26 +452,15 @@ def _create_alerts_from_analyses(
 
         stats["alerts_created"] += 1
 
-        # HIGH/CRITICAL events must remain eligible for immediate push
-        # notification even when the holding has a small portfolio weight.
-        # The score floor is still used to suppress low-priority items from
-        # the user-facing alert feed, but it must not cancel a material
-        # HIGH/CRITICAL event before Web Push gets a chance to deliver it.
+        # Notification behavior is tier-based, not score-floor-based:
+        #   HIGH/CRITICAL -> immediate Web Push
+        #   MODERATE      -> daily digest
+        #   LOW           -> portfolio-news history/feed only
+        #
+        # alert_score remains a ranking signal. It must not make a relevant
+        # MODERATE alert disappear from the daily digest simply because a
+        # smaller holding produces a low portfolio-weighted score.
         immediate_tier = alert.notification_tier in ("high", "critical")
-
-        if (
-            alert.relevant
-            and alert.alert_score < min_alert_score
-            and not immediate_tier
-        ):
-            alert.relevant = False
-            alert.notification_sent = False
-            alert.save(
-                update_fields=[
-                    "relevant",
-                    "notification_sent",
-                ]
-            )
 
         if immediate_tier and alert.relevant:
             if deliver_alert_notification(alert):
@@ -484,8 +473,6 @@ def _create_alerts_from_analyses(
                     alert.notification_tier,
                     alert.alert_score,
                 )
-        elif alert.relevant and deliver_alert_notification(alert):
-            stats["notifications_sent"] += 1
 
 
 def run_portfolio_news_monitor(

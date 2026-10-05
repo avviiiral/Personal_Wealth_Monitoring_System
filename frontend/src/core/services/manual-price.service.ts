@@ -77,13 +77,18 @@ export class ManualPriceService {
   // UPDATE PRICE
   // ==========================================================
 
-  updatePrice(assetId: number, price: number): Observable<ManualPriceResponse> {
+  updatePrice(
+    assetId: number,
+    price: number,
+    priceDate: string,
+  ): Observable<ManualPriceResponse> {
     return this.getCsrfToken().pipe(
       switchMap(() => {
         return this.http.put<ManualPriceResponse>(
           `${this.baseUrl}/assets/${assetId}/manual-price/`,
           {
             price,
+            price_date: priceDate,
           },
           {
             headers: this.getHeaders(),

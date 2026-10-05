@@ -1613,39 +1613,10 @@ class HistoricalWealthAnalytics:
 
             current_date += timedelta(days=1)
 
-        # Preserve the requested historical date as the source of truth.
-        # Only the current endpoint date (today) is reconciled to the
-        # Portfolio/Dashboard live valuation; historical end dates must
-        # remain valued using prices effective on that date.
-        if results and end_date == date.today():
-            from .unified_wealth import UnifiedWealthAnalytics
-
-            valuation = UnifiedWealthAnalytics._portfolio_tree_valuation(
-                user,
-                family_name=family_name,
-            )
-
-            latest = results[-1]
-            latest["date"] = end_date
-            latest["invested_value"] = valuation["invested"]
-            latest["portfolio_value"] = valuation["current"]
-            latest["pnl"] = (
-                valuation["current"] - valuation["invested"]
-            )
-
-            latest["equity"]["invested_value"] = valuation["equity_invested"]
-            latest["equity"]["portfolio_value"] = valuation["equity_current"]
-            latest["equity"]["pnl"] = (
-                valuation["equity_current"]
-                - valuation["equity_invested"]
-            )
-
-            latest["mutual_funds"]["invested_value"] = valuation["mutual_invested"]
-            latest["mutual_funds"]["portfolio_value"] = valuation["mutual_current"]
-            latest["mutual_funds"]["pnl"] = (
-                valuation["mutual_current"]
-                - valuation["mutual_invested"]
-            )
+        # Every point in the chart is calculated strictly as of its
+        # own date. This is especially important for dated manual prices:
+        # a manual price must change Total Wealth starting on its selected
+        # effective date, not only at the current/live endpoint.
 
         return results
 

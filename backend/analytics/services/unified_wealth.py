@@ -677,10 +677,10 @@ class UnifiedWealthAnalytics:
         """
         Calculate the complete unified wealth summary.
 
-        The all-families path reuses one transaction read per investment
-        type for realized P&L and XIRR, while the existing family-filtered
-        path remains transaction/history based so its family semantics stay
-        unchanged.
+        Both the all-families and family-filtered paths use the historical
+        position engine for valuation so the Dashboard "All" total is exactly
+        the sum of its Family Member selections. Realized P&L and XIRR still
+        use the transaction cash-flow calculations for the selected scope.
         """
 
         if not family_name:

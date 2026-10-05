@@ -593,6 +593,17 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
 
     const portfolioValues = results.map((item: any) => this.toNumber(item.portfolio_value));
 
+    const formatTooltipDate = (value: any): string => {
+      if (!value) return '-';
+      const parsedDate = new Date(String(value) + 'T00:00:00');
+      if (Number.isNaN(parsedDate.getTime())) return String(value);
+      return parsedDate.toLocaleDateString('en-IN', {
+        day: '2-digit',
+        month: 'short',
+        year: 'numeric',
+      });
+    };
+
     const config: ChartConfiguration<'line'> = {
       type: 'line',
 
@@ -654,9 +665,12 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
 
           tooltip: {
             callbacks: {
+              title: (items) => {
+                const index = items[0]?.dataIndex ?? 0;
+                return 'As on ' + formatTooltipDate(results[index]?.date);
+              },
               label: (context) => {
                 const value = context.parsed.y ?? 0;
-
                 return `${context.dataset.label}: ${this.formatDisplayAmount(value)}`;
               },
             },

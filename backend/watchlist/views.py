@@ -46,9 +46,10 @@ def _watchlist_user_ids(request):
 def _filtered_products(request, product_type=None):
     queryset = InvestmentProduct.objects.filter(is_active=True).select_related("mutual_fund", "pms")
 
-    # Presentation filter: PMS rows require AUM or a displayed
-    # performance metric, while mutual funds can be displayed from their
-    # latest NAV even when the historical performance import is deferred.
+    # Presentation filter: a product must have at least one value that
+    # can actually be displayed in the Watch List return/AUM columns.
+    # Latest NAV alone is not sufficient because it would produce a row
+    # where every visible metric is N/A.
     displayable_snapshot = PerformanceSnapshot.objects.filter(
         product_id=OuterRef("pk"),
     ).filter(
@@ -68,11 +69,7 @@ def _filtered_products(request, product_type=None):
     # before its first performance snapshot has been imported.
     status = request.query_params.get("status", "").upper()
     if status != "OWNED":
-        queryset = queryset.filter(
-            Q(mutual_fund__latest_nav__isnull=False)
-            | Q(pms__aum__isnull=False)
-            | Exists(displayable_snapshot)
-        )
+        queryset = queryset.filter(Exists(displayable_snapshot))
 
     if product_type:
         queryset = queryset.filter(product_type=product_type)

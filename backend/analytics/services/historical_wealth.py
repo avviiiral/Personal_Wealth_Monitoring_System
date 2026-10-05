@@ -350,83 +350,19 @@ class HistoricalWealthAnalytics:
 
             prices_by_asset[asset.pk] = values
 
-        # Manual observations are an override layer, not a separate
-        # series. Resolve them against the automatic observations
-        # before the daily loop so every request window gets the same
-        # effective price on every date.
-        for asset_id, values in list(prices_by_asset.items()):
-            automatic_values = [
-                (price_date, value)
-                for price_date, value, source in values
-                if source != DataSource.MANUAL
-            ]
-            manual_values = [
-                (price_date, value)
-                for price_date, value, source in values
-                if source == DataSource.MANUAL
-            ]
-
-            if not manual_values:
-                prices_by_asset[asset_id] = sorted(
-                    [
-                        (price_date, value)
-                        for price_date, value, _ in values
-                    ],
-                    key=lambda item: item[0],
+        # Manual prices are current-price overrides, not as-of-date
+        # valuation instructions. The latest manually entered price is
+        # used as the effective price for the asset across the requested
+        # calculation range. The stored date is informational (Price
+        # Updated) and must not change the valuation.
+        for asset_id, latest_manual in latest_manual_prices.items():
+            prices_by_asset[asset_id] = [
+                (
+                    latest_manual.date,
+                    latest_manual.close_price,
+                    latest_manual.source,
                 )
-                continue
-
-            combined_dates = sorted(
-                {
-                    price_date
-                    for price_date, _ in automatic_values
-                }
-                | {
-                    price_date
-                    for price_date, _ in manual_values
-                }
-            )
-
-            effective_values = []
-            manual_index = -1
-
-            for price_date in combined_dates:
-                while (
-                    manual_index + 1 < len(manual_values)
-                    and manual_values[manual_index + 1][0] <= price_date
-                ):
-                    manual_index += 1
-
-                if manual_index >= 0:
-                    effective_values.append(
-                        (
-                            price_date,
-                            manual_values[manual_index][1],
-                        )
-                    )
-                    continue
-
-                automatic_value = next(
-                    (
-                        value
-                        for value_date, value in automatic_values
-                        if value_date == price_date
-                    ),
-                    None,
-                )
-
-                if automatic_value is not None:
-                    effective_values.append(
-                        (
-                            price_date,
-                            automatic_value,
-                        )
-                    )
-
-            prices_by_asset[asset_id] = sorted(
-                effective_values,
-                key=lambda item: item[0],
-            )
+            ]
 
         # Legacy one-row manual prices remain supported for assets
         # that have no MarketPrice history at all.

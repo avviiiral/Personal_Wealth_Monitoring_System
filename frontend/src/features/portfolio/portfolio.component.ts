@@ -330,12 +330,6 @@ export class PortfolioComponent implements OnInit, OnDestroy {
   formatDecimal(value: number): string { return new Intl.NumberFormat('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(this.toNumber(value)); }
   formatPercentage(value: number | null): string { if (value === null || value === undefined) return '-'; return `${this.formatDecimal(value)}%`; }
   getPnlClass(value: number): string { if (value > 0) return 'positive'; if (value < 0) return 'negative'; return 'neutral'; }
-  getPriceDate(asset: PortfolioAssetNode): string | null {
-    const extendedAsset = asset as PortfolioAssetNode & {
-      price_date?: string | null;
-    };
-    return extendedAsset.price_date ?? null;
-  }
   getTodayDateInputValue(): string {
     const today = new Date();
     const year = today.getFullYear();

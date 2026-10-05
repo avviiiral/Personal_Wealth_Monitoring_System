@@ -1363,8 +1363,15 @@ class TransactionImporter:
                 )
 
         if touched_mutual_fund_scheme_ids:
-            TransactionImporter._refresh_imported_mutual_fund_navs(
+            scheme_ids_for_refresh = tuple(
                 touched_mutual_fund_scheme_ids
+            )
+            db_transaction.on_commit(
+                lambda scheme_ids=scheme_ids_for_refresh: (
+                    TransactionImporter._refresh_imported_mutual_fund_navs(
+                        scheme_ids
+                    )
+                )
             )
 
         if imported_investments:

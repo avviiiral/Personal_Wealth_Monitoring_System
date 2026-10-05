@@ -19,6 +19,7 @@ from .views import (
     wealth_standard_allocations,
     wealth_standard_allocations_update,
     wealth_summary,
+    wealth_recalculate,
     wealth_xirr,
     wealth_historical,
     wealth_historical_period,
@@ -35,6 +36,7 @@ urlpatterns = [
 
     # Unified wealth APIs
     path("wealth/summary/", wealth_summary, name="wealth-summary"),
+    path("wealth/recalculate/", wealth_recalculate, name="wealth-recalculate"),
     path("wealth/allocation/", wealth_allocation, name="wealth-allocation"),
     path("wealth/performance/", wealth_performance, name="wealth-performance"),
     path("wealth/xirr/", wealth_xirr, name="wealth-xirr"),

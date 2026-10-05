@@ -369,6 +369,27 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
     this.loadDashboard();
   }
 
+  refreshDashboard(): void {
+    console.log('Recalculating dashboard portfolio data...');
+
+    this.loading = true;
+    this.error = '';
+    this.destroyCharts();
+
+    this.wealthApi.recalculate().subscribe({
+      next: (result) => {
+        console.log('DASHBOARD RECALCULATION RESPONSE:', result);
+        this.loadDashboard();
+      },
+      error: (error) => {
+        console.error('DASHBOARD RECALCULATION API ERROR:', error);
+        this.loading = false;
+        this.error = error?.error?.detail || 'Unable to recalculate dashboard data.';
+        this.cdr.markForCheck();
+      },
+    });
+  }
+
   loadDashboard(): void {
     console.log('Loading dashboard data...');
 

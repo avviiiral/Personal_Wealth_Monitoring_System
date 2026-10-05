@@ -16,7 +16,13 @@ from .services.portfolio_analytics import PortfolioAnalytics
 from .services.unified_wealth import UnifiedWealthAnalytics
 from .services.equity_analysis import EquityAnalysisService
 from .services.mutual_fund_lookthrough import MutualFundLookThroughService
-from users.permissions import get_family_group_ids, is_system_owner
+from users.permissions import (
+    get_family_group_ids,
+    is_system_owner,
+    require_active_family,
+)
+from portfolio.services.holding_engine import HoldingCalculationEngine
+from portfolio.services.portfolio_position_engine import PortfolioPositionEngine
 
 
 
@@ -61,6 +67,30 @@ def analytics_historical(request):
         "end_date": end_date,
         "results": results,
     })
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def wealth_recalculate(request):
+    """
+    Rebuild persisted portfolio holdings and positions for the active
+    family before the Dashboard requests its calculation-heavy analytics.
+
+    Market prices are intentionally not fetched here. This endpoint only
+    recalculates derived portfolio state from the transactions and the
+    latest prices already stored in the database.
+    """
+    family = require_active_family(request.user)
+
+    holdings = HoldingCalculationEngine.rebuild_all_for_user(request.user)
+    positions = PortfolioPositionEngine.rebuild_all_for_family(family)
+
+    return Response({
+        "success": True,
+        "holdings_rebuilt": len(holdings),
+        "positions_rebuilt": len(positions),
+        "message": "Portfolio calculations rebuilt successfully.",
+    }, status=status.HTTP_200_OK)
 
 
 @api_view(["GET"])

@@ -1123,3 +1123,58 @@ class ManualPriceEffectiveDateAndMissingPriceTests(TestCase):
             pointer,
         )
         self.assertEqual(price_after, Decimal("150"))
+
+    def test_historical_chart_ignores_manual_price_added_date(self):
+        """
+        The wealth chart must use MarketPrice.date (the manual
+        "As on Date") as the effective date. created_at is only an
+        audit timestamp and must never determine when the price starts
+        affecting historical wealth.
+        """
+        from analytics.services.historical_wealth import HistoricalWealthAnalytics
+        from market_data.models import DataSource, MarketPrice
+
+        MarketPrice.objects.create(
+            asset=self.asset,
+            date=date(2026, 10, 2),
+            close_price=Decimal("100"),
+            source=DataSource.YAHOO_FINANCE,
+        )
+
+        manual = MarketPrice.objects.create(
+            asset=self.asset,
+            date=date(2026, 10, 3),
+            close_price=Decimal("150"),
+            source=DataSource.MANUAL,
+            updated_by=self.user,
+        )
+
+        # Simulate the manual price being added later than its effective
+        # date. The chart must still switch to the manual price on Oct 3.
+        MarketPrice.objects.filter(pk=manual.pk).update(
+            created_at=timezone.make_aware(
+                datetime(2026, 10, 5, 12, 0, 0),
+            ),
+        )
+
+        results = HistoricalWealthAnalytics.calculate_history(
+            self.user,
+            date(2026, 10, 2),
+            date(2026, 10, 5),
+        )
+
+        by_date = {item["date"]: item for item in results}
+
+        self.assertEqual(
+            by_date[date(2026, 10, 2)]["portfolio_value"],
+            Decimal("1000"),
+        )
+        self.assertEqual(
+            by_date[date(2026, 10, 3)]["portfolio_value"],
+            Decimal("1500"),
+        )
+        self.assertEqual(
+            by_date[date(2026, 10, 4)]["portfolio_value"],
+            Decimal("1500"),
+        )
+

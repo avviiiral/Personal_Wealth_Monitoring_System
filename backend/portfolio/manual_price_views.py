@@ -189,6 +189,8 @@ def manual_asset_price(
     
     if request.method == "DELETE":
 
+        # Restore automatic pricing by removing every manual snapshot
+        # for the asset, including historical as-on-date overrides.
         deleted, _ = (
             MarketPrice.objects
             .filter(

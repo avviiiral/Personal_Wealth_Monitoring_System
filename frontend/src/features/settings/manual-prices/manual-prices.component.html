@@ -23,6 +23,7 @@
           <th>Asset</th>
           <th>Category</th>
           <th>Price</th>
+          <th>As on Date</th>
           <th>Source</th>
           <th>Updated By</th>
           <th>Updated</th>
@@ -60,6 +61,8 @@
               </label>
             </div>
           </td>
+
+          <td>{{ row.price_date || '-' }}</td>
 
           <td>
             <span
@@ -112,7 +115,7 @@
         </tr>
 
         <tr *ngIf="expandedAssetId === row.asset_id">
-          <td colspan="7" class="history-row">
+          <td colspan="8" class="history-row">
             <div class="history-panel">
               <div class="history-title">Manual Price History</div>
 
@@ -148,7 +151,7 @@
         </ng-container>
 
         <tr *ngIf="rows.length === 0">
-          <td colspan="7" class="empty-row">No assets found.</td>
+          <td colspan="8" class="empty-row">No assets found.</td>
         </tr>
       </tbody>
     </table>

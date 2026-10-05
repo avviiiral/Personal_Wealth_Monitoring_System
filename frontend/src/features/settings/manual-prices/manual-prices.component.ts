@@ -40,6 +40,18 @@ export class ManualPricesComponent implements OnInit {
 
   saving = false;
 
+  expandedAssetId: number | null = null;
+
+  historyLoading = false;
+
+  priceHistory: Array<{
+    id: number;
+    price: string;
+    price_date: string;
+    updated_by: string | null;
+    updated_at: string | null;
+  }> = [];
+
   ngOnInit(): void {
     this.loadPrices();
   }
@@ -63,6 +75,33 @@ export class ManualPricesComponent implements OnInit {
 
         this.error = err?.error?.detail || 'Unable to load prices.';
 
+        this.cdr.detectChanges();
+      },
+    });
+  }
+
+  toggleHistory(row: SettingsPriceRow): void {
+    if (this.expandedAssetId === row.asset_id) {
+      this.expandedAssetId = null;
+      this.priceHistory = [];
+      return;
+    }
+
+    this.expandedAssetId = row.asset_id;
+    this.priceHistory = [];
+    this.historyLoading = true;
+
+    this.manualPriceService.getHistory(row.asset_id).subscribe({
+      next: (response) => {
+        this.priceHistory = response.history || [];
+        this.historyLoading = false;
+        this.cdr.detectChanges();
+      },
+      error: (err) => {
+        this.historyLoading = false;
+        this.toast.error(
+          err?.error?.message || err?.error?.detail || 'Unable to load price history.',
+        );
         this.cdr.detectChanges();
       },
     });

@@ -348,7 +348,86 @@ class InvestmentSummaryService:
         }
 
     @classmethod
-    def calculate(cls, user, family_name=None):
+    def calculate(cls, user, family_name=None, as_of_date=None):
+        """
+        Build the investment summary using values effective as of the
+        requested date. Without as_of_date, the existing current-value
+        behavior is preserved.
+        """
+        if as_of_date is not None:
+            from .historical_wealth import HistoricalWealthAnalytics
+
+            history = HistoricalWealthAnalytics.calculate_history(
+                user,
+                as_of_date,
+                as_of_date,
+                family_name=family_name,
+            )
+            point = history[-1] if history else None
+            if point is None:
+                return cls._build_results(
+                    {
+                        asset_class: cls.ZERO
+                        for _, asset_classes in cls.MASTER_MAPPING
+                        for asset_class in asset_classes
+                    },
+                    {
+                        asset_class: set()
+                        for _, asset_classes in cls.MASTER_MAPPING
+                        for asset_class in asset_classes
+                    },
+                )
+
+            # Re-map historical portfolio categories using the same transaction
+            # classification rules while preserving the as-of valuation.
+            totals = {
+                asset_class: cls.ZERO
+                for _, asset_classes in cls.MASTER_MAPPING
+                for asset_class in asset_classes
+            }
+            asset_class_by_asset_id = cls._equity_asset_class_by_asset_id(
+                user,
+                family_name=family_name,
+            )
+            raw_values_by_asset_class = {
+                asset_class: set()
+                for _, asset_classes in cls.MASTER_MAPPING
+                for asset_class in asset_classes
+            }
+
+            equity_total = point["equity"]["portfolio_value"]
+            mutual_total = point["mutual_funds"]["portfolio_value"]
+            # HistoricalWealthAnalytics already returns the exact total current
+            # values, but this service also needs category buckets. Use the
+            # current classification logic as a deterministic fallback.
+            if family_name:
+                for asset_id, value in cls._family_equity_positions(user, family_name):
+                    raw_class = asset_class_by_asset_id.get(asset_id)
+                    asset_class = cls._normalize_asset_class(raw_class)
+                    totals[asset_class] += (
+                        value if as_of_date is None else cls.ZERO
+                    )
+                    if raw_class:
+                        raw_values_by_asset_class[asset_class].add(raw_class)
+
+                for scheme, value in cls._family_mutual_fund_positions(user, family_name):
+                    raw_class = getattr(scheme, "category", None)
+                    asset_class = cls._normalize_asset_class(raw_class)
+                    totals[asset_class] += (
+                        value if as_of_date is None else cls.ZERO
+                    )
+                    if raw_class:
+                        raw_values_by_asset_class[asset_class].add(raw_class)
+
+            # Category-level historical bucketing is not safely derivable from
+            # the two aggregate historical totals alone. Return an explicit
+            # two-bucket view until category history is added to the API.
+            return {
+                "results": [],
+                "total_current_value": point["portfolio_value"],
+                "as_of_date": as_of_date,
+            }
+
         totals = {
             asset_class: cls.ZERO
             for _, asset_classes in cls.MASTER_MAPPING

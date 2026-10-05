@@ -971,6 +971,90 @@ class ManualPriceEffectiveDateAndMissingPriceTests(TestCase):
         self.assertEqual(node["pnl"], 0.0)
         self.assertEqual(node["pnl_percentage"], 0.0)
 
+    def test_dashboard_holding_missing_price_has_zero_pnl(self):
+        from portfolio.services.holding_engine import HoldingCalculationEngine
+
+        asset = Asset.objects.create(
+            owner=self.user,
+            family=self.family,
+            name="No Dashboard Price Equity",
+            category="STOCK",
+            isin="INE000DASHNOPRICE",
+        )
+
+        Transaction.objects.create(
+            owner=self.user,
+            family=self.family,
+            family_name="Family Dated",
+            portfolio="Portfolio Dated",
+            asset=asset,
+            asset_class="Equity",
+            sub_class="Large Cap",
+            asset_name="No Dashboard Price Equity",
+            transaction_date=date(2026, 2, 1),
+            transaction_type="BUY",
+            quantity=Decimal("5"),
+            price_per_unit=Decimal("200"),
+            amount=Decimal("1000"),
+            fees=Decimal("0"),
+        )
+
+        holding = HoldingCalculationEngine.rebuild_holding(asset)
+
+        self.assertEqual(holding.current_price, Decimal("0"))
+        self.assertEqual(holding.current_value, Decimal("0"))
+        self.assertEqual(holding.unrealized_pnl, Decimal("0"))
+
+    def test_dashboard_holding_uses_reit_invit_reference_price(self):
+        from portfolio.services.holding_engine import HoldingCalculationEngine
+
+        asset = Asset.objects.create(
+            owner=self.user,
+            family=self.family,
+            name="Dashboard Cube InvIT",
+            category="OTHER",
+            isin="INVI000DASH001",
+        )
+
+        Transaction.objects.create(
+            owner=self.user,
+            family=self.family,
+            family_name="Family Dated",
+            portfolio="Portfolio Dated",
+            asset=asset,
+            asset_class="Infrastructure",
+            sub_class="InvITs",
+            asset_name="Dashboard Cube InvIT",
+            transaction_date=date(2026, 1, 10),
+            transaction_type="BUY",
+            quantity=Decimal("10"),
+            price_per_unit=Decimal("100"),
+            amount=Decimal("1000"),
+            fees=Decimal("0"),
+        )
+
+        reference_asset = Asset.objects.create(
+            owner=None,
+            family=None,
+            name="Cube InvIT Dashboard Reference",
+            category="OTHER",
+            symbol="CUBEINVIT.NS",
+            currency="INR",
+            is_active=True,
+        )
+        MarketPrice.objects.create(
+            asset=reference_asset,
+            date=date(2026, 10, 5),
+            source=DataSource.YAHOO_FINANCE,
+            close_price=Decimal("125.50"),
+        )
+
+        holding = HoldingCalculationEngine.rebuild_holding(asset)
+
+        self.assertEqual(holding.current_price, Decimal("125.50"))
+        self.assertEqual(holding.current_value, Decimal("1255.00"))
+        self.assertEqual(holding.unrealized_pnl, Decimal("255.00"))
+
     def test_historical_manual_price_is_effective_from_selected_date(self):
         from analytics.services.historical_wealth import HistoricalWealthAnalytics
         from market_data.models import DataSource, MarketPrice

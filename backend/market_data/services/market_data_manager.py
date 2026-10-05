@@ -648,10 +648,21 @@ class MarketDataManager:
         # STOCK / ETF
         # ======================================================
 
-        if asset.category == "ETF":
-            # Prefer AMFI's daily NAV whenever the ETF's ISIN is
-            # present in the official AMFI feed. ETFs absent from
-            # AMFI continue through the normal Yahoo path.
+        # Excel imports can leave exchange-traded funds with the legacy
+        # OTHER category. Do not let that classification prevent market
+        # pricing: an explicit ETF category OR an instrument whose name
+        # identifies it as an ETF is treated as an ETF for quote routing.
+        is_etf = (
+            asset.category == "ETF"
+            or " ETF" in f" {(asset.name or '').upper()}"
+        )
+
+        if is_etf:
+            # Prefer AMFI's daily NAV whenever the ETF's ISIN is present
+            # in the official AMFI feed. If AMFI does not contain the ISIN
+            # or is temporarily unreachable, continue to Yahoo so a
+            # temporary AMFI outage cannot turn an otherwise priceable ETF
+            # into a zero-price holding.
             try:
                 amfi_result = cls._fetch_amfi_nav(asset)
             except Exception:
@@ -663,7 +674,7 @@ class MarketDataManager:
         if asset.category not in [
             "STOCK",
             "ETF",
-        ]:
+        ] and not is_etf:
 
             return {
                 "success": False,

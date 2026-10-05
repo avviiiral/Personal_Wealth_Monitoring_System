@@ -70,7 +70,6 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
   historical: any = null;
   investmentSummary: any = null;
   investmentSummaryError = '';
-  investmentSummaryAsOfDate = '';
   standardAllocations: Record<string, number> = {};
   standardAllocationAmounts: Record<string, number> = {};
   standardAllocationAmountDraft: Record<string, number> = {};
@@ -243,11 +242,6 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
    * Portfolio/Reports filter by Family.
    */
   selectedFamilyMember = '';
-  historicalAsOfDate = '';
-
-  private getHistoricalAsOfDate(): string | undefined {
-    return this.historicalAsOfDate || undefined;
-  }
   reportAssetClass = '';
   reportLevel: 'asset_class' | 'sub_class' | 'asset_name' | 'underlying' = 'asset_class';
   reportScope = '';
@@ -452,7 +446,7 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
     this.investmentSummary = null;
     this.investmentSummaryError = '';
 
-    this.wealthApi.getInvestmentSummary(family, this.getHistoricalAsOfDate()).subscribe({
+    this.wealthApi.getInvestmentSummary(family).subscribe({
       next: (data) => {
         console.log('INVESTMENT SUMMARY RESPONSE:', data);
 

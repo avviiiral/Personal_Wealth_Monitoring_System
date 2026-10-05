@@ -212,7 +212,7 @@
    ========================================================== */
 
 .prices-table {
-  min-width: 1100px;
+  min-width: 1180px;
   table-layout: auto;
 }
 
@@ -271,4 +271,38 @@
 .history-table th {
   font-size: 12px;
   color: var(--muted-text-color, #8b93a7);
+}
+
+
+.price-edit-fields {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.price-date-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: #667085;
+}
+
+.price-date-input {
+  box-sizing: border-box;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  padding: 6px 8px;
+  font-size: 13px;
+}
+
+:host-context(html.dark-theme) .price-date-label {
+  color: #aeb7c6;
+}
+
+:host-context(html.dark-theme) .price-date-input {
+  background: #12151c;
+  border-color: #3a414e;
+  color: #e5e7eb;
 }

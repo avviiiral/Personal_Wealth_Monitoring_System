@@ -264,7 +264,7 @@ export class PortfolioComponent implements OnInit, OnDestroy {
     if (!Number.isFinite(price) || price <= 0) { this.manualPriceErrors[asset.id] = 'Enter a valid price greater than 0.'; return; }
     this.manualPriceErrors[asset.id] = ''; this.savingManualPriceAssetId = asset.id;
     this.manualPriceService.updatePrice(asset.id, price).subscribe({
-      next: (response) => { this.savingManualPriceAssetId = null; if (!response.success) { this.manualPriceErrors[asset.id] = response.message || 'Unable to update price.'; this.cdr.detectChanges(); return; } this.editingAssetId = null; this.manualPriceInput = ''; this.manualPriceDate = ''; this.loadPortfolio(true); },
+      next: (response) => { this.savingManualPriceAssetId = null; if (!response.success) { this.manualPriceErrors[asset.id] = response.message || 'Unable to update price.'; this.cdr.detectChanges(); return; } this.editingAssetId = null; this.manualPriceInput = ''; this.loadPortfolio(true); },
       error: (error) => { console.error('Manual price update failed:', error); this.savingManualPriceAssetId = null; this.manualPriceErrors[asset.id] = error?.error?.message || 'Unable to update manual price.'; this.cdr.detectChanges(); },
     });
   }
@@ -274,7 +274,6 @@ export class PortfolioComponent implements OnInit, OnDestroy {
   assetGroupHasManualPrice(assetGroup: AssetGroup): boolean { return assetGroup.assets.some((asset) => this.isManualPrice(asset)); }
   isSavingManualPrice(asset: PortfolioAssetNode): boolean { return this.savingManualPriceAssetId === asset.id; }
   getManualPriceError(asset: PortfolioAssetNode): string { return this.manualPriceErrors[asset.id] || ''; }
-  getTodayIsoDate(): string { const now = new Date(); const offset = now.getTimezoneOffset(); return new Date(now.getTime() - offset * 60000).toISOString().slice(0, 10); }
   formatAbsoluteCurrency(value: number): string { return this.formatCurrency(Math.abs(this.toNumber(value))); }
   formatCurrency(value: number): string { return new Intl.NumberFormat('en-IN', { maximumFractionDigits: 0 }).format(this.toNumber(value)); }
   formatNumber(value: number): string { return new Intl.NumberFormat('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 }).format(this.toNumber(value)); }

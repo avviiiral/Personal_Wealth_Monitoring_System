@@ -1,3 +1,4 @@
+from django.db import close_old_connections
 from django.db.models import Exists, OuterRef, Q, Subquery
 from django.shortcuts import get_object_or_404
 from rest_framework.decorators import api_view, permission_classes
@@ -313,6 +314,24 @@ def watch_list_product_detail(request, product_id):
     )
 
 
+WATCH_LIST_REFRESH_LOCK = __import__("threading").Lock()
+watch_list_refreshing = False
+
+
+def _run_watch_list_refresh():
+    global watch_list_refreshing
+    close_old_connections()
+    try:
+        with DATABASE_SCHEDULER_LOCK:
+            mf_result = AMFIUniverseService.refresh()
+            pms_result = APMIPMSDiscoveryService.refresh()
+        return mf_result, pms_result
+    finally:
+        watch_list_refreshing = False
+        WATCH_LIST_REFRESH_LOCK.release()
+        close_old_connections()
+
+
 BENCHMARK_CHOICES = ("BSE 500", "Nifty 50")
 
 
@@ -485,12 +504,29 @@ def watch_list_bulk_remove(request):
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def watch_list_refresh(request):
-    # Serialize manual refreshes with background schedulers so two full
-    # universe upserts cannot run concurrently against SQLite.
-    with DATABASE_SCHEDULER_LOCK:
-        mf_result = AMFIUniverseService.refresh()
-        pms_result = APMIPMSDiscoveryService.refresh()
-    return Response({"mutual_funds": mf_result, "pms": pms_result})
+    global watch_list_refreshing
+
+    # The universe refresh can take tens of seconds. Run it outside the
+    # request so the Watch List is never blocked by a full universe import.
+    if not WATCH_LIST_REFRESH_LOCK.acquire(blocking=False):
+        return Response({"status": "already_running"}, status=202)
+
+    watch_list_refreshing = True
+    import threading
+
+    threading.Thread(
+        target=_run_watch_list_refresh,
+        name="watch-list-universe-refresh",
+        daemon=True,
+    ).start()
+
+    return Response({"status": "started"}, status=202)
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def watch_list_refresh_status(request):
+    return Response({"refreshing": watch_list_refreshing})
 
 
 @api_view(["POST"])

@@ -33,7 +33,7 @@ export class WatchListComponent implements OnInit, OnDestroy {
   private requestSequence = 0;
   private refreshPollTimer: ReturnType<typeof setTimeout> | null = null;
   private refreshPollAttempts = 0;
-  private readonly maxRefreshPollAttempts = 24;
+  private readonly maxRefreshPollAttempts = 60;
 
   products: WatchListProduct[] = [];
   loading = true;

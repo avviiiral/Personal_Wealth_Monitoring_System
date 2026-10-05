@@ -1082,6 +1082,9 @@ class ManualPriceEffectiveDateAndMissingPriceTests(TestCase):
 
         by_date = {item["date"]: item for item in results}
 
+        self.assertEqual(by_date[date(2026, 10, 2)]["total_wealth"], Decimal("1000"))
+        self.assertEqual(by_date[date(2026, 10, 3)]["total_wealth"], Decimal("1500"))
+        self.assertEqual(by_date[date(2026, 10, 5)]["total_wealth"], Decimal("1500"))
         self.assertEqual(by_date[date(2026, 10, 2)]["portfolio_value"], Decimal("1000"))
         self.assertEqual(by_date[date(2026, 10, 3)]["portfolio_value"], Decimal("1500"))
         self.assertEqual(by_date[date(2026, 10, 5)]["portfolio_value"], Decimal("1500"))

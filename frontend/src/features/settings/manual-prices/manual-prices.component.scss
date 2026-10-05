@@ -233,3 +233,42 @@
 .prices-table .actions-cell .link-button + .link-button {
   margin-left: 14px;
 }
+
+
+.history-row {
+  padding: 0 !important;
+  background: transparent;
+}
+
+.history-panel {
+  padding: 14px 18px;
+  border-top: 1px solid var(--border-color, #2b303b);
+}
+
+.history-title {
+  font-weight: 600;
+  margin-bottom: 10px;
+}
+
+.history-loading,
+.history-empty {
+  color: var(--muted-text-color, #8b93a7);
+  padding: 8px 0;
+}
+
+.history-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.history-table th,
+.history-table td {
+  padding: 8px 10px;
+  text-align: left;
+  border-bottom: 1px solid var(--border-color, #2b303b);
+}
+
+.history-table th {
+  font-size: 12px;
+  color: var(--muted-text-color, #8b93a7);
+}

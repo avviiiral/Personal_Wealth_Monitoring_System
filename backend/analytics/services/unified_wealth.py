@@ -737,6 +737,10 @@ class UnifiedWealthAnalytics:
         mutual_count = 0
 
         for family_node in tree.get("families", []):
+            tree_family_name = (family_node.get("family_name") or "").strip()
+            if family_name and tree_family_name != family_name.strip():
+                continue
+
             for portfolio_node in family_node.get("portfolios", []):
                 for asset_class_node in portfolio_node.get("asset_classes", []):
                     asset_class_name = (

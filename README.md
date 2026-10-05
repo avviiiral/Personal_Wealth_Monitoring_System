@@ -310,6 +310,174 @@ The detail page exposes:
 
 The frontend uses the shared light/dark design tokens, renders asynchronous API responses explicitly, and keeps the detail metrics responsive across desktop, tablet and mobile layouts.
 
+#### Portfolio Impact & Alert Scoring
+
+Portfolio News uses a **deterministic internal scoring model**. The numerical scores are not supplied by Google News, NSE, BSE, SEBI, or an external financial-risk API, and Portfolio News does not call an LLM to generate these scores.
+
+The external sources provide the underlying facts (article/filing text, publisher, publication time, company identifiers), while PWMS converts those facts and the user's live portfolio exposure into transparent numerical factors.
+
+| Score / Factor | Source in PWMS | How it is calculated |
+| --- | --- | --- |
+| **Event Impact Score** | Local RuleBasedArticleAnalyzer; corporate filings use the deterministic filing_intelligence classifier | News impact starts from **20** and increases from detected event signals. Critical signals add up to **38 points each** (maximum two), high-impact signals add up to **22 points each** (maximum three), and additional medium signals add up to **8 points each** (maximum four). Tier 1 sources add 8 points and Tier 2 sources add 4 points. The final news impact score is capped at **100**. Corporate filings use their deterministic event rules and representative severity scores: **INFO 20, LOW 30, MEDIUM 50, HIGH 70, CRITICAL 90**. |
+| **Portfolio Weight** | Live PWMS holdings from the unified wealth analytics layer | Holding Current Value ÷ Total Current Portfolio Value × 100. The weight is calculated from the current equity + mutual-fund portfolio values for the monitored user. It is captured as portfolio_weight_at_alert when the alert is created. |
+| **Confidence** | Local RuleBasedArticleAnalyzer | Starts at **0.78**. It is reduced by **0.12** when the RSS article has no description, by **0.08** when the publisher is missing or reported only as Google News, and by another **0.08** for broad sector/macro queries that have no direct holding-name hit. The final confidence is bounded to **0.35–0.95**. |
+| **Source Quality** | Local publisher/source classification in source_quality.py | Publisher names are matched against deterministic Tier 1/Tier 2 lists, with optional configured overrides. **Tier 1 = 1.00**, **Tier 2 = 0.75**, **Tier 3 = 0.50**. Unknown/empty publishers default to Tier 3. For clustered sources, the best available tier is retained. |
+| **Recency** | Article/filing publication timestamp | **≤1 day = 1.00**. Between **1 and 7 days**, the multiplier decreases linearly from **1.00 to 0.50**. **≥7 days = 0.50**. If publication time is unavailable, the neutral value **1.00** is used rather than penalizing missing metadata. |
+| **Final Alert Score** | Local compute_alert_score() formula | Impact Score × (Portfolio Weight % ÷ 100) × Confidence × Source Quality × Recency. The result is rounded to two decimals and constrained to **0–100**. |
+
+##### Event Impact: ordinary news
+
+The local news analyzer looks at the article title and provider-supplied description/snippet. It uses transparent keyword/event rules rather than an LLM.
+
+The main impact signal groups are:
+
+- **Critical:** fraud/accounting fraud, insolvency/bankruptcy, default, licence cancellation/revocation, major regulatory action, regulatory/trading ban.
+- **High:** major penalty, material litigation, regulatory action, merger/acquisition/takeover, CEO/CFO resignation, guidance cuts/withdrawal, plant/business shutdown, major/material orders or contracts, promoter pledge/increase, major investigation.
+- **Medium:** earnings/results, guidance, orders, dividends, buybacks, approvals, fundraising, rating upgrade/downgrade, lawsuits/investigations, profit/revenue decline, margin decline and similar events.
+
+The analyzer also determines **sentiment, category, materiality and time horizon** from the same deterministic rule set. These are analytical attributes; they are not additional multipliers in the final alert-score formula.
+
+Impact levels are mapped deterministically from the 0–100 impact score:
+
+| Impact score | Impact level |
+| ---: | --- |
+| **0–20** | Very Low |
+| **21–40** | Low |
+| **41–60** | Moderate |
+| **61–80** | High |
+| **81–100** | Critical |
+
+##### Corporate filing impact
+
+Corporate filings have a dedicated deterministic classifier because exchange announcements contain structured event information. Representative filing scores are:
+
+| Filing severity | Representative impact score |
+| --- | ---: |
+| **INFO** | 20 |
+| **LOW** | 30 |
+| **MEDIUM** | 50 |
+| **HIGH** | 70 |
+| **CRITICAL** | 90 |
+
+Individual filing event rules have their own base scores and can combine contextual/adverse signals before severity is assigned. The filing then enters the shared Portfolio News alert-scoring path.
+
+##### Portfolio Weight calculation
+
+For every monitored holding:
+
+Portfolio Weight % = Holding Current Value ÷ Total Current Portfolio Value × 100
+
+Example:
+
+₹2,00,000 ÷ ₹10,00,000 × 100 = **20%**
+
+The final formula uses **0.20**, not 20, for the multiplication.
+
+This is why the same company event can have different portfolio impact for different users:
+
+1% exposure → lower portfolio-weight contribution
+
+30% exposure → higher portfolio-weight contribution
+
+##### Confidence calculation
+
+Confidence is a **deterministic data-quality / matching-confidence factor**, not a probability of future returns.
+
+Current rule:
+
+- Base confidence: **0.78**
+- No article description: **−0.12**
+- Missing publisher / publisher reported only as Google News: **−0.08**
+- Broad sector/macro query with no direct holding-name hit: **−0.08**
+- Final value is bounded between **0.35 and 0.95**
+
+For example:
+
+0.78 − 0.12 − 0.08 = **0.58**
+
+if both the description and usable publisher are missing.
+
+##### Source-quality calculation
+
+Source quality is assigned from the publisher name using deterministic substring matching.
+
+**Tier 1** includes primary/official and top financial sources such as exchange/regulator sources and publishers including Reuters, Bloomberg, CNBC, Financial Times, Economic Times, Moneycontrol, Business Standard and Mint/Livemint.
+
+**Tier 2** includes reputable business/general financial publishers such as The Hindu, BusinessLine, Business Today, Financial Express, NDTV Profit/Business, Zee Business, CNBC-TV18, Forbes India and similar configured sources.
+
+**Tier 3** is the fallback for all other, unknown or unclassified publishers.
+
+The multiplier is:
+
+Tier 1 = **1.00**
+
+Tier 2 = **0.75**
+
+Tier 3 = **0.50**
+
+For multiple reports clustered around the same event, source aggregation retains supporting source records while using the best available source tier for scoring.
+
+##### Recency calculation
+
+Recency is a deterministic linear decay:
+
+Age ≤ 1 day → **1.00**
+
+1 < Age < 7 days → **1.00 − ((Age − 1) ÷ 6 × 0.50)**
+
+Age ≥ 7 days → **0.50**
+
+A missing publication date receives **1.00** so missing metadata does not automatically make a story look stale.
+
+##### Final mathematical calculation
+
+The complete current formula is:
+
+Final Alert Score = Event Impact × (Portfolio Weight % ÷ 100) × Confidence × Source Quality × Recency
+
+Example:
+
+Event Impact = **90**
+
+Portfolio Weight = **20%**
+
+Confidence = **0.90**
+
+Source Quality = **1.00**
+
+Recency = **1.00**
+
+Therefore:
+
+90 × 0.20 × 0.90 × 1.00 × 1.00 = **16.20**
+
+So the stored **alert score is 16.20**.
+
+The score is an **internal alert-priority/ranking number**. It is **not** a prediction of future returns, a probability of loss, a VaR calculation, a credit score, or investment advice.
+
+##### Score versus notification tier
+
+The **final alert score is a ranking/relevance signal** and is separate from the notification tier.
+
+Notification tier is derived from the analyzed **impact level**:
+
+| Impact level | Notification behavior |
+| --- | --- |
+| **Critical** | Immediate notification eligible |
+| **High** | Immediate notification eligible |
+| **Moderate** | Daily digest |
+| **Low / Very Low** | Feed/history only |
+
+The configured minimum alert score (default **2.0**) controls whether an alert remains user-facing/relevant, but a high/critical impact event can still be treated as an immediate-notification candidate based on its notification tier. The score itself does not predict investment performance.
+
+##### Where the numbers come from
+
+The data flow is:
+
+News / Filing Sources → Facts → Deterministic Classification → Impact + Confidence + Source Quality + Recency → Portfolio Weight → Final Alert Score → Notification Handling
+
+External providers supply the **facts**. PWMS supplies the **rules and mathematics**. The current numeric weights are **internal design parameters**, not values prescribed by SEBI, NSE, BSE, or a universal financial-risk standard. They can therefore be recalibrated later using historical outcomes without changing the data-ingestion architecture.
+
 #### Zero-cost design
 
 Portfolio News and corporate filing intelligence are intentionally implemented without an LLM dependency:

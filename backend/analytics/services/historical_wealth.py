@@ -301,7 +301,10 @@ class HistoricalWealthAnalytics:
         if missing_price_asset_ids:
             latest_available_prices = (
                 MarketPrice.objects
-                .filter(asset_id__in=missing_price_asset_ids)
+                .filter(
+                    asset_id__in=missing_price_asset_ids,
+                    date__lte=end_date,
+                )
                 .order_by("asset_id", "-date", "-id")
                 .only(
                     "asset_id",
@@ -350,19 +353,98 @@ class HistoricalWealthAnalytics:
 
             prices_by_asset[asset.pk] = values
 
-        # Manual prices are current-price overrides, not as-of-date
-        # valuation instructions. The latest manually entered price is
-        # used as the effective price for the asset across the requested
-        # calculation range. The stored date is informational (Price
-        # Updated) and must not change the valuation.
-        for asset_id, latest_manual in latest_manual_prices.items():
-            prices_by_asset[asset_id] = [
+        # Manual prices are dated effective-price overrides.
+        #
+        # A manual price entered with an effective date becomes the
+        # valuation price from that date onward until the next manual
+        # price is entered. Automatic market prices before the first
+        # manual effective date remain usable.
+        manual_prices = (
+            MarketPrice.objects
+            .filter(
+                asset_id__in=asset_ids,
+                source=DataSource.MANUAL,
+            )
+            .order_by(
+                "asset_id",
+                "date",
+                "id",
+            )
+            .only(
+                "asset_id",
+                "date",
+                "close_price",
+                "source",
+            )
+        )
+
+        manual_by_asset = defaultdict(list)
+
+        for manual_price in manual_prices:
+            manual_by_asset[manual_price.asset_id].append(
                 (
-                    latest_manual.date,
-                    latest_manual.close_price,
-                    latest_manual.source,
+                    manual_price.date,
+                    manual_price.close_price,
+                    manual_price.source,
                 )
+            )
+
+        for asset_id, manual_values in manual_by_asset.items():
+            automatic_values = [
+                value
+                for value in prices_by_asset.get(asset_id, [])
+                if len(value) < 3 or value[2] != DataSource.MANUAL
             ]
+
+            combined_dates = sorted(
+                {
+                    price_date
+                    for price_date, _, *_ in automatic_values
+                }
+                | {
+                    price_date
+                    for price_date, _, _ in manual_values
+                }
+            )
+
+            effective_values = []
+            manual_index = -1
+
+            for price_date in combined_dates:
+                while (
+                    manual_index + 1 < len(manual_values)
+                    and manual_values[manual_index + 1][0] <= price_date
+                ):
+                    manual_index += 1
+
+                if manual_index >= 0:
+                    effective_values.append(
+                        manual_values[manual_index]
+                    )
+                    continue
+
+                automatic_value = next(
+                    (
+                        value
+                        for value_date, value, *rest in automatic_values
+                        if value_date == price_date
+                    ),
+                    None,
+                )
+
+                if automatic_value is not None:
+                    effective_values.append(
+                        (
+                            price_date,
+                            automatic_value,
+                            DataSource.YAHOO_FINANCE,
+                        )
+                    )
+
+            prices_by_asset[asset_id] = sorted(
+                effective_values,
+                key=lambda item: item[0],
+            )
 
         # Legacy one-row manual prices remain supported for assets
         # that have no MarketPrice history at all.
@@ -389,6 +471,7 @@ class HistoricalWealthAnalytics:
                 (
                     legacy_price.price_date,
                     legacy_price.price,
+                    DataSource.MANUAL,
                 )
             ]
 

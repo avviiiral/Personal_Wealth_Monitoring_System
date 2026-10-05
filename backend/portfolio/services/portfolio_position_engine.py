@@ -9,7 +9,7 @@ from investments.models import (
     Transaction,
     TransactionType,
 )
-from market_data.models import MarketPrice
+from market_data.models import DataSource, MarketPrice
 
 
 class PortfolioPositionEngine:
@@ -140,10 +140,40 @@ class PortfolioPositionEngine:
 
     @staticmethod
     def get_latest_price(asset):
+        """
+        Return the effective current price for an asset.
+
+        Manual prices are explicit user overrides and must always take
+        precedence over automatically collected market prices, even when
+        the automatic quote has a newer date.
+
+        This mirrors HoldingCalculationEngine.get_effective_price() so
+        persisted PortfolioPosition rows cannot diverge from Holding rows.
+        """
+        manual_price = (
+            MarketPrice.objects
+            .filter(
+                asset=asset,
+                source=DataSource.MANUAL,
+            )
+            .order_by(
+                "-date",
+                "-id",
+            )
+            .first()
+        )
+
+        if manual_price is not None:
+            return manual_price
+
         return (
             MarketPrice.objects
             .filter(asset=asset)
-            .order_by("-date")
+            .exclude(source=DataSource.MANUAL)
+            .order_by(
+                "-date",
+                "-id",
+            )
             .first()
         )
 

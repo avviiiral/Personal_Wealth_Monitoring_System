@@ -1613,11 +1613,11 @@ class HistoricalWealthAnalytics:
 
             current_date += timedelta(days=1)
 
-        # The latest chart point must reconcile exactly with the
-        # Dashboard/Portfolio current valuation. Historical pricing can
-        # have gaps, while the Portfolio Tree is the canonical current
-        # price source. Use the same valuation for the final point.
-        if results:
+        # Preserve the requested historical date as the source of truth.
+        # Only the current endpoint date (today) is reconciled to the
+        # Portfolio/Dashboard live valuation; historical end dates must
+        # remain valued using prices effective on that date.
+        if results and end_date == date.today():
             from .unified_wealth import UnifiedWealthAnalytics
 
             valuation = UnifiedWealthAnalytics._portfolio_tree_valuation(

@@ -23,10 +23,9 @@
           <th>Asset</th>
           <th>Category</th>
           <th>Price</th>
-          <th>As on Date</th>
           <th>Source</th>
           <th>Updated By</th>
-          <th>Updated</th>
+          <th>As on Date</th>
           <th>Actions</th>
         </tr>
       </thead>
@@ -75,7 +74,7 @@
           </td>
 
           <td>{{ row.updated_by || '-' }}</td>
-          <td>{{ formatDate(row.updated_at) }}</td>
+          <td>{{ row.price_date || '-' }}</td>
 
           <td class="actions-cell">
             <ng-container *ngIf="editingAssetId !== row.asset_id">

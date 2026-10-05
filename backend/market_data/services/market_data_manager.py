@@ -164,13 +164,17 @@ class MarketDataManager:
         return holding
 
     @classmethod
-    def _fetch_mutual_fund(
+    def _fetch_amfi_nav(
         cls,
         asset,
     ):
         """
-        Fetch and store the latest AMFI NAV
-        for a mutual fund.
+        Fetch and store the latest AMFI NAV for an
+        ISIN-backed fund/ETF.
+
+        AMFI is the authoritative daily NAV source for securities
+        that are present in the AMFI feed. ETFs continue to fall back
+        to Yahoo only when AMFI has no NAV for their ISIN.
         """
 
         if not asset.isin:
@@ -626,7 +630,7 @@ class MarketDataManager:
 
         if asset.category == "MUTUAL_FUND":
 
-            return cls._fetch_mutual_fund(
+            return cls._fetch_amfi_nav(
                 asset
             )
 
@@ -643,6 +647,18 @@ class MarketDataManager:
         # ======================================================
         # STOCK / ETF
         # ======================================================
+
+        if asset.category == "ETF":
+            # Prefer AMFI's daily NAV whenever the ETF's ISIN is
+            # present in the official AMFI feed. ETFs absent from
+            # AMFI continue through the normal Yahoo path.
+            try:
+                amfi_result = cls._fetch_amfi_nav(asset)
+            except Exception:
+                amfi_result = None
+
+            if amfi_result and amfi_result.get("success"):
+                return amfi_result
 
         if asset.category not in [
             "STOCK",

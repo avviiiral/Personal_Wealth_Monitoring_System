@@ -1,5 +1,5 @@
 import logging
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 
 from django.db.models import OuterRef, QuerySet, Subquery, Q
@@ -7,8 +7,9 @@ from django.db.models import OuterRef, QuerySet, Subquery, Q
 from investments.models import AssetCategory, SecurityMaster, Transaction, TransactionType
 from investments.services.security_master import SecurityMasterService
 from investments.services.xirr import XIRRCalculator
-from market_data.models import ManualAssetPrice, MarketPrice
+from market_data.models import DataSource, ManualAssetPrice, MarketPrice
 from market_data.services.mutual_fund_nav_service import MutualFundNAVService
+from market_data.services.yahoo_finance import YahooFinanceService
 from mutual_funds.models import MutualFundNAV, MutualFundScheme
 
 
@@ -125,6 +126,135 @@ class PortfolioTreeService:
         if current_quantity > 0 and current_value is not None and current_value > 0:
             cash_flows.append((date.today(), float(current_value)))
         return XIRRCalculator.calculate(cash_flows) if len(cash_flows) >= 2 else None
+
+    REIT_INVIT_REFERENCE_SYMBOLS = {
+        "Mindspace Business Parks": ("MINDSPACE.NS", "MINDSPACE.BO"),
+        "Embassy Office Parks": ("EMBASSY.NS", "EMBASSY.BO"),
+        "Brookfield India Real Estate Trust": ("BIRET.NS", "BIRET.BO"),
+        "National Highways Infra Trust": ("NHIT.NS", "NHIT.BO"),
+        "Nexus Select Trust": ("NXST.NS", "NXST.BO"),
+        "Knowledge Realty Trust": ("KRT.NS", "KRT.BO"),
+        "Bagmane Prime Office Reit": ("BAGMANE.NS", "BAGMANE.BO"),
+        "NDR InvIT": ("NDRI.NS", "NDRINVIT.NS", "NDRINVIT.BO"),
+        "Cube InvIT": ("CUBEINVIT.NS", "CUBEINVIT.BO"),
+    }
+
+    REIT_INVIT_REFERENCE_ALIASES = {
+        "Mindspace Business Parks": ("mindspace business parks", "mindspace"),
+        "Embassy Office Parks": ("embassy office parks", "embassy"),
+        "Brookfield India Real Estate Trust": ("brookfield india real estate trust", "brookfield india reit"),
+        "National Highways Infra Trust": ("national highways infra trust", "nhit"),
+        "Nexus Select Trust": ("nexus select trust", "nexus"),
+        "Knowledge Realty Trust": ("knowledge realty trust", "krt"),
+        "Bagmane Prime Office Reit": ("bagmane prime office reit", "bagmane"),
+        "NDR InvIT": ("ndr invit", "ndrinvit", "ndr"),
+        "Cube InvIT": ("cube invit", "cube highways invit", "cube highways trust", "cube highways"),
+    }
+
+    @classmethod
+    def _load_reit_invit_reference_prices(cls, assets_by_id, price_cache):
+        """Fill missing REIT/InvIT prices from the same Yahoo reference history used by MIS Notes."""
+        today = date.today()
+        history_cache = {}
+
+        for asset_id, asset in assets_by_id.items():
+            if asset_id in price_cache:
+                continue
+
+            subclass = cls._clean(getattr(asset, "_portfolio_sub_class", "")).upper()
+            if subclass not in {"REITS", "REIT", "INVITS", "INVIT"}:
+                continue
+
+            normalized_name = cls._clean(asset.name).lower()
+            normalized_symbol = cls._clean(asset.symbol).lower()
+            matched_name = None
+            for reference_name, aliases in cls.REIT_INVIT_REFERENCE_ALIASES.items():
+                if any(
+                    alias in normalized_name or alias == normalized_symbol
+                    for alias in aliases
+                ):
+                    matched_name = reference_name
+                    break
+
+            if matched_name is None:
+                continue
+
+            reference_asset = None
+            for symbol in cls.REIT_INVIT_REFERENCE_SYMBOLS[matched_name]:
+                reference_asset = (
+                    Asset.objects
+                    .filter(family__isnull=True, symbol=symbol)
+                    .order_by("id")
+                    .first()
+                )
+                if reference_asset is not None:
+                    break
+
+                try:
+                    reference_asset = Asset.objects.create(
+                        owner=None,
+                        family=None,
+                        name=matched_name,
+                        category=AssetCategory.OTHER,
+                        symbol=symbol,
+                        currency="INR",
+                        is_active=True,
+                    )
+                except Exception:
+                    reference_asset = (
+                        Asset.objects
+                        .filter(family__isnull=True, symbol=symbol)
+                        .order_by("id")
+                        .first()
+                    )
+
+                if reference_asset is not None:
+                    break
+
+            if reference_asset is None:
+                continue
+
+            latest = (
+                MarketPrice.objects
+                .filter(asset=reference_asset, date__lte=today)
+                .order_by("-date", "-id")
+                .values("close_price", "date", "source")
+                .first()
+            )
+
+            if latest is None:
+                try:
+                    cache_key = tuple(cls.REIT_INVIT_REFERENCE_SYMBOLS[matched_name])
+                    if cache_key not in history_cache:
+                        YahooFinanceService.save_history(
+                            asset=reference_asset,
+                            symbol=cache_key[0],
+                            start=today - timedelta(days=30),
+                            end=today + timedelta(days=1),
+                        )
+                        history_cache[cache_key] = True
+                    latest = (
+                        MarketPrice.objects
+                        .filter(asset=reference_asset, date__lte=today)
+                        .order_by("-date", "-id")
+                        .values("close_price", "date", "source")
+                        .first()
+                    )
+                except Exception:
+                    logger.exception(
+                        "Unable to resolve Yahoo reference price for REIT/InvIT asset %s (%s).",
+                        asset_id,
+                        asset.name,
+                    )
+
+            if latest is not None:
+                price_cache[asset_id] = {
+                    "current_price": latest["close_price"],
+                    "price_source": latest["source"] or DataSource.YAHOO_FINANCE,
+                    "price_date": latest["date"],
+                }
+
+        return price_cache
 
     @classmethod
     def _load_price_cache(cls, asset_ids, assets_by_id=None):
@@ -279,6 +409,8 @@ class PortfolioTreeService:
                     "price_source": "AMFI",
                     "price_date": nav_record["date"],
                 }
+
+        price_cache = cls._load_reit_invit_reference_prices(assets_by_id, price_cache)
 
         return price_cache
 

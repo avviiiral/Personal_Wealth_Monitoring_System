@@ -1055,6 +1055,36 @@ class ManualPriceEffectiveDateAndMissingPriceTests(TestCase):
         self.assertEqual(holding.current_value, Decimal("1255.00"))
         self.assertEqual(holding.unrealized_pnl, Decimal("255.00"))
 
+    def test_historical_chart_uses_manual_price_on_effective_date(self):
+        from analytics.services.historical_wealth import HistoricalWealthAnalytics
+        from market_data.models import DataSource, MarketPrice
+
+        MarketPrice.objects.create(
+            asset=self.asset,
+            date=date(2026, 10, 1),
+            close_price=Decimal("100"),
+            source=DataSource.YAHOO_FINANCE,
+        )
+        MarketPrice.objects.create(
+            asset=self.asset,
+            date=date(2026, 10, 3),
+            close_price=Decimal("150"),
+            source=DataSource.MANUAL,
+            updated_by=self.user,
+        )
+
+        results = HistoricalWealthAnalytics.calculate_history(
+            self.user,
+            date(2026, 10, 1),
+            date(2026, 10, 5),
+        )
+
+        by_date = {item["date"]: item for item in results}
+
+        self.assertEqual(by_date[date(2026, 10, 2)]["portfolio_value"], Decimal("1000"))
+        self.assertEqual(by_date[date(2026, 10, 3)]["portfolio_value"], Decimal("1500"))
+        self.assertEqual(by_date[date(2026, 10, 5)]["portfolio_value"], Decimal("1500"))
+
     def test_historical_manual_price_is_effective_from_selected_date(self):
         from analytics.services.historical_wealth import HistoricalWealthAnalytics
         from market_data.models import DataSource, MarketPrice

@@ -36,6 +36,8 @@ export class ManualPricesComponent implements OnInit {
 
   priceInput = '';
 
+  priceDate = '';
+
   saving = false;
 
   ngOnInit(): void {
@@ -69,11 +71,13 @@ export class ManualPricesComponent implements OnInit {
   startEdit(row: SettingsPriceRow): void {
     this.editingAssetId = row.asset_id;
     this.priceInput = row.price ?? '';
+    this.priceDate = row.price_date || this.getTodayDateInputValue();
   }
 
   cancelEdit(): void {
     this.editingAssetId = null;
     this.priceInput = '';
+    this.priceDate = '';
   }
 
   saveEdit(row: SettingsPriceRow): void {
@@ -84,9 +88,27 @@ export class ManualPricesComponent implements OnInit {
       return;
     }
 
+    if (!this.priceDate) {
+      this.toast.error('Select the date from which this price is effective.');
+      return;
+    }
+
+    const selectedDate = new Date(this.priceDate + 'T00:00:00');
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    if (Number.isNaN(selectedDate.getTime()) || selectedDate > today) {
+      this.toast.error('As on Date cannot be in the future.');
+      return;
+    }
+
     this.saving = true;
 
-    this.manualPriceService.updatePrice(row.asset_id, price).subscribe({
+    this.manualPriceService.updatePrice(
+      row.asset_id,
+      price,
+      this.priceDate,
+    ).subscribe({
       next: (response) => {
         this.saving = false;
 
@@ -138,6 +160,14 @@ export class ManualPricesComponent implements OnInit {
         );
       },
     });
+  }
+
+  getTodayDateInputValue(): string {
+    const today = new Date();
+    const year = today.getFullYear();
+    const month = String(today.getMonth() + 1).padStart(2, '0');
+    const day = String(today.getDate()).padStart(2, '0');
+    return year + '-' + month + '-' + day;
   }
 
   formatDate(value: string | null): string {

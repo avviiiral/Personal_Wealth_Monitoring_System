@@ -1,4 +1,5 @@
 from django.db import close_old_connections
+import threading
 from django.db.models import Exists, OuterRef, Q, Subquery
 from django.shortcuts import get_object_or_404
 from rest_framework.decorators import api_view, permission_classes
@@ -314,7 +315,7 @@ def watch_list_product_detail(request, product_id):
     )
 
 
-WATCH_LIST_REFRESH_LOCK = __import__("threading").Lock()
+WATCH_LIST_REFRESH_LOCK = threading.Lock()
 watch_list_refreshing = False
 
 
@@ -512,8 +513,6 @@ def watch_list_refresh(request):
         return Response({"status": "already_running"}, status=202)
 
     watch_list_refreshing = True
-    import threading
-
     threading.Thread(
         target=_run_watch_list_refresh,
         name="watch-list-universe-refresh",

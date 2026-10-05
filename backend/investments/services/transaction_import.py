@@ -27,12 +27,15 @@ from portfolio.services.portfolio_position_engine import (
 )
 from market_data.services.security_resolver import SecurityResolver
 from market_data.services.yahoo_quant_enrichment import enrich_quant_fields
+from market_data.services.mutual_fund_nav_service import MutualFundNAVService
 
 from mutual_funds.models import (
+    MutualFundNAV,
     MutualFundScheme,
     MutualFundTransaction,
     MutualFundTransactionType,
 )
+from mutual_funds.services.holding_engine import MutualFundHoldingEngine
 
 logger = logging.getLogger(__name__)
 
@@ -1076,6 +1079,75 @@ class TransactionImporter:
         }
 
     @staticmethod
+    def _refresh_imported_mutual_fund_navs(scheme_ids):
+        """
+        Refresh AMFI NAVs for mutual-fund schemes touched by an import.
+
+        The AMFI feed is loaded once per process/day by MutualFundNAVService,
+        so refreshing several imported schemes does not create one HTTP
+        request per scheme. Each resolved NAV is persisted and the holding
+        is rebuilt immediately so the new import is valued without waiting
+        for the next scheduled refresh.
+        """
+        refreshed = 0
+        failed = 0
+
+        for scheme in (
+            MutualFundScheme.objects
+            .filter(id__in=scheme_ids, is_active=True)
+            .order_by("id")
+        ):
+            isin = scheme.isin_growth or scheme.isin_dividend
+
+            if not isin:
+                continue
+
+            try:
+                nav_record = MutualFundNAVService.get_latest_nav(isin)
+                if nav_record is None:
+                    logger.warning(
+                        "[TRANSACTION IMPORT] AMFI NAV not found for mutual fund %s (ISIN=%s).",
+                        scheme.scheme_name,
+                        isin,
+                    )
+                    continue
+
+                changed_fields = []
+                if (
+                    nav_record.get("scheme_code")
+                    and scheme.scheme_code != nav_record["scheme_code"]
+                ):
+                    scheme.scheme_code = nav_record["scheme_code"]
+                    changed_fields.append("scheme_code")
+
+                if changed_fields:
+                    changed_fields.append("updated_at")
+                    scheme.save(update_fields=changed_fields)
+
+                MutualFundNAV.objects.update_or_create(
+                    scheme=scheme,
+                    date=nav_record["date"],
+                    source="AMFI",
+                    defaults={"nav": nav_record["nav"]},
+                )
+                MutualFundHoldingEngine.rebuild_holding(scheme)
+                refreshed += 1
+            except Exception:
+                failed += 1
+                logger.exception(
+                    "[TRANSACTION IMPORT] AMFI NAV refresh failed for mutual fund %s.",
+                    scheme.scheme_name,
+                )
+
+        logger.info(
+            "[TRANSACTION IMPORT] AMFI NAV refresh completed: refreshed=%s failed=%s schemes=%s",
+            refreshed,
+            failed,
+            len(scheme_ids),
+        )
+        return {"refreshed": refreshed, "failed": failed}
+
+    @staticmethod
     @db_transaction.atomic
     def import_file(file, owner, upload_batch=None):
         family = require_active_family(owner)
@@ -1152,6 +1224,7 @@ class TransactionImporter:
         seen_source_keys = set()
         seen_mutual_fund_keys = set()
         touched_asset_ids = set()
+        touched_mutual_fund_scheme_ids = set()
 
         for row_number, parsed, original_row in rows:
             try:
@@ -1177,6 +1250,7 @@ class TransactionImporter:
                             asset_name=parsed["asset_name"],
                             isin=parsed["isin"],
                         )
+                        touched_mutual_fund_scheme_ids.add(scheme.id)
 
                         duplicate_key = (
                             parsed["family_name"], parsed["portfolio"], scheme.id,
@@ -1288,6 +1362,11 @@ class TransactionImporter:
                     asset.id, asset.name,
                 )
 
+        if touched_mutual_fund_scheme_ids:
+            TransactionImporter._refresh_imported_mutual_fund_navs(
+                touched_mutual_fund_scheme_ids
+            )
+
         if imported_investments:
             PortfolioPositionEngine.rebuild_all_for_user(owner)
 
@@ -1324,5 +1403,8 @@ class TransactionImporter:
             "failed_rows": failed_total,
             "failures": failures,
             "touched_asset_ids": list(touched_asset_ids),
+            "touched_mutual_fund_scheme_ids": list(
+                touched_mutual_fund_scheme_ids
+            ),
         }
 

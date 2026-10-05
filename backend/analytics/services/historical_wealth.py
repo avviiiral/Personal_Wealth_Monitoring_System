@@ -1503,6 +1503,14 @@ class HistoricalWealthAnalytics:
                 price_pointers[asset.pk] = pointer
 
                 if price is None:
+                    # There is no historical price available for this
+                    # holding on this date. Keep the holding's invested
+                    # capital in the series, but treat its historical
+                    # P/L as zero rather than assigning a zero market
+                    # value. In that case its total wealth contribution
+                    # is its invested value.
+                    equity_invested_for_missing_price = position["invested_value"]
+                    equity_value += equity_invested_for_missing_price
                     continue
 
                 equity_value += (
@@ -1559,6 +1567,11 @@ class HistoricalWealthAnalytics:
                 nav_pointers[scheme.pk] = pointer
 
                 if nav is None:
+                    # No historical NAV is available. Preserve invested
+                    # capital and use zero historical P/L, which makes
+                    # the wealth contribution equal to invested value
+                    # instead of incorrectly dropping it to zero.
+                    mutual_fund_value += position["invested_value"]
                     continue
 
                 mutual_fund_value += (

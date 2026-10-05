@@ -628,8 +628,18 @@ class HistoricalWealthAnalytics:
                 pointer,
             )
 
-        # Before the earliest known value: use it as the best
-        # available estimate rather than treating it as unknown.
+        # A manual price is explicitly effective from its selected
+        # date. If the requested date is earlier than the first manual
+        # price, there is no valid manual valuation yet.
+        if (
+            len(values[0]) >= 3
+            and values[0][2] == DataSource.MANUAL
+        ):
+            return None, pointer
+
+        # For automatic market data, retain the existing best-known
+        # opening-value fallback when the first quote is later than the
+        # requested range.
         return (
             values[0][1],
             pointer,

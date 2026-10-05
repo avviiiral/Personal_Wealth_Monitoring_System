@@ -601,7 +601,7 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
 
         datasets: [
           {
-            label: 'Portfolio Value',
+            label: 'Total Wealth',
             data: portfolioValues,
             borderColor: this.themeService.isDark() ? '#2fbf8f' : '#2563EB',
 

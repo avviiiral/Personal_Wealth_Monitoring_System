@@ -720,14 +720,6 @@
                                           }}
                                         </div>
 
-                                        <small
-                                          *ngIf="hasPriceDate(asset)"
-                                          class="price-update-date"
-                                        >
-                                          Updated
-                                          {{ formatPriceDate(getPriceDate(asset)) }}
-                                        </small>
-
                                         <button
                                           type="button"
                                           class="manual-price-edit"
@@ -743,15 +735,31 @@
                                           class="manual-price-container"
                                           (click)="$event.stopPropagation()"
                                         >
-                                          <input
-                                            type="number"
-                                            class="manual-price-input"
-                                            [(ngModel)]="manualPriceInput"
-                                            min="0"
-                                            step="0.0001"
-                                            placeholder="Price"
-                                            [disabled]="isSavingManualPrice(asset)"
-                                          />
+                                          <div class="manual-price-field">
+                                            <label for="manual-price-{{ asset.id }}">Price</label>
+                                            <input
+                                              id="manual-price-{{ asset.id }}"
+                                              type="number"
+                                              class="manual-price-input"
+                                              [(ngModel)]="manualPriceInput"
+                                              min="0"
+                                              step="0.0001"
+                                              placeholder="Price"
+                                              [disabled]="isSavingManualPrice(asset)"
+                                            />
+                                          </div>
+
+                                          <div class="manual-price-field">
+                                            <label for="manual-price-date-{{ asset.id }}">Effective From</label>
+                                            <input
+                                              id="manual-price-date-{{ asset.id }}"
+                                              type="date"
+                                              class="manual-price-date-input"
+                                              [(ngModel)]="manualPriceDate"
+                                              [max]="getTodayDateInputValue()"
+                                              [disabled]="isSavingManualPrice(asset)"
+                                            />
+                                          </div>
 
                                           <div class="manual-price-actions">
                                             <button

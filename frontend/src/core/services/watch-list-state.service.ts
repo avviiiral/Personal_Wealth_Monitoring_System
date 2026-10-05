@@ -4,7 +4,9 @@ import { WatchListProduct } from './watch-list-api.service';
 
 @Injectable({ providedIn: 'root' })
 export class WatchListStateService {
-  private readonly storageKey = 'pwms.watch-list.pending-state';
+  // Version the optimistic state so products from an older universe/database
+  // cannot be reintroduced into the current Watch List after a refresh.
+  private readonly storageKey = 'pwms.watch-list.pending-state.v2';
   private readonly added = new Map<'MUTUAL_FUND' | 'PMS', Map<number, WatchListProduct>>();
   private readonly removed = new Map<'MUTUAL_FUND' | 'PMS', Set<number>>();
 

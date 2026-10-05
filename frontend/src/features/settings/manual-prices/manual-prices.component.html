@@ -31,7 +31,8 @@
       </thead>
 
       <tbody>
-        <tr *ngFor="let row of rows">
+        <ng-container *ngFor="let row of rows">
+          <tr>
           <td>{{ row.asset_name }}</td>
           <td>{{ row.category }}</td>
 
@@ -144,6 +145,7 @@
             </div>
           </td>
         </tr>
+        </ng-container>
 
         <tr *ngIf="rows.length === 0">
           <td colspan="7" class="empty-row">No assets found.</td>

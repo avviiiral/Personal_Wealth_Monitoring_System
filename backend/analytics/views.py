@@ -126,30 +126,7 @@ def wealth_xirr(request):
 @permission_classes([IsAuthenticated])
 def wealth_investment_summary(request):
     family_name = request.GET.get("family") or None
-    as_of_date_param = request.GET.get("as_of_date")
-
-    as_of_date = None
-    if as_of_date_param:
-        try:
-            as_of_date = date.fromisoformat(as_of_date_param)
-        except (TypeError, ValueError):
-            return Response(
-                {"detail": "as_of_date must be a valid ISO date."},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-        if as_of_date > date.today():
-            return Response(
-                {"detail": "as_of_date cannot be in the future."},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
-    return Response(
-        InvestmentSummaryService.calculate(
-            request.user,
-            family_name=family_name,
-            as_of_date=as_of_date,
-        )
-    )
+    return Response(InvestmentSummaryService.calculate(request.user, family_name=family_name))
 
 
 def _standard_allocation_family_name(request):

@@ -684,38 +684,48 @@ class UnifiedWealthAnalytics:
         """
 
         if not family_name:
-            equity_totals = (
-                UnifiedWealthAnalytics
-                .get_equity_holdings(user)
-                .aggregate(
-                    invested=Sum("invested_value"),
-                    current=Sum("current_value"),
-                    unrealized=Sum("unrealized_pnl"),
-                    number_of_holdings=Count("id"),
+            # The Dashboard's "All" selection must be exactly the sum of
+            # its Family Member selections. Holding/MutualFundHolding are
+            # aggregated at asset/scheme level and can therefore diverge
+            # from the family_name transaction positions (especially when
+            # the same asset is held by multiple family members).
+            #
+            # Use the same historical engine used by the family-filtered
+            # path so All and DAJ + DJT share identical position/price
+            # semantics.
+            from .historical_wealth import HistoricalWealthAnalytics
+            from datetime import date
+
+            today = date.today()
+
+            today_rows = (
+                HistoricalWealthAnalytics
+                .calculate_history(
+                    user,
+                    today,
+                    today,
                 )
             )
 
-            mutual_fund_totals = (
-                UnifiedWealthAnalytics
-                .get_mutual_fund_holdings(user)
-                .aggregate(
-                    invested=Sum("invested_value"),
-                    current=Sum("current_value"),
-                    unrealized=Sum("unrealized_pnl"),
-                    number_of_holdings=Count("id"),
-                )
+            today_totals = (
+                today_rows[0]
+                if today_rows
+                else {
+                    "invested_value": UnifiedWealthAnalytics.ZERO,
+                    "portfolio_value": UnifiedWealthAnalytics.ZERO,
+                    "pnl": UnifiedWealthAnalytics.ZERO,
+                    "equity": {
+                        "invested_value": UnifiedWealthAnalytics.ZERO,
+                        "portfolio_value": UnifiedWealthAnalytics.ZERO,
+                        "pnl": UnifiedWealthAnalytics.ZERO,
+                    },
+                    "mutual_funds": {
+                        "invested_value": UnifiedWealthAnalytics.ZERO,
+                        "portfolio_value": UnifiedWealthAnalytics.ZERO,
+                        "pnl": UnifiedWealthAnalytics.ZERO,
+                    },
+                }
             )
-
-            equity = {
-                "invested": equity_totals["invested"] or UnifiedWealthAnalytics.ZERO,
-                "current": equity_totals["current"] or UnifiedWealthAnalytics.ZERO,
-                "unrealized": equity_totals["unrealized"] or UnifiedWealthAnalytics.ZERO,
-            }
-            mutual_funds = {
-                "invested": mutual_fund_totals["invested"] or UnifiedWealthAnalytics.ZERO,
-                "current": mutual_fund_totals["current"] or UnifiedWealthAnalytics.ZERO,
-                "unrealized": mutual_fund_totals["unrealized"] or UnifiedWealthAnalytics.ZERO,
-            }
 
             equity_transactions = list(
                 Transaction.objects
@@ -746,9 +756,9 @@ class UnifiedWealthAnalytics:
                 mutual_fund_transactions,
             )
 
-            total_invested = equity["invested"] + mutual_funds["invested"]
-            total_current_value = equity["current"] + mutual_funds["current"]
-            unrealized_pnl = equity["unrealized"] + mutual_funds["unrealized"]
+            total_invested = today_totals["invested_value"]
+            total_current_value = today_totals["portfolio_value"]
+            unrealized_pnl = today_totals["pnl"]
             realized_pnl = equity_realized + mutual_fund_realized
             total_pnl = realized_pnl + unrealized_pnl
 
@@ -771,8 +781,22 @@ class UnifiedWealthAnalytics:
                 total_current_value,
             )
 
-            equity_count = equity_totals["number_of_holdings"] or 0
-            mutual_fund_count = mutual_fund_totals["number_of_holdings"] or 0
+            equity_count = (
+                today_totals["equity"]["portfolio_value"] is not None
+            )
+            # Counts are retained from the persisted holding tables for
+            # compatibility; only valuation totals move to the unified
+            # family-aware calculation above.
+            equity_count = (
+                UnifiedWealthAnalytics
+                .get_equity_holdings(user)
+                .count()
+            )
+            mutual_fund_count = (
+                UnifiedWealthAnalytics
+                .get_mutual_fund_holdings(user)
+                .count()
+            )
 
             return {
                 "total_invested": total_invested,
@@ -784,16 +808,16 @@ class UnifiedWealthAnalytics:
                 "xirr_percentage": xirr_percentage,
                 "number_of_holdings": equity_count + mutual_fund_count,
                 "equity": {
-                    "invested": equity["invested"],
-                    "current_value": equity["current"],
-                    "unrealized_pnl": equity["unrealized"],
+                    "invested": today_totals["equity"]["invested_value"],
+                    "current_value": today_totals["equity"]["portfolio_value"],
+                    "unrealized_pnl": today_totals["equity"]["pnl"],
                     "realized_pnl": equity_realized,
                     "number_of_holdings": equity_count,
                 },
                 "mutual_funds": {
-                    "invested": mutual_funds["invested"],
-                    "current_value": mutual_funds["current"],
-                    "unrealized_pnl": mutual_funds["unrealized"],
+                    "invested": today_totals["mutual_funds"]["invested_value"],
+                    "current_value": today_totals["mutual_funds"]["portfolio_value"],
+                    "unrealized_pnl": today_totals["mutual_funds"]["pnl"],
                     "realized_pnl": mutual_fund_realized,
                     "number_of_holdings": mutual_fund_count,
                 },

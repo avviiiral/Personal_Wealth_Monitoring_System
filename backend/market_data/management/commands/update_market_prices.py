@@ -1,6 +1,7 @@
 from config.postgres_advisory_lock import with_postgres_advisory_lock
 from django.contrib.auth.models import User
 from django.core.management.base import BaseCommand
+from django.db.models import Q
 
 from investments.models import Asset
 from market_data.services.market_data_manager import (
@@ -15,7 +16,7 @@ class Command(BaseCommand):
 
     help = (
         "Automatically fetch latest market prices "
-        "for all STOCK and ETF assets."
+        "for all STOCK, ETF, and bond/SGB assets."
     )
 
     def add_arguments(self, parser):
@@ -25,7 +26,7 @@ class Command(BaseCommand):
             type=int,
             required=False,
             help=(
-                "Only update STOCK and ETF assets "
+                "Only update STOCK, ETF, and bond/SGB assets "
                 "belonging to this user."
             ),
         )
@@ -96,12 +97,18 @@ class Command(BaseCommand):
 
         user_id = options.get("user_id")
 
+        # Keep the scheduler data-driven: exchange-traded assets use the
+        # Security Master/ISIN resolver, while SGBs are routed by their
+        # security name and ISIN. No individual security names or symbols
+        # are embedded here.
         assets = Asset.objects.filter(
-            category__in=[
+            Q(category__in=[
                 "STOCK",
                 "ETF",
-            ]
-        )
+                "BOND",
+            ])
+            | Q(name__icontains="SOVEREIGN GOLD BOND")
+        ).distinct()
 
         if user_id:
 

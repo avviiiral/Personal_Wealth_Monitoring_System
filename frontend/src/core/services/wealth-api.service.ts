@@ -54,9 +54,10 @@ export class WealthApiService {
     });
   }
 
-  getInvestmentSummary(family?: string): Observable<any> {
+  getInvestmentSummary(family?: string, asOfDate?: string): Observable<any> {
     let params = new HttpParams();
     if (family) params = params.set('family', family);
+    if (asOfDate) params = params.set('as_of_date', asOfDate);
     return this.http.get<any>(`${this.baseUrl}/investment-summary/`, { params, withCredentials: true });
   }
 

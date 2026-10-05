@@ -350,130 +350,139 @@ class InvestmentSummaryService:
     @classmethod
     def calculate(cls, user, family_name=None, as_of_date=None):
         """
-        Build the investment summary using values effective as of the
-        requested date. Without as_of_date, the existing current-value
-        behavior is preserved.
+        Build the Investment Summary for the current portfolio or for an
+        explicit historical as-of date. Historical values are derived from
+        HistoricalWealthAnalytics so manual prices respect their effective
+        dates.
         """
         if as_of_date is not None:
             from .historical_wealth import HistoricalWealthAnalytics
 
-            history = HistoricalWealthAnalytics.calculate_history(
-                user,
-                as_of_date,
-                as_of_date,
-                family_name=family_name,
-            )
-            point = history[-1] if history else None
-            if point is None:
-                return cls._build_results(
-                    {
-                        asset_class: cls.ZERO
-                        for _, asset_classes in cls.MASTER_MAPPING
-                        for asset_class in asset_classes
-                    },
-                    {
-                        asset_class: set()
-                        for _, asset_classes in cls.MASTER_MAPPING
-                        for asset_class in asset_classes
-                    },
+            transactions = list(
+                Transaction.objects
+                .filter(
+                    cls._scope_q(user),
+                    transaction_date__lte=as_of_date,
                 )
+                .select_related("asset")
+                .order_by("asset_id", "transaction_date", "created_at", "id")
+            )
+            if family_name:
+                transactions = [
+                    tx for tx in transactions
+                    if (tx.family_name or "").strip() == family_name.strip()
+                ]
 
-            # Re-map historical portfolio categories using the same transaction
-            # classification rules while preserving the as-of valuation.
+            mf_transactions = list(
+                MutualFundTransaction.objects
+                .filter(
+                    cls._scope_q(user),
+                    transaction_date__lte=as_of_date,
+                )
+                .select_related("scheme")
+                .order_by("scheme_id", "transaction_date", "created_at", "id")
+            )
+            if family_name:
+                mf_transactions = [
+                    tx for tx in mf_transactions
+                    if (tx.family_name or "").strip() == family_name.strip()
+                ]
+
             totals = {
                 asset_class: cls.ZERO
                 for _, asset_classes in cls.MASTER_MAPPING
                 for asset_class in asset_classes
             }
-            asset_class_by_asset_id = cls._equity_asset_class_by_asset_id(
-                user,
-                family_name=family_name,
-            )
             raw_values_by_asset_class = {
                 asset_class: set()
                 for _, asset_classes in cls.MASTER_MAPPING
                 for asset_class in asset_classes
             }
 
-            equity_total = point["equity"]["portfolio_value"]
-            mutual_total = point["mutual_funds"]["portfolio_value"]
-            # HistoricalWealthAnalytics already returns the exact total current
-            # values, but this service also needs category buckets. Use the
-            # current classification logic as a deterministic fallback.
-            if family_name:
-                for asset_id, value in cls._family_equity_positions(user, family_name):
-                    raw_class = asset_class_by_asset_id.get(asset_id)
-                    asset_class = cls._normalize_asset_class(raw_class)
-                    totals[asset_class] += (
-                        value if as_of_date is None else cls.ZERO
-                    )
-                    if raw_class:
-                        raw_values_by_asset_class[asset_class].add(raw_class)
+            equity_positions = {}
+            for tx in transactions:
+                position = equity_positions.setdefault(
+                    tx.asset_id,
+                    {"quantity": cls.ZERO, "invested_value": cls.ZERO},
+                )
+                HistoricalWealthAnalytics._apply_equity_transaction(position, tx)
 
-                for scheme, value in cls._family_mutual_fund_positions(user, family_name):
-                    raw_class = getattr(scheme, "category", None)
-                    asset_class = cls._normalize_asset_class(raw_class)
-                    totals[asset_class] += (
-                        value if as_of_date is None else cls.ZERO
-                    )
-                    if raw_class:
-                        raw_values_by_asset_class[asset_class].add(raw_class)
+            mf_positions = {}
+            for tx in mf_transactions:
+                position = mf_positions.setdefault(
+                    tx.scheme_id,
+                    {"units": cls.ZERO, "invested_value": cls.ZERO},
+                )
+                HistoricalWealthAnalytics._apply_mutual_fund_transaction(position, tx)
 
-            # Category-level historical bucketing is not safely derivable from
-            # the two aggregate historical totals alone. Return an explicit
-            # two-bucket view until category history is added to the API.
-            return {
-                "results": [],
-                "total_current_value": point["portfolio_value"],
-                "as_of_date": as_of_date,
-            }
+            asset_class_by_asset_id = {}
+            for tx in transactions:
+                asset_class_by_asset_id.setdefault(
+                    tx.asset_id,
+                    tx.sub_class,
+                )
 
-        totals = {
-            asset_class: cls.ZERO
-            for _, asset_classes in cls.MASTER_MAPPING
-            for asset_class in asset_classes
-        }
-        raw_values_by_asset_class = {
-            asset_class: set()
-            for _, asset_classes in cls.MASTER_MAPPING
-            for asset_class in asset_classes
-        }
+            assets_by_id = {}
+            for tx in transactions:
+                assets_by_id[tx.asset_id] = tx.asset
 
-        if not family_name:
-            asset_class_by_asset_id = cls._equity_asset_class_by_asset_id(user)
-            for holding in UnifiedWealthAnalytics.get_equity_holdings(user):
-                value = holding.current_value or cls.ZERO
-                raw_class = asset_class_by_asset_id.get(holding.asset_id)
-                asset_class = cls._normalize_asset_class(raw_class)
-                totals[asset_class] += value
+            price_map = HistoricalWealthAnalytics._build_price_map(
+                list(assets_by_id.values()),
+                as_of_date,
+                as_of_date,
+            )
+
+            for asset_id, position in equity_positions.items():
+                if position["quantity"] <= 0:
+                    continue
+                asset = assets_by_id.get(asset_id)
+                if asset is None:
+                    continue
+                price_values = price_map.get(asset_id, [])
+                price, _ = HistoricalWealthAnalytics._get_value_for_date(
+                    price_values,
+                    as_of_date,
+                    -1,
+                )
+                if price is None:
+                    continue
+                asset_class = cls._normalize_asset_class(
+                    asset_class_by_asset_id.get(asset_id)
+                )
+                totals[asset_class] += position["quantity"] * price
+                raw_class = asset_class_by_asset_id.get(asset_id)
                 if raw_class:
                     raw_values_by_asset_class[asset_class].add(raw_class)
 
-            for holding in UnifiedWealthAnalytics.get_mutual_fund_holdings(user):
-                value = holding.current_value or cls.ZERO
-                raw_class = getattr(holding.scheme, "category", None)
+            # Mutual-fund NAV history is keyed to schemes.
+            schemes_by_id = {}
+            for tx in mf_transactions:
+                schemes_by_id[tx.scheme_id] = tx.scheme
+            nav_map = HistoricalWealthAnalytics._build_nav_map(
+                list(schemes_by_id.values()),
+                as_of_date,
+                as_of_date,
+            )
+            for scheme_id, position in mf_positions.items():
+                if position["units"] <= 0:
+                    continue
+                nav_values = nav_map.get(scheme_id, [])
+                nav, _ = HistoricalWealthAnalytics._get_value_for_date(
+                    nav_values,
+                    as_of_date,
+                    -1,
+                )
+                if nav is None:
+                    continue
+                raw_class = getattr(schemes_by_id[scheme_id], "category", None)
                 asset_class = cls._normalize_asset_class(raw_class)
-                totals[asset_class] += value
+                totals[asset_class] += position["units"] * nav
                 if raw_class:
                     raw_values_by_asset_class[asset_class].add(raw_class)
-            return cls._build_results(totals, raw_values_by_asset_class)
 
-        asset_class_by_asset_id = cls._equity_asset_class_by_asset_id(
-            user, family_name=family_name
-        )
-        for asset_id, value in cls._family_equity_positions(user, family_name):
-            raw_class = asset_class_by_asset_id.get(asset_id)
-            asset_class = cls._normalize_asset_class(raw_class)
-            totals[asset_class] += value
-            if raw_class:
-                raw_values_by_asset_class[asset_class].add(raw_class)
-
-        for scheme, value in cls._family_mutual_fund_positions(user, family_name):
-            raw_class = getattr(scheme, "category", None)
-            asset_class = cls._normalize_asset_class(raw_class)
-            totals[asset_class] += value
-            if raw_class:
-                raw_values_by_asset_class[asset_class].add(raw_class)
+            result = cls._build_results(totals, raw_values_by_asset_class)
+            result["as_of_date"] = as_of_date
+            return result
 
         return cls._build_results(totals, raw_values_by_asset_class)
 

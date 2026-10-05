@@ -781,9 +781,6 @@ class UnifiedWealthAnalytics:
                 total_current_value,
             )
 
-            equity_count = (
-                today_totals["equity"]["portfolio_value"] is not None
-            )
             # Counts are retained from the persisted holding tables for
             # compatibility; only valuation totals move to the unified
             # family-aware calculation above.

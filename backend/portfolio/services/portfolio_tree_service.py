@@ -177,9 +177,9 @@ class PortfolioTreeService:
             for asset_id, asset in assets_by_id.items()
             if (
                 asset.category == AssetCategory.MUTUAL_FUND
-                or cls._clean(getattr(asset, "_portfolio_asset_class", "" )).upper()
+                or cls._clean(getattr(asset, "_portfolio_asset_class", "")).upper()
                 in {"MUTUAL FUND", "MUTUAL FUNDS", "MUTUAL_FUND"}
-                or cls._clean(getattr(asset, "_portfolio_sub_class", "" )).upper()
+                or cls._clean(getattr(asset, "_portfolio_sub_class", "")).upper()
                 in {"MUTUAL FUND", "MUTUAL FUNDS", "MUTUAL_FUND"}
                 or "MUTUAL FUND" in cls._clean(getattr(asset, "_portfolio_sub_class", "")).upper()
             )
@@ -250,7 +250,7 @@ class PortfolioTreeService:
                     }
 
         # Legacy Portfolio Tree assets may predate the dedicated
-        # MutualFundScheme/M﻿utualFundNAV records. Resolve those by ISIN from
+        # MutualFundScheme/MutualFundNAV records. Resolve those by ISIN from
         # the existing AMFI service, whose feed is cached once per process/day.
         for asset_id, asset in mutual_fund_assets.items():
             if asset_id in price_cache and price_cache[asset_id].get("price_source") not in {

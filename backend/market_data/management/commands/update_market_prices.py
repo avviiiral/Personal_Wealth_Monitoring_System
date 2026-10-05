@@ -108,12 +108,27 @@ class Command(BaseCommand):
                 "BOND",
             ])
             | Q(name__icontains="SOVEREIGN GOLD BOND")
+            | Q(name__icontains=" ETF")
         ).distinct()
 
         if user_id:
 
             assets = assets.filter(
                 owner_id=user_id
+            )
+
+        # Repair legacy imports where an exchange-traded fund was stored
+        # as OTHER. The rule is deliberately generic and name-based; no
+        # individual ETF/security is hardcoded here.
+        legacy_etfs = assets.filter(
+            name__icontains=" ETF",
+        ).exclude(
+            category="ETF",
+        )
+
+        if legacy_etfs.exists():
+            legacy_etfs.update(
+                category="ETF",
             )
 
         self._refresh_security_master_if_needed(assets)

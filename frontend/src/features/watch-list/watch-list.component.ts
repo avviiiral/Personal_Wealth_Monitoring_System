@@ -26,7 +26,10 @@ export class WatchListComponent implements OnInit, OnDestroy {
   private readonly api = inject(WatchListApiService);
   private readonly state = inject(WatchListStateService);
   private readonly changeDetector = inject(ChangeDetectorRef);
-  private readonly cachePrefix = 'pwms.watch-list.';
+  // Bump the cache namespace whenever the product universe identity changes.
+  // This prevents rows cached by an older database/universe from being clickable
+  // after a refresh, which can otherwise produce benchmark 404s for stale IDs.
+  private readonly cachePrefix = 'pwms.watch-list.v2.';
   private autoRefreshAttempted = false;
   private readonly searchInput$ = new Subject<string>();
   private readonly destroy$ = new Subject<void>();

@@ -607,6 +607,20 @@ class MarketDataManager:
         """
 
         # ======================================================
+        # SOVEREIGN GOLD BOND
+        # ======================================================
+
+        # Route SGBs by their security identity (name/ISIN), not by
+        # a user-facing Asset Class label. This also repairs legacy
+        # imports where an SGB was classified as GOLD/OTHER instead
+        # of BOND.
+        if "SOVEREIGN GOLD BOND" in (asset.name or "").upper():
+
+            return cls._fetch_sgb(
+                asset
+            )
+
+        # ======================================================
         # MUTUAL FUND
         # ======================================================
 
@@ -621,18 +635,6 @@ class MarketDataManager:
         # ======================================================
 
         if asset.category == "BOND":
-    
-            if (
-                "SOVEREIGN GOLD BOND"
-                in (
-                    asset.name
-                    or ""
-                ).upper()
-            ):
-
-                return cls._fetch_sgb(
-                    asset
-                )
 
             return cls._fetch_bond(
                 asset

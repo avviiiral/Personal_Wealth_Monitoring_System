@@ -75,7 +75,15 @@
 
           <td class="actions-cell">
             <ng-container *ngIf="editingAssetId !== row.asset_id">
-              <button type="button" class="link-button" (click)="startEdit(row)">Edit</button>
+              <button type="button" class="link-button" (click)="startEdit(row)">Edit / Add</button>
+
+              <button
+                type="button"
+                class="link-button"
+                (click)="toggleHistory(row)"
+              >
+                {{ expandedAssetId === row.asset_id ? 'Hide History' : 'History' }}
+              </button>
 
               <button
                 type="button"
@@ -99,6 +107,41 @@
 
               <button type="button" class="link-button" (click)="cancelEdit()">Cancel</button>
             </ng-container>
+          </td>
+        </tr>
+
+        <tr *ngIf="expandedAssetId === row.asset_id">
+          <td colspan="7" class="history-row">
+            <div class="history-panel">
+              <div class="history-title">Manual Price History</div>
+
+              <div *ngIf="historyLoading" class="history-loading">
+                Loading history...
+              </div>
+
+              <div *ngIf="!historyLoading && priceHistory.length === 0" class="history-empty">
+                No manual historical prices have been added.
+              </div>
+
+              <table *ngIf="!historyLoading && priceHistory.length > 0" class="history-table">
+                <thead>
+                  <tr>
+                    <th>As on Date</th>
+                    <th>Price</th>
+                    <th>Updated By</th>
+                    <th>Added</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr *ngFor="let history of priceHistory">
+                    <td>{{ history.price_date }}</td>
+                    <td>₹{{ history.price }}</td>
+                    <td>{{ history.updated_by || '-' }}</td>
+                    <td>{{ formatDate(history.updated_at) }}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
           </td>
         </tr>
 

@@ -286,7 +286,9 @@ export class WatchListComponent implements OnInit, OnDestroy {
 
         if (this.shouldBootstrapUniverse(response)) {
           this.autoRefreshAttempted = true;
-          this.refreshUniverse(true);
+          this.refreshUniverse(true, true);
+          // Do not block the Watch List on the universe refresh. The
+          // refresh will reload the data when it completes.
           return;
         }
         const serverResults = this.state.filterVisible(response.results);
@@ -1186,10 +1188,15 @@ export class WatchListComponent implements OnInit, OnDestroy {
     const anchor = document.createElement('a'); anchor.href = url; anchor.download = filename; anchor.click(); URL.revokeObjectURL(url);
   }
 
-  refreshUniverse(auto = false): void {
+  refreshUniverse(auto = false, background = false): void {
     if (this.refreshing) return;
     this.refreshing = true;
     if (!auto) this.error = '';
+    if (background) {
+      // Existing/cached results remain visible while the universe refresh
+      // runs. Only the refresh state changes; the list is not cleared.
+      this.loading = false;
+    }
     this.api.refresh().subscribe({
       next: () => {
         this.refreshing = false;
@@ -1201,8 +1208,10 @@ export class WatchListComponent implements OnInit, OnDestroy {
       error: error => {
         console.error('Watch List refresh failed:', error);
         this.refreshing = false;
-        this.error = 'Universe refresh failed. Existing data was not changed.';
-        this.loading = false;
+        if (!background) {
+          this.error = 'Universe refresh failed. Existing data was not changed.';
+          this.loading = false;
+        }
       },
     });
   }

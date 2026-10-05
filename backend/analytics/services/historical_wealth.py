@@ -426,19 +426,15 @@ class HistoricalWealthAnalytics:
                 automatic_value = next(
                     (
                         value
-                        for value_date, value, *rest in automatic_values
-                        if value_date == price_date
+                        for value in automatic_values
+                        if value[0] == price_date
                     ),
                     None,
                 )
 
                 if automatic_value is not None:
                     effective_values.append(
-                        (
-                            price_date,
-                            automatic_value,
-                            DataSource.YAHOO_FINANCE,
-                        )
+                        automatic_value
                     )
 
             prices_by_asset[asset_id] = sorted(

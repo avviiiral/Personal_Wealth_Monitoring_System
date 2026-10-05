@@ -793,7 +793,14 @@
                                       </ng-container>
                                     </td>
 
-                                    <td>₹{{ formatCurrency(asset.current_value) }}</td>
+                                    <td>
+                                      {{
+                                        asset.current_value !== null &&
+                                        asset.current_value !== undefined
+                                          ? '₹' + formatCurrency(asset.current_value)
+                                          : '-'
+                                      }}
+                                    </td>
 
                                     <td class="pnl-cell" [ngClass]="getPnlClass(asset.pnl)">
                                       {{ asset.pnl >= 0 ? '+' : '-' }}₹{{

@@ -27,12 +27,15 @@ from portfolio.services.portfolio_position_engine import (
 )
 from market_data.services.security_resolver import SecurityResolver
 from market_data.services.yahoo_quant_enrichment import enrich_quant_fields
+from market_data.services.mutual_fund_nav_service import MutualFundNAVService
 
 from mutual_funds.models import (
+    MutualFundNAV,
     MutualFundScheme,
     MutualFundTransaction,
     MutualFundTransactionType,
 )
+from mutual_funds.services.holding_engine import MutualFundHoldingEngine
 
 logger = logging.getLogger(__name__)
 
@@ -184,12 +187,80 @@ class TransactionImporter:
         ).hexdigest()
 
     @staticmethod
-    def _read_excel(file):
-        filename = getattr(
-            file,
-            "name",
-            "",
+    def _normalize_excel_header(value):
+        """Normalize Excel header text for sheet/header auto-detection."""
+        if pd.isna(value):
+            return ""
+        return " ".join(str(value).strip().split()).upper()
+
+    @staticmethod
+    def _find_excel_header_row(raw_dataframe, required_columns):
+        """
+        Find a row containing every required column.
+
+        The entire sheet is scanned, so headers may appear on any row.
+        Sheet names and fixed header positions are never required.
+        """
+        required = {
+            TransactionImporter._normalize_excel_header(column)
+            for column in required_columns
+        }
+        header_aliases = {
+            "FAMILY MEMBER": "FAMILY NAME",
+        }
+
+        for row_index in range(len(raw_dataframe.index)):
+            row_values = {
+                header_aliases.get(
+                    TransactionImporter._normalize_excel_header(value),
+                    TransactionImporter._normalize_excel_header(value),
+                )
+                for value in raw_dataframe.iloc[row_index].tolist()
+            }
+            row_values.discard("")
+
+            if required.issubset(row_values):
+                return row_index
+
+        return None
+
+    @staticmethod
+    def _canonicalize_excel_columns(dataframe):
+        """Map normalized Excel headers to the application's canonical names."""
+        aliases = {
+            "FAMILY MEMBER": "Family Name",
+        }
+
+        canonical_lookup = {
+            TransactionImporter._normalize_excel_header(column): column
+            for column in (
+                TRANSACTIONS_REQUIRED_COLUMNS
+                + SUMMARY_REQUIRED_COLUMNS
+            )
+        }
+        canonical_lookup.update(
+            {
+                TransactionImporter._normalize_excel_header(alias): target
+                for alias, target in aliases.items()
+            }
         )
+
+        rename_map = {}
+
+        for column in dataframe.columns:
+            normalized = TransactionImporter._normalize_excel_header(column)
+            target = canonical_lookup.get(normalized)
+            if target and target != column:
+                rename_map[column] = target
+
+        if rename_map:
+            dataframe = dataframe.rename(columns=rename_map)
+
+        return dataframe
+
+    @staticmethod
+    def _read_excel(file):
+        filename = getattr(file, "name", "")
 
         if not filename.lower().endswith(".xlsx"):
             raise TransactionImportError(
@@ -197,37 +268,96 @@ class TransactionImporter:
             )
 
         try:
-            transactions = pd.read_excel(
-                file,
-                sheet_name="Transactions",
-                header=0,
-            )
-
+            file.seek(0)
+            workbook = pd.ExcelFile(file)
+            sheet_names = list(workbook.sheet_names)
         except Exception as exc:
             raise TransactionImportError(
-                "Unable to read the Excel workbook. "
-                "Expected a sheet named 'Transactions'."
+                "Unable to open the Excel workbook."
             ) from exc
 
-        # The "Summary" sheet is optional supplementary data (used
-        # only to fill in Portfolio Name when present - see
-        # _resolve_portfolio_from_summary). A workbook containing
-        # only a Transactions sheet is perfectly valid and must
-        # still import; only fail the whole import if the required
-        # Transactions sheet itself could not be read.
-        summary = None
+        transaction_frames = []
+        summary_frames = []
 
-        try:
-            file.seek(0)
+        # Every sheet is inspected. Sheet name, sheet count, and header row
+        # position are intentionally irrelevant.
+        for sheet_name in sheet_names:
+            try:
+                raw = pd.read_excel(
+                    workbook,
+                    sheet_name=sheet_name,
+                    header=None,
+                )
+            except Exception as exc:
+                logger.warning(
+                    "Skipping unreadable Excel sheet '%s': %s",
+                    sheet_name,
+                    exc,
+                )
+                continue
 
-            summary = pd.read_excel(
-                file,
-                sheet_name="Summary",
-                header=1,
+            if raw.empty:
+                continue
+
+            transaction_header = TransactionImporter._find_excel_header_row(
+                raw,
+                TRANSACTIONS_REQUIRED_COLUMNS,
             )
 
-        except Exception:
-            summary = None
+            summary_header = TransactionImporter._find_excel_header_row(
+                raw,
+                SUMMARY_REQUIRED_COLUMNS,
+            )
+
+            if transaction_header is not None:
+                dataframe = pd.read_excel(
+                    workbook,
+                    sheet_name=sheet_name,
+                    header=transaction_header,
+                )
+                dataframe = TransactionImporter._canonicalize_excel_columns(
+                    dataframe
+                )
+
+                first_data_row = transaction_header + 2
+                dataframe["__source_sheet"] = sheet_name
+                dataframe["__source_row"] = range(
+                    first_data_row,
+                    first_data_row + len(dataframe.index),
+                )
+                transaction_frames.append(dataframe)
+                continue
+
+            if summary_header is not None:
+                dataframe = pd.read_excel(
+                    workbook,
+                    sheet_name=sheet_name,
+                    header=summary_header,
+                )
+                dataframe = TransactionImporter._canonicalize_excel_columns(
+                    dataframe
+                )
+                summary_frames.append(dataframe)
+
+        if not transaction_frames:
+            raise TransactionImportError(
+                "Unable to find transaction data in the Excel workbook. "
+                "The workbook can contain any number of sheets with any "
+                "sheet names, but at least one sheet must contain these "
+                "transaction columns: "
+                + ", ".join(TRANSACTIONS_REQUIRED_COLUMNS)
+            )
+
+        transactions = pd.concat(
+            transaction_frames,
+            ignore_index=True,
+        )
+
+        summary = (
+            pd.concat(summary_frames, ignore_index=True)
+            if summary_frames
+            else None
+        )
 
         return transactions, summary
 
@@ -949,6 +1079,75 @@ class TransactionImporter:
         }
 
     @staticmethod
+    def _refresh_imported_mutual_fund_navs(scheme_ids):
+        """
+        Refresh AMFI NAVs for mutual-fund schemes touched by an import.
+
+        The AMFI feed is loaded once per process/day by MutualFundNAVService,
+        so refreshing several imported schemes does not create one HTTP
+        request per scheme. Each resolved NAV is persisted and the holding
+        is rebuilt immediately so the new import is valued without waiting
+        for the next scheduled refresh.
+        """
+        refreshed = 0
+        failed = 0
+
+        for scheme in (
+            MutualFundScheme.objects
+            .filter(id__in=scheme_ids, is_active=True)
+            .order_by("id")
+        ):
+            isin = scheme.isin_growth or scheme.isin_dividend
+
+            if not isin:
+                continue
+
+            try:
+                nav_record = MutualFundNAVService.get_latest_nav(isin)
+                if nav_record is None:
+                    logger.warning(
+                        "[TRANSACTION IMPORT] AMFI NAV not found for mutual fund %s (ISIN=%s).",
+                        scheme.scheme_name,
+                        isin,
+                    )
+                    continue
+
+                changed_fields = []
+                if (
+                    nav_record.get("scheme_code")
+                    and scheme.scheme_code != nav_record["scheme_code"]
+                ):
+                    scheme.scheme_code = nav_record["scheme_code"]
+                    changed_fields.append("scheme_code")
+
+                if changed_fields:
+                    changed_fields.append("updated_at")
+                    scheme.save(update_fields=changed_fields)
+
+                MutualFundNAV.objects.update_or_create(
+                    scheme=scheme,
+                    date=nav_record["date"],
+                    source="AMFI",
+                    defaults={"nav": nav_record["nav"]},
+                )
+                MutualFundHoldingEngine.rebuild_holding(scheme)
+                refreshed += 1
+            except Exception:
+                failed += 1
+                logger.exception(
+                    "[TRANSACTION IMPORT] AMFI NAV refresh failed for mutual fund %s.",
+                    scheme.scheme_name,
+                )
+
+        logger.info(
+            "[TRANSACTION IMPORT] AMFI NAV refresh completed: refreshed=%s failed=%s schemes=%s",
+            refreshed,
+            failed,
+            len(scheme_ids),
+        )
+        return {"refreshed": refreshed, "failed": failed}
+
+    @staticmethod
     @db_transaction.atomic
     def import_file(file, owner, upload_batch=None):
         family = require_active_family(owner)
@@ -1025,6 +1224,7 @@ class TransactionImporter:
         seen_source_keys = set()
         seen_mutual_fund_keys = set()
         touched_asset_ids = set()
+        touched_mutual_fund_scheme_ids = set()
 
         for row_number, parsed, original_row in rows:
             try:
@@ -1050,6 +1250,7 @@ class TransactionImporter:
                             asset_name=parsed["asset_name"],
                             isin=parsed["isin"],
                         )
+                        touched_mutual_fund_scheme_ids.add(scheme.id)
 
                         duplicate_key = (
                             parsed["family_name"], parsed["portfolio"], scheme.id,
@@ -1161,6 +1362,18 @@ class TransactionImporter:
                     asset.id, asset.name,
                 )
 
+        if touched_mutual_fund_scheme_ids:
+            scheme_ids_for_refresh = tuple(
+                touched_mutual_fund_scheme_ids
+            )
+            db_transaction.on_commit(
+                lambda scheme_ids=scheme_ids_for_refresh: (
+                    TransactionImporter._refresh_imported_mutual_fund_navs(
+                        scheme_ids
+                    )
+                )
+            )
+
         if imported_investments:
             PortfolioPositionEngine.rebuild_all_for_user(owner)
 
@@ -1197,5 +1410,8 @@ class TransactionImporter:
             "failed_rows": failed_total,
             "failures": failures,
             "touched_asset_ids": list(touched_asset_ids),
+            "touched_mutual_fund_scheme_ids": list(
+                touched_mutual_fund_scheme_ids
+            ),
         }
 

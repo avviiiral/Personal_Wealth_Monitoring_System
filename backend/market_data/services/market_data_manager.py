@@ -164,13 +164,17 @@ class MarketDataManager:
         return holding
 
     @classmethod
-    def _fetch_mutual_fund(
+    def _fetch_amfi_nav(
         cls,
         asset,
     ):
         """
-        Fetch and store the latest AMFI NAV
-        for a mutual fund.
+        Fetch and store the latest AMFI NAV for an
+        ISIN-backed fund/ETF.
+
+        AMFI is the authoritative daily NAV source for securities
+        that are present in the AMFI feed. ETFs continue to fall back
+        to Yahoo only when AMFI has no NAV for their ISIN.
         """
 
         if not asset.isin:
@@ -607,12 +611,26 @@ class MarketDataManager:
         """
 
         # ======================================================
+        # SOVEREIGN GOLD BOND
+        # ======================================================
+
+        # Route SGBs by their security identity (name/ISIN), not by
+        # a user-facing Asset Class label. This also repairs legacy
+        # imports where an SGB was classified as GOLD/OTHER instead
+        # of BOND.
+        if "SOVEREIGN GOLD BOND" in (asset.name or "").upper():
+
+            return cls._fetch_sgb(
+                asset
+            )
+
+        # ======================================================
         # MUTUAL FUND
         # ======================================================
 
         if asset.category == "MUTUAL_FUND":
 
-            return cls._fetch_mutual_fund(
+            return cls._fetch_amfi_nav(
                 asset
             )
 
@@ -621,18 +639,6 @@ class MarketDataManager:
         # ======================================================
 
         if asset.category == "BOND":
-    
-            if (
-                "SOVEREIGN GOLD BOND"
-                in (
-                    asset.name
-                    or ""
-                ).upper()
-            ):
-
-                return cls._fetch_sgb(
-                    asset
-                )
 
             return cls._fetch_bond(
                 asset
@@ -642,10 +648,33 @@ class MarketDataManager:
         # STOCK / ETF
         # ======================================================
 
+        # Excel imports can leave exchange-traded funds with the legacy
+        # OTHER category. Do not let that classification prevent market
+        # pricing: an explicit ETF category OR an instrument whose name
+        # identifies it as an ETF is treated as an ETF for quote routing.
+        is_etf = (
+            asset.category == "ETF"
+            or " ETF" in f" {(asset.name or '').upper()}"
+        )
+
+        if is_etf:
+            # Prefer AMFI's daily NAV whenever the ETF's ISIN is present
+            # in the official AMFI feed. If AMFI does not contain the ISIN
+            # or is temporarily unreachable, continue to Yahoo so a
+            # temporary AMFI outage cannot turn an otherwise priceable ETF
+            # into a zero-price holding.
+            try:
+                amfi_result = cls._fetch_amfi_nav(asset)
+            except Exception:
+                amfi_result = None
+
+            if amfi_result and amfi_result.get("success"):
+                return amfi_result
+
         if asset.category not in [
             "STOCK",
             "ETF",
-        ]:
+        ] and not is_etf:
 
             return {
                 "success": False,

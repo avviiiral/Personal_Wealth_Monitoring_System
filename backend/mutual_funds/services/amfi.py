@@ -7,7 +7,7 @@ import time
 import requests
 
 from django.db import transaction
-from django.db.models import OuterRef, Subquery
+from django.db.models import OuterRef, Q, Subquery
 
 from mutual_funds.models import (
     AMFIMasterNAV,
@@ -1375,6 +1375,143 @@ class AMFIService:
 
         return {"schemes": len(master_schemes), "nav_records": len(family_navs)}
     
+    @staticmethod
+    def sync_owned_navs_from_master(owner):
+        """Materialize latest AMFI NAVs only for schemes owned by a family.
+
+        The shared AMFI master is refreshed once globally. This method avoids
+        copying the full 14k+ scheme universe into every family and refreshes
+        only the family's owned mutual funds.
+        """
+        from users.permissions import require_active_family
+        from mutual_funds.services.holding_engine import MutualFundHoldingEngine
+
+        family = require_active_family(owner)
+        schemes = list(
+            MutualFundScheme.objects
+            .filter(family=family, is_active=True)
+            .only(
+                "id",
+                "scheme_code",
+                "scheme_name",
+                "isin_growth",
+                "isin_dividend",
+            )
+        )
+
+        if not schemes:
+            return {"schemes": 0, "matched": 0, "nav_records": 0}
+
+        isins = {
+            isin.strip().upper()
+            for scheme in schemes
+            for isin in (scheme.isin_growth, scheme.isin_dividend)
+            if isin
+        }
+
+        if not isins:
+            return {
+                "schemes": len(schemes),
+                "matched": 0,
+                "nav_records": 0,
+            }
+
+        masters = (
+            AMFIMasterScheme.objects
+            .filter(
+                is_active=True,
+            )
+            .filter(
+                Q(isin_growth__in=isins)
+                | Q(isin_dividend__in=isins)
+            )
+            .only(
+                "id",
+                "scheme_code",
+                "scheme_name",
+                "isin_growth",
+                "isin_dividend",
+            )
+        )
+
+        master_by_isin = {}
+        for master in masters:
+            for isin in (master.isin_growth, master.isin_dividend):
+                if isin:
+                    master_by_isin.setdefault(isin.strip().upper(), master)
+
+        master_ids = [master.id for master in master_by_isin.values()]
+        latest_nav_id = (
+            AMFIMasterNAV.objects
+            .filter(scheme_id=OuterRef("scheme_id"))
+            .order_by("-date", "-id")
+            .values("id")[:1]
+        )
+        latest_navs = (
+            AMFIMasterNAV.objects
+            .filter(
+                scheme_id__in=master_ids,
+                id=Subquery(latest_nav_id),
+            )
+            .only("scheme_id", "date", "nav")
+        )
+        latest_by_master_id = {
+            nav.scheme_id: nav
+            for nav in latest_navs
+        }
+
+        matched = 0
+        nav_records = 0
+
+        for scheme in schemes:
+            master = None
+            for isin in (scheme.isin_growth, scheme.isin_dividend):
+                if isin:
+                    master = master_by_isin.get(isin.strip().upper())
+                    if master is not None:
+                        break
+
+            if master is None:
+                continue
+
+            latest_nav = latest_by_master_id.get(master.id)
+            if latest_nav is None:
+                continue
+
+            changed_fields = []
+            if scheme.scheme_code != master.scheme_code:
+                scheme.scheme_code = master.scheme_code
+                changed_fields.append("scheme_code")
+
+            if not scheme.isin_growth and master.isin_growth:
+                scheme.isin_growth = master.isin_growth
+                changed_fields.append("isin_growth")
+
+            if not scheme.isin_dividend and master.isin_dividend:
+                scheme.isin_dividend = master.isin_dividend
+                changed_fields.append("isin_dividend")
+
+            if changed_fields:
+                changed_fields.append("updated_at")
+                scheme.save(update_fields=changed_fields)
+
+            MutualFundNAV.objects.update_or_create(
+                scheme=scheme,
+                date=latest_nav.date,
+                source="AMFI",
+                defaults={"nav": latest_nav.nav},
+            )
+            MutualFundHoldingEngine.rebuild_holding(scheme)
+
+            matched += 1
+            nav_records += 1
+
+        return {
+            "schemes": len(schemes),
+            "matched": matched,
+            "nav_records": nav_records,
+        }
+
     @staticmethod
     def import_latest_navs(owner):
         """Compatibility wrapper: refresh the shared master, then sync one family."""

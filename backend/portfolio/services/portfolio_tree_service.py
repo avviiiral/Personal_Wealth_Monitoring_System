@@ -316,7 +316,7 @@ class PortfolioTreeService:
         }
 
         if not mutual_fund_assets:
-            return price_cache
+            return cls._load_reit_invit_reference_prices(assets_by_id, price_cache)
 
         # Prefer persisted family-owned MutualFundNAV records. Matching by
         # ISIN avoids relying on scheme names, which can vary by formatting.

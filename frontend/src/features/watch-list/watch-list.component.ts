@@ -31,6 +31,9 @@ export class WatchListComponent implements OnInit, OnDestroy {
   private readonly searchInput$ = new Subject<string>();
   private readonly destroy$ = new Subject<void>();
   private requestSequence = 0;
+  private refreshPollTimer: ReturnType<typeof setTimeout> | null = null;
+  private refreshPollAttempts = 0;
+  private readonly maxRefreshPollAttempts = 24;
 
   products: WatchListProduct[] = [];
   loading = true;
@@ -87,6 +90,8 @@ export class WatchListComponent implements OnInit, OnDestroy {
   }
 
   ngOnDestroy(): void {
+    if (this.refreshPollTimer) clearTimeout(this.refreshPollTimer);
+    this.refreshPollTimer = null;
     this.destroy$.next();
     this.destroy$.complete();
     this.searchInput$.complete();
@@ -1191,19 +1196,16 @@ export class WatchListComponent implements OnInit, OnDestroy {
   refreshUniverse(auto = false, background = false): void {
     if (this.refreshing) return;
     this.refreshing = true;
+    this.refreshPollAttempts = 0;
     if (!auto) this.error = '';
-    if (background) {
-      // Existing/cached results remain visible while the universe refresh
-      // runs. Only the refresh state changes; the list is not cleared.
-      this.loading = false;
-    }
+    if (background) this.loading = false;
+
     this.api.refresh().subscribe({
       next: () => {
-        this.refreshing = false;
-        this.page = 1;
-        this.selectedIds.clear();
-        this.loadFilters();
-        this.load();
+        // The backend starts the expensive universe import in the
+        // background. Keep the existing page visible and poll only the
+        // lightweight refresh-status endpoint until it completes.
+        this.scheduleRefreshPoll(auto, background);
       },
       error: error => {
         console.error('Watch List refresh failed:', error);
@@ -1214,6 +1216,42 @@ export class WatchListComponent implements OnInit, OnDestroy {
         }
       },
     });
+  }
+
+  private scheduleRefreshPoll(auto: boolean, background: boolean): void {
+    if (this.refreshPollTimer) clearTimeout(this.refreshPollTimer);
+
+    this.refreshPollTimer = setTimeout(() => {
+      this.api.refreshStatus().subscribe({
+        next: status => {
+          if (status.refreshing && this.refreshPollAttempts < this.maxRefreshPollAttempts) {
+            this.refreshPollAttempts += 1;
+            this.scheduleRefreshPoll(auto, background);
+            return;
+          }
+
+          this.refreshPollTimer = null;
+          this.refreshing = false;
+          this.page = 1;
+          this.selectedIds.clear();
+          this.loadFilters();
+          this.load();
+        },
+        error: error => {
+          console.error('Watch List refresh status check failed:', error);
+          if (this.refreshPollAttempts < this.maxRefreshPollAttempts) {
+            this.refreshPollAttempts += 1;
+            this.scheduleRefreshPoll(auto, background);
+            return;
+          }
+
+          this.refreshPollTimer = null;
+          this.refreshing = false;
+          if (!background) this.error = 'Unable to confirm the universe refresh status.';
+          this.loading = false;
+        },
+      });
+    }, 1000);
   }
 
   benchmarkDisplayName(benchmark: string | null | undefined): string {

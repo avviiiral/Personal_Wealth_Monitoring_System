@@ -994,6 +994,30 @@ class HistoricalWealthAnalytics:
                 current_value
             )
 
+        # Assets/schemes with no historical market value must not be
+        # treated as having a zero value. For historical charting,
+        # keep their P/L at zero by valuing them at cost basis.
+        #
+        # This is intentionally only a fallback for missing historical
+        # prices/NAVs. When a dated market/manual price exists, that
+        # as-of-date price remains authoritative.
+        missing_equity_value = (
+            total_invested
+            - equity_value
+        )
+        if missing_equity_value < 0:
+            missing_equity_value = HistoricalWealthAnalytics.ZERO
+
+        missing_mutual_fund_value = (
+            mutual_fund_invested
+            - mutual_fund_value
+        )
+        if missing_mutual_fund_value < 0:
+            missing_mutual_fund_value = HistoricalWealthAnalytics.ZERO
+
+        equity_value += missing_equity_value
+        mutual_fund_value += missing_mutual_fund_value
+
         # ======================================================
         # TOTALS
         # ======================================================

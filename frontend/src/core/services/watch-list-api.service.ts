@@ -1,6 +1,6 @@
 import { Injectable, inject } from '@angular/core';
 import { HttpClient, HttpHeaders, HttpParams } from '@angular/common/http';
-import { Observable, switchMap, timeout } from 'rxjs';
+import { Observable, switchMap } from 'rxjs';
 
 import { environment } from '../../environments/environment';
 

@@ -946,41 +946,32 @@ class UnifiedWealthAnalytics:
             )
         )
 
-        if family_name:
-            from .historical_wealth import (
-                HistoricalWealthAnalytics,
+        # Use the Portfolio Tree for the terminal value as well, so
+        # Dashboard XIRR follows exactly the same family-scoped valuation
+        # as the Portfolio page.
+        from portfolio.services.portfolio_tree_service import PortfolioTreeService
+
+        family = get_active_family_group(user)
+        current_value = UnifiedWealthAnalytics.ZERO
+
+        if family is not None:
+            tree = PortfolioTreeService.build(
+                owner=user,
+                family_id=family.id,
             )
 
-            today_rows = (
-                HistoricalWealthAnalytics
-                .calculate_history(
-                    user,
-                    date.today(),
-                    date.today(),
-                    family_name=family_name,
-                )
-            )
+            for family_node in tree.get("families", []):
+                tree_family_name = (family_node.get("family_name") or "").strip()
+                if family_name and tree_family_name != family_name.strip():
+                    continue
 
-            current_value = (
-                today_rows[0]["portfolio_value"]
-                if today_rows
-                else UnifiedWealthAnalytics.ZERO
-            )
-        else:
-            equity_totals = (
-                UnifiedWealthAnalytics
-                .get_equity_totals(user)
-            )
-
-            mutual_fund_totals = (
-                UnifiedWealthAnalytics
-                .get_mutual_fund_totals(user)
-            )
-
-            current_value = (
-                equity_totals["current"]
-                + mutual_fund_totals["current"]
-            )
+                for portfolio_node in family_node.get("portfolios", []):
+                    for asset_class_node in portfolio_node.get("asset_classes", []):
+                        for sub_class_node in asset_class_node.get("sub_classes", []):
+                            for asset_node in sub_class_node.get("assets", []):
+                                current_value += Decimal(
+                                    str(asset_node.get("current_value") or 0)
+                                )
 
         if current_value > 0:
             cash_flows.append(

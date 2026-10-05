@@ -226,10 +226,20 @@ export class WatchListComponent implements OnInit, OnDestroy {
       if (!raw) return;
       const cached = JSON.parse(raw) as WatchListResponse;
       if (!cached || !Array.isArray(cached.results)) return;
-      this.products = this.sortProducts(cached.results);
-      this.count = Number(cached.count) || cached.results.length;
+      this.products = this.sortProducts(this.state.filterVisible(cached.results));
+      this.count = Number(cached.count) || this.products.length;
       this.loading = false;
     } catch (error) { console.warn('Failed to restore Watch List cache:', error); }
+  }
+
+  private invalidateUniverseCache(): void {
+    try {
+      Object.keys(localStorage)
+        .filter(key => key.startsWith(this.cachePrefix))
+        .forEach(key => localStorage.removeItem(key));
+    } catch (error) {
+      console.warn('Failed to invalidate Watch List cache:', error);
+    }
   }
 
   private cachePage(response: WatchListResponse): void {
@@ -1232,6 +1242,10 @@ export class WatchListComponent implements OnInit, OnDestroy {
 
           this.refreshPollTimer = null;
           this.refreshing = false;
+          // A universe refresh can create/update product IDs. Drop every
+          // cached page so stale product IDs cannot survive into the next
+          // benchmark/Watch List interaction.
+          this.invalidateUniverseCache();
           this.page = 1;
           this.selectedIds.clear();
           this.loadFilters();

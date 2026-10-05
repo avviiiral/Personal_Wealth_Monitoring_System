@@ -4,7 +4,7 @@ from decimal import Decimal
 
 from django.db.models import OuterRef, QuerySet, Subquery, Q
 
-from investments.models import AssetCategory, SecurityMaster, Transaction, TransactionType
+from investments.models import Asset, AssetCategory, SecurityMaster, Transaction, TransactionType
 from investments.services.security_master import SecurityMasterService
 from investments.services.xirr import XIRRCalculator
 from market_data.models import DataSource, ManualAssetPrice, MarketPrice

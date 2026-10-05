@@ -1587,6 +1587,7 @@ class HistoricalWealthAnalytics:
             results.append({
                 "date": current_date,
                 "invested_value": total_invested,
+                "total_wealth": total_value,
                 "portfolio_value": total_value,
                 "pnl": unrealized_pnl,
                 "equity": {
@@ -1632,6 +1633,7 @@ class HistoricalWealthAnalytics:
             latest = results[-1]
             latest["date"] = end_date
             latest["invested_value"] = valuation["invested"]
+            latest["total_wealth"] = valuation["current"]
             latest["portfolio_value"] = valuation["current"]
             latest["pnl"] = (
                 valuation["current"] - valuation["invested"]

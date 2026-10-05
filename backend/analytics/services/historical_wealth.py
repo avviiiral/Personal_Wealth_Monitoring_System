@@ -1613,10 +1613,43 @@ class HistoricalWealthAnalytics:
 
             current_date += timedelta(days=1)
 
-        # Every point in the chart is calculated strictly as of its
-        # own date. This is especially important for dated manual prices:
-        # a manual price must change Total Wealth starting on its selected
-        # effective date, not only at the current/live endpoint.
+        # Historical points remain strictly as-of-date calculations.
+        # The final point is special when the requested range ends today:
+        # Dashboard KPI uses PortfolioTreeService's canonical current
+        # valuation, which may resolve a newer/current price source than the
+        # historical daily series (for example an intraday/current quote).
+        # Reconcile only today's point so the chart's latest Total Wealth
+        # exactly matches the KPI without changing historical dates.
+
+        if results and end_date == date.today():
+            from .unified_wealth import UnifiedWealthAnalytics
+
+            valuation = UnifiedWealthAnalytics._portfolio_tree_valuation(
+                user,
+                family_name=family_name,
+            )
+
+            latest = results[-1]
+            latest["date"] = end_date
+            latest["invested_value"] = valuation["invested"]
+            latest["portfolio_value"] = valuation["current"]
+            latest["pnl"] = (
+                valuation["current"] - valuation["invested"]
+            )
+
+            latest["equity"]["invested_value"] = valuation["equity_invested"]
+            latest["equity"]["portfolio_value"] = valuation["equity_current"]
+            latest["equity"]["pnl"] = (
+                valuation["equity_current"]
+                - valuation["equity_invested"]
+            )
+
+            latest["mutual_funds"]["invested_value"] = valuation["mutual_invested"]
+            latest["mutual_funds"]["portfolio_value"] = valuation["mutual_current"]
+            latest["mutual_funds"]["pnl"] = (
+                valuation["mutual_current"]
+                - valuation["mutual_invested"]
+            )
 
         return results
 

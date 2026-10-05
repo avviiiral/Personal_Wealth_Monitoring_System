@@ -850,3 +850,162 @@ class ManualPriceCalculationRegressionTests(TestCase):
                 2,
             ),
         )
+
+
+class ManualPriceEffectiveDateAndMissingPriceTests(TestCase):
+    """Regression coverage for dated manual prices and unavailable quotes."""
+
+    def setUp(self):
+        User = get_user_model()
+
+        self.user = User.objects.create_user(
+            username="manual_price_effective_date_user",
+            password="test-password",
+        )
+        self.family = FamilyGroup.objects.create(
+            name="Manual Price Effective Date Family",
+        )
+        self.user.profile.family_groups.add(self.family)
+
+        self.asset = Asset.objects.create(
+            owner=self.user,
+            family=self.family,
+            name="Dated Manual Equity",
+            category="STOCK",
+            isin="INE000DATED001",
+        )
+
+        Transaction.objects.create(
+            owner=self.user,
+            family=self.family,
+            family_name="Family Dated",
+            portfolio="Portfolio Dated",
+            asset=self.asset,
+            asset_class="Equity",
+            sub_class="Large Cap",
+            asset_name="Dated Manual Equity",
+            transaction_date=date(2026, 1, 1),
+            transaction_type="BUY",
+            quantity=Decimal("10"),
+            price_per_unit=Decimal("100"),
+            amount=Decimal("1000"),
+            fees=Decimal("0"),
+        )
+
+    def _find_asset_node(self, tree, asset_name):
+        for family in tree["families"]:
+            for portfolio in family["portfolios"]:
+                for asset_class in portfolio["asset_classes"]:
+                    for sub_class in asset_class["sub_classes"]:
+                        for asset in sub_class["assets"]:
+                            if asset["asset_name"] == asset_name:
+                                return asset
+        return None
+
+    def test_portfolio_tree_manual_price_wins_over_newer_automatic_quote(self):
+        from market_data.models import DataSource, MarketPrice
+        from portfolio.services.portfolio_tree_service import PortfolioTreeService
+
+        MarketPrice.objects.create(
+            asset=self.asset,
+            date=date(2026, 10, 4),
+            close_price=Decimal("250"),
+            source=DataSource.YAHOO_FINANCE,
+        )
+        MarketPrice.objects.create(
+            asset=self.asset,
+            date=date(2026, 10, 3),
+            close_price=Decimal("150"),
+            source=DataSource.MANUAL,
+            updated_by=self.user,
+        )
+
+        tree = PortfolioTreeService.build(
+            owner=self.user,
+            family_id=self.family.id,
+        )
+        node = self._find_asset_node(tree, "Dated Manual Equity")
+
+        self.assertIsNotNone(node)
+        self.assertEqual(node["current_price"], 150.0)
+        self.assertEqual(node["current_value"], 1500.0)
+        self.assertEqual(node["pnl"], 500.0)
+
+    def test_portfolio_tree_missing_price_has_zero_pnl(self):
+        from portfolio.services.portfolio_tree_service import PortfolioTreeService
+
+        asset = Asset.objects.create(
+            owner=self.user,
+            family=self.family,
+            name="No Price Equity",
+            category="STOCK",
+            isin="INE000NOPRICE1",
+        )
+
+        Transaction.objects.create(
+            owner=self.user,
+            family=self.family,
+            family_name="Family Dated",
+            portfolio="Portfolio Dated",
+            asset=asset,
+            asset_class="Equity",
+            sub_class="Large Cap",
+            asset_name="No Price Equity",
+            transaction_date=date(2026, 2, 1),
+            transaction_type="BUY",
+            quantity=Decimal("5"),
+            price_per_unit=Decimal("200"),
+            amount=Decimal("1000"),
+            fees=Decimal("0"),
+        )
+
+        tree = PortfolioTreeService.build(
+            owner=self.user,
+            family_id=self.family.id,
+        )
+        node = self._find_asset_node(tree, "No Price Equity")
+
+        self.assertIsNotNone(node)
+        self.assertIsNone(node["current_price"])
+        self.assertIsNone(node["current_value"])
+        self.assertEqual(node["pnl"], 0.0)
+        self.assertEqual(node["pnl_percentage"], 0.0)
+
+    def test_historical_manual_price_is_effective_from_selected_date(self):
+        from analytics.services.historical_wealth import HistoricalWealthAnalytics
+        from market_data.models import DataSource, MarketPrice
+
+        MarketPrice.objects.create(
+            asset=self.asset,
+            date=date(2026, 10, 1),
+            close_price=Decimal("100"),
+            source=DataSource.YAHOO_FINANCE,
+        )
+        MarketPrice.objects.create(
+            asset=self.asset,
+            date=date(2026, 10, 3),
+            close_price=Decimal("150"),
+            source=DataSource.MANUAL,
+            updated_by=self.user,
+        )
+
+        values = HistoricalWealthAnalytics._build_price_map(
+            [self.asset],
+            date(2026, 10, 1),
+            date(2026, 10, 5),
+        )[self.asset.id]
+
+        pointer = -1
+        price_before, pointer = HistoricalWealthAnalytics._get_value_for_date(
+            values,
+            date(2026, 10, 2),
+            pointer,
+        )
+        self.assertEqual(price_before, Decimal("100"))
+
+        price_after, pointer = HistoricalWealthAnalytics._get_value_for_date(
+            values,
+            date(2026, 10, 4),
+            pointer,
+        )
+        self.assertEqual(price_after, Decimal("150"))

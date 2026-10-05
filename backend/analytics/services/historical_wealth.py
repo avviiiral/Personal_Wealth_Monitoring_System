@@ -1614,99 +1614,38 @@ class HistoricalWealthAnalytics:
             current_date += timedelta(days=1)
 
         # The latest chart point must reconcile exactly with the
-        # Dashboard/Portfolio current valuation. Historical pricing
-        # can legitimately have gaps (especially for manually priced
-        # assets), while the Portfolio Tree uses the canonical current
-        # price cache. For the final day, use that same canonical
-        # valuation so the Wealth Overview never disagrees with the
-        # Total Wealth and Invested Value cards.
+        # Dashboard/Portfolio current valuation. Historical pricing can
+        # have gaps, while the Portfolio Tree is the canonical current
+        # price source. Use the same valuation for the final point.
         if results:
-            from portfolio.services.portfolio_tree_service import PortfolioTreeService
+            from .unified_wealth import UnifiedWealthAnalytics
 
-            family = get_active_family_group(user)
-            if family is not None:
-                current_tree = PortfolioTreeService._get_transactions(
-                    [user.pk],
-                    family_id=family.id,
-                )
+            valuation = UnifiedWealthAnalytics._portfolio_tree_valuation(
+                user,
+                family_name=family_name,
+            )
 
-                if family_name:
-                    requested_family = family_name.strip()
-                    current_tree = [
-                        transaction
-                        for transaction in current_tree
-                        if PortfolioTreeService._clean(transaction.family_name)
-                        == requested_family
-                    ]
+            latest = results[-1]
+            latest["date"] = end_date
+            latest["invested_value"] = valuation["invested"]
+            latest["portfolio_value"] = valuation["current"]
+            latest["pnl"] = (
+                valuation["current"] - valuation["invested"]
+            )
 
-                current_transactions = list(current_tree)
+            latest["equity"]["invested_value"] = valuation["equity_invested"]
+            latest["equity"]["portfolio_value"] = valuation["equity_current"]
+            latest["equity"]["pnl"] = (
+                valuation["equity_current"]
+                - valuation["equity_invested"]
+            )
 
-                if current_transactions:
-                    asset_ids = {
-                        transaction.asset_id
-                        for transaction in current_transactions
-                    }
-                    assets_by_id = {}
-
-                    for transaction in current_transactions:
-                        transaction.asset._portfolio_asset_class = transaction.asset_class
-                        transaction.asset._portfolio_sub_class = transaction.sub_class
-                        assets_by_id.setdefault(
-                            transaction.asset_id,
-                            transaction.asset,
-                        )
-
-                    price_cache = PortfolioTreeService._load_price_cache(
-                        asset_ids,
-                        assets_by_id=assets_by_id,
-                    )
-
-                    grouped = {}
-                    for transaction in current_transactions:
-                        key = (
-                            PortfolioTreeService._clean(transaction.family_name),
-                            PortfolioTreeService._clean(transaction.portfolio),
-                            PortfolioTreeService._clean(transaction.asset_class),
-                            PortfolioTreeService._clean(transaction.sub_class),
-                            transaction.asset_id,
-                        )
-                        grouped.setdefault(key, []).append(transaction)
-
-                    current_invested = HistoricalWealthAnalytics.ZERO
-                    current_value = HistoricalWealthAnalytics.ZERO
-
-                    for key, asset_transactions in grouped.items():
-                        position = PortfolioTreeService._calculate_position(
-                            asset_transactions,
-                        )
-                        quantity = position["quantity"]
-
-                        if quantity <= 0:
-                            continue
-
-                        current_invested += position["invested_value"]
-
-                        price = price_cache.get(
-                            key[4],
-                            {},
-                        ).get("current_price")
-
-                        if price is not None:
-                            current_value += (
-                                quantity * Decimal(str(price))
-                            )
-
-                    latest = results[-1]
-                    latest["date"] = end_date
-                    latest["invested_value"] = current_invested
-                    latest["portfolio_value"] = current_value
-                    latest["pnl"] = current_value - current_invested
-                    latest["equity"]["invested_value"] = current_invested
-                    latest["equity"]["portfolio_value"] = current_value
-                    latest["equity"]["pnl"] = current_value - current_invested
-                    latest["mutual_funds"]["invested_value"] = HistoricalWealthAnalytics.ZERO
-                    latest["mutual_funds"]["portfolio_value"] = HistoricalWealthAnalytics.ZERO
-                    latest["mutual_funds"]["pnl"] = HistoricalWealthAnalytics.ZERO
+            latest["mutual_funds"]["invested_value"] = valuation["mutual_invested"]
+            latest["mutual_funds"]["portfolio_value"] = valuation["mutual_current"]
+            latest["mutual_funds"]["pnl"] = (
+                valuation["mutual_current"]
+                - valuation["mutual_invested"]
+            )
 
         return results
 

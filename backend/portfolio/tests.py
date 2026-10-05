@@ -806,7 +806,7 @@ class ManualPriceCalculationRegressionTests(TestCase):
         from analytics.services.unified_wealth import (
             UnifiedWealthAnalytics,
         )
-        from investments.services.xirr import XIRRCalculator
+        from analytics.services.xirr import XIRRCalculator
 
         MarketPrice.objects.create(
             asset=self.asset,
@@ -836,13 +836,17 @@ class ManualPriceCalculationRegressionTests(TestCase):
 
         actual = UnifiedWealthAnalytics.calculate_xirr(self.user)
 
-        self.assertEqual(actual, expected)
+        self.assertEqual(actual, round(expected * 100, 2))
         self.assertNotEqual(
             actual,
-            XIRRCalculator.calculate(
-                [
-                    (date(2026, 1, 1), -1000.0),
-                    (date.today(), 2500.0),
-                ]
+            round(
+                XIRRCalculator.calculate(
+                    [
+                        (date(2026, 1, 1), -1000.0),
+                        (date.today(), 2500.0),
+                    ]
+                )
+                * 100,
+                2,
             ),
         )

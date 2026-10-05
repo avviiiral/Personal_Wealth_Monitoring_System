@@ -264,8 +264,7 @@ export class PortfolioComponent implements OnInit, OnDestroy {
       asset.current_price !== null && asset.current_price !== undefined
         ? String(asset.current_price)
         : '';
-    this.manualPriceDate =
-      this.getPriceDate(asset) || this.getTodayDateInputValue();
+    this.manualPriceDate = this.getTodayDateInputValue();
     this.manualPriceErrors[asset.id] = '';
     this.cdr.detectChanges();
   }

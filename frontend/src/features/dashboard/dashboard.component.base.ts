@@ -591,7 +591,9 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
 
     const investedValues = results.map((item: any) => this.toNumber(item.invested_value));
 
-    const portfolioValues = results.map((item: any) => this.toNumber(item.portfolio_value));
+    const totalWealthValues = results.map((item: any) =>
+      this.toNumber(item.total_wealth ?? item.portfolio_value),
+    );
 
     const formatTooltipDate = (value: any): string => {
       if (!value) return '-';
@@ -613,7 +615,7 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
         datasets: [
           {
             label: 'Total Wealth',
-            data: portfolioValues,
+            data: totalWealthValues,
             borderColor: this.themeService.isDark() ? '#2fbf8f' : '#2563EB',
 
             backgroundColor: this.themeService.isDark()

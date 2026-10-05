@@ -4,10 +4,12 @@ from decimal import Decimal
 
 from django.db.models import OuterRef, QuerySet, Subquery, Q
 
-from investments.models import SecurityMaster, Transaction, TransactionType
+from investments.models import AssetCategory, SecurityMaster, Transaction, TransactionType
 from investments.services.security_master import SecurityMasterService
 from investments.services.xirr import XIRRCalculator
 from market_data.models import ManualAssetPrice, MarketPrice
+from market_data.services.mutual_fund_nav_service import MutualFundNAVService
+from mutual_funds.models import MutualFundNAV, MutualFundScheme
 
 
 logger = logging.getLogger(__name__)
@@ -49,7 +51,7 @@ class PortfolioTreeService:
                 "advisors", "transaction_date", "transaction_type",
                 "quantity", "price_per_unit", "amount", "notes", "id",
                 "asset__owner_id", "asset__family_id", "asset__name",
-                "asset__isin", "asset__symbol",
+                "asset__category", "asset__isin", "asset__symbol",
                 "asset__security_master__id",
                 "asset__security_master__owner_id",
                 "asset__security_master__family_id",
@@ -125,10 +127,27 @@ class PortfolioTreeService:
         return XIRRCalculator.calculate(cash_flows) if len(cash_flows) >= 2 else None
 
     @classmethod
-    def _load_price_cache(cls, asset_ids):
+    def _load_price_cache(cls, asset_ids, assets_by_id=None):
+        """
+        Load the latest price for each portfolio asset.
+
+        Mutual funds are valued from the AMFI-backed MutualFundNAV path,
+        rather than MarketPrice/Yahoo. This is intentionally done here
+        because the Portfolio Tree is built from investments.Transaction,
+        while mutual-fund NAVs are stored in the dedicated mutual_funds app.
+
+        The database-backed MutualFundNAV value is preferred. For legacy
+        portfolio assets that do not yet have a MutualFundScheme row, the
+        existing AMFI NAV service is used as a fallback by ISIN. Its feed
+        is cached in-process for the day, so this does not create one
+        provider request per mutual fund.
+        """
         if not asset_ids:
             return {}
+
+        assets_by_id = assets_by_id or {}
         price_cache = {}
+
         manual_prices = ManualAssetPrice.objects.filter(asset_id__in=asset_ids)
         for manual in manual_prices:
             price_cache[manual.asset_id] = {
@@ -136,6 +155,7 @@ class PortfolioTreeService:
                 "price_source": "MANUAL",
                 "price_date": manual.price_date,
             }
+
         latest_market_id = (
             MarketPrice.objects.filter(asset_id=OuterRef("asset_id"))
             .order_by("-date", "-id").values("id")[:1]
@@ -151,6 +171,115 @@ class PortfolioTreeService:
                 "price_source": market.source,
                 "price_date": market.date,
             }
+
+        mutual_fund_assets = {
+            asset_id: asset
+            for asset_id, asset in assets_by_id.items()
+            if (
+                asset.category == AssetCategory.MUTUAL_FUND
+                or cls._clean(getattr(asset, "_portfolio_asset_class", "" )).upper()
+                in {"MUTUAL FUND", "MUTUAL FUNDS", "MUTUAL_FUND"}
+                or cls._clean(getattr(asset, "_portfolio_sub_class", "" )).upper()
+                in {"MUTUAL FUND", "MUTUAL FUNDS", "MUTUAL_FUND"}
+                or "MUTUAL FUND" in cls._clean(getattr(asset, "_portfolio_sub_class", "")).upper()
+            )
+        }
+
+        if not mutual_fund_assets:
+            return price_cache
+
+        # Prefer persisted family-owned MutualFundNAV records. Matching by
+        # ISIN avoids relying on scheme names, which can vary by formatting.
+        isins = {
+            cls._clean(asset.isin).upper()
+            for asset in mutual_fund_assets.values()
+            if cls._clean(asset.isin)
+        }
+        families = {
+            asset.family_id
+            for asset in mutual_fund_assets.values()
+            if asset.family_id is not None
+        }
+
+        scheme_by_isin = {}
+        if isins and families:
+            scheme_rows = (
+                MutualFundScheme.objects
+                .filter(
+                    family_id__in=families,
+                    is_active=True,
+                )
+                .filter(
+                    Q(isin_growth__in=isins) | Q(isin_dividend__in=isins)
+                )
+                .only(
+                    "id", "family_id", "scheme_name",
+                    "isin_growth", "isin_dividend",
+                )
+            )
+            for scheme in scheme_rows:
+                for scheme_isin in (scheme.isin_growth, scheme.isin_dividend):
+                    normalized = cls._clean(scheme_isin).upper()
+                    if normalized:
+                        scheme_by_isin[(scheme.family_id, normalized)] = scheme
+
+        if scheme_by_isin:
+            scheme_ids = {scheme.id for scheme in scheme_by_isin.values()}
+            latest_nav_id = (
+                MutualFundNAV.objects
+                .filter(scheme_id=OuterRef("scheme_id"))
+                .order_by("-date", "-id")
+                .values("id")[:1]
+            )
+            nav_rows = (
+                MutualFundNAV.objects
+                .filter(scheme_id__in=scheme_ids, id=Subquery(latest_nav_id))
+                .only("scheme_id", "date", "nav", "source")
+            )
+            nav_by_scheme = {row.scheme_id: row for row in nav_rows}
+
+            for asset_id, asset in mutual_fund_assets.items():
+                isin = cls._clean(asset.isin).upper()
+                scheme = scheme_by_isin.get((asset.family_id, isin))
+                nav_row = nav_by_scheme.get(scheme.id) if scheme else None
+                if nav_row is not None:
+                    price_cache[asset_id] = {
+                        "current_price": nav_row.nav,
+                        "price_source": nav_row.source or "AMFI",
+                        "price_date": nav_row.date,
+                    }
+
+        # Legacy Portfolio Tree assets may predate the dedicated
+        # MutualFundScheme/M﻿utualFundNAV records. Resolve those by ISIN from
+        # the existing AMFI service, whose feed is cached once per process/day.
+        for asset_id, asset in mutual_fund_assets.items():
+            if asset_id in price_cache and price_cache[asset_id].get("price_source") not in {
+                "MANUAL",
+                "YAHOO",
+            }:
+                continue
+
+            isin = cls._clean(asset.isin).upper()
+            if not isin:
+                continue
+
+            try:
+                nav_record = MutualFundNAVService.get_latest_nav(isin)
+            except Exception:
+                logger.exception(
+                    "Unable to resolve AMFI NAV for portfolio mutual fund asset %s (%s).",
+                    asset_id,
+                    asset.name,
+                )
+                continue
+
+            if nav_record is not None:
+                price_cache[asset_id] = {
+                    "current_price": nav_record["nav"],
+                    "price_source": "AMFI",
+                    "price_date": nav_record["date"],
+                }
+
         return price_cache
 
     @classmethod
@@ -250,7 +379,20 @@ class PortfolioTreeService:
             sub_class_xirr_grouped.setdefault(sub_class, []).append(tx)
 
         asset_ids = {tx.asset_id for tx in transactions}
-        price_cache = cls._load_price_cache(asset_ids)
+        assets_by_id = {}
+        for tx in transactions:
+            asset = tx.asset
+            # Preserve the hierarchy labels on the asset object so the price
+            # loader can recognize legacy MF assets even when their technical
+            # AssetCategory was not classified as MUTUAL_FUND.
+            asset._portfolio_asset_class = tx.asset_class
+            asset._portfolio_sub_class = tx.sub_class
+            assets_by_id.setdefault(tx.asset_id, asset)
+
+        price_cache = cls._load_price_cache(
+            asset_ids,
+            assets_by_id=assets_by_id,
+        )
 
         assets_for_security_master = {}
         for tx in transactions:

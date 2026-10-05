@@ -1,3 +1,4 @@
+from datetime import date
 from decimal import Decimal, InvalidOperation
 
 from django.db import transaction
@@ -41,8 +42,9 @@ def manual_asset_price(
     current price for an asset.
 
     Manual prices use the same MarketPrice pipeline as
-    automatic prices. The stored date is the automatic
-    "Price Updated" date and is not an as-of valuation date.
+    automatic prices. The supplied date is the effective
+    valuation date: the manual price applies from that date
+    onward in historical calculations.
 
     Editability is role-based (Admin/Super User/System Owner)
     and asset visibility remains family/owner based. The
@@ -185,7 +187,31 @@ def manual_asset_price(
             status=status.HTTP_400_BAD_REQUEST,
         )
 
-    price_date = timezone.localdate()
+    raw_price_date = request.data.get("price_date")
+
+    if raw_price_date in (None, ""):
+        price_date = timezone.localdate()
+    else:
+        try:
+            price_date = date.fromisoformat(str(raw_price_date))
+        except (TypeError, ValueError):
+            return Response(
+                {
+                    "success": False,
+                    "message": "Price date must be a valid date in YYYY-MM-DD format.",
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if price_date > timezone.localdate():
+            return Response(
+                {
+                    "success": False,
+                    "message": "Price date cannot be in the future.",
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
     with transaction.atomic():
         manual_price, _ = (
             MarketPrice.objects

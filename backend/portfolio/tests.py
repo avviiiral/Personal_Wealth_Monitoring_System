@@ -722,3 +722,127 @@ class PortfolioSummaryMultiOwnerTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(Decimal(str(response.data["total_invested"])), Decimal("500"))
         self.assertEqual(response.data["number_of_holdings"], 1)
+
+
+class ManualPriceCalculationRegressionTests(TestCase):
+    """
+    Manual prices are explicit overrides. A newer automatic quote must
+    not replace the manual value used by persisted positions or XIRR.
+    """
+
+    def setUp(self):
+        User = get_user_model()
+
+        self.user = User.objects.create_user(
+            username="manual_price_regression_user",
+            password="test-password",
+        )
+        self.family = FamilyGroup.objects.create(
+            name="Manual Price Regression Family"
+        )
+        self.user.profile.family_groups.add(self.family)
+
+        self.asset = Asset.objects.create(
+            owner=self.user,
+            family=self.family,
+            name="Manual Override Equity",
+            category="STOCK",
+            isin="INE000MANUAL001",
+        )
+
+        Transaction.objects.create(
+            owner=self.user,
+            family=self.family,
+            family_name="Family Manual",
+            portfolio="Portfolio Manual",
+            asset=self.asset,
+            asset_class="Equity",
+            sub_class="Large Cap",
+            asset_name="Manual Override Equity",
+            transaction_date=date(2026, 1, 1),
+            transaction_type="BUY",
+            quantity=Decimal("10"),
+            price_per_unit=Decimal("100"),
+            amount=Decimal("1000"),
+            fees=Decimal("0"),
+        )
+
+    def test_manual_price_wins_over_newer_automatic_price(self):
+        from market_data.models import DataSource, MarketPrice
+        from portfolio.services.portfolio_position_engine import (
+            PortfolioPositionEngine,
+        )
+
+        MarketPrice.objects.create(
+            asset=self.asset,
+            date=date(2026, 10, 4),
+            close_price=Decimal("250"),
+            source=DataSource.YAHOO_FINANCE,
+        )
+        MarketPrice.objects.create(
+            asset=self.asset,
+            date=date(2026, 10, 3),
+            close_price=Decimal("150"),
+            source=DataSource.MANUAL,
+            updated_by=self.user,
+        )
+
+        position = PortfolioPositionEngine.rebuild_position(
+            family_name="Family Manual",
+            portfolio="Portfolio Manual",
+            asset=self.asset,
+            family=self.family,
+        )
+
+        self.assertEqual(position.current_price, Decimal("150"))
+        self.assertEqual(position.current_value, Decimal("1500"))
+        self.assertEqual(position.gain, Decimal("500"))
+
+    def test_dashboard_xirr_uses_manual_price_as_terminal_value(self):
+        from market_data.models import DataSource, MarketPrice
+        from portfolio.services.holding_engine import (
+            HoldingCalculationEngine,
+        )
+        from analytics.services.unified_wealth import (
+            UnifiedWealthAnalytics,
+        )
+        from investments.services.xirr import XIRRCalculator
+
+        MarketPrice.objects.create(
+            asset=self.asset,
+            date=date(2026, 10, 4),
+            close_price=Decimal("250"),
+            source=DataSource.YAHOO_FINANCE,
+        )
+        MarketPrice.objects.create(
+            asset=self.asset,
+            date=date(2026, 10, 3),
+            close_price=Decimal("150"),
+            source=DataSource.MANUAL,
+            updated_by=self.user,
+        )
+
+        holding = HoldingCalculationEngine.rebuild_holding(self.asset)
+
+        self.assertEqual(holding.current_price, Decimal("150"))
+        self.assertEqual(holding.current_value, Decimal("1500"))
+
+        expected = XIRRCalculator.calculate(
+            [
+                (date(2026, 1, 1), -1000.0),
+                (date.today(), 1500.0),
+            ]
+        )
+
+        actual = UnifiedWealthAnalytics.calculate_xirr(self.user)
+
+        self.assertEqual(actual, expected)
+        self.assertNotEqual(
+            actual,
+            XIRRCalculator.calculate(
+                [
+                    (date(2026, 1, 1), -1000.0),
+                    (date.today(), 2500.0),
+                ]
+            ),
+        )

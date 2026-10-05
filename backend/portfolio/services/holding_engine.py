@@ -246,74 +246,53 @@ class HoldingCalculationEngine:
     @staticmethod
     def get_effective_price(asset):
         """
-        Determine the price that should be used.
+        Determine the same effective current price used by the Portfolio Tree.
 
-        Priority:
-
-            1. Manual price
-            2. Automatic market price
-            3. Zero
+        Priority and fallbacks are centralized in PortfolioTreeService so the
+        Dashboard Holding rows cannot diverge from Portfolio valuation for
+        mutual-fund NAVs, REIT/InvIT reference prices, manual overrides, or
+        automatic market prices.
         """
 
-        # ------------------------------------------------------
-        # MANUAL PRICE FIRST
-        # ------------------------------------------------------
-
-        manual_price = (
-            MarketPrice.objects
-            .filter(
-                asset=asset,
-                source=DataSource.MANUAL,
-            )
-            .order_by(
-                "-date",
-                "-id",
-            )
+        # PortfolioTreeService uses transaction metadata (asset class/subclass)
+        # to identify legacy mutual-fund and REIT/InvIT rows. Populate that
+        # metadata on the Asset before asking it for the shared price cache.
+        latest_transaction = (
+            Transaction.objects
+            .filter(asset=asset)
+            .order_by("-transaction_date", "-created_at", "-id")
             .first()
         )
+        if latest_transaction is not None:
+            asset._portfolio_asset_class = latest_transaction.asset_class
+            asset._portfolio_sub_class = latest_transaction.sub_class
 
-        if manual_price is not None:
+        from portfolio.services.portfolio_tree_service import PortfolioTreeService
 
+        price_data = PortfolioTreeService._load_price_cache(
+            {asset.id},
+            assets_by_id={asset.id: asset},
+        ).get(asset.id)
+
+        if price_data is None:
             return {
-                "price": (
-                    manual_price.close_price
-                    or HoldingCalculationEngine.ZERO
-                ),
-                "source": DataSource.MANUAL,
-                "date": manual_price.date,
-                "is_manual": True,
-            }
-
-        # ------------------------------------------------------
-        # AUTOMATIC PRICE
-        # ------------------------------------------------------
-
-        latest_price = (
-            HoldingCalculationEngine
-            .get_latest_price(asset)
-        )
-
-        if latest_price is not None:
-
-            return {
-                "price": (
-                    latest_price.close_price
-                    or HoldingCalculationEngine.ZERO
-                ),
-                "source": latest_price.source,
-                "date": latest_price.date,
+                "price": HoldingCalculationEngine.ZERO,
+                "source": None,
+                "date": None,
                 "is_manual": False,
+                "has_price": False,
             }
-
-        # ------------------------------------------------------
-        # NO PRICE
-        # ------------------------------------------------------
 
         return {
-            "price": HoldingCalculationEngine.ZERO,
-            "source": None,
-            "date": None,
-            "is_manual": False,
+            "price": (
+                price_data.get("current_price")
+                if price_data.get("current_price") is not None
+                else HoldingCalculationEngine.ZERO
+            ),
+            "source": price_data.get("price_source"),
+            "date": price_data.get("price_date"),
+            "is_manual": price_data.get("price_source") == DataSource.MANUAL,
+            "has_price": price_data.get("current_price") is not None,
         }
 
     # ==========================================================
@@ -356,8 +335,9 @@ class HoldingCalculationEngine:
         )
 
         unrealized_pnl = (
-            current_value
-            - invested_value
+            current_value - invested_value
+            if effective_price["has_price"]
+            else HoldingCalculationEngine.ZERO
         )
 
         holding, _ = (

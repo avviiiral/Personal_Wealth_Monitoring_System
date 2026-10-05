@@ -8,6 +8,7 @@ from users.models import FamilyGroup
 from rest_framework.test import APIClient
 
 from investments.models import Asset, Transaction
+from market_data.models import MarketPrice
 from portfolio.services.portfolio_tree_service import (
     PortfolioTreeService,
 )
@@ -94,6 +95,56 @@ class PortfolioTreeServiceTests(TestCase):
             asset["isin"],
             "INE000TEST001",
         )
+
+    def test_reit_invit_falls_back_to_mis_reference_price(self):
+        """REIT/InvIT portfolio rows use the same global Yahoo reference history as MIS Notes."""
+        asset = Asset.objects.create(
+            family=self.family,
+            owner=self.user,
+            name="Cube Highways InvIT",
+            category="OTHER",
+            isin="INVI000CUBE001",
+        )
+        Transaction.objects.create(
+            owner=self.user,
+            family=self.family,
+            asset=asset,
+            family_name="Family A",
+            portfolio="Portfolio A",
+            asset_class="Infrastructure",
+            sub_class="InvITs",
+            asset_name="Cube Highways InvIT",
+            underlying="Cube Highways InvIT",
+            transaction_date=date(2026, 1, 10),
+            transaction_type="BUY",
+            quantity=Decimal("10"),
+            price_per_unit=Decimal("100"),
+            amount=Decimal("1000"),
+            fees=Decimal("0"),
+        )
+
+        reference_asset = Asset.objects.create(
+            owner=None,
+            family=None,
+            name="Cube InvIT",
+            category="OTHER",
+            symbol="CUBEINVIT.NS",
+            currency="INR",
+            is_active=True,
+        )
+        MarketPrice.objects.create(
+            asset=reference_asset,
+            date=date(2026, 10, 5),
+            source="YAHOO_FINANCE",
+            close_price=Decimal("125.50"),
+        )
+
+        result = PortfolioTreeService.build(self.user)
+        node = self._find_asset_node(result, "INVI000CUBE001")
+
+        self.assertIsNotNone(node)
+        self.assertEqual(node["current_price"], 125.5)
+        self.assertEqual(node["current_value"], 1255.0)
 
     def test_position_calculation(self):
         result = PortfolioTreeService.build(self.user)

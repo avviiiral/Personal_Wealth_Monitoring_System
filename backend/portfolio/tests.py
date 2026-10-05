@@ -1056,6 +1056,60 @@ class ManualPriceEffectiveDateAndMissingPriceTests(TestCase):
         self.assertEqual(holding.current_value, Decimal("1255.00"))
         self.assertEqual(holding.unrealized_pnl, Decimal("255.00"))
 
+    def test_historical_chart_missing_price_uses_cost_as_total_wealth(self):
+        from analytics.services.historical_wealth import HistoricalWealthAnalytics
+
+        asset = Asset.objects.create(
+            owner=self.user,
+            family=self.family,
+            name="Historical No Price Equity",
+            category="STOCK",
+            isin="INE000HISTNOPRICE",
+        )
+
+        Transaction.objects.create(
+            owner=self.user,
+            family=self.family,
+            family_name="Family Dated",
+            portfolio="Portfolio Dated",
+            asset=asset,
+            asset_class="Equity",
+            sub_class="Large Cap",
+            asset_name="Historical No Price Equity",
+            transaction_date=date(2026, 2, 1),
+            transaction_type="BUY",
+            quantity=Decimal("5"),
+            price_per_unit=Decimal("200"),
+            amount=Decimal("1000"),
+            fees=Decimal("0"),
+        )
+
+        results = HistoricalWealthAnalytics.calculate_history(
+            self.user,
+            date(2026, 2, 1),
+            date(2026, 2, 3),
+        )
+
+        by_date = {item["date"]: item for item in results}
+
+        for target_date in (
+            date(2026, 2, 1),
+            date(2026, 2, 2),
+            date(2026, 2, 3),
+        ):
+            self.assertEqual(
+                by_date[target_date]["invested_value"],
+                Decimal("1000"),
+            )
+            self.assertEqual(
+                by_date[target_date]["total_wealth"],
+                Decimal("1000"),
+            )
+            self.assertEqual(
+                by_date[target_date]["pnl"],
+                Decimal("0"),
+            )
+
     def test_historical_chart_uses_manual_price_on_effective_date(self):
         from analytics.services.historical_wealth import HistoricalWealthAnalytics
         from market_data.models import DataSource, MarketPrice

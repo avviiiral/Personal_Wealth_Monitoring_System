@@ -74,6 +74,28 @@ export class ManualPriceService {
   }
 
   // ==========================================================
+  // HISTORICAL PRICE HISTORY
+  // ==========================================================
+
+  getHistory(assetId: number): Observable<{
+    success: boolean;
+    asset_id: number;
+    asset_name: string;
+    history: Array<{
+      id: number;
+      price: string;
+      price_date: string;
+      updated_by: string | null;
+      updated_at: string | null;
+    }>;
+  }> {
+    return this.http.get<any>(
+      this.baseUrl + '/assets/' + assetId + '/manual-price/',
+      { withCredentials: true },
+    );
+  }
+
+  // ==========================================================
   // UPDATE PRICE
   // ==========================================================
 

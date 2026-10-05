@@ -153,9 +153,15 @@ class PortfolioTreeService:
 
     @classmethod
     def _load_reit_invit_reference_prices(cls, assets_by_id, price_cache):
-        """Fill missing REIT/InvIT prices from the same Yahoo reference history used by MIS Notes."""
+        """Reuse the shared MIS reference-price history for REIT/InvIT holdings.
+
+        MISReportService.refresh_reference_prices already maintains the global
+        reference assets and their Yahoo history. Portfolio valuation must not
+        make a second provider request or assume the first symbol is valid;
+        some REIT/InvITs have no Yahoo history under their NSE symbol while a
+        fallback BSE/alternate symbol does.
+        """
         today = date.today()
-        history_cache = {}
 
         for asset_id, asset in assets_by_id.items():
             if asset_id in price_cache:
@@ -179,7 +185,8 @@ class PortfolioTreeService:
             if matched_name is None:
                 continue
 
-            reference_asset = None
+            # Prefer whichever already-populated shared MIS reference asset has
+            # a latest price. Do not stop at an existing but empty first symbol.
             for symbol in cls.REIT_INVIT_REFERENCE_SYMBOLS[matched_name]:
                 reference_asset = (
                     Asset.objects
@@ -187,72 +194,25 @@ class PortfolioTreeService:
                     .order_by("id")
                     .first()
                 )
-                if reference_asset is not None:
-                    break
+                if reference_asset is None:
+                    continue
 
-                try:
-                    reference_asset = Asset.objects.create(
-                        owner=None,
-                        family=None,
-                        name=matched_name,
-                        category=AssetCategory.OTHER,
-                        symbol=symbol,
-                        currency="INR",
-                        is_active=True,
-                    )
-                except Exception:
-                    reference_asset = (
-                        Asset.objects
-                        .filter(family__isnull=True, symbol=symbol)
-                        .order_by("id")
-                        .first()
-                    )
+                latest = (
+                    MarketPrice.objects
+                    .filter(asset=reference_asset, date__lte=today)
+                    .order_by("-date", "-id")
+                    .values("close_price", "date", "source")
+                    .first()
+                )
+                if latest is None:
+                    continue
 
-                if reference_asset is not None:
-                    break
-
-            if reference_asset is None:
-                continue
-
-            latest = (
-                MarketPrice.objects
-                .filter(asset=reference_asset, date__lte=today)
-                .order_by("-date", "-id")
-                .values("close_price", "date", "source")
-                .first()
-            )
-
-            if latest is None:
-                try:
-                    cache_key = tuple(cls.REIT_INVIT_REFERENCE_SYMBOLS[matched_name])
-                    if cache_key not in history_cache:
-                        YahooFinanceService.save_history(
-                            asset=reference_asset,
-                            symbol=cache_key[0],
-                            start=today - timedelta(days=30),
-                            end=today + timedelta(days=1),
-                        )
-                        history_cache[cache_key] = True
-                    latest = (
-                        MarketPrice.objects
-                        .filter(asset=reference_asset, date__lte=today)
-                        .order_by("-date", "-id")
-                        .values("close_price", "date", "source")
-                        .first()
-                    )
-                except Exception:
-                    logger.exception(
-                        "Unable to resolve Yahoo reference price for REIT/InvIT asset %s (%s).",
-                        asset_id,
-                        asset.name,
-                    )
-
-            if latest is not None:
                 price_cache[asset_id] = {
                     "current_price": latest["close_price"],
                     "price_source": latest["source"] or DataSource.YAHOO_FINANCE,
                     "price_date": latest["date"],
                 }
+                break
 
         return price_cache
 

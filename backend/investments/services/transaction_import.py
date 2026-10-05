@@ -184,12 +184,80 @@ class TransactionImporter:
         ).hexdigest()
 
     @staticmethod
-    def _read_excel(file):
-        filename = getattr(
-            file,
-            "name",
-            "",
+    def _normalize_excel_header(value):
+        """Normalize Excel header text for sheet/header auto-detection."""
+        if pd.isna(value):
+            return ""
+        return " ".join(str(value).strip().split()).upper()
+
+    @staticmethod
+    def _find_excel_header_row(raw_dataframe, required_columns):
+        """
+        Find a row containing every required column.
+
+        The entire sheet is scanned, so headers may appear on any row.
+        Sheet names and fixed header positions are never required.
+        """
+        required = {
+            TransactionImporter._normalize_excel_header(column)
+            for column in required_columns
+        }
+        header_aliases = {
+            "FAMILY MEMBER": "FAMILY NAME",
+        }
+
+        for row_index in range(len(raw_dataframe.index)):
+            row_values = {
+                header_aliases.get(
+                    TransactionImporter._normalize_excel_header(value),
+                    TransactionImporter._normalize_excel_header(value),
+                )
+                for value in raw_dataframe.iloc[row_index].tolist()
+            }
+            row_values.discard("")
+
+            if required.issubset(row_values):
+                return row_index
+
+        return None
+
+    @staticmethod
+    def _canonicalize_excel_columns(dataframe):
+        """Map normalized Excel headers to the application's canonical names."""
+        aliases = {
+            "FAMILY MEMBER": "Family Name",
+        }
+
+        canonical_lookup = {
+            TransactionImporter._normalize_excel_header(column): column
+            for column in (
+                TRANSACTIONS_REQUIRED_COLUMNS
+                + SUMMARY_REQUIRED_COLUMNS
+            )
+        }
+        canonical_lookup.update(
+            {
+                TransactionImporter._normalize_excel_header(alias): target
+                for alias, target in aliases.items()
+            }
         )
+
+        rename_map = {}
+
+        for column in dataframe.columns:
+            normalized = TransactionImporter._normalize_excel_header(column)
+            target = canonical_lookup.get(normalized)
+            if target and target != column:
+                rename_map[column] = target
+
+        if rename_map:
+            dataframe = dataframe.rename(columns=rename_map)
+
+        return dataframe
+
+    @staticmethod
+    def _read_excel(file):
+        filename = getattr(file, "name", "")
 
         if not filename.lower().endswith(".xlsx"):
             raise TransactionImportError(
@@ -197,37 +265,96 @@ class TransactionImporter:
             )
 
         try:
-            transactions = pd.read_excel(
-                file,
-                sheet_name="Transactions",
-                header=0,
-            )
-
+            file.seek(0)
+            workbook = pd.ExcelFile(file)
+            sheet_names = list(workbook.sheet_names)
         except Exception as exc:
             raise TransactionImportError(
-                "Unable to read the Excel workbook. "
-                "Expected a sheet named 'Transactions'."
+                "Unable to open the Excel workbook."
             ) from exc
 
-        # The "Summary" sheet is optional supplementary data (used
-        # only to fill in Portfolio Name when present - see
-        # _resolve_portfolio_from_summary). A workbook containing
-        # only a Transactions sheet is perfectly valid and must
-        # still import; only fail the whole import if the required
-        # Transactions sheet itself could not be read.
-        summary = None
+        transaction_frames = []
+        summary_frames = []
 
-        try:
-            file.seek(0)
+        # Every sheet is inspected. Sheet name, sheet count, and header row
+        # position are intentionally irrelevant.
+        for sheet_name in sheet_names:
+            try:
+                raw = pd.read_excel(
+                    workbook,
+                    sheet_name=sheet_name,
+                    header=None,
+                )
+            except Exception as exc:
+                logger.warning(
+                    "Skipping unreadable Excel sheet '%s': %s",
+                    sheet_name,
+                    exc,
+                )
+                continue
 
-            summary = pd.read_excel(
-                file,
-                sheet_name="Summary",
-                header=1,
+            if raw.empty:
+                continue
+
+            transaction_header = TransactionImporter._find_excel_header_row(
+                raw,
+                TRANSACTIONS_REQUIRED_COLUMNS,
             )
 
-        except Exception:
-            summary = None
+            summary_header = TransactionImporter._find_excel_header_row(
+                raw,
+                SUMMARY_REQUIRED_COLUMNS,
+            )
+
+            if transaction_header is not None:
+                dataframe = pd.read_excel(
+                    workbook,
+                    sheet_name=sheet_name,
+                    header=transaction_header,
+                )
+                dataframe = TransactionImporter._canonicalize_excel_columns(
+                    dataframe
+                )
+
+                first_data_row = transaction_header + 2
+                dataframe["__source_sheet"] = sheet_name
+                dataframe["__source_row"] = range(
+                    first_data_row,
+                    first_data_row + len(dataframe.index),
+                )
+                transaction_frames.append(dataframe)
+                continue
+
+            if summary_header is not None:
+                dataframe = pd.read_excel(
+                    workbook,
+                    sheet_name=sheet_name,
+                    header=summary_header,
+                )
+                dataframe = TransactionImporter._canonicalize_excel_columns(
+                    dataframe
+                )
+                summary_frames.append(dataframe)
+
+        if not transaction_frames:
+            raise TransactionImportError(
+                "Unable to find transaction data in the Excel workbook. "
+                "The workbook can contain any number of sheets with any "
+                "sheet names, but at least one sheet must contain these "
+                "transaction columns: "
+                + ", ".join(TRANSACTIONS_REQUIRED_COLUMNS)
+            )
+
+        transactions = pd.concat(
+            transaction_frames,
+            ignore_index=True,
+        )
+
+        summary = (
+            pd.concat(summary_frames, ignore_index=True)
+            if summary_frames
+            else None
+        )
 
         return transactions, summary
 

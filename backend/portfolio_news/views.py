@@ -1,6 +1,7 @@
 from datetime import timedelta
 
-from django.db.models import Exists, OuterRef
+from django.db.models import Exists, OuterRef, Q
+from django.db.models.functions import TruncDate
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 
@@ -52,6 +53,17 @@ def _parse_limit(request):
     return max(1, min(limit, MAX_LIST_LIMIT))
 
 
+def _parse_after_id(request):
+    """Return a positive incremental-feed cursor, or None."""
+
+    try:
+        after_id = int(request.query_params.get("after_id", ""))
+    except (TypeError, ValueError):
+        return None
+
+    return after_id if after_id > 0 else None
+
+
 def _apply_common_filters(queryset, request):
     """
     Shared filter logic for the news feed. Every filter is
@@ -79,7 +91,13 @@ def _apply_common_filters(queryset, request):
     source_type = request.query_params.get("source_type")
 
     if source_type:
-        queryset = queryset.filter(source_type=source_type)
+        if source_type == "CORPORATE_FILING":
+            queryset = queryset.filter(
+                Q(source_type="CORPORATE_FILING")
+                | Q(source_type="EXCHANGE_FILING")
+            )
+        else:
+            queryset = queryset.filter(source_type=source_type)
 
     holding_id = request.query_params.get("holding_id")
 
@@ -93,7 +111,8 @@ def _apply_common_filters(queryset, request):
 
     if date_range == "today":
         queryset = queryset.filter(
-            created_at__date=timezone.localdate()
+            created_at__gte=timezone.localdate(),
+            created_at__lt=timezone.localdate() + timedelta(days=1),
         )
     elif date_range in DATE_RANGE_DAYS:
         cutoff = timezone.now() - timedelta(
@@ -120,6 +139,10 @@ def portfolio_news_list(request):
         .filter(user=request.user, relevant=True)
         .select_related("article", "filing")
     )
+
+    after_id = _parse_after_id(request)
+    if after_id is not None:
+        queryset = queryset.filter(id__gt=after_id)
 
     tier = request.query_params.get("tier")
 
@@ -186,10 +209,23 @@ def portfolio_news_raw_list(request):
         .filter(Exists(matching_articles))
     )
 
+    after_id = _parse_after_id(request)
+    if after_id is not None:
+        articles = articles.filter(id__gt=after_id)
+
     date_range = request.query_params.get("date_range")
     if date_range == "today":
+        today_start = timezone.localdate()
+        tomorrow_start = today_start + timedelta(days=1)
         articles = articles.filter(
-            published_at__date=timezone.localdate()
+            published_at__gte=timezone.make_aware(
+                timezone.datetime.combine(today_start, timezone.datetime.min.time()),
+                timezone.get_current_timezone(),
+            ),
+            published_at__lt=timezone.make_aware(
+                timezone.datetime.combine(tomorrow_start, timezone.datetime.min.time()),
+                timezone.get_current_timezone(),
+            ),
         )
     elif date_range in DATE_RANGE_DAYS:
         cutoff = timezone.now() - timedelta(days=DATE_RANGE_DAYS[date_range])
@@ -275,10 +311,17 @@ def portfolio_news_detail(request, alert_id):
     """
 
     alert = get_object_or_404(
-        PortfolioNewsAlert.objects.select_related("article", "filing"),
+        PortfolioNewsAlert.objects
+        .filter(
+            id=alert_id,
+            user=request.user,
+            relevant=True,
+        )
+        .select_related("article", "filing")
+        .prefetch_related(
+            "article__sources",
+        ),
         id=alert_id,
-        user=request.user,
-        relevant=True,
     )
 
     serializer = PortfolioNewsAlertDetailSerializer(alert)

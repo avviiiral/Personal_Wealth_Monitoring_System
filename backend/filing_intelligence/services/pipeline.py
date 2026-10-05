@@ -1,5 +1,6 @@
 import hashlib
 import logging
+from django.conf import settings
 from datetime import timedelta
 from django.contrib.auth.models import User
 from django.db.models import Sum
@@ -7,24 +8,47 @@ from django.utils import timezone
 from investments.models import Holding
 from portfolio_news.constants import AlertSourceType, HoldingType, ImpactLevel, Materiality, NewsCategory, NotificationTier, Sentiment, TimeHorizon
 from portfolio_news.models import NewsArticle, PortfolioNewsAlert
-from portfolio_news.services.alert_scoring import determine_notification_tier
+from portfolio_news.services.alert_scoring import compute_alert_score, determine_notification_tier
 from portfolio_news.services.web_push import deliver_alert_notification
+from portfolio_news.services.article_store import store_article
+from portfolio_news.services.news_provider import NewsArticleResult
+from portfolio_news.services.market_hours import market_session
 from ..models import Filing, FilingProcessingStatus
 from ..providers.official import NSEFilingProvider, BSEFilingProvider
-from .classifier import classify, SEVERITY_SCORE
+from .classifier import classify, FilingClassification, SEVERITY_SCORE
+from .material_change import detect_material_change
 from .matching import match_assets, users_for_holding, match_user_watchlists
 logger=logging.getLogger(__name__)
 
 def _hash(item): return hashlib.sha256("|".join([item.exchange,item.external_filing_id,item.company_name,item.symbol,item.isin,item.subject,item.details,item.filing_url]).encode()).hexdigest()
 def _store_article(filing):
-    url=filing.filing_url or filing.source_url
-    h=hashlib.sha256(url.encode()).hexdigest()
-    article,_=NewsArticle.objects.get_or_create(url_hash=h,defaults={"title":filing.subject[:500],"normalized_title":filing.subject.lower()[:500],"url":url,"source":filing.exchange,"description":filing.details[:5000],"published_at":filing.published_at,"fingerprint":filing.content_hash,"matched_query":"exchange_filing","source_quality":"tier_1","source_count":1})
-    return article
+    """Store a filing in the shared NewsArticle/source-clustering layer.
+
+    Using the same store as RSS news is what lets an NSE/BSE filing,
+    company announcement and independent news reports collapse into one
+    underlying event while retaining every supporting source.
+    """
+    url = filing.filing_url or filing.source_url
+    candidate = NewsArticleResult(
+        title=filing.subject or f"{filing.company_name} corporate filing",
+        url=url,
+        source=filing.exchange,
+        description=filing.details[:5000],
+        published_at=filing.published_at,
+        matched_query=(filing.symbol or filing.company_name or "corporate filing")[:255],
+    )
+    return store_article(candidate)[0]
 
 def _create_alert(user, holding_type, holding_id, display_name, filing, article, cls, weight=0.0):
     impact = cls.impact
     tier = determine_notification_tier(impact)
+    confidence = min(0.97 + max(0, article.source_count - 1) * 0.01, 0.99)
+    portfolio_relevance = min(
+        100.0,
+        float(cls.impact == "critical") * 100.0
+        + float(cls.impact != "critical") * (float(cls.severity_score if hasattr(cls, "severity_score") else SEVERITY_SCORE[cls.severity]) * max(weight, 1.0) / 100.0),
+    )
+    session = market_session(filing.published_at)
     materiality = (
         cls.materiality
         if cls.materiality in {x.value for x in Materiality}
@@ -35,7 +59,13 @@ def _create_alert(user, holding_type, holding_id, display_name, filing, article,
         if cls.category in {x.value for x in NewsCategory}
         else NewsCategory.OTHER
     )
-    score = float(SEVERITY_SCORE[cls.severity])
+    score = compute_alert_score(
+        impact_score=SEVERITY_SCORE[cls.severity],
+        portfolio_weight_percent=weight,
+        confidence=confidence,
+        source_quality=getattr(article, "source_quality", "tier_1"),
+        published_at=article.published_at,
+    )
 
     alert, created = PortfolioNewsAlert.objects.get_or_create(
         user=user,
@@ -43,7 +73,7 @@ def _create_alert(user, holding_type, holding_id, display_name, filing, article,
         holding_type=holding_type,
         holding_id=holding_id,
         defaults={
-            "source_type": AlertSourceType.EXCHANGE_FILING,
+            "source_type": AlertSourceType.CORPORATE_FILING,
             "filing": filing,
             "holding_display_name": display_name,
             "relevant": True,
@@ -53,7 +83,7 @@ def _create_alert(user, holding_type, holding_id, display_name, filing, article,
             "relevance_score": 100,
             "impact": impact,
             "impact_score": SEVERITY_SCORE[cls.severity],
-            "confidence": 1.0,
+            "confidence": confidence,
             "portfolio_weight_at_alert": weight,
             "alert_score": score,
             "notification_tier": tier,
@@ -62,20 +92,55 @@ def _create_alert(user, holding_type, holding_id, display_name, filing, article,
                 "This filing is associated with a security in your monitored "
                 "portfolio or watchlist."
             ),
-            "reason": cls.reason,
+            "reason": f"{cls.reason} Timing: {session}. Portfolio relevance signal: {portfolio_relevance:.1f}/100. Source confidence: {confidence:.2f}.",
             "notification_sent": False,
             "materiality": materiality,
             "key_facts": " ".join(cls.facts)[:5000],
             "interpretation": "",
             "uncertainty_notes": (
                 "The severity is a deterministic PWMS classification of the "
-                "filing text; no market outcome is inferred."
+                "filing text; no market outcome is inferred. Source count "
+                f"currently represents {article.source_count} independent URL(s)."
             ),
         },
     )
 
     if created:
-        deliver_alert_notification(alert)
+        if tier in ("critical", "high") and not alert.notification_sent:
+            deliver_alert_notification(alert)
+    elif filing:
+        # A primary corporate filing upgrades an existing news alert for the
+        # same clustered event. Supporting sources stay attached to the shared
+        # NewsArticle and never generate another notification.
+        updates = {
+            "source_type": AlertSourceType.CORPORATE_FILING,
+            "category": category,
+            "impact": impact,
+            "impact_score": SEVERITY_SCORE[cls.severity],
+            "materiality": materiality,
+            "notification_tier": tier,
+            "relevance_score": 100,
+            "alert_score": score,
+            "summary": f"The {filing.exchange} filing reports: {filing.subject}.",
+            "key_facts": " ".join(cls.facts)[:5000],
+        }
+        if confidence > alert.confidence:
+            updates["confidence"] = confidence
+        if alert.filing_id != filing.id:
+            updates["filing"] = filing
+        for field, value in updates.items():
+            setattr(alert, field, value)
+        alert.reason = (
+            f"{cls.reason} Timing: {session}. Portfolio relevance signal: "
+            f"{portfolio_relevance:.1f}/100. Source confidence: {confidence:.2f}."
+        )
+        updates["reason"] = alert.reason
+        alert.save(update_fields=list(updates.keys()))
+        if tier in ("critical", "high") and not alert.notification_sent:
+            cooldown_seconds = max(0, int(getattr(settings, "NEWS_NOTIFICATION_COOLDOWN", 86400)))
+            alert_age = (timezone.now() - alert.created_at).total_seconds()
+            if alert_age <= cooldown_seconds:
+                deliver_alert_notification(alert)
 
     return alert, created
 
@@ -85,10 +150,33 @@ def _process(item,dry_run=False):
     if existing:
         return {"duplicate":True,"stored":False,"matched":0,"alerts":0}
     if dry_run:
-        cls=classify(item.subject,item.details); logger.info("filing dry-run exchange=%s symbol=%s event=%s severity=%s",item.exchange,item.symbol,cls.event_type,cls.severity)
+        cls=classify(item.subject,item.details,item.filing_type); logger.info("filing dry-run exchange=%s symbol=%s event=%s severity=%s",item.exchange,item.symbol,cls.event_type,cls.severity)
         return {"duplicate":False,"stored":False,"matched":0,"alerts":0}
     filing=Filing.objects.create(exchange=item.exchange,company_name=item.company_name or item.symbol,symbol=item.symbol,isin=item.isin,bse_code=item.bse_code,filing_type=item.filing_type,subject=item.subject or "Exchange filing",details=item.details,filing_url=item.filing_url or item.source_url,source_url=item.source_url,external_filing_id=item.external_filing_id,published_at=item.published_at,content_hash=content_hash)
-    cls=classify(filing.subject,filing.details)
+    cls=classify(filing.subject,filing.details,filing.filing_type)
+    previous = (
+        Filing.objects
+        .filter(
+            company_name__iexact=filing.company_name,
+            event_type=cls.event_type,
+        )
+        .order_by("-published_at")
+        .first()
+    )
+    material_change = detect_material_change(
+        " ".join(filter(None, [previous.subject, previous.details])) if previous else "",
+        " ".join(filter(None, [filing.subject, filing.details])),
+    )
+    if material_change:
+        cls = FilingClassification(
+            event_type=cls.event_type,
+            severity=cls.severity,
+            category=cls.category,
+            impact=cls.impact,
+            materiality=cls.materiality,
+            reason=f"{cls.reason} {material_change}.",
+            facts=[*cls.facts, f"Material change: {material_change}"],
+        )
     filing.event_type,filing.severity,filing.classification_reason,filing.classification_facts=cls.event_type,cls.severity,cls.reason,cls.facts
     filing.save(update_fields=["event_type","severity","classification_reason","classification_facts","updated_at"])
     assets,method=match_assets(filing); article=_store_article(filing); alerts=0; matched=len(assets)

@@ -1,4 +1,4 @@
-import { Component, OnInit, inject } from '@angular/core';
+import { ChangeDetectorRef, Component, OnInit, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { ActivatedRoute, Router } from '@angular/router';
 
@@ -15,6 +15,7 @@ export class PortfolioNewsDetailComponent implements OnInit {
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
   private readonly newsApi = inject(NewsApiService);
+  private readonly changeDetector = inject(ChangeDetectorRef);
 
   alert: PortfolioNewsAlertDetail | null = null;
   loading = true;
@@ -34,12 +35,14 @@ export class PortfolioNewsDetailComponent implements OnInit {
       next: (alert) => {
         this.alert = alert;
         this.loading = false;
+        this.changeDetector.detectChanges();
       },
 
       error: (error) => {
         console.error('Failed to load news detail:', error);
         this.error = 'This news item could not be found.';
         this.loading = false;
+        this.changeDetector.detectChanges();
       },
     });
   }
@@ -53,7 +56,7 @@ export class PortfolioNewsDetailComponent implements OnInit {
   }
 
   isFiling(): boolean {
-    return this.alert?.source_type === 'EXCHANGE_FILING';
+    return this.alert?.source_type === 'EXCHANGE_FILING' || this.alert?.source_type === 'CORPORATE_FILING';
   }
 
   formattedPublishedAt(): string {

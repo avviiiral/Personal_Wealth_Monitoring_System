@@ -4,6 +4,7 @@ from unittest.mock import (
     patch,
 )
 
+from django.contrib.auth import get_user_model
 from django.test import TestCase
 from rest_framework.test import APIClient
 
@@ -53,6 +54,101 @@ SAMPLE_FEED_XML = b"""<?xml version="1.0" encoding="UTF-8"?>
 """
 
 MALFORMED_FEED_XML = b"not a valid feed at all <<<>>>"
+
+
+class PortfolioNewsIncrementalFeedTests(TestCase):
+
+    def setUp(self):
+        self.client = APIClient()
+        User = get_user_model()
+        self.user = User.objects.create_user(
+            username="live-news-user",
+            password="test-password",
+        )
+        self.client.force_authenticate(user=self.user)
+
+    def _article(self, title, article_id=None):
+        candidate = NewsArticleResult(
+            title=title,
+            url=f"https://news.example.com/{title.lower().replace(' ', '-')}",
+            source="Reuters",
+            description=title,
+            published_at=datetime(2026, 10, 3, 9, 0, tzinfo=timezone.utc),
+            matched_query="Test Company",
+        )
+        article, _ = store_article(candidate)
+        return article
+
+    def test_raw_feed_supports_after_id_cursor(self):
+        first = self._article("First article")
+        second = self._article("Second article")
+
+        PortfolioNewsMatch.objects.create(
+            user=self.user,
+            article=first,
+            holding_type="EQUITY",
+            holding_id=1,
+            holding_display_name="Test Company",
+            matched_query="Test Company",
+        )
+        PortfolioNewsMatch.objects.create(
+            user=self.user,
+            article=second,
+            holding_type="EQUITY",
+            holding_id=1,
+            holding_display_name="Test Company",
+            matched_query="Test Company",
+        )
+
+        response = self.client.get(
+            "/api/ai/news/raw/",
+            {"after_id": first.id},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        returned_ids = [item["id"] for item in response.data["results"]]
+        self.assertIn(second.id, returned_ids)
+        self.assertNotIn(first.id, returned_ids)
+
+    def test_alert_feed_supports_after_id_cursor(self):
+        first = self._article("First alert article")
+        second = self._article("Second alert article")
+
+        def create_alert(article):
+            return PortfolioNewsAlert.objects.create(
+                user=self.user,
+                article=article,
+                holding_type="EQUITY",
+                holding_id=1,
+                holding_display_name="Test Company",
+                relevant=True,
+                category="OTHER",
+                sentiment="neutral",
+                time_horizon="unspecified",
+                relevance_score=80,
+                impact="high",
+                impact_score=70,
+                confidence=0.8,
+                portfolio_weight_at_alert=10.0,
+                alert_score=5.0,
+                notification_tier="high",
+                summary="Test alert",
+                portfolio_implication="Test implication",
+                reason="Test reason",
+            )
+
+        first_alert = create_alert(first)
+        second_alert = create_alert(second)
+
+        response = self.client.get(
+            "/api/ai/news/",
+            {"after_id": first_alert.id},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        returned_ids = [item["id"] for item in response.data["results"]]
+        self.assertIn(second_alert.id, returned_ids)
+        self.assertNotIn(first_alert.id, returned_ids)
 
 
 class GoogleNewsRSSProviderTests(TestCase):
@@ -191,6 +287,16 @@ class TextUtilsTests(TestCase):
 
 class DeduplicationLogicTests(TestCase):
 
+    def _result(self, title, url, source):
+        return NewsArticleResult(
+            title=title,
+            url=url,
+            source=source,
+            description=title,
+            published_at=datetime(2026, 8, 24, 9, 0, tzinfo=timezone.utc),
+            matched_query="XYZ",
+        )
+
     def test_titles_are_similar_true_for_near_duplicates(self):
         a = normalize_title(
             "Aurobindo Pharma receives USFDA approval - Reuters"
@@ -221,6 +327,26 @@ class DeduplicationLogicTests(TestCase):
         )
 
         self.assertEqual(fp1, fp2)
+
+    def test_event_family_clusters_different_acquisition_headlines(self):
+        first = self._result(
+            "XYZ approves acquisition of ABC",
+            "https://news.example.com/acq-1",
+            "Reuters",
+        )
+        second = self._result(
+            "XYZ to acquire ABC",
+            "https://news.example.com/acq-2",
+            "Economic Times",
+        )
+
+        article_one, created_one = store_article(first)
+        article_two, created_two = store_article(second)
+
+        self.assertTrue(created_one)
+        self.assertFalse(created_two)
+        self.assertEqual(article_one.id, article_two.id)
+        self.assertEqual(article_one.source_count, 2)
 
     def test_compute_url_hash_deterministic(self):
         url = "https://news.example.com/article-1"
@@ -2796,7 +2922,7 @@ class PortfolioNewsPipelineTests(TestCase):
             provider=provider, analyzer=analyzer
         )
 
-        self.assertEqual(stats["ai_failures"], 1)
+        self.assertEqual(stats["analysis_failures"], 1)
         self.assertEqual(stats["alerts_created"], 0)
         # The article itself is still stored for future runs.
         self.assertEqual(NewsArticle.objects.count(), 1)
@@ -3014,7 +3140,7 @@ class PortfolioNewsPipelineTests(TestCase):
         # only 1 was sent to the AI this run - the cap applies
         # after matching, before the (expensive) AI call.
         self.assertEqual(stats["articles_matched"], 2)
-        self.assertEqual(stats["articles_sent_to_ai"], 1)
+        self.assertEqual(stats["articles_analyzed"], 1)
         self.assertEqual(analyzer.call_count, 1)
 
         # Both articles are still stored, though - nothing is

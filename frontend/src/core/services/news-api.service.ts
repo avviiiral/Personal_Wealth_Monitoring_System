@@ -25,7 +25,7 @@ export interface PortfolioNewsAlertListItem {
   underlying_name: string;
   underlying_weight: string | null;
   created_at: string;
-  source_type: 'NEWS' | 'EXCHANGE_FILING';
+  source_type: 'NEWS' | 'EXCHANGE_FILING' | 'CORPORATE_FILING';
   filing_exchange?: string | null;
   filing_company?: string | null;
   filing_symbol?: string | null;
@@ -169,6 +169,7 @@ export class NewsApiService {
     holdingId?: number;
     dateRange?: string;
     sourceType?: string;
+    afterId?: number;
   }): Observable<PortfolioNewsListResponse> {
     let params = new HttpParams();
 
@@ -207,6 +208,10 @@ export class NewsApiService {
       params = params.set('source_type', options.sourceType);
     }
 
+    if (options?.afterId) {
+      params = params.set('after_id', String(options.afterId));
+    }
+
     return this.http.get<PortfolioNewsListResponse>(`${this.baseUrl}/news/`, {
       withCredentials: true,
       params,
@@ -218,6 +223,7 @@ export class NewsApiService {
     holdingType?: string;
     holdingId?: number;
     dateRange?: string;
+    afterId?: number;
   }): Observable<PortfolioNewsRawListResponse> {
     let params = new HttpParams();
 
@@ -235,6 +241,10 @@ export class NewsApiService {
 
     if (options?.dateRange) {
       params = params.set('date_range', options.dateRange);
+    }
+
+    if (options?.afterId) {
+      params = params.set('after_id', String(options.afterId));
     }
 
     return this.http.get<PortfolioNewsRawListResponse>(

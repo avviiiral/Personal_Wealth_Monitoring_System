@@ -9,7 +9,9 @@ class HoldingType(models.TextChoices):
 
 class AlertSourceType(models.TextChoices):
     NEWS = "NEWS", "News"
+    # EXCHANGE_FILING is retained for backward compatibility with existing rows.
     EXCHANGE_FILING = "EXCHANGE_FILING", "Exchange Filing"
+    CORPORATE_FILING = "CORPORATE_FILING", "Corporate Filing"
 
 
 class NewsCategory(models.TextChoices):

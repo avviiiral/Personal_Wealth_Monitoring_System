@@ -68,7 +68,7 @@
   border: 1px solid var(--surface-line, #e7e9ee);
   border-radius: var(--radius-lg, 12px);
 
-  background: #ffffff;
+  background: var(--surface, #ffffff);
 
   box-shadow: var(--shadow-sm, 0 1px 2px rgba(17, 24, 39, 0.04), 0 1px 1px rgba(17, 24, 39, 0.03));
 
@@ -150,9 +150,9 @@
 
   border-radius: 20px;
 
-  background: #f2f4f7;
+  background: var(--surface-line, #f2f4f7);
 
-  color: #4f5868;
+  color: var(--muted, #4f5868);
 
   font-size: 11px;
   font-weight: 700;
@@ -191,7 +191,7 @@
 }
 
 .dot-sep {
-  color: #c9cfd8;
+  color: var(--surface-line, #c9cfd8);
 }
 
 .read-original-button {
@@ -266,7 +266,7 @@
   font-size: 13px;
   line-height: 1.6;
 
-  color: #3f4755;
+  color: var(--ink-soft, #3f4755);
 }
 
 .why-matters-card p:last-child {
@@ -306,7 +306,7 @@
   font-size: 13px;
   line-height: 1.6;
 
-  color: #3f4755;
+  color: var(--ink-soft, #3f4755);
 }
 
 .disclaimer {
@@ -332,9 +332,9 @@
   padding: 14px 16px;
 
   border-radius: 10px;
-  border-left: 3px solid #d0d5dd;
+  border-left: 3px solid var(--surface-line, #d0d5dd);
 
-  background: #fbfcfe;
+  background: var(--surface, #fbfcfe);
 }
 
 .fact-block p {
@@ -343,7 +343,7 @@
   font-size: 13px;
   line-height: 1.6;
 
-  color: #3f4755;
+  color: var(--ink-soft, #3f4755);
 }
 
 .fact-block-label {
@@ -356,7 +356,7 @@
 }
 
 .fact-block-label--facts {
-  color: #175cd3;
+  color: #3b82f6;
 }
 
 .fact-block-label--interpretation {
@@ -406,17 +406,17 @@
 }
 
 .source-tier--tier_1 {
-  background: #ecfdf3;
+  background: var(--accent-soft, #ecfdf3);
   color: var(--accent, #027a48);
 }
 
 .source-tier--tier_2 {
-  background: #f2f4f7;
-  color: #4f5868;
+  background: var(--surface-line, #f2f4f7);
+  color: var(--muted, #4f5868);
 }
 
 .source-tier--tier_3 {
-  background: #f9fafb;
+  background: var(--canvas-from, #f9fafb);
   color: var(--muted-soft, #8d95a5);
 }
 
@@ -428,7 +428,7 @@
   margin-top: 28px;
 
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(3, 1fr);
   gap: 14px;
 }
 
@@ -438,7 +438,7 @@
   border: 1px solid var(--surface-line, #e7e9ee);
   border-radius: var(--radius-md, 10px);
 
-  background: #ffffff;
+  background: var(--surface, #ffffff);
 
   box-shadow: var(--shadow-sm, 0 1px 2px rgba(17, 24, 39, 0.04), 0 1px 1px rgba(17, 24, 39, 0.03));
 
@@ -482,9 +482,15 @@
   color: var(--warning, #b54708);
 }
 
-@media (max-width: 700px) {
+@media (max-width: 900px) {
   .metrics-grid {
     grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 700px) {
+  .metrics-grid {
+    grid-template-columns: 1fr;
   }
 }
 

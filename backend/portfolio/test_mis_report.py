@@ -707,6 +707,126 @@ class MISReportAPITests(TestCase):
         self.assertEqual(response.status_code, 400)
 
 
+    def test_saved_note_tracks_current_asset_price_regardless_of_section(self):
+        gold_etf = Asset.objects.create(
+            owner=self.user,
+            family=self.family,
+            name="ICICI Prudential Gold ETF",
+            category="ETF",
+            isin="INE123GOLDETF1",
+            symbol="GOLDIETF",
+        )
+        MarketPrice.objects.create(
+            asset=gold_etf,
+            date=date.today(),
+            close_price=Decimal("125.50"),
+            source=DataSource.MANUAL,
+        )
+
+        response = self.client.get("/api/portfolio/mis-report/")
+        self.assertEqual(response.status_code, 200)
+        document = response.json()["notes"]["editable"]
+        silver_section = next(
+            section for section in document["sections"]
+            if section["id"] == "silver"
+        )
+        silver_section["rows"].append({
+            "id": "gold-etf-row",
+            "cells": {
+                "sr_no": 99,
+                "particulars": "ICICI Prudential Gold ETF",
+                "opening_rate": None,
+                "closing_rate": None,
+                "change": None,
+                "percent_change": None,
+            },
+        })
+
+        response = self.client.put(
+            "/api/portfolio/mis-report/notes/",
+            {"notes": document, "auto_fill": False},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200)
+
+        saved = response.json()["notes"]["editable"]
+        saved_row = next(
+            row
+            for row in next(
+                section for section in saved["sections"]
+                if section["id"] == "silver"
+            )["rows"]
+            if row["id"] == "gold-etf-row"
+        )
+        self.assertEqual(saved_row["cells"]["closing_rate"], 125.50)
+
+        # The stored Notes document must not freeze the old price. A later
+        # market-price refresh should immediately flow through to the same row.
+        MarketPrice.objects.create(
+            asset=gold_etf,
+            date=date.today(),
+            close_price=Decimal("131.25"),
+            source=DataSource.MANUAL,
+        )
+        response = self.client.get("/api/portfolio/mis-report/")
+        self.assertEqual(response.status_code, 200)
+        current = response.json()["notes"]["editable"]
+        current_row = next(
+            row
+            for row in next(
+                section for section in current["sections"]
+                if section["id"] == "silver"
+            )["rows"]
+            if row["id"] == "gold-etf-row"
+        )
+        self.assertEqual(current_row["cells"]["closing_rate"], 131.25)
+
+    def test_removing_note_row_stops_note_price_tracking(self):
+        response = self.client.get("/api/portfolio/mis-report/")
+        self.assertEqual(response.status_code, 200)
+        document = response.json()["notes"]["editable"]
+        section = document["sections"][0]
+        section["rows"].append({
+            "id": "tracked-row",
+            "cells": {
+                "sr_no": 99,
+                "particulars": "Tracked Note Equity",
+                "opening_rate": None,
+                "closing_rate": None,
+                "change": None,
+                "percent_change": None,
+            },
+        })
+
+        response = self.client.put(
+            "/api/portfolio/mis-report/notes/",
+            {"notes": document, "auto_fill": False},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200)
+
+        document = response.json()["notes"]["editable"]
+        section = document["sections"][0]
+        section["rows"] = [
+            row for row in section["rows"]
+            if row["id"] != "tracked-row"
+        ]
+
+        response = self.client.put(
+            "/api/portfolio/mis-report/notes/",
+            {"notes": document, "auto_fill": False},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200)
+
+        saved = response.json()["notes"]["editable"]
+        all_names = [
+            row["cells"].get("particulars")
+            for section in saved["sections"]
+            for row in section["rows"]
+        ]
+        self.assertNotIn("Tracked Note Equity", all_names)
+
     def test_notes_can_be_edited_and_are_family_scoped(self):
         response = self.client.get("/api/portfolio/mis-report/")
         self.assertEqual(response.status_code, 200)

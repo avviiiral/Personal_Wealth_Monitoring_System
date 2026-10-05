@@ -50,85 +50,73 @@ class HoldingMatcher:
     """
 
     @staticmethod
+    def match_score(
+        title: str,
+        description: str,
+        holding: MonitoredHolding,
+        matched_query: str = "",
+    ) -> int:
+        """Return an explainable 0-100 deterministic entity-match strength.
+
+        Headline matches deliberately outrank body-only matches. Exact ISIN,
+        company name/alias and symbol matches are stronger than sector/macro
+        matches, reducing false positives without using an AI model.
+        """
+        title_text = (title or "").lower()
+        body_text = (description or "").lower()
+
+        def score_term(term: str, title_weight: int, body_weight: int) -> int:
+            if not term or len(term.strip()) < MIN_TERM_LENGTH_FOR_MATCH:
+                return 0
+            phrase = term.strip()
+            if _contains_phrase(title_text, phrase):
+                return title_weight
+            if _contains_phrase(body_text, phrase):
+                return body_weight
+            return 0
+
+        best = max(
+            (score_term(term, 100, 70) for term in holding.identifier_terms()),
+            default=0,
+        )
+
+        if holding.symbol:
+            best = max(best, score_term(holding.symbol, 95, 65))
+
+        if holding.isin and len(holding.isin) >= MIN_ISIN_LENGTH:
+            if holding.isin.lower() in title_text:
+                best = max(best, 100)
+            elif holding.isin.lower() in body_text:
+                best = max(best, 80)
+
+        underlying = QueryBuilder.underlying_for_query(matched_query, holding)
+        if underlying is not None:
+            if underlying.name:
+                best = max(best, score_term(underlying.name, 85, 60))
+            if underlying.isin and len(underlying.isin) >= MIN_ISIN_LENGTH:
+                if underlying.isin.lower() in title_text:
+                    best = max(best, 90)
+                elif underlying.isin.lower() in body_text:
+                    best = max(best, 75)
+
+        searchable = _build_searchable_text(title, description)
+        if matched_query and holding.sector and QueryBuilder.is_sector_or_macro_query(
+            matched_query, holding
+        ):
+            if holding.sector.lower() in searchable or matched_query.lower() in searchable:
+                best = max(best, 50)
+
+        return best
+
+    @classmethod
     def is_relevant(
+        cls,
         title: str,
         description: str,
         holding: MonitoredHolding,
         matched_query: str = "",
     ) -> bool:
-
-        # Deterministic matching considers both the headline and the
-        # provider-supplied article body/description. This keeps the
-        # matcher broader than headline-only matching without requiring
-        # a second full-article fetch.
-        searchable = _build_searchable_text(title, description)
-
-        for term in holding.identifier_terms():
-
-            if len(term) < MIN_TERM_LENGTH_FOR_MATCH:
-                continue
-
-            if _contains_phrase(searchable, term):
-                return True
-
-        if (
-            holding.symbol
-            and len(holding.symbol) >= 2
-            and _contains_phrase(searchable, holding.symbol)
-        ):
-            return True
-
-        if (
-            holding.isin
-            and len(holding.isin) >= MIN_ISIN_LENGTH
-            and holding.isin.lower() in searchable
-        ):
-            return True
-
-        # Uploaded underlying holdings are an explicit portfolio
-        # relationship. Only accept an underlying match when the
-        # article text contains that underlying's name/ISIN and the
-        # search query was generated for that same underlying.
-        underlying = QueryBuilder.underlying_for_query(
-            matched_query,
-            holding,
-        )
-        if underlying is not None:
-            underlying_name = (underlying.name or "").strip()
-            if underlying_name and _contains_phrase(searchable, underlying_name):
-                return True
-            if (
-                underlying.isin
-                and len(underlying.isin) >= MIN_ISIN_LENGTH
-                and underlying.isin.lower() in searchable
-            ):
-                return True
-
-        # Sector/macro fallback: a genuine macro or sector story
-        # (e.g. "RBI raises repo rate") will never mention a
-        # specific company by name, so the checks above are
-        # expected to miss it. That's only acceptable when the
-        # query that surfaced this article was itself generated
-        # specifically for this holding's sector (see
-        # QueryBuilder.is_sector_or_macro_query) - i.e. the
-        # relationship was established deliberately at query time,
-        # not guessed after the fact. Even then, the article text
-        # must still mention the sector or the specific macro topic
-        # searched for, so an off-topic result from that query
-        # doesn't get waved through untested.
-        if matched_query and holding.sector:
-            if QueryBuilder.is_sector_or_macro_query(
-                matched_query, holding
-            ):
-                sector = holding.sector.strip()
-
-                if sector and sector.lower() in searchable:
-                    return True
-
-                if matched_query.lower() in searchable:
-                    return True
-
-        return False
+        return cls.match_score(title, description, holding, matched_query) >= 50
 
     @classmethod
     def connection_for_article(

@@ -53,7 +53,7 @@ It is built for **households, not just individuals**: a four-tier role hierarchy
 | 👨‍👩‍👧  | **Family-ready**              | Four roles, many-to-many families, and an active-family switcher                              |
 | 🤖  | **Deterministic intelligence** | Portfolio News classification and alerting run locally with rules; no AI API key is required |
 | 📰  | **News that matters**         | An agent reads your _actual_ holdings, matches articles deterministically, then scores impact |
-| 🪶  | **Zero infrastructure tax**   | SQLite by default, in-process schedulers — no Celery, no Redis, no cron                       |
+| 🪶  | **Low infrastructure overhead** | SQLite by default; optional Windows Task Scheduler for automatic hourly market-price refresh; no Celery or Redis required |
 | 📤  | **Export anything**           | Transactions, holdings and summaries to Excel or PDF                                          |
 | 📥  | **Controlled transaction imports** | Upload history, row-level failures and a downloadable standard transaction format              |
 | 📊  | **MIS reporting**             | IPS, Data Sheet and Fund Type-wise Summary with historical valuation and Excel download       |
@@ -755,8 +755,10 @@ flowchart LR
         API["REST API<br/>session auth + CSRF"]
         RBAC["users.permissions<br/>role + family scope"]
         APPS["Domain apps<br/>portfolio · analytics · mutual_funds<br/>investments · ai · portfolio_news"]
-        SCH["Background threads<br/>4 in-process schedulers"]
+        SCH["In-process background jobs"]
     end
+
+    WTS["Windows Task Scheduler<br/>Hourly market-price refresh"]
 
     DB[("SQLite - WAL mode<br/>or PostgreSQL")]
     YF["Yahoo Finance<br/>stocks and ETFs"]
@@ -772,6 +774,7 @@ flowchart LR
     SCH --> AMFI
     SCH --> GN
     SCH --> NLG
+    WTS -->|"update_market_prices"| APPS
     APPS -->|"AI chat"| GEM
 ```
 
@@ -1186,16 +1189,55 @@ All authenticated routes sit under a `ShellComponent` (sidebar + header with the
 
 ## ⏰ Background jobs
 
-Four independent, **in-process** mechanisms start automatically from each app's `AppConfig.ready()`. They deliberately avoid Celery / Redis, and [`config/scheduler_guard.py`](./backend/config/scheduler_guard.py) detects whether Django is running under `runserver`, **waitress** or **uvicorn** so each job starts **exactly once** however the server is launched.
+PWMS has two layers of automatic refresh:
 
-| #   | Job                        | Cadence                                        | What it does                                                      |
-| --- | -------------------------- | ---------------------------------------------- | ----------------------------------------------------------------- |
-| 1   | **Market price refresh**   | Every 15 minutes                               | Stock / ETF prices (Yahoo Finance) and mutual-fund NAVs (AMFI)    |
-| 2   | **Daily refresh**          | Once per calendar day of uptime                | AMFI NAV, security-master ratios, benchmark master coverage, SIP sync and execute |
-| 3   | **Post-import refresh**    | Right after an import commits                  | Immediate live price for any newly added asset                    |
-| 4   | **Portfolio News monitor** | Every `NEWS_MONITOR_INTERVAL` (default 30 min) | Full news discovery → match → analyze → alert pass for every user |
+1. **In-process jobs** run while Django is running. They handle the normal application background work, including post-import refreshes, the daily refresh pipeline and Portfolio News monitoring.
+2. **Windows Task Scheduler** can run the market-price command independently of the Django server process. This is the recommended Windows mechanism for keeping Stock / ETF / Bond / SGB prices refreshed automatically.
 
-There is no Task Scheduler entry, cron job or `.bat` file to configure — the jobs run for exactly as long as the server process is up. Check `backend/logs/pwms.log` to watch them work.
+| #   | Job / mechanism              | Cadence                                      | What it does |
+| --- | ---------------------------- | -------------------------------------------- | ------------ |
+| 1   | **Market price refresh**     | **Every hour on Windows**                    | Runs `update_market_prices` for Stock, ETF, Bond and SGB prices. ETFs use AMFI first when covered, with Yahoo fallback. |
+| 2   | **In-process price refresh** | While Django is running                      | Existing application-level price refresh mechanism; PostgreSQL advisory locks prevent overlapping refresh work. |
+| 3   | **Daily refresh**             | Once per calendar day of uptime              | AMFI NAV, security-master ratios, benchmark master coverage, SIP sync and execute. |
+| 4   | **Post-import refresh**       | Right after an import commits                | Immediate price refresh for newly added assets. |
+| 5   | **Portfolio News monitor**    | Every `NEWS_MONITOR_INTERVAL` (default 30 min) | Full news discovery → match → analyze → alert pass for every user. |
+
+### Windows automatic market-price refresh
+
+The repository includes a Windows Task Scheduler setup so market prices can continue refreshing even when the Django development server is not running.
+
+From the repository root in PowerShell:
+
+```powershell
+Set-ExecutionPolicy -Scope Process Bypass
+.\scripts\windows\register_market_price_scheduler.ps1
+```
+
+This creates the scheduled task `PWMS-Market-Price-Refresh`.
+
+The task:
+
+- runs `backend\venv\Scripts\python.exe manage.py update_market_prices`
+- runs once every hour
+- starts shortly after registration
+- uses `-StartWhenAvailable` so a missed run can start when Windows becomes available
+- prevents overlapping instances
+- writes execution output to `backend\logs\scheduled_market_price_refresh.log`
+
+Verify the task:
+
+```powershell
+Get-ScheduledTask -TaskName "PWMS-Market-Price-Refresh"
+Get-ScheduledTaskInfo -TaskName "PWMS-Market-Price-Refresh"
+```
+
+Remove it with:
+
+```powershell
+Unregister-ScheduledTask -TaskName "PWMS-Market-Price-Refresh" -Confirm:$false
+```
+
+The setup is documented further in [`scripts/windows/README.md`](./scripts/windows/README.md).
 
 The daily refresh also runs the **benchmark master coverage check** for Nifty 50 and BSE 500 before the normal daily refresh. The BSE 500 loader only reads the configured local source when it is a regular file, so a directory or invalid file-path setting does not cause the scheduler to fail; supported remote/fallback benchmark sources remain available.
 
@@ -1326,7 +1368,7 @@ Run from `backend/` with the virtual environment active: `python manage.py <comm
 
 | Command                          | App              | What it does                                                                 |
 | -------------------------------- | ---------------- | ---------------------------------------------------------------------------- |
-| `update_market_prices`           | `market_data`    | One-off price refresh (also runs automatically every 15 min)                 |
+| `update_market_prices`           | `market_data`    | One-off price refresh; on Windows it can also be run automatically every hour by the documented Task Scheduler setup |
 | `monitor_portfolio_news`         | `portfolio_news` | One full news-monitoring pass for every user (also automatic)                |
 | `ingest_exchange_filings`         | `filing_intelligence` | Ingest corporate filings for a selected exchange; supports `--exchange nse|bse`, `--hours` and dry-run workflows |
 | `diagnose_corporate_filings`      | `filing_intelligence` | Read-only diagnostics for filing identifier coverage, portfolio matches, holding-user matches, watchlists and existing filing alerts |
@@ -1404,7 +1446,7 @@ npm run build     # verifies the whole app compiles
 | Limitation                                   | Details                                                                                                                                                                                                 |
 | -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **SQLite is the default database**           | WAL mode + busy-timeout reduce — but do not eliminate — write contention under concurrent load, and there is no automated backup yet. Fine for a household; for many concurrent writers use PostgreSQL. |
-| **Schedulers use in-process execution**     | The application still uses in-process schedulers. PostgreSQL advisory locks prevent duplicate market-refresh work across workers, but this does not turn the scheduler into a distributed job queue; use the documented deployment model and validate any multi-process topology. |
+| **Windows market-price scheduling is OS-level** | Windows automatic market-price refresh uses Task Scheduler to invoke `update_market_prices` hourly. The in-process application jobs remain separate; PostgreSQL advisory locks prevent overlapping refresh work when PostgreSQL is used. |
 | **Single owning user per record**            | `Asset` / `Transaction` are stored against one owning `User`; family sharing is a visibility layer on top.                                                                                              |
 | **Web Push requires VAPID configuration**     | Background browser delivery requires `WEB_PUSH_VAPID_PUBLIC_KEY`, `WEB_PUSH_VAPID_PRIVATE_KEY` and `WEB_PUSH_VAPID_SUBJECT`. Without them, news alerts still appear in the in-app notification feed but no push is sent. |
 | **Browser permission is required**             | The user must grant notification permission and allow the service worker to subscribe. |

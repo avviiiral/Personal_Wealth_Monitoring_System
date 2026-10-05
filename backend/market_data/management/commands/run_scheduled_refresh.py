@@ -147,6 +147,36 @@ class Command(BaseCommand):
             User.objects.filter(is_active=True).values_list("id", flat=True)
         )
 
+        # AMFI master is refreshed once globally above. Materialize only
+        # the latest NAVs for each user's owned mutual-fund schemes before
+        # SIP execution and the downstream security/news refreshes.
+        if "sync_owned_amfi_navs" not in skip:
+            for user_id in active_user_ids:
+                self.stdout.write(
+                    f"\n--- sync_owned_amfi_navs (user {user_id}) ---"
+                )
+                try:
+                    user = User.objects.get(id=user_id)
+                    result = AMFIService.sync_owned_navs_from_master(user)
+                    succeeded.append(
+                        f"sync_owned_amfi_navs (user {user_id})"
+                    )
+                    self.stdout.write(self.style.SUCCESS(
+                        "Owned AMFI NAVs synced: "
+                        f"schemes={result.get('schemes', 0)}, "
+                        f"matched={result.get('matched', 0)}, "
+                        f"nav_records={result.get('nav_records', 0)}"
+                    ))
+                except Exception as exc:
+                    failed.append(
+                        (f"sync_owned_amfi_navs (user {user_id})", str(exc))
+                    )
+                    self.stderr.write(
+                        self.style.ERROR(
+                            f"sync_owned_amfi_navs (user {user_id}) failed: {exc}"
+                        )
+                    )
+
         for user_id in active_user_ids:
             for command_name, kwargs in self.PER_USER_STEPS:
                 run_step(command_name, kwargs, user_id=user_id)

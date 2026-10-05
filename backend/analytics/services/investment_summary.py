@@ -353,49 +353,28 @@ class InvestmentSummaryService:
         if as_of_date is not None:
             from .historical_wealth import HistoricalWealthAnalytics
 
-            transactions = list(
-                Transaction.objects
-                .filter(cls._scope_q(user), transaction_date__lte=as_of_date)
-                .select_related("asset")
-                .order_by("asset_id", "transaction_date", "created_at", "id")
-            )
-            mf_transactions = list(
-                MutualFundTransaction.objects
-                .filter(cls._scope_q(user), transaction_date__lte=as_of_date)
-                .select_related("scheme")
-                .order_by("scheme_id", "transaction_date", "created_at", "id")
-            )
+            transactions = list(Transaction.objects.filter(cls._scope_q(user), transaction_date__lte=as_of_date).select_related("asset").order_by("asset_id", "transaction_date", "created_at", "id"))
+            mf_transactions = list(MutualFundTransaction.objects.filter(cls._scope_q(user), transaction_date__lte=as_of_date).select_related("scheme").order_by("scheme_id", "transaction_date", "created_at", "id"))
             if family_name:
                 family = family_name.strip()
                 transactions = [tx for tx in transactions if (tx.family_name or "").strip() == family]
                 mf_transactions = [tx for tx in mf_transactions if (tx.family_name or "").strip() == family]
 
-            totals = {
-                asset_class: cls.ZERO
-                for _, asset_classes in cls.MASTER_MAPPING
-                for asset_class in asset_classes
-            }
-            raw_values_by_asset_class = {
-                asset_class: set()
-                for _, asset_classes in cls.MASTER_MAPPING
-                for asset_class in asset_classes
-            }
-
+            totals = {asset_class: cls.ZERO for _, asset_classes in cls.MASTER_MAPPING for asset_class in asset_classes}
+            raw_values_by_asset_class = {asset_class: set() for _, asset_classes in cls.MASTER_MAPPING for asset_class in asset_classes}
             positions = {}
             assets_by_id = {}
             class_by_asset = {}
             for tx in transactions:
-                positions.setdefault(tx.asset_id, {"quantity": cls.ZERO, "invested_value": cls.ZERO})
-                HistoricalWealthAnalytics._apply_equity_transaction(positions[tx.asset_id], tx)
+                position = positions.setdefault(tx.asset_id, {"quantity": cls.ZERO, "invested_value": cls.ZERO})
+                HistoricalWealthAnalytics._apply_equity_transaction(position, tx)
                 assets_by_id[tx.asset_id] = tx.asset
                 class_by_asset.setdefault(tx.asset_id, tx.sub_class)
 
             for asset in assets_by_id.values():
                 asset._portfolio_asset_class = class_by_asset.get(asset.id)
                 asset._portfolio_sub_class = class_by_asset.get(asset.id)
-            prices = HistoricalWealthAnalytics._build_price_map(
-                list(assets_by_id.values()), as_of_date, as_of_date
-            )
+            prices = HistoricalWealthAnalytics._build_price_map(list(assets_by_id.values()), as_of_date, as_of_date)
             for asset_id, position in positions.items():
                 if position["quantity"] <= 0:
                     continue
@@ -431,17 +410,8 @@ class InvestmentSummaryService:
             result["as_of_date"] = as_of_date
             return result
 
-        totals = {
-            asset_class: cls.ZERO
-            for _, asset_classes in cls.MASTER_MAPPING
-            for asset_class in asset_classes
-        }
-        raw_values_by_asset_class = {
-            asset_class: set()
-            for _, asset_classes in cls.MASTER_MAPPING
-            for asset_class in asset_classes
-        }
-
+        totals = {asset_class: cls.ZERO for _, asset_classes in cls.MASTER_MAPPING for asset_class in asset_classes}
+        raw_values_by_asset_class = {asset_class: set() for _, asset_classes in cls.MASTER_MAPPING for asset_class in asset_classes}
         if not family_name:
             asset_class_by_asset_id = cls._equity_asset_class_by_asset_id(user)
             for holding in UnifiedWealthAnalytics.get_equity_holdings(user):
@@ -449,30 +419,25 @@ class InvestmentSummaryService:
                 raw_class = asset_class_by_asset_id.get(holding.asset_id)
                 asset_class = cls._normalize_asset_class(raw_class)
                 totals[asset_class] += value
-                if raw_class:
-                    raw_values_by_asset_class[asset_class].add(raw_class)
+                if raw_class: raw_values_by_asset_class[asset_class].add(raw_class)
             for holding in UnifiedWealthAnalytics.get_mutual_fund_holdings(user):
                 value = holding.current_value or cls.ZERO
                 raw_class = getattr(holding.scheme, "category", None)
                 asset_class = cls._normalize_asset_class(raw_class)
                 totals[asset_class] += value
-                if raw_class:
-                    raw_values_by_asset_class[asset_class].add(raw_class)
+                if raw_class: raw_values_by_asset_class[asset_class].add(raw_class)
             return cls._build_results(totals, raw_values_by_asset_class)
-
         asset_class_by_asset_id = cls._equity_asset_class_by_asset_id(user, family_name=family_name)
         for asset_id, value in cls._family_equity_positions(user, family_name):
             raw_class = asset_class_by_asset_id.get(asset_id)
             asset_class = cls._normalize_asset_class(raw_class)
             totals[asset_class] += value
-            if raw_class:
-                raw_values_by_asset_class[asset_class].add(raw_class)
+            if raw_class: raw_values_by_asset_class[asset_class].add(raw_class)
         for scheme, value in cls._family_mutual_fund_positions(user, family_name):
             raw_class = getattr(scheme, "category", None)
             asset_class = cls._normalize_asset_class(raw_class)
             totals[asset_class] += value
-            if raw_class:
-                raw_values_by_asset_class[asset_class].add(raw_class)
+            if raw_class: raw_values_by_asset_class[asset_class].add(raw_class)
         return cls._build_results(totals, raw_values_by_asset_class)
     @classmethod
     def calculate_performance_by_subclass(cls, user):

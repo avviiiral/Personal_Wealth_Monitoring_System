@@ -40,14 +40,24 @@
               {{ row.price !== null ? '₹' + row.price : '-' }}
             </ng-container>
 
-            <input
-              *ngIf="editingAssetId === row.asset_id"
-              type="number"
-              class="price-input"
-              [(ngModel)]="priceInput"
-              min="0"
-              step="0.01"
-            />
+            <div *ngIf="editingAssetId === row.asset_id" class="price-edit-fields">
+              <input
+                type="number"
+                class="price-input"
+                [(ngModel)]="priceInput"
+                min="0"
+                step="0.01"
+              />
+              <label class="price-date-label">
+                As on Date
+                <input
+                  type="date"
+                  class="price-date-input"
+                  [(ngModel)]="priceDate"
+                  [max]="getTodayDateInputValue()"
+                />
+              </label>
+            </div>
           </td>
 
           <td>

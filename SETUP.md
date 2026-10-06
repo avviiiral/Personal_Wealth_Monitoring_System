@@ -447,9 +447,10 @@ If Yahoo Finance or AMFI has no quote for an asset, use **Settings → Manual Pr
 
 | Job                                                                  | Cadence                                    | Needs Gemini key? |
 | -------------------------------------------------------------------- | ------------------------------------------ | :---------------: |
-| Market price refresh (Yahoo Finance + AMFI)                          | every 15 minutes                           |        No         |
+| Market price refresh (Yahoo Finance + AMFI)                          | every 15 minutes while Django runs       |        No         |
 | Daily refresh (AMFI NAV, security-master ratios, SIP sync / execute) | once per calendar day of uptime            |        No         |
-| Post-import price refresh                                            | right after an import commits              |        No         |
+| Post-import refresh                                                  | right after an import commits              |        No         |
+| MIS historical prefetch                                               | after imports and during daily refresh     |        No         |
 | Portfolio News monitor                                               | every 30 minutes (`NEWS_MONITOR_INTERVAL`) |      **Yes**      |
 
 **Watch them work** — the log file is created automatically:
@@ -474,6 +475,28 @@ python manage.py monitor_portfolio_news      # one full news pass
 Read the printed statistics (`Holdings processed`, `Articles retrieved`, `Alerts created`, …). `Alerts created: 0` is often perfectly normal on a fresh portfolio with no recent matching news.
 
 ---
+
+### 8.3 · MIS historical market-data preparation
+
+The MIS report reconstructs historical valuations from **persisted market/NAV history**. The interactive MIS API does not download AMFI or Yahoo Finance data while the user is waiting for the report.
+
+For mutual funds:
+
+- Historical NAVs are stored in the shared **AMFI master NAV history**.
+- PWMS automatically prefetches missing history for held schemes **after transaction imports** and during the **daily scheduled refresh**.
+- The prefetcher keeps approximately **five years** of coverage and imports only missing ranges, so repeated refreshes are incremental.
+- The normal MIS report reads the stored history directly. This is the path used by the IPS, Data Sheet and Tax Report.
+- The explicit MIS Excel download may perform a targeted history backfill if required before generating the workbook.
+
+For a first-time or manual historical backfill, run from `backend/`:
+
+```powershell
+python manage.py fetch_amfi_nav --from-date 2025-10-01 --to-date 2026-10-05
+```
+
+Both dates are required and must use `YYYY-MM-DD` format. The command imports the historical AMFI master dataset in batches.
+
+You can verify that the report is using stored history by checking `backend/logs/pwms.log`. A normal interactive MIS request should not show a live AMFI historical download.
 
 ## 8.4 · Background Web Push notifications
 
@@ -1148,7 +1171,7 @@ If the chart remains sparse after a backend restart, inspect `backend/logs/pwms.
 python manage.py fetch_amfi_nav
 ```
 
-Confirm the machine can reach the AMFI website, then check the log for errors. The daily job also refreshes NAVs once per day of uptime.
+Confirm the machine can reach the AMFI website, then check the log for errors. The daily refresh updates the shared AMFI master and also prefetches missing historical AMFI coverage required by MIS. For a one-off historical backfill, use the dated command shown in section 8.3.
 
 </details>
 

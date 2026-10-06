@@ -8,11 +8,13 @@ from django.db import close_old_connections
 
 from portfolio_news.services.pipeline import run_portfolio_news_monitor
 from filing_intelligence.services.pipeline import ingest_exchange_filings
+from config.pwms_config import get as get_pwms_config
 
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_INTERVAL_SECONDS = 1800
+DEFAULT_INTERVAL_SECONDS = get_pwms_config("scheduler", "news_interval_seconds", 1800)
+STARTUP_DELAY_SECONDS = get_pwms_config("scheduler", "startup_delay_seconds", 10)
 
 
 def _get_interval_seconds() -> int:
@@ -50,7 +52,7 @@ class PortfolioNewsScheduler:
 
     @classmethod
     def _run(cls):
-        time.sleep(10)
+        time.sleep(STARTUP_DELAY_SECONDS)
         interval_seconds = _get_interval_seconds()
 
         while True:

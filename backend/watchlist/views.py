@@ -9,7 +9,7 @@ from rest_framework.response import Response
 
 from config.database_scheduler_lock import DATABASE_SCHEDULER_LOCK
 
-from investments.models import AssetCategory, PortfolioPosition, Transaction
+from investments.models import PortfolioPosition, Transaction
 from users.permissions import get_active_family_group_id, get_visible_owner_ids
 from watchlist.models import InvestmentProduct, PerformanceSnapshot, ProductType, WatchListEntry
 from watchlist.serializers import PerformanceSnapshotSerializer, WatchListProductSerializer
@@ -158,7 +158,7 @@ def _filtered_products(request, product_type=None):
 
         isin_positions = scoped_positions.filter(
             asset__isin__iexact=OuterRef("isin"),
-        ).filter(asset__category=AssetCategory.MUTUAL_FUND)
+        ).filter()
         owned_mf_expression = (
             ~Q(isin__isnull=True)
             & ~Q(isin="")

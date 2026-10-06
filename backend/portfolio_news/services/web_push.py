@@ -5,6 +5,7 @@ from django.conf import settings
 
 from ..constants import NotificationTier
 from ..models import PortfolioNewsAlert, PushSubscription
+from config.pwms_config import get as get_pwms_config
 
 logger = logging.getLogger(__name__)
 
@@ -95,8 +96,8 @@ def deliver_alert_notification(alert: PortfolioNewsAlert) -> bool:
                 vapid_claims={
                     "sub": settings.WEB_PUSH_VAPID_SUBJECT,
                 },
-                ttl=86400,
-                timeout=10,
+                ttl=get_pwms_config("web_push", "ttl_seconds", 86400),
+                timeout=get_pwms_config("web_push", "timeout_seconds", 10),
             )
             delivered = True
             logger.info(

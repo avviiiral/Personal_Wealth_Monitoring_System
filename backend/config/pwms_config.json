@@ -279,6 +279,13 @@
   "database": {
     "sqlite_timeout_seconds": 60,
     "sqlite_busy_timeout_ms": 60000,
-    "postgres_conn_max_age": 60
+    "postgres_conn_max_age": 60,
+    "postgres_db": "pwms",
+    "postgres_user": "pwms_user",
+    "postgres_host": "localhost",
+    "postgres_port": "5432"
+  },
+  "deployment": {
+    "dev_frontend_origin": "http://localhost:4200"
   }
 }

@@ -4,13 +4,14 @@ from decimal import Decimal
 
 from django.db.models import OuterRef, QuerySet, Subquery, Q
 
-from investments.models import Asset, AssetCategory, SecurityMaster, Transaction, TransactionType
+from investments.models import Asset, SecurityMaster, Transaction, TransactionType
 from investments.services.security_master import SecurityMasterService
 from investments.services.xirr import XIRRCalculator
 from market_data.models import DataSource, ManualAssetPrice, MarketPrice
 from market_data.services.mutual_fund_nav_service import MutualFundNAVService
 from market_data.services.yahoo_finance import YahooFinanceService
 from mutual_funds.models import MutualFundNAV, MutualFundScheme
+from mutual_funds.services.amfi_asset_resolver import AMFIAssetResolver
 
 
 logger = logging.getLogger(__name__)
@@ -298,17 +299,14 @@ class PortfolioTreeService:
                 "price_date": market.date,
             }
 
+        # AMFI identity is authoritative for NAV routing. Legacy imports can
+        # incorrectly classify mutual funds as STOCK/CASH/BOND/OTHER, so do
+        # not rely on Asset.category or presentation metadata here.
+        amfi_asset_ids = AMFIAssetResolver.amfi_asset_ids(assets_by_id)
         mutual_fund_assets = {
-            asset_id: asset
-            for asset_id, asset in assets_by_id.items()
-            if (
-                asset.category == AssetCategory.MUTUAL_FUND
-                or cls._clean(getattr(asset, "_portfolio_asset_class", "")).upper()
-                in {"MUTUAL FUND", "MUTUAL FUNDS", "MUTUAL_FUND"}
-                or cls._clean(getattr(asset, "_portfolio_sub_class", "")).upper()
-                in {"MUTUAL FUND", "MUTUAL FUNDS", "MUTUAL_FUND"}
-                or "MUTUAL FUND" in cls._clean(getattr(asset, "_portfolio_sub_class", "")).upper()
-            )
+            asset_id: assets_by_id[asset_id]
+            for asset_id in amfi_asset_ids
+            if asset_id in assets_by_id
         }
 
         if not mutual_fund_assets:

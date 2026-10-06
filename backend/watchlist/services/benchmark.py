@@ -80,7 +80,11 @@ class BenchmarkPerformanceService:
                     try:
                         kwargs = {
                             "headers": cls.NIFTY_TRI_HEADERS,
-                            "timeout": 60,
+                            "timeout": get_pwms_config(
+                                "benchmarks",
+                                "nifty_request_timeout_seconds",
+                                60,
+                            ),
                         }
                         if body_mode == "json":
                             kwargs["json"] = payload

@@ -10,6 +10,7 @@ from rest_framework.test import APIClient
 
 from investments.models import Asset, Transaction
 from market_data.models import DataSource, MarketPrice
+from market_data.services.market_data_manager import MarketDataManager
 from mutual_funds.models import (
     MutualFundHolding,
     MutualFundScheme,
@@ -79,8 +80,15 @@ class MISReportAPITests(TestCase):
         )
         self.reference_rate_patcher.start()
         self.bse500_rate_patcher.start()
+        self.market_data_patcher = patch.object(
+            MarketDataManager,
+            "fetch_and_rebuild",
+            return_value={"success": False, "skipped": True},
+        )
+        self.market_data_patcher.start()
         self.addCleanup(self.reference_rate_patcher.stop)
         self.addCleanup(self.bse500_rate_patcher.stop)
+        self.addCleanup(self.market_data_patcher.stop)
 
     def test_mf_historical_nav_falls_back_to_market_price_history(self):
         scheme = MutualFundScheme.objects.create(

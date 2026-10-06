@@ -8,7 +8,7 @@ from django.test import TestCase
 from openpyxl import load_workbook
 from rest_framework.test import APIClient
 
-from investments.models import Asset, Transaction
+from investments.models import Asset, AssetCategory, Transaction
 from market_data.models import DataSource, MarketPrice
 from mutual_funds.models import (
     MutualFundHolding,
@@ -536,6 +536,56 @@ class MISReportAPITests(TestCase):
         self.assertEqual(rows[0]["qty_units"], 15.0)
         self.assertEqual(rows[0]["total_cost"], 1500.0)
         self.assertEqual(rows[0]["closing_amount"], 1875.0)
+
+    def test_asset_backed_mutual_fund_uses_amfi_nav_when_market_price_is_missing(self):
+        """Legacy Asset/Transaction MF rows must use persisted AMFI NAVs."""
+        scheme = MutualFundScheme.objects.create(
+            owner=self.user,
+            family=self.family,
+            scheme_name="Legacy Asset MF",
+            scheme_code="LEGACY001",
+            category="Debt",
+            isin_growth="INF000LEGACY1",
+        )
+        legacy_asset = Asset.objects.create(
+            owner=self.user,
+            family=self.family,
+            name="Legacy Asset MF",
+            category=AssetCategory.MUTUAL_FUND,
+            isin="INF000LEGACY1",
+        )
+        Transaction.objects.create(
+            owner=self.user,
+            family=self.family,
+            asset=legacy_asset,
+            family_name="DAJ",
+            portfolio="Core",
+            asset_class="Mutual Funds",
+            sub_class="Debt",
+            asset_name="Legacy Asset MF",
+            transaction_date=date(2026, 1, 10),
+            transaction_type="BUY",
+            quantity=Decimal("10"),
+            price_per_unit=Decimal("100"),
+            amount=Decimal("1000"),
+            fees=Decimal("0"),
+        )
+        MutualFundNAV.objects.create(
+            scheme=scheme,
+            date=date.today(),
+            nav=Decimal("123.45"),
+            source="AMFI",
+        )
+
+        response = self.client.get("/api/portfolio/mis-report/")
+
+        self.assertEqual(response.status_code, 200)
+        row = next(
+            item for item in response.json()["data_sheet"]
+            if item["asset_name"] == "Legacy Asset MF"
+        )
+        self.assertEqual(row["closing_nav"], 123.45)
+        self.assertEqual(row["closing_amount"], 1234.5)
 
     def test_mutual_fund_data_sheet_and_fund_summary_are_included(self):
         scheme = MutualFundScheme.objects.create(

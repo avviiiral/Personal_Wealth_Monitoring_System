@@ -445,7 +445,7 @@ class MISReportService:
         return rows
 
     @classmethod
-    def _build_data_row(cls, row, opening_date, as_of, period_start, price_cache, nav_cache):
+    def _build_data_row(cls, row, opening_date, as_of, period_start, price_cache, nav_cache, reference_cache):
         txs = row["transactions"]
         opening_qty, _opening_cost = cls._position_at(txs, opening_date, row["kind"])
         closing_qty, closing_cost = cls._position_at(txs, as_of, row["kind"])
@@ -459,14 +459,52 @@ class MISReportService:
                 asset = assets_by_id.get(asset_id)
                 opening_nav = cls._mf_nav_for_asset(asset, opening_date, nav_cache) if asset else None
                 closing_nav = cls._mf_nav_for_asset(asset, as_of, nav_cache) if asset else None
-                # AMFI-backed NAV is the authoritative valuation path when the
-                # asset resolves to a mutual-fund scheme. Fall back to MarketPrice
-                # for ordinary securities and legacy rows without an MF match.
+
+                opening_price = opening_nav
+                closing_price = closing_nav
+
+                # REIT/InvIT rows are often stored as ordinary Asset +
+                # Transaction records, but their valuation is maintained through
+                # the shared reference-price history rather than family MarketPrice.
+                # Use the configured reference instruments for both historical
+                # dates before falling back to an asset-local MarketPrice.
+                subclass = cls._clean(getattr(asset, "_portfolio_sub_class", "")).casefold() if asset else ""
+                if asset and ("reit" in subclass or "invit" in subclass):
+                    normalized_name = cls._normalize_mf_name(asset.name)
+                    reference_candidates = []
+                    for reference_name, symbols in cls.REFERENCE_SYMBOLS.items():
+                        if reference_name in {"Nifty 50", "$ Rate", "BSE 500"}:
+                            continue
+                        reference_normalized = cls._normalize_mf_name(reference_name)
+                        target_tokens = set(normalized_name.split())
+                        reference_tokens = set(reference_normalized.split())
+                        overlap = len(target_tokens & reference_tokens)
+                        if overlap >= 2 and overlap / max(len(target_tokens), len(reference_tokens)) >= 0.5:
+                            reference_candidates.append((overlap, reference_name, symbols))
+                    reference_candidates.sort(key=lambda item: item[0], reverse=True)
+
+                    for _score, reference_name, symbols in reference_candidates:
+                        ref_opening, ref_closing = cls._reference_rate(
+                            reference_name,
+                            symbols,
+                            as_of,
+                            opening_date,
+                            reference_cache,
+                        )
+                        if opening_price is None and ref_opening is not None:
+                            opening_price = ref_opening
+                        if closing_price is None and ref_closing is not None:
+                            closing_price = ref_closing
+                        if opening_price is not None or closing_price is not None:
+                            break
+
                 opening_prices.append(
-                    opening_nav if opening_nav is not None else cls._market_price(asset_id, opening_date, price_cache)
+                    opening_price if opening_price is not None
+                    else cls._market_price(asset_id, opening_date, price_cache)
                 )
                 closing_prices.append(
-                    closing_nav if closing_nav is not None else cls._market_price(asset_id, as_of, price_cache)
+                    closing_price if closing_price is not None
+                    else cls._market_price(asset_id, as_of, price_cache)
                 )
         else:
             opening_prices = [
@@ -1679,6 +1717,7 @@ class MISReportService:
         rows = cls._base_rows(family)
         price_cache = {}
         nav_cache = {}
+        reference_cache = {}
         data_rows = [
             cls._build_data_row(
                 row,
@@ -1687,6 +1726,7 @@ class MISReportService:
                 period_start,
                 price_cache,
                 nav_cache,
+                reference_cache,
             )
             for row in rows
         ]
@@ -1702,6 +1742,7 @@ class MISReportService:
                 period_start,
                 price_cache,
                 nav_cache,
+                reference_cache,
             )
             for row in rows
         ]

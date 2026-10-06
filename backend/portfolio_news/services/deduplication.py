@@ -159,16 +159,37 @@ class ArticleDeduplicator:
             "matched_query",
         )
 
+        candidate_entities = _entity_tokens(candidate)
+
         for article in recent_candidates:
-            if titles_are_similar(
+            if not titles_are_similar(
                 normalized_title,
                 article.normalized_title,
                 threshold=cls.NEAR_DUPLICATE_THRESHOLD,
             ):
+                continue
+
+            article_entities = {
+                token
+                for token in re.findall(
+                    r"[a-z0-9]+",
+                    " ".join(
+                        (
+                            article.matched_query or "",
+                            article.normalized_title or "",
+                        )
+                    ).lower(),
+                )
+                if len(token) >= 4 and token not in _STOPWORDS
+            }
+            # Fuzzy similarity alone is too broad for generic headlines such
+            # as "First alert article" and "Second alert article". Require at
+            # least one meaningful entity token in common before treating two
+            # different headlines as the same event.
+            if candidate_entities & article_entities:
                 return article
 
         candidate_family = _event_family(candidate.title)
-        candidate_entities = _entity_tokens(candidate)
         if candidate_family and candidate_entities:
             for article in recent_candidates:
                 if _event_family(article.normalized_title) != candidate_family:

@@ -1831,6 +1831,7 @@ class MISReportService:
                 period_start,
                 price_cache,
                 nav_cache,
+                reference_cache,
             )
             if prior["closing_units"] > 0 or prior["closing_amount"] > 0:
                 prior_by_family_asset_class[(prior["asset_class"], prior["family_name"])] += Decimal(str(prior["closing_amount"] or 0))

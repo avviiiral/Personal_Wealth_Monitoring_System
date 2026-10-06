@@ -11,6 +11,7 @@ from django.db.models import Max, Q
 from investments.models import Asset, Transaction, TransactionType
 from market_data.models import MarketPrice, ManualAssetPrice
 from mutual_funds.services.amfi import AMFIService
+from mutual_funds.services.amfi_asset_resolver import AMFIAssetResolver
 from mutual_funds.models import (
     AMFIMasterNAV,
     AMFIMasterScheme,
@@ -117,6 +118,15 @@ class MISReportService:
                 .first()
             )
         return cache[key]
+
+    @classmethod
+    def _amfi_scheme_codes_for_asset(cls, asset):
+        """Return AMFI scheme codes using the centralized asset identity resolver."""
+        return list(
+            AMFIAssetResolver.schemes_for_isins(
+                AMFIAssetResolver._isins(asset)
+            ).values_list("scheme_code", flat=True)
+        )
 
     @staticmethod
     def _normalize_mf_name(value):
@@ -303,20 +313,11 @@ class MISReportService:
                     if str(code or "").strip()
                 )
 
-                if identity_isins:
-                    scheme_codes.update(
-                        str(code).strip()
-                        for code in (
-                            AMFIMasterScheme.objects
-                            .filter(is_active=True)
-                            .filter(
-                                Q(isin_growth__in=identity_isins)
-                                | Q(isin_dividend__in=identity_isins)
-                            )
-                            .values_list("scheme_code", flat=True)
-                        )
-                        if str(code or "").strip()
-                    )
+                scheme_codes.update(
+                    str(code).strip()
+                    for code in cls._amfi_scheme_codes_for_asset(asset)
+                    if str(code or "").strip()
+                )
 
         if not scheme_codes:
             return
@@ -350,12 +351,7 @@ class MISReportService:
                         identity_isins.add(str(security_master.isin or "").strip().upper())
                     identity_isins.discard("")
                     if identity_isins:
-                        codes.extend(
-                            AMFIMasterScheme.objects.filter(is_active=True).filter(
-                                Q(isin_growth__in=identity_isins)
-                                | Q(isin_dividend__in=identity_isins)
-                            ).values_list("scheme_code", flat=True)
-                        )
+                        codes.extend(cls._amfi_scheme_codes_for_asset(asset))
             transaction_dates = [
                 tx.transaction_date for tx in transactions
                 if getattr(tx, "transaction_date", None) is not None

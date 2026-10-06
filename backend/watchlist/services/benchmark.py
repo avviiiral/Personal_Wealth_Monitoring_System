@@ -462,7 +462,7 @@ class BenchmarkPerformanceService:
                 "period": "D",
             },
             headers=cls.BSE_HEADERS,
-            timeout=45,
+            timeout=get_pwms_config("benchmarks", "bse_request_timeout_seconds", 45),
         )
         response.raise_for_status()
         points = cls._parse_bse_api_csv(response.text)

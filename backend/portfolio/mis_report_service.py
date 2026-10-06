@@ -1,6 +1,7 @@
 from collections import defaultdict
 from datetime import date, timedelta
 from decimal import Decimal
+import logging
 import re
 
 import requests
@@ -22,6 +23,9 @@ from portfolio.services.portfolio_tree_service import PortfolioTreeService
 from market_data.services.yahoo_finance import YahooFinanceService
 from users.models import TaxRateSetting
 from .models import FamilyMISNotes
+
+
+logger = logging.getLogger(__name__)
 
 
 class MISReportService:

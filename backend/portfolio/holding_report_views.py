@@ -14,6 +14,7 @@ from investments.services.xirr import XIRRCalculator
 from market_data.models import DataSource, MarketPrice
 from users.permissions import family_scope, require_active_family
 from portfolio.services.portfolio_position_engine import PortfolioPositionEngine
+from portfolio.services.holding_engine import HoldingCalculationEngine
 
 
 @api_view(["GET"])
@@ -51,6 +52,20 @@ def holding_report(request):
         )
         .order_by("family_name", "portfolio", "asset__name")
     )
+
+    # Keep the report aligned with the Portfolio/Reports pages. PortfolioPosition
+    # rows can contain a stale zero price for asset classes whose effective price
+    # comes from the dedicated NAV/reference-price providers (for example AMFI
+    # mutual-fund NAVs). Resolve the same effective price used by the Portfolio
+    # tree before calculating report values and XIRR.
+    for position in positions:
+        effective_price = HoldingCalculationEngine.get_effective_price(position.asset)
+        if not effective_price.get("has_price"):
+            continue
+        current_price = effective_price.get("price") or 0
+        position.current_price = current_price
+        position.current_value = (position.quantity or 0) * current_price
+        position.gain = position.current_value - (position.invested_value or 0)
 
     asset_ids = {position.asset_id for position in positions}
 

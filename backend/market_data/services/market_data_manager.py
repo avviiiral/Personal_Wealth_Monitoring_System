@@ -24,6 +24,14 @@ from market_data.services.sgb_price_service import (
     SGBPriceService,
 )
 
+from mutual_funds.models import (
+    AMFIMasterNAV,
+    AMFIMasterScheme,
+    MutualFundNAV,
+    MutualFundScheme,
+)
+from mutual_funds.services.amfi import AMFIService
+
 class MarketDataManager:
     """
     Coordinates market-data collection.

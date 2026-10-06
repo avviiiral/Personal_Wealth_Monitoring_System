@@ -339,7 +339,7 @@ class SGBPriceService:
             response = requests.get(
                 cls.FALLBACK_URL,
                 impersonate="chrome",
-                timeout=20,
+                timeout=cls.CONFIG.get("timeout_seconds", 20),
                 headers={
                     "User-Agent": cls.CONFIG.get("user_agent", ""),
                     "Accept": cls.CONFIG.get("accept", ""),

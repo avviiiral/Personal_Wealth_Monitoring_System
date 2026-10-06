@@ -189,41 +189,41 @@ class MISReportService:
                     candidates.append(row)
                     seen.add(row.id)
 
-            if not candidates or not any(
-                cls._normalize_mf_name(row.scheme_name) == normalized_name
-                for row in candidates
+            # Keep exact matches first, but also retain the strongest
+            # normalized-name candidates. The exact AMFI identity may exist
+            # without NAV history while the corresponding active identity has
+            # the required NAV rows.
+            scored = []
+            target_tokens = set(normalized_name.split())
+            for row in AMFIMasterScheme.objects.filter(is_active=True).only(
+                "id", "scheme_name"
             ):
-                scored = []
-                for row in AMFIMasterScheme.objects.filter(is_active=True).only(
-                    "id", "scheme_name"
-                ):
-                    candidate_name = cls._normalize_mf_name(row.scheme_name)
-                    target_tokens = set(normalized_name.split())
-                    candidate_tokens = set(candidate_name.split())
-                    overlap = len(target_tokens & candidate_tokens)
-                    if overlap == 0:
-                        continue
-                    coverage = overlap / max(
-                        len(target_tokens),
-                        len(candidate_tokens),
-                    )
-                    score = (
-                        coverage,
-                        overlap,
-                        -abs(len(target_tokens) - len(candidate_tokens)),
-                    )
-                    scored.append((score, row))
+                candidate_name = cls._normalize_mf_name(row.scheme_name)
+                candidate_tokens = set(candidate_name.split())
+                overlap = len(target_tokens & candidate_tokens)
+                if overlap == 0:
+                    continue
+                coverage = overlap / max(
+                    len(target_tokens),
+                    len(candidate_tokens),
+                )
+                score = (
+                    coverage,
+                    overlap,
+                    -abs(len(target_tokens) - len(candidate_tokens)),
+                )
+                scored.append((score, row))
 
-                scored.sort(key=lambda item: item[0], reverse=True)
-                if scored:
-                    best_score = scored[0][0]
-                    if best_score[0] >= 0.55 and best_score[1] >= 3:
-                        for score, row in scored:
-                            if score != best_score:
-                                break
-                            if row.id not in seen:
-                                candidates.append(row)
-                                seen.add(row.id)
+            scored.sort(key=lambda item: item[0], reverse=True)
+            if scored:
+                best_score = scored[0][0]
+                if best_score[0] >= 0.55 and best_score[1] >= 3:
+                    for score, row in scored:
+                        if score != best_score:
+                            break
+                        if row.id not in seen:
+                            candidates.append(row)
+                            seen.add(row.id)
 
         for master in candidates:
             nav = (

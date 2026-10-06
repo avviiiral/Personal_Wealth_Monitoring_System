@@ -1,5 +1,7 @@
 from django.db import models
 
+from config.pwms_config import get as get_pwms_config
+
 
 class HoldingType(models.TextChoices):
     EQUITY = "EQUITY", "Equity"
@@ -88,16 +90,14 @@ class ImpactLevel(models.TextChoices):
             Critical:  81-100
         """
 
-        if impact_score >= 81:
+        thresholds = get_pwms_config("news", "impact_thresholds", {})
+        if impact_score >= thresholds.get("critical", 81):
             return cls.CRITICAL
-
-        if impact_score >= 61:
+        if impact_score >= thresholds.get("high", 61):
             return cls.HIGH
-
-        if impact_score >= 41:
+        if impact_score >= thresholds.get("moderate", 41):
             return cls.MODERATE
-
-        if impact_score >= 21:
+        if impact_score >= thresholds.get("low", 21):
             return cls.LOW
 
         return cls.VERY_LOW
@@ -129,11 +129,7 @@ class SourceQualityTier(models.TextChoices):
     def weight(cls, tier: str) -> float:
         """Multiplier used by alert scoring (0-1)."""
 
-        mapping: dict[str, float] = {
-            cls.TIER_1: 1.0,
-            cls.TIER_2: 0.75,
-            cls.TIER_3: 0.5,
-        }
+        mapping = get_pwms_config("news", "source_quality_weights", {})
 
         return mapping.get(tier, 0.5)
 

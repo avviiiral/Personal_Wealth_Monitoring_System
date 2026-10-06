@@ -254,15 +254,61 @@ class MISReportService:
     @classmethod
     def _mf_nav(cls, scheme_id, as_of, cache):
         key = (scheme_id, as_of)
-        if key not in cache:
-            cache[key] = (
-                MutualFundNAV.objects
-                .filter(scheme_id=scheme_id, date__lte=as_of)
+        if key in cache:
+            return cache[key]
+
+        nav = (
+            MutualFundNAV.objects
+            .filter(scheme_id=scheme_id, date__lte=as_of)
+            .order_by("-date", "-id")
+            .values_list("nav", flat=True)
+            .first()
+        )
+        if nav is not None:
+            cache[key] = nav
+            return nav
+
+        scheme = (
+            MutualFundScheme.objects
+            .filter(id=scheme_id)
+            .values("isin_growth", "isin_dividend", "scheme_name")
+            .first()
+        )
+        master = None
+        if scheme:
+            isins = {
+                str(scheme.get("isin_growth") or "").strip(),
+                str(scheme.get("isin_dividend") or "").strip(),
+            } - {""}
+            if isins:
+                master = (
+                    AMFIMasterScheme.objects
+                    .filter(is_active=True)
+                    .filter(Q(isin_growth__in=isins) | Q(isin_dividend__in=isins))
+                    .order_by("id")
+                    .first()
+                )
+            if master is None and scheme.get("scheme_name"):
+                candidates = AMFIMasterScheme.objects.filter(
+                    is_active=True
+                ).values("id", "scheme_name")
+                master_id = cls._best_mf_scheme_match(
+                    cls._normalize_mf_name(scheme["scheme_name"]), candidates
+                )
+                if master_id is not None:
+                    master = AMFIMasterScheme.objects.filter(id=master_id).first()
+
+        if master is not None:
+            nav = (
+                AMFIMasterNAV.objects
+                .filter(scheme_id=master.id, date__lte=as_of)
                 .order_by("-date", "-id")
                 .values_list("nav", flat=True)
                 .first()
             )
-        return cache[key]
+
+        cache[key] = nav
+        return nav
 
     @classmethod
     def _latest_reporting_date(cls, family):

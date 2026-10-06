@@ -245,7 +245,20 @@ class HistoricalWealthAnalytics:
             )
         )
 
+        asset_has_symbol = {
+            asset.pk: bool(getattr(asset, "symbol", None))
+            for asset in assets
+        }
+
         for price in prices:
+            # Automatic market quotes are only meaningful for assets that
+            # have an identifiable market symbol. Manual prices remain valid
+            # without a symbol because they are explicit user valuations.
+            if (
+                price.source != DataSource.MANUAL
+                and not asset_has_symbol.get(price.asset_id, False)
+            ):
+                continue
             prices_by_asset[price.asset_id].append(
                 (
                     price.date,

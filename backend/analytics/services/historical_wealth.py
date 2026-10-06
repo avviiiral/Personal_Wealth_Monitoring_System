@@ -913,12 +913,12 @@ class HistoricalWealthAnalytics:
             )
 
             if price is None:
-                continue
-
-            current_value = (
-                quantity
-                * price.close_price
-            )
+                # No historical market quote exists. Preserve invested
+                # capital as the best available wealth estimate so an
+                # unpriced holding does not disappear from historical wealth.
+                current_value = invested_value
+            else:
+                current_value = quantity * price.close_price
 
             equity_invested += invested_value
             equity_value += current_value

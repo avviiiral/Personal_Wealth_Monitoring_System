@@ -4,6 +4,8 @@ from pathlib import Path
 
 from django.conf import settings
 
+from config.pwms_config import get as get_pwms_config
+
 logger = logging.getLogger(__name__)
 
 
@@ -20,113 +22,17 @@ class SecurityResolver:
         6. Generic symbol + exchange suffix
 
     The Security Master is optional. If it is unavailable, the existing
-    resolver behaviour remains available as a fallback.
-    """
-
-    NSE_SUFFIX = ".NS"
-    BSE_SUFFIX = ".BO"
+    resolv    CONFIG = get_pwms_config("security_resolver", "", {}) or {}
+    NSE_SUFFIX = CONFIG.get("nse_suffix", ".NS")
+    BSE_SUFFIX = CONFIG.get("bse_suffix", ".BO")
 
     SECURITY_MASTER_FILENAME = "security_master.xlsx"
 
-    # ==========================================================
-    # Existing fallback ISIN -> Yahoo Finance symbol mapping
-    # ==========================================================
+    # Legacy fallback mappings are configuration data rather than code.
+    ISIN_TO_YAHOO = CONFIG.get("isin_to_yahoo", {})
+    NAME_TO_YAHOO = CONFIG.get("name_to_yahoo", {})
 
-    ISIN_TO_YAHOO = {
-        "INE021A01026": "ASIANPAINT.NS",
-        "INE397D01024": "BHARTIARTL.NS",
-        "INE860A01027": "HCLTECH.NS",
-        "INE040A01034": "HDFCBANK.NS",
-        "INE030A01027": "HINDUNILVR.NS",
-        "INE090A01021": "ICICIBANK.NS",
-        "INE154A01025": "ITC.NS",
-        "INE009A01021": "INFY.NS",
-        "INE018A01030": "LT.NS",
-        "INE101A01026": "M&M.NS",
-        "INE585B01010": "MARUTI.NS",
-        "INE002A01018": "RELIANCE.NS",
-        "INE062A01020": "SBIN.NS",
-        "INE044A01036": "SUNPHARMA.NS",
-        "INE467B01029": "TCS.NS",
-        "INE155A01022": "TATAMOTORS.NS",
-
-        # Added while chasing down 4 stocks that failed to resolve
-        # via the Security Master Excel / generic name fallback —
-        # NSE symbols confirmed against AMFI's own official stock
-        # categorisation list (amfiindia.com, 6 months ended 30 Jun
-        # 2026), not guessed.
-        "INE0V6F01027": "HYUNDAI.NS",    # Hyundai Motor India
-        "INE1CDF01017": "VAML.NS",        # Vedanta Aluminium Metal
-        "INE128X01021": "ACI.NS",         # Archean Chemical Industries
-        "INE089A01031": "DRREDDY.NS",     # Dr. Reddy's Laboratories
-    }
-
-    # ==========================================================
-    # Existing fallback asset-name mapping
-    # ==========================================================
-
-    NAME_TO_YAHOO = {
-        "ASIAN PAINTS LTD": "ASIANPAINT.NS",
-        "ASIAN PAINTS": "ASIANPAINT.NS",
-
-        "BHARTI AIRTEL LTD": "BHARTIARTL.NS",
-        "BHARTI AIRTEL": "BHARTIARTL.NS",
-
-        "HCL TECHNOLOGIES": "HCLTECH.NS",
-        "HCL TECHNOLOGIES LTD": "HCLTECH.NS",
-        "HCL TECHNOLOGIES LIMITED": "HCLTECH.NS",
-
-        "HDFC BANK LTD": "HDFCBANK.NS",
-        "HDFC BANK LIMITED": "HDFCBANK.NS",
-        "HDFC BANK": "HDFCBANK.NS",
-
-        "HINDUSTAN UNILEVER LTD": "HINDUNILVR.NS",
-        "HINDUSTAN UNILEVER LIMITED": "HINDUNILVR.NS",
-        "HINDUSTAN UNILEVER": "HINDUNILVR.NS",
-
-        "ICICI BANK LTD": "ICICIBANK.NS",
-        "ICICI BANK LIMITED": "ICICIBANK.NS",
-        "ICICI BANK": "ICICIBANK.NS",
-
-        "ITC LTD": "ITC.NS",
-        "ITC LIMITED": "ITC.NS",
-        "ITC": "ITC.NS",
-
-        "INFOSYS LTD": "INFY.NS",
-        "INFOSYS LIMITED": "INFY.NS",
-        "INFOSYS": "INFY.NS",
-
-        "LARSEN & TOUBRO LTD": "LT.NS",
-        "LARSEN & TOUBRO LIMITED": "LT.NS",
-        "LARSEN AND TOUBRO LTD": "LT.NS",
-        "LARSEN AND TOUBRO LIMITED": "LT.NS",
-
-        "MAHINDRA & MAHINDRA LTD": "M&M.NS",
-        "MAHINDRA & MAHINDRA LIMITED": "M&M.NS",
-        "MAHINDRA AND MAHINDRA LTD": "M&M.NS",
-
-        "MARUTI SUZUKI INDIA LTD": "MARUTI.NS",
-        "MARUTI SUZUKI INDIA LIMITED": "MARUTI.NS",
-        "MARUTI SUZUKI": "MARUTI.NS",
-
-        "RELIANCE INDUSTRIES": "RELIANCE.NS",
-        "RELIANCE INDUSTRIES LTD": "RELIANCE.NS",
-        "RELIANCE INDUSTRIES LIMITED": "RELIANCE.NS",
-
-        "STATE BANK OF INDIA": "SBIN.NS",
-        "STATE BANK OF INDIA LTD": "SBIN.NS",
-        "STATE BANK OF INDIA LIMITED": "SBIN.NS",
-
-        "SUN PHARMACEUTICAL INDUSTRIES LTD": "SUNPHARMA.NS",
-        "SUN PHARMACEUTICAL INDUSTRIES LIMITED": "SUNPHARMA.NS",
-        "SUN PHARMA": "SUNPHARMA.NS",
-
-        "TATA CONSULTANCY SERVICES LTD": "TCS.NS",
-        "TATA CONSULTANCY SERVICES LIMITED": "TCS.NS",
-        "TCS": "TCS.NS",
-
-        "TATA MOTORS LTD": "TATAMOTORS.NS",
-        "TATA MOTORS LIMITED": "TATAMOTORS.NS",
+RS.NS",
         "TATA MOTORS": "TATAMOTORS.NS",
     }
 

@@ -200,7 +200,10 @@
       "Accept": "text/csv,application/json,text/plain,*/*",
       "Referer": "https://www.bseindia.com/",
       "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0 Safari/537.36"
-    }
+    },
+    "nifty_bootstrap_timeout_seconds": 15,
+    "nifty_request_timeout_seconds": 60,
+    "bse_request_timeout_seconds": 45
   },
   "providers": {
     "google_news": {

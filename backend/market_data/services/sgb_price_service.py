@@ -247,7 +247,7 @@ class SGBPriceService:
                     "symbol": symbol,
                 },
                 headers=headers,
-                timeout=20,
+                timeout=cls.CONFIG.get("timeout_seconds", 20),
             )
 
             response.raise_for_status()
@@ -341,18 +341,10 @@ class SGBPriceService:
                 impersonate="chrome",
                 timeout=20,
                 headers={
-                    "User-Agent": (
-                        "Mozilla/5.0 "
-                        "(Windows NT 10.0; Win64; x64) "
-                        "AppleWebKit/537.36 "
-                        "(KHTML, like Gecko) "
-                        "Chrome/151.0.0.0 "
-                        "Safari/537.36"
-                    ),
-                    "Accept": (
-                        "text/html,application/xhtml+xml,"
-                        "application/xml;q=0.9,*/*;q=0.8"
-                    ),
+                    "User-Agent": cls.CONFIG.get("user_agent", ""),
+                    "Accept": cls.CONFIG.get("accept", ""),
+                    "Accept-Language": cls.CONFIG.get("accept_language", ""),
+                    "Referer": cls.CONFIG.get("referer", ""),
                 },
             )
 

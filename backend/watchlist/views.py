@@ -65,6 +65,8 @@ def _filtered_products(request, product_type=None):
         | Q(return_5y__isnull=False)
         | Q(return_since_inception__isnull=False)
         | Q(cagr__isnull=False)
+        | Q(mutual_fund__aum__isnull=False)
+        | Q(pms__aum__isnull=False)
     )
     # OWNED is an ownership view, so an owned product remains visible even
     # before its first performance snapshot has been imported.

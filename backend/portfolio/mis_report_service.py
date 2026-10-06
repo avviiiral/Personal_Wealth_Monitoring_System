@@ -108,15 +108,62 @@ class MISReportService:
 
     @classmethod
     def _mf_nav(cls, scheme_id, as_of, cache):
+        """
+        Resolve historical MF NAV from the family NAV history first, then
+        fall back to the unified MarketPrice history.
+
+        Market-data backfill stores AMFI history in MarketPrice because that
+        is the common historical-price store used by the portfolio refresh
+        pipeline. Older MIS code only queried MutualFundNAV, which made the
+        Portfolio page correct while the Data Sheet showed blank opening NAVs.
+        """
         key = (scheme_id, as_of)
         if key not in cache:
-            cache[key] = (
+            nav = (
                 MutualFundNAV.objects
                 .filter(scheme_id=scheme_id, date__lte=as_of)
                 .order_by("-date", "-id")
                 .values_list("nav", flat=True)
                 .first()
             )
+            if nav is None:
+                # Resolve the owning Asset(s) through the scheme ISIN so the
+                # historical AMFI rows written by the market-data backfill
+                # can be used by MIS without duplicating NAV history.
+                scheme = (
+                    MutualFundTransaction.objects
+                    .filter(scheme_id=scheme_id)
+                    .select_related("scheme")
+                    .values(
+                        "scheme__isin_growth",
+                        "scheme__isin_dividend",
+                    )
+                    .first()
+                )
+                isins = []
+                if scheme:
+                    isins = [
+                        value.strip().upper()
+                        for value in (
+                            scheme.get("scheme__isin_growth"),
+                            scheme.get("scheme__isin_dividend"),
+                        )
+                        if value
+                    ]
+                nav = (
+                    MarketPrice.objects
+                    .filter(
+                        asset__isin__in=isins,
+                        source="AMFI",
+                        date__lte=as_of,
+                    )
+                    .order_by("-date", "-id")
+                    .values_list("close_price", flat=True)
+                    .first()
+                    if isins
+                    else None
+                )
+            cache[key] = nav
         return cache[key]
 
     @classmethod

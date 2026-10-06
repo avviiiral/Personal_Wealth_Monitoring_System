@@ -946,12 +946,17 @@ class MISReportService:
 
                 if period_start <= tx.transaction_date <= as_of:
                     realized_pnl += gain
-                    # Tax follows the P/L sign. Losses therefore produce a
-                    # negative tax amount (tax benefit) using the same
-                    # tenure-based ST/LT rate as gains.
-                    realized_tax += gain * cls._tax_rate_for_lot(
-                        lot, tax_setting, tx.transaction_date
+
+                    # Resolve the rate directly at the point where each FIFO
+                    # lot is disposed. This keeps the ST/LT decision tied to
+                    # that exact lot and sale date, rather than relying on
+                    # report-period state or a later remaining-lot valuation.
+                    tax_rate = cls._tax_rate_for_lot(
+                        lot,
+                        tax_setting,
+                        tx.transaction_date,
                     )
+                    realized_tax += gain * tax_rate
 
                 lot["remaining_qty"] -= matched_qty
                 remaining_to_sell -= matched_qty

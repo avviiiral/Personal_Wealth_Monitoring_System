@@ -1517,13 +1517,19 @@ class HistoricalWealthAnalytics:
 
                 price_pointers[asset.pk] = pointer
 
+                # An asset without a market symbol must never be valued from
+                # an automatic quote. Keep this final guard beside the daily
+                # valuation so an unidentifiable holding cannot acquire a
+                # fabricated historical value from a future/stale quote.
+                if not getattr(asset, "symbol", None) and not any(
+                    len(value) >= 3 and value[2] == DataSource.MANUAL
+                    for value in price_values
+                ):
+                    price = None
+
                 if price is None:
-                    # There is no historical price available for this
-                    # holding on this date. Keep the holding's invested
-                    # capital in the series, but treat its historical
-                    # P/L as zero rather than assigning a zero market
-                    # value. In that case its total wealth contribution
-                    # is its invested value.
+                    # No usable historical price exists. Preserve invested
+                    # capital and therefore report zero historical P/L.
                     equity_invested_for_missing_price = position["invested_value"]
                     equity_value += equity_invested_for_missing_price
                     continue

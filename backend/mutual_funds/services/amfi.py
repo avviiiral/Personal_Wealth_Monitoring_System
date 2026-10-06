@@ -607,11 +607,29 @@ class AMFIService:
         if from_date > to_date:
             raise ValueError("From date cannot be after to_date.")
 
+        # The public command accepts arbitrary historical ranges. Split long
+        # requests here so callers do not have to manually create 90-day
+        # batches. The scheme-specific path already performs its own chunking.
         if (to_date - from_date).days > 90:
-            raise ValueError(
-                "AMFI historical NAV download supports a maximum period "
-                "of 90 days at a time."
-            )
+            records = []
+            window_start = from_date
+            while window_start <= to_date:
+                window_end = min(
+                    window_start + relativedelta(days=89),
+                    to_date,
+                )
+                report_text = AMFIService.download_historical_nav(
+                    window_start,
+                    window_end,
+                )
+                records.extend(
+                    AMFIService.parse_nav_file(
+                        report_text,
+                        historical=True,
+                    )
+                )
+                window_start = window_end + relativedelta(days=1)
+            return records
 
         date_params = {
             "frmdt": from_date.strftime("%d-%b-%Y"),

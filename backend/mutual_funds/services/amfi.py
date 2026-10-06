@@ -509,7 +509,10 @@ class AMFIService:
                     )
                     response.raise_for_status()
                     candidate = response.text or ""
-                    if not AMFIService._is_historical_report(candidate):
+                    if not AMFIService._is_historical_report(
+                        candidate,
+                        scheme_codes=requested_codes,
+                    ):
                         raise RuntimeError(
                             "AMFI historical response was not a NAV report "
                             f"(bytes={len(response.content)})"
@@ -532,13 +535,12 @@ class AMFIService:
                 historical=True,
                 scheme_codes=requested_codes,
             )
-            if not window_records:
-                raise RuntimeError(
-                    "AMFI returned a valid historical report but no requested "
-                    f"scheme rows for {window_start} to {window_end}; "
-                    f"requested={sorted(requested_codes)}"
-                )
-            records.extend(window_records)
+            # A valid AMFI report can legitimately contain no row for a
+            # requested scheme in a particular window (for example before a
+            # scheme started, after closure, or around a reporting gap).
+            # Keep the window and continue; validate coverage after all chunks.
+            if window_records:
+                records.extend(window_records)
             window_start = window_end + relativedelta(days=1)
 
         deduped = {
@@ -546,6 +548,16 @@ class AMFIService:
             for record in records
             if record["scheme_code"] in requested_codes
         }
+        matched_codes = {record["scheme_code"] for record in deduped.values()}
+        missing_codes = requested_codes - matched_codes
+        if missing_codes:
+            logger.warning(
+                "AMFI historical backfill returned no rows for scheme codes: %s "
+                "range=%s to %s",
+                sorted(missing_codes),
+                from_date,
+                to_date,
+            )
         return sorted(
             deduped.values(),
             key=lambda item: (item["scheme_code"], item["date"]),
@@ -645,8 +657,8 @@ class AMFIService:
         raise RuntimeError("AMFI historical endpoint returned no response.")
 
     @staticmethod
-    def _is_historical_report(text):
-        """Return True only for AMFI's semicolon-delimited historical report."""
+    def _is_historical_report(text, scheme_codes=None):
+        """Return True for AMFI historical text, including header variants."""
         if not text:
             return False
 
@@ -658,20 +670,42 @@ class AMFIService:
         if not lines:
             return False
 
-        # AMFI may prepend whitespace/BOM or informational lines. Find the
-        # actual tabular header instead of assuming it is line zero.
         required = {
             "scheme code",
             "scheme name",
             "net asset value",
             "date",
         }
-        return any(
+        if any(
             required.issubset(
                 {token.strip().lower() for token in line.split(";")}
             )
-            for line in lines[:20]
-        )
+            for line in lines[:100]
+        ):
+            return True
+
+        # AMFI has changed/added report preamble and header text over time.
+        # A real historical report is still identifiable by its 8-column
+        # semicolon-delimited scheme rows. When codes are supplied, require
+        # one of those requested codes to appear in a valid NAV/date row.
+        requested = {
+            str(code).strip()
+            for code in (scheme_codes or [])
+            if str(code or "").strip()
+        }
+        for line in lines:
+            parts = [part.strip() for part in line.split(";")]
+            if len(parts) < 8 or not parts[0].isdigit():
+                continue
+            if requested and parts[0] not in requested:
+                continue
+            try:
+                Decimal(parts[4])
+                datetime.strptime(parts[-1], "%d-%b-%Y")
+            except (InvalidOperation, ValueError, TypeError):
+                continue
+            return True
+        return False
 
     @staticmethod
     def _build_record(

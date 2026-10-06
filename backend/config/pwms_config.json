@@ -262,6 +262,32 @@
         ]
       ],
       "annual_days": 365.2425
+    },
+    "yahoo_finance": {
+      "doh_url": "https://1.1.1.1/dns-query"
+    },
+    "bond_price": {
+      "endpoint": "https://bricsonline.nseindia.com/bondsnew/rest/public/sebiannxone/all",
+      "timeout_seconds": 30,
+      "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36",
+      "accept": "application/json, text/javascript, */*; q=0.01",
+      "origin": "https://bricsonline.nseindia.com",
+      "referer": "https://bricsonline.nseindia.com/bondsnew/rest/public?r=sebiannexure1"
+    },
+    "sgb": {
+      "nse_home_url": "https://www.nseindia.com/",
+      "nse_quote_url": "https://www.nseindia.com/api/quote-equity",
+      "fallback_url": "https://sgb.vercel.app/",
+      "doh_url": "https://1.1.1.1/dns-query",
+      "timeout_seconds": 20,
+      "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36",
+      "accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+      "accept_language": "en-US,en;q=0.9",
+      "referer": "https://www.nseindia.com/"
+    },
+    "amfi_nav": {
+      "url": "https://portal.amfiindia.com/spages/NAVAll.txt",
+      "timeout_seconds": 30
     }
   },
   "scheduler": {

@@ -194,7 +194,7 @@ class ArticleDeduplicator:
                     ).lower(),
                 )
                 if (
-                    len(token) >= 4
+                    len(token) >= 3
                     and token not in _STOPWORDS
                     and token not in _EVENT_ENTITY_STOPWORDS
                 )
@@ -223,7 +223,7 @@ class ArticleDeduplicator:
                         ).lower(),
                     )
                     if (
-                        len(token) >= 4
+                        len(token) >= 3
                         and token not in _STOPWORDS
                         and token not in _EVENT_ENTITY_STOPWORDS
                     )

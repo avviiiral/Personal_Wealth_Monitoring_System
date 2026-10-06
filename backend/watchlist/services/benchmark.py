@@ -599,12 +599,29 @@ class BenchmarkPerformanceService:
             ]
 
         series = read_master()
-        if len(series) >= 2:
+
+        # A previously bootstrapped master can contain only a few sparse
+        # observations (for example, older Nifty imports). That is enough to
+        # calculate a return but produces a misleading stepped/sparse chart.
+        # Require daily-ish coverage for the 5Y history before accepting the
+        # master series. Rebuild the Nifty TRI master when coverage is thin so
+        # the chart has the same observation density as the BSE 500 TRI chart.
+        end = timezone.now().date()
+        expected_rows = max(5, int((end - start).days * 0.5))
+        first_date = date.fromisoformat(series[0]["date"]) if series else None
+        last_date = date.fromisoformat(series[-1]["date"]) if series else None
+        coverage_ok = (
+            first_date is not None
+            and last_date is not None
+            and first_date <= start + timedelta(days=10)
+            and last_date >= end - timedelta(days=10)
+        )
+        if len(series) >= expected_rows and coverage_ok:
             return series
 
         try:
             points = (
-                cls._nifty_tri_series(start)
+                cls._nifty_tri_series(start, end)
                 if benchmark == "Nifty 50"
                 else cls._bse_series(start)
                 if benchmark == "BSE 500"

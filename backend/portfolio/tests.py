@@ -97,6 +97,16 @@ class PortfolioTreeServiceTests(TestCase):
             "INE000TEST001",
         )
 
+    def _find_asset_node(self, tree, isin):
+        for family in tree["families"]:
+            for portfolio in family["portfolios"]:
+                for asset_class in portfolio["asset_classes"]:
+                    for sub_class in asset_class["sub_classes"]:
+                        for asset in sub_class["assets"]:
+                            if asset.get("isin") == isin:
+                                return asset
+        return None
+
     def test_reit_invit_falls_back_to_mis_reference_price(self):
         """REIT/InvIT portfolio rows use the same global Yahoo reference history as MIS Notes."""
         asset = Asset.objects.create(

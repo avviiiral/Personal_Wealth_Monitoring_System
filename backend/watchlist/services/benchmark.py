@@ -568,7 +568,7 @@ class BenchmarkPerformanceService:
     def _benchmark_series(cls, benchmark, start):
         """Read benchmark history from the shared master, bootstrapping once if needed."""
         def read_master():
-            points = (
+            points = list(
                 BenchmarkMasterPoint.objects
                 .filter(
                     benchmark=benchmark,
@@ -578,6 +578,19 @@ class BenchmarkPerformanceService:
                 .order_by("date", "id")
                 .values("date", "value")
             )
+            boundary = (
+                BenchmarkMasterPoint.objects
+                .filter(
+                    benchmark=benchmark,
+                    source="MASTER",
+                    date__lt=start,
+                )
+                .order_by("-date", "-id")
+                .values("date", "value")
+                .first()
+            )
+            if boundary is not None:
+                points.insert(0, boundary)
             return [
                 {
                     "date": point["date"].isoformat(),

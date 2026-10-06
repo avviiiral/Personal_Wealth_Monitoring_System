@@ -877,13 +877,12 @@ class MISReportService:
         if isinstance(as_of, str):
             as_of = date.fromisoformat(as_of)
 
-        # The classification is based on the actual FIFO lot's acquisition
-        # date and the disposal date, not on the report period start. This
-        # keeps a lot acquired before the reporting window correctly
-        # long-term while a newer FIFO lot from the same asset can still be
-        # short-term.
-        long_term_boundary = acquired_on + relativedelta(months=tenure_months)
-        is_long_term = as_of >= long_term_boundary
+        # Classify each FIFO lot independently using completed calendar
+        # months held through the actual disposal/as-of date. This keeps
+        # older lots long-term while newer lots from the same asset remain
+        # short-term in the same disposal.
+        holding_months = cls._holding_months(acquired_on, as_of)
+        is_long_term = holding_months >= tenure_months
 
         raw_rate = (
             tax_setting.long_term_tax_rate

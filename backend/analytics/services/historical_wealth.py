@@ -303,7 +303,6 @@ class HistoricalWealthAnalytics:
                 MarketPrice.objects
                 .filter(
                     asset_id__in=missing_price_asset_ids,
-                    date__lte=end_date,
                 )
                 .order_by("asset_id", "-date", "-id")
                 .only(

@@ -9,7 +9,7 @@ from django.db.models import Max, Q
 
 from investments.models import Asset, Transaction, TransactionType
 from market_data.models import MarketPrice, ManualAssetPrice
-from mutual_funds.models import MutualFundNAV, MutualFundTransaction, MutualFundHolding
+from mutual_funds.models import (\n    AMFIMasterNAV,\n    AMFIMasterScheme,\n    MutualFundNAV,\n    MutualFundTransaction,\n    MutualFundHolding,\n    MutualFundScheme,\n)
 from portfolio.services.portfolio_tree_service import PortfolioTreeService
 from market_data.services.yahoo_finance import YahooFinanceService
 from users.models import TaxRateSetting
@@ -105,6 +105,66 @@ class MISReportService:
                 .first()
             )
         return cache[key]
+
+    @classmethod
+    def _mf_nav_for_asset(cls, asset, as_of, cache):
+        """Resolve a mutual-fund NAV for a legacy Asset-backed transaction.
+
+        Some older/imported portfolio rows are stored in investments.Transaction
+        instead of mutual_funds.MutualFundTransaction. Those rows still carry a
+        real asset ISIN, while their NAV lives in the AMFI NAV tables rather than
+        MarketPrice. Resolve by ISIN and family/master scheme data instead of by
+        asset name or a hard-coded security list.
+        """
+        key = (asset.id, as_of)
+        if key in cache:
+            return cache[key]
+
+        isin = str(asset.isin or "").strip().upper()
+        if not isin:
+            cache[key] = None
+            return None
+
+        scheme = (
+            MutualFundScheme.objects
+            .filter(family_id=asset.family_id, is_active=True)
+            .filter(Q(isin_growth__iexact=isin) | Q(isin_dividend__iexact=isin))
+            .order_by("id")
+            .first()
+        )
+        if scheme is not None:
+            nav = (
+                MutualFundNAV.objects
+                .filter(scheme_id=scheme.id, date__lte=as_of)
+                .order_by("-date", "-id")
+                .values_list("nav", flat=True)
+                .first()
+            )
+            if nav is not None:
+                cache[key] = nav
+                return nav
+
+        master_scheme = (
+            AMFIMasterScheme.objects
+            .filter(is_active=True)
+            .filter(Q(isin_growth__iexact=isin) | Q(isin_dividend__iexact=isin))
+            .order_by("id")
+            .first()
+        )
+        if master_scheme is not None:
+            nav = (
+                AMFIMasterNAV.objects
+                .filter(scheme_id=master_scheme.id, date__lte=as_of)
+                .order_by("-date", "-id")
+                .values_list("nav", flat=True)
+                .first()
+            )
+            if nav is not None:
+                cache[key] = nav
+                return nav
+
+        cache[key] = None
+        return None
 
     @classmethod
     def _mf_nav(cls, scheme_id, as_of, cache):
@@ -234,14 +294,22 @@ class MISReportService:
 
         if row["kind"] == "asset":
             asset_ids = row["asset_ids"]
-            opening_prices = [
-                cls._market_price(asset_id, opening_date, price_cache)
-                for asset_id in asset_ids
-            ]
-            closing_prices = [
-                cls._market_price(asset_id, as_of, price_cache)
-                for asset_id in asset_ids
-            ]
+            assets_by_id = {tx.asset_id: tx.asset for tx in txs if tx.asset_id}
+            opening_prices = []
+            closing_prices = []
+            for asset_id in asset_ids:
+                asset = assets_by_id.get(asset_id)
+                opening_nav = cls._mf_nav_for_asset(asset, opening_date, nav_cache) if asset else None
+                closing_nav = cls._mf_nav_for_asset(asset, as_of, nav_cache) if asset else None
+                # AMFI-backed NAV is the authoritative valuation path when the
+                # asset resolves to a mutual-fund scheme. Fall back to MarketPrice
+                # for ordinary securities and legacy rows without an MF match.
+                opening_prices.append(
+                    opening_nav if opening_nav is not None else cls._market_price(asset_id, opening_date, price_cache)
+                )
+                closing_prices.append(
+                    closing_nav if closing_nav is not None else cls._market_price(asset_id, as_of, price_cache)
+                )
         else:
             opening_prices = [
                 cls._mf_nav(scheme_id, opening_date, nav_cache)

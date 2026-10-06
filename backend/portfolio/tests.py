@@ -1080,7 +1080,7 @@ class ManualPriceEffectiveDateAndMissingPriceTests(TestCase):
         Transaction.objects.create(
             owner=self.user,
             family=self.family,
-            family_name="Family Dated",
+            family_name="Historical Missing Price",
             portfolio="Portfolio Dated",
             asset=asset,
             asset_class="Equity",
@@ -1098,6 +1098,7 @@ class ManualPriceEffectiveDateAndMissingPriceTests(TestCase):
             self.user,
             date(2026, 2, 1),
             date(2026, 2, 3),
+            family_name="Historical Missing Price",
         )
 
         by_date = {item["date"]: item for item in results}

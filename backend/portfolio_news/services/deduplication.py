@@ -58,7 +58,7 @@ def _entity_tokens(candidate: NewsArticleResult) -> set[str]:
     return {
         token
         for token in re.findall(r"[a-z0-9]+", raw.lower())
-        if len(token) >= 4
+        if len(token) >= 3
         and token not in _STOPWORDS
         and token not in _EVENT_ENTITY_STOPWORDS
     }

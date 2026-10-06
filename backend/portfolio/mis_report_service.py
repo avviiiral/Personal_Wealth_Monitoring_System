@@ -113,6 +113,38 @@ class MISReportService:
             )
         return cache[key]
 
+    @staticmethod
+    def _normalize_mf_name(value):
+        value = str(value or "").casefold()
+        value = re.sub(r"[^a-z0-9]+", " ", value)
+        return " ".join(value.split())
+
+    @classmethod
+    def _best_mf_scheme_match(cls, target, candidates):
+        target_tokens = set(target.split())
+        if not target_tokens:
+            return None
+
+        scored = []
+        for candidate in candidates:
+            tokens = set(cls._normalize_mf_name(candidate.get("scheme_name")).split())
+            overlap = len(target_tokens & tokens)
+            if overlap == 0:
+                continue
+            coverage = overlap / max(len(target_tokens), len(tokens))
+            score = (coverage, overlap, -abs(len(target_tokens) - len(tokens)))
+            scored.append((score, candidate["id"]))
+
+        scored.sort(reverse=True)
+        if not scored:
+            return None
+        best_score, best_id = scored[0]
+        if best_score[0] < 0.55 or best_score[1] < 3:
+            return None
+        if len(scored) > 1 and scored[1][0] == best_score:
+            return None
+        return best_id
+
     @classmethod
     def _mf_nav_for_asset(cls, asset, as_of, cache):
         """Resolve a mutual-fund NAV for a legacy Asset-backed transaction.
@@ -151,6 +183,16 @@ class MISReportService:
                 .first()
             )
 
+        if scheme is None and asset.name:
+            candidates = MutualFundScheme.objects.filter(
+                family_id=asset.family_id, is_active=True
+            ).values("id", "scheme_name")
+            scheme_id = cls._best_mf_scheme_match(
+                cls._normalize_mf_name(asset.name), candidates
+            )
+            if scheme_id is not None:
+                scheme = MutualFundScheme.objects.filter(id=scheme_id).first()
+
         if scheme is not None:
             nav = (
                 MutualFundNAV.objects
@@ -183,6 +225,16 @@ class MISReportService:
                 .order_by("id")
                 .first()
             )
+
+        if master_scheme is None and asset.name:
+            candidates = AMFIMasterScheme.objects.filter(
+                is_active=True
+            ).values("id", "scheme_name")
+            scheme_id = cls._best_mf_scheme_match(
+                cls._normalize_mf_name(asset.name), candidates
+            )
+            if scheme_id is not None:
+                master_scheme = AMFIMasterScheme.objects.filter(id=scheme_id).first()
 
         if master_scheme is not None:
             nav = (

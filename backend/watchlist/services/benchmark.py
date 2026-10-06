@@ -621,6 +621,19 @@ class BenchmarkPerformanceService:
             )
             if points:
                 cls.save_benchmark_master(benchmark, points)
+                # The fetched series is authoritative for this calculation.
+                # Return it directly instead of immediately re-reading the
+                # master with the original start filter; this preserves a
+                # boundary observation needed to calculate a long-period
+                # cumulative return when the latest provider observation is
+                # slightly stale.
+                return sorted(
+                    (
+                        point for point in points
+                        if point.get("date") and point.get("value") is not None
+                    ),
+                    key=lambda point: point["date"],
+                )
         except Exception:
             return series
 

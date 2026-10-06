@@ -146,32 +146,133 @@ class MISReportService:
         return best_id
 
     @classmethod
+    def _resolve_mf_master_nav(cls, isin_values, scheme_name, as_of):
+        """Resolve the best AMFI master NAV without assuming one master row.
+
+        AMFI can contain multiple identity rows that are similar by name. A
+        resolver must therefore prefer identity matches, but verify that the
+        selected master actually has NAV history for the requested date before
+        returning it.
+        """
+        candidates = []
+        seen = set()
+
+        normalized_isins = {
+            str(value or "").strip().upper()
+            for value in isin_values
+            if str(value or "").strip()
+        }
+
+        if normalized_isins:
+            rows = (
+                AMFIMasterScheme.objects
+                .filter(is_active=True)
+                .filter(
+                    Q(isin_growth__in=normalized_isins)
+                    | Q(isin_dividend__in=normalized_isins)
+                )
+                .order_by("id")
+            )
+            for row in rows:
+                if row.id not in seen:
+                    candidates.append(row)
+                    seen.add(row.id)
+
+        normalized_name = cls._normalize_mf_name(scheme_name)
+        if normalized_name:
+            rows = AMFIMasterScheme.objects.filter(
+                is_active=True,
+                scheme_name__iexact=scheme_name,
+            ).order_by("id")
+            for row in rows:
+                if row.id not in seen:
+                    candidates.append(row)
+                    seen.add(row.id)
+
+            if not candidates or not any(
+                cls._normalize_mf_name(row.scheme_name) == normalized_name
+                for row in candidates
+            ):
+                scored = []
+                for row in AMFIMasterScheme.objects.filter(is_active=True).only(
+                    "id", "scheme_name"
+                ):
+                    candidate_name = cls._normalize_mf_name(row.scheme_name)
+                    target_tokens = set(normalized_name.split())
+                    candidate_tokens = set(candidate_name.split())
+                    overlap = len(target_tokens & candidate_tokens)
+                    if overlap == 0:
+                        continue
+                    coverage = overlap / max(
+                        len(target_tokens),
+                        len(candidate_tokens),
+                    )
+                    score = (
+                        coverage,
+                        overlap,
+                        -abs(len(target_tokens) - len(candidate_tokens)),
+                    )
+                    scored.append((score, row))
+
+                scored.sort(key=lambda item: item[0], reverse=True)
+                if scored:
+                    best_score = scored[0][0]
+                    if best_score[0] >= 0.55 and best_score[1] >= 3:
+                        for score, row in scored:
+                            if score != best_score:
+                                break
+                            if row.id not in seen:
+                                candidates.append(row)
+                                seen.add(row.id)
+
+        for master in candidates:
+            nav = (
+                AMFIMasterNAV.objects
+                .filter(scheme_id=master.id, date__lte=as_of)
+                .order_by("-date", "-id")
+                .values_list("nav", flat=True)
+                .first()
+            )
+            if nav is not None:
+                return nav
+
+        return None
+
+    @classmethod
     def _mf_nav_for_asset(cls, asset, as_of, cache):
         """Resolve a mutual-fund NAV for a legacy Asset-backed transaction.
 
-        Some older/imported portfolio rows are stored in investments.Transaction
-        instead of mutual_funds.MutualFundTransaction. Their NAV lives in the
-        AMFI NAV tables rather than MarketPrice. Resolve by ISIN when available,
-        then by the persisted scheme name, instead of using security-specific
-        hard-coding.
+        Legacy/imported portfolio rows can be stored in investments.Transaction
+        instead of mutual_funds.MutualFundTransaction. Their valuation can still
+        be resolved from the AMFI identity carried by the asset/security master.
+        No fund-specific names, ISINs or NAVs are assumed.
         """
         key = (asset.id, as_of)
         if key in cache:
             return cache[key]
 
-        isin = str(asset.isin or "").strip().upper()
+        identity_isins = {
+            str(asset.isin or "").strip().upper(),
+        }
+        security_master = getattr(asset, "security_master", None)
+        if security_master is not None:
+            identity_isins.add(str(security_master.isin or "").strip().upper())
+        identity_isins.discard("")
 
         scheme = None
-        if isin:
+        if identity_isins:
             scheme = (
                 MutualFundScheme.objects
                 .filter(family_id=asset.family_id, is_active=True)
-                .filter(Q(isin_growth__iexact=isin) | Q(isin_dividend__iexact=isin))
+                .filter(
+                    Q(isin_growth__in=identity_isins)
+                    | Q(isin_dividend__in=identity_isins)
+                )
                 .order_by("id")
                 .first()
             )
 
-        if scheme is None:
+        if scheme is None and asset.name:
             scheme = (
                 MutualFundScheme.objects
                 .filter(
@@ -182,16 +283,6 @@ class MISReportService:
                 .order_by("id")
                 .first()
             )
-
-        if scheme is None and asset.name:
-            candidates = MutualFundScheme.objects.filter(
-                family_id=asset.family_id, is_active=True
-            ).values("id", "scheme_name")
-            scheme_id = cls._best_mf_scheme_match(
-                cls._normalize_mf_name(asset.name), candidates
-            )
-            if scheme_id is not None:
-                scheme = MutualFundScheme.objects.filter(id=scheme_id).first()
 
         if scheme is not None:
             nav = (
@@ -205,51 +296,13 @@ class MISReportService:
                 cache[key] = nav
                 return nav
 
-        master_scheme = None
-        if isin:
-            master_scheme = (
-                AMFIMasterScheme.objects
-                .filter(is_active=True)
-                .filter(Q(isin_growth__iexact=isin) | Q(isin_dividend__iexact=isin))
-                .order_by("id")
-                .first()
-            )
-
-        if master_scheme is None:
-            master_scheme = (
-                AMFIMasterScheme.objects
-                .filter(
-                    is_active=True,
-                    scheme_name__iexact=asset.name,
-                )
-                .order_by("id")
-                .first()
-            )
-
-        if master_scheme is None and asset.name:
-            candidates = AMFIMasterScheme.objects.filter(
-                is_active=True
-            ).values("id", "scheme_name")
-            scheme_id = cls._best_mf_scheme_match(
-                cls._normalize_mf_name(asset.name), candidates
-            )
-            if scheme_id is not None:
-                master_scheme = AMFIMasterScheme.objects.filter(id=scheme_id).first()
-
-        if master_scheme is not None:
-            nav = (
-                AMFIMasterNAV.objects
-                .filter(scheme_id=master_scheme.id, date__lte=as_of)
-                .order_by("-date", "-id")
-                .values_list("nav", flat=True)
-                .first()
-            )
-            if nav is not None:
-                cache[key] = nav
-                return nav
-
-        cache[key] = None
-        return None
+        nav = cls._resolve_mf_master_nav(
+            identity_isins,
+            asset.name,
+            as_of,
+        )
+        cache[key] = nav
+        return nav
 
     @classmethod
     def _mf_nav(cls, scheme_id, as_of, cache):
@@ -264,48 +317,22 @@ class MISReportService:
             .values_list("nav", flat=True)
             .first()
         )
-        if nav is not None:
-            cache[key] = nav
-            return nav
-
-        scheme = (
-            MutualFundScheme.objects
-            .filter(id=scheme_id)
-            .values("isin_growth", "isin_dividend", "scheme_name")
-            .first()
-        )
-        master = None
-        if scheme:
-            isins = {
-                str(scheme.get("isin_growth") or "").strip(),
-                str(scheme.get("isin_dividend") or "").strip(),
-            } - {""}
-            if isins:
-                master = (
-                    AMFIMasterScheme.objects
-                    .filter(is_active=True)
-                    .filter(Q(isin_growth__in=isins) | Q(isin_dividend__in=isins))
-                    .order_by("id")
-                    .first()
-                )
-            if master is None and scheme.get("scheme_name"):
-                candidates = AMFIMasterScheme.objects.filter(
-                    is_active=True
-                ).values("id", "scheme_name")
-                master_id = cls._best_mf_scheme_match(
-                    cls._normalize_mf_name(scheme["scheme_name"]), candidates
-                )
-                if master_id is not None:
-                    master = AMFIMasterScheme.objects.filter(id=master_id).first()
-
-        if master is not None:
-            nav = (
-                AMFIMasterNAV.objects
-                .filter(scheme_id=master.id, date__lte=as_of)
-                .order_by("-date", "-id")
-                .values_list("nav", flat=True)
+        if nav is None:
+            scheme = (
+                MutualFundScheme.objects
+                .filter(id=scheme_id)
+                .values("isin_growth", "isin_dividend", "scheme_name")
                 .first()
             )
+            if scheme:
+                nav = cls._resolve_mf_master_nav(
+                    {
+                        scheme.get("isin_growth"),
+                        scheme.get("isin_dividend"),
+                    },
+                    scheme.get("scheme_name"),
+                    as_of,
+                )
 
         cache[key] = nav
         return nav

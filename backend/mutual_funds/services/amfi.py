@@ -652,9 +652,8 @@ class AMFIService:
         )
         last_response = None
 
-        with requests.Session() as session:
-            for params in attempts:
-                response = session.get(
+        for params in attempts:
+            response = requests.get(
                     AMFIService.NAV_HISTORY_URL,
                     params=params,
                     headers=headers,

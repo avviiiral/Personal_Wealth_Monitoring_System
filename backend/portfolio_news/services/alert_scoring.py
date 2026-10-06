@@ -4,6 +4,7 @@ from typing import Optional
 from django.utils import timezone
 
 from ..constants import NotificationTier, SourceQualityTier
+from config.pwms_config import get as get_pwms_config
 
 
 def _recency_weight(
@@ -33,16 +34,16 @@ def _recency_weight(
     age = now - published_at
     age_days = age.total_seconds() / 86400.0
 
-    if age_days <= 1:
+    recency = get_pwms_config("news", "recency", {})
+    fresh_days = recency.get("fresh_days", 1)
+    floor_days = recency.get("floor_days", 7)
+    floor_weight = recency.get("floor_weight", 0.5)
+    if age_days <= fresh_days:
         return 1.0
-
-    if age_days >= 7:
-        return 0.5
-
-    # Linear interpolation between (1 day, 1.0) and (7 days, 0.5).
-    fraction = (age_days - 1) / (7 - 1)
-
-    return round(1.0 - fraction * 0.5, 4)
+    if age_days >= floor_days:
+        return floor_weight
+    fraction = (age_days - fresh_days) / (floor_days - fresh_days)
+    return round(1.0 - fraction * (1.0 - floor_weight), 4)
 
 
 def compute_alert_score(

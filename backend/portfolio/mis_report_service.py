@@ -260,8 +260,12 @@ class MISReportService:
         The MIS report can encounter a scheme whose family NAV table has never
         been populated even though the asset carries a valid AMFI identity.
         Resolve the existing scheme code and fetch official AMFI history into
-        the shared master table. No scheme names, ISINs, or NAV values are
-        assumed.
+        the shared master table.
+
+        Important performance rule: collect all schemes missing coverage for a
+        valuation date and import them in one AMFI batch. The previous
+        implementation called the historical importer once per scheme, which
+        multiplied external API calls for a single MIS request.
         """
         scheme_codes = set()
 
@@ -284,9 +288,6 @@ class MISReportService:
                 if asset is None:
                     continue
 
-                # Legacy portfolio data does not reliably classify mutual funds
-                # as MUTUAL_FUND. Resolve the instrument from its AMFI identity
-                # instead of trusting the local Asset.category value.
                 identity_isins = {str(asset.isin or "").strip().upper()}
                 security_master = getattr(asset, "security_master", None)
                 if security_master is not None:
@@ -322,16 +323,6 @@ class MISReportService:
         if not scheme_codes:
             return
 
-        # MIS dates are user-selectable. We therefore only need AMFI
-        # observations around the actual valuation dates used by the report.
-        # Never backfill from the earliest transaction date or from the
-        # beginning of the report range: a multi-year range can turn a normal
-        # page load into dozens/hundreds of AMFI requests.
-        #
-        # For each valuation target, an observation on or before that date is
-        # sufficient. If the stored master history cannot provide a recent
-        # observation, fetch only a bounded look-back window ending on the
-        # target. This also handles weekends and holidays.
         valuation_dates = sorted({
             value
             for value in (
@@ -344,17 +335,19 @@ class MISReportService:
         lookback_days = 14
 
         try:
-            for code in sorted(scheme_codes):
-                master_id = (
-                    AMFIMasterScheme.objects
-                    .filter(scheme_code=code, is_active=True)
-                    .values_list("id", flat=True)
-                    .first()
-                )
-                if master_id is None:
-                    continue
+            for target_date in valuation_dates:
+                missing_codes = []
 
-                for target_date in valuation_dates:
+                for code in sorted(scheme_codes):
+                    master_id = (
+                        AMFIMasterScheme.objects
+                        .filter(scheme_code=code, is_active=True)
+                        .values_list("id", flat=True)
+                        .first()
+                    )
+                    if master_id is None:
+                        continue
+
                     latest_before = (
                         AMFIMasterNAV.objects
                         .filter(
@@ -366,26 +359,31 @@ class MISReportService:
                         .first()
                     )
 
-                    # Existing history already resolves this target. A NAV
-                    # within the last seven calendar days is sufficient because
-                    # the normal resolver uses the latest observation on or
-                    # before the requested date.
                     if (
                         latest_before is not None
                         and latest_before >= target_date - timedelta(days=7)
                     ):
                         continue
 
-                    # The target may pre-date the imported master history, or
-                    # current history may simply be stale. Fetch only the
-                    # immediately relevant historical window instead of trying
-                    # to reconstruct the entire lifetime of the scheme.
-                    history_start = target_date - timedelta(days=lookback_days)
-                    AMFIService.import_historical_master_navs(
-                        history_start,
-                        target_date,
-                        scheme_codes=[code],
-                    )
+                    missing_codes.append(code)
+
+                if not missing_codes:
+                    continue
+
+                history_start = target_date - timedelta(days=lookback_days)
+                logger.info(
+                    "MIS AMFI coverage missing for %s schemes at %s; "
+                    "batch importing %s to %s.",
+                    len(missing_codes),
+                    target_date.isoformat(),
+                    history_start.isoformat(),
+                    target_date.isoformat(),
+                )
+                AMFIService.import_historical_master_navs(
+                    history_start,
+                    target_date,
+                    scheme_codes=missing_codes,
+                )
         except Exception:
             logger.exception(
                 "Unable to backfill AMFI history for MIS schemes: %s",

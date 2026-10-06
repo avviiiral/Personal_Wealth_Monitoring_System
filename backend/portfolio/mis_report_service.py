@@ -1876,22 +1876,9 @@ class MISReportService:
         price_cache = {}
         nav_cache = {}
         reference_cache = {}
-        data_rows = [
-            cls._build_data_row(
-                row,
-                opening_date,
-                as_of,
-                period_start,
-                price_cache,
-                nav_cache,
-                reference_cache,
-            )
-            for row in rows
-        ]
-        # Keep the complete set of report rows before applying the Data Sheet
-        # display filter. A Tax Report must also retain positions that were fully
-        # sold during the selected period because those rows can have realized
-        # P/L/tax even when their closing units and market value are zero.
+        # Build each valuation row exactly once. The previous implementation
+        # calculated the entire Data Sheet twice before filtering it, which
+        # multiplied all historical NAV/price queries for every MIS request.
         all_data_rows = [
             cls._build_data_row(
                 row,

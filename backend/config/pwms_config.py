@@ -27,3 +27,7 @@ if raw_override:
 
 def get(section: str, key: str, default: Any = None) -> Any:
     return CONFIG.get(section, {}).get(key, default)
+
+
+def section(name: str) -> dict[str, Any]:
+    return CONFIG.get(name, {})

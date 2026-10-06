@@ -654,36 +654,35 @@ class AMFIService:
 
         for params in attempts:
             response = requests.get(
-                    AMFIService.NAV_HISTORY_URL,
-                    params=params,
-                    headers=headers,
-                    timeout=60,
-                )
-                last_response = response
-                text = response.text or ""
+                AMFIService.NAV_HISTORY_URL,
+                params=params,
+                headers=headers,
+                timeout=60,
+            )
+            last_response = response
+            text = response.text or ""
 
-                # Do not accept an HTTP 200 WebForms/error page as if it
-                # were the downloadable report. This was the reason the
-                # previous importer could silently return zero records.
-                if (
-                    200 <= int(getattr(response, "status_code", 0) or 0) < 300
-                    and AMFIService._is_historical_report(text)
-                ):
-                    return text
+            # Do not accept an HTTP 200 WebForms/error page as if it
+            # were the downloadable report.
+            if (
+                200 <= int(getattr(response, "status_code", 0) or 0) < 300
+                and AMFIService._is_historical_report(text)
+            ):
+                return text
 
-                preview = " ".join(text.split())[:240]
-                logger.warning(
-                    "AMFI historical response was not a NAV report: "
-                    "endpoint=%s status=%s content_type=%s "
-                    "from=%s to=%s bytes=%s preview=%r",
-                    getattr(response, "url", AMFIService.NAV_HISTORY_URL),
-                    getattr(response, "status_code", None),
-                    getattr(response, "headers", {}).get("Content-Type", ""),
-                    from_date,
-                    to_date,
-                    len(getattr(response, "content", text.encode("utf-8"))),
-                    preview,
-                )
+            preview = " ".join(text.split())[:240]
+            logger.warning(
+                "AMFI historical response was not a NAV report: "
+                "endpoint=%s status=%s content_type=%s "
+                "from=%s to=%s bytes=%s preview=%r",
+                getattr(response, "url", AMFIService.NAV_HISTORY_URL),
+                getattr(response, "status_code", None),
+                getattr(response, "headers", {}).get("Content-Type", ""),
+                from_date,
+                to_date,
+                len(getattr(response, "content", text.encode("utf-8"))),
+                preview,
+            )
 
         if last_response is not None:
             last_response.raise_for_status()

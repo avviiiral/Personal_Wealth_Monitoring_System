@@ -254,7 +254,7 @@ class MISReportService:
         return None
 
     @classmethod
-    def _ensure_mf_history(cls, rows, from_date, to_date):
+    def _ensure_mf_history(cls, rows, from_date, to_date, extra_dates=None):
         """Backfill missing AMFI history for mutual funds used by this report.
 
         The MIS report can encounter a scheme whose family NAV table has never
@@ -322,13 +322,26 @@ class MISReportService:
         if not scheme_codes:
             return
 
-        # The valuation pass only needs NAV coverage for the report's
-        # requested valuation window. Do not expand this to the earliest
-        # transaction date: that can turn a normal MIS request into a
-        # multi-year AMFI backfill even when current NAV history is already
-        # complete. Older report dates will naturally request their own range.
-        history_start = from_date
-        history_end = to_date
+        # MIS dates are user-selectable. We therefore only need AMFI
+        # observations around the actual valuation dates used by the report.
+        # Never backfill from the earliest transaction date or from the
+        # beginning of the report range: a multi-year range can turn a normal
+        # page load into dozens/hundreds of AMFI requests.
+        #
+        # For each valuation target, an observation on or before that date is
+        # sufficient. If the stored master history cannot provide a recent
+        # observation, fetch only a bounded look-back window ending on the
+        # target. This also handles weekends and holidays.
+        valuation_dates = sorted({
+            value
+            for value in (
+                from_date,
+                to_date,
+                *(extra_dates or []),
+            )
+            if value is not None
+        })
+        lookback_days = 14
 
         try:
             for code in sorted(scheme_codes):
@@ -341,58 +354,38 @@ class MISReportService:
                 if master_id is None:
                     continue
 
-                earliest_stored = (
-                    AMFIMasterNAV.objects
-                    .filter(scheme_id=master_id)
-                    .order_by("date", "id")
-                    .values_list("date", flat=True)
-                    .first()
-                )
-                latest_stored = (
-                    AMFIMasterNAV.objects
-                    .filter(scheme_id=master_id)
-                    .order_by("-date", "-id")
-                    .values_list("date", flat=True)
-                    .first()
-                )
-
-                if earliest_stored is None:
-                    AMFIService.import_historical_master_navs(
-                        history_start,
-                        history_end,
-                        scheme_codes=[code],
-                    )
-                    continue
-
-                # Fill only a missing historical prefix. Existing recent
-                # history is retained and reused by the normal NAV resolver.
-                if earliest_stored > history_start:
-                    AMFIService.import_historical_master_navs(
-                        history_start,
-                        earliest_stored - timedelta(days=1),
-                        scheme_codes=[code],
-                    )
-
-                # A NAV from the last few calendar days is sufficient because
-                # NAVs are published on business days and the resolver uses the
-                # latest observation on or before the requested date. Avoid
-                # forcing an AMFI request merely because the report date is a
-                # weekend/holiday or today's NAV has not been published yet.
-                if (
-                    latest_stored is None
-                    or latest_stored < history_end - timedelta(days=7)
-                ):
-                    suffix_start = (
-                        latest_stored + timedelta(days=1)
-                        if latest_stored is not None
-                        else history_start
-                    )
-                    if suffix_start <= history_end:
-                        AMFIService.import_historical_master_navs(
-                            suffix_start,
-                            history_end,
-                            scheme_codes=[code],
+                for target_date in valuation_dates:
+                    latest_before = (
+                        AMFIMasterNAV.objects
+                        .filter(
+                            scheme_id=master_id,
+                            date__lte=target_date,
                         )
+                        .order_by("-date", "-id")
+                        .values_list("date", flat=True)
+                        .first()
+                    )
+
+                    # Existing history already resolves this target. A NAV
+                    # within the last seven calendar days is sufficient because
+                    # the normal resolver uses the latest observation on or
+                    # before the requested date.
+                    if (
+                        latest_before is not None
+                        and latest_before >= target_date - timedelta(days=7)
+                    ):
+                        continue
+
+                    # The target may pre-date the imported master history, or
+                    # current history may simply be stale. Fetch only the
+                    # immediately relevant historical window instead of trying
+                    # to reconstruct the entire lifetime of the scheme.
+                    history_start = target_date - timedelta(days=lookback_days)
+                    AMFIService.import_historical_master_navs(
+                        history_start,
+                        target_date,
+                        scheme_codes=[code],
+                    )
         except Exception:
             logger.exception(
                 "Unable to backfill AMFI history for MIS schemes: %s",
@@ -1878,7 +1871,7 @@ class MISReportService:
         rows = cls._base_rows(family)
         # Backfill missing official AMFI observations once per report before
         # the valuation pass, then resolve them through the normal cache path.
-        cls._ensure_mf_history(rows, opening_date, as_of)
+        cls._ensure_mf_history(rows, opening_date, as_of, extra_dates=[prior_month_end])
 
         price_cache = {}
         nav_cache = {}

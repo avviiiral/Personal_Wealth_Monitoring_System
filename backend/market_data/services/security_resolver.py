@@ -22,19 +22,17 @@ class SecurityResolver:
         6. Generic symbol + exchange suffix
 
     The Security Master is optional. If it is unavailable, the existing
-    resolv    CONFIG = get_pwms_config("security_resolver")
+    resolver behaviour remains available as a fallback.
+    """
+
+    CONFIG = get_pwms_config("security_resolver")
     NSE_SUFFIX = CONFIG.get("nse_suffix", ".NS")
     BSE_SUFFIX = CONFIG.get("bse_suffix", ".BO")
 
     SECURITY_MASTER_FILENAME = "security_master.xlsx"
 
-    # Legacy fallback mappings are configuration data rather than code.
     ISIN_TO_YAHOO = CONFIG.get("isin_to_yahoo", {})
     NAME_TO_YAHOO = CONFIG.get("name_to_yahoo", {})
-
-RS.NS",
-        "TATA MOTORS": "TATAMOTORS.NS",
-    }
 
     _security_master_loaded = False
     _security_master_isin = {}

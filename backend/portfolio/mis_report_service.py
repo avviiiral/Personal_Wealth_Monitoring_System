@@ -987,64 +987,34 @@ class MISReportService:
     @classmethod
     def _bse500_rate(cls, target_date, cache):
         """
-        Read the BSE 500 price-return index from the official BSE Indices
-        chart page. The page exposes recent daily chart points as
-        'Date: DD Mon YYYY - Value: ...'. Values are never inferred from
-        another index.
+        Resolve BSE 500 from locally stored reference history.
+
+        Do not call the public BSE site while serving the MIS page. Reference
+        history is refreshed separately by the scheduled/reference refresh
+        workflow or the explicit Excel download path.
         """
         cache_key = ("BSE500", target_date)
         if cache_key in cache:
             return cache[cache_key]
 
-        try:
-            response = requests.get(
-                "https://www.bseindices.com/indices-details/code/17/",
-                headers={
-                    "User-Agent": "Mozilla/5.0",
-                    "Accept": "text/html,application/xhtml+xml",
-                },
-                timeout=10,
-            )
-            response.raise_for_status()
-            html = response.text
+        asset = (
+            Asset.objects
+            .filter(family__isnull=True, symbol="BSE-500.BO")
+            .order_by("id")
+            .first()
+        )
+        if asset is None:
+            cache[cache_key] = None
+            return None
 
-            patterns = [
-                r"Date\s*:\s*(\d{1,2})\s+([A-Za-z]{3,9})\s+(\d{4})\s*[–-]\s*Value\s*:\s*([\d,]+(?:\.\d+)?)",
-                r"(\d{1,2})\s+([A-Za-z]{3,9})\s+(\d{4}).{0,80}?Value\s*:\s*([\d,]+(?:\.\d+)?)",
-            ]
-            month_map = {
-                "jan": 1, "feb": 2, "mar": 3, "apr": 4,
-                "may": 5, "jun": 6, "jul": 7, "aug": 8,
-                "sep": 9, "sept": 9, "oct": 10, "nov": 11, "dec": 12,
-            }
-
-            found = {}
-            for pattern in patterns:
-                for day, month_text, year, value in re.findall(pattern, html, flags=re.IGNORECASE):
-                    month = month_map.get(month_text[:3].lower())
-                    if not month:
-                        continue
-                    try:
-                        point_date = date(int(year), month, int(day))
-                        found[point_date] = Decimal(value.replace(",", ""))
-                    except (TypeError, ValueError, ArithmeticError):
-                        continue
-
-                if found:
-                    break
-
-            if found:
-                eligible = [
-                    (point_date, value)
-                    for point_date, value in found.items()
-                    if point_date <= target_date
-                ]
-                result = max(eligible, key=lambda item: item[0])[1] if eligible else None
-            else:
-                result = None
-        except Exception:
-            result = None
-
+        value = (
+            MarketPrice.objects
+            .filter(asset=asset, date__lte=target_date)
+            .order_by("-date", "-id")
+            .values_list("close_price", flat=True)
+            .first()
+        )
+        result = Decimal(str(value)) if value is not None else None
         cache[cache_key] = result
         return result
 

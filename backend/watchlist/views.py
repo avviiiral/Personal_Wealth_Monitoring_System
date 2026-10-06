@@ -65,14 +65,22 @@ def _filtered_products(request, product_type=None):
         | Q(return_5y__isnull=False)
         | Q(return_since_inception__isnull=False)
         | Q(cagr__isnull=False)
-        | Q(mutual_fund__aum__isnull=False)
+    )
+    # AUM belongs to the product-specific child models, not PerformanceSnapshot.
+    # Keep those checks on the outer InvestmentProduct queryset so products with
+    # only a current AUM value remain displayable without generating an invalid
+    # reverse lookup inside the snapshot subquery.
+    displayable_product = (
+        Q(mutual_fund__aum__isnull=False)
         | Q(pms__aum__isnull=False)
     )
     # OWNED is an ownership view, so an owned product remains visible even
     # before its first performance snapshot has been imported.
     status = request.query_params.get("status", "").upper()
     if status != "OWNED":
-        queryset = queryset.filter(Exists(displayable_snapshot))
+        queryset = queryset.filter(
+            Q(Exists(displayable_snapshot)) | displayable_product
+        )
 
     if product_type:
         queryset = queryset.filter(product_type=product_type)

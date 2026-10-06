@@ -641,12 +641,14 @@ class AMFIService:
             "Referer": "https://www.amfiindia.com/net-asset-value/nav-download",
         }
 
-        # AMFI's all-schemes historical download is addressable with
-        # mf=0. Keep tp=1 for the text-report mode. A second attempt without
-        # tp handles deployments where the flag is inferred by the endpoint.
+        # AMFI's all-schemes historical download is addressable directly by
+        # date range. Do not send mf=0: the current portal treats that value
+        # as an invalid AMC selection and returns its HTML WebForms page.
+        # Keep tp=1 as the preferred text-report mode, with a fallback that
+        # lets the endpoint infer the report mode.
         attempts = (
-            {"mf": "0", "tp": "1", **date_params},
-            {"mf": "0", **date_params},
+            {"tp": "1", **date_params},
+            date_params,
         )
         last_response = None
 

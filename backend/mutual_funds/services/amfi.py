@@ -1414,11 +1414,18 @@ class AMFIService:
             )
             return AMFIService._import_master_records(records)
 
-        text = AMFIService.download_historical_nav(from_date, to_date)
-        records = AMFIService.parse_nav_file(
-            text,
-            historical=True,
-            scheme_codes=scheme_codes,
+        downloaded = AMFIService.download_historical_nav(from_date, to_date)
+        # Long all-scheme ranges are internally chunked by
+        # download_historical_nav(), so that path returns already-parsed
+        # records. A single-window request still returns the raw report text.
+        records = (
+            downloaded
+            if isinstance(downloaded, list)
+            else AMFIService.parse_nav_file(
+                downloaded,
+                historical=True,
+                scheme_codes=scheme_codes,
+            )
         )
         return AMFIService._import_master_records(records)
 

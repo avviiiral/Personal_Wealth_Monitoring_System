@@ -32,7 +32,11 @@ _EVENT_FAMILIES = {
     "pledge": ("promoter pledge", "pledge", "pledged"),
 }
 
-_STOPWORDS = {"the", "and", "of", "for", "to", "a", "an", "with", "on", "in", "from", "limited", "ltd", "company"}
+_STOPWORDS = {
+    "the", "and", "of", "for", "to", "a", "an", "with", "on", "in", "from",
+    "limited", "ltd", "company", "article", "alert", "news", "report",
+    "story", "update", "first", "second", "third", "latest",
+}
 
 
 def _event_family(text: str) -> str:
@@ -152,6 +156,7 @@ class ArticleDeduplicator:
         ).only(
             "id",
             "normalized_title",
+            "matched_query",
         )
 
         for article in recent_candidates:
@@ -168,11 +173,16 @@ class ArticleDeduplicator:
             for article in recent_candidates:
                 if _event_family(article.normalized_title) != candidate_family:
                     continue
-                article_entities = {
-                    token
-                    for token in re.findall(r"[a-z0-9]+", article.normalized_title.lower())
-                    if len(token) >= 4 and token not in _STOPWORDS
-                }
+                article_entities = _entity_tokens(
+                    NewsArticleResult(
+                        title=article.normalized_title,
+                        url="",
+                        source="",
+                        description="",
+                        published_at=article.published_at,
+                        matched_query=article.matched_query,
+                    )
+                )
                 if candidate_entities & article_entities:
                     return article
 

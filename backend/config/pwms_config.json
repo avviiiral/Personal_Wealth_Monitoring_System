@@ -203,7 +203,9 @@
     },
     "nifty_bootstrap_timeout_seconds": 15,
     "nifty_request_timeout_seconds": 60,
-    "bse_request_timeout_seconds": 45
+    "bse_request_timeout_seconds": 45,
+    "minimum_history_rows": 20,
+    "minimum_daily_coverage_ratio": 0.5
   },
   "providers": {
     "google_news": {

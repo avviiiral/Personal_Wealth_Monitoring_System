@@ -2,7 +2,7 @@ import logging
 from datetime import timedelta
 
 from django.utils import timezone
-from django.db.models import Min
+from django.db.models import Max, Min
 
 from mutual_funds.models import AMFIMasterNAV
 from mutual_funds.services.amfi import AMFIService
@@ -50,20 +50,10 @@ class WatchListAMFIHistoryService:
             source="AMFI",
         ).aggregate(
             first_date=Min("date"),
-            last_date=Min("date"),
+            last_date=Max("date"),
         )
         first_date = coverage["first_date"]
-        last_date = (
-            AMFIMasterNAV.objects.filter(
-                scheme__scheme_code=scheme_code,
-                date__gte=start,
-                date__lte=today,
-                source="AMFI",
-            )
-            .order_by("-date")
-            .values_list("date", flat=True)
-            .first()
-        )
+        last_date = coverage["last_date"]
         row_count = AMFIMasterNAV.objects.filter(
             scheme__scheme_code=scheme_code,
             date__gte=start,

@@ -50,7 +50,7 @@ def _env_int(name, default):
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/5.2/howto/deployment/checklist/
 
-DEBUG = _env_bool("DEBUG", True)
+DEBUG = _env_bool("DEBUG", False)
 SECRET_KEY = os.environ.get("SECRET_KEY", "").strip()
 if not SECRET_KEY:
     if DEBUG:

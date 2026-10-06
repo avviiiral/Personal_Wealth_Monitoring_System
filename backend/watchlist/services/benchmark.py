@@ -165,7 +165,17 @@ class BenchmarkPerformanceService:
                         }
                         window_points += 1
 
-                if window_points < 20 and (window_end - cursor).days > 45:
+                expected_window_rows = max(
+                    cls.MINIMUM_HISTORY_ROWS,
+                    int(
+                        (window_end - cursor).days
+                        * cls.MINIMUM_DAILY_COVERAGE_RATIO
+                    ),
+                )
+                if (
+                    window_points < expected_window_rows
+                    and (window_end - cursor).days > 45
+                ):
                     raise ValueError(
                         "NSE Indices TRI returned insufficient historical rows "
                         f"for {cursor.isoformat()} to {window_end.isoformat()}"
@@ -182,7 +192,10 @@ class BenchmarkPerformanceService:
         end = end or timezone.now().date()
         start = start or (end - timedelta(days=cls.PERIOD_DAYS["5Y"] + 31))
         results = {}
-        expected = max(5, int((end - start).days * 0.5))
+        expected = max(
+            cls.MINIMUM_HISTORY_ROWS,
+            int((end - start).days * cls.MINIMUM_DAILY_COVERAGE_RATIO),
+        )
 
         for benchmark in ("Nifty 50", "BSE 500"):
             aggregate = BenchmarkMasterPoint.objects.filter(

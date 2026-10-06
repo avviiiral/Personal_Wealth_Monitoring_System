@@ -14,13 +14,12 @@ import os
 from pathlib import Path
 
 from django.core.management.utils import get_random_secret_key
-
-from config.pwms_config import get as get_pwms_config
-
 from dotenv import load_dotenv
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 load_dotenv(BASE_DIR / ".env")
+
+from config.pwms_config import get as get_pwms_config  # noqa: E402
 
 
 def _env_bool(name, default):

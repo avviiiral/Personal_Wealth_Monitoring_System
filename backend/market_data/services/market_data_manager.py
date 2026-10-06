@@ -24,6 +24,7 @@ from market_data.services.sgb_price_service import (
     SGBPriceService,
 )
 
+from mutual_funds.services.amfi_asset_resolver import AMFIAssetResolver
 from mutual_funds.models import (
     AMFIMasterNAV,
     AMFIMasterScheme,
@@ -797,11 +798,11 @@ class MarketDataManager:
         # MUTUAL FUND
         # ======================================================
 
-        if asset.category == "MUTUAL_FUND":
-
-            return cls._fetch_amfi_nav(
-                asset
-            )
+        # AMFI identity is authoritative. Legacy imports may carry an
+        # incorrect local category, but an ISIN mapped by AMFI must use AMFI
+        # NAV/history rather than bond/stock/Yahoo routing.
+        if AMFIAssetResolver.is_amfi_backed(asset):
+            return cls._fetch_amfi_nav(asset)
 
         # ======================================================
         # BOND

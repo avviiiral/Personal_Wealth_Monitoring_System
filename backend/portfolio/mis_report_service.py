@@ -187,89 +187,142 @@ class MISReportService:
         return best_id
 
     @classmethod
-    def _resolve_mf_master_nav(cls, isin_values, scheme_name, as_of):
+    def _master_name_index(cls, cache):
+        """Tokenised AMFI master names, built once per report.
+
+        Returns ``(tokens_by_id, postings, position_by_id)`` where
+        ``postings`` maps a name token to the master ids containing it and
+        ``position_by_id`` keeps the master's default ordering for ties.
+        """
+        index = cache.get("__master_name_index__") if cache is not None else None
+        if index is None:
+            tokens_by_id = {}
+            position_by_id = {}
+            postings = defaultdict(list)
+            rows = (
+                AMFIMasterScheme.objects
+                .filter(is_active=True)
+                .order_by("scheme_name", "id")
+                .values_list("id", "scheme_name")
+            )
+            for position, (row_id, name) in enumerate(rows):
+                tokens = frozenset(cls._normalize_mf_name(name).split())
+                tokens_by_id[row_id] = tokens
+                position_by_id[row_id] = position
+                for token in tokens:
+                    postings[token].append(row_id)
+            index = (tokens_by_id, postings, position_by_id)
+            if cache is not None:
+                cache["__master_name_index__"] = index
+        return index
+
+    @classmethod
+    def _fuzzy_master_ids(cls, normalized_name, cache):
+        """Master ids whose name is the strongest normalised-name match.
+
+        Same scoring and acceptance rule as before (best coverage >= 0.55 and
+        overlap >= 3, all rows tied on the best score), but evaluated from a
+        token index instead of re-reading and re-normalising every scheme for
+        every call.
+        """
+        key = ("__fuzzy__", normalized_name)
+        if cache is not None and key in cache:
+            return cache[key]
+
+        target_tokens = set(normalized_name.split())
+        matches = []
+        # Overlap can never reach 3 with fewer than 3 target tokens.
+        if len(target_tokens) >= 3:
+            tokens_by_id, postings, position_by_id = cls._master_name_index(cache)
+            overlaps = defaultdict(int)
+            for token in target_tokens:
+                for row_id in postings.get(token, ()):
+                    overlaps[row_id] += 1
+
+            best_score = None
+            best_ids = []
+            for row_id, overlap in overlaps.items():
+                candidate_len = len(tokens_by_id[row_id])
+                coverage = overlap / max(len(target_tokens), candidate_len)
+                score = (
+                    coverage,
+                    overlap,
+                    -abs(len(target_tokens) - candidate_len),
+                )
+                if best_score is None or score > best_score:
+                    best_score = score
+                    best_ids = [row_id]
+                elif score == best_score:
+                    best_ids.append(row_id)
+
+            if (
+                best_score is not None
+                and best_score[0] >= 0.55
+                and best_score[1] >= 3
+            ):
+                matches = sorted(best_ids, key=position_by_id.__getitem__)
+
+        if cache is not None:
+            cache[key] = matches
+        return matches
+
+    @classmethod
+    def _resolve_mf_master_nav(cls, isin_values, scheme_name, as_of, cache=None):
         """Resolve the best AMFI master NAV without assuming one master row.
 
         AMFI can contain multiple identity rows that are similar by name. A
         resolver must therefore prefer identity matches, but verify that the
         selected master actually has NAV history for the requested date before
-        returning it.
+        returning it. Candidates are tried in order (ISIN, exact name, then
+        strongest normalised-name match) and the first with a NAV wins; the
+        later, more expensive candidate sources are only evaluated when the
+        earlier ones produced no NAV.
         """
-        candidates = []
-        seen = set()
-
         normalized_isins = {
             str(value or "").strip().upper()
             for value in isin_values
             if str(value or "").strip()
         }
-
-        if normalized_isins:
-            rows = (
-                AMFIMasterScheme.objects
-                .filter(is_active=True)
-                .filter(
-                    Q(isin_growth__in=normalized_isins)
-                    | Q(isin_dividend__in=normalized_isins)
-                )
-                .order_by("id")
-            )
-            for row in rows:
-                if row.id not in seen:
-                    candidates.append(row)
-                    seen.add(row.id)
-
         normalized_name = cls._normalize_mf_name(scheme_name)
-        if normalized_name:
-            rows = AMFIMasterScheme.objects.filter(
-                is_active=True,
-                scheme_name__iexact=scheme_name,
-            ).order_by("id")
-            for row in rows:
-                if row.id not in seen:
-                    candidates.append(row)
-                    seen.add(row.id)
 
-            # Keep exact matches first, but also retain the strongest
-            # normalized-name candidates. The exact AMFI identity may exist
-            # without NAV history while the corresponding active identity has
-            # the required NAV rows.
-            scored = []
-            target_tokens = set(normalized_name.split())
-            for row in AMFIMasterScheme.objects.filter(is_active=True).only(
-                "id", "scheme_name"
-            ):
-                candidate_name = cls._normalize_mf_name(row.scheme_name)
-                candidate_tokens = set(candidate_name.split())
-                overlap = len(target_tokens & candidate_tokens)
-                if overlap == 0:
-                    continue
-                coverage = overlap / max(
-                    len(target_tokens),
-                    len(candidate_tokens),
-                )
-                score = (
-                    coverage,
-                    overlap,
-                    -abs(len(target_tokens) - len(candidate_tokens)),
-                )
-                scored.append((score, row))
+        def candidate_ids():
+            seen = set()
 
-            scored.sort(key=lambda item: item[0], reverse=True)
-            if scored:
-                best_score = scored[0][0]
-                if best_score[0] >= 0.55 and best_score[1] >= 3:
-                    for score, row in scored:
-                        if score != best_score:
-                            break
-                        if row.id not in seen:
-                            candidates.append(row)
-                            seen.add(row.id)
+            if normalized_isins:
+                for row_id in (
+                    AMFIMasterScheme.objects
+                    .filter(is_active=True)
+                    .filter(
+                        Q(isin_growth__in=normalized_isins)
+                        | Q(isin_dividend__in=normalized_isins)
+                    )
+                    .order_by("id")
+                    .values_list("id", flat=True)
+                ):
+                    if row_id not in seen:
+                        seen.add(row_id)
+                        yield row_id
 
-        for master in candidates:
+            if normalized_name:
+                for row_id in (
+                    AMFIMasterScheme.objects
+                    .filter(is_active=True, scheme_name__iexact=scheme_name)
+                    .order_by("id")
+                    .values_list("id", flat=True)
+                ):
+                    if row_id not in seen:
+                        seen.add(row_id)
+                        yield row_id
+
+                for row_id in cls._fuzzy_master_ids(normalized_name, cache):
+                    if row_id not in seen:
+                        seen.add(row_id)
+                        yield row_id
+
+        for master_id in candidate_ids():
             nav = (
                 AMFIMasterNAV.objects
-                .filter(scheme_id=master.id, date__lte=as_of)
+                .filter(scheme_id=master_id, date__lte=as_of)
                 .order_by("-date", "-id")
                 .values_list("nav", flat=True)
                 .first()
@@ -519,6 +572,7 @@ class MISReportService:
             identity_isins,
             asset.name,
             as_of,
+            cache=cache,
         )
         cache[key] = nav
         return nav
@@ -551,6 +605,7 @@ class MISReportService:
                     },
                     scheme.get("scheme_name"),
                     as_of,
+                    cache=cache,
                 )
 
         cache[key] = nav
@@ -605,7 +660,7 @@ class MISReportService:
         transactions = list(
             Transaction.objects
             .filter(family=family)
-            .select_related("asset")
+            .select_related("asset", "asset__security_master")
             .order_by("transaction_date", "created_at", "id")
         )
         tx_groups = defaultdict(list)

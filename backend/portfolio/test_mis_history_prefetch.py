@@ -273,3 +273,123 @@ class MISManualPriceTests(MISHistoryTestBase):
 
         before = self.row("2026-08-01", "2026-09-15")
         self.assertEqual(before["closing_amount"], before["total_cost"])
+
+
+def _reference_resolve_mf_master_nav(isin_values, scheme_name, as_of):
+    """Verbatim copy of the pre-optimisation resolver, used as the oracle."""
+    from django.db.models import Q
+    from mutual_funds.models import AMFIMasterNAV, AMFIMasterScheme
+
+    normalize = MISReportService._normalize_mf_name
+    candidates = []
+    seen = set()
+    normalized_isins = {
+        str(value or "").strip().upper()
+        for value in isin_values
+        if str(value or "").strip()
+    }
+    if normalized_isins:
+        rows = (
+            AMFIMasterScheme.objects.filter(is_active=True)
+            .filter(Q(isin_growth__in=normalized_isins) | Q(isin_dividend__in=normalized_isins))
+            .order_by("id")
+        )
+        for row in rows:
+            if row.id not in seen:
+                candidates.append(row)
+                seen.add(row.id)
+    normalized_name = normalize(scheme_name)
+    if normalized_name:
+        rows = AMFIMasterScheme.objects.filter(
+            is_active=True, scheme_name__iexact=scheme_name
+        ).order_by("id")
+        for row in rows:
+            if row.id not in seen:
+                candidates.append(row)
+                seen.add(row.id)
+        scored = []
+        target_tokens = set(normalized_name.split())
+        for row in AMFIMasterScheme.objects.filter(is_active=True).only("id", "scheme_name"):
+            candidate_tokens = set(normalize(row.scheme_name).split())
+            overlap = len(target_tokens & candidate_tokens)
+            if overlap == 0:
+                continue
+            coverage = overlap / max(len(target_tokens), len(candidate_tokens))
+            score = (coverage, overlap, -abs(len(target_tokens) - len(candidate_tokens)))
+            scored.append((score, row))
+        scored.sort(key=lambda item: item[0], reverse=True)
+        if scored:
+            best_score = scored[0][0]
+            if best_score[0] >= 0.55 and best_score[1] >= 3:
+                for score, row in scored:
+                    if score != best_score:
+                        break
+                    if row.id not in seen:
+                        candidates.append(row)
+                        seen.add(row.id)
+    for master in candidates:
+        nav = (
+            AMFIMasterNAV.objects.filter(scheme_id=master.id, date__lte=as_of)
+            .order_by("-date", "-id").values_list("nav", flat=True).first()
+        )
+        if nav is not None:
+            return nav
+    return None
+
+
+class MasterNavResolverEquivalenceTests(TestCase):
+    """The optimised resolver must return exactly what the old one did."""
+
+    def test_optimised_resolver_matches_original_on_varied_inputs(self):
+        import random
+
+        rng = random.Random(7)
+        words = ["hdfc", "axis", "sbi", "nifty", "index", "fund", "direct", "plan",
+                 "growth", "equity", "bluechip", "midcap", "debt", "liquid", "gold",
+                 "etf", "value", "focused", "flexi", "cap", "bond", "short", "term"]
+        as_of = date(2026, 10, 5)
+        masters = []
+        for i in range(400):
+            name = " ".join(rng.sample(words, rng.randint(2, 6)))
+            if i % 9 == 0 and masters:               # near-duplicate identities
+                name = masters[-1].scheme_name
+            master = AMFIMasterScheme.objects.create(
+                scheme_code=f"EQ{i:05d}",
+                scheme_name=name,
+                isin_growth=f"INF{i:08d}A",
+                isin_dividend=f"INF{i:08d}B" if i % 4 == 0 else None,
+                is_active=(i % 25 != 0),
+            )
+            masters.append(master)
+            if i % 3 != 0:                           # some identities have no NAV
+                AMFIMasterNAV.objects.create(
+                    scheme=master, date=date(2026, 9, 30), nav=Decimal(10 + i % 50)
+                )
+
+        cache = {}
+        compared = 0
+        for _ in range(250):
+            kind = rng.choice(["name", "isin", "exact", "stock", "short"])
+            target = rng.choice(masters)
+            if kind == "name":
+                name, isins = " ".join(rng.sample(words, rng.randint(3, 7))), []
+            elif kind == "isin":
+                name, isins = "unrelated holding name", [target.isin_growth]
+            elif kind == "exact":
+                name, isins = target.scheme_name.upper(), []
+            elif kind == "short":
+                name, isins = " ".join(rng.sample(words, 2)), []
+            else:
+                name, isins = f"Company {rng.randint(1, 99)} Limited", [f"INE{rng.randint(1, 9999):09d}"]
+
+            expected = _reference_resolve_mf_master_nav(isins, name, as_of)
+            actual = MISReportService._resolve_mf_master_nav(
+                isins, name, as_of, cache=cache
+            )
+            self.assertEqual(actual, expected, msg=(kind, name, isins))
+            # the uncached call path must agree too
+            self.assertEqual(
+                MISReportService._resolve_mf_master_nav(isins, name, as_of), expected
+            )
+            compared += 1
+        self.assertEqual(compared, 250)

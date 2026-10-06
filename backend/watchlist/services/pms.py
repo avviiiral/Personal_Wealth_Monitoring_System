@@ -27,7 +27,7 @@ class APMIPMSDiscoveryService:
 
     @staticmethod
     def _headers():
-        return {"User-Agent": cls.APMI_CONFIG.get("user_agent", "")}
+        return {"User-Agent": get_pwms_config("providers", "apmi", {}).get("user_agent", "")}
 
     @staticmethod
     def _decimal(value):

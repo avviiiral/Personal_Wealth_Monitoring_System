@@ -30,6 +30,12 @@ class BenchmarkPerformanceService:
     NIFTY_TRI_HEADERS["Referer"] = get_pwms_config("benchmarks", "nifty_historical_page", "")
     BSE_TRI_PROXY_TICKERS = tuple(get_pwms_config("benchmarks", "bse_tri_proxy_tickers", []))
     BSE_HEADERS = dict(get_pwms_config("benchmarks", "bse_headers", {}))
+    MINIMUM_HISTORY_ROWS = int(
+        get_pwms_config("benchmarks", "minimum_history_rows", 20)
+    )
+    MINIMUM_DAILY_COVERAGE_RATIO = float(
+        get_pwms_config("benchmarks", "minimum_daily_coverage_ratio", 0.5)
+    )
 
     @classmethod
     def _ticker(cls, benchmark):
@@ -120,10 +126,16 @@ class BenchmarkPerformanceService:
 
                 covered_start = min(all_points) if all_points else None
                 covered_end = max(all_points) if all_points else None
+                expected_rows = max(
+                    cls.MINIMUM_HISTORY_ROWS,
+                    int((end - start).days * cls.MINIMUM_DAILY_COVERAGE_RATIO),
+                )
                 if (
-                    covered_start
+                    len(all_points) >= expected_rows
+                    and covered_start
                     and date.fromisoformat(covered_start) <= start + timedelta(days=10)
                     and covered_end
+                    and date.fromisoformat(covered_end) >= end - timedelta(days=10)
                 ):
                     return [all_points[key] for key in sorted(all_points)]
             except Exception:
@@ -567,7 +579,10 @@ class BenchmarkPerformanceService:
         # master series. Rebuild the Nifty TRI master when coverage is thin so
         # the chart has the same observation density as the BSE 500 TRI chart.
         end = timezone.now().date()
-        expected_rows = max(5, int((end - start).days * 0.5))
+        expected_rows = max(
+            cls.MINIMUM_HISTORY_ROWS,
+            int((end - start).days * cls.MINIMUM_DAILY_COVERAGE_RATIO),
+        )
         first_date = date.fromisoformat(series[0]["date"]) if series else None
         last_date = date.fromisoformat(series[-1]["date"]) if series else None
         coverage_ok = (

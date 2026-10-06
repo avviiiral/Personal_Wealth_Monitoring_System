@@ -1,7 +1,6 @@
 import csv
 import io
 import json
-import os
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -9,67 +8,28 @@ from typing import Any
 import requests
 import yfinance as yf
 from curl_cffi import requests as curl_requests
+from django.conf import settings
 from django.db import models
 from django.utils import timezone
 
 from mutual_funds.models import AMFIMasterNAV
 from watchlist.models import BenchmarkMasterPoint, PerformanceSnapshot
+from config.pwms_config import get as get_pwms_config
 
 
 class BenchmarkPerformanceService:
     """Calculate Watch List benchmark comparisons from market/index time series."""
 
-    PERIOD_DAYS = {
-        "1M": 31,
-        "3M": 92,
-        "6M": 184,
-        "1Y": 365,
-        "3Y": 365 * 3,
-        "5Y": 365 * 5,
-    }
-
-    TICKERS = {
-        "Nifty 50": "^NSEI",
-        "BSE 500": "BSE500T",
-    }
-
-    BSE500_FILE = os.getenv(
-        "WATCHLIST_BENCHMARK_BSE500_FILE",
-        str(Path(__file__).resolve().parents[1] / "data" / "bse500_tri.csv"),
-    )
-    # Optional override for deployments that have a licensed BSE500 TRI feed.
-    BSE500_URL = os.getenv("WATCHLIST_BENCHMARK_BSE500_URL", "").strip()
-    BSE500_API = "https://api.bseindia.com/BseIndiaAPI/api/ProduceCSVForDate/w"
-    NIFTY_TRI_URLS = (
-        "https://www.niftyindices.com/BackPage/getTotalReturnIndexString",
-        "https://www.niftyindices.com/Backpage.aspx/getTotalReturnIndexString",
-        "https://www.niftyindices.com/Backpage/getTotalReturnIndexString",
-    )
-    NIFTY_TRI_HEADERS = {
-        "Content-Type": "application/json; charset=UTF-8",
-        "Accept": "application/json, text/plain, */*",
-        "X-Requested-With": "XMLHttpRequest",
-        "Referer": "https://www.niftyindices.com/reports/historical-data",
-        "Accept-Language": "en-GB,en-US;q=0.9,en;q=0.8",
-        "User-Agent": (
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-            "AppleWebKit/537.36 (KHTML, like Gecko) "
-            "Chrome/140.0 Safari/537.36"
-        ),
-    }
-    # Public-market fallback: HDFC's ETF explicitly tracks the BSE 500 TRI.
-    # This keeps Watch List benchmark comparison automatic when BSE's public
-    # historical endpoint does not expose the TRI series directly.
-    BSE_TRI_PROXY_TICKERS = ("HDFCBSE500.NS", "BSE500IETF.NS")
-    BSE_HEADERS = {
-        "Accept": "text/csv,application/json,text/plain,*/*",
-        "Referer": "https://www.bseindia.com/",
-        "User-Agent": (
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-            "AppleWebKit/537.36 (KHTML, like Gecko) "
-            "Chrome/140.0 Safari/537.36"
-        ),
-    }
+    PERIOD_DAYS = get_pwms_config("benchmarks", "period_days", {})
+    TICKERS = get_pwms_config("benchmarks", "tickers", {})
+    BSE500_FILE = settings.WATCHLIST_BENCHMARK_BSE500_FILE
+    BSE500_URL = settings.WATCHLIST_BENCHMARK_BSE500_URL
+    BSE500_API = get_pwms_config("benchmarks", "bse_api", "")
+    NIFTY_TRI_URLS = tuple(get_pwms_config("benchmarks", "nifty_tri_urls", []))
+    NIFTY_TRI_HEADERS = dict(get_pwms_config("benchmarks", "nifty_headers", {}))
+    NIFTY_TRI_HEADERS["Referer"] = get_pwms_config("benchmarks", "nifty_historical_page", "")
+    BSE_TRI_PROXY_TICKERS = tuple(get_pwms_config("benchmarks", "bse_tri_proxy_tickers", []))
+    BSE_HEADERS = dict(get_pwms_config("benchmarks", "bse_headers", {}))
 
     @classmethod
     def _ticker(cls, benchmark):

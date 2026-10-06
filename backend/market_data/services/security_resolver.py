@@ -4,7 +4,7 @@ from pathlib import Path
 
 from django.conf import settings
 
-from config.pwms_config import get as get_pwms_config
+from config.pwms_config import section as get_pwms_config
 
 logger = logging.getLogger(__name__)
 
@@ -22,7 +22,7 @@ class SecurityResolver:
         6. Generic symbol + exchange suffix
 
     The Security Master is optional. If it is unavailable, the existing
-    resolv    CONFIG = get_pwms_config("security_resolver", "", {}) or {}
+    resolv    CONFIG = get_pwms_config("security_resolver")
     NSE_SUFFIX = CONFIG.get("nse_suffix", ".NS")
     BSE_SUFFIX = CONFIG.get("bse_suffix", ".BO")
 

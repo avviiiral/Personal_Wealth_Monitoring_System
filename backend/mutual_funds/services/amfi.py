@@ -712,11 +712,12 @@ class AMFIService:
             for code in (scheme_codes or [])
             if str(code or "").strip()
         }
+        # Some AMFI responses omit the recognizable header but still contain
+        # valid historical rows. Validate the payload structurally rather than
+        # requiring a particular requested scheme to appear in this chunk.
         for line in lines:
             parts = [part.strip() for part in line.split(";")]
             if len(parts) < 8 or not parts[0].isdigit():
-                continue
-            if requested and parts[0] not in requested:
                 continue
             try:
                 Decimal(parts[4])
@@ -724,21 +725,6 @@ class AMFIService:
             except (InvalidOperation, ValueError, TypeError):
                 continue
             return True
-
-        # Some AMFI responses omit the recognizable header but still contain
-        # valid historical rows. When no scheme filter is supplied, accept any
-        # structurally valid NAV/date row as a report.
-        if not requested:
-            for line in lines:
-                parts = [part.strip() for part in line.split(";")]
-                if len(parts) < 8 or not parts[0].isdigit():
-                    continue
-                try:
-                    Decimal(parts[4])
-                    datetime.strptime(parts[-1], "%d-%b-%Y")
-                except (InvalidOperation, ValueError, TypeError):
-                    continue
-                return True
         return False
 
     @staticmethod

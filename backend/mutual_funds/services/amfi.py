@@ -513,7 +513,7 @@ class AMFIService:
             window_start = from_date
             while window_start <= to_date:
                 window_end = min(
-                    window_start + relativedelta(days=89),
+                    window_start + relativedelta(days=AMFIService.HISTORICAL_WINDOW_DAYS - 1),
                     to_date,
                 )
                 params = {
@@ -535,7 +535,7 @@ class AMFIService:
                         )
                         response.raise_for_status()
                         candidate = response.text or ""
-                        if not AMFIService._is_historical_report(candidate):
+                        if not AMFIService._is_historical_report(candidate, scheme_codes=mf_codes):
                             raise RuntimeError(
                                 "AMFI historical response was not a NAV report "
                                 f"(mf={mf_id}, bytes={len(response.content)})"
@@ -724,6 +724,21 @@ class AMFIService:
             except (InvalidOperation, ValueError, TypeError):
                 continue
             return True
+
+        # Some AMFI responses omit the recognizable header but still contain
+        # valid historical rows. When no scheme filter is supplied, accept any
+        # structurally valid NAV/date row as a report.
+        if not requested:
+            for line in lines:
+                parts = [part.strip() for part in line.split(";")]
+                if len(parts) < 8 or not parts[0].isdigit():
+                    continue
+                try:
+                    Decimal(parts[4])
+                    datetime.strptime(parts[-1], "%d-%b-%Y")
+                except (InvalidOperation, ValueError, TypeError):
+                    continue
+                return True
         return False
 
     @staticmethod

@@ -38,6 +38,13 @@ _STOPWORDS = {
     "story", "update", "first", "second", "third", "latest",
 }
 
+_EVENT_ENTITY_STOPWORDS = {
+    token
+    for phrases in _EVENT_FAMILIES.values()
+    for phrase in phrases
+    for token in re.findall(r"[a-z0-9]+", phrase.lower())
+}
+
 
 def _event_family(text: str) -> str:
     value = (text or "").lower()
@@ -48,7 +55,13 @@ def _event_family(text: str) -> str:
 
 def _entity_tokens(candidate: NewsArticleResult) -> set[str]:
     raw = " ".join((candidate.matched_query or "", candidate.title or ""))
-    return {token for token in re.findall(r"[a-z0-9]+", raw.lower()) if len(token) >= 4 and token not in _STOPWORDS}
+    return {
+        token
+        for token in re.findall(r"[a-z0-9]+", raw.lower())
+        if len(token) >= 4
+        and token not in _STOPWORDS
+        and token not in _EVENT_ENTITY_STOPWORDS
+    }
 
 
 
@@ -180,7 +193,11 @@ class ArticleDeduplicator:
                         )
                     ).lower(),
                 )
-                if len(token) >= 4 and token not in _STOPWORDS
+                if (
+                    len(token) >= 4
+                    and token not in _STOPWORDS
+                    and token not in _EVENT_ENTITY_STOPWORDS
+                )
             }
             # Fuzzy similarity alone is too broad for generic headlines such
             # as "First alert article" and "Second alert article". Require at
@@ -205,7 +222,11 @@ class ArticleDeduplicator:
                             )
                         ).lower(),
                     )
-                    if len(token) >= 4 and token not in _STOPWORDS
+                    if (
+                        len(token) >= 4
+                        and token not in _STOPWORDS
+                        and token not in _EVENT_ENTITY_STOPWORDS
+                    )
                 }
                 if candidate_entities & article_entities:
                     return article

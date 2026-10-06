@@ -87,6 +87,21 @@ The application uses the following external data sources for market and investme
 | Corporate filings | NSE public Corporate Announcements feed; BSE via an authorized/configured feed |
 | Portfolio News analysis | Deterministic local rules — no hosted AI model or paid AI API required |
 
+### 📈 Watch List benchmark and indexed-performance charts
+
+Watch List benchmark comparisons use **official Nifty 50 Gross TRI** data from NSE Indices and BSE 500 TRI data from the configured BSE source/fallback path.
+
+The indexed-performance chart is deliberately protected against sparse source responses:
+
+- Nifty 50 TRI history is accepted only when it has sufficient row density and covers the requested date range.
+- If the Nifty endpoint returns sparse or incomplete data, PWMS automatically retries using smaller historical windows instead of rendering a sparse annual-point series.
+- Mutual-fund benchmark charts use the shared **AMFI master NAV history** for the selected fund.
+- Older Watch List entries that only contain the six performance-anchor snapshots (`1M`, `3M`, `6M`, `1Y`, `3Y`, `5Y`) are automatically backfilled with actual AMFI historical NAV observations when the chart is opened.
+- The chart uses actual observations; PWMS does not interpolate synthetic NAV or benchmark values merely to make the line look denser.
+- Historical coverage is validated using configurable minimum row density and date coverage thresholds before a source is considered complete.
+- The selected chart period (`1M`, `3M`, `6M`, `1Y`, `3Y`, or `5Y`) determines the AMFI history that is prepared.
+
+The thresholds and benchmark endpoints are centralized in [`backend/config/pwms_config.json`](./backend/config/pwms_config.json), so source URLs, timeouts and density requirements can be changed without editing the benchmark service code.
 ## 🚀 Quick start
 
 > Full walkthrough with troubleshooting: **[SETUP.md](./SETUP.md)**. Prerequisites: Git, Python 3.12 (3.11+), Node.js 20+ (22 recommended).
@@ -1310,7 +1325,7 @@ See [SETUP.md](./SETUP.md#84-background-web-push-notifications) for the full set
 
 ## 🚀 Deployment and refresh performance
 
-The deployment refresh path includes protections for production-style multi-worker environments and avoids unnecessary market-data work.
+The deployment refresh path includes protections for production-style multi-worker environments and avoids unnecessary market-data work. Benchmark history and Watch List chart preparation also validate data density before accepting historical series.
 
 - **PostgreSQL advisory locks** prevent concurrent scheduled/manual market refresh workers from performing the same refresh simultaneously.
 - Advisory locking is applied to the scheduled refresh command, one-off market-price updates, and the market-price scheduler.
@@ -1326,12 +1341,12 @@ The deployment refresh path includes protections for production-style multi-work
 
 ## 🔧 Configuration
 
-Settings load from **`backend/.env`** (template: [`backend/.env.example`](./backend/.env.example)). Every value has a development-safe default baked into `config/settings.py`, so **local development works with no `.env` at all**; you only need real values for a deployment.
+Settings are split into two layers: **secrets and deployment-specific values** come from `backend/.env` (template: [`backend/.env.example`](./backend/.env.example)), while **non-secret application/provider settings** are centralized in [`backend/config/pwms_config.json`](./backend/config/pwms_config.json). The Python loader [`backend/config/pwms_config.py`](./backend/config/pwms_config.py) reads that JSON and supports the optional `PWMS_CONFIG_OVERRIDES` environment variable for deployment-specific JSON overrides. `SECRET_KEY` is required when `DEBUG=False`; when `DEBUG=True`, Django generates a development-only random key at startup.
 
 | Variable                                                                                  | Purpose                                                     | Local default                               | Production / template value                                                                                   |
 | ----------------------------------------------------------------------------------------- | ----------------------------------------------------------- | ------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
-| `SECRET_KEY`                                                                              | Django's cryptographic signing key                          | insecure placeholder                        | A random key — never committed                                                                                |
-| `DEBUG`                                                                                   | Debug mode                                                  | `True`                                      | `False`                                                                                                       |
+| `SECRET_KEY`                                                                              | Django's cryptographic signing key                          | Generated automatically only when `DEBUG=True` | Required when `DEBUG=False`; random key — never committed                                                     |
+| `DEBUG`                                                                                   | Debug mode                                                  | `False`                                     | `False`                                                                                                       |
 | `ALLOWED_HOSTS`                                                                           | Comma-separated allowed hosts                               | _(empty)_                                   | Your domain(s) / IP(s) — Django rejects everything else once `DEBUG=False`                                    |
 | `CORS_ALLOWED_ORIGINS`                                                                    | Allowed frontend origins                                    | `http://localhost:4200`                     | Exact `https://` origin of the frontend                                                                       |
 | `CSRF_TRUSTED_ORIGINS`                                                                    | Trusted origins for CSRF                                    | `http://localhost:4200`                     | Same as above                                                                                                 |
@@ -1358,7 +1373,7 @@ Settings load from **`backend/.env`** (template: [`backend/.env.example`](./back
 
 > ⚠️ **Turn the `*_SECURE` flags and `SECURE_SSL_REDIRECT` on only after HTTPS is working.** Browsers refuse `Secure` cookies over plain HTTP, so enabling them early breaks login.
 
-**Frontend:** the backend URL lives in exactly one place — `frontend/src/environments/environment.ts` (`apiUrl`, `http://localhost:8000` for development). Production builds automatically swap in `environment.prod.ts` via `fileReplacements` in `angular.json`.
+**Frontend:** the backend URL lives in `frontend/src/environments/environment.ts` for development (`http://localhost:8000`). The production environment currently uses an empty `apiUrl`, so production builds expect `/api` to be routed by the same-origin reverse proxy. If your deployment uses a separate backend origin, set `frontend/src/environments/environment.prod.ts` before building.
 
 ---
 

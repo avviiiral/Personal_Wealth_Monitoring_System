@@ -1503,6 +1503,18 @@ class HistoricalWealthAnalytics:
                     [],
                 )
 
+                # For assets without a market identifier, automatic quotes
+                # are never valid. Evaluate only explicit manual observations
+                # for these assets; this prevents any stale/future automatic
+                # observation from leaking into historical wealth.
+                if not getattr(asset, "symbol", None):
+                    price_values = [
+                        value
+                        for value in price_values
+                        if len(value) >= 3
+                        and value[2] == DataSource.MANUAL
+                    ]
+
                 price, pointer = (
                     HistoricalWealthAnalytics
                     ._get_value_for_date(
@@ -1516,16 +1528,6 @@ class HistoricalWealthAnalytics:
                 )
 
                 price_pointers[asset.pk] = pointer
-
-                # An asset without a market symbol must never be valued from
-                # an automatic quote. Keep this final guard beside the daily
-                # valuation so an unidentifiable holding cannot acquire a
-                # fabricated historical value from a future/stale quote.
-                if not getattr(asset, "symbol", None) and not any(
-                    len(value) >= 3 and value[2] == DataSource.MANUAL
-                    for value in price_values
-                ):
-                    price = None
 
                 if price is None:
                     # No usable historical price exists. Preserve invested

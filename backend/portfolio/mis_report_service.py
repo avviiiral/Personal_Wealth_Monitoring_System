@@ -9,6 +9,7 @@ from django.db.models import Max, Q
 
 from investments.models import Asset, Transaction, TransactionType
 from market_data.models import MarketPrice, ManualAssetPrice
+from mutual_funds.services.amfi import AMFIService
 from mutual_funds.models import (
     AMFIMasterNAV,
     AMFIMasterScheme,
@@ -237,6 +238,119 @@ class MISReportService:
                 return nav
 
         return None
+
+    @classmethod
+    def _ensure_mf_history(cls, rows, from_date, to_date):
+        """Backfill missing AMFI history for mutual funds used by this report.
+
+        The MIS report can encounter a scheme whose family NAV table has never
+        been populated even though the asset carries a valid AMFI identity.
+        Resolve the existing scheme code and fetch official AMFI history into
+        the shared master table. No scheme names, ISINs, or NAV values are
+        assumed.
+        """
+        scheme_codes = set()
+
+        for row in rows:
+            if row["kind"] == "mutual_fund":
+                schemes = (
+                    MutualFundScheme.objects
+                    .filter(id__in=row["scheme_ids"], is_active=True)
+                    .values_list("scheme_code", flat=True)
+                )
+                scheme_codes.update(
+                    str(code).strip()
+                    for code in schemes
+                    if str(code or "").strip()
+                )
+                continue
+
+            for tx in row["transactions"]:
+                asset = getattr(tx, "asset", None)
+                if asset is None or getattr(asset, "category", None) != "MUTUAL_FUND":
+                    continue
+
+                identity_isins = {str(asset.isin or "").strip().upper()}
+                security_master = getattr(asset, "security_master", None)
+                if security_master is not None:
+                    identity_isins.add(str(security_master.isin or "").strip().upper())
+                identity_isins.discard("")
+
+                family_schemes = MutualFundScheme.objects.filter(
+                    family_id=asset.family_id,
+                    is_active=True,
+                )
+                if identity_isins:
+                    family_schemes = family_schemes.filter(
+                        Q(isin_growth__in=identity_isins)
+                        | Q(isin_dividend__in=identity_isins)
+                    )
+                elif asset.name:
+                    family_schemes = family_schemes.filter(
+                        scheme_name__iexact=asset.name
+                    )
+
+                scheme_codes.update(
+                    str(code).strip()
+                    for code in family_schemes.values_list("scheme_code", flat=True)
+                    if str(code or "").strip()
+                )
+
+                if identity_isins:
+                    scheme_codes.update(
+                        str(code).strip()
+                        for code in (
+                            AMFIMasterScheme.objects
+                            .filter(is_active=True)
+                            .filter(
+                                Q(isin_growth__in=identity_isins)
+                                | Q(isin_dividend__in=identity_isins)
+                            )
+                            .values_list("scheme_code", flat=True)
+                        )
+                        if str(code or "").strip()
+                    )
+
+        if not scheme_codes:
+            return
+
+        missing_history_codes = []
+        for code in sorted(scheme_codes):
+            master_id = (
+                AMFIMasterScheme.objects
+                .filter(scheme_code=code, is_active=True)
+                .values_list("id", flat=True)
+                .first()
+            )
+            if master_id is None:
+                missing_history_codes.append(code)
+                continue
+
+            has_opening = AMFIMasterNAV.objects.filter(
+                scheme_id=master_id,
+                date__lte=from_date,
+            ).exists()
+            has_closing = AMFIMasterNAV.objects.filter(
+                scheme_id=master_id,
+                date__lte=to_date,
+            ).exists()
+            if not has_opening or not has_closing:
+                missing_history_codes.append(code)
+
+        if not missing_history_codes:
+            return
+
+        try:
+            AMFIService.import_historical_master_navs(
+                from_date,
+                to_date,
+                scheme_codes=missing_history_codes,
+            )
+        except Exception:
+            logger.exception(
+                "Unable to backfill AMFI history for MIS schemes: %s",
+                ", ".join(missing_history_codes),
+            )
 
     @classmethod
     def _mf_nav_for_asset(cls, asset, as_of, cache):
@@ -468,7 +582,7 @@ class MISReportService:
                 # the shared reference-price history rather than family MarketPrice.
                 # Use the configured reference instruments for both historical
                 # dates before falling back to an asset-local MarketPrice.
-                subclass = cls._clean(getattr(asset, "_portfolio_sub_class", "")).casefold() if asset else ""
+                subclass = cls._clean(row.get("sub_class") or getattr(asset, "_portfolio_sub_class", "")).casefold() if asset else ""
                 if asset and ("reit" in subclass or "invit" in subclass):
                     normalized_name = cls._normalize_mf_name(asset.name)
                     reference_candidates = []
@@ -1715,6 +1829,10 @@ class MISReportService:
         period_start = from_date
 
         rows = cls._base_rows(family)
+        # Backfill missing official AMFI observations once per report before
+        # the valuation pass, then resolve them through the normal cache path.
+        cls._ensure_mf_history(rows, opening_date, as_of)
+
         price_cache = {}
         nav_cache = {}
         reference_cache = {}

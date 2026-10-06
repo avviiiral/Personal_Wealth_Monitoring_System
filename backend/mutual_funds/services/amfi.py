@@ -677,12 +677,12 @@ class AMFIService:
                     "AMFI historical response was not a NAV report: "
                     "endpoint=%s status=%s content_type=%s "
                     "from=%s to=%s bytes=%s preview=%r",
-                    response.url,
-                    response.status_code,
-                    response.headers.get("Content-Type", ""),
+                    getattr(response, "url", AMFIService.NAV_HISTORY_URL),
+                    getattr(response, "status_code", None),
+                    getattr(response, "headers", {}).get("Content-Type", ""),
                     from_date,
                     to_date,
-                    len(response.content),
+                    len(getattr(response, "content", text.encode("utf-8"))),
                     preview,
                 )
 
@@ -691,9 +691,9 @@ class AMFIService:
             raise RuntimeError(
                 "AMFI historical endpoint returned an unexpected response "
                 f"for {from_date} to {to_date} "
-                f"(status={last_response.status_code}, "
-                f"content_type={last_response.headers.get('Content-Type', '')}, "
-                f"bytes={len(last_response.content)})."
+                f"(status={getattr(last_response, 'status_code', None)}, "
+                f"content_type={getattr(last_response, 'headers', {}).get('Content-Type', '')}, "
+                f"bytes={len(getattr(last_response, 'content', b''))})."
             )
 
         raise RuntimeError("AMFI historical endpoint returned no response.")

@@ -146,44 +146,54 @@ def _filtered_products(request, product_type=None):
         active_position = Q(quantity__gt=0) | Q(current_value__gt=0)
         scoped_positions = family_scope(PortfolioPosition.objects, request.user).filter(active_position)
 
-        if product_type == ProductType.PMS:
-            # Correlate the transaction to the current position first, then
-            # correlate that nested query back to the InvestmentProduct.
-            # OuterRef(OuterRef("name")) is required because the transaction
-            # query is nested inside the PortfolioPosition EXISTS.
-            pms_transactions = family_scope(Transaction.objects, request.user).filter(
-                asset_name__iexact=OuterRef(OuterRef("name")),
-                asset_id=OuterRef("asset_id"),
-            )
-            owned_pms_positions = scoped_positions.filter(
-                Exists(pms_transactions),
-            )
-            owned_expression = Exists(owned_pms_positions)
-            queryset = queryset.filter(
-                owned_expression if status == "OWNED" else ~owned_expression
-            )
-        else:
-            # Mutual funds and other products first match by ISIN, then use
-            # the same symbol/name fallback as OwnershipService.bulk_enrich().
-            isin_positions = scoped_positions.filter(
-                asset__isin__iexact=OuterRef("isin"),
-            )
-            fallback_positions = scoped_positions.filter(
-                Q(asset__symbol__iexact=OuterRef("external_identifier"))
-                | Q(asset__name__iexact=OuterRef("name"))
-            )
+        # Ownership identity is product-type specific. Build one
+        # correlated expression for PMS-name matching and one for MF-ISIN
+        # matching so the unfiltered Watch List can contain both product types.
+        pms_transactions = family_scope(Transaction.objects, request.user).filter(
+            asset_name__iexact=OuterRef(OuterRef("name")),
+            asset_id=OuterRef("asset_id"),
+        )
+        owned_pms_positions = scoped_positions.filter(Exists(pms_transactions))
+        owned_pms_expression = Exists(owned_pms_positions)
 
-            if product_type == ProductType.MUTUAL_FUND:
-                isin_positions = isin_positions.filter(asset__category=AssetCategory.MUTUAL_FUND)
-                fallback_positions = fallback_positions.filter(asset__category=AssetCategory.MUTUAL_FUND)
+        isin_positions = scoped_positions.filter(
+            asset__isin__iexact=OuterRef("isin"),
+        ).filter(asset__category=AssetCategory.MUTUAL_FUND)
+        owned_mf_expression = (
+            ~Q(isin__isnull=True)
+            & ~Q(isin="")
+            & Exists(isin_positions)
+        )
 
-            owned_expression = (
-                (~Q(isin__isnull=True) & ~Q(isin="") & Exists(isin_positions))
-                | ((Q(isin__isnull=True) | Q(isin="")) & Exists(fallback_positions))
+        # PMS uses strategy/Transaction.asset_name; Mutual Fund uses ISIN.
+        # Do not let a Mutual Fund name match or a PMS ISIN accidentally mark
+        # the product as owned.
+        owned_expression = (
+            (Q(product_type=ProductType.PMS) & owned_pms_expression)
+            | (Q(product_type=ProductType.MUTUAL_FUND) & owned_mf_expression)
+            | (
+                ~Q(product_type__in=[ProductType.PMS, ProductType.MUTUAL_FUND])
+                & (
+                    (
+                        ~Q(isin__isnull=True)
+                        & ~Q(isin="")
+                        & Exists(scoped_positions.filter(
+                            asset__isin__iexact=OuterRef("isin"),
+                        ))
+                    )
+                    | (
+                        (Q(isin__isnull=True) | Q(isin=""))
+                        & Exists(scoped_positions.filter(
+                            Q(asset__symbol__iexact=OuterRef("external_identifier"))
+                            | Q(asset__name__iexact=OuterRef("name"))
+                        ))
+                    )
+                )
             )
-            queryset = queryset.filter(
-                owned_expression if status == "OWNED" else ~owned_expression
-            )
+        )
+        queryset = queryset.filter(
+            owned_expression if status == "OWNED" else ~owned_expression
+        )
     return queryset
 
 

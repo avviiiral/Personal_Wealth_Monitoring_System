@@ -345,8 +345,13 @@ class MISReportService:
             return
 
         try:
+            # AMFI NAVs are published on trading days only. The report opening
+            # date can therefore be a weekend/holiday (or a month-end with no
+            # NAV publication). Fetch a short lookback so date__lte=opening_date
+            # can carry forward the last valid official NAV.
+            history_start = from_date - timedelta(days=7)
             AMFIService.import_historical_master_navs(
-                from_date,
+                history_start,
                 to_date,
                 scheme_codes=missing_history_codes,
             )

@@ -862,15 +862,26 @@ class MISReportService:
 
     @classmethod
     def _tax_rate_for_lot(cls, lot, tax_setting, as_of):
+        """Return the configured ST/LT tax rate for one FIFO lot."""
         if tax_setting is None or tax_setting.tenure_months is None:
             return cls.ZERO
-        holding_months = cls._holding_months(lot["acquired_on"], as_of)
-        rate = (
-            tax_setting.short_term_tax_rate
-            if holding_months <= tax_setting.tenure_months
-            else tax_setting.long_term_tax_rate
-        )
-        return Decimal(str(rate or 0)) / Decimal("100")
+
+        acquired_on = lot.get("acquired_on")
+        if acquired_on is None or as_of is None:
+            return cls.ZERO
+
+        holding_months = cls._holding_months(acquired_on, as_of)
+        tenure_months = int(tax_setting.tenure_months)
+
+        if holding_months <= tenure_months:
+            raw_rate = tax_setting.short_term_tax_rate
+        else:
+            raw_rate = tax_setting.long_term_tax_rate
+
+        if raw_rate is None:
+            return cls.ZERO
+
+        return Decimal(str(raw_rate)) / Decimal("100")
 
     @classmethod
     def _fifo_tax_metrics(cls, transactions, kind, as_of, period_start, tax_setting, market_rate):

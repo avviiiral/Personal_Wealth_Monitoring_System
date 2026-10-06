@@ -322,86 +322,81 @@ class MISReportService:
         if not scheme_codes:
             return
 
-        # Keep the full historical range required by the portfolio data.
-        # Use the earliest transaction date for each AMFI scheme, matching the
-        # market-data layer's historical coverage behavior.
-        earliest_dates = {}
-        for row in rows:
-            transactions = row.get("transactions", [])
-            if row["kind"] == "mutual_fund":
-                codes = [
-                    str(code).strip()
-                    for code in MutualFundScheme.objects
-                    .filter(id__in=row["scheme_ids"], is_active=True)
-                    .values_list("scheme_code", flat=True)
-                    if str(code or "").strip()
-                ]
-            else:
-                codes = []
-                for tx in transactions:
-                    asset = getattr(tx, "asset", None)
-                    if asset is None:
-                        continue
-
-                    # Use AMFI ISIN identity for legacy assets regardless of the
-                    # locally assigned asset category (e.g. BOND/CASH/STOCK).
-                    identity_isins = {str(asset.isin or "").strip().upper()}
-                    security_master = getattr(asset, "security_master", None)
-                    if security_master is not None:
-                        identity_isins.add(str(security_master.isin or "").strip().upper())
-                    identity_isins.discard("")
-                    if identity_isins:
-                        codes.extend(cls._amfi_scheme_codes_for_asset(asset))
-            transaction_dates = [
-                tx.transaction_date for tx in transactions
-                if getattr(tx, "transaction_date", None) is not None
-            ]
-            if not transaction_dates:
-                continue
-            earliest = min(transaction_dates)
-            for code in codes:
-                code = str(code).strip()
-                if code:
-                    earliest_dates[code] = min(earliest_dates.get(code, earliest), earliest)
-
-        if not earliest_dates:
-            return
+        # The valuation pass only needs NAV coverage for the report's
+        # requested valuation window. Do not expand this to the earliest
+        # transaction date: that can turn a normal MIS request into a
+        # multi-year AMFI backfill even when current NAV history is already
+        # complete. Older report dates will naturally request their own range.
+        history_start = from_date
+        history_end = to_date
 
         try:
-            for code in sorted(earliest_dates):
+            for code in sorted(scheme_codes):
                 master_id = (
                     AMFIMasterScheme.objects
                     .filter(scheme_code=code, is_active=True)
                     .values_list("id", flat=True)
                     .first()
                 )
-                history_start = earliest_dates[code]
+                if master_id is None:
+                    continue
+
                 earliest_stored = (
-                    AMFIMasterNAV.objects.filter(scheme_id=master_id)
-                    .order_by("date", "id").values_list("date", flat=True).first()
-                    if master_id is not None else None
+                    AMFIMasterNAV.objects
+                    .filter(scheme_id=master_id)
+                    .order_by("date", "id")
+                    .values_list("date", flat=True)
+                    .first()
                 )
                 latest_stored = (
-                    AMFIMasterNAV.objects.filter(scheme_id=master_id)
-                    .order_by("-date", "-id").values_list("date", flat=True).first()
-                    if master_id is not None else None
+                    AMFIMasterNAV.objects
+                    .filter(scheme_id=master_id)
+                    .order_by("-date", "-id")
+                    .values_list("date", flat=True)
+                    .first()
                 )
-                # AMFI upserts are idempotent; importing the complete required
-                # range also repairs missing historical rows.
-                if (
-                    earliest_stored is not None
-                    and earliest_stored <= history_start
-                    and latest_stored is not None
-                    and latest_stored >= to_date
-                ):
+
+                if earliest_stored is None:
+                    AMFIService.import_historical_master_navs(
+                        history_start,
+                        history_end,
+                        scheme_codes=[code],
+                    )
                     continue
-                AMFIService.import_historical_master_navs(
-                    history_start, to_date, scheme_codes=[code]
-                )
+
+                # Fill only a missing historical prefix. Existing recent
+                # history is retained and reused by the normal NAV resolver.
+                if earliest_stored > history_start:
+                    AMFIService.import_historical_master_navs(
+                        history_start,
+                        earliest_stored - timedelta(days=1),
+                        scheme_codes=[code],
+                    )
+
+                # A NAV from the last few calendar days is sufficient because
+                # NAVs are published on business days and the resolver uses the
+                # latest observation on or before the requested date. Avoid
+                # forcing an AMFI request merely because the report date is a
+                # weekend/holiday or today's NAV has not been published yet.
+                if (
+                    latest_stored is None
+                    or latest_stored < history_end - timedelta(days=7)
+                ):
+                    suffix_start = (
+                        latest_stored + timedelta(days=1)
+                        if latest_stored is not None
+                        else history_start
+                    )
+                    if suffix_start <= history_end:
+                        AMFIService.import_historical_master_navs(
+                            suffix_start,
+                            history_end,
+                            scheme_codes=[code],
+                        )
         except Exception:
             logger.exception(
-                "Unable to backfill full AMFI history for MIS schemes: %s",
-                ", ".join(sorted(earliest_dates)),
+                "Unable to backfill AMFI history for MIS schemes: %s",
+                ", ".join(sorted(scheme_codes)),
             )
 
     @classmethod

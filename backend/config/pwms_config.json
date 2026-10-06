@@ -388,5 +388,11 @@
     },
     "nse_suffix": ".NS",
     "bse_suffix": ".BO"
+  },
+  "market_data": {
+    "equity_market_cap": {
+      "large_min": 1000000000000,
+      "mid_min": 200000000000
+    }
   }
 }

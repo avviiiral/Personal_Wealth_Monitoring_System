@@ -93,9 +93,9 @@ class BenchmarkPerformanceService:
 
         try:
             session.get(
-                "https://www.niftyindices.com/reports/historical-data",
+                get_pwms_config("benchmarks", "nifty_historical_page", ""),
                 headers=cls.NIFTY_TRI_HEADERS,
-                timeout=15,
+                timeout=get_pwms_config("benchmarks", "nifty_bootstrap_timeout_seconds", 15),
             )
 
             # Prefer the complete requested history when the current endpoint
@@ -448,7 +448,7 @@ class BenchmarkPerformanceService:
             response = requests.get(
                 cls.BSE500_URL,
                 headers=cls.BSE_HEADERS,
-                timeout=45,
+                timeout=get_pwms_config("benchmarks", "bse_request_timeout_seconds", 45),
             )
             response.raise_for_status()
             return cls._load_bse_csv(response.text)
@@ -456,7 +456,7 @@ class BenchmarkPerformanceService:
         response = requests.get(
             cls.BSE500_API,
             params={
-                "strIndex": "BSE500T",
+                "strIndex": cls.TICKERS.get("BSE 500", "BSE500T"),
                 "dtFromDate": start.strftime("%d/%m/%Y"),
                 "dtToDate": end.strftime("%d/%m/%Y"),
                 "period": "D",

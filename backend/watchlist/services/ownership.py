@@ -37,8 +37,8 @@ class OwnershipService:
 
         if product.isin:
             qs = qs.filter(isin__iexact=product.isin)
-            if product.product_type == ProductType.MUTUAL_FUND:
-                qs = qs.filter(category=AssetCategory.MUTUAL_FUND)
+            # Mutual-fund ownership is identified by the product's ISIN.
+            # Do not depend on the legacy Asset.category value.
             return qs
         if product.external_identifier:
             return qs.filter(Q(symbol__iexact=product.external_identifier) | Q(name__iexact=match_name))
@@ -161,7 +161,9 @@ class OwnershipService:
 
             assets_qs = family_scope(Asset.objects, user).filter(identifier_query)
             if all(product.product_type == ProductType.MUTUAL_FUND for product in non_pms_products):
-                assets_qs = assets_qs.filter(category=AssetCategory.MUTUAL_FUND)
+                # The product ISIN is the ownership identity; legacy Asset.category
+                # may be STOCK/CASH/BOND even when the instrument is AMFI-backed.
+                pass
 
             assets = list(
                 assets_qs.only("id", "owner_id", "name", "symbol", "isin", "category")
@@ -251,7 +253,8 @@ class OwnershipService:
     def ownership_rows(cls, product, user):
         assets = cls._asset_queryset(product, user)
         if product.product_type == ProductType.MUTUAL_FUND:
-            assets = assets.filter(category=AssetCategory.MUTUAL_FUND)
+            # Match mutual funds by ISIN regardless of the legacy Asset.category.
+            pass
         positions = family_scope(PortfolioPosition.objects, user).filter(asset__in=assets).select_related("asset")
         rows = []
         for position in positions:

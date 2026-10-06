@@ -341,7 +341,16 @@ class HistoricalWealthAnalytics:
             else:
                 latest_available = latest_available_by_asset.get(asset.pk)
 
-                if latest_available is not None:
+                # Future automatic quotes are a valid fallback only for
+                # market-identifiable assets. Manual snapshots remain valid
+                # regardless of symbol because they are explicit valuations.
+                is_manual_snapshot = (
+                    latest_available is not None
+                    and latest_available.source == DataSource.MANUAL
+                )
+                if latest_available is not None and (
+                    is_manual_snapshot or bool(getattr(asset, "symbol", None))
+                ):
                     values.append(
                         (
                             latest_available.date,

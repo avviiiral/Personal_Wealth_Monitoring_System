@@ -272,6 +272,13 @@ class AMFIService:
             score += 1000
             methods.append("isin")
 
+        # The AMFI scheme code is the canonical identifier. Some AMC
+        # scheme-list responses contain similarly named sibling plans, so an
+        # exact nav_id/code match must outrank name-token similarity.
+        if candidate.get("nav_id") == metadata.get("scheme_code"):
+            score += 5000
+            methods.append("scheme_code")
+
         if metadata.get("mf_id") and candidate.get("mf_id") == metadata["mf_id"]:
             score += 250
 
@@ -307,6 +314,8 @@ class AMFIService:
             if token in combined_target and token in combined_candidate:
                 score += weight
 
+        if "scheme_code" in methods:
+            return score, "scheme_code"
         if "exact_name" in methods and target_isins & candidate_isins:
             return score, "isin"
         if target_isins & candidate_isins:

@@ -40,7 +40,7 @@
 
 **PWMS** is a full-stack **personal and family wealth management system** for investors who hold **Indian equities, ETFs, bonds, Sovereign Gold Bonds (SGBs), mutual funds and SIPs** and want one place that _computes_ the numbers instead of estimating them.
 
-Every figure you see — holdings, invested value, current value, unrealized and realized P&L, **XIRR**, **CAGR** and asset allocation — is calculated **server-side from your real transactions**. Prices stay fresh through automatic background refreshes (**Yahoo Finance** for stocks and ETFs, **AMFI** for mutual-fund NAVs), and the AI layer sitting on top of it never invents or recalculates anything.
+Every figure you see — holdings, invested value, current value, unrealized and realized P&L, **XIRR**, **CAGR** and asset allocation — is calculated **server-side from your real transactions**. Prices stay fresh through automatic background refreshes (**Yahoo Finance** for stocks and ETFs, **AMFI** for mutual-fund NAVs). Historical MIS valuations use persisted market/NAV history prepared by background jobs, so the interactive report does not perform live provider downloads.
 
 It is built for **households, not just individuals**: a four-tier role hierarchy (System Owner / Super User / Admin / Viewer) plus many-to-many family membership lets several people share visibility into the same portfolio — or several portfolios — with permissions enforced independently on the backend, not merely hidden in the UI.
 
@@ -56,7 +56,7 @@ It is built for **households, not just individuals**: a four-tier role hierarchy
 | 🪶  | **Low infrastructure overhead** | SQLite by default; optional Windows Task Scheduler for automatic hourly market-price refresh; no Celery or Redis required |
 | 📤  | **Export anything**           | Transactions, holdings and summaries to Excel or PDF                                          |
 | 📥  | **Controlled transaction imports** | Upload history, row-level failures and a downloadable standard transaction format              |
-| 📊  | **MIS reporting**             | IPS, Data Sheet and Fund Type-wise Summary with historical valuation and Excel download       |
+| 📊  | **MIS reporting**             | IPS, Data Sheet, Tax Report and Fund Type-wise Summary with persisted historical valuation and Excel download |
 | 🔢  | **Flexible display units**    | View monetary values as Amount, Lakhs or Crores without changing stored rupee values          |
 | 🔐  | **Backend-enforced security** | Every request re-derives role and family scope from the database                              |
 
@@ -538,6 +538,24 @@ The **MIS Report** is available at **Portfolio → MIS Report** and contains the
 - **Standard transaction workbook** — the separate transaction template download is available from Settings and is intended for future transaction imports.
 - **Indian INR formatting** — monetary values in the downloaded **Data Sheet** and **Tax Report** use the **₹ symbol with Indian lakh/crore comma grouping** (for example, `₹1,20,880.00`). Quantity/unit columns remain numeric without the currency symbol.
 - **Automatic reference-price refresh** — MIS reference prices are refreshed automatically by the background scheduler every 30 minutes, are included in the scheduled refresh flow, and are refreshed again immediately before an MIS Excel download. The refresh uses stored market history and supported Yahoo Finance symbols; unavailable third-party data is not fabricated.
+
+### 🗂️ MIS historical valuation data
+
+MIS historical valuations use **stored market history**, not live provider calls while the interactive report is being generated.
+
+- **Mutual-fund historical NAVs** are stored in the shared **AMFI master NAV history** (AMFIMasterNAV) and are the source used by MIS for historical MF valuations.
+- The MIS history prefetcher keeps held schemes covered for approximately **five years** and imports only missing date ranges.
+- Historical AMFI coverage is prepared automatically **after transaction imports** and during the **daily scheduled refresh**.
+- The interactive MIS endpoint is intentionally **database-only** for historical MF valuation. It does not wait for an AMFI download while the user is viewing the report.
+- The explicit **Excel download** path can perform a targeted AMFI history backfill when required before generating the workbook.
+- Existing historical price/NAV rows are reused across MIS valuations instead of downloading the same history repeatedly.
+- The manual historical import command supports a complete date range when an initial database backfill is required:
+
+```bash
+python manage.py fetch_amfi_nav --from-date 2025-10-01 --to-date 2026-10-05
+```
+
+This architecture keeps the report responsive while ensuring historical Data Sheet, IPS and Tax Report valuations can be reconstructed from persisted observations.
 
 ### 🔐 Settings
 
@@ -1388,13 +1406,14 @@ Run from `backend/` with the virtual environment active: `python manage.py <comm
 | `ingest_exchange_filings`         | `filing_intelligence` | Ingest corporate filings for a selected exchange; supports `--exchange nse|bse`, `--hours` and dry-run workflows |
 | `diagnose_corporate_filings`      | `filing_intelligence` | Read-only diagnostics for filing identifier coverage, portfolio matches, holding-user matches, watchlists and existing filing alerts |
 | `gemini_usage`                   | `ai`             | Summary of Gemini token usage                                                |
-| `fetch_amfi_nav`                 | `mutual_funds`   | Download and import the current AMFI NAV file (batched commits)              |
+| `fetch_amfi_nav`                 | `mutual_funds`   | Import latest AMFI NAV master, or historical AMFI master data with `--from-date` / `--to-date` |
 | `execute_sips`                   | `mutual_funds`   | Execute all due SIP installments for a user                                  |
 | `rebuild_holdings`               | `portfolio`      | Rebuild holdings from transactions — `--user-id <id>`                        |
 | `load_security_master_data`      | `investments`    | Load researched sector / cap-type / P/E / P/B / ROE data into SecurityMaster |
 | `link_security_master`           | `investments`    | Link Assets to their SecurityMaster row by ISIN _(dry-run by default)_       |
 | `import_amfi_cap_classification` | `investments`    | Classify stocks Large / Mid / Small Cap by AMFI rank _(dry-run by default)_  |
 | `generate_web_push_keys`           | `portfolio_news` | Generate URL-safe VAPID keys for browser Web Push |
+| `run_scheduled_refresh`           | `market_data`    | Run the complete scheduled external-data refresh pipeline, including AMFI master refresh and MIS historical prefetch |
 Standard Django commands you'll use as well: `migrate`, `check`, `createsuperuser`, `changepassword <username>`, `shell`, `test`.
 
 > Tip: run any command with `--help` to see its options — including how to apply the _dry-run by default_ commands.

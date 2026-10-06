@@ -3,6 +3,8 @@ from decimal import Decimal, InvalidOperation
 
 import requests
 
+from config.pwms_config import get as get_pwms_config
+
 
 class MutualFundNAVService:
     """
@@ -31,11 +33,9 @@ class MutualFundNAVService:
     PWMS uses ISIN as the primary identifier.
     """
 
-    AMFI_NAV_URL = (
-        "https://portal.amfiindia.com/spages/NAVAll.txt"
-    )
-
-    REQUEST_TIMEOUT = 30
+    CONFIG = get_pwms_config("providers", "amfi_nav", {})
+    AMFI_NAV_URL = CONFIG.get("url", "")
+    REQUEST_TIMEOUT = CONFIG.get("timeout_seconds", 30)
 
     _nav_cache = None
     _nav_cache_date = None

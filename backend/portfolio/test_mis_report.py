@@ -812,11 +812,11 @@ class MISReportAPITests(TestCase):
 
         # The stored Notes document must not freeze the old price. A later
         # market-price refresh should immediately flow through to the same row.
-        MarketPrice.objects.create(
+        MarketPrice.objects.update_or_create(
             asset=gold_etf,
             date=date.today(),
-            close_price=Decimal("131.25"),
             source=DataSource.MANUAL,
+            defaults={"close_price": Decimal("131.25")},
         )
         response = self.client.get("/api/portfolio/mis-report/")
         self.assertEqual(response.status_code, 200)

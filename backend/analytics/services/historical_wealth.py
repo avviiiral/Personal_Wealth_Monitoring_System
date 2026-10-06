@@ -628,18 +628,12 @@ class HistoricalWealthAnalytics:
                 pointer,
             )
 
-        # A manual price is explicitly effective from its selected
-        # date. If the requested date is earlier than the first manual
-        # price, there is no valid manual valuation yet.
-        if (
-            len(values[0]) >= 3
-            and values[0][2] == DataSource.MANUAL
-        ):
-            return None, pointer
-
-        # For automatic market data, retain the existing best-known
-        # opening-value fallback when the first quote is later than the
-        # requested range.
+        # If the first known observation is after the requested date, use
+        # it as the best available valuation for the entire earlier range.
+        # This is important for both manual-only snapshots and automatic
+        # prices that were first captured after the requested historical
+        # window. The chart must not invent a zero value merely because the
+        # first persisted observation is dated later than the selected range.
         return (
             values[0][1],
             pointer,

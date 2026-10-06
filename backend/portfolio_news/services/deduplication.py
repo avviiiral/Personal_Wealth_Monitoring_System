@@ -53,8 +53,8 @@ def _event_family(text: str) -> str:
     return family if score else ""
 
 
-def _entity_tokens(candidate: NewsArticleResult) -> set[str]:
-    raw = " ".join((candidate.matched_query or "", candidate.title or ""))
+def _meaningful_entity_tokens(*values: str) -> set[str]:
+    raw = " ".join(value or "" for value in values)
     return {
         token
         for token in re.findall(r"[a-z0-9]+", raw.lower())
@@ -62,6 +62,13 @@ def _entity_tokens(candidate: NewsArticleResult) -> set[str]:
         and token not in _STOPWORDS
         and token not in _EVENT_ENTITY_STOPWORDS
     }
+
+
+def _entity_tokens(candidate: NewsArticleResult) -> set[str]:
+    return _meaningful_entity_tokens(
+        candidate.matched_query,
+        candidate.title,
+    )
 
 
 
@@ -211,23 +218,10 @@ class ArticleDeduplicator:
             for article in recent_candidates:
                 if _event_family(article.normalized_title) != candidate_family:
                     continue
-                article_entities = {
-                    token
-                    for token in re.findall(
-                        r"[a-z0-9]+",
-                        " ".join(
-                            (
-                                article.matched_query or "",
-                                article.normalized_title or "",
-                            )
-                        ).lower(),
-                    )
-                    if (
-                        len(token) >= 3
-                        and token not in _STOPWORDS
-                        and token not in _EVENT_ENTITY_STOPWORDS
-                    )
-                }
+                article_entities = _meaningful_entity_tokens(
+                    article.matched_query,
+                    article.normalized_title,
+                )
                 if candidate_entities & article_entities:
                     return article
 

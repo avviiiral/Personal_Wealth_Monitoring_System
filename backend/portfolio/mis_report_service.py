@@ -1,4 +1,5 @@
 from collections import defaultdict
+from dateutil.relativedelta import relativedelta
 from datetime import date, timedelta
 from decimal import Decimal
 import logging
@@ -870,10 +871,13 @@ class MISReportService:
         if acquired_on is None or as_of is None:
             return cls.ZERO
 
-        holding_months = cls._holding_months(acquired_on, as_of)
         tenure_months = int(tax_setting.tenure_months)
+        long_term_boundary = acquired_on + relativedelta(months=tenure_months)
 
-        if holding_months <= tenure_months:
+        # Use the calendar-date boundary directly. The lot is long-term on
+        # the exact date that is tenure_months after acquisition; before
+        # that date it remains short-term.
+        if as_of < long_term_boundary:
             raw_rate = tax_setting.short_term_tax_rate
         else:
             raw_rate = tax_setting.long_term_tax_rate

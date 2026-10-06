@@ -423,7 +423,7 @@ class FamilyStandardAllocationApiTests(TestCase):
 
     def test_different_families_can_have_different_allocations(self):
         StandardAllocation.objects.create(
-            family=self.family_a,
+            family_name=self.family_a.name,
             asset_category="Equities",
             allocation_percent=Decimal("60.00"),
             allocation_amount=Decimal("600000.00"),

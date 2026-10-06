@@ -271,9 +271,12 @@ class MISReportService:
 
             for tx in row["transactions"]:
                 asset = getattr(tx, "asset", None)
-                if asset is None or getattr(asset, "category", None) != "MUTUAL_FUND":
+                if asset is None:
                     continue
 
+                # Legacy portfolio data does not reliably classify mutual funds
+                # as MUTUAL_FUND. Resolve the instrument from its AMFI identity
+                # instead of trusting the local Asset.category value.
                 identity_isins = {str(asset.isin or "").strip().upper()}
                 security_master = getattr(asset, "security_master", None)
                 if security_master is not None:
@@ -336,8 +339,11 @@ class MISReportService:
                 codes = []
                 for tx in transactions:
                     asset = getattr(tx, "asset", None)
-                    if asset is None or getattr(asset, "category", None) != AssetCategory.MUTUAL_FUND:
+                    if asset is None:
                         continue
+
+                    # Use AMFI ISIN identity for legacy assets regardless of the
+                    # locally assigned asset category (e.g. BOND/CASH/STOCK).
                     identity_isins = {str(asset.isin or "").strip().upper()}
                     security_master = getattr(asset, "security_master", None)
                     if security_master is not None:

@@ -12,6 +12,7 @@ from market_data.models import MarketPrice, ManualAssetPrice
 from mutual_funds.models import MutualFundNAV, MutualFundTransaction, MutualFundHolding
 from portfolio.services.portfolio_tree_service import PortfolioTreeService
 from market_data.services.yahoo_finance import YahooFinanceService
+from market_data.services.market_data_manager import MarketDataManager
 from users.models import TaxRateSetting
 from .models import FamilyMISNotes
 
@@ -1481,6 +1482,73 @@ class MISReportService:
         ), True
 
     @classmethod
+    def _ensure_portfolio_history(cls, rows, opening_date, as_of):
+        """
+        Repair missing historical market data before the MIS valuation pass.
+
+        Portfolio refreshes normally maintain this history asynchronously, but
+        a report can be requested before the scheduler has repaired an older
+        position. Only STOCK/ETF/MUTUAL_FUND assets are backfilled here; other
+        asset classes may require an explicit/manual historical valuation.
+        """
+        seen_asset_ids = set()
+
+        for row in rows:
+            if row.get("kind") != "asset":
+                continue
+
+            for asset_id in row.get("asset_ids", []):
+                if asset_id in seen_asset_ids:
+                    continue
+                seen_asset_ids.add(asset_id)
+
+                asset = (
+                    Asset.objects
+                    .filter(
+                        id=asset_id,
+                        family=family,
+                        is_active=True,
+                    )
+                    .first()
+                )
+                if asset is None:
+                    continue
+
+                if asset.category not in {"STOCK", "ETF", "MUTUAL_FUND"}:
+                    continue
+
+                opening_exists = (
+                    MarketPrice.objects
+                    .filter(
+                        asset=asset,
+                        date__lte=opening_date,
+                    )
+                    .exists()
+                )
+                closing_exists = (
+                    MarketPrice.objects
+                    .filter(
+                        asset=asset,
+                        date__lte=as_of,
+                    )
+                    .exists()
+                )
+
+                if opening_exists and closing_exists:
+                    continue
+
+                try:
+                    MarketDataManager.fetch_and_rebuild(
+                        asset=asset,
+                        period="1y",
+                    )
+                except Exception:
+                    # A report must remain usable when an external provider is
+                    # unavailable. The valuation helpers below will use whatever
+                    # history is already stored.
+                    continue
+
+    @classmethod
     def build(cls, family, from_date=None, to_date=None):
         if from_date is None and to_date is None:
             to_date = cls._latest_reporting_date(family)
@@ -1498,6 +1566,11 @@ class MISReportService:
         period_start = from_date
 
         rows = cls._base_rows(family)
+        cls._ensure_portfolio_history(
+            rows,
+            opening_date=opening_date,
+            as_of=as_of,
+        )
         price_cache = {}
         nav_cache = {}
         data_rows = [

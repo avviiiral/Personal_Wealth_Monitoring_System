@@ -459,63 +459,73 @@ class AMFIService:
 
     @staticmethod
     def _download_historical_api_records(from_date, to_date, scheme_codes):
-        """Resolve current AMFI NAV IDs, then download their history."""
+        """Download authoritative AMFI history for the requested scheme codes.
+
+        The scheme-specific JSON NAV-history resolver is useful for current
+        NAV metadata, but it is not a reliable source for the complete
+        historical series. The AMFI historical report is the authoritative
+        dated source, and supports the full universe via mf=0. Download it in
+        the documented 90-day windows and filter to the requested schemes while
+        parsing.
+        """
         if from_date > to_date:
             raise ValueError("From date cannot be after to_date.")
 
-        nav_ids = AMFIService._resolve_nav_ids(scheme_codes)
-        if not nav_ids:
+        requested_codes = {
+            str(code).strip()
+            for code in (scheme_codes or [])
+            if str(code or "").strip()
+        }
+        if not requested_codes:
             return []
 
         records = []
-        schemes_by_mf = {}
-        for scheme_code, metadata in nav_ids.items():
-            mf_id = metadata.get("mf_id") or "0"
-            schemes_by_mf.setdefault(str(mf_id), set()).add(str(scheme_code))
+        window_start = from_date
+        headers = {
+            **AMFIService._headers(),
+            "Accept": "text/plain,text/csv,text/*;q=0.9,*/*;q=0.8",
+            "Referer": "https://www.amfiindia.com/net-asset-value/nav-download",
+        }
 
-        # The current JSON /api/nav-history route returns HTTP 400 for the
-        # production sd_id/date-range request used by the application. Use
-        # AMFI's historical report endpoint for the actual NAV rows instead.
-        for mf_id, mf_scheme_codes in schemes_by_mf.items():
-            window_start = from_date
-            while window_start <= to_date:
-                window_end = min(
-                    window_start + relativedelta(days=90),
-                    to_date,
+        while window_start <= to_date:
+            window_end = min(
+                window_start + relativedelta(days=90),
+                to_date,
+            )
+            params = {
+                "mf": "0",
+                "tp": "1",
+                "frmdt": window_start.strftime("%d-%b-%Y"),
+                "todt": window_end.strftime("%d-%b-%Y"),
+            }
+            response = requests.get(
+                AMFIService.NAV_HISTORY_URL,
+                params=params,
+                headers=headers,
+                timeout=60,
+            )
+            response.raise_for_status()
+            report_text = response.text or ""
+            if not AMFIService._is_historical_report(report_text):
+                raise RuntimeError(
+                    "AMFI historical response was not a NAV report: "
+                    f"endpoint={getattr(response, 'url', AMFIService.NAV_HISTORY_URL)} "
+                    f"from={window_start} to={window_end}"
                 )
-                response = requests.get(
-                    AMFIService.NAV_HISTORY_URL,
-                    params={
-                        "mf": mf_id,
-                        "tp": "1",
-                        "frmdt": window_start.strftime("%d-%b-%Y"),
-                        "todt": window_end.strftime("%d-%b-%Y"),
-                    },
-                    headers=AMFIService._headers(),
-                    timeout=60,
-                )
-                response.raise_for_status()
-                report_text = response.text
-                if not AMFIService._is_historical_report(report_text):
-                    raise RuntimeError(
-                        "AMFI historical response was not a NAV report: "
-                        f"endpoint={getattr(response, 'url', AMFIService.NAV_HISTORY_URL)} "
-                        f"from={window_start} to={window_end}"
-                    )
 
-                records.extend(
-                    AMFIService.parse_nav_file(
-                        report_text,
-                        historical=True,
-                        scheme_codes=mf_scheme_codes,
-                    )
+            records.extend(
+                AMFIService.parse_nav_file(
+                    report_text,
+                    historical=True,
+                    scheme_codes=requested_codes,
                 )
-                window_start = window_end + relativedelta(days=1)
+            )
+            window_start = window_end + relativedelta(days=1)
 
         deduped = {
             (record["scheme_code"], record["date"]): record
             for record in records
-            if record["scheme_code"] in nav_ids
+            if record["scheme_code"] in requested_codes
         }
         return sorted(
             deduped.values(),

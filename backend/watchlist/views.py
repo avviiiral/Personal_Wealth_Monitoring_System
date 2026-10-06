@@ -375,6 +375,17 @@ def watch_list_benchmark_performance(request, product_id):
     chart_period = request.query_params.get("period", "1Y").upper()
     if chart_period not in BenchmarkPerformanceService.PERIOD_DAYS:
         chart_period = "1Y"
+
+    # Older Watch List entries may only have the six return-anchor snapshots
+    # (1M/3M/6M/1Y/3Y/5Y), which makes the indexed chart appear as a handful
+    # of straight line segments. Ensure the selected chart period has dense
+    # AMFI master NAV history before calculating the aligned series.
+    if product.product_type == ProductType.MUTUAL_FUND:
+        prepare_mutual_fund_watchlist_history(
+            product,
+            days=BenchmarkPerformanceService.PERIOD_DAYS[chart_period],
+        )
+
     result = BenchmarkPerformanceService.calculate(product, chart_period=chart_period)
     if result is None:
         return Response({"available": False, "benchmark": None, "message": "Select a supported benchmark first."})

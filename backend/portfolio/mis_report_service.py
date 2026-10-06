@@ -120,6 +120,32 @@ class MISReportService:
         return cache[key]
 
     @classmethod
+    def _legacy_manual_price(cls, asset_id, as_of, cache):
+        """Legacy one-row ``ManualAssetPrice`` valid from its ``price_date``.
+
+        Only consulted when no automatic/manual ``MarketPrice`` exists on or
+        before ``as_of``. A price entered "as on" a date is therefore used for
+        that date and later; earlier dates keep the existing cost-basis
+        fallback (P/L 0).
+        """
+        key = ("legacy-manual", asset_id, as_of)
+        if key not in cache:
+            cache[key] = (
+                ManualAssetPrice.objects
+                .filter(asset_id=asset_id, price_date__lte=as_of)
+                .values_list("price", flat=True)
+                .first()
+            )
+        return cache[key]
+
+    @classmethod
+    def _price_on(cls, asset_id, as_of, cache):
+        price = cls._market_price(asset_id, as_of, cache)
+        if price is None:
+            price = cls._legacy_manual_price(asset_id, as_of, cache)
+        return price
+
+    @classmethod
     def _amfi_scheme_codes_for_asset(cls, asset):
         """Return AMFI scheme codes using the centralized asset identity resolver."""
         return list(
@@ -254,71 +280,112 @@ class MISReportService:
         return None
 
     @classmethod
-    def _ensure_mf_history(cls, rows, from_date, to_date, extra_dates=None):
-        """Backfill missing AMFI history for mutual funds used by this report.
+    def _scheme_codes_for_non_mf_asset(cls, asset):
+        """Return AMFI scheme codes for a legacy Asset-backed holding."""
+        identity_isins = {str(asset.isin or "").strip().upper()}
+        security_master = getattr(asset, "security_master", None)
+        if security_master is not None:
+            identity_isins.add(str(security_master.isin or "").strip().upper())
+        identity_isins.discard("")
 
-        The MIS report can encounter a scheme whose family NAV table has never
-        been populated even though the asset carries a valid AMFI identity.
-        Resolve the existing scheme code and fetch official AMFI history into
-        the shared master table.
+        family_schemes = MutualFundScheme.objects.filter(
+            family_id=asset.family_id,
+            is_active=True,
+        )
+        if identity_isins:
+            family_schemes = family_schemes.filter(
+                Q(isin_growth__in=identity_isins)
+                | Q(isin_dividend__in=identity_isins)
+            )
+        elif asset.name:
+            family_schemes = family_schemes.filter(
+                scheme_name__iexact=asset.name
+            )
 
-        Important performance rule: collect all schemes missing coverage for a
-        valuation date and import them in one AMFI batch. The previous
-        implementation called the historical importer once per scheme, which
-        multiplied external API calls for a single MIS request.
+        codes = {
+            str(code).strip()
+            for code in family_schemes.values_list("scheme_code", flat=True)
+            if str(code or "").strip()
+        }
+        codes.update(
+            str(code).strip()
+            for code in cls._amfi_scheme_codes_for_asset(asset)
+            if str(code or "").strip()
+        )
+        return codes
+
+    @classmethod
+    def _collect_mf_scheme_codes(cls, rows):
+        """Map every AMFI scheme code used by ``rows`` to its earliest
+        transaction date.
+
+        Scheme codes are resolved once per asset (not once per transaction).
+        The returned keys are exactly the codes the previous inline
+        implementation of ``_ensure_mf_history`` collected.
         """
-        scheme_codes = set()
+        earliest_by_code = {}
+
+        def note(code, when):
+            code = str(code or "").strip()
+            if not code:
+                return
+            current = earliest_by_code.get(code)
+            if current is None or (when is not None and when < current):
+                earliest_by_code[code] = when
+
+        codes_by_asset_id = {}
 
         for row in rows:
             if row["kind"] == "mutual_fund":
+                earliest = min(
+                    (tx.transaction_date for tx in row["transactions"]),
+                    default=None,
+                )
                 schemes = (
                     MutualFundScheme.objects
                     .filter(id__in=row["scheme_ids"], is_active=True)
                     .values_list("scheme_code", flat=True)
                 )
-                scheme_codes.update(
-                    str(code).strip()
-                    for code in schemes
-                    if str(code or "").strip()
-                )
+                for code in schemes:
+                    note(code, earliest)
                 continue
 
+            assets = {}
+            earliest_by_asset_id = {}
             for tx in row["transactions"]:
                 asset = getattr(tx, "asset", None)
                 if asset is None:
                     continue
+                assets[asset.id] = asset
+                current = earliest_by_asset_id.get(asset.id)
+                if current is None or tx.transaction_date < current:
+                    earliest_by_asset_id[asset.id] = tx.transaction_date
 
-                identity_isins = {str(asset.isin or "").strip().upper()}
-                security_master = getattr(asset, "security_master", None)
-                if security_master is not None:
-                    identity_isins.add(str(security_master.isin or "").strip().upper())
-                identity_isins.discard("")
+            for asset_id, asset in assets.items():
+                codes = codes_by_asset_id.get(asset_id)
+                if codes is None:
+                    codes = cls._scheme_codes_for_non_mf_asset(asset)
+                    codes_by_asset_id[asset_id] = codes
+                for code in codes:
+                    note(code, earliest_by_asset_id[asset_id])
 
-                family_schemes = MutualFundScheme.objects.filter(
-                    family_id=asset.family_id,
-                    is_active=True,
-                )
-                if identity_isins:
-                    family_schemes = family_schemes.filter(
-                        Q(isin_growth__in=identity_isins)
-                        | Q(isin_dividend__in=identity_isins)
-                    )
-                elif asset.name:
-                    family_schemes = family_schemes.filter(
-                        scheme_name__iexact=asset.name
-                    )
+        return earliest_by_code
 
-                scheme_codes.update(
-                    str(code).strip()
-                    for code in family_schemes.values_list("scheme_code", flat=True)
-                    if str(code or "").strip()
-                )
+    @classmethod
+    def _ensure_mf_history(cls, rows, from_date, to_date, extra_dates=None):
+        """Backfill missing AMFI history for mutual funds used by this report.
 
-                scheme_codes.update(
-                    str(code).strip()
-                    for code in cls._amfi_scheme_codes_for_asset(asset)
-                    if str(code or "").strip()
-                )
+        This performs live AMFI downloads, so it must NOT run while serving
+        the interactive MIS page. It is only used by the explicit Excel
+        download (``build(..., ensure_history=True)``). Normal history
+        coverage is maintained in the background by
+        ``portfolio.mis_history_prefetch.MISHistoryPrefetch`` after every
+        transaction upload and by the daily refresh.
+
+        All schemes missing coverage for a valuation date are imported in one
+        AMFI batch.
+        """
+        scheme_codes = set(cls._collect_mf_scheme_codes(rows))
 
         if not scheme_codes:
             return
@@ -652,11 +719,11 @@ class MISReportService:
 
                 opening_prices.append(
                     opening_price if opening_price is not None
-                    else cls._market_price(asset_id, opening_date, price_cache)
+                    else cls._price_on(asset_id, opening_date, price_cache)
                 )
                 closing_prices.append(
                     closing_price if closing_price is not None
-                    else cls._market_price(asset_id, as_of, price_cache)
+                    else cls._price_on(asset_id, as_of, price_cache)
                 )
         else:
             opening_prices = [
@@ -1796,7 +1863,7 @@ class MISReportService:
         ), True
 
     @classmethod
-    def build(cls, family, from_date=None, to_date=None):
+    def build(cls, family, from_date=None, to_date=None, ensure_history=False):
         if from_date is None and to_date is None:
             to_date = cls._latest_reporting_date(family)
             from_date = cls._period_start(to_date)
@@ -1813,9 +1880,12 @@ class MISReportService:
         period_start = from_date
 
         rows = cls._base_rows(family)
-        # Backfill missing official AMFI observations once per report before
-        # the valuation pass, then resolve them through the normal cache path.
-        cls._ensure_mf_history(rows, opening_date, as_of, extra_dates=[prior_month_end])
+        # Serving the report is database-only. AMFI history is stored in the
+        # background (after uploads and in the daily refresh); see
+        # portfolio.mis_history_prefetch. Only the explicit Excel download
+        # asks for a synchronous top-up.
+        if ensure_history:
+            cls._ensure_mf_history(rows, opening_date, as_of, extra_dates=[prior_month_end])
 
         price_cache = {}
         nav_cache = {}

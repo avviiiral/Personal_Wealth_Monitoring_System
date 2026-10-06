@@ -1,7 +1,9 @@
 from datetime import date
 from decimal import Decimal
 from io import BytesIO
+import logging
 import re
+import time
 
 from django.http import HttpResponse
 from openpyxl import Workbook
@@ -14,6 +16,8 @@ from rest_framework.exceptions import ValidationError
 
 from users.permissions import is_system_owner, require_active_family
 from .mis_report_service import MISReportService
+
+logger = logging.getLogger(__name__)
 
 
 
@@ -573,10 +577,16 @@ def mis_report_notes_history(request):
 def mis_report(request):
     family = _authorized_active_family(request.user)
     from_date, to_date = _parse_report_dates(request)
+    started = time.monotonic()
     try:
         report = MISReportService.build(family, from_date, to_date)
     except ValueError as exc:
         raise ValidationError({"detail": str(exc)})
+    logger.info(
+        "MIS report built for family %s in %.2fs.",
+        family.pk,
+        time.monotonic() - started,
+    )
     return Response(_serialize_report(report))
 
 
@@ -663,7 +673,9 @@ def mis_report_download(request):
         # scheduler having run since the last request. Refresh the shared MIS
         # reference prices immediately before constructing the workbook.
         MISReportService.refresh_reference_prices()
-        report = MISReportService.build(family, from_date, to_date)
+        report = MISReportService.build(
+            family, from_date, to_date, ensure_history=True
+        )
     except ValueError as exc:
         raise ValidationError({"detail": str(exc)})
 

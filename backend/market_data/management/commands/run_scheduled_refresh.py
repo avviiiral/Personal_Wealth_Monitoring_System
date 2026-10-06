@@ -5,6 +5,7 @@ from django.core.management.base import BaseCommand
 from django.utils import timezone
 
 from mutual_funds.services.amfi import AMFIService
+from portfolio.mis_history_prefetch import MISHistoryPrefetch
 from watchlist.services.performance import AMFIPerformanceService
 from watchlist.services.universe import AMFIUniverseService
 
@@ -176,6 +177,27 @@ class Command(BaseCommand):
                             f"sync_owned_amfi_navs (user {user_id}) failed: {exc}"
                         )
                     )
+
+        # Keep the AMFI history the MIS report reads stored ahead of time
+        # (held schemes only, missing range only), so opening MIS never
+        # waits on AMFI.
+        if "prefetch_mis_history" not in skip:
+            self.stdout.write("\n--- prefetch_mis_history ---")
+            try:
+                result = MISHistoryPrefetch.run_for_all_families()
+                succeeded.append("prefetch_mis_history")
+                self.stdout.write(self.style.SUCCESS(
+                    "MIS AMFI history prefetched: "
+                    f"families={result.get('families', 0)}, "
+                    f"schemes={result.get('schemes', 0)}, "
+                    f"requests={result.get('requests', 0)}, "
+                    f"failed={result.get('failed', 0)}"
+                ))
+            except Exception as exc:
+                failed.append(("prefetch_mis_history", str(exc)))
+                self.stderr.write(
+                    self.style.ERROR(f"prefetch_mis_history failed: {exc}")
+                )
 
         for user_id in active_user_ids:
             for command_name, kwargs in self.PER_USER_STEPS:

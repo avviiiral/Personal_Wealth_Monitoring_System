@@ -103,5 +103,16 @@ def _refresh_assets(asset_ids):
                     asset.name,
                 )
 
+        # Store the AMFI history the MIS report needs for the funds in this
+        # upload, so the MIS page never has to download anything itself.
+        try:
+            from portfolio.mis_history_prefetch import MISHistoryPrefetch
+
+            MISHistoryPrefetch.run_for_assets(asset_ids)
+        except Exception:
+            logger.exception(
+                "[POST-IMPORT REFRESH] MIS AMFI history prefetch failed."
+            )
+
     finally:
         close_old_connections()

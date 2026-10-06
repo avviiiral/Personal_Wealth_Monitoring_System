@@ -118,27 +118,39 @@ class MISReportService:
         """Resolve a mutual-fund NAV for a legacy Asset-backed transaction.
 
         Some older/imported portfolio rows are stored in investments.Transaction
-        instead of mutual_funds.MutualFundTransaction. Those rows still carry a
-        real asset ISIN, while their NAV lives in the AMFI NAV tables rather than
-        MarketPrice. Resolve by ISIN and family/master scheme data instead of by
-        asset name or a hard-coded security list.
+        instead of mutual_funds.MutualFundTransaction. Their NAV lives in the
+        AMFI NAV tables rather than MarketPrice. Resolve by ISIN when available,
+        then by the persisted scheme name, instead of using security-specific
+        hard-coding.
         """
         key = (asset.id, as_of)
         if key in cache:
             return cache[key]
 
         isin = str(asset.isin or "").strip().upper()
-        if not isin:
-            cache[key] = None
-            return None
 
-        scheme = (
-            MutualFundScheme.objects
-            .filter(family_id=asset.family_id, is_active=True)
-            .filter(Q(isin_growth__iexact=isin) | Q(isin_dividend__iexact=isin))
-            .order_by("id")
-            .first()
-        )
+        scheme = None
+        if isin:
+            scheme = (
+                MutualFundScheme.objects
+                .filter(family_id=asset.family_id, is_active=True)
+                .filter(Q(isin_growth__iexact=isin) | Q(isin_dividend__iexact=isin))
+                .order_by("id")
+                .first()
+            )
+
+        if scheme is None:
+            scheme = (
+                MutualFundScheme.objects
+                .filter(
+                    family_id=asset.family_id,
+                    is_active=True,
+                    scheme_name__iexact=asset.name,
+                )
+                .order_by("id")
+                .first()
+            )
+
         if scheme is not None:
             nav = (
                 MutualFundNAV.objects
@@ -151,13 +163,27 @@ class MISReportService:
                 cache[key] = nav
                 return nav
 
-        master_scheme = (
-            AMFIMasterScheme.objects
-            .filter(is_active=True)
-            .filter(Q(isin_growth__iexact=isin) | Q(isin_dividend__iexact=isin))
-            .order_by("id")
-            .first()
-        )
+        master_scheme = None
+        if isin:
+            master_scheme = (
+                AMFIMasterScheme.objects
+                .filter(is_active=True)
+                .filter(Q(isin_growth__iexact=isin) | Q(isin_dividend__iexact=isin))
+                .order_by("id")
+                .first()
+            )
+
+        if master_scheme is None:
+            master_scheme = (
+                AMFIMasterScheme.objects
+                .filter(
+                    is_active=True,
+                    scheme_name__iexact=asset.name,
+                )
+                .order_by("id")
+                .first()
+            )
+
         if master_scheme is not None:
             nav = (
                 AMFIMasterNAV.objects

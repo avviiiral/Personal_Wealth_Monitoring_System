@@ -1914,16 +1914,26 @@ class MISReportService:
         for row in data_rows:
             current_by_family_asset_class[(row["asset_class"], row["family_name"])] += Decimal(str(row["closing_amount"] or 0))
 
-        for row in rows:
-            prior = cls._build_data_row(
-                row,
-                prior_month_end,
-                prior_month_end,
-                period_start,
-                price_cache,
-                nav_cache,
-                reference_cache,
-            )
+        # Reuse the already-computed valuation rows when the requested
+        # opening date is the previous month-end. Only custom MIS ranges
+        # need a separate prior-month valuation pass.
+        if opening_date == prior_month_end:
+            prior_rows = all_data_rows
+        else:
+            prior_rows = [
+                cls._build_data_row(
+                    row,
+                    prior_month_end,
+                    prior_month_end,
+                    period_start,
+                    price_cache,
+                    nav_cache,
+                    reference_cache,
+                )
+                for row in rows
+            ]
+
+        for prior in prior_rows:
             if prior["closing_units"] > 0 or prior["closing_amount"] > 0:
                 prior_by_family_asset_class[(prior["asset_class"], prior["family_name"])] += Decimal(str(prior["closing_amount"] or 0))
 

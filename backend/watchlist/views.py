@@ -156,9 +156,11 @@ def _filtered_products(request, product_type=None):
         owned_pms_positions = scoped_positions.filter(Exists(pms_transactions))
         owned_pms_expression = Exists(owned_pms_positions)
 
+        # Mutual-fund ownership is an ISIN match; Asset.category is not
+        # authoritative because AMFI-backed funds may be stored as STOCK/CASH/BOND.
         isin_positions = scoped_positions.filter(
             asset__isin__iexact=OuterRef("isin"),
-        ).filter()
+        )
         owned_mf_expression = (
             ~Q(isin__isnull=True)
             & ~Q(isin="")

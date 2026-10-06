@@ -7,6 +7,7 @@ from django.db.models import Count, Q
 from django.utils import timezone
 
 from ..models import PortfolioNewsMatch
+from config.pwms_config import get as get_pwms_config
 
 
 @dataclass(frozen=True)
@@ -22,9 +23,15 @@ class UnusualNewsActivity:
 def detect_unusual_activity(
     user,
     holding,
-    recent_hours: int = 24,
-    baseline_days: int = 30,
+    recent_hours: int | None = None,
+    baseline_days: int | None = None,
 ) -> UnusualNewsActivity | None:
+    config = get_pwms_config("news", "unusual_activity", {})
+    recent_hours = config.get("recent_hours", 24) if recent_hours is None else recent_hours
+    baseline_days = config.get("baseline_days", 30) if baseline_days is None else baseline_days
+    minimum_recent_count = config.get("minimum_recent_count", 5)
+    baseline_multiplier = config.get("baseline_multiplier", 2.5)
+
     now = timezone.now()
     recent_start = now - timedelta(hours=recent_hours)
     baseline_start = now - timedelta(days=baseline_days)
@@ -44,10 +51,10 @@ def detect_unusual_activity(
     baseline_days_effective = max(1, baseline_days - 1)
     baseline_average = baseline_count / baseline_days_effective
 
-    threshold = max(5, baseline_average * 2.5)
+    threshold = max(minimum_recent_count, baseline_average * baseline_multiplier)
     ratio = recent_count / max(baseline_average, 1.0)
 
-    if recent_count < threshold or recent_count < 5:
+    if recent_count < threshold or recent_count < minimum_recent_count:
         return None
 
     return UnusualNewsActivity(

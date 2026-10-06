@@ -173,16 +173,19 @@ class ArticleDeduplicator:
             for article in recent_candidates:
                 if _event_family(article.normalized_title) != candidate_family:
                     continue
-                article_entities = _entity_tokens(
-                    NewsArticleResult(
-                        title=article.normalized_title,
-                        url="",
-                        source="",
-                        description="",
-                        published_at=article.published_at,
-                        matched_query=article.matched_query,
+                article_entities = {
+                    token
+                    for token in re.findall(
+                        r"[a-z0-9]+",
+                        " ".join(
+                            (
+                                article.matched_query or "",
+                                article.normalized_title or "",
+                            )
+                        ).lower(),
                     )
-                )
+                    if len(token) >= 4 and token not in _STOPWORDS
+                }
                 if candidate_entities & article_entities:
                     return article
 

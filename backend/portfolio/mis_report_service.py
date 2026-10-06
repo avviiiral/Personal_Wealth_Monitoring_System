@@ -9,7 +9,14 @@ from django.db.models import Max, Q
 
 from investments.models import Asset, Transaction, TransactionType
 from market_data.models import MarketPrice, ManualAssetPrice
-from mutual_funds.models import (\n    AMFIMasterNAV,\n    AMFIMasterScheme,\n    MutualFundNAV,\n    MutualFundTransaction,\n    MutualFundHolding,\n    MutualFundScheme,\n)
+from mutual_funds.models import (
+    AMFIMasterNAV,
+    AMFIMasterScheme,
+    MutualFundNAV,
+    MutualFundTransaction,
+    MutualFundHolding,
+    MutualFundScheme,
+)
 from portfolio.services.portfolio_tree_service import PortfolioTreeService
 from market_data.services.yahoo_finance import YahooFinanceService
 from users.models import TaxRateSetting

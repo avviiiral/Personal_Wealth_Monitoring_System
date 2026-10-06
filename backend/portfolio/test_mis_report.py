@@ -286,7 +286,11 @@ class MISReportAPITests(TestCase):
         )
         row = next(item for item in response.json()["tax_report"] if item["asset_name"] == "FIFO Equity")
         self.assertEqual(row["realized_pnl"], 2000.0)
-        self.assertEqual(row["realized_tax"], 275.0)
+        # The September 20 sale is FIFO-matched to the remaining January
+        # 2026 lot (cost ₹200), so its ₹500 loss receives the configured
+        # 15% short-term rate as a negative tax benefit. Cumulative tax is
+        # therefore ₹275 - ₹75 = ₹200.
+        self.assertEqual(row["realized_tax"], 200.0)
 
     def test_tax_is_negative_for_realized_and_unrealized_losses_with_tenure_rate(self):
         loss_asset = Asset.objects.create(

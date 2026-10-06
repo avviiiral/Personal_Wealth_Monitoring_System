@@ -953,10 +953,12 @@ class MISReportService:
     @classmethod
     def _ensure_reference_history(cls, name, symbol, opening_date, as_of, cache):
         """
-        Resolve a standard MIS reference instrument to a global Asset and make
-        sure its Yahoo historical prices are available for the requested dates.
-        Reference assets are not family holdings and therefore never affect
-        portfolio ownership or valuation.
+        Resolve a standard MIS reference instrument to a global Asset.
+
+        MIS page generation is a synchronous request and must not block on
+        Yahoo/network I/O. Reference prices are therefore read from the local
+        MarketPrice history here. The explicit Excel-download path can refresh
+        reference history before building the workbook.
         """
         cache_key = (symbol, opening_date, as_of)
         if cache_key in cache:
@@ -978,32 +980,6 @@ class MISReportService:
                 currency="INR",
                 is_active=True,
             )
-
-        has_opening = MarketPrice.objects.filter(
-            asset=asset,
-            date__lte=opening_date,
-        ).exists()
-        has_closing = MarketPrice.objects.filter(
-            asset=asset,
-            date__lte=as_of,
-        ).exists()
-
-        if not (has_opening and has_closing):
-            try:
-                # REIT/InvIT units can be thinly traded. Fetch a look-back
-                # window so a prior trading day is available when the requested
-                # opening date itself has no trade.
-                history_start = opening_date - timedelta(days=30)
-                YahooFinanceService.save_history(
-                    asset=asset,
-                    symbol=symbol,
-                    start=history_start,
-                    end=as_of + timedelta(days=1),
-                )
-            except Exception:
-                # Existing stored history remains usable even when an external
-                # source is temporarily unavailable.
-                pass
 
         cache[cache_key] = asset
         return asset

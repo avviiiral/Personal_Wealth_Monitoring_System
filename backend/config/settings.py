@@ -117,11 +117,11 @@ if DATABASE_ENGINE in ('postgresql', 'postgres'):
     DATABASES = {
         'default': {
             'ENGINE': 'django.db.backends.postgresql',
-            'NAME': os.environ.get('POSTGRES_DB', 'pwms'),
-            'USER': os.environ.get('POSTGRES_USER', 'pwms_user'),
+            'NAME': os.environ.get('POSTGRES_DB', get_pwms_config('database', 'postgres_db', 'pwms')),
+            'USER': os.environ.get('POSTGRES_USER', get_pwms_config('database', 'postgres_user', 'pwms_user')),
             'PASSWORD': os.environ.get('POSTGRES_PASSWORD', ''),
-            'HOST': os.environ.get('POSTGRES_HOST', 'localhost'),
-            'PORT': os.environ.get('POSTGRES_PORT', '5432'),
+            'HOST': os.environ.get('POSTGRES_HOST', get_pwms_config('database', 'postgres_host', 'localhost')),
+            'PORT': os.environ.get('POSTGRES_PORT', get_pwms_config('database', 'postgres_port', '5432')),
             # Reuse healthy PostgreSQL connections across requests. This
             # reduces connection setup overhead under concurrent users while
             # remaining deployment-configurable (set POSTGRES_CONN_MAX_AGE=0
@@ -186,9 +186,9 @@ REST_FRAMEWORK = {
 }
 
 CORS_ALLOW_ALL_ORIGINS = False
-CORS_ALLOWED_ORIGINS = _env_list('CORS_ALLOWED_ORIGINS', ['http://localhost:4200'])
+CORS_ALLOWED_ORIGINS = _env_list('CORS_ALLOWED_ORIGINS', [get_pwms_config('deployment', 'dev_frontend_origin', 'http://localhost:4200')])
 CORS_ALLOW_CREDENTIALS = True
-CSRF_TRUSTED_ORIGINS = _env_list('CSRF_TRUSTED_ORIGINS', ['http://localhost:4200'])
+CSRF_TRUSTED_ORIGINS = _env_list('CSRF_TRUSTED_ORIGINS', [get_pwms_config('deployment', 'dev_frontend_origin', 'http://localhost:4200')])
 SESSION_COOKIE_SECURE = _env_bool('SESSION_COOKIE_SECURE', False)
 CSRF_COOKIE_SECURE = _env_bool('CSRF_COOKIE_SECURE', False)
 SECURE_SSL_REDIRECT = _env_bool('SECURE_SSL_REDIRECT', False)

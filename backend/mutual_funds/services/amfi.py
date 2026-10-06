@@ -489,37 +489,56 @@ class AMFIService:
 
         while window_start <= to_date:
             window_end = min(
-                window_start + relativedelta(days=90),
+                window_start + relativedelta(days=AMFIService.HISTORICAL_WINDOW_DAYS - 1),
                 to_date,
             )
             params = {
-                "mf": "0",
-                "tp": "1",
                 "frmdt": window_start.strftime("%d-%b-%Y"),
                 "todt": window_end.strftime("%d-%b-%Y"),
             }
-            response = requests.get(
-                AMFIService.NAV_HISTORY_URL,
-                params=params,
-                headers=headers,
-                timeout=60,
-            )
-            response.raise_for_status()
-            report_text = response.text or ""
-            if not AMFIService._is_historical_report(report_text):
-                raise RuntimeError(
-                    "AMFI historical response was not a NAV report: "
-                    f"endpoint={getattr(response, 'url', AMFIService.NAV_HISTORY_URL)} "
-                    f"from={window_start} to={window_end}"
-                )
 
-            records.extend(
-                AMFIService.parse_nav_file(
-                    report_text,
-                    historical=True,
-                    scheme_codes=requested_codes,
-                )
+            report_text = ""
+            last_error = None
+            for attempt in range(AMFIService.HISTORICAL_MAX_RETRIES):
+                try:
+                    response = requests.get(
+                        AMFIService.NAV_HISTORY_URL,
+                        params=params,
+                        headers=headers,
+                        timeout=90,
+                    )
+                    response.raise_for_status()
+                    candidate = response.text or ""
+                    if not AMFIService._is_historical_report(candidate):
+                        raise RuntimeError(
+                            "AMFI historical response was not a NAV report "
+                            f"(bytes={len(response.content)})"
+                        )
+                    report_text = candidate
+                    break
+                except Exception as exc:
+                    last_error = exc
+                    if attempt + 1 < AMFIService.HISTORICAL_MAX_RETRIES:
+                        time.sleep(1.5 * (attempt + 1))
+
+            if not report_text:
+                raise RuntimeError(
+                    "Unable to download AMFI historical NAV report "
+                    f"for {window_start} to {window_end}"
+                ) from last_error
+
+            window_records = AMFIService.parse_nav_file(
+                report_text,
+                historical=True,
+                scheme_codes=requested_codes,
             )
+            if not window_records:
+                raise RuntimeError(
+                    "AMFI returned a valid historical report but no requested "
+                    f"scheme rows for {window_start} to {window_end}; "
+                    f"requested={sorted(requested_codes)}"
+                )
+            records.extend(window_records)
             window_start = window_end + relativedelta(days=1)
 
         deduped = {
@@ -639,16 +658,20 @@ class AMFIService:
         if not lines:
             return False
 
-        header_tokens = {
-            token.strip().lower()
-            for token in lines[0].split(";")
-        }
+        # AMFI may prepend whitespace/BOM or informational lines. Find the
+        # actual tabular header instead of assuming it is line zero.
         required = {
             "scheme code",
+            "scheme name",
             "net asset value",
             "date",
         }
-        return required.issubset(header_tokens)
+        return any(
+            required.issubset(
+                {token.strip().lower() for token in line.split(";")}
+            )
+            for line in lines[:20]
+        )
 
     @staticmethod
     def _build_record(
@@ -863,7 +886,7 @@ class AMFIService:
             parts = [part.strip() for part in line.split(";")]
 
             if historical and parts[0].strip().lower() == "scheme code":
-                normalized = [part.lower() for part in parts]
+                normalized = [part.strip().lower() for part in parts]
                 historical_positions = {
                     "scheme_code": normalized.index("scheme code"),
                     "scheme_name": (
@@ -916,6 +939,12 @@ class AMFIService:
     # per batch, letting other connections interleave, while each
     # batch is still atomic (no partial-batch corruption on error).
     NAV_IMPORT_BATCH_SIZE = 500
+
+    # AMFI's historical report is large and can intermittently return an
+    # incomplete/stub response for long ranges. Small chunks make retries
+    # reliable while still keeping the importer independent of third-party APIs.
+    HISTORICAL_WINDOW_DAYS = 7
+    HISTORICAL_MAX_RETRIES = 3
 
     # Pause between batch transactions so the write lock is
     # actually released for a moment before the next batch's

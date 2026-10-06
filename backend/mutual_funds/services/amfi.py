@@ -666,7 +666,10 @@ class AMFIService:
                 # Do not accept an HTTP 200 WebForms/error page as if it
                 # were the downloadable report. This was the reason the
                 # previous importer could silently return zero records.
-                if response.ok and AMFIService._is_historical_report(text):
+                if (
+                    200 <= int(getattr(response, "status_code", 0) or 0) < 300
+                    and AMFIService._is_historical_report(text)
+                ):
                     return text
 
                 preview = " ".join(text.split())[:240]
@@ -752,7 +755,6 @@ class AMFIService:
                     continue
             if nav_values:
                 return True
-        return False
         return False
 
     @staticmethod
@@ -1025,7 +1027,7 @@ class AMFIService:
     # AMFI's historical report is large and can intermittently return an
     # incomplete/stub response for long ranges. Small chunks make retries
     # reliable while still keeping the importer independent of third-party APIs.
-    HISTORICAL_WINDOW_DAYS = 7
+    HISTORICAL_WINDOW_DAYS = 90
     HISTORICAL_MAX_RETRIES = 3
 
     # Pause between batch transactions so the write lock is

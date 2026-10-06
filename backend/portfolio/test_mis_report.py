@@ -82,6 +82,47 @@ class MISReportAPITests(TestCase):
         self.addCleanup(self.reference_rate_patcher.stop)
         self.addCleanup(self.bse500_rate_patcher.stop)
 
+    def test_mf_historical_nav_falls_back_to_market_price_history(self):
+        scheme = MutualFundScheme.objects.create(
+            owner=self.user,
+            family=self.family,
+            scheme_name="MIS Historical Fund",
+            scheme_code="MIS-HIST-001",
+            isin_growth="INF000MISMF01",
+        )
+        MutualFundTransaction.objects.create(
+            owner=self.user,
+            family=self.family,
+            family_name="DAJ",
+            scheme=scheme,
+            transaction_type=MutualFundTransactionType.PURCHASE,
+            transaction_date=date(2025, 4, 10),
+            units=Decimal("100"),
+            nav=Decimal("20"),
+            amount=Decimal("2000"),
+        )
+        history_asset = Asset.objects.create(
+            owner=self.user,
+            family=self.family,
+            name="MIS Historical Fund Price",
+            category="MUTUAL_FUND",
+            isin="INF000MISMF01",
+        )
+        MarketPrice.objects.create(
+            asset=history_asset,
+            date=date(2026, 3, 31),
+            close_price=Decimal("27.50"),
+            source=DataSource.AMFI,
+        )
+
+        value = MISReportService._mf_nav(
+            scheme.id,
+            date(2026, 3, 31),
+            {},
+        )
+
+        self.assertEqual(value, Decimal("27.50"))
+
     def test_report_requires_authentication(self):
         self.client.force_authenticate(user=None)
         response = self.client.get("/api/portfolio/mis-report/")

@@ -13,6 +13,9 @@ from market_data.services.yahoo_finance import (
 from market_data.services.mutual_fund_nav_service import (
     MutualFundNAVService,
 )
+from market_data.services.mutual_fund_history_backfill import (
+    MutualFundHistoryBackfillService,
+)
 from market_data.services.bond_price_service import (
     BondPriceService,
 )
@@ -219,6 +222,36 @@ class MarketDataManager:
 
         nav = nav_record["nav"]
         nav_date = nav_record["date"]
+
+        # Keep historical MF valuation data available for MIS/reporting.
+        # The existing backfill service stores the history in MarketPrice,
+        # while this method supplies the latest NAV used by the portfolio.
+        # Only backfill when the stored AMFI history does not reach the
+        # earliest transaction, so normal refreshes remain cheap.
+        earliest_transaction_date = cls.get_earliest_transaction_date(asset)
+        earliest_amfi_date = (
+            MarketPrice.objects
+            .filter(
+                asset=asset,
+                source=DataSource.AMFI,
+            )
+            .order_by("date", "id")
+            .values_list("date", flat=True)
+            .first()
+        )
+        if (
+            earliest_transaction_date is not None
+            and (
+                earliest_amfi_date is None
+                or earliest_amfi_date > earliest_transaction_date
+            )
+        ):
+            try:
+                MutualFundHistoryBackfillService.backfill_for_assets([asset])
+            except Exception:
+                # Latest NAV refresh must not fail because historical
+                # backfill is temporarily unavailable.
+                pass
 
         if nav_date is None:
 
@@ -788,6 +821,18 @@ class MarketDataManager:
             )
         )
 
+        earliest_transaction_date = cls.get_earliest_transaction_date(asset)
+        earliest_yahoo_date = (
+            MarketPrice.objects
+            .filter(
+                asset=asset,
+                source=DataSource.YAHOO_FINANCE,
+            )
+            .order_by("date", "id")
+            .values_list("date", flat=True)
+            .first()
+        )
+
         try:
 
             # ==================================================
@@ -840,6 +885,27 @@ class MarketDataManager:
             # ==================================================
 
             else:
+
+                # A previous implementation treated an existing Yahoo row as
+                # proof that the full history had been downloaded. That leaves
+                # older positions without their opening-period price when the
+                # first stored row is newer than the earliest transaction.
+                if (
+                    earliest_transaction_date is not None
+                    and earliest_yahoo_date is not None
+                    and earliest_transaction_date < earliest_yahoo_date
+                ):
+                    try:
+                        YahooFinanceService.save_history(
+                            asset=asset,
+                            symbol=yahoo_symbol,
+                            start=earliest_transaction_date,
+                            end=earliest_yahoo_date + timedelta(days=1),
+                        )
+                    except Exception:
+                        # Continue with the normal incremental refresh. Existing
+                        # history is still valid even if the backfill is down.
+                        pass
 
                 start_date = (
                     latest_date

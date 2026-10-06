@@ -711,17 +711,15 @@ class AMFIService:
 
         required = {
             "scheme code",
-            "scheme name",
             "net asset value",
             "date",
         }
-        if any(
-            required.issubset(
-                {token.strip().lower() for token in line.split(";")}
-            )
-            for line in lines[:100]
-        ):
-            return True
+        for line in lines[:100]:
+            tokens = {token.strip().lower() for token in line.split(";")}
+            if required.issubset(tokens) and (
+                "scheme name" in tokens or "nav name" in tokens
+            ):
+                return True
 
         # AMFI has changed/added report preamble and header text over time.
         # A real historical report is still identifiable by its 8-column
@@ -735,16 +733,26 @@ class AMFIService:
         # Some AMFI responses omit the recognizable header but still contain
         # valid historical rows. Validate the payload structurally rather than
         # requiring a particular requested scheme to appear in this chunk.
+        # The current report puts NAV at index 6; older variants used index 4.
         for line in lines:
             parts = [part.strip() for part in line.split(";")]
             if len(parts) < 8 or not parts[0].isdigit():
                 continue
             try:
-                Decimal(parts[4])
                 datetime.strptime(parts[-1], "%d-%b-%Y")
-            except (InvalidOperation, ValueError, TypeError):
+            except (ValueError, TypeError):
                 continue
-            return True
+            nav_values = []
+            for index in (6, 4, len(parts) - 2):
+                if index >= len(parts):
+                    continue
+                try:
+                    nav_values.append(Decimal(parts[index]))
+                except (InvalidOperation, ValueError, TypeError):
+                    continue
+            if nav_values:
+                return True
+        return False
         return False
 
     @staticmethod

@@ -136,7 +136,7 @@ class MISReportService:
         if key not in cache:
             nav = (
                 MutualFundNAV.objects
-                .filter(scheme_id=scheme.id, date__lte=as_of)
+                .filter(scheme_id=scheme_id, date__lte=as_of)
                 .order_by("-date", "-id")
                 .values_list("nav", flat=True)
                 .first()
@@ -1514,7 +1514,7 @@ class MISReportService:
         ), True
 
     @classmethod
-    def _ensure_portfolio_history(cls, rows, opening_date, as_of):
+    def _ensure_portfolio_history(cls, rows, opening_date, as_of, family=None):
         """
         Repair missing historical market data before the MIS valuation pass.
 
@@ -1602,6 +1602,7 @@ class MISReportService:
             rows,
             opening_date=opening_date,
             as_of=as_of,
+            family=family,
         )
         price_cache = {}
         nav_cache = {}

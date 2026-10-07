@@ -2058,7 +2058,7 @@ class MISReportService:
                     continue
 
     @classmethod
-    def build(cls, family, from_date=None, to_date=None):
+    def build(cls, family, from_date=None, to_date=None, ensure_history=False):
         if from_date is None and to_date is None:
             to_date = cls._latest_reporting_date(family)
             from_date = cls._period_start(to_date)
@@ -2075,6 +2075,13 @@ class MISReportService:
         period_start = from_date
 
         rows = cls._base_rows(family)
+        if ensure_history:
+            cls._ensure_mf_history(
+                rows,
+                opening_date,
+                as_of,
+                extra_dates=[prior_month_end],
+            )
         cls._ensure_portfolio_history(
             rows,
             opening_date=opening_date,

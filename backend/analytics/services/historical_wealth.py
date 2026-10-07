@@ -1508,12 +1508,23 @@ class HistoricalWealthAnalytics:
                 # for these assets; this prevents any stale/future automatic
                 # observation from leaking into historical wealth.
                 if not getattr(asset, "symbol", None):
-                    price_values = [
-                        value
+                    # An unidentifiable asset must not be valued from an
+                    # automatic quote by itself. However, when the asset has
+                    # an explicit manual history, automatic observations
+                    # before the first manual effective date are still valid
+                    # historical context; the manual series below overrides
+                    # them from its selected effective date onward.
+                    has_manual_history = any(
+                        len(value) >= 3 and value[2] == DataSource.MANUAL
                         for value in price_values
-                        if len(value) >= 3
-                        and value[2] == DataSource.MANUAL
-                    ]
+                    )
+                    if not has_manual_history:
+                        price_values = [
+                            value
+                            for value in price_values
+                            if len(value) >= 3
+                            and value[2] == DataSource.MANUAL
+                        ]
 
                 price, pointer = (
                     HistoricalWealthAnalytics

@@ -210,19 +210,25 @@ class ArticleDeduplicator:
             # as "First alert article" and "Second alert article". Require at
             # least one meaningful entity token in common before treating two
             # different headlines as the same event.
-            if candidate_entities & article_entities:
+            candidate_title_entities = _meaningful_entity_tokens(candidate.title)
+            article_title_entities = _meaningful_entity_tokens(article.normalized_title)
+            # The matched query is often identical for every article returned
+            # for one holding. It is useful as context, but by itself it is
+            # not enough to collapse generic headlines such as "First alert
+            # article" and "Second alert article".
+            if candidate_title_entities & article_title_entities:
                 return article
 
         candidate_family = _event_family(candidate.title)
         if candidate_family and candidate_entities:
+            candidate_title_entities = _meaningful_entity_tokens(candidate.title)
             for article in recent_candidates:
                 if _event_family(article.normalized_title) != candidate_family:
                     continue
-                article_entities = _meaningful_entity_tokens(
-                    article.matched_query,
+                article_title_entities = _meaningful_entity_tokens(
                     article.normalized_title,
                 )
-                if candidate_entities & article_entities:
+                if candidate_title_entities & article_title_entities:
                     return article
 
         return None

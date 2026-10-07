@@ -12,6 +12,19 @@ export class WealthApiService {
 
   private readonly baseUrl = `${environment.apiUrl}/api/analytics/wealth`;
 
+  recalculate(): Observable<any> {
+    const csrfToken = this.getCookie('csrftoken');
+    const headers = csrfToken
+      ? new HttpHeaders({ 'X-CSRFToken': csrfToken })
+      : undefined;
+
+    return this.http.post<any>(
+      `${this.baseUrl}/recalculate/`,
+      {},
+      { headers, withCredentials: true },
+    );
+  }
+
   getSummary(family?: string): Observable<any> {
     let params = new HttpParams();
     if (family) params = params.set('family', family);

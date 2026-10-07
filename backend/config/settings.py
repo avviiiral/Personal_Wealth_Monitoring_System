@@ -13,10 +13,13 @@ https://docs.djangoproject.com/en/5.2/ref/settings/
 import os
 from pathlib import Path
 
+from django.core.management.utils import get_random_secret_key
 from dotenv import load_dotenv
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 load_dotenv(BASE_DIR / ".env")
+
+from config.pwms_config import get as get_pwms_config  # noqa: E402
 
 
 def _env_bool(name, default):
@@ -47,11 +50,13 @@ def _env_int(name, default):
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/5.2/howto/deployment/checklist/
 
-SECRET_KEY = os.environ.get(
-    "SECRET_KEY",
-    'django-insecure-duf0^3c*i0zzokar066d50xhzp%0i3j5h40dech-t%%l*=us8k',
-)
-DEBUG = _env_bool("DEBUG", True)
+DEBUG = _env_bool("DEBUG", False)
+SECRET_KEY = os.environ.get("SECRET_KEY", "").strip()
+if not SECRET_KEY:
+    if DEBUG:
+        SECRET_KEY = get_random_secret_key()
+    else:
+        raise RuntimeError("SECRET_KEY must be configured when DEBUG=False.")
 ALLOWED_HOSTS = _env_list("ALLOWED_HOSTS", [])
 
 INSTALLED_APPS = [
@@ -111,16 +116,16 @@ if DATABASE_ENGINE in ('postgresql', 'postgres'):
     DATABASES = {
         'default': {
             'ENGINE': 'django.db.backends.postgresql',
-            'NAME': os.environ.get('POSTGRES_DB', 'pwms'),
-            'USER': os.environ.get('POSTGRES_USER', 'pwms_user'),
+            'NAME': os.environ.get('POSTGRES_DB', get_pwms_config('database', 'postgres_db', 'pwms')),
+            'USER': os.environ.get('POSTGRES_USER', get_pwms_config('database', 'postgres_user', 'pwms_user')),
             'PASSWORD': os.environ.get('POSTGRES_PASSWORD', ''),
-            'HOST': os.environ.get('POSTGRES_HOST', 'localhost'),
-            'PORT': os.environ.get('POSTGRES_PORT', '5432'),
+            'HOST': os.environ.get('POSTGRES_HOST', get_pwms_config('database', 'postgres_host', 'localhost')),
+            'PORT': os.environ.get('POSTGRES_PORT', get_pwms_config('database', 'postgres_port', '5432')),
             # Reuse healthy PostgreSQL connections across requests. This
             # reduces connection setup overhead under concurrent users while
             # remaining deployment-configurable (set POSTGRES_CONN_MAX_AGE=0
             # when an external pooler should own connection lifetime).
-            'CONN_MAX_AGE': _env_int('POSTGRES_CONN_MAX_AGE', 60),
+            'CONN_MAX_AGE': _env_int('POSTGRES_CONN_MAX_AGE', get_pwms_config('database', 'postgres_conn_max_age', 60)),
             'CONN_HEALTH_CHECKS': True,
         }
     }
@@ -131,7 +136,7 @@ else:
             'ENGINE': 'django.db.backends.sqlite3',
             'NAME': Path(SQLITE_DB_PATH) if SQLITE_DB_PATH else BASE_DIR / 'db.sqlite3',
             'OPTIONS': {
-                'timeout': 60,
+                'timeout': get_pwms_config('database', 'sqlite_timeout_seconds', 60),
             },
         }
     }
@@ -146,7 +151,7 @@ def _configure_sqlite_pragmas(sender, connection, **kwargs):
     cursor = connection.cursor()
     cursor.execute('PRAGMA journal_mode=WAL;')
     cursor.execute('PRAGMA synchronous=NORMAL;')
-    cursor.execute('PRAGMA busy_timeout=60000;')
+    cursor.execute(f"PRAGMA busy_timeout={get_pwms_config('database', 'sqlite_busy_timeout_ms', 60000)};")
     cursor.close()
 
 
@@ -160,7 +165,7 @@ AUTH_PASSWORD_VALIDATORS = [
 ]
 
 LANGUAGE_CODE = 'en-us'
-TIME_ZONE = 'Asia/Kolkata'
+TIME_ZONE = get_pwms_config('market', 'timezone', 'UTC')
 USE_I18N = True
 USE_TZ = True
 
@@ -180,9 +185,9 @@ REST_FRAMEWORK = {
 }
 
 CORS_ALLOW_ALL_ORIGINS = False
-CORS_ALLOWED_ORIGINS = _env_list('CORS_ALLOWED_ORIGINS', ['http://localhost:4200'])
+CORS_ALLOWED_ORIGINS = _env_list('CORS_ALLOWED_ORIGINS', [get_pwms_config('deployment', 'dev_frontend_origin', 'http://localhost:4200')])
 CORS_ALLOW_CREDENTIALS = True
-CSRF_TRUSTED_ORIGINS = _env_list('CSRF_TRUSTED_ORIGINS', ['http://localhost:4200'])
+CSRF_TRUSTED_ORIGINS = _env_list('CSRF_TRUSTED_ORIGINS', [get_pwms_config('deployment', 'dev_frontend_origin', 'http://localhost:4200')])
 SESSION_COOKIE_SECURE = _env_bool('SESSION_COOKIE_SECURE', False)
 CSRF_COOKIE_SECURE = _env_bool('CSRF_COOKIE_SECURE', False)
 SECURE_SSL_REDIRECT = _env_bool('SECURE_SSL_REDIRECT', False)
@@ -190,10 +195,7 @@ SECURE_SSL_REDIRECT = _env_bool('SECURE_SSL_REDIRECT', False)
 # Browser Web Push (VAPID). Keep the private key server-side only.
 WEB_PUSH_VAPID_PUBLIC_KEY = os.environ.get("WEB_PUSH_VAPID_PUBLIC_KEY", "").strip()
 WEB_PUSH_VAPID_PRIVATE_KEY = os.environ.get("WEB_PUSH_VAPID_PRIVATE_KEY", "").strip()
-WEB_PUSH_VAPID_SUBJECT = os.environ.get(
-    "WEB_PUSH_VAPID_SUBJECT",
-    "mailto:admin@example.com",
-).strip()
+WEB_PUSH_VAPID_SUBJECT = os.environ.get("WEB_PUSH_VAPID_SUBJECT", "").strip()
 WEB_PUSH_ENABLED = bool(
     WEB_PUSH_VAPID_PUBLIC_KEY and WEB_PUSH_VAPID_PRIVATE_KEY
 )
@@ -214,8 +216,8 @@ LOGS_DIR.mkdir(exist_ok=True)
 # require searching through one large application log.  Each file rotates at
 # 10 MB and keeps the five most recent backups.
 LOG_FORMAT = '%(asctime)s %(levelname)s %(name)s: %(message)s'
-LOG_MAX_BYTES = 10 * 1024 * 1024
-LOG_BACKUP_COUNT = 5
+LOG_MAX_BYTES = get_pwms_config('logging', 'max_bytes', 10485760)
+LOG_BACKUP_COUNT = get_pwms_config('logging', 'backup_count', 5)
 
 
 def _rotating_log_handler(filename, level='INFO'):

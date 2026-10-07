@@ -40,7 +40,7 @@
 
 **PWMS** is a full-stack **personal and family wealth management system** for investors who hold **Indian equities, ETFs, bonds, Sovereign Gold Bonds (SGBs), mutual funds and SIPs** and want one place that _computes_ the numbers instead of estimating them.
 
-Every figure you see — holdings, invested value, current value, unrealized and realized P&L, **XIRR**, **CAGR** and asset allocation — is calculated **server-side from your real transactions**. Prices stay fresh through automatic background refreshes (**Yahoo Finance** for stocks and ETFs, **AMFI** for mutual-fund NAVs), and the AI layer sitting on top of it never invents or recalculates anything.
+Every figure you see — holdings, invested value, current value, unrealized and realized P&L, **XIRR**, **CAGR** and asset allocation — is calculated **server-side from your real transactions**. Prices stay fresh through automatic background refreshes (**Yahoo Finance** for stocks and ETFs, **AMFI** for mutual-fund NAVs). Historical MIS valuations use persisted market/NAV history prepared by background jobs, so the interactive report does not perform live provider downloads.
 
 It is built for **households, not just individuals**: a four-tier role hierarchy (System Owner / Super User / Admin / Viewer) plus many-to-many family membership lets several people share visibility into the same portfolio — or several portfolios — with permissions enforced independently on the backend, not merely hidden in the UI.
 
@@ -56,7 +56,7 @@ It is built for **households, not just individuals**: a four-tier role hierarchy
 | 🪶  | **Low infrastructure overhead** | SQLite by default; optional Windows Task Scheduler for automatic hourly market-price refresh; no Celery or Redis required |
 | 📤  | **Export anything**           | Transactions, holdings and summaries to Excel or PDF                                          |
 | 📥  | **Controlled transaction imports** | Upload history, row-level failures and a downloadable standard transaction format              |
-| 📊  | **MIS reporting**             | IPS, Data Sheet and Fund Type-wise Summary with historical valuation and Excel download       |
+| 📊  | **MIS reporting**             | IPS, Data Sheet, Tax Report and Fund Type-wise Summary with persisted historical valuation and Excel download |
 | 🔢  | **Flexible display units**    | View monetary values as Amount, Lakhs or Crores without changing stored rupee values          |
 | 🔐  | **Backend-enforced security** | Every request re-derives role and family scope from the database                              |
 
@@ -87,6 +87,21 @@ The application uses the following external data sources for market and investme
 | Corporate filings | NSE public Corporate Announcements feed; BSE via an authorized/configured feed |
 | Portfolio News analysis | Deterministic local rules — no hosted AI model or paid AI API required |
 
+### 📈 Watch List benchmark and indexed-performance charts
+
+Watch List benchmark comparisons use **official Nifty 50 Gross TRI** data from NSE Indices and BSE 500 TRI data from the configured BSE source/fallback path.
+
+The indexed-performance chart is deliberately protected against sparse source responses:
+
+- Nifty 50 TRI history is accepted only when it has sufficient row density and covers the requested date range.
+- If the Nifty endpoint returns sparse or incomplete data, PWMS automatically retries using smaller historical windows instead of rendering a sparse annual-point series.
+- Mutual-fund benchmark charts use the shared **AMFI master NAV history** for the selected fund.
+- Older Watch List entries that only contain the six performance-anchor snapshots (`1M`, `3M`, `6M`, `1Y`, `3Y`, `5Y`) are automatically backfilled with actual AMFI historical NAV observations when the chart is opened.
+- The chart uses actual observations; PWMS does not interpolate synthetic NAV or benchmark values merely to make the line look denser.
+- Historical coverage is validated using configurable minimum row density and date coverage thresholds before a source is considered complete.
+- The selected chart period (`1M`, `3M`, `6M`, `1Y`, `3Y`, or `5Y`) determines the AMFI history that is prepared.
+
+The thresholds and benchmark endpoints are centralized in [`backend/config/pwms_config.json`](./backend/config/pwms_config.json), so source URLs, timeouts and density requirements can be changed without editing the benchmark service code.
 ## 🚀 Quick start
 
 > Full walkthrough with troubleshooting: **[SETUP.md](./SETUP.md)**. Prerequisites: Git, Python 3.12 (3.11+), Node.js 20+ (22 recommended).
@@ -523,6 +538,24 @@ The **MIS Report** is available at **Portfolio → MIS Report** and contains the
 - **Standard transaction workbook** — the separate transaction template download is available from Settings and is intended for future transaction imports.
 - **Indian INR formatting** — monetary values in the downloaded **Data Sheet** and **Tax Report** use the **₹ symbol with Indian lakh/crore comma grouping** (for example, `₹1,20,880.00`). Quantity/unit columns remain numeric without the currency symbol.
 - **Automatic reference-price refresh** — MIS reference prices are refreshed automatically by the background scheduler every 30 minutes, are included in the scheduled refresh flow, and are refreshed again immediately before an MIS Excel download. The refresh uses stored market history and supported Yahoo Finance symbols; unavailable third-party data is not fabricated.
+
+### 🗂️ MIS historical valuation data
+
+MIS historical valuations use **stored market history**, not live provider calls while the interactive report is being generated.
+
+- **Mutual-fund historical NAVs** are stored in the shared **AMFI master NAV history** (AMFIMasterNAV) and are the source used by MIS for historical MF valuations.
+- The MIS history prefetcher keeps held schemes covered for approximately **five years** and imports only missing date ranges.
+- Historical AMFI coverage is prepared automatically **after transaction imports** and during the **daily scheduled refresh**.
+- The interactive MIS endpoint is intentionally **database-only** for historical MF valuation. It does not wait for an AMFI download while the user is viewing the report.
+- The explicit **Excel download** path can perform a targeted AMFI history backfill when required before generating the workbook.
+- Existing historical price/NAV rows are reused across MIS valuations instead of downloading the same history repeatedly.
+- The manual historical import command supports a complete date range when an initial database backfill is required:
+
+```bash
+python manage.py fetch_amfi_nav --from-date 2025-10-01 --to-date 2026-10-05
+```
+
+This architecture keeps the report responsive while ensuring historical Data Sheet, IPS and Tax Report valuations can be reconstructed from persisted observations.
 
 ### 🔐 Settings
 
@@ -1310,7 +1343,7 @@ See [SETUP.md](./SETUP.md#84-background-web-push-notifications) for the full set
 
 ## 🚀 Deployment and refresh performance
 
-The deployment refresh path includes protections for production-style multi-worker environments and avoids unnecessary market-data work.
+The deployment refresh path includes protections for production-style multi-worker environments and avoids unnecessary market-data work. Benchmark history and Watch List chart preparation also validate data density before accepting historical series.
 
 - **PostgreSQL advisory locks** prevent concurrent scheduled/manual market refresh workers from performing the same refresh simultaneously.
 - Advisory locking is applied to the scheduled refresh command, one-off market-price updates, and the market-price scheduler.
@@ -1326,12 +1359,12 @@ The deployment refresh path includes protections for production-style multi-work
 
 ## 🔧 Configuration
 
-Settings load from **`backend/.env`** (template: [`backend/.env.example`](./backend/.env.example)). Every value has a development-safe default baked into `config/settings.py`, so **local development works with no `.env` at all**; you only need real values for a deployment.
+Settings are split into two layers: **secrets and deployment-specific values** come from `backend/.env` (template: [`backend/.env.example`](./backend/.env.example)), while **non-secret application/provider settings** are centralized in [`backend/config/pwms_config.json`](./backend/config/pwms_config.json). The Python loader [`backend/config/pwms_config.py`](./backend/config/pwms_config.py) reads that JSON and supports the optional `PWMS_CONFIG_OVERRIDES` environment variable for deployment-specific JSON overrides. `SECRET_KEY` is required when `DEBUG=False`; when `DEBUG=True`, Django generates a development-only random key at startup.
 
 | Variable                                                                                  | Purpose                                                     | Local default                               | Production / template value                                                                                   |
 | ----------------------------------------------------------------------------------------- | ----------------------------------------------------------- | ------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
-| `SECRET_KEY`                                                                              | Django's cryptographic signing key                          | insecure placeholder                        | A random key — never committed                                                                                |
-| `DEBUG`                                                                                   | Debug mode                                                  | `True`                                      | `False`                                                                                                       |
+| `SECRET_KEY`                                                                              | Django's cryptographic signing key                          | Generated automatically only when `DEBUG=True` | Required when `DEBUG=False`; random key — never committed                                                     |
+| `DEBUG`                                                                                   | Debug mode                                                  | `False`                                     | `False`                                                                                                       |
 | `ALLOWED_HOSTS`                                                                           | Comma-separated allowed hosts                               | _(empty)_                                   | Your domain(s) / IP(s) — Django rejects everything else once `DEBUG=False`                                    |
 | `CORS_ALLOWED_ORIGINS`                                                                    | Allowed frontend origins                                    | `http://localhost:4200`                     | Exact `https://` origin of the frontend                                                                       |
 | `CSRF_TRUSTED_ORIGINS`                                                                    | Trusted origins for CSRF                                    | `http://localhost:4200`                     | Same as above                                                                                                 |
@@ -1358,7 +1391,7 @@ Settings load from **`backend/.env`** (template: [`backend/.env.example`](./back
 
 > ⚠️ **Turn the `*_SECURE` flags and `SECURE_SSL_REDIRECT` on only after HTTPS is working.** Browsers refuse `Secure` cookies over plain HTTP, so enabling them early breaks login.
 
-**Frontend:** the backend URL lives in exactly one place — `frontend/src/environments/environment.ts` (`apiUrl`, `http://localhost:8000` for development). Production builds automatically swap in `environment.prod.ts` via `fileReplacements` in `angular.json`.
+**Frontend:** the backend URL lives in `frontend/src/environments/environment.ts` for development (`http://localhost:8000`). The production environment currently uses an empty `apiUrl`, so production builds expect `/api` to be routed by the same-origin reverse proxy. If your deployment uses a separate backend origin, set `frontend/src/environments/environment.prod.ts` before building.
 
 ---
 
@@ -1373,13 +1406,14 @@ Run from `backend/` with the virtual environment active: `python manage.py <comm
 | `ingest_exchange_filings`         | `filing_intelligence` | Ingest corporate filings for a selected exchange; supports `--exchange nse|bse`, `--hours` and dry-run workflows |
 | `diagnose_corporate_filings`      | `filing_intelligence` | Read-only diagnostics for filing identifier coverage, portfolio matches, holding-user matches, watchlists and existing filing alerts |
 | `gemini_usage`                   | `ai`             | Summary of Gemini token usage                                                |
-| `fetch_amfi_nav`                 | `mutual_funds`   | Download and import the current AMFI NAV file (batched commits)              |
+| `fetch_amfi_nav`                 | `mutual_funds`   | Import latest AMFI NAV master, or historical AMFI master data with `--from-date` / `--to-date` |
 | `execute_sips`                   | `mutual_funds`   | Execute all due SIP installments for a user                                  |
 | `rebuild_holdings`               | `portfolio`      | Rebuild holdings from transactions — `--user-id <id>`                        |
 | `load_security_master_data`      | `investments`    | Load researched sector / cap-type / P/E / P/B / ROE data into SecurityMaster |
 | `link_security_master`           | `investments`    | Link Assets to their SecurityMaster row by ISIN _(dry-run by default)_       |
 | `import_amfi_cap_classification` | `investments`    | Classify stocks Large / Mid / Small Cap by AMFI rank _(dry-run by default)_  |
 | `generate_web_push_keys`           | `portfolio_news` | Generate URL-safe VAPID keys for browser Web Push |
+| `run_scheduled_refresh`           | `market_data`    | Run the complete scheduled external-data refresh pipeline, including AMFI master refresh and MIS historical prefetch |
 Standard Django commands you'll use as well: `migrate`, `check`, `createsuperuser`, `changepassword <username>`, `shell`, `test`.
 
 > Tip: run any command with `--help` to see its options — including how to apply the _dry-run by default_ commands.

@@ -1,0 +1,403 @@
+{
+  "market": {
+    "timezone": "Asia/Kolkata",
+    "open": "09:15",
+    "close": "15:30"
+  },
+  "news": {
+    "event_query_suffixes": [
+      "earnings",
+      "regulatory",
+      "acquisition",
+      "management",
+      "litigation",
+      "order"
+    ],
+    "max_queries_per_holding": 15,
+    "max_underlying_queries_per_holding": 5,
+    "min_symbol_length_for_standalone_query": 3,
+    "sector_query_template": "Indian {sector} sector",
+    "max_macro_queries_per_holding": 2,
+    "macro_topics_by_sector": {
+      "bank": [
+        "RBI",
+        "interest rates",
+        "bond yields"
+      ],
+      "financial": [
+        "RBI",
+        "interest rates"
+      ],
+      "nbfc": [
+        "RBI",
+        "interest rates"
+      ],
+      "insurance": [
+        "interest rates",
+        "IRDAI"
+      ],
+      "it": [
+        "USD/INR"
+      ],
+      "software": [
+        "USD/INR"
+      ],
+      "technology": [
+        "USD/INR"
+      ],
+      "oil": [
+        "crude oil prices"
+      ],
+      "energy": [
+        "crude oil prices"
+      ],
+      "gas": [
+        "crude oil prices"
+      ],
+      "power": [
+        "crude oil prices"
+      ],
+      "auto": [
+        "fuel prices"
+      ],
+      "automobile": [
+        "fuel prices"
+      ],
+      "pharma": [
+        "USFDA"
+      ],
+      "healthcare": [
+        "USFDA"
+      ],
+      "fmcg": [
+        "inflation"
+      ],
+      "consumer": [
+        "inflation"
+      ],
+      "metal": [
+        "commodity prices"
+      ],
+      "mining": [
+        "commodity prices"
+      ],
+      "steel": [
+        "commodity prices"
+      ],
+      "infrastructure": [
+        "government infrastructure policy"
+      ],
+      "construction": [
+        "government infrastructure policy"
+      ],
+      "cement": [
+        "government infrastructure policy"
+      ],
+      "export": [
+        "USD/INR",
+        "tariffs"
+      ],
+      "textile": [
+        "tariffs"
+      ],
+      "real estate": [
+        "interest rates"
+      ]
+    },
+    "tier_1_publishers": [
+      "reuters",
+      "bloomberg",
+      "cnbc",
+      "financial times",
+      "economic times",
+      "moneycontrol",
+      "business standard",
+      "livemint",
+      "mint",
+      "nse",
+      "bse",
+      "sebi",
+      "rbi",
+      "reserve bank of india",
+      "ministry of",
+      "pib.gov.in",
+      "press information bureau"
+    ],
+    "tier_2_publishers": [
+      "the hindu",
+      "hindu businessline",
+      "business today",
+      "financial express",
+      "ndtv profit",
+      "ndtv business",
+      "zee business",
+      "cnbc-tv18",
+      "the economic times",
+      "outlook business",
+      "forbes india",
+      "fortune india",
+      "wall street journal",
+      "wsj",
+      "the times of india",
+      "hindustan times",
+      "livelaw"
+    ],
+    "source_quality_weights": {
+      "tier_1": 1,
+      "tier_2": 0.75,
+      "tier_3": 0.5
+    },
+    "impact_thresholds": {
+      "critical": 81,
+      "high": 61,
+      "moderate": 41,
+      "low": 21
+    },
+    "recency": {
+      "fresh_days": 1,
+      "floor_days": 7,
+      "floor_weight": 0.5
+    },
+    "unusual_activity": {
+      "recent_hours": 24,
+      "baseline_days": 30,
+      "minimum_recent_count": 5,
+      "baseline_multiplier": 2.5
+    }
+  },
+  "benchmarks": {
+    "period_days": {
+      "1M": 31,
+      "3M": 92,
+      "6M": 184,
+      "1Y": 365,
+      "3Y": 1095,
+      "5Y": 1825
+    },
+    "tickers": {
+      "Nifty 50": "^NSEI",
+      "BSE 500": "BSE500T"
+    },
+    "bse_tri_proxy_tickers": [
+      "HDFCBSE500.NS",
+      "BSE500IETF.NS"
+    ],
+    "bse_api": "https://api.bseindia.com/BseIndiaAPI/api/ProduceCSVForDate/w",
+    "nifty_tri_urls": [
+      "https://www.niftyindices.com/BackPage/getTotalReturnIndexString",
+      "https://www.niftyindices.com/Backpage.aspx/getTotalReturnIndexString",
+      "https://www.niftyindices.com/Backpage/getTotalReturnIndexString"
+    ],
+    "nifty_historical_page": "https://www.niftyindices.com/reports/historical-data",
+    "nifty_headers": {
+      "Content-Type": "application/json; charset=UTF-8",
+      "Accept": "application/json, text/plain, */*",
+      "X-Requested-With": "XMLHttpRequest",
+      "Accept-Language": "en-GB,en-US;q=0.9,en;q=0.8",
+      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0 Safari/537.36"
+    },
+    "bse_headers": {
+      "Accept": "text/csv,application/json,text/plain,*/*",
+      "Referer": "https://www.bseindia.com/",
+      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0 Safari/537.36"
+    },
+    "nifty_bootstrap_timeout_seconds": 15,
+    "nifty_request_timeout_seconds": 60,
+    "bse_request_timeout_seconds": 45,
+    "minimum_history_rows": 20,
+    "minimum_daily_coverage_ratio": 0.5
+  },
+  "providers": {
+    "google_news": {
+      "base_url": "https://news.google.com/rss/search",
+      "timeout_seconds": 15,
+      "language": "en-IN",
+      "country": "IN",
+      "user_agent": "Mozilla/5.0 (compatible; PWMS-PortfolioNewsAgent/1.0; +https://github.com/avviiiral/Personal_Wealth_Monitoring)"
+    },
+    "apmi": {
+      "report_url": "https://www.apmiindia.org/apmi/welcomeiaperformance.htm?action=PMSmenu",
+      "timeout_seconds": 60,
+      "user_agent": "PWMS-WatchList/1.0",
+      "performance_periods": [
+        "1m",
+        "3m",
+        "6m",
+        "1y",
+        "2y",
+        "3y",
+        "4y",
+        "5y",
+        "si"
+      ],
+      "country": "India",
+      "currency": "INR",
+      "category": "PMS",
+      "sub_category": "Investment Approach",
+      "strategy_type": "Investment Approach",
+      "asset_class": "PMS"
+    },
+    "amfi_performance": {
+      "history_url": "https://portal.amfiindia.com/DownloadNAVHistoryReport_Po.aspx",
+      "window_days": 15,
+      "periods": [
+        [
+          "return_1m",
+          1
+        ],
+        [
+          "return_3m",
+          3
+        ],
+        [
+          "return_6m",
+          6
+        ],
+        [
+          "return_1y",
+          12
+        ],
+        [
+          "return_3y",
+          36
+        ],
+        [
+          "return_5y",
+          60
+        ]
+      ],
+      "annual_days": 365.2425
+    },
+    "yahoo_finance": {
+      "doh_url": "https://1.1.1.1/dns-query"
+    },
+    "bond_price": {
+      "endpoint": "https://bricsonline.nseindia.com/bondsnew/rest/public/sebiannxone/all",
+      "timeout_seconds": 30,
+      "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36",
+      "accept": "application/json, text/javascript, */*; q=0.01",
+      "origin": "https://bricsonline.nseindia.com",
+      "referer": "https://bricsonline.nseindia.com/bondsnew/rest/public?r=sebiannexure1"
+    },
+    "sgb": {
+      "nse_home_url": "https://www.nseindia.com/",
+      "nse_quote_url": "https://www.nseindia.com/api/quote-equity",
+      "fallback_url": "https://sgb.vercel.app/",
+      "doh_url": "https://1.1.1.1/dns-query",
+      "timeout_seconds": 20,
+      "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36",
+      "accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+      "accept_language": "en-US,en;q=0.9",
+      "referer": "https://www.nseindia.com/"
+    },
+    "amfi_nav": {
+      "url": "https://portal.amfiindia.com/spages/NAVAll.txt",
+      "timeout_seconds": 30
+    }
+  },
+  "scheduler": {
+    "news_interval_seconds": 1800,
+    "startup_delay_seconds": 10
+  },
+  "web_push": {
+    "ttl_seconds": 86400,
+    "timeout_seconds": 10
+  },
+  "logging": {
+    "max_bytes": 10485760,
+    "backup_count": 5
+  },
+  "database": {
+    "sqlite_timeout_seconds": 60,
+    "sqlite_busy_timeout_ms": 60000,
+    "postgres_conn_max_age": 60,
+    "postgres_db": "pwms",
+    "postgres_user": "pwms_user",
+    "postgres_host": "localhost",
+    "postgres_port": "5432"
+  },
+  "deployment": {
+    "dev_frontend_origin": "http://localhost:4200"
+  },
+  "security_resolver": {
+    "isin_to_yahoo": {
+      "INE021A01026": "ASIANPAINT.NS",
+      "INE397D01024": "BHARTIARTL.NS",
+      "INE860A01027": "HCLTECH.NS",
+      "INE040A01034": "HDFCBANK.NS",
+      "INE030A01027": "HINDUNILVR.NS",
+      "INE090A01021": "ICICIBANK.NS",
+      "INE154A01025": "ITC.NS",
+      "INE009A01021": "INFY.NS",
+      "INE018A01030": "LT.NS",
+      "INE101A01026": "M&M.NS",
+      "INE585B01010": "MARUTI.NS",
+      "INE002A01018": "RELIANCE.NS",
+      "INE062A01020": "SBIN.NS",
+      "INE044A01036": "SUNPHARMA.NS",
+      "INE467B01029": "TCS.NS",
+      "INE155A01022": "TATAMOTORS.NS",
+      "INE0V6F01027": "HYUNDAI.NS",
+      "INE1CDF01017": "VAML.NS",
+      "INE128X01021": "ACI.NS",
+      "INE089A01031": "DRREDDY.NS"
+    },
+    "name_to_yahoo": {
+      "ASIAN PAINTS LTD": "ASIANPAINT.NS",
+      "ASIAN PAINTS": "ASIANPAINT.NS",
+      "BHARTI AIRTEL LTD": "BHARTIARTL.NS",
+      "BHARTI AIRTEL": "BHARTIARTL.NS",
+      "HCL TECHNOLOGIES": "HCLTECH.NS",
+      "HCL TECHNOLOGIES LTD": "HCLTECH.NS",
+      "HCL TECHNOLOGIES LIMITED": "HCLTECH.NS",
+      "HDFC BANK LTD": "HDFCBANK.NS",
+      "HDFC BANK LIMITED": "HDFCBANK.NS",
+      "HDFC BANK": "HDFCBANK.NS",
+      "HINDUSTAN UNILEVER LTD": "HINDUNILVR.NS",
+      "HINDUSTAN UNILEVER LIMITED": "HINDUNILVR.NS",
+      "HINDUSTAN UNILEVER": "HINDUNILVR.NS",
+      "ICICI BANK LTD": "ICICIBANK.NS",
+      "ICICI BANK LIMITED": "ICICIBANK.NS",
+      "ICICI BANK": "ICICIBANK.NS",
+      "ITC LTD": "ITC.NS",
+      "ITC LIMITED": "ITC.NS",
+      "ITC": "ITC.NS",
+      "INFOSYS LTD": "INFY.NS",
+      "INFOSYS LIMITED": "INFY.NS",
+      "INFOSYS": "INFY.NS",
+      "LARSEN & TOUBRO LTD": "LT.NS",
+      "LARSEN & TOUBRO LIMITED": "LT.NS",
+      "LARSEN AND TOUBRO LTD": "LT.NS",
+      "LARSEN AND TOUBRO LIMITED": "LT.NS",
+      "MAHINDRA & MAHINDRA LTD": "M&M.NS",
+      "MAHINDRA & MAHINDRA LIMITED": "M&M.NS",
+      "MAHINDRA AND MAHINDRA LTD": "M&M.NS",
+      "MARUTI SUZUKI INDIA LTD": "MARUTI.NS",
+      "MARUTI SUZUKI INDIA LIMITED": "MARUTI.NS",
+      "MARUTI SUZUKI": "MARUTI.NS",
+      "RELIANCE INDUSTRIES": "RELIANCE.NS",
+      "RELIANCE INDUSTRIES LTD": "RELIANCE.NS",
+      "RELIANCE INDUSTRIES LIMITED": "RELIANCE.NS",
+      "STATE BANK OF INDIA": "SBIN.NS",
+      "STATE BANK OF INDIA LTD": "SBIN.NS",
+      "STATE BANK OF INDIA LIMITED": "SBIN.NS",
+      "SUN PHARMACEUTICAL INDUSTRIES LTD": "SUNPHARMA.NS",
+      "SUN PHARMACEUTICAL INDUSTRIES LIMITED": "SUNPHARMA.NS",
+      "SUN PHARMA": "SUNPHARMA.NS",
+      "TATA CONSULTANCY SERVICES LTD": "TCS.NS",
+      "TATA CONSULTANCY SERVICES LIMITED": "TCS.NS",
+      "TCS": "TCS.NS",
+      "TATA MOTORS LTD": "TATAMOTORS.NS",
+      "TATA MOTORS LIMITED": "TATAMOTORS.NS",
+      "TATA MOTORS": "TATAMOTORS.NS"
+    },
+    "nse_suffix": ".NS",
+    "bse_suffix": ".BO"
+  },
+  "market_data": {
+    "equity_market_cap": {
+      "large_min": 1000000000000,
+      "mid_min": 200000000000
+    }
+  }
+}

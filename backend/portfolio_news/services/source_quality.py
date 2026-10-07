@@ -17,52 +17,15 @@ supply a publisher name string.
 from django.conf import settings
 
 from ..constants import SourceQualityTier
+from config.pwms_config import get as get_pwms_config
 
 
 # Primary / official / top-tier wire and financial press.
 # Matched as a case-insensitive substring of the publisher name,
 # since RSS "source" fields vary in exact formatting
 # (e.g. "Reuters", "Reuters.com", "Reuters India").
-TIER_1_PUBLISHERS = [
-    "reuters",
-    "bloomberg",
-    "cnbc",
-    "financial times",
-    "economic times",
-    "moneycontrol",
-    "business standard",
-    "livemint",
-    "mint",
-    "nse",
-    "bse",
-    "sebi",
-    "rbi",
-    "reserve bank of india",
-    "ministry of",
-    "pib.gov.in",
-    "press information bureau",
-]
-
-TIER_2_PUBLISHERS = [
-    "the hindu",
-    "hindu businessline",
-    "business today",
-    "financial express",
-    "ndtv profit",
-    "ndtv business",
-    "zee business",
-    "cnbc-tv18",
-    "the economic times",
-    "outlook business",
-    "forbes india",
-    "fortune india",
-    "wall street journal",
-    "wsj",
-    "the times of india",
-    "hindustan times",
-    "livelaw",
-]
-
+TIER_1_PUBLISHERS = get_pwms_config("news", "tier_1_publishers", [])
+TIER_2_PUBLISHERS = get_pwms_config("news", "tier_2_publishers", [])
 
 def _overrides() -> dict:
     return getattr(settings, "NEWS_SOURCE_QUALITY_OVERRIDES", {}) or {}

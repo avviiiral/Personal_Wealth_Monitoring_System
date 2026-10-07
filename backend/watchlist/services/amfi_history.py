@@ -17,7 +17,7 @@ class WatchListAMFIHistoryService:
     """Prepare shared AMFI history when a Mutual Fund enters the Watch List."""
 
     @classmethod
-    def prepare_product(cls, product):
+    def prepare_product(cls, product, days=None):
         if not product or product.product_type != ProductType.MUTUAL_FUND:
             return {"prepared": False, "reason": "not_mutual_fund"}
 
@@ -35,9 +35,8 @@ class WatchListAMFIHistoryService:
             return {"prepared": False, "reason": "missing_scheme_code"}
 
         today = timezone.now().date()
-        start = today - timedelta(
-            days=BenchmarkPerformanceService.PERIOD_DAYS["5Y"] + 31
-        )
+        requested_days = days or BenchmarkPerformanceService.PERIOD_DAYS["5Y"]
+        start = today - timedelta(days=requested_days + 31)
         inception_date = getattr(mutual_fund, "inception_date", None)
         if inception_date:
             start = max(start, inception_date)
@@ -55,8 +54,22 @@ class WatchListAMFIHistoryService:
         )
         first_date = coverage["first_date"]
         last_date = coverage["last_date"]
+        row_count = AMFIMasterNAV.objects.filter(
+            scheme__scheme_code=scheme_code,
+            date__gte=start,
+            date__lte=today,
+            source="AMFI",
+        ).count()
+        expected_rows = max(
+            BenchmarkPerformanceService.MINIMUM_HISTORY_ROWS,
+            int(
+                (today - start).days
+                * BenchmarkPerformanceService.MINIMUM_DAILY_COVERAGE_RATIO
+            ),
+        )
         if (
-            first_date is not None
+            row_count >= expected_rows
+            and first_date is not None
             and last_date is not None
             and first_date <= start + timedelta(days=10)
             and last_date >= today - timedelta(days=10)
@@ -87,10 +100,10 @@ class WatchListAMFIHistoryService:
         }
 
 
-def prepare_mutual_fund_watchlist_history(product):
+def prepare_mutual_fund_watchlist_history(product, days=None):
     """Best-effort wrapper used by Watch List write paths."""
     try:
-        return WatchListAMFIHistoryService.prepare_product(product)
+        return WatchListAMFIHistoryService.prepare_product(product, days=days)
     except Exception:
         logger.exception(
             "Watch List AMFI history preparation failed for product=%s",

@@ -4,6 +4,8 @@ from decimal import Decimal, InvalidOperation
 import requests
 from django.utils import timezone
 
+from config.pwms_config import get as get_pwms_config
+
 from watchlist.models import InvestmentProduct, PerformanceSnapshot, ProductType
 
 
@@ -16,17 +18,12 @@ class AMFIPerformanceService:
     observations. Missing history is left as null rather than estimated.
     """
 
-    HISTORY_URL = "https://portal.amfiindia.com/DownloadNAVHistoryReport_Po.aspx"
+    AMFI_CONFIG = get_pwms_config("providers", "amfi_performance", {})
+    HISTORY_URL = AMFI_CONFIG.get("history_url", "")
     SOURCE = "AMFI"
-    WINDOW_DAYS = 15
-    PERIODS = (
-        ("return_1m", 1),
-        ("return_3m", 3),
-        ("return_6m", 6),
-        ("return_1y", 12),
-        ("return_3y", 36),
-        ("return_5y", 60),
-    )
+    WINDOW_DAYS = AMFI_CONFIG.get("window_days", 15)
+    PERIODS = tuple(tuple(item) for item in AMFI_CONFIG.get("periods", []))
+    ANNUAL_DAYS = Decimal(str(AMFI_CONFIG.get("annual_days", 365.2425)))
 
     @staticmethod
     def _is_idcw_option(option):
@@ -205,7 +202,7 @@ class AMFIPerformanceService:
 
         ratio = latest_nav / historical_nav
         if elapsed_days is not None and elapsed_days > 365:
-            return (ratio ** (Decimal("365.2425") / Decimal(str(elapsed_days))) - Decimal("1")) * Decimal("100")
+            return (ratio ** (cls.ANNUAL_DAYS / Decimal(str(elapsed_days))) - Decimal("1")) * Decimal("100")
 
         return (ratio - Decimal("1")) * Decimal("100")
 

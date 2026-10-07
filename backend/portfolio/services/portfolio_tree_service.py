@@ -4,13 +4,14 @@ from decimal import Decimal
 
 from django.db.models import OuterRef, QuerySet, Subquery, Q
 
-from investments.models import Asset, AssetCategory, SecurityMaster, Transaction, TransactionType
+from investments.models import Asset, SecurityMaster, Transaction, TransactionType
 from investments.services.security_master import SecurityMasterService
 from investments.services.xirr import XIRRCalculator
 from market_data.models import DataSource, ManualAssetPrice, MarketPrice
 from market_data.services.mutual_fund_nav_service import MutualFundNAVService
 from market_data.services.yahoo_finance import YahooFinanceService
 from mutual_funds.models import MutualFundNAV, MutualFundScheme
+from mutual_funds.services.amfi_asset_resolver import AMFIAssetResolver
 
 
 logger = logging.getLogger(__name__)
@@ -238,20 +239,56 @@ class PortfolioTreeService:
         assets_by_id = assets_by_id or {}
         price_cache = {}
 
-        manual_prices = ManualAssetPrice.objects.filter(asset_id__in=asset_ids)
-        for manual in manual_prices:
+        # Manual prices are explicit overrides. The latest manual
+        # MarketPrice wins over automatic market data regardless of
+        # which one has the newer date.
+        latest_manual_id = (
+            MarketPrice.objects
+            .filter(
+                asset_id=OuterRef("asset_id"),
+                source=DataSource.MANUAL,
+            )
+            .order_by("-date", "-id")
+            .values("id")[:1]
+        )
+        manual_market_prices = MarketPrice.objects.filter(
+            asset_id__in=asset_ids,
+            source=DataSource.MANUAL,
+            id=Subquery(latest_manual_id),
+        )
+        for manual in manual_market_prices:
+            price_cache[manual.asset_id] = {
+                "current_price": manual.close_price,
+                "price_source": DataSource.MANUAL,
+                "price_date": manual.date,
+            }
+
+        # Legacy one-row manual prices are kept as a fallback for
+        # installations that predate the MarketPrice manual pipeline.
+        legacy_manual_prices = ManualAssetPrice.objects.filter(
+            asset_id__in=asset_ids,
+        )
+        for manual in legacy_manual_prices:
+            if manual.asset_id in price_cache:
+                continue
             price_cache[manual.asset_id] = {
                 "current_price": manual.price,
-                "price_source": "MANUAL",
+                "price_source": DataSource.MANUAL,
                 "price_date": manual.price_date,
             }
 
         latest_market_id = (
-            MarketPrice.objects.filter(asset_id=OuterRef("asset_id"))
-            .order_by("-date", "-id").values("id")[:1]
+            MarketPrice.objects
+            .filter(
+                asset_id=OuterRef("asset_id"),
+            )
+            .exclude(source=DataSource.MANUAL)
+            .order_by("-date", "-id")
+            .values("id")[:1]
         )
         market_prices = MarketPrice.objects.filter(
-            asset_id__in=asset_ids, id=Subquery(latest_market_id)
+            asset_id__in=asset_ids,
+            id=Subquery(latest_market_id),
         )
         for market in market_prices:
             if market.asset_id in price_cache:
@@ -262,17 +299,14 @@ class PortfolioTreeService:
                 "price_date": market.date,
             }
 
+        # AMFI identity is authoritative for NAV routing. Legacy imports can
+        # incorrectly classify mutual funds as STOCK/CASH/BOND/OTHER, so do
+        # not rely on Asset.category or presentation metadata here.
+        amfi_asset_ids = AMFIAssetResolver.amfi_asset_ids(assets_by_id)
         mutual_fund_assets = {
-            asset_id: asset
-            for asset_id, asset in assets_by_id.items()
-            if (
-                asset.category == AssetCategory.MUTUAL_FUND
-                or cls._clean(getattr(asset, "_portfolio_asset_class", "")).upper()
-                in {"MUTUAL FUND", "MUTUAL FUNDS", "MUTUAL_FUND"}
-                or cls._clean(getattr(asset, "_portfolio_sub_class", "")).upper()
-                in {"MUTUAL FUND", "MUTUAL FUNDS", "MUTUAL_FUND"}
-                or "MUTUAL FUND" in cls._clean(getattr(asset, "_portfolio_sub_class", "")).upper()
-            )
+            asset_id: assets_by_id[asset_id]
+            for asset_id in amfi_asset_ids
+            if asset_id in assets_by_id
         }
 
         if not mutual_fund_assets:
@@ -384,10 +418,30 @@ class PortfolioTreeService:
         average_cost = position["average_cost"]
         price_data = price_cache.get(asset.id, {})
         current_price = price_data.get("current_price")
-        current_value = quantity * Decimal(str(current_price)) if current_price is not None else None
-        pnl = current_value - invested_value if current_value is not None else None
-        pnl_percentage = (pnl / invested_value) * Decimal("100") if pnl is not None and invested_value > Decimal("0") else None
-        xirr = cls._calculate_xirr(xirr_transactions, quantity, current_value)
+        current_value = (
+            quantity * Decimal(str(current_price))
+            if current_price is not None
+            else None
+        )
+
+        # If no reliable current price can be resolved for an underlying,
+        # do not manufacture a loss from the missing quote. P/L is explicitly
+        # neutral until a price is available or entered manually.
+        pnl = (
+            current_value - invested_value
+            if current_value is not None
+            else Decimal("0")
+        )
+        pnl_percentage = (
+            (pnl / invested_value) * Decimal("100")
+            if invested_value > Decimal("0")
+            else Decimal("0")
+        )
+        xirr = cls._calculate_xirr(
+            xirr_transactions,
+            quantity,
+            current_value,
+        )
         security_master = getattr(asset, "security_master", None)
         if security_master is None and security_master_cache is not None:
             isin = asset.isin.strip() if asset.isin else ""

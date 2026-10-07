@@ -11,6 +11,7 @@ from watchlist.views import (
     watch_list_benchmarks_performance,
     watch_list_products,
     watch_list_refresh,
+    watch_list_refresh_status,
     watch_list_toggle,
 )
 
@@ -26,4 +27,5 @@ urlpatterns = [
     path("bulk-add/", watch_list_bulk_add, name="watch-list-bulk-add"),
     path("bulk-remove/", watch_list_bulk_remove, name="watch-list-bulk-remove"),
     path("refresh/", watch_list_refresh, name="watch-list-refresh"),
+    path("refresh/status/", watch_list_refresh_status, name="watch-list-refresh-status"),
 ]

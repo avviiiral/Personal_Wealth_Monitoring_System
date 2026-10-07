@@ -210,6 +210,36 @@ printf 'DEBUG=True\nGEMINI_API_KEY=paste-your-key-here\n' > .env
 - **Never commit `.env`.** It is already listed in `.gitignore`.
 - For a real deployment, start from `.env.example` instead — see [section 11](#11--production-style-deployment). The full variable list is in the [README](./README.md#-configuration).
 
+### 4.3a Centralized non-secret configuration
+
+PWMS keeps provider URLs, benchmark periods, market hours, scheduler timings, news rules, logging limits and other non-secret application settings in:
+
+```text
+backend/config/pwms_config.json
+backend/config/pwms_config.py
+```
+
+The JSON file is committed because it contains configuration rather than credentials. Environment-specific secrets and deployment settings remain in `backend/.env`.
+
+You can override selected JSON values without editing the file by setting `PWMS_CONFIG_OVERRIDES` to a JSON object. The override is merged into the base configuration at startup. For example:
+
+```ini
+PWMS_CONFIG_OVERRIDES={"benchmarks":{"minimum_daily_coverage_ratio":0.6}}
+```
+
+Keep overrides small and deployment-specific. Do not put passwords, API keys or private credentials in this JSON configuration; use `backend/.env` instead.
+
+Important benchmark defaults include:
+
+| Setting | Default | Purpose |
+| --- | ---: | --- |
+| `benchmarks.minimum_history_rows` | `20` | Minimum observations before a benchmark series is accepted as sufficiently populated |
+| `benchmarks.minimum_daily_coverage_ratio` | `0.5` | Minimum expected observation density relative to calendar days |
+| `benchmarks.nifty_request_timeout_seconds` | `60` | Timeout for each Nifty TRI request |
+| `benchmarks.nifty_bootstrap_timeout_seconds` | `15` | Timeout for the Nifty historical-data page bootstrap request |
+
+These checks are especially important for Watch List indexed-performance charts. A source response that contains only a few annual/anchor observations is treated as incomplete and is refreshed/retried rather than rendered as a sparse line.
+
 ### 4.4 Create the database
 
 PWMS uses **SQLite** by default — there is no database server to install. Apply the migrations to create the schema:
@@ -417,9 +447,10 @@ If Yahoo Finance or AMFI has no quote for an asset, use **Settings → Manual Pr
 
 | Job                                                                  | Cadence                                    | Needs Gemini key? |
 | -------------------------------------------------------------------- | ------------------------------------------ | :---------------: |
-| Market price refresh (Yahoo Finance + AMFI)                          | every 15 minutes                           |        No         |
+| Market price refresh (Yahoo Finance + AMFI)                          | every 15 minutes while Django runs       |        No         |
 | Daily refresh (AMFI NAV, security-master ratios, SIP sync / execute) | once per calendar day of uptime            |        No         |
-| Post-import price refresh                                            | right after an import commits              |        No         |
+| Post-import refresh                                                  | right after an import commits              |        No         |
+| MIS historical prefetch                                               | after imports and during daily refresh     |        No         |
 | Portfolio News monitor                                               | every 30 minutes (`NEWS_MONITOR_INTERVAL`) |      **Yes**      |
 
 **Watch them work** — the log file is created automatically:
@@ -444,6 +475,28 @@ python manage.py monitor_portfolio_news      # one full news pass
 Read the printed statistics (`Holdings processed`, `Articles retrieved`, `Alerts created`, …). `Alerts created: 0` is often perfectly normal on a fresh portfolio with no recent matching news.
 
 ---
+
+### 8.3 · MIS historical market-data preparation
+
+The MIS report reconstructs historical valuations from **persisted market/NAV history**. The interactive MIS API does not download AMFI or Yahoo Finance data while the user is waiting for the report.
+
+For mutual funds:
+
+- Historical NAVs are stored in the shared **AMFI master NAV history**.
+- PWMS automatically prefetches missing history for held schemes **after transaction imports** and during the **daily scheduled refresh**.
+- The prefetcher keeps approximately **five years** of coverage and imports only missing ranges, so repeated refreshes are incremental.
+- The normal MIS report reads the stored history directly. This is the path used by the IPS, Data Sheet and Tax Report.
+- The explicit MIS Excel download may perform a targeted history backfill if required before generating the workbook.
+
+For a first-time or manual historical backfill, run from `backend/`:
+
+```powershell
+python manage.py fetch_amfi_nav --from-date 2025-10-01 --to-date 2026-10-05
+```
+
+Both dates are required and must use `YYYY-MM-DD` format. The command imports the historical AMFI master dataset in batches.
+
+You can verify that the report is using stored history by checking `backend/logs/pwms.log`. A normal interactive MIS request should not show a live AMFI historical download.
 
 ## 8.4 · Background Web Push notifications
 
@@ -691,6 +744,9 @@ Then fill in `backend/.env`:
 ```ini
 SECRET_KEY=paste-the-generated-key
 DEBUG=False
+
+# Optional: override selected non-secret settings from backend/config/pwms_config.json
+# PWMS_CONFIG_OVERRIDES={"benchmarks":{"minimum_daily_coverage_ratio":0.6}}
 ALLOWED_HOSTS=yourdomain.com,www.yourdomain.com,localhost,127.0.0.1
 CORS_ALLOWED_ORIGINS=https://yourdomain.com
 CSRF_TRUSTED_ORIGINS=https://yourdomain.com
@@ -727,7 +783,7 @@ python -m uvicorn config.asgi:application --host 127.0.0.1 --port 8000
 
 ### 11.3 Build the frontend
 
-1. Open `frontend/src/environments/environment.prod.ts` and change `apiUrl` from the placeholder to your real backend address — or to `''` (empty) if the frontend and backend share one origin, as in the nginx example below.
+1. `frontend/src/environments/environment.prod.ts` is already configured with an empty `apiUrl`, which is correct when the frontend and `/api/` are served through the same reverse-proxy origin, as in the nginx example below. If your frontend and backend use different origins, set `apiUrl` to the deployed backend origin before building.
 2. Build:
 
    ```bash
@@ -1099,13 +1155,23 @@ python manage.py rebuild_holdings --user-id <id>
 </details>
 
 <details>
+<summary><b>Nifty 50 indexed-performance chart is sparse</b></summary>
+
+PWMS does not intentionally draw a five-point/annual-point Nifty line. The benchmark service validates both **date coverage** and **historical row density**. If NSE returns a sparse response, it falls back to smaller historical windows. The thresholds are controlled by `benchmarks.minimum_history_rows` and `benchmarks.minimum_daily_coverage_ratio` in `backend/config/pwms_config.json`.
+
+For a Mutual Fund comparison, the Watch List benchmark endpoint also checks the fund's AMFI master history. If an older Watch List entry only has `1M/3M/6M/1Y/3Y/5Y` anchor snapshots, the endpoint automatically prepares the selected period's actual AMFI NAV history before calculating the indexed chart.
+
+If the chart remains sparse after a backend restart, inspect `backend/logs/pwms.log` for AMFI/NSE request errors and confirm the machine can reach `www.amfiindia.com` and `www.niftyindices.com`.
+
+</details>
+<details>
 <summary><b>Mutual-fund NAVs are missing</b></summary>
 
 ```bash
 python manage.py fetch_amfi_nav
 ```
 
-Confirm the machine can reach the AMFI website, then check the log for errors. The daily job also refreshes NAVs once per day of uptime.
+Confirm the machine can reach the AMFI website, then check the log for errors. The daily refresh updates the shared AMFI master and also prefetches missing historical AMFI coverage required by MIS. For a one-off historical backfill, use the dated command shown in section 8.3.
 
 </details>
 

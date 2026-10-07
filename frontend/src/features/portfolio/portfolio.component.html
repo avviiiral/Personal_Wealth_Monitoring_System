@@ -720,13 +720,6 @@
                                           }}
                                         </div>
 
-                                        <small
-                                          *ngIf="hasPriceDate(asset)"
-                                          class="price-update-date"
-                                        >
-                                          As on Date {{ formatPriceDate(getPriceDate(asset)) }}
-                                        </small>
-
                                         <button
                                           type="button"
                                           class="manual-price-edit"
@@ -742,27 +735,31 @@
                                           class="manual-price-container"
                                           (click)="$event.stopPropagation()"
                                         >
-                                          <input
-                                            type="number"
-                                            class="manual-price-input"
-                                            [(ngModel)]="manualPriceInput"
-                                            min="0"
-                                            step="0.0001"
-                                            placeholder="Price"
-                                            [disabled]="isSavingManualPrice(asset)"
-                                          />
-
-                                          <label class="manual-price-date-label">
-                                            As on date
+                                          <div class="manual-price-field">
+                                            <label for="manual-price-{{ asset.id }}">Price</label>
                                             <input
-                                              type="date"
-                                              class="manual-price-input manual-price-date-input"
-                                              [(ngModel)]="manualPriceDate"
-                                              [max]="getTodayIsoDate()"
-                                              aria-label="As on date"
+                                              id="manual-price-{{ asset.id }}"
+                                              type="number"
+                                              class="manual-price-input"
+                                              [(ngModel)]="manualPriceInput"
+                                              min="0"
+                                              step="0.0001"
+                                              placeholder="Price"
                                               [disabled]="isSavingManualPrice(asset)"
                                             />
-                                          </label>
+                                          </div>
+
+                                          <div class="manual-price-field">
+                                            <label for="manual-price-date-{{ asset.id }}">As on Date</label>
+                                            <input
+                                              id="manual-price-date-{{ asset.id }}"
+                                              type="date"
+                                              class="manual-price-date-input"
+                                              [(ngModel)]="manualPriceDate"
+                                              [max]="getTodayDateInputValue()"
+                                              [disabled]="isSavingManualPrice(asset)"
+                                            />
+                                          </div>
 
                                           <div class="manual-price-actions">
                                             <button
@@ -796,7 +793,14 @@
                                       </ng-container>
                                     </td>
 
-                                    <td>₹{{ formatCurrency(asset.current_value) }}</td>
+                                    <td>
+                                      {{
+                                        asset.current_value !== null &&
+                                        asset.current_value !== undefined
+                                          ? '₹' + formatCurrency(asset.current_value)
+                                          : '-'
+                                      }}
+                                    </td>
 
                                     <td class="pnl-cell" [ngClass]="getPnlClass(asset.pnl)">
                                       {{ asset.pnl >= 0 ? '+' : '-' }}₹{{

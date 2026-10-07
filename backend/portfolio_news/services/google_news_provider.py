@@ -11,6 +11,8 @@ from urllib.parse import quote_plus
 import feedparser
 import requests
 
+from config.pwms_config import get as get_pwms_config
+
 from .news_provider import (
     NewsArticleResult,
     NewsProvider,
@@ -34,20 +36,14 @@ class GoogleNewsRSSProvider(NewsProvider):
     monitoring of the user's other holdings.
     """
 
-    BASE_URL = "https://news.google.com/rss/search"
+    CONFIG = get_pwms_config("providers", "google_news", {})
+    BASE_URL = CONFIG.get("base_url", "")
+    REQUEST_TIMEOUT_SECONDS = CONFIG.get("timeout_seconds", 15)
+    USER_AGENT = CONFIG.get("user_agent", "")
 
-    REQUEST_TIMEOUT_SECONDS = 15
-
-    USER_AGENT = (
-        "Mozilla/5.0 (compatible; PWMS-PortfolioNewsAgent/1.0; "
-        "+https://github.com/avviiiral/Personal_Wealth_Monitoring)"
-    )
-
-    def __init__(
-        self,
-        language="en-IN",
-        country="IN",
-    ):
+    def __init__(self, language=None, country=None):
+        language = language or self.CONFIG.get("language", "en-IN")
+        country = country or self.CONFIG.get("country", "IN")
         self.language = language
         self.country = country
 

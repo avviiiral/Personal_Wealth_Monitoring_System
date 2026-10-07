@@ -6,6 +6,8 @@ import requests
 from bs4 import BeautifulSoup
 from django.utils import timezone
 
+from config.pwms_config import get as get_pwms_config
+
 from watchlist.models import DiscoveryRun, InvestmentProduct, PerformanceSnapshot, PMSProduct, ProductType
 
 
@@ -18,13 +20,14 @@ class APMIPMSDiscoveryService:
     directly from the APMI table markup instead.
     """
 
+    APMI_CONFIG = get_pwms_config("providers", "apmi", {})
     SOURCE = "APMI"
-    REPORT_URL = "https://www.apmiindia.org/apmi/welcomeiaperformance.htm?action=PMSmenu"
-    PERFORMANCE_PERIODS = ("1m", "3m", "6m", "1y", "2y", "3y", "4y", "5y", "si")
+    REPORT_URL = APMI_CONFIG.get("report_url", "")
+    PERFORMANCE_PERIODS = tuple(APMI_CONFIG.get("performance_periods", []))
 
     @staticmethod
     def _headers():
-        return {"User-Agent": "PWMS-WatchList/1.0"}
+        return {"User-Agent": get_pwms_config("providers", "apmi", {}).get("user_agent", "")}
 
     @staticmethod
     def _decimal(value):
@@ -110,7 +113,7 @@ class APMIPMSDiscoveryService:
         run = DiscoveryRun.objects.create(source=cls.SOURCE)
         discovered = updated = failed = 0
         try:
-            response = requests.get(cls.REPORT_URL, headers=cls._headers(), timeout=60)
+            response = requests.get(cls.REPORT_URL, headers=cls._headers(), timeout=cls.APMI_CONFIG.get("timeout_seconds", 60))
             response.raise_for_status()
             report_date = cls._report_date(response.text)
             records = cls._records(response.text)
@@ -134,11 +137,11 @@ class APMIPMSDiscoveryService:
                         product_type=ProductType.PMS,
                         name=record["name"],
                         provider=record["provider"],
-                        country="India",
-                        category="PMS",
-                        sub_category="Investment Approach",
+                        country=cls.APMI_CONFIG.get("country", "India"),
+                        category=cls.APMI_CONFIG.get("category", "PMS"),
+                        sub_category=cls.APMI_CONFIG.get("sub_category", "Investment Approach"),
                         external_identifier=record["iaid"],
-                        currency="INR",
+                        currency=cls.APMI_CONFIG.get("currency", "INR"),
                         source=cls.SOURCE,
                         source_reference=cls.REPORT_URL,
                         source_date=report_date,
@@ -179,8 +182,8 @@ class APMIPMSDiscoveryService:
                     PMSProduct(
                         product_id=product.id,
                         strategy_name=record["name"],
-                        strategy_type="Investment Approach",
-                        asset_class="PMS",
+                        strategy_type=cls.APMI_CONFIG.get("strategy_type", "Investment Approach"),
+                        asset_class=cls.APMI_CONFIG.get("asset_class", "PMS"),
                         aum=record["aum"],
                         latest_value=record["aum"],
                     )

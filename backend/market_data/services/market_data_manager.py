@@ -27,6 +27,15 @@ from market_data.services.sgb_price_service import (
     SGBPriceService,
 )
 
+from mutual_funds.services.amfi_asset_resolver import AMFIAssetResolver
+from mutual_funds.models import (
+    AMFIMasterNAV,
+    AMFIMasterScheme,
+    MutualFundNAV,
+    MutualFundScheme,
+)
+from mutual_funds.services.amfi import AMFIService
+
 class MarketDataManager:
     """
     Coordinates market-data collection.
@@ -167,6 +176,161 @@ class MarketDataManager:
         return holding
 
     @classmethod
+    def _ensure_amfi_history(
+        cls,
+        asset,
+        scheme_code,
+        latest_nav_date,
+    ):
+        """Persist the AMFI history needed by every valuation surface.
+
+        The Portfolio page can show a current NAV because the daily AMFI
+        refresh stores one current MarketPrice row. Historical MIS/Data Sheet
+        values, however, need dated observations as well. Backfill the shared
+        AMFI master and materialize those observations into both the asset's
+        MarketPrice history and its family MutualFundNAV history when a
+        family scheme exists.
+
+        The transaction's first date is the lower bound, so we do not invent
+        observations before the holding existed.
+        """
+        if not scheme_code or latest_nav_date is None:
+            return
+
+        earliest_transaction = (
+            cls.get_earliest_transaction_date(asset)
+        )
+        if earliest_transaction is None:
+            return
+
+        latest_stored = (
+            MarketPrice.objects
+            .filter(
+                asset=asset,
+                source=DataSource.AMFI,
+            )
+            .order_by("-date", "-id")
+            .values_list("date", flat=True)
+            .first()
+        )
+        earliest_stored = (
+            MarketPrice.objects
+            .filter(
+                asset=asset,
+                source=DataSource.AMFI,
+            )
+            .order_by("date", "id")
+            .values_list("date", flat=True)
+            .first()
+        )
+
+        ranges = []
+        if earliest_stored is None or earliest_stored > earliest_transaction:
+            ranges.append((earliest_transaction, latest_nav_date))
+        elif latest_stored is not None and latest_stored < latest_nav_date:
+            ranges.append((latest_stored + timedelta(days=1), latest_nav_date))
+
+        if not ranges:
+            return
+
+        for from_date, to_date in ranges:
+            if from_date > to_date:
+                continue
+            try:
+                AMFIService.import_historical_master_navs(
+                    from_date,
+                    to_date,
+                    scheme_codes=[str(scheme_code)],
+                )
+            except Exception as exc:
+                # Current NAV remains usable even when historical backfill is
+                # temporarily unavailable. Do not fail the market refresh.
+                import logging
+                logging.getLogger(__name__).warning(
+                    "Unable to backfill AMFI history for %s (%s): %s",
+                    asset.name,
+                    scheme_code,
+                    exc,
+                )
+                return
+
+        master = (
+            AMFIMasterScheme.objects
+            .filter(
+                scheme_code=str(scheme_code),
+                is_active=True,
+            )
+            .first()
+        )
+        if master is None:
+            return
+
+        history = list(
+            AMFIMasterNAV.objects
+            .filter(
+                scheme=master,
+                date__gte=earliest_transaction,
+                date__lte=latest_nav_date,
+            )
+            .order_by("date", "id")
+            .only("date", "nav")
+        )
+        if not history:
+            return
+
+        MarketPrice.objects.bulk_create(
+            [
+                MarketPrice(
+                    asset=asset,
+                    date=record.date,
+                    source=DataSource.AMFI,
+                    close_price=record.nav,
+                    adjusted_close=record.nav,
+                )
+                for record in history
+            ],
+            batch_size=500,
+            update_conflicts=True,
+            unique_fields=["asset", "date", "source"],
+            update_fields=[
+                "close_price",
+                "adjusted_close",
+            ],
+        )
+
+        family = getattr(asset, "family", None)
+        if family is None:
+            return
+
+        family_scheme = (
+            MutualFundScheme.objects
+            .filter(
+                family=family,
+                scheme_code=str(scheme_code),
+                is_active=True,
+            )
+            .first()
+        )
+        if family_scheme is None:
+            return
+
+        MutualFundNAV.objects.bulk_create(
+            [
+                MutualFundNAV(
+                    scheme=family_scheme,
+                    date=record.date,
+                    source="AMFI",
+                    nav=record.nav,
+                )
+                for record in history
+            ],
+            batch_size=500,
+            update_conflicts=True,
+            unique_fields=["scheme", "date", "source"],
+            update_fields=["nav"],
+        )
+
+    @classmethod
     def _fetch_amfi_nav(
         cls,
         asset,
@@ -264,6 +428,12 @@ class MarketDataManager:
                     "a valid NAV date."
                 ),
             }
+
+        cls._ensure_amfi_history(
+            asset,
+            nav_record["scheme_code"],
+            nav_date,
+        )
 
         MarketPrice.objects.update_or_create(
             asset=asset,
@@ -661,11 +831,11 @@ class MarketDataManager:
         # MUTUAL FUND
         # ======================================================
 
-        if asset.category == "MUTUAL_FUND":
-
-            return cls._fetch_amfi_nav(
-                asset
-            )
+        # AMFI identity is authoritative. Legacy imports may carry an
+        # incorrect local category, but an ISIN mapped by AMFI must use AMFI
+        # NAV/history rather than bond/stock/Yahoo routing.
+        if AMFIAssetResolver.is_amfi_backed(asset):
+            return cls._fetch_amfi_nav(asset)
 
         # ======================================================
         # BOND

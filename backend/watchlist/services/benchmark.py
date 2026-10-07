@@ -1,7 +1,6 @@
 import csv
 import io
 import json
-import os
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -9,67 +8,34 @@ from typing import Any
 import requests
 import yfinance as yf
 from curl_cffi import requests as curl_requests
+from django.conf import settings
 from django.db import models
 from django.utils import timezone
 
 from mutual_funds.models import AMFIMasterNAV
 from watchlist.models import BenchmarkMasterPoint, PerformanceSnapshot
+from config.pwms_config import get as get_pwms_config
 
 
 class BenchmarkPerformanceService:
     """Calculate Watch List benchmark comparisons from market/index time series."""
 
-    PERIOD_DAYS = {
-        "1M": 31,
-        "3M": 92,
-        "6M": 184,
-        "1Y": 365,
-        "3Y": 365 * 3,
-        "5Y": 365 * 5,
-    }
-
-    TICKERS = {
-        "Nifty 50": "^NSEI",
-        "BSE 500": "BSE500T",
-    }
-
-    BSE500_FILE = os.getenv(
-        "WATCHLIST_BENCHMARK_BSE500_FILE",
-        str(Path(__file__).resolve().parents[1] / "data" / "bse500_tri.csv"),
+    PERIOD_DAYS = get_pwms_config("benchmarks", "period_days", {})
+    TICKERS = get_pwms_config("benchmarks", "tickers", {})
+    BSE500_FILE = settings.WATCHLIST_BENCHMARK_BSE500_FILE
+    BSE500_URL = settings.WATCHLIST_BENCHMARK_BSE500_URL
+    BSE500_API = get_pwms_config("benchmarks", "bse_api", "")
+    NIFTY_TRI_URLS = tuple(get_pwms_config("benchmarks", "nifty_tri_urls", []))
+    NIFTY_TRI_HEADERS = dict(get_pwms_config("benchmarks", "nifty_headers", {}))
+    NIFTY_TRI_HEADERS["Referer"] = get_pwms_config("benchmarks", "nifty_historical_page", "")
+    BSE_TRI_PROXY_TICKERS = tuple(get_pwms_config("benchmarks", "bse_tri_proxy_tickers", []))
+    BSE_HEADERS = dict(get_pwms_config("benchmarks", "bse_headers", {}))
+    MINIMUM_HISTORY_ROWS = int(
+        get_pwms_config("benchmarks", "minimum_history_rows", 20)
     )
-    # Optional override for deployments that have a licensed BSE500 TRI feed.
-    BSE500_URL = os.getenv("WATCHLIST_BENCHMARK_BSE500_URL", "").strip()
-    BSE500_API = "https://api.bseindia.com/BseIndiaAPI/api/ProduceCSVForDate/w"
-    NIFTY_TRI_URLS = (
-        "https://www.niftyindices.com/BackPage/getTotalReturnIndexString",
-        "https://www.niftyindices.com/Backpage.aspx/getTotalReturnIndexString",
-        "https://www.niftyindices.com/Backpage/getTotalReturnIndexString",
+    MINIMUM_DAILY_COVERAGE_RATIO = float(
+        get_pwms_config("benchmarks", "minimum_daily_coverage_ratio", 0.5)
     )
-    NIFTY_TRI_HEADERS = {
-        "Content-Type": "application/json; charset=UTF-8",
-        "Accept": "application/json, text/plain, */*",
-        "X-Requested-With": "XMLHttpRequest",
-        "Referer": "https://www.niftyindices.com/reports/historical-data",
-        "Accept-Language": "en-GB,en-US;q=0.9,en;q=0.8",
-        "User-Agent": (
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-            "AppleWebKit/537.36 (KHTML, like Gecko) "
-            "Chrome/140.0 Safari/537.36"
-        ),
-    }
-    # Public-market fallback: HDFC's ETF explicitly tracks the BSE 500 TRI.
-    # This keeps Watch List benchmark comparison automatic when BSE's public
-    # historical endpoint does not expose the TRI series directly.
-    BSE_TRI_PROXY_TICKERS = ("HDFCBSE500.NS", "BSE500IETF.NS")
-    BSE_HEADERS = {
-        "Accept": "text/csv,application/json,text/plain,*/*",
-        "Referer": "https://www.bseindia.com/",
-        "User-Agent": (
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-            "AppleWebKit/537.36 (KHTML, like Gecko) "
-            "Chrome/140.0 Safari/537.36"
-        ),
-    }
 
     @classmethod
     def _ticker(cls, benchmark):
@@ -114,7 +80,11 @@ class BenchmarkPerformanceService:
                     try:
                         kwargs = {
                             "headers": cls.NIFTY_TRI_HEADERS,
-                            "timeout": 60,
+                            "timeout": get_pwms_config(
+                                "benchmarks",
+                                "nifty_request_timeout_seconds",
+                                60,
+                            ),
                         }
                         if body_mode == "json":
                             kwargs["json"] = payload
@@ -133,9 +103,9 @@ class BenchmarkPerformanceService:
 
         try:
             session.get(
-                "https://www.niftyindices.com/reports/historical-data",
+                get_pwms_config("benchmarks", "nifty_historical_page", ""),
                 headers=cls.NIFTY_TRI_HEADERS,
-                timeout=15,
+                timeout=get_pwms_config("benchmarks", "nifty_bootstrap_timeout_seconds", 15),
             )
 
             # Prefer the complete requested history when the current endpoint
@@ -160,10 +130,16 @@ class BenchmarkPerformanceService:
 
                 covered_start = min(all_points) if all_points else None
                 covered_end = max(all_points) if all_points else None
+                expected_rows = max(
+                    cls.MINIMUM_HISTORY_ROWS,
+                    int((end - start).days * cls.MINIMUM_DAILY_COVERAGE_RATIO),
+                )
                 if (
-                    covered_start
+                    len(all_points) >= expected_rows
+                    and covered_start
                     and date.fromisoformat(covered_start) <= start + timedelta(days=10)
                     and covered_end
+                    and date.fromisoformat(covered_end) >= end - timedelta(days=10)
                 ):
                     return [all_points[key] for key in sorted(all_points)]
             except Exception:
@@ -193,7 +169,17 @@ class BenchmarkPerformanceService:
                         }
                         window_points += 1
 
-                if window_points < 20 and (window_end - cursor).days > 45:
+                expected_window_rows = max(
+                    cls.MINIMUM_HISTORY_ROWS,
+                    int(
+                        (window_end - cursor).days
+                        * cls.MINIMUM_DAILY_COVERAGE_RATIO
+                    ),
+                )
+                if (
+                    window_points < expected_window_rows
+                    and (window_end - cursor).days > 45
+                ):
                     raise ValueError(
                         "NSE Indices TRI returned insufficient historical rows "
                         f"for {cursor.isoformat()} to {window_end.isoformat()}"
@@ -210,7 +196,10 @@ class BenchmarkPerformanceService:
         end = end or timezone.now().date()
         start = start or (end - timedelta(days=cls.PERIOD_DAYS["5Y"] + 31))
         results = {}
-        expected = max(5, int((end - start).days * 0.5))
+        expected = max(
+            cls.MINIMUM_HISTORY_ROWS,
+            int((end - start).days * cls.MINIMUM_DAILY_COVERAGE_RATIO),
+        )
 
         for benchmark in ("Nifty 50", "BSE 500"):
             aggregate = BenchmarkMasterPoint.objects.filter(
@@ -488,7 +477,7 @@ class BenchmarkPerformanceService:
             response = requests.get(
                 cls.BSE500_URL,
                 headers=cls.BSE_HEADERS,
-                timeout=45,
+                timeout=get_pwms_config("benchmarks", "bse_request_timeout_seconds", 45),
             )
             response.raise_for_status()
             return cls._load_bse_csv(response.text)
@@ -496,13 +485,13 @@ class BenchmarkPerformanceService:
         response = requests.get(
             cls.BSE500_API,
             params={
-                "strIndex": "BSE500T",
+                "strIndex": cls.TICKERS.get("BSE 500", "BSE500T"),
                 "dtFromDate": start.strftime("%d/%m/%Y"),
                 "dtToDate": end.strftime("%d/%m/%Y"),
                 "period": "D",
             },
             headers=cls.BSE_HEADERS,
-            timeout=45,
+            timeout=get_pwms_config("benchmarks", "bse_request_timeout_seconds", 45),
         )
         response.raise_for_status()
         points = cls._parse_bse_api_csv(response.text)
@@ -579,7 +568,7 @@ class BenchmarkPerformanceService:
     def _benchmark_series(cls, benchmark, start):
         """Read benchmark history from the shared master, bootstrapping once if needed."""
         def read_master():
-            points = (
+            points = list(
                 BenchmarkMasterPoint.objects
                 .filter(
                     benchmark=benchmark,
@@ -589,6 +578,19 @@ class BenchmarkPerformanceService:
                 .order_by("date", "id")
                 .values("date", "value")
             )
+            boundary = (
+                BenchmarkMasterPoint.objects
+                .filter(
+                    benchmark=benchmark,
+                    source="MASTER",
+                    date__lt=start,
+                )
+                .order_by("-date", "-id")
+                .values("date", "value")
+                .first()
+            )
+            if boundary is not None:
+                points.insert(0, boundary)
             return [
                 {
                     "date": point["date"].isoformat(),
@@ -599,12 +601,32 @@ class BenchmarkPerformanceService:
             ]
 
         series = read_master()
-        if len(series) >= 2:
+
+        # A previously bootstrapped master can contain only a few sparse
+        # observations (for example, older Nifty imports). That is enough to
+        # calculate a return but produces a misleading stepped/sparse chart.
+        # Require daily-ish coverage for the 5Y history before accepting the
+        # master series. Rebuild the Nifty TRI master when coverage is thin so
+        # the chart has the same observation density as the BSE 500 TRI chart.
+        end = timezone.now().date()
+        expected_rows = max(
+            cls.MINIMUM_HISTORY_ROWS,
+            int((end - start).days * cls.MINIMUM_DAILY_COVERAGE_RATIO),
+        )
+        first_date = date.fromisoformat(series[0]["date"]) if series else None
+        last_date = date.fromisoformat(series[-1]["date"]) if series else None
+        coverage_ok = (
+            first_date is not None
+            and last_date is not None
+            and first_date <= start + timedelta(days=10)
+            and last_date >= end - timedelta(days=10)
+        )
+        if len(series) >= expected_rows and coverage_ok:
             return series
 
         try:
             points = (
-                cls._nifty_tri_series(start)
+                cls._nifty_tri_series(start, end)
                 if benchmark == "Nifty 50"
                 else cls._bse_series(start)
                 if benchmark == "BSE 500"
@@ -612,6 +634,19 @@ class BenchmarkPerformanceService:
             )
             if points:
                 cls.save_benchmark_master(benchmark, points)
+                # The fetched series is authoritative for this calculation.
+                # Return it directly instead of immediately re-reading the
+                # master with the original start filter; this preserves a
+                # boundary observation needed to calculate a long-period
+                # cumulative return when the latest provider observation is
+                # slightly stale.
+                return sorted(
+                    (
+                        point for point in points
+                        if point.get("date") and point.get("value") is not None
+                    ),
+                    key=lambda point: point["date"],
+                )
         except Exception:
             return series
 

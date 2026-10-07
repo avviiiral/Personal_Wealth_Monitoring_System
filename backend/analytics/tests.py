@@ -1,3 +1,4 @@
+from datetime import date
 from django.contrib.auth.models import User
 from django.test import TestCase
 from rest_framework.test import APIClient
@@ -367,12 +368,43 @@ class FamilyStandardAllocationApiTests(TestCase):
         self.user.profile.active_family_group = self.family_a
         self.user.profile.save(update_fields=["active_family_group"])
 
+        # Standard Allocation is keyed by the legacy Family Member label
+        # stored on transactions. Seed one visible transaction label per
+        # FamilyGroup so the API authorization contract is exercised.
+        for family, label in (
+            (self.family_a, self.family_a.name),
+            (self.family_b, self.family_b.name),
+        ):
+            asset = Asset.objects.create(
+                owner=self.user,
+                family=family,
+                name=f"{label} Equity",
+                category="STOCK",
+                isin=f"INE{family.id:09d}",
+            )
+            Transaction.objects.create(
+                owner=self.user,
+                family=family,
+                asset=asset,
+                family_name=label,
+                portfolio="Core",
+                asset_class="Equity",
+                sub_class="Large Cap",
+                asset_name=f"{label} Equity",
+                transaction_date=date(2026, 1, 1),
+                transaction_type=TransactionType.BUY,
+                quantity=Decimal("1"),
+                price_per_unit=Decimal("100"),
+                amount=Decimal("100"),
+                fees=Decimal("0"),
+            )
+
         self.client = APIClient()
         self.client.force_authenticate(user=self.user)
 
     def test_all_members_of_a_family_share_one_allocation(self):
         StandardAllocation.objects.create(
-            family=self.family_a,
+            family_name=self.family_a.name,
             asset_category="Equities",
             allocation_percent=Decimal("60.00"),
             allocation_amount=Decimal("600000.00"),
@@ -391,13 +423,13 @@ class FamilyStandardAllocationApiTests(TestCase):
 
     def test_different_families_can_have_different_allocations(self):
         StandardAllocation.objects.create(
-            family=self.family_a,
+            family_name=self.family_a.name,
             asset_category="Equities",
             allocation_percent=Decimal("60.00"),
             allocation_amount=Decimal("600000.00"),
         )
         StandardAllocation.objects.create(
-            family=self.family_b,
+            family_name=self.family_b.name,
             asset_category="Equities",
             allocation_percent=Decimal("40.00"),
             allocation_amount=Decimal("400000.00"),

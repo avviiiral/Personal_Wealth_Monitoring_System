@@ -369,6 +369,27 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
     this.loadDashboard();
   }
 
+  refreshDashboard(): void {
+    console.log('Recalculating dashboard portfolio data...');
+
+    this.loading = true;
+    this.error = '';
+    this.destroyCharts();
+
+    this.wealthApi.recalculate().subscribe({
+      next: (result) => {
+        console.log('DASHBOARD RECALCULATION RESPONSE:', result);
+        this.loadDashboard();
+      },
+      error: (error) => {
+        console.error('DASHBOARD RECALCULATION API ERROR:', error);
+        this.loading = false;
+        this.error = error?.error?.detail || 'Unable to recalculate dashboard data.';
+        this.cdr.markForCheck();
+      },
+    });
+  }
+
   loadDashboard(): void {
     console.log('Loading dashboard data...');
 
@@ -570,7 +591,20 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
 
     const investedValues = results.map((item: any) => this.toNumber(item.invested_value));
 
-    const portfolioValues = results.map((item: any) => this.toNumber(item.portfolio_value));
+    const totalWealthValues = results.map((item: any) =>
+      this.toNumber(item.total_wealth ?? item.portfolio_value),
+    );
+
+    const formatTooltipDate = (value: any): string => {
+      if (!value) return '-';
+      const parsedDate = new Date(String(value) + 'T00:00:00');
+      if (Number.isNaN(parsedDate.getTime())) return String(value);
+      return parsedDate.toLocaleDateString('en-IN', {
+        day: '2-digit',
+        month: 'short',
+        year: 'numeric',
+      });
+    };
 
     const config: ChartConfiguration<'line'> = {
       type: 'line',
@@ -580,8 +614,8 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
 
         datasets: [
           {
-            label: 'Portfolio Value',
-            data: portfolioValues,
+            label: 'Total Wealth',
+            data: totalWealthValues,
             borderColor: this.themeService.isDark() ? '#2fbf8f' : '#2563EB',
 
             backgroundColor: this.themeService.isDark()
@@ -633,9 +667,12 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
 
           tooltip: {
             callbacks: {
+              title: (items) => {
+                const index = items[0]?.dataIndex ?? 0;
+                return 'As on ' + formatTooltipDate(results[index]?.date);
+              },
               label: (context) => {
                 const value = context.parsed.y ?? 0;
-
                 return `${context.dataset.label}: ${this.formatDisplayAmount(value)}`;
               },
             },

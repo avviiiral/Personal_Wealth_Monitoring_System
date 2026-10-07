@@ -272,6 +272,13 @@ class AMFIService:
             score += 1000
             methods.append("isin")
 
+        # The AMFI scheme code is the canonical identifier. Some AMC
+        # scheme-list responses contain similarly named sibling plans, so an
+        # exact nav_id/code match must outrank name-token similarity.
+        if candidate.get("nav_id") == metadata.get("scheme_code"):
+            score += 5000
+            methods.append("scheme_code")
+
         if metadata.get("mf_id") and candidate.get("mf_id") == metadata["mf_id"]:
             score += 250
 
@@ -307,6 +314,8 @@ class AMFIService:
             if token in combined_target and token in combined_candidate:
                 score += weight
 
+        if "scheme_code" in methods:
+            return score, "scheme_code"
         if "exact_name" in methods and target_isins & candidate_isins:
             return score, "isin"
         if target_isins & candidate_isins:
@@ -459,69 +468,120 @@ class AMFIService:
 
     @staticmethod
     def _download_historical_api_records(from_date, to_date, scheme_codes):
-        """Resolve current AMFI NAV IDs, then download their history."""
+        """Download authoritative AMFI history grouped by AMC.
+
+        The legacy AMFI historical endpoint expects ``mf`` to be an AMC
+        identifier. Resolve requested schemes through AMFI's current metadata
+        API, group them by AMC, and download only relevant AMC reports.
+        """
         if from_date > to_date:
             raise ValueError("From date cannot be after to_date.")
 
-        nav_ids = AMFIService._resolve_nav_ids(scheme_codes)
-        if not nav_ids:
+        requested_codes = {
+            str(code).strip()
+            for code in (scheme_codes or [])
+            if str(code or "").strip()
+        }
+        if not requested_codes:
             return []
 
-        records = []
-        schemes_by_mf = {}
-        for scheme_code, metadata in nav_ids.items():
-            mf_id = metadata.get("mf_id") or "0"
-            schemes_by_mf.setdefault(str(mf_id), set()).add(str(scheme_code))
+        resolved = AMFIService._resolve_nav_ids(requested_codes)
+        mf_ids_by_code = {
+            code: str(item.get("mf_id") or "").strip()
+            for code, item in resolved.items()
+            if item.get("mf_id")
+        }
+        missing_mf_ids = requested_codes - set(mf_ids_by_code)
+        if missing_mf_ids:
+            raise RuntimeError(
+                "AMFI could not resolve AMC identifiers for scheme codes: "
+                + ", ".join(sorted(missing_mf_ids))
+            )
 
-        # The current JSON /api/nav-history route returns HTTP 400 for the
-        # production sd_id/date-range request used by the application. Use
-        # AMFI's historical report endpoint for the actual NAV rows instead.
-        for mf_id, mf_scheme_codes in schemes_by_mf.items():
+        codes_by_mf = {}
+        for code, mf_id in mf_ids_by_code.items():
+            codes_by_mf.setdefault(mf_id, set()).add(code)
+
+        headers = {
+            **AMFIService._headers(),
+            "Accept": "text/plain,text/csv,text/*;q=0.9,*/*;q=0.8",
+            "Referer": "https://www.amfiindia.com/net-asset-value/nav-download",
+        }
+        records = []
+
+        for mf_id, mf_codes in sorted(codes_by_mf.items()):
             window_start = from_date
             while window_start <= to_date:
                 window_end = min(
-                    window_start + relativedelta(days=90),
+                    window_start + relativedelta(days=AMFIService.HISTORICAL_WINDOW_DAYS - 1),
                     to_date,
                 )
-                response = requests.get(
-                    AMFIService.NAV_HISTORY_URL,
-                    params={
-                        "mf": mf_id,
-                        "tp": "1",
-                        "frmdt": window_start.strftime("%d-%b-%Y"),
-                        "todt": window_end.strftime("%d-%b-%Y"),
-                    },
-                    headers=AMFIService._headers(),
-                    timeout=60,
-                )
-                response.raise_for_status()
-                report_text = response.text
-                if not AMFIService._is_historical_report(report_text):
-                    raise RuntimeError(
-                        "AMFI historical response was not a NAV report: "
-                        f"endpoint={getattr(response, 'url', AMFIService.NAV_HISTORY_URL)} "
-                        f"from={window_start} to={window_end}"
-                    )
+                params = {
+                    "mf": mf_id,
+                    "tp": "1",
+                    "frmdt": window_start.strftime("%d-%b-%Y"),
+                    "todt": window_end.strftime("%d-%b-%Y"),
+                }
 
-                records.extend(
-                    AMFIService.parse_nav_file(
-                        report_text,
-                        historical=True,
-                        scheme_codes=mf_scheme_codes,
-                    )
+                report_text = ""
+                last_error = None
+                for attempt in range(AMFIService.HISTORICAL_MAX_RETRIES):
+                    try:
+                        response = requests.get(
+                            AMFIService.NAV_HISTORY_URL,
+                            params=params,
+                            headers=headers,
+                            timeout=90,
+                        )
+                        response.raise_for_status()
+                        candidate = response.text or ""
+                        if not AMFIService._is_historical_report(candidate, scheme_codes=mf_codes):
+                            raise RuntimeError(
+                                "AMFI historical response was not a NAV report "
+                                f"(mf={mf_id}, bytes={len(response.content)})"
+                            )
+                        report_text = candidate
+                        break
+                    except Exception as exc:
+                        last_error = exc
+                        if attempt + 1 < AMFIService.HISTORICAL_MAX_RETRIES:
+                            time.sleep(1.5 * (attempt + 1))
+
+                if not report_text:
+                    raise RuntimeError(
+                        "Unable to download AMFI historical NAV report "
+                        f"for mf={mf_id}, {window_start} to {window_end}"
+                    ) from last_error
+
+                window_records = AMFIService.parse_nav_file(
+                    report_text,
+                    historical=True,
+                    scheme_codes=mf_codes,
                 )
+                if window_records:
+                    records.extend(window_records)
+
                 window_start = window_end + relativedelta(days=1)
 
         deduped = {
             (record["scheme_code"], record["date"]): record
             for record in records
-            if record["scheme_code"] in nav_ids
+            if record["scheme_code"] in requested_codes
         }
+        matched_codes = {record["scheme_code"] for record in deduped.values()}
+        missing_codes = requested_codes - matched_codes
+        if missing_codes:
+            logger.warning(
+                "AMFI historical backfill returned no rows for scheme codes: %s "
+                "range=%s to %s",
+                sorted(missing_codes),
+                from_date,
+                to_date,
+            )
         return sorted(
             deduped.values(),
             key=lambda item: (item["scheme_code"], item["date"]),
         )
-
     @staticmethod
     def download_historical_nav(
         from_date,
@@ -547,11 +607,29 @@ class AMFIService:
         if from_date > to_date:
             raise ValueError("From date cannot be after to_date.")
 
+        # The public command accepts arbitrary historical ranges. Split long
+        # requests here so callers do not have to manually create 90-day
+        # batches. The scheme-specific path already performs its own chunking.
         if (to_date - from_date).days > 90:
-            raise ValueError(
-                "AMFI historical NAV download supports a maximum period "
-                "of 90 days at a time."
-            )
+            records = []
+            window_start = from_date
+            while window_start <= to_date:
+                window_end = min(
+                    window_start + relativedelta(days=89),
+                    to_date,
+                )
+                report_text = AMFIService.download_historical_nav(
+                    window_start,
+                    window_end,
+                )
+                records.extend(
+                    AMFIService.parse_nav_file(
+                        report_text,
+                        historical=True,
+                    )
+                )
+                window_start = window_end + relativedelta(days=1)
+            return records
 
         date_params = {
             "frmdt": from_date.strftime("%d-%b-%Y"),
@@ -563,61 +641,64 @@ class AMFIService:
             "Referer": "https://www.amfiindia.com/net-asset-value/nav-download",
         }
 
-        # AMFI's all-schemes historical download is addressable with
-        # mf=0. Keep tp=1 for the text-report mode. A second attempt without
-        # tp handles deployments where the flag is inferred by the endpoint.
+        # AMFI's all-schemes historical download is addressable directly by
+        # date range. Do not send mf=0: the current portal treats that value
+        # as an invalid AMC selection and returns its HTML WebForms page.
+        # Keep tp=1 as the preferred text-report mode, with a fallback that
+        # lets the endpoint infer the report mode.
         attempts = (
-            {"mf": "0", "tp": "1", **date_params},
-            {"mf": "0", **date_params},
+            {"tp": "1", **date_params},
+            date_params,
         )
         last_response = None
 
-        with requests.Session() as session:
-            for params in attempts:
-                response = session.get(
-                    AMFIService.NAV_HISTORY_URL,
-                    params=params,
-                    headers=headers,
-                    timeout=60,
-                )
-                last_response = response
-                text = response.text or ""
+        for params in attempts:
+            response = requests.get(
+                AMFIService.NAV_HISTORY_URL,
+                params=params,
+                headers=headers,
+                timeout=60,
+            )
+            last_response = response
+            text = response.text or ""
 
-                # Do not accept an HTTP 200 WebForms/error page as if it
-                # were the downloadable report. This was the reason the
-                # previous importer could silently return zero records.
-                if response.ok and AMFIService._is_historical_report(text):
-                    return text
+            # Do not accept an HTTP 200 WebForms/error page as if it
+            # were the downloadable report.
+            if (
+                200 <= int(getattr(response, "status_code", 0) or 0) < 300
+                and AMFIService._is_historical_report(text)
+            ):
+                return text
 
-                preview = " ".join(text.split())[:240]
-                logger.warning(
-                    "AMFI historical response was not a NAV report: "
-                    "endpoint=%s status=%s content_type=%s "
-                    "from=%s to=%s bytes=%s preview=%r",
-                    response.url,
-                    response.status_code,
-                    response.headers.get("Content-Type", ""),
-                    from_date,
-                    to_date,
-                    len(response.content),
-                    preview,
-                )
+            preview = " ".join(text.split())[:240]
+            logger.warning(
+                "AMFI historical response was not a NAV report: "
+                "endpoint=%s status=%s content_type=%s "
+                "from=%s to=%s bytes=%s preview=%r",
+                getattr(response, "url", AMFIService.NAV_HISTORY_URL),
+                getattr(response, "status_code", None),
+                getattr(response, "headers", {}).get("Content-Type", ""),
+                from_date,
+                to_date,
+                len(getattr(response, "content", text.encode("utf-8"))),
+                preview,
+            )
 
         if last_response is not None:
             last_response.raise_for_status()
             raise RuntimeError(
                 "AMFI historical endpoint returned an unexpected response "
                 f"for {from_date} to {to_date} "
-                f"(status={last_response.status_code}, "
-                f"content_type={last_response.headers.get('Content-Type', '')}, "
-                f"bytes={len(last_response.content)})."
+                f"(status={getattr(last_response, 'status_code', None)}, "
+                f"content_type={getattr(last_response, 'headers', {}).get('Content-Type', '')}, "
+                f"bytes={len(getattr(last_response, 'content', b''))})."
             )
 
         raise RuntimeError("AMFI historical endpoint returned no response.")
 
     @staticmethod
-    def _is_historical_report(text):
-        """Return True only for AMFI's semicolon-delimited historical report."""
+    def _is_historical_report(text, scheme_codes=None):
+        """Return True for AMFI historical text, including header variants."""
         if not text:
             return False
 
@@ -629,16 +710,50 @@ class AMFIService:
         if not lines:
             return False
 
-        header_tokens = {
-            token.strip().lower()
-            for token in lines[0].split(";")
-        }
         required = {
             "scheme code",
             "net asset value",
             "date",
         }
-        return required.issubset(header_tokens)
+        for line in lines[:100]:
+            tokens = {token.strip().lower() for token in line.split(";")}
+            if required.issubset(tokens) and (
+                "scheme name" in tokens or "nav name" in tokens
+            ):
+                return True
+
+        # AMFI has changed/added report preamble and header text over time.
+        # A real historical report is still identifiable by its 8-column
+        # semicolon-delimited scheme rows. When codes are supplied, require
+        # one of those requested codes to appear in a valid NAV/date row.
+        requested = {
+            str(code).strip()
+            for code in (scheme_codes or [])
+            if str(code or "").strip()
+        }
+        # Some AMFI responses omit the recognizable header but still contain
+        # valid historical rows. Validate the payload structurally rather than
+        # requiring a particular requested scheme to appear in this chunk.
+        # The current report puts NAV at index 6; older variants used index 4.
+        for line in lines:
+            parts = [part.strip() for part in line.split(";")]
+            if len(parts) < 8 or not parts[0].isdigit():
+                continue
+            try:
+                datetime.strptime(parts[-1], "%d-%b-%Y")
+            except (ValueError, TypeError):
+                continue
+            nav_values = []
+            for index in (6, 4, len(parts) - 2):
+                if index >= len(parts):
+                    continue
+                try:
+                    nav_values.append(Decimal(parts[index]))
+                except (InvalidOperation, ValueError, TypeError):
+                    continue
+            if nav_values:
+                return True
+        return False
 
     @staticmethod
     def _build_record(
@@ -853,7 +968,7 @@ class AMFIService:
             parts = [part.strip() for part in line.split(";")]
 
             if historical and parts[0].strip().lower() == "scheme code":
-                normalized = [part.lower() for part in parts]
+                normalized = [part.strip().lower() for part in parts]
                 historical_positions = {
                     "scheme_code": normalized.index("scheme code"),
                     "scheme_name": (
@@ -906,6 +1021,12 @@ class AMFIService:
     # per batch, letting other connections interleave, while each
     # batch is still atomic (no partial-batch corruption on error).
     NAV_IMPORT_BATCH_SIZE = 500
+
+    # AMFI's historical report is large and can intermittently return an
+    # incomplete/stub response for long ranges. Small chunks make retries
+    # reliable while still keeping the importer independent of third-party APIs.
+    HISTORICAL_WINDOW_DAYS = 90
+    HISTORICAL_MAX_RETRIES = 3
 
     # Pause between batch transactions so the write lock is
     # actually released for a moment before the next batch's
@@ -1293,11 +1414,18 @@ class AMFIService:
             )
             return AMFIService._import_master_records(records)
 
-        text = AMFIService.download_historical_nav(from_date, to_date)
-        records = AMFIService.parse_nav_file(
-            text,
-            historical=True,
-            scheme_codes=scheme_codes,
+        downloaded = AMFIService.download_historical_nav(from_date, to_date)
+        # Long all-scheme ranges are internally chunked by
+        # download_historical_nav(), so that path returns already-parsed
+        # records. A single-window request still returns the raw report text.
+        records = (
+            downloaded
+            if isinstance(downloaded, list)
+            else AMFIService.parse_nav_file(
+                downloaded,
+                historical=True,
+                scheme_codes=scheme_codes,
+            )
         )
         return AMFIService._import_master_records(records)
 

@@ -1,6 +1,7 @@
 from typing import List, Optional
 
 from .holdings_registry import MonitoredHolding
+from config.pwms_config import get as get_pwms_config
 
 
 class QueryBuilder:
@@ -28,60 +29,13 @@ class QueryBuilder:
     the company name.
     """
 
-    EVENT_QUERY_SUFFIXES = [
-        "earnings",
-        "regulatory",
-        "acquisition",
-        "management",
-        "litigation",
-        "order",
-    ]
-
-    MAX_QUERIES_PER_HOLDING = 15
-
-    MAX_UNDERLYING_QUERIES_PER_HOLDING = 5
-
-    MIN_SYMBOL_LENGTH_FOR_STANDALONE_QUERY = 3
-
-    SECTOR_QUERY_TEMPLATE = "Indian {sector} sector"
-
-    MAX_MACRO_QUERIES_PER_HOLDING = 2
-
-    # Sector keyword (matched as a case-insensitive substring of
-    # the holding's sector/category string) -> macro topics that
-    # defensibly affect that sector. Deliberately curated and
-    # narrow per the spec's "Only associate macro news with a
-    # holding when there is a defensible relationship" rule -
-    # this is not an exhaustive macro-topic list, just the ones
-    # with a clear causal story for each sector.
-    MACRO_TOPICS_BY_SECTOR = {
-        "bank": ["RBI", "interest rates", "bond yields"],
-        "financial": ["RBI", "interest rates"],
-        "nbfc": ["RBI", "interest rates"],
-        "insurance": ["interest rates", "IRDAI"],
-        "it": ["USD/INR"],
-        "software": ["USD/INR"],
-        "technology": ["USD/INR"],
-        "oil": ["crude oil prices"],
-        "energy": ["crude oil prices"],
-        "gas": ["crude oil prices"],
-        "power": ["crude oil prices"],
-        "auto": ["fuel prices"],
-        "automobile": ["fuel prices"],
-        "pharma": ["USFDA"],
-        "healthcare": ["USFDA"],
-        "fmcg": ["inflation"],
-        "consumer": ["inflation"],
-        "metal": ["commodity prices"],
-        "mining": ["commodity prices"],
-        "steel": ["commodity prices"],
-        "infrastructure": ["government infrastructure policy"],
-        "construction": ["government infrastructure policy"],
-        "cement": ["government infrastructure policy"],
-        "export": ["USD/INR", "tariffs"],
-        "textile": ["tariffs"],
-        "real estate": ["interest rates"],
-    }
+    EVENT_QUERY_SUFFIXES = get_pwms_config("news", "event_query_suffixes", [])
+    MAX_QUERIES_PER_HOLDING = get_pwms_config("news", "max_queries_per_holding", 15)
+    MAX_UNDERLYING_QUERIES_PER_HOLDING = get_pwms_config("news", "max_underlying_queries_per_holding", 5)
+    MIN_SYMBOL_LENGTH_FOR_STANDALONE_QUERY = get_pwms_config("news", "min_symbol_length_for_standalone_query", 3)
+    SECTOR_QUERY_TEMPLATE = get_pwms_config("news", "sector_query_template", "Indian {sector} sector")
+    MAX_MACRO_QUERIES_PER_HOLDING = get_pwms_config("news", "max_macro_queries_per_holding", 2)
+    MACRO_TOPICS_BY_SECTOR = get_pwms_config("news", "macro_topics_by_sector", {})
 
     @classmethod
     def macro_terms_for_sector(cls, sector: str) -> List[str]:

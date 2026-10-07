@@ -11,6 +11,7 @@ import logging
 import yfinance as yf
 
 from investments.models import AssetCategory
+from config.pwms_config import get as get_pwms_config
 
 logger = logging.getLogger(__name__)
 
@@ -31,12 +32,10 @@ def _cap_type_from_market_cap(market_cap):
     except (TypeError, ValueError):
         return None
 
-    # 1 lakh crore+ = Large, 20,000 crore to <1 lakh crore = Mid,
-    # below 20,000 crore = Small. These are application bands; Yahoo's
-    # raw marketCap is the source value.
-    if value >= 1_000_000_000_000:
+    bands = get_pwms_config("market_data", "equity_market_cap", {})
+    if value >= bands.get("large_min", 1_000_000_000_000):
         return "Large Cap"
-    if value >= 200_000_000_000:
+    if value >= bands.get("mid_min", 200_000_000_000):
         return "Mid Cap"
     return "Small Cap"
 

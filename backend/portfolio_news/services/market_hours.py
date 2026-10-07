@@ -8,6 +8,8 @@ extend this helper with an official holiday calendar later.
 from datetime import time
 from django.utils import timezone
 
+from config.pwms_config import get as get_pwms_config
+
 
 def market_session(timestamp):
     if timestamp is None:
@@ -18,8 +20,10 @@ def market_session(timestamp):
         return "weekend"
 
     clock = local.time()
-    if clock < time(9, 15):
+    market_open = time.fromisoformat(get_pwms_config("market", "open", "09:15"))
+    market_close = time.fromisoformat(get_pwms_config("market", "close", "15:30"))
+    if clock < market_open:
         return "pre-market"
-    if clock <= time(15, 30):
+    if clock <= market_close:
         return "market-hours"
     return "post-market"

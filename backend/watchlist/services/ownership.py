@@ -37,8 +37,8 @@ class OwnershipService:
 
         if product.isin:
             qs = qs.filter(isin__iexact=product.isin)
-            if product.product_type == ProductType.MUTUAL_FUND:
-                qs = qs.filter(category=AssetCategory.MUTUAL_FUND)
+            # Mutual-fund ownership is identified by the product's ISIN.
+            # Do not depend on the legacy Asset.category value.
             return qs
         if product.external_identifier:
             return qs.filter(Q(symbol__iexact=product.external_identifier) | Q(name__iexact=match_name))
@@ -109,18 +109,31 @@ class OwnershipService:
         }
         product_asset_ids = {product.id: set() for product in products}
 
-        if all(product.product_type == ProductType.PMS for product in products):
-            # PMS portfolio imports retain the strategy name on each
-            # Transaction.asset_name while Transaction.asset points to the
-            # underlying stock Asset. Resolve that relationship dynamically.
+        # Ownership identity rules are product-type specific:
+        #   - Mutual Funds: owned when the product ISIN matches a family MF Asset ISIN.
+        #   - PMS: owned when the PMS strategy name matches Transaction.asset_name.
+        # Keep the two matchers independent because the Watch List page normally
+        # contains mixed Mutual Fund and PMS products.
+        pms_products = [
+            product for product in products
+            if product.product_type == ProductType.PMS
+        ]
+        non_pms_products = [
+            product for product in products
+            if product.product_type != ProductType.PMS
+        ]
+
+        if pms_products:
             name_query = Q()
-            for product in products:
+            for product in pms_products:
                 name_query |= Q(asset_name__iexact=product_match_names[product.id])
 
-            pms_transactions = family_scope(Transaction.objects, user).filter(name_query).values("asset_id", "asset_name")
+            pms_transactions = family_scope(Transaction.objects, user).filter(
+                name_query
+            ).values("asset_id", "asset_name")
 
             products_by_name = {}
-            for product in products:
+            for product in pms_products:
                 products_by_name.setdefault(
                     str(product_match_names[product.id] or "").strip().casefold(),
                     [],
@@ -130,24 +143,26 @@ class OwnershipService:
                 name_key = str(transaction["asset_name"] or "").strip().casefold()
                 for product_id in products_by_name.get(name_key, []):
                     product_asset_ids[product_id].add(transaction["asset_id"])
-        else:
+
+        if non_pms_products:
             identifier_query = Q()
-            for product in products:
-                match_name = product_match_names[product.id]
+            for product in non_pms_products:
+                # Mutual funds intentionally use ISIN as the ownership identity.
+                # Do not fall back to name when an MF product has an ISIN.
                 if product.isin:
                     identifier_query |= Q(isin__iexact=product.isin)
                 elif product.external_identifier:
                     identifier_query |= (
                         Q(symbol__iexact=product.external_identifier)
-                        | Q(name__iexact=match_name)
+                        | Q(name__iexact=product_match_names[product.id])
                     )
                 else:
-                    identifier_query |= Q(name__iexact=match_name)
+                    identifier_query |= Q(name__iexact=product_match_names[product.id])
 
             assets_qs = family_scope(Asset.objects, user).filter(identifier_query)
-            if products and all(product.product_type == ProductType.MUTUAL_FUND for product in products):
-                assets_qs = assets_qs.filter(category=AssetCategory.MUTUAL_FUND)
-            assets = list(assets_qs.only("id", "owner_id", "name", "symbol", "isin", "category"))
+            assets = list(
+                assets_qs.only("id", "owner_id", "name", "symbol", "isin", "category")
+            )
 
             def norm(value):
                 return str(value or "").strip().casefold()
@@ -163,17 +178,16 @@ class OwnershipService:
                 if asset.name:
                     assets_by_name.setdefault(norm(asset.name), []).append(asset)
 
-            for product in products:
-                match_name = product_match_names[product.id]
+            for product in non_pms_products:
                 if product.isin:
                     matches = assets_by_isin.get(norm(product.isin), [])
                 elif product.external_identifier:
                     matches = (
                         assets_by_symbol.get(norm(product.external_identifier), [])
-                        + assets_by_name.get(norm(match_name), [])
+                        + assets_by_name.get(norm(product_match_names[product.id]), [])
                     )
                 else:
-                    matches = assets_by_name.get(norm(match_name), [])
+                    matches = assets_by_name.get(norm(product_match_names[product.id]), [])
                 product_asset_ids[product.id] = {asset.id for asset in matches}
 
         all_asset_ids = {asset_id for ids in product_asset_ids.values() for asset_id in ids}
@@ -233,8 +247,6 @@ class OwnershipService:
     @classmethod
     def ownership_rows(cls, product, user):
         assets = cls._asset_queryset(product, user)
-        if product.product_type == ProductType.MUTUAL_FUND:
-            assets = assets.filter(category=AssetCategory.MUTUAL_FUND)
         positions = family_scope(PortfolioPosition.objects, user).filter(asset__in=assets).select_related("asset")
         rows = []
         for position in positions:

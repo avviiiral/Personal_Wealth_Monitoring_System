@@ -3,6 +3,8 @@ from datetime import date
 
 from curl_cffi import requests
 
+from config.pwms_config import get as get_pwms_config
+
 
 class SGBPriceService:
     """
@@ -23,18 +25,10 @@ class SGBPriceService:
     so the NSE symbol is derived automatically.
     """
 
-    NSE_HOME_URL = (
-        "https://www.nseindia.com/"
-    )
-
-    NSE_QUOTE_URL = (
-        "https://www.nseindia.com/"
-        "api/quote-equity"
-    )
-
-    FALLBACK_URL = (
-        "https://sgb.vercel.app/"
-    )
+    CONFIG = get_pwms_config("providers", "sgb", {})
+    NSE_HOME_URL = CONFIG.get("nse_home_url", "")
+    NSE_QUOTE_URL = CONFIG.get("nse_quote_url", "")
+    FALLBACK_URL = CONFIG.get("fallback_url", "")
 
     MONTHS = {
         "JAN": "JAN",
@@ -59,33 +53,20 @@ class SGBPriceService:
 
         session = requests.Session(
             impersonate="chrome",
-            doh_url="https://1.1.1.1/dns-query",
+            doh_url=cls.CONFIG.get("doh_url", ""),
         )
 
         headers = {
-            "User-Agent": (
-                "Mozilla/5.0 "
-                "(Windows NT 10.0; Win64; x64) "
-                "AppleWebKit/537.36 "
-                "(KHTML, like Gecko) "
-                "Chrome/151.0.0.0 Safari/537.36"
-            ),
-            "Accept": (
-                "text/html,application/xhtml+xml,"
-                "application/xml;q=0.9,*/*;q=0.8"
-            ),
-            "Accept-Language": (
-                "en-US,en;q=0.9"
-            ),
-            "Referer": (
-                "https://www.nseindia.com/"
-            ),
+            "User-Agent": cls.CONFIG.get("user_agent", ""),
+            "Accept": cls.CONFIG.get("accept", ""),
+            "Accept-Language": cls.CONFIG.get("accept_language", ""),
+            "Referer": cls.CONFIG.get("referer", ""),
         }
 
         response = session.get(
             cls.NSE_HOME_URL,
             headers=headers,
-            timeout=20,
+            timeout=cls.CONFIG.get("timeout_seconds", 20),
         )
 
         response.raise_for_status()
@@ -266,7 +247,7 @@ class SGBPriceService:
                     "symbol": symbol,
                 },
                 headers=headers,
-                timeout=20,
+                timeout=cls.CONFIG.get("timeout_seconds", 20),
             )
 
             response.raise_for_status()
@@ -358,20 +339,12 @@ class SGBPriceService:
             response = requests.get(
                 cls.FALLBACK_URL,
                 impersonate="chrome",
-                timeout=20,
+                timeout=cls.CONFIG.get("timeout_seconds", 20),
                 headers={
-                    "User-Agent": (
-                        "Mozilla/5.0 "
-                        "(Windows NT 10.0; Win64; x64) "
-                        "AppleWebKit/537.36 "
-                        "(KHTML, like Gecko) "
-                        "Chrome/151.0.0.0 "
-                        "Safari/537.36"
-                    ),
-                    "Accept": (
-                        "text/html,application/xhtml+xml,"
-                        "application/xml;q=0.9,*/*;q=0.8"
-                    ),
+                    "User-Agent": cls.CONFIG.get("user_agent", ""),
+                    "Accept": cls.CONFIG.get("accept", ""),
+                    "Accept-Language": cls.CONFIG.get("accept_language", ""),
+                    "Referer": cls.CONFIG.get("referer", ""),
                 },
             )
 

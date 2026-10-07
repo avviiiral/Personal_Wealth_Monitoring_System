@@ -1,6 +1,8 @@
 from collections import defaultdict
+from dateutil.relativedelta import relativedelta
 from datetime import date, timedelta
 from decimal import Decimal
+import logging
 import re
 
 import requests
@@ -9,12 +11,24 @@ from django.db.models import Max, Q
 
 from investments.models import Asset, Transaction, TransactionType
 from market_data.models import MarketPrice, ManualAssetPrice
-from mutual_funds.models import MutualFundNAV, MutualFundTransaction, MutualFundHolding
+from mutual_funds.services.amfi import AMFIService
+from mutual_funds.services.amfi_asset_resolver import AMFIAssetResolver
+from mutual_funds.models import (
+    AMFIMasterNAV,
+    AMFIMasterScheme,
+    MutualFundNAV,
+    MutualFundTransaction,
+    MutualFundHolding,
+    MutualFundScheme,
+)
 from portfolio.services.portfolio_tree_service import PortfolioTreeService
 from market_data.services.yahoo_finance import YahooFinanceService
 from market_data.services.market_data_manager import MarketDataManager
 from users.models import TaxRateSetting
 from .models import FamilyMISNotes
+
+
+logger = logging.getLogger(__name__)
 
 
 class MISReportService:
@@ -122,7 +136,7 @@ class MISReportService:
         if key not in cache:
             nav = (
                 MutualFundNAV.objects
-                .filter(scheme_id=scheme_id, date__lte=as_of)
+                .filter(scheme_id=scheme.id, date__lte=as_of)
                 .order_by("-date", "-id")
                 .values_list("nav", flat=True)
                 .first()
@@ -216,7 +230,7 @@ class MISReportService:
         transactions = list(
             Transaction.objects
             .filter(family=family)
-            .select_related("asset")
+            .select_related("asset", "asset__security_master")
             .order_by("transaction_date", "created_at", "id")
         )
         tx_groups = defaultdict(list)
@@ -275,21 +289,67 @@ class MISReportService:
         return rows
 
     @classmethod
-    def _build_data_row(cls, row, opening_date, as_of, period_start, price_cache, nav_cache):
+    def _build_data_row(cls, row, opening_date, as_of, period_start, price_cache, nav_cache, reference_cache):
         txs = row["transactions"]
         opening_qty, _opening_cost = cls._position_at(txs, opening_date, row["kind"])
         closing_qty, closing_cost = cls._position_at(txs, as_of, row["kind"])
 
         if row["kind"] == "asset":
             asset_ids = row["asset_ids"]
-            opening_prices = [
-                cls._market_price(asset_id, opening_date, price_cache)
-                for asset_id in asset_ids
-            ]
-            closing_prices = [
-                cls._market_price(asset_id, as_of, price_cache)
-                for asset_id in asset_ids
-            ]
+            assets_by_id = {tx.asset_id: tx.asset for tx in txs if tx.asset_id}
+            opening_prices = []
+            closing_prices = []
+            for asset_id in asset_ids:
+                asset = assets_by_id.get(asset_id)
+                opening_nav = cls._mf_nav_for_asset(asset, opening_date, nav_cache) if asset else None
+                closing_nav = cls._mf_nav_for_asset(asset, as_of, nav_cache) if asset else None
+
+                opening_price = opening_nav
+                closing_price = closing_nav
+
+                # REIT/InvIT rows are often stored as ordinary Asset +
+                # Transaction records, but their valuation is maintained through
+                # the shared reference-price history rather than family MarketPrice.
+                # Use the configured reference instruments for both historical
+                # dates before falling back to an asset-local MarketPrice.
+                subclass = cls._clean(row.get("sub_class") or getattr(asset, "_portfolio_sub_class", "")).casefold() if asset else ""
+                if asset and ("reit" in subclass or "invit" in subclass):
+                    normalized_name = cls._normalize_mf_name(asset.name)
+                    reference_candidates = []
+                    for reference_name, symbols in cls.REFERENCE_SYMBOLS.items():
+                        if reference_name in {"Nifty 50", "$ Rate", "BSE 500"}:
+                            continue
+                        reference_normalized = cls._normalize_mf_name(reference_name)
+                        target_tokens = set(normalized_name.split())
+                        reference_tokens = set(reference_normalized.split())
+                        overlap = len(target_tokens & reference_tokens)
+                        if overlap >= 2 and overlap / max(len(target_tokens), len(reference_tokens)) >= 0.5:
+                            reference_candidates.append((overlap, reference_name, symbols))
+                    reference_candidates.sort(key=lambda item: item[0], reverse=True)
+
+                    for _score, reference_name, symbols in reference_candidates:
+                        ref_opening, ref_closing = cls._reference_rate(
+                            reference_name,
+                            symbols,
+                            as_of,
+                            opening_date,
+                            reference_cache,
+                        )
+                        if opening_price is None and ref_opening is not None:
+                            opening_price = ref_opening
+                        if closing_price is None and ref_closing is not None:
+                            closing_price = ref_closing
+                        if opening_price is not None or closing_price is not None:
+                            break
+
+                opening_prices.append(
+                    opening_price if opening_price is not None
+                    else cls._price_on(asset_id, opening_date, price_cache)
+                )
+                closing_prices.append(
+                    closing_price if closing_price is not None
+                    else cls._price_on(asset_id, as_of, price_cache)
+                )
         else:
             opening_prices = [
                 cls._mf_nav(scheme_id, opening_date, nav_cache)
@@ -372,15 +432,36 @@ class MISReportService:
 
     @classmethod
     def _tax_rate_for_lot(cls, lot, tax_setting, as_of):
+        """Return the configured ST/LT tax rate for one FIFO lot."""
         if tax_setting is None or tax_setting.tenure_months is None:
             return cls.ZERO
-        holding_months = cls._holding_months(lot["acquired_on"], as_of)
-        rate = (
-            tax_setting.short_term_tax_rate
-            if holding_months <= tax_setting.tenure_months
-            else tax_setting.long_term_tax_rate
+
+        acquired_on = lot.get("acquired_on")
+        if acquired_on is None or as_of is None:
+            return cls.ZERO
+
+        tenure_months = int(tax_setting.tenure_months)
+        if isinstance(acquired_on, str):
+            acquired_on = date.fromisoformat(acquired_on)
+        if isinstance(as_of, str):
+            as_of = date.fromisoformat(as_of)
+
+        # Classify each FIFO lot independently using completed calendar
+        # months held through the actual disposal/as-of date. This keeps
+        # older lots long-term while newer lots from the same asset remain
+        # short-term in the same disposal.
+        holding_months = cls._holding_months(acquired_on, as_of)
+        is_long_term = holding_months >= tenure_months
+
+        raw_rate = (
+            tax_setting.long_term_tax_rate
+            if is_long_term
+            else tax_setting.short_term_tax_rate
         )
-        return Decimal(str(rate or 0)) / Decimal("100")
+        if raw_rate is None:
+            return cls.ZERO
+
+        return Decimal(str(raw_rate)) / Decimal("100")
 
     @classmethod
     def _fifo_tax_metrics(cls, transactions, kind, as_of, period_start, tax_setting, market_rate):
@@ -434,12 +515,17 @@ class MISReportService:
 
                 if period_start <= tx.transaction_date <= as_of:
                     realized_pnl += gain
-                    # Tax follows the P/L sign. Losses therefore produce a
-                    # negative tax amount (tax benefit) using the same
-                    # tenure-based ST/LT rate as gains.
-                    realized_tax += gain * cls._tax_rate_for_lot(
-                        lot, tax_setting, tx.transaction_date
+
+                    # Resolve the rate directly at the point where each FIFO
+                    # lot is disposed. This keeps the ST/LT decision tied to
+                    # that exact lot and sale date, rather than relying on
+                    # report-period state or a later remaining-lot valuation.
+                    tax_rate = cls._tax_rate_for_lot(
+                        lot,
+                        tax_setting,
+                        tx.transaction_date,
                     )
+                    realized_tax += gain * tax_rate
 
                 lot["remaining_qty"] -= matched_qty
                 remaining_to_sell -= matched_qty
@@ -583,10 +669,12 @@ class MISReportService:
     @classmethod
     def _ensure_reference_history(cls, name, symbol, opening_date, as_of, cache):
         """
-        Resolve a standard MIS reference instrument to a global Asset and make
-        sure its Yahoo historical prices are available for the requested dates.
-        Reference assets are not family holdings and therefore never affect
-        portfolio ownership or valuation.
+        Resolve a standard MIS reference instrument to a global Asset.
+
+        MIS page generation is a synchronous request and must not block on
+        Yahoo/network I/O. Reference prices are therefore read from the local
+        MarketPrice history here. The explicit Excel-download path can refresh
+        reference history before building the workbook.
         """
         cache_key = (symbol, opening_date, as_of)
         if cache_key in cache:
@@ -609,96 +697,40 @@ class MISReportService:
                 is_active=True,
             )
 
-        has_opening = MarketPrice.objects.filter(
-            asset=asset,
-            date__lte=opening_date,
-        ).exists()
-        has_closing = MarketPrice.objects.filter(
-            asset=asset,
-            date__lte=as_of,
-        ).exists()
-
-        if not (has_opening and has_closing):
-            try:
-                # REIT/InvIT units can be thinly traded. Fetch a look-back
-                # window so a prior trading day is available when the requested
-                # opening date itself has no trade.
-                history_start = opening_date - timedelta(days=30)
-                YahooFinanceService.save_history(
-                    asset=asset,
-                    symbol=symbol,
-                    start=history_start,
-                    end=as_of + timedelta(days=1),
-                )
-            except Exception:
-                # Existing stored history remains usable even when an external
-                # source is temporarily unavailable.
-                pass
-
         cache[cache_key] = asset
         return asset
 
     @classmethod
     def _bse500_rate(cls, target_date, cache):
         """
-        Read the BSE 500 price-return index from the official BSE Indices
-        chart page. The page exposes recent daily chart points as
-        'Date: DD Mon YYYY - Value: ...'. Values are never inferred from
-        another index.
+        Resolve BSE 500 from locally stored reference history.
+
+        Do not call the public BSE site while serving the MIS page. Reference
+        history is refreshed separately by the scheduled/reference refresh
+        workflow or the explicit Excel download path.
         """
         cache_key = ("BSE500", target_date)
         if cache_key in cache:
             return cache[cache_key]
 
-        try:
-            response = requests.get(
-                "https://www.bseindices.com/indices-details/code/17/",
-                headers={
-                    "User-Agent": "Mozilla/5.0",
-                    "Accept": "text/html,application/xhtml+xml",
-                },
-                timeout=10,
-            )
-            response.raise_for_status()
-            html = response.text
+        asset = (
+            Asset.objects
+            .filter(family__isnull=True, symbol="BSE-500.BO")
+            .order_by("id")
+            .first()
+        )
+        if asset is None:
+            cache[cache_key] = None
+            return None
 
-            patterns = [
-                r"Date\s*:\s*(\d{1,2})\s+([A-Za-z]{3,9})\s+(\d{4})\s*[–-]\s*Value\s*:\s*([\d,]+(?:\.\d+)?)",
-                r"(\d{1,2})\s+([A-Za-z]{3,9})\s+(\d{4}).{0,80}?Value\s*:\s*([\d,]+(?:\.\d+)?)",
-            ]
-            month_map = {
-                "jan": 1, "feb": 2, "mar": 3, "apr": 4,
-                "may": 5, "jun": 6, "jul": 7, "aug": 8,
-                "sep": 9, "sept": 9, "oct": 10, "nov": 11, "dec": 12,
-            }
-
-            found = {}
-            for pattern in patterns:
-                for day, month_text, year, value in re.findall(pattern, html, flags=re.IGNORECASE):
-                    month = month_map.get(month_text[:3].lower())
-                    if not month:
-                        continue
-                    try:
-                        point_date = date(int(year), month, int(day))
-                        found[point_date] = Decimal(value.replace(",", ""))
-                    except (TypeError, ValueError, ArithmeticError):
-                        continue
-
-                if found:
-                    break
-
-            if found:
-                eligible = [
-                    (point_date, value)
-                    for point_date, value in found.items()
-                    if point_date <= target_date
-                ]
-                result = max(eligible, key=lambda item: item[0])[1] if eligible else None
-            else:
-                result = None
-        except Exception:
-            result = None
-
+        value = (
+            MarketPrice.objects
+            .filter(asset=asset, date__lte=target_date)
+            .order_by("-date", "-id")
+            .values_list("close_price", flat=True)
+            .first()
+        )
+        result = Decimal(str(value)) if value is not None else None
         cache[cache_key] = result
         return result
 
@@ -1573,21 +1605,10 @@ class MISReportService:
         )
         price_cache = {}
         nav_cache = {}
-        data_rows = [
-            cls._build_data_row(
-                row,
-                opening_date,
-                as_of,
-                period_start,
-                price_cache,
-                nav_cache,
-            )
-            for row in rows
-        ]
-        # Keep the complete set of report rows before applying the Data Sheet
-        # display filter. A Tax Report must also retain positions that were fully
-        # sold during the selected period because those rows can have realized
-        # P/L/tax even when their closing units and market value are zero.
+        reference_cache = {}
+        # Build each valuation row exactly once. The previous implementation
+        # calculated the entire Data Sheet twice before filtering it, which
+        # multiplied all historical NAV/price queries for every MIS request.
         all_data_rows = [
             cls._build_data_row(
                 row,
@@ -1596,6 +1617,7 @@ class MISReportService:
                 period_start,
                 price_cache,
                 nav_cache,
+                reference_cache,
             )
             for row in rows
         ]
@@ -1676,15 +1698,26 @@ class MISReportService:
         for row in data_rows:
             current_by_family_asset_class[(row["asset_class"], row["family_name"])] += Decimal(str(row["closing_amount"] or 0))
 
-        for row in rows:
-            prior = cls._build_data_row(
-                row,
-                prior_month_end,
-                prior_month_end,
-                period_start,
-                price_cache,
-                nav_cache,
-            )
+        # Reuse the already-computed valuation rows when the requested
+        # opening date is the previous month-end. Only custom MIS ranges
+        # need a separate prior-month valuation pass.
+        if opening_date == prior_month_end:
+            prior_rows = all_data_rows
+        else:
+            prior_rows = [
+                cls._build_data_row(
+                    row,
+                    prior_month_end,
+                    prior_month_end,
+                    period_start,
+                    price_cache,
+                    nav_cache,
+                    reference_cache,
+                )
+                for row in rows
+            ]
+
+        for prior in prior_rows:
             if prior["closing_units"] > 0 or prior["closing_amount"] > 0:
                 prior_by_family_asset_class[(prior["asset_class"], prior["family_name"])] += Decimal(str(prior["closing_amount"] or 0))
 

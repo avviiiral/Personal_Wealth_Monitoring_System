@@ -5,6 +5,8 @@ from decimal import Decimal, InvalidOperation
 import requests
 from django.utils import timezone
 
+from config.pwms_config import get as get_pwms_config
+
 
 class BondPriceService:
     """
@@ -18,12 +20,9 @@ class BondPriceService:
     discovered automatically without manual symbol mapping.
     """
 
-    ENDPOINT = (
-        "https://bricsonline.nseindia.com/"
-        "bondsnew/rest/public/sebiannxone/all"
-    )
-
-    TIMEOUT = 30
+    CONFIG = get_pwms_config("providers", "bond_price", {})
+    ENDPOINT = CONFIG.get("endpoint", "")
+    TIMEOUT = CONFIG.get("timeout_seconds", 30)
 
     COLUMN_NAMES = [
         "modRemarksBuyer",
@@ -49,23 +48,11 @@ class BondPriceService:
     def _headers(cls):
         return {
             "pageToken": str(uuid.uuid4()),
-            "User-Agent": (
-                "Mozilla/5.0 "
-                "(Windows NT 10.0; Win64; x64) "
-                "AppleWebKit/537.36 "
-                "(KHTML, like Gecko) "
-                "Chrome/151.0.0.0 Safari/537.36"
-            ),
-            "Accept": (
-                "application/json, "
-                "text/javascript, */*; q=0.01"
-            ),
+            "User-Agent": cls.CONFIG.get("user_agent", ""),
+            "Accept": cls.CONFIG.get("accept", ""),
             "X-Requested-With": "XMLHttpRequest",
-            "Origin": "https://bricsonline.nseindia.com",
-            "Referer": (
-                "https://bricsonline.nseindia.com/"
-                "bondsnew/rest/public?r=sebiannexure1"
-            ),
+            "Origin": cls.CONFIG.get("origin", ""),
+            "Referer": cls.CONFIG.get("referer", ""),
         }
 
     @classmethod

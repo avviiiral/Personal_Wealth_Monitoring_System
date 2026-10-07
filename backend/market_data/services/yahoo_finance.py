@@ -8,6 +8,7 @@ from curl_cffi import requests
 from django.db import transaction
 
 from market_data.models import MarketPrice, DataSource
+from config.pwms_config import get as get_pwms_config
 
 
 # ============================================================
@@ -72,7 +73,7 @@ class YahooFinanceService:
         try:
             session = requests.Session(
                 impersonate="chrome",
-                doh_url="https://1.1.1.1/dns-query",
+                doh_url=get_pwms_config("providers", "yahoo_finance", {}).get("doh_url", ""),
             )
 
             ticker = yf.Ticker(

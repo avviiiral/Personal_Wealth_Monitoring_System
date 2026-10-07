@@ -212,7 +212,7 @@
    ========================================================== */
 
 .prices-table {
-  min-width: 1100px;
+  min-width: 1180px;
   table-layout: auto;
 }
 
@@ -232,4 +232,77 @@
 
 .prices-table .actions-cell .link-button + .link-button {
   margin-left: 14px;
+}
+
+
+.history-row {
+  padding: 0 !important;
+  background: transparent;
+}
+
+.history-panel {
+  padding: 14px 18px;
+  border-top: 1px solid var(--border-color, #2b303b);
+}
+
+.history-title {
+  font-weight: 600;
+  margin-bottom: 10px;
+}
+
+.history-loading,
+.history-empty {
+  color: var(--muted-text-color, #8b93a7);
+  padding: 8px 0;
+}
+
+.history-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.history-table th,
+.history-table td {
+  padding: 8px 10px;
+  text-align: left;
+  border-bottom: 1px solid var(--border-color, #2b303b);
+}
+
+.history-table th {
+  font-size: 12px;
+  color: var(--muted-text-color, #8b93a7);
+}
+
+
+.price-edit-fields {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.price-date-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: #667085;
+}
+
+.price-date-input {
+  box-sizing: border-box;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  padding: 6px 8px;
+  font-size: 13px;
+}
+
+:host-context(html.dark-theme) .price-date-label {
+  color: #aeb7c6;
+}
+
+:host-context(html.dark-theme) .price-date-input {
+  background: #12151c;
+  border-color: #3a414e;
+  color: #e5e7eb;
 }

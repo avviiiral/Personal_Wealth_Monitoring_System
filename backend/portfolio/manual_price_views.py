@@ -31,7 +31,7 @@ from users.permissions import get_visible_owner_ids
 from users.permissions import is_admin_or_above
 
 
-@api_view(["PUT", "PATCH", "DELETE"])
+@api_view(["GET", "PUT", "PATCH", "DELETE"])
 @permission_classes([IsAuthenticated])
 def manual_asset_price(
     request,
@@ -42,8 +42,9 @@ def manual_asset_price(
     current price for an asset.
 
     Manual prices use the same MarketPrice pipeline as
-    automatic prices, while preserving dated manual
-    snapshots for historical analytics.
+    automatic prices. The supplied date is the effective
+    valuation date: the manual price applies from that date
+    onward in historical calculations.
 
     Editability is role-based (Admin/Super User/System Owner)
     and asset visibility remains family/owner based. The
@@ -51,6 +52,81 @@ def manual_asset_price(
     the editor's active-family selection, because the editor
     may be a different family member.
     """
+
+    # ==========================================================
+    # READ MANUAL PRICE HISTORY
+    # ==========================================================
+
+    if request.method == "GET":
+        visible_owner_ids = get_visible_owner_ids(request.user)
+
+        asset = (
+            Asset.objects
+            .filter(
+                id=asset_id,
+                is_active=True,
+            )
+            .filter(
+                family_id__in=request.user.profile.family_groups.values_list(
+                    "id",
+                    flat=True,
+                )
+            )
+            .first()
+        )
+
+        if asset is None:
+            asset = (
+                Asset.objects
+                .filter(
+                    id=asset_id,
+                    owner_id__in=visible_owner_ids,
+                    is_active=True,
+                )
+                .first()
+            )
+
+        if asset is None:
+            return Response(
+                {
+                    "success": False,
+                    "message": "Asset not found.",
+                },
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        history = (
+            MarketPrice.objects
+            .filter(
+                asset=asset,
+                source=DataSource.MANUAL,
+            )
+            .select_related("updated_by")
+            .order_by("-date", "-id")
+        )
+
+        return Response(
+            {
+                "success": True,
+                "asset_id": asset.id,
+                "asset_name": asset.name,
+                "history": [
+                    {
+                        "id": record.id,
+                        "price": str(record.close_price),
+                        "price_date": str(record.date),
+                        "updated_by": (
+                            record.updated_by.username
+                            if record.updated_by
+                            else None
+                        ),
+                        "updated_at": record.created_at,
+                    }
+                    for record in history
+                ],
+            },
+            status=status.HTTP_200_OK,
+        )
 
     # ==========================================================
     # AUTHORIZE CAPABILITY
@@ -113,6 +189,8 @@ def manual_asset_price(
     
     if request.method == "DELETE":
 
+        # Restore automatic pricing by removing every manual snapshot
+        # for the asset, including historical as-on-date overrides.
         deleted, _ = (
             MarketPrice.objects
             .filter(
@@ -188,16 +266,25 @@ def manual_asset_price(
 
     raw_price_date = request.data.get("price_date")
 
-    if not raw_price_date:
+    if raw_price_date in (None, ""):
         price_date = timezone.localdate()
     else:
         try:
             price_date = date.fromisoformat(str(raw_price_date))
-        except ValueError:
+        except (TypeError, ValueError):
             return Response(
                 {
                     "success": False,
-                    "message": "price_date must be YYYY-MM-DD.",
+                    "message": "Price date must be a valid date in YYYY-MM-DD format.",
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if price_date > timezone.localdate():
+            return Response(
+                {
+                    "success": False,
+                    "message": "Price date cannot be in the future.",
                 },
                 status=status.HTTP_400_BAD_REQUEST,
             )

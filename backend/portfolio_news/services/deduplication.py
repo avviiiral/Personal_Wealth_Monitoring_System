@@ -32,7 +32,18 @@ _EVENT_FAMILIES = {
     "pledge": ("promoter pledge", "pledge", "pledged"),
 }
 
-_STOPWORDS = {"the", "and", "of", "for", "to", "a", "an", "with", "on", "in", "from", "limited", "ltd", "company"}
+_STOPWORDS = {
+    "the", "and", "of", "for", "to", "a", "an", "with", "on", "in", "from",
+    "limited", "ltd", "company", "article", "alert", "news", "report",
+    "story", "update", "first", "second", "third", "latest",
+}
+
+_EVENT_ENTITY_STOPWORDS = {
+    token
+    for phrases in _EVENT_FAMILIES.values()
+    for phrase in phrases
+    for token in re.findall(r"[a-z0-9]+", phrase.lower())
+}
 
 
 def _event_family(text: str) -> str:
@@ -42,9 +53,22 @@ def _event_family(text: str) -> str:
     return family if score else ""
 
 
+def _meaningful_entity_tokens(*values: str) -> set[str]:
+    raw = " ".join(value or "" for value in values)
+    return {
+        token
+        for token in re.findall(r"[a-z0-9]+", raw.lower())
+        if len(token) >= 3
+        and token not in _STOPWORDS
+        and token not in _EVENT_ENTITY_STOPWORDS
+    }
+
+
 def _entity_tokens(candidate: NewsArticleResult) -> set[str]:
-    raw = " ".join((candidate.matched_query or "", candidate.title or ""))
-    return {token for token in re.findall(r"[a-z0-9]+", raw.lower()) if len(token) >= 4 and token not in _STOPWORDS}
+    return _meaningful_entity_tokens(
+        candidate.matched_query,
+        candidate.title,
+    )
 
 
 
@@ -152,28 +176,59 @@ class ArticleDeduplicator:
         ).only(
             "id",
             "normalized_title",
+            "matched_query",
         )
 
+        candidate_entities = _entity_tokens(candidate)
+
         for article in recent_candidates:
-            if titles_are_similar(
+            if not titles_are_similar(
                 normalized_title,
                 article.normalized_title,
                 threshold=cls.NEAR_DUPLICATE_THRESHOLD,
             ):
+                continue
+
+            article_entities = {
+                token
+                for token in re.findall(
+                    r"[a-z0-9]+",
+                    " ".join(
+                        (
+                            article.matched_query or "",
+                            article.normalized_title or "",
+                        )
+                    ).lower(),
+                )
+                if (
+                    len(token) >= 3
+                    and token not in _STOPWORDS
+                    and token not in _EVENT_ENTITY_STOPWORDS
+                )
+            }
+            # Fuzzy similarity alone is too broad for generic headlines such
+            # as "First alert article" and "Second alert article". Require at
+            # least one meaningful entity token in common before treating two
+            # different headlines as the same event.
+            candidate_title_entities = _meaningful_entity_tokens(candidate.title)
+            article_title_entities = _meaningful_entity_tokens(article.normalized_title)
+            # The matched query is often identical for every article returned
+            # for one holding. It is useful as context, but by itself it is
+            # not enough to collapse generic headlines such as "First alert
+            # article" and "Second alert article".
+            if candidate_title_entities & article_title_entities:
                 return article
 
         candidate_family = _event_family(candidate.title)
-        candidate_entities = _entity_tokens(candidate)
         if candidate_family and candidate_entities:
+            candidate_title_entities = _meaningful_entity_tokens(candidate.title)
             for article in recent_candidates:
                 if _event_family(article.normalized_title) != candidate_family:
                     continue
-                article_entities = {
-                    token
-                    for token in re.findall(r"[a-z0-9]+", article.normalized_title.lower())
-                    if len(token) >= 4 and token not in _STOPWORDS
-                }
-                if candidate_entities & article_entities:
+                article_title_entities = _meaningful_entity_tokens(
+                    article.normalized_title,
+                )
+                if candidate_title_entities & article_title_entities:
                     return article
 
         return None

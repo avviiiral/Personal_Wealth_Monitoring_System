@@ -349,6 +349,7 @@ class InvestmentSummaryService:
 
     @classmethod
     def calculate(cls, user, family_name=None):
+        """Calculate the current Investment Summary."""
         totals = {
             asset_class: cls.ZERO
             for _, asset_classes in cls.MASTER_MAPPING
@@ -377,10 +378,12 @@ class InvestmentSummaryService:
                 totals[asset_class] += value
                 if raw_class:
                     raw_values_by_asset_class[asset_class].add(raw_class)
+
             return cls._build_results(totals, raw_values_by_asset_class)
 
         asset_class_by_asset_id = cls._equity_asset_class_by_asset_id(
-            user, family_name=family_name
+            user,
+            family_name=family_name,
         )
         for asset_id, value in cls._family_equity_positions(user, family_name):
             raw_class = asset_class_by_asset_id.get(asset_id)
@@ -397,7 +400,6 @@ class InvestmentSummaryService:
                 raw_values_by_asset_class[asset_class].add(raw_class)
 
         return cls._build_results(totals, raw_values_by_asset_class)
-
     @classmethod
     def calculate_performance_by_subclass(cls, user):
         totals = {

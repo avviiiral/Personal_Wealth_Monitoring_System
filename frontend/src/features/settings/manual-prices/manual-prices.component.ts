@@ -36,7 +36,21 @@ export class ManualPricesComponent implements OnInit {
 
   priceInput = '';
 
+  priceDate = '';
+
   saving = false;
+
+  expandedAssetId: number | null = null;
+
+  historyLoading = false;
+
+  priceHistory: Array<{
+    id: number;
+    price: string;
+    price_date: string;
+    updated_by: string | null;
+    updated_at: string | null;
+  }> = [];
 
   ngOnInit(): void {
     this.loadPrices();
@@ -66,14 +80,43 @@ export class ManualPricesComponent implements OnInit {
     });
   }
 
+  toggleHistory(row: SettingsPriceRow): void {
+    if (this.expandedAssetId === row.asset_id) {
+      this.expandedAssetId = null;
+      this.priceHistory = [];
+      return;
+    }
+
+    this.expandedAssetId = row.asset_id;
+    this.priceHistory = [];
+    this.historyLoading = true;
+
+    this.manualPriceService.getHistory(row.asset_id).subscribe({
+      next: (response) => {
+        this.priceHistory = response.history || [];
+        this.historyLoading = false;
+        this.cdr.detectChanges();
+      },
+      error: (err) => {
+        this.historyLoading = false;
+        this.toast.error(
+          err?.error?.message || err?.error?.detail || 'Unable to load price history.',
+        );
+        this.cdr.detectChanges();
+      },
+    });
+  }
+
   startEdit(row: SettingsPriceRow): void {
     this.editingAssetId = row.asset_id;
     this.priceInput = row.price ?? '';
+    this.priceDate = row.price_date || this.getTodayDateInputValue();
   }
 
   cancelEdit(): void {
     this.editingAssetId = null;
     this.priceInput = '';
+    this.priceDate = '';
   }
 
   saveEdit(row: SettingsPriceRow): void {
@@ -84,9 +127,27 @@ export class ManualPricesComponent implements OnInit {
       return;
     }
 
+    if (!this.priceDate) {
+      this.toast.error('Select the date from which this price is effective.');
+      return;
+    }
+
+    const selectedDate = new Date(this.priceDate + 'T00:00:00');
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    if (Number.isNaN(selectedDate.getTime()) || selectedDate > today) {
+      this.toast.error('As on Date cannot be in the future.');
+      return;
+    }
+
     this.saving = true;
 
-    this.manualPriceService.updatePrice(row.asset_id, price).subscribe({
+    this.manualPriceService.updatePrice(
+      row.asset_id,
+      price,
+      this.priceDate,
+    ).subscribe({
       next: (response) => {
         this.saving = false;
 
@@ -138,6 +199,14 @@ export class ManualPricesComponent implements OnInit {
         );
       },
     });
+  }
+
+  getTodayDateInputValue(): string {
+    const today = new Date();
+    const year = today.getFullYear();
+    const month = String(today.getMonth() + 1).padStart(2, '0');
+    const day = String(today.getDate()).padStart(2, '0');
+    return year + '-' + month + '-' + day;
   }
 
   formatDate(value: string | null): string {

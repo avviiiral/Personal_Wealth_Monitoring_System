@@ -346,7 +346,13 @@ class DeduplicationLogicTests(TestCase):
         self.assertTrue(created_one)
         self.assertFalse(created_two)
         self.assertEqual(article_one.id, article_two.id)
+
+        # The first model instance is stale after the second store updates
+        # the same database row. Refresh it before checking the denormalized
+        # source count, and also verify that both source rows were persisted.
+        article_one.refresh_from_db()
         self.assertEqual(article_one.source_count, 2)
+        self.assertEqual(article_one.sources.count(), 2)
 
     def test_compute_url_hash_deterministic(self):
         url = "https://news.example.com/article-1"

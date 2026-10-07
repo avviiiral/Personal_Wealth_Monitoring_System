@@ -26,11 +26,17 @@ export class WatchListComponent implements OnInit, OnDestroy {
   private readonly api = inject(WatchListApiService);
   private readonly state = inject(WatchListStateService);
   private readonly changeDetector = inject(ChangeDetectorRef);
-  private readonly cachePrefix = 'pwms.watch-list.';
+  // Bump the cache namespace whenever the product universe identity changes.
+  // This prevents rows cached by an older database/universe from being clickable
+  // after a refresh, which can otherwise produce benchmark 404s for stale IDs.
+  private readonly cachePrefix = 'pwms.watch-list.v2.';
   private autoRefreshAttempted = false;
   private readonly searchInput$ = new Subject<string>();
   private readonly destroy$ = new Subject<void>();
   private requestSequence = 0;
+  private refreshPollTimer: ReturnType<typeof setTimeout> | null = null;
+  private refreshPollAttempts = 0;
+  private readonly maxRefreshPollAttempts = 60;
 
   products: WatchListProduct[] = [];
   loading = true;
@@ -87,6 +93,8 @@ export class WatchListComponent implements OnInit, OnDestroy {
   }
 
   ngOnDestroy(): void {
+    if (this.refreshPollTimer) clearTimeout(this.refreshPollTimer);
+    this.refreshPollTimer = null;
     this.destroy$.next();
     this.destroy$.complete();
     this.searchInput$.complete();
@@ -221,10 +229,20 @@ export class WatchListComponent implements OnInit, OnDestroy {
       if (!raw) return;
       const cached = JSON.parse(raw) as WatchListResponse;
       if (!cached || !Array.isArray(cached.results)) return;
-      this.products = this.sortProducts(cached.results);
-      this.count = Number(cached.count) || cached.results.length;
+      this.products = this.sortProducts(this.state.filterVisible(cached.results));
+      this.count = Number(cached.count) || this.products.length;
       this.loading = false;
     } catch (error) { console.warn('Failed to restore Watch List cache:', error); }
+  }
+
+  private invalidateUniverseCache(): void {
+    try {
+      Object.keys(localStorage)
+        .filter(key => key.startsWith(this.cachePrefix))
+        .forEach(key => localStorage.removeItem(key));
+    } catch (error) {
+      console.warn('Failed to invalidate Watch List cache:', error);
+    }
   }
 
   private cachePage(response: WatchListResponse): void {
@@ -286,7 +304,9 @@ export class WatchListComponent implements OnInit, OnDestroy {
 
         if (this.shouldBootstrapUniverse(response)) {
           this.autoRefreshAttempted = true;
-          this.refreshUniverse(true);
+          this.refreshUniverse(true, true);
+          // Do not block the Watch List on the universe refresh. The
+          // refresh will reload the data when it completes.
           return;
         }
         const serverResults = this.state.filterVisible(response.results);
@@ -1186,25 +1206,69 @@ export class WatchListComponent implements OnInit, OnDestroy {
     const anchor = document.createElement('a'); anchor.href = url; anchor.download = filename; anchor.click(); URL.revokeObjectURL(url);
   }
 
-  refreshUniverse(auto = false): void {
+  refreshUniverse(auto = false, background = false): void {
     if (this.refreshing) return;
     this.refreshing = true;
+    this.refreshPollAttempts = 0;
     if (!auto) this.error = '';
+    if (background) this.loading = false;
+
     this.api.refresh().subscribe({
       next: () => {
-        this.refreshing = false;
-        this.page = 1;
-        this.selectedIds.clear();
-        this.loadFilters();
-        this.load();
+        // The backend starts the expensive universe import in the
+        // background. Keep the existing page visible and poll only the
+        // lightweight refresh-status endpoint until it completes.
+        this.scheduleRefreshPoll(auto, background);
       },
       error: error => {
         console.error('Watch List refresh failed:', error);
         this.refreshing = false;
-        this.error = 'Universe refresh failed. Existing data was not changed.';
-        this.loading = false;
+        if (!background) {
+          this.error = 'Universe refresh failed. Existing data was not changed.';
+          this.loading = false;
+        }
       },
     });
+  }
+
+  private scheduleRefreshPoll(auto: boolean, background: boolean): void {
+    if (this.refreshPollTimer) clearTimeout(this.refreshPollTimer);
+
+    this.refreshPollTimer = setTimeout(() => {
+      this.api.refreshStatus().subscribe({
+        next: status => {
+          if (status.refreshing && this.refreshPollAttempts < this.maxRefreshPollAttempts) {
+            this.refreshPollAttempts += 1;
+            this.scheduleRefreshPoll(auto, background);
+            return;
+          }
+
+          this.refreshPollTimer = null;
+          this.refreshing = false;
+          // A universe refresh can create/update product IDs. Drop every
+          // cached page so stale product IDs cannot survive into the next
+          // benchmark/Watch List interaction.
+          this.invalidateUniverseCache();
+          this.page = 1;
+          this.selectedIds.clear();
+          this.loadFilters();
+          this.load();
+        },
+        error: error => {
+          console.error('Watch List refresh status check failed:', error);
+          if (this.refreshPollAttempts < this.maxRefreshPollAttempts) {
+            this.refreshPollAttempts += 1;
+            this.scheduleRefreshPoll(auto, background);
+            return;
+          }
+
+          this.refreshPollTimer = null;
+          this.refreshing = false;
+          if (!background) this.error = 'Unable to confirm the universe refresh status.';
+          this.loading = false;
+        },
+      });
+    }, 1000);
   }
 
   benchmarkDisplayName(benchmark: string | null | undefined): string {

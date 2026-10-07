@@ -1,3 +1,5 @@
+from django.db import close_old_connections
+import threading
 from django.db.models import Exists, OuterRef, Q, Subquery
 from django.shortcuts import get_object_or_404
 from rest_framework.decorators import api_view, permission_classes
@@ -7,12 +9,13 @@ from rest_framework.response import Response
 
 from config.database_scheduler_lock import DATABASE_SCHEDULER_LOCK
 
-from investments.models import AssetCategory, PortfolioPosition, Transaction
+from investments.models import PortfolioPosition, Transaction
 from users.permissions import get_active_family_group_id, get_visible_owner_ids
 from watchlist.models import InvestmentProduct, PerformanceSnapshot, ProductType, WatchListEntry
 from watchlist.serializers import PerformanceSnapshotSerializer, WatchListProductSerializer
 from watchlist.services.ownership import OwnershipService
 from watchlist.services.pms import APMIPMSDiscoveryService
+from watchlist.services.performance import AMFIPerformanceService
 from watchlist.services.benchmark import BenchmarkPerformanceService
 from watchlist.services.universe import AMFIUniverseService
 from watchlist.services.amfi_history import prepare_mutual_fund_watchlist_history
@@ -44,9 +47,10 @@ def _watchlist_user_ids(request):
 def _filtered_products(request, product_type=None):
     queryset = InvestmentProduct.objects.filter(is_active=True).select_related("mutual_fund", "pms")
 
-    # Presentation filter: a raw NAV/value alone is not enough to make a
-    # product displayable because it does not populate any Watch List return
-    # column. AUM or a displayed performance metric is required.
+    # Presentation filter: a product must have at least one value that
+    # can actually be displayed in the Watch List return/AUM columns.
+    # Latest NAV alone is not sufficient because it would produce a row
+    # where every visible metric is N/A.
     displayable_snapshot = PerformanceSnapshot.objects.filter(
         product_id=OuterRef("pk"),
     ).filter(
@@ -62,14 +66,20 @@ def _filtered_products(request, product_type=None):
         | Q(return_since_inception__isnull=False)
         | Q(cagr__isnull=False)
     )
+    # AUM belongs to the product-specific child models, not PerformanceSnapshot.
+    # Keep those checks on the outer InvestmentProduct queryset so products with
+    # only a current AUM value remain displayable without generating an invalid
+    # reverse lookup inside the snapshot subquery.
+    displayable_product = (
+        Q(mutual_fund__aum__isnull=False)
+        | Q(pms__aum__isnull=False)
+    )
     # OWNED is an ownership view, so an owned product remains visible even
     # before its first performance snapshot has been imported.
     status = request.query_params.get("status", "").upper()
     if status != "OWNED":
         queryset = queryset.filter(
-            Q(mutual_fund__aum__isnull=False)
-            | Q(pms__aum__isnull=False)
-            | Exists(displayable_snapshot)
+            Q(Exists(displayable_snapshot)) | displayable_product
         )
 
     if product_type:
@@ -146,44 +156,56 @@ def _filtered_products(request, product_type=None):
         active_position = Q(quantity__gt=0) | Q(current_value__gt=0)
         scoped_positions = family_scope(PortfolioPosition.objects, request.user).filter(active_position)
 
-        if product_type == ProductType.PMS:
-            # Correlate the transaction to the current position first, then
-            # correlate that nested query back to the InvestmentProduct.
-            # OuterRef(OuterRef("name")) is required because the transaction
-            # query is nested inside the PortfolioPosition EXISTS.
-            pms_transactions = family_scope(Transaction.objects, request.user).filter(
-                asset_name__iexact=OuterRef(OuterRef("name")),
-                asset_id=OuterRef("asset_id"),
-            )
-            owned_pms_positions = scoped_positions.filter(
-                Exists(pms_transactions),
-            )
-            owned_expression = Exists(owned_pms_positions)
-            queryset = queryset.filter(
-                owned_expression if status == "OWNED" else ~owned_expression
-            )
-        else:
-            # Mutual funds and other products first match by ISIN, then use
-            # the same symbol/name fallback as OwnershipService.bulk_enrich().
-            isin_positions = scoped_positions.filter(
-                asset__isin__iexact=OuterRef("isin"),
-            )
-            fallback_positions = scoped_positions.filter(
-                Q(asset__symbol__iexact=OuterRef("external_identifier"))
-                | Q(asset__name__iexact=OuterRef("name"))
-            )
+        # Ownership identity is product-type specific. Build one
+        # correlated expression for PMS-name matching and one for MF-ISIN
+        # matching so the unfiltered Watch List can contain both product types.
+        pms_transactions = family_scope(Transaction.objects, request.user).filter(
+            asset_name__iexact=OuterRef(OuterRef("name")),
+            asset_id=OuterRef("asset_id"),
+        )
+        owned_pms_positions = scoped_positions.filter(Exists(pms_transactions))
+        owned_pms_expression = Exists(owned_pms_positions)
 
-            if product_type == ProductType.MUTUAL_FUND:
-                isin_positions = isin_positions.filter(asset__category=AssetCategory.MUTUAL_FUND)
-                fallback_positions = fallback_positions.filter(asset__category=AssetCategory.MUTUAL_FUND)
+        # Mutual-fund ownership is an ISIN match; Asset.category is not
+        # authoritative because AMFI-backed funds may be stored as STOCK/CASH/BOND.
+        isin_positions = scoped_positions.filter(
+            asset__isin__iexact=OuterRef("isin"),
+        )
+        owned_mf_expression = (
+            ~Q(isin__isnull=True)
+            & ~Q(isin="")
+            & Exists(isin_positions)
+        )
 
-            owned_expression = (
-                (~Q(isin__isnull=True) & ~Q(isin="") & Exists(isin_positions))
-                | ((Q(isin__isnull=True) | Q(isin="")) & Exists(fallback_positions))
+        # PMS uses strategy/Transaction.asset_name; Mutual Fund uses ISIN.
+        # Do not let a Mutual Fund name match or a PMS ISIN accidentally mark
+        # the product as owned.
+        owned_expression = (
+            (Q(product_type=ProductType.PMS) & owned_pms_expression)
+            | (Q(product_type=ProductType.MUTUAL_FUND) & owned_mf_expression)
+            | (
+                ~Q(product_type__in=[ProductType.PMS, ProductType.MUTUAL_FUND])
+                & (
+                    (
+                        ~Q(isin__isnull=True)
+                        & ~Q(isin="")
+                        & Exists(scoped_positions.filter(
+                            asset__isin__iexact=OuterRef("isin"),
+                        ))
+                    )
+                    | (
+                        (Q(isin__isnull=True) | Q(isin=""))
+                        & Exists(scoped_positions.filter(
+                            Q(asset__symbol__iexact=OuterRef("external_identifier"))
+                            | Q(asset__name__iexact=OuterRef("name"))
+                        ))
+                    )
+                )
             )
-            queryset = queryset.filter(
-                owned_expression if status == "OWNED" else ~owned_expression
-            )
+        )
+        queryset = queryset.filter(
+            owned_expression if status == "OWNED" else ~owned_expression
+        )
     return queryset
 
 
@@ -313,6 +335,27 @@ def watch_list_product_detail(request, product_id):
     )
 
 
+WATCH_LIST_REFRESH_LOCK = threading.Lock()
+watch_list_refreshing = False
+
+
+def _run_watch_list_refresh():
+    global watch_list_refreshing
+    close_old_connections()
+    try:
+        with DATABASE_SCHEDULER_LOCK:
+            mf_result = AMFIUniverseService.refresh()
+            # Populate the metrics used by the Watch List visibility filter
+            # after the AMFI universe has been created/updated.
+            mf_performance_result = AMFIPerformanceService.refresh()
+            pms_result = APMIPMSDiscoveryService.refresh()
+        return mf_result, mf_performance_result, pms_result
+    finally:
+        watch_list_refreshing = False
+        WATCH_LIST_REFRESH_LOCK.release()
+        close_old_connections()
+
+
 BENCHMARK_CHOICES = ("BSE 500", "Nifty 50")
 
 
@@ -354,6 +397,17 @@ def watch_list_benchmark_performance(request, product_id):
     chart_period = request.query_params.get("period", "1Y").upper()
     if chart_period not in BenchmarkPerformanceService.PERIOD_DAYS:
         chart_period = "1Y"
+
+    # Older Watch List entries may only have the six return-anchor snapshots
+    # (1M/3M/6M/1Y/3Y/5Y), which makes the indexed chart appear as a handful
+    # of straight line segments. Ensure the selected chart period has dense
+    # AMFI master NAV history before calculating the aligned series.
+    if product.product_type == ProductType.MUTUAL_FUND:
+        prepare_mutual_fund_watchlist_history(
+            product,
+            days=BenchmarkPerformanceService.PERIOD_DAYS[chart_period],
+        )
+
     result = BenchmarkPerformanceService.calculate(product, chart_period=chart_period)
     if result is None:
         return Response({"available": False, "benchmark": None, "message": "Select a supported benchmark first."})
@@ -485,12 +539,27 @@ def watch_list_bulk_remove(request):
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def watch_list_refresh(request):
-    # Serialize manual refreshes with background schedulers so two full
-    # universe upserts cannot run concurrently against SQLite.
-    with DATABASE_SCHEDULER_LOCK:
-        mf_result = AMFIUniverseService.refresh()
-        pms_result = APMIPMSDiscoveryService.refresh()
-    return Response({"mutual_funds": mf_result, "pms": pms_result})
+    global watch_list_refreshing
+
+    # The universe refresh can take tens of seconds. Run it outside the
+    # request so the Watch List is never blocked by a full universe import.
+    if not WATCH_LIST_REFRESH_LOCK.acquire(blocking=False):
+        return Response({"status": "already_running"}, status=202)
+
+    watch_list_refreshing = True
+    threading.Thread(
+        target=_run_watch_list_refresh,
+        name="watch-list-universe-refresh",
+        daemon=True,
+    ).start()
+
+    return Response({"status": "started"}, status=202)
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def watch_list_refresh_status(request):
+    return Response({"refreshing": watch_list_refreshing})
 
 
 @api_view(["POST"])

@@ -245,7 +245,35 @@ class HistoricalWealthAnalytics:
             )
         )
 
+        asset_has_symbol = {
+            asset.pk: bool(getattr(asset, "symbol", None))
+            for asset in assets
+        }
+
+        # An asset without a symbol may still have a valid automatic history
+        # before a manually entered effective price. Preserve that history so
+        # the manual series can override it from its effective date onward.
+        # Assets with neither a symbol nor manual history must continue to
+        # reject automatic quotes entirely.
+        manual_market_asset_ids = set(
+            MarketPrice.objects
+            .filter(
+                asset_id__in=asset_ids,
+                source=DataSource.MANUAL,
+            )
+            .values_list("asset_id", flat=True)
+        )
+
         for price in prices:
+            # Automatic market quotes are only meaningful for assets that
+            # have an identifiable market symbol. Manual prices remain valid
+            # without a symbol because they are explicit user valuations.
+            if (
+                price.source != DataSource.MANUAL
+                and not asset_has_symbol.get(price.asset_id, False)
+                and price.asset_id not in manual_market_asset_ids
+            ):
+                continue
             prices_by_asset[price.asset_id].append(
                 (
                     price.date,
@@ -301,7 +329,9 @@ class HistoricalWealthAnalytics:
         if missing_price_asset_ids:
             latest_available_prices = (
                 MarketPrice.objects
-                .filter(asset_id__in=missing_price_asset_ids)
+                .filter(
+                    asset_id__in=missing_price_asset_ids,
+                )
                 .order_by("asset_id", "-date", "-id")
                 .only(
                     "asset_id",
@@ -339,7 +369,16 @@ class HistoricalWealthAnalytics:
             else:
                 latest_available = latest_available_by_asset.get(asset.pk)
 
-                if latest_available is not None:
+                # Future automatic quotes are a valid fallback only for
+                # market-identifiable assets. Manual snapshots remain valid
+                # regardless of symbol because they are explicit valuations.
+                is_manual_snapshot = (
+                    latest_available is not None
+                    and latest_available.source == DataSource.MANUAL
+                )
+                if latest_available is not None and (
+                    is_manual_snapshot or bool(getattr(asset, "symbol", None))
+                ):
                     values.append(
                         (
                             latest_available.date,
@@ -350,40 +389,57 @@ class HistoricalWealthAnalytics:
 
             prices_by_asset[asset.pk] = values
 
-        # Manual observations are an override layer, not a separate
-        # series. Resolve them against the automatic observations
-        # before the daily loop so every request window gets the same
-        # effective price on every date.
-        for asset_id, values in list(prices_by_asset.items()):
-            automatic_values = [
-                (price_date, value)
-                for price_date, value, source in values
-                if source != DataSource.MANUAL
-            ]
-            manual_values = [
-                (price_date, value)
-                for price_date, value, source in values
-                if source == DataSource.MANUAL
-            ]
+        # Manual prices are dated effective-price overrides.
+        #
+        # A manual price entered with an effective date becomes the
+        # valuation price from that date onward until the next manual
+        # price is entered. Automatic market prices before the first
+        # manual effective date remain usable.
+        manual_prices = (
+            MarketPrice.objects
+            .filter(
+                asset_id__in=asset_ids,
+                source=DataSource.MANUAL,
+            )
+            .order_by(
+                "asset_id",
+                "date",
+                "id",
+            )
+            .only(
+                "asset_id",
+                "date",
+                "close_price",
+                "source",
+            )
+        )
 
-            if not manual_values:
-                prices_by_asset[asset_id] = sorted(
-                    [
-                        (price_date, value)
-                        for price_date, value, _ in values
-                    ],
-                    key=lambda item: item[0],
+        manual_by_asset = defaultdict(list)
+
+        for manual_price in manual_prices:
+            manual_by_asset[manual_price.asset_id].append(
+                (
+                    manual_price.date,
+                    manual_price.close_price,
+                    manual_price.source,
                 )
-                continue
+            )
+
+        for asset_id, manual_values in manual_by_asset.items():
+            automatic_values = [
+                value
+                for value in prices_by_asset.get(asset_id, [])
+                if len(value) < 3 or value[2] != DataSource.MANUAL
+            ]
 
             combined_dates = sorted(
                 {
                     price_date
-                    for price_date, _ in automatic_values
+                    for price_date, _, *_ in automatic_values
                 }
                 | {
                     price_date
-                    for price_date, _ in manual_values
+                    for price_date, _, _ in manual_values
                 }
             )
 
@@ -399,28 +455,22 @@ class HistoricalWealthAnalytics:
 
                 if manual_index >= 0:
                     effective_values.append(
-                        (
-                            price_date,
-                            manual_values[manual_index][1],
-                        )
+                        manual_values[manual_index]
                     )
                     continue
 
                 automatic_value = next(
                     (
                         value
-                        for value_date, value in automatic_values
-                        if value_date == price_date
+                        for value in automatic_values
+                        if value[0] == price_date
                     ),
                     None,
                 )
 
                 if automatic_value is not None:
                     effective_values.append(
-                        (
-                            price_date,
-                            automatic_value,
-                        )
+                        automatic_value
                     )
 
             prices_by_asset[asset_id] = sorted(
@@ -453,6 +503,7 @@ class HistoricalWealthAnalytics:
                 (
                     legacy_price.price_date,
                     legacy_price.price,
+                    DataSource.MANUAL,
                 )
             ]
 
@@ -613,8 +664,12 @@ class HistoricalWealthAnalytics:
                 pointer,
             )
 
-        # Before the earliest known value: use it as the best
-        # available estimate rather than treating it as unknown.
+        # If the first known observation is after the requested date, use
+        # it as the best available valuation for the entire earlier range.
+        # This is important for both manual-only snapshots and automatic
+        # prices that were first captured after the requested historical
+        # window. The chart must not invent a zero value merely because the
+        # first persisted observation is dated later than the selected range.
         return (
             values[0][1],
             pointer,
@@ -886,12 +941,12 @@ class HistoricalWealthAnalytics:
             )
 
             if price is None:
-                continue
-
-            current_value = (
-                quantity
-                * price.close_price
-            )
+                # No historical market quote exists. Preserve invested
+                # capital as the best available wealth estimate so an
+                # unpriced holding does not disappear from historical wealth.
+                current_value = invested_value
+            else:
+                current_value = quantity * price.close_price
 
             equity_invested += invested_value
             equity_value += current_value
@@ -1463,6 +1518,29 @@ class HistoricalWealthAnalytics:
                     [],
                 )
 
+                # For assets without a market identifier, automatic quotes
+                # are never valid. Evaluate only explicit manual observations
+                # for these assets; this prevents any stale/future automatic
+                # observation from leaking into historical wealth.
+                if not getattr(asset, "symbol", None):
+                    # An unidentifiable asset must not be valued from an
+                    # automatic quote by itself. However, when the asset has
+                    # an explicit manual history, automatic observations
+                    # before the first manual effective date are still valid
+                    # historical context; the manual series below overrides
+                    # them from its selected effective date onward.
+                    has_manual_history = any(
+                        len(value) >= 3 and value[2] == DataSource.MANUAL
+                        for value in price_values
+                    )
+                    if not has_manual_history:
+                        price_values = [
+                            value
+                            for value in price_values
+                            if len(value) >= 3
+                            and value[2] == DataSource.MANUAL
+                        ]
+
                 price, pointer = (
                     HistoricalWealthAnalytics
                     ._get_value_for_date(
@@ -1478,6 +1556,10 @@ class HistoricalWealthAnalytics:
                 price_pointers[asset.pk] = pointer
 
                 if price is None:
+                    # No usable historical price exists. Preserve invested
+                    # capital and therefore report zero historical P/L.
+                    equity_invested_for_missing_price = position["invested_value"]
+                    equity_value += equity_invested_for_missing_price
                     continue
 
                 equity_value += (
@@ -1534,6 +1616,11 @@ class HistoricalWealthAnalytics:
                 nav_pointers[scheme.pk] = pointer
 
                 if nav is None:
+                    # No historical NAV is available. Preserve invested
+                    # capital and use zero historical P/L, which makes
+                    # the wealth contribution equal to invested value
+                    # instead of incorrectly dropping it to zero.
+                    mutual_fund_value += position["invested_value"]
                     continue
 
                 mutual_fund_value += (
@@ -1562,6 +1649,7 @@ class HistoricalWealthAnalytics:
             results.append({
                 "date": current_date,
                 "invested_value": total_invested,
+                "total_wealth": total_value,
                 "portfolio_value": total_value,
                 "pnl": unrealized_pnl,
                 "equity": {
@@ -1587,6 +1675,45 @@ class HistoricalWealthAnalytics:
             })
 
             current_date += timedelta(days=1)
+
+        # Historical points remain strictly as-of-date calculations.
+        # The final point is special when the requested range ends today:
+        # Dashboard KPI uses PortfolioTreeService's canonical current
+        # valuation, which may resolve a newer/current price source than the
+        # historical daily series (for example an intraday/current quote).
+        # Reconcile only today's point so the chart's latest Total Wealth
+        # exactly matches the KPI without changing historical dates.
+
+        if results and end_date == date.today():
+            from .unified_wealth import UnifiedWealthAnalytics
+
+            valuation = UnifiedWealthAnalytics._portfolio_tree_valuation(
+                user,
+                family_name=family_name,
+            )
+
+            latest = results[-1]
+            latest["date"] = end_date
+            latest["invested_value"] = valuation["invested"]
+            latest["total_wealth"] = valuation["current"]
+            latest["portfolio_value"] = valuation["current"]
+            latest["pnl"] = (
+                valuation["current"] - valuation["invested"]
+            )
+
+            latest["equity"]["invested_value"] = valuation["equity_invested"]
+            latest["equity"]["portfolio_value"] = valuation["equity_current"]
+            latest["equity"]["pnl"] = (
+                valuation["equity_current"]
+                - valuation["equity_invested"]
+            )
+
+            latest["mutual_funds"]["invested_value"] = valuation["mutual_invested"]
+            latest["mutual_funds"]["portfolio_value"] = valuation["mutual_current"]
+            latest["mutual_funds"]["pnl"] = (
+                valuation["mutual_current"]
+                - valuation["mutual_invested"]
+            )
 
         return results
 

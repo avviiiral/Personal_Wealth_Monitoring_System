@@ -43,8 +43,9 @@
 
   <div *ngIf="error" class="error">{{ error }}</div>
   <div *ngIf="loading" class="state">Loading…</div>
+  <div *ngIf="!loading && refreshing && products.length === 0" class="state">Preparing Watch List universe…</div>
 
-  <div *ngIf="!loading" class="table-wrap">
+  <div *ngIf="!loading && (!refreshing || products.length > 0)" class="table-wrap">
     <table>
       <thead>
         <tr>

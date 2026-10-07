@@ -74,22 +74,43 @@ export class ManualPriceService {
   }
 
   // ==========================================================
+  // HISTORICAL PRICE HISTORY
+  // ==========================================================
+
+  getHistory(assetId: number): Observable<{
+    success: boolean;
+    asset_id: number;
+    asset_name: string;
+    history: Array<{
+      id: number;
+      price: string;
+      price_date: string;
+      updated_by: string | null;
+      updated_at: string | null;
+    }>;
+  }> {
+    return this.http.get<any>(
+      this.baseUrl + '/assets/' + assetId + '/manual-price/',
+      { withCredentials: true },
+    );
+  }
+
+  // ==========================================================
   // UPDATE PRICE
   // ==========================================================
 
-  updatePrice(assetId: number, price: number, priceDate?: string): Observable<ManualPriceResponse> {
+  updatePrice(
+    assetId: number,
+    price: number,
+    priceDate: string,
+  ): Observable<ManualPriceResponse> {
     return this.getCsrfToken().pipe(
       switchMap(() => {
         return this.http.put<ManualPriceResponse>(
           `${this.baseUrl}/assets/${assetId}/manual-price/`,
           {
             price,
-
-            ...(priceDate
-              ? {
-                  price_date: priceDate,
-                }
-              : {}),
+            price_date: priceDate,
           },
           {
             headers: this.getHeaders(),

@@ -1,8 +1,9 @@
 from decimal import Decimal
-from datetime import date
+from datetime import date, datetime
 
 from django.contrib.auth import get_user_model
 from django.test import TestCase
+from django.utils import timezone
 
 from users.models import FamilyGroup
 from rest_framework.test import APIClient
@@ -95,6 +96,16 @@ class PortfolioTreeServiceTests(TestCase):
             asset["isin"],
             "INE000TEST001",
         )
+
+    def _find_asset_node(self, tree, isin):
+        for family in tree["families"]:
+            for portfolio in family["portfolios"]:
+                for asset_class in portfolio["asset_classes"]:
+                    for sub_class in asset_class["sub_classes"]:
+                        for asset in sub_class["assets"]:
+                            if asset.get("isin") == isin:
+                                return asset
+        return None
 
     def test_reit_invit_falls_back_to_mis_reference_price(self):
         """REIT/InvIT portfolio rows use the same global Yahoo reference history as MIS Notes."""
@@ -722,3 +733,517 @@ class PortfolioSummaryMultiOwnerTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(Decimal(str(response.data["total_invested"])), Decimal("500"))
         self.assertEqual(response.data["number_of_holdings"], 1)
+
+
+class ManualPriceCalculationRegressionTests(TestCase):
+    """
+    Manual prices are explicit overrides. A newer automatic quote must
+    not replace the manual value used by persisted positions or XIRR.
+    """
+
+    def setUp(self):
+        User = get_user_model()
+
+        self.user = User.objects.create_user(
+            username="manual_price_regression_user",
+            password="test-password",
+        )
+        self.family = FamilyGroup.objects.create(
+            name="Manual Price Regression Family"
+        )
+        self.user.profile.family_groups.add(self.family)
+
+        self.asset = Asset.objects.create(
+            owner=self.user,
+            family=self.family,
+            name="Manual Override Equity",
+            category="STOCK",
+            isin="INE000MANUAL001",
+        )
+
+        Transaction.objects.create(
+            owner=self.user,
+            family=self.family,
+            family_name="Family Manual",
+            portfolio="Portfolio Manual",
+            asset=self.asset,
+            asset_class="Equity",
+            sub_class="Large Cap",
+            asset_name="Manual Override Equity",
+            transaction_date=date(2026, 1, 1),
+            transaction_type="BUY",
+            quantity=Decimal("10"),
+            price_per_unit=Decimal("100"),
+            amount=Decimal("1000"),
+            fees=Decimal("0"),
+        )
+
+    def test_manual_price_wins_over_newer_automatic_price(self):
+        from market_data.models import DataSource, MarketPrice
+        from portfolio.services.portfolio_position_engine import (
+            PortfolioPositionEngine,
+        )
+
+        MarketPrice.objects.create(
+            asset=self.asset,
+            date=date(2026, 10, 4),
+            close_price=Decimal("250"),
+            source=DataSource.YAHOO_FINANCE,
+        )
+        MarketPrice.objects.create(
+            asset=self.asset,
+            date=date(2026, 10, 3),
+            close_price=Decimal("150"),
+            source=DataSource.MANUAL,
+            updated_by=self.user,
+        )
+
+        position = PortfolioPositionEngine.rebuild_position(
+            family_name="Family Manual",
+            portfolio="Portfolio Manual",
+            asset=self.asset,
+            family=self.family,
+        )
+
+        self.assertEqual(position.current_price, Decimal("150"))
+        self.assertEqual(position.current_value, Decimal("1500"))
+        self.assertEqual(position.gain, Decimal("500"))
+
+    def test_dashboard_xirr_uses_manual_price_as_terminal_value(self):
+        from market_data.models import DataSource, MarketPrice
+        from portfolio.services.holding_engine import (
+            HoldingCalculationEngine,
+        )
+        from analytics.services.unified_wealth import (
+            UnifiedWealthAnalytics,
+        )
+        from analytics.services.xirr import XIRRCalculator
+
+        MarketPrice.objects.create(
+            asset=self.asset,
+            date=date(2026, 10, 4),
+            close_price=Decimal("250"),
+            source=DataSource.YAHOO_FINANCE,
+        )
+        MarketPrice.objects.create(
+            asset=self.asset,
+            date=date(2026, 10, 3),
+            close_price=Decimal("150"),
+            source=DataSource.MANUAL,
+            updated_by=self.user,
+        )
+
+        holding = HoldingCalculationEngine.rebuild_holding(self.asset)
+
+        self.assertEqual(holding.current_price, Decimal("150"))
+        self.assertEqual(holding.current_value, Decimal("1500"))
+
+        expected = XIRRCalculator.calculate(
+            [
+                (date(2026, 1, 1), -1000.0),
+                (date.today(), 1500.0),
+            ]
+        )
+
+        actual = UnifiedWealthAnalytics.calculate_xirr(self.user)
+
+        self.assertEqual(actual, round(expected * 100, 2))
+        self.assertNotEqual(
+            actual,
+            round(
+                XIRRCalculator.calculate(
+                    [
+                        (date(2026, 1, 1), -1000.0),
+                        (date.today(), 2500.0),
+                    ]
+                )
+                * 100,
+                2,
+            ),
+        )
+
+
+class ManualPriceEffectiveDateAndMissingPriceTests(TestCase):
+    """Regression coverage for dated manual prices and unavailable quotes."""
+
+    def setUp(self):
+        User = get_user_model()
+
+        self.user = User.objects.create_user(
+            username="manual_price_effective_date_user",
+            password="test-password",
+        )
+        self.family = FamilyGroup.objects.create(
+            name="Manual Price Effective Date Family",
+        )
+        self.user.profile.family_groups.add(self.family)
+
+        self.asset = Asset.objects.create(
+            owner=self.user,
+            family=self.family,
+            name="Dated Manual Equity",
+            category="STOCK",
+            isin="INE000DATED001",
+        )
+
+        Transaction.objects.create(
+            owner=self.user,
+            family=self.family,
+            family_name="Family Dated",
+            portfolio="Portfolio Dated",
+            asset=self.asset,
+            asset_class="Equity",
+            sub_class="Large Cap",
+            asset_name="Dated Manual Equity",
+            transaction_date=date(2026, 1, 1),
+            transaction_type="BUY",
+            quantity=Decimal("10"),
+            price_per_unit=Decimal("100"),
+            amount=Decimal("1000"),
+            fees=Decimal("0"),
+        )
+
+    def _find_asset_node(self, tree, asset_name):
+        for family in tree["families"]:
+            for portfolio in family["portfolios"]:
+                for asset_class in portfolio["asset_classes"]:
+                    for sub_class in asset_class["sub_classes"]:
+                        for asset in sub_class["assets"]:
+                            if asset["asset_name"] == asset_name:
+                                return asset
+        return None
+
+    def test_portfolio_tree_manual_price_wins_over_newer_automatic_quote(self):
+        from market_data.models import DataSource, MarketPrice
+        from portfolio.services.portfolio_tree_service import PortfolioTreeService
+
+        MarketPrice.objects.create(
+            asset=self.asset,
+            date=date(2026, 10, 4),
+            close_price=Decimal("250"),
+            source=DataSource.YAHOO_FINANCE,
+        )
+        MarketPrice.objects.create(
+            asset=self.asset,
+            date=date(2026, 10, 3),
+            close_price=Decimal("150"),
+            source=DataSource.MANUAL,
+            updated_by=self.user,
+        )
+
+        tree = PortfolioTreeService.build(
+            owner=self.user,
+            family_id=self.family.id,
+        )
+        node = self._find_asset_node(tree, "Dated Manual Equity")
+
+        self.assertIsNotNone(node)
+        self.assertEqual(node["current_price"], 150.0)
+        self.assertEqual(node["current_value"], 1500.0)
+        self.assertEqual(node["pnl"], 500.0)
+
+    def test_portfolio_tree_missing_price_has_zero_pnl(self):
+        from portfolio.services.portfolio_tree_service import PortfolioTreeService
+
+        asset = Asset.objects.create(
+            owner=self.user,
+            family=self.family,
+            name="No Price Equity",
+            category="STOCK",
+            isin="INE000NOPRICE1",
+        )
+
+        Transaction.objects.create(
+            owner=self.user,
+            family=self.family,
+            family_name="Family Dated",
+            portfolio="Portfolio Dated",
+            asset=asset,
+            asset_class="Equity",
+            sub_class="Large Cap",
+            asset_name="No Price Equity",
+            transaction_date=date(2026, 2, 1),
+            transaction_type="BUY",
+            quantity=Decimal("5"),
+            price_per_unit=Decimal("200"),
+            amount=Decimal("1000"),
+            fees=Decimal("0"),
+        )
+
+        tree = PortfolioTreeService.build(
+            owner=self.user,
+            family_id=self.family.id,
+        )
+        node = self._find_asset_node(tree, "No Price Equity")
+
+        self.assertIsNotNone(node)
+        self.assertIsNone(node["current_price"])
+        self.assertIsNone(node["current_value"])
+        self.assertEqual(node["pnl"], 0.0)
+        self.assertEqual(node["pnl_percentage"], 0.0)
+
+    def test_dashboard_holding_missing_price_has_zero_pnl(self):
+        from portfolio.services.holding_engine import HoldingCalculationEngine
+
+        asset = Asset.objects.create(
+            owner=self.user,
+            family=self.family,
+            name="No Dashboard Price Equity",
+            category="STOCK",
+            isin="INE000DASHNOPRICE",
+        )
+
+        Transaction.objects.create(
+            owner=self.user,
+            family=self.family,
+            family_name="Family Dated",
+            portfolio="Portfolio Dated",
+            asset=asset,
+            asset_class="Equity",
+            sub_class="Large Cap",
+            asset_name="No Dashboard Price Equity",
+            transaction_date=date(2026, 2, 1),
+            transaction_type="BUY",
+            quantity=Decimal("5"),
+            price_per_unit=Decimal("200"),
+            amount=Decimal("1000"),
+            fees=Decimal("0"),
+        )
+
+        holding = HoldingCalculationEngine.rebuild_holding(asset)
+
+        self.assertEqual(holding.current_price, Decimal("0"))
+        self.assertEqual(holding.current_value, Decimal("0"))
+        self.assertEqual(holding.unrealized_pnl, Decimal("0"))
+
+    def test_dashboard_holding_uses_reit_invit_reference_price(self):
+        from portfolio.services.holding_engine import HoldingCalculationEngine
+
+        asset = Asset.objects.create(
+            owner=self.user,
+            family=self.family,
+            name="Dashboard Cube InvIT",
+            category="OTHER",
+            isin="INVI000DASH001",
+        )
+
+        Transaction.objects.create(
+            owner=self.user,
+            family=self.family,
+            family_name="Family Dated",
+            portfolio="Portfolio Dated",
+            asset=asset,
+            asset_class="Infrastructure",
+            sub_class="InvITs",
+            asset_name="Dashboard Cube InvIT",
+            transaction_date=date(2026, 1, 10),
+            transaction_type="BUY",
+            quantity=Decimal("10"),
+            price_per_unit=Decimal("100"),
+            amount=Decimal("1000"),
+            fees=Decimal("0"),
+        )
+
+        reference_asset = Asset.objects.create(
+            owner=None,
+            family=None,
+            name="Cube InvIT Dashboard Reference",
+            category="OTHER",
+            symbol="CUBEINVIT.NS",
+            currency="INR",
+            is_active=True,
+        )
+        MarketPrice.objects.create(
+            asset=reference_asset,
+            date=date(2026, 10, 5),
+            source=DataSource.YAHOO_FINANCE,
+            close_price=Decimal("125.50"),
+        )
+
+        holding = HoldingCalculationEngine.rebuild_holding(asset)
+
+        self.assertEqual(holding.current_price, Decimal("125.50"))
+        self.assertEqual(holding.current_value, Decimal("1255.00"))
+        self.assertEqual(holding.unrealized_pnl, Decimal("255.00"))
+
+    def test_historical_chart_missing_price_uses_cost_as_total_wealth(self):
+        from analytics.services.historical_wealth import HistoricalWealthAnalytics
+
+        asset = Asset.objects.create(
+            owner=self.user,
+            family=self.family,
+            name="Historical No Price Equity",
+            category="STOCK",
+            isin="INE000HISTNOPRICE",
+        )
+
+        Transaction.objects.create(
+            owner=self.user,
+            family=self.family,
+            family_name="Historical Missing Price",
+            portfolio="Portfolio Dated",
+            asset=asset,
+            asset_class="Equity",
+            sub_class="Large Cap",
+            asset_name="Historical No Price Equity",
+            transaction_date=date(2026, 2, 1),
+            transaction_type="BUY",
+            quantity=Decimal("5"),
+            price_per_unit=Decimal("200"),
+            amount=Decimal("1000"),
+            fees=Decimal("0"),
+        )
+
+        results = HistoricalWealthAnalytics.calculate_history(
+            self.user,
+            date(2026, 2, 1),
+            date(2026, 2, 3),
+            family_name="Historical Missing Price",
+        )
+
+        by_date = {item["date"]: item for item in results}
+
+        for target_date in (
+            date(2026, 2, 1),
+            date(2026, 2, 2),
+            date(2026, 2, 3),
+        ):
+            self.assertEqual(
+                by_date[target_date]["invested_value"],
+                Decimal("1000"),
+            )
+            self.assertEqual(
+                by_date[target_date]["total_wealth"],
+                Decimal("1000"),
+            )
+            self.assertEqual(
+                by_date[target_date]["pnl"],
+                Decimal("0"),
+            )
+
+    def test_historical_chart_uses_manual_price_on_effective_date(self):
+        from analytics.services.historical_wealth import HistoricalWealthAnalytics
+        from market_data.models import DataSource, MarketPrice
+
+        MarketPrice.objects.create(
+            asset=self.asset,
+            date=date(2026, 10, 1),
+            close_price=Decimal("100"),
+            source=DataSource.YAHOO_FINANCE,
+        )
+        MarketPrice.objects.create(
+            asset=self.asset,
+            date=date(2026, 10, 3),
+            close_price=Decimal("150"),
+            source=DataSource.MANUAL,
+            updated_by=self.user,
+        )
+
+        results = HistoricalWealthAnalytics.calculate_history(
+            self.user,
+            date(2026, 10, 1),
+            date(2026, 10, 5),
+        )
+
+        by_date = {item["date"]: item for item in results}
+
+        self.assertEqual(by_date[date(2026, 10, 2)]["total_wealth"], Decimal("1000"))
+        self.assertEqual(by_date[date(2026, 10, 3)]["total_wealth"], Decimal("1500"))
+        self.assertEqual(by_date[date(2026, 10, 5)]["total_wealth"], Decimal("1500"))
+        self.assertEqual(by_date[date(2026, 10, 2)]["portfolio_value"], Decimal("1000"))
+        self.assertEqual(by_date[date(2026, 10, 3)]["portfolio_value"], Decimal("1500"))
+        self.assertEqual(by_date[date(2026, 10, 5)]["portfolio_value"], Decimal("1500"))
+
+    def test_historical_manual_price_is_effective_from_selected_date(self):
+        from analytics.services.historical_wealth import HistoricalWealthAnalytics
+        from market_data.models import DataSource, MarketPrice
+
+        MarketPrice.objects.create(
+            asset=self.asset,
+            date=date(2026, 10, 1),
+            close_price=Decimal("100"),
+            source=DataSource.YAHOO_FINANCE,
+        )
+        MarketPrice.objects.create(
+            asset=self.asset,
+            date=date(2026, 10, 3),
+            close_price=Decimal("150"),
+            source=DataSource.MANUAL,
+            updated_by=self.user,
+        )
+
+        values = HistoricalWealthAnalytics._build_price_map(
+            [self.asset],
+            date(2026, 10, 1),
+            date(2026, 10, 5),
+        )[self.asset.id]
+
+        pointer = -1
+        price_before, pointer = HistoricalWealthAnalytics._get_value_for_date(
+            values,
+            date(2026, 10, 2),
+            pointer,
+        )
+        self.assertEqual(price_before, Decimal("100"))
+
+        price_after, pointer = HistoricalWealthAnalytics._get_value_for_date(
+            values,
+            date(2026, 10, 4),
+            pointer,
+        )
+        self.assertEqual(price_after, Decimal("150"))
+
+    def test_historical_chart_ignores_manual_price_added_date(self):
+        """
+        The wealth chart must use MarketPrice.date (the manual
+        "As on Date") as the effective date. created_at is only an
+        audit timestamp and must never determine when the price starts
+        affecting historical wealth.
+        """
+        from analytics.services.historical_wealth import HistoricalWealthAnalytics
+        from market_data.models import DataSource, MarketPrice
+
+        MarketPrice.objects.create(
+            asset=self.asset,
+            date=date(2026, 10, 2),
+            close_price=Decimal("100"),
+            source=DataSource.YAHOO_FINANCE,
+        )
+
+        manual = MarketPrice.objects.create(
+            asset=self.asset,
+            date=date(2026, 10, 3),
+            close_price=Decimal("150"),
+            source=DataSource.MANUAL,
+            updated_by=self.user,
+        )
+
+        # Simulate the manual price being added later than its effective
+        # date. The chart must still switch to the manual price on Oct 3.
+        MarketPrice.objects.filter(pk=manual.pk).update(
+            created_at=timezone.make_aware(
+                datetime(2026, 10, 5, 12, 0, 0),
+            ),
+        )
+
+        results = HistoricalWealthAnalytics.calculate_history(
+            self.user,
+            date(2026, 10, 2),
+            date(2026, 10, 5),
+        )
+
+        by_date = {item["date"]: item for item in results}
+
+        self.assertEqual(
+            by_date[date(2026, 10, 2)]["portfolio_value"],
+            Decimal("1000"),
+        )
+        self.assertEqual(
+            by_date[date(2026, 10, 3)]["portfolio_value"],
+            Decimal("1500"),
+        )
+        self.assertEqual(
+            by_date[date(2026, 10, 4)]["portfolio_value"],
+            Decimal("1500"),
+        )
+

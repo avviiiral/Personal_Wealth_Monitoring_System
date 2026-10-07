@@ -250,6 +250,20 @@ class HistoricalWealthAnalytics:
             for asset in assets
         }
 
+        # An asset without a symbol may still have a valid automatic history
+        # before a manually entered effective price. Preserve that history so
+        # the manual series can override it from its effective date onward.
+        # Assets with neither a symbol nor manual history must continue to
+        # reject automatic quotes entirely.
+        manual_market_asset_ids = set(
+            MarketPrice.objects
+            .filter(
+                asset_id__in=asset_ids,
+                source=DataSource.MANUAL,
+            )
+            .values_list("asset_id", flat=True)
+        )
+
         for price in prices:
             # Automatic market quotes are only meaningful for assets that
             # have an identifiable market symbol. Manual prices remain valid
@@ -257,6 +271,7 @@ class HistoricalWealthAnalytics:
             if (
                 price.source != DataSource.MANUAL
                 and not asset_has_symbol.get(price.asset_id, False)
+                and price.asset_id not in manual_market_asset_ids
             ):
                 continue
             prices_by_asset[price.asset_id].append(

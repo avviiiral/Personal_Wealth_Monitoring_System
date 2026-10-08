@@ -31,6 +31,7 @@ export interface PortfolioCalculations {
   subclasses: PortfolioCalculationRow[];
   asset_names: PortfolioCalculationRow[];
   family_subclasses: PortfolioCalculationRow[];
+  report_subclass_summaries: Array<PortfolioCalculationRow & { asset_class: string }>;
 }
 export interface PortfolioTreeResponse { success: boolean; count: number; families: FamilyNode[]; calculations?: PortfolioCalculations; }
 export interface HoldingReportRow { id: number; family_name: string; portfolio: string; asset_class: string; asset_class_xirr: number | null; sub_class: string; asset_id: number; asset_name: string; underlying: string; underlying_xirr?: Record<string, { xirr: number | null; holding_percentage: number }>; isin: string | null; advisors: string; quantity: number; average_cost: number; invested_value: number; current_price: number; current_value: number; gain: number; gain_percentage: number; xirr: number | null; sub_class_xirr: number | null; asset_name_xirr: number | null; sector: string | null; cap_type: string | null; amc_name: string | null; }

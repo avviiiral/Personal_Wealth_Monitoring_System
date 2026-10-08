@@ -329,6 +329,19 @@ export class PortfolioComponent implements OnInit, OnDestroy {
   formatNumber(value: number): string { return new Intl.NumberFormat('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 }).format(this.toNumber(value)); }
   formatDecimal(value: number): string { return new Intl.NumberFormat('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(this.toNumber(value)); }
   formatPercentage(value: number | null): string { if (value === null || value === undefined) return '-'; return `${this.formatDecimal(value)}%`; }
+  formatPriceDate(value: string | null | undefined): string {
+    if (!value) return '-';
+    const parsed = new Date(value + 'T00:00:00');
+    if (Number.isNaN(parsed.getTime())) return value;
+    return new Intl.DateTimeFormat('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }).format(parsed);
+  }
+  formatPriceSource(value: string | null | undefined): string {
+    if (!value) return '-';
+    if (value === 'MANUAL') return 'Manual';
+    if (value === 'AMFI') return 'Automatic (AMFI)';
+    if (value === 'YAHOO_FINANCE') return 'Automatic (Market Data)';
+    return value;
+  }
   getPnlClass(value: number): string { if (value > 0) return 'positive'; if (value < 0) return 'negative'; return 'neutral'; }
   getTodayDateInputValue(): string {
     const today = new Date();

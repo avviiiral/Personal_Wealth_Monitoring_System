@@ -64,6 +64,7 @@ class PortfolioCalculationService:
         current_value_by_asset = {
             asset_id: cls._number(asset.get("current_value"))
             for asset_id, asset in unique_assets.items()
+            if asset.get("current_price") is not None
         }
         current_value = sum(current_value_by_asset.values(), Decimal("0"))
 

@@ -1136,6 +1136,38 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
     reportLevel: 'asset_class' | 'sub_class' | 'asset_name' | 'underlying' = 'asset_class',
     reportScope = '',
   ): SubClassSummaryRow[] {
+    const allowedSubScopes = new Set<string>();
+
+    if (reportLevel === 'asset_name' || reportLevel === 'underlying') {
+      for (const family of this.portfolioTree?.families ?? []) {
+        if (this.selectedFamilyMember && family.family_name !== this.selectedFamilyMember) {
+          continue;
+        }
+        for (const portfolio of family.portfolios) {
+          for (const assetClass of portfolio.asset_classes) {
+            const assetClassName = (assetClass.asset_class || 'Unassigned').trim() || 'Unassigned';
+            for (const subClass of assetClass.sub_classes) {
+              const subClassName = (subClass.sub_class || 'Unassigned').trim() || 'Unassigned';
+              const subScope = assetClassName + '::' + subClassName;
+
+              for (const asset of subClass.assets) {
+                const assetName = (asset.asset_name || 'Unnamed Asset').trim() || 'Unnamed Asset';
+                const underlying = (asset.underlying || '').trim();
+                const assetScope = subScope + '::' + assetName;
+
+                if (
+                  (reportLevel === 'asset_name' && reportScope === assetScope) ||
+                  (reportLevel === 'underlying' && reportScope === assetScope + '::' + underlying)
+                ) {
+                  allowedSubScopes.add(subScope);
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+
     return this.portfolioReportSummaries
       .filter((row) => {
         if (this.selectedFamilyMember && row.family_name !== this.selectedFamilyMember) {
@@ -1147,6 +1179,12 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
           return false;
         }
         if (reportLevel === 'sub_class' && reportScope !== subScope) {
+          return false;
+        }
+        if (
+          (reportLevel === 'asset_name' || reportLevel === 'underlying') &&
+          !allowedSubScopes.has(subScope)
+        ) {
           return false;
         }
 

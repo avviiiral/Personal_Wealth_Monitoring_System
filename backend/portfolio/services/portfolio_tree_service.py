@@ -10,7 +10,7 @@ from analytics.services.cash_flows import build_cash_flows, xirr_percent
 from market_data.models import DataSource, ManualAssetPrice, MarketPrice
 from market_data.services.mutual_fund_nav_service import MutualFundNAVService
 from market_data.services.yahoo_finance import YahooFinanceService
-from mutual_funds.models import MutualFundNAV, MutualFundScheme
+from mutual_funds.models import AMFIMasterNAV, AMFIMasterScheme
 from mutual_funds.services.amfi_asset_resolver import AMFIAssetResolver
 
 
@@ -304,75 +304,84 @@ class PortfolioTreeService:
         if not mutual_fund_assets:
             return cls._load_reit_invit_reference_prices(assets_by_id, price_cache)
 
-        # Prefer persisted family-owned MutualFundNAV records. Matching by
-        # ISIN avoids relying on scheme names, which can vary by formatting.
+        # AMFI is the canonical NAV source for actual mutual-fund holdings.
+        # Legacy generic Asset rows can have inaccurate Asset.category values,
+        # so a holding is considered a mutual fund when its Portfolio hierarchy
+        # identifies it as a mutual fund. ETFs must remain on market-price
+        # routing even when their ISIN also exists in the AMFI master.
+        mutual_fund_assets = {
+            asset_id: asset
+            for asset_id, asset in assets_by_id.items()
+            if asset_id in amfi_asset_ids
+            and (
+                str(getattr(asset, "category", "") or "").strip().upper() == "MUTUAL_FUND"
+                or "MUTUAL FUND" in cls._clean(getattr(asset, "_portfolio_sub_class", "")).upper()
+            )
+        }
+
+        if not mutual_fund_assets:
+            return cls._load_reit_invit_reference_prices(assets_by_id, price_cache)
+
+        # Resolve the latest persisted global AMFI NAV strictly by ISIN.
+        # AMFIMasterNAV is the canonical source for Portfolio valuation; the
+        # family-owned MutualFundNAV table can be stale for legacy generic
+        # investments and must not override the investment-driven master.
         isins = {
             cls._clean(asset.isin).upper()
             for asset in mutual_fund_assets.values()
             if cls._clean(asset.isin)
         }
-        families = {
-            asset.family_id
-            for asset in mutual_fund_assets.values()
-            if asset.family_id is not None
-        }
-
-        scheme_by_isin = {}
-        if isins and families:
-            scheme_rows = (
-                MutualFundScheme.objects
-                .filter(
-                    family_id__in=families,
-                    is_active=True,
-                )
-                .filter(
-                    Q(isin_growth__in=isins) | Q(isin_dividend__in=isins)
-                )
-                .only(
-                    "id", "family_id", "scheme_name",
-                    "isin_growth", "isin_dividend",
-                )
+        master_scheme_by_isin = {}
+        if isins:
+            master_schemes = (
+                AMFIMasterScheme.objects
+                .filter(is_active=True)
+                .filter(Q(isin_growth__in=isins) | Q(isin_dividend__in=isins))
+                .only("id", "scheme_code", "scheme_name", "isin_growth", "isin_dividend")
             )
-            for scheme in scheme_rows:
+            for scheme in master_schemes:
                 for scheme_isin in (scheme.isin_growth, scheme.isin_dividend):
                     normalized = cls._clean(scheme_isin).upper()
-                    if normalized:
-                        scheme_by_isin[(scheme.family_id, normalized)] = scheme
+                    if normalized and normalized in isins:
+                        master_scheme_by_isin.setdefault(normalized, scheme)
 
-        if scheme_by_isin:
-            scheme_ids = {scheme.id for scheme in scheme_by_isin.values()}
-            latest_nav_id = (
-                MutualFundNAV.objects
+        if master_scheme_by_isin:
+            master_scheme_ids = {scheme.id for scheme in master_scheme_by_isin.values()}
+            latest_master_nav_id = (
+                AMFIMasterNAV.objects
                 .filter(scheme_id=OuterRef("scheme_id"))
                 .order_by("-date", "-id")
                 .values("id")[:1]
             )
-            nav_rows = (
-                MutualFundNAV.objects
-                .filter(scheme_id__in=scheme_ids, id=Subquery(latest_nav_id))
+            master_nav_rows = (
+                AMFIMasterNAV.objects
+                .filter(scheme_id__in=master_scheme_ids, id=Subquery(latest_master_nav_id))
                 .only("scheme_id", "date", "nav", "source")
             )
-            nav_by_scheme = {row.scheme_id: row for row in nav_rows}
+            master_nav_by_scheme = {row.scheme_id: row for row in master_nav_rows}
 
             for asset_id, asset in mutual_fund_assets.items():
+                # Manual valuation always wins over automatic sources.
+                if price_cache.get(asset_id, {}).get("price_source") == DataSource.MANUAL:
+                    continue
                 isin = cls._clean(asset.isin).upper()
-                scheme = scheme_by_isin.get((asset.family_id, isin))
-                nav_row = nav_by_scheme.get(scheme.id) if scheme else None
+                scheme = master_scheme_by_isin.get(isin)
+                nav_row = master_nav_by_scheme.get(scheme.id) if scheme else None
                 if nav_row is not None:
                     price_cache[asset_id] = {
                         "current_price": nav_row.nav,
-                        "price_source": nav_row.source or "AMFI",
+                        "price_source": DataSource.AMFI,
                         "price_date": nav_row.date,
                     }
 
-        # Legacy Portfolio Tree assets may predate the dedicated
-        # MutualFundScheme/MutualFundNAV records. Resolve those by ISIN from
-        # the existing AMFI service, whose feed is cached once per process/day.
+        # If the investment-driven master has not been populated yet, use the
+        # existing AMFI feed as a temporary compatibility fallback. Once the
+        # scheduler/command has populated AMFIMasterNAV, Portfolio always uses
+        # that persisted canonical value instead of family-level NAV records.
         for asset_id, asset in mutual_fund_assets.items():
-            if asset_id in price_cache and price_cache[asset_id].get("price_source") not in {
-                "MANUAL",
-                "YAHOO",
-            }:
+            if price_cache.get(asset_id, {}).get("price_source") == DataSource.MANUAL:
+                continue
+            if asset_id in price_cache:
                 continue
 
             isin = cls._clean(asset.isin).upper()
@@ -392,7 +401,7 @@ class PortfolioTreeService:
             if nav_record is not None:
                 price_cache[asset_id] = {
                     "current_price": nav_record["nav"],
-                    "price_source": "AMFI",
+                    "price_source": DataSource.AMFI,
                     "price_date": nav_record["date"],
                 }
 

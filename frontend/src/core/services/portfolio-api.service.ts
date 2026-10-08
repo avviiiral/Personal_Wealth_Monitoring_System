@@ -16,7 +16,23 @@ export interface SubClassNode { sub_class: string; assets: PortfolioAssetNode[];
 export interface AssetClassNode { asset_class: string; sub_classes: SubClassNode[]; sub_class_count: number; }
 export interface PortfolioNode { portfolio: string; asset_classes: AssetClassNode[]; asset_class_count: number; }
 export interface FamilyNode { family_name: string; portfolios: PortfolioNode[]; portfolio_count: number; }
-export interface PortfolioTreeResponse { success: boolean; count: number; families: FamilyNode[]; }
+export interface PortfolioCalculationRow {
+  sub_class: string;
+  asset_name?: string;
+  family_name?: string;
+  family_names?: string[];
+  quantity: number;
+  invested_value: number;
+  current_value: number;
+  pnl: number;
+  xirr: number | null;
+}
+export interface PortfolioCalculations {
+  subclasses: PortfolioCalculationRow[];
+  asset_names: PortfolioCalculationRow[];
+  family_subclasses: PortfolioCalculationRow[];
+}
+export interface PortfolioTreeResponse { success: boolean; count: number; families: FamilyNode[]; calculations?: PortfolioCalculations; }
 export interface HoldingReportRow { id: number; family_name: string; portfolio: string; asset_class: string; asset_class_xirr: number | null; sub_class: string; asset_id: number; asset_name: string; underlying: string; underlying_xirr?: Record<string, { xirr: number | null; holding_percentage: number }>; isin: string | null; advisors: string; quantity: number; average_cost: number; invested_value: number; current_price: number; current_value: number; gain: number; gain_percentage: number; xirr: number | null; sub_class_xirr: number | null; asset_name_xirr: number | null; sector: string | null; cap_type: string | null; amc_name: string | null; }
 export interface HoldingReportResponse { success: boolean; count: number; results: HoldingReportRow[]; }
 export interface HoldingMatrixUnderlyingDetail { name: string; current_value: number; percentage_of_total_current_value: number; current_market_price: number | null; }

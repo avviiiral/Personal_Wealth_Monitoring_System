@@ -30,13 +30,13 @@ from .xirr_by_asset_class_views import wealth_xirr_by_asset_class
 
 urlpatterns = [
     # Existing analytics APIs
-    path("dashboard/", analytics_dashboard, name="analytics-dashboard"),
     path("summary/", analytics_summary, name="analytics-summary"),
     path("allocation/", analytics_allocation, name="analytics-allocation"),
     path("performance/", analytics_performance, name="analytics-performance"),
     path("historical/", analytics_historical, name="analytics-historical"),
 
     # Unified wealth APIs
+    path("wealth/dashboard/", analytics_dashboard, name="analytics-dashboard"),
     path("wealth/summary/", wealth_summary, name="wealth-summary"),
     path("wealth/recalculate/", wealth_recalculate, name="wealth-recalculate"),
     path("wealth/allocation/", wealth_allocation, name="wealth-allocation"),

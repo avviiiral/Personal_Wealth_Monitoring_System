@@ -402,17 +402,6 @@ export class PortfolioComponent implements OnInit, OnDestroy {
     const day = String(today.getDate()).padStart(2, '0');
     return year + '-' + month + '-' + day;
   }
-  private getSubClassPnl(subClass: SubClassNode): number { return this.getAssetsPnl(subClass.assets); }
-  private getSubClassQuantity(subClass: SubClassNode): number { return this.getAssetsQuantity(subClass.assets); }
-  private getSubClassXirr(assets: PortfolioAssetNode[]): number | null {
-    const values = assets.map((asset) => asset.sub_class_xirr).filter((value): value is number => value !== null && value !== undefined);
-    return values.length ? values[0] : null;
-  }
-  private getAssetNameXirr(assets: PortfolioAssetNode[]): number | null {
-    const values = assets.map((asset) => asset.asset_name_xirr).filter((value): value is number => value !== null && value !== undefined);
-    return values.length ? values[0] : null;
-  }
-  private calculateXirr(_assets: PortfolioAssetNode[]): number | null { return null; }
   private toNumber(value: number | null | undefined): number { if (value === null || value === undefined) return 0; const numberValue = Number(value); return Number.isFinite(numberValue) ? numberValue : 0; }
   private validateSelections(): void {
     if (this.selectedFamilyMember && !this.familyMemberOptions.includes(this.selectedFamilyMember)) this.selectedFamilyMember = '';

@@ -270,12 +270,16 @@ class PortfolioTreeService:
                 "price_date": manual.price_date,
             }
 
+        # AMFI NAVs are valid for mutual-fund valuation only. They must
+        # never be treated as a generic market quote for ETFs or other
+        # exchange-traded assets. Mutual funds are routed to the canonical
+        # AMFIMasterNAV path below.
         latest_market_id = (
             MarketPrice.objects
             .filter(
                 asset_id=OuterRef("asset_id"),
             )
-            .exclude(source=DataSource.MANUAL)
+            .exclude(source__in=[DataSource.MANUAL, DataSource.AMFI])
             .order_by("-date", "-id")
             .values("id")[:1]
         )

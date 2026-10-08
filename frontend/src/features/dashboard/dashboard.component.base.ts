@@ -414,7 +414,7 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
         this.xirr = data.xirr;
         this.investmentSummary = data.investment_summary;
         this.dashboardInvestmentSummary = data.dashboard_investment_summary ?? [];
-        this.dashboardPerformance = data.performance?.results ?? [];
+        this.dashboardPerformance = data.dashboard_performance?.results ?? [];
         this.advisorAllocation = data.advisor_allocation?.results ?? [];
         this.advisorPerformance = data.advisor_performance?.results ?? [];
         this.historical = data.historical;

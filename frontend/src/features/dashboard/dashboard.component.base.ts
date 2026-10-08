@@ -1357,7 +1357,7 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
               assets: [] as SubClassDetail['assets'],
             };
 
-            for (const asset: any of subClass.assets) {
+            for (const asset of subClass.assets) {
               const assetName = (asset.asset_name || asset.underlying || '-').trim();
               const underlying = (asset.underlying || '').trim();
               const assetScope = subScope + '::' + assetName;

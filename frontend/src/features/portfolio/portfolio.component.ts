@@ -3,7 +3,7 @@ import { FormsModule } from '@angular/forms';
 import { ChangeDetectorRef, Component, OnDestroy, OnInit, inject } from '@angular/core';
 import { Subscription, timer } from 'rxjs';
 
-import { PortfolioApiService, PortfolioAssetNode, FamilyNode, SubClassNode } from '../../core/services/portfolio-api.service';
+import { PortfolioApiService, PortfolioAssetNode, FamilyNode, SubClassNode, PortfolioCalculations } from '../../core/services/portfolio-api.service';
 import { ManualPriceService } from '../../core/services/manual-price.service';
 import { InvestmentsApiService } from '../../core/services/investments-api.service';
 import { ToastService } from '../../core/services/toast.service';
@@ -25,6 +25,7 @@ export class PortfolioComponent implements OnInit, OnDestroy {
   readonly rbac = inject(RbacService);
   private refreshSubscription: Subscription | null = null;
   families: FamilyNode[] = [];
+  portfolioCalculations: PortfolioCalculations = { subclasses: [], asset_names: [], family_subclasses: [] };
   selectedFamilyMember = '';
   selectedAssetClass = '';
   selectedAdvisor = '';
@@ -56,7 +57,7 @@ export class PortfolioComponent implements OnInit, OnDestroy {
   loadPortfolio(silent = false): void {
     if (!silent) { this.loading = true; this.error = ''; }
     this.portfolioApi.getPortfolioTree({ family: this.selectedFamilyMember, asset_class: this.selectedAssetClass, advisor: this.selectedAdvisor }).subscribe({
-      next: (response) => { this.families = response.families ?? []; this.validateSelections(); this.loading = false; this.cdr.detectChanges(); },
+      next: (response) => { this.families = response.families ?? []; this.portfolioCalculations = response.calculations ?? { subclasses: [], asset_names: [], family_subclasses: [] }; this.validateSelections(); this.loading = false; this.cdr.detectChanges(); },
       error: (error) => { console.error('Portfolio API error:', error); this.loading = false; this.error = error?.status === 401 || error?.status === 403 ? 'Authentication failed. Please log in again.' : 'Unable to load portfolio data.'; this.cdr.detectChanges(); },
     });
   }
@@ -196,6 +197,7 @@ export class PortfolioComponent implements OnInit, OnDestroy {
 
   get subClassSummaries(): SubClassSummary[] {
     const summaryMap = new Map<string, SubClassSummary>();
+
     for (const family of this.filteredFamilies) for (const portfolio of family.portfolios) for (const assetClass of portfolio.asset_classes) {
       if (this.selectedAssetClass && assetClass.asset_class !== this.selectedAssetClass) continue;
       for (const subClass of assetClass.sub_classes) {
@@ -203,31 +205,81 @@ export class PortfolioComponent implements OnInit, OnDestroy {
         if (!filteredAssets.length) continue;
         const key = subClass.sub_class || 'Unassigned';
         let summary = summaryMap.get(key);
-        if (!summary) { summary = { sub_class: key, current_value: 0, invested_value: 0, pnl: 0, quantity: 0, xirr: null, assets: [] }; summaryMap.set(key, summary); }
-        summary.current_value += this.getAssetsCurrentValue(filteredAssets);
-        summary.invested_value += this.getAssetsInvestedValue(filteredAssets);
-        summary.pnl += this.getAssetsPnl(filteredAssets);
-        summary.quantity += this.getAssetsQuantity(filteredAssets);
+        if (!summary) {
+          summary = {
+            sub_class: key,
+            current_value: 0,
+            invested_value: 0,
+            pnl: 0,
+            quantity: 0,
+            xirr: null,
+            assets: [],
+          };
+          summaryMap.set(key, summary);
+        }
         summary.assets.push(...filteredAssets);
       }
     }
-    const summaries = Array.from(summaryMap.values()).map((summary) => ({ ...summary, xirr: this.getSubClassXirr(summary.assets) }));
-    return this.sortRows(summaries, 'subclass', '', (summary, column) => {
-      switch (column) { case 'sub_class': return summary.sub_class; case 'quantity': return summary.quantity; case 'invested_value': return summary.invested_value; case 'current_value': return summary.current_value; case 'pnl': return summary.pnl; case 'xirr': return summary.xirr; default: return summary.sub_class; }
-    }, (left, right) => left.sub_class.localeCompare(right.sub_class));
+
+    return Array.from(summaryMap.values()).map((summary) => {
+      const calculated = this.portfolioCalculations.subclasses.find((row) => row.sub_class === summary.sub_class);
+      return {
+        ...summary,
+        quantity: calculated?.quantity ?? 0,
+        invested_value: calculated?.invested_value ?? 0,
+        current_value: calculated?.current_value ?? 0,
+        pnl: calculated?.pnl ?? 0,
+        xirr: calculated?.xirr ?? null,
+      };
+    }).sort((left, right) => left.sub_class.localeCompare(right.sub_class));
   }
-  private getSortableValue(summary: SubClassSummary, column: PortfolioSortColumn): number | null { switch (column) { case 'quantity': return this.toNullableNumber(summary.quantity); case 'invested_value': return this.toNullableNumber(summary.invested_value); case 'current_value': return this.toNullableNumber(summary.current_value); case 'pnl': return this.toNullableNumber(summary.pnl); case 'xirr': return this.toNullableNumber(summary.xirr); default: return null; } }
   getSubClassAssets(subClass: string): PortfolioAssetNode[] { return this.subClassSummaries.find((summary) => summary.sub_class === subClass)?.assets ?? []; }
   toggleSubClass(subClass: string): void { if (this.expandedSubClass === subClass) { this.expandedSubClass = ''; this.expandedAsset = ''; this.expandedQuantsAssetId = null; return; } this.expandedSubClass = subClass; this.expandedAsset = ''; }
 
   getAssetGroups(assets: PortfolioAssetNode[], parentKey = ''): AssetGroup[] {
     const groups = new Map<string, PortfolioAssetNode[]>();
-    for (const asset of assets) { const assetName = asset.asset_name?.trim() || 'Unnamed Asset'; if (!groups.has(assetName)) groups.set(assetName, []); groups.get(assetName)!.push(asset); }
+    for (const asset of assets) {
+      const assetName = asset.asset_name?.trim() || 'Unnamed Asset';
+      if (!groups.has(assetName)) groups.set(assetName, []);
+      groups.get(assetName)!.push(asset);
+    }
+
+    const subClass = parentKey.split('::')[0] || this.expandedSubClass;
     const groupsList: AssetGroup[] = Array.from(groups.entries()).map(([asset_name, groupedAssets]) => {
-      const familyNames = Array.from(new Set(groupedAssets.map((asset) => asset.family_name?.trim()).filter((family): family is string => Boolean(family)))).sort((a, b) => a.localeCompare(b));
-      return { asset_name, family_name: familyNames.length ? familyNames.join(', ') : '-', quantity: this.getAssetsQuantity(groupedAssets), invested_value: this.getAssetsInvestedValue(groupedAssets), current_value: this.getAssetsCurrentValue(groupedAssets), pnl: this.getAssetsPnl(groupedAssets), xirr: this.getAssetNameXirr(groupedAssets), assets: groupedAssets };
+      const calculated = this.portfolioCalculations.asset_names.find(
+        (row) => row.sub_class === subClass && row.asset_name === asset_name,
+      );
+      const familyNames = calculated?.family_names ?? [];
+      return {
+        asset_name,
+        family_name: familyNames.length ? familyNames.join(', ') : '-',
+        quantity: calculated?.quantity ?? 0,
+        invested_value: calculated?.invested_value ?? 0,
+        current_value: calculated?.current_value ?? 0,
+        pnl: calculated?.pnl ?? 0,
+        xirr: calculated?.xirr ?? null,
+        assets: groupedAssets,
+      };
     });
-    return this.sortRows(groupsList, 'asset', parentKey, (group, column) => { switch (column) { case 'asset_name': return group.asset_name; case 'family_name': return group.family_name; case 'quantity': return group.quantity; case 'invested_value': return group.invested_value; case 'current_value': return group.current_value; case 'pnl': return group.pnl; case 'xirr': return group.xirr; default: return group.asset_name; } }, (left, right) => left.asset_name.localeCompare(right.asset_name));
+
+    return this.sortRows(
+      groupsList,
+      'asset',
+      parentKey,
+      (group, column) => {
+        switch (column) {
+          case 'asset_name': return group.asset_name;
+          case 'family_name': return group.family_name;
+          case 'quantity': return group.quantity;
+          case 'invested_value': return group.invested_value;
+          case 'current_value': return group.current_value;
+          case 'pnl': return group.pnl;
+          case 'xirr': return group.xirr;
+          default: return group.asset_name;
+        }
+      },
+      (left, right) => left.asset_name.localeCompare(right.asset_name),
+    );
   }
   getSortedUnderlyingAssets(assets: PortfolioAssetNode[], parentKey = ''): PortfolioAssetNode[] {
     const resolvedParentKey = parentKey || this.expandedAsset || 'empty';
@@ -350,11 +402,6 @@ export class PortfolioComponent implements OnInit, OnDestroy {
     const day = String(today.getDate()).padStart(2, '0');
     return year + '-' + month + '-' + day;
   }
-  private getAssetsCurrentValue(assets: PortfolioAssetNode[]): number { return assets.reduce((total, asset) => total + this.toNumber(asset.current_value), 0); }
-  private getAssetsInvestedValue(assets: PortfolioAssetNode[]): number { return assets.reduce((total, asset) => total + this.toNumber(asset.invested_value), 0); }
-  private getAssetsPnl(assets: PortfolioAssetNode[]): number { return assets.reduce((total, asset) => total + this.toNumber(asset.pnl), 0); }
-  private getAssetsQuantity(assets: PortfolioAssetNode[]): number { return assets.reduce((total, asset) => total + this.toNumber(asset.quantity), 0); }
-  private getSubClassCurrentValue(subClass: SubClassNode): number { return this.getAssetsCurrentValue(subClass.assets); }
   private getSubClassPnl(subClass: SubClassNode): number { return this.getAssetsPnl(subClass.assets); }
   private getSubClassQuantity(subClass: SubClassNode): number { return this.getAssetsQuantity(subClass.assets); }
   private getSubClassXirr(assets: PortfolioAssetNode[]): number | null {

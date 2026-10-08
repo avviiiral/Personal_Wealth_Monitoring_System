@@ -96,9 +96,26 @@ class AnalyticsViewModelService:
 
         summary = UnifiedWealthAnalytics.calculate_summary(user, family_name=family_name)
         investment_summary = InvestmentSummaryService.calculate(user, family_name=family_name)
-        direct_holdings = list(UnifiedWealthAnalytics.get_equity_holdings(user))
+        allocation_totals = {}
+        for row in investment_summary.get("results", []):
+            category = row.get("asset_category") or "Unassigned"
+            allocation_totals[category] = allocation_totals.get(category, Decimal("0")) + cls._number(row.get("current_value"))
+        allocation_total = sum(allocation_totals.values(), Decimal("0"))
         allocation = {
-            "results": MutualFundLookThroughService.allocation(user, direct_holdings),
+            "results": [
+                {
+                    "category": category,
+                    "value": value,
+                    "percentage": round((value / allocation_total) * Decimal("100"), 2) if allocation_total else Decimal("0"),
+                }
+                for category, value in sorted(
+                    allocation_totals.items(),
+                    key=lambda item: item[1],
+                    reverse=True,
+                )
+                if value > 0
+            ],
+            "total_current_value": allocation_total,
         }
         advisor_allocation = InvestmentSummaryService.calculate_allocation_by_advisor(user)
         advisor_performance = {

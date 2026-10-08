@@ -5,7 +5,6 @@ from django.core.management.base import BaseCommand
 from django.utils import timezone
 
 from mutual_funds.services.amfi import AMFIService
-from portfolio.mis_history_prefetch import MISHistoryPrefetch
 from watchlist.services.performance import AMFIPerformanceService
 from watchlist.services.universe import AMFIUniverseService
 
@@ -57,8 +56,8 @@ class Command(BaseCommand):
     """
 
     help = (
-        "Run every scheduled external-data refresh (market prices, "
-        "investment-driven AMFI NAVs by ISIN, security master ratios, SIP sync/execute, "
+        "Run the daily external-data refresh (market prices, "
+        "security master ratios, SIP sync/execute, "
         "portfolio news) for every active user, in one call. "
         "Intended to be the single command a scheduler triggers "
         "nightly."

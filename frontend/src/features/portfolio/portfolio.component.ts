@@ -25,7 +25,7 @@ export class PortfolioComponent implements OnInit, OnDestroy {
   readonly rbac = inject(RbacService);
   private refreshSubscription: Subscription | null = null;
   families: FamilyNode[] = [];
-  portfolioCalculations: PortfolioCalculations = { subclasses: [], asset_names: [], family_subclasses: [] };
+  portfolioCalculations: PortfolioCalculations = { subclasses: [], asset_names: [], family_subclasses: [], report_subclass_summaries: [] };
   selectedFamilyMember = '';
   selectedAssetClass = '';
   selectedAdvisor = '';
@@ -57,7 +57,7 @@ export class PortfolioComponent implements OnInit, OnDestroy {
   loadPortfolio(silent = false): void {
     if (!silent) { this.loading = true; this.error = ''; }
     this.portfolioApi.getPortfolioTree({ family: this.selectedFamilyMember, asset_class: this.selectedAssetClass, advisor: this.selectedAdvisor }).subscribe({
-      next: (response) => { this.families = response.families ?? []; this.portfolioCalculations = response.calculations ?? { subclasses: [], asset_names: [], family_subclasses: [] }; this.validateSelections(); this.loading = false; this.cdr.detectChanges(); },
+      next: (response) => { this.families = response.families ?? []; this.portfolioCalculations = response.calculations ?? { subclasses: [], asset_names: [], family_subclasses: [], report_subclass_summaries: [] }; this.validateSelections(); this.loading = false; this.cdr.detectChanges(); },
       error: (error) => { console.error('Portfolio API error:', error); this.loading = false; this.error = error?.status === 401 || error?.status === 403 ? 'Authentication failed. Please log in again.' : 'Unable to load portfolio data.'; this.cdr.detectChanges(); },
     });
   }

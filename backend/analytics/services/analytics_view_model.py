@@ -122,6 +122,29 @@ class AnalyticsViewModelService:
 
         insights = cls._insights(performance, allocation, historical)
 
+        from analytics.models import StandardAllocation
+        standard_rows = StandardAllocation.objects.filter(family_name__isnull=True)
+        if family_name:
+            family_rows = {
+                row.asset_category: row
+                for row in StandardAllocation.objects.filter(family_name=family_name)
+            }
+            global_rows = {
+                row.asset_category: row
+                for row in standard_rows
+            }
+            standard_rows = list({**global_rows, **family_rows}.values())
+
+        total_current_value = cls._number(summary.get("total_current_value"))
+        standard_allocations = {}
+        for row in standard_rows:
+            percent = cls._number(row.allocation_percent)
+            amount = (total_current_value * percent / Decimal("100")).quantize(Decimal("0.01"))
+            standard_allocations[row.asset_category] = {
+                "percent": float(percent),
+                "amount": float(amount),
+            }
+
         return {
             "summary": summary,
             "investment_summary": investment_summary,
@@ -135,4 +158,5 @@ class AnalyticsViewModelService:
             "sector_allocation": sector_allocation,
             "insights": insights,
             "portfolio_tree": portfolio_tree,
+            "standard_allocations": standard_allocations,
         }

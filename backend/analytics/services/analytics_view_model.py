@@ -48,7 +48,7 @@ class AnalyticsViewModelService:
                 for asset_class in portfolio.get("asset_classes", []):
                     for sub_class in asset_class.get("sub_classes", []):
                         for asset in sub_class.get("assets", []):
-                            xirr = asset.get("xirr")
+                            xirr = asset.get("asset_name_xirr")
                             if xirr is None:
                                 continue
                             try:
@@ -68,6 +68,44 @@ class AnalyticsViewModelService:
 
         rows.sort(key=lambda row: row["xirr_percentage"], reverse=True)
         return rows, tree
+
+    @classmethod
+    def _dashboard_xirr_performance(cls, tree, investment_summary, family_name=None):
+        asset_category_by_class = {}
+        for row in (investment_summary or {}).get("results", []):
+            category = row.get("asset_category") or "Unassigned"
+            asset_category_by_class[row.get("asset_class")] = category
+            for raw_class in row.get("raw_asset_classes") or []:
+                asset_category_by_class[raw_class] = category
+
+        rows = []
+        for family_node in tree.get("families", []):
+            if family_name and family_node.get("family_name") != family_name:
+                continue
+            for portfolio in family_node.get("portfolios", []):
+                for asset_class in portfolio.get("asset_classes", []):
+                    for sub_class in asset_class.get("sub_classes", []):
+                        for asset in sub_class.get("assets", []):
+                            xirr = asset.get("xirr")
+                            if xirr is None:
+                                continue
+                            try:
+                                xirr_value = float(xirr)
+                            except (TypeError, ValueError):
+                                continue
+                            rows.append({
+                                "asset_name": asset.get("asset_name") or "Unnamed Asset",
+                                "asset_class": sub_class.get("sub_class") or "Unassigned",
+                                "asset_category": asset_category_by_class.get(
+                                    sub_class.get("sub_class"),
+                                    asset_category_by_class.get(asset_class.get("asset_class"), "Unassigned"),
+                                ),
+                                "xirr_percentage": xirr_value,
+                                "underlying": asset.get("underlying") or asset.get("asset_name") or "Unnamed Underlying",
+                            })
+
+        rows.sort(key=lambda row: row["xirr_percentage"], reverse=True)
+        return rows
 
     @classmethod
     def _dashboard_investment_summary(cls, tree, family_name=None):
@@ -245,6 +283,7 @@ class AnalyticsViewModelService:
             "dashboard_investment_summary": cls._dashboard_investment_summary(portfolio_tree, family_name=family_name),
             "allocation": allocation,
             "performance": {"results": performance},
+            "dashboard_performance": {"results": cls._dashboard_xirr_performance(portfolio_tree, investment_summary, family_name=family_name)},
             "advisor_allocation": advisor_allocation,
             "advisor_performance": advisor_performance,
             "xirr": {"xirr_percentage": summary.get("xirr_percentage")},

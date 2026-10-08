@@ -1276,7 +1276,7 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
               current_value: 0,
               invested_value: 0,
               pnl: 0,
-              xirr_inputs: [],
+              xirr_inputs: [] as { invested_value: number; xirr: number | null }[],
             };
 
             for (const asset of subClass.assets) {
@@ -1351,13 +1351,13 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
             if (reportLevel === 'sub_class' && reportScope !== subScope) continue;
             const key = subScope;
 
-            const existing = bySubClass.get(key) ?? {
+            const existing: SubClassDetail = bySubClass.get(key) ?? {
               sub_class: subClassName,
               asset_class: (assetClass.asset_class || 'Unassigned').trim() || 'Unassigned',
-              assets: [],
+              assets: [] as SubClassDetail['assets'],
             };
 
-            for (const asset of subClass.assets) {
+            for (const asset: any of subClass.assets) {
               const assetName = (asset.asset_name || asset.underlying || '-').trim();
               const underlying = (asset.underlying || '').trim();
               const assetScope = subScope + '::' + assetName;

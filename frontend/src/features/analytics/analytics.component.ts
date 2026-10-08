@@ -372,11 +372,11 @@ export class AnalyticsComponent implements OnInit, AfterViewInit, OnDestroy {
   formatCategory(value: string): string { if (!value) return 'Unknown'; return value.replace(/_/g, ' ').toLowerCase().replace(/\b\w/g, char => char.toUpperCase()); }
   getBestPerformerName(): string {
     if (!this.bestPerformer) return '-';
-    return this.bestPerformer.asset_name || this.bestPerformer.asset_class || 'Unknown';
+    return this.bestPerformer.asset_class || this.bestPerformer.asset_name || 'Unknown';
   }
   getWorstPerformerName(): string {
     if (!this.worstPerformer) return '-';
-    return this.worstPerformer.asset_name || this.worstPerformer.asset_class || 'Unknown';
+    return this.worstPerformer.asset_class || this.worstPerformer.asset_name || 'Unknown';
   }
   getBestPerformerReturn(): number { return this.toNumber(this.bestPerformer?.xirr_percentage); }
   getWorstPerformerReturn(): number { return this.toNumber(this.worstPerformer?.xirr_percentage); }

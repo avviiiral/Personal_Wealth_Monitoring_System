@@ -214,6 +214,7 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
   portfolioTree: PortfolioTreeResponse | null = null;
   dashboardInvestmentSummary: Array<any> = [];
   dashboardPerformance: Array<any> = [];
+  portfolioReportSummaries: Array<any> = [];
 
   private wealthChart?: Chart;
   private allocationChart?: Chart;
@@ -415,6 +416,7 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
         this.investmentSummary = data.investment_summary;
         this.dashboardInvestmentSummary = data.dashboard_investment_summary ?? [];
         this.dashboardPerformance = data.dashboard_performance?.results ?? [];
+        this.portfolioReportSummaries = data.portfolio_calculations?.report_subclass_summaries ?? [];
         this.advisorAllocation = data.advisor_allocation?.results ?? [];
         this.advisorPerformance = data.advisor_performance?.results ?? [];
         const standardAllocationRows = data.standard_allocations ?? {};
@@ -462,6 +464,7 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
         this.portfolioTree = null;
         this.dashboardInvestmentSummary = [];
         this.dashboardPerformance = [];
+        this.portfolioReportSummaries = [];
         this.cdr.markForCheck();
       },
     });
@@ -1133,83 +1136,39 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
    * number shown on the Portfolio page. Better to omit it in the
    * PDF than to show a number that might not match.
    */
-  private buildSubClassSummariesForReport(reportLevel: 'asset_class' | 'sub_class' | 'asset_name' | 'underlying' = 'asset_class', reportScope = ''): SubClassSummaryRow[] {
-    const totals = new Map<string, {
-      family_name: string;
-      sub_class: string;
-      current_value: number;
-      invested_value: number;
-      pnl: number;
-      xirr_inputs: { invested_value: number; xirr: number | null }[];
-    }>();
-
-    for (const family of this.portfolioTree?.families ?? []) {
-      if (this.selectedFamilyMember && family.family_name !== this.selectedFamilyMember) continue;
-
-      for (const portfolio of family.portfolios) {
-        for (const assetClass of portfolio.asset_classes) {
-          const ac = (assetClass.asset_class || 'Unassigned').trim() || 'Unassigned';
-          for (const subClass of assetClass.sub_classes) {
-            const subClassName = subClass.sub_class || 'Unassigned';
-            const subScope = ac + '::' + subClassName;
-            if (reportLevel === 'asset_class' && reportScope && reportScope !== ac) continue;
-            if (reportLevel === 'sub_class' && reportScope !== subScope) continue;
-            const key = family.family_name + '::' + subScope;
-            const existing = totals.get(key) ?? {
-              family_name: family.family_name,
-              sub_class: subClassName,
-              current_value: 0,
-              invested_value: 0,
-              pnl: 0,
-              xirr_inputs: [],
-            };
-
-            for (const asset of subClass.assets) {
-              const assetName = (asset.asset_name || 'Unnamed Asset').trim() || 'Unnamed Asset';
-              const underlying = (asset.underlying || '').trim();
-              const assetScope = subScope + '::' + assetName;
-              if (reportLevel === 'asset_name' && reportScope !== assetScope) continue;
-              if (reportLevel === 'underlying' && reportScope.indexOf(assetScope + '::') !== 0) continue;
-              const investedValue = Number(asset.invested_value ?? 0);
-              existing.current_value += Number(asset.current_value ?? 0);
-              existing.invested_value += investedValue;
-              existing.pnl += Number(asset.pnl ?? 0);
-              existing.xirr_inputs.push({
-                invested_value: investedValue,
-                xirr: asset.sub_class_xirr ?? null,
-              });
-            }
-
-            totals.set(key, existing);
-          }
+  private buildSubClassSummariesForReport(
+    reportLevel: 'asset_class' | 'sub_class' | 'asset_name' | 'underlying' = 'asset_class',
+    reportScope = '',
+  ): SubClassSummaryRow[] {
+    return this.portfolioReportSummaries
+      .filter((row) => {
+        if (this.selectedFamilyMember && row.family_name !== this.selectedFamilyMember) {
+          return false;
         }
-      }
-    }
 
-    return Array.from(totals.values())
-      .map((values) => {
-        const valid = values.xirr_inputs.filter(
-          (item) => item.xirr !== null && Number.isFinite(Number(item.xirr)) && item.invested_value > 0,
-        );
-        const totalInvested = valid.reduce((sum, item) => sum + item.invested_value, 0);
-        const xirr = totalInvested
-          ? valid.reduce((sum, item) => sum + Number(item.xirr) * item.invested_value, 0) / totalInvested
-          : null;
+        const subScope = row.asset_class + '::' + row.sub_class;
+        if (reportLevel === 'asset_class' && reportScope && reportScope !== row.asset_class) {
+          return false;
+        }
+        if (reportLevel === 'sub_class' && reportScope !== subScope) {
+          return false;
+        }
 
-        return {
-          family_name: values.family_name,
-          sub_class: values.sub_class,
-          invested_value: values.invested_value,
-          current_value: values.current_value,
-          pnl: values.pnl,
-          xirr,
-        };
+        return true;
       })
-      .sort((a, b) =>
-        a.family_name.localeCompare(b.family_name) || b.current_value - a.current_value,
+      .map((row) => ({
+        family_name: row.family_name,
+        sub_class: row.sub_class,
+        invested_value: row.invested_value,
+        current_value: row.current_value,
+        pnl: row.pnl,
+        xirr: row.xirr,
+      }))
+      .sort(
+        (a, b) =>
+          a.family_name.localeCompare(b.family_name) || b.current_value - a.current_value,
       );
   }
-
   /**
    * Per-scheme/per-holding detail for the Portfolio Review PDF,
    * grouped by Sub Class - the source of the "Equities: Mutual

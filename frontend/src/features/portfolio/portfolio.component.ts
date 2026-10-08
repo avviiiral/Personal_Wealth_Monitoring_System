@@ -3,7 +3,7 @@ import { FormsModule } from '@angular/forms';
 import { ChangeDetectorRef, Component, OnDestroy, OnInit, inject } from '@angular/core';
 import { Subscription, timer } from 'rxjs';
 
-import { PortfolioApiService, PortfolioAssetNode, FamilyNode, SubClassNode, PortfolioCalculations } from '../../core/services/portfolio-api.service';
+import { PortfolioApiService, PortfolioAssetNode, FamilyNode, PortfolioCalculations } from '../../core/services/portfolio-api.service';
 import { ManualPriceService } from '../../core/services/manual-price.service';
 import { InvestmentsApiService } from '../../core/services/investments-api.service';
 import { ToastService } from '../../core/services/toast.service';

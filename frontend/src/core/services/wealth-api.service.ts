@@ -23,6 +23,7 @@ export interface AnalyticsViewModel {
   market_cap_allocation: Record<string, unknown>;
   sector_allocation: Record<string, unknown>;
   insights: AnalyticsInsights;
+  portfolio_tree: any;
 }
 
 @Injectable({
@@ -33,13 +34,14 @@ export class WealthApiService {
 
   private readonly baseUrl = `${environment.apiUrl}/api/analytics/wealth`;
 
-  getAnalyticsDashboard(period: string = '30d', days: number = 30): Observable<AnalyticsViewModel> {
+  getAnalyticsDashboard(period: string = '30d', days: number = 30, family?: string): Observable<AnalyticsViewModel> {
     let params = new HttpParams();
     if (period === '30d' || period === '90d' || period === '6m' || period === '1y') {
       params = params.set('days', days);
     } else {
       params = params.set('period', period);
     }
+    if (family) params = params.set('family', family);
     return this.http.get<AnalyticsViewModel>(`${this.baseUrl}/dashboard/`, {
       params,
       withCredentials: true,

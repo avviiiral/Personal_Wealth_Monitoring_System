@@ -370,8 +370,14 @@ export class AnalyticsComponent implements OnInit, AfterViewInit, OnDestroy {
   formatAxisCurrency(value: number): string { const absolute = Math.abs(value); if (absolute >= 10000000) return `₹${(value / 10000000).toFixed(1)}Cr`; if (absolute >= 100000) return `₹${(value / 100000).toFixed(1)}L`; if (absolute >= 1000) return `₹${(value / 1000).toFixed(0)}K`; return `₹${value}`; }
   formatDate(value: string): string { if (!value) return ''; const date = new Date(`${value}T00:00:00`); return date.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' }); }
   formatCategory(value: string): string { if (!value) return 'Unknown'; return value.replace(/_/g, ' ').toLowerCase().replace(/\b\w/g, char => char.toUpperCase()); }
-  getBestPerformerName(): string { if (!this.bestPerformer) return '-'; return this.bestPerformer.asset_class || this.bestPerformer.symbol || this.bestPerformer.asset_name || this.bestPerformer.scheme_name || this.bestPerformer.name || 'Unknown'; }
-  getWorstPerformerName(): string { if (!this.worstPerformer) return '-'; return this.worstPerformer.asset_class || this.worstPerformer.symbol || this.worstPerformer.asset_name || this.worstPerformer.scheme_name || this.worstPerformer.name || 'Unknown'; }
+  getBestPerformerName(): string {
+    if (!this.bestPerformer) return '-';
+    return this.bestPerformer.asset_name || this.bestPerformer.asset_class || 'Unknown';
+  }
+  getWorstPerformerName(): string {
+    if (!this.worstPerformer) return '-';
+    return this.worstPerformer.asset_name || this.worstPerformer.asset_class || 'Unknown';
+  }
   getBestPerformerReturn(): number { return this.toNumber(this.bestPerformer?.xirr_percentage); }
   getWorstPerformerReturn(): number { return this.toNumber(this.worstPerformer?.xirr_percentage); }
   getLargestAllocationName(): string { if (!this.largestAllocation) return '-'; return this.formatCategory(this.largestAllocation.category); }

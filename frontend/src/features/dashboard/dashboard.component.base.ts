@@ -39,7 +39,6 @@ Chart.register(...registerables);
 })
 export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
   private readonly wealthApi = inject(WealthApiService);
-  private readonly portfolioApi = inject(PortfolioApiService);
   private readonly themeService = inject(ThemeService);
   private readonly cdr = inject(ChangeDetectorRef);
   private readonly themeEffect = effect(() => {
@@ -213,6 +212,8 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
   generatingReport = false;
 
   portfolioTree: PortfolioTreeResponse | null = null;
+  dashboardInvestmentSummary: Array<any> = [];
+  dashboardPerformance: Array<any> = [];
 
   private wealthChart?: Chart;
   private allocationChart?: Chart;
@@ -395,20 +396,41 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
 
     this.loading = true;
     this.error = '';
-
     this.destroyCharts();
 
     const family = this.selectedFamilyMember || undefined;
 
-    // SUMMARY
-    this.wealthApi.getSummary(family).subscribe({
-      next: (data) => {
-        console.log('SUMMARY RESPONSE:', data);
+    this.investmentSummary = null;
+    this.investmentSummaryError = '';
+    this.portfolioTree = null;
+    this.dashboardInvestmentSummary = [];
+    this.dashboardPerformance = [];
 
-        this.summary = data;
+    this.wealthApi.getAnalyticsDashboard('30d', 30, family).subscribe({
+      next: (data) => {
+        console.log('ANALYTICS DASHBOARD RESPONSE:', data);
+
+        this.summary = data.summary;
+        this.xirr = data.xirr;
+        this.investmentSummary = data.investment_summary;
+        this.dashboardInvestmentSummary = data.dashboard_investment_summary ?? [];
+        this.dashboardPerformance = data.performance?.results ?? [];
+        this.advisorAllocation = data.advisor_allocation?.results ?? [];
+        this.advisorPerformance = data.advisor_performance?.results ?? [];
+        this.historical = data.historical;
+        this.portfolioTree = data.portfolio_tree;
+
+        if (
+          this.reportScope &&
+          !this.reportScopeOptions.some(option => option.value === this.reportScope)
+        ) {
+          this.reportScope = '';
+          this.reportAssetClass = '';
+        }
+
+        this.ensureValidXirrCategoryIndex();
 
         this.loading = false;
-
         this.cdr.markForCheck();
 
         setTimeout(() => {
@@ -416,140 +438,15 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
           this.cdr.markForCheck();
         });
       },
-
       error: (error) => {
-        console.error('SUMMARY API ERROR:', error);
-
+        console.error('ANALYTICS DASHBOARD API ERROR:', error);
         this.loading = false;
-        this.error = 'Unable to load wealth summary.';
-
-        this.cdr.markForCheck();
-      },
-    });
-
-    // XIRR
-    this.wealthApi.getXirr(family).subscribe({
-      next: (data) => {
-        console.log('XIRR RESPONSE:', data);
-
-        this.xirr = data;
-
-        this.cdr.markForCheck();
-      },
-
-      error: (error) => {
-        console.error('XIRR API ERROR:', error);
-      },
-    });
-
-    // INVESTMENT SUMMARY
-    this.investmentSummary = null;
-    this.investmentSummaryError = '';
-
-    this.wealthApi.getInvestmentSummary(family).subscribe({
-      next: (data) => {
-        console.log('INVESTMENT SUMMARY RESPONSE:', data);
-
-        this.investmentSummary = data;
-
-        this.cdr.markForCheck();
-
-        setTimeout(() => {
-          this.renderAllocationChart();
-          this.cdr.markForCheck();
-        });
-      },
-
-      error: (error) => {
-        console.error('INVESTMENT SUMMARY API ERROR:', error);
-
+        this.error = 'Unable to load dashboard data.';
         this.investmentSummaryError = 'Unable to load investment summary.';
-
-        this.cdr.markForCheck();
-      },
-    });
-
-    // ADVISOR ALLOCATION / PERFORMANCE
-    // (see the advisorAllocation/advisorPerformance field docs)
-    this.wealthApi.getAllocationByAdvisor().subscribe({
-      next: (data) => {
-        this.advisorAllocation = data?.results ?? [];
-        this.cdr.markForCheck();
-      },
-
-      error: (error) => {
-        console.error('ALLOCATION BY ADVISOR API ERROR:', error);
-        this.advisorAllocation = [];
-      },
-    });
-
-    this.wealthApi.getPerformanceByAdvisor().subscribe({
-      next: (data) => {
-        this.advisorPerformance = data?.results ?? [];
-        this.cdr.markForCheck();
-      },
-
-      error: (error) => {
-        console.error('PERFORMANCE BY ADVISOR API ERROR:', error);
-        this.advisorPerformance = [];
-      },
-    });
-
-    // PORTFOLIO TREE
-    /*
-     * Reuse the existing Portfolio tree because every portfolio
-     * asset already contains its calculated XIRR and Underlying.
-     *
-     * This is used for the Dashboard XIRR Performance section AND
-     * as the source of Family Members for the filter bar - it is
-     * intentionally NOT scoped by ?family= (the tree endpoint has no
-     * such param), so the filter's own option list always shows
-     * every Family regardless of which one is currently selected.
-     * The XIRR Performance getters below filter it client-side by
-     * selectedFamilyMember, the same way Portfolio/Reports do.
-     */
-    this.portfolioApi.getPortfolioTree().subscribe({
-      next: (data) => {
-        console.log('PORTFOLIO TREE RESPONSE:', data);
-
-        this.portfolioTree = data;
-
-        if (this.reportScope && !this.reportScopeOptions.some(option => option.value === this.reportScope)) {
-          this.reportScope = '';
-          this.reportAssetClass = '';
-        }
-
-        this.ensureValidXirrCategoryIndex();
-
-        this.cdr.markForCheck();
-      },
-
-      error: (error) => {
-        console.error('PORTFOLIO TREE API ERROR:', error);
-
         this.portfolioTree = null;
-
+        this.dashboardInvestmentSummary = [];
+        this.dashboardPerformance = [];
         this.cdr.markForCheck();
-      },
-    });
-
-    // HISTORICAL
-    this.wealthApi.getHistorical(30, family).subscribe({
-      next: (data) => {
-        console.log('HISTORICAL RESPONSE:', data);
-
-        this.historical = data;
-
-        this.cdr.markForCheck();
-
-        setTimeout(() => {
-          this.renderWealthChart();
-          this.cdr.markForCheck();
-        });
-      },
-
-      error: (error) => {
-        console.error('HISTORICAL API ERROR:', error);
       },
     });
   }

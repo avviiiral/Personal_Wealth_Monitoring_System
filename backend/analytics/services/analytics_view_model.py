@@ -245,7 +245,21 @@ class AnalyticsViewModelService:
         }
 
         historical = historical_loader(user)
-        performance, portfolio_tree = cls._investment_performance(user, family_name=family_name, investment_summary=investment_summary)
+        performance, performance_tree = cls._investment_performance(
+            user,
+            family_name=family_name,
+            investment_summary=investment_summary,
+        )
+
+        from portfolio.services.portfolio_tree_service import PortfolioTreeService
+        from users.permissions import require_active_family
+
+        family = require_active_family(user)
+        portfolio_tree = PortfolioTreeService.build(
+            owner=user,
+            family_id=family.id,
+            xirr_filters={},
+        )
 
         market_cap_allocation = InvestmentSummaryService.calculate_market_cap_allocation(user)
         sector_allocation = MutualFundLookThroughService.sector_allocation(
@@ -290,7 +304,7 @@ class AnalyticsViewModelService:
             "dashboard_investment_summary": cls._dashboard_investment_summary(portfolio_tree, family_name=family_name),
             "allocation": allocation,
             "performance": {"results": performance},
-            "dashboard_performance": {"results": cls._dashboard_xirr_performance(portfolio_tree, investment_summary, family_name=family_name)},
+            "dashboard_performance": {"results": cls._dashboard_xirr_performance(performance_tree, investment_summary, family_name=family_name)},
             "advisor_allocation": advisor_allocation,
             "advisor_performance": advisor_performance,
             "xirr": {"xirr_percentage": summary.get("xirr_percentage")},

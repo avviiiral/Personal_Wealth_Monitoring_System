@@ -13,9 +13,13 @@ describe('AnalyticsComponent', () => {
     getInvestmentSummary: ReturnType<typeof vi.fn>;
     getPerformanceBySubclass: ReturnType<typeof vi.fn>;
     getAllocationByAdvisor: ReturnType<typeof vi.fn>;
+    getAllocation: ReturnType<typeof vi.fn>;
     getPerformanceByAdvisor: ReturnType<typeof vi.fn>;
     getXirr: ReturnType<typeof vi.fn>;
     getHistorical: ReturnType<typeof vi.fn>;
+    getHistoricalByPeriod: ReturnType<typeof vi.fn>;
+    getMarketCapAllocation: ReturnType<typeof vi.fn>;
+    getSectorAllocation: ReturnType<typeof vi.fn>;
   };
 
   const mockSummary = {
@@ -133,9 +137,18 @@ describe('AnalyticsComponent', () => {
       getInvestmentSummary: vi.fn().mockReturnValue(of(mockInvestmentSummary)),
       getPerformanceBySubclass: vi.fn().mockReturnValue(of(mockPerformance)),
       getAllocationByAdvisor: vi.fn().mockReturnValue(of(mockAdvisorAllocation)),
+      getAllocation: vi.fn().mockReturnValue(of({
+        results: [
+          { category: 'Equities', value: 75000, percentage: 60 },
+          { category: 'Fixed Income', value: 50000, percentage: 40 },
+        ],
+      })),
       getPerformanceByAdvisor: vi.fn().mockReturnValue(of(mockAdvisorPerformance)),
       getXirr: vi.fn().mockReturnValue(of(mockXirr)),
       getHistorical: vi.fn().mockReturnValue(of(mockHistorical)),
+      getHistoricalByPeriod: vi.fn().mockReturnValue(of(mockHistorical)),
+      getMarketCapAllocation: vi.fn().mockReturnValue(of({ results: [] })),
+      getSectorAllocation: vi.fn().mockReturnValue(of({ results: [] })),
     };
 
     await TestBed.configureTestingModule({

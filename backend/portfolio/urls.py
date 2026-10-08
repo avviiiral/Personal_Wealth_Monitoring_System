@@ -9,7 +9,6 @@ from .views import (
     portfolio_summary,
     portfolio_holdings,
     portfolio_tree,
-    portfolio_calculations,
     portfolio_asset_underlying_import,
     portfolio_underlying_uploads,
     portfolio_underlying_template,
@@ -117,12 +116,6 @@ urlpatterns = [
         "tree/",
         portfolio_tree,
         name="portfolio-tree",
-    ),
-
-    path(
-        "calculations/",
-        portfolio_calculations,
-        name="portfolio-calculations",
     ),
 
 

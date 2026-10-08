@@ -325,20 +325,16 @@ class HoldingCalculationEngine:
             .get_effective_price(asset)
         )
 
-        current_price = (
-            effective_price["price"]
-        )
-
-        current_value = (
-            quantity
-            * current_price
-        )
-
-        unrealized_pnl = (
-            current_value - invested_value
-            if effective_price["has_price"]
-            else HoldingCalculationEngine.ZERO
-        )
+        if effective_price["has_price"]:
+            current_price = effective_price["price"]
+            current_value = quantity * current_price
+            unrealized_pnl = current_value - invested_value
+        else:
+            # No usable market price: carry the position at cost (value =
+            # invested amount, P&L = 0) until a price is entered manually.
+            current_price = average_cost
+            current_value = invested_value
+            unrealized_pnl = HoldingCalculationEngine.ZERO
 
         holding, _ = (
             Holding.objects

@@ -3,8 +3,8 @@ from decimal import Decimal
 
 from django.db.models import Q
 
-from analytics.services.xirr import XIRRCalculator
-from investments.models import Asset, AssetCategory, PortfolioPosition, Transaction, TransactionType
+from analytics.services.cash_flows import build_cash_flows, xirr_percent
+from investments.models import Asset, AssetCategory, PortfolioPosition, Transaction
 from users.permissions import family_scope, require_active_family
 from watchlist.models import InvestmentProduct, ProductType
 
@@ -32,7 +32,7 @@ class OwnershipService:
             asset_ids = Transaction.objects.filter(
                 family_id=require_active_family(user).id,
                 asset_name__iexact=match_name,
-            ).values_list("asset_id", flat=True).distinct()
+            ).order_by().values_list("asset_id", flat=True).distinct()
             return qs.filter(id__in=asset_ids)
 
         if product.isin:
@@ -59,19 +59,10 @@ class OwnershipService:
                 (position.owner_id, position.asset_id, position.family_name, position.portfolio),
                 [],
             )
-        for tx in transactions:
-            amount = tx.amount or Decimal("0")
-            fees = tx.fees or Decimal("0")
-            if tx.transaction_type in (TransactionType.BUY, TransactionType.SIP):
-                flows.append((tx.transaction_date, -(amount + fees)))
-            elif tx.transaction_type in (TransactionType.SELL, TransactionType.DIVIDEND, TransactionType.INTEREST):
-                flows.append((tx.transaction_date, amount - fees))
+        flows = build_cash_flows(transactions)
         if position.current_value and position.current_value > 0:
-            flows.append((date.today(), position.current_value))
-        if len(flows) < 2:
-            return None
-        value = XIRRCalculator.calculate(flows)
-        return round(value * 100, 2) if value is not None else None
+            flows.append((date.today(), float(position.current_value)))
+        return xirr_percent(flows)
 
     @classmethod
     def _build_rows(cls, matched_positions, transactions_by_position=None):

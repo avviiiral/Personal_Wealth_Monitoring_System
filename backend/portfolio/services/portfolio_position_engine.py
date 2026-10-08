@@ -205,12 +205,14 @@ class PortfolioPositionEngine:
         average_cost = position["average_cost"]
 
         latest_price = cls.get_latest_price(asset)
-        current_price = (
-            latest_price.close_price
-            if latest_price
-            else cls.ZERO
-        )
-        current_value = quantity * current_price
+        if latest_price:
+            current_price = latest_price.close_price
+            current_value = quantity * current_price
+        else:
+            # No usable market price: carry the position at cost (value =
+            # invested amount, gain = 0) until a price is entered manually.
+            current_price = average_cost
+            current_value = invested_value
         gain = current_value - invested_value
 
         portfolio_position, _ = (
@@ -245,9 +247,13 @@ class PortfolioPositionEngine:
         if family is None:
             return []
 
-        combinations = (
+        # ``order_by()`` clears Transaction.Meta.ordering. Without it the
+        # ordering columns are added to SELECT DISTINCT, every transaction
+        # looks unique and each position is rebuilt once per transaction.
+        combinations = list(
             Transaction.objects
             .filter(family=family)
+            .order_by()
             .values(
                 "family_name",
                 "portfolio",
@@ -256,10 +262,14 @@ class PortfolioPositionEngine:
             .distinct()
         )
 
+        assets_by_id = Asset.objects.in_bulk(
+            {combination["asset_id"] for combination in combinations}
+        )
+
         positions = []
 
         for combination in combinations:
-            asset = Asset.objects.get(id=combination["asset_id"])
+            asset = assets_by_id[combination["asset_id"]]
 
             position = cls.rebuild_position(
                 family=family,

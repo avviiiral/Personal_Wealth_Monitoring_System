@@ -10,6 +10,7 @@ from investments.models import Transaction, TransactionType
 from mutual_funds.models import MutualFundTransaction, MutualFundTransactionType
 
 from .investment_summary import InvestmentSummaryService
+from .cash_flows import DIVIDEND_REINVESTMENT_NOTE
 from .xirr import XIRRCalculator
 
 
@@ -47,6 +48,8 @@ class XIRRByAssetClassService:
             asset_class = InvestmentSummaryService._normalize_asset_class(raw_class)
             amount = transaction.amount or cls.ZERO
             fees = transaction.fees or cls.ZERO
+            if transaction.notes == DIVIDEND_REINVESTMENT_NOTE:
+                continue
 
             if transaction.transaction_type in (
                 TransactionType.BUY,

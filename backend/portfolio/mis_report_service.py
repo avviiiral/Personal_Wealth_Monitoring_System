@@ -2,6 +2,7 @@ from collections import defaultdict
 from dateutil.relativedelta import relativedelta
 from datetime import date, timedelta
 from decimal import Decimal
+from bisect import bisect_right
 import logging
 import re
 
@@ -112,13 +113,26 @@ class MISReportService:
     def _market_price(cls, asset_id, as_of, cache):
         key = (asset_id, as_of)
         if key not in cache:
-            cache[key] = (
-                MarketPrice.objects
-                .filter(asset_id=asset_id, date__lte=as_of)
-                .order_by("-date", "-id")
-                .values_list("close_price", flat=True)
-                .first()
-            )
+            # Load an asset's price history once and bisect per date instead
+            # of issuing one query per (asset, date). Rows are ordered by
+            # (date, id), so the last row on or before ``as_of`` is the same
+            # one the previous "-date, -id" ``.first()`` query returned.
+            series_key = ("market_price_series", asset_id)
+            if series_key not in cache:
+                rows = list(
+                    MarketPrice.objects
+                    .filter(asset_id=asset_id)
+                    .order_by("date", "id")
+                    .values_list("date", "close_price")
+                )
+                cache[series_key] = (
+                    [row[0] for row in rows],
+                    [row[1] for row in rows],
+                )
+            dates, closes = cache[series_key]
+            as_of_date = as_of.date() if hasattr(as_of, "date") else as_of
+            index = bisect_right(dates, as_of_date)
+            cache[key] = closes[index - 1] if index else None
         return cache[key]
 
     @classmethod

@@ -114,6 +114,16 @@ class HistoricalWealthAnalytics:
             # number purely from a fee-accounting difference.
             position["invested_value"] += amount
 
+        elif transaction.transaction_type in (
+            TransactionType.BONUS,
+            TransactionType.SPLIT,
+        ):
+            # Matches HoldingCalculationEngine: extra shares, no extra cost.
+            # Without this the history understates value after a corporate
+            # action and its last point disagrees with today's holdings.
+            if quantity > 0:
+                position["quantity"] += quantity
+
         elif transaction.transaction_type == TransactionType.SELL:
             if (
                 position["quantity"] <= 0
@@ -889,6 +899,7 @@ class HistoricalWealthAnalytics:
                 HistoricalWealthAnalytics._scope_q(user),
                 transaction_date__lte=target_date,
             )
+            .order_by()
             .values_list(
                 "asset_id",
                 flat=True,
@@ -961,6 +972,7 @@ class HistoricalWealthAnalytics:
                 HistoricalWealthAnalytics._scope_q(user),
                 transaction_date__lte=target_date,
             )
+            .order_by()
             .values_list(
                 "scheme_id",
                 flat=True,

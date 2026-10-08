@@ -11,6 +11,7 @@ from investments.models import (
 )
 from market_data.models import MarketPrice
 
+from .cash_flows import DIVIDEND_REINVESTMENT_NOTE
 from .xirr import XIRRCalculator
 from users.permissions import get_active_family_group, is_system_owner
 
@@ -35,6 +36,8 @@ class PortfolioAnalytics:
         for tx in transactions:
             amount = tx.amount or PortfolioAnalytics.ZERO
             fees = tx.fees or PortfolioAnalytics.ZERO
+            if tx.notes == DIVIDEND_REINVESTMENT_NOTE:
+                continue
 
             if tx.transaction_type in (
                 TransactionType.BUY,

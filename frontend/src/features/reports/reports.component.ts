@@ -441,12 +441,6 @@ export class ReportsComponent implements OnInit {
 
     const subClassMap = new Map<string, Map<string, Map<string, Transaction[]>>>();
 
-    /* Distinct asset ids seen per Sub Class, and per Sub
-       Class::Asset Name, so financial values are summed once per
-       asset (not once per transaction). */
-    const subClassAssetIds = new Map<string, Set<number>>();
-    const assetNameAssetIds = new Map<string, Set<number>>();
-
     for (const tx of transactions) {
       const subClass = this.clean(tx.sub_class);
       const assetName = this.getAssetName(tx);
@@ -470,16 +464,6 @@ export class ReportsComponent implements OnInit {
 
       underlyingMap.get(underlying)!.push(tx);
 
-      if (!subClassAssetIds.has(subClass)) {
-        subClassAssetIds.set(subClass, new Set());
-      }
-      subClassAssetIds.get(subClass)!.add(tx.asset);
-
-      const assetNameKey = `${subClass}::${assetName}`;
-      if (!assetNameAssetIds.has(assetNameKey)) {
-        assetNameAssetIds.set(assetNameKey, new Set());
-      }
-      assetNameAssetIds.get(assetNameKey)!.add(tx.asset);
     }
 
     const subClasses: SubClassGroup[] = Array.from(subClassMap.entries())
@@ -774,33 +758,6 @@ export class ReportsComponent implements OnInit {
       gainKey: 'gain',
       filename: `${this.slugify(familyLabel)}_${this.slugify(summary.sub_class)}_holdings_${this.todayStamp()}.xlsx`,
     });
-  }
-
-  private getAssetNameXirr(subClass: string, assetName: string): number | null {
-    const assetIds = new Set<number>();
-
-    for (const tx of this.transactions) {
-      if (this.clean(tx.sub_class) === subClass && this.getAssetName(tx) === assetName) {
-        assetIds.add(tx.asset);
-      }
-    }
-
-    const lookup = this.assetLookup;
-    const assets: PortfolioAssetNode[] = [];
-
-    for (const id of assetIds) {
-      const asset = lookup.get(id);
-      if (asset) {
-        assets.push(asset);
-      }
-    }
-
-    return this.weightedXirr(
-      assets.map((asset) => ({
-        invested_value: this.toNumber(asset.invested_value),
-        xirr: asset.xirr,
-      })),
-    );
   }
 
   async downloadAssetNameTransactions(

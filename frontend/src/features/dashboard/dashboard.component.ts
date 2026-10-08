@@ -353,7 +353,7 @@ export class DashboardComponent extends BaseDashboardComponent {
             }
 
             if (
-              (subClass.assets ?? []).some((asset) => Number.isFinite(Number(asset.asset_name_xirr)))
+              (subClass.assets ?? []).some((asset: any) => Number.isFinite(Number(asset.asset_name_xirr)))
             ) {
               return true;
             }

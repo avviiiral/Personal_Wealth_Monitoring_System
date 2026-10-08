@@ -255,11 +255,14 @@ class AnalyticsViewModelService:
         from users.permissions import require_active_family
 
         family = require_active_family(user)
-        portfolio_tree = PortfolioTreeService.build(
-            owner=user,
-            family_id=family.id,
-            xirr_filters={},
-        )
+        if family_name:
+            portfolio_tree = PortfolioTreeService.build(
+                owner=user,
+                family_id=family.id,
+                xirr_filters={},
+            )
+        else:
+            portfolio_tree = performance_tree
 
         from portfolio.services.portfolio_calculation_service import PortfolioCalculationService
         portfolio_calculations = PortfolioCalculationService.calculate(

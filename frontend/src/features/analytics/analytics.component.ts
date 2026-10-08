@@ -14,6 +14,7 @@ import { CommonModule } from '@angular/common';
 import { Chart, ChartConfiguration, registerables } from 'chart.js';
 
 import { AnalyticsDashboardViewModel, WealthApiService } from '../../core/services/wealth-api.service';
+import { PortfolioTreeResponse } from '../../core/services/portfolio-api.service';
 
 Chart.register(...registerables);
 

@@ -737,82 +737,20 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
     return `${this.toNumber(value).toFixed(2)}%`;
   }
 
-  /**
-   * Groups the Investment Summary rows by Asset Category, summing
-   * current value and % of total, so the Allocation chart shows the
-   * exact same categorization and totals as the Investment Summary
-   * table below it — one source of truth for both.
-   *
-   * CORRECTION: an earlier version of this getter assumed the
-   * backend (InvestmentSummaryService.calculate(), reached via
-   * /api/analytics/wealth/investment-summary/) returned a bare
-   * array. That assumption was wrong — traced and confirmed against
-   * the real service code and a live functional test — the backend
-   * actually returns { results: [...], total_current_value }, and
-   * each row genuinely carries percentage_of_total. The "fix" based
-   * on the wrong assumption broke this section (empty Allocation/
-   * Investment Summary); this restores the correct original logic.
-   */
   get allocationByCategory(): Array<{
     category: string;
     value: number;
     percentage: number;
   }> {
-    const results = this.investmentSummary?.results ?? [];
-
-    const order: string[] = [];
-    const totals = new Map<
-      string,
-      {
-        value: number;
-        percentage: number;
-      }
-    >();
-
-    for (const row of results) {
-      const category = row.asset_category;
-
-      if (!totals.has(category)) {
-        totals.set(category, {
-          value: 0,
-          percentage: 0,
-        });
-
-        order.push(category);
-      }
-
-      const entry = totals.get(category)!;
-
-      entry.value += this.toNumber(row.current_value);
-
-      entry.percentage += this.toNumber(row.percentage_of_total);
-    }
-
-    return order
-      .map((category) => {
-        const entry = totals.get(category)!;
-
-        return {
-          category,
-          value: entry.value,
-          percentage: Math.round(entry.percentage * 100) / 100,
-        };
-      })
-      .filter((entry) => entry.value > 0);
+    return this.dashboardInvestmentSummary
+      .filter((group) => Number(group.current_value) > 0)
+      .map((group) => ({
+        category: group.asset_category,
+        value: Number(group.percentage_of_total) || 0,
+        percentage: Number(group.percentage_of_total) || 0,
+      }));
   }
 
-  /**
-   * Groups the flat Investment Summary API rows by Asset Category.
-   *
-   * Level 1:
-   *   Asset Category
-   *
-   * Level 2:
-   *   Asset Class
-   *
-   * Clicking an Asset Category expands its Asset Classes directly
-   * inside the Dashboard. No Portfolio navigation is performed.
-   */
   get investmentSummaryGroups(): Array<{
     asset_category: string;
     current_value: number;
@@ -824,86 +762,7 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
       raw_asset_classes: string[];
     }>;
   }> {
-    const results = this.investmentSummary?.results ?? [];
-
-    const groups = new Map<
-      string,
-      {
-        asset_category: string;
-        current_value: number;
-        percentage_of_total: number;
-        asset_classes: Array<{
-          asset_class: string;
-          current_value: number;
-          percentage_of_total: number;
-          raw_asset_classes: string[];
-        }>;
-      }
-    >();
-
-    for (const row of results) {
-      const category = row.asset_category || 'Unassigned';
-
-      const assetClass = row.asset_class || 'Unassigned';
-
-      let group = groups.get(category);
-
-      if (!group) {
-        group = {
-          asset_category: category,
-          current_value: 0,
-          percentage_of_total: 0,
-          asset_classes: [],
-        };
-
-        groups.set(category, group);
-      }
-
-      const currentValue = this.toNumber(row.current_value);
-
-      const percentage = this.toNumber(row.percentage_of_total);
-
-      group.current_value += currentValue;
-
-      group.percentage_of_total += percentage;
-
-      let classRow = group.asset_classes.find((item) => item.asset_class === assetClass);
-
-      if (!classRow) {
-        classRow = {
-          asset_class: assetClass,
-          current_value: 0,
-          percentage_of_total: 0,
-          raw_asset_classes: [],
-        };
-
-        group.asset_classes.push(classRow);
-      }
-
-      classRow.current_value += currentValue;
-
-      classRow.percentage_of_total += percentage;
-
-      const rawAssetClasses = Array.isArray(row.raw_asset_classes) ? row.raw_asset_classes : [];
-
-      for (const rawAssetClass of rawAssetClasses) {
-        if (rawAssetClass && !classRow.raw_asset_classes.includes(rawAssetClass)) {
-          classRow.raw_asset_classes.push(rawAssetClass);
-        }
-      }
-    }
-
-    return Array.from(groups.values()).map((group) => ({
-      ...group,
-
-      percentage_of_total: Math.round(group.percentage_of_total * 100) / 100,
-
-      asset_classes: group.asset_classes.map((assetClass) => ({
-        ...assetClass,
-
-        percentage_of_total: Math.round(assetClass.percentage_of_total * 100) / 100,
-      })),
-    }));
+    return this.dashboardInvestmentSummary;
   }
 
   /**

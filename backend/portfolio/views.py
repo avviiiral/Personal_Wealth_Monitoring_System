@@ -287,6 +287,22 @@ def portfolio_tree(request):
 
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
+def portfolio_calculations(request):
+    from portfolio.services.portfolio_calculation_service import PortfolioCalculationService
+
+    family = require_active_family(request.user)
+    data = PortfolioCalculationService.calculate(
+        owner=request.user,
+        family_id=family.id,
+        family=request.query_params.get("family", "").strip() or None,
+        asset_class=request.query_params.get("asset_class", "").strip() or None,
+        advisor=request.query_params.get("advisor", "").strip() or None,
+    )
+    return Response({"success": True, **data})
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
 def portfolio_underlying_uploads(request):
     """Return the latest underlying upload per portfolio asset for the active family."""
     family = require_active_family(request.user)

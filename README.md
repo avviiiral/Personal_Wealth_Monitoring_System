@@ -40,7 +40,7 @@
 
 **PWMS** is a full-stack **personal and family wealth management system** for investors who hold **Indian equities, ETFs, bonds, Sovereign Gold Bonds (SGBs), mutual funds and SIPs** and want one place that _computes_ the numbers instead of estimating them.
 
-Every figure you see — holdings, invested value, current value, unrealized and realized P&L, **XIRR**, **CAGR** and asset allocation — is calculated **server-side from your real transactions**. Prices stay fresh through automatic background refreshes (**Yahoo Finance** for stocks and ETFs, **AMFI** for mutual-fund NAVs). Historical MIS valuations use persisted market/NAV history prepared by background jobs, so the interactive report does not perform live provider downloads.
+Every figure you see — holdings, invested value, current value, unrealized and realized P&L, **XIRR**, **CAGR** and asset allocation — is calculated **server-side from your real transactions**. Prices stay fresh through automatic background refreshes (**Yahoo Finance** for stocks and ETFs, **AMFI** for mutual-fund NAVs). Historical MIS valuations use persisted market/NAV history prepared by background jobs, so the interactive report does not perform live provider downloads. Mutual-fund history supports both the dedicated mutual-fund transaction models and legacy/imported mutual-fund transactions stored in the generic investment transaction model, with AMFI master scheme/NAV history used to value legacy holdings.
 
 It is built for **households, not just individuals**: a four-tier role hierarchy (System Owner / Super User / Admin / Viewer) plus many-to-many family membership lets several people share visibility into the same portfolio — or several portfolios — with permissions enforced independently on the backend, not merely hidden in the UI.
 
@@ -259,6 +259,21 @@ The following user-facing fields are sourced from uploaded transaction records:
 | **Advisors** | Uploaded transaction data |
 
 The application no longer uses synthetic `Unassigned` values or hard-coded user-facing asset-class mappings for these fields. Internal technical asset categories may still be used by market-data services to decide which external price/NAV provider to call; those technical categories are separate from the user uploaded portfolio classification.
+### 📊 Historical MIS valuation
+
+The MIS historical valuation pipeline is designed to use the same portfolio transactions that drive the live portfolio, while valuing each asset with persisted historical market data.
+
+- Historical valuation is calculated **server-side**; the Angular frontend only requests and displays the results.
+- Equity transactions are kept separate from mutual-fund transactions during historical replay.
+- Mutual funds are supported through both:
+  - the dedicated `mutual_funds` transaction/NAV models; and
+  - legacy/imported mutual-fund transactions stored in `investments.Transaction` and identified from their uploaded mutual-fund subclass.
+- Legacy mutual-fund holdings are resolved from the asset/security **ISIN** to `AMFIMasterScheme`, then valued from `AMFIMasterNAV` history.
+- AMFI master history is persisted locally, so an MIS request does not require a live AMFI download.
+- Historical mutual-fund invested value, portfolio value and P&L are included in the returned wealth history rather than being misclassified as equity.
+- The current-day historical point is reconciled with the canonical portfolio valuation so dashboard and historical wealth totals remain consistent.
+- Historical valuation supports user-selected dates; available market/NAV history is used for the requested valuation date according to the backend's persisted-history rules.
+
 
 ### 📰 Portfolio News & Corporate Filing Intelligence
 
@@ -1067,9 +1082,9 @@ _A simplified conceptual view — see each app's `models.py` for exact fields an
 | App              | Models                                                                                                     | Notes                                                                                                                                                                                           |
 | ---------------- | ---------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `users`          | `UserProfile`, `FamilyGroup`, `FamilyMembership`, `UserAuditLog`                                           | `UserProfile` holds role and active family; the audit log is append-only                                                                                                                        |
-| `investments`    | `Asset`, `Transaction`, `Holding`, `SecurityMaster`                                                        | `Transaction` is the source of truth for quantity and invested value; `Holding` is derived and rebuildable; `SecurityMaster` stores sector, cap-type, AMC name, P/E, P/B, ROE and credit rating |
+| `investments`    | `Asset`, `Transaction`, `Holding`, `SecurityMaster`                                                        | `Transaction` is the source of truth for quantity and invested value; `Holding` is derived and rebuildable. Generic `Transaction` rows can also contain legacy/imported mutual-fund transactions. `SecurityMaster` stores sector, cap-type, AMC name, P/E, P/B, ROE and credit rating |
 | `market_data`    | `MarketPrice`                                                                                              | Tagged by source: **Yahoo Finance**, **AMFI** or **Manual**                                                                                                                                     |
-| `mutual_funds`   | `MutualFundScheme`, `MutualFundNAV`, `MutualFundTransaction`, `MutualFundHolding`, `SIP`, `SIPInstallment` |                                                                                                                                                                                                 |
+| `mutual_funds`   | `MutualFundScheme`, `MutualFundNAV`, `MutualFundTransaction`, `MutualFundHolding`, `AMFIMasterScheme`, `AMFIMasterNAV`, `SIP`, `SIPInstallment` | Dedicated mutual-fund models plus the persisted AMFI master scheme/NAV history used for current data, Watch List benchmarks and historical MIS valuation of legacy mutual-fund holdings |
 | `portfolio_news` | `NewsArticle`, `NewsArticleSource`, `PortfolioNewsAlert`                                                   | Alerts are unique per user / article / holding                                                                                                                                                  |
 | `ai`             | `GeminiUsageLog`                                                                                           | Token usage per Gemini call — Portfolio Chat only                                                                                                                                         |
 
@@ -1464,6 +1479,7 @@ python manage.py test portfolio_news.test_web_push -v 2 # Web Push delivery beha
 | Transaction upload workflow | Upload audit/history, standard template endpoints, row-level failure handling, and transaction import behavior |
 | `portfolio_news/test_web_push.py` | VAPID/Web Push delivery, subscription handling and notification_sent semantics |
 | `portfolio/test_mis_report.py` | MIS Report API, historical valuation, Excel structure, display units, FIFO taxation, negative-loss tax benefits, and family authorization |
+| `analytics/test_historical_wealth.py` | Historical wealth regression coverage, including legacy mutual-fund classification and AMFI master NAV valuation |
 | `filing_intelligence` | Corporate filing classifier, event precedence, material-change detection, deterministic portfolio matching, filing ingestion, deduplication, cross-source clustering and alert creation. Current branch verification: **20 tests, all passing** |
 
 **Frontend** — from `frontend/`:

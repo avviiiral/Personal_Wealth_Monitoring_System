@@ -106,6 +106,7 @@ class PortfolioCalculationService:
         family=None,
         asset_class=None,
         advisor=None,
+        tree=None,
     ):
         # Build the complete authoritative asset tree first. Filtering here
         # selects already-calculated positions; it never reconstructs a

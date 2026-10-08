@@ -128,11 +128,13 @@ class PortfolioCalculationService:
         subclass_groups = defaultdict(list)
         asset_name_groups = defaultdict(list)
         family_subclass_groups = defaultdict(list)
+        report_subclass_groups = defaultdict(list)
 
         for row in rows:
             subclass_groups[row["sub_class"]].append(row)
             asset_name_groups[(row["sub_class"], row["asset"].get("asset_name") or "Unassigned")].append(row)
             family_subclass_groups[(row["family_name"], row["sub_class"])].append(row)
+            report_subclass_groups[(row["family_name"], row["asset_class"], row["sub_class"])].append(row)
 
         subclasses = [
             cls._row({"sub_class": key}, group, transactions)
@@ -171,8 +173,29 @@ class PortfolioCalculationService:
             key=lambda item: (item["family_name"].casefold(), item["sub_class"].casefold())
         )
 
+        report_subclass_summaries = [
+            cls._row(
+                {
+                    "family_name": key[0],
+                    "asset_class": key[1],
+                    "sub_class": key[2],
+                },
+                group,
+                transactions,
+            )
+            for key, group in report_subclass_groups.items()
+        ]
+        report_subclass_summaries.sort(
+            key=lambda item: (
+                item["family_name"].casefold(),
+                item["asset_class"].casefold(),
+                item["sub_class"].casefold(),
+            )
+        )
+
         return {
             "subclasses": subclasses,
             "asset_names": asset_names,
             "family_subclasses": family_subclasses,
+            "report_subclass_summaries": report_subclass_summaries,
         }

@@ -28,7 +28,7 @@ class InvestmentAMFIServiceTests(SimpleTestCase):
             {
                 "scheme_code": "999",
                 "scheme_name": "Unheld Fund",
-                "isin_growth": "INFUNHELD00001",
+                "isin_growth": "INFOTHER00001",
                 "isin_dividend": None,
                 "nav": "50.0",
                 "date": None,

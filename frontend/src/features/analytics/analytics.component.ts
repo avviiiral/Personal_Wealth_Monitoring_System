@@ -13,10 +13,7 @@ import { CommonModule } from '@angular/common';
 
 import { Chart, ChartConfiguration, registerables } from 'chart.js';
 
-import { forkJoin, Observable } from 'rxjs';
-
-import { WealthApiService } from '../../core/services/wealth-api.service';
-import { PortfolioApiService, PortfolioTreeResponse } from '../../core/services/portfolio-api.service';
+import { AnalyticsDashboardViewModel, WealthApiService } from '../../core/services/wealth-api.service';
 
 Chart.register(...registerables);
 
@@ -45,7 +42,6 @@ const LOSS_COLOR = '#b42318';
 })
 export class AnalyticsComponent implements OnInit, AfterViewInit, OnDestroy {
   private readonly wealthApi = inject(WealthApiService);
-  private readonly portfolioApi = inject(PortfolioApiService);
   private readonly cdr = inject(ChangeDetectorRef);
 
   @ViewChild('historicalChart') historicalChartRef?: ElementRef<HTMLCanvasElement>;
@@ -100,82 +96,35 @@ export class AnalyticsComponent implements OnInit, AfterViewInit, OnDestroy {
     this.performance = null;
     this.portfolioTree = null;
 
-    this.portfolioApi.getPortfolioTree().subscribe({
-      next: tree => {
-        this.portfolioTree = tree;
-        this.performance = {
-          results: this.getInvestmentPerformanceRows(),
-        };
-        this.calculateInsights();
-        this.cdr.markForCheck();
-        setTimeout(() => {
-          this.renderPerformanceChart();
-          this.cdr.markForCheck();
-        });
-      },
-      error: error => {
-        console.error('PORTFOLIO TREE API ERROR:', error);
-        this.performance = { results: [] };
-        this.cdr.markForCheck();
-      },
-    });
+    this.wealthApi.getAnalyticsDashboard(
+      this.selectedPeriod,
+      this.selectedDays,
+    ).subscribe({
+      next: (data: AnalyticsDashboardViewModel) => {
+        console.log('Analytics dashboard API response:', data);
 
-    this.wealthApi.getMarketCapAllocation().subscribe({
-      next: data => {
-        this.marketCapAllocation = data;
-        this.cdr.markForCheck();
-        setTimeout(() => { this.renderMarketCapChart(); this.cdr.markForCheck(); });
-      },
-      error: error => {
-        console.error('MARKET CAP ALLOCATION API ERROR:', error);
-        this.marketCapAllocationError = 'Unable to load market cap allocation.';
-        this.cdr.markForCheck();
-      },
-    });
+        this.summary = data.summary;
+        this.investmentSummary = data.investment_summary;
+        this.allocation = data.allocation;
+        this.performance = data.performance;
+        this.advisorAllocation = data.advisor_allocation;
+        this.advisorPerformance = data.advisor_performance;
+        this.xirr = data.xirr;
+        this.historical = data.historical;
+        this.marketCapAllocation = data.market_cap_allocation;
+        this.sectorAllocation = data.sector_allocation;
+        this.portfolioTree = data.portfolio_tree;
+        this.bestPerformer = data.insights?.best_performer ?? null;
+        this.worstPerformer = data.insights?.worst_performer ?? null;
+        this.largestAllocation = data.insights?.largest_allocation ?? null;
+        this.periodValueChange = Number(data.insights?.period_value_change ?? 0);
 
-    this.wealthApi.getSectorAllocation().subscribe({
-      next: data => {
-        this.sectorAllocation = data;
-        this.cdr.markForCheck();
-        setTimeout(() => { this.renderSectorChart(); this.cdr.markForCheck(); });
+        this.loading = false;
+        this.cdr.detectChanges();
+        setTimeout(() => this.renderCharts(), 0);
       },
-      error: error => {
-        console.error('SECTOR ALLOCATION API ERROR:', error);
-        this.sectorAllocationError = 'Unable to load sector allocation.';
-        this.cdr.markForCheck();
-      },
-    });
-
-    forkJoin({
-      summary: this.wealthApi.getSummary(),
-      investmentSummary: this.wealthApi.getInvestmentSummary(),
-      allocation: this.wealthApi.getAllocation(),
-      advisorAllocation: this.wealthApi.getAllocationByAdvisor(),
-      advisorPerformance: this.wealthApi.getPerformanceByAdvisor(),
-      historical: this.getSelectedHistorical(),
-    }).subscribe({
-      next: data => {
-        console.log('Analytics API response:', data);
-        try {
-          this.summary = data.summary;
-          this.investmentSummary = data.investmentSummary;
-          this.allocation = data.allocation;
-          this.advisorAllocation = data.advisorAllocation;
-          this.advisorPerformance = data.advisorPerformance;
-          this.xirr = { xirr_percentage: this.summary?.xirr_percentage ?? null };
-          this.historical = data.historical;
-          this.calculateInsights();
-        } catch (processingError) {
-          console.error('Analytics response processing error:', processingError);
-          this.error = 'Analytics data was received, but could not be processed.';
-        } finally {
-          this.loading = false;
-          this.cdr.detectChanges();
-          setTimeout(() => this.renderCharts(), 0);
-        }
-      },
-      error: error => {
-        console.error('Analytics API loading error:', error);
+      error: (error) => {
+        console.error('Analytics dashboard API loading error:', error);
         this.loading = false;
         this.error = 'Unable to load analytics data. Please refresh and try again.';
         this.cdr.detectChanges();
@@ -198,26 +147,6 @@ export class AnalyticsComponent implements OnInit, AfterViewInit, OnDestroy {
       this.selectedDays = days;
     }
     this.loadAnalytics();
-  }
-
-  private getSelectedHistorical(): Observable<any> {
-    if (this.selectedPeriod === 'this-month') {
-      return this.wealthApi.getHistoricalByPeriod('this-month');
-    }
-    if (this.selectedPeriod === 'last-month') {
-      return this.wealthApi.getHistoricalByPeriod('last-month');
-    }
-    if (this.selectedPeriod === 'inception') {
-      return this.wealthApi.getHistoricalByPeriod('inception');
-    }
-    return this.wealthApi.getHistorical(this.selectedDays);
-  }
-
-  private toIsoDate(value: Date): string {
-    const year = value.getFullYear();
-    const month = String(value.getMonth() + 1).padStart(2, '0');
-    const day = String(value.getDate()).padStart(2, '0');
-    return `${year}-${month}-${day}`;
   }
 
   private daysForPeriod(period: string): number | null {
@@ -257,34 +186,6 @@ export class AnalyticsComponent implements OnInit, AfterViewInit, OnDestroy {
       case 'last-month': return 'last month';
       case 'inception': return 'since inception';
       default: return this.selectedDays + 'd';
-    }
-  }
-
-  private calculateInsights(): void {
-    const performanceResults = this.performance?.results ?? [];
-    if (performanceResults.length) {
-      // Investment Performance is XIRR-based. Use the same metric for the
-      // Best/Worst Performer insight cards so the cards and chart stay consistent.
-      const sorted = [...performanceResults].sort(
-        (a: any, b: any) => this.toNumber(b.xirr_percentage) - this.toNumber(a.xirr_percentage),
-      );
-      this.bestPerformer = sorted[0];
-      this.worstPerformer = sorted[sorted.length - 1];
-    } else {
-      this.bestPerformer = null;
-      this.worstPerformer = null;
-    }
-    const allocationResults = this.allocation?.results ?? [];
-    this.largestAllocation = allocationResults.length
-      ? [...allocationResults].sort((a: any, b: any) => this.toNumber(b.percentage) - this.toNumber(a.percentage))[0]
-      : null;
-    const historicalResults = this.historical?.results ?? [];
-    if (historicalResults.length >= 2) {
-      const first = this.toNumber(historicalResults[0].portfolio_value);
-      const last = this.toNumber(historicalResults[historicalResults.length - 1].portfolio_value);
-      this.periodValueChange = first > 0 ? ((last - first) / first) * 100 : 0;
-    } else {
-      this.periodValueChange = 0;
     }
   }
 
@@ -334,50 +235,6 @@ export class AnalyticsComponent implements OnInit, AfterViewInit, OnDestroy {
       options: { animation: { duration: 900, easing: 'easeOutQuart' }, responsive: true, maintainAspectRatio: false, cutout: '68%', plugins: { legend: { position: 'bottom', labels: { color: this.chartTextColor(), usePointStyle: true, padding: 14 } }, tooltip: { callbacks: { label: context => `${context.label}: ${this.formatCurrency(Number(context.raw))} (${(percentages[context.dataIndex] ?? 0).toFixed(2)}%)` } } } },
     };
     this.allocationChart = new Chart(canvas, config);
-  }
-
-  private getInvestmentPerformanceRows(): Array<{
-    asset_name: string;
-    asset_class: string;
-    xirr_percentage: number;
-  }> {
-    const rowsByKey = new Map<string, {
-      asset_name: string;
-      asset_class: string;
-      xirr_percentage: number;
-    }>();
-
-    for (const family of this.portfolioTree?.families ?? []) {
-      for (const portfolio of family.portfolios ?? []) {
-        for (const assetClass of portfolio.asset_classes ?? []) {
-          for (const subClass of assetClass.sub_classes ?? []) {
-            for (const asset of subClass.assets ?? []) {
-              const xirr = Number(asset.asset_name_xirr);
-
-              if (!Number.isFinite(xirr)) {
-                continue;
-              }
-
-              const assetName = asset.asset_name?.trim() || 'Unnamed Asset';
-              const subClassName = subClass.sub_class?.trim() || 'Unassigned';
-              const key = `${subClassName}::${assetName}`;
-
-              if (!rowsByKey.has(key)) {
-                rowsByKey.set(key, {
-                  asset_name: assetName,
-                  asset_class: subClassName,
-                  xirr_percentage: xirr,
-                });
-              }
-            }
-          }
-        }
-      }
-    }
-
-    return Array.from(rowsByKey.values()).sort(
-      (a, b) => b.xirr_percentage - a.xirr_percentage,
-    );
   }
 
   private renderPerformanceChart(): void {

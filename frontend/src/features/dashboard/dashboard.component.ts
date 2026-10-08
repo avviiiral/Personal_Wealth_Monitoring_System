@@ -36,34 +36,6 @@ export class DashboardComponent extends BaseDashboardComponent {
     }
   });
 
-  override get investmentSummaryGroups(): Array<{
-    asset_category: string;
-    current_value: number;
-    percentage_of_total: number;
-    asset_classes: Array<{
-      asset_class: string;
-      current_value: number;
-      percentage_of_total: number;
-      raw_asset_classes: string[];
-    }>;
-  }> {
-    return this.dashboardInvestmentSummary;
-  }
-
-  override get allocationByCategory(): Array<{
-    category: string;
-    value: number;
-    percentage: number;
-  }> {
-    return this.dashboardInvestmentSummary
-      .filter((group) => Number(group.current_value) > 0)
-      .map((group) => ({
-        category: group.asset_category,
-        value: Number(group.percentage_of_total) || 0,
-        percentage: Number(group.percentage_of_total) || 0,
-      }));
-  }
-
   override loadDashboard(): void {
     const request = ++this.allocationRenderRequest;
 

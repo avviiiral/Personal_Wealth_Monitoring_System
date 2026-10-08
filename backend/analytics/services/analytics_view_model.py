@@ -40,7 +40,7 @@ class AnalyticsViewModelService:
             for raw_class in row.get("raw_asset_classes") or []:
                 asset_category_by_class[raw_class] = category
 
-        rows = []
+        rows_by_key = {}
         for family_node in tree.get("families", []):
             if family_name and family_node.get("family_name") != family_name:
                 continue
@@ -55,17 +55,24 @@ class AnalyticsViewModelService:
                                 xirr_value = float(xirr)
                             except (TypeError, ValueError):
                                 continue
-                            rows.append({
-                                "asset_name": asset.get("asset_name") or "Unnamed Asset",
-                                "asset_class": sub_class.get("sub_class") or "Unassigned",
-                                "xirr_percentage": xirr_value,
-                                "underlying": asset.get("underlying") or asset.get("asset_name") or "Unnamed Underlying",
-                                "asset_category": asset_category_by_class.get(
-                                    sub_class.get("sub_class"),
-                                    asset_category_by_class.get(asset_class.get("asset_class"), "Unassigned"),
-                                ),
-                            })
 
+                            asset_name = asset.get("asset_name") or "Unnamed Asset"
+                            sub_class_name = sub_class.get("sub_class") or "Unassigned"
+                            key = (sub_class_name, asset_name)
+
+                            if key not in rows_by_key:
+                                rows_by_key[key] = {
+                                    "asset_name": asset_name,
+                                    "asset_class": sub_class_name,
+                                    "xirr_percentage": xirr_value,
+                                    "underlying": asset.get("underlying") or asset_name or "Unnamed Underlying",
+                                    "asset_category": asset_category_by_class.get(
+                                        sub_class_name,
+                                        asset_category_by_class.get(asset_class.get("asset_class"), "Unassigned"),
+                                    ),
+                                }
+
+        rows = list(rows_by_key.values())
         rows.sort(key=lambda row: row["xirr_percentage"], reverse=True)
         return rows, tree
 

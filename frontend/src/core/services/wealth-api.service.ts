@@ -48,6 +48,18 @@ export interface AnalyticsDashboardViewModel {
   };
   portfolio_tree: any;
   standard_allocations: Record<string, { percent: number; amount: number }>;
+  portfolio_calculations: {
+    report_subclass_summaries: Array<{
+      family_name: string;
+      asset_class: string;
+      sub_class: string;
+      quantity: number;
+      invested_value: number;
+      current_value: number;
+      pnl: number;
+      xirr: number | null;
+    }>;
+  };
 }
 
 @Injectable({

@@ -214,10 +214,11 @@ class PortfolioTreeService:
         """
         Load the latest price for each portfolio asset.
 
-        Mutual funds are valued from the AMFI-backed MutualFundNAV path,
-        rather than MarketPrice/Yahoo. This is intentionally done here
-        because the Portfolio Tree is built from investments.Transaction,
-        while mutual-fund NAVs are stored in the dedicated mutual_funds app.
+        Mutual funds are valued from the canonical global AMFI master,
+        rather than family-owned MutualFundNAV/Yahoo rows. This is
+        intentionally done here because the Portfolio Tree is built from
+        investments.Transaction and legacy MF holdings may not have current
+        dedicated mutual_fund NAV rows.
 
         The database-backed MutualFundNAV value is preferred. For legacy
         portfolio assets that do not yet have a MutualFundScheme row, the

@@ -40,7 +40,6 @@ export class DashboardComponent extends BaseDashboardComponent {
     const request = ++this.allocationRenderRequest;
 
     super.loadDashboard();
-    this.loadStandardAllocations();
 
     const renderWhenReady = (attempt: number): void => {
       if (request !== this.allocationRenderRequest) {
@@ -61,42 +60,6 @@ export class DashboardComponent extends BaseDashboardComponent {
     };
 
     setTimeout(() => renderWhenReady(0));
-  }
-
-  private loadStandardAllocations(): void {
-    this.standardAllocationError = '';
-
-    this.dashboardWealthApi.getStandardAllocations(this.selectedFamilyMember || undefined).subscribe({
-      next: (data) => {
-        const allocationResponse = data?.allocations ?? {};
-        this.standardAllocations = this.normalizeAllocationMap(
-          Object.fromEntries(
-            Object.entries(allocationResponse).map(([category, value]) => [
-              category,
-              typeof value === 'object' && value !== null ? (value as any).percent : value,
-            ]),
-          ),
-        );
-        this.standardAllocationAmounts = this.normalizeAllocationMap(
-          Object.fromEntries(
-            Object.entries(allocationResponse).map(([category, value]) => [
-              category,
-              typeof value === 'object' && value !== null ? (value as any).amount : 0,
-            ]),
-          ),
-        );
-        this.standardAllocationTotalValue = this.getInvestmentSummaryTotal();
-        this.syncStandardAllocationAmounts();
-        this.standardAllocationDraft = { ...this.standardAllocations };
-        this.standardAllocationAmountDraft = { ...this.standardAllocationAmounts };
-      },
-      error: (error) => {
-        console.error('STANDARD ALLOCATION API ERROR:', error);
-        this.standardAllocationError = 'Unable to load Standard Allocation.';
-        this.standardAllocations = {};
-        this.standardAllocationDraft = {};
-      },
-    });
   }
 
   private getInvestmentSummaryTotal(): number {

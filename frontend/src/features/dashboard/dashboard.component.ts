@@ -47,93 +47,7 @@ export class DashboardComponent extends BaseDashboardComponent {
       raw_asset_classes: string[];
     }>;
   }> {
-    const groups = new Map<
-      string,
-      {
-        asset_category: string;
-        current_value: number;
-        asset_classes: Map<
-          string,
-          {
-            asset_class: string;
-            current_value: number;
-            percentage_of_total: number;
-            raw_asset_classes: string[];
-          }
-        >;
-      }
-    >();
-
-    for (const family of this.portfolioTree?.families ?? []) {
-      if (this.selectedFamilyMember && family.family_name !== this.selectedFamilyMember) {
-        continue;
-      }
-
-      for (const portfolio of family.portfolios ?? []) {
-        for (const assetClass of portfolio.asset_classes ?? []) {
-          const category = (assetClass.asset_class || 'Unassigned').trim() || 'Unassigned';
-
-          let group = groups.get(category);
-
-          if (!group) {
-            group = {
-              asset_category: category,
-              current_value: 0,
-              asset_classes: new Map(),
-            };
-
-            groups.set(category, group);
-          }
-
-          for (const subClass of assetClass.sub_classes ?? []) {
-            const subClassName = (subClass.sub_class || 'Unassigned').trim() || 'Unassigned';
-
-            let classRow = group.asset_classes.get(subClassName);
-
-            if (!classRow) {
-              classRow = {
-                asset_class: subClassName,
-                current_value: 0,
-                percentage_of_total: 0,
-                raw_asset_classes: [],
-              };
-
-              group.asset_classes.set(subClassName, classRow);
-            }
-
-            for (const asset of subClass.assets ?? []) {
-              const currentValue = Number(asset.current_value);
-
-              if (!Number.isFinite(currentValue)) {
-                continue;
-              }
-
-              group.current_value += currentValue;
-              classRow.current_value += currentValue;
-            }
-          }
-        }
-      }
-    }
-
-    const totalCurrentValue = Array.from(groups.values()).reduce(
-      (total, group) => total + group.current_value,
-      0,
-    );
-
-    return Array.from(groups.values()).map((group) => ({
-      asset_category: group.asset_category,
-      current_value: group.current_value,
-      percentage_of_total: totalCurrentValue
-        ? Math.round((group.current_value / totalCurrentValue) * 10000) / 100
-        : 0,
-      asset_classes: Array.from(group.asset_classes.values()).map((assetClass) => ({
-        ...assetClass,
-        percentage_of_total: totalCurrentValue
-          ? Math.round((assetClass.current_value / totalCurrentValue) * 10000) / 100
-          : 0,
-      })),
-    }));
+    return this.dashboardInvestmentSummary;
   }
 
   override get allocationByCategory(): Array<{
@@ -141,12 +55,12 @@ export class DashboardComponent extends BaseDashboardComponent {
     value: number;
     percentage: number;
   }> {
-    return this.investmentSummaryGroups
-      .filter((group) => group.current_value > 0)
+    return this.dashboardInvestmentSummary
+      .filter((group) => Number(group.current_value) > 0)
       .map((group) => ({
         category: group.asset_category,
-        value: group.percentage_of_total,
-        percentage: group.percentage_of_total,
+        value: Number(group.percentage_of_total) || 0,
+        percentage: Number(group.percentage_of_total) || 0,
       }));
   }
 
@@ -214,8 +128,9 @@ export class DashboardComponent extends BaseDashboardComponent {
   }
 
   private getInvestmentSummaryTotal(): number {
-    const total = this.investmentSummaryGroups.reduce(
-      (sum, group) => sum + Number(group.current_value || 0),
+    const total = Number(
+      this.summary?.total_current_value ??
+      this.investmentSummary?.total_current_value ??
       0,
     );
 

@@ -70,10 +70,12 @@ class AnalyticsViewModelService:
         return rows, tree
 
     @classmethod
-    def _dashboard_investment_summary(cls, tree):
+    def _dashboard_investment_summary(cls, tree, family_name=None):
         groups = {}
 
         for family_node in tree.get("families", []):
+            if family_name and family_node.get("family_name") != family_name:
+                continue
             for portfolio in family_node.get("portfolios", []):
                 for asset_class in portfolio.get("asset_classes", []):
                     category = (asset_class.get("asset_class") or "Unassigned").strip() or "Unassigned"
@@ -240,7 +242,7 @@ class AnalyticsViewModelService:
         return {
             "summary": summary,
             "investment_summary": investment_summary,
-            "dashboard_investment_summary": cls._dashboard_investment_summary(portfolio_tree),
+            "dashboard_investment_summary": cls._dashboard_investment_summary(portfolio_tree, family_name=family_name),
             "allocation": allocation,
             "performance": {"results": performance},
             "advisor_allocation": advisor_allocation,

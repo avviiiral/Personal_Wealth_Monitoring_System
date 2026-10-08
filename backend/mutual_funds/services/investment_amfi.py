@@ -55,6 +55,20 @@ class InvestmentAMFIService:
         return cls.refresh_for_isins(cls.investment_isins())
 
     @classmethod
+    def refresh_for_investments_with_history(cls):
+        """Refresh latest NAVs, then backfill only missing MIS history."""
+        result = cls.refresh_for_all_investments()
+
+        # MISHistoryPrefetch checks first/last stored NAV coverage and only
+        # downloads missing historical ranges. If coverage is current, no
+        # historical AMFI request is made.
+        from portfolio.mis_history_prefetch import MISHistoryPrefetch
+
+        history = MISHistoryPrefetch.run_for_all_families()
+        result["history"] = history
+        return result
+
+    @classmethod
     def refresh_for_isins(cls, isins):
         requested = {
             cls._normalize_isin(isin)

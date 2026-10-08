@@ -85,7 +85,7 @@ class InvestmentAMFIServiceTests(SimpleTestCase):
         self.assertEqual(matched_records[0]["scheme_code"], "456")
 
 
-    @patch("mutual_funds.services.investment_amfi.MISHistoryPrefetch.run_for_all_families")
+    @patch("portfolio.mis_history_prefetch.MISHistoryPrefetch.run_for_all_families")
     @patch("mutual_funds.services.investment_amfi.InvestmentAMFIService.refresh_for_all_investments")
     def test_refresh_for_investments_with_history_runs_coverage_check(
         self,

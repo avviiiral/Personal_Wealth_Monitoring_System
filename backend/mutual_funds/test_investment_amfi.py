@@ -83,3 +83,31 @@ class InvestmentAMFIServiceTests(SimpleTestCase):
         self.assertEqual(result["unmatched_isins"], [])
         matched_records = import_master_records.call_args.args[0]
         self.assertEqual(matched_records[0]["scheme_code"], "456")
+
+
+    @patch("mutual_funds.services.investment_amfi.MISHistoryPrefetch.run_for_all_families")
+    @patch("mutual_funds.services.investment_amfi.InvestmentAMFIService.refresh_for_all_investments")
+    def test_refresh_for_investments_with_history_runs_coverage_check(
+        self,
+        refresh_latest,
+        prefetch_history,
+    ):
+        refresh_latest.return_value = {
+            "requested_isins": 1,
+            "matched_isins": 1,
+            "unmatched_isins": [],
+            "schemes": 1,
+            "nav_records": 1,
+        }
+        prefetch_history.return_value = {
+            "families": 1,
+            "schemes": 1,
+            "requests": 0,
+            "failed": 0,
+        }
+
+        result = InvestmentAMFIService.refresh_for_investments_with_history()
+
+        refresh_latest.assert_called_once_with()
+        prefetch_history.assert_called_once_with()
+        self.assertEqual(result["history"]["requests"], 0)

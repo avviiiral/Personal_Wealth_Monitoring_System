@@ -53,6 +53,17 @@ describe('AnalyticsComponent', () => {
         { category: 'Fixed Income', value: 50000, percentage: 40 },
       ],
     },
+    dashboard_performance: {
+      results: [
+        {
+          asset_name: 'Direct Equity Asset',
+          asset_class: 'Direct Equity',
+          asset_category: 'Equities',
+          xirr_percentage: 30,
+          underlying: 'Direct Equity Asset',
+        },
+      ],
+    },
     performance: {
       results: [
         {

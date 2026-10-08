@@ -18,29 +18,26 @@ class Command(BaseCommand):
 
     Runs, in dependency order:
 
-        1. refresh_investment_amfi        - latest AMFI NAVs only for
-                                            mutual-fund ISINs actually held
-                                            in investments.
-        2. update_market_prices            - live Stock/ETF prices
+        1. update_market_prices            - live Stock/ETF prices
                                             (Yahoo). Also
                                             auto-refreshes
                                             security_master.xlsx if
                                             a new ISIN shows up.
-        4. refresh_security_master
+        2. refresh_security_master
            --apply                       - sector/pe_ratio/
                                             pb_ratio/roe (Yahoo).
                                             Runs after prices/NAV so
                                             the day's holdings are
                                             already current.
-        5. sync_sip_installments
+        3. sync_sip_installments
            (per user)                    - generate/reconcile due
                                             SIP installments.
-        5. execute_sips (per user)       - execute installments
+        4. execute_sips (per user)       - execute installments
                                             that are now due. Runs
                                             after sync so nothing
                                             newly generated is
                                             missed on the same pass.
-        6. monitor_portfolio_news        - news + portfolio-weighted
+        5. monitor_portfolio_news        - news + portfolio-weighted
                                             alerts. Runs last so it
                                             sees the day's updated
                                             holdings/prices, not
@@ -148,30 +145,6 @@ class Command(BaseCommand):
             User.objects.filter(is_active=True).values_list("id", flat=True)
         )
 
-        # Refresh only the AMFI schemes represented by actual investments.
-        # Asset.ISIN is the primary mapping key; no full AMFI universe import
-        # is performed here.
-        if "refresh_investment_amfi" not in skip:
-            self.stdout.write("\n--- refresh_investment_amfi ---")
-            try:
-                from mutual_funds.services.investment_amfi import InvestmentAMFIService
-
-                result = InvestmentAMFIService.refresh_for_all_investments()
-                succeeded.append("refresh_investment_amfi")
-                self.stdout.write(self.style.SUCCESS(
-                    "Investment AMFI refresh completed: "
-                    f"requested_isins={result.get('requested_isins', 0)}, "
-                    f"matched_isins={result.get('matched_isins', 0)}, "
-                    f"schemes={result.get('schemes', 0)}, "
-                    f"nav_records={result.get('nav_records', 0)}, "
-                    f"unmatched={result.get('unmatched_isins', [])}"
-                ))
-            except Exception as exc:
-                failed.append(("refresh_investment_amfi", str(exc)))
-                self.stderr.write(
-                    self.style.ERROR(f"refresh_investment_amfi failed: {exc}")
-                )
-
         # Materialize only the latest NAVs for each user's owned mutual-fund
         # schemes before SIP execution and downstream refreshes.
         if "sync_owned_amfi_navs" not in skip:
@@ -200,27 +173,6 @@ class Command(BaseCommand):
                             f"sync_owned_amfi_navs (user {user_id}) failed: {exc}"
                         )
                     )
-
-        # Keep the AMFI history the MIS report reads stored ahead of time
-        # (held schemes only, missing range only), so opening MIS never
-        # waits on AMFI.
-        if "prefetch_mis_history" not in skip:
-            self.stdout.write("\n--- prefetch_mis_history ---")
-            try:
-                result = MISHistoryPrefetch.run_for_all_families()
-                succeeded.append("prefetch_mis_history")
-                self.stdout.write(self.style.SUCCESS(
-                    "MIS AMFI history prefetched: "
-                    f"families={result.get('families', 0)}, "
-                    f"schemes={result.get('schemes', 0)}, "
-                    f"requests={result.get('requests', 0)}, "
-                    f"failed={result.get('failed', 0)}"
-                ))
-            except Exception as exc:
-                failed.append(("prefetch_mis_history", str(exc)))
-                self.stderr.write(
-                    self.style.ERROR(f"prefetch_mis_history failed: {exc}")
-                )
 
         for user_id in active_user_ids:
             for command_name, kwargs in self.PER_USER_STEPS:

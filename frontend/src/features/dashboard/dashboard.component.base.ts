@@ -417,6 +417,22 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
         this.dashboardPerformance = data.dashboard_performance?.results ?? [];
         this.advisorAllocation = data.advisor_allocation?.results ?? [];
         this.advisorPerformance = data.advisor_performance?.results ?? [];
+        const standardAllocationRows = data.standard_allocations ?? {};
+        this.standardAllocations = Object.fromEntries(
+          Object.entries(standardAllocationRows).map(([category, value]: [string, any]) => [
+            category,
+            Number(value?.percent ?? 0),
+          ]),
+        );
+        this.standardAllocationAmounts = Object.fromEntries(
+          Object.entries(standardAllocationRows).map(([category, value]: [string, any]) => [
+            category,
+            Number(value?.amount ?? 0),
+          ]),
+        );
+        this.standardAllocationTotalValue = Number(data.summary?.total_current_value ?? 0);
+        this.standardAllocationDraft = { ...this.standardAllocations };
+        this.standardAllocationAmountDraft = { ...this.standardAllocationAmounts };
         this.historical = data.historical;
         this.portfolioTree = data.portfolio_tree;
 

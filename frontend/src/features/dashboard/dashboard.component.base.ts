@@ -156,11 +156,7 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
   }
 
   private getStandardAllocationBaseTotal(): number {
-    const summaryTotal = (this.investmentSummaryGroups ?? []).reduce(
-      (total, group) => total + Number(group.current_value || 0),
-      0,
-    );
-
+    const summaryTotal = Number(this.summary?.total_current_value ?? 0);
     if (Number.isFinite(summaryTotal) && summaryTotal > 0) {
       return summaryTotal;
     }

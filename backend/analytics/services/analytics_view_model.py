@@ -261,6 +261,13 @@ class AnalyticsViewModelService:
             xirr_filters={},
         )
 
+        from portfolio.services.portfolio_calculation_service import PortfolioCalculationService
+        portfolio_calculations = PortfolioCalculationService.calculate(
+            owner=user,
+            family_id=family.id,
+            tree=portfolio_tree,
+        )
+
         market_cap_allocation = InvestmentSummaryService.calculate_market_cap_allocation(user)
         sector_allocation = MutualFundLookThroughService.sector_allocation(
             user,
@@ -313,5 +320,6 @@ class AnalyticsViewModelService:
             "sector_allocation": sector_allocation,
             "insights": insights,
             "portfolio_tree": portfolio_tree,
+            "portfolio_calculations": portfolio_calculations,
             "standard_allocations": standard_allocations,
         }

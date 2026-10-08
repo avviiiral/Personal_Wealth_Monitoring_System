@@ -322,9 +322,8 @@ export class DashboardComponent extends BaseDashboardComponent {
   }
 
   /**
-   * XIRR Performance categories are the same top-level Asset Categories
-   * used by Investment Summary. The ranking inside each category is based
-   * on Asset Name XIRR, not the XIRR of individual Underlyings.
+   * XIRR Performance categories are supplied by the backend-calculated
+   * performance rows and the backend investment-summary hierarchy.
    */
   override get xirrPerformanceCategories(): string[] {
     return this.investmentSummaryGroups
@@ -334,14 +333,6 @@ export class DashboardComponent extends BaseDashboardComponent {
       .map((group) => group.asset_category);
   }
 
-  /**
-   * Return Asset Name rows for the selected Asset Category.
-   *
-   * The XIRR used for ranking is `asset_name_xirr`, which is calculated
-   * by the Portfolio Tree from the aggregated cash flows of the Asset
-   * Name. We deliberately do NOT use `asset.xirr` here because that is
-   * the XIRR of the individual underlying/asset position.
-   */
   override get selectedXirrRows(): Array<{
     underlying: string;
     xirr: number;
@@ -349,7 +340,7 @@ export class DashboardComponent extends BaseDashboardComponent {
   }> {
     const category = this.selectedXirrAssetCategory;
 
-    if (!category || !this.portfolioTree) {
+    if (!category) {
       return [];
     }
 
@@ -359,40 +350,26 @@ export class DashboardComponent extends BaseDashboardComponent {
       assetClass: string;
     }>();
 
-    for (const family of this.portfolioTree.families ?? []) {
-      if (this.selectedFamilyMember && family.family_name !== this.selectedFamilyMember) {
+    for (const row of this.dashboardPerformance) {
+      if (row.asset_category !== category) {
         continue;
       }
 
-      for (const portfolio of family.portfolios ?? []) {
-        for (const assetClass of portfolio.asset_classes ?? []) {
-          for (const subClass of assetClass.sub_classes ?? []) {
-            const assetCategory = this.getAssetCategoryForTreeAssetClass(subClass.sub_class);
+      const xirr = Number(row.xirr_percentage);
+      if (!Number.isFinite(xirr)) {
+        continue;
+      }
 
-            if (assetCategory !== category) {
-              continue;
-            }
+      const assetName = (row.asset_name || 'Unnamed Asset').trim() || 'Unnamed Asset';
+      const assetClass = (row.asset_class || 'Unassigned').trim() || 'Unassigned';
+      const key = `${assetClass}::${assetName}`;
 
-            for (const asset of subClass.assets ?? []) {
-              const xirr = Number(asset.asset_name_xirr);
-
-              if (!Number.isFinite(xirr)) {
-                continue;
-              }
-
-              const assetName = asset.asset_name?.trim() || 'Unnamed Asset';
-              const key = `${subClass.sub_class}::${assetName}`;
-
-              if (!rowsByKey.has(key)) {
-                rowsByKey.set(key, {
-                  underlying: assetName,
-                  xirr,
-                  assetClass: subClass.sub_class,
-                });
-              }
-            }
-          }
-        }
+      if (!rowsByKey.has(key)) {
+        rowsByKey.set(key, {
+          underlying: assetName,
+          xirr,
+          assetClass,
+        });
       }
     }
 
@@ -402,32 +379,15 @@ export class DashboardComponent extends BaseDashboardComponent {
   private hasXirrForSubClass(subClassName: string): boolean {
     const target = subClassName.trim();
 
-    if (!target || !this.portfolioTree) {
+    if (!target) {
       return false;
     }
 
-    for (const family of this.portfolioTree.families ?? []) {
-      if (this.selectedFamilyMember && family.family_name !== this.selectedFamilyMember) {
-        continue;
-      }
-
-      for (const portfolio of family.portfolios ?? []) {
-        for (const assetClass of portfolio.asset_classes ?? []) {
-          for (const subClass of assetClass.sub_classes ?? []) {
-            if ((subClass.sub_class || '').trim() !== target) {
-              continue;
-            }
-
-            if (
-              (subClass.assets ?? []).some((asset) => Number.isFinite(Number(asset.asset_name_xirr)))
-            ) {
-              return true;
-            }
-          }
-        }
-      }
-    }
-
-    return false;
+    return this.dashboardPerformance.some(
+      (row) =>
+        (row.asset_class || '').trim() === target &&
+        Number.isFinite(Number(row.xirr_percentage)),
+    );
   }
+
 }

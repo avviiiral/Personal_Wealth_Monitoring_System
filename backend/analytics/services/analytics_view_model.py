@@ -94,9 +94,7 @@ class AnalyticsViewModelService:
 
     @classmethod
     def calculate(cls, user, *, historical_loader):
-        from .equity_analysis import EquityAnalysisService
-        from .historical_wealth import HistoricalWealthAnalytics
-        from .investment_summary import InvestmentSummaryService
+                from .investment_summary import InvestmentSummaryService
         from .mutual_fund_lookthrough import MutualFundLookThroughService
         from .unified_wealth import UnifiedWealthAnalytics
 

@@ -1394,6 +1394,36 @@ class CanonicalAMFIValuationTests(TestCase):
         self.assertEqual(node["price_source"], DataSource.YAHOO_FINANCE)
         self.assertEqual(node["price_date"], "2026-10-08")
 
+    def test_market_data_manager_routes_amfi_listed_etf_to_yahoo(self):
+        from unittest.mock import patch
+
+        from market_data.services.market_data_manager import MarketDataManager
+
+        asset = self._create_transaction_asset(
+            name="ETF Manager Routing Test",
+            category="ETF",
+            isin="INF000CANONICAL5",
+            sub_class="ETF",
+        )
+
+        with patch.object(
+            MarketDataManager,
+            "_fetch_amfi_nav",
+            side_effect=AssertionError("ETF must not be routed to AMFI"),
+        ) as amfi_fetch, patch.object(
+            MarketDataManager,
+            "resolve_asset_symbol",
+            return_value="TESTETF.NS",
+        ), patch(
+            "market_data.services.market_data_manager.YahooFinanceService.save_history",
+            return_value=1,
+        ) as yahoo_fetch:
+            result = MarketDataManager.fetch_and_rebuild(asset)
+
+        self.assertFalse(amfi_fetch.called)
+        self.assertTrue(yahoo_fetch.called)
+        self.assertEqual(result["symbol"], "TESTETF.NS")
+
     def test_etf_ignores_stale_amfi_market_price_and_uses_market_quote(self):
         from market_data.models import DataSource, MarketPrice
 

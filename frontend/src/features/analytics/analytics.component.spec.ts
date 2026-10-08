@@ -3,6 +3,7 @@ import { of, throwError } from 'rxjs';
 
 import { AnalyticsComponent } from './analytics.component';
 import { WealthApiService } from '../../core/services/wealth-api.service';
+import { PortfolioApiService } from '../../core/services/portfolio-api.service';
 
 describe('AnalyticsComponent', () => {
   let component: AnalyticsComponent;
@@ -56,20 +57,119 @@ describe('AnalyticsComponent', () => {
   const mockPerformance = {
     results: [
       {
-        asset_category: 'Equities',
+        asset_name: 'Direct Equity Asset',
         asset_class: 'Direct Equity',
-        invested_value: 60000,
-        current_value: 75000,
-        unrealized_pnl: 15000,
-        pnl_percentage: 30,
+        xirr_percentage: 30,
       },
       {
-        asset_category: 'Fixed Income',
+        asset_name: 'Debt Mutual Fund Asset',
         asset_class: 'Debt Mutual Fund',
-        invested_value: 45000,
-        current_value: 50000,
-        unrealized_pnl: 5000,
-        pnl_percentage: 10,
+        xirr_percentage: 10,
+      },
+    ],
+  };
+
+  const mockPortfolioTree = {
+    success: true,
+    count: 2,
+    families: [
+      {
+        family_name: 'Test Family',
+        portfolio_count: 1,
+        portfolios: [
+          {
+            portfolio: 'Test Portfolio',
+            asset_class_count: 2,
+            asset_classes: [
+              {
+                asset_class: 'Equities',
+                sub_class_count: 1,
+                sub_classes: [
+                  {
+                    sub_class: 'Direct Equity',
+                    asset_count: 1,
+                    assets: [
+                      {
+                        id: 1,
+                        family_name: 'Test Family',
+                        asset_name: 'Direct Equity Asset',
+                        underlying: '',
+                        isin: null,
+                        advisors: 'Advisor A',
+                        quantity: 1,
+                        average_cost: 60000,
+                        invested_value: 60000,
+                        current_price: 75000,
+                        current_value: 75000,
+                        pnl: 15000,
+                        pnl_percentage: 25,
+                        xirr: 30,
+                        asset_name_xirr: 30,
+                        sub_class_xirr: 30,
+                        sector: null,
+                        cap_type: null,
+                        amc_name: null,
+                        pe_ratio: null,
+                        pb_ratio: null,
+                        peg_ratio: null,
+                        roe: null,
+                        credit_rating: null,
+                        ytm: null,
+                        modified_duration: null,
+                        average_maturity: null,
+                        price_source: null,
+                        price_date: null,
+                      },
+                    ],
+                  },
+                ],
+              },
+              {
+                asset_class: 'Fixed Income',
+                sub_class_count: 1,
+                sub_classes: [
+                  {
+                    sub_class: 'Debt Mutual Fund',
+                    asset_count: 1,
+                    assets: [
+                      {
+                        id: 2,
+                        family_name: 'Test Family',
+                        asset_name: 'Debt Mutual Fund Asset',
+                        underlying: '',
+                        isin: null,
+                        advisors: 'Unassigned',
+                        quantity: 1,
+                        average_cost: 45000,
+                        invested_value: 45000,
+                        current_price: 50000,
+                        current_value: 50000,
+                        pnl: 5000,
+                        pnl_percentage: 11.11,
+                        xirr: 10,
+                        asset_name_xirr: 10,
+                        sub_class_xirr: 10,
+                        sector: null,
+                        cap_type: null,
+                        amc_name: null,
+                        pe_ratio: null,
+                        pb_ratio: null,
+                        peg_ratio: null,
+                        roe: null,
+                        credit_rating: null,
+                        ytm: null,
+                        modified_duration: null,
+                        average_maturity: null,
+                        price_source: null,
+                        price_date: null,
+                      },
+                    ],
+                  },
+                ],
+              },
+            ],
+          },
+        ],
       },
     ],
   };
@@ -158,6 +258,12 @@ describe('AnalyticsComponent', () => {
           provide: WealthApiService,
           useValue: wealthApi,
         },
+        {
+          provide: PortfolioApiService,
+          useValue: {
+            getPortfolioTree: vi.fn().mockReturnValue(of(mockPortfolioTree)),
+          },
+        },
       ],
     }).compileComponents();
 
@@ -219,6 +325,8 @@ describe('AnalyticsComponent', () => {
   });
 
   it('should change historical period', () => {
+    wealthApi.getSummary.mockClear();
+
     component.changePeriod(90);
 
     expect(component.selectedDays).toBe(90);

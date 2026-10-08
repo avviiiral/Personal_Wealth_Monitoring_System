@@ -849,6 +849,15 @@
                                   >
                                     <td colspan="10">
                                       <div class="quant-details">
+                                        <div class="quant-chip" *ngIf="asset.price_date || asset.price_source">
+                                          <span class="quant-chip-label">Last Updated</span>
+                                          <span class="quant-chip-value">{{ formatPriceDate(asset.price_date) }}</span>
+                                        </div>
+
+                                        <div class="quant-chip" *ngIf="asset.price_source">
+                                          <span class="quant-chip-label">Price / NAV Source</span>
+                                          <span class="quant-chip-value">{{ formatPriceSource(asset.price_source) }}</span>
+                                        </div>
                                         <div class="quant-chip" *ngIf="asset.sector">
                                           <span class="quant-chip-label">Sector</span>
                                           <span class="quant-chip-value">{{ asset.sector }}</span>

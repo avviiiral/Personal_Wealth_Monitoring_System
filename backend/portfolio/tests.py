@@ -1249,3 +1249,255 @@ class ManualPriceEffectiveDateAndMissingPriceTests(TestCase):
             Decimal("1500"),
         )
 
+
+
+class CanonicalAMFIValuationTests(TestCase):
+    def setUp(self):
+        User = get_user_model()
+        self.user = User.objects.create_user(
+            username="canonical_amfi_user",
+            password="test-password",
+        )
+        self.family = FamilyGroup.objects.create(name="Canonical AMFI Family")
+        self.user.profile.family_groups.add(self.family)
+
+    def _create_transaction_asset(self, *, name, category, isin, sub_class):
+        asset = Asset.objects.create(
+            owner=self.user,
+            family=self.family,
+            name=name,
+            category=category,
+            isin=isin,
+        )
+        Transaction.objects.create(
+            owner=self.user,
+            family=self.family,
+            family_name="Canonical Family",
+            portfolio="Canonical Portfolio",
+            asset=asset,
+            asset_class="Fixed Income" if "Mutual" in sub_class else "Equity",
+            sub_class=sub_class,
+            asset_name=name,
+            transaction_date=date(2026, 1, 1),
+            transaction_type="BUY",
+            quantity=Decimal("100"),
+            price_per_unit=Decimal("100"),
+            amount=Decimal("10000"),
+            fees=Decimal("0"),
+        )
+        return asset
+
+    def _find_asset(self, tree, name):
+        for family in tree["families"]:
+            for portfolio in family["portfolios"]:
+                for asset_class in portfolio["asset_classes"]:
+                    for sub_class in asset_class["sub_classes"]:
+                        for asset in sub_class["assets"]:
+                            if asset["asset_name"] == name:
+                                return asset
+        return None
+
+    def test_portfolio_uses_latest_master_amfi_nav_not_stale_family_nav(self):
+        from market_data.models import DataSource
+        from mutual_funds.models import (
+            AMFIMasterNAV,
+            AMFIMasterScheme,
+            MutualFundNAV,
+            MutualFundScheme,
+        )
+
+        asset = self._create_transaction_asset(
+            name="Canonical AMFI Bond Fund",
+            category="BOND",
+            isin="INF000CANONICAL1",
+            sub_class="Debt Mutual Fund",
+        )
+
+        family_scheme = MutualFundScheme.objects.create(
+            owner=self.user,
+            family=self.family,
+            scheme_name="Canonical AMFI Bond Fund",
+            scheme_code="FAMILY-OLD",
+            isin_growth=asset.isin,
+            is_active=True,
+        )
+        MutualFundNAV.objects.create(
+            scheme=family_scheme,
+            date=date(2025, 6, 17),
+            nav=Decimal("37.47"),
+            source="AMFI",
+        )
+
+        master_scheme = AMFIMasterScheme.objects.create(
+            scheme_code="999001",
+            scheme_name="Canonical AMFI Bond Fund Direct Growth",
+            isin_growth=asset.isin,
+            is_active=True,
+        )
+        AMFIMasterNAV.objects.create(
+            scheme=master_scheme,
+            date=date(2026, 10, 8),
+            nav=Decimal("42.75"),
+            source="AMFI",
+        )
+
+        tree = PortfolioTreeService.build(
+            owner=self.user,
+            family_id=self.family.id,
+        )
+        node = self._find_asset(tree, "Canonical AMFI Bond Fund")
+
+        self.assertIsNotNone(node)
+        self.assertEqual(node["current_price"], 42.75)
+        self.assertEqual(node["price_source"], DataSource.AMFI)
+        self.assertEqual(node["price_date"], "2026-10-08")
+        self.assertEqual(node["current_value"], 4275.0)
+
+    def test_etf_with_amfi_isin_uses_market_price_not_amfi_nav(self):
+        from market_data.models import DataSource, MarketPrice
+        from mutual_funds.models import AMFIMasterNAV, AMFIMasterScheme
+
+        asset = self._create_transaction_asset(
+            name="Canonical Silver ETF",
+            category="ETF",
+            isin="INF000CANONICAL2",
+            sub_class="ETF",
+        )
+
+        master_scheme = AMFIMasterScheme.objects.create(
+            scheme_code="999002",
+            scheme_name="Canonical Silver ETF",
+            isin_growth=asset.isin,
+            is_active=True,
+        )
+        AMFIMasterNAV.objects.create(
+            scheme=master_scheme,
+            date=date(2026, 10, 8),
+            nav=Decimal("180.00"),
+            source="AMFI",
+        )
+        MarketPrice.objects.create(
+            asset=asset,
+            date=date(2026, 10, 8),
+            close_price=Decimal("198.67"),
+            source=DataSource.YAHOO_FINANCE,
+        )
+
+        tree = PortfolioTreeService.build(
+            owner=self.user,
+            family_id=self.family.id,
+        )
+        node = self._find_asset(tree, "Canonical Silver ETF")
+
+        self.assertIsNotNone(node)
+        self.assertEqual(node["current_price"], 198.67)
+        self.assertEqual(node["price_source"], DataSource.YAHOO_FINANCE)
+        self.assertEqual(node["price_date"], "2026-10-08")
+
+    def test_market_data_manager_routes_amfi_listed_etf_to_yahoo(self):
+        from unittest.mock import patch
+
+        from market_data.services.market_data_manager import MarketDataManager
+
+        asset = self._create_transaction_asset(
+            name="ETF Manager Routing Test",
+            category="ETF",
+            isin="INF000CANONICAL5",
+            sub_class="ETF",
+        )
+
+        with patch.object(
+            MarketDataManager,
+            "_fetch_amfi_nav",
+            side_effect=AssertionError("ETF must not be routed to AMFI"),
+        ) as amfi_fetch, patch.object(
+            MarketDataManager,
+            "resolve_asset_symbol",
+            return_value="TESTETF.NS",
+        ), patch(
+            "market_data.services.market_data_manager.YahooFinanceService.save_history",
+            return_value=1,
+        ) as yahoo_fetch:
+            result = MarketDataManager.fetch_and_rebuild(asset)
+
+        self.assertFalse(amfi_fetch.called)
+        self.assertTrue(yahoo_fetch.called)
+        self.assertEqual(result["symbol"], "TESTETF.NS")
+
+    def test_etf_ignores_stale_amfi_market_price_and_uses_market_quote(self):
+        from market_data.models import DataSource, MarketPrice
+
+        asset = self._create_transaction_asset(
+            name="ETF With Stale AMFI Quote",
+            category="ETF",
+            isin="INF000CANONICAL4",
+            sub_class="ETF",
+        )
+
+        # A legacy/incorrect pipeline may have persisted an AMFI NAV as a
+        # MarketPrice row. It must not be treated as the ETF's exchange quote.
+        MarketPrice.objects.create(
+            asset=asset,
+            date=date(2026, 10, 8),
+            close_price=Decimal("180.00"),
+            source=DataSource.AMFI,
+        )
+        MarketPrice.objects.create(
+            asset=asset,
+            date=date(2026, 10, 7),
+            close_price=Decimal("198.67"),
+            source=DataSource.YAHOO_FINANCE,
+        )
+
+        tree = PortfolioTreeService.build(
+            owner=self.user,
+            family_id=self.family.id,
+        )
+        node = self._find_asset(tree, "ETF With Stale AMFI Quote")
+
+        self.assertIsNotNone(node)
+        self.assertEqual(node["current_price"], 198.67)
+        self.assertEqual(node["price_source"], DataSource.YAHOO_FINANCE)
+        self.assertEqual(node["price_date"], "2026-10-07")
+
+    def test_manual_price_stays_authoritative_over_amfi_nav(self):
+        from market_data.models import DataSource, MarketPrice
+        from mutual_funds.models import AMFIMasterNAV, AMFIMasterScheme
+
+        asset = self._create_transaction_asset(
+            name="Manual AMFI Override Fund",
+            category="MUTUAL_FUND",
+            isin="INF000CANONICAL3",
+            sub_class="Equity Mutual Fund",
+        )
+
+        master_scheme = AMFIMasterScheme.objects.create(
+            scheme_code="999003",
+            scheme_name="Manual AMFI Override Fund",
+            isin_growth=asset.isin,
+            is_active=True,
+        )
+        AMFIMasterNAV.objects.create(
+            scheme=master_scheme,
+            date=date(2026, 10, 8),
+            nav=Decimal("250.00"),
+            source="AMFI",
+        )
+        MarketPrice.objects.create(
+            asset=asset,
+            date=date(2026, 10, 7),
+            close_price=Decimal("275.00"),
+            source=DataSource.MANUAL,
+            updated_by=self.user,
+        )
+
+        tree = PortfolioTreeService.build(
+            owner=self.user,
+            family_id=self.family.id,
+        )
+        node = self._find_asset(tree, "Manual AMFI Override Fund")
+
+        self.assertIsNotNone(node)
+        self.assertEqual(node["current_price"], 275.0)
+        self.assertEqual(node["price_source"], DataSource.MANUAL)
+        self.assertEqual(node["price_date"], "2026-10-07")

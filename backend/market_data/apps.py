@@ -32,6 +32,12 @@ class MarketDataConfig(AppConfig):
 
         DailyRefreshScheduler.start()
 
+        from market_data.services.investment_amfi_scheduler import (
+            InvestmentAMFIScheduler,
+        )
+
+        InvestmentAMFIScheduler.start()
+
         from market_data.services.security_metrics_scheduler import (
             SecurityMetricsScheduler,
         )

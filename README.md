@@ -44,6 +44,12 @@ Every figure you see — holdings, invested value, current value, unrealized and
 
 It is built for **households, not just individuals**: a four-tier role hierarchy (System Owner / Super User / Admin / Viewer) plus many-to-many family membership lets several people share visibility into the same portfolio — or several portfolios — with permissions enforced independently on the backend, not merely hidden in the UI.
 
+### Investment-driven market and NAV refresh
+
+Automatic valuation refresh is investment-driven rather than a blanket provider sync. Active investment ISINs are collected from portfolio assets and legacy/imported mutual-fund transactions, then matched to the AMFI master **by ISIN**. The AMFI latest feed is downloaded once per refresh, but only records matching held investment ISINs are persisted. Mutual-fund history is backfilled from the persisted AMFI master history for MIS valuation.
+
+A lightweight in-process scheduler runs the investment-driven AMFI refresh and MIS history prefetch every **30 minutes**. Daily market-price scheduling remains responsible for listed-stock/ETF market data. AMFI is used for mutual-fund NAVs; listed ETFs with an AMFI-looking ISIN are routed to market-price data instead. Manual prices remain authoritative over automatic sources.
+
 ### At a glance
 
 |     | Highlight                     | What it means                                                                                 |
@@ -1428,7 +1434,7 @@ Run from `backend/` with the virtual environment active: `python manage.py <comm
 | `link_security_master`           | `investments`    | Link Assets to their SecurityMaster row by ISIN _(dry-run by default)_       |
 | `import_amfi_cap_classification` | `investments`    | Classify stocks Large / Mid / Small Cap by AMFI rank _(dry-run by default)_  |
 | `generate_web_push_keys`           | `portfolio_news` | Generate URL-safe VAPID keys for browser Web Push |
-| `run_scheduled_refresh`           | `market_data`    | Run the complete scheduled external-data refresh pipeline, including AMFI master refresh and MIS historical prefetch |
+| `run_scheduled_refresh`           | `market_data`    | Run the scheduled market-price/security/news refresh pipeline; investment-driven AMFI refresh and MIS history are handled by the separate 30-minute in-process scheduler |
 Standard Django commands you'll use as well: `migrate`, `check`, `createsuperuser`, `changepassword <username>`, `shell`, `test`.
 
 > Tip: run any command with `--help` to see its options — including how to apply the _dry-run by default_ commands.
@@ -1503,6 +1509,7 @@ npm run build     # verifies the whole app compiles
 | **HTTPS is required outside localhost**        | Service workers and Push API require a secure context in production. Localhost is suitable for development. |
 | **Some SIP tests drift with the calendar**   | A few SIP-scheduling tests compare against today's real date; this is a known fixture limitation that does not affect the running app.                                                                  |
 | **Third-party data can lag or fail**         | Yahoo Finance, AMFI and Google News are external sources; use **manual prices** when a quote is missing.                                                                                                |
+| **AMFI refresh is investment-driven**       | The AMFI feed is downloaded as a complete public source file, but PWMS persists and processes only records matching held investment ISINs. Mutual-fund history is persisted locally for MIS. |
 | **MIS valuation depends on available market data** | Historical MIS valuation uses the latest available market price / NAV on or before the requested valuation date; missing valuation data may result in an unavailable market-value figure. |
 | **Corporate filing coverage depends on exchange feeds** | NSE uses the built-in public Corporate Announcements adapter; BSE requires an authorized/configured feed. Unconfigured BSE ingestion is skipped rather than treated as a provider failure. |
 | **Deterministic news is intentionally not LLM-generated** | Portfolio News classifications, filing categories, scoring and notification tiers use transparent rules. This avoids hosted AI cost but cannot provide open-ended semantic reasoning. |

@@ -831,10 +831,18 @@ class MarketDataManager:
         # MUTUAL FUND
         # ======================================================
 
-        # AMFI identity is authoritative. Legacy imports may carry an
-        # incorrect local category, but an ISIN mapped by AMFI must use AMFI
-        # NAV/history rather than bond/stock/Yahoo routing.
-        if AMFIAssetResolver.is_amfi_backed(asset):
+        # AMFI identity is authoritative for actual mutual-fund holdings.
+        # Do not route every AMFI-listed ISIN through NAV: listed ETFs can
+        # also appear in the AMFI feed, but their portfolio valuation must
+        # come from exchange market prices.
+        is_mutual_fund = (
+            asset.category == "MUTUAL_FUND"
+            or Transaction.objects.filter(
+                asset=asset,
+                sub_class__icontains="mutual fund",
+            ).exists()
+        )
+        if is_mutual_fund and AMFIAssetResolver.is_amfi_backed(asset):
             return cls._fetch_amfi_nav(asset)
 
         # ======================================================
@@ -859,20 +867,6 @@ class MarketDataManager:
             asset.category == "ETF"
             or " ETF" in f" {(asset.name or '').upper()}"
         )
-
-        if is_etf:
-            # Prefer AMFI's daily NAV whenever the ETF's ISIN is present
-            # in the official AMFI feed. If AMFI does not contain the ISIN
-            # or is temporarily unreachable, continue to Yahoo so a
-            # temporary AMFI outage cannot turn an otherwise priceable ETF
-            # into a zero-price holding.
-            try:
-                amfi_result = cls._fetch_amfi_nav(asset)
-            except Exception:
-                amfi_result = None
-
-            if amfi_result and amfi_result.get("success"):
-                return amfi_result
 
         if asset.category not in [
             "STOCK",

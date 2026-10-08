@@ -12,8 +12,9 @@ def refresh_assets_async(asset_ids):
     they were created or touched by a transaction import - so a
     newly added stock, mutual fund, or bond shows a live price
     immediately instead of waiting for the next scheduled refresh
-    (up to 15 minutes for stocks/ETFs, once a day for AMFI mutual
-    fund NAVs - see market_data.services).
+    (up to 15 minutes for stocks/ETFs. Mutual-fund NAVs are refreshed
+    immediately for uploaded investment ISINs and then historical gaps
+    are prefetched for MIS).
 
     Runs on a background daemon thread, mirroring the existing
     MarketPriceScheduler / DailyRefreshScheduler pattern in
@@ -102,6 +103,27 @@ def _refresh_assets(asset_ids):
                     asset.id,
                     asset.name,
                 )
+
+        # Resolve the uploaded mutual-fund assets by ISIN first. This keeps
+        # the shared AMFI master investment-driven instead of importing the
+        # entire AMFI universe for every scheduled refresh.
+        try:
+            from mutual_funds.services.investment_amfi import InvestmentAMFIService
+
+            result = InvestmentAMFIService.refresh_for_assets(asset_ids)
+            logger.info(
+                "[POST-IMPORT AMFI] requested_isins=%s matched_isins=%s "
+                "schemes=%s nav_records=%s unmatched=%s",
+                result.get("requested_isins", 0),
+                result.get("matched_isins", 0),
+                result.get("schemes", 0),
+                result.get("nav_records", 0),
+                result.get("unmatched_isins", []),
+            )
+        except Exception:
+            logger.exception(
+                "[POST-IMPORT AMFI] Investment-driven ISIN refresh failed."
+            )
 
         # Store the AMFI history the MIS report needs for the funds in this
         # upload, so the MIS page never has to download anything itself.

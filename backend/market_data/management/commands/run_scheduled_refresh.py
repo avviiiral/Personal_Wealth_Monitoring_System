@@ -5,7 +5,6 @@ from django.core.management.base import BaseCommand
 from django.utils import timezone
 
 from mutual_funds.services.amfi import AMFIService
-from portfolio.mis_history_prefetch import MISHistoryPrefetch
 from watchlist.services.performance import AMFIPerformanceService
 from watchlist.services.universe import AMFIUniverseService
 
@@ -18,28 +17,26 @@ class Command(BaseCommand):
 
     Runs, in dependency order:
 
-        1. refresh_amfi_master            - AMFI scheme/NAV master,
-                                            downloaded once for all users.
-        2. update_market_prices            - live Stock/ETF prices
+        1. update_market_prices            - live Stock/ETF prices
                                             (Yahoo). Also
                                             auto-refreshes
                                             security_master.xlsx if
                                             a new ISIN shows up.
-        4. refresh_security_master
+        2. refresh_security_master
            --apply                       - sector/pe_ratio/
                                             pb_ratio/roe (Yahoo).
                                             Runs after prices/NAV so
                                             the day's holdings are
                                             already current.
-        5. sync_sip_installments
+        3. sync_sip_installments
            (per user)                    - generate/reconcile due
                                             SIP installments.
-        5. execute_sips (per user)       - execute installments
+        4. execute_sips (per user)       - execute installments
                                             that are now due. Runs
                                             after sync so nothing
                                             newly generated is
                                             missed on the same pass.
-        6. monitor_portfolio_news        - news + portfolio-weighted
+        5. monitor_portfolio_news        - news + portfolio-weighted
                                             alerts. Runs last so it
                                             sees the day's updated
                                             holdings/prices, not
@@ -59,8 +56,8 @@ class Command(BaseCommand):
     """
 
     help = (
-        "Run every scheduled external-data refresh (market prices, "
-        "shared AMFI master NAV, security master ratios, SIP sync/execute, "
+        "Run the daily external-data refresh (market prices, "
+        "security master ratios, SIP sync/execute, "
         "portfolio news) for every active user, in one call. "
         "Intended to be the single command a scheduler triggers "
         "nightly."
@@ -69,7 +66,6 @@ class Command(BaseCommand):
     # Commands that operate across all users in one call - no
     # --user-id needed/accepted.
     GLOBAL_STEPS = [
-        ("refresh_amfi_master", {}),
         ("update_market_prices", {}),
         ("refresh_mis_reference_prices", {}),
     ]
@@ -148,9 +144,8 @@ class Command(BaseCommand):
             User.objects.filter(is_active=True).values_list("id", flat=True)
         )
 
-        # AMFI master is refreshed once globally above. Materialize only
-        # the latest NAVs for each user's owned mutual-fund schemes before
-        # SIP execution and the downstream security/news refreshes.
+        # Materialize only the latest NAVs for each user's owned mutual-fund
+        # schemes before SIP execution and downstream refreshes.
         if "sync_owned_amfi_navs" not in skip:
             for user_id in active_user_ids:
                 self.stdout.write(
@@ -177,27 +172,6 @@ class Command(BaseCommand):
                             f"sync_owned_amfi_navs (user {user_id}) failed: {exc}"
                         )
                     )
-
-        # Keep the AMFI history the MIS report reads stored ahead of time
-        # (held schemes only, missing range only), so opening MIS never
-        # waits on AMFI.
-        if "prefetch_mis_history" not in skip:
-            self.stdout.write("\n--- prefetch_mis_history ---")
-            try:
-                result = MISHistoryPrefetch.run_for_all_families()
-                succeeded.append("prefetch_mis_history")
-                self.stdout.write(self.style.SUCCESS(
-                    "MIS AMFI history prefetched: "
-                    f"families={result.get('families', 0)}, "
-                    f"schemes={result.get('schemes', 0)}, "
-                    f"requests={result.get('requests', 0)}, "
-                    f"failed={result.get('failed', 0)}"
-                ))
-            except Exception as exc:
-                failed.append(("prefetch_mis_history", str(exc)))
-                self.stderr.write(
-                    self.style.ERROR(f"prefetch_mis_history failed: {exc}")
-                )
 
         for user_id in active_user_ids:
             for command_name, kwargs in self.PER_USER_STEPS:

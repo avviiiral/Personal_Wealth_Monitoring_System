@@ -22,7 +22,7 @@ class AnalyticsViewModelService:
         return number
 
     @classmethod
-    def _investment_performance(cls, user):
+    def _investment_performance(cls, user, family_name=None):
         from portfolio.services.portfolio_tree_service import PortfolioTreeService
         from users.permissions import require_active_family
 
@@ -30,7 +30,7 @@ class AnalyticsViewModelService:
         tree = PortfolioTreeService.build(
             owner=user,
             family_id=family.id,
-            xirr_filters={},
+            xirr_filters={"family": family_name} if family_name else {},
         )
 
         rows_by_key = {}
@@ -60,7 +60,7 @@ class AnalyticsViewModelService:
             rows_by_key.values(),
             key=lambda row: row["xirr_percentage"],
             reverse=True,
-        )
+        ), tree
 
     @classmethod
     def _insights(cls, performance, allocation, historical):
@@ -93,13 +93,13 @@ class AnalyticsViewModelService:
         }
 
     @classmethod
-    def calculate(cls, user, *, historical_loader):
+    def calculate(cls, user, *, historical_loader, family_name=None):
                 from .investment_summary import InvestmentSummaryService
         from .mutual_fund_lookthrough import MutualFundLookThroughService
         from .unified_wealth import UnifiedWealthAnalytics
 
-        summary = UnifiedWealthAnalytics.calculate_summary(user)
-        investment_summary = InvestmentSummaryService.calculate(user)
+        summary = UnifiedWealthAnalytics.calculate_summary(user, family_name=family_name)
+        investment_summary = InvestmentSummaryService.calculate(user, family_name=family_name)
         direct_holdings = list(UnifiedWealthAnalytics.get_equity_holdings(user))
         allocation = {
             "results": MutualFundLookThroughService.allocation(user, direct_holdings),
@@ -110,7 +110,7 @@ class AnalyticsViewModelService:
         }
 
         historical = historical_loader(user)
-        performance = cls._investment_performance(user)
+        performance, portfolio_tree = cls._investment_performance(user, family_name=family_name)
 
         market_cap_allocation = InvestmentSummaryService.calculate_market_cap_allocation(user)
         sector_allocation = MutualFundLookThroughService.sector_allocation(
@@ -138,4 +138,5 @@ class AnalyticsViewModelService:
             "market_cap_allocation": market_cap_allocation,
             "sector_allocation": sector_allocation,
             "insights": insights,
+            "portfolio_tree": portfolio_tree,
         }

@@ -22,7 +22,7 @@ class AnalyticsViewModelService:
         return number
 
     @classmethod
-    def _investment_performance(cls, user, family_name=None):
+    def _investment_performance(cls, user, family_name=None, investment_summary=None):
         from portfolio.services.portfolio_tree_service import PortfolioTreeService
         from users.permissions import require_active_family
 
@@ -32,6 +32,13 @@ class AnalyticsViewModelService:
             family_id=family.id,
             xirr_filters={"family": family_name} if family_name else {},
         )
+
+        asset_category_by_class = {}
+        for row in (investment_summary or {}).get("results", []):
+            category = row.get("asset_category") or "Unassigned"
+            asset_category_by_class[row.get("asset_class")] = category
+            for raw_class in row.get("raw_asset_classes") or []:
+                asset_category_by_class[raw_class] = category
 
         rows = []
         for family_node in tree.get("families", []):
@@ -53,10 +60,78 @@ class AnalyticsViewModelService:
                                 "asset_class": sub_class.get("sub_class") or "Unassigned",
                                 "xirr_percentage": xirr_value,
                                 "underlying": asset.get("underlying") or asset.get("asset_name") or "Unnamed Underlying",
+                                "asset_category": asset_category_by_class.get(
+                                    sub_class.get("sub_class"),
+                                    asset_category_by_class.get(asset_class.get("asset_class"), "Unassigned"),
+                                ),
                             })
 
         rows.sort(key=lambda row: row["xirr_percentage"], reverse=True)
         return rows, tree
+
+    @classmethod
+    def _dashboard_investment_summary(cls, tree):
+        groups = {}
+
+        for family_node in tree.get("families", []):
+            for portfolio in family_node.get("portfolios", []):
+                for asset_class in portfolio.get("asset_classes", []):
+                    category = (asset_class.get("asset_class") or "Unassigned").strip() or "Unassigned"
+                    group = groups.setdefault(
+                        category,
+                        {
+                            "asset_category": category,
+                            "current_value": Decimal("0"),
+                            "asset_classes": {},
+                        },
+                    )
+
+                    for sub_class in asset_class.get("sub_classes", []):
+                        sub_class_name = (sub_class.get("sub_class") or "Unassigned").strip() or "Unassigned"
+                        row = group["asset_classes"].setdefault(
+                            sub_class_name,
+                            {
+                                "asset_class": sub_class_name,
+                                "current_value": Decimal("0"),
+                                "raw_asset_classes": [],
+                            },
+                        )
+
+                        if sub_class_name not in row["raw_asset_classes"]:
+                            row["raw_asset_classes"].append(sub_class_name)
+
+                        for asset in sub_class.get("assets", []):
+                            current_value = cls._number(asset.get("current_value"))
+                            group["current_value"] += current_value
+                            row["current_value"] += current_value
+
+        total = sum((group["current_value"] for group in groups.values()), Decimal("0"))
+        result = []
+
+        for group in groups.values():
+            group_value = group["current_value"]
+            result.append({
+                "asset_category": group["asset_category"],
+                "current_value": float(group_value),
+                "percentage_of_total": round(
+                    float((group_value / total) * Decimal("100")) if total else 0,
+                    2,
+                ),
+                "asset_classes": [
+                    {
+                        "asset_class": row["asset_class"],
+                        "current_value": float(row["current_value"]),
+                        "percentage_of_total": round(
+                            float((row["current_value"] / total) * Decimal("100")) if total else 0,
+                            2,
+                        ),
+                        "raw_asset_classes": row["raw_asset_classes"],
+                    }
+                    for row in group["asset_classes"].values()
+                ],
+            })
+
+        return result
 
     @classmethod
     def _insights(cls, performance, allocation, historical):
@@ -123,7 +198,7 @@ class AnalyticsViewModelService:
         }
 
         historical = historical_loader(user)
-        performance, portfolio_tree = cls._investment_performance(user, family_name=family_name)
+        performance, portfolio_tree = cls._investment_performance(user, family_name=family_name, investment_summary=investment_summary)
 
         market_cap_allocation = InvestmentSummaryService.calculate_market_cap_allocation(user)
         sector_allocation = MutualFundLookThroughService.sector_allocation(
@@ -165,6 +240,7 @@ class AnalyticsViewModelService:
         return {
             "summary": summary,
             "investment_summary": investment_summary,
+            "dashboard_investment_summary": cls._dashboard_investment_summary(portfolio_tree),
             "allocation": allocation,
             "performance": {"results": performance},
             "advisor_allocation": advisor_allocation,

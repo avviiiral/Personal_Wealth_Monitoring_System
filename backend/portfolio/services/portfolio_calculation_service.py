@@ -46,7 +46,10 @@ class PortfolioCalculationService:
         if not transactions:
             return None
 
-        asset_ids = {asset["asset"].get("id") for asset in assets}
+        unique_assets = {}
+        for item in assets:
+            unique_assets[item["asset"].get("id")] = item["asset"]
+        asset_ids = set(unique_assets)
         selected_transactions = [
             tx for tx in transactions
             if tx.asset_id in asset_ids
@@ -55,20 +58,13 @@ class PortfolioCalculationService:
             return None
 
         quantity = sum(
-            (
-                cls._number(asset["asset"].get("quantity"))
-                for asset in assets
-                if asset["asset"].get("id") in asset_ids
-            ),
+            (cls._number(asset.get("quantity")) for asset in unique_assets.values()),
             Decimal("0"),
         )
-        current_value_by_asset = {}
-        for asset in assets:
-            asset_id = asset["asset"].get("id")
-            current_value_by_asset[asset_id] = (
-                current_value_by_asset.get(asset_id, Decimal("0"))
-                + cls._number(asset["asset"].get("current_value"))
-            )
+        current_value_by_asset = {
+            asset_id: cls._number(asset.get("current_value"))
+            for asset_id, asset in unique_assets.items()
+        }
         current_value = sum(current_value_by_asset.values(), Decimal("0"))
 
         return PortfolioTreeService._calculate_xirr(
@@ -113,7 +109,7 @@ class PortfolioCalculationService:
         # Build the complete authoritative asset tree first. Filtering here
         # selects already-calculated positions; it never reconstructs a
         # position from a filtered transaction subset.
-        tree = PortfolioTreeService.build(
+        tree = tree or PortfolioTreeService.build(
             owner=owner,
             family_id=family_id,
             xirr_filters={},

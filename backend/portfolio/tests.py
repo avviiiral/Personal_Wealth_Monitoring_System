@@ -1394,6 +1394,42 @@ class CanonicalAMFIValuationTests(TestCase):
         self.assertEqual(node["price_source"], DataSource.YAHOO_FINANCE)
         self.assertEqual(node["price_date"], "2026-10-08")
 
+    def test_etf_ignores_stale_amfi_market_price_and_uses_market_quote(self):
+        from market_data.models import DataSource, MarketPrice
+
+        asset = self._create_transaction_asset(
+            name="ETF With Stale AMFI Quote",
+            category="ETF",
+            isin="INF000CANONICAL4",
+            sub_class="ETF",
+        )
+
+        # A legacy/incorrect pipeline may have persisted an AMFI NAV as a
+        # MarketPrice row. It must not be treated as the ETF's exchange quote.
+        MarketPrice.objects.create(
+            asset=asset,
+            date=date(2026, 10, 8),
+            close_price=Decimal("180.00"),
+            source=DataSource.AMFI,
+        )
+        MarketPrice.objects.create(
+            asset=asset,
+            date=date(2026, 10, 7),
+            close_price=Decimal("198.67"),
+            source=DataSource.YAHOO_FINANCE,
+        )
+
+        tree = PortfolioTreeService.build(
+            owner=self.user,
+            family_id=self.family.id,
+        )
+        node = self._find_asset(tree, "ETF With Stale AMFI Quote")
+
+        self.assertIsNotNone(node)
+        self.assertEqual(node["current_price"], 198.67)
+        self.assertEqual(node["price_source"], DataSource.YAHOO_FINANCE)
+        self.assertEqual(node["price_date"], "2026-10-07")
+
     def test_manual_price_stays_authoritative_over_amfi_nav(self):
         from market_data.models import DataSource, MarketPrice
         from mutual_funds.models import AMFIMasterNAV, AMFIMasterScheme

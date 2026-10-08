@@ -17,7 +17,6 @@ from investments.models import (
     TransactionEditHistory,
 )
 
-from investments.services.portfolio_metrics import PortfolioMetricsService
 from market_data.services.market_data_manager import MarketDataManager
 from portfolio.services.holding_engine import HoldingCalculationEngine
 from portfolio.services.portfolio_position_engine import PortfolioPositionEngine

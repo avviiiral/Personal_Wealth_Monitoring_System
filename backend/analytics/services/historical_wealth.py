@@ -12,6 +12,8 @@ from django.db.models import Q
 from market_data.models import DataSource, ManualAssetPrice, MarketPrice
 from users.permissions import get_active_family_group, is_system_owner
 from mutual_funds.models import (
+    AMFIMasterNAV,
+    AMFIMasterScheme,
     MutualFundNAV,
     MutualFundScheme,
     MutualFundTransaction,
@@ -114,6 +116,16 @@ class HistoricalWealthAnalytics:
             # number purely from a fee-accounting difference.
             position["invested_value"] += amount
 
+        elif transaction.transaction_type in (
+            TransactionType.BONUS,
+            TransactionType.SPLIT,
+        ):
+            # Matches HoldingCalculationEngine: extra shares, no extra cost.
+            # Without this the history understates value after a corporate
+            # action and its last point disagrees with today's holdings.
+            if quantity > 0:
+                position["quantity"] += quantity
+
         elif transaction.transaction_type == TransactionType.SELL:
             if (
                 position["quantity"] <= 0
@@ -140,6 +152,114 @@ class HistoricalWealthAnalytics:
                 position["invested_value"] = (
                     HistoricalWealthAnalytics.ZERO
                 )
+
+    # ==========================================================
+    # LEGACY PORTFOLIO MUTUAL FUND TRANSACTION HELPER
+    # ==========================================================
+
+    @staticmethod
+    def _apply_legacy_mutual_fund_transaction(position, transaction):
+        """Apply a legacy investments.Transaction to an MF position.
+
+        Older portfolio imports stored mutual-fund transactions in the
+        generic investments_transaction table rather than the dedicated
+        mutual_funds tables.  Keep their accounting identical to the
+        dedicated MF engine so historical wealth can value those holdings
+        instead of classifying them as equities.
+        """
+        units = transaction.quantity or HistoricalWealthAnalytics.ZERO
+        amount = transaction.amount or HistoricalWealthAnalytics.ZERO
+
+        if transaction.transaction_type in (
+            TransactionType.BUY,
+            TransactionType.SIP,
+        ):
+            position["units"] += units
+            position["invested_value"] += amount
+        elif transaction.transaction_type == TransactionType.SELL:
+            if position["units"] <= 0 or units <= 0:
+                return
+            average_cost = (
+                position["invested_value"] / position["units"]
+            )
+            position["units"] -= units
+            position["invested_value"] -= average_cost * units
+            if position["units"] <= 0:
+                position["units"] = HistoricalWealthAnalytics.ZERO
+                position["invested_value"] = HistoricalWealthAnalytics.ZERO
+
+    @staticmethod
+    def _is_legacy_mutual_fund_transaction(transaction):
+        """Return True for legacy generic transactions representing MFs."""
+        return "mutual fund" in str(
+            getattr(transaction, "sub_class", "") or ""
+        ).strip().lower()
+
+    @staticmethod
+    def _build_legacy_mutual_fund_nav_map(assets, end_date):
+        """Load AMFI master NAV history for legacy MF portfolio assets.
+
+        Legacy Excel imports use Asset + investments.Transaction, while the
+        dedicated MutualFundScheme/MutualFundNAV tables may be empty.  The
+        AMFI master tables are global and are therefore the authoritative
+        persisted NAV history for these assets.
+        """
+        asset_ids = [asset.pk for asset in assets]
+        if not asset_ids:
+            return {}
+
+        asset_isins = {
+            asset.pk: str(getattr(asset, "isin", "") or "").strip().upper()
+            for asset in assets
+        }
+        isins = {value for value in asset_isins.values() if value}
+        if not isins:
+            return {}
+
+        scheme_rows = (
+            AMFIMasterScheme.objects
+            .filter(is_active=True)
+            .filter(Q(isin_growth__in=isins) | Q(isin_dividend__in=isins))
+            .only("id", "isin_growth", "isin_dividend")
+        )
+
+        scheme_ids_by_isin = {}
+        for scheme in scheme_rows:
+            for value in (scheme.isin_growth, scheme.isin_dividend):
+                normalized = str(value or "").strip().upper()
+                if normalized:
+                    scheme_ids_by_isin[normalized] = scheme.id
+
+        matched_scheme_ids = {
+            scheme_ids_by_isin[isin]
+            for isin in isins
+            if isin in scheme_ids_by_isin
+        }
+        if not matched_scheme_ids:
+            return {}
+
+        nav_rows = (
+            AMFIMasterNAV.objects
+            .filter(
+                scheme_id__in=matched_scheme_ids,
+                date__lte=end_date,
+            )
+            .order_by("scheme_id", "date", "id")
+            .only("scheme_id", "date", "nav")
+        )
+
+        navs_by_scheme = defaultdict(list)
+        for nav in nav_rows:
+            navs_by_scheme[nav.scheme_id].append((nav.date, nav.nav))
+
+        result = {}
+        for asset in assets:
+            isin = asset_isins.get(asset.pk)
+            scheme_id = scheme_ids_by_isin.get(isin)
+            if scheme_id and navs_by_scheme.get(scheme_id):
+                result[asset.pk] = navs_by_scheme[scheme_id]
+
+        return result
 
     # ==========================================================
     # MUTUAL FUND TRANSACTION HELPER
@@ -889,6 +1009,8 @@ class HistoricalWealthAnalytics:
                 HistoricalWealthAnalytics._scope_q(user),
                 transaction_date__lte=target_date,
             )
+            .exclude(sub_class__icontains="mutual fund")
+            .order_by()
             .values_list(
                 "asset_id",
                 flat=True,
@@ -961,6 +1083,7 @@ class HistoricalWealthAnalytics:
                 HistoricalWealthAnalytics._scope_q(user),
                 transaction_date__lte=target_date,
             )
+            .order_by()
             .values_list(
                 "scheme_id",
                 flat=True,
@@ -1022,6 +1145,72 @@ class HistoricalWealthAnalytics:
 
             mutual_fund_value += (
                 current_value
+            )
+
+        # ======================================================
+        # LEGACY PORTFOLIO MUTUAL FUNDS
+        # ======================================================
+
+        legacy_mf_asset_ids = (
+            Transaction.objects
+            .filter(
+                HistoricalWealthAnalytics._scope_q(user),
+                transaction_date__lte=target_date,
+                sub_class__icontains="mutual fund",
+            )
+            .order_by()
+            .values_list("asset_id", flat=True)
+            .distinct()
+        )
+
+        legacy_mf_assets = list(
+            Asset.objects
+            .filter(
+                HistoricalWealthAnalytics._scope_q(user),
+                is_active=True,
+                id__in=legacy_mf_asset_ids,
+            )
+            .order_by("id")
+        )
+        legacy_mf_navs_by_asset = (
+            HistoricalWealthAnalytics._build_legacy_mutual_fund_nav_map(
+                legacy_mf_assets,
+                target_date,
+            )
+        )
+
+        for asset in legacy_mf_assets:
+            transactions = (
+                Transaction.objects
+                .filter(
+                    family=asset.family,
+                    asset=asset,
+                    transaction_date__lte=target_date,
+                    sub_class__icontains="mutual fund",
+                )
+                .order_by("transaction_date", "created_at", "id")
+            )
+            position = {
+                "units": HistoricalWealthAnalytics.ZERO,
+                "invested_value": HistoricalWealthAnalytics.ZERO,
+            }
+            for transaction in transactions:
+                HistoricalWealthAnalytics._apply_legacy_mutual_fund_transaction(
+                    position, transaction
+                )
+
+            if position["units"] <= 0:
+                continue
+
+            mutual_fund_invested += position["invested_value"]
+            nav_values = legacy_mf_navs_by_asset.get(asset.pk, [])
+            nav, _ = HistoricalWealthAnalytics._get_value_for_date(
+                nav_values, target_date, -1
+            )
+            mutual_fund_value += (
+                position["units"] * nav
+                if nav is not None
+                else position["invested_value"]
             )
 
         # ======================================================
@@ -1122,6 +1311,7 @@ class HistoricalWealthAnalytics:
                 HistoricalWealthAnalytics._scope_q(user),
                 transaction_date__lte=end_date,
             )
+            .exclude(sub_class__icontains="mutual fund")
         )
 
         if family_name:
@@ -1236,19 +1426,40 @@ class HistoricalWealthAnalytics:
             )
         )
 
-        mutual_fund_transactions_by_date = (
-            defaultdict(list)
-        )
-
+        mutual_fund_transactions_by_date = defaultdict(list)
         mutual_fund_scheme_ids = set()
 
         for transaction in mutual_fund_transactions:
+            mutual_fund_scheme_ids.add(transaction.scheme_id)
+            mutual_fund_transactions_by_date[
+                transaction.transaction_date
+            ].append(transaction)
 
-            mutual_fund_scheme_ids.add(
-                transaction.scheme_id
+        # Legacy Excel imports store MF transactions in the generic
+        # investments_transaction table.  They must be separated from the
+        # equity stream before positions and valuations are calculated.
+        legacy_mf_transactions_qs = (
+            Transaction.objects
+            .filter(
+                HistoricalWealthAnalytics._scope_q(user),
+                transaction_date__lte=end_date,
+                sub_class__icontains="mutual fund",
+            )
+        )
+        if family_name:
+            legacy_mf_transactions_qs = legacy_mf_transactions_qs.filter(
+                family_name=family_name
             )
 
-            mutual_fund_transactions_by_date[
+        legacy_mf_transactions = legacy_mf_transactions_qs.order_by(
+            "transaction_date", "created_at", "id"
+        )
+        legacy_mf_transactions_by_date = defaultdict(list)
+        legacy_mf_asset_ids = set()
+
+        for transaction in legacy_mf_transactions:
+            legacy_mf_asset_ids.add(transaction.asset_id)
+            legacy_mf_transactions_by_date[
                 transaction.transaction_date
             ].append(transaction)
 
@@ -1338,15 +1549,37 @@ class HistoricalWealthAnalytics:
         mutual_fund_positions = {}
 
         for scheme in schemes:
-
             mutual_fund_positions[scheme.pk] = {
-                "units": (
-                    HistoricalWealthAnalytics.ZERO
-                ),
-                "invested_value": (
-                    HistoricalWealthAnalytics.ZERO
-                ),
+                "units": HistoricalWealthAnalytics.ZERO,
+                "invested_value": HistoricalWealthAnalytics.ZERO,
             }
+
+        legacy_mf_assets = list(
+            Asset.objects
+            .filter(
+                HistoricalWealthAnalytics._scope_q(user),
+                is_active=True,
+                id__in=legacy_mf_asset_ids,
+            )
+            .order_by("id")
+        )
+        legacy_mf_asset_id_set = {asset.pk for asset in legacy_mf_assets}
+        legacy_mf_positions = {
+            asset.pk: {
+                "units": HistoricalWealthAnalytics.ZERO,
+                "invested_value": HistoricalWealthAnalytics.ZERO,
+            }
+            for asset in legacy_mf_assets
+        }
+        legacy_mf_navs_by_asset = (
+            HistoricalWealthAnalytics._build_legacy_mutual_fund_nav_map(
+                legacy_mf_assets,
+                end_date,
+            )
+        )
+        legacy_mf_nav_pointers = {
+            asset.pk: -1 for asset in legacy_mf_assets
+        }
 
         # ======================================================
         # APPLY TRANSACTIONS BEFORE START DATE
@@ -1395,17 +1628,22 @@ class HistoricalWealthAnalytics:
                 continue
 
             for transaction in transactions:
-
-                position = mutual_fund_positions.get(
-                    transaction.scheme_id
-                )
-
+                position = mutual_fund_positions.get(transaction.scheme_id)
                 if position is None:
                     continue
-
                 HistoricalWealthAnalytics._apply_mutual_fund_transaction(
-                    position,
-                    transaction,
+                    position, transaction
+                )
+
+        for transaction_date, transactions in legacy_mf_transactions_by_date.items():
+            if transaction_date >= start_date:
+                continue
+            for transaction in transactions:
+                position = legacy_mf_positions.get(transaction.asset_id)
+                if position is None:
+                    continue
+                HistoricalWealthAnalytics._apply_legacy_mutual_fund_transaction(
+                    position, transaction
                 )
 
         # ======================================================
@@ -1459,28 +1697,20 @@ class HistoricalWealthAnalytics:
             # MUTUAL FUND TRANSACTIONS FOR CURRENT DATE
             # --------------------------------------------------
 
-            for transaction in (
-                mutual_fund_transactions_by_date.get(
-                    current_date,
-                    [],
-                )
-            ):
-
-                # Defensive lookup.
-                #
-                # Even if database data contains a transaction
-                # referring to a missing/inactive scheme, the
-                # historical endpoint must not crash.
-                position = mutual_fund_positions.get(
-                    transaction.scheme_id
-                )
-
+            for transaction in mutual_fund_transactions_by_date.get(current_date, []):
+                position = mutual_fund_positions.get(transaction.scheme_id)
                 if position is None:
                     continue
-
                 HistoricalWealthAnalytics._apply_mutual_fund_transaction(
-                    position,
-                    transaction,
+                    position, transaction
+                )
+
+            for transaction in legacy_mf_transactions_by_date.get(current_date, []):
+                position = legacy_mf_positions.get(transaction.asset_id)
+                if position is None:
+                    continue
+                HistoricalWealthAnalytics._apply_legacy_mutual_fund_transaction(
+                    position, transaction
                 )
 
             # --------------------------------------------------
@@ -1626,6 +1856,26 @@ class HistoricalWealthAnalytics:
                 mutual_fund_value += (
                     units * nav
                 )
+
+            # Legacy generic-transaction mutual funds.
+            for asset in legacy_mf_assets:
+                position = legacy_mf_positions.get(asset.pk)
+                if position is None or position["units"] <= 0:
+                    continue
+
+                mutual_fund_invested += position["invested_value"]
+                nav_values = legacy_mf_navs_by_asset.get(asset.pk, [])
+                nav, pointer = HistoricalWealthAnalytics._get_value_for_date(
+                    nav_values,
+                    current_date,
+                    legacy_mf_nav_pointers.get(asset.pk, -1),
+                )
+                legacy_mf_nav_pointers[asset.pk] = pointer
+
+                if nav is None:
+                    mutual_fund_value += position["invested_value"]
+                else:
+                    mutual_fund_value += position["units"] * nav
 
             # --------------------------------------------------
             # TOTALS

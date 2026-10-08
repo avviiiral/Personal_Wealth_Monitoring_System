@@ -105,6 +105,15 @@
       ]
     },
     "tier_1_publishers": [
+      "morningstar",
+      "factset",
+      "trendlyne",
+      "tickertape",
+      "stockedge",
+      "value research",
+      "market mojo",
+      "marketmojo",
+      "screener",
       "reuters",
       "bloomberg",
       "cnbc",

@@ -10,7 +10,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from investments.models import Asset, AssetCategory, AssetUnderlyingHolding, PortfolioPosition, Transaction, TransactionType
-from investments.services.xirr import XIRRCalculator
+from analytics.services.cash_flows import build_cash_flows, xirr_percent
 from market_data.models import DataSource, MarketPrice
 from users.permissions import family_scope, require_active_family
 from portfolio.services.portfolio_position_engine import PortfolioPositionEngine
@@ -86,6 +86,7 @@ def holding_report(request):
             "transaction_type",
             "transaction_date",
             "amount",
+            "fees",
             "notes",
         )
         .order_by("transaction_date", "id")
@@ -112,16 +113,7 @@ def holding_report(request):
         return value or default
 
     def cash_flows_for(transactions_for_group):
-        cash_flows = []
-        for tx in transactions_for_group:
-            amount = tx.amount or 0
-            if tx.notes == "DIVIDEND REINVESTMENT":
-                continue
-            if tx.transaction_type in (TransactionType.BUY, TransactionType.SIP):
-                cash_flows.append((tx.transaction_date, -float(amount)))
-            elif tx.transaction_type == TransactionType.SELL:
-                cash_flows.append((tx.transaction_date, float(amount)))
-        return cash_flows
+        return build_cash_flows(transactions_for_group)
 
     def calculate_group_xirr(group_key, current_value):
         cash_flows = cash_flows_for(xirr_transactions.get(group_key, []))
@@ -129,7 +121,7 @@ def holding_report(request):
             cash_flows.append((date.today(), current_value))
         if len(cash_flows) < 2:
             return None
-        return XIRRCalculator.calculate(cash_flows)
+        return xirr_percent(cash_flows)
 
     asset_class_current_values = {}
     subclass_current_values = {}
@@ -182,7 +174,7 @@ def holding_report(request):
             cash_flows.append((date.today(), float(position.current_value)))
         if len(cash_flows) < 2:
             return None
-        return XIRRCalculator.calculate(cash_flows)
+        return xirr_percent(cash_flows)
 
     uploaded_underlying_by_asset = {}
     if asset_ids:
@@ -225,22 +217,12 @@ def holding_report(request):
             percentage = float(underlying_row.holding_percentage or 0) / 100.0
             if percentage <= 0:
                 continue
-            cash_flows = []
-            for tx in position_transactions:
-                amount = float(tx.amount or 0) * percentage
-                if tx.notes == "DIVIDEND REINVESTMENT":
-                    continue
-                if tx.transaction_type in (TransactionType.BUY, TransactionType.SIP):
-                    cash_flows.append((tx.transaction_date, -amount))
-                elif tx.transaction_type == TransactionType.SELL:
-                    cash_flows.append((tx.transaction_date, amount))
+            cash_flows = build_cash_flows(position_transactions, scale=percentage)
 
             current_value = float(position.current_value or 0) * percentage
             if current_value > 0:
                 cash_flows.append((date.today(), current_value))
-            xirr = None
-            if len(cash_flows) >= 2:
-                xirr = XIRRCalculator.calculate(cash_flows)
+            xirr = xirr_percent(cash_flows)
 
             underlying_values[str(underlying_row.stock_name).strip()] = {
                 "xirr": xirr,

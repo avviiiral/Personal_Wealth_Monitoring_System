@@ -16,6 +16,7 @@ from mutual_funds.models import (
     MutualFundTransactionType,
 )
 
+from .cash_flows import DIVIDEND_REINVESTMENT_NOTE
 from .xirr import XIRRCalculator
 from users.permissions import get_active_family_group, is_system_owner
 
@@ -505,6 +506,8 @@ class UnifiedWealthAnalytics:
         for transaction in transactions:
             amount = transaction.amount or UnifiedWealthAnalytics.ZERO
             fees = transaction.fees or UnifiedWealthAnalytics.ZERO
+            if transaction.notes == DIVIDEND_REINVESTMENT_NOTE:
+                continue
 
             if transaction.transaction_type in (
                 TransactionType.BUY,

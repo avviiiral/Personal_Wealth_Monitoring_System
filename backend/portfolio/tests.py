@@ -978,7 +978,8 @@ class ManualPriceEffectiveDateAndMissingPriceTests(TestCase):
 
         self.assertIsNotNone(node)
         self.assertIsNone(node["current_price"])
-        self.assertIsNone(node["current_value"])
+        # Unpriced positions are carried at cost until a price is entered.
+        self.assertEqual(node["current_value"], 1000.0)
         self.assertEqual(node["pnl"], 0.0)
         self.assertEqual(node["pnl_percentage"], 0.0)
 
@@ -1012,8 +1013,9 @@ class ManualPriceEffectiveDateAndMissingPriceTests(TestCase):
 
         holding = HoldingCalculationEngine.rebuild_holding(asset)
 
-        self.assertEqual(holding.current_price, Decimal("0"))
-        self.assertEqual(holding.current_value, Decimal("0"))
+        # Carried at cost (5 x 200) with zero P&L until a price is entered.
+        self.assertEqual(holding.current_price, Decimal("200"))
+        self.assertEqual(holding.current_value, Decimal("1000"))
         self.assertEqual(holding.unrealized_pnl, Decimal("0"))
 
     def test_dashboard_holding_uses_reit_invit_reference_price(self):

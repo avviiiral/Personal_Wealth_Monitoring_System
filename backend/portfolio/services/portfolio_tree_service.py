@@ -6,7 +6,7 @@ from django.db.models import OuterRef, QuerySet, Subquery, Q
 
 from investments.models import Asset, SecurityMaster, Transaction, TransactionType
 from investments.services.security_master import SecurityMasterService
-from investments.services.xirr import XIRRCalculator
+from analytics.services.cash_flows import build_cash_flows, xirr_percent
 from market_data.models import DataSource, ManualAssetPrice, MarketPrice
 from market_data.services.mutual_fund_nav_service import MutualFundNAVService
 from market_data.services.yahoo_finance import YahooFinanceService
@@ -51,7 +51,7 @@ class PortfolioTreeService:
                 "owner_id", "family_id", "family_name", "portfolio",
                 "asset_class", "sub_class", "asset_name", "underlying",
                 "advisors", "transaction_date", "transaction_type",
-                "quantity", "price_per_unit", "amount", "notes", "id",
+                "quantity", "price_per_unit", "amount", "fees", "notes", "id",
                 "asset__owner_id", "asset__family_id", "asset__name",
                 "asset__category", "asset__isin", "asset__symbol",
                 "asset__security_master__id",
@@ -115,18 +115,10 @@ class PortfolioTreeService:
 
     @staticmethod
     def _calculate_xirr(transactions, current_quantity, current_value):
-        cash_flows = []
-        for tx in transactions:
-            amount = tx.amount or Decimal("0")
-            if tx.notes == "DIVIDEND REINVESTMENT":
-                continue
-            if tx.transaction_type in (TransactionType.BUY, TransactionType.SIP):
-                cash_flows.append((tx.transaction_date, -float(amount)))
-            elif tx.transaction_type == TransactionType.SELL:
-                cash_flows.append((tx.transaction_date, float(amount)))
+        cash_flows = build_cash_flows(transactions)
         if current_quantity > 0 and current_value is not None and current_value > 0:
             cash_flows.append((date.today(), float(current_value)))
-        return XIRRCalculator.calculate(cash_flows) if len(cash_flows) >= 2 else None
+        return xirr_percent(cash_flows)
 
     REIT_INVIT_REFERENCE_SYMBOLS = {
         "Mindspace Business Parks": ("MINDSPACE.NS", "MINDSPACE.BO"),
@@ -418,20 +410,17 @@ class PortfolioTreeService:
         average_cost = position["average_cost"]
         price_data = price_cache.get(asset.id, {})
         current_price = price_data.get("current_price")
-        current_value = (
+        priced_value = (
             quantity * Decimal(str(current_price))
             if current_price is not None
             else None
         )
 
-        # If no reliable current price can be resolved for an underlying,
-        # do not manufacture a loss from the missing quote. P/L is explicitly
-        # neutral until a price is available or entered manually.
-        pnl = (
-            current_value - invested_value
-            if current_value is not None
-            else Decimal("0")
-        )
+        # No reliable price: carry the position at cost (value = invested
+        # amount, P/L = 0) until a price is entered manually. XIRR still sees
+        # ``priced_value`` (None) so no fake terminal cash flow is invented.
+        current_value = priced_value if priced_value is not None else invested_value
+        pnl = current_value - invested_value
         pnl_percentage = (
             (pnl / invested_value) * Decimal("100")
             if invested_value > Decimal("0")
@@ -440,7 +429,7 @@ class PortfolioTreeService:
         xirr = cls._calculate_xirr(
             xirr_transactions,
             quantity,
-            current_value,
+            priced_value,
         )
         security_master = getattr(asset, "security_master", None)
         if security_master is None and security_master_cache is not None:
@@ -451,7 +440,9 @@ class PortfolioTreeService:
                 security_key = ("owner_isin", asset.owner_id, isin) if isin else ("owner_name", asset.owner_id, asset.name)
             security_master = security_master_cache.get(security_key)
         if security_master is None:
-            security_master = SecurityMasterService.get_for_asset(owner=asset.owner, asset=asset, family=asset.family)
+            # Pass primary keys: ORM filters accept them and it avoids two lazy
+            # owner/family row loads per asset.
+            security_master = SecurityMasterService.get_for_asset(owner=asset.owner_id, asset=asset, family=asset.family_id)
         asset_name = cls._clean(first.asset_name)
         return {
             "id": asset.id,

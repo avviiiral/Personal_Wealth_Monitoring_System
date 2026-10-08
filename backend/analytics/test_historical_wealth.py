@@ -18,6 +18,8 @@ from market_data.models import (
     MarketPrice,
 )
 from mutual_funds.models import (
+    AMFIMasterNAV,
+    AMFIMasterScheme,
     MutualFundNAV,
     MutualFundScheme,
     MutualFundTransaction,
@@ -198,6 +200,100 @@ class HistoricalWealthAnalyticsTests(TestCase):
         self.assertEqual(
             result["equity"]["portfolio_value"],
             Decimal("1200"),
+        )
+
+    # ==========================================================
+    # LEGACY PORTFOLIO MUTUAL FUND HISTORICAL VALUE
+    # ==========================================================
+
+    def create_legacy_mutual_fund(self):
+        asset = Asset.objects.create(
+            owner=self.user,
+            family=self.family,
+            name="Legacy Test Mutual Fund",
+            category=AssetCategory.STOCK,
+            isin="INFLEGACY0001",
+            currency="INR",
+            is_active=True,
+        )
+
+        Transaction.objects.create(
+            owner=self.user,
+            family=self.family,
+            family_name="DAJ",
+            asset=asset,
+            transaction_type=TransactionType.BUY,
+            transaction_date=date(2026, 1, 1),
+            quantity=Decimal("100"),
+            price_per_unit=Decimal("100"),
+            amount=Decimal("10000"),
+            fees=Decimal("0"),
+            asset_class="Equity",
+            sub_class="Equity Mutual Fund",
+            asset_name=asset.name,
+        )
+
+        master = AMFIMasterScheme.objects.create(
+            scheme_code="999999",
+            scheme_name=asset.name,
+            isin_growth=asset.isin,
+            is_active=True,
+        )
+        AMFIMasterNAV.objects.create(
+            scheme=master,
+            date=date(2026, 1, 1),
+            nav=Decimal("100"),
+            source="AMFI",
+        )
+        AMFIMasterNAV.objects.create(
+            scheme=master,
+            date=date(2026, 1, 2),
+            nav=Decimal("110"),
+            source="AMFI",
+        )
+        return asset
+
+    def test_legacy_mutual_fund_is_not_classified_as_equity(self):
+        self.create_legacy_mutual_fund()
+
+        result = HistoricalWealthAnalytics.calculate_historical_value(
+            self.user,
+            date(2026, 1, 2),
+        )
+
+        self.assertEqual(
+            result["equity"]["invested_value"],
+            Decimal("0"),
+        )
+        self.assertEqual(
+            result["mutual_funds"]["invested_value"],
+            Decimal("10000"),
+        )
+        self.assertEqual(
+            result["mutual_funds"]["portfolio_value"],
+            Decimal("11000"),
+        )
+
+    def test_legacy_mutual_fund_history_uses_master_nav(self):
+        self.create_legacy_mutual_fund()
+
+        results = HistoricalWealthAnalytics.calculate_history(
+            self.user,
+            date(2026, 1, 1),
+            date(2026, 1, 2),
+        )
+
+        self.assertEqual(
+            results[0]["mutual_funds"]["portfolio_value"],
+            Decimal("10000"),
+        )
+        self.assertEqual(
+            results[1]["mutual_funds"]["portfolio_value"],
+            Decimal("11000"),
+        )
+        self.assertEqual(
+            results[1]["equity"]["portfolio_value"],
+            Decimal("0"),
         )
 
     # ==========================================================

@@ -33,34 +33,30 @@ class AnalyticsViewModelService:
             xirr_filters={"family": family_name} if family_name else {},
         )
 
-        rows_by_key = {}
+        rows = []
         for family_node in tree.get("families", []):
+            if family_name and family_node.get("family_name") != family_name:
+                continue
             for portfolio in family_node.get("portfolios", []):
                 for asset_class in portfolio.get("asset_classes", []):
                     for sub_class in asset_class.get("sub_classes", []):
                         for asset in sub_class.get("assets", []):
-                            xirr = asset.get("asset_name_xirr")
+                            xirr = asset.get("xirr")
+                            if xirr is None:
+                                continue
                             try:
                                 xirr_value = float(xirr)
                             except (TypeError, ValueError):
                                 continue
+                            rows.append({
+                                "asset_name": asset.get("asset_name") or "Unnamed Asset",
+                                "asset_class": sub_class.get("sub_class") or "Unassigned",
+                                "xirr_percentage": xirr_value,
+                                "underlying": asset.get("underlying") or asset.get("asset_name") or "Unnamed Underlying",
+                            })
 
-                            asset_name = (asset.get("asset_name") or "").strip() or "Unnamed Asset"
-                            sub_class_name = (sub_class.get("sub_class") or "").strip() or "Unassigned"
-                            key = f"{sub_class_name}::{asset_name}"
-
-                            if key not in rows_by_key:
-                                rows_by_key[key] = {
-                                    "asset_name": asset_name,
-                                    "asset_class": sub_class_name,
-                                    "xirr_percentage": xirr_value,
-                                }
-
-        return sorted(
-            rows_by_key.values(),
-            key=lambda row: row["xirr_percentage"],
-            reverse=True,
-        ), tree
+        rows.sort(key=lambda row: row["xirr_percentage"], reverse=True)
+        return rows, tree
 
     @classmethod
     def _insights(cls, performance, allocation, historical):

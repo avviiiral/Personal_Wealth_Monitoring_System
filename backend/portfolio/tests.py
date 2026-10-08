@@ -13,6 +13,7 @@ from market_data.models import MarketPrice
 from portfolio.services.portfolio_tree_service import (
     PortfolioTreeService,
 )
+from portfolio.services.portfolio_calculation_service import PortfolioCalculationService
 
 
 class PortfolioTreeServiceTests(TestCase):
@@ -263,6 +264,63 @@ class PortfolioTreeServiceTests(TestCase):
             asset["average_cost"],
             100.0,
         )
+
+
+class PortfolioCalculationServiceTests(TestCase):
+    def setUp(self):
+        User = get_user_model()
+        self.user = User.objects.create_user(
+            username="portfolio_calculation_user",
+            password="test-password",
+        )
+        self.family = FamilyGroup.objects.create(name="Portfolio Calculation Family")
+        self.user.profile.family_groups.add(self.family)
+
+        self.asset = Asset.objects.create(
+            family=self.family,
+            owner=self.user,
+            name="Calculation Equity",
+            category="STOCK",
+            isin="INE000CALC001",
+        )
+        Transaction.objects.create(
+            owner=self.user,
+            family=self.family,
+            asset=self.asset,
+            family_name="Family A",
+            portfolio="Portfolio A",
+            asset_class="Equity",
+            sub_class="Large Cap",
+            asset_name="Calculation Equity",
+            transaction_date=date(2026, 1, 10),
+            transaction_type="BUY",
+            quantity=Decimal("10"),
+            price_per_unit=Decimal("100"),
+            amount=Decimal("1000"),
+            fees=Decimal("0"),
+        )
+
+    def test_calculations_are_aggregated_server_side(self):
+        data = PortfolioCalculationService.calculate(
+            owner=self.user,
+            family_id=self.family.id,
+        )
+
+        self.assertEqual(len(data["subclasses"]), 1)
+        self.assertEqual(data["subclasses"][0]["sub_class"], "Large Cap")
+        self.assertEqual(data["subclasses"][0]["quantity"], 10.0)
+        self.assertEqual(data["subclasses"][0]["invested_value"], 1000.0)
+        self.assertEqual(data["subclasses"][0]["current_value"], 1000.0)
+        self.assertEqual(data["subclasses"][0]["pnl"], 0.0)
+
+        self.assertEqual(len(data["asset_names"]), 1)
+        self.assertEqual(data["asset_names"][0]["asset_name"], "Calculation Equity")
+        self.assertEqual(data["asset_names"][0]["invested_value"], 1000.0)
+
+        self.assertEqual(len(data["family_subclasses"]), 1)
+        self.assertEqual(data["family_subclasses"][0]["family_name"], "Family A")
+        self.assertEqual(data["family_subclasses"][0]["sub_class"], "Large Cap")
+
 
 
 class PortfolioTreeAPITests(TestCase):

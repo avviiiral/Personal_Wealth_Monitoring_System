@@ -16,6 +16,7 @@ from .services.portfolio_analytics import PortfolioAnalytics
 from .services.unified_wealth import UnifiedWealthAnalytics
 from .services.equity_analysis import EquityAnalysisService
 from .services.mutual_fund_lookthrough import MutualFundLookThroughService
+from .services.analytics_view_model import AnalyticsViewModelService
 from users.permissions import (
     get_family_group_ids,
     is_system_owner,
@@ -24,6 +25,53 @@ from users.permissions import (
 from portfolio.services.holding_engine import HoldingCalculationEngine
 from portfolio.services.portfolio_position_engine import PortfolioPositionEngine
 
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def analytics_dashboard(request):
+    """Return the complete backend-calculated Analytics view model."""
+    period = request.GET.get("period", "30d")
+
+    from .services.historical_wealth import HistoricalWealthAnalytics
+
+    if period == "this-month":
+        start_date = date.today().replace(day=1)
+        end_date = date.today()
+    elif period == "last-month":
+        current_month_start = date.today().replace(day=1)
+        end_date = current_month_start - timedelta(days=1)
+        start_date = end_date.replace(day=1)
+    elif period == "inception":
+        start_date = HistoricalWealthAnalytics.get_inception_date(request.user) or date.today()
+        end_date = date.today()
+    else:
+        try:
+            days = int(request.GET.get("days", 30))
+        except (TypeError, ValueError):
+            days = 30
+        days = max(1, min(days, 3650))
+        end_date = date.today()
+        start_date = end_date - timedelta(days=days - 1)
+
+    def historical_loader(user):
+        return {
+            "days": (end_date - start_date).days + 1,
+            "start_date": start_date,
+            "end_date": end_date,
+            "results": HistoricalWealthAnalytics.calculate_history(
+                user,
+                start_date,
+                end_date,
+            ),
+        }
+
+    return Response(
+        AnalyticsViewModelService.calculate(
+            request.user,
+            historical_loader=historical_loader,
+        )
+    )
 
 
 @api_view(["GET"])

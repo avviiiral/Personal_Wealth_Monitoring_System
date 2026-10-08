@@ -72,6 +72,8 @@ describe('PortfolioComponent', () => {
                         pnl_percentage: 20,
 
                         xirr: 20,
+                        sub_class_xirr: 20,
+                        asset_name_xirr: 20,
 
                         sector: 'Technology',
                         cap_type: 'Large Cap',

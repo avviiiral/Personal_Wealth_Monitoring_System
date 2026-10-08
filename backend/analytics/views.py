@@ -44,7 +44,7 @@ def analytics_dashboard(request):
         end_date = current_month_start - timedelta(days=1)
         start_date = end_date.replace(day=1)
     elif period == "inception":
-        start_date = HistoricalWealthAnalytics.get_inception_date(request.user) or date.today()
+        start_date = HistoricalWealthAnalytics.get_inception_date(request.user, family_name=family_name) or date.today()
         end_date = date.today()
     else:
         try:
@@ -64,6 +64,7 @@ def analytics_dashboard(request):
                 user,
                 start_date,
                 end_date,
+                family_name=family_name,
             ),
         }
 

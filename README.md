@@ -1096,6 +1096,12 @@ _A simplified conceptual view — see each app's `models.py` for exact fields an
 
 ---
 
+## Dashboard and Analytics calculation ownership
+
+Dashboard and Analytics use backend view models as the authoritative financial/business calculation layer. Django owns valuation, P&L, XIRR, allocation, historical valuation, standard-allocation targets, advisor metrics, market-cap/sector analytics, performance aggregation, and page-level insights. Angular consumes the aggregated view model and is responsible for presentation, formatting, filters, interaction state, and chart rendering.
+
+The page-level Dashboard/Analytics response is available at `GET /api/analytics/wealth/dashboard/` with `days` for rolling periods, `period=this-month|last-month|inception`, and an optional `family` filter. Existing granular wealth endpoints remain available for other consumers and are not removed by this refactor.
+
 ## 🔌 API reference
 
 All endpoints require an authenticated Django session unless noted. Auth uses **session cookie + CSRF token** (no bearer tokens).

@@ -5,6 +5,7 @@ from .views import (
     analytics_historical,
     analytics_performance,
     analytics_summary,
+    analytics_dashboard,
     wealth_allocation,
     wealth_allocation_by_advisor,
     wealth_composition_by_amc,
@@ -35,6 +36,7 @@ urlpatterns = [
     path("historical/", analytics_historical, name="analytics-historical"),
 
     # Unified wealth APIs
+    path("wealth/dashboard/", analytics_dashboard, name="analytics-dashboard"),
     path("wealth/summary/", wealth_summary, name="wealth-summary"),
     path("wealth/recalculate/", wealth_recalculate, name="wealth-recalculate"),
     path("wealth/allocation/", wealth_allocation, name="wealth-allocation"),

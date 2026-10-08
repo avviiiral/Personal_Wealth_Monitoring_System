@@ -72,6 +72,8 @@ describe('PortfolioComponent', () => {
                         pnl_percentage: 20,
 
                         xirr: 20,
+                        sub_class_xirr: 20,
+                        asset_name_xirr: 20,
 
                         sector: 'Technology',
                         cap_type: 'Large Cap',
@@ -79,6 +81,7 @@ describe('PortfolioComponent', () => {
                         amc_name: 'ICICI Prudential',
                         pe_ratio: 22.5,
                         pb_ratio: 3.1,
+                        peg_ratio: null,
                         roe: 18.2,
                         credit_rating: 'AAA',
                         ytm: 7.2,
@@ -186,9 +189,9 @@ describe('PortfolioComponent', () => {
   // ==========================================================
 
   it('should expose family options', () => {
-    expect(component.familyOptions.length).toBe(1);
+    expect(component.familyMemberOptions.length).toBe(1);
 
-    expect(component.familyOptions[0]).toBe('Family A');
+    expect(component.familyMemberOptions[0]).toBe('Family A');
   });
 
   // ==========================================================
@@ -210,9 +213,9 @@ describe('PortfolioComponent', () => {
   });
 
   it('should filter by family', () => {
-    component.selectFamily('Family A');
+    component.selectFamilyMember('Family A');
 
-    expect(component.selectedFamily).toBe('Family A');
+    expect(component.selectedFamilyMember).toBe('Family A');
 
     expect(component.filteredFamilies.length).toBe(1);
 
@@ -220,13 +223,13 @@ describe('PortfolioComponent', () => {
   });
 
   it('should clear family selection when selecting the same family again', () => {
-    component.selectFamily('Family A');
+    component.selectFamilyMember('Family A');
 
-    expect(component.selectedFamily).toBe('Family A');
+    expect(component.selectedFamilyMember).toBe('Family A');
 
-    component.selectFamily('Family A');
+    component.selectFamilyMember('Family A');
 
-    expect(component.selectedFamily).toBe('');
+    expect(component.selectedFamilyMember).toBe('');
 
     expect(component.filteredFamilies.length).toBe(1);
   });
@@ -312,21 +315,21 @@ describe('PortfolioComponent', () => {
   // ==========================================================
 
   it('should clear family and asset class filters', () => {
-    component.selectFamily('Family A');
+    component.selectFamilyMember('Family A');
 
     component.selectAssetClass('Equity');
 
     component.toggleSubClass('Large Cap');
 
-    expect(component.selectedFamily).toBe('Family A');
+    expect(component.selectedFamilyMember).toBe('Family A');
 
     expect(component.selectedAssetClass).toBe('Equity');
 
     expect(component.expandedSubClass).toBe('Large Cap');
 
-    component.clearFamily();
+    component.clearFamilyMember();
 
-    expect(component.selectedFamily).toBe('');
+    expect(component.selectedFamilyMember).toBe('');
 
     expect(component.selectedAssetClass).toBe('');
 
@@ -334,7 +337,7 @@ describe('PortfolioComponent', () => {
   });
 
   it('should clear only asset class filter', () => {
-    component.selectFamily('Family A');
+    component.selectFamilyMember('Family A');
 
     component.selectAssetClass('Equity');
 
@@ -342,7 +345,7 @@ describe('PortfolioComponent', () => {
 
     component.clearAssetClass();
 
-    expect(component.selectedFamily).toBe('Family A');
+    expect(component.selectedFamilyMember).toBe('Family A');
 
     expect(component.selectedAssetClass).toBe('');
 
@@ -354,11 +357,11 @@ describe('PortfolioComponent', () => {
   // ==========================================================
 
   it('should correctly identify selected family', () => {
-    expect(component.isFamilySelected('Family A')).toBe(false);
+    expect(component.isFamilyMemberSelected('Family A')).toBe(false);
 
-    component.selectFamily('Family A');
+    component.selectFamilyMember('Family A');
 
-    expect(component.isFamilySelected('Family A')).toBe(true);
+    expect(component.isFamilyMemberSelected('Family A')).toBe(true);
   });
 
   it('should correctly identify selected asset class', () => {
@@ -415,10 +418,13 @@ describe('PortfolioComponent', () => {
   // PRICE DATE
   // ==========================================================
 
-  it('should handle missing price date', () => {
-    const asset = component.subClassSummaries[0].assets[0];
+  it('should format a missing price date', () => {
+    const asset = {
+      ...component.subClassSummaries[0].assets[0],
+      price_date: null,
+    };
 
-    expect(component.hasPriceDate(asset)).toBe(false);
+    expect(component.formatPriceDate(asset.price_date)).toBe('-');
   });
 
   // ==========================================================
@@ -472,7 +478,7 @@ describe('PortfolioComponent', () => {
 
     expect(component.isQuantDetailsExpanded(asset)).toBe(true);
 
-    component.clearFamily();
+    component.clearFamilyMember();
 
     expect(component.isQuantDetailsExpanded(asset)).toBe(false);
   });

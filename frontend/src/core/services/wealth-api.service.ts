@@ -4,6 +4,28 @@ import { HttpClient, HttpHeaders, HttpParams } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import { environment } from '../../environments/environment';
 
+export interface AnalyticsInsights {
+  best_performer: { asset_name: string; asset_class: string; xirr_percentage: number } | null;
+  worst_performer: { asset_name: string; asset_class: string; xirr_percentage: number } | null;
+  largest_allocation: { category: string; value: number; percentage: number } | null;
+  period_value_change: number;
+}
+
+export interface AnalyticsViewModel {
+  summary: Record<string, unknown>;
+  investment_summary: Record<string, unknown>;
+  allocation: { results: Array<Record<string, unknown>> };
+  performance: { results: Array<{ asset_name: string; asset_class: string; xirr_percentage: number }> };
+  advisor_allocation: Record<string, unknown>;
+  advisor_performance: { results: Array<Record<string, unknown>> };
+  xirr: { xirr_percentage: number | null };
+  historical: { results: Array<Record<string, unknown>>; [key: string]: unknown };
+  market_cap_allocation: Record<string, unknown>;
+  sector_allocation: Record<string, unknown>;
+  insights: AnalyticsInsights;
+  portfolio_tree: any;
+}
+
 @Injectable({
   providedIn: 'root',
 })
@@ -11,6 +33,20 @@ export class WealthApiService {
   private readonly http = inject(HttpClient);
 
   private readonly baseUrl = `${environment.apiUrl}/api/analytics/wealth`;
+
+  getAnalyticsDashboard(period: string = '30d', days: number = 30, family?: string): Observable<AnalyticsViewModel> {
+    let params = new HttpParams();
+    if (period === '30d' || period === '90d' || period === '6m' || period === '1y') {
+      params = params.set('days', days);
+    } else {
+      params = params.set('period', period);
+    }
+    if (family) params = params.set('family', family);
+    return this.http.get<AnalyticsViewModel>(`${this.baseUrl}/dashboard/`, {
+      params,
+      withCredentials: true,
+    });
+  }
 
   recalculate(): Observable<any> {
     const csrfToken = this.getCookie('csrftoken');

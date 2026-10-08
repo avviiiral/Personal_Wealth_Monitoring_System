@@ -7,6 +7,7 @@ from users.models import FamilyGroup
 
 from .models import StandardAllocation
 from .services.investment_summary import InvestmentSummaryService
+from .services.analytics_view_model import AnalyticsViewModelService
 
 from decimal import Decimal 
 
@@ -454,3 +455,49 @@ class FamilyStandardAllocationApiTests(TestCase):
             response_b.data["allocations"]["Equities"]["percent"],
             40.0,
         )
+
+
+class AnalyticsViewModelServiceTests(TestCase):
+    def test_insights_are_calculated_server_side(self):
+        performance = [
+            {"asset_name": "Best", "asset_class": "Direct Equity", "xirr_percentage": 30.0},
+            {"asset_name": "Worst", "asset_class": "Debt", "xirr_percentage": -5.0},
+        ]
+        allocation = {
+            "results": [
+                {"category": "Equities", "value": 700, "percentage": 70.0},
+                {"category": "Fixed Income", "value": 300, "percentage": 30.0},
+            ],
+        }
+        historical = {
+            "results": [
+                {"date": "2026-01-01", "portfolio_value": 1000, "invested_value": 900},
+                {"date": "2026-01-31", "portfolio_value": 1200, "invested_value": 950},
+            ],
+        }
+
+        insights = AnalyticsViewModelService._insights(
+            performance,
+            allocation,
+            historical,
+        )
+
+        self.assertEqual(insights["best_performer"]["asset_name"], "Best")
+        self.assertEqual(insights["best_performer"]["xirr_percentage"], 30.0)
+        self.assertEqual(insights["worst_performer"]["asset_name"], "Worst")
+        self.assertEqual(insights["worst_performer"]["xirr_percentage"], -5.0)
+        self.assertEqual(insights["largest_allocation"]["category"], "Equities")
+        self.assertEqual(insights["largest_allocation"]["percentage"], 70.0)
+        self.assertEqual(insights["period_value_change"], 20.0)
+
+    def test_empty_insights_are_deterministic(self):
+        insights = AnalyticsViewModelService._insights(
+            [],
+            {"results": []},
+            {"results": []},
+        )
+
+        self.assertIsNone(insights["best_performer"])
+        self.assertIsNone(insights["worst_performer"])
+        self.assertIsNone(insights["largest_allocation"])
+        self.assertEqual(insights["period_value_change"], 0)

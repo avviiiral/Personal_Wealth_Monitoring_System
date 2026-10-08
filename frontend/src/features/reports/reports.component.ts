@@ -99,7 +99,7 @@ export class ReportsComponent implements OnInit {
      to join Quantity / Invested Value / Current Value / Gain / XIRR
      onto the Sub Class and Asset Name rows here, by asset id. */
   private portfolioTree: FamilyNode[] = [];
-  private portfolioCalculations: PortfolioCalculations = { subclasses: [], asset_names: [], family_subclasses: [] };
+  private portfolioCalculations: PortfolioCalculations = { subclasses: [], asset_names: [], family_subclasses: [], report_subclass_summaries: [] };
 
   loading = true;
   error = '';
@@ -157,7 +157,7 @@ export class ReportsComponent implements OnInit {
         this.portfolioApi.getPortfolioTree().subscribe({
           next: (treeResponse) => {
             this.portfolioTree = treeResponse.families ?? [];
-            this.portfolioCalculations = treeResponse.calculations ?? { subclasses: [], asset_names: [], family_subclasses: [] };
+            this.portfolioCalculations = treeResponse.calculations ?? { subclasses: [], asset_names: [], family_subclasses: [], report_subclass_summaries: [] };
 
             this.validateSelections();
 
@@ -174,7 +174,7 @@ export class ReportsComponent implements OnInit {
                portfolioTree, so we don't block the page on this -
                those columns just show as 0/blank until it's back. */
             this.portfolioTree = [];
-            this.portfolioCalculations = { subclasses: [], asset_names: [], family_subclasses: [] };
+            this.portfolioCalculations = { subclasses: [], asset_names: [], family_subclasses: [], report_subclass_summaries: [] };
 
             this.validateSelections();
 
@@ -572,13 +572,13 @@ export class ReportsComponent implements OnInit {
     }).subscribe({
       next: (response) => {
         this.portfolioTree = response.families ?? [];
-        this.portfolioCalculations = response.calculations ?? { subclasses: [], asset_names: [], family_subclasses: [] };
+        this.portfolioCalculations = response.calculations ?? { subclasses: [], asset_names: [], family_subclasses: [], report_subclass_summaries: [] };
         this.validateSelections();
         this.cdr.detectChanges();
       },
       error: (error) => {
         console.error('Reports financial calculations API error:', error);
-        this.portfolioCalculations = { subclasses: [], asset_names: [], family_subclasses: [] };
+        this.portfolioCalculations = { subclasses: [], asset_names: [], family_subclasses: [], report_subclass_summaries: [] };
         this.cdr.detectChanges();
       },
     });

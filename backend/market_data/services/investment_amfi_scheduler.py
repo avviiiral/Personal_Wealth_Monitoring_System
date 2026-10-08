@@ -40,7 +40,7 @@ class InvestmentAMFIScheduler:
             from mutual_funds.services.investment_amfi import InvestmentAMFIService
             from mutual_funds.services.amfi import AMFIService
 
-            result = InvestmentAMFIService.refresh_for_all_investments()
+            result = InvestmentAMFIService.refresh_for_investments_with_history()
 
             # Materialize the latest master NAV into each user's family
             # models so existing portfolio/current-value flows see today's NAV.
@@ -54,13 +54,6 @@ class InvestmentAMFIScheduler:
                         user_id,
                     )
 
-            # This performs a coverage check before downloading history:
-            # complete/current coverage => no historical request;
-            # missing/old coverage => import only the required range.
-            from portfolio.mis_history_prefetch import MISHistoryPrefetch
-
-            history = MISHistoryPrefetch.run_for_all_families()
-
             logger.info(
                 "Investment AMFI refresh completed: requested_isins=%s "
                 "matched_isins=%s schemes=%s nav_records=%s "
@@ -70,7 +63,7 @@ class InvestmentAMFIScheduler:
                 result.get("schemes", 0),
                 result.get("nav_records", 0),
                 result.get("unmatched_isins", []),
-                history,
+                result.get("history", {}),
             )
         except Exception:
             logger.exception("Investment AMFI 30-minute refresh failed.")

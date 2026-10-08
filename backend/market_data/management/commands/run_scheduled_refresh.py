@@ -18,8 +18,9 @@ class Command(BaseCommand):
 
     Runs, in dependency order:
 
-        1. refresh_amfi_master            - AMFI scheme/NAV master,
-                                            downloaded once for all users.
+        1. refresh_investment_amfi        - latest AMFI NAVs only for
+                                            mutual-fund ISINs actually held
+                                            in investments.
         2. update_market_prices            - live Stock/ETF prices
                                             (Yahoo). Also
                                             auto-refreshes
@@ -60,7 +61,7 @@ class Command(BaseCommand):
 
     help = (
         "Run every scheduled external-data refresh (market prices, "
-        "shared AMFI master NAV, security master ratios, SIP sync/execute, "
+        "investment-driven AMFI NAVs by ISIN, security master ratios, SIP sync/execute, "
         "portfolio news) for every active user, in one call. "
         "Intended to be the single command a scheduler triggers "
         "nightly."
@@ -69,7 +70,6 @@ class Command(BaseCommand):
     # Commands that operate across all users in one call - no
     # --user-id needed/accepted.
     GLOBAL_STEPS = [
-        ("refresh_amfi_master", {}),
         ("update_market_prices", {}),
         ("refresh_mis_reference_prices", {}),
     ]
@@ -148,9 +148,32 @@ class Command(BaseCommand):
             User.objects.filter(is_active=True).values_list("id", flat=True)
         )
 
-        # AMFI master is refreshed once globally above. Materialize only
-        # the latest NAVs for each user's owned mutual-fund schemes before
-        # SIP execution and the downstream security/news refreshes.
+        # Refresh only the AMFI schemes represented by actual investments.
+        # Asset.ISIN is the primary mapping key; no full AMFI universe import
+        # is performed here.
+        if "refresh_investment_amfi" not in skip:
+            self.stdout.write("\n--- refresh_investment_amfi ---")
+            try:
+                from mutual_funds.services.investment_amfi import InvestmentAMFIService
+
+                result = InvestmentAMFIService.refresh_for_all_investments()
+                succeeded.append("refresh_investment_amfi")
+                self.stdout.write(self.style.SUCCESS(
+                    "Investment AMFI refresh completed: "
+                    f"requested_isins={result.get('requested_isins', 0)}, "
+                    f"matched_isins={result.get('matched_isins', 0)}, "
+                    f"schemes={result.get('schemes', 0)}, "
+                    f"nav_records={result.get('nav_records', 0)}, "
+                    f"unmatched={result.get('unmatched_isins', [])}"
+                ))
+            except Exception as exc:
+                failed.append(("refresh_investment_amfi", str(exc)))
+                self.stderr.write(
+                    self.style.ERROR(f"refresh_investment_amfi failed: {exc}")
+                )
+
+        # Materialize only the latest NAVs for each user's owned mutual-fund
+        # schemes before SIP execution and downstream refreshes.
         if "sync_owned_amfi_navs" not in skip:
             for user_id in active_user_ids:
                 self.stdout.write(

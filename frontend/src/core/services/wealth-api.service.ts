@@ -27,6 +27,13 @@ export interface AnalyticsDashboardViewModel {
     xirr_percentage: number;
     underlying: string;
   }> };
+  dashboard_performance: { results: Array<{
+    asset_name: string;
+    asset_class: string;
+    asset_category?: string;
+    xirr_percentage: number;
+    underlying: string;
+  }> };
   advisor_allocation: any;
   advisor_performance: any;
   xirr: any;

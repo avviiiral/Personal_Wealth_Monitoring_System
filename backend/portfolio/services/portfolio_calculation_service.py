@@ -42,7 +42,7 @@ class PortfolioCalculationService:
         return True
 
     @classmethod
-    def _xirr(cls, transactions, assets):
+    def _xirr(cls, transactions, assets, family=None, asset_class=None, advisor=None):
         if not transactions:
             return None
 
@@ -53,6 +53,9 @@ class PortfolioCalculationService:
         selected_transactions = [
             tx for tx in transactions
             if tx.asset_id in asset_ids
+            and (not family or (tx.family_name or "Unassigned") == family)
+            and (not asset_class or (tx.asset_class or "Unassigned") == asset_class)
+            and (not advisor or (tx.advisors or "").strip() == advisor)
         ]
         if not selected_transactions:
             return None
@@ -75,7 +78,7 @@ class PortfolioCalculationService:
         )
 
     @classmethod
-    def _row(cls, group_key, assets, transactions):
+    def _row(cls, group_key, assets, transactions, family_filter=None, asset_class_filter=None, advisor_filter=None):
         quantity = sum(
             (cls._number(item["asset"].get("quantity")) for item in assets),
             Decimal("0"),
@@ -95,7 +98,13 @@ class PortfolioCalculationService:
             "invested_value": float(invested),
             "current_value": float(current),
             "pnl": float(pnl),
-            "xirr": cls._xirr(transactions, assets),
+            "xirr": cls._xirr(
+                transactions,
+                assets,
+                family=group_key.get("family_name") or family_filter,
+                asset_class=group_key.get("asset_class") or asset_class_filter,
+                advisor=advisor_filter,
+            ),
         }
 
     @classmethod
@@ -138,7 +147,7 @@ class PortfolioCalculationService:
             report_subclass_groups[(row["family_name"], row["asset_class"], row["sub_class"])].append(row)
 
         subclasses = [
-            cls._row({"sub_class": key}, group, transactions)
+            cls._row({"sub_class": key}, group, transactions, family_filter=family, asset_class_filter=asset_class, advisor_filter=advisor)
             for key, group in subclass_groups.items()
         ]
         subclasses.sort(key=lambda item: item["sub_class"].casefold())
@@ -155,6 +164,9 @@ class PortfolioCalculationService:
                 },
                 group,
                 transactions,
+                family_filter=family,
+                asset_class_filter=asset_class,
+                advisor_filter=advisor,
             )
             for key, group in asset_name_groups.items()
         ]

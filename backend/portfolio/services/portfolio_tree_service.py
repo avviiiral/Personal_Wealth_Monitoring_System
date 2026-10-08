@@ -296,15 +296,6 @@ class PortfolioTreeService:
         # incorrectly classify mutual funds as STOCK/CASH/BOND/OTHER, so do
         # not rely on Asset.category or presentation metadata here.
         amfi_asset_ids = AMFIAssetResolver.amfi_asset_ids(assets_by_id)
-        mutual_fund_assets = {
-            asset_id: assets_by_id[asset_id]
-            for asset_id in amfi_asset_ids
-            if asset_id in assets_by_id
-        }
-
-        if not mutual_fund_assets:
-            return cls._load_reit_invit_reference_prices(assets_by_id, price_cache)
-
         # AMFI is the canonical NAV source for actual mutual-fund holdings.
         # Legacy generic Asset rows can have inaccurate Asset.category values,
         # so a holding is considered a mutual fund when its Portfolio hierarchy

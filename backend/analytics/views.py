@@ -32,6 +32,7 @@ from portfolio.services.portfolio_position_engine import PortfolioPositionEngine
 def analytics_dashboard(request):
     """Return the complete backend-calculated Analytics view model."""
     period = request.GET.get("period", "30d")
+    family_name = (request.GET.get("family") or "").strip() or None
 
     from .services.historical_wealth import HistoricalWealthAnalytics
 
@@ -70,6 +71,7 @@ def analytics_dashboard(request):
         AnalyticsViewModelService.calculate(
             request.user,
             historical_loader=historical_loader,
+            family_name=family_name,
         )
     )
 

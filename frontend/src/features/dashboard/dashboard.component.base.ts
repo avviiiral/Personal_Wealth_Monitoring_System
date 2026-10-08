@@ -400,6 +400,21 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
         this.portfolioTree = data.portfolio_tree;
         this.advisorAllocation = data.advisor_allocation?.results ?? [];
         this.advisorPerformance = data.advisor_performance?.results ?? [];
+        this.standardAllocations = Object.fromEntries(
+          Object.entries(data.standard_allocations ?? {}).map(([category, value]: [string, any]) => [
+            category,
+            Number(value?.percent ?? value ?? 0),
+          ]),
+        );
+        this.standardAllocationAmounts = Object.fromEntries(
+          Object.entries(data.standard_allocations ?? {}).map(([category, value]: [string, any]) => [
+            category,
+            Number(value?.amount ?? 0),
+          ]),
+        );
+        this.standardAllocationDraft = { ...this.standardAllocations };
+        this.standardAllocationAmountDraft = { ...this.standardAllocationAmounts };
+        this.standardAllocationTotalValue = Number(data.summary?.total_current_value ?? 0);
         this.investmentSummaryError = '';
 
         if (this.reportScope && !this.reportScopeOptions.some(option => option.value === this.reportScope)) {

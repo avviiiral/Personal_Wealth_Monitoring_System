@@ -5,6 +5,7 @@ from .views import (
     analytics_historical,
     analytics_performance,
     analytics_summary,
+    analytics_dashboard,
     wealth_allocation,
     wealth_allocation_by_advisor,
     wealth_composition_by_amc,
@@ -29,6 +30,7 @@ from .xirr_by_asset_class_views import wealth_xirr_by_asset_class
 
 urlpatterns = [
     # Existing analytics APIs
+    path("dashboard/", analytics_dashboard, name="analytics-dashboard"),
     path("summary/", analytics_summary, name="analytics-summary"),
     path("allocation/", analytics_allocation, name="analytics-allocation"),
     path("performance/", analytics_performance, name="analytics-performance"),

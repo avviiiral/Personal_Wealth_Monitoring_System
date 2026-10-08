@@ -381,6 +381,10 @@ class PortfolioTreeAPITests(TestCase):
 
         self.assertTrue(data["success"])
         self.assertIn("families", data)
+        self.assertIn("calculations", data)
+        self.assertEqual(data["calculations"]["subclasses"][0]["quantity"], 20.0)
+        self.assertEqual(data["calculations"]["subclasses"][0]["invested_value"], 1000.0)
+        self.assertEqual(data["calculations"]["asset_names"][0]["asset_name"], "API Test Equity")
 
         family = next(
             (

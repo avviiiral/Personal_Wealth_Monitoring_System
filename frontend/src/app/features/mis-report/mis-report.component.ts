@@ -40,6 +40,14 @@ export class MISReportComponent implements OnInit {
   todayDate = '';
   displayUnit: 'amount' | 'lakhs' | 'crores' = 'lakhs';
   editableNotes: MISEditableNotes | null = null;
+  showAssetTickerForm = false;
+  assetTickerName = '';
+  assetTickerSymbol = '';
+  private pendingAssetSection: MISEditableSection | null = null;
+  showAddColumnForm = false;
+  newColumnName = 'New Column';
+  newColumnType: 'text' | 'number' = 'text';
+  private pendingColumnSection: MISEditableSection | null = null;
 
   readonly sheets: Array<{ key: MISSheet; label: string }> = [
     { key: 'ips', label: 'IPS' },
@@ -98,6 +106,8 @@ export class MISReportComponent implements OnInit {
 
   cancelNotesEditing(): void {
     if (!this.report) return;
+    this.closeAssetTickerForm();
+    this.closeAddColumnForm();
     this.editableNotes = this.cloneNotes(this.report.notes.editable);
     this.notesError = '';
     this.editingNotes = false;
@@ -153,24 +163,46 @@ export class MISReportComponent implements OnInit {
   }
 
   addColumn(section: MISEditableSection): void {
-    const label = window.prompt('Column name:', 'New Column');
-    if (!label?.trim()) return;
-    const type = window.prompt('Column type (text or number):', 'text')?.trim().toLowerCase() === 'number'
-      ? 'number'
-      : 'text';
+    this.notesError = '';
+    this.pendingColumnSection = section;
+    this.newColumnName = 'New Column';
+    this.newColumnType = 'text';
+    this.showAddColumnForm = true;
+  }
+
+  confirmAddColumn(): void {
+    const section = this.pendingColumnSection;
+    const label = this.newColumnName.trim();
+    if (!section) {
+      this.closeAddColumnForm();
+      return;
+    }
+    if (!label) {
+      this.notesError = 'Enter a column name.';
+      return;
+    }
+    const type = this.newColumnType;
     const column: MISEditableColumn = {
       id: this.newId('column'),
-      label: label.trim(),
+      label,
       type,
     };
     section.columns.push(column);
     section.rows.forEach((row) => row.cells[column.id] = type === 'number' ? null : '');
+    this.closeAddColumnForm();
+  }
+
+  closeAddColumnForm(): void {
+    this.showAddColumnForm = false;
+    this.pendingColumnSection = null;
+    this.newColumnName = 'New Column';
+    this.newColumnType = 'text';
   }
 
   removeColumn(section: MISEditableSection, index: number): void {
     const column = section.columns[index];
-    if (this.isCalculatedColumn(column)) {
-      this.notesError = 'Sr. No, Change In Rate and % Change are calculated automatically and cannot be removed.';
+    if (this.isSystemColumn(column)) {
+      this.notesError = 'Sr. No, Ticker/Symbol, Change In Rate and % Change are system-managed columns and cannot be removed.';
       return;
     }
     if (section.columns.length <= 1) {
@@ -185,6 +217,10 @@ export class MISReportComponent implements OnInit {
     return ['sr_no', 'change', 'percent_change'].includes(column.id);
   }
 
+  isSystemColumn(column: MISEditableColumn): boolean {
+    return ['sr_no', 'symbol', 'change', 'percent_change'].includes(column.id);
+  }
+
   formatNotesCalculatedValue(column: MISEditableColumn, value: string | number | null | undefined): string {
     if (value === null || value === undefined || value === '') return '—';
     if (column.id === 'sr_no') return String(value);
@@ -194,20 +230,65 @@ export class MISReportComponent implements OnInit {
   }
 
   addRow(section: MISEditableSection): void {
+    if (this.isMarketTrackedSection(section)) {
+      this.notesError = '';
+      this.pendingAssetSection = section;
+      this.assetTickerName = '';
+      this.assetTickerSymbol = '';
+      this.showAssetTickerForm = true;
+      return;
+    }
+    this.appendRow(section, {});
+  }
+
+  confirmAddAssetRow(): void {
+    const section = this.pendingAssetSection;
+    const name = this.assetTickerName.trim();
+    if (!section) {
+      this.closeAssetTickerForm();
+      return;
+    }
+    if (!name) {
+      this.notesError = 'Enter an asset or instrument name before adding the row.';
+      return;
+    }
+    this.appendRow(section, {
+      particulars: name,
+      symbol: this.assetTickerSymbol.trim().toUpperCase(),
+    });
+    this.closeAssetTickerForm();
+  }
+
+  closeAssetTickerForm(): void {
+    this.showAssetTickerForm = false;
+    this.pendingAssetSection = null;
+    this.assetTickerName = '';
+    this.assetTickerSymbol = '';
+  }
+
+  private appendRow(
+    section: MISEditableSection,
+    initialCells: Record<string, string | number | null>,
+  ): void {
     const cells: Record<string, string | number | null> = {};
     section.columns.forEach((column) => {
-      if (this.isCalculatedColumn(column)) {
-        return;
-      }
-      cells[column.id] = column.type === 'number' ? null : '';
+      if (this.isCalculatedColumn(column)) return;
+      cells[column.id] = Object.prototype.hasOwnProperty.call(initialCells, column.id)
+        ? initialCells[column.id]
+        : column.type === 'number' ? null : '';
     });
-    section.rows.push({
-      id: this.newId('row'),
-      cells,
-    });
+    this.notesError = '';
+    section.rows.push({ id: this.newId('row'), cells });
+  }
+
+  isMarketTrackedSection(section: MISEditableSection): boolean {
+    const ids = new Set(section.columns.map((column) => column.id));
+    return ids.has('particulars') && ids.has('opening_rate') &&
+      ids.has('closing_rate') && ids.has('symbol');
   }
 
   coerceCellValue(column: MISEditableColumn, value: string): string | number | null {
+    if (column.id === 'symbol') return value.trim().toUpperCase();
     if (column.type !== 'number') return value;
     if (value === '') return null;
     const numeric = Number(value);

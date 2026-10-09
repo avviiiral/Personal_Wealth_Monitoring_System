@@ -541,6 +541,14 @@ def mis_report_notes(request):
         )
     except ValueError as exc:
         raise ValidationError({"detail": str(exc)})
+    if changed:
+        from django.db import transaction
+        from market_data.services.mis_reference_price_scheduler import (
+            refresh_custom_reference_prices_async,
+        )
+
+        transaction.on_commit(refresh_custom_reference_prices_async)
+
     return Response({
         "notes": _serialize_report(notes),
         "changed": changed,

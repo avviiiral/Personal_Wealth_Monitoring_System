@@ -269,7 +269,70 @@
         </div>
       </div>
 
+      <p class="notes-ticker-help" *ngIf="editingNotes">
+        Add Row in a rate-tracking section asks for the asset name and Yahoo Finance ticker.
+        Use exchange-qualified symbols such as RELIANCE.NS or INFY.BO; leave the ticker blank for manual/unlisted valuations.
+        Saved tickers are refreshed in the background.
+      </p>
+
       <div class="notes-editor-error" *ngIf="notesError">{{ notesError }}</div>
+
+      <div class="asset-ticker-overlay" *ngIf="showAddColumnForm" (click)="closeAddColumnForm()">
+        <section class="asset-ticker-dialog" role="dialog" aria-modal="true" aria-labelledby="add-column-dialog-title" (click)="$event.stopPropagation()">
+          <div class="asset-ticker-dialog-header">
+            <div>
+              <h3 id="add-column-dialog-title">Add Column</h3>
+              <p>Choose a column name and the type of values it will contain.</p>
+            </div>
+            <button type="button" class="notes-icon-button" aria-label="Close" (click)="closeAddColumnForm()">×</button>
+          </div>
+          <form class="asset-ticker-form" (ngSubmit)="confirmAddColumn()">
+            <label>
+              <span>Column name <strong>*</strong></span>
+              <input name="newColumnName" type="text" [(ngModel)]="newColumnName" placeholder="e.g. Notes or Units" required autofocus />
+            </label>
+            <label>
+              <span>Column type</span>
+              <select name="newColumnType" [(ngModel)]="newColumnType">
+                <option value="text">Text</option>
+                <option value="number">Number</option>
+              </select>
+              <small>Choose Text for descriptions and Number for numeric values.</small>
+            </label>
+            <div class="asset-ticker-dialog-actions">
+              <button type="button" class="secondary-button" (click)="closeAddColumnForm()">Cancel</button>
+              <button type="submit" class="primary-button" [disabled]="!newColumnName.trim()">Add Column</button>
+            </div>
+          </form>
+        </section>
+      </div>
+
+      <div class="asset-ticker-overlay" *ngIf="showAssetTickerForm" (click)="closeAssetTickerForm()">
+        <section class="asset-ticker-dialog" role="dialog" aria-modal="true" aria-labelledby="asset-ticker-dialog-title" (click)="$event.stopPropagation()">
+          <div class="asset-ticker-dialog-header">
+            <div>
+              <h3 id="asset-ticker-dialog-title">Add Asset / Instrument</h3>
+              <p>Enter the name and ticker to fetch historical prices for MIS.</p>
+            </div>
+            <button type="button" class="notes-icon-button" aria-label="Close" (click)="closeAssetTickerForm()">×</button>
+          </div>
+          <form class="asset-ticker-form" (ngSubmit)="confirmAddAssetRow()">
+            <label>
+              <span>Asset / instrument name <strong>*</strong></span>
+              <input name="assetTickerName" type="text" [(ngModel)]="assetTickerName" placeholder="e.g. Reliance Industries" required autofocus />
+            </label>
+            <label>
+              <span>Yahoo Finance ticker / symbol</span>
+              <input name="assetTickerSymbol" type="text" [(ngModel)]="assetTickerSymbol" placeholder="e.g. RELIANCE.NS or ^NSEI" />
+              <small>Use an exchange suffix for Indian shares, such as .NS or .BO. Leave blank for manual/unlisted valuations.</small>
+            </label>
+            <div class="asset-ticker-dialog-actions">
+              <button type="button" class="secondary-button" (click)="closeAssetTickerForm()">Cancel</button>
+              <button type="submit" class="primary-button" [disabled]="!assetTickerName.trim()">Add Asset</button>
+            </div>
+          </form>
+        </section>
+      </div>
 
       <div class="notes-content" *ngIf="editableNotes as notes">
         <div class="notes-section" *ngFor="let section of notes.sections; let sectionIndex = index">
@@ -285,10 +348,10 @@
               <thead>
                 <tr>
                   <th *ngFor="let column of section.columns; let columnIndex = index; trackBy: trackByEditableColumn">
-                    <ng-container *ngIf="editingNotes && !isCalculatedColumn(column); else readonlyColumn">
+                    <ng-container *ngIf="editingNotes && !isSystemColumn(column); else readonlyColumn">
                       <div class="notes-column-editor">
                         <input class="notes-column-input" [(ngModel)]="column.label" />
-                        <button type="button" class="notes-icon-button" title="Remove column" (click)="removeColumn(section, columnIndex)">×</button>
+                        <button *ngIf="!isSystemColumn(column)" type="button" class="notes-icon-button" title="Remove column" (click)="removeColumn(section, columnIndex)">×</button>
                       </div>
                     </ng-container>
                     <ng-template #readonlyColumn>{{ column.label }}</ng-template>

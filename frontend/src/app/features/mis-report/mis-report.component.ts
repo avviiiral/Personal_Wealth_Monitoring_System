@@ -44,6 +44,10 @@ export class MISReportComponent implements OnInit {
   assetTickerName = '';
   assetTickerSymbol = '';
   private pendingAssetSection: MISEditableSection | null = null;
+  showAddColumnForm = false;
+  newColumnName = 'New Column';
+  newColumnType: 'text' | 'number' = 'text';
+  private pendingColumnSection: MISEditableSection | null = null;
 
   readonly sheets: Array<{ key: MISSheet; label: string }> = [
     { key: 'ips', label: 'IPS' },
@@ -103,6 +107,7 @@ export class MISReportComponent implements OnInit {
   cancelNotesEditing(): void {
     if (!this.report) return;
     this.closeAssetTickerForm();
+    this.closeAddColumnForm();
     this.editableNotes = this.cloneNotes(this.report.notes.editable);
     this.notesError = '';
     this.editingNotes = false;
@@ -158,18 +163,40 @@ export class MISReportComponent implements OnInit {
   }
 
   addColumn(section: MISEditableSection): void {
-    const label = window.prompt('Column name:', 'New Column');
-    if (!label?.trim()) return;
-    const type = window.prompt('Column type (text or number):', 'text')?.trim().toLowerCase() === 'number'
-      ? 'number'
-      : 'text';
+    this.notesError = '';
+    this.pendingColumnSection = section;
+    this.newColumnName = 'New Column';
+    this.newColumnType = 'text';
+    this.showAddColumnForm = true;
+  }
+
+  confirmAddColumn(): void {
+    const section = this.pendingColumnSection;
+    const label = this.newColumnName.trim();
+    if (!section) {
+      this.closeAddColumnForm();
+      return;
+    }
+    if (!label) {
+      this.notesError = 'Enter a column name.';
+      return;
+    }
+    const type = this.newColumnType;
     const column: MISEditableColumn = {
       id: this.newId('column'),
-      label: label.trim(),
+      label,
       type,
     };
     section.columns.push(column);
     section.rows.forEach((row) => row.cells[column.id] = type === 'number' ? null : '');
+    this.closeAddColumnForm();
+  }
+
+  closeAddColumnForm(): void {
+    this.showAddColumnForm = false;
+    this.pendingColumnSection = null;
+    this.newColumnName = 'New Column';
+    this.newColumnType = 'text';
   }
 
   removeColumn(section: MISEditableSection, index: number): void {

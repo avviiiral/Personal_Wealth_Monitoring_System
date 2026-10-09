@@ -556,7 +556,20 @@ th {
   font: inherit;
 }
 
-.asset-ticker-form input:focus { outline: 2px solid rgba(31,189,139,.35); border-color: #1fbd8b; }
+.asset-ticker-form input:focus,
+.asset-ticker-form select:focus { outline: 2px solid rgba(31,189,139,.35); border-color: #1fbd8b; }
+
+.asset-ticker-form select {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 42px;
+  border: 1px solid rgba(127,127,127,.3);
+  border-radius: 8px;
+  padding: 10px 12px;
+  background: var(--surface, #fff);
+  color: inherit;
+  font: inherit;
+}
 .asset-ticker-form small { font-size: 12px; line-height: 1.5; opacity: .68; }
 .asset-ticker-dialog-actions { display: flex; justify-content: flex-end; gap: 10px; padding-top: 4px; }
 

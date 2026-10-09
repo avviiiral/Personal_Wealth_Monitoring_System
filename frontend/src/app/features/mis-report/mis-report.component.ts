@@ -169,8 +169,8 @@ export class MISReportComponent implements OnInit {
 
   removeColumn(section: MISEditableSection, index: number): void {
     const column = section.columns[index];
-    if (this.isCalculatedColumn(column)) {
-      this.notesError = 'Sr. No, Change In Rate and % Change are calculated automatically and cannot be removed.';
+    if (this.isSystemColumn(column)) {
+      this.notesError = 'Sr. No, Ticker/Symbol, Change In Rate and % Change are system-managed columns and cannot be removed.';
       return;
     }
     if (section.columns.length <= 1) {
@@ -183,6 +183,10 @@ export class MISReportComponent implements OnInit {
 
   isCalculatedColumn(column: MISEditableColumn): boolean {
     return ['sr_no', 'change', 'percent_change'].includes(column.id);
+  }
+
+  isSystemColumn(column: MISEditableColumn): boolean {
+    return ['sr_no', 'symbol', 'change', 'percent_change'].includes(column.id);
   }
 
   formatNotesCalculatedValue(column: MISEditableColumn, value: string | number | null | undefined): string {
@@ -201,13 +205,40 @@ export class MISReportComponent implements OnInit {
       }
       cells[column.id] = column.type === 'number' ? null : '';
     });
+
+    if (this.isMarketTrackedSection(section)) {
+      const name = window.prompt('Asset / instrument name:', '');
+      if (name === null) return;
+      if (!name.trim()) {
+        this.notesError = 'Enter an asset or instrument name before adding the row.';
+        return;
+      }
+
+      const symbol = window.prompt(
+        `Yahoo Finance ticker/symbol for "${name.trim()}" (for example RELIANCE.NS, INFY.BO or ^NSEI). Leave blank for manual/unlisted valuations:`,
+        '',
+      );
+      if (symbol === null) return;
+
+      cells['particulars'] = name.trim();
+      cells['symbol'] = symbol.trim().toUpperCase();
+    }
+
+    this.notesError = '';
     section.rows.push({
       id: this.newId('row'),
       cells,
     });
   }
 
+  isMarketTrackedSection(section: MISEditableSection): boolean {
+    const ids = new Set(section.columns.map((column) => column.id));
+    return ids.has('particulars') && ids.has('opening_rate') &&
+      ids.has('closing_rate') && ids.has('symbol');
+  }
+
   coerceCellValue(column: MISEditableColumn, value: string): string | number | null {
+    if (column.id === 'symbol') return value.trim().toUpperCase();
     if (column.type !== 'number') return value;
     if (value === '') return null;
     const numeric = Number(value);

@@ -212,6 +212,46 @@ class MISReportAPITests(TestCase):
             ],
         )
 
+    def test_notes_ticker_is_persisted_and_drives_live_price_lookup(self):
+        opening_date = date(2026, 6, 30)
+        as_of = date(2026, 7, 31)
+        base_notes = MISReportService._build_notes(
+            self.family, [], opening_date, as_of
+        )
+        editable = MISReportService._editable_notes_from_report(base_notes)
+        section = editable["sections"][0]
+        row = section["rows"][0]
+        row["cells"]["particulars"] = "Custom REIT"
+        row["cells"]["symbol"] = "customreit.ns"
+
+        with patch.object(
+            MISReportService,
+            "_reference_rate",
+            return_value=(Decimal("100"), Decimal("125")),
+        ) as reference_rate:
+            notes, changed = MISReportService.save_editable_notes(
+                self.family,
+                self.user,
+                editable,
+                base_notes,
+                opening_date=opening_date,
+                as_of=as_of,
+            )
+
+        self.assertTrue(changed)
+        self.assertEqual(
+            notes["sections"][0]["items"][0]["opening_rate"],
+            Decimal("100"),
+        )
+        self.assertEqual(
+            notes["sections"][0]["items"][0]["closing_rate"],
+            Decimal("125"),
+        )
+        self.assertTrue(any(
+            call.kwargs.get("symbol") == "CUSTOMREIT.NS"
+            for call in reference_rate.call_args_list
+        ))
+
     def test_tax_report_uses_fifo_and_tenure_based_tax_rates(self):
         fifo_asset = Asset.objects.create(
             owner=self.user,

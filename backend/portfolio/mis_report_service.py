@@ -1603,9 +1603,9 @@ class MISReportService:
         sections = []
         for section in notes["sections"]:
             section_columns = [dict(column) for column in columns]
-            section_columns[2]["label"] = f"{section['unit_label']} {notes['opening_label']}"
-            section_columns[3]["label"] = f"{section['unit_label']} {notes['closing_label']}"
-            section_columns[4]["label"] = section["change_label"]
+            section_columns[3]["label"] = f"{section['unit_label']} {notes['opening_label']}"
+            section_columns[4]["label"] = f"{section['unit_label']} {notes['closing_label']}"
+            section_columns[5]["label"] = section["change_label"]
             rows = []
             for index, item in enumerate(section["items"], 1):
                 rows.append({

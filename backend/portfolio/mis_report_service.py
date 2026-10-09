@@ -1097,15 +1097,49 @@ class MISReportService:
         }
 
     @classmethod
-    def refresh_reference_prices(cls, lookback_days=7):
-        """Refresh the shared Yahoo history used by MIS Notes."""
+    def _custom_note_references(cls):
+        """Return unique Yahoo symbols registered in any family's editable MIS Notes."""
+        references = {}
+        for document in FamilyMISNotes.objects.values_list("document", flat=True):
+            if not isinstance(document, dict):
+                continue
+            for section in document.get("sections", []):
+                for row in section.get("rows", []):
+                    cells = row.get("cells", {}) if isinstance(row, dict) else {}
+                    if not isinstance(cells, dict):
+                        continue
+                    symbol = str(cells.get("symbol") or "").strip().upper()
+                    name = str(cells.get("particulars") or "").strip()
+                    if symbol and name:
+                        references.setdefault(symbol, name)
+        return references
+
+    @classmethod
+    def refresh_reference_prices(cls, lookback_days=7, custom_only=False):
+        """Refresh shared MIS reference history, including user-registered tickers."""
         today = date.today()
         refreshed = 0
         failed = 0
         records = 0
 
-        for name, symbols in cls.REFERENCE_SYMBOLS.items():
+        static_symbols = set()
+        for symbols in cls.REFERENCE_SYMBOLS.values():
             candidates = symbols if isinstance(symbols, (tuple, list)) else (symbols,)
+            static_symbols.update(str(symbol).strip().upper() for symbol in candidates if symbol)
+
+        references = []
+        if not custom_only:
+            for name, symbols in cls.REFERENCE_SYMBOLS.items():
+                candidates = symbols if isinstance(symbols, (tuple, list)) else (symbols,)
+                references.append((name, candidates, False))
+
+        for symbol, name in cls._custom_note_references().items():
+            # A symbol already refreshed as a standard reference does not need a
+            # duplicate request, even if a user also added it to a Notes row.
+            if symbol not in static_symbols:
+                references.append((name, (symbol,), True))
+
+        for name, candidates, is_custom in references:
             success = False
             for symbol in candidates:
                 try:
@@ -1133,13 +1167,22 @@ class MISReportService:
                         .values_list("date", flat=True)
                         .first()
                     )
-                    start = max(today - timedelta(days=lookback_days), latest_date) if latest_date else today - timedelta(days=lookback_days)
-                    saved = YahooFinanceService.save_history(
-                        asset=asset,
-                        symbol=symbol,
-                        start=start,
-                        end=today + timedelta(days=1),
-                    )
+                    if is_custom and latest_date is None:
+                        # New custom tickers need their available history, not
+                        # just the last few days, so user-selected MIS dates work.
+                        saved = YahooFinanceService.save_history(
+                            asset=asset,
+                            symbol=symbol,
+                            period="max",
+                        )
+                    else:
+                        start = max(today - timedelta(days=lookback_days), latest_date) if latest_date else today - timedelta(days=lookback_days)
+                        saved = YahooFinanceService.save_history(
+                            asset=asset,
+                            symbol=symbol,
+                            start=start,
+                            end=today + timedelta(days=1),
+                        )
                     records += saved
                     refreshed += 1
                     success = True
@@ -1151,11 +1194,16 @@ class MISReportService:
                 failed += 1
 
         return {
-            "references": len(cls.REFERENCE_SYMBOLS),
+            "references": len(references),
             "refreshed": refreshed,
             "failed": failed,
             "records": records,
         }
+
+    @classmethod
+    def refresh_custom_reference_prices(cls, lookback_days=7):
+        """Refresh only the user-registered Notes tickers after an edit."""
+        return cls.refresh_reference_prices(lookback_days=lookback_days, custom_only=True)
 
     @classmethod
     def _ensure_reference_history(cls, name, symbol, opening_date, as_of, cache):
@@ -1546,6 +1594,7 @@ class MISReportService:
         columns = [
             {"id": "sr_no", "label": "Sr. No", "type": "number"},
             {"id": "particulars", "label": "Particulars", "type": "text"},
+            {"id": "symbol", "label": "Ticker / Symbol", "type": "text"},
             {"id": "opening_rate", "label": "", "type": "number"},
             {"id": "closing_rate", "label": "", "type": "number"},
             {"id": "change", "label": "", "type": "number"},
@@ -1564,6 +1613,7 @@ class MISReportService:
                     "cells": {
                         "sr_no": index,
                         "particulars": item["name"],
+                        "symbol": "",
                         "opening_rate": item["opening_rate"],
                         "closing_rate": item["closing_rate"],
                         "change": item["change"],
@@ -1624,7 +1674,13 @@ class MISReportService:
                     "change": "Change In Rate",
                     "percent_change": "% Change",
                 }
-                if column_id in fixed_labels:
+                if column_id == "symbol":
+                    cleaned_columns.append({
+                        "id": "symbol",
+                        "label": "Ticker / Symbol",
+                        "type": "text",
+                    })
+                elif column_id in fixed_labels:
                     cleaned_columns.append({
                         "id": column_id,
                         "label": fixed_labels[column_id],
@@ -1636,6 +1692,18 @@ class MISReportService:
                         "label": str(column.get("label") or f"Column {column_index}")[:300],
                         "type": str(column.get("type") or "text")[:30],
                     })
+
+            column_ids = {column["id"] for column in cleaned_columns}
+            if {"particulars", "opening_rate", "closing_rate"}.issubset(column_ids) and "symbol" not in column_ids:
+                particulars_index = next(
+                    index for index, column in enumerate(cleaned_columns)
+                    if column["id"] == "particulars"
+                )
+                cleaned_columns.insert(particulars_index + 1, {
+                    "id": "symbol",
+                    "label": "Ticker / Symbol",
+                    "type": "text",
+                })
 
             cleaned_rows = []
             valid_column_ids = {column["id"] for column in cleaned_columns}
@@ -1656,6 +1724,8 @@ class MISReportService:
                 cleaned_cells.pop("sr_no", None)
                 cleaned_cells.pop("change", None)
                 cleaned_cells.pop("percent_change", None)
+                if "symbol" in valid_column_ids:
+                    cleaned_cells["symbol"] = str(cleaned_cells.get("symbol") or "").strip().upper()[:50]
                 cleaned_rows.append({
                     "id": str(row.get("id") or f"row-{section_id}-{row_index}")[:120],
                     "cells": cleaned_cells,
@@ -1814,23 +1884,30 @@ class MISReportService:
         return changes
 
     @classmethod
-    def _saved_note_live_rates(cls, family, name, opening_date, as_of, base_rates):
+    def _saved_note_live_rates(
+        cls, family, name, opening_date, as_of, base_rates,
+        symbol=None, reference_cache=None,
+    ):
         """
-        Resolve a saved Notes row against the current market data instead of
-        treating the rates stored in FamilyMISNotes as the source of truth.
-
-        The Notes row's Particulars identify what should be tracked. The
-        section/column where the user places it is presentation only. This
-        allows a user to put, for example, "ICICI Prudential Gold ETF" in the
-        Silver ETF section and still receive the Gold ETF's live price.
-
-        Existing standard/reference rows continue to use the already-built
-        report rates (for example Nifty 50 and BSE 500). Custom rows are
-        resolved against the family's active Asset records by name/symbol.
+        Resolve a saved Notes row against its explicitly entered ticker first,
+        then fall back to standard MIS rows and family-owned assets by name.
         """
         normalized_name = cls._normalize_note_name(name)
-        if not normalized_name:
+        normalized_symbol = str(symbol or "").strip().upper()
+        if not normalized_name and not normalized_symbol:
             return None, None
+
+        if normalized_symbol:
+            try:
+                return cls._reference_rate(
+                    name=name or normalized_symbol,
+                    symbol=normalized_symbol,
+                    opening_date=opening_date,
+                    as_of=as_of,
+                    cache=reference_cache if reference_cache is not None else {},
+                )
+            except Exception:
+                return None, None
 
         standard = base_rates.get(normalized_name)
         if standard is not None:
@@ -1883,6 +1960,7 @@ class MISReportService:
                     )
 
         sections = []
+        reference_cache = {}
         for section in editable["sections"]:
             columns = section["columns"]
             items = []
@@ -1899,11 +1977,20 @@ class MISReportService:
                         opening_date,
                         as_of,
                         base_rates,
+                        symbol=cells.get("symbol"),
+                        reference_cache=reference_cache,
                     )
-                    if live_opening is not None:
+                    if cells.get("symbol"):
+                        # The explicitly chosen ticker is authoritative. Do not
+                        # show stale rates from the previous ticker while its
+                        # history is still being fetched.
                         opening_rate = live_opening
-                    if live_closing is not None:
                         closing_rate = live_closing
+                    else:
+                        if live_opening is not None:
+                            opening_rate = live_opening
+                        if live_closing is not None:
+                            closing_rate = live_closing
 
                 change = None
                 percent_change = None

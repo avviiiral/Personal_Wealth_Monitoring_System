@@ -2329,29 +2329,36 @@ class MISReportService:
         # Fund Type.V2 in the workbook maps to the report's asset-class hierarchy.
         # Each asset class contains the individual asset names and their current
         # market value at the reporting date.
-        fund_groups = defaultdict(list)
+        fund_groups = defaultdict(lambda: defaultdict(Decimal))
+        fund_display_names = defaultdict(dict)
         for row in data_rows:
-            fund_groups[row["asset_class"]].append(row)
+            fund_type = row["asset_class"]
+            fund_name = str(row["asset_name"] or "").strip()
+            # Consolidate duplicate asset-name rows within the same asset class
+            # so each fund appears once, with its current values summed.
+            normalized_name = fund_name.casefold()
+            fund_groups[fund_type][normalized_name] += Decimal(
+                str(row["closing_amount"] or 0)
+            )
+            fund_display_names[fund_type].setdefault(normalized_name, fund_name)
 
         fund_type_summary = []
         for fund_type in sorted(fund_groups, key=str.casefold):
-            fund_rows = sorted(
-                fund_groups[fund_type],
-                key=lambda row: row["asset_name"].casefold(),
-            )
+            fund_rows = [
+                {
+                    "fund_name": fund_display_names[fund_type][normalized_name],
+                    "total": total,
+                }
+                for normalized_name, total in fund_groups[fund_type].items()
+            ]
+            fund_rows.sort(key=lambda row: row["fund_name"].casefold())
             subtotal = sum(
-                (Decimal(str(row["closing_amount"] or 0)) for row in fund_rows),
+                (Decimal(str(row["total"] or 0)) for row in fund_rows),
                 Decimal("0"),
             )
             fund_type_summary.append({
                 "fund_type": fund_type,
-                "rows": [
-                    {
-                        "fund_name": row["asset_name"],
-                        "total": row["closing_amount"],
-                    }
-                    for row in fund_rows
-                ],
+                "rows": fund_rows,
                 "subtotal": subtotal,
             })
 

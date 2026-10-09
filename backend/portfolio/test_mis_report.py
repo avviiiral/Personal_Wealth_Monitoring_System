@@ -240,6 +240,10 @@ class MISReportAPITests(TestCase):
 
         self.assertTrue(changed)
         self.assertEqual(
+            notes["editable"]["sections"][0]["rows"][0]["cells"]["symbol"],
+            "CUSTOMREIT.NS",
+        )
+        self.assertEqual(
             notes["sections"][0]["items"][0]["opening_rate"],
             Decimal("100"),
         )

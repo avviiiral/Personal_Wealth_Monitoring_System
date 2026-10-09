@@ -277,6 +277,33 @@
 
       <div class="notes-editor-error" *ngIf="notesError">{{ notesError }}</div>
 
+      <div class="asset-ticker-overlay" *ngIf="showAssetTickerForm" (click)="closeAssetTickerForm()">
+        <section class="asset-ticker-dialog" role="dialog" aria-modal="true" aria-labelledby="asset-ticker-dialog-title" (click)="$event.stopPropagation()">
+          <div class="asset-ticker-dialog-header">
+            <div>
+              <h3 id="asset-ticker-dialog-title">Add Asset / Instrument</h3>
+              <p>Enter the name and ticker to fetch historical prices for MIS.</p>
+            </div>
+            <button type="button" class="notes-icon-button" aria-label="Close" (click)="closeAssetTickerForm()">×</button>
+          </div>
+          <form class="asset-ticker-form" (ngSubmit)="confirmAddAssetRow()">
+            <label>
+              <span>Asset / instrument name <strong>*</strong></span>
+              <input name="assetTickerName" type="text" [(ngModel)]="assetTickerName" placeholder="e.g. Reliance Industries" required autofocus />
+            </label>
+            <label>
+              <span>Yahoo Finance ticker / symbol</span>
+              <input name="assetTickerSymbol" type="text" [(ngModel)]="assetTickerSymbol" placeholder="e.g. RELIANCE.NS or ^NSEI" />
+              <small>Use an exchange suffix for Indian shares, such as .NS or .BO. Leave blank for manual/unlisted valuations.</small>
+            </label>
+            <div class="asset-ticker-dialog-actions">
+              <button type="button" class="secondary-button" (click)="closeAssetTickerForm()">Cancel</button>
+              <button type="submit" class="primary-button" [disabled]="!assetTickerName.trim()">Add Asset</button>
+            </div>
+          </form>
+        </section>
+      </div>
+
       <div class="notes-content" *ngIf="editableNotes as notes">
         <div class="notes-section" *ngFor="let section of notes.sections; let sectionIndex = index">
           <div class="notes-section-title">

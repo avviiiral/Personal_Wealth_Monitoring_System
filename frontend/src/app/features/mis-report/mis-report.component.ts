@@ -40,6 +40,10 @@ export class MISReportComponent implements OnInit {
   todayDate = '';
   displayUnit: 'amount' | 'lakhs' | 'crores' = 'lakhs';
   editableNotes: MISEditableNotes | null = null;
+  showAssetTickerForm = false;
+  assetTickerName = '';
+  assetTickerSymbol = '';
+  private pendingAssetSection: MISEditableSection | null = null;
 
   readonly sheets: Array<{ key: MISSheet; label: string }> = [
     { key: 'ips', label: 'IPS' },
@@ -98,6 +102,7 @@ export class MISReportComponent implements OnInit {
 
   cancelNotesEditing(): void {
     if (!this.report) return;
+    this.closeAssetTickerForm();
     this.editableNotes = this.cloneNotes(this.report.notes.editable);
     this.notesError = '';
     this.editingNotes = false;
@@ -198,37 +203,55 @@ export class MISReportComponent implements OnInit {
   }
 
   addRow(section: MISEditableSection): void {
+    if (this.isMarketTrackedSection(section)) {
+      this.notesError = '';
+      this.pendingAssetSection = section;
+      this.assetTickerName = '';
+      this.assetTickerSymbol = '';
+      this.showAssetTickerForm = true;
+      return;
+    }
+    this.appendRow(section, {});
+  }
+
+  confirmAddAssetRow(): void {
+    const section = this.pendingAssetSection;
+    const name = this.assetTickerName.trim();
+    if (!section) {
+      this.closeAssetTickerForm();
+      return;
+    }
+    if (!name) {
+      this.notesError = 'Enter an asset or instrument name before adding the row.';
+      return;
+    }
+    this.appendRow(section, {
+      particulars: name,
+      symbol: this.assetTickerSymbol.trim().toUpperCase(),
+    });
+    this.closeAssetTickerForm();
+  }
+
+  closeAssetTickerForm(): void {
+    this.showAssetTickerForm = false;
+    this.pendingAssetSection = null;
+    this.assetTickerName = '';
+    this.assetTickerSymbol = '';
+  }
+
+  private appendRow(
+    section: MISEditableSection,
+    initialCells: Record<string, string | number | null>,
+  ): void {
     const cells: Record<string, string | number | null> = {};
     section.columns.forEach((column) => {
-      if (this.isCalculatedColumn(column)) {
-        return;
-      }
-      cells[column.id] = column.type === 'number' ? null : '';
+      if (this.isCalculatedColumn(column)) return;
+      cells[column.id] = Object.prototype.hasOwnProperty.call(initialCells, column.id)
+        ? initialCells[column.id]
+        : column.type === 'number' ? null : '';
     });
-
-    if (this.isMarketTrackedSection(section)) {
-      const name = window.prompt('Asset / instrument name:', '');
-      if (name === null) return;
-      if (!name.trim()) {
-        this.notesError = 'Enter an asset or instrument name before adding the row.';
-        return;
-      }
-
-      const symbol = window.prompt(
-        `Yahoo Finance ticker/symbol for "${name.trim()}" (for example RELIANCE.NS, INFY.BO or ^NSEI). Leave blank for manual/unlisted valuations:`,
-        '',
-      );
-      if (symbol === null) return;
-
-      cells['particulars'] = name.trim();
-      cells['symbol'] = symbol.trim().toUpperCase();
-    }
-
     this.notesError = '';
-    section.rows.push({
-      id: this.newId('row'),
-      cells,
-    });
+    section.rows.push({ id: this.newId('row'), cells });
   }
 
   isMarketTrackedSection(section: MISEditableSection): boolean {

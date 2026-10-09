@@ -269,6 +269,12 @@
         </div>
       </div>
 
+      <p class="notes-ticker-help" *ngIf="editingNotes">
+        Add Row in a rate-tracking section asks for the asset name and Yahoo Finance ticker.
+        Use exchange-qualified symbols such as RELIANCE.NS or INFY.BO; leave the ticker blank for manual/unlisted valuations.
+        Saved tickers are refreshed in the background.
+      </p>
+
       <div class="notes-editor-error" *ngIf="notesError">{{ notesError }}</div>
 
       <div class="notes-content" *ngIf="editableNotes as notes">
@@ -288,7 +294,7 @@
                     <ng-container *ngIf="editingNotes && !isCalculatedColumn(column); else readonlyColumn">
                       <div class="notes-column-editor">
                         <input class="notes-column-input" [(ngModel)]="column.label" />
-                        <button type="button" class="notes-icon-button" title="Remove column" (click)="removeColumn(section, columnIndex)">×</button>
+                        <button *ngIf="!isSystemColumn(column)" type="button" class="notes-icon-button" title="Remove column" (click)="removeColumn(section, columnIndex)">×</button>
                       </div>
                     </ng-container>
                     <ng-template #readonlyColumn>{{ column.label }}</ng-template>

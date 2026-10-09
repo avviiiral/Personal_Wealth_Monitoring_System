@@ -291,7 +291,7 @@
               <thead>
                 <tr>
                   <th *ngFor="let column of section.columns; let columnIndex = index; trackBy: trackByEditableColumn">
-                    <ng-container *ngIf="editingNotes && !isCalculatedColumn(column); else readonlyColumn">
+                    <ng-container *ngIf="editingNotes && !isSystemColumn(column); else readonlyColumn">
                       <div class="notes-column-editor">
                         <input class="notes-column-input" [(ngModel)]="column.label" />
                         <button *ngIf="!isSystemColumn(column)" type="button" class="notes-icon-button" title="Remove column" (click)="removeColumn(section, columnIndex)">×</button>

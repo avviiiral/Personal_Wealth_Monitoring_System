@@ -1,6 +1,6 @@
 from decimal import Decimal
 
-from django.db.models import Q
+from django.db.models import Max, Q
 
 from investments.models import Asset, SecurityMaster
 from mutual_funds.models import MutualFundHolding, MutualFundUnderlying
@@ -26,21 +26,52 @@ class MutualFundLookThroughService:
 
     @classmethod
     def latest_underlyings(cls, user):
-        holdings = MutualFundHolding.objects.filter(
-            MutualFundLookThroughService.scope_q(user),
-            scheme__is_active=True,
-            current_value__gt=0,
-        ).select_related("scheme")
+        holdings = list(
+            MutualFundHolding.objects.filter(
+                MutualFundLookThroughService.scope_q(user),
+                scheme__is_active=True,
+                current_value__gt=0,
+            ).select_related("scheme")
+        )
+        scheme_ids = {holding.scheme_id for holding in holdings}
+        if not scheme_ids:
+            return {}
+
+        # Resolve the latest portfolio date for all schemes in one grouped query,
+        # then load all rows for those dates in one query instead of two queries
+        # per mutual-fund holding.
+        latest_dates = dict(
+            MutualFundUnderlying.objects
+            .filter(scheme_id__in=scheme_ids)
+            .values("scheme_id")
+            .annotate(latest_date=Max("portfolio_date"))
+            .values_list("scheme_id", "latest_date")
+        )
+        latest_rows_by_scheme = {}
+        latest_pairs = [
+            (scheme_id, latest_date)
+            for scheme_id, latest_date in latest_dates.items()
+            if latest_date is not None
+        ]
+        if latest_pairs:
+            latest_rows = MutualFundUnderlying.objects.filter(
+                scheme_id__in=[scheme_id for scheme_id, _ in latest_pairs],
+                portfolio_date__in=[latest_date for _, latest_date in latest_pairs],
+            )
+            allowed_pairs = set(latest_pairs)
+            for row in latest_rows:
+                if (row.scheme_id, row.portfolio_date) in allowed_pairs:
+                    latest_rows_by_scheme.setdefault(row.scheme_id, []).append(row)
+
         result = {}
         for holding in holdings:
-            rows = MutualFundUnderlying.objects.filter(scheme=holding.scheme)
-            latest_date = rows.order_by("-portfolio_date").values_list("portfolio_date", flat=True).first()
+            latest_date = latest_dates.get(holding.scheme_id)
             if latest_date is None:
                 continue
             result[holding.scheme_id] = {
                 "holding": holding,
                 "portfolio_date": latest_date,
-                "rows": list(rows.filter(portfolio_date=latest_date)),
+                "rows": latest_rows_by_scheme.get(holding.scheme_id, []),
             }
         return result
 

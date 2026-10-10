@@ -14,7 +14,7 @@ from analytics.services.cash_flows import build_cash_flows, xirr_percent
 from market_data.models import DataSource, MarketPrice
 from users.permissions import family_scope, require_active_family
 from portfolio.services.portfolio_position_engine import PortfolioPositionEngine
-from portfolio.services.holding_engine import HoldingCalculationEngine
+from portfolio.services.portfolio_tree_service import PortfolioTreeService
 
 
 @api_view(["GET"])

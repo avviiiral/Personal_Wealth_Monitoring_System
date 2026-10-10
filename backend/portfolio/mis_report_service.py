@@ -2180,6 +2180,33 @@ class MISReportService:
         price_cache = {}
         nav_cache = {}
         reference_cache = {}
+
+        # Preload historical market prices for all report assets in one query.
+        # _market_price continues to use the same (date, id) ordering and
+        # bisect lookup; this only removes one history query per asset.
+        report_asset_ids = {
+            asset_id
+            for row in rows
+            if row.get("kind") == "asset"
+            for asset_id in row.get("asset_ids", [])
+        }
+        if report_asset_ids:
+            price_dates_by_asset = defaultdict(list)
+            price_values_by_asset = defaultdict(list)
+            for asset_id, price_date, close_price in (
+                MarketPrice.objects
+                .filter(asset_id__in=report_asset_ids)
+                .order_by("asset_id", "date", "id")
+                .values_list("asset_id", "date", "close_price")
+            ):
+                price_dates_by_asset[asset_id].append(price_date)
+                price_values_by_asset[asset_id].append(close_price)
+            for asset_id in report_asset_ids:
+                price_cache[("market_price_series", asset_id)] = (
+                    price_dates_by_asset[asset_id],
+                    price_values_by_asset[asset_id],
+                )
+
         # Build each valuation row exactly once. The previous implementation
         # calculated the entire Data Sheet twice before filtering it, which
         # multiplied all historical NAV/price queries for every MIS request.

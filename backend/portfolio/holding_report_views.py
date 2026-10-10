@@ -53,16 +53,25 @@ def holding_report(request):
         .order_by("family_name", "portfolio", "asset__name")
     )
 
-    # Keep the report aligned with the Portfolio/Reports pages. PortfolioPosition
-    # rows can contain a stale zero price for asset classes whose effective price
-    # comes from the dedicated NAV/reference-price providers (for example AMFI
-    # mutual-fund NAVs). Resolve the same effective price used by the Portfolio
-    # tree before calculating report values and XIRR.
+    # Resolve effective prices in one shared pass. Calling
+    # HoldingCalculationEngine.get_effective_price() per position repeated the
+    # latest-transaction and price-history queries for every row in this report.
+    assets_by_id = {}
     for position in positions:
-        effective_price = HoldingCalculationEngine.get_effective_price(position.asset)
-        if not effective_price.get("has_price"):
+        asset = position.asset
+        asset._portfolio_asset_class = position.latest_asset_class
+        asset._portfolio_sub_class = position.latest_sub_class
+        assets_by_id.setdefault(position.asset_id, asset)
+
+    price_cache = PortfolioTreeService._load_price_cache(
+        set(assets_by_id),
+        assets_by_id=assets_by_id,
+    )
+    for position in positions:
+        effective_price = price_cache.get(position.asset_id, {})
+        current_price = effective_price.get("current_price")
+        if current_price is None:
             continue
-        current_price = effective_price.get("price") or 0
         position.current_price = current_price
         position.current_value = (position.quantity or 0) * current_price
         position.gain = position.current_value - (position.invested_value or 0)

@@ -2117,7 +2117,7 @@ class MISReportService:
                 id__in=asset_ids,
                 family=family,
                 is_active=True,
-            ).only("id", "category", "family_id", "owner_id", "name", "symbol", "isin")
+            )
         )
         assets_with_opening_history = set(
             MarketPrice.objects.filter(

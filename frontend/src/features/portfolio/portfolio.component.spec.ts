@@ -32,6 +32,35 @@ describe('PortfolioComponent', () => {
     success: true,
     count: 1,
 
+    // Keep the fixture aligned with the API's calculated summaries.
+    // The component reads subclass totals and XIRR from this payload.
+    calculations: {
+      subclasses: [
+        {
+          sub_class: 'Large Cap',
+          quantity: 10,
+          invested_value: 1000,
+          current_value: 1200,
+          pnl: 200,
+          xirr: 20,
+        },
+      ],
+      asset_names: [
+        {
+          sub_class: 'Large Cap',
+          asset_name: 'Test Equity',
+          family_names: ['Family A'],
+          quantity: 10,
+          invested_value: 1000,
+          current_value: 1200,
+          pnl: 200,
+          xirr: 20,
+        },
+      ],
+      family_subclasses: [],
+      report_subclass_summaries: [],
+    },
+
     families: [
       {
         family_name: 'Family A',

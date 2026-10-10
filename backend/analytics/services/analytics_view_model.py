@@ -251,23 +251,18 @@ class AnalyticsViewModelService:
             investment_summary=investment_summary,
         )
 
-        from portfolio.services.portfolio_tree_service import PortfolioTreeService
-        from users.permissions import require_active_family
-
-        family = require_active_family(user)
-        if family_name:
-            portfolio_tree = PortfolioTreeService.build(
-                owner=user,
-                family_id=family.id,
-                xirr_filters={},
-            )
-        else:
-            portfolio_tree = performance_tree
+        # _investment_performance already built the complete position tree.
+        # Its XIRR filter affects performance cash flows, not which positions are
+        # present, so reuse that tree instead of rebuilding all prices and XIRRs.
+        portfolio_tree = performance_tree
 
         from portfolio.services.portfolio_calculation_service import PortfolioCalculationService
+        from users.permissions import require_active_family
+
+        active_family = require_active_family(user)
         portfolio_calculations = PortfolioCalculationService.calculate(
             owner=user,
-            family_id=family.id,
+            family_id=active_family.id,
             tree=portfolio_tree,
         )
 

@@ -14,7 +14,7 @@ from analytics.services.cash_flows import build_cash_flows, xirr_percent
 from market_data.models import DataSource, MarketPrice
 from users.permissions import family_scope, require_active_family
 from portfolio.services.portfolio_position_engine import PortfolioPositionEngine
-from portfolio.services.holding_engine import HoldingCalculationEngine
+from portfolio.services.portfolio_tree_service import PortfolioTreeService
 
 
 @api_view(["GET"])
@@ -53,16 +53,25 @@ def holding_report(request):
         .order_by("family_name", "portfolio", "asset__name")
     )
 
-    # Keep the report aligned with the Portfolio/Reports pages. PortfolioPosition
-    # rows can contain a stale zero price for asset classes whose effective price
-    # comes from the dedicated NAV/reference-price providers (for example AMFI
-    # mutual-fund NAVs). Resolve the same effective price used by the Portfolio
-    # tree before calculating report values and XIRR.
+    # Resolve effective prices in one shared pass. Calling
+    # HoldingCalculationEngine.get_effective_price() per position repeated the
+    # latest-transaction and price-history queries for every row in this report.
+    assets_by_id = {}
     for position in positions:
-        effective_price = HoldingCalculationEngine.get_effective_price(position.asset)
-        if not effective_price.get("has_price"):
+        asset = position.asset
+        asset._portfolio_asset_class = position.latest_asset_class
+        asset._portfolio_sub_class = position.latest_sub_class
+        assets_by_id.setdefault(position.asset_id, asset)
+
+    price_cache = PortfolioTreeService._load_price_cache(
+        set(assets_by_id),
+        assets_by_id=assets_by_id,
+    )
+    for position in positions:
+        effective_price = price_cache.get(position.asset_id, {})
+        current_price = effective_price.get("current_price")
+        if current_price is None:
             continue
-        current_price = effective_price.get("price") or 0
         position.current_price = current_price
         position.current_value = (position.quantity or 0) * current_price
         position.gain = position.current_value - (position.invested_value or 0)
@@ -203,9 +212,13 @@ def holding_report(request):
             if fallback_rows:
                 uploaded_underlying_by_asset[position.asset_id] = fallback_rows
 
+    position_by_asset_id = {}
+    for position in positions:
+        position_by_asset_id.setdefault(position.asset_id, position)
+
     underlying_xirr_by_asset = {}
     for asset_id, underlying_rows in uploaded_underlying_by_asset.items():
-        position = next((item for item in positions if item.asset_id == asset_id), None)
+        position = position_by_asset_id.get(asset_id)
         if position is None:
             continue
         position_transactions = xirr_transactions_by_position.get(
@@ -322,6 +335,7 @@ def holding_matrix_report(request):
     )
 
     grouped_transactions = {}
+    transactions_by_position = {}
     for transaction in transactions_as_of:
         key = (
             clean_matrix(transaction.family_name, ""),
@@ -329,6 +343,7 @@ def holding_matrix_report(request):
             transaction.asset_id,
         )
         grouped_transactions[key] = transaction
+        transactions_by_position.setdefault(key, []).append(transaction)
 
     positions = []
     for (family_name, portfolio, asset_id), latest_transaction in grouped_transactions.items():
@@ -336,26 +351,11 @@ def holding_matrix_report(request):
         if not asset.is_active or asset.category == AssetCategory.MUTUAL_FUND:
             continue
 
-        calculated = PortfolioPositionEngine.calculate_position(
-            family=family,
-            family_name=family_name,
-            portfolio=portfolio,
-            asset=asset,
-            as_of_date=as_of_date,
+        calculated = PortfolioPositionEngine.calculate_position_from_transactions(
+            transactions_by_position[(family_name, portfolio, asset_id)]
         )
         quantity = float(calculated["quantity"] or 0)
         if quantity <= 0:
-            continue
-
-        price_record = (
-            MarketPrice.objects
-            .filter(asset=asset, date__lte=as_of_date)
-            .order_by("-date", "-id")
-            .first()
-        )
-        historical_price = float(price_record.close_price or 0) if price_record else 0.0
-        current_value = quantity * historical_price
-        if current_value <= 0:
             continue
 
         positions.append(
@@ -365,11 +365,31 @@ def holding_matrix_report(request):
                 asset_id=asset_id,
                 asset=asset,
                 quantity=quantity,
-                current_value=current_value,
+                current_value=0.0,
                 latest_asset_name=latest_transaction.asset_name,
                 latest_underlying=latest_transaction.underlying,
             )
         )
+
+    asset_ids = {position.asset_id for position in positions}
+    latest_prices = {}
+    if asset_ids:
+        for price in MarketPrice.objects.filter(
+            asset_id__in=asset_ids,
+            date__lte=as_of_date,
+        ).order_by("asset_id", "date", "id").only(
+            "asset_id", "date", "id", "close_price"
+        ):
+            latest_prices[price.asset_id] = price
+
+    valued_positions = []
+    for position in positions:
+        price_record = latest_prices.get(position.asset_id)
+        historical_price = float(price_record.close_price or 0) if price_record else 0.0
+        position.current_value = position.quantity * historical_price
+        if position.current_value > 0:
+            valued_positions.append(position)
+    positions = valued_positions
 
     asset_ids = {position.asset_id for position in positions}
     uploaded_rows = list(

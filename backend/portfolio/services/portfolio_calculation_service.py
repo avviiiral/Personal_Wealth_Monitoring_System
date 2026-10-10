@@ -46,30 +46,57 @@ class PortfolioCalculationService:
         if not transactions:
             return None
 
-        unique_assets = {}
-        for item in assets:
-            unique_assets[item["asset"].get("id")] = item["asset"]
-        asset_ids = set(unique_assets)
-        selected_transactions = [
-            tx for tx in transactions
-            if tx.asset_id in asset_ids
-            and (not family or (tx.family_name or "Unassigned") == family)
-            and (not asset_class or (tx.asset_class or "Unassigned") == asset_class)
-            and (not advisor or (tx.advisors or "").strip() == advisor)
-        ]
+        # An asset can appear in more than one portfolio-tree node (for
+        # example, the same security held by two families). Match transactions
+        # to the full node scope rather than asset_id alone, so one node cannot
+        # absorb another node's flows.
+        asset_scope_keys = {
+            (
+                item["family_name"],
+                item["portfolio"],
+                item["asset_class"],
+                item["sub_class"],
+                item["asset"].get("id"),
+            )
+            for item in assets
+        }
+        selected_transactions = []
+        for tx in transactions:
+            tx_scope_key = (
+                (tx.family_name or "").strip() or "Unassigned",
+                (tx.portfolio or "").strip() or "Unassigned",
+                (tx.asset_class or "").strip() or "Unassigned",
+                (tx.sub_class or "").strip() or "Unassigned",
+                tx.asset_id,
+            )
+            if tx_scope_key not in asset_scope_keys:
+                continue
+            if family and tx_scope_key[0] != family:
+                continue
+            if asset_class and tx_scope_key[2] != asset_class:
+                continue
+            if advisor and (tx.advisors or "").strip() != advisor:
+                continue
+            selected_transactions.append(tx)
+
         if not selected_transactions:
             return None
 
+        # Do not deduplicate by asset_id: separate tree nodes are separate
+        # positions for aggregation purposes, even when they reference one
+        # shared Asset record.
         quantity = sum(
-            (cls._number(asset.get("quantity")) for asset in unique_assets.values()),
+            (cls._number(item["asset"].get("quantity")) for item in assets),
             Decimal("0"),
         )
-        current_value_by_asset = {
-            asset_id: cls._number(asset.get("current_value"))
-            for asset_id, asset in unique_assets.items()
-            if asset.get("current_price") is not None
-        }
-        current_value = sum(current_value_by_asset.values(), Decimal("0"))
+        current_value = sum(
+            (
+                cls._number(item["asset"].get("current_value"))
+                for item in assets
+                if item["asset"].get("current_price") is not None
+            ),
+            Decimal("0"),
+        )
 
         return PortfolioTreeService._calculate_xirr(
             selected_transactions,

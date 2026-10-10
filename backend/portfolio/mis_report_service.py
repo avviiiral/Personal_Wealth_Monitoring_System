@@ -2101,62 +2101,50 @@ class MISReportService:
         position. Only STOCK/ETF/MUTUAL_FUND assets are backfilled here; other
         asset classes may require an explicit/manual historical valuation.
         """
-        seen_asset_ids = set()
+        asset_ids = {
+            asset_id
+            for row in rows
+            if row.get("kind") == "asset"
+            for asset_id in row.get("asset_ids", [])
+        }
+        if not asset_ids:
+            return
 
-        for row in rows:
-            if row.get("kind") != "asset":
+        # Load candidate assets and historical coverage in batches instead of
+        # issuing one Asset query plus two existence queries per position.
+        assets = list(
+            Asset.objects.filter(
+                id__in=asset_ids,
+                family=family,
+                is_active=True,
+            ).only("id", "category", "family_id", "owner_id", "name", "symbol", "isin")
+        )
+        assets_with_opening_history = set(
+            MarketPrice.objects.filter(
+                asset_id__in=asset_ids,
+                date__lte=opening_date,
+            ).values_list("asset_id", flat=True).distinct()
+        )
+
+        # Any price on/before the opening date is necessarily also on/before
+        # the later as-of date, so a second closing-date existence query is
+        # redundant. Only supported categories are backfilled, as before.
+        for asset in assets:
+            if asset.category not in {"STOCK", "ETF", "MUTUAL_FUND"}:
+                continue
+            if asset.id in assets_with_opening_history:
                 continue
 
-            for asset_id in row.get("asset_ids", []):
-                if asset_id in seen_asset_ids:
-                    continue
-                seen_asset_ids.add(asset_id)
-
-                asset = (
-                    Asset.objects
-                    .filter(
-                        id=asset_id,
-                        family=family,
-                        is_active=True,
-                    )
-                    .first()
+            try:
+                MarketDataManager.fetch_and_rebuild(
+                    asset=asset,
+                    period="1y",
                 )
-                if asset is None:
-                    continue
-
-                if asset.category not in {"STOCK", "ETF", "MUTUAL_FUND"}:
-                    continue
-
-                opening_exists = (
-                    MarketPrice.objects
-                    .filter(
-                        asset=asset,
-                        date__lte=opening_date,
-                    )
-                    .exists()
-                )
-                closing_exists = (
-                    MarketPrice.objects
-                    .filter(
-                        asset=asset,
-                        date__lte=as_of,
-                    )
-                    .exists()
-                )
-
-                if opening_exists and closing_exists:
-                    continue
-
-                try:
-                    MarketDataManager.fetch_and_rebuild(
-                        asset=asset,
-                        period="1y",
-                    )
-                except Exception:
-                    # A report must remain usable when an external provider is
-                    # unavailable. The valuation helpers below will use whatever
-                    # history is already stored.
-                    continue
+            except Exception:
+                # A report must remain usable when an external provider is
+                # unavailable. The valuation helpers below will use whatever
+                # history is already stored.
+                continue
 
     @classmethod
     def build(cls, family, from_date=None, to_date=None, ensure_history=False):

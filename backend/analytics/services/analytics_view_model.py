@@ -257,9 +257,12 @@ class AnalyticsViewModelService:
         portfolio_tree = performance_tree
 
         from portfolio.services.portfolio_calculation_service import PortfolioCalculationService
+        from users.permissions import require_active_family
+
+        active_family = require_active_family(user)
         portfolio_calculations = PortfolioCalculationService.calculate(
             owner=user,
-            family_id=family.id,
+            family_id=active_family.id,
             tree=portfolio_tree,
         )
 

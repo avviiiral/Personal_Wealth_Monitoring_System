@@ -50,30 +50,33 @@ class PortfolioPositionEngine:
         asset,
         as_of_date=None,
     ):
-        transactions = list(cls.get_transactions(
+        quantity = cls.ZERO
+        invested_value = cls.ZERO
+
+        transactions = cls.get_transactions(
             family=family,
             family_name=family_name,
             portfolio=portfolio,
             asset=asset,
             as_of_date=as_of_date,
-        ))
-        return cls.calculate_position_from_transactions(transactions)
-
-    @classmethod
-    def calculate_position_from_transactions(cls, transactions):
-        """Calculate a position using an already-loaded, ordered transaction list."""
-        quantity = cls.ZERO
-        invested_value = cls.ZERO
-
-        # Preserve the existing BUY/SIP-only aggregation semantics without
-        # issuing a query for every position in historical report generation.
-        has_adjustments = any(
-            tx.transaction_type not in (TransactionType.BUY, TransactionType.SIP)
-            for tx in transactions
         )
+
+        # Optimize the common BUY/SIP-only case with a single SQL
+        # aggregation. Positions containing SELL/BONUS/SPLIT still use
+        # the existing ordered transaction logic unchanged.
+        has_adjustments = transactions.exclude(
+            transaction_type__in=(
+                TransactionType.BUY,
+                TransactionType.SIP,
+            )
+        ).exists()
         if not has_adjustments:
-            quantity = sum((tx.quantity or cls.ZERO for tx in transactions), cls.ZERO)
-            invested_value = sum((tx.amount or cls.ZERO for tx in transactions), cls.ZERO)
+            totals = transactions.aggregate(
+                quantity=Sum("quantity"),
+                invested_value=Sum("amount"),
+            )
+            quantity = totals["quantity"] or cls.ZERO
+            invested_value = totals["invested_value"] or cls.ZERO
             average_cost = (
                 invested_value / quantity
                 if quantity > 0
@@ -85,50 +88,51 @@ class PortfolioPositionEngine:
                 "average_cost": average_cost,
             }
 
+        return cls.calculate_position_from_transactions(list(transactions))
+
+    @classmethod
+    def calculate_position_from_transactions(cls, transactions):
+        """Calculate a position from an already-loaded, ordered transaction list."""
+        quantity = cls.ZERO
+        invested_value = cls.ZERO
+        has_adjustments = any(
+            tx.transaction_type not in (TransactionType.BUY, TransactionType.SIP)
+            for tx in transactions
+        )
+        if not has_adjustments:
+            quantity = sum((tx.quantity or cls.ZERO for tx in transactions), cls.ZERO)
+            invested_value = sum((tx.amount or cls.ZERO for tx in transactions), cls.ZERO)
+            average_cost = invested_value / quantity if quantity > 0 else cls.ZERO
+            return {
+                "quantity": quantity,
+                "invested_value": invested_value,
+                "average_cost": average_cost,
+            }
+
         for tx in transactions:
             tx_quantity = tx.quantity or cls.ZERO
             tx_amount = tx.amount or cls.ZERO
 
-            if tx.transaction_type in (
-                TransactionType.BUY,
-                TransactionType.SIP,
-            ):
+            if tx.transaction_type in (TransactionType.BUY, TransactionType.SIP):
                 if tx_quantity > 0:
                     quantity += tx_quantity
                 if tx_amount > 0:
                     invested_value += tx_amount
-
             elif tx.transaction_type == TransactionType.SELL:
                 if tx_quantity <= 0 or quantity <= 0:
                     continue
-
-                average_cost = (
-                    invested_value / quantity
-                    if quantity > 0
-                    else cls.ZERO
-                )
+                average_cost = invested_value / quantity if quantity > 0 else cls.ZERO
                 sell_quantity = min(tx_quantity, quantity)
                 quantity -= sell_quantity
                 invested_value -= average_cost * sell_quantity
-
                 if quantity <= 0:
                     quantity = cls.ZERO
                     invested_value = cls.ZERO
-
-            elif tx.transaction_type == TransactionType.BONUS:
+            elif tx.transaction_type in (TransactionType.BONUS, TransactionType.SPLIT):
                 if tx_quantity > 0:
                     quantity += tx_quantity
 
-            elif tx.transaction_type == TransactionType.SPLIT:
-                if tx_quantity > 0:
-                    quantity += tx_quantity
-
-        average_cost = (
-            invested_value / quantity
-            if quantity > 0
-            else cls.ZERO
-        )
-
+        average_cost = invested_value / quantity if quantity > 0 else cls.ZERO
         return {
             "quantity": quantity,
             "invested_value": invested_value,

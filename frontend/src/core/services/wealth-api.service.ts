@@ -4,6 +4,64 @@ import { HttpClient, HttpHeaders, HttpParams } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import { environment } from '../../environments/environment';
 
+
+export interface AnalyticsDashboardViewModel {
+  summary: any;
+  investment_summary: any;
+  dashboard_investment_summary: Array<{
+    asset_category: string;
+    current_value: number;
+    percentage_of_total: number;
+    asset_classes: Array<{
+      asset_class: string;
+      current_value: number;
+      percentage_of_total: number;
+      raw_asset_classes: string[];
+    }>;
+  }>;
+  allocation: any;
+  performance: { results: Array<{
+    asset_name: string;
+    asset_class: string;
+    asset_category?: string;
+    xirr_percentage: number;
+    underlying: string;
+  }> };
+  dashboard_performance: { results: Array<{
+    asset_name: string;
+    asset_class: string;
+    asset_category?: string;
+    xirr_percentage: number;
+    underlying: string;
+  }> };
+  advisor_allocation: any;
+  advisor_performance: any;
+  xirr: any;
+  historical: any;
+  market_cap_allocation: any;
+  sector_allocation: any;
+  insights: {
+    best_performer: any;
+    worst_performer: any;
+    largest_allocation: any;
+    period_value_change: number;
+  };
+  portfolio_tree: any;
+  standard_allocations: Record<string, { percent: number; amount: number }>;
+  portfolio_calculations: {
+    report_subclass_summaries: Array<{
+      family_name: string;
+      asset_class: string;
+      sub_class: string;
+      quantity: number;
+      invested_value: number;
+      current_value: number;
+      pnl: number;
+      xirr: number | null;
+    }>;
+  };
+}
+
 @Injectable({
   providedIn: 'root',
 })
@@ -11,6 +69,23 @@ export class WealthApiService {
   private readonly http = inject(HttpClient);
 
   private readonly baseUrl = `${environment.apiUrl}/api/analytics/wealth`;
+
+
+  getAnalyticsDashboard(
+    period: string = '30d',
+    days: number = 30,
+    family?: string,
+  ): Observable<AnalyticsDashboardViewModel> {
+    let params = new HttpParams()
+      .set('period', period)
+      .set('days', days);
+    if (family) params = params.set('family', family);
+
+    return this.http.get<AnalyticsDashboardViewModel>(
+      `${this.baseUrl}/dashboard/`,
+      { params, withCredentials: true },
+    );
+  }
 
   recalculate(): Observable<any> {
     const csrfToken = this.getCookie('csrftoken');

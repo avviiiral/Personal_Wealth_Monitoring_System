@@ -16,6 +16,7 @@ import {
   PortfolioAssetNode,
   Transaction,
   UpdateTransactionRequest,
+  PortfolioCalculations,
 } from '../../core/services/portfolio-api.service';
 
 /* ==============================================================
@@ -98,6 +99,7 @@ export class ReportsComponent implements OnInit {
      to join Quantity / Invested Value / Current Value / Gain / XIRR
      onto the Sub Class and Asset Name rows here, by asset id. */
   private portfolioTree: FamilyNode[] = [];
+  private portfolioCalculations: PortfolioCalculations = { subclasses: [], asset_names: [], family_subclasses: [], report_subclass_summaries: [] };
 
   loading = true;
   error = '';
@@ -155,6 +157,7 @@ export class ReportsComponent implements OnInit {
         this.portfolioApi.getPortfolioTree().subscribe({
           next: (treeResponse) => {
             this.portfolioTree = treeResponse.families ?? [];
+            this.portfolioCalculations = treeResponse.calculations ?? { subclasses: [], asset_names: [], family_subclasses: [], report_subclass_summaries: [] };
 
             this.validateSelections();
 
@@ -171,6 +174,7 @@ export class ReportsComponent implements OnInit {
                portfolioTree, so we don't block the page on this -
                those columns just show as 0/blank until it's back. */
             this.portfolioTree = [];
+            this.portfolioCalculations = { subclasses: [], asset_names: [], family_subclasses: [], report_subclass_summaries: [] };
 
             this.validateSelections();
 
@@ -437,12 +441,6 @@ export class ReportsComponent implements OnInit {
 
     const subClassMap = new Map<string, Map<string, Map<string, Transaction[]>>>();
 
-    /* Distinct asset ids seen per Sub Class, and per Sub
-       Class::Asset Name, so financial values are summed once per
-       asset (not once per transaction). */
-    const subClassAssetIds = new Map<string, Set<number>>();
-    const assetNameAssetIds = new Map<string, Set<number>>();
-
     for (const tx of transactions) {
       const subClass = this.clean(tx.sub_class);
       const assetName = this.getAssetName(tx);
@@ -466,35 +464,7 @@ export class ReportsComponent implements OnInit {
 
       underlyingMap.get(underlying)!.push(tx);
 
-      if (!subClassAssetIds.has(subClass)) {
-        subClassAssetIds.set(subClass, new Set());
-      }
-      subClassAssetIds.get(subClass)!.add(tx.asset);
-
-      const assetNameKey = `${subClass}::${assetName}`;
-      if (!assetNameAssetIds.has(assetNameKey)) {
-        assetNameAssetIds.set(assetNameKey, new Set());
-      }
-      assetNameAssetIds.get(assetNameKey)!.add(tx.asset);
     }
-
-    const nodesFor = (ids: Set<number> | undefined): PortfolioAssetNode[] => {
-      if (!ids) {
-        return [];
-      }
-
-      const nodes: PortfolioAssetNode[] = [];
-
-      for (const id of ids) {
-        const node = lookup.get(id);
-
-        if (node) {
-          nodes.push(node);
-        }
-      }
-
-      return nodes;
-    };
 
     const subClasses: SubClassGroup[] = Array.from(subClassMap.entries())
       .map(([sub_class, assetNameMap]) => {
@@ -514,18 +484,18 @@ export class ReportsComponent implements OnInit {
               0,
             );
 
-            const assetNameFinancials = this.aggregateAssetNodes(
-              nodesFor(assetNameAssetIds.get(`${sub_class}::${asset_name}`)),
+            const assetNameFinancials = this.portfolioCalculations.asset_names.find(
+              (row) => row.sub_class === sub_class && row.asset_name === asset_name,
             );
 
             return {
               asset_name,
               underlyings,
               transaction_count,
-              quantity: assetNameFinancials.quantity,
-              invested_value: assetNameFinancials.invested_value,
-              current_value: assetNameFinancials.current_value,
-              pnl: assetNameFinancials.pnl,
+              quantity: assetNameFinancials?.quantity ?? 0,
+              invested_value: assetNameFinancials?.invested_value ?? 0,
+              current_value: assetNameFinancials?.current_value ?? 0,
+              pnl: assetNameFinancials?.pnl ?? 0,
             };
           })
           .sort((a, b) => a.asset_name.localeCompare(b.asset_name));
@@ -535,59 +505,24 @@ export class ReportsComponent implements OnInit {
           0,
         );
 
-        const subClassFinancials = this.aggregateAssetNodes(
-          nodesFor(subClassAssetIds.get(sub_class)),
+        const subClassFinancials = this.portfolioCalculations.subclasses.find(
+          (row) => row.sub_class === sub_class,
         );
 
         return {
           sub_class,
           asset_names,
           transaction_count,
-          quantity: subClassFinancials.quantity,
-          invested_value: subClassFinancials.invested_value,
-          current_value: subClassFinancials.current_value,
-          pnl: subClassFinancials.pnl,
-          xirr: subClassFinancials.xirr,
+          quantity: subClassFinancials?.quantity ?? 0,
+          invested_value: subClassFinancials?.invested_value ?? 0,
+          current_value: subClassFinancials?.current_value ?? 0,
+          pnl: subClassFinancials?.pnl ?? 0,
+          xirr: subClassFinancials?.xirr ?? null,
         };
       })
       .sort((a, b) => a.sub_class.localeCompare(b.sub_class));
 
     return subClasses;
-  }
-
-  /**
-   * Sums Quantity / Invested Value / Current Value / Gain across a
-   * set of (already de-duplicated) Portfolio assets, and computes
-   * their invested-value-weighted XIRR — same aggregation Portfolio
-   * itself uses for its Sub Class rows.
-   */
-  private aggregateAssetNodes(nodes: PortfolioAssetNode[]): {
-    quantity: number;
-    invested_value: number;
-    current_value: number;
-    pnl: number;
-    xirr: number | null;
-  } {
-    let quantity = 0;
-    let invested_value = 0;
-    let current_value = 0;
-    let pnl = 0;
-
-    for (const node of nodes) {
-      quantity += this.toNumber(node.quantity);
-      invested_value += this.toNumber(node.invested_value);
-      current_value += this.toNumber(node.current_value);
-      pnl += this.toNumber(node.pnl);
-    }
-
-    const xirr = this.weightedXirr(
-      nodes.map((node) => ({
-        invested_value: this.toNumber(node.invested_value),
-        xirr: node.xirr,
-      })),
-    );
-
-    return { quantity, invested_value, current_value, pnl, xirr };
   }
 
   /* ============================================================
@@ -599,23 +534,27 @@ export class ReportsComponent implements OnInit {
 
     this.selectedAssetClass = '';
     this.resetExpansion();
+    this.refreshFinancialCalculations();
   }
 
   selectAssetClass(assetClass: string): void {
     this.selectedAssetClass = this.selectedAssetClass === assetClass ? '' : assetClass;
 
     this.resetExpansion();
+    this.refreshFinancialCalculations();
   }
 
   clearFamilyMember(): void {
     this.selectedFamilyMember = '';
     this.selectedAssetClass = '';
     this.resetExpansion();
+    this.refreshFinancialCalculations();
   }
 
   clearAssetClass(): void {
     this.selectedAssetClass = '';
     this.resetExpansion();
+    this.refreshFinancialCalculations();
   }
 
   isFamilyMemberSelected(family: string): boolean {
@@ -624,6 +563,25 @@ export class ReportsComponent implements OnInit {
 
   isAssetClassSelected(assetClass: string): boolean {
     return this.selectedAssetClass === assetClass;
+  }
+
+  private refreshFinancialCalculations(): void {
+    this.portfolioApi.getPortfolioTree({
+      family: this.selectedFamilyMember,
+      asset_class: this.selectedAssetClass,
+    }).subscribe({
+      next: (response) => {
+        this.portfolioTree = response.families ?? [];
+        this.portfolioCalculations = response.calculations ?? { subclasses: [], asset_names: [], family_subclasses: [], report_subclass_summaries: [] };
+        this.validateSelections();
+        this.cdr.detectChanges();
+      },
+      error: (error) => {
+        console.error('Reports financial calculations API error:', error);
+        this.portfolioCalculations = { subclasses: [], asset_names: [], family_subclasses: [], report_subclass_summaries: [] };
+        this.cdr.detectChanges();
+      },
+    });
   }
 
   private resetExpansion(): void {
@@ -800,33 +758,6 @@ export class ReportsComponent implements OnInit {
       gainKey: 'gain',
       filename: `${this.slugify(familyLabel)}_${this.slugify(summary.sub_class)}_holdings_${this.todayStamp()}.xlsx`,
     });
-  }
-
-  private getAssetNameXirr(subClass: string, assetName: string): number | null {
-    const assetIds = new Set<number>();
-
-    for (const tx of this.transactions) {
-      if (this.clean(tx.sub_class) === subClass && this.getAssetName(tx) === assetName) {
-        assetIds.add(tx.asset);
-      }
-    }
-
-    const lookup = this.assetLookup;
-    const assets: PortfolioAssetNode[] = [];
-
-    for (const id of assetIds) {
-      const asset = lookup.get(id);
-      if (asset) {
-        assets.push(asset);
-      }
-    }
-
-    return this.weightedXirr(
-      assets.map((asset) => ({
-        invested_value: this.toNumber(asset.invested_value),
-        xirr: asset.xirr,
-      })),
-    );
   }
 
   async downloadAssetNameTransactions(
@@ -1110,88 +1041,21 @@ export class ReportsComponent implements OnInit {
    * empty value returns all Families.
    */
   private buildSummaryRows(family?: string): SubClassSummaryRow[] {
-    const rowMap = new Map<
-      string,
-      SubClassSummaryRow & { assets: { invested_value: number; xirr: number | null }[] }
-    >();
-
-    for (const familyNode of this.portfolioTree) {
-      if (family && familyNode.family_name !== family) {
-        continue;
-      }
-
-      for (const portfolio of familyNode.portfolios) {
-        for (const assetClass of portfolio.asset_classes) {
-          for (const subClass of assetClass.sub_classes) {
-            const key = `${familyNode.family_name}::${subClass.sub_class}`;
-
-            let row = rowMap.get(key);
-
-            if (!row) {
-              row = {
-                family_name: familyNode.family_name,
-                sub_class: subClass.sub_class,
-                quantity: 0,
-                invested_value: 0,
-                current_value: 0,
-                gain: 0,
-                xirr: null,
-                assets: [],
-              };
-
-              rowMap.set(key, row);
-            }
-
-            for (const asset of subClass.assets) {
-              row.quantity += this.toNumber(asset.quantity);
-              row.invested_value += this.toNumber(asset.invested_value);
-              row.current_value += this.toNumber(asset.current_value);
-              row.gain += this.toNumber(asset.pnl);
-
-              row.assets.push({
-                invested_value: this.toNumber(asset.invested_value),
-                xirr: asset.xirr,
-              });
-            }
-          }
-        }
-      }
-    }
-
-    return Array.from(rowMap.values())
+    return this.portfolioCalculations.family_subclasses
+      .filter((row) => !family || row.family_name === family)
       .map((row) => ({
-        family_name: row.family_name,
+        family_name: row.family_name || 'Unassigned',
         sub_class: row.sub_class,
         quantity: row.quantity,
         invested_value: row.invested_value,
         current_value: row.current_value,
-        gain: row.gain,
-        xirr: this.weightedXirr(row.assets),
+        gain: row.pnl,
+        xirr: row.xirr,
       }))
       .sort(
         (a, b) =>
           a.family_name.localeCompare(b.family_name) || a.sub_class.localeCompare(b.sub_class),
       );
-  }
-
-  private weightedXirr(assets: { invested_value: number; xirr: number | null }[]): number | null {
-    const validAssets = assets.filter(
-      (asset) => asset.xirr !== null && asset.xirr !== undefined && asset.invested_value > 0,
-    );
-
-    if (!validAssets.length) {
-      return null;
-    }
-
-    let weightedXirr = 0;
-    let totalInvested = 0;
-
-    for (const asset of validAssets) {
-      weightedXirr += (asset.xirr as number) * asset.invested_value;
-      totalInvested += asset.invested_value;
-    }
-
-    return totalInvested ? weightedXirr / totalInvested : null;
   }
 
   /* ============================================================

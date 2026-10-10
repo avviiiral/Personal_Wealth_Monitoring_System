@@ -39,7 +39,6 @@ Chart.register(...registerables);
 })
 export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
   private readonly wealthApi = inject(WealthApiService);
-  private readonly portfolioApi = inject(PortfolioApiService);
   private readonly themeService = inject(ThemeService);
   private readonly cdr = inject(ChangeDetectorRef);
   private readonly themeEffect = effect(() => {
@@ -157,11 +156,7 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
   }
 
   private getStandardAllocationBaseTotal(): number {
-    const summaryTotal = (this.investmentSummaryGroups ?? []).reduce(
-      (total, group) => total + Number(group.current_value || 0),
-      0,
-    );
-
+    const summaryTotal = Number(this.summary?.total_current_value ?? 0);
     if (Number.isFinite(summaryTotal) && summaryTotal > 0) {
       return summaryTotal;
     }
@@ -213,6 +208,9 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
   generatingReport = false;
 
   portfolioTree: PortfolioTreeResponse | null = null;
+  dashboardInvestmentSummary: Array<any> = [];
+  dashboardPerformance: Array<any> = [];
+  portfolioReportSummaries: Array<any> = [];
 
   private wealthChart?: Chart;
   private allocationChart?: Chart;
@@ -395,20 +393,58 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
 
     this.loading = true;
     this.error = '';
-
     this.destroyCharts();
 
     const family = this.selectedFamilyMember || undefined;
 
-    // SUMMARY
-    this.wealthApi.getSummary(family).subscribe({
-      next: (data) => {
-        console.log('SUMMARY RESPONSE:', data);
+    this.investmentSummary = null;
+    this.investmentSummaryError = '';
+    this.portfolioTree = null;
+    this.dashboardInvestmentSummary = [];
+    this.dashboardPerformance = [];
 
-        this.summary = data;
+    this.wealthApi.getAnalyticsDashboard('30d', 30, family).subscribe({
+      next: (data) => {
+        console.log('ANALYTICS DASHBOARD RESPONSE:', data);
+
+        this.summary = data.summary;
+        this.xirr = data.xirr;
+        this.investmentSummary = data.investment_summary;
+        this.dashboardInvestmentSummary = data.dashboard_investment_summary ?? [];
+        this.dashboardPerformance = data.dashboard_performance?.results ?? [];
+        this.portfolioReportSummaries = data.portfolio_calculations?.report_subclass_summaries ?? [];
+        this.advisorAllocation = data.advisor_allocation?.results ?? [];
+        this.advisorPerformance = data.advisor_performance?.results ?? [];
+        const standardAllocationRows = data.standard_allocations ?? {};
+        this.standardAllocations = Object.fromEntries(
+          Object.entries(standardAllocationRows).map(([category, value]: [string, any]) => [
+            category,
+            Number(value?.percent ?? 0),
+          ]),
+        );
+        this.standardAllocationAmounts = Object.fromEntries(
+          Object.entries(standardAllocationRows).map(([category, value]: [string, any]) => [
+            category,
+            Number(value?.amount ?? 0),
+          ]),
+        );
+        this.standardAllocationTotalValue = Number(data.summary?.total_current_value ?? 0);
+        this.standardAllocationDraft = { ...this.standardAllocations };
+        this.standardAllocationAmountDraft = { ...this.standardAllocationAmounts };
+        this.historical = data.historical;
+        this.portfolioTree = data.portfolio_tree;
+
+        if (
+          this.reportScope &&
+          !this.reportScopeOptions.some(option => option.value === this.reportScope)
+        ) {
+          this.reportScope = '';
+          this.reportAssetClass = '';
+        }
+
+        this.ensureValidXirrCategoryIndex();
 
         this.loading = false;
-
         this.cdr.markForCheck();
 
         setTimeout(() => {
@@ -416,140 +452,16 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
           this.cdr.markForCheck();
         });
       },
-
       error: (error) => {
-        console.error('SUMMARY API ERROR:', error);
-
+        console.error('ANALYTICS DASHBOARD API ERROR:', error);
         this.loading = false;
-        this.error = 'Unable to load wealth summary.';
-
-        this.cdr.markForCheck();
-      },
-    });
-
-    // XIRR
-    this.wealthApi.getXirr(family).subscribe({
-      next: (data) => {
-        console.log('XIRR RESPONSE:', data);
-
-        this.xirr = data;
-
-        this.cdr.markForCheck();
-      },
-
-      error: (error) => {
-        console.error('XIRR API ERROR:', error);
-      },
-    });
-
-    // INVESTMENT SUMMARY
-    this.investmentSummary = null;
-    this.investmentSummaryError = '';
-
-    this.wealthApi.getInvestmentSummary(family).subscribe({
-      next: (data) => {
-        console.log('INVESTMENT SUMMARY RESPONSE:', data);
-
-        this.investmentSummary = data;
-
-        this.cdr.markForCheck();
-
-        setTimeout(() => {
-          this.renderAllocationChart();
-          this.cdr.markForCheck();
-        });
-      },
-
-      error: (error) => {
-        console.error('INVESTMENT SUMMARY API ERROR:', error);
-
+        this.error = 'Unable to load dashboard data.';
         this.investmentSummaryError = 'Unable to load investment summary.';
-
-        this.cdr.markForCheck();
-      },
-    });
-
-    // ADVISOR ALLOCATION / PERFORMANCE
-    // (see the advisorAllocation/advisorPerformance field docs)
-    this.wealthApi.getAllocationByAdvisor().subscribe({
-      next: (data) => {
-        this.advisorAllocation = data?.results ?? [];
-        this.cdr.markForCheck();
-      },
-
-      error: (error) => {
-        console.error('ALLOCATION BY ADVISOR API ERROR:', error);
-        this.advisorAllocation = [];
-      },
-    });
-
-    this.wealthApi.getPerformanceByAdvisor().subscribe({
-      next: (data) => {
-        this.advisorPerformance = data?.results ?? [];
-        this.cdr.markForCheck();
-      },
-
-      error: (error) => {
-        console.error('PERFORMANCE BY ADVISOR API ERROR:', error);
-        this.advisorPerformance = [];
-      },
-    });
-
-    // PORTFOLIO TREE
-    /*
-     * Reuse the existing Portfolio tree because every portfolio
-     * asset already contains its calculated XIRR and Underlying.
-     *
-     * This is used for the Dashboard XIRR Performance section AND
-     * as the source of Family Members for the filter bar - it is
-     * intentionally NOT scoped by ?family= (the tree endpoint has no
-     * such param), so the filter's own option list always shows
-     * every Family regardless of which one is currently selected.
-     * The XIRR Performance getters below filter it client-side by
-     * selectedFamilyMember, the same way Portfolio/Reports do.
-     */
-    this.portfolioApi.getPortfolioTree().subscribe({
-      next: (data) => {
-        console.log('PORTFOLIO TREE RESPONSE:', data);
-
-        this.portfolioTree = data;
-
-        if (this.reportScope && !this.reportScopeOptions.some(option => option.value === this.reportScope)) {
-          this.reportScope = '';
-          this.reportAssetClass = '';
-        }
-
-        this.ensureValidXirrCategoryIndex();
-
-        this.cdr.markForCheck();
-      },
-
-      error: (error) => {
-        console.error('PORTFOLIO TREE API ERROR:', error);
-
         this.portfolioTree = null;
-
+        this.dashboardInvestmentSummary = [];
+        this.dashboardPerformance = [];
+        this.portfolioReportSummaries = [];
         this.cdr.markForCheck();
-      },
-    });
-
-    // HISTORICAL
-    this.wealthApi.getHistorical(30, family).subscribe({
-      next: (data) => {
-        console.log('HISTORICAL RESPONSE:', data);
-
-        this.historical = data;
-
-        this.cdr.markForCheck();
-
-        setTimeout(() => {
-          this.renderWealthChart();
-          this.cdr.markForCheck();
-        });
-      },
-
-      error: (error) => {
-        console.error('HISTORICAL API ERROR:', error);
       },
     });
   }
@@ -840,82 +752,20 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
     return `${this.toNumber(value).toFixed(2)}%`;
   }
 
-  /**
-   * Groups the Investment Summary rows by Asset Category, summing
-   * current value and % of total, so the Allocation chart shows the
-   * exact same categorization and totals as the Investment Summary
-   * table below it — one source of truth for both.
-   *
-   * CORRECTION: an earlier version of this getter assumed the
-   * backend (InvestmentSummaryService.calculate(), reached via
-   * /api/analytics/wealth/investment-summary/) returned a bare
-   * array. That assumption was wrong — traced and confirmed against
-   * the real service code and a live functional test — the backend
-   * actually returns { results: [...], total_current_value }, and
-   * each row genuinely carries percentage_of_total. The "fix" based
-   * on the wrong assumption broke this section (empty Allocation/
-   * Investment Summary); this restores the correct original logic.
-   */
   get allocationByCategory(): Array<{
     category: string;
     value: number;
     percentage: number;
   }> {
-    const results = this.investmentSummary?.results ?? [];
-
-    const order: string[] = [];
-    const totals = new Map<
-      string,
-      {
-        value: number;
-        percentage: number;
-      }
-    >();
-
-    for (const row of results) {
-      const category = row.asset_category;
-
-      if (!totals.has(category)) {
-        totals.set(category, {
-          value: 0,
-          percentage: 0,
-        });
-
-        order.push(category);
-      }
-
-      const entry = totals.get(category)!;
-
-      entry.value += this.toNumber(row.current_value);
-
-      entry.percentage += this.toNumber(row.percentage_of_total);
-    }
-
-    return order
-      .map((category) => {
-        const entry = totals.get(category)!;
-
-        return {
-          category,
-          value: entry.value,
-          percentage: Math.round(entry.percentage * 100) / 100,
-        };
-      })
-      .filter((entry) => entry.value > 0);
+    return this.dashboardInvestmentSummary
+      .filter((group) => Number(group.current_value) > 0)
+      .map((group) => ({
+        category: group.asset_category,
+        value: Number(group.percentage_of_total) || 0,
+        percentage: Number(group.percentage_of_total) || 0,
+      }));
   }
 
-  /**
-   * Groups the flat Investment Summary API rows by Asset Category.
-   *
-   * Level 1:
-   *   Asset Category
-   *
-   * Level 2:
-   *   Asset Class
-   *
-   * Clicking an Asset Category expands its Asset Classes directly
-   * inside the Dashboard. No Portfolio navigation is performed.
-   */
   get investmentSummaryGroups(): Array<{
     asset_category: string;
     current_value: number;
@@ -927,86 +777,7 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
       raw_asset_classes: string[];
     }>;
   }> {
-    const results = this.investmentSummary?.results ?? [];
-
-    const groups = new Map<
-      string,
-      {
-        asset_category: string;
-        current_value: number;
-        percentage_of_total: number;
-        asset_classes: Array<{
-          asset_class: string;
-          current_value: number;
-          percentage_of_total: number;
-          raw_asset_classes: string[];
-        }>;
-      }
-    >();
-
-    for (const row of results) {
-      const category = row.asset_category || 'Unassigned';
-
-      const assetClass = row.asset_class || 'Unassigned';
-
-      let group = groups.get(category);
-
-      if (!group) {
-        group = {
-          asset_category: category,
-          current_value: 0,
-          percentage_of_total: 0,
-          asset_classes: [],
-        };
-
-        groups.set(category, group);
-      }
-
-      const currentValue = this.toNumber(row.current_value);
-
-      const percentage = this.toNumber(row.percentage_of_total);
-
-      group.current_value += currentValue;
-
-      group.percentage_of_total += percentage;
-
-      let classRow = group.asset_classes.find((item) => item.asset_class === assetClass);
-
-      if (!classRow) {
-        classRow = {
-          asset_class: assetClass,
-          current_value: 0,
-          percentage_of_total: 0,
-          raw_asset_classes: [],
-        };
-
-        group.asset_classes.push(classRow);
-      }
-
-      classRow.current_value += currentValue;
-
-      classRow.percentage_of_total += percentage;
-
-      const rawAssetClasses = Array.isArray(row.raw_asset_classes) ? row.raw_asset_classes : [];
-
-      for (const rawAssetClass of rawAssetClasses) {
-        if (rawAssetClass && !classRow.raw_asset_classes.includes(rawAssetClass)) {
-          classRow.raw_asset_classes.push(rawAssetClass);
-        }
-      }
-    }
-
-    return Array.from(groups.values()).map((group) => ({
-      ...group,
-
-      percentage_of_total: Math.round(group.percentage_of_total * 100) / 100,
-
-      asset_classes: group.asset_classes.map((assetClass) => ({
-        ...assetClass,
-
-        percentage_of_total: Math.round(assetClass.percentage_of_total * 100) / 100,
-      })),
-    }));
+    return this.dashboardInvestmentSummary;
   }
 
   /**
@@ -1361,83 +1132,77 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
    * number shown on the Portfolio page. Better to omit it in the
    * PDF than to show a number that might not match.
    */
-  private buildSubClassSummariesForReport(reportLevel: 'asset_class' | 'sub_class' | 'asset_name' | 'underlying' = 'asset_class', reportScope = ''): SubClassSummaryRow[] {
-    const totals = new Map<string, {
-      family_name: string;
-      sub_class: string;
-      current_value: number;
-      invested_value: number;
-      pnl: number;
-      xirr_inputs: { invested_value: number; xirr: number | null }[];
-    }>();
+  private buildSubClassSummariesForReport(
+    reportLevel: 'asset_class' | 'sub_class' | 'asset_name' | 'underlying' = 'asset_class',
+    reportScope = '',
+  ): SubClassSummaryRow[] {
+    const allowedSubScopes = new Set<string>();
 
-    for (const family of this.portfolioTree?.families ?? []) {
-      if (this.selectedFamilyMember && family.family_name !== this.selectedFamilyMember) continue;
+    if (reportLevel === 'asset_name' || reportLevel === 'underlying') {
+      for (const family of this.portfolioTree?.families ?? []) {
+        if (this.selectedFamilyMember && family.family_name !== this.selectedFamilyMember) {
+          continue;
+        }
+        for (const portfolio of family.portfolios) {
+          for (const assetClass of portfolio.asset_classes) {
+            const assetClassName = (assetClass.asset_class || 'Unassigned').trim() || 'Unassigned';
+            for (const subClass of assetClass.sub_classes) {
+              const subClassName = (subClass.sub_class || 'Unassigned').trim() || 'Unassigned';
+              const subScope = assetClassName + '::' + subClassName;
 
-      for (const portfolio of family.portfolios) {
-        for (const assetClass of portfolio.asset_classes) {
-          const ac = (assetClass.asset_class || 'Unassigned').trim() || 'Unassigned';
-          for (const subClass of assetClass.sub_classes) {
-            const subClassName = subClass.sub_class || 'Unassigned';
-            const subScope = ac + '::' + subClassName;
-            if (reportLevel === 'asset_class' && reportScope && reportScope !== ac) continue;
-            if (reportLevel === 'sub_class' && reportScope !== subScope) continue;
-            const key = family.family_name + '::' + subScope;
-            const existing = totals.get(key) ?? {
-              family_name: family.family_name,
-              sub_class: subClassName,
-              current_value: 0,
-              invested_value: 0,
-              pnl: 0,
-              xirr_inputs: [],
-            };
+              for (const asset of subClass.assets) {
+                const assetName = (asset.asset_name || 'Unnamed Asset').trim() || 'Unnamed Asset';
+                const underlying = (asset.underlying || '').trim();
+                const assetScope = subScope + '::' + assetName;
 
-            for (const asset of subClass.assets) {
-              const assetName = (asset.asset_name || 'Unnamed Asset').trim() || 'Unnamed Asset';
-              const underlying = (asset.underlying || '').trim();
-              const assetScope = subScope + '::' + assetName;
-              if (reportLevel === 'asset_name' && reportScope !== assetScope) continue;
-              if (reportLevel === 'underlying' && reportScope.indexOf(assetScope + '::') !== 0) continue;
-              const investedValue = Number(asset.invested_value ?? 0);
-              existing.current_value += Number(asset.current_value ?? 0);
-              existing.invested_value += investedValue;
-              existing.pnl += Number(asset.pnl ?? 0);
-              existing.xirr_inputs.push({
-                invested_value: investedValue,
-                xirr: asset.sub_class_xirr ?? null,
-              });
+                if (
+                  (reportLevel === 'asset_name' && reportScope === assetScope) ||
+                  (reportLevel === 'underlying' && reportScope === assetScope + '::' + underlying)
+                ) {
+                  allowedSubScopes.add(subScope);
+                }
+              }
             }
-
-            totals.set(key, existing);
           }
         }
       }
     }
 
-    return Array.from(totals.values())
-      .map((values) => {
-        const valid = values.xirr_inputs.filter(
-          (item) => item.xirr !== null && Number.isFinite(Number(item.xirr)) && item.invested_value > 0,
-        );
-        const totalInvested = valid.reduce((sum, item) => sum + item.invested_value, 0);
-        const xirr = totalInvested
-          ? valid.reduce((sum, item) => sum + Number(item.xirr) * item.invested_value, 0) / totalInvested
-          : null;
+    return this.portfolioReportSummaries
+      .filter((row) => {
+        if (this.selectedFamilyMember && row.family_name !== this.selectedFamilyMember) {
+          return false;
+        }
 
-        return {
-          family_name: values.family_name,
-          sub_class: values.sub_class,
-          invested_value: values.invested_value,
-          current_value: values.current_value,
-          pnl: values.pnl,
-          xirr,
-        };
+        const subScope = row.asset_class + '::' + row.sub_class;
+        if (reportLevel === 'asset_class' && reportScope && reportScope !== row.asset_class) {
+          return false;
+        }
+        if (reportLevel === 'sub_class' && reportScope !== subScope) {
+          return false;
+        }
+        if (
+          (reportLevel === 'asset_name' || reportLevel === 'underlying') &&
+          !allowedSubScopes.has(subScope)
+        ) {
+          return false;
+        }
+
+        return true;
       })
-      .sort((a, b) =>
-        a.family_name.localeCompare(b.family_name) || b.current_value - a.current_value,
+      .map((row) => ({
+        family_name: row.family_name,
+        sub_class: row.sub_class,
+        invested_value: row.invested_value,
+        current_value: row.current_value,
+        pnl: row.pnl,
+        xirr: row.xirr,
+      }))
+      .sort(
+        (a, b) =>
+          a.family_name.localeCompare(b.family_name) || b.current_value - a.current_value,
       );
   }
-
   /**
    * Per-scheme/per-holding detail for the Portfolio Review PDF,
    * grouped by Sub Class - the source of the "Equities: Mutual

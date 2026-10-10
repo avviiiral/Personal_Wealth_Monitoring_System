@@ -13,6 +13,7 @@ from market_data.models import MarketPrice
 from portfolio.services.portfolio_tree_service import (
     PortfolioTreeService,
 )
+from portfolio.services.portfolio_calculation_service import PortfolioCalculationService
 
 
 class PortfolioTreeServiceTests(TestCase):
@@ -265,6 +266,174 @@ class PortfolioTreeServiceTests(TestCase):
         )
 
 
+class PortfolioCalculationServiceTests(TestCase):
+    def setUp(self):
+        User = get_user_model()
+        self.user = User.objects.create_user(
+            username="portfolio_calculation_user",
+            password="test-password",
+        )
+        self.family = FamilyGroup.objects.create(name="Portfolio Calculation Family")
+        self.user.profile.family_groups.add(self.family)
+
+        self.asset = Asset.objects.create(
+            family=self.family,
+            owner=self.user,
+            name="Calculation Equity",
+            category="STOCK",
+            isin="INE000CALC001",
+        )
+        Transaction.objects.create(
+            owner=self.user,
+            family=self.family,
+            asset=self.asset,
+            family_name="Family A",
+            portfolio="Portfolio A",
+            asset_class="Equity",
+            sub_class="Large Cap",
+            asset_name="Calculation Equity",
+            transaction_date=date(2026, 1, 10),
+            transaction_type="BUY",
+            quantity=Decimal("10"),
+            price_per_unit=Decimal("100"),
+            amount=Decimal("1000"),
+            fees=Decimal("0"),
+        )
+
+    def test_calculations_are_aggregated_server_side(self):
+        data = PortfolioCalculationService.calculate(
+            owner=self.user,
+            family_id=self.family.id,
+        )
+
+        self.assertEqual(len(data["subclasses"]), 1)
+        self.assertEqual(data["subclasses"][0]["sub_class"], "Large Cap")
+        self.assertEqual(data["subclasses"][0]["quantity"], 10.0)
+        self.assertEqual(data["subclasses"][0]["invested_value"], 1000.0)
+        self.assertEqual(data["subclasses"][0]["current_value"], 1000.0)
+        self.assertEqual(data["subclasses"][0]["pnl"], 0.0)
+
+        self.assertEqual(len(data["asset_names"]), 1)
+        self.assertEqual(data["asset_names"][0]["asset_name"], "Calculation Equity")
+        self.assertEqual(data["asset_names"][0]["invested_value"], 1000.0)
+
+        self.assertEqual(len(data["family_subclasses"]), 1)
+        self.assertEqual(data["family_subclasses"][0]["family_name"], "Family A")
+        self.assertEqual(data["family_subclasses"][0]["sub_class"], "Large Cap")
+
+    def test_aggregate_xirr_scopes_cash_flows_and_values_to_tree_positions(self):
+        Transaction.objects.create(
+            owner=self.user,
+            family=self.family,
+            asset=self.asset,
+            family_name="Family B",
+            portfolio="Portfolio B",
+            asset_class="Equity",
+            sub_class="Large Cap",
+            asset_name="Calculation Equity",
+            transaction_date=date(2026, 2, 10),
+            transaction_type="BUY",
+            quantity=Decimal("10"),
+            price_per_unit=Decimal("100"),
+            amount=Decimal("1000"),
+            fees=Decimal("0"),
+        )
+        Transaction.objects.create(
+            owner=self.user,
+            family=self.family,
+            asset=self.asset,
+            family_name="Family A",
+            portfolio="Portfolio C",
+            asset_class="Equity",
+            sub_class="Small Cap",
+            asset_name="Calculation Equity",
+            transaction_date=date(2026, 3, 10),
+            transaction_type="BUY",
+            quantity=Decimal("50"),
+            price_per_unit=Decimal("100"),
+            amount=Decimal("5000"),
+            fees=Decimal("0"),
+        )
+
+        def position(quantity, current_price, current_value):
+            return {
+                "id": self.asset.id,
+                "asset_name": "Calculation Equity",
+                "quantity": quantity,
+                "invested_value": quantity * 100,
+                "current_price": current_price,
+                "current_value": current_value,
+                "advisors": "",
+            }
+
+        def portfolio_row(portfolio, sub_class, holding):
+            return {
+                "portfolio": portfolio,
+                "asset_classes": [
+                    {
+                        "asset_class": "Equity",
+                        "sub_classes": [
+                            {"sub_class": sub_class, "assets": [holding]}
+                        ],
+                    }
+                ],
+            }
+
+        tree = {
+            "families": [
+                {
+                    "family_name": "Family A",
+                    "portfolios": [
+                        portfolio_row(
+                            "Portfolio A",
+                            "Large Cap",
+                            position(10, 150, 1500),
+                        ),
+                        portfolio_row(
+                            "Portfolio C",
+                            "Small Cap",
+                            position(50, 120, 6000),
+                        ),
+                    ],
+                },
+                {
+                    "family_name": "Family B",
+                    "portfolios": [
+                        portfolio_row(
+                            "Portfolio B",
+                            "Large Cap",
+                            position(10, 150, 1500),
+                        )
+                    ],
+                },
+            ]
+        }
+
+        data = PortfolioCalculationService.calculate(
+            owner=self.user,
+            family_id=self.family.id,
+            tree=tree,
+        )
+        large_cap = next(
+            row for row in data["subclasses"] if row["sub_class"] == "Large Cap"
+        )
+        large_cap_transactions = list(
+            Transaction.objects.filter(
+                family=self.family,
+                sub_class="Large Cap",
+            ).order_by("transaction_date", "id")
+        )
+        expected_xirr = PortfolioTreeService._calculate_xirr(
+            large_cap_transactions,
+            Decimal("20"),
+            Decimal("3000"),
+        )
+
+        self.assertEqual(large_cap["quantity"], 20.0)
+        self.assertEqual(large_cap["current_value"], 3000.0)
+        self.assertEqual(large_cap["xirr"], expected_xirr)
+
+
 class PortfolioTreeAPITests(TestCase):
 
     def setUp(self):
@@ -323,6 +492,10 @@ class PortfolioTreeAPITests(TestCase):
 
         self.assertTrue(data["success"])
         self.assertIn("families", data)
+        self.assertIn("calculations", data)
+        self.assertEqual(data["calculations"]["subclasses"][0]["quantity"], 20.0)
+        self.assertEqual(data["calculations"]["subclasses"][0]["invested_value"], 1000.0)
+        self.assertEqual(data["calculations"]["asset_names"][0]["asset_name"], "API Test Equity")
 
         family = next(
             (

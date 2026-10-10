@@ -490,6 +490,51 @@ class AnalyticsViewModelServiceTests(TestCase):
         self.assertEqual(insights["largest_allocation"]["percentage"], 70.0)
         self.assertEqual(insights["period_value_change"], 20.0)
 
+    def test_dashboard_investment_summary_is_server_calculated(self):
+        tree = {
+            "families": [
+                {
+                    "family_name": "Family A",
+                    "portfolios": [
+                        {
+                            "asset_classes": [
+                                {
+                                    "asset_class": "Equity",
+                                    "sub_classes": [
+                                        {
+                                            "sub_class": "Direct Equity",
+                                            "assets": [
+                                                {"current_value": 700},
+                                            ],
+                                        }
+                                    ],
+                                },
+                                {
+                                    "asset_class": "Debt",
+                                    "sub_classes": [
+                                        {
+                                            "sub_class": "Debt Mutual Fund",
+                                            "assets": [
+                                                {"current_value": 300},
+                                            ],
+                                        }
+                                    ],
+                                },
+                            ]
+                        }
+                    ],
+                }
+            ]
+        }
+
+        rows = AnalyticsViewModelService._dashboard_investment_summary(tree)
+
+        self.assertEqual(rows[0]["current_value"], 700.0)
+        self.assertEqual(rows[0]["percentage_of_total"], 70.0)
+        self.assertEqual(rows[0]["asset_classes"][0]["current_value"], 700.0)
+        self.assertEqual(rows[1]["current_value"], 300.0)
+        self.assertEqual(rows[1]["percentage_of_total"], 30.0)
+
     def test_empty_insights_are_deterministic(self):
         insights = AnalyticsViewModelService._insights(
             [],

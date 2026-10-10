@@ -1,0 +1,241 @@
+from collections import defaultdict
+from decimal import Decimal
+
+from portfolio.services.portfolio_tree_service import PortfolioTreeService
+
+
+class PortfolioCalculationService:
+    """Authoritative financial aggregations for Portfolio and Reports UI."""
+
+    @staticmethod
+    def _number(value):
+        if value is None:
+            return Decimal("0")
+        return Decimal(str(value))
+
+    @classmethod
+    def _asset_rows(cls, tree):
+        rows = []
+        for family in tree.get("families", []):
+            for portfolio in family.get("portfolios", []):
+                for asset_class in portfolio.get("asset_classes", []):
+                    for sub_class in asset_class.get("sub_classes", []):
+                        for asset in sub_class.get("assets", []):
+                            rows.append({
+                                "family_name": family.get("family_name") or "Unassigned",
+                                "portfolio": portfolio.get("portfolio") or "Unassigned",
+                                "asset_class": asset_class.get("asset_class") or "Unassigned",
+                                "sub_class": sub_class.get("sub_class") or "Unassigned",
+                                "asset": asset,
+                            })
+        return rows
+
+    @classmethod
+    def _matches(cls, row, family=None, asset_class=None, advisor=None):
+        asset = row["asset"]
+        if family and row["family_name"] != family:
+            return False
+        if asset_class and row["asset_class"] != asset_class:
+            return False
+        if advisor and (asset.get("advisors") or "").strip() != advisor:
+            return False
+        return True
+
+    @classmethod
+    def _xirr(cls, transactions, assets, family=None, asset_class=None, advisor=None):
+        if not transactions:
+            return None
+
+        # An asset can appear in more than one portfolio-tree node (for
+        # example, the same security held by two families). Match transactions
+        # to the full node scope rather than asset_id alone, so one node cannot
+        # absorb another node's flows.
+        asset_scope_keys = {
+            (
+                item["family_name"],
+                item["portfolio"],
+                item["asset_class"],
+                item["sub_class"],
+                item["asset"].get("id"),
+            )
+            for item in assets
+        }
+        selected_transactions = []
+        for tx in transactions:
+            tx_scope_key = (
+                (tx.family_name or "").strip() or "Unassigned",
+                (tx.portfolio or "").strip() or "Unassigned",
+                (tx.asset_class or "").strip() or "Unassigned",
+                (tx.sub_class or "").strip() or "Unassigned",
+                tx.asset_id,
+            )
+            if tx_scope_key not in asset_scope_keys:
+                continue
+            if family and tx_scope_key[0] != family:
+                continue
+            if asset_class and tx_scope_key[2] != asset_class:
+                continue
+            if advisor and (tx.advisors or "").strip() != advisor:
+                continue
+            selected_transactions.append(tx)
+
+        if not selected_transactions:
+            return None
+
+        # Do not deduplicate by asset_id: separate tree nodes are separate
+        # positions for aggregation purposes, even when they reference one
+        # shared Asset record.
+        quantity = sum(
+            (cls._number(item["asset"].get("quantity")) for item in assets),
+            Decimal("0"),
+        )
+        current_value = sum(
+            (
+                cls._number(item["asset"].get("current_value"))
+                for item in assets
+                if item["asset"].get("current_price") is not None
+            ),
+            Decimal("0"),
+        )
+
+        return PortfolioTreeService._calculate_xirr(
+            selected_transactions,
+            quantity,
+            current_value if quantity > 0 and current_value > 0 else None,
+        )
+
+    @classmethod
+    def _row(cls, group_key, assets, transactions, family_filter=None, asset_class_filter=None, advisor_filter=None):
+        quantity = sum(
+            (cls._number(item["asset"].get("quantity")) for item in assets),
+            Decimal("0"),
+        )
+        invested = sum(
+            (cls._number(item["asset"].get("invested_value")) for item in assets),
+            Decimal("0"),
+        )
+        current = sum(
+            (cls._number(item["asset"].get("current_value")) for item in assets),
+            Decimal("0"),
+        )
+        pnl = current - invested
+        return {
+            **group_key,
+            "quantity": float(quantity),
+            "invested_value": float(invested),
+            "current_value": float(current),
+            "pnl": float(pnl),
+            "xirr": cls._xirr(
+                transactions,
+                assets,
+                family=group_key.get("family_name") or family_filter,
+                asset_class=group_key.get("asset_class") or asset_class_filter,
+                advisor=advisor_filter,
+            ),
+        }
+
+    @classmethod
+    def calculate(
+        cls,
+        owner,
+        family_id,
+        family=None,
+        asset_class=None,
+        advisor=None,
+        tree=None,
+    ):
+        # Build the complete authoritative asset tree first. Filtering here
+        # selects already-calculated positions; it never reconstructs a
+        # position from a filtered transaction subset.
+        tree = tree or PortfolioTreeService.build(
+            owner=owner,
+            family_id=family_id,
+            xirr_filters={},
+        )
+        rows = [
+            row for row in cls._asset_rows(tree)
+            if cls._matches(row, family=family, asset_class=asset_class, advisor=advisor)
+        ]
+
+        owner_ids = [owner.pk] if hasattr(owner, "pk") else list(owner)
+        transactions = list(
+            PortfolioTreeService._get_transactions(owner_ids, family_id=family_id)
+        )
+
+        subclass_groups = defaultdict(list)
+        asset_name_groups = defaultdict(list)
+        family_subclass_groups = defaultdict(list)
+        report_subclass_groups = defaultdict(list)
+
+        for row in rows:
+            subclass_groups[row["sub_class"]].append(row)
+            asset_name_groups[(row["sub_class"], row["asset"].get("asset_name") or "Unassigned")].append(row)
+            family_subclass_groups[(row["family_name"], row["sub_class"])].append(row)
+            report_subclass_groups[(row["family_name"], row["asset_class"], row["sub_class"])].append(row)
+
+        subclasses = [
+            cls._row({"sub_class": key}, group, transactions, family_filter=family, asset_class_filter=asset_class, advisor_filter=advisor)
+            for key, group in subclass_groups.items()
+        ]
+        subclasses.sort(key=lambda item: item["sub_class"].casefold())
+
+        asset_names = [
+            cls._row(
+                {
+                    "sub_class": key[0],
+                    "asset_name": key[1],
+                    "family_names": sorted(
+                        {item["family_name"] for item in group},
+                        key=str.casefold,
+                    ),
+                },
+                group,
+                transactions,
+                family_filter=family,
+                asset_class_filter=asset_class,
+                advisor_filter=advisor,
+            )
+            for key, group in asset_name_groups.items()
+        ]
+        asset_names.sort(
+            key=lambda item: (item["sub_class"].casefold(), item["asset_name"].casefold())
+        )
+
+        family_subclasses = [
+            cls._row(
+                {"family_name": key[0], "sub_class": key[1]},
+                group,
+                transactions,
+            )
+            for key, group in family_subclass_groups.items()
+        ]
+        family_subclasses.sort(
+            key=lambda item: (item["family_name"].casefold(), item["sub_class"].casefold())
+        )
+
+        report_subclass_summaries = [
+            cls._row(
+                {
+                    "family_name": key[0],
+                    "asset_class": key[1],
+                    "sub_class": key[2],
+                },
+                group,
+                transactions,
+            )
+            for key, group in report_subclass_groups.items()
+        ]
+        report_subclass_summaries.sort(
+            key=lambda item: (
+                item["family_name"].casefold(),
+                item["asset_class"].casefold(),
+                item["sub_class"].casefold(),
+            )
+        )
+
+        return {
+            "subclasses": subclasses,
+            "asset_names": asset_names,
+            "family_subclasses": family_subclasses,
+            "report_subclass_summaries": report_subclass_summaries,
+        }

@@ -267,6 +267,15 @@ def portfolio_tree(request):
             family_id=family.id,
             xirr_filters=xirr_filters,
         )
+        from portfolio.services.portfolio_calculation_service import PortfolioCalculationService
+        calculations = PortfolioCalculationService.calculate(
+            owner=request.user,
+            family_id=family.id,
+            family=xirr_filters["family"] or None,
+            asset_class=xirr_filters["asset_class"] or None,
+            advisor=xirr_filters["advisor"] or None,
+            tree=tree,
+        )
     except PermissionDenied as exc:
         return Response(
             {
@@ -281,7 +290,7 @@ def portfolio_tree(request):
             {"success": False, "message": "Unable to build the portfolio tree.", "error": str(exc)},
             status=status.HTTP_500_INTERNAL_SERVER_ERROR,
         )
-    return Response({"success": True, **tree}, status=status.HTTP_200_OK)
+    return Response({"success": True, **tree, "calculations": calculations}, status=status.HTTP_200_OK)
 
 
 

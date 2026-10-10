@@ -452,6 +452,8 @@ class PortfolioTreeService:
         return {
             "id": asset.id,
             "family_name": cls._clean(first.family_name),
+            "asset_class": cls._clean(first.asset_class),
+            "sub_class": cls._clean(first.sub_class),
             "asset_name": asset_name,
             "underlying": cls._clean(first.underlying, ""),
             "isin": getattr(asset, "isin", None),

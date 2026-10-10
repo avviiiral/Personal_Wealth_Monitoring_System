@@ -50,33 +50,30 @@ class PortfolioPositionEngine:
         asset,
         as_of_date=None,
     ):
-        quantity = cls.ZERO
-        invested_value = cls.ZERO
-
-        transactions = cls.get_transactions(
+        transactions = list(cls.get_transactions(
             family=family,
             family_name=family_name,
             portfolio=portfolio,
             asset=asset,
             as_of_date=as_of_date,
-        )
+        ))
+        return cls.calculate_position_from_transactions(transactions)
 
-        # Optimize the common BUY/SIP-only case with a single SQL
-        # aggregation. Positions containing SELL/BONUS/SPLIT still use
-        # the existing ordered transaction logic unchanged.
-        has_adjustments = transactions.exclude(
-            transaction_type__in=(
-                TransactionType.BUY,
-                TransactionType.SIP,
-            )
-        ).exists()
+    @classmethod
+    def calculate_position_from_transactions(cls, transactions):
+        """Calculate a position using an already-loaded, ordered transaction list."""
+        quantity = cls.ZERO
+        invested_value = cls.ZERO
+
+        # Preserve the existing BUY/SIP-only aggregation semantics without
+        # issuing a query for every position in historical report generation.
+        has_adjustments = any(
+            tx.transaction_type not in (TransactionType.BUY, TransactionType.SIP)
+            for tx in transactions
+        )
         if not has_adjustments:
-            totals = transactions.aggregate(
-                quantity=Sum("quantity"),
-                invested_value=Sum("amount"),
-            )
-            quantity = totals["quantity"] or cls.ZERO
-            invested_value = totals["invested_value"] or cls.ZERO
+            quantity = sum((tx.quantity or cls.ZERO for tx in transactions), cls.ZERO)
+            invested_value = sum((tx.amount or cls.ZERO for tx in transactions), cls.ZERO)
             average_cost = (
                 invested_value / quantity
                 if quantity > 0

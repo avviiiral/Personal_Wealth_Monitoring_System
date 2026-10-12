@@ -1285,6 +1285,83 @@ class MISReportAPITests(TestCase):
         self.assertAlmostEqual(djt["unrealized_pnl"], 7879892.375016, places=2)
         self.assertAlmostEqual(djt["unrealized_tax"], 1178043.910064892, places=2)
 
+    def test_fifo_tax_uses_tax_setting_for_each_underlying_position(self):
+        asset_a = Asset.objects.create(
+            owner=self.user, family=self.family, name="Long Term Underlying",
+            category="STOCK", symbol="LONGTERM",
+        )
+        asset_b = Asset.objects.create(
+            owner=self.user, family=self.family, name="Short Term Underlying",
+            category="STOCK", symbol="SHORTTERM",
+        )
+        common = {
+            "owner": self.user,
+            "family": self.family,
+            "family_name": "DAJ",
+            "portfolio": "Grouped PMS",
+            "asset_class": "Equity",
+            "sub_class": "Equity PMS",
+            "asset_name": "Grouped PMS",
+            "advisors": "Advisor A",
+            "fees": Decimal("0"),
+        }
+        transactions = [
+            Transaction.objects.create(
+                **common, asset=asset_a, transaction_date=date(2024, 1, 1),
+                transaction_type="BUY", quantity=Decimal("10"),
+                price_per_unit=Decimal("100"), amount=Decimal("1000"),
+            ),
+            Transaction.objects.create(
+                **common, asset=asset_b, transaction_date=date(2026, 8, 1),
+                transaction_type="BUY", quantity=Decimal("10"),
+                price_per_unit=Decimal("100"), amount=Decimal("1000"),
+            ),
+            Transaction.objects.create(
+                **common, asset=asset_a, transaction_date=date(2026, 9, 1),
+                transaction_type="SELL", quantity=Decimal("5"),
+                price_per_unit=Decimal("110"), amount=Decimal("550"),
+            ),
+            Transaction.objects.create(
+                **common, asset=asset_b, transaction_date=date(2026, 9, 1),
+                transaction_type="SELL", quantity=Decimal("5"),
+                price_per_unit=Decimal("110"), amount=Decimal("550"),
+            ),
+        ]
+        long_term_setting = TaxRateSetting.objects.create(
+            family=self.family, asset=asset_a, tenure_months=12,
+            short_term_tax_rate=Decimal("25"),
+            long_term_tax_rate=Decimal("10"),
+        )
+        short_term_setting = TaxRateSetting.objects.create(
+            family=self.family, asset=asset_b, tenure_months=12,
+            short_term_tax_rate=Decimal("20"),
+            long_term_tax_rate=Decimal("8"),
+        )
+
+        metrics = MISReportService._fifo_tax_metrics(
+            transactions,
+            "asset",
+            date(2026, 10, 1),
+            date(2026, 9, 1),
+            {
+                asset_a.id: long_term_setting,
+                asset_b.id: short_term_setting,
+            },
+            {
+                asset_a.id: Decimal("120"),
+                asset_b.id: Decimal("120"),
+            },
+        )
+
+        # Realized gain is ₹50 per asset: A uses its 10% LT rate and B
+        # uses its 20% ST rate, yielding ₹5 + ₹10 tax.
+        self.assertEqual(metrics["realized_pnl"], Decimal("100"))
+        self.assertEqual(metrics["realized_tax"], Decimal("15.00"))
+        # Each has five units left and ₹100 unrealized gain. Their own rates
+        # produce ₹10 + ₹20 tax; one row-level rate would be incorrect.
+        self.assertEqual(metrics["unrealized_pnl"], Decimal("200"))
+        self.assertEqual(metrics["unrealized_tax"], Decimal("30.00"))
+
     def test_fifo_tax_matches_sales_to_the_same_underlying_asset(self):
         from datetime import date
         from decimal import Decimal

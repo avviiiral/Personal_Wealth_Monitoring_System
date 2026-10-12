@@ -281,6 +281,15 @@ def _build_tax_report_sheet(workbook, report):
     ws["A1"] = "Tax Report"
     _style_title(ws["A1"])
     ws.merge_cells("A1:X1")
+    ws["A2"] = (
+        "Tax amounts are estimates based on user-configured rates. Blank tax amounts mean "
+        "tax settings are missing or incomplete; they do not mean zero tax is due. "
+        "Validate applicable tax rules with a qualified tax professional."
+    )
+    ws.merge_cells("A2:X2")
+    ws["A2"].font = Font(italic=True, size=10)
+    ws["A2"].alignment = Alignment(vertical="center", wrap_text=True)
+    ws.row_dimensions[2].height = 30
 
     report_date = report["reporting_date"].strftime("%d.%m.%Y")
     opening_label = report["opening_date"].strftime("%b-%y").upper()

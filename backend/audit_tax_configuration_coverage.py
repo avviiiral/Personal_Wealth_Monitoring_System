@@ -71,8 +71,8 @@ for tx in transactions.iterator():
     row["transaction_types"].add(tx.transaction_type or "")
     row["first_transaction_date"] = min(row["first_transaction_date"], tx.transaction_date)
     row["last_transaction_date"] = max(row["last_transaction_date"], tx.transaction_date)
-    row["net_quantity_sum"] += tx.quantity or 0
-    row["net_amount_sum"] += tx.amount or 0
+    row["quantity_total"] += tx.quantity or 0
+    row["transaction_amount_total"] += tx.amount or 0
 
 family_ids = {row["family_id"] for row in groups.values()}
 asset_ids = {row["asset_id"] for row in groups.values()}
@@ -87,7 +87,7 @@ fieldnames = [
     "asset_id", "underlying_asset", "asset_category", "symbol", "isin",
     "portfolio_labels", "transaction_types", "transaction_count",
     "first_transaction_date", "last_transaction_date",
-    "net_quantity_sum", "net_amount_sum", "setting_status",
+    "quantity_total", "transaction_amount_total", "setting_status",
     "tenure_months", "short_term_tax_rate_pct", "long_term_tax_rate_pct",
     "missing_setting_fields", "recommended_action",
 ]
@@ -150,8 +150,8 @@ with output_path.open("w", newline="", encoding="utf-8-sig") as handle:
             "transaction_count": row["transaction_count"],
             "first_transaction_date": row["first_transaction_date"].isoformat(),
             "last_transaction_date": row["last_transaction_date"].isoformat(),
-            "net_quantity_sum": row["net_quantity_sum"],
-            "net_amount_sum": row["net_amount_sum"],
+            "quantity_total": row["quantity_total"],
+            "transaction_amount_total": row["transaction_amount_total"],
             "setting_status": status,
             "tenure_months": tenure,
             "short_term_tax_rate_pct": short_rate,

@@ -1126,7 +1126,8 @@ class MISReportAPITests(TestCase):
             asset=fund,
             date=report_date,
             close_price=Decimal("256.104"),
-            source=DataSource.MANUAL,
+            # Legacy asset-backed MF holdings resolve NAV from AMFI price history.
+            source="AMFI",
         )
 
         common = {

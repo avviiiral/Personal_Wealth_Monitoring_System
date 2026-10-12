@@ -1175,11 +1175,22 @@ class MISReportService:
 
         tax_is_configured = tax_configuration_status in ("CONFIGURED", "MIXED")
         representative_setting = None
-        if tax_configuration_status == "CONFIGURED":
-            representative_setting = next(
-                (setting for setting in position_settings if setting is not None),
-                None,
+        non_null_settings = [setting for setting in position_settings if setting is not None]
+        if non_null_settings and all(
+            (
+                setting.tenure_months,
+                setting.short_term_tax_rate,
+                setting.long_term_tax_rate,
+            ) == (
+                non_null_settings[0].tenure_months,
+                non_null_settings[0].short_term_tax_rate,
+                non_null_settings[0].long_term_tax_rate,
             )
+            for setting in non_null_settings
+        ):
+            # Even an incomplete setting can still expose the fields that were
+            # configured; the status and tax amounts indicate incompleteness.
+            representative_setting = non_null_settings[0]
 
         return {
             **public_data_row,
@@ -2389,10 +2400,17 @@ class MISReportService:
                     setting = tax_settings_by_id.get(position_id)
                     if setting is None and position_name:
                         setting = tax_settings_by_name.get(position_name)
+                    # Preserve the documented shared-setting behavior when a
+                    # setting is explicitly keyed to the report's display name.
+                    # This is only a fallback; a direct per-position setting wins.
+                    if setting is None:
+                        setting = tax_settings_by_name.get(base_row["asset_name"])
                 else:
                     position_id = getattr(tx, "scheme_id", None)
                     position_name = getattr(getattr(tx, "scheme", None), "scheme_name", "")
                     setting = tax_settings_by_name.get(position_name) if position_name else None
+                    if setting is None:
+                        setting = tax_settings_by_name.get(base_row["asset_name"])
                 if position_id is not None:
                     tax_settings_by_position[position_id] = setting
             tax_rows.append(

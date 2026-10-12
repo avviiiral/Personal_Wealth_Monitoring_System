@@ -1068,6 +1068,46 @@ class MISReportAPITests(TestCase):
             "Family One Custom Notes",
         )
 
+    def test_tax_estimate_does_not_report_negative_tax_on_losses(self):
+        from datetime import date
+        from decimal import Decimal
+
+        asset = Asset.objects.create(
+            owner=self.user, family=self.family, name="Loss Position",
+            category="STOCK", symbol="LOSSPOS",
+        )
+        common = {
+            "owner": self.user, "family": self.family, "family_name": "DAJ",
+            "portfolio": "Core", "asset_class": "Equity",
+            "sub_class": "Large Cap", "asset_name": "Loss Position",
+            "advisors": "Advisor A", "fees": Decimal("0"), "asset": asset,
+        }
+        buy = Transaction.objects.create(
+            **common, transaction_date=date(2025, 1, 1),
+            transaction_type="BUY", quantity=Decimal("10"),
+            price_per_unit=Decimal("100"), amount=Decimal("1000"),
+        )
+        sell = Transaction.objects.create(
+            **common, transaction_date=date(2025, 6, 1),
+            transaction_type="SELL", quantity=Decimal("5"),
+            price_per_unit=Decimal("80"), amount=Decimal("400"),
+        )
+        setting = TaxRateSetting.objects.create(
+            family=self.family, asset=asset, tenure_months=12,
+            short_term_tax_rate=Decimal("23.73"),
+            long_term_tax_rate=Decimal("14.95"),
+        )
+
+        metrics = MISReportService._fifo_tax_metrics(
+            [buy, sell], "asset", date(2025, 12, 31), date(2025, 1, 1),
+            setting, {asset.id: Decimal("80")},
+        )
+
+        self.assertEqual(metrics["realized_pnl"], Decimal("-100"))
+        self.assertEqual(metrics["realized_tax"], Decimal("0"))
+        self.assertEqual(metrics["unrealized_pnl"], Decimal("-100"))
+        self.assertEqual(metrics["unrealized_tax"], Decimal("0"))
+
     def test_fifo_tax_matches_sales_to_the_same_underlying_asset(self):
         from datetime import date
         from decimal import Decimal

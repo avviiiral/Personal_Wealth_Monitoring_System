@@ -291,6 +291,25 @@ class MISReportAPITests(TestCase):
         self.assertEqual(row["tax_configuration_status"], "INCOMPLETE")
         self.assertEqual(row["short_term_tax_rate"], 0.0)
         self.assertEqual(row["long_term_tax_rate"], 0.0)
+        self.assertIsNone(row["realized_tax"])
+        self.assertIsNone(row["unrealized_tax"])
+
+        # An explicitly configured 0% rate is valid and must remain numeric zero.
+        setting = TaxRateSetting.objects.get(family=self.family, asset=self.asset)
+        setting.tenure_months = 12
+        setting.save(update_fields=["tenure_months"])
+        response = self.client.get(
+            "/api/portfolio/mis-report/",
+            {"from_date": "2026-01-01", "to_date": date.today().isoformat()},
+        )
+        self.assertEqual(response.status_code, 200)
+        row = next(
+            item for item in response.json()["tax_report"]
+            if item["asset_name"] == "MIS Equity"
+        )
+        self.assertEqual(row["tax_configuration_status"], "CONFIGURED")
+        self.assertEqual(row["realized_tax"], 0.0)
+        self.assertEqual(row["unrealized_tax"], 0.0)
 
     def test_tax_report_uses_fifo_and_tenure_based_tax_rates(self):
         fifo_asset = Asset.objects.create(
@@ -816,6 +835,7 @@ class MISReportAPITests(TestCase):
             ["IPS", "Data Sheet", "Tax Report", "Fund Type Summary", "Notes"],
         )
         self.assertEqual(workbook["IPS"]["A1"].value, "IPS")
+        self.assertIn("Blank tax amounts mean", workbook["Tax Report"]["A2"].value)
         reporting_date = date.today()
         opening_date = MISReportService._prior_month_end(reporting_date)
         period_start = MISReportService._period_start(reporting_date)

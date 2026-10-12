@@ -1068,7 +1068,7 @@ class MISReportAPITests(TestCase):
             "Family One Custom Notes",
         )
 
-    def test_tax_estimate_does_not_report_negative_tax_on_losses(self):
+    def test_tax_estimate_applies_configured_rates_to_losses(self):
         from datetime import date
         from decimal import Decimal
 
@@ -1104,9 +1104,9 @@ class MISReportAPITests(TestCase):
         )
 
         self.assertEqual(metrics["realized_pnl"], Decimal("-100"))
-        self.assertEqual(metrics["realized_tax"], Decimal("0"))
+        self.assertEqual(metrics["realized_tax"], Decimal("-23.7300"))
         self.assertEqual(metrics["unrealized_pnl"], Decimal("-100"))
-        self.assertEqual(metrics["unrealized_tax"], Decimal("0"))
+        self.assertEqual(metrics["unrealized_tax"], Decimal("-23.7300"))
 
     def test_fifo_tax_matches_sales_to_the_same_underlying_asset(self):
         from datetime import date

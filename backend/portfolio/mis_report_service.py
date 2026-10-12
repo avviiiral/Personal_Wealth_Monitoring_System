@@ -1000,6 +1000,11 @@ class MISReportService:
         def position_key(tx):
             return getattr(tx, "scheme_id", None) if kind == "mutual_fund" else getattr(tx, "asset_id", None)
 
+        def setting_for_position(position_id):
+            if isinstance(tax_setting, dict):
+                return tax_setting.get(position_id)
+            return tax_setting
+
         for tx in ordered:
             qty = Decimal(str(getattr(tx, "quantity", getattr(tx, "units", 0)) or 0))
             amount = Decimal(str(tx.amount or 0))
@@ -1053,7 +1058,7 @@ class MISReportService:
 
                 if period_start <= tx.transaction_date <= as_of:
                     realized_pnl += gain
-                    tax_rate = cls._tax_rate_for_lot(lot, tax_setting, tx.transaction_date)
+                    tax_rate = cls._tax_rate_for_lot(lot, setting_for_position(lot["position_key"]), tx.transaction_date)
                     # This report applies the configured rate symmetrically to
                     # gains and losses, so loss tax estimates remain negative.
                     realized_tax += gain * tax_rate
@@ -1080,7 +1085,7 @@ class MISReportService:
             # Apply the configured tenure-based rate to unrealized gains and
             # losses. Negative values are estimates under this application's
             # configured-rate convention, not a statutory refund determination.
-            unrealized_tax += gain * cls._tax_rate_for_lot(lot, tax_setting, as_of)
+            unrealized_tax += gain * cls._tax_rate_for_lot(lot, setting_for_position(lot["position_key"]), as_of)
 
         return {
             "realized_pnl": realized_pnl,
@@ -1091,6 +1096,12 @@ class MISReportService:
 
     @classmethod
     def _tax_settings(cls, family, rows):
+        """Index tax settings by their actual underlying asset identity.
+
+        A displayed PMS/strategy row can aggregate many unrelated securities.
+        Do not propagate a setting to every display name that happens to contain
+        the configured Asset ID; the FIFO engine resolves settings per position.
+        """
         asset_ids = {
             asset_id
             for row in rows
@@ -1105,78 +1116,89 @@ class MISReportService:
 
         by_asset_id = {}
         by_asset_name = {}
-
-        # Tax settings are driven by the report/display Asset Name, not by
-        # the internal Asset row. Multiple internal Asset records can represent
-        # the same displayed asset name (for example, separate Direct Equity
-        # positions). A setting saved against any one of those records must
-        # therefore apply to every matching report row.
-        display_names_by_asset_id = defaultdict(set)
-        for row in rows:
-            for asset_id in row.get("asset_ids", []):
-                display_names_by_asset_id[asset_id].add(row["asset_name"])
-
         for setting in settings:
             by_asset_id.setdefault(setting.asset_id, setting)
             by_asset_name.setdefault(setting.asset.name, setting)
-            for display_name in display_names_by_asset_id.get(setting.asset_id, set()):
-                by_asset_name.setdefault(display_name, setting)
 
         return by_asset_id, by_asset_name
 
     @classmethod
-    def _build_tax_row(cls, row, data_row, as_of, period_start, tax_setting):
+    def _build_tax_row(cls, row, data_row, as_of, period_start, tax_settings):
         metrics = cls._fifo_tax_metrics(
             row["transactions"],
             row["kind"],
             as_of,
             period_start,
-            tax_setting,
+            tax_settings,
             data_row.get("_closing_rates_by_position", data_row["closing_nav"]),
         )
-        # Internal per-instrument rates are used for tax math but are not part
-        # of the public report schema.
         public_data_row = {
             key: value for key, value in data_row.items()
             if key != "_closing_rates_by_position"
         }
-        if tax_setting is None:
-            tax_configuration_status = "MISSING"
-        elif (
-            tax_setting.tenure_months is None
-            or tax_setting.short_term_tax_rate is None
-            or tax_setting.long_term_tax_rate is None
-        ):
-            tax_configuration_status = "INCOMPLETE"
-        else:
-            tax_configuration_status = "CONFIGURED"
 
-        tax_is_configured = tax_configuration_status == "CONFIGURED"
+        position_settings = list(tax_settings.values()) if isinstance(tax_settings, dict) else [tax_settings]
+        if not position_settings or all(setting is None for setting in position_settings):
+            tax_configuration_status = "MISSING"
+        else:
+            configured = [
+                setting for setting in position_settings
+                if setting is not None
+                and setting.tenure_months is not None
+                and setting.short_term_tax_rate is not None
+                and setting.long_term_tax_rate is not None
+            ]
+            incomplete = [
+                setting for setting in position_settings
+                if setting is not None
+                and (
+                    setting.tenure_months is None
+                    or setting.short_term_tax_rate is None
+                    or setting.long_term_tax_rate is None
+                )
+            ]
+            missing = any(setting is None for setting in position_settings)
+            if missing or (incomplete and configured):
+                tax_configuration_status = "PARTIAL"
+            elif incomplete:
+                tax_configuration_status = "INCOMPLETE"
+            else:
+                signatures = {
+                    (
+                        setting.tenure_months,
+                        str(setting.short_term_tax_rate),
+                        str(setting.long_term_tax_rate),
+                    )
+                    for setting in configured
+                }
+                tax_configuration_status = "MIXED" if len(signatures) > 1 else "CONFIGURED"
+
+        tax_is_configured = tax_configuration_status in ("CONFIGURED", "MIXED")
+        representative_setting = None
+        if tax_configuration_status == "CONFIGURED":
+            representative_setting = next(
+                (setting for setting in position_settings if setting is not None),
+                None,
+            )
 
         return {
             **public_data_row,
             "realized_pnl": metrics["realized_pnl"],
             "unrealized_pnl": metrics["unrealized_pnl"],
-            # Never report a missing/incomplete configuration as ₹0 tax.
-            # Null means "not estimated"; a configured 0% rate remains a
-            # real numeric zero and is distinguishable via the status field.
             "realized_tax": metrics["realized_tax"] if tax_is_configured else None,
             "unrealized_tax": metrics["unrealized_tax"] if tax_is_configured else None,
-            # Explicitly distinguish absent/incomplete settings from a
-            # deliberately configured 0% rate. Additive fields preserve
-            # compatibility with existing report consumers.
             "tax_configuration_status": tax_configuration_status,
             "tax_tenure_months": (
-                tax_setting.tenure_months if tax_setting is not None else None
+                representative_setting.tenure_months if representative_setting is not None else None
             ),
             "short_term_tax_rate": (
-                float(tax_setting.short_term_tax_rate)
-                if tax_setting is not None and tax_setting.short_term_tax_rate is not None
+                float(representative_setting.short_term_tax_rate)
+                if representative_setting is not None and representative_setting.short_term_tax_rate is not None
                 else None
             ),
             "long_term_tax_rate": (
-                float(tax_setting.long_term_tax_rate)
-                if tax_setting is not None and tax_setting.long_term_tax_rate is not None
+                float(representative_setting.long_term_tax_rate)
+                if representative_setting is not None and representative_setting.long_term_tax_rate is not None
                 else None
             ),
         }
@@ -2357,20 +2379,29 @@ class MISReportService:
             if not has_closing_position and not has_period_transaction:
                 continue
 
-            tax_setting = None
-            for asset_id in base_row.get("asset_ids", []):
-                tax_setting = tax_settings_by_id.get(asset_id)
-                if tax_setting is not None:
-                    break
-            if tax_setting is None:
-                tax_setting = tax_settings_by_name.get(base_row["asset_name"])
+            # Resolve each underlying security independently; never leak a
+            # security's tax setting to other holdings in a grouped PMS row.
+            tax_settings_by_position = {}
+            for tx in base_row["transactions"]:
+                if base_row["kind"] == "asset":
+                    position_id = getattr(tx, "asset_id", None)
+                    position_name = getattr(getattr(tx, "asset", None), "name", "")
+                    setting = tax_settings_by_id.get(position_id)
+                    if setting is None and position_name:
+                        setting = tax_settings_by_name.get(position_name)
+                else:
+                    position_id = getattr(tx, "scheme_id", None)
+                    position_name = getattr(getattr(tx, "scheme", None), "scheme_name", "")
+                    setting = tax_settings_by_name.get(position_name) if position_name else None
+                if position_id is not None:
+                    tax_settings_by_position[position_id] = setting
             tax_rows.append(
                 cls._build_tax_row(
                     base_row,
                     data_row,
                     as_of,
                     period_start,
-                    tax_setting,
+                    tax_settings_by_position,
                 )
             )
         tax_rows.sort(key=lambda row: (row["asset_class"].casefold(), row["asset_name"].casefold(), row["family_name"].casefold()))

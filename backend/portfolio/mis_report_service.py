@@ -785,12 +785,23 @@ class MISReportService:
         opening_qty, _opening_cost = cls._position_at(txs, opening_date, row["kind"])
         closing_qty, closing_cost = cls._position_at(txs, as_of, row["kind"])
 
+        opening_valuations = []
+        closing_valuations = []
+        opening_unpriced_cost = cls.ZERO
+        closing_unpriced_cost = cls.ZERO
+        closing_rates_by_position = {}
+
         if row["kind"] == "asset":
             asset_ids = row["asset_ids"]
             assets_by_id = {tx.asset_id: tx.asset for tx in txs if tx.asset_id}
-            opening_prices = []
-            closing_prices = []
             for asset_id in asset_ids:
+                position_transactions = [tx for tx in txs if tx.asset_id == asset_id]
+                opening_position_qty, opening_position_cost = cls._position_at(
+                    position_transactions, opening_date, row["kind"]
+                )
+                closing_position_qty, closing_position_cost = cls._position_at(
+                    position_transactions, as_of, row["kind"]
+                )
                 asset = assets_by_id.get(asset_id)
                 opening_nav = cls._mf_nav_for_asset(asset, opening_date, nav_cache) if asset else None
                 closing_nav = cls._mf_nav_for_asset(asset, as_of, nav_cache) if asset else None
@@ -798,11 +809,8 @@ class MISReportService:
                 opening_price = opening_nav
                 closing_price = closing_nav
 
-                # REIT/InvIT rows are often stored as ordinary Asset +
-                # Transaction records, but their valuation is maintained through
-                # the shared reference-price history rather than family MarketPrice.
-                # Use the configured reference instruments for both historical
-                # dates before falling back to an asset-local MarketPrice.
+                # REIT/InvIT rows are ordinary Asset + Transaction records, but
+                # use shared reference-price history before asset-local prices.
                 subclass = cls._clean(row.get("sub_class") or getattr(asset, "_portfolio_sub_class", "")).casefold() if asset else ""
                 if asset and ("reit" in subclass or "invit" in subclass):
                     normalized_name = cls._normalize_mf_name(asset.name)
@@ -820,11 +828,7 @@ class MISReportService:
 
                     for _score, reference_name, symbols in reference_candidates:
                         ref_opening, ref_closing = cls._reference_rate(
-                            reference_name,
-                            symbols,
-                            as_of,
-                            opening_date,
-                            reference_cache,
+                            reference_name, symbols, as_of, opening_date, reference_cache
                         )
                         if opening_price is None and ref_opening is not None:
                             opening_price = ref_opening
@@ -833,36 +837,59 @@ class MISReportService:
                         if opening_price is not None or closing_price is not None:
                             break
 
-                opening_prices.append(
-                    opening_price if opening_price is not None
-                    else cls._price_on(asset_id, opening_date, price_cache)
-                )
-                closing_prices.append(
-                    closing_price if closing_price is not None
-                    else cls._price_on(asset_id, as_of, price_cache)
-                )
+                if opening_price is None:
+                    opening_price = cls._price_on(asset_id, opening_date, price_cache)
+                if closing_price is None:
+                    closing_price = cls._price_on(asset_id, as_of, price_cache)
+
+                if opening_price is None:
+                    opening_unpriced_cost += opening_position_cost
+                else:
+                    opening_valuations.append((opening_position_qty, Decimal(str(opening_price))))
+                if closing_price is None:
+                    closing_unpriced_cost += closing_position_cost
+                    closing_rates_by_position[asset_id] = None
+                else:
+                    closing_price = Decimal(str(closing_price))
+                    closing_valuations.append((closing_position_qty, closing_price))
+                    closing_rates_by_position[asset_id] = closing_price
         else:
-            opening_prices = [
-                cls._mf_nav(scheme_id, opening_date, nav_cache)
-                for scheme_id in row["scheme_ids"]
-            ]
-            closing_prices = [
-                cls._mf_nav(scheme_id, as_of, nav_cache)
-                for scheme_id in row["scheme_ids"]
-            ]
+            for scheme_id in row["scheme_ids"]:
+                position_transactions = [
+                    tx for tx in txs if getattr(tx, "scheme_id", None) == scheme_id
+                ]
+                opening_position_qty, opening_position_cost = cls._position_at(
+                    position_transactions, opening_date, row["kind"]
+                )
+                closing_position_qty, closing_position_cost = cls._position_at(
+                    position_transactions, as_of, row["kind"]
+                )
+                opening_price = cls._mf_nav(scheme_id, opening_date, nav_cache)
+                closing_price = cls._mf_nav(scheme_id, as_of, nav_cache)
+                if opening_price is None:
+                    opening_unpriced_cost += opening_position_cost
+                else:
+                    opening_valuations.append((opening_position_qty, Decimal(str(opening_price))))
+                if closing_price is None:
+                    closing_unpriced_cost += closing_position_cost
+                    closing_rates_by_position[scheme_id] = None
+                else:
+                    closing_price = Decimal(str(closing_price))
+                    closing_valuations.append((closing_position_qty, closing_price))
+                    closing_rates_by_position[scheme_id] = closing_price
 
-        opening_prices = [Decimal(str(value)) for value in opening_prices if value is not None]
-        closing_prices = [Decimal(str(value)) for value in closing_prices if value is not None]
+        opening_priced_qty = sum((qty for qty, _price in opening_valuations), cls.ZERO)
+        closing_priced_qty = sum((qty for qty, _price in closing_valuations), cls.ZERO)
+        opening_priced_mtm = sum((qty * price for qty, price in opening_valuations), cls.ZERO)
+        closing_priced_mtm = sum((qty * price for qty, price in closing_valuations), cls.ZERO)
+        opening_rate = opening_priced_mtm / opening_priced_qty if opening_priced_qty else None
+        closing_rate = closing_priced_mtm / closing_priced_qty if closing_priced_qty else None
 
-        opening_rate = opening_prices[0] if len(set(opening_prices)) == 1 and opening_prices else (
-            sum(opening_prices) / len(opening_prices) if opening_prices else None
+        opening_mtm = opening_priced_mtm + opening_unpriced_cost if opening_valuations else cls.ZERO
+        closing_mtm = (
+            closing_priced_mtm + closing_unpriced_cost
+            if closing_valuations else closing_cost
         )
-        closing_rate = closing_prices[0] if len(set(closing_prices)) == 1 and closing_prices else (
-            sum(closing_prices) / len(closing_prices) if closing_prices else None
-        )
-
-        opening_mtm = opening_qty * opening_rate if opening_rate is not None else cls.ZERO
-        closing_mtm = closing_qty * closing_rate if closing_rate is not None else closing_cost
         average_cost = closing_cost / closing_qty if closing_qty else cls.ZERO
 
         period_transactions = [tx for tx in txs if period_start <= tx.transaction_date <= as_of]
@@ -912,6 +939,7 @@ class MISReportService:
             "closing_units": closing_qty,
             "closing_nav": closing_rate,
             "closing_amount": closing_mtm,
+            "_closing_rates_by_position": closing_rates_by_position,
         }
 
     @staticmethod
@@ -956,18 +984,26 @@ class MISReportService:
 
     @classmethod
     def _fifo_tax_metrics(cls, transactions, kind, as_of, period_start, tax_setting, market_rate):
+        # Maintain an independent FIFO queue for each underlying asset/scheme.
+        # Rows can aggregate multiple internal Asset records under one display
+        # name; a sale must never consume another instrument's acquisition lots.
         lots = []
         realized_pnl = cls.ZERO
         realized_tax = cls.ZERO
+        market_rates = market_rate if isinstance(market_rate, dict) else None
 
         ordered = sorted(
             (tx for tx in transactions if tx.transaction_date <= as_of),
             key=lambda item: (item.transaction_date, item.created_at, item.id),
         )
 
+        def position_key(tx):
+            return getattr(tx, "scheme_id", None) if kind == "mutual_fund" else getattr(tx, "asset_id", None)
+
         for tx in ordered:
             qty = Decimal(str(getattr(tx, "quantity", getattr(tx, "units", 0)) or 0))
             amount = Decimal(str(tx.amount or 0))
+            key = position_key(tx)
 
             if kind == "mutual_fund":
                 is_buy = tx.transaction_type in ("PURCHASE", "SIP")
@@ -978,6 +1014,7 @@ class MISReportService:
 
             if is_buy and qty > 0:
                 lots.append({
+                    "position_key": key,
                     "remaining_qty": qty,
                     "unit_cost": amount / qty if amount else cls.ZERO,
                     "acquired_on": tx.transaction_date,
@@ -986,6 +1023,7 @@ class MISReportService:
 
             if kind == "asset" and tx.transaction_type in (TransactionType.BONUS, TransactionType.SPLIT) and qty > 0:
                 lots.append({
+                    "position_key": key,
                     "remaining_qty": qty,
                     "unit_cost": cls.ZERO,
                     "acquired_on": tx.transaction_date,
@@ -999,42 +1037,47 @@ class MISReportService:
                 str(getattr(tx, "price_per_unit", getattr(tx, "nav", 0)) or 0)
             )
             remaining_to_sell = qty
-            while remaining_to_sell > 0 and lots:
-                lot = lots[0]
+            while remaining_to_sell > 0:
+                lot_index = next(
+                    (
+                        index for index, candidate in enumerate(lots)
+                        if candidate["position_key"] == key and candidate["remaining_qty"] > 0
+                    ),
+                    None,
+                )
+                if lot_index is None:
+                    break
+                lot = lots[lot_index]
                 matched_qty = min(remaining_to_sell, lot["remaining_qty"])
                 gain = (sale_unit_value - lot["unit_cost"]) * matched_qty
 
                 if period_start <= tx.transaction_date <= as_of:
                     realized_pnl += gain
-
-                    # Resolve the rate directly at the point where each FIFO
-                    # lot is disposed. This keeps the ST/LT decision tied to
-                    # that exact lot and sale date, rather than relying on
-                    # report-period state or a later remaining-lot valuation.
-                    tax_rate = cls._tax_rate_for_lot(
-                        lot,
-                        tax_setting,
-                        tx.transaction_date,
-                    )
+                    tax_rate = cls._tax_rate_for_lot(lot, tax_setting, tx.transaction_date)
                     realized_tax += gain * tax_rate
 
                 lot["remaining_qty"] -= matched_qty
                 remaining_to_sell -= matched_qty
-                if lot["remaining_qty"] <= 0:
-                    lots.pop(0)
 
         unrealized_pnl = cls.ZERO
         unrealized_tax = cls.ZERO
-        if market_rate is not None:
-            market_rate = Decimal(str(market_rate))
-            for lot in lots:
-                gain = (market_rate - lot["unit_cost"]) * lot["remaining_qty"]
-                unrealized_pnl += gain
-                # Apply the same tenure-based tax rate to unrealized losses,
-                # producing a negative tax amount for a tax benefit.
-                unrealized_tax += gain * cls._tax_rate_for_lot(
-                    lot, tax_setting, as_of
-                )
+        for lot in lots:
+            if lot["remaining_qty"] <= 0:
+                continue
+            if market_rates is not None:
+                raw_market_rate = market_rates.get(lot["position_key"])
+                if raw_market_rate is None:
+                    continue
+                lot_market_rate = Decimal(str(raw_market_rate))
+            else:
+                if market_rate is None:
+                    continue
+                lot_market_rate = Decimal(str(market_rate))
+            gain = (lot_market_rate - lot["unit_cost"]) * lot["remaining_qty"]
+            unrealized_pnl += gain
+            # This is a configured-rate estimate, not a determination of
+            # payable tax or a claimable/refundable loss.
+            unrealized_tax += gain * cls._tax_rate_for_lot(lot, tax_setting, as_of)
 
         return {
             "realized_pnl": realized_pnl,
@@ -1086,10 +1129,16 @@ class MISReportService:
             as_of,
             period_start,
             tax_setting,
-            data_row["closing_nav"],
+            data_row.get("_closing_rates_by_position", data_row["closing_nav"]),
         )
+        # Internal per-instrument rates are used for tax math but are not part
+        # of the public report schema.
+        public_data_row = {
+            key: value for key, value in data_row.items()
+            if key != "_closing_rates_by_position"
+        }
         return {
-            **data_row,
+            **public_data_row,
             "realized_pnl": metrics["realized_pnl"],
             "unrealized_pnl": metrics["unrealized_pnl"],
             "realized_tax": metrics["realized_tax"],
@@ -2289,6 +2338,9 @@ class MISReportService:
                 )
             )
         tax_rows.sort(key=lambda row: (row["asset_class"].casefold(), row["asset_name"].casefold(), row["family_name"].casefold()))
+
+        for row in all_data_rows:
+            row.pop("_closing_rates_by_position", None)
 
         # IPS is a direct aggregation of the Data Sheet closing MTM, with the
         # previous-month closing MTM reconstructed using the same valuation logic.

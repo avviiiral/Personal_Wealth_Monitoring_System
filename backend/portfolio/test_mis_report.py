@@ -1067,3 +1067,65 @@ class MISReportAPITests(TestCase):
             response.json()["notes"]["title"],
             "Family One Custom Notes",
         )
+
+    def test_fifo_tax_matches_sales_to_the_same_underlying_asset(self):
+        from datetime import date
+        from decimal import Decimal
+
+        asset_a = Asset.objects.create(
+            owner=self.user, family=self.family, name="Shared Display A",
+            category="STOCK", symbol="SHAREDA",
+        )
+        asset_b = Asset.objects.create(
+            owner=self.user, family=self.family, name="Shared Display B",
+            category="STOCK", symbol="SHAREDB",
+        )
+        common = {
+            "owner": self.user,
+            "family": self.family,
+            "family_name": "DAJ",
+            "portfolio": "Core",
+            "asset_class": "Equity",
+            "sub_class": "Large Cap",
+            "asset_name": "Shared Display",
+            "advisors": "Advisor A",
+            "fees": Decimal("0"),
+        }
+        buy_a = Transaction.objects.create(
+            **common, asset=asset_a, transaction_date=date(2025, 1, 1),
+            transaction_type="BUY", quantity=Decimal("10"),
+            price_per_unit=Decimal("100"), amount=Decimal("1000"),
+        )
+        buy_b = Transaction.objects.create(
+            **common, asset=asset_b, transaction_date=date(2025, 1, 2),
+            transaction_type="BUY", quantity=Decimal("10"),
+            price_per_unit=Decimal("500"), amount=Decimal("5000"),
+        )
+        sell_b = Transaction.objects.create(
+            **common, asset=asset_b, transaction_date=date(2026, 1, 2),
+            transaction_type="SELL", quantity=Decimal("10"),
+            price_per_unit=Decimal("600"), amount=Decimal("6000"),
+        )
+        setting = TaxRateSetting.objects.create(
+            family=self.family, asset=asset_a, tenure_months=12,
+            short_term_tax_rate=Decimal("15"),
+            long_term_tax_rate=Decimal("10"),
+        )
+
+        metrics = MISReportService._fifo_tax_metrics(
+            [buy_a, buy_b, sell_b],
+            "asset",
+            date(2026, 2, 1),
+            date(2026, 1, 1),
+            setting,
+            {asset_a.id: Decimal("120"), asset_b.id: None},
+        )
+
+        # Selling asset B must consume B's ₹5,000 cost lot, not asset A's
+        # cheaper ₹1,000 lot merely because both share one display name.
+        self.assertEqual(metrics["realized_pnl"], Decimal("1000"))
+        self.assertEqual(metrics["realized_tax"], Decimal("100"))
+        # Asset A remains open and is valued at its own ₹120 market price.
+        self.assertEqual(metrics["unrealized_pnl"], Decimal("200"))
+        self.assertEqual(metrics["unrealized_tax"], Decimal("20"))
+

@@ -1151,12 +1151,17 @@ class MISReportService:
         else:
             tax_configuration_status = "CONFIGURED"
 
+        tax_is_configured = tax_configuration_status == "CONFIGURED"
+
         return {
             **public_data_row,
             "realized_pnl": metrics["realized_pnl"],
             "unrealized_pnl": metrics["unrealized_pnl"],
-            "realized_tax": metrics["realized_tax"],
-            "unrealized_tax": metrics["unrealized_tax"],
+            # Never report a missing/incomplete configuration as ₹0 tax.
+            # Null means "not estimated"; a configured 0% rate remains a
+            # real numeric zero and is distinguishable via the status field.
+            "realized_tax": metrics["realized_tax"] if tax_is_configured else None,
+            "unrealized_tax": metrics["unrealized_tax"] if tax_is_configured else None,
             # Explicitly distinguish absent/incomplete settings from a
             # deliberately configured 0% rate. Additive fields preserve
             # compatibility with existing report consumers.

@@ -1426,3 +1426,97 @@ class MISReportAPITests(TestCase):
         self.assertEqual(metrics["unrealized_pnl"], Decimal("200"))
         self.assertEqual(metrics["unrealized_tax"], Decimal("20"))
 
+
+
+    def test_display_asset_name_tax_setting_overrides_all_underlying_settings(self):
+        """A displayed PMS tax entry governs every underlying in its row."""
+        older_underlying = Asset.objects.create(
+            owner=self.user,
+            family=self.family,
+            name="Grouped PMS Underlying A",
+            category="STOCK",
+            symbol="GROUPA",
+        )
+        newer_underlying = Asset.objects.create(
+            owner=self.user,
+            family=self.family,
+            name="Grouped PMS Underlying B",
+            category="STOCK",
+            symbol="GROUPB",
+        )
+        display_asset = Asset.objects.create(
+            owner=self.user,
+            family=self.family,
+            name="Grouped PMS",
+            category="OTHER",
+            symbol="GROUPPMS",
+        )
+        common = {
+            "owner": self.user,
+            "family": self.family,
+            "family_name": "DAJ",
+            "portfolio": "Grouped PMS Portfolio",
+            "asset_class": "Equity",
+            "sub_class": "Equity PMS",
+            "asset_name": "Grouped PMS",
+            "advisors": "Advisor A",
+            "fees": Decimal("0"),
+        }
+        Transaction.objects.create(
+            **common,
+            asset=older_underlying,
+            transaction_date=date(2024, 1, 1),
+            transaction_type="BUY",
+            quantity=Decimal("10"),
+            price_per_unit=Decimal("100"),
+            amount=Decimal("1000"),
+        )
+        Transaction.objects.create(
+            **common,
+            asset=newer_underlying,
+            transaction_date=date(2026, 9, 1),
+            transaction_type="BUY",
+            quantity=Decimal("10"),
+            price_per_unit=Decimal("100"),
+            amount=Decimal("1000"),
+        )
+        for underlying in (older_underlying, newer_underlying):
+            MarketPrice.objects.create(
+                asset=underlying,
+                date=date.today(),
+                close_price=Decimal("120"),
+                source=DataSource.MANUAL,
+            )
+
+        # Deliberately conflicting underlying settings prove that the display
+        # Asset Name policy takes precedence. All rates come from database rows.
+        TaxRateSetting.objects.create(
+            family=self.family,
+            asset=display_asset,
+            tenure_months=12,
+            short_term_tax_rate=Decimal("10"),
+            long_term_tax_rate=Decimal("8"),
+        )
+        TaxRateSetting.objects.create(
+            family=self.family,
+            asset=older_underlying,
+            tenure_months=12,
+            short_term_tax_rate=Decimal("25"),
+            long_term_tax_rate=Decimal("20"),
+        )
+
+        response = self.client.get("/api/portfolio/mis-report/")
+        self.assertEqual(response.status_code, 200)
+        row = next(
+            item for item in response.json()["tax_report"]
+            if item["asset_name"] == "Grouped PMS" and item["family_name"] == "DAJ"
+        )
+
+        # Older lot uses the display policy's 8% LT rate; newer lot uses its
+        # 10% ST rate. Each security retains its own FIFO lots and valuation.
+        self.assertEqual(row["tax_configuration_status"], "CONFIGURED")
+        self.assertEqual(row["tax_tenure_months"], 12)
+        self.assertEqual(row["short_term_tax_rate"], 10.0)
+        self.assertEqual(row["long_term_tax_rate"], 8.0)
+        self.assertAlmostEqual(row["unrealized_pnl"], 400.0, places=2)
+        self.assertAlmostEqual(row["unrealized_tax"], 36.0, places=2)

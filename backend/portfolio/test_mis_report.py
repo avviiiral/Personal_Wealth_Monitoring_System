@@ -1108,6 +1108,111 @@ class MISReportAPITests(TestCase):
         self.assertEqual(metrics["unrealized_pnl"], Decimal("-100"))
         self.assertEqual(metrics["unrealized_tax"], Decimal("-23.7300"))
 
+    def test_hdfc_focused_fund_tax_matches_october_2026_transaction_amounts(self):
+        """Regression for the supplied HDFC DAJ/DJT quantities, costs and tax rates."""
+        from datetime import date
+        from decimal import Decimal
+
+        fund = Asset.objects.create(
+            owner=self.user,
+            family=self.family,
+            name="HDFC Focused Fund - Growth Option - Direct Plan",
+            category="MUTUAL_FUND",
+            isin="INF179K01VK7",
+            symbol="HDFCFOCUSED",
+        )
+        report_date = date(2026, 10, 12)
+        MarketPrice.objects.create(
+            asset=fund,
+            date=report_date,
+            close_price=Decimal("256.104"),
+            source=DataSource.MANUAL,
+        )
+
+        common = {
+            "owner": self.user,
+            "family": self.family,
+            "asset": fund,
+            "asset_class": "Equity",
+            "sub_class": "Equity Mutual Fund",
+            "asset_name": "HDFC Focused Fund - Growth Option - Direct Plan",
+            "advisors": "ARTHYA",
+            "portfolio": "Equity MF",
+            "fees": Decimal("0"),
+        }
+
+        # DAJ has two lots straddling the configured 12-month tenure boundary.
+        Transaction.objects.create(
+            **common,
+            family_name="DAJ",
+            transaction_date=date(2025, 10, 7),
+            transaction_type="BUY",
+            quantity=Decimal("5091.381"),
+            price_per_unit=Decimal("267.69"),
+            amount=Decimal("1362979.88"),
+        )
+        Transaction.objects.create(
+            **common,
+            family_name="DAJ",
+            transaction_date=date(2025, 10, 15),
+            transaction_type="BUY",
+            quantity=Decimal("25771.215"),
+            price_per_unit=Decimal("268.795"),
+            amount=Decimal("6927520.17"),
+        )
+
+        # All 35 DJT source lots are long-term as of 12 Oct 2026. Aggregating
+        # them into one test lot preserves the same tax result because every
+        # lot uses the configured 14.95% long-term rate and there are no sales.
+        Transaction.objects.create(
+            **common,
+            family_name="DJT",
+            transaction_date=date(2023, 4, 11),
+            transaction_type="BUY",
+            quantity=Decimal("242899.529"),
+            price_per_unit=Decimal("223.66"),
+            amount=Decimal("54327648.60"),
+        )
+
+        TaxRateSetting.objects.create(
+            family=self.family,
+            asset=fund,
+            tenure_months=12,
+            short_term_tax_rate=Decimal("23.73"),
+            long_term_tax_rate=Decimal("14.95"),
+        )
+
+        response = self.client.get(
+            "/api/portfolio/mis-report/",
+            {"from_date": "2026-04-01", "to_date": "2026-10-12"},
+        )
+        self.assertEqual(response.status_code, 200)
+        tax_rows = response.json()["tax_report"]
+        daj = next(
+            row for row in tax_rows
+            if row["asset_name"] == "HDFC Focused Fund - Growth Option - Direct Plan"
+            and row["family_name"] == "DAJ"
+        )
+        djt = next(
+            row for row in tax_rows
+            if row["asset_name"] == "HDFC Focused Fund - Growth Option - Direct Plan"
+            and row["family_name"] == "DJT"
+        )
+
+        self.assertAlmostEqual(daj["qty_units"], 30862.596, places=3)
+        self.assertAlmostEqual(daj["total_cost"], 8290500.05, places=2)
+        self.assertAlmostEqual(daj["closing_amount"], 7904034.285984, places=2)
+        self.assertAlmostEqual(daj["realized_tax"], 0.0, places=2)
+        self.assertAlmostEqual(daj["unrealized_pnl"], -386465.764016, places=2)
+        self.assertAlmostEqual(daj["unrealized_tax"], -86523.135215984, places=2)
+
+        self.assertAlmostEqual(djt["qty_units"], 242899.529, places=3)
+        self.assertAlmostEqual(djt["total_cost"], 54327648.60, places=2)
+        self.assertAlmostEqual(djt["closing_amount"], 62207540.975016, places=2)
+        self.assertAlmostEqual(djt["realized_tax"], 0.0, places=2)
+        self.assertAlmostEqual(djt["unrealized_pnl"], 7879892.375016, places=2)
+        self.assertAlmostEqual(djt["unrealized_tax"], 1178043.910064892, places=2)
+
     def test_fifo_tax_matches_sales_to_the_same_underlying_asset(self):
         from datetime import date
         from decimal import Decimal

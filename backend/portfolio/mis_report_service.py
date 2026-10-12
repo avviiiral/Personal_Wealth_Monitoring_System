@@ -1096,20 +1096,23 @@ class MISReportService:
 
     @classmethod
     def _tax_settings(cls, family, rows):
-        """Index tax settings by their actual underlying asset identity.
+        """Index both display-name policy settings and underlying settings.
 
-        A displayed PMS/strategy row can aggregate many unrelated securities.
-        Do not propagate a setting to every display name that happens to contain
-        the configured Asset ID; the FIFO engine resolves settings per position.
+        A TaxRateSetting attached to an Asset whose name matches the displayed
+        MIS Asset Name is the group policy for that row. The caller applies it
+        to every underlying position in that row, while the FIFO engine keeps
+        acquisition lots and sales isolated by the actual underlying identity.
+        Underlying-specific settings remain available as a fallback when the
+        displayed Asset Name has no tax entry.
         """
         asset_ids = {
             asset_id
             for row in rows
             for asset_id in row.get("asset_ids", [])
         }
-        asset_names = {row["asset_name"] for row in rows}
+        display_asset_names = {row["asset_name"] for row in rows}
 
-        filters = Q(asset_id__in=asset_ids) | Q(asset__name__in=asset_names)
+        filters = Q(asset_id__in=asset_ids) | Q(asset__name__in=display_asset_names)
         settings = TaxRateSetting.objects.filter(
             family=family
         ).filter(filters).select_related("asset").order_by("-updated_at", "-id")
@@ -2390,19 +2393,23 @@ class MISReportService:
             if not has_closing_position and not has_period_transaction:
                 continue
 
-            # Resolve each underlying security independently; never leak a
-            # security's tax setting to other holdings in a grouped PMS row.
+            # A tax entry attached to the displayed Asset Name is the
+            # governing policy for every underlying in this report row. It
+            # takes precedence over security-specific settings; those are the
+            # fallback only when no display-name policy exists. FIFO lots still
+            # remain isolated by underlying position inside _fifo_tax_metrics.
+            display_name_setting = tax_settings_by_name.get(base_row["asset_name"])
             tax_settings_by_position = {}
             for tx in base_row["transactions"]:
                 if base_row["kind"] == "asset":
                     position_id = getattr(tx, "asset_id", None)
-                    # Security tax settings are keyed by the actual Asset ID.
-                    # Never borrow a setting by display name or another Asset name.
-                    setting = tax_settings_by_id.get(position_id)
+                    underlying_setting = tax_settings_by_id.get(position_id)
                 else:
                     position_id = getattr(tx, "scheme_id", None)
                     position_name = getattr(getattr(tx, "scheme", None), "scheme_name", "")
-                    setting = tax_settings_by_name.get(position_name) if position_name else None
+                    underlying_setting = tax_settings_by_name.get(position_name) if position_name else None
+
+                setting = display_name_setting or underlying_setting
                 if position_id is not None:
                     tax_settings_by_position[position_id] = setting
             tax_rows.append(

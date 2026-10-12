@@ -1140,12 +1140,40 @@ class MISReportService:
             key: value for key, value in data_row.items()
             if key != "_closing_rates_by_position"
         }
+        if tax_setting is None:
+            tax_configuration_status = "MISSING"
+        elif (
+            tax_setting.tenure_months is None
+            or tax_setting.short_term_tax_rate is None
+            or tax_setting.long_term_tax_rate is None
+        ):
+            tax_configuration_status = "INCOMPLETE"
+        else:
+            tax_configuration_status = "CONFIGURED"
+
         return {
             **public_data_row,
             "realized_pnl": metrics["realized_pnl"],
             "unrealized_pnl": metrics["unrealized_pnl"],
             "realized_tax": metrics["realized_tax"],
             "unrealized_tax": metrics["unrealized_tax"],
+            # Explicitly distinguish absent/incomplete settings from a
+            # deliberately configured 0% rate. Additive fields preserve
+            # compatibility with existing report consumers.
+            "tax_configuration_status": tax_configuration_status,
+            "tax_tenure_months": (
+                tax_setting.tenure_months if tax_setting is not None else None
+            ),
+            "short_term_tax_rate": (
+                float(tax_setting.short_term_tax_rate)
+                if tax_setting is not None and tax_setting.short_term_tax_rate is not None
+                else None
+            ),
+            "long_term_tax_rate": (
+                float(tax_setting.long_term_tax_rate)
+                if tax_setting is not None and tax_setting.long_term_tax_rate is not None
+                else None
+            ),
         }
 
     @classmethod

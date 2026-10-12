@@ -256,6 +256,42 @@ class MISReportAPITests(TestCase):
             for call in reference_rate.call_args_list
         ))
 
+    def test_tax_report_marks_missing_and_incomplete_tax_settings(self):
+        # The fixture's MIS Equity has no tax setting.
+        response = self.client.get(
+            "/api/portfolio/mis-report/",
+            {"from_date": "2026-01-01", "to_date": date.today().isoformat()},
+        )
+        self.assertEqual(response.status_code, 200)
+        row = next(
+            item for item in response.json()["tax_report"]
+            if item["asset_name"] == "MIS Equity"
+        )
+        self.assertEqual(row["tax_configuration_status"], "MISSING")
+        self.assertIsNone(row["tax_tenure_months"])
+        self.assertIsNone(row["short_term_tax_rate"])
+        self.assertIsNone(row["long_term_tax_rate"])
+
+        TaxRateSetting.objects.create(
+            family=self.family,
+            asset=self.asset,
+            tenure_months=None,
+            short_term_tax_rate=Decimal("0"),
+            long_term_tax_rate=Decimal("0"),
+        )
+        response = self.client.get(
+            "/api/portfolio/mis-report/",
+            {"from_date": "2026-01-01", "to_date": date.today().isoformat()},
+        )
+        self.assertEqual(response.status_code, 200)
+        row = next(
+            item for item in response.json()["tax_report"]
+            if item["asset_name"] == "MIS Equity"
+        )
+        self.assertEqual(row["tax_configuration_status"], "INCOMPLETE")
+        self.assertEqual(row["short_term_tax_rate"], 0.0)
+        self.assertEqual(row["long_term_tax_rate"], 0.0)
+
     def test_tax_report_uses_fifo_and_tenure_based_tax_rates(self):
         fifo_asset = Asset.objects.create(
             owner=self.user,

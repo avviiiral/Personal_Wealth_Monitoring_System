@@ -17,8 +17,6 @@ from collections import defaultdict
 from datetime import date
 from pathlib import Path
 
-from django.db.models import Count, Min, Max, Sum
-
 from investments.models import Transaction
 from users.models import TaxRateSetting
 
@@ -64,8 +62,8 @@ for tx in transactions.iterator():
             "transaction_count": 0,
             "first_transaction_date": tx.transaction_date,
             "last_transaction_date": tx.transaction_date,
-            "net_quantity_sum": 0,
-            "net_amount_sum": 0,
+            "quantity_total": 0,
+            "transaction_amount_total": 0,
         }
     row = groups[key]
     row["transaction_count"] += 1

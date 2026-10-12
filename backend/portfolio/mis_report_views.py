@@ -280,7 +280,7 @@ def _build_tax_report_sheet(workbook, report):
     ws = workbook.create_sheet("Tax Report")
     ws["A1"] = "Tax Report"
     _style_title(ws["A1"])
-    ws.merge_cells("A1:T1")
+    ws.merge_cells("A1:X1")
 
     report_date = report["reporting_date"].strftime("%d.%m.%Y")
     opening_label = report["opening_date"].strftime("%b-%y").upper()
@@ -293,16 +293,18 @@ def _build_tax_report_sheet(workbook, report):
     ws.merge_cells("K3:M3")
     ws.merge_cells("N3:P3")
     ws.merge_cells("Q3:T3")
+    ws.merge_cells("U3:X3")
     ws["E3"] = f"Investment Cost {report_date}"
     ws["H3"] = f"{opening_label} Closing MTM"
     ws["K3"] = f"Transactions- Buy/Sell {period_start} to {period_end}"
     ws["N3"] = f"{closing_label} Closing MTM"
     ws["Q3"] = "Taxation"
+    ws["U3"] = "Tax Configuration"
 
-    for col in range(1, 21):
+    for col in range(1, 25):
         ws.cell(3, col).fill = _SECTION_FILL
         ws.cell(3, col).border = _BORDER
-    for cell in ("E3", "H3", "K3", "N3", "Q3"):
+    for cell in ("E3", "H3", "K3", "N3", "Q3", "U3"):
         _style_header(ws[cell])
 
     headers = [
@@ -326,6 +328,10 @@ def _build_tax_report_sheet(workbook, report):
         "Unrealized P/L",
         "Realized Tax",
         "Unrealized Tax",
+        "Tax Configuration Status",
+        "Tax Tenure (Months)",
+        "Short-Term Tax Rate (%)",
+        "Long-Term Tax Rate (%)",
     ]
     for col, value in enumerate(headers, 1):
         ws.cell(4, col, value)
@@ -354,6 +360,10 @@ def _build_tax_report_sheet(workbook, report):
             row["unrealized_pnl"],
             row["realized_tax"],
             row["unrealized_tax"],
+            row.get("tax_configuration_status", "MISSING"),
+            row.get("tax_tenure_months"),
+            row.get("short_term_tax_rate"),
+            row.get("long_term_tax_rate"),
         ]
         for col, value in enumerate(values, 1):
             ws.cell(row_idx, col, value)
@@ -362,7 +372,7 @@ def _build_tax_report_sheet(workbook, report):
 
     if not report["tax_report"]:
         ws.cell(5, 1, "No Tax Report rows available.")
-        ws.merge_cells("A5:T5")
+        ws.merge_cells("A5:X5")
         ws.cell(5, 1).alignment = Alignment(horizontal="center", vertical="center")
         ws.cell(5, 1).border = _BORDER
 

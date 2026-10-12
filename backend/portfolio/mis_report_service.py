@@ -2396,21 +2396,13 @@ class MISReportService:
             for tx in base_row["transactions"]:
                 if base_row["kind"] == "asset":
                     position_id = getattr(tx, "asset_id", None)
-                    position_name = getattr(getattr(tx, "asset", None), "name", "")
+                    # Security tax settings are keyed by the actual Asset ID.
+                    # Never borrow a setting by display name or another Asset name.
                     setting = tax_settings_by_id.get(position_id)
-                    if setting is None and position_name:
-                        setting = tax_settings_by_name.get(position_name)
-                    # Preserve the documented shared-setting behavior when a
-                    # setting is explicitly keyed to the report's display name.
-                    # This is only a fallback; a direct per-position setting wins.
-                    if setting is None:
-                        setting = tax_settings_by_name.get(base_row["asset_name"])
                 else:
                     position_id = getattr(tx, "scheme_id", None)
                     position_name = getattr(getattr(tx, "scheme", None), "scheme_name", "")
                     setting = tax_settings_by_name.get(position_name) if position_name else None
-                    if setting is None:
-                        setting = tax_settings_by_name.get(base_row["asset_name"])
                 if position_id is not None:
                     tax_settings_by_position[position_id] = setting
             tax_rows.append(

@@ -511,7 +511,7 @@ class MISReportAPITests(TestCase):
         self.assertEqual(row["unrealized_pnl"], -1500.0)
         self.assertEqual(row["unrealized_tax"], -225.0)
 
-    def test_tax_setting_applies_to_same_display_asset_name_across_positions(self):
+    def test_tax_setting_does_not_leak_from_display_name_to_unconfigured_underlying(self):
         first_asset = Asset.objects.create(
             owner=self.user,
             family=self.family,
@@ -578,10 +578,13 @@ class MISReportAPITests(TestCase):
             {item["family_name"] for item in rows},
             {"DAJ", "DJT"},
         )
-        self.assertEqual(
-            {item["unrealized_tax"] for item in rows},
-            {150.0},
-        )
+        rows_by_family = {item["family_name"]: item for item in rows}
+        # DAJ has a setting for its actual Asset. DJT has a different underlying
+        # with no setting; the shared display name must not lend it DAJ\'s rate.
+        self.assertEqual(rows_by_family["DAJ"]["unrealized_tax"], 150.0)
+        self.assertEqual(rows_by_family["DAJ"]["tax_configuration_status"], "CONFIGURED")
+        self.assertIsNone(rows_by_family["DJT"]["unrealized_tax"])
+        self.assertEqual(rows_by_family["DJT"]["tax_configuration_status"], "MISSING")
 
     def test_tax_report_keeps_fully_exited_positions_for_realized_pnl(self):
         exited_asset = Asset.objects.create(

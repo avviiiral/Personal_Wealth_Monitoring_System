@@ -830,6 +830,11 @@ class MISReportAPITests(TestCase):
         self.assertEqual(workbook["Data Sheet"]["A5"].value, "MIS Equity")
         self.assertEqual(workbook["Data Sheet"]["A2"].value, None)
         self.assertEqual(workbook["Data Sheet"]["A6"].value, None)
+        # Missing settings are visibly marked and tax amounts remain blank, not zero.
+        tax_sheet = workbook["Tax Report"]
+        self.assertEqual(tax_sheet["U5"].value, "MISSING")
+        self.assertIsNone(tax_sheet["S5"].value)
+        self.assertIsNone(tax_sheet["T5"].value)
         tax_ws = workbook["Tax Report"]
         self.assertEqual(tax_ws["A1"].value, "Tax Report")
         self.assertEqual(tax_ws["Q3"].value, "Taxation")

@@ -1054,10 +1054,9 @@ class MISReportService:
                 if period_start <= tx.transaction_date <= as_of:
                     realized_pnl += gain
                     tax_rate = cls._tax_rate_for_lot(lot, tax_setting, tx.transaction_date)
-                    # A negative gain is a capital loss, not negative tax or an
-                    # implied refundable tax credit. Loss offset/carry-forward
-                    # requires a separate tax-ledger model and is not inferred here.
-                    realized_tax += max(gain, cls.ZERO) * tax_rate
+                    # This report applies the configured rate symmetrically to
+                    # gains and losses, so loss tax estimates remain negative.
+                    realized_tax += gain * tax_rate
 
                 lot["remaining_qty"] -= matched_qty
                 remaining_to_sell -= matched_qty
@@ -1078,12 +1077,10 @@ class MISReportService:
                 lot_market_rate = Decimal(str(market_rate))
             gain = (lot_market_rate - lot["unit_cost"]) * lot["remaining_qty"]
             unrealized_pnl += gain
-            # Estimate tax only on positive unrealized gains. A mark-to-market
-            # loss must not appear as negative tax or a tax refund; any eligible
-            # loss set-off/carry-forward belongs in a separate tax calculation.
-            unrealized_tax += max(gain, cls.ZERO) * cls._tax_rate_for_lot(
-                lot, tax_setting, as_of
-            )
+            # Apply the configured tenure-based rate to unrealized gains and
+            # losses. Negative values are estimates under this application's
+            # configured-rate convention, not a statutory refund determination.
+            unrealized_tax += gain * cls._tax_rate_for_lot(lot, tax_setting, as_of)
 
         return {
             "realized_pnl": realized_pnl,

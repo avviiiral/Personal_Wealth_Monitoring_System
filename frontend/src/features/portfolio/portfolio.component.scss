@@ -107,6 +107,31 @@
   display: none;
 }
 
+.duplicate-import-option {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.35;
+  cursor: pointer;
+  max-width: 210px;
+
+  input {
+    width: 15px;
+    height: 15px;
+    margin: 0;
+    accent-color: var(--ink);
+    flex-shrink: 0;
+  }
+
+  &:has(input:disabled) {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+}
+
 .selection-area {
   display: flex;
   gap: 14px;

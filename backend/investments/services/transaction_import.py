@@ -1149,7 +1149,7 @@ class TransactionImporter:
 
     @staticmethod
     @db_transaction.atomic
-    def import_file(file, owner, upload_batch=None):
+    def import_file(file, owner, upload_batch=None, include_duplicates=False):
         family = require_active_family(owner)
         dataframe, summary = TransactionImporter._read_file(file)
 
@@ -1214,6 +1214,12 @@ class TransactionImporter:
                     price=parsed["price"],
                     amount=parsed["amount"],
                 )
+                if include_duplicates:
+                    # Keep the database idempotency constraint while allowing
+                    # intentional duplicates as distinct imported rows.
+                    upload_token = upload_batch.id if upload_batch is not None else timezone.now().isoformat()
+                    unique_material = f"{parsed['source_key']}|upload:{upload_token}|row:{row_number}"
+                    parsed["source_key"] = hashlib.sha256(unique_material.encode("utf-8")).hexdigest()
                 rows.append((row_number, parsed, row))
             except TransactionImportError as exc:
                 record_failure(row_number, exc, row)
@@ -1257,7 +1263,7 @@ class TransactionImporter:
                             mapped_type, parsed["transaction_date"], parsed["quantity"],
                             parsed["price"], parsed["amount"],
                         )
-                        if duplicate_key in seen_mutual_fund_keys:
+                        if duplicate_key in seen_mutual_fund_keys and not include_duplicates:
                             skipped_duplicates += 1
                             continue
 
@@ -1274,7 +1280,7 @@ class TransactionImporter:
                             amount=parsed["amount"],
                             source_key=source_key,
                         )
-                        if existing is not None:
+                        if existing is not None and not include_duplicates:
                             skipped_duplicates += 1
                             seen_mutual_fund_keys.add(duplicate_key)
                             continue
@@ -1291,14 +1297,14 @@ class TransactionImporter:
                         imported_mutual_funds += 1
                         continue
 
-                    if source_key in seen_source_keys:
+                    if source_key in seen_source_keys and not include_duplicates:
                         skipped_duplicates += 1
                         continue
 
                     existing = TransactionImporter._find_existing_investment_transaction(
                         owner=owner, family=family, source_key=source_key,
                     )
-                    if existing is not None:
+                    if existing is not None and not include_duplicates:
                         skipped_duplicates += 1
                         seen_source_keys.add(source_key)
                         continue

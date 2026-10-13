@@ -218,6 +218,7 @@ Net worth, asset allocation, key portfolio metrics and an **Investment Summary**
 - Quantity, invested value, current value, P&L and **XIRR per node**
 - Full transaction history, create / edit / delete
 - **Excel transaction import** (a _Transactions_ sheet is required; a _Summary_ sheet is optional)
+- **Duplicate transaction review before import** — matching rows are shown in a review table with family member, asset, date, transaction type, quantity, price and amount; select each duplicate row to import or leave it unchecked to skip
 - **Standard transaction format download** from Settings for consistent transaction uploads
 - **Transaction upload history** with upload status, imported/failed row counts and row-level failure details
 - **Data-driven classification** — Family Member, Asset Class, Sub Class, Asset Name, Underlying and Advisors are sourced from uploaded transaction/database records rather than hard-coded user-facing classification lists
@@ -237,6 +238,11 @@ Transaction imports are tracked as auditable upload records so users can review 
 - Users can download the **Standard Transaction Format** directly from Settings.
 - The standard workbook includes the transaction fields expected by the importer and supports the existing `Summary` / portfolio-mapping structure.
 - Transaction upload failures are recorded without silently treating invalid rows as successful imports.
+- Before committing an upload, PWMS checks the workbook for duplicates and opens a **Review duplicate transactions** dialog when matches are found.
+- Each duplicate is displayed with its Excel row number, family member, asset class/sub-class, asset name, date, transaction type, quantity, price and amount.
+- Select the **Import** checkbox for each duplicate you intentionally want to add. Unchecked duplicate rows are skipped; non-duplicate rows continue through the normal import flow.
+- **Import Selected & Skip Others** applies the individual choices. **Cancel Upload** closes the review without importing the file.
+- Duplicate preview does not save transactions. The final import request reprocesses the workbook and preserves the database source-key uniqueness guard; selected duplicate rows receive distinct import identities.
 - The importer accepts uploaded classification values as authoritative application data; it does not replace them with hard-coded asset-class or family-name values.
 
 ### 🧩 Asset Underlying management

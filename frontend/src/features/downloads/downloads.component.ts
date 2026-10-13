@@ -764,10 +764,13 @@ export class DownloadsComponent implements OnInit {
           const isLongTerm = holdingMonths >= tenureMonths;
           gainType = isLongTerm ? 'Long Term' : 'Short Term';
           taxRate = isLongTerm ? longRate : shortRate;
-          // This is an indicative per-lot estimate. Tax-loss set-off, exemptions,
-          // surcharge, cess and other filing-specific rules are not applied here.
-          estimatedTax = Math.max(0, realisedGain) * taxRate / 100;
-          taxStatus = 'Indicative only; loss set-off, exemptions and surcharge/cess excluded';
+          // Apply the configured rate to gains and losses. A negative result
+          // represents an indicative tax impact/benefit on the loss, not a
+          // guaranteed refund; actual loss set-off depends on tax rules.
+          estimatedTax = realisedGain * taxRate / 100;
+          taxStatus = realisedGain < 0
+            ? 'Indicative loss tax impact; actual loss set-off/refund depends on tax rules'
+            : 'Indicative only; exemptions and surcharge/cess excluded';
         }
 
         if (includeSale) {
@@ -832,7 +835,6 @@ export class DownloadsComponent implements OnInit {
       ['ISIN', 'isin'],
       ['Acquisition Date', 'acquisition_date'],
       ['Sale Date', 'sale_date'],
-      ['Holding Period (Months)', 'holding_period_months'],
       ['Quantity Sold', 'quantity_sold'],
       ['Cost Basis', 'cost_basis'],
       ['Sale Proceeds', 'sale_proceeds'],

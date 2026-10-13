@@ -1683,3 +1683,58 @@ class MISReportAPITests(TestCase):
         # lot, even though the database Asset FK is the same.
         self.assertEqual(metrics["realized_pnl"], Decimal("1000"))
         self.assertEqual(metrics["realized_tax"], Decimal("100.00"))
+
+
+
+    def test_fifo_tax_metrics_include_buy_and_sell_fees(self):
+        common = {
+            "owner": self.user,
+            "family": self.family,
+            "family_name": "Member Fees",
+            "portfolio": "Direct Equity",
+            "asset_class": "Equity",
+            "sub_class": "Direct Equity",
+            "asset_name": "MIS Equity",
+            "asset": self.asset,
+        }
+        buy = Transaction.objects.create(
+            **common,
+            transaction_date=date(2026, 1, 1),
+            transaction_type="BUY",
+            quantity=Decimal("10"),
+            price_per_unit=Decimal("100"),
+            amount=Decimal("1000"),
+            fees=Decimal("10"),
+        )
+        sell = Transaction.objects.create(
+            **common,
+            transaction_date=date(2026, 6, 1),
+            transaction_type="SELL",
+            quantity=Decimal("5"),
+            price_per_unit=Decimal("140"),
+            amount=Decimal("700"),
+            fees=Decimal("20"),
+        )
+        setting = TaxRateSetting.objects.create(
+            family=self.family,
+            asset=self.asset,
+            tenure_months=12,
+            short_term_tax_rate=Decimal("20"),
+            long_term_tax_rate=Decimal("10"),
+        )
+
+        metrics = MISReportService._fifo_tax_metrics(
+            [buy, sell],
+            "asset",
+            date(2026, 6, 30),
+            date(2026, 1, 1),
+            {self.asset.id: setting},
+            {self.asset.id: Decimal("140")},
+        )
+
+        # Buy fees raise unit cost to ₹101; sell fees reduce net proceeds
+        # to ₹680. Realized gain is ₹175 and the configured 20% estimate is ₹35.
+        self.assertEqual(metrics["realized_pnl"], Decimal("175"))
+        self.assertEqual(metrics["realized_tax"], Decimal("35.00"))
+        # Five remaining units retain the fee-inclusive ₹101 cost basis.
+        self.assertEqual(metrics["unrealized_pnl"], Decimal("195"))

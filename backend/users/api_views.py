@@ -2,8 +2,10 @@ from decimal import Decimal, InvalidOperation
 from io import BytesIO
 
 from openpyxl import Workbook, load_workbook
+from openpyxl.styles import Font
 
 from django.db import IntegrityError
+from django.http import HttpResponse
 from django.contrib.auth import get_user_model
 from django.db import transaction
 from django.db.models import Q
@@ -463,13 +465,13 @@ def tax_rate_template(request):
     sheet.freeze_panes = "A2"
     sheet.auto_filter.ref = "A1:D2"
     for cell in sheet[1]:
-        cell.font = __import__("openpyxl").styles.Font(bold=True)
+        cell.font = Font(bold=True)
     for column, width in {"A": 36, "B": 20, "C": 22, "D": 22}.items():
         sheet.column_dimensions[column].width = width
 
     output = BytesIO()
     workbook.save(output)
-    response = Response(output.getvalue(), content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    response = HttpResponse(output.getvalue(), content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
     response["Content-Disposition"] = 'attachment; filename="pwms_tax_settings_template.xlsx"'
     return response
 

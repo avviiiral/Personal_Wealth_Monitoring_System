@@ -80,6 +80,21 @@
         </span>
       </div>
 
+      <div class="tax-upload-actions">
+        <div>
+          <strong>Bulk update from Excel</strong>
+          <p>Download the template, fill in Asset Name, Tenure (Months), Short Term Tax (%) and Long Term Tax (%), then upload it. Only rows in the file are updated.</p>
+        </div>
+        <div class="tax-upload-buttons">
+          <button type="button" class="secondary-button" (click)="downloadTaxSettingsTemplate()" [disabled]="taxRateUploadBusy">Download Template</button>
+          <label class="primary-button tax-upload-label" [class.disabled]="taxRateUploadBusy">
+            {{ taxRateUploadBusy ? 'Uploading...' : 'Upload Excel' }}
+            <input type="file" accept=".xlsx" (change)="uploadTaxSettingsFromEvent($event)" [disabled]="taxRateUploadBusy" />
+          </label>
+        </div>
+      </div>
+
+      <div class="success-message" *ngIf="taxRateUploadMessage">{{ taxRateUploadMessage }}</div>
       <div class="error-message" *ngIf="taxRateError">{{ taxRateError }}</div>
 
       <div class="loading-card history-loading" *ngIf="taxRateLoading">

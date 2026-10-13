@@ -119,8 +119,7 @@ export class DownloadsComponent implements OnInit {
 
     if (report === 'capital-gain') {
       if (!this.transactionsLoaded || force) {
-        const response = await firstValueFrom(this.portfolioApi.getTransactions());
-        this.transactions = response.results ?? [];
+        this.transactions = await this.loadAllTransactions();
         this.setTransactionDateRange();
         this.transactionsLoaded = true;
       }
@@ -143,6 +142,34 @@ export class DownloadsComponent implements OnInit {
     const holdingResponse = await firstValueFrom(this.portfolioApi.getHoldingReport());
     this.holdingRows = holdingResponse.results ?? [];
     this.holdingsLoaded = true;
+  }
+
+  private async loadAllTransactions(): Promise<Transaction[]> {
+    const all: Transaction[] = [];
+    const seenIds = new Set<number>();
+    let page = 1;
+    let expectedCount = Number.POSITIVE_INFINITY;
+
+    while (all.length < expectedCount) {
+      const response = await firstValueFrom(this.portfolioApi.getTransactions(page));
+      const results = response.results ?? [];
+      expectedCount = Number(response.count ?? results.length);
+
+      if (results.length === 0) break;
+      let added = 0;
+      for (const transaction of results) {
+        if (seenIds.has(transaction.id)) continue;
+        seenIds.add(transaction.id);
+        all.push(transaction);
+        added += 1;
+      }
+
+      // Avoid looping forever if the endpoint does not support page parameters.
+      if (added === 0 || results.length < 1) break;
+      page += 1;
+    }
+
+    return all;
   }
 
   private setTransactionDateRange(): void {

@@ -2,7 +2,7 @@ import { Injectable, inject } from '@angular/core';
 
 import { HttpClient, HttpHeaders } from '@angular/common/http';
 
-import { Observable } from 'rxjs';
+import { Observable, switchMap } from 'rxjs';
 
 import { environment } from '../../environments/environment';
 
@@ -177,6 +177,29 @@ export class SettingsApiService {
 
   getTaxRateSettings(): Observable<TaxRateSetting[]> {
     return this.http.get<TaxRateSetting[]>(`${this.baseUrl}/settings/tax-rates/`, this.requestOptions);
+  }
+
+  downloadTaxRateTemplate(): Observable<Blob> {
+    return this.http.get(`${this.baseUrl}/settings/tax-rates/template/`, {
+      ...this.requestOptions,
+      responseType: 'blob',
+    });
+  }
+
+  uploadTaxRateSettings(file: File): Observable<{ message: string; updated_count: number; active_family: string }> {
+    const formData = new FormData();
+    formData.append('file', file);
+    return this.getCsrfToken().pipe(
+      switchMap(() => {
+        const csrfToken = this.readCsrfToken();
+        const headers = csrfToken ? new HttpHeaders({ 'X-CSRFToken': csrfToken }) : undefined;
+        return this.http.post<{ message: string; updated_count: number; active_family: string }>(
+          `${this.baseUrl}/settings/tax-rates/upload/`,
+          formData,
+          { withCredentials: true, headers },
+        );
+      }),
+    );
   }
 
   saveTaxRateSetting(

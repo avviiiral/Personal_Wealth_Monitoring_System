@@ -1,11 +1,11 @@
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ChangeDetectorRef, Component, OnDestroy, OnInit, inject } from '@angular/core';
-import { Subscription, timer } from 'rxjs';
+import { Subscription, firstValueFrom, timer } from 'rxjs';
 
-import { PortfolioApiService, PortfolioAssetNode, FamilyNode, PortfolioCalculations } from '../../core/services/portfolio-api.service';
+import { PortfolioApiService, PortfolioAssetNode, FamilyNode, PortfolioCalculations, Transaction } from '../../core/services/portfolio-api.service';
 import { ManualPriceService } from '../../core/services/manual-price.service';
-import { InvestmentsApiService } from '../../core/services/investments-api.service';
+import { DuplicateTransactionRow, InvestmentsApiService } from '../../core/services/investments-api.service';
 import { ToastService } from '../../core/services/toast.service';
 import { RbacService } from '../../core/services/rbac.service';
 
@@ -25,6 +25,7 @@ export class PortfolioComponent implements OnInit, OnDestroy {
   readonly rbac = inject(RbacService);
   private refreshSubscription: Subscription | null = null;
   families: FamilyNode[] = [];
+  private transactionAssetClassRows: Pick<Transaction, 'family_name' | 'asset_class'>[] = [];
   portfolioCalculations: PortfolioCalculations = { subclasses: [], asset_names: [], family_subclasses: [], report_subclass_summaries: [] };
   selectedFamilyMember = '';
   selectedAssetClass = '';
@@ -43,6 +44,10 @@ export class PortfolioComponent implements OnInit, OnDestroy {
   savingManualPriceAssetId: number | null = null;
   manualPriceErrors: Record<number, string> = {};
   uploadingTransactions = false;
+  pendingTransactionFile: File | null = null;
+  duplicateTransactionRows: Array<DuplicateTransactionRow & { import: boolean }> = [];
+  showDuplicateReview = false;
+  reviewingDuplicates = false;
   showUnderlyingUpload = false;
   selectedUnderlyingAssetId: number | null = null;
   selectedUnderlyingFile: File | null = null;
@@ -50,6 +55,7 @@ export class PortfolioComponent implements OnInit, OnDestroy {
 
   ngOnInit(): void {
     this.loadPortfolio();
+    void this.loadTransactionAssetClasses();
     this.refreshSubscription = timer(30000, 30000).subscribe(() => this.loadPortfolio(true));
   }
   ngOnDestroy(): void { this.refreshSubscription?.unsubscribe(); }
@@ -101,11 +107,47 @@ export class PortfolioComponent implements OnInit, OnDestroy {
   onTransactionFileSelected(event: Event): void {
     const input = event.target as HTMLInputElement; const file = input.files?.[0]; input.value = '';
     if (!file) return;
-    this.uploadingTransactions = true;
-    this.investmentsApi.importTransactions(file).subscribe({
-      next: (response) => { this.uploadingTransactions = false; const data = response.data; if (data) this.toast.success(`Imported ${data.total_imported} transaction(s)` + (data.skipped_duplicates ? ` (${data.skipped_duplicates} duplicate(s) skipped).` : '.')); else this.toast.success(response.message || 'Transactions imported.'); this.loadPortfolio(true); this.cdr.detectChanges(); },
-      error: (error) => { this.uploadingTransactions = false; const message = error?.error?.message || error?.error?.error || 'Unable to import the transaction file.'; this.toast.error(message, 6000); this.cdr.detectChanges(); },
+    this.pendingTransactionFile = file;
+    this.reviewingDuplicates = true;
+    this.investmentsApi.previewTransactionDuplicates(file).subscribe({
+      next: response => {
+        this.reviewingDuplicates = false;
+        const duplicates = response.data?.duplicate_rows ?? [];
+        if (duplicates.length) {
+          this.duplicateTransactionRows = duplicates.map(row => ({ ...row, import: false }));
+          this.showDuplicateReview = true;
+          this.cdr.detectChanges();
+        } else { this.confirmTransactionImport([]); }
+      },
+      error: error => {
+        this.reviewingDuplicates = false; this.pendingTransactionFile = null;
+        this.toast.error(error?.error?.message || 'Unable to review transaction duplicates.', 6000);
+        this.cdr.detectChanges();
+      },
     });
+  }
+
+  confirmTransactionImport(selectedRows: number[]): void {
+    const file = this.pendingTransactionFile;
+    if (!file) return;
+    this.showDuplicateReview = false; this.uploadingTransactions = true;
+    this.investmentsApi.importTransactions(file, selectedRows).subscribe({
+      next: response => {
+        this.uploadingTransactions = false; this.pendingTransactionFile = null;
+        const data = response.data;
+        this.toast.success(data ? `Imported ${data.total_imported} transaction(s)` + (data.skipped_duplicates ? ` (${data.skipped_duplicates} duplicate(s) skipped).` : '.') : (response.message || 'Transactions imported.'));
+        this.duplicateTransactionRows = []; this.loadPortfolio(true); this.cdr.detectChanges();
+      },
+      error: error => { this.uploadingTransactions = false; this.toast.error(error?.error?.message || 'Unable to import the transaction file.', 6000); this.cdr.detectChanges(); },
+    });
+  }
+
+  importSelectedDuplicates(): void {
+    this.confirmTransactionImport(this.duplicateTransactionRows.filter(row => row.import).map(row => row.row_number));
+  }
+
+  cancelDuplicateReview(): void {
+    this.showDuplicateReview = false; this.pendingTransactionFile = null; this.duplicateTransactionRows = [];
   }
 
   get underlyingAssetOptions(): Array<{ id: number; name: string }> {
@@ -179,8 +221,65 @@ export class PortfolioComponent implements OnInit, OnDestroy {
   get familyMemberOptions(): string[] { return this.families.map((family) => family.family_name).filter(Boolean).sort((a, b) => a.localeCompare(b)); }
   get assetClassOptions(): string[] {
     const classes = new Set<string>();
-    for (const family of this.filteredFamilies) for (const portfolio of family.portfolios) for (const assetClass of portfolio.asset_classes) if (assetClass.asset_class) classes.add(assetClass.asset_class);
+
+    // Transaction uploads are the source of truth for user-defined Asset Class
+    // labels. Include them even when a transaction no longer appears in the
+    // current holdings tree (for example, a fully sold position).
+    for (const row of this.transactionAssetClassRows) {
+      if (this.selectedFamilyMember && (row.family_name || '').trim() !== this.selectedFamilyMember) continue;
+      const assetClass = (row.asset_class || '').trim();
+      if (assetClass) classes.add(assetClass);
+    }
+
+    // Keep the portfolio tree as a compatibility fallback while transaction
+    // rows are loading, and preserve any class labels represented in holdings.
+    for (const family of this.filteredFamilies) {
+      for (const portfolio of family.portfolios) {
+        for (const assetClass of portfolio.asset_classes) {
+          const label = (assetClass.asset_class || '').trim();
+          if (label) classes.add(label);
+        }
+      }
+    }
+
     return Array.from(classes).sort((a, b) => a.localeCompare(b));
+  }
+
+  private async loadTransactionAssetClasses(): Promise<void> {
+    try {
+      const rows: Pick<Transaction, 'family_name' | 'asset_class'>[] = [];
+      const seenIds = new Set<number>();
+      let page = 1;
+      let expectedCount = Number.POSITIVE_INFINITY;
+
+      while (rows.length < expectedCount) {
+        const response = await firstValueFrom(this.portfolioApi.getTransactions(page));
+        expectedCount = Number(response.count ?? response.results?.length ?? 0);
+        const results = response.results ?? [];
+        if (!results.length) break;
+
+        let added = 0;
+        for (const transaction of results) {
+          if (seenIds.has(transaction.id)) continue;
+          seenIds.add(transaction.id);
+          rows.push({
+            family_name: transaction.family_name,
+            asset_class: transaction.asset_class,
+          });
+          added += 1;
+        }
+
+        if (!added) break;
+        page += 1;
+      }
+
+      this.transactionAssetClassRows = rows;
+      this.validateSelections();
+      this.cdr.detectChanges();
+    } catch (error) {
+      // Portfolio-tree options remain available if transaction loading fails.
+      console.error('Unable to load transaction Asset Class values:', error);
+    }
   }
   get advisorOptions(): string[] {
     const advisors = new Set<string>();

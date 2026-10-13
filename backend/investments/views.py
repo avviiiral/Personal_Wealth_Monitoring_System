@@ -31,6 +31,24 @@ from users.permissions import family_scope, require_active_family
 
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
+def preview_transaction_duplicates(request):
+    uploaded_file = request.FILES.get("file")
+    if uploaded_file is None:
+        return Response({"success": False, "message": "Please select a transaction file."}, status=400)
+    if not uploaded_file.name.lower().endswith((".xlsx", ".csv")):
+        return Response({"success": False, "message": "Only .xlsx and .csv files are supported."}, status=400)
+    try:
+        return Response({"success": True, "data": TransactionImporter.preview_duplicates(uploaded_file, request.user)})
+    except PermissionDenied as exc:
+        return Response({"success": False, "message": str(exc.detail)}, status=403)
+    except TransactionImportError as exc:
+        return Response({"success": False, "message": str(exc)}, status=400)
+    except Exception:
+        return Response({"success": False, "message": "Unable to review duplicate transactions."}, status=500)
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
 def import_transactions(request):
     """Import transaction data and persist an auditable upload summary."""
     uploaded_file = request.FILES.get("file")
@@ -49,10 +67,13 @@ def import_transactions(request):
     )
 
     try:
+        selected_duplicate_rows = request.data.get("selected_duplicate_rows", "[]")
+        if isinstance(selected_duplicate_rows, str):
+            import json
+            selected_duplicate_rows = json.loads(selected_duplicate_rows)
         result = TransactionImporter.import_file(
-            file=uploaded_file,
-            owner=request.user,
-            upload_batch=upload,
+            file=uploaded_file, owner=request.user, upload_batch=upload,
+            selected_duplicate_rows=selected_duplicate_rows,
         )
     except PermissionDenied as exc:
         upload.status = "FAILED"

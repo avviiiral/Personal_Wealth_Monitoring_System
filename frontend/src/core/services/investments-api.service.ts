@@ -9,6 +9,11 @@ import { environment } from '../../environments/environment';
    (investments/urls.py -> investments/views.py::import_transactions)
    ========================================================== */
 
+export interface DuplicateTransactionRow {
+  row_number: number; asset_name: string; family_name: string; asset_class: string; sub_class: string; transaction_date: string; transaction_type: string; quantity: string; price: string; amount: string; reason: string;
+}
+export interface DuplicatePreviewResponse { success: boolean; message?: string; data?: { duplicate_rows: DuplicateTransactionRow[]; duplicate_count: number }; }
+
 export interface ImportTransactionsResult {
   imported_investments: number;
   imported_mutual_funds: number;
@@ -78,10 +83,16 @@ export class InvestmentsApiService {
   // IMPORT TRANSACTIONS (.xlsx / .csv workbook upload)
   // ==========================================================
 
-  importTransactions(file: File): Observable<ImportTransactionsResponse> {
+  previewTransactionDuplicates(file: File): Observable<DuplicatePreviewResponse> {
+    const formData = new FormData(); formData.append('file', file);
+    return this.getCsrfToken().pipe(switchMap(() => this.http.post<DuplicatePreviewResponse>(this.baseUrl + '/import/preview/', formData, { headers: this.getCsrfHeaders(), withCredentials: true })));
+  }
+
+  importTransactions(file: File, selectedDuplicateRows: number[] = []): Observable<ImportTransactionsResponse> {
     const formData = new FormData();
 
     formData.append('file', file);
+    formData.append('selected_duplicate_rows', JSON.stringify(selectedDuplicateRows));
 
     return this.getCsrfToken().pipe(
       switchMap(() =>

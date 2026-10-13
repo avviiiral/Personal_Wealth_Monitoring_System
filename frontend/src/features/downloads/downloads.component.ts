@@ -10,6 +10,7 @@ import {
   Transaction,
 } from '../../core/services/portfolio-api.service';
 import { WatchListApiService, WatchListProduct } from '../../core/services/watch-list-api.service';
+import { SettingsApiService, TaxRateSetting } from '../../core/services/settings-api.service';
 
 type ReportId =
   | 'portfolio-detailed'
@@ -19,7 +20,8 @@ type ReportId =
   | 'asset-name-xirr'
   | 'watch-list'
   | 'market-cap'
-  | 'holding-matrix';
+  | 'holding-matrix'
+  | 'capital-gain';
 
 interface ReportDefinition {
   id: ReportId;
@@ -39,10 +41,12 @@ interface ReportDefinition {
 export class DownloadsComponent implements OnInit {
   private readonly portfolioApi = inject(PortfolioApiService);
   private readonly watchListApi = inject(WatchListApiService);
+  private readonly settingsApi = inject(SettingsApiService);
   private readonly cdr = inject(ChangeDetectorRef);
 
   readonly reports: ReportDefinition[] = [
     { id: 'portfolio-detailed', name: 'Portfolio Detailed', type: 'Transaction Report', description: 'Transaction-level portfolio activity for a selected date range.', filters: 'Family + Date Range' },
+    { id: 'capital-gain', name: 'Capital Gain Report', type: 'Tax / Realised Gains', description: 'FIFO realised gains from sales; indicative tax uses saved asset rates and excludes loss set-off, exemptions, surcharge/cess, and other filing-specific rules.', filters: 'Family + Asset Class + Sub Class + Date Range' },
     { id: 'sub-class-holdings', name: 'Sub Class Holdings', type: 'Holdings Report', description: 'Current holdings belonging to a selected Sub Class.', filters: 'Family + Asset Class + Sub Class' },
     { id: 'holding-report', name: 'Holding Report', type: 'Holdings Report', description: 'Current holdings with quantity, invested value, current value, gain and XIRR.', filters: 'Family + Asset Class' },
     { id: 'sub-class-xirr', name: 'Portfolio Summary', type: 'Performance / XIRR', description: 'Sub Class level portfolio summary with XIRR performance.', filters: 'Family + Asset Class + Sub Class' },
@@ -56,6 +60,7 @@ export class DownloadsComponent implements OnInit {
   holdingRows: HoldingReportRow[] = [];
   watchListProducts: WatchListProduct[] = [];
   marketCapRows: MarketCapReportRow[] = [];
+  taxRateSettings: TaxRateSetting[] = [];
 
   selectedReport: ReportId = 'portfolio-detailed';
   selectedFamilyMember = '';
@@ -76,6 +81,7 @@ export class DownloadsComponent implements OnInit {
   private transactionsLoaded = false;
   private holdingsLoaded = false;
   private marketCapLoaded = false;
+  private taxRateSettingsLoaded = false;
 
   ngOnInit(): void {
     this.load();
@@ -111,6 +117,19 @@ export class DownloadsComponent implements OnInit {
       return;
     }
 
+    if (report === 'capital-gain') {
+      if (!this.transactionsLoaded || force) {
+        this.transactions = await this.loadAllTransactions();
+        this.setTransactionDateRange();
+        this.transactionsLoaded = true;
+      }
+      if (!this.taxRateSettingsLoaded || force) {
+        this.taxRateSettings = await firstValueFrom(this.settingsApi.getTaxRateSettings());
+        this.taxRateSettingsLoaded = true;
+      }
+      return;
+    }
+
     if (report === 'market-cap') {
       if (this.marketCapLoaded && !force) return;
       const response = await firstValueFrom(this.portfolioApi.getEquityMarketCapReport(this.selectedReportDate));
@@ -123,6 +142,34 @@ export class DownloadsComponent implements OnInit {
     const holdingResponse = await firstValueFrom(this.portfolioApi.getHoldingReport());
     this.holdingRows = holdingResponse.results ?? [];
     this.holdingsLoaded = true;
+  }
+
+  private async loadAllTransactions(): Promise<Transaction[]> {
+    const all: Transaction[] = [];
+    const seenIds = new Set<number>();
+    let page = 1;
+    let expectedCount = Number.POSITIVE_INFINITY;
+
+    while (all.length < expectedCount) {
+      const response = await firstValueFrom(this.portfolioApi.getTransactions(page));
+      const results = response.results ?? [];
+      expectedCount = Number(response.count ?? results.length);
+
+      if (results.length === 0) break;
+      let added = 0;
+      for (const transaction of results) {
+        if (seenIds.has(transaction.id)) continue;
+        seenIds.add(transaction.id);
+        all.push(transaction);
+        added += 1;
+      }
+
+      // Avoid looping forever if the endpoint does not support page parameters.
+      if (added === 0 || results.length < 1) break;
+      page += 1;
+    }
+
+    return all;
   }
 
   private setTransactionDateRange(): void {
@@ -139,26 +186,46 @@ export class DownloadsComponent implements OnInit {
   }
 
   get assetClassOptions(): string[] {
-    return Array.from(new Set(this.holdingRows
+    const holdingClasses = this.holdingRows
       .filter(row => !this.selectedFamilyMember || this.clean(row.family_name) === this.selectedFamilyMember)
-      .map(row => this.clean(row.asset_class))))
+      .map(row => this.clean(row.asset_class));
+    const transactionClasses = this.transactions
+      .filter(tx => !this.selectedFamilyMember || this.clean(tx.family_name) === this.selectedFamilyMember)
+      .map(tx => this.clean(tx.asset_class));
+    return Array.from(new Set([...holdingClasses, ...transactionClasses]))
       .sort((a, b) => a.localeCompare(b));
   }
 
   get subClassOptions(): string[] {
-    return Array.from(new Set(this.holdingRows
-      .filter(row => (!this.selectedFamilyMember || this.clean(row.family_name) === this.selectedFamilyMember)
-        && (!this.selectedAssetClass || this.clean(row.asset_class) === this.selectedAssetClass))
-      .map(row => this.clean(row.sub_class))))
+    const matches = (family: string | null | undefined, assetClass: string | null | undefined) =>
+      (!this.selectedFamilyMember || this.clean(family) === this.selectedFamilyMember)
+      && (!this.selectedAssetClass || this.clean(assetClass) === this.selectedAssetClass);
+    const holdingSubClasses = this.holdingRows
+      .filter(row => matches(row.family_name, row.asset_class))
+      .map(row => this.clean(row.sub_class));
+    const transactionSubClasses = this.transactions
+      .filter(tx => matches(tx.family_name, tx.asset_class))
+      .map(tx => this.clean(tx.sub_class));
+    return Array.from(new Set([...holdingSubClasses, ...transactionSubClasses]))
       .sort((a, b) => a.localeCompare(b));
   }
 
   get assetNameOptions(): string[] {
-    return Array.from(new Set(this.holdingRows
-      .filter(row => (!this.selectedFamilyMember || this.clean(row.family_name) === this.selectedFamilyMember)
-        && (!this.selectedAssetClass || this.clean(row.asset_class) === this.selectedAssetClass)
-        && (!this.selectedSubClass || this.clean(row.sub_class) === this.selectedSubClass))
-      .map(row => this.clean(row.asset_name))))
+    const matches = (
+      family: string | null | undefined,
+      assetClass: string | null | undefined,
+      subClass: string | null | undefined,
+    ) =>
+      (!this.selectedFamilyMember || this.clean(family) === this.selectedFamilyMember)
+      && (!this.selectedAssetClass || this.clean(assetClass) === this.selectedAssetClass)
+      && (!this.selectedSubClass || this.clean(subClass) === this.selectedSubClass);
+    const holdingAssetNames = this.holdingRows
+      .filter(row => matches(row.family_name, row.asset_class, row.sub_class))
+      .map(row => this.clean(row.asset_name));
+    const transactionAssetNames = this.transactions
+      .filter(tx => matches(tx.family_name, tx.asset_class, tx.sub_class))
+      .map(tx => this.clean(tx.asset_name));
+    return Array.from(new Set([...holdingAssetNames, ...transactionAssetNames]))
       .sort((a, b) => a.localeCompare(b));
   }
 
@@ -245,6 +312,7 @@ export class DownloadsComponent implements OnInit {
         case 'watch-list': await this.downloadWatchList(); break;
         case 'market-cap': await this.downloadMarketCap(); break;
         case 'holding-matrix': await this.downloadHoldingMatrix(); break;
+        case 'capital-gain': await this.downloadCapitalGainReport(); break;
       }
       this.success = `${this.selectedDefinition.name} downloaded successfully.`;
     } catch (error) {
@@ -574,6 +642,226 @@ export class DownloadsComponent implements OnInit {
     return null;
   }
 
+
+  private async downloadCapitalGainReport(): Promise<void> {
+    type FifoLot = {
+      acquisition_date: string;
+      remaining_quantity: number;
+      unit_cost: number;
+    };
+
+    const transactions = [...this.transactions].sort((a, b) =>
+      a.transaction_date.localeCompare(b.transaction_date)
+      || (a.created_at || '').localeCompare(b.created_at || '')
+      || a.id - b.id,
+    );
+    const lotsByKey = new Map<string, FifoLot[]>();
+    const policyByAssetName = new Map<string, TaxRateSetting>();
+    for (const policy of this.taxRateSettings) {
+      const key = (policy.asset_name || '').trim().toLocaleLowerCase();
+      if (key && !policyByAssetName.has(key)) policyByAssetName.set(key, policy);
+    }
+
+    const rows: Record<string, unknown>[] = [];
+    for (const tx of transactions) {
+      const type = (tx.transaction_type || '').toUpperCase();
+      const quantity = Math.abs(Number(tx.quantity || 0));
+      if (!Number.isFinite(quantity) || quantity <= 0 || !tx.transaction_date) continue;
+
+      const familyKey = this.clean(tx.family_name).toLocaleLowerCase();
+      const portfolioKey = this.clean(tx.portfolio).toLocaleLowerCase();
+      const assetClassKey = this.clean(tx.asset_class).toLocaleLowerCase();
+      const subClassKey = this.clean(tx.sub_class).toLocaleLowerCase();
+      const assetName = (tx.asset_name || '').trim() || this.clean(tx.asset_name);
+      const assetKey = assetName.toLocaleLowerCase();
+      const underlyingKey = this.clean(tx.underlying).toLocaleLowerCase();
+      const isinKey = this.clean(tx.isin).toLocaleUpperCase();
+      // FIFO inventory must never be shared across different holdings that
+      // happen to reuse the same displayed Asset Name or Portfolio label.
+      // Include the transaction's underlying asset identity and hierarchy.
+      const fifoKey = [
+        familyKey,
+        portfolioKey,
+        assetClassKey,
+        subClassKey,
+        assetKey,
+        underlyingKey,
+        isinKey,
+        String(tx.asset ?? ''),
+      ].join('::');
+      const inventory = lotsByKey.get(fifoKey) ?? [];
+      if (!lotsByKey.has(fifoKey)) lotsByKey.set(fifoKey, inventory);
+
+      const amount = Math.abs(Number(tx.amount || 0));
+      const price = Math.abs(Number(tx.price_per_unit || 0));
+      const fees = Number(tx.fees || 0);
+
+      if (type === 'BUY' || type === 'SIP') {
+        const grossCost = amount > 0 ? amount : quantity * price;
+        const totalCost = grossCost + fees;
+        inventory.push({
+          acquisition_date: tx.transaction_date,
+          remaining_quantity: quantity,
+          unit_cost: totalCost / quantity,
+        });
+        continue;
+      }
+
+      if (type === 'BONUS') {
+        // Bonus units are tracked as a zero-cost lot from the bonus allotment date.
+        inventory.push({
+          acquisition_date: tx.transaction_date,
+          remaining_quantity: quantity,
+          unit_cost: 0,
+        });
+        continue;
+      }
+
+      if (type !== 'SELL') continue;
+
+      const grossProceeds = amount > 0 ? amount : quantity * price;
+      const netProceeds = grossProceeds - fees;
+      const proceedsPerUnit = netProceeds / quantity;
+      let quantityRemaining = quantity;
+      const inDateRange = (!this.fromDate || tx.transaction_date >= this.fromDate)
+        && (!this.toDate || tx.transaction_date <= this.toDate);
+      const includeSale = inDateRange && this.matchesTransaction(tx);
+      const policy = policyByAssetName.get(assetName.toLocaleLowerCase());
+      const tenureMonths = policy?.tenure_months == null ? null : Number(policy.tenure_months);
+      const shortRate = policy?.short_term_tax_rate == null || policy.short_term_tax_rate === ''
+        ? null : Number(policy.short_term_tax_rate);
+      const longRate = policy?.long_term_tax_rate == null || policy.long_term_tax_rate === ''
+        ? null : Number(policy.long_term_tax_rate);
+      const policyConfigured = !!policy
+        && policy.id !== null
+        && tenureMonths !== null
+        && Number.isFinite(tenureMonths)
+        && shortRate !== null && Number.isFinite(shortRate)
+        && longRate !== null && Number.isFinite(longRate)
+        && !policy.configuration_conflict;
+
+      while (quantityRemaining > 0.0000005 && inventory.length) {
+        const lot = inventory[0];
+        const matchedQuantity = Math.min(quantityRemaining, lot.remaining_quantity);
+        if (matchedQuantity <= 0) {
+          inventory.shift();
+          continue;
+        }
+
+        const costBasis = matchedQuantity * lot.unit_cost;
+        const saleProceeds = matchedQuantity * proceedsPerUnit;
+        const realisedGain = saleProceeds - costBasis;
+        const holdingMonths = this.completedHoldingMonths(lot.acquisition_date, tx.transaction_date);
+        let gainType = 'Not Configured';
+        let taxRate: number | null = null;
+        let estimatedTax: number | null = null;
+        let taxStatus = 'Tax settings missing or incomplete';
+
+        if (policy?.configuration_conflict) {
+          gainType = 'Review Required';
+          taxStatus = 'Review tax settings';
+        } else if (policyConfigured && tenureMonths !== null && shortRate !== null && longRate !== null) {
+          const isLongTerm = holdingMonths >= tenureMonths;
+          gainType = isLongTerm ? 'Long Term' : 'Short Term';
+          taxRate = isLongTerm ? longRate : shortRate;
+          // Apply the configured rate to gains and losses. A negative result
+          // represents an indicative tax impact/benefit on the loss, not a
+          // guaranteed refund; actual loss set-off depends on tax rules.
+          estimatedTax = realisedGain * taxRate / 100;
+          taxStatus = realisedGain < 0
+            ? 'Indicative loss tax impact; actual loss set-off/refund depends on tax rules'
+            : 'Indicative only; exemptions and surcharge/cess excluded';
+        }
+
+        if (includeSale) {
+          rows.push({
+            family_member: this.clean(tx.family_name),
+            portfolio: this.clean(tx.portfolio),
+            asset_class: this.clean(tx.asset_class),
+            sub_class: this.clean(tx.sub_class),
+            asset_name: assetName,
+            underlying: tx.underlying || assetName,
+            isin: tx.isin || '-',
+            acquisition_date: lot.acquisition_date,
+            sale_date: tx.transaction_date,
+            holding_period_months: holdingMonths,
+            quantity_sold: matchedQuantity,
+            cost_basis: costBasis,
+            sale_proceeds: saleProceeds,
+            realised_capital_gain: realisedGain,
+            capital_gain_type: gainType,
+            tax_rate: taxRate,
+            indicative_tax: estimatedTax,
+            tax_status: taxStatus,
+          });
+        }
+
+        lot.remaining_quantity -= matchedQuantity;
+        quantityRemaining -= matchedQuantity;
+        if (lot.remaining_quantity <= 0.0000005) inventory.shift();
+      }
+
+      if (includeSale && quantityRemaining > 0.0000005) {
+        rows.push({
+          family_member: this.clean(tx.family_name),
+          portfolio: this.clean(tx.portfolio),
+          asset_class: this.clean(tx.asset_class),
+          sub_class: this.clean(tx.sub_class),
+          asset_name: assetName,
+          underlying: tx.underlying || assetName,
+          isin: tx.isin || '-',
+          acquisition_date: '',
+          sale_date: tx.transaction_date,
+          holding_period_months: null,
+          quantity_sold: quantityRemaining,
+          cost_basis: null,
+          sale_proceeds: quantityRemaining * proceedsPerUnit,
+          realised_capital_gain: null,
+          capital_gain_type: 'Unmatched',
+          tax_rate: null,
+          indicative_tax: null,
+          tax_status: 'Unmatched quantity: review prior purchases and corporate actions',
+        });
+      }
+    }
+
+    await this.exportWorkbook('Capital Gains', 'Capital Gain Report (FIFO Realised Gains)', [
+      ['Family Member', 'family_member'],
+      ['Portfolio', 'portfolio'],
+      ['Asset Class', 'asset_class'],
+      ['Sub Class', 'sub_class'],
+      ['Asset Name', 'asset_name'],
+      ['Underlying', 'underlying'],
+      ['ISIN', 'isin'],
+      ['Acquisition Date', 'acquisition_date'],
+      ['Sale Date', 'sale_date'],
+      ['Quantity Sold', 'quantity_sold'],
+      ['Cost Basis', 'cost_basis'],
+      ['Sale Proceeds', 'sale_proceeds'],
+      ['Realised Capital Gain', 'realised_capital_gain'],
+      ['Tenure', 'capital_gain_type'],
+      ['Tax Rate (%)', 'tax_rate'],
+      ['Indicative Tax', 'indicative_tax'],
+
+    ], rows, 'capital_gain_report');
+  }
+
+  private completedHoldingMonths(acquisitionDate: string, saleDate: string): number {
+    const acquisition = new Date(acquisitionDate + 'T00:00:00Z');
+    const sale = new Date(saleDate + 'T00:00:00Z');
+    if (!Number.isFinite(acquisition.getTime()) || !Number.isFinite(sale.getTime()) || sale < acquisition) return 0;
+
+    let months = (sale.getUTCFullYear() - acquisition.getUTCFullYear()) * 12
+      + sale.getUTCMonth() - acquisition.getUTCMonth();
+    const targetMonthIndex = acquisition.getUTCFullYear() * 12 + acquisition.getUTCMonth() + months;
+    const targetYear = Math.floor(targetMonthIndex / 12);
+    const targetMonth = targetMonthIndex % 12;
+    const lastDayOfTargetMonth = new Date(Date.UTC(targetYear, targetMonth + 1, 0)).getUTCDate();
+    const anniversaryDay = Math.min(acquisition.getUTCDate(), lastDayOfTargetMonth);
+    if (sale.getUTCDate() < anniversaryDay) months -= 1;
+    return Math.max(0, months);
+  }
+
   private async downloadMarketCap(): Promise<void> {
     const response = await firstValueFrom(this.portfolioApi.getEquityMarketCapReport(this.selectedReportDate));
     this.marketCapRows = response.results ?? [];
@@ -894,7 +1182,8 @@ export class DownloadsComponent implements OnInit {
   private matchesTransaction(tx: Transaction): boolean {
     return (!this.selectedFamilyMember || this.clean(tx.family_name) === this.selectedFamilyMember)
       && (!this.selectedAssetClass || this.clean(tx.asset_class) === this.selectedAssetClass)
-      && (!this.selectedSubClass || this.clean(tx.sub_class) === this.selectedSubClass);
+      && (!this.selectedSubClass || this.clean(tx.sub_class) === this.selectedSubClass)
+      && (!this.selectedAssetName || this.clean(tx.asset_name) === this.selectedAssetName);
   }
 
   private holdingExportRow(row: HoldingReportRow): Record<string, unknown> {

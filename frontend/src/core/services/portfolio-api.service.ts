@@ -65,7 +65,12 @@ export class PortfolioApiService {
   }
   getSummary(): Observable<PortfolioSummary> { return this.http.get<PortfolioSummary>(`${this.baseUrl}/summary/`, this.requestOptions); }
   getHoldings(): Observable<ApiListResponse<Holding>> { return this.http.get<ApiListResponse<Holding>>(`${this.baseUrl}/holdings/`, this.requestOptions); }
-  getTransactions(): Observable<ApiListResponse<Transaction>> { return this.http.get<ApiListResponse<Transaction>>(`${this.baseUrl}/transactions/`, this.requestOptions); }
+  getTransactions(page?: number): Observable<ApiListResponse<Transaction>> {
+    return this.http.get<ApiListResponse<Transaction>>(`${this.baseUrl}/transactions/`, {
+      ...this.requestOptions,
+      ...(page ? { params: { page: page.toString() } } : {}),
+    });
+  }
   getAssets(): Observable<ApiListResponse<PortfolioAsset>> { return this.http.get<ApiListResponse<PortfolioAsset>>(`${this.baseUrl}/assets/`, this.requestOptions); }
   getPortfolioTree(filters: { family?: string; asset_class?: string; advisor?: string } = {}): Observable<PortfolioTreeResponse> {
     return this.http.get<PortfolioTreeResponse>(`${this.baseUrl}/tree/`, {

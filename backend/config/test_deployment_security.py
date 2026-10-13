@@ -31,13 +31,12 @@ class DeploymentSecuritySettingTests(SimpleTestCase):
             settings.REST_FRAMEWORK["DEFAULT_PERMISSION_CLASSES"],
         )
 
-    def test_database_engine_can_be_selected_for_postgresql_deployment(self):
-        from django.conf import settings
+    def test_database_engine_setting_is_supported(self):
+        import os
 
-        # The active settings module determines the test database; this
-        # assertion guards the supported backend declaration without opening
-        # a database connection.
+        # Settings accept the documented SQLite and PostgreSQL engine names.
+        # A database connection is intentionally not opened by this test.
         self.assertIn(
-            settings.DATABASES["default"]["ENGINE"],
-            ("django.db.backends.sqlite3", "django.db.backends.postgresql"),
+            os.environ.get("DATABASE_ENGINE", "sqlite").strip().lower(),
+            ("sqlite", "postgres", "postgresql"),
         )

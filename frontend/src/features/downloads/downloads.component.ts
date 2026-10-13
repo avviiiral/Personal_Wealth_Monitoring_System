@@ -46,7 +46,7 @@ export class DownloadsComponent implements OnInit {
 
   readonly reports: ReportDefinition[] = [
     { id: 'portfolio-detailed', name: 'Portfolio Detailed', type: 'Transaction Report', description: 'Transaction-level portfolio activity for a selected date range.', filters: 'Family + Date Range' },
-    { id: 'capital-gain', name: 'Capital Gain Report', type: 'Tax / Realised Gains', description: 'Realised capital gains from sale transactions matched to purchase lots using FIFO, with indicative tax based on configured asset tax settings.', filters: 'Family + Asset Class + Sub Class + Date Range' },
+    { id: 'capital-gain', name: 'Capital Gain Report', type: 'Tax / Realised Gains', description: 'FIFO realised gains from sales; indicative tax uses saved asset rates and excludes loss set-off, exemptions, surcharge/cess, and other filing-specific rules.', filters: 'Family + Asset Class + Sub Class + Date Range' },
     { id: 'sub-class-holdings', name: 'Sub Class Holdings', type: 'Holdings Report', description: 'Current holdings belonging to a selected Sub Class.', filters: 'Family + Asset Class + Sub Class' },
     { id: 'holding-report', name: 'Holding Report', type: 'Holdings Report', description: 'Current holdings with quantity, invested value, current value, gain and XIRR.', filters: 'Family + Asset Class' },
     { id: 'sub-class-xirr', name: 'Portfolio Summary', type: 'Performance / XIRR', description: 'Sub Class level portfolio summary with XIRR performance.', filters: 'Family + Asset Class + Sub Class' },
@@ -643,7 +643,7 @@ export class DownloadsComponent implements OnInit {
 
       const familyKey = this.clean(tx.family_name).toLocaleLowerCase();
       const portfolioKey = this.clean(tx.portfolio).toLocaleLowerCase();
-      const assetName = (tx.asset_name || tx.asset_name === '' ? tx.asset_name : '').trim() || this.clean(tx.asset_name);
+      const assetName = (tx.asset_name || '').trim() || this.clean(tx.asset_name);
       const assetKey = assetName.toLocaleLowerCase();
       const fifoKey = [familyKey, portfolioKey, assetKey].join('::');
       const inventory = lotsByKey.get(fifoKey) ?? [];
@@ -724,7 +724,7 @@ export class DownloadsComponent implements OnInit {
           // This is an indicative per-lot estimate. Tax-loss set-off, exemptions,
           // surcharge, cess and other filing-specific rules are not applied here.
           estimatedTax = Math.max(0, realisedGain) * taxRate / 100;
-          taxStatus = 'Indicative estimate';
+          taxStatus = 'Indicative only; loss set-off, exemptions and surcharge/cess excluded';
         }
 
         if (includeSale) {
@@ -774,7 +774,7 @@ export class DownloadsComponent implements OnInit {
           capital_gain_type: 'Unmatched',
           tax_rate: null,
           indicative_tax: null,
-          tax_status: 'Unmatched quantity: purchase lots not found',
+          tax_status: 'Unmatched quantity: review prior purchases and corporate actions',
         });
       }
     }

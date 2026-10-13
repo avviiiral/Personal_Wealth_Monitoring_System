@@ -1148,8 +1148,52 @@ class TransactionImporter:
         return {"refreshed": refreshed, "failed": failed}
 
     @staticmethod
+    def preview_duplicates(file, owner):
+        """Identify duplicate transaction rows without saving transactions."""
+        family = require_active_family(owner)
+        dataframe, summary = TransactionImporter._read_file(file)
+        TransactionImporter._validate_dataframe(dataframe)
+        TransactionImporter._normalize_family_member_column(summary)
+        TransactionImporter._validate_summary_columns(summary)
+        duplicate_rows = []
+        seen_keys = set()
+        for row_number, (_, row) in enumerate(dataframe.iterrows(), start=2):
+            try:
+                parsed = TransactionImporter._validate_row(row, row_number)
+                key = TransactionImporter._build_source_key(
+                    family_name=parsed["family_name"], asset_class=parsed["asset_class"],
+                    sub_class=parsed["sub_class"], asset_name=parsed["asset_name"],
+                    underlying=parsed["underlying"], advisors=parsed["advisors"],
+                    isin=parsed["isin"], transaction_date=parsed["transaction_date"],
+                    transaction_type=parsed["transaction_type"], quantity=parsed["quantity"],
+                    price=parsed["price"], amount=parsed["amount"],
+                )
+                ac = TransactionImporter._normalize(parsed["asset_class"])
+                sub = TransactionImporter._normalize(parsed["sub_class"])
+                is_mf = ac in {"MUTUAL_FUND", "MUTUAL FUND"} or sub in {"MUTUAL FUND", "MUTUAL_FUND"}
+                exists = key in seen_keys
+                if not exists and is_mf:
+                    exists = MutualFundTransaction.objects.filter(family=family, source_key=key).exists()
+                elif not exists:
+                    exists = Transaction.objects.filter(family=family, source="EXCEL", source_key=key).exists()
+                if exists:
+                    duplicate_rows.append({
+                        "row_number": row_number, "asset_name": parsed["asset_name"],
+                        "family_name": parsed["family_name"], "asset_class": parsed["asset_class"],
+                        "sub_class": parsed["sub_class"], "transaction_date": str(parsed["transaction_date"]),
+                        "transaction_type": parsed["transaction_type"], "quantity": str(parsed["quantity"]),
+                        "price": str(parsed["price"]), "amount": str(parsed["amount"]),
+                        "reason": "Matches an existing transaction or an earlier row in this file",
+                    })
+                seen_keys.add(key)
+            except TransactionImportError:
+                continue
+        return {"duplicate_rows": duplicate_rows, "duplicate_count": len(duplicate_rows)}
+
+    @staticmethod
     @db_transaction.atomic
-    def import_file(file, owner, upload_batch=None, include_duplicates=False):
+    def import_file(file, owner, upload_batch=None, selected_duplicate_rows=None):
+        selected_duplicate_rows = {int(value) for value in (selected_duplicate_rows or [])}
         family = require_active_family(owner)
         dataframe, summary = TransactionImporter._read_file(file)
 
@@ -1214,7 +1258,7 @@ class TransactionImporter:
                     price=parsed["price"],
                     amount=parsed["amount"],
                 )
-                if include_duplicates:
+                if row_number in selected_duplicate_rows:
                     # Keep the database idempotency constraint while allowing
                     # intentional duplicates as distinct imported rows.
                     upload_token = upload_batch.id if upload_batch is not None else timezone.now().isoformat()
@@ -1263,7 +1307,7 @@ class TransactionImporter:
                             mapped_type, parsed["transaction_date"], parsed["quantity"],
                             parsed["price"], parsed["amount"],
                         )
-                        if duplicate_key in seen_mutual_fund_keys and not include_duplicates:
+                        if duplicate_key in seen_mutual_fund_keys and row_number not in selected_duplicate_rows:
                             skipped_duplicates += 1
                             continue
 

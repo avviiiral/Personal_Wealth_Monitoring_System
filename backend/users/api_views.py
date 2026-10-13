@@ -583,14 +583,28 @@ def tax_rate_upload(request):
                 continue
             seen.add(key)
 
+            # A blank tenure may preserve an already configured policy's
+            # threshold when the upload is intended to update tax rates only.
+            # New policies still require an explicit tenure value.
+            existing_policy = (
+                _global_tax_policy_queryset()
+                .filter(asset_name=canonical_name)
+                .first()
+            )
+
             try:
                 tenure_value = cell_value(values, "tenure_months")
                 if tenure_value in (None, ""):
-                    raise ValueError("Tenure is required.")
-                tenure_decimal = Decimal(str(tenure_value))
-                if not tenure_decimal.is_finite() or tenure_decimal != tenure_decimal.to_integral_value() or tenure_decimal < 0:
-                    raise ValueError("Tenure must be a non-negative whole number of months.")
-                tenure = int(tenure_decimal)
+                    if existing_policy is None or existing_policy.tenure_months is None:
+                        raise ValueError(
+                            "Tenure is required for a new tax setting; enter months or configure it first."
+                        )
+                    tenure = existing_policy.tenure_months
+                else:
+                    tenure_decimal = Decimal(str(tenure_value))
+                    if not tenure_decimal.is_finite() or tenure_decimal != tenure_decimal.to_integral_value() or tenure_decimal < 0:
+                        raise ValueError("Tenure must be a non-negative whole number of months.")
+                    tenure = int(tenure_decimal)
 
                 rates = []
                 for field, label in (("short_term_tax_rate", "Short Term Tax"), ("long_term_tax_rate", "Long Term Tax")):

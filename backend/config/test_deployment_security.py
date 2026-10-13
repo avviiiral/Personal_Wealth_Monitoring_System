@@ -1,27 +1,39 @@
-"""Deployment configuration regression tests.
+"""Regression tests for deployment configuration parsing and safe defaults.
 
-These tests cover startup/security settings only. They intentionally do not touch
-portfolio, valuation, tax, FIFO, XIRR, or other financial calculation code.
+These tests exercise configuration only; they do not import or modify financial
+calculation code.
 """
-from django.test import SimpleTestCase, override_settings
+import os
+from unittest.mock import patch
+
+from django.test import SimpleTestCase
+
+from config.settings import _env_bool, _env_list
 
 
 class DeploymentSecuritySettingTests(SimpleTestCase):
-    @override_settings(SESSION_COOKIE_SECURE=True, CSRF_COOKIE_SECURE=True, SECURE_SSL_REDIRECT=True)
-    def test_secure_deployment_flags_can_be_enabled_together(self):
-        from django.conf import settings
+    def test_env_bool_parses_documented_true_values_case_insensitively(self):
+        for value in ("true", "TRUE", "1", "yes", " YeS "):
+            with self.subTest(value=value), patch.dict(os.environ, {"PWMS_TEST_FLAG": value}):
+                self.assertTrue(_env_bool("PWMS_TEST_FLAG", False))
 
-        self.assertTrue(settings.SESSION_COOKIE_SECURE)
-        self.assertTrue(settings.CSRF_COOKIE_SECURE)
-        self.assertTrue(settings.SECURE_SSL_REDIRECT)
+    def test_env_bool_treats_other_explicit_values_as_false(self):
+        for value in ("false", "0", "no", "enabled", ""):
+            with self.subTest(value=value), patch.dict(os.environ, {"PWMS_TEST_FLAG": value}):
+                self.assertFalse(_env_bool("PWMS_TEST_FLAG", True))
 
-    @override_settings(SESSION_COOKIE_SECURE=False, CSRF_COOKIE_SECURE=False, SECURE_SSL_REDIRECT=False)
-    def test_local_http_development_flags_remain_configurable(self):
-        from django.conf import settings
+    def test_env_bool_uses_default_when_variable_is_missing(self):
+        with patch.dict(os.environ):
+            os.environ.pop("PWMS_TEST_MISSING_FLAG", None)
+            self.assertTrue(_env_bool("PWMS_TEST_MISSING_FLAG", True))
+            self.assertFalse(_env_bool("PWMS_TEST_MISSING_FLAG", False))
 
-        self.assertFalse(settings.SESSION_COOKIE_SECURE)
-        self.assertFalse(settings.CSRF_COOKIE_SECURE)
-        self.assertFalse(settings.SECURE_SSL_REDIRECT)
+    def test_env_list_trims_items_and_omits_empty_entries(self):
+        with patch.dict(os.environ, {"PWMS_TEST_ORIGINS": " https://a.example, ,https://b.example , "}):
+            self.assertEqual(
+                _env_list("PWMS_TEST_ORIGINS", ["fallback"]),
+                ["https://a.example", "https://b.example"],
+            )
 
     def test_default_api_permissions_require_authentication(self):
         from django.conf import settings
@@ -31,12 +43,13 @@ class DeploymentSecuritySettingTests(SimpleTestCase):
             settings.REST_FRAMEWORK["DEFAULT_PERMISSION_CLASSES"],
         )
 
-    def test_database_engine_setting_is_supported(self):
-        import os
+    def test_configured_database_backend_matches_supported_environment_setting(self):
+        from django.conf import settings
 
-        # Settings accept the documented SQLite and PostgreSQL engine names.
-        # A database connection is intentionally not opened by this test.
-        self.assertIn(
-            os.environ.get("DATABASE_ENGINE", "sqlite").strip().lower(),
-            ("sqlite", "postgres", "postgresql"),
+        requested = os.environ.get("DATABASE_ENGINE", "sqlite").strip().lower()
+        expected = (
+            "django.db.backends.postgresql"
+            if requested in ("postgres", "postgresql")
+            else "django.db.backends.sqlite3"
         )
+        self.assertEqual(settings.DATABASES["default"]["ENGINE"], expected)

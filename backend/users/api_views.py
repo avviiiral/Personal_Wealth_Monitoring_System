@@ -469,23 +469,33 @@ def tax_rate_template(request):
         "Long Term Tax (%)",
     ])
 
-    # Match the Tax Settings screen: one row per canonical transaction Asset Name.
-    # Asset Class is informational and populated from the linked Asset category.
+    # Use the user's transaction hierarchy as the source of truth. The linked
+    # Asset.category is an internal security category (e.g. Stock/Other) and
+    # must not replace the Asset Class uploaded/entered on Transactions.
     asset_rows = (
         Transaction.objects
         .filter(family=family, asset_name__isnull=False)
         .exclude(asset_name="")
-        .select_related("asset")
         .order_by("asset_name", "id")
     )
-    seen_names = set()
+    asset_class_by_name = {}
     for item in asset_rows:
-        asset_name = item.asset_name.strip()
-        if not asset_name or asset_name.casefold() in seen_names:
+        asset_name = (item.asset_name or "").strip()
+        if not asset_name:
             continue
-        seen_names.add(asset_name.casefold())
-        asset_class = item.asset.get_category_display() if item.asset_id else ""
-        sheet.append([asset_class, asset_name, None, None, None])
+        key = asset_name.casefold()
+        if key not in asset_class_by_name:
+            asset_class_by_name[key] = {
+                "asset_name": asset_name,
+                "asset_class": (item.asset_class or "").strip(),
+            }
+        elif not asset_class_by_name[key]["asset_class"] and (item.asset_class or "").strip():
+            # If an older row has no class, prefer another transaction row
+            # for the same displayed Asset Name that has the user's class.
+            asset_class_by_name[key]["asset_class"] = (item.asset_class or "").strip()
+
+    for entry in sorted(asset_class_by_name.values(), key=lambda value: value["asset_name"].casefold()):
+        sheet.append([entry["asset_class"], entry["asset_name"], None, None, None])
 
     sheet.freeze_panes = "A2"
     sheet.auto_filter.ref = f"A1:E{max(sheet.max_row, 1)}"

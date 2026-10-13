@@ -719,7 +719,7 @@ export class DownloadsComponent implements OnInit {
           taxStatus = 'Review tax settings';
         } else if (policyConfigured && tenureMonths !== null && shortRate !== null && longRate !== null) {
           const isLongTerm = holdingMonths >= tenureMonths;
-          gainType = isLongTerm ? 'LTCG' : 'STCG';
+          gainType = isLongTerm ? 'Long Term' : 'Short Term';
           taxRate = isLongTerm ? longRate : shortRate;
           // This is an indicative per-lot estimate. Tax-loss set-off, exemptions,
           // surcharge, cess and other filing-specific rules are not applied here.
@@ -794,7 +794,7 @@ export class DownloadsComponent implements OnInit {
       ['Cost Basis', 'cost_basis'],
       ['Sale Proceeds', 'sale_proceeds'],
       ['Realised Capital Gain', 'realised_capital_gain'],
-      ['Capital Gain Type', 'capital_gain_type'],
+      ['Tenure', 'capital_gain_type'],
       ['Tax Rate (%)', 'tax_rate'],
       ['Indicative Tax', 'indicative_tax'],
       ['Tax Status', 'tax_status'],

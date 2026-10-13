@@ -456,17 +456,42 @@ def tax_rate_list(request):
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def tax_rate_template(request):
-    """Download an Excel template for active-family tax policy updates."""
+    """Download a prefilled tax policy workbook for every asset in the active family."""
+    family = require_active_family(request.user)
     workbook = Workbook()
     sheet = workbook.active
     sheet.title = "Tax Settings"
-    sheet.append(["Asset Name", "Tenure (Months)", "Short Term Tax (%)", "Long Term Tax (%)"])
-    sheet.append(["Example Asset Name", 12, 15, 10])
+    sheet.append([
+        "Asset Class",
+        "Asset Name",
+        "Tenure (Months)",
+        "Short Term Tax (%)",
+        "Long Term Tax (%)",
+    ])
+
+    # Match the Tax Settings screen: one row per canonical transaction Asset Name.
+    # Asset Class is informational and populated from the linked Asset category.
+    asset_rows = (
+        Transaction.objects
+        .filter(family=family, asset_name__isnull=False)
+        .exclude(asset_name="")
+        .select_related("asset")
+        .order_by("asset_name", "id")
+    )
+    seen_names = set()
+    for item in asset_rows:
+        asset_name = item.asset_name.strip()
+        if not asset_name or asset_name.casefold() in seen_names:
+            continue
+        seen_names.add(asset_name.casefold())
+        asset_class = item.asset.get_category_display() if item.asset_id else ""
+        sheet.append([asset_class, asset_name, None, None, None])
+
     sheet.freeze_panes = "A2"
-    sheet.auto_filter.ref = "A1:D2"
+    sheet.auto_filter.ref = f"A1:E{max(sheet.max_row, 1)}"
     for cell in sheet[1]:
         cell.font = Font(bold=True)
-    for column, width in {"A": 36, "B": 20, "C": 22, "D": 22}.items():
+    for column, width in {"A": 24, "B": 42, "C": 20, "D": 22, "E": 22}.items():
         sheet.column_dimensions[column].width = width
 
     output = BytesIO()

@@ -1030,12 +1030,19 @@ class MISReportService:
                 is_buy = tx.transaction_type in (TransactionType.BUY, TransactionType.SIP)
                 is_sell = tx.transaction_type == TransactionType.SELL
 
+            fees = Decimal(str(getattr(tx, "fees", 0) or 0))
+
             if is_buy and qty > 0:
+                gross_cost = amount if amount else (
+                    qty * Decimal(str(getattr(tx, "price_per_unit", getattr(tx, "nav", 0)) or 0))
+                )
                 lots.append({
                     "position_key": key,
                     "inventory_key": inventory,
                     "remaining_qty": qty,
-                    "unit_cost": amount / qty if amount else cls.ZERO,
+                    # Keep backend MIS tax cost basis aligned with the Capital
+                    # Gains export: acquisition fees form part of the cost basis.
+                    "unit_cost": (gross_cost + fees) / qty,
                     "acquired_on": tx.transaction_date,
                 })
                 continue
@@ -1053,9 +1060,11 @@ class MISReportService:
             if not is_sell or qty <= 0:
                 continue
 
-            sale_unit_value = amount / qty if amount else Decimal(
+            gross_sale_value = amount if amount else qty * Decimal(
                 str(getattr(tx, "price_per_unit", getattr(tx, "nav", 0)) or 0)
             )
+            # Disposal fees reduce net proceeds and therefore the realized gain.
+            sale_unit_value = (gross_sale_value - fees) / qty
             remaining_to_sell = qty
             while remaining_to_sell > 0:
                 lot_index = next(

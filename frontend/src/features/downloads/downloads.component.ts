@@ -670,9 +670,25 @@ export class DownloadsComponent implements OnInit {
 
       const familyKey = this.clean(tx.family_name).toLocaleLowerCase();
       const portfolioKey = this.clean(tx.portfolio).toLocaleLowerCase();
+      const assetClassKey = this.clean(tx.asset_class).toLocaleLowerCase();
+      const subClassKey = this.clean(tx.sub_class).toLocaleLowerCase();
       const assetName = (tx.asset_name || '').trim() || this.clean(tx.asset_name);
       const assetKey = assetName.toLocaleLowerCase();
-      const fifoKey = [familyKey, portfolioKey, assetKey].join('::');
+      const underlyingKey = this.clean(tx.underlying).toLocaleLowerCase();
+      const isinKey = this.clean(tx.isin).toLocaleUpperCase();
+      // FIFO inventory must never be shared across different holdings that
+      // happen to reuse the same displayed Asset Name or Portfolio label.
+      // Include the transaction's underlying asset identity and hierarchy.
+      const fifoKey = [
+        familyKey,
+        portfolioKey,
+        assetClassKey,
+        subClassKey,
+        assetKey,
+        underlyingKey,
+        isinKey,
+        String(tx.asset ?? ''),
+      ].join('::');
       const inventory = lotsByKey.get(fifoKey) ?? [];
       if (!lotsByKey.has(fifoKey)) lotsByKey.set(fifoKey, inventory);
 

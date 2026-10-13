@@ -44,6 +44,7 @@ export class PortfolioComponent implements OnInit, OnDestroy {
   savingManualPriceAssetId: number | null = null;
   manualPriceErrors: Record<number, string> = {};
   uploadingTransactions = false;
+  includeDuplicateTransactions = false;
   showUnderlyingUpload = false;
   selectedUnderlyingAssetId: number | null = null;
   selectedUnderlyingFile: File | null = null;
@@ -104,8 +105,9 @@ export class PortfolioComponent implements OnInit, OnDestroy {
     const input = event.target as HTMLInputElement; const file = input.files?.[0]; input.value = '';
     if (!file) return;
     this.uploadingTransactions = true;
-    this.investmentsApi.importTransactions(file).subscribe({
-      next: (response) => { this.uploadingTransactions = false; const data = response.data; if (data) this.toast.success(`Imported ${data.total_imported} transaction(s)` + (data.skipped_duplicates ? ` (${data.skipped_duplicates} duplicate(s) skipped).` : '.')); else this.toast.success(response.message || 'Transactions imported.'); this.loadPortfolio(true); this.cdr.detectChanges(); },
+    const includeDuplicates = this.includeDuplicateTransactions;
+    this.investmentsApi.importTransactions(file, includeDuplicates).subscribe({
+      next: (response) => { this.uploadingTransactions = false; const data = response.data; if (data) this.toast.success(`Imported ${data.total_imported} transaction(s)` + (includeDuplicates ? ' (duplicate import enabled).' : (data.skipped_duplicates ? ` (${data.skipped_duplicates} duplicate(s) skipped).` : '.'))); else this.toast.success(response.message || 'Transactions imported.'); this.loadPortfolio(true); this.cdr.detectChanges(); },
       error: (error) => { this.uploadingTransactions = false; const message = error?.error?.message || error?.error?.error || 'Unable to import the transaction file.'; this.toast.error(message, 6000); this.cdr.detectChanges(); },
     });
   }

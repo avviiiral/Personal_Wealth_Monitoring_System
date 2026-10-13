@@ -78,10 +78,11 @@ export class InvestmentsApiService {
   // IMPORT TRANSACTIONS (.xlsx / .csv workbook upload)
   // ==========================================================
 
-  importTransactions(file: File): Observable<ImportTransactionsResponse> {
+  importTransactions(file: File, includeDuplicates = false): Observable<ImportTransactionsResponse> {
     const formData = new FormData();
 
     formData.append('file', file);
+    formData.append('include_duplicates', String(includeDuplicates));
 
     return this.getCsrfToken().pipe(
       switchMap(() =>

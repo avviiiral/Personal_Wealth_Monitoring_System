@@ -207,7 +207,7 @@ class TaxRateSettingsApiTests(TestCase):
         )
         self.assertEqual(response.status_code, 201)
         self.assertEqual(
-            TaxRateSetting.objects.filter(family=self.family, asset__name="HDFC Bank").count(),
+            TaxRateSetting.objects.filter(family__isnull=True, asset__isnull=True, asset_name="Family Portfolio - HDFC Bank").count(),
             1,
         )
 
@@ -239,6 +239,60 @@ class TaxRateSettingsApiTests(TestCase):
         )
 
         self.assertEqual(response.status_code, 400)
+
+    def test_post_resolves_the_submitted_display_name_for_shared_underlying(self):
+        Transaction.objects.create(
+            owner=self.user1,
+            family=self.family,
+            family_name="Test",
+            portfolio="Second Portfolio",
+            asset_class="EQUITY",
+            sub_class="Direct Equity",
+            asset_name="Another Display Label",
+            underlying="HDFC Bank",
+            advisors="Test Advisor",
+            asset=self.asset1,
+            transaction_type=TransactionType.BUY,
+            transaction_date=date(2026, 2, 1),
+            quantity=Decimal("2"),
+            price_per_unit=Decimal("150"),
+            amount=Decimal("300"),
+            source="MANUAL",
+        )
+        self.client.force_authenticate(self.user1)
+
+        response = self.client.post(
+            "/api/settings/tax-rates/",
+            {
+                "asset_id": self.asset1.id,
+                "asset_name": "Another Display Label",
+                "tenure_months": 24,
+                "short_term_tax_rate": "18",
+                "long_term_tax_rate": "9",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.data["asset_name"], "Another Display Label")
+        self.assertEqual(response.data["asset_id"], self.asset1.id)
+        self.assertTrue(
+            TaxRateSetting.objects.filter(
+                family__isnull=True,
+                asset__isnull=True,
+                asset_name="Another Display Label",
+            ).exists()
+        )
+        self.assertFalse(
+            TaxRateSetting.objects.filter(
+                family__isnull=True,
+                asset__isnull=True,
+                asset_name="Family Portfolio - HDFC Bank",
+            ).exists()
+        )
+        history = self.client.get("/api/settings/tax-rates/history/")
+        self.assertEqual(history.status_code, 200)
+        self.assertEqual(history.data[0]["asset_name"], "Another Display Label")
 
     def test_tax_rates_and_tenure_are_validated(self):
         self.client.force_authenticate(self.user1)
@@ -278,10 +332,11 @@ class TaxRateSettingsApiTests(TestCase):
             )
             self.assertEqual(response.status_code, 400)
 
-    def test_tax_setting_is_family_shared(self):
+    def test_global_tax_setting_is_shared_with_family_members(self):
         TaxRateSetting.objects.create(
-            family=self.family,
-            asset=self.asset1,
+            asset_name="Family Portfolio - HDFC Bank",
+            family=None,
+            asset=None,
             tenure_months=36,
             short_term_tax_rate=Decimal("17.5"),
             long_term_tax_rate=Decimal("7.5"),
@@ -295,3 +350,165 @@ class TaxRateSettingsApiTests(TestCase):
         self.assertEqual(configured["tenure_months"], 36)
         self.assertEqual(configured["short_term_tax_rate"], "17.5000")
         self.assertEqual(configured["long_term_tax_rate"], "7.5000")
+
+    def test_global_policy_is_visible_and_editable_across_distinct_families(self):
+        self.client.force_authenticate(self.user1)
+        create = self.client.post(
+            "/api/settings/tax-rates/",
+            {
+                "asset_id": self.asset1.id,
+                "tenure_months": 12,
+                "short_term_tax_rate": "20",
+                "long_term_tax_rate": "10",
+            },
+            format="json",
+        )
+        self.assertEqual(create.status_code, 201)
+        global_id = create.data["id"]
+
+        other_user = User.objects.create_user(username="tax-user-other-family", password="pass123")
+        other_family = FamilyGroup.objects.create(name="Other Tax Family")
+        other_user.profile.family_groups.add(other_family)
+        other_user.profile.active_family_group = other_family
+        other_user.profile.save(update_fields=["active_family_group"])
+        other_asset = Asset.objects.create(
+            owner=other_user,
+            family=other_family,
+            name="HDFC Internal Position B",
+            category=AssetCategory.STOCK,
+        )
+        Transaction.objects.create(
+            owner=other_user,
+            family=other_family,
+            family_name="Other Family Portfolio",
+            portfolio="Other Portfolio",
+            asset_class="EQUITY",
+            sub_class="Direct Equity",
+            asset_name="Family Portfolio - HDFC Bank",
+            underlying="HDFC Internal Position B",
+            advisors="Other Advisor",
+            asset=other_asset,
+            transaction_type=TransactionType.BUY,
+            transaction_date=date(2026, 1, 1),
+            quantity=Decimal("4"),
+            price_per_unit=Decimal("200"),
+            amount=Decimal("800"),
+            source="MANUAL",
+        )
+
+        self.client.force_authenticate(other_user)
+        listing = self.client.get("/api/settings/tax-rates/")
+        self.assertEqual(listing.status_code, 200)
+        configured = next(
+            row for row in listing.data
+            if row["asset_name"] == "Family Portfolio - HDFC Bank"
+        )
+        self.assertEqual(configured["id"], global_id)
+        self.assertEqual(configured["family_id"], other_family.id)
+        self.assertEqual(configured["tenure_months"], 12)
+        self.assertFalse(configured["configuration_conflict"])
+
+        update = self.client.patch(
+            f"/api/settings/tax-rates/{global_id}/",
+            {"tenure_months": 24, "short_term_tax_rate": "16", "long_term_tax_rate": "8"},
+            format="json",
+        )
+        self.assertEqual(update.status_code, 200)
+        self.assertEqual(update.data["tenure_months"], 24)
+
+        self.client.force_authenticate(self.user1)
+        listing = self.client.get("/api/settings/tax-rates/")
+        configured = next(row for row in listing.data if row["asset_name"] == "Family Portfolio - HDFC Bank")
+        self.assertEqual(configured["tenure_months"], 24)
+        self.assertEqual(configured["short_term_tax_rate"], "16.0000")
+
+        self.client.force_authenticate(other_user)
+        history = self.client.get("/api/settings/tax-rates/history/")
+        self.assertEqual(history.status_code, 200)
+        self.assertEqual(len(history.data), 2)
+        self.assertEqual(
+            {entry["user"] for entry in history.data},
+            {"tax-user-1", "tax-user-other-family"},
+        )
+
+    def test_conflicting_legacy_policies_are_flagged_not_selected(self):
+        second_asset = Asset.objects.create(
+            owner=self.user1,
+            family=self.family,
+            name="Second HDFC Internal Position",
+            category=AssetCategory.STOCK,
+        )
+        Transaction.objects.create(
+            owner=self.user1,
+            family=self.family,
+            family_name="Test",
+            portfolio="Test Portfolio",
+            asset_class="EQUITY",
+            sub_class="Direct Equity",
+            asset_name="Family Portfolio - HDFC Bank",
+            underlying="Second HDFC Internal Position",
+            advisors="Test Advisor",
+            asset=second_asset,
+            transaction_type=TransactionType.BUY,
+            transaction_date=date(2026, 2, 1),
+            quantity=Decimal("2"),
+            price_per_unit=Decimal("100"),
+            amount=Decimal("200"),
+            source="MANUAL",
+        )
+        for asset, short_rate, long_rate in (
+            (self.asset1, Decimal("20"), Decimal("10")),
+            (second_asset, Decimal("25"), Decimal("12")),
+        ):
+            TaxRateSetting.objects.create(
+                family=self.family,
+                asset=asset,
+                asset_name="Family Portfolio - HDFC Bank",
+                tenure_months=12,
+                short_term_tax_rate=short_rate,
+                long_term_tax_rate=long_rate,
+                needs_review=True,
+                review_reason="Conflicting legacy policies require manual review.",
+            )
+
+        self.client.force_authenticate(self.user1)
+        listing = self.client.get("/api/settings/tax-rates/")
+        configured = next(
+            row for row in listing.data
+            if row["asset_name"] == "Family Portfolio - HDFC Bank"
+        )
+        self.assertIsNone(configured["id"])
+        self.assertIsNone(configured["short_term_tax_rate"])
+        self.assertTrue(configured["configuration_conflict"])
+        self.assertEqual(
+            TaxRateSetting.objects.filter(
+                family=self.family,
+                asset_name="Family Portfolio - HDFC Bank",
+                needs_review=True,
+            ).count(),
+            2,
+        )
+
+        resolve = self.client.post(
+            "/api/settings/tax-rates/",
+            {
+                "asset_id": self.asset1.id,
+                "asset_name": "Family Portfolio - HDFC Bank",
+                "tenure_months": 24,
+                "short_term_tax_rate": "18",
+                "long_term_tax_rate": "9",
+            },
+            format="json",
+        )
+        self.assertEqual(resolve.status_code, 201)
+        self.assertFalse(resolve.data["configuration_conflict"])
+        legacy_rows = TaxRateSetting.objects.filter(
+            family=self.family,
+            asset_name="Family Portfolio - HDFC Bank",
+        ).order_by("asset_id")
+        self.assertEqual(legacy_rows.count(), 2)
+        self.assertFalse(legacy_rows.filter(needs_review=True).exists())
+        self.assertEqual(
+            list(legacy_rows.values_list("short_term_tax_rate", flat=True)),
+            [Decimal("20.0000"), Decimal("25.0000")],
+        )

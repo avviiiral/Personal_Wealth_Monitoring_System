@@ -210,6 +210,7 @@ Net worth, asset allocation, key portfolio metrics and an **Investment Summary**
 - A global allocation can be shared across family members, while selecting a family member can create an independent family-specific allocation override.
 - Family-specific amounts recalculate against that family member's current portfolio total without changing the configured allocation percentages.
 - Standard Allocation percentages are validated to total **100%** before saving.
+- **XIRR Performance** ranks the top and bottom five asset names for each available Dashboard asset category using backend-calculated asset XIRR. The category labels follow the same portfolio hierarchy shown by the Dashboard, so rankings remain attached to the correct category.
 
 ### 📁 Portfolio
 
@@ -581,7 +582,7 @@ This architecture keeps the report responsive while ensuring historical Data She
 ### 🔐 Settings
 
 - **Account and preferences**, including password change
-- **Tax Settings** — configure asset-name-specific tenure, Short Term Tax and Long Term Tax rates for the active family.
+- **Tax Settings** — configure tenure, Short Term Tax and Long Term Tax policies by displayed asset name. A saved policy is shared globally across families holding that displayed asset name. Conflicting legacy policies are flagged for review rather than silently selected; saving an explicit policy resolves the conflict. FIFO transaction and lot matching remains separate for each underlying asset.
 - **User Management** — role-scoped: you only see and manage the roles you're allowed to
 - **Family Management** — System Owner only
 - **Logs** — operational and audit history is grouped under one Settings entry. Logs contains:
@@ -1138,7 +1139,7 @@ All endpoints require an authenticated Django session unless noted. Auth uses **
 | `POST` `DELETE`              | `/api/settings/groups/<id>/members/[<user_id>/]` | Add / remove a family member         |
 | `GET`                        | `/api/settings/prices/`                          | List overridable prices              |
 | `PUT` `PATCH` `DELETE`       | `/api/settings/prices/<asset_id>/`               | Set / clear a manual price           |
-| `GET`                        | `/api/settings/tax-rates/`                      | List asset-name tax settings         |
+| `GET` `POST` `PATCH` `DELETE` | `/api/settings/tax-rates/`                      | List, create/update, or clear shared asset-name tax settings |
 | `GET`                        | `/api/settings/tax-rates/history/`              | Tax-setting change history            |
 
 </details>
@@ -1480,6 +1481,7 @@ Prefer to keep everything local? Leave `GEMINI_API_KEY` unset — Portfolio News
 ```bash
 python manage.py test                       # everything
 python manage.py test users portfolio -v 2  # RBAC + portfolio, verbose
+python manage.py test analytics.tests -v 2  # Dashboard view model, XIRR category mapping and allocation APIs
 python manage.py test portfolio_news.test_web_push -v 2 # Web Push delivery behavior
 ```
 
@@ -1491,6 +1493,8 @@ python manage.py test portfolio_news.test_web_push -v 2 # Web Push delivery beha
 | Transaction upload workflow | Upload audit/history, standard template endpoints, row-level failure handling, and transaction import behavior |
 | `portfolio_news/test_web_push.py` | VAPID/Web Push delivery, subscription handling and notification_sent semantics |
 | `portfolio/test_mis_report.py` | MIS Report API, historical valuation, Excel structure, display units, FIFO taxation, negative-loss tax benefits, and family authorization |
+| `users/test_tax_rate_settings.py` | Shared displayed-asset tax policies, cross-family visibility, legacy conflict review, and tax-setting change history |
+| `analytics/tests.py` | Dashboard view-model calculations, XIRR category matching, investment summary and Standard Allocation APIs |
 | `analytics/test_historical_wealth.py` | Historical wealth regression coverage, including legacy mutual-fund classification and AMFI master NAV valuation |
 | `filing_intelligence` | Corporate filing classifier, event precedence, material-change detection, deterministic portfolio matching, filing ingestion, deduplication, cross-source clustering and alert creation. Current branch verification: **20 tests, all passing** |
 

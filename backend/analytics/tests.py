@@ -535,6 +535,58 @@ class AnalyticsViewModelServiceTests(TestCase):
         self.assertEqual(rows[1]["current_value"], 300.0)
         self.assertEqual(rows[1]["percentage_of_total"], 30.0)
 
+    def test_dashboard_xirr_performance_matches_dashboard_category_hierarchy(self):
+        tree = {
+            "families": [
+                {
+                    "family_name": "Family A",
+                    "portfolios": [
+                        {
+                            "asset_classes": [
+                                {
+                                    "asset_class": "AIF",
+                                    "sub_classes": [
+                                        {
+                                            "sub_class": "Private Equity",
+                                            "assets": [
+                                                {
+                                                    "asset_name": "Alpha Fund",
+                                                    "underlying": "Alpha Fund",
+                                                    "xirr": 12.5,
+                                                },
+                                            ],
+                                        },
+                                    ],
+                                },
+                            ],
+                        },
+                    ],
+                },
+            ],
+        }
+        # This legacy classification maps Private Equity to "Alternative",
+        # while Dashboard's visible hierarchy correctly groups it under "AIF".
+        investment_summary = {
+            "results": [
+                {
+                    "asset_category": "Alternative",
+                    "asset_class": "Private Equity",
+                    "raw_asset_classes": ["Private Equity"],
+                },
+            ],
+        }
+
+        rows = AnalyticsViewModelService._dashboard_xirr_performance(
+            tree,
+            investment_summary,
+        )
+
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["asset_name"], "Alpha Fund")
+        self.assertEqual(rows[0]["asset_class"], "Private Equity")
+        self.assertEqual(rows[0]["asset_category"], "AIF")
+        self.assertEqual(rows[0]["xirr_percentage"], 12.5)
+
     def test_empty_insights_are_deterministic(self):
         insights = AnalyticsViewModelService._insights(
             [],

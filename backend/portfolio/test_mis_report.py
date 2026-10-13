@@ -171,8 +171,9 @@ class MISReportAPITests(TestCase):
         self.assertIn("tax_report", data)
         self.assertEqual(data["tax_report"][0]["realized_pnl"], 0.0)
         self.assertEqual(data["tax_report"][0]["unrealized_pnl"], 250.0)
-        self.assertEqual(data["tax_report"][0]["realized_tax"], 0.0)
-        self.assertEqual(data["tax_report"][0]["unrealized_tax"], 0.0)
+        self.assertEqual(data["tax_report"][0]["tax_configuration_status"], "MISSING")
+        self.assertIsNone(data["tax_report"][0]["realized_tax"])
+        self.assertIsNone(data["tax_report"][0]["unrealized_tax"])
         self.assertEqual(data["data_sheet"][0]["advisor"], "Advisor A")
         self.assertEqual(len(data["fund_type_summary"]), 1)
         self.assertEqual(data["fund_type_summary"][0]["fund_type"], "Equity")
@@ -255,6 +256,62 @@ class MISReportAPITests(TestCase):
             call.kwargs.get("symbol") == "CUSTOMREIT.NS"
             for call in reference_rate.call_args_list
         ))
+
+    def test_tax_report_marks_missing_and_incomplete_tax_settings(self):
+        # The fixture's MIS Equity has no tax setting.
+        response = self.client.get(
+            "/api/portfolio/mis-report/",
+            {"from_date": "2026-01-01", "to_date": date.today().isoformat()},
+        )
+        self.assertEqual(response.status_code, 200)
+        row = next(
+            item for item in response.json()["tax_report"]
+            if item["asset_name"] == "MIS Equity"
+        )
+        self.assertEqual(row["tax_configuration_status"], "MISSING")
+        self.assertIsNone(row["tax_tenure_months"])
+        self.assertIsNone(row["short_term_tax_rate"])
+        self.assertIsNone(row["long_term_tax_rate"])
+
+        TaxRateSetting.objects.create(
+            asset_name="MIS Equity",
+            family=None,
+            asset=None,
+            tenure_months=None,
+            short_term_tax_rate=Decimal("0"),
+            long_term_tax_rate=Decimal("0"),
+        )
+        response = self.client.get(
+            "/api/portfolio/mis-report/",
+            {"from_date": "2026-01-01", "to_date": date.today().isoformat()},
+        )
+        self.assertEqual(response.status_code, 200)
+        row = next(
+            item for item in response.json()["tax_report"]
+            if item["asset_name"] == "MIS Equity"
+        )
+        self.assertEqual(row["tax_configuration_status"], "INCOMPLETE")
+        self.assertEqual(row["short_term_tax_rate"], 0.0)
+        self.assertEqual(row["long_term_tax_rate"], 0.0)
+        self.assertIsNone(row["realized_tax"])
+        self.assertIsNone(row["unrealized_tax"])
+
+        # An explicitly configured 0% rate is valid and must remain numeric zero.
+        setting = TaxRateSetting.objects.get(family__isnull=True, asset__isnull=True, asset_name="MIS Equity")
+        setting.tenure_months = 12
+        setting.save(update_fields=["tenure_months"])
+        response = self.client.get(
+            "/api/portfolio/mis-report/",
+            {"from_date": "2026-01-01", "to_date": date.today().isoformat()},
+        )
+        self.assertEqual(response.status_code, 200)
+        row = next(
+            item for item in response.json()["tax_report"]
+            if item["asset_name"] == "MIS Equity"
+        )
+        self.assertEqual(row["tax_configuration_status"], "CONFIGURED")
+        self.assertEqual(row["realized_tax"], 0.0)
+        self.assertEqual(row["unrealized_tax"], 0.0)
 
     def test_tax_report_uses_fifo_and_tenure_based_tax_rates(self):
         fifo_asset = Asset.objects.create(
@@ -455,7 +512,7 @@ class MISReportAPITests(TestCase):
         self.assertEqual(row["unrealized_pnl"], -1500.0)
         self.assertEqual(row["unrealized_tax"], -225.0)
 
-    def test_tax_setting_applies_to_same_display_asset_name_across_positions(self):
+    def test_display_name_tax_setting_is_inherited_by_unconfigured_underlying(self):
         first_asset = Asset.objects.create(
             owner=self.user,
             family=self.family,
@@ -473,8 +530,9 @@ class MISReportAPITests(TestCase):
             symbol="DIRECT2",
         )
         TaxRateSetting.objects.create(
-            family=self.family,
-            asset=first_asset,
+            asset_name="Direct Equity",
+            family=None,
+            asset=None,
             tenure_months=12,
             short_term_tax_rate=Decimal("15"),
             long_term_tax_rate=Decimal("10"),
@@ -522,10 +580,13 @@ class MISReportAPITests(TestCase):
             {item["family_name"] for item in rows},
             {"DAJ", "DJT"},
         )
-        self.assertEqual(
-            {item["unrealized_tax"] for item in rows},
-            {150.0},
-        )
+        rows_by_family = {item["family_name"]: item for item in rows}
+        # The global policy for the displayed name governs both rows, even
+        # though DAJ and DJT use different underlying Asset records.
+        self.assertEqual(rows_by_family["DAJ"]["unrealized_tax"], 150.0)
+        self.assertEqual(rows_by_family["DAJ"]["tax_configuration_status"], "CONFIGURED")
+        self.assertEqual(rows_by_family["DJT"]["unrealized_tax"], 150.0)
+        self.assertEqual(rows_by_family["DJT"]["tax_configuration_status"], "CONFIGURED")
 
     def test_tax_report_keeps_fully_exited_positions_for_realized_pnl(self):
         exited_asset = Asset.objects.create(
@@ -780,6 +841,7 @@ class MISReportAPITests(TestCase):
             ["IPS", "Data Sheet", "Tax Report", "Fund Type Summary", "Notes"],
         )
         self.assertEqual(workbook["IPS"]["A1"].value, "IPS")
+        self.assertIn("Blank tax amounts mean", workbook["Tax Report"]["A2"].value)
         reporting_date = date.today()
         opening_date = MISReportService._prior_month_end(reporting_date)
         period_start = MISReportService._period_start(reporting_date)
@@ -794,6 +856,11 @@ class MISReportAPITests(TestCase):
         self.assertEqual(workbook["Data Sheet"]["A5"].value, "MIS Equity")
         self.assertEqual(workbook["Data Sheet"]["A2"].value, None)
         self.assertEqual(workbook["Data Sheet"]["A6"].value, None)
+        # Missing settings are visibly marked and tax amounts remain blank, not zero.
+        tax_sheet = workbook["Tax Report"]
+        self.assertEqual(tax_sheet["U5"].value, "MISSING")
+        self.assertIsNone(tax_sheet["S5"].value)
+        self.assertIsNone(tax_sheet["T5"].value)
         tax_ws = workbook["Tax Report"]
         self.assertEqual(tax_ws["A1"].value, "Tax Report")
         self.assertEqual(tax_ws["Q3"].value, "Taxation")
@@ -801,6 +868,15 @@ class MISReportAPITests(TestCase):
         self.assertEqual(tax_ws["R4"].value, "Unrealized P/L")
         self.assertEqual(tax_ws["S4"].value, "Realized Tax")
         self.assertEqual(tax_ws["T4"].value, "Unrealized Tax")
+        self.assertEqual(tax_ws["U3"].value, "Tax Configuration")
+        self.assertEqual(tax_ws["U4"].value, "Tax Configuration Status")
+        self.assertEqual(tax_ws["V4"].value, "Tax Tenure (Months)")
+        self.assertEqual(tax_ws["W4"].value, "Short-Term Tax Rate (%)")
+        self.assertEqual(tax_ws["X4"].value, "Long-Term Tax Rate (%)")
+        self.assertEqual(tax_ws["U5"].value, "MISSING")
+        self.assertIsNone(tax_ws["V5"].value)
+        self.assertIsNone(tax_ws["W5"].value)
+        self.assertIsNone(tax_ws["X5"].value)
         self.assertEqual(tax_ws["A5"].value, "MIS Equity")
         fund_summary_ws = workbook["Fund Type Summary"]
         self.assertEqual(fund_summary_ws["A1"].value, "Fund Type wise Summary")
@@ -1067,3 +1143,465 @@ class MISReportAPITests(TestCase):
             response.json()["notes"]["title"],
             "Family One Custom Notes",
         )
+
+    def test_tax_estimate_applies_configured_rates_to_losses(self):
+        from datetime import date
+        from decimal import Decimal
+
+        asset = Asset.objects.create(
+            owner=self.user, family=self.family, name="Loss Position",
+            category="STOCK", symbol="LOSSPOS",
+        )
+        common = {
+            "owner": self.user, "family": self.family, "family_name": "DAJ",
+            "portfolio": "Core", "asset_class": "Equity",
+            "sub_class": "Large Cap", "asset_name": "Loss Position",
+            "advisors": "Advisor A", "fees": Decimal("0"), "asset": asset,
+        }
+        buy = Transaction.objects.create(
+            **common, transaction_date=date(2025, 1, 1),
+            transaction_type="BUY", quantity=Decimal("10"),
+            price_per_unit=Decimal("100"), amount=Decimal("1000"),
+        )
+        sell = Transaction.objects.create(
+            **common, transaction_date=date(2025, 6, 1),
+            transaction_type="SELL", quantity=Decimal("5"),
+            price_per_unit=Decimal("80"), amount=Decimal("400"),
+        )
+        setting = TaxRateSetting.objects.create(
+            family=self.family, asset=asset, tenure_months=12,
+            short_term_tax_rate=Decimal("23.73"),
+            long_term_tax_rate=Decimal("14.95"),
+        )
+
+        metrics = MISReportService._fifo_tax_metrics(
+            [buy, sell], "asset", date(2025, 12, 31), date(2025, 1, 1),
+            setting, {asset.id: Decimal("80")},
+        )
+
+        self.assertEqual(metrics["realized_pnl"], Decimal("-100"))
+        self.assertEqual(metrics["realized_tax"], Decimal("-23.7300"))
+        self.assertEqual(metrics["unrealized_pnl"], Decimal("-100"))
+        self.assertEqual(metrics["unrealized_tax"], Decimal("-23.7300"))
+
+    def test_hdfc_focused_fund_tax_matches_october_2026_transaction_amounts(self):
+        """Regression for the supplied HDFC DAJ/DJT quantities, costs and tax rates."""
+        from datetime import date
+        from decimal import Decimal
+
+        fund = Asset.objects.create(
+            owner=self.user,
+            family=self.family,
+            name="HDFC Focused Fund - Growth Option - Direct Plan",
+            category="MUTUAL_FUND",
+            isin="INF179K01VK7",
+            symbol="HDFCFOCUSED",
+        )
+        report_date = date(2026, 10, 12)
+        MarketPrice.objects.create(
+            asset=fund,
+            date=report_date,
+            close_price=Decimal("256.104"),
+            # Legacy asset-backed MF holdings resolve NAV from AMFI price history.
+            source="AMFI",
+        )
+
+        common = {
+            "owner": self.user,
+            "family": self.family,
+            "asset": fund,
+            "asset_class": "Equity",
+            "sub_class": "Equity Mutual Fund",
+            "asset_name": "HDFC Focused Fund - Growth Option - Direct Plan",
+            "advisors": "ARTHYA",
+            "portfolio": "Equity MF",
+            "fees": Decimal("0"),
+        }
+
+        # DAJ has two lots straddling the configured 12-month tenure boundary.
+        Transaction.objects.create(
+            **common,
+            family_name="DAJ",
+            transaction_date=date(2025, 10, 7),
+            transaction_type="BUY",
+            quantity=Decimal("5091.381"),
+            price_per_unit=Decimal("267.69"),
+            amount=Decimal("1362979.88"),
+        )
+        Transaction.objects.create(
+            **common,
+            family_name="DAJ",
+            transaction_date=date(2025, 10, 15),
+            transaction_type="BUY",
+            quantity=Decimal("25771.215"),
+            price_per_unit=Decimal("268.795"),
+            amount=Decimal("6927520.17"),
+        )
+
+        # All 35 DJT source lots are long-term as of 12 Oct 2026. Aggregating
+        # them into one test lot preserves the same tax result because every
+        # lot uses the configured 14.95% long-term rate and there are no sales.
+        Transaction.objects.create(
+            **common,
+            family_name="DJT",
+            transaction_date=date(2023, 4, 11),
+            transaction_type="BUY",
+            quantity=Decimal("242899.529"),
+            price_per_unit=Decimal("223.66"),
+            amount=Decimal("54327648.60"),
+        )
+
+        TaxRateSetting.objects.create(
+            asset_name="HDFC Focused Fund - Growth Option - Direct Plan",
+            family=None,
+            asset=None,
+            tenure_months=12,
+            short_term_tax_rate=Decimal("23.73"),
+            long_term_tax_rate=Decimal("14.95"),
+        )
+
+        response = self.client.get(
+            "/api/portfolio/mis-report/",
+            {"from_date": "2026-04-01", "to_date": "2026-10-12"},
+        )
+        self.assertEqual(response.status_code, 200)
+        tax_rows = response.json()["tax_report"]
+        daj = next(
+            row for row in tax_rows
+            if row["asset_name"] == "HDFC Focused Fund - Growth Option - Direct Plan"
+            and row["family_name"] == "DAJ"
+        )
+        djt = next(
+            row for row in tax_rows
+            if row["asset_name"] == "HDFC Focused Fund - Growth Option - Direct Plan"
+            and row["family_name"] == "DJT"
+        )
+
+        self.assertAlmostEqual(daj["qty_units"], 30862.596, places=3)
+        self.assertAlmostEqual(daj["total_cost"], 8290500.05, places=2)
+        self.assertAlmostEqual(daj["closing_amount"], 7904034.285984, places=2)
+        self.assertAlmostEqual(daj["realized_tax"], 0.0, places=2)
+        self.assertAlmostEqual(daj["unrealized_pnl"], -386465.764016, places=2)
+        self.assertAlmostEqual(daj["unrealized_tax"], -86523.135215984, places=2)
+
+        self.assertAlmostEqual(djt["qty_units"], 242899.529, places=3)
+        self.assertAlmostEqual(djt["total_cost"], 54327648.60, places=2)
+        self.assertAlmostEqual(djt["closing_amount"], 62207540.975016, places=2)
+        self.assertAlmostEqual(djt["realized_tax"], 0.0, places=2)
+        self.assertAlmostEqual(djt["unrealized_pnl"], 7879892.375016, places=2)
+        self.assertAlmostEqual(djt["unrealized_tax"], 1178043.910064892, places=2)
+
+    def test_fifo_tax_uses_tax_setting_for_each_underlying_position(self):
+        asset_a = Asset.objects.create(
+            owner=self.user, family=self.family, name="Long Term Underlying",
+            category="STOCK", symbol="LONGTERM",
+        )
+        asset_b = Asset.objects.create(
+            owner=self.user, family=self.family, name="Short Term Underlying",
+            category="STOCK", symbol="SHORTTERM",
+        )
+        common = {
+            "owner": self.user,
+            "family": self.family,
+            "family_name": "DAJ",
+            "portfolio": "Grouped PMS",
+            "asset_class": "Equity",
+            "sub_class": "Equity PMS",
+            "asset_name": "Grouped PMS",
+            "advisors": "Advisor A",
+            "fees": Decimal("0"),
+        }
+        transactions = [
+            Transaction.objects.create(
+                **common, asset=asset_a, transaction_date=date(2024, 1, 1),
+                transaction_type="BUY", quantity=Decimal("10"),
+                price_per_unit=Decimal("100"), amount=Decimal("1000"),
+            ),
+            Transaction.objects.create(
+                **common, asset=asset_b, transaction_date=date(2026, 8, 1),
+                transaction_type="BUY", quantity=Decimal("10"),
+                price_per_unit=Decimal("100"), amount=Decimal("1000"),
+            ),
+            Transaction.objects.create(
+                **common, asset=asset_a, transaction_date=date(2026, 9, 1),
+                transaction_type="SELL", quantity=Decimal("5"),
+                price_per_unit=Decimal("110"), amount=Decimal("550"),
+            ),
+            Transaction.objects.create(
+                **common, asset=asset_b, transaction_date=date(2026, 9, 1),
+                transaction_type="SELL", quantity=Decimal("5"),
+                price_per_unit=Decimal("110"), amount=Decimal("550"),
+            ),
+        ]
+        long_term_setting = TaxRateSetting.objects.create(
+            family=self.family, asset=asset_a, tenure_months=12,
+            short_term_tax_rate=Decimal("25"),
+            long_term_tax_rate=Decimal("10"),
+        )
+        short_term_setting = TaxRateSetting.objects.create(
+            family=self.family, asset=asset_b, tenure_months=12,
+            short_term_tax_rate=Decimal("20"),
+            long_term_tax_rate=Decimal("8"),
+        )
+
+        metrics = MISReportService._fifo_tax_metrics(
+            transactions,
+            "asset",
+            date(2026, 10, 1),
+            date(2026, 9, 1),
+            {
+                asset_a.id: long_term_setting,
+                asset_b.id: short_term_setting,
+            },
+            {
+                asset_a.id: Decimal("120"),
+                asset_b.id: Decimal("120"),
+            },
+        )
+
+        # Realized gain is ₹50 per asset: A uses its 10% LT rate and B
+        # uses its 20% ST rate, yielding ₹5 + ₹10 tax.
+        self.assertEqual(metrics["realized_pnl"], Decimal("100"))
+        self.assertEqual(metrics["realized_tax"], Decimal("15.00"))
+        # Each has five units left and ₹100 unrealized gain. Their own rates
+        # produce ₹10 + ₹20 tax; one row-level rate would be incorrect.
+        self.assertEqual(metrics["unrealized_pnl"], Decimal("200"))
+        self.assertEqual(metrics["unrealized_tax"], Decimal("30.00"))
+
+    def test_fifo_tax_matches_sales_to_the_same_underlying_asset(self):
+        from datetime import date
+        from decimal import Decimal
+
+        asset_a = Asset.objects.create(
+            owner=self.user, family=self.family, name="Shared Display A",
+            category="STOCK", symbol="SHAREDA",
+        )
+        asset_b = Asset.objects.create(
+            owner=self.user, family=self.family, name="Shared Display B",
+            category="STOCK", symbol="SHAREDB",
+        )
+        common = {
+            "owner": self.user,
+            "family": self.family,
+            "family_name": "DAJ",
+            "portfolio": "Core",
+            "asset_class": "Equity",
+            "sub_class": "Large Cap",
+            "asset_name": "Shared Display",
+            "advisors": "Advisor A",
+            "fees": Decimal("0"),
+        }
+        buy_a = Transaction.objects.create(
+            **common, asset=asset_a, transaction_date=date(2025, 1, 1),
+            transaction_type="BUY", quantity=Decimal("10"),
+            price_per_unit=Decimal("100"), amount=Decimal("1000"),
+        )
+        buy_b = Transaction.objects.create(
+            **common, asset=asset_b, transaction_date=date(2025, 1, 2),
+            transaction_type="BUY", quantity=Decimal("10"),
+            price_per_unit=Decimal("500"), amount=Decimal("5000"),
+        )
+        sell_b = Transaction.objects.create(
+            **common, asset=asset_b, transaction_date=date(2026, 1, 2),
+            transaction_type="SELL", quantity=Decimal("10"),
+            price_per_unit=Decimal("600"), amount=Decimal("6000"),
+        )
+        setting = TaxRateSetting.objects.create(
+            family=self.family, asset=asset_a, tenure_months=12,
+            short_term_tax_rate=Decimal("15"),
+            long_term_tax_rate=Decimal("10"),
+        )
+
+        metrics = MISReportService._fifo_tax_metrics(
+            [buy_a, buy_b, sell_b],
+            "asset",
+            date(2026, 2, 1),
+            date(2026, 1, 1),
+            setting,
+            {asset_a.id: Decimal("120"), asset_b.id: None},
+        )
+
+        # Selling asset B must consume B's ₹5,000 cost lot, not asset A's
+        # cheaper ₹1,000 lot merely because both share one display name.
+        self.assertEqual(metrics["realized_pnl"], Decimal("1000"))
+        self.assertEqual(metrics["realized_tax"], Decimal("100"))
+        # Asset A remains open and is valued at its own ₹120 market price.
+        self.assertEqual(metrics["unrealized_pnl"], Decimal("200"))
+        self.assertEqual(metrics["unrealized_tax"], Decimal("20"))
+
+
+
+    def test_display_asset_name_tax_setting_overrides_all_underlying_settings(self):
+        """A displayed PMS tax entry governs every underlying in its row."""
+        older_underlying = Asset.objects.create(
+            owner=self.user,
+            family=self.family,
+            name="Grouped PMS Underlying A",
+            category="STOCK",
+            symbol="GROUPA",
+        )
+        newer_underlying = Asset.objects.create(
+            owner=self.user,
+            family=self.family,
+            name="Grouped PMS Underlying B",
+            category="STOCK",
+            symbol="GROUPB",
+        )
+        common = {
+            "owner": self.user,
+            "family": self.family,
+            "family_name": "DAJ",
+            "portfolio": "Grouped PMS Portfolio",
+            "asset_class": "Equity",
+            "sub_class": "Equity PMS",
+            "asset_name": "Grouped PMS",
+            "advisors": "Advisor A",
+            "fees": Decimal("0"),
+        }
+        Transaction.objects.create(
+            **common,
+            asset=older_underlying,
+            transaction_date=date(2024, 1, 1),
+            transaction_type="BUY",
+            quantity=Decimal("10"),
+            price_per_unit=Decimal("100"),
+            amount=Decimal("1000"),
+        )
+        Transaction.objects.create(
+            **common,
+            asset=newer_underlying,
+            transaction_date=date(2026, 9, 1),
+            transaction_type="BUY",
+            quantity=Decimal("10"),
+            price_per_unit=Decimal("100"),
+            amount=Decimal("1000"),
+        )
+        for underlying in (older_underlying, newer_underlying):
+            MarketPrice.objects.create(
+                asset=underlying,
+                date=date.today(),
+                close_price=Decimal("120"),
+                source=DataSource.MANUAL,
+            )
+
+        # Deliberately conflicting underlying settings prove that the display
+        # Asset Name policy takes precedence. All rates come from database rows.
+        TaxRateSetting.objects.create(
+            asset_name="Grouped PMS",
+            family=None,
+            asset=None,
+            tenure_months=12,
+            short_term_tax_rate=Decimal("10"),
+            long_term_tax_rate=Decimal("8"),
+        )
+        TaxRateSetting.objects.create(
+            family=self.family,
+            asset=older_underlying,
+            tenure_months=12,
+            short_term_tax_rate=Decimal("25"),
+            long_term_tax_rate=Decimal("20"),
+        )
+
+        response = self.client.get("/api/portfolio/mis-report/")
+        self.assertEqual(response.status_code, 200)
+        row = next(
+            item for item in response.json()["tax_report"]
+            if item["asset_name"] == "Grouped PMS" and item["family_name"] == "DAJ"
+        )
+
+        # Older lot uses the display policy's 8% LT rate; newer lot uses its
+        # 10% ST rate. Each security retains its own FIFO lots and valuation.
+        self.assertEqual(row["tax_configuration_status"], "CONFIGURED")
+        self.assertEqual(row["tax_tenure_months"], 12)
+        self.assertEqual(row["short_term_tax_rate"], 10.0)
+        self.assertEqual(row["long_term_tax_rate"], 8.0)
+        self.assertAlmostEqual(row["unrealized_pnl"], 400.0, places=2)
+        self.assertAlmostEqual(row["unrealized_tax"], 36.0, places=2)
+
+    def test_global_display_policy_keeps_underlying_fifo_lots_separate(self):
+        older_asset = Asset.objects.create(
+            owner=self.user,
+            family=self.family,
+            name="Global Group Underlying A",
+            category="STOCK",
+            symbol="GLOBALGROUPA",
+        )
+        recent_asset = Asset.objects.create(
+            owner=self.user,
+            family=self.family,
+            name="Global Group Underlying B",
+            category="STOCK",
+            symbol="GLOBALGROUPB",
+        )
+        common = {
+            "owner": self.user,
+            "family": self.family,
+            "family_name": "DAJ",
+            "portfolio": "Global Group Portfolio",
+            "asset_class": "Equity",
+            "sub_class": "Equity PMS",
+            "asset_name": "Global Group",
+            "advisors": "Advisor A",
+            "fees": Decimal("0"),
+        }
+        Transaction.objects.create(
+            **common,
+            asset=older_asset,
+            transaction_date=date(2024, 1, 1),
+            transaction_type="BUY",
+            quantity=Decimal("10"),
+            price_per_unit=Decimal("100"),
+            amount=Decimal("1000"),
+        )
+        Transaction.objects.create(
+            **common,
+            asset=recent_asset,
+            transaction_date=date(2026, 8, 1),
+            transaction_type="BUY",
+            quantity=Decimal("10"),
+            price_per_unit=Decimal("500"),
+            amount=Decimal("5000"),
+        )
+        Transaction.objects.create(
+            **common,
+            asset=recent_asset,
+            transaction_date=date(2026, 10, 1),
+            transaction_type="SELL",
+            quantity=Decimal("10"),
+            price_per_unit=Decimal("600"),
+            amount=Decimal("6000"),
+        )
+        for asset in (older_asset, recent_asset):
+            MarketPrice.objects.create(
+                asset=asset,
+                date=date.today(),
+                close_price=Decimal("120"),
+                source=DataSource.MANUAL,
+            )
+        TaxRateSetting.objects.create(
+            asset_name="Global Group",
+            family=None,
+            asset=None,
+            tenure_months=12,
+            short_term_tax_rate=Decimal("20"),
+            long_term_tax_rate=Decimal("8"),
+        )
+
+        response = self.client.get(
+            "/api/portfolio/mis-report/",
+            {"from_date": "2026-10-01", "to_date": date.today().isoformat()},
+        )
+        self.assertEqual(response.status_code, 200)
+        row = next(
+            item for item in response.json()["tax_report"]
+            if item["asset_name"] == "Global Group" and item["family_name"] == "DAJ"
+        )
+
+        # The sale of B realizes only B's ₹1,000 gain at the 20% short-term
+        # rate. A's 10-unit lot remains open at its own cost basis and gets
+        # the 8% long-term rate on its ₹200 unrealized gain.
+        self.assertEqual(row["tax_configuration_status"], "CONFIGURED")
+        self.assertEqual(row["realized_pnl"], 1000.0)
+        self.assertEqual(row["realized_tax"], 200.0)
+        self.assertEqual(row["unrealized_pnl"], 200.0)
+        self.assertEqual(row["unrealized_tax"], 16.0)

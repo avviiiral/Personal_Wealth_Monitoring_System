@@ -785,12 +785,23 @@ class MISReportService:
         opening_qty, _opening_cost = cls._position_at(txs, opening_date, row["kind"])
         closing_qty, closing_cost = cls._position_at(txs, as_of, row["kind"])
 
+        opening_valuations = []
+        closing_valuations = []
+        opening_unpriced_cost = cls.ZERO
+        closing_unpriced_cost = cls.ZERO
+        closing_rates_by_position = {}
+
         if row["kind"] == "asset":
             asset_ids = row["asset_ids"]
             assets_by_id = {tx.asset_id: tx.asset for tx in txs if tx.asset_id}
-            opening_prices = []
-            closing_prices = []
             for asset_id in asset_ids:
+                position_transactions = [tx for tx in txs if tx.asset_id == asset_id]
+                opening_position_qty, opening_position_cost = cls._position_at(
+                    position_transactions, opening_date, row["kind"]
+                )
+                closing_position_qty, closing_position_cost = cls._position_at(
+                    position_transactions, as_of, row["kind"]
+                )
                 asset = assets_by_id.get(asset_id)
                 opening_nav = cls._mf_nav_for_asset(asset, opening_date, nav_cache) if asset else None
                 closing_nav = cls._mf_nav_for_asset(asset, as_of, nav_cache) if asset else None
@@ -798,11 +809,8 @@ class MISReportService:
                 opening_price = opening_nav
                 closing_price = closing_nav
 
-                # REIT/InvIT rows are often stored as ordinary Asset +
-                # Transaction records, but their valuation is maintained through
-                # the shared reference-price history rather than family MarketPrice.
-                # Use the configured reference instruments for both historical
-                # dates before falling back to an asset-local MarketPrice.
+                # REIT/InvIT rows are ordinary Asset + Transaction records, but
+                # use shared reference-price history before asset-local prices.
                 subclass = cls._clean(row.get("sub_class") or getattr(asset, "_portfolio_sub_class", "")).casefold() if asset else ""
                 if asset and ("reit" in subclass or "invit" in subclass):
                     normalized_name = cls._normalize_mf_name(asset.name)
@@ -820,11 +828,7 @@ class MISReportService:
 
                     for _score, reference_name, symbols in reference_candidates:
                         ref_opening, ref_closing = cls._reference_rate(
-                            reference_name,
-                            symbols,
-                            as_of,
-                            opening_date,
-                            reference_cache,
+                            reference_name, symbols, as_of, opening_date, reference_cache
                         )
                         if opening_price is None and ref_opening is not None:
                             opening_price = ref_opening
@@ -833,36 +837,59 @@ class MISReportService:
                         if opening_price is not None or closing_price is not None:
                             break
 
-                opening_prices.append(
-                    opening_price if opening_price is not None
-                    else cls._price_on(asset_id, opening_date, price_cache)
-                )
-                closing_prices.append(
-                    closing_price if closing_price is not None
-                    else cls._price_on(asset_id, as_of, price_cache)
-                )
+                if opening_price is None:
+                    opening_price = cls._price_on(asset_id, opening_date, price_cache)
+                if closing_price is None:
+                    closing_price = cls._price_on(asset_id, as_of, price_cache)
+
+                if opening_price is None:
+                    opening_unpriced_cost += opening_position_cost
+                else:
+                    opening_valuations.append((opening_position_qty, Decimal(str(opening_price))))
+                if closing_price is None:
+                    closing_unpriced_cost += closing_position_cost
+                    closing_rates_by_position[asset_id] = None
+                else:
+                    closing_price = Decimal(str(closing_price))
+                    closing_valuations.append((closing_position_qty, closing_price))
+                    closing_rates_by_position[asset_id] = closing_price
         else:
-            opening_prices = [
-                cls._mf_nav(scheme_id, opening_date, nav_cache)
-                for scheme_id in row["scheme_ids"]
-            ]
-            closing_prices = [
-                cls._mf_nav(scheme_id, as_of, nav_cache)
-                for scheme_id in row["scheme_ids"]
-            ]
+            for scheme_id in row["scheme_ids"]:
+                position_transactions = [
+                    tx for tx in txs if getattr(tx, "scheme_id", None) == scheme_id
+                ]
+                opening_position_qty, opening_position_cost = cls._position_at(
+                    position_transactions, opening_date, row["kind"]
+                )
+                closing_position_qty, closing_position_cost = cls._position_at(
+                    position_transactions, as_of, row["kind"]
+                )
+                opening_price = cls._mf_nav(scheme_id, opening_date, nav_cache)
+                closing_price = cls._mf_nav(scheme_id, as_of, nav_cache)
+                if opening_price is None:
+                    opening_unpriced_cost += opening_position_cost
+                else:
+                    opening_valuations.append((opening_position_qty, Decimal(str(opening_price))))
+                if closing_price is None:
+                    closing_unpriced_cost += closing_position_cost
+                    closing_rates_by_position[scheme_id] = None
+                else:
+                    closing_price = Decimal(str(closing_price))
+                    closing_valuations.append((closing_position_qty, closing_price))
+                    closing_rates_by_position[scheme_id] = closing_price
 
-        opening_prices = [Decimal(str(value)) for value in opening_prices if value is not None]
-        closing_prices = [Decimal(str(value)) for value in closing_prices if value is not None]
+        opening_priced_qty = sum((qty for qty, _price in opening_valuations), cls.ZERO)
+        closing_priced_qty = sum((qty for qty, _price in closing_valuations), cls.ZERO)
+        opening_priced_mtm = sum((qty * price for qty, price in opening_valuations), cls.ZERO)
+        closing_priced_mtm = sum((qty * price for qty, price in closing_valuations), cls.ZERO)
+        opening_rate = opening_priced_mtm / opening_priced_qty if opening_priced_qty else None
+        closing_rate = closing_priced_mtm / closing_priced_qty if closing_priced_qty else None
 
-        opening_rate = opening_prices[0] if len(set(opening_prices)) == 1 and opening_prices else (
-            sum(opening_prices) / len(opening_prices) if opening_prices else None
+        opening_mtm = opening_priced_mtm + opening_unpriced_cost if opening_valuations else cls.ZERO
+        closing_mtm = (
+            closing_priced_mtm + closing_unpriced_cost
+            if closing_valuations else closing_cost
         )
-        closing_rate = closing_prices[0] if len(set(closing_prices)) == 1 and closing_prices else (
-            sum(closing_prices) / len(closing_prices) if closing_prices else None
-        )
-
-        opening_mtm = opening_qty * opening_rate if opening_rate is not None else cls.ZERO
-        closing_mtm = closing_qty * closing_rate if closing_rate is not None else closing_cost
         average_cost = closing_cost / closing_qty if closing_qty else cls.ZERO
 
         period_transactions = [tx for tx in txs if period_start <= tx.transaction_date <= as_of]
@@ -912,6 +939,7 @@ class MISReportService:
             "closing_units": closing_qty,
             "closing_nav": closing_rate,
             "closing_amount": closing_mtm,
+            "_closing_rates_by_position": closing_rates_by_position,
         }
 
     @staticmethod
@@ -956,18 +984,31 @@ class MISReportService:
 
     @classmethod
     def _fifo_tax_metrics(cls, transactions, kind, as_of, period_start, tax_setting, market_rate):
+        # Maintain an independent FIFO queue for each underlying asset/scheme.
+        # Rows can aggregate multiple internal Asset records under one display
+        # name; a sale must never consume another instrument's acquisition lots.
         lots = []
         realized_pnl = cls.ZERO
         realized_tax = cls.ZERO
+        market_rates = market_rate if isinstance(market_rate, dict) else None
 
         ordered = sorted(
             (tx for tx in transactions if tx.transaction_date <= as_of),
             key=lambda item: (item.transaction_date, item.created_at, item.id),
         )
 
+        def position_key(tx):
+            return getattr(tx, "scheme_id", None) if kind == "mutual_fund" else getattr(tx, "asset_id", None)
+
+        def setting_for_position(position_id):
+            if isinstance(tax_setting, dict):
+                return tax_setting.get(position_id)
+            return tax_setting
+
         for tx in ordered:
             qty = Decimal(str(getattr(tx, "quantity", getattr(tx, "units", 0)) or 0))
             amount = Decimal(str(tx.amount or 0))
+            key = position_key(tx)
 
             if kind == "mutual_fund":
                 is_buy = tx.transaction_type in ("PURCHASE", "SIP")
@@ -978,6 +1019,7 @@ class MISReportService:
 
             if is_buy and qty > 0:
                 lots.append({
+                    "position_key": key,
                     "remaining_qty": qty,
                     "unit_cost": amount / qty if amount else cls.ZERO,
                     "acquired_on": tx.transaction_date,
@@ -986,6 +1028,7 @@ class MISReportService:
 
             if kind == "asset" and tx.transaction_type in (TransactionType.BONUS, TransactionType.SPLIT) and qty > 0:
                 lots.append({
+                    "position_key": key,
                     "remaining_qty": qty,
                     "unit_cost": cls.ZERO,
                     "acquired_on": tx.transaction_date,
@@ -999,42 +1042,50 @@ class MISReportService:
                 str(getattr(tx, "price_per_unit", getattr(tx, "nav", 0)) or 0)
             )
             remaining_to_sell = qty
-            while remaining_to_sell > 0 and lots:
-                lot = lots[0]
+            while remaining_to_sell > 0:
+                lot_index = next(
+                    (
+                        index for index, candidate in enumerate(lots)
+                        if candidate["position_key"] == key and candidate["remaining_qty"] > 0
+                    ),
+                    None,
+                )
+                if lot_index is None:
+                    break
+                lot = lots[lot_index]
                 matched_qty = min(remaining_to_sell, lot["remaining_qty"])
                 gain = (sale_unit_value - lot["unit_cost"]) * matched_qty
 
                 if period_start <= tx.transaction_date <= as_of:
                     realized_pnl += gain
-
-                    # Resolve the rate directly at the point where each FIFO
-                    # lot is disposed. This keeps the ST/LT decision tied to
-                    # that exact lot and sale date, rather than relying on
-                    # report-period state or a later remaining-lot valuation.
-                    tax_rate = cls._tax_rate_for_lot(
-                        lot,
-                        tax_setting,
-                        tx.transaction_date,
-                    )
+                    tax_rate = cls._tax_rate_for_lot(lot, setting_for_position(lot["position_key"]), tx.transaction_date)
+                    # This report applies the configured rate symmetrically to
+                    # gains and losses, so loss tax estimates remain negative.
                     realized_tax += gain * tax_rate
 
                 lot["remaining_qty"] -= matched_qty
                 remaining_to_sell -= matched_qty
-                if lot["remaining_qty"] <= 0:
-                    lots.pop(0)
 
         unrealized_pnl = cls.ZERO
         unrealized_tax = cls.ZERO
-        if market_rate is not None:
-            market_rate = Decimal(str(market_rate))
-            for lot in lots:
-                gain = (market_rate - lot["unit_cost"]) * lot["remaining_qty"]
-                unrealized_pnl += gain
-                # Apply the same tenure-based tax rate to unrealized losses,
-                # producing a negative tax amount for a tax benefit.
-                unrealized_tax += gain * cls._tax_rate_for_lot(
-                    lot, tax_setting, as_of
-                )
+        for lot in lots:
+            if lot["remaining_qty"] <= 0:
+                continue
+            if market_rates is not None:
+                raw_market_rate = market_rates.get(lot["position_key"])
+                if raw_market_rate is None:
+                    continue
+                lot_market_rate = Decimal(str(raw_market_rate))
+            else:
+                if market_rate is None:
+                    continue
+                lot_market_rate = Decimal(str(market_rate))
+            gain = (lot_market_rate - lot["unit_cost"]) * lot["remaining_qty"]
+            unrealized_pnl += gain
+            # Apply the configured tenure-based rate to unrealized gains and
+            # losses. Negative values are estimates under this application's
+            # configured-rate convention, not a statutory refund determination.
+            unrealized_tax += gain * cls._tax_rate_for_lot(lot, setting_for_position(lot["position_key"]), as_of)
 
         return {
             "realized_pnl": realized_pnl,
@@ -1045,55 +1096,143 @@ class MISReportService:
 
     @classmethod
     def _tax_settings(cls, family, rows):
+        """Return global display policies and scoped underlying fallbacks.
+
+        A global policy is represented by a TaxRateSetting with both scope
+        foreign keys unset. Legacy family/asset rows remain scoped to the
+        selected family and may only be used as underlying fallbacks.
+        """
         asset_ids = {
             asset_id
             for row in rows
             for asset_id in row.get("asset_ids", [])
         }
-        asset_names = {row["asset_name"] for row in rows}
+        display_asset_names = {row["asset_name"] for row in rows}
 
-        filters = Q(asset_id__in=asset_ids) | Q(asset__name__in=asset_names)
-        settings = TaxRateSetting.objects.filter(
-            family=family
-        ).filter(filters).select_related("asset").order_by("-updated_at", "-id")
+        global_settings = (
+            TaxRateSetting.objects
+            .filter(
+                family__isnull=True,
+                asset__isnull=True,
+                asset_name__in=display_asset_names,
+            )
+            .order_by("-updated_at", "-id")
+        )
+        legacy_filters = Q(asset_id__in=asset_ids)
+        if display_asset_names:
+            legacy_filters |= Q(asset__name__in=display_asset_names)
+        legacy_settings = (
+            TaxRateSetting.objects
+            .filter(family=family)
+            .filter(legacy_filters)
+            .select_related("asset")
+            .order_by("-updated_at", "-id")
+        )
 
         by_asset_id = {}
-        by_asset_name = {}
+        by_display_name = {}
+        by_underlying_name = {}
+        for setting in global_settings:
+            by_display_name.setdefault(setting.asset_name, setting)
 
-        # Tax settings are driven by the report/display Asset Name, not by
-        # the internal Asset row. Multiple internal Asset records can represent
-        # the same displayed asset name (for example, separate Direct Equity
-        # positions). A setting saved against any one of those records must
-        # therefore apply to every matching report row.
-        display_names_by_asset_id = defaultdict(set)
-        for row in rows:
-            for asset_id in row.get("asset_ids", []):
-                display_names_by_asset_id[asset_id].add(row["asset_name"])
+        for setting in legacy_settings:
+            if setting.asset_id:
+                by_asset_id.setdefault(setting.asset_id, setting)
+                if setting.asset and setting.asset.name:
+                    by_underlying_name.setdefault(setting.asset.name, setting)
 
-        for setting in settings:
-            by_asset_id.setdefault(setting.asset_id, setting)
-            by_asset_name.setdefault(setting.asset.name, setting)
-            for display_name in display_names_by_asset_id.get(setting.asset_id, set()):
-                by_asset_name.setdefault(display_name, setting)
-
-        return by_asset_id, by_asset_name
+        return by_asset_id, by_display_name, by_underlying_name
 
     @classmethod
-    def _build_tax_row(cls, row, data_row, as_of, period_start, tax_setting):
+    def _build_tax_row(cls, row, data_row, as_of, period_start, tax_settings):
         metrics = cls._fifo_tax_metrics(
             row["transactions"],
             row["kind"],
             as_of,
             period_start,
-            tax_setting,
-            data_row["closing_nav"],
+            tax_settings,
+            data_row.get("_closing_rates_by_position", data_row["closing_nav"]),
         )
+        public_data_row = {
+            key: value for key, value in data_row.items()
+            if key != "_closing_rates_by_position"
+        }
+
+        position_settings = list(tax_settings.values()) if isinstance(tax_settings, dict) else [tax_settings]
+        if not position_settings or all(setting is None for setting in position_settings):
+            tax_configuration_status = "MISSING"
+        else:
+            configured = [
+                setting for setting in position_settings
+                if setting is not None
+                and setting.tenure_months is not None
+                and setting.short_term_tax_rate is not None
+                and setting.long_term_tax_rate is not None
+            ]
+            incomplete = [
+                setting for setting in position_settings
+                if setting is not None
+                and (
+                    setting.tenure_months is None
+                    or setting.short_term_tax_rate is None
+                    or setting.long_term_tax_rate is None
+                )
+            ]
+            missing = any(setting is None for setting in position_settings)
+            if missing or (incomplete and configured):
+                tax_configuration_status = "PARTIAL"
+            elif incomplete:
+                tax_configuration_status = "INCOMPLETE"
+            else:
+                signatures = {
+                    (
+                        setting.tenure_months,
+                        str(setting.short_term_tax_rate),
+                        str(setting.long_term_tax_rate),
+                    )
+                    for setting in configured
+                }
+                tax_configuration_status = "MIXED" if len(signatures) > 1 else "CONFIGURED"
+
+        tax_is_configured = tax_configuration_status in ("CONFIGURED", "MIXED")
+        representative_setting = None
+        non_null_settings = [setting for setting in position_settings if setting is not None]
+        if non_null_settings and all(
+            (
+                setting.tenure_months,
+                setting.short_term_tax_rate,
+                setting.long_term_tax_rate,
+            ) == (
+                non_null_settings[0].tenure_months,
+                non_null_settings[0].short_term_tax_rate,
+                non_null_settings[0].long_term_tax_rate,
+            )
+            for setting in non_null_settings
+        ):
+            # Even an incomplete setting can still expose the fields that were
+            # configured; the status and tax amounts indicate incompleteness.
+            representative_setting = non_null_settings[0]
+
         return {
-            **data_row,
+            **public_data_row,
             "realized_pnl": metrics["realized_pnl"],
             "unrealized_pnl": metrics["unrealized_pnl"],
-            "realized_tax": metrics["realized_tax"],
-            "unrealized_tax": metrics["unrealized_tax"],
+            "realized_tax": metrics["realized_tax"] if tax_is_configured else None,
+            "unrealized_tax": metrics["unrealized_tax"] if tax_is_configured else None,
+            "tax_configuration_status": tax_configuration_status,
+            "tax_tenure_months": (
+                representative_setting.tenure_months if representative_setting is not None else None
+            ),
+            "short_term_tax_rate": (
+                float(representative_setting.short_term_tax_rate)
+                if representative_setting is not None and representative_setting.short_term_tax_rate is not None
+                else None
+            ),
+            "long_term_tax_rate": (
+                float(representative_setting.long_term_tax_rate)
+                if representative_setting is not None and representative_setting.long_term_tax_rate is not None
+                else None
+            ),
         }
 
     @classmethod
@@ -2231,7 +2370,7 @@ class MISReportService:
         # Tax Report uses the same valuation rows as the Data Sheet, but it also
         # includes rows with a transaction in the selected period when the
         # position was fully exited. This preserves realized FIFO P/L/tax.
-        tax_settings_by_id, tax_settings_by_name = cls._tax_settings(family, rows)
+        tax_settings_by_id, tax_settings_by_name, underlying_tax_settings_by_name = cls._tax_settings(family, rows)
         data_row_by_key = {
             (row["family_name"], row["sub_class"], row["asset_name"]): row
             for row in all_data_rows
@@ -2272,23 +2411,38 @@ class MISReportService:
             if not has_closing_position and not has_period_transaction:
                 continue
 
-            tax_setting = None
-            for asset_id in base_row.get("asset_ids", []):
-                tax_setting = tax_settings_by_id.get(asset_id)
-                if tax_setting is not None:
-                    break
-            if tax_setting is None:
-                tax_setting = tax_settings_by_name.get(base_row["asset_name"])
+            # A tax entry attached to the displayed Asset Name is the
+            # governing policy for every underlying in this report row. It
+            # takes precedence over security-specific settings; those are the
+            # fallback only when no display-name policy exists. FIFO lots still
+            # remain isolated by underlying position inside _fifo_tax_metrics.
+            display_name_setting = tax_settings_by_name.get(base_row["asset_name"])
+            tax_settings_by_position = {}
+            for tx in base_row["transactions"]:
+                if base_row["kind"] == "asset":
+                    position_id = getattr(tx, "asset_id", None)
+                    underlying_setting = tax_settings_by_id.get(position_id)
+                else:
+                    position_id = getattr(tx, "scheme_id", None)
+                    position_name = getattr(getattr(tx, "scheme", None), "scheme_name", "")
+                    underlying_setting = underlying_tax_settings_by_name.get(position_name) if position_name else None
+
+                setting = display_name_setting or underlying_setting
+                if position_id is not None:
+                    tax_settings_by_position[position_id] = setting
             tax_rows.append(
                 cls._build_tax_row(
                     base_row,
                     data_row,
                     as_of,
                     period_start,
-                    tax_setting,
+                    tax_settings_by_position,
                 )
             )
         tax_rows.sort(key=lambda row: (row["asset_class"].casefold(), row["asset_name"].casefold(), row["family_name"].casefold()))
+
+        for row in all_data_rows:
+            row.pop("_closing_rates_by_position", None)
 
         # IPS is a direct aggregation of the Data Sheet closing MTM, with the
         # previous-month closing MTM reconstructed using the same valuation logic.

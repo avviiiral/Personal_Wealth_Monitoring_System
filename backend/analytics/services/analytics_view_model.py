@@ -78,19 +78,15 @@ class AnalyticsViewModelService:
 
     @classmethod
     def _dashboard_xirr_performance(cls, tree, investment_summary, family_name=None):
-        asset_category_by_class = {}
-        for row in (investment_summary or {}).get("results", []):
-            category = row.get("asset_category") or "Unassigned"
-            asset_category_by_class[row.get("asset_class")] = category
-            for raw_class in row.get("raw_asset_classes") or []:
-                asset_category_by_class[raw_class] = category
-
         rows = []
         for family_node in tree.get("families", []):
             if family_name and family_node.get("family_name") != family_name:
                 continue
             for portfolio in family_node.get("portfolios", []):
                 for asset_class in portfolio.get("asset_classes", []):
+                    # Match the Dashboard's investment-summary hierarchy:
+                    # its category is the portfolio-tree asset_class label.
+                    category = (asset_class.get("asset_class") or "Unassigned").strip() or "Unassigned"
                     for sub_class in asset_class.get("sub_classes", []):
                         for asset in sub_class.get("assets", []):
                             xirr = asset.get("xirr")
@@ -103,10 +99,7 @@ class AnalyticsViewModelService:
                             rows.append({
                                 "asset_name": asset.get("asset_name") or "Unnamed Asset",
                                 "asset_class": sub_class.get("sub_class") or "Unassigned",
-                                "asset_category": asset_category_by_class.get(
-                                    sub_class.get("sub_class"),
-                                    asset_category_by_class.get(asset_class.get("asset_class"), "Unassigned"),
-                                ),
+                                "asset_category": category,
                                 "xirr_percentage": xirr_value,
                                 "underlying": asset.get("underlying") or asset.get("asset_name") or "Unnamed Underlying",
                             })

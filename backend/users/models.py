@@ -63,17 +63,33 @@ class UserPreference(models.Model):
 
 
 class TaxRateSetting(models.Model):
-    """Family-shared tax configuration for a portfolio Asset."""
+    """
+    Tax policy records.
 
+    Global policies have both family and asset unset and are uniquely keyed
+    by canonical displayed Asset Name. Existing family/asset-scoped rows are
+    retained as underlying-security fallback policies and for migration review.
+    """
+
+    asset_name = models.CharField(
+        max_length=255,
+        blank=True,
+        default="",
+        help_text="Canonical displayed Asset Name for global policies or legacy mapping.",
+    )
     family = models.ForeignKey(
         "FamilyGroup",
         on_delete=models.CASCADE,
         related_name="tax_rate_settings",
+        null=True,
+        blank=True,
     )
     asset = models.ForeignKey(
         "investments.Asset",
         on_delete=models.CASCADE,
         related_name="tax_rate_settings",
+        null=True,
+        blank=True,
     )
     tenure_months = models.PositiveIntegerField(
         null=True,
@@ -92,20 +108,32 @@ class TaxRateSetting(models.Model):
         null=True,
         blank=True,
     )
+    needs_review = models.BooleanField(
+        default=False,
+        help_text="True when migrated family-scoped settings conflict for this displayed name.",
+    )
+    review_reason = models.TextField(blank=True, default="")
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
-        ordering = ["asset__name"]
+        ordering = ["asset_name"]
         constraints = [
             models.UniqueConstraint(
                 fields=["family", "asset"],
                 name="unique_family_tax_rate_asset",
-            )
+            ),
+            models.UniqueConstraint(
+                fields=["asset_name"],
+                condition=models.Q(family__isnull=True, asset__isnull=True),
+                name="unique_global_tax_rate_asset_name",
+            ),
         ]
 
     def __str__(self):
-        return f"{self.family.name} - {self.asset.name}"
+        if self.family_id is None and self.asset_id is None:
+            return self.asset_name or "Global tax policy"
+        return f"{self.family.name} - {self.asset.name if self.asset_id else self.asset_name}"
 
 
 class TaxRateChangeLog(models.Model):

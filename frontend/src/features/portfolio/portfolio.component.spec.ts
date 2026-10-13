@@ -18,6 +18,7 @@ describe('PortfolioComponent', () => {
 
   let portfolioApi: {
     getPortfolioTree: ReturnType<typeof vi.fn>;
+    getTransactions: ReturnType<typeof vi.fn>;
   };
 
   let manualPriceService: {
@@ -25,6 +26,7 @@ describe('PortfolioComponent', () => {
   };
 
   let investmentsApi: {
+    previewTransactionDuplicates: ReturnType<typeof vi.fn>;
     importTransactions: ReturnType<typeof vi.fn>;
   };
 
@@ -133,6 +135,7 @@ describe('PortfolioComponent', () => {
   beforeEach(async () => {
     portfolioApi = {
       getPortfolioTree: vi.fn().mockReturnValue(of(mockResponse)),
+      getTransactions: vi.fn().mockReturnValue(of({ count: 0, results: [] })),
     };
 
     manualPriceService = {
@@ -145,6 +148,12 @@ describe('PortfolioComponent', () => {
     };
 
     investmentsApi = {
+      previewTransactionDuplicates: vi.fn().mockReturnValue(
+        of({
+          success: true,
+          data: { duplicate_rows: [], duplicate_count: 0 },
+        }),
+      ),
       importTransactions: vi.fn().mockReturnValue(
         of({
           success: true,
@@ -598,7 +607,8 @@ describe('PortfolioComponent', () => {
 
     component.onTransactionFileSelected({ target: input } as unknown as Event);
 
-    expect(investmentsApi.importTransactions).toHaveBeenCalledWith(file);
+    expect(investmentsApi.previewTransactionDuplicates).toHaveBeenCalledWith(file);
+    expect(investmentsApi.importTransactions).toHaveBeenCalledWith(file, []);
     expect(component.uploadingTransactions).toBe(false);
 
     // loadPortfolio(true) should have been triggered after a

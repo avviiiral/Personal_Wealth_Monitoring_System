@@ -14,6 +14,11 @@
         (change)="onTransactionFileSelected($event)"
       />
 
+      <label class="duplicate-import-option" title="When enabled, identical rows in this file and rows already in PWMS will also be imported.">
+        <input type="checkbox" [(ngModel)]="includeDuplicateTransactions" [disabled]="uploadingTransactions" />
+        <span>Import duplicate transactions</span>
+      </label>
+
       <button
         type="button"
         class="upload-button"

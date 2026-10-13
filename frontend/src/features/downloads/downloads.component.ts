@@ -797,7 +797,7 @@ export class DownloadsComponent implements OnInit {
       ['Tenure', 'capital_gain_type'],
       ['Tax Rate (%)', 'tax_rate'],
       ['Indicative Tax', 'indicative_tax'],
-      ['Tax Status', 'tax_status'],
+
     ], rows, 'capital_gain_report');
   }
 

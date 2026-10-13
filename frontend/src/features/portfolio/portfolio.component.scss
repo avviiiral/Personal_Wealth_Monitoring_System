@@ -107,31 +107,6 @@
   display: none;
 }
 
-.duplicate-import-option {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  color: var(--ink);
-  font-size: 12px;
-  font-weight: 600;
-  line-height: 1.35;
-  cursor: pointer;
-  max-width: 210px;
-
-  input {
-    width: 15px;
-    height: 15px;
-    margin: 0;
-    accent-color: var(--ink);
-    flex-shrink: 0;
-  }
-
-  &:has(input:disabled) {
-    opacity: 0.6;
-    cursor: not-allowed;
-  }
-}
-
 .selection-area {
   display: flex;
   gap: 14px;
@@ -1069,3 +1044,18 @@
   font-weight: 600;
   cursor: pointer;
 }
+
+
+.duplicate-review-backdrop { position: fixed; inset: 0; z-index: 1200; display: flex; align-items: center; justify-content: center; padding: 24px; background: rgba(16, 24, 40, .55); }
+.duplicate-review-panel { width: min(1400px, 96vw); max-height: 88vh; display: flex; flex-direction: column; gap: 16px; padding: 24px; border-radius: 14px; background: var(--surface); box-shadow: 0 24px 70px rgba(0,0,0,.24); }
+.duplicate-review-heading, .duplicate-review-actions { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.duplicate-review-heading h2 { margin: 0; color: var(--ink); font-size: 21px; }
+.duplicate-review-heading p { margin: 8px 0 0; color: var(--muted); font-size: 13px; }
+.duplicate-review-table-wrap { overflow: auto; border: 1px solid var(--surface-line); border-radius: 8px; }
+.duplicate-review-table { width: 100%; border-collapse: collapse; font-size: 12px; white-space: nowrap; }
+.duplicate-review-table th, .duplicate-review-table td { padding: 10px 12px; border-bottom: 1px solid var(--surface-line); text-align: left; }
+.duplicate-review-table th { position: sticky; top: 0; background: var(--canvas-to); color: var(--ink); }
+.duplicate-review-table input { width: 16px; height: 16px; accent-color: var(--ink); }
+.duplicate-review-actions { justify-content: flex-end; flex-wrap: wrap; }
+.duplicate-review-actions span { margin-right: auto; color: var(--muted); font-size: 12px; }
+@media (max-width: 700px) { .duplicate-review-backdrop { padding: 8px; } .duplicate-review-panel { padding: 14px; max-height: 95vh; } .duplicate-review-heading { align-items: flex-start; } }

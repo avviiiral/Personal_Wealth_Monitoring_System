@@ -71,8 +71,8 @@
         <div>
           <h2>Tax Settings</h2>
           <p>
-            Configure tenure and Short Term / Long Term tax rates for every Asset Name in the active family.
-            These settings are shared across the family and used by the Tax Report.
+            Configure tenure and Short Term / Long Term tax rates for each displayed Asset Name.
+            Each policy is shared globally with other families holding the same Asset Name and used by the Tax Report.
           </p>
         </div>
         <span class="section-badge">
@@ -102,6 +102,12 @@
             <tr *ngFor="let row of taxRateSettings">
               <td class="tax-asset-name">
                 <strong>{{ row.asset_name }}</strong>
+                <small
+                  *ngIf="row.configuration_conflict"
+                  class="tax-review-warning"
+                >
+                  Conflicting legacy tax settings were retained. Saving a global policy here selects the policy for this Asset Name; legacy values are not overwritten.
+                </small>
               </td>
               <td>
                 <input

@@ -266,6 +266,7 @@ export class SettingsComponent implements OnInit {
     const request$ = row.id === null
       ? this.settingsApi.saveTaxRateSetting(
           row.asset_id,
+          row.asset_name,
           tenureMonths,
           shortTermTaxRate,
           longTermTaxRate,
@@ -279,7 +280,7 @@ export class SettingsComponent implements OnInit {
 
     request$.subscribe({
       next: (saved) => {
-        const index = this.taxRateSettings.findIndex((item) => item.asset_id === saved.asset_id);
+        const index = this.taxRateSettings.findIndex((item) => item.asset_name === saved.asset_name);
         if (index >= 0) {
           this.taxRateSettings[index] = saved;
         }
@@ -306,7 +307,7 @@ export class SettingsComponent implements OnInit {
 
     this.settingsApi.deleteTaxRateSetting(row.id).subscribe({
       next: () => {
-        const index = this.taxRateSettings.findIndex((item) => item.asset_id === row.asset_id);
+        const index = this.taxRateSettings.findIndex((item) => item.asset_name === row.asset_name);
         if (index >= 0) {
           this.taxRateSettings[index] = {
             ...this.taxRateSettings[index],

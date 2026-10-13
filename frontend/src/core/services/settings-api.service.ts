@@ -37,6 +37,7 @@ export interface TaxRateSetting {
   short_term_tax_rate: string | number | null;
   long_term_tax_rate: string | number | null;
   updated_at: string | null;
+  configuration_conflict?: boolean;
 }
 export interface TaxRateChangeLog {
   id: number;
@@ -180,6 +181,7 @@ export class SettingsApiService {
 
   saveTaxRateSetting(
     assetId: number,
+    assetName: string,
     tenureMonths: number,
     shortTermTaxRate: number,
     longTermTaxRate: number,
@@ -193,6 +195,7 @@ export class SettingsApiService {
       `${this.baseUrl}/settings/tax-rates/`,
       {
         asset_id: assetId,
+        asset_name: assetName,
         tenure_months: tenureMonths,
         short_term_tax_rate: shortTermTaxRate,
         long_term_tax_rate: longTermTaxRate,

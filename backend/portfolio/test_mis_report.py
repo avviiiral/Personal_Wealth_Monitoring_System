@@ -274,8 +274,9 @@ class MISReportAPITests(TestCase):
         self.assertIsNone(row["long_term_tax_rate"])
 
         TaxRateSetting.objects.create(
-            family=self.family,
-            asset=self.asset,
+            asset_name="MIS Equity",
+            family=None,
+            asset=None,
             tenure_months=None,
             short_term_tax_rate=Decimal("0"),
             long_term_tax_rate=Decimal("0"),
@@ -296,7 +297,7 @@ class MISReportAPITests(TestCase):
         self.assertIsNone(row["unrealized_tax"])
 
         # An explicitly configured 0% rate is valid and must remain numeric zero.
-        setting = TaxRateSetting.objects.get(family=self.family, asset=self.asset)
+        setting = TaxRateSetting.objects.get(family__isnull=True, asset__isnull=True, asset_name="MIS Equity")
         setting.tenure_months = 12
         setting.save(update_fields=["tenure_months"])
         response = self.client.get(
@@ -529,8 +530,9 @@ class MISReportAPITests(TestCase):
             symbol="DIRECT2",
         )
         TaxRateSetting.objects.create(
-            family=self.family,
-            asset=first_asset,
+            asset_name="Direct Equity",
+            family=None,
+            asset=None,
             tenure_months=12,
             short_term_tax_rate=Decimal("15"),
             long_term_tax_rate=Decimal("10"),
@@ -579,8 +581,8 @@ class MISReportAPITests(TestCase):
             {"DAJ", "DJT"},
         )
         rows_by_family = {item["family_name"]: item for item in rows}
-        # DAJ has a setting for its actual Asset. DJT has a different underlying
-        # with no setting; the shared display name must not lend it DAJ\'s rate.
+        # The global policy for the displayed name governs both rows, even
+        # though DAJ and DJT use different underlying Asset records.
         self.assertEqual(rows_by_family["DAJ"]["unrealized_tax"], 150.0)
         self.assertEqual(rows_by_family["DAJ"]["tax_configuration_status"], "CONFIGURED")
         self.assertEqual(rows_by_family["DJT"]["unrealized_tax"], 150.0)
@@ -1250,8 +1252,9 @@ class MISReportAPITests(TestCase):
         )
 
         TaxRateSetting.objects.create(
-            family=self.family,
-            asset=fund,
+            asset_name="HDFC Focused Fund - Growth Option - Direct Plan",
+            family=None,
+            asset=None,
             tenure_months=12,
             short_term_tax_rate=Decimal("23.73"),
             long_term_tax_rate=Decimal("14.95"),
@@ -1444,13 +1447,6 @@ class MISReportAPITests(TestCase):
             category="STOCK",
             symbol="GROUPB",
         )
-        display_asset = Asset.objects.create(
-            owner=self.user,
-            family=self.family,
-            name="Grouped PMS",
-            category="OTHER",
-            symbol="GROUPPMS",
-        )
         common = {
             "owner": self.user,
             "family": self.family,
@@ -1491,8 +1487,9 @@ class MISReportAPITests(TestCase):
         # Deliberately conflicting underlying settings prove that the display
         # Asset Name policy takes precedence. All rates come from database rows.
         TaxRateSetting.objects.create(
-            family=self.family,
-            asset=display_asset,
+            asset_name="Grouped PMS",
+            family=None,
+            asset=None,
             tenure_months=12,
             short_term_tax_rate=Decimal("10"),
             long_term_tax_rate=Decimal("8"),
@@ -1520,3 +1517,91 @@ class MISReportAPITests(TestCase):
         self.assertEqual(row["long_term_tax_rate"], 8.0)
         self.assertAlmostEqual(row["unrealized_pnl"], 400.0, places=2)
         self.assertAlmostEqual(row["unrealized_tax"], 36.0, places=2)
+
+    def test_global_display_policy_keeps_underlying_fifo_lots_separate(self):
+        older_asset = Asset.objects.create(
+            owner=self.user,
+            family=self.family,
+            name="Global Group Underlying A",
+            category="STOCK",
+            symbol="GLOBALGROUPA",
+        )
+        recent_asset = Asset.objects.create(
+            owner=self.user,
+            family=self.family,
+            name="Global Group Underlying B",
+            category="STOCK",
+            symbol="GLOBALGROUPB",
+        )
+        common = {
+            "owner": self.user,
+            "family": self.family,
+            "family_name": "DAJ",
+            "portfolio": "Global Group Portfolio",
+            "asset_class": "Equity",
+            "sub_class": "Equity PMS",
+            "asset_name": "Global Group",
+            "advisors": "Advisor A",
+            "fees": Decimal("0"),
+        }
+        Transaction.objects.create(
+            **common,
+            asset=older_asset,
+            transaction_date=date(2024, 1, 1),
+            transaction_type="BUY",
+            quantity=Decimal("10"),
+            price_per_unit=Decimal("100"),
+            amount=Decimal("1000"),
+        )
+        Transaction.objects.create(
+            **common,
+            asset=recent_asset,
+            transaction_date=date(2026, 8, 1),
+            transaction_type="BUY",
+            quantity=Decimal("10"),
+            price_per_unit=Decimal("500"),
+            amount=Decimal("5000"),
+        )
+        Transaction.objects.create(
+            **common,
+            asset=recent_asset,
+            transaction_date=date(2026, 10, 1),
+            transaction_type="SELL",
+            quantity=Decimal("10"),
+            price_per_unit=Decimal("600"),
+            amount=Decimal("6000"),
+        )
+        for asset in (older_asset, recent_asset):
+            MarketPrice.objects.create(
+                asset=asset,
+                date=date.today(),
+                close_price=Decimal("120"),
+                source=DataSource.MANUAL,
+            )
+        TaxRateSetting.objects.create(
+            asset_name="Global Group",
+            family=None,
+            asset=None,
+            tenure_months=12,
+            short_term_tax_rate=Decimal("20"),
+            long_term_tax_rate=Decimal("8"),
+        )
+
+        response = self.client.get(
+            "/api/portfolio/mis-report/",
+            {"from_date": "2026-10-01", "to_date": date.today().isoformat()},
+        )
+        self.assertEqual(response.status_code, 200)
+        row = next(
+            item for item in response.json()["tax_report"]
+            if item["asset_name"] == "Global Group" and item["family_name"] == "DAJ"
+        )
+
+        # The sale of B realizes only B's ₹1,000 gain at the 20% short-term
+        # rate. A's 10-unit lot remains open at its own cost basis and gets
+        # the 8% long-term rate on its ₹200 unrealized gain.
+        self.assertEqual(row["tax_configuration_status"], "CONFIGURED")
+        self.assertEqual(row["realized_pnl"], 1000.0)
+        self.assertEqual(row["realized_tax"], 200.0)
+        self.assertEqual(row["unrealized_pnl"], 200.0)
+        self.assertEqual(row["unrealized_tax"], 16.0)

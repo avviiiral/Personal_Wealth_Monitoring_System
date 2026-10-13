@@ -1096,14 +1096,11 @@ class MISReportService:
 
     @classmethod
     def _tax_settings(cls, family, rows):
-        """Index both display-name policy settings and underlying settings.
+        """Return global display policies and scoped underlying fallbacks.
 
-        A TaxRateSetting attached to an Asset whose name matches the displayed
-        MIS Asset Name is the group policy for that row. The caller applies it
-        to every underlying position in that row, while the FIFO engine keeps
-        acquisition lots and sales isolated by the actual underlying identity.
-        Underlying-specific settings remain available as a fallback when the
-        displayed Asset Name has no tax entry.
+        A global policy is represented by a TaxRateSetting with both scope
+        foreign keys unset. Legacy family/asset rows remain scoped to the
+        selected family and may only be used as underlying fallbacks.
         """
         asset_ids = {
             asset_id
@@ -1112,18 +1109,39 @@ class MISReportService:
         }
         display_asset_names = {row["asset_name"] for row in rows}
 
-        filters = Q(asset_id__in=asset_ids) | Q(asset__name__in=display_asset_names)
-        settings = TaxRateSetting.objects.filter(
-            family=family
-        ).filter(filters).select_related("asset").order_by("-updated_at", "-id")
+        global_settings = (
+            TaxRateSetting.objects
+            .filter(
+                family__isnull=True,
+                asset__isnull=True,
+                asset_name__in=display_asset_names,
+            )
+            .order_by("-updated_at", "-id")
+        )
+        legacy_filters = Q(asset_id__in=asset_ids)
+        if display_asset_names:
+            legacy_filters |= Q(asset__name__in=display_asset_names)
+        legacy_settings = (
+            TaxRateSetting.objects
+            .filter(family=family)
+            .filter(legacy_filters)
+            .select_related("asset")
+            .order_by("-updated_at", "-id")
+        )
 
         by_asset_id = {}
-        by_asset_name = {}
-        for setting in settings:
-            by_asset_id.setdefault(setting.asset_id, setting)
-            by_asset_name.setdefault(setting.asset.name, setting)
+        by_display_name = {}
+        by_underlying_name = {}
+        for setting in global_settings:
+            by_display_name.setdefault(setting.asset_name, setting)
 
-        return by_asset_id, by_asset_name
+        for setting in legacy_settings:
+            if setting.asset_id:
+                by_asset_id.setdefault(setting.asset_id, setting)
+                if setting.asset and setting.asset.name:
+                    by_underlying_name.setdefault(setting.asset.name, setting)
+
+        return by_asset_id, by_display_name, by_underlying_name
 
     @classmethod
     def _build_tax_row(cls, row, data_row, as_of, period_start, tax_settings):
@@ -2352,7 +2370,7 @@ class MISReportService:
         # Tax Report uses the same valuation rows as the Data Sheet, but it also
         # includes rows with a transaction in the selected period when the
         # position was fully exited. This preserves realized FIFO P/L/tax.
-        tax_settings_by_id, tax_settings_by_name = cls._tax_settings(family, rows)
+        tax_settings_by_id, tax_settings_by_name, underlying_tax_settings_by_name = cls._tax_settings(family, rows)
         data_row_by_key = {
             (row["family_name"], row["sub_class"], row["asset_name"]): row
             for row in all_data_rows
@@ -2407,7 +2425,7 @@ class MISReportService:
                 else:
                     position_id = getattr(tx, "scheme_id", None)
                     position_name = getattr(getattr(tx, "scheme", None), "scheme_name", "")
-                    underlying_setting = tax_settings_by_name.get(position_name) if position_name else None
+                    underlying_setting = underlying_tax_settings_by_name.get(position_name) if position_name else None
 
                 setting = display_name_setting or underlying_setting
                 if position_id is not None:

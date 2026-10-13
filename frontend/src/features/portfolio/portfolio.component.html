@@ -14,11 +14,6 @@
         (change)="onTransactionFileSelected($event)"
       />
 
-      <label class="duplicate-import-option" title="When enabled, identical rows in this file and rows already in PWMS will also be imported.">
-        <input type="checkbox" [(ngModel)]="includeDuplicateTransactions" [disabled]="uploadingTransactions" />
-        <span>Import duplicate transactions</span>
-      </label>
-
       <button
         type="button"
         class="upload-button"
@@ -79,6 +74,16 @@
     </div>
   </div>
 
+
+  <div *ngIf="reviewingDuplicates" class="duplicate-review-backdrop"><section class="duplicate-review-panel"><h2>Checking transactions…</h2><p>Looking for duplicate rows before import.</p></section></div>
+
+  <div *ngIf="showDuplicateReview" class="duplicate-review-backdrop">
+    <section class="duplicate-review-panel" role="dialog" aria-modal="true" aria-labelledby="duplicate-review-title">
+      <div class="duplicate-review-heading"><div><h2 id="duplicate-review-title">Review duplicate transactions</h2><p>{{ duplicateTransactionRows.length }} duplicate row(s) found. Check only the transactions you want to import; unchecked rows will be skipped.</p></div><button type="button" class="refresh-button" (click)="cancelDuplicateReview()">Cancel</button></div>
+      <div class="duplicate-review-table-wrap"><table class="duplicate-review-table"><thead><tr><th>Import</th><th>Excel Row</th><th>Family Member</th><th>Asset Class / Sub Class</th><th>Asset Name</th><th>Date</th><th>Type</th><th>Quantity</th><th>Price</th><th>Amount</th></tr></thead><tbody><tr *ngFor="let row of duplicateTransactionRows"><td><input type="checkbox" [(ngModel)]="row.import" aria-label="Import this duplicate transaction" /></td><td>{{ row.row_number }}</td><td>{{ row.family_name }}</td><td>{{ row.asset_class }} / {{ row.sub_class }}</td><td>{{ row.asset_name }}</td><td>{{ row.transaction_date }}</td><td>{{ row.transaction_type }}</td><td>{{ row.quantity }}</td><td>{{ row.price }}</td><td>{{ row.amount }}</td></tr></tbody></table></div>
+      <div class="duplicate-review-actions"><span>{{ duplicateTransactionRows.length }} duplicates require a decision</span><button type="button" class="refresh-button" (click)="cancelDuplicateReview()">Cancel Upload</button><button type="button" class="upload-button" [disabled]="uploadingTransactions" (click)="importSelectedDuplicates()">Import Selected &amp; Skip Others</button></div>
+    </section>
+  </div>
 
   <div *ngIf="showUnderlyingUpload" class="underlying-upload-panel">
     <div class="underlying-upload-content">

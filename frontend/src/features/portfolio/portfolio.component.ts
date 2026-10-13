@@ -5,7 +5,7 @@ import { Subscription, firstValueFrom, timer } from 'rxjs';
 
 import { PortfolioApiService, PortfolioAssetNode, FamilyNode, PortfolioCalculations, Transaction } from '../../core/services/portfolio-api.service';
 import { ManualPriceService } from '../../core/services/manual-price.service';
-import { InvestmentsApiService } from '../../core/services/investments-api.service';
+import { DuplicateTransactionRow, InvestmentsApiService } from '../../core/services/investments-api.service';
 import { ToastService } from '../../core/services/toast.service';
 import { RbacService } from '../../core/services/rbac.service';
 
@@ -44,7 +44,10 @@ export class PortfolioComponent implements OnInit, OnDestroy {
   savingManualPriceAssetId: number | null = null;
   manualPriceErrors: Record<number, string> = {};
   uploadingTransactions = false;
-  includeDuplicateTransactions = false;
+  pendingTransactionFile: File | null = null;
+  duplicateTransactionRows: Array<DuplicateTransactionRow & { import: boolean }> = [];
+  showDuplicateReview = false;
+  reviewingDuplicates = false;
   showUnderlyingUpload = false;
   selectedUnderlyingAssetId: number | null = null;
   selectedUnderlyingFile: File | null = null;
@@ -104,12 +107,47 @@ export class PortfolioComponent implements OnInit, OnDestroy {
   onTransactionFileSelected(event: Event): void {
     const input = event.target as HTMLInputElement; const file = input.files?.[0]; input.value = '';
     if (!file) return;
-    this.uploadingTransactions = true;
-    const includeDuplicates = this.includeDuplicateTransactions;
-    this.investmentsApi.importTransactions(file, includeDuplicates).subscribe({
-      next: (response) => { this.uploadingTransactions = false; const data = response.data; if (data) this.toast.success(`Imported ${data.total_imported} transaction(s)` + (includeDuplicates ? ' (duplicate import enabled).' : (data.skipped_duplicates ? ` (${data.skipped_duplicates} duplicate(s) skipped).` : '.'))); else this.toast.success(response.message || 'Transactions imported.'); this.loadPortfolio(true); this.cdr.detectChanges(); },
-      error: (error) => { this.uploadingTransactions = false; const message = error?.error?.message || error?.error?.error || 'Unable to import the transaction file.'; this.toast.error(message, 6000); this.cdr.detectChanges(); },
+    this.pendingTransactionFile = file;
+    this.reviewingDuplicates = true;
+    this.investmentsApi.previewTransactionDuplicates(file).subscribe({
+      next: response => {
+        this.reviewingDuplicates = false;
+        const duplicates = response.data?.duplicate_rows ?? [];
+        if (duplicates.length) {
+          this.duplicateTransactionRows = duplicates.map(row => ({ ...row, import: false }));
+          this.showDuplicateReview = true;
+          this.cdr.detectChanges();
+        } else { this.confirmTransactionImport([]); }
+      },
+      error: error => {
+        this.reviewingDuplicates = false; this.pendingTransactionFile = null;
+        this.toast.error(error?.error?.message || 'Unable to review transaction duplicates.', 6000);
+        this.cdr.detectChanges();
+      },
     });
+  }
+
+  confirmTransactionImport(selectedRows: number[]): void {
+    const file = this.pendingTransactionFile;
+    if (!file) return;
+    this.showDuplicateReview = false; this.uploadingTransactions = true;
+    this.investmentsApi.importTransactions(file, selectedRows).subscribe({
+      next: response => {
+        this.uploadingTransactions = false; this.pendingTransactionFile = null;
+        const data = response.data;
+        this.toast.success(data ? `Imported ${data.total_imported} transaction(s)` + (data.skipped_duplicates ? ` (${data.skipped_duplicates} duplicate(s) skipped).` : '.') : (response.message || 'Transactions imported.'));
+        this.duplicateTransactionRows = []; this.loadPortfolio(true); this.cdr.detectChanges();
+      },
+      error: error => { this.uploadingTransactions = false; this.toast.error(error?.error?.message || 'Unable to import the transaction file.', 6000); this.cdr.detectChanges(); },
+    });
+  }
+
+  importSelectedDuplicates(): void {
+    this.confirmTransactionImport(this.duplicateTransactionRows.filter(row => row.import).map(row => row.row_number));
+  }
+
+  cancelDuplicateReview(): void {
+    this.showDuplicateReview = false; this.pendingTransactionFile = null; this.duplicateTransactionRows = [];
   }
 
   get underlyingAssetOptions(): Array<{ id: number; name: string }> {

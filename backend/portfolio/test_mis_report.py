@@ -1605,3 +1605,81 @@ class MISReportAPITests(TestCase):
         self.assertEqual(row["realized_tax"], 200.0)
         self.assertEqual(row["unrealized_pnl"], 200.0)
         self.assertEqual(row["unrealized_tax"], 16.0)
+
+
+    def test_fifo_lots_are_isolated_by_family_member_and_portfolio(self):
+        member_a_buy = Transaction.objects.create(
+            owner=self.user,
+            family=self.family,
+            family_name="Member A",
+            portfolio="Portfolio A",
+            asset_class="Equity",
+            sub_class="Direct Equity",
+            asset_name="Shared Holding",
+            underlying="Shared Holding",
+            advisors="Advisor",
+            asset=self.asset,
+            transaction_date=date(2025, 1, 1),
+            transaction_type="BUY",
+            quantity=Decimal("10"),
+            price_per_unit=Decimal("100"),
+            amount=Decimal("1000"),
+            fees=Decimal("0"),
+        )
+        member_b_buy = Transaction.objects.create(
+            owner=self.user,
+            family=self.family,
+            family_name="Member B",
+            portfolio="Portfolio B",
+            asset_class="Equity",
+            sub_class="Direct Equity",
+            asset_name="Shared Holding",
+            underlying="Shared Holding",
+            advisors="Advisor",
+            asset=self.asset,
+            transaction_date=date(2025, 1, 2),
+            transaction_type="BUY",
+            quantity=Decimal("10"),
+            price_per_unit=Decimal("500"),
+            amount=Decimal("5000"),
+            fees=Decimal("0"),
+        )
+        member_b_sell = Transaction.objects.create(
+            owner=self.user,
+            family=self.family,
+            family_name="Member B",
+            portfolio="Portfolio B",
+            asset_class="Equity",
+            sub_class="Direct Equity",
+            asset_name="Shared Holding",
+            underlying="Shared Holding",
+            advisors="Advisor",
+            asset=self.asset,
+            transaction_date=date(2026, 1, 2),
+            transaction_type="SELL",
+            quantity=Decimal("10"),
+            price_per_unit=Decimal("600"),
+            amount=Decimal("6000"),
+            fees=Decimal("0"),
+        )
+        setting = TaxRateSetting.objects.create(
+            family=self.family,
+            asset=self.asset,
+            tenure_months=12,
+            short_term_tax_rate=Decimal("15"),
+            long_term_tax_rate=Decimal("10"),
+        )
+
+        metrics = MISReportService._fifo_tax_metrics(
+            [member_a_buy, member_b_buy, member_b_sell],
+            "asset",
+            date(2026, 2, 1),
+            date(2026, 1, 1),
+            {self.asset.id: setting},
+            {self.asset.id: Decimal("600")},
+        )
+
+        # Member B's sale must consume B's ₹5,000 lot, not Member A's ₹1,000
+        # lot, even though the database Asset FK is the same.
+        self.assertEqual(metrics["realized_pnl"], Decimal("1000"))
+        self.assertEqual(metrics["realized_tax"], Decimal("100.00"))

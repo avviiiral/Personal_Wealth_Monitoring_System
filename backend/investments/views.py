@@ -49,10 +49,12 @@ def import_transactions(request):
     )
 
     try:
+        include_duplicates = str(request.data.get("include_duplicates", "")).strip().lower() in {"1", "true", "yes", "on"}
         result = TransactionImporter.import_file(
             file=uploaded_file,
             owner=request.user,
             upload_batch=upload,
+            include_duplicates=include_duplicates,
         )
     except PermissionDenied as exc:
         upload.status = "FAILED"

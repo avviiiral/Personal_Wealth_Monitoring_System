@@ -1324,7 +1324,7 @@ class TransactionImporter:
                             amount=parsed["amount"],
                             source_key=source_key,
                         )
-                        if existing is not None and not include_duplicates:
+                        if existing is not None and row_number not in selected_duplicate_rows:
                             skipped_duplicates += 1
                             seen_mutual_fund_keys.add(duplicate_key)
                             continue
@@ -1341,14 +1341,14 @@ class TransactionImporter:
                         imported_mutual_funds += 1
                         continue
 
-                    if source_key in seen_source_keys and not include_duplicates:
+                    if source_key in seen_source_keys and row_number not in selected_duplicate_rows:
                         skipped_duplicates += 1
                         continue
 
                     existing = TransactionImporter._find_existing_investment_transaction(
                         owner=owner, family=family, source_key=source_key,
                     )
-                    if existing is not None and not include_duplicates:
+                    if existing is not None and row_number not in selected_duplicate_rows:
                         skipped_duplicates += 1
                         seen_source_keys.add(source_key)
                         continue

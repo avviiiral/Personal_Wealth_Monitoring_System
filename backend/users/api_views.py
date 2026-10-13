@@ -1,4 +1,7 @@
 from decimal import Decimal, InvalidOperation
+from io import BytesIO
+
+from openpyxl import Workbook, load_workbook
 
 from django.db import IntegrityError
 from django.contrib.auth import get_user_model
@@ -446,6 +449,158 @@ def tax_rate_list(request):
         ),
         status=status.HTTP_201_CREATED if created else status.HTTP_200_OK,
     )
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def tax_rate_template(request):
+    """Download an Excel template for active-family tax policy updates."""
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.title = "Tax Settings"
+    sheet.append(["Asset Name", "Tenure (Months)", "Short Term Tax (%)", "Long Term Tax (%)"])
+    sheet.append(["Example Asset Name", 12, 15, 10])
+    sheet.freeze_panes = "A2"
+    sheet.auto_filter.ref = "A1:D2"
+    for cell in sheet[1]:
+        cell.font = __import__("openpyxl").styles.Font(bold=True)
+    for column, width in {"A": 36, "B": 20, "C": 22, "D": 22}.items():
+        sheet.column_dimensions[column].width = width
+
+    output = BytesIO()
+    workbook.save(output)
+    response = Response(output.getvalue(), content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    response["Content-Disposition"] = 'attachment; filename="pwms_tax_settings_template.xlsx"'
+    return response
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def tax_rate_upload(request):
+    """Validate and atomically upsert tax policies from an Excel workbook."""
+    uploaded_file = request.FILES.get("file")
+    if uploaded_file is None:
+        return Response({"detail": "Upload an .xlsx file using the 'file' field."}, status=status.HTTP_400_BAD_REQUEST)
+    if not uploaded_file.name.lower().endswith(".xlsx"):
+        return Response({"detail": "Only .xlsx files are supported."}, status=status.HTTP_400_BAD_REQUEST)
+
+    family = require_active_family(request.user)
+    try:
+        workbook = load_workbook(BytesIO(uploaded_file.read()), read_only=True, data_only=True)
+    except Exception:
+        return Response({"detail": "The uploaded file is not a valid Excel workbook."}, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        sheet = workbook["Tax Settings"] if "Tax Settings" in workbook.sheetnames else workbook.active
+        rows = sheet.iter_rows(values_only=True)
+        headers = next(rows, None)
+        if not headers:
+            return Response({"detail": "The workbook is empty."}, status=status.HTTP_400_BAD_REQUEST)
+
+        normalize = lambda value: " ".join(str(value or "").strip().casefold().replace("_", " ").split())
+        header_map = {normalize(value): index for index, value in enumerate(headers)}
+        aliases = {
+            "asset_name": {"asset name", "asset"},
+            "tenure_months": {"tenure months", "tenure (months)", "tenure"},
+            "short_term_tax_rate": {"short term tax", "short term tax (%)", "short term tax rate", "stcg rate"},
+            "long_term_tax_rate": {"long term tax", "long term tax (%)", "long term tax rate", "ltcg rate"},
+        }
+        columns = {}
+        for field, choices in aliases.items():
+            index = next((header_map[name] for name in choices if name in header_map), None)
+            if index is None:
+                return Response({"detail": "Required columns: Asset Name, Tenure (Months), Short Term Tax (%), Long Term Tax (%)."}, status=status.HTTP_400_BAD_REQUEST)
+            columns[field] = index
+
+        valid_names = set(
+            Transaction.objects.filter(family=family, asset_name__isnull=False)
+            .exclude(asset_name="")
+            .values_list("asset_name", flat=True)
+            .distinct()
+        )
+        names_casefold = {name.casefold(): name for name in valid_names}
+        parsed = []
+        errors = []
+        seen = set()
+
+        def cell_value(row, field):
+            index = columns[field]
+            return row[index] if index < len(row) else None
+
+        for row_number, values in enumerate(rows, start=2):
+            if not values or not any(value not in (None, "") for value in values):
+                continue
+            raw_name = str(cell_value(values, "asset_name") or "").strip()
+            if raw_name.casefold() == "example asset name":
+                continue
+            if not raw_name:
+                errors.append(f"Row {row_number}: Asset Name is required.")
+                continue
+            canonical_name = names_casefold.get(raw_name.casefold())
+            if canonical_name is None:
+                errors.append(f"Row {row_number}: '{raw_name}' is not an Asset Name in the active family's transactions.")
+                continue
+            key = canonical_name.casefold()
+            if key in seen:
+                errors.append(f"Row {row_number}: duplicate Asset Name '{canonical_name}'.")
+                continue
+            seen.add(key)
+
+            try:
+                tenure_value = cell_value(values, "tenure_months")
+                if tenure_value in (None, ""):
+                    raise ValueError("Tenure is required.")
+                tenure_decimal = Decimal(str(tenure_value))
+                if not tenure_decimal.is_finite() or tenure_decimal != tenure_decimal.to_integral_value() or tenure_decimal < 0:
+                    raise ValueError("Tenure must be a non-negative whole number of months.")
+                tenure = int(tenure_decimal)
+
+                rates = []
+                for field, label in (("short_term_tax_rate", "Short Term Tax"), ("long_term_tax_rate", "Long Term Tax")):
+                    value = cell_value(values, field)
+                    if value in (None, ""):
+                        raise ValueError(f"{label} is required.")
+                    rate = Decimal(str(value).replace("%", "").strip())
+                    if not rate.is_finite() or rate < 0 or rate > 100:
+                        raise ValueError(f"{label} must be between 0 and 100 percent.")
+                    rates.append(rate)
+                parsed.append((canonical_name, tenure, rates[0], rates[1]))
+            except (InvalidOperation, TypeError, ValueError) as exc:
+                errors.append(f"Row {row_number}: {exc}")
+
+        if not parsed and not errors:
+            errors.append("No tax settings rows were found.")
+        if errors:
+            return Response({"detail": "No changes were saved because the file contains validation errors.", "errors": errors[:100], "error_count": len(errors)}, status=status.HTTP_400_BAD_REQUEST)
+
+        saved = 0
+        with transaction.atomic():
+            for asset_name, tenure, short_rate, long_rate in parsed:
+                row = _global_tax_policy_queryset().select_for_update().filter(asset_name=asset_name).first()
+                before = TaxRateSetting.objects.get(pk=row.pk) if row else None
+                if row is None:
+                    row = TaxRateSetting.objects.create(
+                        family=None, asset=None, asset_name=asset_name,
+                        tenure_months=tenure,
+                        short_term_tax_rate=short_rate,
+                        long_term_tax_rate=long_rate,
+                    )
+                else:
+                    row.tenure_months = tenure
+                    row.short_term_tax_rate = short_rate
+                    row.long_term_tax_rate = long_rate
+                    row.save(update_fields=["tenure_months", "short_term_tax_rate", "long_term_tax_rate", "updated_at"])
+
+                representative = Transaction.objects.filter(family=family, asset_name=asset_name).select_related("asset").order_by("id").first()
+                _log_tax_change(request.user, family, representative.asset if representative else None, before, row, asset_name=asset_name)
+                TaxRateSetting.objects.filter(
+                    family__isnull=False, asset__isnull=False, asset_name=asset_name, needs_review=True
+                ).update(needs_review=False, review_reason="")
+                saved += 1
+
+        return Response({"message": "Tax settings uploaded successfully.", "updated_count": saved, "active_family": family.name})
+    finally:
+        workbook.close()
 
 
 @api_view(["PATCH", "DELETE"])

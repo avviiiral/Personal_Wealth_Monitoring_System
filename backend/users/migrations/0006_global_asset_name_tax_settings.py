@@ -169,14 +169,6 @@ class Migration(migrations.Migration):
             promote_unanimous_legacy_policies,
             reverse_global_policy_promotion,
         ),
-        migrations.AddConstraint(
-            model_name="taxratesetting",
-            constraint=models.UniqueConstraint(
-                fields=("asset_name",),
-                condition=models.Q(family__isnull=True, asset__isnull=True),
-                name="unique_global_tax_rate_asset_name",
-            ),
-        ),
         migrations.AlterModelOptions(
             name="taxratesetting",
             options={"ordering": ["asset_name"]},

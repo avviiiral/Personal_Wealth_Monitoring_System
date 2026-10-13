@@ -82,6 +82,8 @@ export class SettingsComponent implements OnInit {
   taxRateLoading = false;
   taxRateSavingAssetId: number | null = null;
   taxRateError = '';
+  taxRateUploadBusy = false;
+  taxRateUploadMessage = '';
 
   taxUpdateHistory: TaxRateChangeLog[] = [];
   taxUpdateLoading = false;
@@ -233,6 +235,64 @@ export class SettingsComponent implements OnInit {
         this.taxRateLoading = false;
         this.taxRateError =
           error?.error?.detail || 'Unable to load tax settings for the active family.';
+        this.cdr.detectChanges();
+      },
+    });
+  }
+
+  downloadTaxSettingsTemplate(): void {
+    this.taxRateError = '';
+    this.taxRateUploadMessage = '';
+    this.settingsApi.downloadTaxRateTemplate().subscribe({
+      next: (blob) => {
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = 'pwms_tax_settings_template.xlsx';
+        link.click();
+        URL.revokeObjectURL(url);
+      },
+      error: (error) => {
+        this.taxRateError = error?.error?.detail || 'Unable to download the tax settings template.';
+        this.cdr.detectChanges();
+      },
+    });
+  }
+
+  uploadTaxSettingsFromEvent(event: Event): void {
+    const input = event.target as HTMLInputElement;
+    const file = input.files?.[0];
+    input.value = '';
+    if (!file) return;
+    if (!file.name.toLowerCase().endsWith('.xlsx')) {
+      this.taxRateError = 'Please select an .xlsx Excel file.';
+      this.taxRateUploadMessage = '';
+      return;
+    }
+    if (this.taxRateUploadBusy) return;
+
+    this.taxRateUploadBusy = true;
+    this.taxRateError = '';
+    this.taxRateUploadMessage = '';
+    this.settingsApi.uploadTaxRateSettings(file).subscribe({
+      next: (response) => {
+        this.taxRateUploadBusy = false;
+        this.taxRateUploadMessage = `${response.message} ${response.updated_count} asset(s) updated.`;
+        this.loadTaxRateSettings();
+        if (this.activeTab === 'logs' && this.activeLogTab === 'tax-updates') {
+          this.loadTaxUpdateHistory();
+        }
+        this.cdr.detectChanges();
+      },
+      error: (error) => {
+        this.taxRateUploadBusy = false;
+        const detail = error?.error?.detail;
+        const errors = error?.error?.errors;
+        this.taxRateError = Array.isArray(errors)
+          ? [Array.isArray(detail) ? detail.join(' ') : detail, ...errors].filter(Boolean).join(' ')
+          : Array.isArray(detail)
+            ? detail.join(' ')
+            : detail || 'Unable to upload tax settings.';
         this.cdr.detectChanges();
       },
     });

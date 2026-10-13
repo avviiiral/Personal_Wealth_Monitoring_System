@@ -2,6 +2,7 @@ from django.urls import path
 
 from .views import (
     import_transactions,
+    preview_transaction_duplicates,
     transaction_upload_history,
     transaction_upload_detail,
     transaction_underlyings,
@@ -12,6 +13,8 @@ from .views import (
 
 
 urlpatterns = [
+    path("import/preview/", preview_transaction_duplicates, name="preview-transaction-duplicates"),
+
     path(
         "import/",
         import_transactions,

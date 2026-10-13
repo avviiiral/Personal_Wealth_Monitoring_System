@@ -54,7 +54,7 @@
             </select>
           </div>
 
-          <div class="filter-field" *ngIf="['sub-class-holdings','sub-class-xirr','asset-name-xirr'].includes(selectedReport)">
+          <div class="filter-field" *ngIf="['sub-class-holdings','sub-class-xirr','asset-name-xirr','capital-gain'].includes(selectedReport)">
             <label>Sub Class</label>
             <select [(ngModel)]="selectedSubClass" (ngModelChange)="onSubClassChange()">
               <option value="">All Sub Classes</option>
@@ -62,7 +62,7 @@
             </select>
           </div>
 
-          <div class="filter-field" *ngIf="['asset-name-xirr'].includes(selectedReport)">
+          <div class="filter-field" *ngIf="['asset-name-xirr','capital-gain'].includes(selectedReport)">
             <label>Asset Name</label>
             <select [(ngModel)]="selectedAssetName">
               <option value="">All Asset Names</option>
@@ -70,12 +70,12 @@
             </select>
           </div>
 
-          <div class="filter-field" *ngIf="selectedReport === 'portfolio-detailed'">
+          <div class="filter-field" *ngIf="selectedReport === 'portfolio-detailed' || selectedReport === 'capital-gain'">
             <label>From Date</label>
             <input type="date" [(ngModel)]="fromDate">
           </div>
 
-          <div class="filter-field" *ngIf="selectedReport === 'portfolio-detailed'">
+          <div class="filter-field" *ngIf="selectedReport === 'portfolio-detailed' || selectedReport === 'capital-gain'">
             <label>To Date</label>
             <input type="date" [(ngModel)]="toDate">
           </div>

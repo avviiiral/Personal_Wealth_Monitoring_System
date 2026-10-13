@@ -1002,6 +1002,16 @@ class MISReportService:
         def position_key(tx):
             return getattr(tx, "scheme_id", None) if kind == "mutual_fund" else getattr(tx, "asset_id", None)
 
+        def inventory_key(tx):
+            # A shared MIS row can contain transactions for multiple family
+            # members and portfolios. Tax lots must not cross those ownership
+            # boundaries even when the underlying Asset/Scheme FK is shared.
+            return (
+                position_key(tx),
+                str(getattr(tx, "family_name", "") or "").strip().casefold(),
+                str(getattr(tx, "portfolio", "") or "").strip().casefold(),
+            )
+
         def setting_for_position(position_id):
             if isinstance(tax_setting, dict):
                 return tax_setting.get(position_id)
@@ -1011,6 +1021,7 @@ class MISReportService:
             qty = Decimal(str(getattr(tx, "quantity", getattr(tx, "units", 0)) or 0))
             amount = Decimal(str(tx.amount or 0))
             key = position_key(tx)
+            inventory = inventory_key(tx)
 
             if kind == "mutual_fund":
                 is_buy = tx.transaction_type in ("PURCHASE", "SIP")
@@ -1022,6 +1033,7 @@ class MISReportService:
             if is_buy and qty > 0:
                 lots.append({
                     "position_key": key,
+                    "inventory_key": inventory,
                     "remaining_qty": qty,
                     "unit_cost": amount / qty if amount else cls.ZERO,
                     "acquired_on": tx.transaction_date,
@@ -1031,6 +1043,7 @@ class MISReportService:
             if kind == "asset" and tx.transaction_type in (TransactionType.BONUS, TransactionType.SPLIT) and qty > 0:
                 lots.append({
                     "position_key": key,
+                    "inventory_key": inventory,
                     "remaining_qty": qty,
                     "unit_cost": cls.ZERO,
                     "acquired_on": tx.transaction_date,
@@ -1048,7 +1061,7 @@ class MISReportService:
                 lot_index = next(
                     (
                         index for index, candidate in enumerate(lots)
-                        if candidate["position_key"] == key and candidate["remaining_qty"] > 0
+                        if candidate["inventory_key"] == inventory and candidate["remaining_qty"] > 0
                     ),
                     None,
                 )

@@ -535,7 +535,8 @@ class MISReportService:
         be resolved from the AMFI identity carried by the asset/security master.
         No fund-specific names, ISINs or NAVs are assumed.
         """
-        key = (asset.id, as_of)
+        # Namespace cache entries: Asset IDs and scheme IDs can overlap.
+        key = ("asset_mf_nav", asset.id, as_of)
         if key in cache:
             return cache[key]
 
@@ -616,7 +617,8 @@ class MISReportService:
         MIS report generation remains database-only; historical data is expected
         to be populated by the background refresh/prefetch pipeline.
         """
-        key = (scheme_id, as_of)
+        # Keep scheme NAV entries separate from legacy Asset-backed NAV entries.
+        key = ("scheme_mf_nav", scheme_id, as_of)
         if key in cache:
             return cache[key]
 

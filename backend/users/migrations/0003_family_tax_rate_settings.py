@@ -63,6 +63,10 @@ class Migration(migrations.Migration):
     ]
 
     operations = [
+        migrations.RemoveConstraint(
+            model_name="taxratesetting",
+            name="unique_user_tax_rate_asset_name",
+        ),
         migrations.AddField(
             model_name="taxratesetting",
             name="asset",

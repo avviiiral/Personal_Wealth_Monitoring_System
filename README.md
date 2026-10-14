@@ -1573,3 +1573,8 @@ Released under a **proprietary license** — see [`License.md`](./License.md).
 [⬆ Back to top](#-personal-wealth-monitoring-system)
 
 </div>
+
+
+## News Agent intelligence audit
+
+The News Agent's source architecture and current limitations are documented in the code and operational notes. See [News Agent Intelligence Audit](docs/NEWS_AGENT_INTELLIGENCE_AUDIT.md) for verified findings, the event-deduplication fixes, regression coverage, and validation commands.

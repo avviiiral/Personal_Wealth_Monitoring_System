@@ -14,6 +14,7 @@
       "order"
     ],
     "max_queries_per_holding": 15,
+    "allow_sector_context": false,
     "max_underlying_queries_per_holding": 5,
     "min_symbol_length_for_standalone_query": 3,
     "sector_query_template": "Indian {sector} sector",

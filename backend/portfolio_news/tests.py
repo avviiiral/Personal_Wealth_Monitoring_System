@@ -673,6 +673,9 @@ from portfolio_news.services.holdings_registry import (
     get_monitored_holdings,
     MonitoredHolding,
 )
+import unittest.mock as _mock
+
+from config.pwms_config import CONFIG as _PWMS_CONFIG
 from portfolio_news.services.holding_matcher import HoldingMatcher
 from portfolio_news.services.query_builder import QueryBuilder
 
@@ -1134,16 +1137,22 @@ class HoldingMatcherTests(TestCase):
             sector="Banking",
         )
 
-        # No mention of "HDFC Bank" anywhere - a genuine sector
-        # story, which is the whole point of this fallback path.
-        self.assertTrue(
-            HoldingMatcher.is_relevant(
-                "Indian banking sector sees record credit growth",
-                "Analysts say the banking sector is expanding.",
-                banking_holding,
-                matched_query="Indian Banking sector",
-            )
+        # No mention of "HDFC Bank" anywhere - a genuine sector story.
+        # Hidden by default; accepted only when sector context is enabled.
+        args = (
+            "Indian banking sector sees record credit growth",
+            "Analysts say the banking sector is expanding.",
+            banking_holding,
         )
+
+        self.assertFalse(
+            HoldingMatcher.is_relevant(*args, matched_query="Indian Banking sector")
+        )
+
+        with _mock.patch.dict(_PWMS_CONFIG["news"], {"allow_sector_context": True}):
+            self.assertTrue(
+                HoldingMatcher.is_relevant(*args, matched_query="Indian Banking sector")
+            )
 
     def test_macro_query_article_matches_via_topic_term(self):
         banking_holding = MonitoredHolding(
@@ -1154,14 +1163,12 @@ class HoldingMatcherTests(TestCase):
             sector="Banking",
         )
 
-        self.assertTrue(
-            HoldingMatcher.is_relevant(
-                "RBI raises repo rate by 25 basis points",
-                "",
-                banking_holding,
-                matched_query="RBI",
-            )
-        )
+        args = ("RBI raises repo rate by 25 basis points", "", banking_holding)
+
+        self.assertFalse(HoldingMatcher.is_relevant(*args, matched_query="RBI"))
+
+        with _mock.patch.dict(_PWMS_CONFIG["news"], {"allow_sector_context": True}):
+            self.assertTrue(HoldingMatcher.is_relevant(*args, matched_query="RBI"))
 
     def test_sector_query_without_sector_or_topic_mention_rejected(
         self,

@@ -2,6 +2,8 @@ import re
 
 from typing import List
 
+from config.pwms_config import get as get_pwms_config
+
 from .holdings_registry import MonitoredHolding
 from .query_builder import QueryBuilder
 
@@ -100,8 +102,13 @@ class HoldingMatcher:
                     best = max(best, 75)
 
         searchable = _build_searchable_text(title, description)
-        if matched_query and holding.sector and QueryBuilder.is_sector_or_macro_query(
-            matched_query, holding
+        # Sector/macro stories that never name the holding are only accepted
+        # when sector context is explicitly enabled (news.allow_sector_context).
+        if (
+            get_pwms_config("news", "allow_sector_context", False)
+            and matched_query
+            and holding.sector
+            and QueryBuilder.is_sector_or_macro_query(matched_query, holding)
         ):
             if holding.sector.lower() in searchable or matched_query.lower() in searchable:
                 best = max(best, 50)

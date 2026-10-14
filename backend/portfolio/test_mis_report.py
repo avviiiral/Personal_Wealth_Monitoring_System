@@ -1797,3 +1797,37 @@ class MISReportAPITests(TestCase):
         self.assertEqual(metrics["realized_tax"], Decimal("35.00"))
         # Five remaining units retain the fee-inclusive ₹101 cost basis.
         self.assertEqual(metrics["unrealized_pnl"], Decimal("195"))
+
+    def test_fifo_holding_months_use_calendar_month_end_anniversaries(self):
+        # Jan 31 to the last day of February is one completed month, including
+        # leap years. This classification is shared by tax tenure thresholds.
+        self.assertEqual(
+            MISReportService._holding_months(date(2025, 1, 31), date(2025, 2, 28)),
+            1,
+        )
+        self.assertEqual(
+            MISReportService._holding_months(date(2024, 1, 31), date(2024, 2, 29)),
+            1,
+        )
+        self.assertEqual(
+            MISReportService._holding_months(date(2025, 1, 31), date(2025, 3, 30)),
+            1,
+        )
+        self.assertEqual(
+            MISReportService._holding_months(date(2025, 1, 31), date(2025, 3, 31)),
+            2,
+        )
+
+        setting = TaxRateSetting(
+            tenure_months=1,
+            short_term_tax_rate=Decimal("15"),
+            long_term_tax_rate=Decimal("10"),
+        )
+        self.assertEqual(
+            MISReportService._tax_rate_for_lot(
+                {"acquired_on": date(2025, 1, 31)},
+                setting,
+                date(2025, 2, 28),
+            ),
+            Decimal("0.10"),
+        )

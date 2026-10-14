@@ -496,13 +496,6 @@ class PortfolioTreeService:
         filters = {key: str(value).strip() for key, value in (xirr_filters or {}).items() if value}
         xirr_transactions = [tx for tx in transactions if cls._matches_xirr_filters(tx, filters)]
 
-        # Use the latest transaction date as the stable terminal date when
-        # the caller has not supplied a valuation date, otherwise identical
-        # transaction sets can show different XIRRs solely because the page
-        # was refreshed on a different day. Production requests use today's
-        # date explicitly through valuation_date.
-        valuation_date = date.today()
-
         tree = {}
         grouped = {}
         xirr_grouped = {}

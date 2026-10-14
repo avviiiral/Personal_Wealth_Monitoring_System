@@ -491,11 +491,14 @@ class PortfolioTreeService:
         }
 
     @classmethod
-    def build(cls, owner, xirr_filters=None, family_id=None):
+    def build(cls, owner, xirr_filters=None, family_id=None, valuation_date=None):
         owner_ids = [owner.pk] if hasattr(owner, "pk") else list(owner)
         transactions = list(cls._get_transactions(owner_ids, family_id=family_id))
         filters = {key: str(value).strip() for key, value in (xirr_filters or {}).items() if value}
         xirr_transactions = [tx for tx in transactions if cls._matches_xirr_filters(tx, filters)]
+        # Capture a single local valuation date for every node in this tree.
+        # This keeps parent and child XIRRs consistent even across midnight.
+        valuation_date = valuation_date or timezone.localdate()
 
         tree = {}
         grouped = {}
@@ -620,6 +623,7 @@ class PortfolioTreeService:
                 txs,
                 asset_name_quantities.get(key, Decimal("0")),
                 asset_name_terminal_values.get(key),
+                valuation_date=valuation_date,
             )
             for key, txs in asset_name_xirr_grouped.items()
         }
@@ -628,6 +632,7 @@ class PortfolioTreeService:
                 txs,
                 sub_class_quantities.get(key, Decimal("0")),
                 sub_class_terminal_values.get(key),
+                valuation_date=valuation_date,
             )
             for key, txs in sub_class_xirr_grouped.items()
         }
@@ -644,6 +649,7 @@ class PortfolioTreeService:
                 asset_name_xirr=asset_name_xirr_values.get(strategy_key),
                 sub_class_xirr=sub_class_xirr_values.get(sub_class_key),
                 price_cache=price_cache,
+                valuation_date=valuation_date,
                 security_master_cache=security_master_cache,
             )
             if asset_data["quantity"] <= 0:

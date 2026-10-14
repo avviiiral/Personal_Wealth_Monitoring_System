@@ -1686,6 +1686,65 @@ class MISReportAPITests(TestCase):
 
 
 
+    def test_split_additional_quantity_preserves_fifo_cost_basis_and_acquisition_date(self):
+        common = {
+            "owner": self.user,
+            "family": self.family,
+            "family_name": "Member Split",
+            "portfolio": "Direct Equity",
+            "asset_class": "Equity",
+            "sub_class": "Direct Equity",
+            "asset_name": "MIS Equity",
+            "asset": self.asset,
+        }
+        buy = Transaction.objects.create(
+            **common,
+            transaction_date=date(2025, 1, 1),
+            transaction_type="BUY",
+            quantity=Decimal("10"),
+            price_per_unit=Decimal("100"),
+            amount=Decimal("1000"),
+            fees=Decimal("0"),
+        )
+        split = Transaction.objects.create(
+            **common,
+            transaction_date=date(2026, 1, 1),
+            transaction_type="SPLIT",
+            quantity=Decimal("10"),
+            price_per_unit=Decimal("0"),
+            amount=Decimal("0"),
+            fees=Decimal("0"),
+        )
+        sell = Transaction.objects.create(
+            **common,
+            transaction_date=date(2026, 2, 1),
+            transaction_type="SELL",
+            quantity=Decimal("5"),
+            price_per_unit=Decimal("60"),
+            amount=Decimal("300"),
+            fees=Decimal("0"),
+        )
+
+        metrics = MISReportService._fifo_tax_metrics(
+            [buy, split, sell],
+            "asset",
+            date(2026, 2, 28),
+            date(2026, 1, 1),
+            {self.asset.id: None},
+            {self.asset.id: Decimal("60")},
+        )
+
+        # The 10 additional shares double the original lot quantity and halve
+        # unit cost; they do not become a zero-cost lot with a new acquisition date.
+        self.assertEqual(metrics["realized_pnl"], Decimal("50"))
+        self.assertEqual(metrics["unrealized_pnl"], Decimal("150"))
+        position_quantity, invested = MISReportService._position_at(
+            [buy, split, sell],
+            date(2026, 2, 28),
+        )
+        self.assertEqual(position_quantity, Decimal("15"))
+        self.assertEqual(invested, Decimal("750"))
+
     def test_fifo_tax_metrics_include_buy_and_sell_fees(self):
         common = {
             "owner": self.user,

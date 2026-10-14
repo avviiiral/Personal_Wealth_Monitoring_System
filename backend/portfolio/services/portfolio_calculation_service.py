@@ -42,14 +42,18 @@ class PortfolioCalculationService:
         return True
 
     @classmethod
-    def _xirr(cls, transactions, assets, family=None, asset_class=None, advisor=None):
-        if not transactions:
+    def _xirr(
+        cls, transactions, assets, family=None, asset_class=None, advisor=None,
+        valuation_date=None,
+    ):
+        """Calculate XIRR from precisely the transactions represented by assets.
+
+        Matching the whole holding key prevents similarly named positions in
+        different portfolios or families from leaking into this aggregate.
+        """
+        if not transactions or not assets:
             return None
 
-        # An asset can appear in more than one portfolio-tree node (for
-        # example, the same security held by two families). Match transactions
-        # to the full node scope rather than asset_id alone, so one node cannot
-        # absorb another node's flows.
         asset_scope_keys = {
             (
                 item["family_name"],
@@ -82,29 +86,23 @@ class PortfolioCalculationService:
         if not selected_transactions:
             return None
 
-        # Do not deduplicate by asset_id: separate tree nodes are separate
-        # positions for aggregation purposes, even when they reference one
-        # shared Asset record.
         quantity = sum(
             (cls._number(item["asset"].get("quantity")) for item in assets),
             Decimal("0"),
         )
-        # Use the displayed terminal value for every position. Unpriced assets
-        # are intentionally carried at cost by PortfolioTreeService, so excluding
-        # them here would make aggregate XIRR inconsistent with the UI totals.
         current_value = sum(
             (cls._number(item["asset"].get("current_value")) for item in assets),
             Decimal("0"),
         )
-
         return PortfolioTreeService._calculate_xirr(
             selected_transactions,
             quantity,
             current_value if quantity > 0 and current_value > 0 else None,
+            valuation_date=valuation_date,
         )
 
     @classmethod
-    def _row(cls, group_key, assets, transactions, family_filter=None, asset_class_filter=None, advisor_filter=None):
+    def _row(cls, group_key, assets, transactions, family_filter=None, asset_class_filter=None, advisor_filter=None, valuation_date=None):
         quantity = sum(
             (cls._number(item["asset"].get("quantity")) for item in assets),
             Decimal("0"),
@@ -130,6 +128,7 @@ class PortfolioCalculationService:
                 family=group_key.get("family_name") or family_filter,
                 asset_class=group_key.get("asset_class") or asset_class_filter,
                 advisor=advisor_filter,
+                valuation_date=valuation_date,
             ),
         }
 
@@ -142,14 +141,17 @@ class PortfolioCalculationService:
         asset_class=None,
         advisor=None,
         tree=None,
+        valuation_date=None,
     ):
         # Build the complete authoritative asset tree first. Filtering here
         # selects already-calculated positions; it never reconstructs a
         # position from a filtered transaction subset.
+        valuation_date = valuation_date or PortfolioTreeService._valuation_date()
         tree = tree or PortfolioTreeService.build(
             owner=owner,
             family_id=family_id,
             xirr_filters={},
+            valuation_date=valuation_date,
         )
         rows = [
             row for row in cls._asset_rows(tree)
@@ -175,13 +177,13 @@ class PortfolioCalculationService:
             report_subclass_groups[(row["family_name"], row["asset_class"], row["sub_class"])].append(row)
 
         subclasses = [
-            cls._row({"sub_class": key}, group, transactions, family_filter=family, asset_class_filter=asset_class, advisor_filter=advisor)
+            cls._row({"sub_class": key}, group, transactions, family_filter=family, asset_class_filter=asset_class, advisor_filter=advisor, valuation_date=valuation_date)
             for key, group in subclass_groups.items()
         ]
         subclasses.sort(key=lambda item: item["sub_class"].casefold())
 
         asset_classes = [
-            cls._row({"asset_class": key}, group, transactions, family_filter=family, advisor_filter=advisor)
+            cls._row({"asset_class": key}, group, transactions, family_filter=family, advisor_filter=advisor, valuation_date=valuation_date)
             for key, group in asset_class_groups.items()
         ]
         asset_classes.sort(key=lambda item: item["asset_class"].casefold())
@@ -201,6 +203,7 @@ class PortfolioCalculationService:
                 family_filter=family,
                 asset_class_filter=asset_class,
                 advisor_filter=advisor,
+                valuation_date=valuation_date,
             )
             for key, group in asset_name_groups.items()
         ]
@@ -213,6 +216,7 @@ class PortfolioCalculationService:
                 {"family_name": key[0], "sub_class": key[1]},
                 group,
                 transactions,
+                valuation_date=valuation_date,
             )
             for key, group in family_subclass_groups.items()
         ]
@@ -229,6 +233,7 @@ class PortfolioCalculationService:
                 },
                 group,
                 transactions,
+                valuation_date=valuation_date,
             )
             for key, group in report_subclass_groups.items()
         ]

@@ -556,14 +556,14 @@ class PortfolioCalculationServiceTests(TestCase):
             sub_class="Large Cap",
             asset_name="Calculation Equity",
         ))
+        # Both the active and fully sold positions contribute their dated
+        # cash flows, but only the active position contributes terminal value.
+        # The active holding in this fixture retains 10 units valued at 1,000.
         expected = PortfolioTreeService._calculate_xirr(
             all_strategy_transactions,
-            Decimal("20"),
-            Decimal("2000"),
+            Decimal("10"),
+            Decimal("1000"),
         )
-        # The original active position and sold holding's complete flows are
-        # included in XIRR while only the active position contributes terminal
-        # value. The exact expected terminal value above is its displayed value.
         self.assertAlmostEqual(strategy["xirr"], expected, places=6)
 
     def test_asset_class_summary_aggregates_subclasses_and_terminal_values(self):

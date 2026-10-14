@@ -523,8 +523,11 @@ class PortfolioTreeService:
 
             # Underlying XIRR follows the exact Portfolio holding hierarchy.
             xirr_grouped.setdefault((family, portfolio, asset_class, sub_class, tx.asset_id), []).append(tx)
-            # Asset Name XIRR intentionally ignores family/portfolio/asset-class boundaries.
-            asset_name_xirr_grouped.setdefault((sub_class, asset_name), []).append(tx)
+            # Strategy/asset-name XIRR is scoped to the complete hierarchy
+            # identity. Matching only by subclass + display name can mix
+            # separate portfolios or family members with the same strategy name.
+            strategy_key = (family, portfolio, asset_class, sub_class, asset_name)
+            asset_name_xirr_grouped.setdefault(strategy_key, []).append(tx)
             sub_class_xirr_grouped.setdefault(sub_class, []).append(tx)
 
         asset_ids = {tx.asset_id for tx in transactions}
@@ -583,11 +586,11 @@ class PortfolioTreeService:
         for (family, portfolio, asset_class, sub_class, asset_id), asset_transactions in filtered_grouped.items():
             first = asset_transactions[0]
             asset_name = cls._clean(first.asset_name)
-            asset_name_key = (sub_class, asset_name)
-            sub_class_key = sub_class
+            strategy_key = (family, portfolio, asset_class, sub_class, asset_name)
+            sub_class_key = (family, portfolio, asset_class, sub_class)
             position = cls._calculate_position(asset_transactions)
             quantity = position["quantity"]
-            asset_name_quantities[asset_name_key] = asset_name_quantities.get(asset_name_key, Decimal("0")) + quantity
+            asset_name_quantities[strategy_key] = asset_name_quantities.get(strategy_key, Decimal("0")) + quantity
             sub_class_quantities[sub_class_key] = sub_class_quantities.get(sub_class_key, Decimal("0")) + quantity
             current_price = price_cache.get(asset_id, {}).get("current_price")
             if quantity > 0:
@@ -599,8 +602,8 @@ class PortfolioTreeService:
                     if current_price is not None
                     else position["invested_value"]
                 )
-                asset_name_terminal_values[asset_name_key] = (
-                    asset_name_terminal_values.get(asset_name_key, Decimal("0")) + current_value
+                asset_name_terminal_values[strategy_key] = (
+                    asset_name_terminal_values.get(strategy_key, Decimal("0")) + current_value
                 )
                 # Subclass and strategy (asset-name) XIRR must both use
                 # the displayed terminal values, including cost fallbacks for
@@ -630,12 +633,12 @@ class PortfolioTreeService:
             first = asset_transactions[0]
             xirr_key = (family, portfolio, asset_class, sub_class, asset_id)
             asset_name = cls._clean(first.asset_name)
-            asset_name_key = (sub_class, asset_name)
-            sub_class_key = sub_class
+            strategy_key = (family, portfolio, asset_class, sub_class, asset_name)
+            sub_class_key = (family, portfolio, asset_class, sub_class)
             asset_data = cls._build_asset(
                 transactions=asset_transactions,
                 xirr_transactions=xirr_grouped.get(xirr_key, []),
-                asset_name_xirr=asset_name_xirr_values.get(asset_name_key),
+                asset_name_xirr=asset_name_xirr_values.get(strategy_key),
                 sub_class_xirr=sub_class_xirr_values.get(sub_class_key),
                 price_cache=price_cache,
                 security_master_cache=security_master_cache,

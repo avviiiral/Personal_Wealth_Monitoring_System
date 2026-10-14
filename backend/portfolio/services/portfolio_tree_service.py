@@ -3,6 +3,7 @@ from datetime import date, timedelta
 from decimal import Decimal
 
 from django.db.models import OuterRef, QuerySet, Subquery, Q
+from django.utils import timezone
 
 from investments.models import Asset, SecurityMaster, Transaction, TransactionType
 from investments.services.security_master import SecurityMasterService
@@ -116,7 +117,7 @@ class PortfolioTreeService:
     @staticmethod
     def _calculate_xirr(transactions, current_quantity, current_value, valuation_date=None):
         cash_flows = build_cash_flows(transactions)
-        terminal_date = valuation_date or date.today()
+        terminal_date = valuation_date or timezone.localdate()
         if current_quantity > 0 and current_value is not None and current_value > 0:
             cash_flows.append((terminal_date, float(current_value)))
         return xirr_percent(cash_flows)

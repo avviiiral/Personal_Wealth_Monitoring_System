@@ -47,21 +47,27 @@ class PortfolioCalculationService:
         valuation_date=None,
         asset_name=None,
     ):
-        """Calculate XIRR from precisely the transactions represented by assets.
+        """Calculate an aggregate XIRR from all transactions in its true scope.
 
-        Matching the whole holding key prevents similarly named positions in
-        different portfolios or families from leaking into this aggregate.
+        Visible tree nodes contain only positions with a positive remaining
+        quantity. Therefore, use their holding keys to identify relevant
+        hierarchy scopes, then select transactions by hierarchy and labels
+        rather than requiring every historical transaction to map to a
+        currently visible asset row. This preserves dated flows for fully
+        sold positions while avoiding unrelated strategies/families.
         """
         if not transactions or not assets:
             return None
 
+        # Scope by the actual named portfolio hierarchy. Historical asset IDs
+        # are not used as a membership test: a fully sold position is absent
+        # from the tree but its buys and sells are still part of strategy XIRR.
         asset_scope_keys = {
             (
                 item["family_name"],
                 item["portfolio"],
                 item["asset_class"],
                 item["sub_class"],
-                item["asset"].get("id"),
             )
             for item in assets
         }
@@ -72,7 +78,6 @@ class PortfolioCalculationService:
                 (tx.portfolio or "").strip() or "Unassigned",
                 (tx.asset_class or "").strip() or "Unassigned",
                 (tx.sub_class or "").strip() or "Unassigned",
-                tx.asset_id,
             )
             if tx_scope_key not in asset_scope_keys:
                 continue

@@ -115,7 +115,9 @@ describe('PortfolioComponent', () => {
 
                         xirr: 20,
                         sub_class_xirr: 20,
-                        asset_name_xirr: 20,
+                        // Deliberately family-scoped to prove the aggregate
+                        // asset-name summary takes precedence in grouped rows.
+                        asset_name_xirr: -3.96,
 
                         sector: 'Technology',
                         cap_type: 'Large Cap',
@@ -457,7 +459,17 @@ describe('PortfolioComponent', () => {
   // XIRR
   // ==========================================================
 
-  it('should calculate subclass weighted XIRR', () => {
+  it('should use the asset-name summary XIRR instead of a family-scoped tree metric', () => {
+    const groups = component.getAssetGroups(
+      component.subClassSummaries[0].assets,
+      'Large Cap::Test Equity',
+    );
+
+    expect(groups).toHaveLength(1);
+    expect(groups[0].xirr).toBe(20);
+  });
+
+  it('should expose the calculated subclass XIRR', () => {
     const summary = component.subClassSummaries[0];
 
     expect(summary.xirr).toBe(20);

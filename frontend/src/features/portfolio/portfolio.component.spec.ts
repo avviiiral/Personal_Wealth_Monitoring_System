@@ -37,6 +37,17 @@ describe('PortfolioComponent', () => {
     // Keep the fixture aligned with the API's calculated summaries.
     // The component reads subclass totals and XIRR from this payload.
     calculations: {
+      asset_classes: [
+        {
+          asset_class: 'Equity',
+          sub_class: 'Large Cap',
+          quantity: 10,
+          invested_value: 1000,
+          current_value: 1200,
+          pnl: 200,
+          xirr: 20,
+        },
+      ],
       subclasses: [
         {
           sub_class: 'Large Cap',

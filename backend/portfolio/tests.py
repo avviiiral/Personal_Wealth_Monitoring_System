@@ -487,6 +487,85 @@ class PortfolioCalculationServiceTests(TestCase):
             ),
         )
 
+    def test_asset_name_summary_includes_fully_sold_strategy_cash_flows(self):
+        # This position is fully sold and omitted from the visible tree, but
+        # its dated buy/sell flows must remain in the strategy's XIRR.
+        sold_asset = Asset.objects.create(
+            family=self.family,
+            owner=self.user,
+            name="Sold Strategy Holding",
+            category="STOCK",
+            isin="INE000SOLD001",
+        )
+        Transaction.objects.create(
+            owner=self.user,
+            family=self.family,
+            asset=sold_asset,
+            family_name="Family A",
+            portfolio="Portfolio A",
+            asset_class="Equity",
+            sub_class="Large Cap",
+            asset_name="Calculation Equity",
+            transaction_date=date(2026, 1, 1),
+            transaction_type="BUY",
+            quantity=Decimal("10"),
+            price_per_unit=Decimal("100"),
+            amount=Decimal("1000"),
+            fees=Decimal("0"),
+        )
+        Transaction.objects.create(
+            owner=self.user,
+            family=self.family,
+            asset=sold_asset,
+            family_name="Family A",
+            portfolio="Portfolio A",
+            asset_class="Equity",
+            sub_class="Large Cap",
+            asset_name="Calculation Equity",
+            transaction_date=date(2026, 6, 1),
+            transaction_type="SELL",
+            quantity=Decimal("10"),
+            price_per_unit=Decimal("110"),
+            amount=Decimal("1100"),
+            fees=Decimal("0"),
+        )
+
+        tree = PortfolioTreeService.build(
+            owner=self.user,
+            family_id=self.family.id,
+        )
+        self.assertFalse(any(
+            asset["id"] == sold_asset.id
+            for family in tree["families"]
+            for portfolio in family["portfolios"]
+            for asset_class in portfolio["asset_classes"]
+            for sub_class in asset_class["sub_classes"]
+            for asset in sub_class["assets"]
+        ))
+        data = PortfolioCalculationService.calculate(
+            owner=self.user,
+            family_id=self.family.id,
+            tree=tree,
+        )
+        strategy = next(
+            row for row in data["asset_names"]
+            if row["asset_name"] == "Calculation Equity"
+        )
+        all_strategy_transactions = list(Transaction.objects.filter(
+            family=self.family,
+            sub_class="Large Cap",
+            asset_name="Calculation Equity",
+        ))
+        expected = PortfolioTreeService._calculate_xirr(
+            all_strategy_transactions,
+            Decimal("20"),
+            Decimal("2000"),
+        )
+        # The original active position and sold holding's complete flows are
+        # included in XIRR while only the active position contributes terminal
+        # value. The exact expected terminal value above is its displayed value.
+        self.assertAlmostEqual(strategy["xirr"], expected, places=6)
+
     def test_asset_class_summary_aggregates_subclasses_and_terminal_values(self):
         second_asset = Asset.objects.create(
             family=self.family,

@@ -33,6 +33,17 @@ import sys
 
 
 def should_start_background_schedulers():
+    # pytest does not necessarily invoke manage.py, so the manage.py
+    # command guard below cannot identify its process. AppConfig.ready()
+    # runs while Django initializes under pytest; starting daemon
+    # schedulers there races test database setup/teardown and leaves
+    # threads using pytest's closed output streams.
+    if (
+        "pytest" in sys.modules
+        or os.environ.get("PYTEST_CURRENT_TEST")
+        or os.environ.get("PYTEST_VERSION")
+    ):
+        return False
 
     argv = sys.argv
 

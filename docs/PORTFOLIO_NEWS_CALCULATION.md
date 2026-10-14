@@ -1170,3 +1170,13 @@ Corporate filings add a dedicated deterministic filing-classification layer befo
 
 The central objective is to prioritize **the news that matters most to the actual portfolio**, rather than simply ranking news by how dramatic a headline looks.
 
+
+---
+
+# Relevance gating and explanations (rule-based analyzer)
+
+- **Word-boundary matching.** Keyword rules match whole words (with simple endings such as "fined"), so "fine" no longer matches "refinery" and "eps" no longer matches "steps".
+- **Negation.** A risk or sentiment phrase preceded within three words by "no", "not", "denies", "without" and similar is ignored (e.g. "denies fraud claims").
+- **Relevance requires naming the holding.** An article is relevant only if its headline/snippet names the holding (name, alias, symbol, ISIN or AMC) or, for funds, a disclosed underlying stock. Stories that do not are scored below the relevance threshold and kept hidden.
+- **Sector/macro context is off by default.** Set `news.allow_sector_context` to `true` (in `pwms_config.json`, or via `PWMS_CONFIG_OVERRIDES='{"news":{"allow_sector_context":true}}'`) to show sector and macro stories that never name the holding. The matcher accepts them at score 50 only when this is enabled.
+- **Portfolio-aware explanation.** `reason`, `portfolio_implication` and `interpretation` now state why the article was selected, the holding's share of the portfolio and its value, and a category-specific consequence. Fund exposure through an underlying stock is labelled an indirect estimate based on the last disclosed holdings.

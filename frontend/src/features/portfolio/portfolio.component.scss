@@ -1059,3 +1059,34 @@
 .duplicate-review-actions { justify-content: flex-end; flex-wrap: wrap; }
 .duplicate-review-actions span { margin-right: auto; color: var(--muted); font-size: 12px; }
 @media (max-width: 700px) { .duplicate-review-backdrop { padding: 8px; } .duplicate-review-panel { padding: 14px; max-height: 95vh; } .duplicate-review-heading { align-items: flex-start; } }
+
+
+/* Asset-class-level XIRR summary. */
+
+.asset-class-xirr-section {
+  margin: 0 0 18px;
+  padding: 18px;
+  background: var(--surface);
+  border: 1px solid var(--surface-line);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+
+  h2 { margin: 0 0 4px; font-size: 15px; color: var(--ink); }
+  > p { margin: 0 0 14px; color: var(--muted); font-size: 12px; }
+}
+.asset-class-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+}
+.asset-class-summary-card {
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid var(--surface-line);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+}
+.asset-class-summary-name { font-size: 13px; font-weight: 700; margin-bottom: 10px; color: var(--ink); }
+.asset-class-summary-values { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 12px; }
+.asset-class-summary-values span { display: flex; flex-direction: column; gap: 3px; color: var(--muted); font-size: 11px; }
+.asset-class-summary-values strong { color: var(--ink); font-size: 13px; font-weight: 700; }

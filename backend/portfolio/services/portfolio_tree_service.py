@@ -441,6 +441,7 @@ class PortfolioTreeService:
             xirr_transactions,
             quantity,
             current_value,
+            valuation_date=valuation_date,
         )
         security_master = getattr(asset, "security_master", None)
         if security_master is None and security_master_cache is not None:

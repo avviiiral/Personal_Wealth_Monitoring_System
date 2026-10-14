@@ -45,6 +45,7 @@ class PortfolioCalculationService:
     def _xirr(
         cls, transactions, assets, family=None, asset_class=None, advisor=None,
         valuation_date=None,
+        asset_name=None,
     ):
         """Calculate XIRR from precisely the transactions represented by assets.
 
@@ -80,6 +81,8 @@ class PortfolioCalculationService:
             if asset_class and tx_scope_key[2] != asset_class:
                 continue
             if advisor and (tx.advisors or "").strip() != advisor:
+                continue
+            if asset_name and ((tx.asset_name or "").strip() or "Unassigned") != asset_name:
                 continue
             selected_transactions.append(tx)
 
@@ -129,6 +132,7 @@ class PortfolioCalculationService:
                 asset_class=group_key.get("asset_class") or asset_class_filter,
                 advisor=advisor_filter,
                 valuation_date=valuation_date,
+                asset_name=group_key.get("asset_name"),
             ),
         }
 

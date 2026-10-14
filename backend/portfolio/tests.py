@@ -437,6 +437,56 @@ class PortfolioCalculationServiceTests(TestCase):
         self.assertEqual(data["family_subclasses"][0]["family_name"], "Family A")
         self.assertEqual(data["family_subclasses"][0]["sub_class"], "Large Cap")
 
+    def test_asset_name_summary_scopes_cash_flows_to_strategy_name(self):
+        other_strategy = Transaction.objects.create(
+            owner=self.user,
+            family=self.family,
+            asset=self.asset,
+            family_name="Family A",
+            portfolio="Portfolio A",
+            asset_class="Equity",
+            sub_class="Large Cap",
+            asset_name="Unrelated Strategy",
+            transaction_date=date(2026, 2, 10),
+            transaction_type="BUY",
+            quantity=Decimal("10"),
+            price_per_unit=Decimal("100"),
+            amount=Decimal("1000"),
+            fees=Decimal("0"),
+        )
+        tree = PortfolioTreeService.build(
+            owner=self.user,
+            family_id=self.family.id,
+        )
+        data = PortfolioCalculationService.calculate(
+            owner=self.user,
+            family_id=self.family.id,
+            tree=tree,
+        )
+        strategy = next(
+            row for row in data["asset_names"]
+            if row["asset_name"] == "Calculation Equity"
+        )
+        original_strategy = Transaction.objects.get(
+            family=self.family,
+            asset=self.asset,
+            asset_name="Calculation Equity",
+        )
+        expected = PortfolioTreeService._calculate_xirr(
+            [original_strategy],
+            Decimal("20"),
+            Decimal("2000"),
+        )
+        self.assertEqual(strategy["xirr"], expected)
+        self.assertNotEqual(
+            strategy["xirr"],
+            PortfolioTreeService._calculate_xirr(
+                [original_strategy, other_strategy],
+                Decimal("20"),
+                Decimal("2000"),
+            ),
+        )
+
     def test_asset_class_summary_aggregates_subclasses_and_terminal_values(self):
         second_asset = Asset.objects.create(
             family=self.family,

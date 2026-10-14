@@ -267,6 +267,40 @@ class PortfolioTreeServiceTests(TestCase):
 
 
 class PortfolioCalculationServiceTests(TestCase):
+    def setUp(self):
+        User = get_user_model()
+        self.user = User.objects.create_user(
+            username="portfolio_calculation_user",
+            password="test-password",
+        )
+        self.family = FamilyGroup.objects.create(name="Portfolio Calculation Family")
+        self.user.profile.family_groups.add(self.family)
+
+        self.asset = Asset.objects.create(
+            family=self.family,
+            owner=self.user,
+            name="Calculation Equity",
+            category="STOCK",
+            isin="INE000CALC001",
+        )
+        Transaction.objects.create(
+            owner=self.user,
+            family=self.family,
+            asset=self.asset,
+            family_name="Family A",
+            portfolio="Portfolio A",
+            asset_class="Equity",
+            sub_class="Large Cap",
+            asset_name="Calculation Equity",
+            transaction_date=date(2026, 1, 10),
+            transaction_type="BUY",
+            quantity=Decimal("10"),
+            price_per_unit=Decimal("100"),
+            amount=Decimal("1000"),
+            fees=Decimal("0"),
+        )
+
+class PortfolioCalculationServiceTests(TestCase):
     def test_strategy_xirr_does_not_mix_same_name_across_portfolios(self):
         from portfolio.services.portfolio_tree_service import PortfolioTreeService
 
@@ -343,38 +377,6 @@ class PortfolioCalculationServiceTests(TestCase):
         self.assertIsNotNone(earlier)
         self.assertNotEqual(expected, earlier)
 
-    def setUp(self):
-        User = get_user_model()
-        self.user = User.objects.create_user(
-            username="portfolio_calculation_user",
-            password="test-password",
-        )
-        self.family = FamilyGroup.objects.create(name="Portfolio Calculation Family")
-        self.user.profile.family_groups.add(self.family)
-
-        self.asset = Asset.objects.create(
-            family=self.family,
-            owner=self.user,
-            name="Calculation Equity",
-            category="STOCK",
-            isin="INE000CALC001",
-        )
-        Transaction.objects.create(
-            owner=self.user,
-            family=self.family,
-            asset=self.asset,
-            family_name="Family A",
-            portfolio="Portfolio A",
-            asset_class="Equity",
-            sub_class="Large Cap",
-            asset_name="Calculation Equity",
-            transaction_date=date(2026, 1, 10),
-            transaction_type="BUY",
-            quantity=Decimal("10"),
-            price_per_unit=Decimal("100"),
-            amount=Decimal("1000"),
-            fees=Decimal("0"),
-        )
 
     def test_calculations_are_aggregated_server_side(self):
         data = PortfolioCalculationService.calculate(

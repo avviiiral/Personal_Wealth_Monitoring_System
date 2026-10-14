@@ -72,6 +72,14 @@ def _entity_tokens(candidate: NewsArticleResult) -> set[str]:
     )
 
 
+def _event_subject_tokens(title: str, family: str) -> set[str]:
+    """Extract headline tokens beyond generic wording for event-family matching."""
+    value = (title or "").lower()
+    for phrase in _EVENT_FAMILIES.get(family, ()):
+        value = value.replace(phrase, " ")
+    return _meaningful_entity_tokens(value)
+
+
 
 _TRACKING_QUERY_KEYS = {
     "fbclid", "gclid", "dclid", "msclkid", "mc_cid", "mc_eid",
@@ -259,7 +267,18 @@ class ArticleDeduplicator:
             # for one holding. It is useful as context, but by itself it is
             # not enough to collapse generic headlines such as "First alert
             # article" and "Second alert article".
-            if len(candidate_title_entities & article_title_entities) >= 2:
+            shared_entities = candidate_title_entities & article_title_entities
+            candidate_family = _event_family(candidate.title)
+            article_family = _event_family(article.normalized_title)
+            if candidate_family and candidate_family == article_family:
+                candidate_subject = _event_subject_tokens(candidate.title, candidate_family)
+                article_subject = _event_subject_tokens(article.normalized_title, article_family)
+                # For acquisition/merger-like events, a different specific target
+                # indicates a different transaction even when company and event
+                # wording overlap. Avoid merging ABC acquisition with DEF.
+                if candidate_subject and article_subject and not (candidate_subject & article_subject):
+                    continue
+            if len(shared_entities) >= 2:
                 return article
 
         candidate_family = _event_family(candidate.title)
@@ -271,7 +290,12 @@ class ArticleDeduplicator:
                 article_title_entities = _meaningful_entity_tokens(
                     article.normalized_title,
                 )
-                if len(candidate_title_entities & article_title_entities) >= 2:
+                shared_entities = candidate_title_entities & article_title_entities
+                candidate_subject = _event_subject_tokens(candidate.title, candidate_family)
+                article_subject = _event_subject_tokens(article.normalized_title, candidate_family)
+                if candidate_subject and article_subject and not (candidate_subject & article_subject):
+                    continue
+                if len(shared_entities) >= 2:
                     return article
 
         return None

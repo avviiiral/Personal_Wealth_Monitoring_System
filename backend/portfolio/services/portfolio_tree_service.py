@@ -528,7 +528,8 @@ class PortfolioTreeService:
             # separate portfolios or family members with the same strategy name.
             strategy_key = (family, portfolio, asset_class, sub_class, asset_name)
             asset_name_xirr_grouped.setdefault(strategy_key, []).append(tx)
-            sub_class_xirr_grouped.setdefault(sub_class, []).append(tx)
+            sub_class_key = (family, portfolio, asset_class, sub_class)
+            sub_class_xirr_grouped.setdefault(sub_class_key, []).append(tx)
 
         asset_ids = {tx.asset_id for tx in transactions}
         assets_by_id = {}

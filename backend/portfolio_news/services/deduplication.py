@@ -251,7 +251,7 @@ class ArticleDeduplicator:
             }
             # Fuzzy similarity alone is too broad for generic headlines such
             # as "First alert article" and "Second alert article". Require at
-            # least one meaningful entity token in common before treating two
+            # least two meaningful headline tokens in common before treating two
             # different headlines as the same event.
             candidate_title_entities = _meaningful_entity_tokens(candidate.title)
             article_title_entities = _meaningful_entity_tokens(article.normalized_title)
@@ -259,7 +259,7 @@ class ArticleDeduplicator:
             # for one holding. It is useful as context, but by itself it is
             # not enough to collapse generic headlines such as "First alert
             # article" and "Second alert article".
-            if candidate_title_entities & article_title_entities:
+            if len(candidate_title_entities & article_title_entities) >= 2:
                 return article
 
         candidate_family = _event_family(candidate.title)

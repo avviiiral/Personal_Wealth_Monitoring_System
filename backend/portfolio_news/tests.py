@@ -3200,3 +3200,46 @@ class PortfolioNewsPipelineTests(TestCase):
 
         self.assertEqual(analyzer.call_count, 2)
         self.assertEqual(PortfolioNewsAlert.objects.count(), 2)
+
+
+class NewsAgentIntelligenceRegressionTests(TestCase):
+    def _candidate(self, title, url, source="Reuters"):
+        return NewsArticleResult(
+            title=title, url=url, source=source, description=title,
+            published_at=datetime(2026, 8, 24, 9, 0, tzinfo=timezone.utc),
+            matched_query="XYZ",
+        )
+
+    def test_tracking_parameters_and_fragments_do_not_create_new_source(self):
+        from portfolio_news.services.deduplication import normalize_url
+        first = "HTTPS://News.Example.com/story/?utm_source=feed&id=42&gclid=abc#section"
+        second = "https://news.example.com/story?id=42&utm_medium=email"
+        self.assertEqual(normalize_url(first), normalize_url(second))
+        self.assertEqual(compute_url_hash(first), compute_url_hash(second))
+
+    def test_same_company_event_family_does_not_merge_different_acquisitions(self):
+        first, created_first = store_article(self._candidate(
+            "XYZ approves acquisition of ABC",
+            "https://news.example.com/acquisition-abc",
+        ))
+        second, created_second = store_article(self._candidate(
+            "XYZ approves acquisition of DEF",
+            "https://news.example.com/acquisition-def", "Economic Times",
+        ))
+        self.assertTrue(created_first)
+        self.assertTrue(created_second)
+        self.assertNotEqual(first.id, second.id)
+        self.assertEqual(NewsArticle.objects.count(), 2)
+
+    def test_same_event_with_two_shared_entities_still_clusters(self):
+        first, created_first = store_article(self._candidate(
+            "XYZ approves acquisition of ABC",
+            "https://news.example.com/acquisition-abc-1",
+        ))
+        second, created_second = store_article(self._candidate(
+            "XYZ to acquire ABC",
+            "https://news.example.com/acquisition-abc-2", "Economic Times",
+        ))
+        self.assertTrue(created_first)
+        self.assertFalse(created_second)
+        self.assertEqual(first.id, second.id)

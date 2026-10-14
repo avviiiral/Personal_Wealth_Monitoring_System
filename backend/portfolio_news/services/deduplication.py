@@ -1,5 +1,6 @@
 import hashlib
 import re
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from datetime import timedelta
 
@@ -72,8 +73,50 @@ def _entity_tokens(candidate: NewsArticleResult) -> set[str]:
 
 
 
+_TRACKING_QUERY_KEYS = {
+    "fbclid", "gclid", "dclid", "msclkid", "mc_cid", "mc_eid",
+    "igshid", "ref", "ref_src",
+}
+
+
+def normalize_url(url: str) -> str:
+    """Normalize harmless URL variants without changing the stored source URL."""
+    value = (url or "").strip()
+    if not value:
+        return ""
+    try:
+        parts = urlsplit(value)
+        if not parts.scheme or not parts.netloc:
+            return value
+        hostname = (parts.hostname or "").lower()
+        if not hostname:
+            return value
+        try:
+            port = parts.port
+        except ValueError:
+            return value
+        if ":" in hostname and not hostname.startswith("["):
+            hostname = f"[{hostname}]"
+        netloc = hostname
+        if port and not ((parts.scheme.lower() == "http" and port == 80)
+                         or (parts.scheme.lower() == "https" and port == 443)):
+            netloc = f"{netloc}:{port}"
+        query_items = []
+        for key, item_value in parse_qsl(parts.query, keep_blank_values=True):
+            lowered = key.lower()
+            if lowered.startswith("utm_") or lowered in _TRACKING_QUERY_KEYS:
+                continue
+            query_items.append((key, item_value))
+        query_items.sort(key=lambda pair: (pair[0].lower(), pair[1]))
+        path = parts.path.rstrip("/") or "/"
+        return urlunsplit((parts.scheme.lower(), netloc, path,
+                           urlencode(query_items, doseq=True), ""))
+    except (TypeError, ValueError):
+        return value
+
+
 def compute_url_hash(url: str) -> str:
-    return hashlib.sha256(url.strip().encode("utf-8")).hexdigest()
+    return hashlib.sha256(normalize_url(url).encode("utf-8")).hexdigest()
 
 
 def compute_fingerprint(
@@ -208,7 +251,7 @@ class ArticleDeduplicator:
             }
             # Fuzzy similarity alone is too broad for generic headlines such
             # as "First alert article" and "Second alert article". Require at
-            # least one meaningful entity token in common before treating two
+            # least two meaningful headline tokens in common before treating two
             # different headlines as the same event.
             candidate_title_entities = _meaningful_entity_tokens(candidate.title)
             article_title_entities = _meaningful_entity_tokens(article.normalized_title)
@@ -216,7 +259,7 @@ class ArticleDeduplicator:
             # for one holding. It is useful as context, but by itself it is
             # not enough to collapse generic headlines such as "First alert
             # article" and "Second alert article".
-            if candidate_title_entities & article_title_entities:
+            if len(candidate_title_entities & article_title_entities) >= 2:
                 return article
 
         candidate_family = _event_family(candidate.title)
@@ -228,7 +271,7 @@ class ArticleDeduplicator:
                 article_title_entities = _meaningful_entity_tokens(
                     article.normalized_title,
                 )
-                if candidate_title_entities & article_title_entities:
+                if len(candidate_title_entities & article_title_entities) >= 2:
                     return article
 
         return None

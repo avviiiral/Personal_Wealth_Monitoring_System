@@ -89,12 +89,11 @@ class PortfolioCalculationService:
             (cls._number(item["asset"].get("quantity")) for item in assets),
             Decimal("0"),
         )
+        # Use the displayed terminal value for every position. Unpriced assets
+        # are intentionally carried at cost by PortfolioTreeService, so excluding
+        # them here would make aggregate XIRR inconsistent with the UI totals.
         current_value = sum(
-            (
-                cls._number(item["asset"].get("current_value"))
-                for item in assets
-                if item["asset"].get("current_price") is not None
-            ),
+            (cls._number(item["asset"].get("current_value")) for item in assets),
             Decimal("0"),
         )
 
@@ -163,12 +162,14 @@ class PortfolioCalculationService:
         )
 
         subclass_groups = defaultdict(list)
+        asset_class_groups = defaultdict(list)
         asset_name_groups = defaultdict(list)
         family_subclass_groups = defaultdict(list)
         report_subclass_groups = defaultdict(list)
 
         for row in rows:
             subclass_groups[row["sub_class"]].append(row)
+            asset_class_groups[row["asset_class"]].append(row)
             asset_name_groups[(row["sub_class"], row["asset"].get("asset_name") or "Unassigned")].append(row)
             family_subclass_groups[(row["family_name"], row["sub_class"])].append(row)
             report_subclass_groups[(row["family_name"], row["asset_class"], row["sub_class"])].append(row)
@@ -178,6 +179,12 @@ class PortfolioCalculationService:
             for key, group in subclass_groups.items()
         ]
         subclasses.sort(key=lambda item: item["sub_class"].casefold())
+
+        asset_classes = [
+            cls._row({"asset_class": key}, group, transactions, family_filter=family, advisor_filter=advisor)
+            for key, group in asset_class_groups.items()
+        ]
+        asset_classes.sort(key=lambda item: item["asset_class"].casefold())
 
         asset_names = [
             cls._row(
@@ -235,6 +242,7 @@ class PortfolioCalculationService:
 
         return {
             "subclasses": subclasses,
+            "asset_classes": asset_classes,
             "asset_names": asset_names,
             "family_subclasses": family_subclasses,
             "report_subclass_summaries": report_subclass_summaries,

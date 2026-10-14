@@ -321,6 +321,52 @@ class PortfolioCalculationServiceTests(TestCase):
         self.assertEqual(data["family_subclasses"][0]["family_name"], "Family A")
         self.assertEqual(data["family_subclasses"][0]["sub_class"], "Large Cap")
 
+    def test_asset_class_summary_aggregates_subclasses_and_terminal_values(self):
+        second_asset = Asset.objects.create(
+            family=self.family,
+            owner=self.user,
+            name="Calculation Debt",
+            category="BOND",
+            isin="INE000CALC002",
+        )
+        Transaction.objects.create(
+            owner=self.user,
+            family=self.family,
+            asset=second_asset,
+            family_name="Family A",
+            portfolio="Portfolio A",
+            asset_class="Equity",
+            sub_class="Small Cap",
+            asset_name="Calculation Debt",
+            transaction_date=date(2026, 2, 10),
+            transaction_type="BUY",
+            quantity=Decimal("5"),
+            price_per_unit=Decimal("100"),
+            amount=Decimal("500"),
+            fees=Decimal("0"),
+        )
+
+        data = PortfolioCalculationService.calculate(
+            owner=self.user,
+            family_id=self.family.id,
+        )
+
+        equity = next(row for row in data["asset_classes"] if row["asset_class"] == "Equity")
+        transactions = list(
+            Transaction.objects.filter(family=self.family, asset_class="Equity")
+            .order_by("transaction_date", "id")
+        )
+        expected_xirr = PortfolioTreeService._calculate_xirr(
+            transactions,
+            Decimal("15"),
+            Decimal("1500"),
+        )
+
+        self.assertEqual(equity["quantity"], 15.0)
+        self.assertEqual(equity["invested_value"], 1500.0)
+        self.assertEqual(equity["current_value"], 1500.0)
+        self.assertEqual(equity["xirr"], expected_xirr)
+
     def test_aggregate_xirr_scopes_cash_flows_and_values_to_tree_positions(self):
         Transaction.objects.create(
             owner=self.user,

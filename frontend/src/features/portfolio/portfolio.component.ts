@@ -9,6 +9,7 @@ import { DuplicateTransactionRow, InvestmentsApiService } from '../../core/servi
 import { ToastService } from '../../core/services/toast.service';
 import { RbacService } from '../../core/services/rbac.service';
 
+interface AssetClassSummary { asset_class: string; current_value: number; invested_value: number; pnl: number; quantity: number; xirr: number | null; }
 interface SubClassSummary { sub_class: string; current_value: number; invested_value: number; pnl: number; quantity: number; xirr: number | null; assets: PortfolioAssetNode[]; }
 interface AssetGroup { asset_name: string; family_name: string; quantity: number; invested_value: number; current_value: number; pnl: number; xirr: number | null; assets: PortfolioAssetNode[]; }
 type PortfolioSortColumn = 'sub_class' | 'asset_name' | 'family_name' | 'underlying' | 'family' | 'isin' | 'quantity' | 'invested_value' | 'invested' | 'current_price' | 'current_value' | 'pnl' | 'xirr';
@@ -26,7 +27,7 @@ export class PortfolioComponent implements OnInit, OnDestroy {
   private refreshSubscription: Subscription | null = null;
   families: FamilyNode[] = [];
   private transactionAssetClassRows: Pick<Transaction, 'family_name' | 'asset_class'>[] = [];
-  portfolioCalculations: PortfolioCalculations = { subclasses: [], asset_names: [], family_subclasses: [], report_subclass_summaries: [] };
+  portfolioCalculations: PortfolioCalculations = { subclasses: [], asset_classes: [], asset_names: [], family_subclasses: [], report_subclass_summaries: [] };
   selectedFamilyMember = '';
   selectedAssetClass = '';
   selectedAdvisor = '';
@@ -63,7 +64,7 @@ export class PortfolioComponent implements OnInit, OnDestroy {
   loadPortfolio(silent = false): void {
     if (!silent) { this.loading = true; this.error = ''; }
     this.portfolioApi.getPortfolioTree({ family: this.selectedFamilyMember, asset_class: this.selectedAssetClass, advisor: this.selectedAdvisor }).subscribe({
-      next: (response) => { this.families = response.families ?? []; this.portfolioCalculations = response.calculations ?? { subclasses: [], asset_names: [], family_subclasses: [], report_subclass_summaries: [] }; this.validateSelections(); this.loading = false; this.cdr.detectChanges(); },
+      next: (response) => { this.families = response.families ?? []; this.portfolioCalculations = response.calculations ?? { subclasses: [], asset_classes: [], asset_names: [], family_subclasses: [], report_subclass_summaries: [] }; this.validateSelections(); this.loading = false; this.cdr.detectChanges(); },
       error: (error) => { console.error('Portfolio API error:', error); this.loading = false; this.error = error?.status === 401 || error?.status === 403 ? 'Authentication failed. Please log in again.' : 'Unable to load portfolio data.'; this.cdr.detectChanges(); },
     });
   }
@@ -293,6 +294,35 @@ export class PortfolioComponent implements OnInit, OnDestroy {
     return Array.from(advisors).sort((a, b) => a.localeCompare(b));
   }
   get filteredFamilies(): FamilyNode[] { return this.selectedFamilyMember ? this.families.filter((family) => family.family_name === this.selectedFamilyMember) : this.families; }
+
+  get assetClassSummaries(): AssetClassSummary[] {
+    const summaryMap = new Map<string, AssetClassSummary>();
+    for (const family of this.filteredFamilies) {
+      for (const portfolio of family.portfolios) {
+        for (const assetClass of portfolio.asset_classes) {
+          const filteredAssets = assetClass.sub_classes.flatMap((subClass) =>
+            subClass.assets.filter((asset) => !this.selectedAdvisor || asset.advisors?.trim() === this.selectedAdvisor),
+          );
+          if (!filteredAssets.length) continue;
+          const key = assetClass.asset_class || 'Unassigned';
+          if (!summaryMap.has(key)) {
+            summaryMap.set(key, { asset_class: key, quantity: 0, invested_value: 0, current_value: 0, pnl: 0, xirr: null });
+          }
+        }
+      }
+    }
+    return Array.from(summaryMap.values()).map((summary) => {
+      const calculated = this.portfolioCalculations.asset_classes.find((row) => row.asset_class === summary.asset_class);
+      return {
+        ...summary,
+        quantity: calculated?.quantity ?? 0,
+        invested_value: calculated?.invested_value ?? 0,
+        current_value: calculated?.current_value ?? 0,
+        pnl: calculated?.pnl ?? 0,
+        xirr: calculated?.xirr ?? null,
+      };
+    }).sort((left, right) => left.asset_class.localeCompare(right.asset_class));
+  }
 
   get subClassSummaries(): SubClassSummary[] {
     const summaryMap = new Map<string, SubClassSummary>();

@@ -707,6 +707,24 @@ export class DownloadsComponent implements OnInit {
         continue;
       }
 
+      if (type === 'SPLIT') {
+        // Imported SPLIT quantity means additional shares received. Increase
+        // each open FIFO lot proportionally; preserve its acquisition date and
+        // total cost basis instead of creating a zero-cost acquisition lot.
+        const existingQuantity = inventory.reduce(
+          (total, lot) => total + Math.max(0, lot.remaining_quantity),
+          0,
+        );
+        if (existingQuantity > 0) {
+          const splitFactor = (existingQuantity + quantity) / existingQuantity;
+          for (const lot of inventory) {
+            lot.remaining_quantity *= splitFactor;
+            lot.unit_cost /= splitFactor;
+          }
+        }
+        continue;
+      }
+
       if (type === 'BONUS') {
         // Bonus units are tracked as a zero-cost lot from the bonus allotment date.
         inventory.push({

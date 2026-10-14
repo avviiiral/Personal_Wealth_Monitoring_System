@@ -279,50 +279,19 @@ export class DashboardComponent extends BaseDashboardComponent {
       return [];
     }
 
-    const rowsByKey = new Map<string, {
-      underlying: string;
-      xirr: number;
-      assetClass: string;
-    }>();
-
-    for (const row of this.dashboardPerformance) {
-      if (row.asset_category !== category) {
-        continue;
-      }
-
-      const xirr = Number(row.xirr_percentage);
-      if (!Number.isFinite(xirr)) {
-        continue;
-      }
-
-      const assetName = (row.asset_name || 'Unnamed Asset').trim() || 'Unnamed Asset';
-      const assetClass = (row.asset_class || 'Unassigned').trim() || 'Unassigned';
-      const key = `${assetClass}::${assetName}`;
-
-      if (!rowsByKey.has(key)) {
-        rowsByKey.set(key, {
-          underlying: assetName,
-          xirr,
-          assetClass,
-        });
-      }
-    }
-
-    return Array.from(rowsByKey.values()).sort((a, b) => b.xirr - a.xirr);
-  }
-
-  private hasXirrForSubClass(subClassName: string): boolean {
-    const target = subClassName.trim();
-
-    if (!target) {
-      return false;
-    }
-
-    return this.dashboardPerformance.some(
-      (row) =>
-        (row.asset_class || '').trim() === target &&
-        Number.isFinite(Number(row.xirr_percentage)),
-    );
+    // Match the Portfolio page's Asset Name XIRR exactly by using the
+    // authoritative PortfolioCalculationService.asset_names rows.
+    // dashboard_performance is a different presentation-level dataset
+    // and can report a different XIRR for the same Asset Name.
+    return (this.portfolioCalculations?.asset_names ?? [])
+      .filter((row: any) => this.getAssetCategoryForTreeAssetClass(row.sub_class) === category)
+      .map((row: any) => ({
+        underlying: (row.asset_name || 'Unnamed Asset').trim() || 'Unnamed Asset',
+        xirr: Number(row.xirr),
+        assetClass: (row.sub_class || 'Unassigned').trim() || 'Unassigned',
+      }))
+      .filter((row: { xirr: number }) => Number.isFinite(row.xirr))
+      .sort((a: { xirr: number }, b: { xirr: number }) => b.xirr - a.xirr);
   }
 
 }

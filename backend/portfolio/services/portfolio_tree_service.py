@@ -421,9 +421,9 @@ class PortfolioTreeService:
             else None
         )
 
-        # No reliable price: carry the position at cost (value = invested
-        # amount, P/L = 0) until a price is entered manually. XIRR still sees
-        # ``priced_value`` (None) so no fake terminal cash flow is invented.
+        # No reliable quote: carry the remaining position at cost until a
+        # price is entered. XIRR uses this same displayed terminal value so the
+        # return calculation reconciles with the value shown in the portfolio.
         current_value = priced_value if priced_value is not None else invested_value
         pnl = current_value - invested_value
         pnl_percentage = (
@@ -431,10 +431,14 @@ class PortfolioTreeService:
             if invested_value > Decimal("0")
             else Decimal("0")
         )
+        # Use the displayed terminal value at each level. If no market
+        # quote exists, current_value is the cost fallback shown in the UI.
+        # The terminal amount represents only the remaining quantity; dated
+        # BUY/SELL flows are already included by _calculate_xirr.
         xirr = cls._calculate_xirr(
             xirr_transactions,
             quantity,
-            priced_value,
+            current_value,
         )
         security_master = getattr(asset, "security_master", None)
         if security_master is None and security_master_cache is not None:
@@ -597,12 +601,12 @@ class PortfolioTreeService:
                 asset_name_terminal_values[asset_name_key] = (
                     asset_name_terminal_values.get(asset_name_key, Decimal("0")) + current_value
                 )
-                # Preserve existing subclass logic; only the asset-name
-                # terminal valuation is broadened to include cost fallbacks.
-                if current_price is not None:
-                    sub_class_terminal_values[sub_class_key] = (
-                        sub_class_terminal_values.get(sub_class_key, Decimal("0")) + current_value
-                    )
+                # Subclass and strategy (asset-name) XIRR must both use
+                # the displayed terminal values, including cost fallbacks for
+                # positions that do not yet have a market quote.
+                sub_class_terminal_values[sub_class_key] = (
+                    sub_class_terminal_values.get(sub_class_key, Decimal("0")) + current_value
+                )
 
         asset_name_xirr_values = {
             key: cls._calculate_xirr(

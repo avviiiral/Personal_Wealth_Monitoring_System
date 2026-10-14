@@ -267,39 +267,6 @@ class PortfolioTreeServiceTests(TestCase):
 
 
 class PortfolioCalculationServiceTests(TestCase):
-    def test_xirr_uses_explicit_valuation_date_when_provided(self):
-        from portfolio.services.portfolio_tree_service import PortfolioTreeService
-
-        transaction = Transaction.objects.create(
-            owner=self.user,
-            family=self.family,
-            asset=self.asset,
-            family_name="Family A",
-            portfolio="Portfolio A",
-            asset_class="Equity",
-            sub_class="Equity PMS",
-            asset_name="Carnelian Capital Compounder Strategy",
-            transaction_date=date(2026, 4, 22),
-            transaction_type="BUY",
-            quantity=Decimal("100"),
-            price_per_unit=Decimal("100"),
-            amount=Decimal("10000"),
-            fees=Decimal("0"),
-        )
-        terminal_value = Decimal("12000")
-        expected = PortfolioTreeService._calculate_xirr(
-            [transaction], Decimal("100"), terminal_value,
-            valuation_date=date(2026, 10, 14),
-        )
-        earlier = PortfolioTreeService._calculate_xirr(
-            [transaction], Decimal("100"), terminal_value,
-            valuation_date=date(2026, 9, 13),
-        )
-
-        self.assertIsNotNone(expected)
-        self.assertIsNotNone(earlier)
-        self.assertNotEqual(expected, earlier)
-
     def test_strategy_xirr_does_not_mix_same_name_across_portfolios(self):
         from portfolio.services.portfolio_tree_service import PortfolioTreeService
 
@@ -342,6 +309,39 @@ class PortfolioCalculationServiceTests(TestCase):
 
         self.assertEqual(len(strategy_xirrs), 2)
         self.assertEqual(strategy_xirrs[0], strategy_xirrs[1])
+
+    def test_xirr_uses_explicit_valuation_date_when_provided(self):
+        from portfolio.services.portfolio_tree_service import PortfolioTreeService
+
+        transaction = Transaction.objects.create(
+            owner=self.user,
+            family=self.family,
+            asset=self.asset,
+            family_name="Family A",
+            portfolio="Portfolio A",
+            asset_class="Equity",
+            sub_class="Equity PMS",
+            asset_name="Carnelian Capital Compounder Strategy",
+            transaction_date=date(2026, 4, 22),
+            transaction_type="BUY",
+            quantity=Decimal("100"),
+            price_per_unit=Decimal("100"),
+            amount=Decimal("10000"),
+            fees=Decimal("0"),
+        )
+        terminal_value = Decimal("12000")
+        expected = PortfolioTreeService._calculate_xirr(
+            [transaction], Decimal("100"), terminal_value,
+            valuation_date=date(2026, 10, 14),
+        )
+        earlier = PortfolioTreeService._calculate_xirr(
+            [transaction], Decimal("100"), terminal_value,
+            valuation_date=date(2026, 9, 13),
+        )
+
+        self.assertIsNotNone(expected)
+        self.assertIsNotNone(earlier)
+        self.assertNotEqual(expected, earlier)
 
     def setUp(self):
         User = get_user_model()

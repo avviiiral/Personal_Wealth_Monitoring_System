@@ -585,10 +585,24 @@ class PortfolioTreeService:
             asset_name_quantities[asset_name_key] = asset_name_quantities.get(asset_name_key, Decimal("0")) + quantity
             sub_class_quantities[sub_class_key] = sub_class_quantities.get(sub_class_key, Decimal("0")) + quantity
             current_price = price_cache.get(asset_id, {}).get("current_price")
-            if current_price is not None and quantity > 0:
-                current_value = quantity * Decimal(str(current_price))
-                asset_name_terminal_values[asset_name_key] = asset_name_terminal_values.get(asset_name_key, Decimal("0")) + current_value
-                sub_class_terminal_values[sub_class_key] = sub_class_terminal_values.get(sub_class_key, Decimal("0")) + current_value
+            if quantity > 0:
+                # Asset-name XIRR uses the same terminal valuation as the
+                # displayed portfolio row. If there is no reliable market
+                # quote, that row is carried at invested cost.
+                current_value = (
+                    quantity * Decimal(str(current_price))
+                    if current_price is not None
+                    else position["invested_value"]
+                )
+                asset_name_terminal_values[asset_name_key] = (
+                    asset_name_terminal_values.get(asset_name_key, Decimal("0")) + current_value
+                )
+                # Preserve existing subclass logic; only the asset-name
+                # terminal valuation is broadened to include cost fallbacks.
+                if current_price is not None:
+                    sub_class_terminal_values[sub_class_key] = (
+                        sub_class_terminal_values.get(sub_class_key, Decimal("0")) + current_value
+                    )
 
         asset_name_xirr_values = {
             key: cls._calculate_xirr(

@@ -268,6 +268,24 @@ export class DashboardComponent extends BaseDashboardComponent {
       .map((group) => group.asset_category);
   }
 
+  private hasXirrForSubClass(subClassName: string): boolean {
+    const target = (subClassName || '').trim();
+
+    if (!target) {
+      return false;
+    }
+
+    // Keep category visibility in sync with the authoritative Portfolio
+    // asset-name XIRR rows used by the Dashboard performance table.
+    return (this.portfolioCalculations?.asset_names ?? []).some(
+      (row: any) =>
+        (row.sub_class || '').trim() === target &&
+        row.xirr !== null &&
+        row.xirr !== undefined &&
+        Number.isFinite(Number(row.xirr)),
+    );
+  }
+
   override get selectedXirrRows(): Array<{
     underlying: string;
     xirr: number;

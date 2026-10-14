@@ -386,9 +386,12 @@ export class PortfolioComponent implements OnInit, OnDestroy {
         invested_value: calculated?.invested_value ?? 0,
         current_value: calculated?.current_value ?? 0,
         pnl: calculated?.pnl ?? 0,
-        xirr: groupedAssets.find(
+        // The asset-name summary is the authoritative strategy-level XIRR.
+        // Individual tree rows can carry family-scoped strategy metrics, so
+        // prefer the aggregate summary when multiple family holdings are grouped.
+        xirr: calculated?.xirr ?? groupedAssets.find(
           (asset) => asset.asset_name_xirr !== null && asset.asset_name_xirr !== undefined,
-        )?.asset_name_xirr ?? calculated?.xirr ?? null,
+        )?.asset_name_xirr ?? null,
         assets: groupedAssets,
       };
     });

@@ -947,7 +947,11 @@ class MISReportService:
     @staticmethod
     def _holding_months(acquired_on, disposed_on):
         months = (disposed_on.year - acquired_on.year) * 12 + (disposed_on.month - acquired_on.month)
-        if disposed_on.day < acquired_on.day:
+        # Match calendar-month anniversaries at month end (e.g. Jan 31 to
+        # Feb 28/29 is one completed month). A raw day-of-month comparison
+        # incorrectly classified these lots as short-term for one extra day.
+        anniversary = acquired_on + relativedelta(months=months)
+        if disposed_on < anniversary:
             months -= 1
         return max(months, 0)
 

@@ -211,6 +211,9 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
   dashboardInvestmentSummary: Array<any> = [];
   dashboardPerformance: Array<any> = [];
   portfolioReportSummaries: Array<any> = [];
+  // Authoritative Portfolio-page calculation payload. Dashboard-only
+  // presentation logic can reuse its asset_names XIRR aggregation.
+  portfolioCalculations: any = null;
 
   private wealthChart?: Chart;
   private allocationChart?: Chart;
@@ -412,6 +415,7 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
         this.investmentSummary = data.investment_summary;
         this.dashboardInvestmentSummary = data.dashboard_investment_summary ?? [];
         this.dashboardPerformance = data.dashboard_performance?.results ?? [];
+        this.portfolioCalculations = data.portfolio_calculations ?? null;
         this.portfolioReportSummaries = data.portfolio_calculations?.report_subclass_summaries ?? [];
         this.advisorAllocation = data.advisor_allocation?.results ?? [];
         this.advisorPerformance = data.advisor_performance?.results ?? [];
@@ -460,6 +464,7 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
         this.portfolioTree = null;
         this.dashboardInvestmentSummary = [];
         this.dashboardPerformance = [];
+        this.portfolioCalculations = null;
         this.portfolioReportSummaries = [];
         this.cdr.markForCheck();
       },

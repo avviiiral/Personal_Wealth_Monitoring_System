@@ -386,7 +386,9 @@ export class PortfolioComponent implements OnInit, OnDestroy {
         invested_value: calculated?.invested_value ?? 0,
         current_value: calculated?.current_value ?? 0,
         pnl: calculated?.pnl ?? 0,
-        xirr: calculated?.xirr ?? null,
+        xirr: groupedAssets.find(
+          (asset) => asset.asset_name_xirr !== null && asset.asset_name_xirr !== undefined,
+        )?.asset_name_xirr ?? calculated?.xirr ?? null,
         assets: groupedAssets,
       };
     });

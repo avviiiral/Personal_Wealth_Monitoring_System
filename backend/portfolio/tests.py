@@ -300,6 +300,49 @@ class PortfolioCalculationServiceTests(TestCase):
         self.assertIsNotNone(earlier)
         self.assertNotEqual(expected, earlier)
 
+    def test_strategy_xirr_does_not_mix_same_name_across_portfolios(self):
+        from portfolio.services.portfolio_tree_service import PortfolioTreeService
+
+        second_asset = Asset.objects.create(
+            family=self.family,
+            owner=self.user,
+            name="Carnelian Duplicate Holding",
+            category="STOCK",
+            isin="INE000CARNELIAN2",
+        )
+        Transaction.objects.create(
+            owner=self.user,
+            family=self.family,
+            asset=second_asset,
+            family_name="Family A",
+            portfolio="Different Portfolio",
+            asset_class="Equity",
+            sub_class="Equity PMS",
+            asset_name="Carnelian Capital Compounder Strategy",
+            transaction_date=date(2026, 4, 22),
+            transaction_type="BUY",
+            quantity=Decimal("100"),
+            price_per_unit=Decimal("100"),
+            amount=Decimal("10000"),
+            fees=Decimal("0"),
+        )
+
+        tree = PortfolioTreeService.build(
+            owner=self.user,
+            family_id=self.family.id,
+        )
+        family = tree["families"][0]
+        strategy_xirrs = []
+        for portfolio in family["portfolios"]:
+            for asset_class in portfolio["asset_classes"]:
+                for sub_class in asset_class["sub_classes"]:
+                    for asset in sub_class["assets"]:
+                        if asset["asset_name"] == "Carnelian Capital Compounder Strategy":
+                            strategy_xirrs.append(asset["asset_name_xirr"])
+
+        self.assertEqual(len(strategy_xirrs), 2)
+        self.assertEqual(strategy_xirrs[0], strategy_xirrs[1])
+
     def setUp(self):
         User = get_user_model()
         self.user = User.objects.create_user(

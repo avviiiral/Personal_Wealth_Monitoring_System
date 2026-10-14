@@ -29,6 +29,7 @@ export interface PortfolioCalculationRow {
 }
 export interface PortfolioCalculations {
   subclasses: PortfolioCalculationRow[];
+  asset_classes: Array<PortfolioCalculationRow & { asset_class: string }>;
   asset_names: PortfolioCalculationRow[];
   family_subclasses: PortfolioCalculationRow[];
   report_subclass_summaries: Array<PortfolioCalculationRow & { asset_class: string }>;

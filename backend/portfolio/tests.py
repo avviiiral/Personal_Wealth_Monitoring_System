@@ -361,6 +361,17 @@ class PortfolioCalculationServiceTests(TestCase):
         # the strategy-level XIRR calculated from all constituent positions.
         self.assertEqual(strategy_xirrs[0], strategy_xirrs[1])
 
+        calculations = PortfolioCalculationService.calculate(
+            owner=self.user,
+            family_id=self.family.id,
+            tree=tree,
+        )
+        summary = next(
+            row for row in calculations["asset_names"]
+            if row["asset_name"] == "Carnelian Capital Compounder Strategy"
+        )
+        self.assertEqual(summary["xirr"], strategy_xirrs[0])
+
     def test_xirr_uses_explicit_valuation_date_when_provided(self):
         from portfolio.services.portfolio_tree_service import PortfolioTreeService
 

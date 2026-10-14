@@ -635,8 +635,8 @@ class PortfolioTreeService:
             first = asset_transactions[0]
             xirr_key = (family, portfolio, asset_class, sub_class, asset_id)
             asset_name = cls._clean(first.asset_name)
-            strategy_key = (family, portfolio, asset_class, sub_class, asset_name)
-            sub_class_key = (family, portfolio, asset_class, sub_class)
+            strategy_key = (family, sub_class, asset_name)
+            sub_class_key = (family, sub_class)
             asset_data = cls._build_asset(
                 transactions=asset_transactions,
                 xirr_transactions=xirr_grouped.get(xirr_key, []),

@@ -1047,7 +1047,24 @@ class MISReportService:
                 })
                 continue
 
-            if kind == "asset" and tx.transaction_type in (TransactionType.BONUS, TransactionType.SPLIT) and qty > 0:
+            if kind == "asset" and tx.transaction_type == TransactionType.SPLIT and qty > 0:
+                # Imported SPLIT quantity means the additional shares received.
+                # Reallocate existing open lots proportionally so total cost
+                # basis and acquisition dates survive the split. No new
+                # zero-cost tax lot is created.
+                open_lots = [
+                    lot for lot in lots
+                    if lot["inventory_key"] == inventory and lot["remaining_qty"] > 0
+                ]
+                existing_qty = sum((lot["remaining_qty"] for lot in open_lots), cls.ZERO)
+                if existing_qty > 0:
+                    split_factor = (existing_qty + qty) / existing_qty
+                    for lot in open_lots:
+                        lot["remaining_qty"] *= split_factor
+                        lot["unit_cost"] /= split_factor
+                continue
+
+            if kind == "asset" and tx.transaction_type == TransactionType.BONUS and qty > 0:
                 lots.append({
                     "position_key": key,
                     "inventory_key": inventory,

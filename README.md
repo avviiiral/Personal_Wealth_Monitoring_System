@@ -1578,3 +1578,17 @@ Released under a **proprietary license** — see [`License.md`](./License.md).
 ## News Agent intelligence audit
 
 The News Agent's source architecture and current limitations are documented in the code and operational notes. See [News Agent Intelligence Audit](docs/NEWS_AGENT_INTELLIGENCE_AUDIT.md) for verified findings, the event-deduplication fixes, regression coverage, and validation commands.
+
+### News Agent relevance and event deduplication
+
+The News Agent includes relevance checks intended to prioritize portfolio-related evidence, while retaining clearly labeled sector or macro context where useful. Portfolio-aware explanations connect a story to the affected holding or exposure when the available data supports that connection.
+
+URL normalization and event-specific deduplication reduce duplicate stories from alternate URL forms without treating generic action words as sufficient evidence that two articles describe the same event. These are heuristic safeguards, not a guarantee that every duplicate or related story will be classified perfectly.
+
+Run the backend regression suite from `backend/`:
+
+```bash
+python -m pytest -q
+```
+
+See [News Agent intelligence audit](docs/NEWS_AGENT_INTELLIGENCE_AUDIT.md) and [portfolio news calculation notes](docs/PORTFOLIO_NEWS_CALCULATION.md) for implementation details and limitations.

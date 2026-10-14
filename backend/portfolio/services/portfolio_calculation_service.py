@@ -42,38 +42,29 @@ class PortfolioCalculationService:
         return True
 
     @classmethod
-    def _xirr(cls, transactions, assets, family=None, asset_class=None, advisor=None):
-        if not transactions:
-            return None
-
-        # An asset can appear in more than one portfolio-tree node (for
-        # example, the same security held by two families). Match transactions
-        # to the full node scope rather than asset_id alone, so one node cannot
-        # absorb another node's flows.
-        asset_scope_keys = {
-            (
-                item["family_name"],
-                item["portfolio"],
-                item["asset_class"],
-                item["sub_class"],
-                item["asset"].get("id"),
-            )
-            for item in assets
-        }
+    def _xirr(cls, transactions, assets, scope=None, family=None, asset_class=None, advisor=None):
+        # Summary rows must select historical transactions by their business
+        # scope, not by the currently visible tree nodes. A fully sold holding
+        # is intentionally absent from the tree but its dated BUY/SELL flows
+        # still belong to its subclass and exact asset-name/strategy summary.
+        scope = scope or {}
         selected_transactions = []
         for tx in transactions:
-            tx_scope_key = (
-                (tx.family_name or "").strip() or "Unassigned",
-                (tx.portfolio or "").strip() or "Unassigned",
-                (tx.asset_class or "").strip() or "Unassigned",
-                (tx.sub_class or "").strip() or "Unassigned",
-                tx.asset_id,
-            )
-            if tx_scope_key not in asset_scope_keys:
+            tx_family = (tx.family_name or "").strip() or "Unassigned"
+            tx_asset_class = (tx.asset_class or "").strip() or "Unassigned"
+            tx_sub_class = (tx.sub_class or "").strip() or "Unassigned"
+            tx_asset_name = (tx.asset_name or "").strip() or "Unassigned"
+            if scope.get("family_name") and tx_family != scope["family_name"]:
                 continue
-            if family and tx_scope_key[0] != family:
+            if scope.get("asset_class") and tx_asset_class != scope["asset_class"]:
                 continue
-            if asset_class and tx_scope_key[2] != asset_class:
+            if scope.get("sub_class") and tx_sub_class != scope["sub_class"]:
+                continue
+            if scope.get("asset_name") and tx_asset_name != scope["asset_name"]:
+                continue
+            if family and tx_family != family:
+                continue
+            if asset_class and tx_asset_class != asset_class:
                 continue
             if advisor and (tx.advisors or "").strip() != advisor:
                 continue
@@ -128,6 +119,7 @@ class PortfolioCalculationService:
             "xirr": cls._xirr(
                 transactions,
                 assets,
+                scope=group_key,
                 family=group_key.get("family_name") or family_filter,
                 asset_class=group_key.get("asset_class") or asset_class_filter,
                 advisor=advisor_filter,

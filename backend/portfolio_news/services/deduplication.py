@@ -75,7 +75,7 @@ def _entity_tokens(candidate: NewsArticleResult) -> set[str]:
 
 _TRACKING_QUERY_KEYS = {
     "fbclid", "gclid", "dclid", "msclkid", "mc_cid", "mc_eid",
-    "igshid", "ref", "ref_src", "source",
+    "igshid", "ref", "ref_src",
 }
 
 

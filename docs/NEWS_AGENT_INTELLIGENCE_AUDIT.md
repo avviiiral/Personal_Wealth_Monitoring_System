@@ -1,6 +1,6 @@
 # PWMS News Agent Audit and Intelligence Improvements
 
-**Base:** `main` at `69ffc67abd16afc115187665cbb219e9b3d6949a`  
+**Base:** `main` at `69ffc67abd16afc115187665cbb219e9b3d6949a`
 **Branch:** `feature/news-agent-intelligence-improvements`
 
 ## Verified architecture

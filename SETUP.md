@@ -1366,3 +1366,16 @@ python manage.py createsuperuser
 [← Back to the README](./README.md) &nbsp;·&nbsp; [⬆ Back to top](#-pwms-setup-guide)
 
 </div>
+
+## News Agent regression checks
+
+Run these commands from the `backend/` directory after changing News Agent behavior:
+
+```bash
+python -m pytest portfolio_news -q
+python -m pytest -q
+```
+
+The focused command checks the News Agent package; the full suite checks for backend regressions. Passing tests do not establish that live RSS feeds, external providers, credentials, or deployment-specific schedules are currently healthy.
+
+For design notes and known heuristic limitations, see [News Agent intelligence audit](docs/NEWS_AGENT_INTELLIGENCE_AUDIT.md) and [portfolio news calculation notes](docs/PORTFOLIO_NEWS_CALCULATION.md).

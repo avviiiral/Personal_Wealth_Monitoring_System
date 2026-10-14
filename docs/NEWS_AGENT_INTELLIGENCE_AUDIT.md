@@ -64,3 +64,16 @@ python manage.py test
 ```
 
 Run focused and full tests with the PostgreSQL configuration as well if available. SQLite-only checks do not establish PostgreSQL compatibility.
+
+## Post-merge validation and limitations
+
+The combined News Agent improvements were merged into `main` through PR #79 from `feature/news-agent-combined-improvements`.
+
+The reported local backend regression run was:
+
+```text
+python -m pytest -q
+163 passed, 10 subtests passed
+```
+
+This result is a snapshot of the local test run, not a claim about current live feed availability or production deployment behavior. Relevance and event deduplication remain heuristic; inspect borderline stories and verify provider-specific behavior in the target environment.

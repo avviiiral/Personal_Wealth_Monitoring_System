@@ -1180,3 +1180,18 @@ The central objective is to prioritize **the news that matters most to the actua
 - **Relevance requires naming the holding.** An article is relevant only if its headline/snippet names the holding (name, alias, symbol, ISIN or AMC) or, for funds, a disclosed underlying stock. Stories that do not are scored below the relevance threshold and kept hidden.
 - **Sector/macro context is off by default.** Set `news.allow_sector_context` to `true` (in `pwms_config.json`, or via `PWMS_CONFIG_OVERRIDES='{"news":{"allow_sector_context":true}}'`) to show sector and macro stories that never name the holding. The matcher accepts them at score 50 only when this is enabled.
 - **Portfolio-aware explanation.** `reason`, `portfolio_implication` and `interpretation` now state why the article was selected, the holding's share of the portfolio and its value, and a category-specific consequence. Fund exposure through an underlying stock is labelled an indirect estimate based on the last disclosed holdings.
+
+## Event deduplication safeguards
+
+The News Agent normalizes article URLs before comparing candidates and uses event-specific tokens when clustering likely duplicate coverage. Generic action words alone should not be enough to merge two stories, helping reduce false matches between distinct events that use similar market language.
+
+These checks are heuristic: alternate URLs, syndicated articles, and genuinely separate events with similar wording can still be misclassified. Review source links and event details when a cluster looks questionable.
+
+Run the focused and full backend regression checks from `backend/`:
+
+```bash
+python -m pytest portfolio_news -q
+python -m pytest -q
+```
+
+The local full-suite result reported for the merged change was `163 passed, 10 subtests passed`; live feeds and deployment configuration require separate verification.

@@ -394,6 +394,16 @@ class PortfolioCalculationServiceTests(TestCase):
         self.assertIsNotNone(earlier)
         self.assertNotEqual(expected, earlier)
 
+        from unittest.mock import patch
+
+        with patch(
+            "portfolio.services.portfolio_tree_service.timezone.localdate",
+            return_value=date(2026, 10, 14),
+        ):
+            default_valuation = PortfolioTreeService._calculate_xirr(
+                [transaction], Decimal("100"), terminal_value
+            )
+        self.assertEqual(default_valuation, expected)
 
     def test_calculations_are_aggregated_server_side(self):
         data = PortfolioCalculationService.calculate(

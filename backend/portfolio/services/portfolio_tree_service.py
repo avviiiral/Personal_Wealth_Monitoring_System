@@ -523,12 +523,13 @@ class PortfolioTreeService:
 
             # Underlying XIRR follows the exact Portfolio holding hierarchy.
             xirr_grouped.setdefault((family, portfolio, asset_class, sub_class, tx.asset_id), []).append(tx)
-            # Strategy/asset-name XIRR is scoped to the complete hierarchy
-            # identity. Matching only by subclass + display name can mix
-            # separate portfolios or family members with the same strategy name.
-            strategy_key = (family, portfolio, asset_class, sub_class, asset_name)
+            # Asset-name/strategy XIRR combines every holding row that
+            # belongs to the same named strategy within the active family.
+            # Each row contributes its dated transaction flows; terminal values
+            # are aggregated once across the remaining positions below.
+            strategy_key = (family, sub_class, asset_name)
             asset_name_xirr_grouped.setdefault(strategy_key, []).append(tx)
-            sub_class_key = (family, portfolio, asset_class, sub_class)
+            sub_class_key = (family, sub_class)
             sub_class_xirr_grouped.setdefault(sub_class_key, []).append(tx)
 
         asset_ids = {tx.asset_id for tx in transactions}
@@ -587,8 +588,8 @@ class PortfolioTreeService:
         for (family, portfolio, asset_class, sub_class, asset_id), asset_transactions in filtered_grouped.items():
             first = asset_transactions[0]
             asset_name = cls._clean(first.asset_name)
-            strategy_key = (family, portfolio, asset_class, sub_class, asset_name)
-            sub_class_key = (family, portfolio, asset_class, sub_class)
+            strategy_key = (family, sub_class, asset_name)
+            sub_class_key = (family, sub_class)
             position = cls._calculate_position(asset_transactions)
             quantity = position["quantity"]
             asset_name_quantities[strategy_key] = asset_name_quantities.get(strategy_key, Decimal("0")) + quantity

@@ -300,7 +300,6 @@ class PortfolioCalculationServiceTests(TestCase):
             fees=Decimal("0"),
         )
 
-class PortfolioCalculationServiceTests(TestCase):
     def test_strategy_xirr_does_not_mix_same_name_across_portfolios(self):
         from portfolio.services.portfolio_tree_service import PortfolioTreeService
 

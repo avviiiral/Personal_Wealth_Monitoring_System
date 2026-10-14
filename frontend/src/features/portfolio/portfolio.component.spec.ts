@@ -469,6 +469,34 @@ describe('PortfolioComponent', () => {
     expect(groups[0].xirr).toBe(20);
   });
 
+  it('should retain a shared strategy XIRR when all underlying rows agree', () => {
+    component.portfolioCalculations.asset_names[0].xirr = 10.8;
+    const asset = component.subClassSummaries[0].assets[0];
+    const strategyAssets = [
+      { ...asset, asset_name_xirr: 8.66 },
+      { ...asset, id: 2, asset_name_xirr: 8.66 },
+    ];
+
+    const groups = component.getAssetGroups(strategyAssets, 'Large Cap::Test Equity');
+
+    expect(groups).toHaveLength(1);
+    expect(groups[0].xirr).toBe(8.66);
+  });
+
+  it('should use the aggregate XIRR when underlying strategy values differ', () => {
+    component.portfolioCalculations.asset_names[0].xirr = 7.48;
+    const asset = component.subClassSummaries[0].assets[0];
+    const strategyAssets = [
+      { ...asset, asset_name_xirr: -3.96 },
+      { ...asset, id: 2, asset_name_xirr: 8.39 },
+    ];
+
+    const groups = component.getAssetGroups(strategyAssets, 'Large Cap::Test Equity');
+
+    expect(groups).toHaveLength(1);
+    expect(groups[0].xirr).toBe(7.48);
+  });
+
   it('should expose the calculated subclass XIRR', () => {
     const summary = component.subClassSummaries[0];
 

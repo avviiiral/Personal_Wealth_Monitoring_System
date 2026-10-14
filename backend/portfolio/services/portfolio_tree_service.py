@@ -114,10 +114,11 @@ class PortfolioTreeService:
         return {"quantity": quantity, "invested_value": invested_value, "average_cost": average_cost}
 
     @staticmethod
-    def _calculate_xirr(transactions, current_quantity, current_value):
+    def _calculate_xirr(transactions, current_quantity, current_value, valuation_date=None):
         cash_flows = build_cash_flows(transactions)
+        terminal_date = valuation_date or date.today()
         if current_quantity > 0 and current_value is not None and current_value > 0:
-            cash_flows.append((date.today(), float(current_value)))
+            cash_flows.append((terminal_date, float(current_value)))
         return xirr_percent(cash_flows)
 
     REIT_INVIT_REFERENCE_SYMBOLS = {

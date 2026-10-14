@@ -558,8 +558,11 @@ The **MIS Report** is available at **Portfolio → MIS Report** and contains the
 - **Notes** — standard MIS reference-rate observations for REITs/InvITs, Sovereign Gold Bonds, Silver ETF, Nifty 50, BSE 500 and Dollar Rate, including opening/closing values, change and percentage change where source data is available.
 - **Custom date range** — select `From Date` and `To Date`; opening valuation is reconstructed from the day before the selected start date and closing valuation is calculated as of the selected end date.
 - **Display As** — **Amount**, **Lakhs**, or **Crores**. Conversion is presentation-only; source financial values remain in rupees.
-- **FIFO taxation** — realized P/L is calculated using **First-In, First-Out (FIFO)** transaction matching. Tax is calculated separately for realized and unrealized P/L using the configured asset-specific tenure and tax rates. The same tenure-based rate is applied regardless of P/L sign, so a negative realized or unrealized P/L produces a **negative tax value (tax benefit)** in the report.
-- **Tax Settings** — taxation settings are configured by **Asset Name** for the active family, including **Tenure (Months)**, **Short Term Tax**, and **Long Term Tax**. The settings apply consistently to matching asset names within the family.
+- **FIFO taxation** — realized P/L is calculated using **First-In, First-Out (FIFO)** transaction matching. FIFO inventories are isolated by asset, family member, and portfolio so transactions from one member or portfolio do not consume another inventory's lots. Tax is calculated separately for realized and unrealized P/L using the configured asset-specific tenure and tax rates. The same tenure-based rate is applied regardless of P/L sign, so a negative realized or unrealized P/L produces a **negative tax value (tax benefit)** in the report.
+- **Transaction fees in tax basis** — buy-side fees are added to acquisition cost basis; sell-side fees reduce net sale proceeds. This ensures realized and unrealized gains reflect the supported transaction fees.
+- **Split and bonus transactions** — a `Split` transaction's quantity is treated as additional shares received; open FIFO lots are adjusted proportionally to preserve total acquisition cost and original acquisition dates. `Bonus` transactions remain separately represented as zero-cost lots.
+- **Holding-period boundaries** — completed holding months are measured against calendar-month anniversaries, including month-end dates (for example, 31 January to 28 February is one completed month). The configured tenure threshold determines short-term versus long-term tax treatment.
+- **Tax Settings** — taxation settings are configured by **Asset Name** for the active family, including **Tenure (Months)**, **Short Term Tax**, and **Long Term Tax**. Settings determine the rates applied to matching asset names, while FIFO inventory accounting remains isolated by family member and portfolio.
 - **Download Excel** — exports `IPS`, `Data Sheet`, `Tax Report`, `Fund Type Summary`, and `Notes` in `.xlsx` format.
 - **Uploaded classification source** — IPS and related MIS grouping use the stored/uploaded family and asset classification data rather than synthetic classification defaults.
 - **Asset-name basis** — MIS grouping uses the stored/uploaded **Asset Name** and **Family Member** values where those fields are part of the report grouping.
@@ -1498,7 +1501,7 @@ python manage.py test portfolio_news.test_web_push -v 2 # Web Push delivery beha
 | `investments/tests.py`  | The transaction importer and AMC-name / quant auto-enrichment         |
 | Transaction upload workflow | Upload audit/history, standard template endpoints, row-level failure handling, and transaction import behavior |
 | `portfolio_news/test_web_push.py` | VAPID/Web Push delivery, subscription handling and notification_sent semantics |
-| `portfolio/test_mis_report.py` | MIS Report API, historical valuation, Excel structure, display units, FIFO taxation, negative-loss tax benefits, and family authorization |
+| `portfolio/test_mis_report.py` | MIS Report API, historical valuation, Excel structure, display units, FIFO taxation, transaction fees, split basis preservation, calendar-month holding boundaries, negative-loss tax benefits, and family authorization |
 | `users/test_tax_rate_settings.py` | Shared displayed-asset tax policies, cross-family visibility, legacy conflict review, and tax-setting change history |
 | `analytics/tests.py` | Dashboard view-model calculations, XIRR category matching, investment summary and Standard Allocation APIs |
 | `analytics/test_historical_wealth.py` | Historical wealth regression coverage, including legacy mutual-fund classification and AMFI master NAV valuation |
@@ -1510,6 +1513,16 @@ python manage.py test portfolio_news.test_web_push -v 2 # Web Push delivery beha
 npm test          # unit tests
 npm run build     # verifies the whole app compiles
 ```
+
+### Capital-gains tax engine audit verification
+
+The `audit/capital-gains-tax-engine-20261013` branch was validated with the following checks:
+
+- `python manage.py test portfolio.test_mis_report` — **35 tests passed**, covering MIS reporting and tax/FIFO regressions.
+- `python manage.py test` — **563 tests passed**; Django system checks reported no issues.
+- `npm run build` — Angular production build completed successfully. The build reported style-budget and CommonJS dependency warnings, but no build failure.
+- `git diff --check origin/main...HEAD` — passed, and the audit branch working tree was clean.
+- The active Django default database setting reported `django.db.backends.postgresql`. The recorded full-suite output did not independently identify the test database engine, so this result should not be read as proof that every test ran against PostgreSQL.
 
 ---
 

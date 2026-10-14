@@ -1605,3 +1605,229 @@ class MISReportAPITests(TestCase):
         self.assertEqual(row["realized_tax"], 200.0)
         self.assertEqual(row["unrealized_pnl"], 200.0)
         self.assertEqual(row["unrealized_tax"], 16.0)
+
+
+    def test_fifo_lots_are_isolated_by_family_member_and_portfolio(self):
+        member_a_buy = Transaction.objects.create(
+            owner=self.user,
+            family=self.family,
+            family_name="Member A",
+            portfolio="Portfolio A",
+            asset_class="Equity",
+            sub_class="Direct Equity",
+            asset_name="Shared Holding",
+            underlying="Shared Holding",
+            advisors="Advisor",
+            asset=self.asset,
+            transaction_date=date(2025, 1, 1),
+            transaction_type="BUY",
+            quantity=Decimal("10"),
+            price_per_unit=Decimal("100"),
+            amount=Decimal("1000"),
+            fees=Decimal("0"),
+        )
+        member_b_buy = Transaction.objects.create(
+            owner=self.user,
+            family=self.family,
+            family_name="Member B",
+            portfolio="Portfolio B",
+            asset_class="Equity",
+            sub_class="Direct Equity",
+            asset_name="Shared Holding",
+            underlying="Shared Holding",
+            advisors="Advisor",
+            asset=self.asset,
+            transaction_date=date(2025, 1, 2),
+            transaction_type="BUY",
+            quantity=Decimal("10"),
+            price_per_unit=Decimal("500"),
+            amount=Decimal("5000"),
+            fees=Decimal("0"),
+        )
+        member_b_sell = Transaction.objects.create(
+            owner=self.user,
+            family=self.family,
+            family_name="Member B",
+            portfolio="Portfolio B",
+            asset_class="Equity",
+            sub_class="Direct Equity",
+            asset_name="Shared Holding",
+            underlying="Shared Holding",
+            advisors="Advisor",
+            asset=self.asset,
+            transaction_date=date(2026, 1, 2),
+            transaction_type="SELL",
+            quantity=Decimal("10"),
+            price_per_unit=Decimal("600"),
+            amount=Decimal("6000"),
+            fees=Decimal("0"),
+        )
+        setting = TaxRateSetting.objects.create(
+            family=self.family,
+            asset=self.asset,
+            tenure_months=12,
+            short_term_tax_rate=Decimal("15"),
+            long_term_tax_rate=Decimal("10"),
+        )
+
+        metrics = MISReportService._fifo_tax_metrics(
+            [member_a_buy, member_b_buy, member_b_sell],
+            "asset",
+            date(2026, 2, 1),
+            date(2026, 1, 1),
+            {self.asset.id: setting},
+            {self.asset.id: Decimal("600")},
+        )
+
+        # Member B's sale must consume B's ₹5,000 lot, not Member A's ₹1,000
+        # lot, even though the database Asset FK is the same.
+        self.assertEqual(metrics["realized_pnl"], Decimal("1000"))
+        self.assertEqual(metrics["realized_tax"], Decimal("100.00"))
+
+
+
+    def test_split_additional_quantity_preserves_fifo_cost_basis_and_acquisition_date(self):
+        common = {
+            "owner": self.user,
+            "family": self.family,
+            "family_name": "Member Split",
+            "portfolio": "Direct Equity",
+            "asset_class": "Equity",
+            "sub_class": "Direct Equity",
+            "asset_name": "MIS Equity",
+            "asset": self.asset,
+        }
+        buy = Transaction.objects.create(
+            **common,
+            transaction_date=date(2025, 1, 1),
+            transaction_type="BUY",
+            quantity=Decimal("10"),
+            price_per_unit=Decimal("100"),
+            amount=Decimal("1000"),
+            fees=Decimal("0"),
+        )
+        split = Transaction.objects.create(
+            **common,
+            transaction_date=date(2026, 1, 1),
+            transaction_type="SPLIT",
+            quantity=Decimal("10"),
+            price_per_unit=Decimal("0"),
+            amount=Decimal("0"),
+            fees=Decimal("0"),
+        )
+        sell = Transaction.objects.create(
+            **common,
+            transaction_date=date(2026, 2, 1),
+            transaction_type="SELL",
+            quantity=Decimal("5"),
+            price_per_unit=Decimal("60"),
+            amount=Decimal("300"),
+            fees=Decimal("0"),
+        )
+
+        metrics = MISReportService._fifo_tax_metrics(
+            [buy, split, sell],
+            "asset",
+            date(2026, 2, 28),
+            date(2026, 1, 1),
+            {self.asset.id: None},
+            {self.asset.id: Decimal("60")},
+        )
+
+        # The 10 additional shares double the original lot quantity and halve
+        # unit cost; they do not become a zero-cost lot with a new acquisition date.
+        self.assertEqual(metrics["realized_pnl"], Decimal("50"))
+        self.assertEqual(metrics["unrealized_pnl"], Decimal("150"))
+        position_quantity, invested = MISReportService._position_at(
+            [buy, split, sell],
+            date(2026, 2, 28),
+        )
+        self.assertEqual(position_quantity, Decimal("15"))
+        self.assertEqual(invested, Decimal("750"))
+
+    def test_fifo_tax_metrics_include_buy_and_sell_fees(self):
+        common = {
+            "owner": self.user,
+            "family": self.family,
+            "family_name": "Member Fees",
+            "portfolio": "Direct Equity",
+            "asset_class": "Equity",
+            "sub_class": "Direct Equity",
+            "asset_name": "MIS Equity",
+            "asset": self.asset,
+        }
+        buy = Transaction.objects.create(
+            **common,
+            transaction_date=date(2026, 1, 1),
+            transaction_type="BUY",
+            quantity=Decimal("10"),
+            price_per_unit=Decimal("100"),
+            amount=Decimal("1000"),
+            fees=Decimal("10"),
+        )
+        sell = Transaction.objects.create(
+            **common,
+            transaction_date=date(2026, 6, 1),
+            transaction_type="SELL",
+            quantity=Decimal("5"),
+            price_per_unit=Decimal("140"),
+            amount=Decimal("700"),
+            fees=Decimal("20"),
+        )
+        setting = TaxRateSetting.objects.create(
+            family=self.family,
+            asset=self.asset,
+            tenure_months=12,
+            short_term_tax_rate=Decimal("20"),
+            long_term_tax_rate=Decimal("10"),
+        )
+
+        metrics = MISReportService._fifo_tax_metrics(
+            [buy, sell],
+            "asset",
+            date(2026, 6, 30),
+            date(2026, 1, 1),
+            {self.asset.id: setting},
+            {self.asset.id: Decimal("140")},
+        )
+
+        # Buy fees raise unit cost to ₹101; sell fees reduce net proceeds
+        # to ₹680. Realized gain is ₹175 and the configured 20% estimate is ₹35.
+        self.assertEqual(metrics["realized_pnl"], Decimal("175"))
+        self.assertEqual(metrics["realized_tax"], Decimal("35.00"))
+        # Five remaining units retain the fee-inclusive ₹101 cost basis.
+        self.assertEqual(metrics["unrealized_pnl"], Decimal("195"))
+
+    def test_fifo_holding_months_use_calendar_month_end_anniversaries(self):
+        # Jan 31 to the last day of February is one completed month, including
+        # leap years. This classification is shared by tax tenure thresholds.
+        self.assertEqual(
+            MISReportService._holding_months(date(2025, 1, 31), date(2025, 2, 28)),
+            1,
+        )
+        self.assertEqual(
+            MISReportService._holding_months(date(2024, 1, 31), date(2024, 2, 29)),
+            1,
+        )
+        self.assertEqual(
+            MISReportService._holding_months(date(2025, 1, 31), date(2025, 3, 30)),
+            1,
+        )
+        self.assertEqual(
+            MISReportService._holding_months(date(2025, 1, 31), date(2025, 3, 31)),
+            2,
+        )
+
+        setting = TaxRateSetting(
+            tenure_months=1,
+            short_term_tax_rate=Decimal("15"),
+            long_term_tax_rate=Decimal("10"),
+        )
+        self.assertEqual(
+            MISReportService._tax_rate_for_lot(
+                {"acquired_on": date(2025, 1, 31)},
+                setting,
+                date(2025, 2, 28),
+            ),
+            Decimal("0.10"),
+        )

@@ -947,7 +947,11 @@ class MISReportService:
     @staticmethod
     def _holding_months(acquired_on, disposed_on):
         months = (disposed_on.year - acquired_on.year) * 12 + (disposed_on.month - acquired_on.month)
-        if disposed_on.day < acquired_on.day:
+        # Match calendar-month anniversaries at month end (e.g. Jan 31 to
+        # Feb 28/29 is one completed month). A raw day-of-month comparison
+        # incorrectly classified these lots as short-term for one extra day.
+        anniversary = acquired_on + relativedelta(months=months)
+        if disposed_on < anniversary:
             months -= 1
         return max(months, 0)
 
@@ -1002,6 +1006,16 @@ class MISReportService:
         def position_key(tx):
             return getattr(tx, "scheme_id", None) if kind == "mutual_fund" else getattr(tx, "asset_id", None)
 
+        def inventory_key(tx):
+            # A shared MIS row can contain transactions for multiple family
+            # members and portfolios. Tax lots must not cross those ownership
+            # boundaries even when the underlying Asset/Scheme FK is shared.
+            return (
+                position_key(tx),
+                str(getattr(tx, "family_name", "") or "").strip().casefold(),
+                str(getattr(tx, "portfolio", "") or "").strip().casefold(),
+            )
+
         def setting_for_position(position_id):
             if isinstance(tax_setting, dict):
                 return tax_setting.get(position_id)
@@ -1011,6 +1025,7 @@ class MISReportService:
             qty = Decimal(str(getattr(tx, "quantity", getattr(tx, "units", 0)) or 0))
             amount = Decimal(str(tx.amount or 0))
             key = position_key(tx)
+            inventory = inventory_key(tx)
 
             if kind == "mutual_fund":
                 is_buy = tx.transaction_type in ("PURCHASE", "SIP")
@@ -1019,18 +1034,44 @@ class MISReportService:
                 is_buy = tx.transaction_type in (TransactionType.BUY, TransactionType.SIP)
                 is_sell = tx.transaction_type == TransactionType.SELL
 
+            fees = Decimal(str(getattr(tx, "fees", 0) or 0))
+
             if is_buy and qty > 0:
+                gross_cost = amount if amount else (
+                    qty * Decimal(str(getattr(tx, "price_per_unit", getattr(tx, "nav", 0)) or 0))
+                )
                 lots.append({
                     "position_key": key,
+                    "inventory_key": inventory,
                     "remaining_qty": qty,
-                    "unit_cost": amount / qty if amount else cls.ZERO,
+                    # Keep backend MIS tax cost basis aligned with the Capital
+                    # Gains export: acquisition fees form part of the cost basis.
+                    "unit_cost": (gross_cost + fees) / qty,
                     "acquired_on": tx.transaction_date,
                 })
                 continue
 
-            if kind == "asset" and tx.transaction_type in (TransactionType.BONUS, TransactionType.SPLIT) and qty > 0:
+            if kind == "asset" and tx.transaction_type == TransactionType.SPLIT and qty > 0:
+                # Imported SPLIT quantity means the additional shares received.
+                # Reallocate existing open lots proportionally so total cost
+                # basis and acquisition dates survive the split. No new
+                # zero-cost tax lot is created.
+                open_lots = [
+                    lot for lot in lots
+                    if lot["inventory_key"] == inventory and lot["remaining_qty"] > 0
+                ]
+                existing_qty = sum((lot["remaining_qty"] for lot in open_lots), cls.ZERO)
+                if existing_qty > 0:
+                    split_factor = (existing_qty + qty) / existing_qty
+                    for lot in open_lots:
+                        lot["remaining_qty"] *= split_factor
+                        lot["unit_cost"] /= split_factor
+                continue
+
+            if kind == "asset" and tx.transaction_type == TransactionType.BONUS and qty > 0:
                 lots.append({
                     "position_key": key,
+                    "inventory_key": inventory,
                     "remaining_qty": qty,
                     "unit_cost": cls.ZERO,
                     "acquired_on": tx.transaction_date,
@@ -1040,15 +1081,17 @@ class MISReportService:
             if not is_sell or qty <= 0:
                 continue
 
-            sale_unit_value = amount / qty if amount else Decimal(
+            gross_sale_value = amount if amount else qty * Decimal(
                 str(getattr(tx, "price_per_unit", getattr(tx, "nav", 0)) or 0)
             )
+            # Disposal fees reduce net proceeds and therefore the realized gain.
+            sale_unit_value = (gross_sale_value - fees) / qty
             remaining_to_sell = qty
             while remaining_to_sell > 0:
                 lot_index = next(
                     (
                         index for index, candidate in enumerate(lots)
-                        if candidate["position_key"] == key and candidate["remaining_qty"] > 0
+                        if candidate["inventory_key"] == inventory and candidate["remaining_qty"] > 0
                     ),
                     None,
                 )

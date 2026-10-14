@@ -321,6 +321,94 @@ class PortfolioCalculationServiceTests(TestCase):
         self.assertEqual(data["family_subclasses"][0]["family_name"], "Family A")
         self.assertEqual(data["family_subclasses"][0]["sub_class"], "Large Cap")
 
+    def test_asset_name_xirr_includes_fully_sold_strategy_positions(self):
+        # This holding has no remaining quantity and therefore is absent from
+        # the visible tree, but its historical BUY/SELL cash flows belong to
+        # the exact strategy summary.
+        sold_asset = Asset.objects.create(
+            family=self.family,
+            owner=self.user,
+            name="Sold Carnelian Holding",
+            category="STOCK",
+            isin="INE000SOLD001",
+        )
+        Transaction.objects.create(
+            owner=self.user, family=self.family, asset=sold_asset,
+            family_name="Family A", portfolio="PMS", asset_class="Equity",
+            sub_class="Equity PMS",
+            asset_name="Carnelian Capital Compounder Strategy",
+            transaction_date=date(2024, 1, 1), transaction_type="BUY",
+            quantity=Decimal("10"), price_per_unit=Decimal("100"),
+            amount=Decimal("1000"), fees=Decimal("0"),
+        )
+        Transaction.objects.create(
+            owner=self.user, family=self.family, asset=sold_asset,
+            family_name="Family A", portfolio="PMS", asset_class="Equity",
+            sub_class="Equity PMS",
+            asset_name="Carnelian Capital Compounder Strategy",
+            transaction_date=date(2025, 1, 1), transaction_type="SELL",
+            quantity=Decimal("10"), price_per_unit=Decimal("120"),
+            amount=Decimal("1200"), fees=Decimal("0"),
+        )
+        # Current strategy holding is a separate asset/node. Its terminal
+        # value is included once while the sold position contributes no value.
+        current_asset = Asset.objects.create(
+            family=self.family, owner=self.user, name="Current Carnelian Holding",
+            category="STOCK", isin="INE000CURR001",
+        )
+        Transaction.objects.create(
+            owner=self.user, family=self.family, asset=current_asset,
+            family_name="Family A", portfolio="PMS", asset_class="Equity",
+            sub_class="Equity PMS",
+            asset_name="Carnelian Capital Compounder Strategy",
+            transaction_date=date(2025, 1, 1), transaction_type="BUY",
+            quantity=Decimal("5"), price_per_unit=Decimal("100"),
+            amount=Decimal("500"), fees=Decimal("0"),
+        )
+
+        # Avoid provider-dependent pricing; supply the deterministic tree and
+        # terminal value used by the calculation under test.
+        tree = {"families": [{
+            "family_name": "Family A",
+            "portfolios": [{
+                "portfolio": "PMS",
+                "asset_classes": [{
+                    "asset_class": "Equity",
+                    "sub_classes": [{
+                        "sub_class": "Equity PMS",
+                        "assets": [{
+                            "id": current_asset.id,
+                            "asset_name": "Carnelian Capital Compounder Strategy",
+                            "quantity": 5,
+                            "invested_value": 500,
+                            "current_price": 130,
+                            "current_value": 650,
+                            "advisors": "",
+                        }],
+                    }],
+                }],
+            }],
+        }]}
+
+        data = PortfolioCalculationService.calculate(
+            owner=self.user, family_id=self.family.id, tree=tree,
+        )
+        strategy = next(
+            row for row in data["asset_names"]
+            if row["asset_name"] == "Carnelian Capital Compounder Strategy"
+        )
+        strategy_transactions = list(Transaction.objects.filter(
+            family=self.family,
+            sub_class="Equity PMS",
+            asset_name="Carnelian Capital Compounder Strategy",
+        ).order_by("transaction_date", "id"))
+        expected = PortfolioTreeService._calculate_xirr(
+            strategy_transactions, Decimal("5"), Decimal("650"),
+        )
+        self.assertEqual(strategy["xirr"], expected)
+        self.assertNotEqual(strategy["xirr"], None)
+        self.assertEqual(strategy["current_value"], 650.0)
+
     def test_aggregate_xirr_scopes_cash_flows_and_values_to_tree_positions(self):
         Transaction.objects.create(
             owner=self.user,

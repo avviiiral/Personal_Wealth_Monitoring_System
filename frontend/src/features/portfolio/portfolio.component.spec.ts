@@ -446,6 +446,17 @@ describe('PortfolioComponent', () => {
   // XIRR
   // ==========================================================
 
+  it('should prefer aggregate asset-name XIRR over a holding-node XIRR', () => {
+    const holding = component.subClassSummaries[0].assets[0];
+    holding.xirr = -5.5;
+    holding.asset_name_xirr = 8.66;
+
+    const groups = component.getAssetGroups([holding], 'Large Cap::Test Equity');
+
+    expect(groups).toHaveLength(1);
+    expect(groups[0].xirr).toBe(20);
+  });
+
   it('should calculate subclass weighted XIRR', () => {
     const summary = component.subClassSummaries[0];
 

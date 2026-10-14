@@ -408,7 +408,7 @@ class PortfolioTreeService:
         return price_cache
 
     @classmethod
-    def _build_asset(cls, transactions, xirr_transactions, asset_name_xirr, sub_class_xirr, price_cache, security_master_cache=None):
+    def _build_asset(cls, transactions, xirr_transactions, asset_name_xirr, sub_class_xirr, price_cache, valuation_date=None, security_master_cache=None):
         first = transactions[0]
         asset = first.asset
         position = cls._calculate_position(transactions)

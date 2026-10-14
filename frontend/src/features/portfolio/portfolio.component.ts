@@ -386,12 +386,11 @@ export class PortfolioComponent implements OnInit, OnDestroy {
         invested_value: calculated?.invested_value ?? 0,
         current_value: calculated?.current_value ?? 0,
         pnl: calculated?.pnl ?? 0,
-        // The asset-name summary is the authoritative strategy-level XIRR.
-        // Individual tree rows can carry family-scoped strategy metrics, so
-        // prefer the aggregate summary when multiple family holdings are grouped.
-        xirr: calculated?.xirr ?? groupedAssets.find(
-          (asset) => asset.asset_name_xirr !== null && asset.asset_name_xirr !== undefined,
-        )?.asset_name_xirr ?? null,
+        // When multiple underlying rows agree on one strategy-level XIRR,
+        // preserve that shared value (it includes the strategy's complete
+        // scoped cash flows). If child values differ across family members,
+        // use the aggregate summary instead, as with DAJ + DJT mutual funds.
+        xirr: this.getAssetNameXirr(groupedAssets, calculated?.xirr ?? null),
         assets: groupedAssets,
       };
     });
@@ -415,6 +414,17 @@ export class PortfolioComponent implements OnInit, OnDestroy {
       (left, right) => left.asset_name.localeCompare(right.asset_name),
     );
   }
+  private getAssetNameXirr(assets: PortfolioAssetNode[], aggregateXirr: number | null): number | null {
+    const childXirrs = assets
+      .map((asset) => asset.asset_name_xirr)
+      .filter((value): value is number => value !== null && value !== undefined);
+    if (assets.length > 1 && childXirrs.length === assets.length) {
+      const first = childXirrs[0];
+      if (childXirrs.every((value) => value === first)) return first;
+    }
+    return aggregateXirr ?? childXirrs[0] ?? null;
+  }
+
   getSortedUnderlyingAssets(assets: PortfolioAssetNode[], parentKey = ''): PortfolioAssetNode[] {
     const resolvedParentKey = parentKey || this.expandedAsset || 'empty';
     return this.sortRows(assets, 'underlying', resolvedParentKey, (asset, column) => {

@@ -73,13 +73,21 @@ def _entity_tokens(candidate: NewsArticleResult) -> set[str]:
 
 
 def _event_subject_tokens(title: str, family: str, *context: str) -> set[str]:
-    """Extract event-specific headline tokens, excluding the queried holding/company."""
+    """Extract event-specific headline tokens, excluding boilerplate and the queried company."""
     value = (title or "").lower()
     for phrase in _EVENT_FAMILIES.get(family, ()):
         value = value.replace(phrase, " ")
     tokens = _meaningful_entity_tokens(value)
     context_tokens = _meaningful_entity_tokens(*context)
-    return tokens - context_tokens
+    # These verbs commonly describe the action but do not identify its
+    # counterparty; retaining them can make different transactions overlap.
+    action_words = {
+        "approve", "approves", "approved", "agree", "agrees", "agreed",
+        "plan", "plans", "planned", "propose", "proposes", "proposed",
+        "buy", "buys", "bought", "acquires", "acquired", "acquiring",
+        "sell", "sells", "sold", "selling", "deal", "deals",
+    }
+    return tokens - context_tokens - action_words
 
 
 

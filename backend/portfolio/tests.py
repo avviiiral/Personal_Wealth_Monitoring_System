@@ -303,6 +303,22 @@ class PortfolioCalculationServiceTests(TestCase):
     def test_strategy_xirr_aggregates_all_position_rows(self):
         from portfolio.services.portfolio_tree_service import PortfolioTreeService
 
+        Transaction.objects.create(
+            owner=self.user,
+            family=self.family,
+            asset=self.asset,
+            family_name="Family A",
+            portfolio="Portfolio A",
+            asset_class="Equity",
+            sub_class="Equity PMS",
+            asset_name="Carnelian Capital Compounder Strategy",
+            transaction_date=date(2026, 4, 22),
+            transaction_type="BUY",
+            quantity=Decimal("100"),
+            price_per_unit=Decimal("100"),
+            amount=Decimal("10000"),
+            fees=Decimal("0"),
+        )
         second_asset = Asset.objects.create(
             family=self.family,
             owner=self.user,

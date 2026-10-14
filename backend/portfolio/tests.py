@@ -300,7 +300,7 @@ class PortfolioCalculationServiceTests(TestCase):
             fees=Decimal("0"),
         )
 
-    def test_strategy_xirr_does_not_mix_same_name_across_portfolios(self):
+    def test_strategy_xirr_aggregates_all_position_rows(self):
         from portfolio.services.portfolio_tree_service import PortfolioTreeService
 
         second_asset = Asset.objects.create(
@@ -341,10 +341,9 @@ class PortfolioCalculationServiceTests(TestCase):
                             strategy_xirrs.append(asset["asset_name_xirr"])
 
         self.assertEqual(len(strategy_xirrs), 2)
-        # Each portfolio's strategy return must be isolated. The duplicate
-        # asset has a different terminal value (carried at cost), so values
-        # should not receive a common blended XIRR.
-        self.assertNotEqual(strategy_xirrs[0], strategy_xirrs[1])
+        # Both displayed rows represent the same strategy and should surface
+        # the strategy-level XIRR calculated from all constituent positions.
+        self.assertEqual(strategy_xirrs[0], strategy_xirrs[1])
 
     def test_xirr_uses_explicit_valuation_date_when_provided(self):
         from portfolio.services.portfolio_tree_service import PortfolioTreeService

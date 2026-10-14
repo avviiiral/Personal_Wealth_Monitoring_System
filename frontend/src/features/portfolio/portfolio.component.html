@@ -116,6 +116,22 @@
   </div>
 
 
+  <section *ngIf="!loading && !error" class="asset-class-xirr-section">
+    <h2>Asset Class Summary</h2>
+    <p>Level 2 · Asset Class XIRR</p>
+    <div class="asset-class-summary-grid">
+      <article class="asset-class-summary-card" *ngFor="let summary of assetClassSummaries">
+        <div class="asset-class-summary-name">{{ summary.asset_class }}</div>
+        <div class="asset-class-summary-values">
+          <span>Invested <strong>₹{{ formatCurrency(summary.invested_value) }}</strong></span>
+          <span>Current <strong>₹{{ formatCurrency(summary.current_value) }}</strong></span>
+          <span>Gain <strong [ngClass]="getPnlClass(summary.pnl)">{{ summary.pnl >= 0 ? '+' : '-' }}₹{{ formatAbsoluteCurrency(summary.pnl) }}</strong></span>
+          <span>XIRR <strong [ngClass]="summary.xirr === null ? 'neutral' : getPnlClass(summary.xirr)">{{ formatPercentage(summary.xirr) }}</strong></span>
+        </div>
+      </article>
+    </div>
+  </section>
+
   <!-- FILTERS -->
   <div *ngIf="!loading && !error" class="selection-area">
     <!-- FAMILY -->

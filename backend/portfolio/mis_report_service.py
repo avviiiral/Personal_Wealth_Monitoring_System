@@ -1393,7 +1393,13 @@ class MISReportService:
                     refreshed += 1
                     success = True
                     break
-                except Exception:
+                except Exception as exc:
+                    logger.warning(
+                        "MIS reference history refresh failed for %s (%s): %s",
+                        name,
+                        symbol,
+                        exc,
+                    )
                     continue
 
             if not success:

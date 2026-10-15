@@ -84,6 +84,9 @@ class YahooFinanceService:
             kwargs = {
                 "interval": interval,
                 "auto_adjust": False,
+                # Bound provider requests so a stalled Yahoo cookie/crumb
+                # handshake cannot block the entire MIS refresh indefinitely.
+                "timeout": 15,
             }
 
             # --------------------------------------------------

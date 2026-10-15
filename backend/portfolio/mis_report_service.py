@@ -1360,7 +1360,29 @@ class MISReportService:
                             period="max",
                         )
                     else:
-                        start = max(today - timedelta(days=lookback_days), latest_date) if latest_date else today - timedelta(days=lookback_days)
+                        start = (
+                            max(today - timedelta(days=lookback_days), latest_date)
+                            if latest_date
+                            else today - timedelta(days=lookback_days)
+                        )
+
+                        # The Notes sheet compares the latest month-end with
+                        # the current reporting date. A recent-only refresh can
+                        # leave a symbol with current prices but no price at
+                        # the previous month-end, making the opening column
+                        # blank indefinitely. Backfill the opening window when
+                        # no stored observation exists on/before that date.
+                        opening_date = cls._prior_month_end(today)
+                        has_opening_history = MarketPrice.objects.filter(
+                            asset=asset,
+                            date__lte=opening_date,
+                        ).exists()
+                        if not has_opening_history:
+                            start = min(
+                                start,
+                                opening_date - timedelta(days=7),
+                            )
+
                         saved = YahooFinanceService.save_history(
                             asset=asset,
                             symbol=symbol,

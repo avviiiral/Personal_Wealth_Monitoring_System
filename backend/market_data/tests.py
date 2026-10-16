@@ -66,7 +66,9 @@ class RefreshMISReferencePricesCommandTests(SimpleTestCase):
             "records": 120,
         }
         command = Command()
-        command.stdout = self._get_test_stream()
+
+        from io import StringIO
+        command.stdout = StringIO()
 
         command.handle()
 

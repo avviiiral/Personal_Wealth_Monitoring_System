@@ -2,6 +2,7 @@ from unittest.mock import patch
 
 from django.test import SimpleTestCase
 
+from market_data.management.commands.refresh_mis_reference_prices import Command
 from market_data.services.mis_reference_price_scheduler import (
     MISReferencePriceScheduler,
 )
@@ -9,8 +10,7 @@ from market_data.services.mis_reference_price_scheduler import (
 
 class MISReferencePriceSchedulerTests(SimpleTestCase):
     def setUp(self):
-        # Keep scheduler lifecycle isolated; no real background threads or
-        # external price-provider requests should start during these tests.
+        # Never start a real worker or contact external price providers in tests.
         self.started_before = MISReferencePriceScheduler._started
         MISReferencePriceScheduler._started = False
 
@@ -37,7 +37,7 @@ class MISReferencePriceSchedulerTests(SimpleTestCase):
     def test_run_refreshes_prices_and_closes_connections(
         self, refresh, close_connections, sleep
     ):
-        # Perform one refresh, then stop the scheduler's loop deterministically.
+        # Execute one cycle and break the loop deterministically.
         sleep.side_effect = [None, KeyboardInterrupt]
         refresh.return_value = {
             "references": 3,
@@ -51,3 +51,26 @@ class MISReferencePriceSchedulerTests(SimpleTestCase):
 
         refresh.assert_called_once_with()
         self.assertGreaterEqual(close_connections.call_count, 2)
+
+
+class RefreshMISReferencePricesCommandTests(SimpleTestCase):
+    @patch(
+        "market_data.management.commands.refresh_mis_reference_prices."
+        "MISReportService.refresh_reference_prices"
+    )
+    def test_command_reports_refresh_summary(self, refresh):
+        refresh.return_value = {
+            "references": 4,
+            "refreshed": 3,
+            "failed": 1,
+            "records": 120,
+        }
+        command = Command()
+        command.stdout = self._get_test_stream()
+
+        command.handle()
+
+        output = command.stdout.getvalue()
+        self.assertIn("3/4 references refreshed", output)
+        self.assertIn("1 failed", output)
+        self.assertIn("120 records saved", output)

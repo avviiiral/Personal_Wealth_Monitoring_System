@@ -190,9 +190,22 @@ CORS_ALLOW_ALL_ORIGINS = False
 CORS_ALLOWED_ORIGINS = _env_list('CORS_ALLOWED_ORIGINS', [get_pwms_config('deployment', 'dev_frontend_origin', 'http://localhost:4200')])
 CORS_ALLOW_CREDENTIALS = True
 CSRF_TRUSTED_ORIGINS = _env_list('CSRF_TRUSTED_ORIGINS', [get_pwms_config('deployment', 'dev_frontend_origin', 'http://localhost:4200')])
-SESSION_COOKIE_SECURE = _env_bool('SESSION_COOKIE_SECURE', False)
-CSRF_COOKIE_SECURE = _env_bool('CSRF_COOKIE_SECURE', False)
-SECURE_SSL_REDIRECT = _env_bool('SECURE_SSL_REDIRECT', False)
+# Production defaults are secure. Local HTTP development remains possible with
+# DEBUG=True and explicit overrides.
+SESSION_COOKIE_SECURE = _env_bool('SESSION_COOKIE_SECURE', not DEBUG)
+SESSION_COOKIE_HTTPONLY = True
+SESSION_COOKIE_SAMESITE = 'Lax'
+CSRF_COOKIE_SECURE = _env_bool('CSRF_COOKIE_SECURE', not DEBUG)
+CSRF_COOKIE_SAMESITE = 'Lax'
+CSRF_COOKIE_HTTPONLY = False  # Angular reads the token to send X-CSRFToken.
+SECURE_SSL_REDIRECT = _env_bool('SECURE_SSL_REDIRECT', not DEBUG)
+SECURE_CONTENT_TYPE_NOSNIFF = True
+SECURE_REFERRER_POLICY = 'same-origin'
+SECURE_CROSS_ORIGIN_OPENER_POLICY = 'same-origin'
+X_FRAME_OPTIONS = 'DENY'
+SECURE_HSTS_SECONDS = _env_int('SECURE_HSTS_SECONDS', 31536000 if not DEBUG else 0)
+SECURE_HSTS_INCLUDE_SUBDOMAINS = _env_bool('SECURE_HSTS_INCLUDE_SUBDOMAINS', False)
+SECURE_HSTS_PRELOAD = _env_bool('SECURE_HSTS_PRELOAD', False)
 
 # Browser Web Push (VAPID). Keep the private key server-side only.
 WEB_PUSH_VAPID_PUBLIC_KEY = os.environ.get("WEB_PUSH_VAPID_PUBLIC_KEY", "").strip()

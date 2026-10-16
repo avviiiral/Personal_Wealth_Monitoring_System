@@ -10,6 +10,7 @@ from django.http import JsonResponse
 from rest_framework.decorators import (
     api_view,
     permission_classes,
+    throttle_scope,
 )
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
@@ -62,6 +63,7 @@ def extract_response_text(data):
 
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
+@throttle_scope("ai_chat")
 def portfolio_chat(request):
     """
     AI chatbot for the authenticated user's PWMS portfolio.
@@ -117,13 +119,14 @@ def portfolio_chat(request):
             )
         )
 
-    except Exception as exc:
+    except Exception:
+        logger.exception(
+            "Unable to build portfolio context for user_id=%s",
+            request.user.id,
+        )
         return Response(
             {
-                "error": (
-                    "Unable to build portfolio context."
-                ),
-                "detail": str(exc),
+                "error": "Unable to build portfolio context.",
             },
             status=500,
         )

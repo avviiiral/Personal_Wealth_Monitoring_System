@@ -3,6 +3,7 @@ from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError
 from django.http import JsonResponse
 from django.middleware.csrf import get_token
+from django.views.decorators.csrf import csrf_protect
 from django.views.decorators.csrf import ensure_csrf_cookie
 
 from rest_framework.decorators import (
@@ -47,6 +48,7 @@ def health_check(request):
 # AUTHENTICATION
 # ==========================================================
 
+@csrf_protect
 @api_view(["POST"])
 @authentication_classes([])
 @permission_classes([AllowAny])

@@ -1,8 +1,8 @@
 import { Injectable, inject } from '@angular/core';
 
-import { HttpClient } from '@angular/common/http';
+import { HttpClient, HttpHeaders } from '@angular/common/http';
 
-import { Observable, BehaviorSubject, tap, catchError, of } from 'rxjs';
+import { Observable, BehaviorSubject, tap, catchError, of, switchMap } from 'rxjs';
 
 import { RbacService, CurrentUser } from './rbac.service';
 
@@ -38,6 +38,30 @@ export class AuthService {
 
   private readonly baseUrl = `${environment.apiUrl}/api/auth`;
 
+  private readonly csrfUrl = `${environment.apiUrl}/api/health/`;
+
+  private getCsrfToken(): Observable<unknown> {
+    return this.http.get(this.csrfUrl, { withCredentials: true });
+  }
+
+  private readCsrfToken(): string {
+    const cookie = document.cookie
+      .split(';')
+      .map((item) => item.trim())
+      .find((item) => item.startsWith('csrftoken='));
+
+    return cookie
+      ? decodeURIComponent(cookie.substring('csrftoken='.length))
+      : '';
+  }
+
+  private getCsrfHeaders(): HttpHeaders {
+    const token = this.readCsrfToken();
+    return token
+      ? new HttpHeaders({ 'X-CSRFToken': token })
+      : new HttpHeaders();
+  }
+
   private readonly authenticatedSubject = new BehaviorSubject<boolean>(false);
 
   readonly authenticated$ = this.authenticatedSubject.asObservable();
@@ -53,18 +77,21 @@ export class AuthService {
   // ----------------------------------------------------------
 
   login(username: string, password: string): Observable<LoginResponse> {
-    return this.http
-      .post<LoginResponse>(
-        `${this.baseUrl}/login/`,
-        {
-          username,
-          password,
-        },
-        {
-          withCredentials: true,
-        },
-      )
-      .pipe(
+    return this.getCsrfToken().pipe(
+      switchMap(() =>
+        this.http.post<LoginResponse>(
+          `${this.baseUrl}/login/`,
+          {
+            username,
+            password,
+          },
+          {
+            headers: this.getCsrfHeaders(),
+            withCredentials: true,
+          },
+        ),
+      ),
+      tap((response) => {
         tap((response) => {
           // --------------------------------------------------
           // NORMAL FULL LOGIN
@@ -108,8 +135,7 @@ export class AuthService {
       .get<LoginResponse>(`${this.baseUrl}/me/`, {
         withCredentials: true,
       })
-      .pipe(
-        tap((response) => {
+      tap((response) => {
           this.authenticatedSubject.next(response.authenticated);
 
           this.userSubject.next(response.user ?? null);
@@ -138,15 +164,18 @@ export class AuthService {
   // ----------------------------------------------------------
 
   logout(): Observable<any> {
-    return this.http
-      .post(
-        `${this.baseUrl}/logout/`,
-        {},
-        {
-          withCredentials: true,
-        },
-      )
-      .pipe(
+    return this.getCsrfToken().pipe(
+      switchMap(() =>
+        this.http.post(
+          `${this.baseUrl}/logout/`,
+          {},
+          {
+            headers: this.getCsrfHeaders(),
+            withCredentials: true,
+          },
+        ),
+      ),
+      tap(() => {
         tap(() => {
           this.authenticatedSubject.next(false);
 

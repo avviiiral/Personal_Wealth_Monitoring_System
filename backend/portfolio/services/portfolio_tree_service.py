@@ -524,7 +524,9 @@ class PortfolioTreeService:
 
         asset_ids = {tx.asset_id for tx in transactions}
         assets_by_id = {}
+        transactions_by_asset = {}
         for tx in transactions:
+            transactions_by_asset.setdefault(tx.asset_id, []).append(tx)
             asset = tx.asset
             # Preserve the hierarchy labels on the asset object so the price
             # loader can recognize legacy MF assets even when their technical
@@ -613,8 +615,16 @@ class PortfolioTreeService:
             asset_name = cls._clean(first.asset_name)
             asset_name_key = (sub_class, asset_name)
             sub_class_key = sub_class
+
+            # Position inventory belongs to the underlying Asset, not to the
+            # editable hierarchy labels on each transaction. A SELL entered
+            # with different portfolio/class labels must still reduce the
+            # same asset's quantity and average-cost basis. Keep hierarchy
+            # grouping for display, and keep XIRR's historical transaction
+            # selection unchanged.
+            position_transactions = transactions_by_asset.get(asset_id, asset_transactions)
             asset_data = cls._build_asset(
-                transactions=asset_transactions,
+                transactions=position_transactions,
                 xirr_transactions=xirr_grouped.get(xirr_key, []),
                 asset_name_xirr=asset_name_xirr_values.get(asset_name_key),
                 sub_class_xirr=sub_class_xirr_values.get(sub_class_key),

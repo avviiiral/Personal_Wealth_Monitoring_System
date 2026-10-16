@@ -10,7 +10,7 @@ Base: `main` at `425fdd0810114ffcff53ecfc1cab52a8702a945f`
 
 Date: 2026-10-16
 
-The review covered the security-relevant Django/DRF backend, Angular authentication and routing, family/portfolio authorization code and tests, PostgreSQL configuration, file-upload paths, AI/news integration, dependency manifests, Git ignore rules, deployment configuration, and repository CI configuration accessible through the GitHub connector. The repository's GitHub code-search index was not available, so an exhaustive generated/static-file inventory and a production infrastructure inspection could not be claimed.
+The review covered the security-relevant Django/DRF backend, Angular authentication and routing, family/portfolio authorization code and tests, PostgreSQL configuration, file-upload paths, AI/news integration, dependency manifests, Git ignore rules, deployment configuration, and repository CI configuration accessible through the GitHub connector. The repository's GitHub code-search index was not available, so an exhaustive generated/static-file inventory and a production infrastructure inspection could not be claimed. The final branch was reviewed against `main` after all security changes were applied.
 
 No real user financial data or credentials were used.
 

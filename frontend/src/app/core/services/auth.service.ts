@@ -2,6 +2,7 @@ import { Injectable, inject } from '@angular/core';
 import { HttpClient, HttpHeaders } from '@angular/common/http';
 
 import { Observable, BehaviorSubject, tap, catchError, of, switchMap } from 'rxjs';
+import { environment } from '../../../environments/environment.prod';
 
 export interface AuthUser {
   id: number;
@@ -20,14 +21,14 @@ export interface LoginResponse {
 export class AuthService {
   private readonly http = inject(HttpClient);
 
-  private readonly baseUrl = 'http://localhost:8000/api/auth';
+  private readonly baseUrl = `${environment.apiUrl}/api/auth`;
 
   /*
    * Django's existing health endpoint uses
    * @ensure_csrf_cookie, so calling it gives the
    * browser the csrftoken cookie.
    */
-  private readonly csrfUrl = 'http://localhost:8000/api/health/';
+  private readonly csrfUrl = `${environment.apiUrl}/api/health/`;
 
   private readonly authenticatedSubject = new BehaviorSubject<boolean>(false);
 

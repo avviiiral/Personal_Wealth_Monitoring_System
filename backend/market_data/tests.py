@@ -28,10 +28,11 @@ class MISReferencePriceSchedulerTests(SimpleTestCase):
         thread_cls.assert_called_once()
         thread.start.assert_called_once()
         self.assertEqual(
-            thread.call_args.kwargs["name"], "mis-reference-price-scheduler"
+            thread_cls.call_args.kwargs["name"],
+            "mis-reference-price-scheduler",
         )
-        self.assertTrue(thread.call_args.kwargs["daemon"])
-
+        self.assertTrue(thread_cls.call_args.kwargs["daemon"])
+        
     @patch("market_data.services.mis_reference_price_scheduler.time.sleep")
     @patch("market_data.services.mis_reference_price_scheduler.close_old_connections")
     @patch("market_data.services.mis_reference_price_scheduler.MISReportService.refresh_reference_prices")

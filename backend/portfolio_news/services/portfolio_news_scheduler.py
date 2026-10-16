@@ -13,15 +13,22 @@ from config.pwms_config import get as get_pwms_config
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_INTERVAL_SECONDS = get_pwms_config("scheduler", "news_interval_seconds", 1800)
+DEFAULT_INTERVAL_SECONDS = get_pwms_config("scheduler", "news_interval_seconds", 180)
 STARTUP_DELAY_SECONDS = get_pwms_config("scheduler", "startup_delay_seconds", 10)
 
 
 def _get_interval_seconds() -> int:
+    raw_interval = os.environ.get("NEWS_MONITOR_INTERVAL")
+
+    if raw_interval is None:
+        return DEFAULT_INTERVAL_SECONDS
+
     try:
-        return int(os.environ.get("NEWS_MONITOR_INTERVAL", DEFAULT_INTERVAL_SECONDS))
+        interval = int(raw_interval)
     except (TypeError, ValueError):
         return DEFAULT_INTERVAL_SECONDS
+
+    return interval if interval > 0 else DEFAULT_INTERVAL_SECONDS
 
 
 class PortfolioNewsScheduler:

@@ -48,11 +48,11 @@ def health_check(request):
 # AUTHENTICATION
 # ==========================================================
 
-@csrf_protect
 @api_view(["POST"])
 @authentication_classes([])
 @permission_classes([AllowAny])
 @throttle_scope("login")
+@csrf_protect
 def login_view(request):
     """
     Authenticate a PWMS user using Django session authentication.

@@ -65,7 +65,7 @@ All third-party actions are pinned to immutable commit SHAs.
 - Confirmed raw AI portfolio-context exceptions are no longer returned to the client.
 - Confirmed external news content is explicitly treated as untrusted data by the Gemini system instructions.
 - Confirmed the security workflow has `permissions: contents: read` and pinned action SHAs.
-- Confirmed the branch is 12 commits ahead of `main` and 0 commits behind at review time.
+- Confirmed the branch is 17 commits ahead of `main` and 0 commits behind at final review time.
 
 ## Required verification after checkout
 

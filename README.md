@@ -1271,6 +1271,7 @@ PWMS has two layers of automatic refresh:
 | 3   | **Daily refresh**             | Once per calendar day of uptime              | AMFI NAV, security-master ratios, benchmark master coverage, SIP sync and execute. |
 | 4   | **Post-import refresh**       | Right after an import commits                | Immediate price refresh for newly added assets. |
 | 5   | **Portfolio News monitor**    | Every `NEWS_MONITOR_INTERVAL` (default 30 min) | Full news discovery → match → analyze → alert pass for every user. |
+| 6   | **MIS reference prices**      | Every 30 minutes while Django is running      | Refreshes Yahoo Finance reference-price history used by the MIS Notes sheet. Starts automatically with the existing background schedulers; no manual command is needed during normal operation. |
 
 ### Windows automatic market-price refresh
 
@@ -1308,6 +1309,8 @@ Unregister-ScheduledTask -TaskName "PWMS-Market-Price-Refresh" -Confirm:$false
 ```
 
 The setup is documented further in [`scripts/windows/README.md`](./scripts/windows/README.md).
+
+**MIS reference prices are refreshed separately from listed-asset market prices.** When Django starts serving requests, the existing `MISReferencePriceScheduler` waits 20 seconds for startup to settle, then calls `MISReportService.refresh_reference_prices()` every 30 minutes. This refresh is guarded by the shared scheduler startup check, so it does not start for one-off commands such as `migrate`, `shell` or `test`. It runs only while a Django application process is running. The management command `refresh_mis_reference_prices` remains available for an explicit one-off refresh; routine operation does not require running it manually.
 
 The daily refresh also runs the **benchmark master coverage check** for Nifty 50 and BSE 500 before the normal daily refresh. The BSE 500 loader only reads the configured local source when it is a regular file, so a directory or invalid file-path setting does not cause the scheduler to fail; supported remote/fallback benchmark sources remain available.
 
@@ -1438,7 +1441,8 @@ Run from `backend/` with the virtual environment active: `python manage.py <comm
 
 | Command                          | App              | What it does                                                                 |
 | -------------------------------- | ---------------- | ---------------------------------------------------------------------------- |
-| `update_market_prices`           | `market_data`    | One-off price refresh; on Windows it can also be run automatically every hour by the documented Task Scheduler setup |
+| `update_market_prices`           | `market_data`    | One-off listed-asset price refresh; on Windows it can also be run automatically every hour by the documented Task Scheduler setup |
+| `refresh_mis_reference_prices`   | `market_data`    | One-off refresh of Yahoo Finance reference-price history used by the MIS Notes sheet; normally refreshed automatically every 30 minutes while Django is running |
 | `monitor_portfolio_news`         | `portfolio_news` | One full news-monitoring pass for every user (also automatic)                |
 | `ingest_exchange_filings`         | `filing_intelligence` | Ingest corporate filings for a selected exchange; supports `--exchange nse|bse`, `--hours` and dry-run workflows |
 | `diagnose_corporate_filings`      | `filing_intelligence` | Read-only diagnostics for filing identifier coverage, portfolio matches, holding-user matches, watchlists and existing filing alerts |

@@ -9,7 +9,7 @@ from portfolio_news.services.pipeline import run_portfolio_news_monitor
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_INTERVAL_SECONDS = 1800  # 30 minutes
+DEFAULT_INTERVAL_SECONDS = 180  # 3 minutes
 
 
 def _get_interval_seconds() -> int:
@@ -36,7 +36,7 @@ class Command(BaseCommand):
         "Task Scheduler / systemd timer) every 30-60 minutes, or "
         "pass --loop to have this command handle its own "
         "scheduling instead, sleeping NEWS_MONITOR_INTERVAL "
-        "seconds (default 1800) between runs. All other "
+        "seconds (default 180) between runs. All other "
         "operational thresholds - lookback window, analysis "
         "pacing, per-holding article cap, and relevance/alert "
         "score floors - are configured via NEWS_MONITOR_* "
@@ -50,7 +50,7 @@ class Command(BaseCommand):
             action="store_true",
             help=(
                 "Run continuously, sleeping NEWS_MONITOR_INTERVAL "
-                "seconds (default 1800) between runs, instead of "
+                "seconds (default 180) between runs, instead of "
                 "running once and exiting. Intended for "
                 "environments without an external scheduler "
                 "(e.g. a long-lived container); stop with "

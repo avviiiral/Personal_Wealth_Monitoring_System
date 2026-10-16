@@ -265,6 +265,34 @@ class PortfolioTreeServiceTests(TestCase):
             100.0,
         )
 
+    def test_sell_reduces_same_asset_when_hierarchy_labels_differ(self):
+        # A sale can carry stale/different hierarchy labels while pointing to
+        # the same Asset row. It must still reduce the displayed position.
+        Transaction.objects.create(
+            owner=self.user,
+            family=self.family,
+            asset=self.asset,
+            family_name="Family A",
+            portfolio="Legacy Portfolio Label",
+            asset_class="Other",
+            sub_class="Old Subclass",
+            asset_name="Test Equity",
+            transaction_date=date(2026, 2, 10),
+            transaction_type="SELL",
+            quantity=Decimal("4"),
+            price_per_unit=Decimal("120"),
+            amount=Decimal("480"),
+            fees=Decimal("0"),
+        )
+
+        result = PortfolioTreeService.build(self.user)
+        asset = self._find_asset_node(result, "INE000TEST001")
+
+        self.assertIsNotNone(asset)
+        self.assertEqual(asset["quantity"], 6.0)
+        self.assertEqual(asset["invested_value"], 600.0)
+        self.assertEqual(asset["average_cost"], 100.0)
+
 
 class PortfolioCalculationServiceTests(TestCase):
     def setUp(self):

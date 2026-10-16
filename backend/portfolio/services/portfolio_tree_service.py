@@ -524,7 +524,9 @@ class PortfolioTreeService:
 
         asset_ids = {tx.asset_id for tx in transactions}
         assets_by_id = {}
+        transactions_by_asset = {}
         for tx in transactions:
+            transactions_by_asset.setdefault(tx.asset_id, []).append(tx)
             asset = tx.asset
             # Preserve the hierarchy labels on the asset object so the price
             # loader can recognize legacy MF assets even when their technical
@@ -613,8 +615,40 @@ class PortfolioTreeService:
             asset_name = cls._clean(first.asset_name)
             asset_name_key = (sub_class, asset_name)
             sub_class_key = sub_class
+
+            # Display grouping is based on transaction metadata. Position
+            # inventory is scoped to the same underlying asset and family, so
+            # a SELL with stale hierarchy labels can still reduce the holding.
+            # If one Asset intentionally has multiple hierarchy positions,
+            # attach only SELL rows that fail to match any existing BUY/SIP
+            # hierarchy; do not replay other groups' BUYs into each node.
+            asset_identity_transactions = transactions_by_asset.get(asset_id, asset_transactions)
+            buy_groups = {
+                (
+                    cls._clean(tx.family_name),
+                    cls._clean(tx.portfolio),
+                    cls._clean(tx.asset_class),
+                    cls._clean(tx.sub_class),
+                )
+                for tx in asset_identity_transactions
+                if str(tx.transaction_type).strip().upper() in ("BUY", "SIP")
+            }
+            unmatched_sales = [
+                tx for tx in asset_identity_transactions
+                if str(tx.transaction_type).strip().upper() == "SELL"
+                and (
+                    cls._clean(tx.family_name),
+                    cls._clean(tx.portfolio),
+                    cls._clean(tx.asset_class),
+                    cls._clean(tx.sub_class),
+                ) not in buy_groups
+            ]
+            position_transactions = sorted(
+                {tx.id: tx for tx in [*asset_transactions, *unmatched_sales]}.values(),
+                key=lambda tx: (tx.transaction_date, tx.id),
+            )
             asset_data = cls._build_asset(
-                transactions=asset_transactions,
+                transactions=position_transactions,
                 xirr_transactions=xirr_grouped.get(xirr_key, []),
                 asset_name_xirr=asset_name_xirr_values.get(asset_name_key),
                 sub_class_xirr=sub_class_xirr_values.get(sub_class_key),

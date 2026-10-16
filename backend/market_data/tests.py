@@ -1,3 +1,4 @@
+from io import StringIO
 from unittest.mock import patch
 
 from django.test import SimpleTestCase
@@ -66,8 +67,6 @@ class RefreshMISReferencePricesCommandTests(SimpleTestCase):
             "records": 120,
         }
         command = Command()
-
-        from io import StringIO
         command.stdout = StringIO()
 
         command.handle()

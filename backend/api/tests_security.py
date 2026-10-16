@@ -84,7 +84,11 @@ class AuthenticationSecurityTests(TestCase):
             "password": "wrong-password",
         }
 
-        for _ in range(2):
+        # The project-level ScopedRateThrottle is configured for five
+        # login attempts per minute. Keep this test aligned with the
+        # actual configured rate instead of overriding REST_FRAMEWORK,
+        # which DRF caches when api_settings is first imported.
+        for _ in range(5):
             response = client.post(
                 "/api/auth/login/",
                 payload,

@@ -1,5 +1,5 @@
 from django.core.cache import cache
-from django.test import TestCase, override_settings
+from django.test import TestCase
 from rest_framework.test import APIClient
 
 from django.contrib.auth import get_user_model
@@ -58,22 +58,6 @@ class AuthenticationSecurityTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertTrue(response.data["authenticated"])
 
-    @override_settings(
-        REST_FRAMEWORK={
-            "DEFAULT_PERMISSION_CLASSES": [
-                "rest_framework.permissions.IsAuthenticated"
-            ],
-            "DEFAULT_AUTHENTICATION_CLASSES": [
-                "rest_framework.authentication.SessionAuthentication"
-            ],
-            "DEFAULT_THROTTLE_CLASSES": [
-                "rest_framework.throttling.ScopedRateThrottle"
-            ],
-            "DEFAULT_THROTTLE_RATES": {
-                "login": "2/minute",
-            },
-        }
-    )
     def test_login_is_rate_limited(self):
         client = APIClient(enforce_csrf_checks=True)
         client.get("/api/health/")

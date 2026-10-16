@@ -67,8 +67,8 @@ class MISReferencePriceScheduler:
     @classmethod
     def _run(cls):
         # Let Django finish startup before the first external-data request.
-        # The MIS reference-prices management command is no longer required
-        # for routine refreshes; run one refresh as soon as startup settles.
+        # Run the first refresh immediately after startup settles, then keep
+        # refreshing on the configured interval.
         time.sleep(20)
 
         while True:

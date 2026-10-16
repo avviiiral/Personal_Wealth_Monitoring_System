@@ -33,11 +33,11 @@ pytz==2026.3.post1
 requests==2.34.2
 six==1.17.0
 soupsieve==2.9.2
-sqlparse==0.5.5
+sqlparse==0.6.0
 types-PyYAML==6.0.12.20260724
 typing_extensions==4.16.0
 tzdata==2026.3
-urllib3==2.7.0
+urllib3==2.8.0
 websockets==17.0.1
 yfinance==1.5.2
 waitress==3.0.2

@@ -3,12 +3,13 @@ from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError
 from django.http import JsonResponse
 from django.middleware.csrf import get_token
-from django.views.decorators.csrf import csrf_exempt, ensure_csrf_cookie
+from django.views.decorators.csrf import ensure_csrf_cookie
 
 from rest_framework.decorators import (
     api_view,
     authentication_classes,
     permission_classes,
+    throttle_scope,
 )
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
@@ -46,10 +47,10 @@ def health_check(request):
 # AUTHENTICATION
 # ==========================================================
 
-@csrf_exempt
 @api_view(["POST"])
 @authentication_classes([])
 @permission_classes([AllowAny])
+@throttle_scope("login")
 def login_view(request):
     """
     Authenticate a PWMS user using Django session authentication.

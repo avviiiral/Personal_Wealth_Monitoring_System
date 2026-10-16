@@ -213,6 +213,53 @@ class MISReportAPITests(TestCase):
             ],
         )
 
+    def test_reference_price_refresh_backfills_previous_month_when_missing(self):
+        today = date.today()
+        opening_date = MISReportService._prior_month_end(today)
+        reference = Asset.objects.create(
+            owner=None,
+            family=None,
+            name="Test MIS Reference",
+            category="OTHER",
+            symbol="TESTMISREF.NS",
+            currency="INR",
+            is_active=True,
+        )
+        # A current price exists, but there is no stored history for the
+        # previous month-end used by the Notes opening-rate column.
+        MarketPrice.objects.create(
+            asset=reference,
+            date=today,
+            close_price=Decimal("125"),
+            source=DataSource.MANUAL,
+        )
+
+        with (
+            patch.object(
+                MISReportService,
+                "REFERENCE_SYMBOLS",
+                {"Test MIS Reference": "TESTMISREF.NS"},
+            ),
+            patch.object(
+                MISReportService,
+                "_custom_note_references",
+                return_value={},
+            ),
+            patch(
+                "portfolio.mis_report_service.YahooFinanceService.save_history",
+                return_value=1,
+            ) as save_history,
+        ):
+            result = MISReportService.refresh_reference_prices()
+
+        self.assertEqual(result["refreshed"], 1)
+        self.assertEqual(result["failed"], 0)
+        self.assertEqual(save_history.call_count, 1)
+        self.assertLessEqual(
+            save_history.call_args.kwargs["start"],
+            opening_date,
+        )
+
     def test_notes_ticker_is_persisted_and_drives_live_price_lookup(self):
         opening_date = date(2026, 6, 30)
         as_of = date(2026, 7, 31)

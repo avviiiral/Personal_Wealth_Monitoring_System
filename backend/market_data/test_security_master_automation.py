@@ -46,7 +46,7 @@ class SecurityMasterMergeTests(unittest.TestCase):
                 "Yahoo Symbol": "",
                 "Asset Type": "STOCK",
                 "Manual NAV Enabled": True,
-                "Manual NAV": 123.45,
+                "Manual NAV": None,
                 "Active": True,
                 "Resolution Status": "UNRESOLVED",
                 "Price Source": "",

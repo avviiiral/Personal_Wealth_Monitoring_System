@@ -344,9 +344,74 @@ class SecurityResolver:
         if yahoo_from_master:
             return yahoo_from_master
 
-        return cls.ISIN_TO_YAHOO.get(
+        configured_symbol = cls.ISIN_TO_YAHOO.get(
             cleaned_isin
         )
+
+        if configured_symbol:
+            return configured_symbol
+
+        # Database fallback: an asset imported without a symbol can
+        # still be resolved when another Asset row for the same ISIN
+        # already has a verified symbol. Never infer a ticker from a
+        # company name or from the SecurityMaster metadata record.
+        return cls._resolve_from_database_isin(cleaned_isin)
+
+    @classmethod
+    def _resolve_from_database_isin(cls, isin):
+        """Resolve an ISIN only from existing Asset symbols in the DB.
+
+        Multiple rows for the same ISIN are safe only when their
+        normalized Yahoo symbols agree. Conflicts are left unresolved
+        rather than selecting an arbitrary ticker.
+        """
+        if not isin:
+            return None
+
+        try:
+            from investments.models import Asset
+
+            symbols = (
+                Asset.objects
+                .filter(isin=isin)
+                .exclude(symbol__isnull=True)
+                .exclude(symbol__exact="")
+                .values_list("symbol", flat=True)
+                .distinct()
+            )
+            candidates = set()
+
+            for symbol in symbols:
+                cleaned = cls.clean_symbol(symbol)
+                if not cleaned:
+                    continue
+
+                if cleaned.endswith(cls.NSE_SUFFIX) or cleaned.endswith(cls.BSE_SUFFIX):
+                    candidates.add(cleaned)
+                else:
+                    # Asset currently has no exchange field. PWMS's
+                    # existing default for unsuffixed Indian symbols is NSE.
+                    candidates.add(f"{cleaned}{cls.NSE_SUFFIX}")
+
+            if len(candidates) == 1:
+                return candidates.pop()
+
+            if len(candidates) > 1:
+                logger.warning(
+                    "Conflicting Asset symbols for ISIN %s: %s",
+                    isin,
+                    sorted(candidates),
+                )
+
+        except Exception:
+            # Symbol resolution must remain available during migrations
+            # and management commands where the database may be unavailable.
+            logger.exception(
+                "Database symbol fallback failed for ISIN %s",
+                isin,
+            )
+
+        return None
 
     @classmethod
     def resolve_from_name(cls, name):

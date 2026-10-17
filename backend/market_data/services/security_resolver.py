@@ -15,11 +15,12 @@ class SecurityResolver:
 
     Resolution priority:
         1. Security Master Excel ISIN mapping
-        2. Existing hard-coded ISIN mapping
-        3. Explicit Yahoo/exchange symbol
-        4. Security Master Excel name mapping
-        5. Existing hard-coded name mapping
-        6. Generic symbol + exchange suffix
+        2. Configured ISIN mapping
+        3. Existing Asset symbol for the same ISIN in the database
+        4. Explicit Yahoo/exchange symbol
+        5. Security Master Excel name mapping
+        6. Configured name mapping
+        7. Generic symbol + exchange suffix
 
     The Security Master is optional. If it is unavailable, the existing
     resolver behaviour remains available as a fallback.
@@ -326,8 +327,9 @@ class SecurityResolver:
         """
         Resolve Yahoo symbol directly from ISIN.
 
-        Security Master is checked first, followed by the existing
-        hard-coded mapping.
+        Security Master Excel and configured mappings are checked
+        first. If neither resolves the ISIN, reuse an unambiguous
+        symbol already stored on another Asset with the same ISIN.
         """
 
         cleaned_isin = cls.clean_isin(isin)
@@ -453,12 +455,11 @@ class SecurityResolver:
 
         Priority:
 
-            1. ISIN through Security Master
-            2. Existing ISIN mapping
-            3. Explicit symbol
-            4. Security Master name mapping
-            5. Existing name mapping
-            6. Generic symbol + exchange suffix
+            1. ISIN through Security Master/config/database
+            2. Explicit symbol
+            3. Security Master name mapping
+            4. Existing name mapping
+            5. Generic symbol + exchange suffix
         """
 
         yahoo_from_isin = cls.resolve_from_isin(

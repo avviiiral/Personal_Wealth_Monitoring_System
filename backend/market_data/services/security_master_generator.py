@@ -1,4 +1,5 @@
 from io import StringIO
+import os
 from pathlib import Path
 
 import pandas as pd
@@ -756,13 +757,122 @@ class SecurityMasterGenerator:
         }
 
     @classmethod
+    def _merge_existing_records(cls, records):
+        """
+        Merge freshly resolved records with the current workbook.
+
+        Existing rows and trusted mappings are retained. A refresh must not
+        erase manual NAV settings, metadata, or a previously stored Yahoo
+        symbol just because a provider is temporarily unavailable.
+        """
+        existing_path = cls._output_file()
+        if not existing_path.exists():
+            return records
+
+        try:
+            import openpyxl
+
+            workbook = openpyxl.load_workbook(
+                existing_path,
+                read_only=True,
+                data_only=True,
+            )
+            worksheet = workbook["Security Master"] if "Security Master" in workbook.sheetnames else workbook.active
+            rows = worksheet.iter_rows(values_only=True)
+            headers = next(rows, ())
+            indexes = {
+                str(header).strip(): index
+                for index, header in enumerate(headers)
+                if header is not None
+            }
+            existing_by_isin = {}
+
+            for row in rows:
+                isin_index = indexes.get("ISIN")
+                if isin_index is None or isin_index >= len(row):
+                    continue
+                isin = cls._normalize_isin(row[isin_index])
+                if not isin:
+                    continue
+                existing_by_isin[isin] = {
+                    column: row[indexes[column]]
+                    for column in cls.OUTPUT_COLUMNS
+                    if column in indexes and indexes[column] < len(row)
+                }
+
+            workbook.close()
+        except Exception:
+            # If the existing workbook is unreadable, fail closed rather
+            # than silently overwrite it with a potentially incomplete file.
+            raise RuntimeError(
+                f"Unable to safely merge existing security master: {existing_path}"
+            )
+
+        def is_blank(value):
+            if value is None:
+                return True
+            try:
+                if pd.isna(value):
+                    return True
+            except (TypeError, ValueError):
+                pass
+            return isinstance(value, str) and not value.strip()
+
+        merged_records = []
+        seen_isins = set()
+
+        for fresh in records:
+            isin = cls._normalize_isin(fresh.get("ISIN"))
+            previous = existing_by_isin.get(isin, {})
+            merged = dict(previous)
+
+            for column in cls.OUTPUT_COLUMNS:
+                new_value = fresh.get(column)
+                old_value = previous.get(column)
+
+                if column == "Yahoo Symbol":
+                    # Existing mapping wins. Fresh symbols are already
+                    # provider-validated by _resolve_yahoo_symbol().
+                    merged[column] = old_value if not is_blank(old_value) else new_value
+                elif column in {"Manual NAV Enabled", "Active"}:
+                    # These are user/operational settings, not resolver output.
+                    merged[column] = old_value if not is_blank(old_value) else new_value
+                elif column == "Manual NAV":
+                    merged[column] = old_value if not is_blank(old_value) else new_value
+                else:
+                    merged[column] = new_value if not is_blank(new_value) else old_value
+
+            if not is_blank(merged.get("Yahoo Symbol")):
+                merged["Resolution Status"] = "RESOLVED"
+                if is_blank(merged.get("Price Source")):
+                    merged["Price Source"] = "YAHOO_FINANCE"
+
+            merged_records.append(merged)
+            if isin:
+                seen_isins.add(isin)
+
+        # Preserve workbook-only/manual records even if they are not present
+        # in today's database extraction.
+        for isin, previous in existing_by_isin.items():
+            if isin not in seen_isins:
+                preserved = {column: previous.get(column) for column in cls.OUTPUT_COLUMNS}
+                merged_records.append(preserved)
+
+        return merged_records
+
+    @classmethod
     def _write_excel(cls, records):
         output_path = cls._output_file()
+        temp_path = output_path.with_name(
+            f".{output_path.stem}.candidate.xlsx"
+        )
 
         output_path.parent.mkdir(
             parents=True,
             exist_ok=True,
         )
+
+        records = cls._merge_existing_records(records)
 
         dataframe = pd.DataFrame(
             records,
@@ -779,7 +889,7 @@ class SecurityMasterGenerator:
         )
 
         with pd.ExcelWriter(
-            output_path,
+            temp_path,
             engine="openpyxl",
         ) as writer:
             dataframe.to_excel(
@@ -890,6 +1000,10 @@ class SecurityMasterGenerator:
                 cell.font = cell.font.copy(
                     bold=True
                 )
+
+        # Replace the active workbook only after the candidate was written
+        # successfully. This prevents a partial write from corrupting it.
+        os.replace(temp_path, output_path)
 
         return output_path
 

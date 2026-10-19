@@ -44,6 +44,12 @@ class MarketDataConfig(AppConfig):
 
         SecurityMetricsScheduler.start()
 
+        from market_data.services.security_master_scheduler import (
+            SecurityMasterScheduler,
+        )
+
+        SecurityMasterScheduler.start()
+
         from market_data.services.mis_reference_price_scheduler import (
             MISReferencePriceScheduler,
         )

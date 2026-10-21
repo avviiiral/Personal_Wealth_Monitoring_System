@@ -110,6 +110,33 @@ class PortfolioTreeService:
                     invested_value = Decimal("0")
             elif transaction_type in ("BONUS", "SPLIT"):
                 quantity += max(tx_quantity, Decimal("0"))
+        # Quantity is a net inventory measure, independent of transaction-date
+        # ordering. Legacy Excel imports can contain dates parsed in the wrong
+        # day/month order, causing SELL rows to precede their BUY rows.
+        net_quantity = sum(
+            (
+                (tx.quantity or Decimal("0"))
+                if str(tx.transaction_type).strip().upper() in ("BUY", "SIP", "BONUS", "SPLIT")
+                else -(tx.quantity or Decimal("0"))
+                if str(tx.transaction_type).strip().upper() == "SELL"
+                else Decimal("0")
+            )
+            for tx in transactions
+        )
+        quantity = max(net_quantity, Decimal("0"))
+        if quantity == 0:
+            invested_value = Decimal("0")
+        elif quantity != sum(
+            (
+                (tx.quantity or Decimal("0"))
+                if str(tx.transaction_type).strip().upper() in ("BUY", "SIP", "BONUS", "SPLIT")
+                else -(tx.quantity or Decimal("0"))
+                if str(tx.transaction_type).strip().upper() == "SELL"
+                else Decimal("0")
+            )
+            for tx in transactions
+        ):
+            invested_value = Decimal("0")
         average_cost = invested_value / quantity if quantity > 0 else Decimal("0")
         return {"quantity": quantity, "invested_value": invested_value, "average_cost": average_cost}
 
@@ -667,6 +694,10 @@ class PortfolioTreeService:
                 ),
                 asset_transactions,
             )
+            # Consider sales attached to the same Asset across legacy hierarchy
+            # labels, but do not consume a sale from a portfolio that has its
+            # own matching BUY/SIP hierarchy.
+            all_asset_transactions = transactions_by_asset.get(asset_id, asset_transactions)
             buy_groups = {
                 (
                     cls._clean(tx.family_name),
@@ -674,11 +705,11 @@ class PortfolioTreeService:
                     cls._clean(tx.asset_class),
                     cls._clean(tx.sub_class),
                 )
-                for tx in asset_identity_transactions
+                for tx in all_asset_transactions
                 if str(tx.transaction_type).strip().upper() in ("BUY", "SIP")
             }
             unmatched_sales = [
-                tx for tx in asset_identity_transactions
+                tx for tx in all_asset_transactions
                 if str(tx.transaction_type).strip().upper() == "SELL"
                 and (
                     cls._clean(tx.family_name),

@@ -382,7 +382,9 @@ export class PortfolioComponent implements OnInit, OnDestroy {
   }
   getSortedUnderlyingAssets(assets: PortfolioAssetNode[], parentKey = ''): PortfolioAssetNode[] {
     const resolvedParentKey = parentKey || this.expandedAsset || 'empty';
-    return this.sortRows(assets, 'underlying', resolvedParentKey, (asset, column) => {
+    // Fully sold positions are omitted from the detail table; calculations and source data remain unchanged.
+    const activeAssets = assets.filter((asset) => Number.isFinite(Number(asset.quantity)) && Number(asset.quantity) > 0);
+    return this.sortRows(activeAssets, 'underlying', resolvedParentKey, (asset, column) => {
       switch (column) { case 'underlying': return this.getUnderlyingName(asset); case 'family': return asset.family_name || ''; case 'isin': return asset.isin || ''; case 'quantity': return asset.quantity; case 'invested': return asset.invested_value; case 'current_price': return asset.current_price; case 'current_value': return asset.current_value; case 'pnl': return asset.pnl; case 'xirr': return asset.xirr; default: return this.getUnderlyingName(asset); }
     }, (left, right) => this.getUnderlyingName(left).localeCompare(this.getUnderlyingName(right)));
   }

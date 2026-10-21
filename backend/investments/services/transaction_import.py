@@ -1,4 +1,5 @@
 from decimal import Decimal, InvalidOperation
+from datetime import datetime
 import hashlib
 import logging
 
@@ -914,6 +915,46 @@ class TransactionImporter:
         )
 
     @staticmethod
+    def _parse_transaction_date(raw_date, row_number):
+        """
+        Parse imported dates without guessing ambiguous day/month order.
+
+        Text dates accept DD-MM-YYYY, DD/MM/YYYY, or ISO YYYY-MM-DD.
+        Native Excel date/datetime values are preserved as dates.
+        """
+        if pd.isna(raw_date):
+            raise TransactionImportError(
+                "Date is empty at "
+                f"Excel row {row_number}."
+            )
+
+        if isinstance(raw_date, pd.Timestamp):
+            return raw_date.date()
+
+        if hasattr(raw_date, "date") and not isinstance(raw_date, str):
+            try:
+                return raw_date.date()
+            except (AttributeError, TypeError, ValueError):
+                pass
+
+        if isinstance(raw_date, str):
+            text = raw_date.strip()
+            for date_format in ("%d-%m-%Y", "%d/%m/%Y", "%Y-%m-%d"):
+                try:
+                    return datetime.strptime(text, date_format).date()
+                except (ValueError, TypeError):
+                    continue
+            raise TransactionImportError(
+                "Invalid Date at Excel row "
+                f"{row_number}: {raw_date}. Use DD-MM-YYYY."
+            )
+
+        raise TransactionImportError(
+            "Invalid Date at Excel row "
+            f"{row_number}: {raw_date}. Use an Excel date cell or DD-MM-YYYY."
+        )
+
+    @staticmethod
     def _validate_row(
         row,
         row_number,
@@ -989,26 +1030,10 @@ class TransactionImporter:
         # No application-owned classification list is used to accept/reject them.
 
         raw_date = row["Date"]
-
-        if pd.isna(raw_date):
-            raise TransactionImportError(
-                "Date is empty at "
-                f"Excel row {row_number}."
-            )
-
-        transaction_date = pd.to_datetime(
+        transaction_date = TransactionImporter._parse_transaction_date(
             raw_date,
-            errors="coerce",
+            row_number,
         )
-
-        if pd.isna(transaction_date):
-            raise TransactionImportError(
-                "Invalid Date at "
-                f"Excel row {row_number}: "
-                f"{raw_date}"
-            )
-
-        transaction_date = transaction_date.date()
 
         transaction_type = (
             TransactionImporter
@@ -1368,6 +1393,45 @@ class TransactionImporter:
                     if mapped_transaction_type is None:
                         raise TransactionImportError(
                             f"Unsupported investment transaction type: {parsed['transaction_type']}"
+                        )
+
+                    # Older imports could interpret DD-MM-YYYY text as MM-DD-YYYY.
+                    # Correct only a unique matching Excel transaction; never guess.
+                    date_mismatch_candidates = list(
+                        Transaction.objects.filter(
+                            family=family,
+                            source="EXCEL",
+                            asset=asset,
+                            family_name=parsed["family_name"],
+                            portfolio=parsed["portfolio"],
+                            asset_class=parsed["asset_class"],
+                            sub_class=parsed["sub_class"],
+                            asset_name=parsed["asset_name"],
+                            underlying=parsed["underlying"],
+                            advisors=parsed["advisors"],
+                            transaction_type=mapped_transaction_type,
+                            quantity=parsed["quantity"],
+                            price_per_unit=parsed["price"],
+                            amount=parsed["amount"],
+                        ).exclude(
+                            transaction_date=parsed["transaction_date"],
+                        ).order_by("id")
+                    )
+                    if len(date_mismatch_candidates) == 1:
+                        existing = date_mismatch_candidates[0]
+                        existing.transaction_date = parsed["transaction_date"]
+                        existing.source_key = source_key
+                        existing.save(update_fields=["transaction_date", "source_key"])
+                        seen_source_keys.add(source_key)
+                        touched_asset_ids.add(asset.id)
+                        imported_investments += 1
+                        continue
+                    if len(date_mismatch_candidates) > 1:
+                        raise TransactionImportError(
+                            "Cannot safely correct the transaction date at "
+                            f"Excel row {row_number}: multiple existing Excel "
+                            "transactions match its security, quantity, price, "
+                            "and amount. Resolve the duplicate records first."
                         )
 
                     Transaction.objects.create(

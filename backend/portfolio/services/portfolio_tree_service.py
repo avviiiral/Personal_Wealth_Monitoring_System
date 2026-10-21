@@ -494,6 +494,7 @@ class PortfolioTreeService:
         tree = {}
         grouped = {}
         xirr_grouped = {}
+        xirr_transactions_by_underlying_identity = {}
         asset_name_xirr_grouped = {}
         sub_class_xirr_grouped = {}
 
@@ -518,6 +519,14 @@ class PortfolioTreeService:
 
             # Underlying XIRR follows the exact Portfolio holding hierarchy.
             xirr_grouped.setdefault((family, portfolio, asset_class, sub_class, tx.asset_id), []).append(tx)
+            underlying_identity = (
+                family.casefold(), portfolio.casefold(), asset_class.casefold(),
+                sub_class.casefold(), asset_name.casefold(),
+                cls._clean(tx.underlying).casefold(),
+            )
+            xirr_transactions_by_underlying_identity.setdefault(
+                underlying_identity, []
+            ).append(tx)
             # Asset Name XIRR intentionally ignores family/portfolio/asset-class boundaries.
             asset_name_xirr_grouped.setdefault((sub_class, asset_name), []).append(tx)
             sub_class_xirr_grouped.setdefault(sub_class, []).append(tx)
@@ -525,8 +534,29 @@ class PortfolioTreeService:
         asset_ids = {tx.asset_id for tx in transactions}
         assets_by_id = {}
         transactions_by_asset = {}
+        transactions_by_portfolio_asset = {}
+        transactions_by_underlying_identity = {}
         for tx in transactions:
             transactions_by_asset.setdefault(tx.asset_id, []).append(tx)
+            portfolio_asset_key = (
+                tx.asset_id,
+                cls._clean(tx.family_name).casefold(),
+                cls._clean(tx.portfolio).casefold(),
+            )
+            transactions_by_portfolio_asset.setdefault(
+                portfolio_asset_key, []
+            ).append(tx)
+            underlying_identity = (
+                cls._clean(tx.family_name).casefold(),
+                cls._clean(tx.portfolio).casefold(),
+                cls._clean(tx.asset_class).casefold(),
+                cls._clean(tx.sub_class).casefold(),
+                cls._clean(tx.asset_name).casefold(),
+                cls._clean(tx.underlying).casefold(),
+            )
+            transactions_by_underlying_identity.setdefault(
+                underlying_identity, []
+            ).append(tx)
             asset = tx.asset
             # Preserve the hierarchy labels on the asset object so the price
             # loader can recognize legacy MF assets even when their technical
@@ -609,20 +639,34 @@ class PortfolioTreeService:
             for key, txs in sub_class_xirr_grouped.items()
         }
 
+        emitted_underlying_positions = set()
         for (family, portfolio, asset_class, sub_class, asset_id), asset_transactions in grouped.items():
             first = asset_transactions[0]
             xirr_key = (family, portfolio, asset_class, sub_class, asset_id)
             asset_name = cls._clean(first.asset_name)
             asset_name_key = (sub_class, asset_name)
             sub_class_key = sub_class
+            underlying_identity = (
+                cls._clean(first.family_name).casefold(),
+                cls._clean(first.portfolio).casefold(),
+                cls._clean(first.asset_class).casefold(),
+                cls._clean(first.sub_class).casefold(),
+                cls._clean(first.asset_name).casefold(),
+                cls._clean(first.underlying).casefold(),
+            )
+            # Separate Asset rows can represent one imported underlying position.
+            # Emit it once, and reconcile only within the exact portfolio hierarchy.
+            if underlying_identity in emitted_underlying_positions:
+                continue
 
-            # Display grouping is based on transaction metadata. Position
-            # inventory is scoped to the same underlying asset and family, so
-            # a SELL with stale hierarchy labels can still reduce the holding.
-            # If one Asset intentionally has multiple hierarchy positions,
-            # attach only SELL rows that fail to match any existing BUY/SIP
-            # hierarchy; do not replay other groups' BUYs into each node.
-            asset_identity_transactions = transactions_by_asset.get(asset_id, asset_transactions)
+            asset_identity_transactions = transactions_by_portfolio_asset.get(
+                (
+                    asset_id,
+                    cls._clean(first.family_name).casefold(),
+                    cls._clean(first.portfolio).casefold(),
+                ),
+                asset_transactions,
+            )
             buy_groups = {
                 (
                     cls._clean(tx.family_name),
@@ -643,13 +687,25 @@ class PortfolioTreeService:
                     cls._clean(tx.sub_class),
                 ) not in buy_groups
             ]
+            matched_duplicates = transactions_by_underlying_identity.get(
+                underlying_identity, []
+            )
             position_transactions = sorted(
-                {tx.id: tx for tx in [*asset_transactions, *unmatched_sales]}.values(),
+                {
+                    tx.id: tx
+                    for tx in [
+                        *asset_identity_transactions,
+                        *unmatched_sales,
+                        *matched_duplicates,
+                    ]
+                }.values(),
                 key=lambda tx: (tx.transaction_date, tx.id),
             )
             asset_data = cls._build_asset(
                 transactions=position_transactions,
-                xirr_transactions=xirr_grouped.get(xirr_key, []),
+                xirr_transactions=xirr_transactions_by_underlying_identity.get(
+                    underlying_identity, xirr_grouped.get(xirr_key, [])
+                ),
                 asset_name_xirr=asset_name_xirr_values.get(asset_name_key),
                 sub_class_xirr=sub_class_xirr_values.get(sub_class_key),
                 price_cache=price_cache,
@@ -657,6 +713,7 @@ class PortfolioTreeService:
             )
             if asset_data["quantity"] <= 0:
                 continue
+            emitted_underlying_positions.add(underlying_identity)
             family_data = tree.setdefault(family, {"family_name": family, "portfolios": {}})
             portfolio_data = family_data["portfolios"].setdefault(portfolio, {"portfolio": portfolio, "asset_classes": {}})
             asset_class_data = portfolio_data["asset_classes"].setdefault(asset_class, {"asset_class": asset_class, "sub_classes": {}})

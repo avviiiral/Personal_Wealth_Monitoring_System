@@ -53,6 +53,192 @@ class PortfolioTreeServiceTests(TestCase):
             fees=Decimal("0"),
         )
 
+    def test_underlying_is_hidden_when_partial_sales_fully_close_position(self):
+        asset = Asset.objects.create(
+            family=self.family,
+            owner=self.user,
+            name="DMZ PARTNERS INHERITORS STRATEGY - TCI Express Ltd",
+            category="STOCK",
+            isin="INE586V01016",
+        )
+        common = {
+            "owner": self.user,
+            "family": self.family,
+            "asset": asset,
+            "family_name": "DAJ",
+            "portfolio": "DMZ PARTNERS INHERITORS STRATEGY",
+            "asset_class": "Equity",
+            "sub_class": "Equity PMS",
+            "asset_name": "DMZ PARTNERS INHERITORS STRATEGY",
+            "underlying": "TCI Express Ltd",
+            "advisors": "Direct",
+            "fees": Decimal("0"),
+        }
+        # Reproduce the live database's ambiguous Excel-date parsing:
+        # the two April SELL dates were stored as Jan 4 and Feb 4, before the
+        # Feb 19 BUY. Quantity must still net to zero regardless of date order.
+        for index, (tx_date, tx_type, quantity, price, amount) in enumerate([
+            (date(2019, 2, 19), "BUY", "80", "622.78", "49822.40"),
+            (date(2019, 1, 4), "SELL", "9", "727.66", "6548.94"),
+            (date(2019, 2, 4), "SELL", "71", "715.00", "50765.00"),
+        ]):
+            # Model Excel import behavior where each row can be linked to a
+            # separate Asset record despite representing the same ISIN.
+            transaction_asset = asset if index == 0 else Asset.objects.create(
+                family=self.family,
+                owner=self.user,
+                name="TCI Express Ltd",
+                category="STOCK",
+                # Duplicate imported Asset rows may have missing or inconsistent ISIN.
+                # Quantity matching must use the four hierarchy fields + Underlying.
+                isin="",
+            )
+            Transaction.objects.create(
+                **{**common, "asset": transaction_asset},
+                transaction_date=tx_date,
+                transaction_type=tx_type,
+                quantity=Decimal(quantity),
+                price_per_unit=Decimal(price),
+                amount=Decimal(amount),
+            )
+
+        result = PortfolioTreeService.build(
+            owner=self.user,
+            family_id=self.family.id,
+        )
+        visible_names = [
+            node["asset_name"]
+            for family in result["families"]
+            for portfolio in family["portfolios"]
+            for asset_class in portfolio["asset_classes"]
+            for subclass in asset_class["sub_classes"]
+            for node in subclass["assets"]
+        ]
+        self.assertNotIn("DMZ PARTNERS INHERITORS STRATEGY", visible_names)
+        self.assertEqual(
+            PortfolioTreeService._calculate_position(
+                list(
+                    Transaction.objects.filter(
+                        family=self.family,
+                        family_name="DAJ",
+                        asset_class="Equity",
+                        sub_class="Equity PMS",
+                        asset_name="DMZ PARTNERS INHERITORS STRATEGY",
+                        underlying="TCI Express Ltd",
+                    ).order_by("transaction_date", "id")
+                )
+            )["quantity"],
+            Decimal("0"),
+        )
+
+    def test_same_asset_is_isolated_between_portfolios(self):
+        # Excel imports may reuse one Asset record for two separate portfolio
+        # strategies. The fully sold position in Portfolio B must not cancel
+        # the still-open position in Portfolio A.
+        shared_asset = Asset.objects.create(
+            family=self.family,
+            owner=self.user,
+            name="Shared Portfolio Equity",
+            category="STOCK",
+            isin="INE000SHARED01",
+        )
+        common = {
+            "owner": self.user,
+            "family": self.family,
+            "asset": shared_asset,
+            "family_name": "DAJ",
+            "asset_class": "Equity",
+            "sub_class": "Equity PMS",
+            "asset_name": "Shared Portfolio Equity",
+            "underlying": "Shared Portfolio Equity",
+            "fees": Decimal("0"),
+        }
+        for portfolio, tx_type, quantity, tx_date in [
+            ("Portfolio A", "BUY", "73", date(2026, 1, 1)),
+            ("Portfolio B", "BUY", "31", date(2026, 1, 2)),
+            ("Portfolio B", "SELL", "31", date(2026, 2, 1)),
+        ]:
+            Transaction.objects.create(
+                **common,
+                portfolio=portfolio,
+                transaction_date=tx_date,
+                transaction_type=tx_type,
+                quantity=Decimal(quantity),
+                price_per_unit=Decimal("100"),
+                amount=Decimal(quantity) * Decimal("100"),
+            )
+
+        result = PortfolioTreeService.build(
+            owner=self.user,
+            family_id=self.family.id,
+        )
+        # Key by family AND portfolio: different families may legitimately
+        # use the same portfolio label (the setUp fixture already has one).
+        positions = {
+            (family["family_name"], portfolio["portfolio"]): [
+                asset
+                for asset_class in portfolio["asset_classes"]
+                for subclass in asset_class["sub_classes"]
+                for asset in subclass["assets"]
+                if asset["asset_name"] == "Shared Portfolio Equity"
+            ]
+            for family in result["families"]
+            for portfolio in family["portfolios"]
+        }
+
+        self.assertEqual(len(positions[("DAJ", "Portfolio A")]), 1)
+        self.assertEqual(positions[("DAJ", "Portfolio A")][0]["quantity"], 73.0)
+        self.assertEqual(positions.get(("DAJ", "Portfolio B"), []), [])
+
+    def test_duplicate_asset_records_reconcile_only_within_same_portfolio(self):
+        # Separate imported Asset rows for one security should reconcile inside
+        # the same portfolio, but a sale in another strategy must not consume it.
+        buy_asset = Asset.objects.create(
+            family=self.family, owner=self.user, name="Duplicate Identity Buy",
+            category="STOCK", isin="INE000DUPLICATE1",
+        )
+        sell_asset = Asset.objects.create(
+            family=self.family, owner=self.user, name="Duplicate Identity Sell",
+            category="STOCK", isin="",
+        )
+        common = {
+            "owner": self.user, "family": self.family, "family_name": "DAJ",
+            "asset_class": "Equity", "sub_class": "Equity PMS",
+            "asset_name": "Duplicate Identity Equity",
+            "underlying": "Duplicate Identity Equity", "fees": Decimal("0"),
+            "price_per_unit": Decimal("100"),
+        }
+        Transaction.objects.create(
+            **common, asset=buy_asset, portfolio="Strategy A",
+            transaction_date=date(2026, 1, 1), transaction_type="BUY",
+            quantity=Decimal("73"), amount=Decimal("7300"),
+        )
+        Transaction.objects.create(
+            **common, asset=sell_asset, portfolio="Strategy A",
+            transaction_date=date(2026, 2, 1), transaction_type="SELL",
+            quantity=Decimal("20"), amount=Decimal("2000"),
+        )
+        Transaction.objects.create(
+            **common, asset=sell_asset, portfolio="Strategy B",
+            transaction_date=date(2026, 2, 2), transaction_type="SELL",
+            quantity=Decimal("53"), amount=Decimal("5300"),
+        )
+
+        result = PortfolioTreeService.build(owner=self.user, family_id=self.family.id)
+        positions = {
+            p["portfolio"]: [
+                node for ac in p["asset_classes"]
+                for sc in ac["sub_classes"] for node in sc["assets"]
+                if node["asset_name"] == "Duplicate Identity Equity"
+            ]
+            for family in result["families"] for p in family["portfolios"]
+        }
+
+        self.assertEqual(len(positions.get("Strategy A", [])), 1)
+        self.assertEqual(positions["Strategy A"][0]["quantity"], 53.0)
+        # Strategy B's SELL has no matching BUY within B and cannot affect A.
+        self.assertEqual(positions.get("Strategy B", []), [])
+
     def test_tree_hierarchy(self):
         result = PortfolioTreeService.build(self.user)
 

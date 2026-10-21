@@ -3,7 +3,7 @@ from decimal import Decimal
 
 from django.core.management.base import BaseCommand, CommandError
 
-from investments.services import cash_flows as cash_flow_service
+from analytics.services import cash_flows as cash_flow_service
 from portfolio.services.portfolio_calculation_service import PortfolioCalculationService
 from portfolio.services.portfolio_tree_service import PortfolioTreeService
 

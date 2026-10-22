@@ -67,4 +67,7 @@ urlpatterns = [
     ),
 
     path("api/filings/", include("filing_intelligence.urls")),
+
+    # Corporate actions (split, bonus, dividends and related events)
+    path("api/corporate-actions/", include("corporate_actions.urls")),
 ]

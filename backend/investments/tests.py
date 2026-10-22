@@ -348,7 +348,7 @@ from .services.transaction_import import (
 )
 
 
-def _build_transactions_workbook(include_summary):
+def _build_transactions_workbook(include_summary, transaction_type="Buy"):
     """
     Build a minimal, valid transaction-import .xlsx file in
     memory, with or without a "Summary" sheet, for testing
@@ -384,7 +384,7 @@ def _build_transactions_workbook(include_summary):
         "DIRECT",
         "INE002A01018",
         "2026-07-16",
-        "Buy",
+        transaction_type,
         "100",
         "1897.87",
         "189787.00",
@@ -482,6 +482,33 @@ class TransactionImportExcelShapeTests(TestCase):
         )
 
         self.assertEqual(result["imported_investments"], 1)
+
+    def test_import_accepts_dividend_payout_and_starred_split_labels(self):
+        expected_types = {
+            "DIVIDEND PAYOUT": TransactionType.DIVIDEND,
+            "*SPLIT": TransactionType.SPLIT,
+        }
+
+        for label, expected_type in expected_types.items():
+            with self.subTest(transaction_type=label):
+                upload = _build_transactions_workbook(
+                    include_summary=False,
+                    transaction_type=label,
+                )
+
+                result = TransactionImporter.import_file(
+                    file=upload,
+                    owner=self.user,
+                )
+
+                self.assertEqual(result["imported_investments"], 1)
+                self.assertEqual(result["failed_rows"], 0)
+                self.assertTrue(
+                    Transaction.objects.filter(
+                        owner=self.user,
+                        transaction_type=expected_type,
+                    ).exists()
+                )
 
     def test_import_accepts_family_member_and_empty_summary_mapping(self):
         workbook = openpyxl.Workbook()

@@ -228,6 +228,19 @@ Net worth, asset allocation, key portfolio metrics and an **Investment Summary**
 - **Sample Underlying Format** download from Settings as an Excel workbook with an `Underlying` sheet and upload instructions
 - **Transaction Edit History** records edits made from Transaction Reports and retains a durable audit record when a transaction is deleted. Deleted transactions remain visible in the audit history with their previous values.
 
+### 🏢 Corporate actions
+
+PWMS now includes a backend corporate-action registry for recording and reviewing security events against the authenticated user's own records.
+
+- Supported event types include stock splits and reverse splits, bonus issues, stock dividends, cash dividends, mergers, demergers, rights issues, buybacks, tender offers, ticker/ISIN changes, delistings, and mutual-fund distributions or unit adjustments.
+- Each event can store the security name, ISIN, symbol, exchange, ex-date, record/payment dates, ratio units, cash per unit, resulting security identifiers, source/reference, notes and metadata.
+- New actions default to **Pending review**. Only **Confirmed** ratio actions contribute to the quantity-multiplier calculation; pending and rejected actions do not.
+- Candidate resolution prioritizes exact ISIN matching when an ISIN is supplied. Otherwise it uses symbol (and exchange when supplied); display-name similarity alone is not used to guess a match.
+- API access is authenticated and owner-scoped. A user cannot retrieve or change another user's corporate-action records.
+- The transaction Excel importer recognizes `DIVIDEND PAYOUT` as a dividend and `*SPLIT` as a split transaction type.
+
+**Current scope:** this is the registry and calculation-service foundation. Corporate actions are **not yet automatically applied end-to-end** to portfolio holdings, current valuations, historical MIS or XIRR, and there is no frontend review screen documented as available. Confirmed actions should not be assumed to have changed displayed portfolio quantities until that integration is implemented.
+
 ### 📥 Transaction Uploads
 
 Transaction imports are tracked as auditable upload records so users can review what happened after an Excel upload.
@@ -1229,6 +1242,19 @@ All endpoints require an authenticated Django session unless noted. Auth uses **
 
 </details>
 
+<details>
+<summary><b>Corporate actions</b> — <code>/api/corporate-actions/</code></summary>
+
+| Method | Endpoint | Purpose |
+| --- | --- | --- |
+| `GET` `POST` | `/api/corporate-actions/` | List the current user's actions (optional `status`, `isin` or `symbol` filters) / create an action |
+| `GET` | `/api/corporate-actions/candidates/` | Find candidate actions by exact security identifier and optional event date |
+| `GET` `PATCH` `DELETE` | `/api/corporate-actions/<id>/` | Retrieve, update or delete one of the current user's actions |
+
+All endpoints require authentication. Ratio actions validate positive old/new units; duplicate owner/ISIN/type/ex-date combinations are rejected. The candidate endpoint returns only the authenticated user's records.
+
+</details>
+
 ---
 
 ## 🎨 Frontend architecture
@@ -1517,6 +1543,18 @@ python manage.py test portfolio_news.test_web_push -v 2 # Web Push delivery beha
 npm test          # unit tests
 npm run build     # verifies the whole app compiles
 ```
+
+### Corporate-actions branch verification
+
+Validation recorded for `feature/corporate-actions-management`:
+
+- `python manage.py test` — **599 backend tests passed**; Django system checks reported no issues.
+- `python manage.py test corporate_actions --verbosity 2` — **6 corporate-action tests passed**, including pending-action behavior, ratio validation, exact-ISIN matching and owner isolation.
+- Frontend `ng test` — **51 tests passed across 4 test files**.
+- `ng build` — production build completed successfully. Non-blocking warnings remain for two component SCSS style budgets and CommonJS dependencies.
+- The importer regression tests cover the `DIVIDEND PAYOUT` and `*SPLIT` transaction labels.
+
+These checks verify the registry/API and importer behavior; they do not establish end-to-end corporate-action adjustment of holdings, valuations or XIRR.
 
 ### Capital-gains tax engine audit verification
 

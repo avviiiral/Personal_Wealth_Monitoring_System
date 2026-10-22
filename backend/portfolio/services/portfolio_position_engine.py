@@ -3,6 +3,11 @@ from decimal import Decimal
 from django.db import transaction
 from django.db.models import Sum
 
+from corporate_actions.position_adjustment import (
+    calculate_position_with_actions,
+    confirmed_ratio_actions,
+)
+
 from investments.models import (
     Asset,
     PortfolioPosition,
@@ -60,6 +65,14 @@ class PortfolioPositionEngine:
             asset=asset,
             as_of_date=as_of_date,
         )
+
+        actions = confirmed_ratio_actions(
+            asset=asset,
+            owner=asset.owner,
+            as_of_date=as_of_date,
+        )
+        if actions:
+            return calculate_position_with_actions(transactions, actions)
 
         # Optimize the common BUY/SIP-only case with a single SQL
         # aggregation. Positions containing SELL/BONUS/SPLIT still use

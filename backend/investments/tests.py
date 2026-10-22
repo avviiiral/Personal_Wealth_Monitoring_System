@@ -344,6 +344,7 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 
 from .services.transaction_import import (
     TransactionImporter,
+    TransactionImportError,
 )
 
 
@@ -436,6 +437,24 @@ class TransactionImportExcelShapeTests(TestCase):
         )
         family = FamilyGroup.objects.create(name="Import Shape Family")
         self.user.profile.family_groups.add(family)
+
+    def test_text_dates_are_parsed_as_day_month_year(self):
+        parsed = TransactionImporter._parse_transaction_date("02-09-2026", 2)
+        self.assertEqual(parsed, date(2026, 9, 2))
+
+    def test_iso_and_slash_dates_are_supported(self):
+        self.assertEqual(
+            TransactionImporter._parse_transaction_date("2026-10-01", 2),
+            date(2026, 10, 1),
+        )
+        self.assertEqual(
+            TransactionImporter._parse_transaction_date("02/09/2026", 2),
+            date(2026, 9, 2),
+        )
+
+    def test_invalid_text_date_is_rejected_with_format_hint(self):
+        with self.assertRaisesRegex(TransactionImportError, "DD-MM-YYYY"):
+            TransactionImporter._parse_transaction_date("31-02-2026", 9)
 
     def test_import_succeeds_without_summary_sheet(self):
         upload = _build_transactions_workbook(include_summary=False)

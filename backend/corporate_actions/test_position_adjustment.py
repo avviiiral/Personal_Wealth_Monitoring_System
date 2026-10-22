@@ -56,8 +56,8 @@ class CorporateActionPositionAdjustmentTests(TestCase):
             actions,
         )
         self.assertEqual(position["quantity"], Decimal("15"))
-        self.assertEqual(position["invested_value"], Decimal("50"))
-        self.assertEqual(position["average_cost"], Decimal("50") / Decimal("15"))
+        self.assertEqual(position["invested_value"], Decimal("75"))
+        self.assertEqual(position["average_cost"], Decimal("5"))
 
     def test_pending_split_does_not_change_position(self):
         self.transaction(TransactionType.BUY, date(2025, 1, 1), 10, 100)

@@ -102,7 +102,7 @@ def corporate_action_candidates(request):
             exchange=request.query_params.get("exchange", ""),
             event_date=event_date,
         )
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, ValidationError):
         return Response({"detail": "event_date must be an ISO date (YYYY-MM-DD)."}, status=400)
     return Response({
         "count": candidates.count(),

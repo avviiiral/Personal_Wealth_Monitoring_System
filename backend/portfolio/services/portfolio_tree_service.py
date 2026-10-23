@@ -5,7 +5,6 @@ from decimal import Decimal
 from django.db.models import OuterRef, QuerySet, Subquery, Q
 
 from investments.models import Asset, SecurityMaster, Transaction, TransactionType
-
 from corporate_actions.position_adjustment import (
     calculate_position_with_actions,
     confirmed_ratio_actions,

@@ -194,6 +194,8 @@ CSRF_TRUSTED_ORIGINS = _env_list('CSRF_TRUSTED_ORIGINS', [get_pwms_config('deplo
 SESSION_COOKIE_SECURE = _env_bool('SESSION_COOKIE_SECURE', False)
 CSRF_COOKIE_SECURE = _env_bool('CSRF_COOKIE_SECURE', False)
 SECURE_SSL_REDIRECT = _env_bool('SECURE_SSL_REDIRECT', False)
+SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+
 
 # Browser Web Push (VAPID). Keep the private key server-side only.
 WEB_PUSH_VAPID_PUBLIC_KEY = os.environ.get("WEB_PUSH_VAPID_PUBLIC_KEY", "").strip()

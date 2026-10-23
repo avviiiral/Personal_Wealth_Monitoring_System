@@ -345,6 +345,43 @@ class PortfolioTreeServiceTests(TestCase):
         self.assertEqual(node["current_price"], 125.5)
         self.assertEqual(node["current_value"], 1255.0)
 
+    def test_confirmed_split_adjusts_tree_quantity_without_changing_cost_basis(self):
+        CorporateAction.objects.create(
+            owner=self.user,
+            action_type=CorporateActionType.STOCK_SPLIT,
+            security_name="Test Equity",
+            isin=self.asset.isin,
+            ex_date=date(2026, 5, 1),
+            old_units=Decimal("1"),
+            new_units=Decimal("2"),
+            status=CorporateActionStatus.CONFIRMED,
+        )
+        result = PortfolioTreeService.build(owner=self.user, family_id=self.family.id)
+        node = self._find_asset_node(result, self.asset.isin)
+
+        self.assertIsNotNone(node)
+        self.assertEqual(node["quantity"], 20.0)
+        self.assertEqual(node["invested_value"], 1000.0)
+        self.assertEqual(node["average_cost"], 50.0)
+
+    def test_pending_split_does_not_adjust_tree_quantity(self):
+        CorporateAction.objects.create(
+            owner=self.user,
+            action_type=CorporateActionType.STOCK_SPLIT,
+            security_name="Test Equity",
+            isin=self.asset.isin,
+            ex_date=date(2026, 5, 1),
+            old_units=Decimal("1"),
+            new_units=Decimal("2"),
+            status=CorporateActionStatus.PENDING,
+        )
+        result = PortfolioTreeService.build(owner=self.user, family_id=self.family.id)
+        node = self._find_asset_node(result, self.asset.isin)
+
+        self.assertIsNotNone(node)
+        self.assertEqual(node["quantity"], 10.0)
+        self.assertEqual(node["invested_value"], 1000.0)
+
     def test_position_calculation(self):
         result = PortfolioTreeService.build(self.user)
 

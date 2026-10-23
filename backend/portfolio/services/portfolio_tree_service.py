@@ -2,6 +2,11 @@ import logging
 from datetime import date, timedelta
 from decimal import Decimal
 
+from corporate_actions.position_adjustment import (
+    calculate_position_with_actions,
+    confirmed_ratio_actions,
+)
+
 from django.db.models import OuterRef, QuerySet, Subquery, Q
 
 from investments.models import Asset, SecurityMaster, Transaction, TransactionType
@@ -88,7 +93,10 @@ class PortfolioTreeService:
         return True
 
     @staticmethod
-    def _calculate_position(transactions):
+    def _calculate_position(transactions, corporate_actions=None):
+        """Calculate quantity/cost, replaying dated actions when provided."""
+        if corporate_actions:
+            return calculate_position_with_actions(transactions, corporate_actions)
         quantity = Decimal("0")
         invested_value = Decimal("0")
         for tx in transactions:
@@ -433,10 +441,13 @@ class PortfolioTreeService:
         return price_cache
 
     @classmethod
-    def _build_asset(cls, transactions, xirr_transactions, asset_name_xirr, sub_class_xirr, price_cache, security_master_cache=None):
+    def _build_asset(cls, transactions, xirr_transactions, asset_name_xirr, sub_class_xirr, price_cache, security_master_cache=None, corporate_actions=None):
         first = transactions[0]
         asset = first.asset
-        position = cls._calculate_position(transactions)
+        position = cls._calculate_position(
+            transactions,
+            corporate_actions=corporate_actions,
+        )
         quantity = position["quantity"]
         invested_value = position["invested_value"]
         average_cost = position["average_cost"]
@@ -639,7 +650,15 @@ class PortfolioTreeService:
             asset_name = cls._clean(first.asset_name)
             asset_name_key = (sub_class, asset_name)
             sub_class_key = sub_class
-            position = cls._calculate_position(asset_transactions)
+            first_asset = asset_transactions[0].asset
+            actions = confirmed_ratio_actions(
+                asset=first_asset,
+                owner=first_asset.owner,
+            )
+            position = cls._calculate_position(
+                asset_transactions,
+                corporate_actions=actions,
+            )
             quantity = position["quantity"]
             asset_name_quantities[asset_name_key] = asset_name_quantities.get(asset_name_key, Decimal("0")) + quantity
             sub_class_quantities[sub_class_key] = sub_class_quantities.get(sub_class_key, Decimal("0")) + quantity
@@ -732,8 +751,14 @@ class PortfolioTreeService:
                 }.values(),
                 key=lambda tx: (tx.transaction_date, tx.id),
             )
+            position_asset = position_transactions[0].asset
+            position_actions = confirmed_ratio_actions(
+                asset=position_asset,
+                owner=position_asset.owner,
+            )
             asset_data = cls._build_asset(
                 transactions=position_transactions,
+                corporate_actions=position_actions,
                 xirr_transactions=xirr_transactions_by_underlying_identity.get(
                     underlying_identity, xirr_grouped.get(xirr_key, [])
                 ),
@@ -741,6 +766,7 @@ class PortfolioTreeService:
                 sub_class_xirr=sub_class_xirr_values.get(sub_class_key),
                 price_cache=price_cache,
                 security_master_cache=security_master_cache,
+                corporate_actions=position_actions,
             )
             if asset_data["quantity"] <= 0:
                 continue

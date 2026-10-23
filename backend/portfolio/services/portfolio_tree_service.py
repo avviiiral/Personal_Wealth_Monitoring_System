@@ -2,14 +2,14 @@ import logging
 from datetime import date, timedelta
 from decimal import Decimal
 
+from django.db.models import OuterRef, QuerySet, Subquery, Q
+
+from investments.models import Asset, SecurityMaster, Transaction, TransactionType
+
 from corporate_actions.position_adjustment import (
     calculate_position_with_actions,
     confirmed_ratio_actions,
 )
-
-from django.db.models import OuterRef, QuerySet, Subquery, Q
-
-from investments.models import Asset, SecurityMaster, Transaction, TransactionType
 from investments.services.security_master import SecurityMasterService
 from analytics.services.cash_flows import build_cash_flows, xirr_percent
 from market_data.models import DataSource, ManualAssetPrice, MarketPrice
@@ -94,22 +94,27 @@ class PortfolioTreeService:
 
     @staticmethod
     def _calculate_position(transactions, corporate_actions=None):
-        """Calculate quantity/cost, replaying dated actions when provided."""
+        """Calculate a dated holding position, including confirmed ratio actions."""
         if corporate_actions:
             return calculate_position_with_actions(transactions, corporate_actions)
+
         quantity = Decimal("0")
         invested_value = Decimal("0")
-        for tx in transactions:
+        ordered_transactions = sorted(
+            transactions,
+            key=lambda tx: (tx.transaction_date, tx.created_at, tx.id),
+        )
+        for tx in ordered_transactions:
             tx_quantity = tx.quantity or Decimal("0")
             tx_amount = tx.amount or Decimal("0")
             transaction_type = str(tx.transaction_type).strip().upper()
             if transaction_type in ("BUY", "SIP"):
-                quantity += tx_quantity
-                invested_value += tx_amount
+                quantity += max(tx_quantity, Decimal("0"))
+                invested_value += max(tx_amount, Decimal("0"))
             elif transaction_type == "SELL":
                 if tx_quantity <= 0 or quantity <= 0:
                     continue
-                average_cost = invested_value / quantity if quantity > 0 else Decimal("0")
+                average_cost = invested_value / quantity
                 sell_quantity = min(tx_quantity, quantity)
                 quantity -= sell_quantity
                 invested_value -= average_cost * sell_quantity
@@ -118,9 +123,10 @@ class PortfolioTreeService:
                     invested_value = Decimal("0")
             elif transaction_type in ("BONUS", "SPLIT"):
                 quantity += max(tx_quantity, Decimal("0"))
-        # Quantity is a net inventory measure, independent of transaction-date
-        # ordering. Legacy Excel imports can contain dates parsed in the wrong
-        # day/month order, causing SELL rows to precede their BUY rows.
+
+        # Preserve legacy import handling where out-of-order SELLs can precede
+        # their BUY due to ambiguous spreadsheet date parsing. Reconcile net
+        # units but never carry invested cost for a non-positive position.
         net_quantity = sum(
             (
                 (tx.quantity or Decimal("0"))
@@ -129,21 +135,12 @@ class PortfolioTreeService:
                 if str(tx.transaction_type).strip().upper() == "SELL"
                 else Decimal("0")
             )
-            for tx in transactions
+            for tx in ordered_transactions
         )
-        quantity = max(net_quantity, Decimal("0"))
-        if quantity == 0:
-            invested_value = Decimal("0")
-        elif quantity != sum(
-            (
-                (tx.quantity or Decimal("0"))
-                if str(tx.transaction_type).strip().upper() in ("BUY", "SIP", "BONUS", "SPLIT")
-                else -(tx.quantity or Decimal("0"))
-                if str(tx.transaction_type).strip().upper() == "SELL"
-                else Decimal("0")
-            )
-            for tx in transactions
-        ):
+        if net_quantity <= 0:
+            return {"quantity": Decimal("0"), "invested_value": Decimal("0"), "average_cost": Decimal("0")}
+        if quantity != net_quantity:
+            quantity = net_quantity
             invested_value = Decimal("0")
         average_cost = invested_value / quantity if quantity > 0 else Decimal("0")
         return {"quantity": quantity, "invested_value": invested_value, "average_cost": average_cost}

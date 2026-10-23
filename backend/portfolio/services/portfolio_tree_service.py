@@ -5,6 +5,10 @@ from decimal import Decimal
 from django.db.models import OuterRef, QuerySet, Subquery, Q
 
 from investments.models import Asset, SecurityMaster, Transaction, TransactionType
+from corporate_actions.position_adjustment import (
+    calculate_position_with_actions,
+    confirmed_ratio_actions,
+)
 from investments.services.security_master import SecurityMasterService
 from analytics.services.cash_flows import build_cash_flows, xirr_percent
 from market_data.models import DataSource, ManualAssetPrice, MarketPrice
@@ -88,7 +92,13 @@ class PortfolioTreeService:
         return True
 
     @staticmethod
-    def _calculate_position(transactions):
+    def _calculate_position(transactions, corporate_actions=None):
+        """Calculate a dated position, sharing ratio-action replay when applicable."""
+        if corporate_actions:
+            return calculate_position_with_actions(transactions, corporate_actions)
+
+        # Preserve historical Portfolio Tree inventory reconciliation for legacy
+        # imports, including SELL rows parsed before their BUY rows.
         quantity = Decimal("0")
         invested_value = Decimal("0")
         for tx in transactions:
@@ -110,9 +120,7 @@ class PortfolioTreeService:
                     invested_value = Decimal("0")
             elif transaction_type in ("BONUS", "SPLIT"):
                 quantity += max(tx_quantity, Decimal("0"))
-        # Quantity is a net inventory measure, independent of transaction-date
-        # ordering. Legacy Excel imports can contain dates parsed in the wrong
-        # day/month order, causing SELL rows to precede their BUY rows.
+
         net_quantity = sum(
             (
                 (tx.quantity or Decimal("0"))
@@ -123,20 +131,11 @@ class PortfolioTreeService:
             )
             for tx in transactions
         )
-        quantity = max(net_quantity, Decimal("0"))
-        if quantity == 0:
+        if net_quantity <= 0:
+            quantity = Decimal("0")
             invested_value = Decimal("0")
-        elif quantity != sum(
-            (
-                (tx.quantity or Decimal("0"))
-                if str(tx.transaction_type).strip().upper() in ("BUY", "SIP", "BONUS", "SPLIT")
-                else -(tx.quantity or Decimal("0"))
-                if str(tx.transaction_type).strip().upper() == "SELL"
-                else Decimal("0")
-            )
-            for tx in transactions
-        ):
-            invested_value = Decimal("0")
+        else:
+            quantity = net_quantity
         average_cost = invested_value / quantity if quantity > 0 else Decimal("0")
         return {"quantity": quantity, "invested_value": invested_value, "average_cost": average_cost}
 
@@ -433,10 +432,13 @@ class PortfolioTreeService:
         return price_cache
 
     @classmethod
-    def _build_asset(cls, transactions, xirr_transactions, asset_name_xirr, sub_class_xirr, price_cache, security_master_cache=None):
+    def _build_asset(cls, transactions, xirr_transactions, asset_name_xirr, sub_class_xirr, price_cache, security_master_cache=None, corporate_actions=None):
         first = transactions[0]
         asset = first.asset
-        position = cls._calculate_position(transactions)
+        position = cls._calculate_position(
+            transactions,
+            corporate_actions=corporate_actions,
+        )
         quantity = position["quantity"]
         invested_value = position["invested_value"]
         average_cost = position["average_cost"]
@@ -639,7 +641,15 @@ class PortfolioTreeService:
             asset_name = cls._clean(first.asset_name)
             asset_name_key = (sub_class, asset_name)
             sub_class_key = sub_class
-            position = cls._calculate_position(asset_transactions)
+            first_asset = asset_transactions[0].asset
+            actions = confirmed_ratio_actions(
+                asset=first_asset,
+                owner=first_asset.owner,
+            )
+            position = cls._calculate_position(
+                asset_transactions,
+                corporate_actions=actions,
+            )
             quantity = position["quantity"]
             asset_name_quantities[asset_name_key] = asset_name_quantities.get(asset_name_key, Decimal("0")) + quantity
             sub_class_quantities[sub_class_key] = sub_class_quantities.get(sub_class_key, Decimal("0")) + quantity
@@ -732,6 +742,11 @@ class PortfolioTreeService:
                 }.values(),
                 key=lambda tx: (tx.transaction_date, tx.id),
             )
+            position_asset = position_transactions[0].asset
+            position_actions = confirmed_ratio_actions(
+                asset=position_asset,
+                owner=position_asset.owner,
+            )
             asset_data = cls._build_asset(
                 transactions=position_transactions,
                 xirr_transactions=xirr_transactions_by_underlying_identity.get(
@@ -741,6 +756,7 @@ class PortfolioTreeService:
                 sub_class_xirr=sub_class_xirr_values.get(sub_class_key),
                 price_cache=price_cache,
                 security_master_cache=security_master_cache,
+                corporate_actions=position_actions,
             )
             if asset_data["quantity"] <= 0:
                 continue

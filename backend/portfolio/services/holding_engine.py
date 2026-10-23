@@ -3,6 +3,11 @@ from decimal import Decimal
 from django.db import transaction
 from django.db.models import Sum
 
+from corporate_actions.position_adjustment import (
+    calculate_position_with_actions,
+    confirmed_ratio_actions,
+)
+
 from investments.models import (
     Asset,
     Holding,
@@ -72,6 +77,10 @@ class HoldingCalculationEngine:
             HoldingCalculationEngine
             .get_transactions(asset)
         )
+
+        actions = confirmed_ratio_actions(asset=asset, owner=asset.owner)
+        if actions:
+            return calculate_position_with_actions(transactions, actions)
 
         # The common transaction types used for position math can be
         # reduced directly in SQL. This removes the Python row-by-row

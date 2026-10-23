@@ -749,7 +749,6 @@ class PortfolioTreeService:
             )
             asset_data = cls._build_asset(
                 transactions=position_transactions,
-                corporate_actions=position_actions,
                 xirr_transactions=xirr_transactions_by_underlying_identity.get(
                     underlying_identity, xirr_grouped.get(xirr_key, [])
                 ),

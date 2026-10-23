@@ -44,6 +44,10 @@ def calculate_position_with_actions(transactions, actions):
     """
     txs = list(transactions)
     action_rows = list(actions)
+    # Suppress a feed action only when an explicit quantity transaction exists
+    # for the same event date and mapped transaction kind. Keep the suppression
+    # local to this exact transaction stream so separately held assets don't
+    # share deduplication state.
     explicit_action_dates = {
         (tx.transaction_date, tx.transaction_type)
         for tx in txs

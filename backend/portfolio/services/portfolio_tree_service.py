@@ -93,27 +93,25 @@ class PortfolioTreeService:
 
     @staticmethod
     def _calculate_position(transactions, corporate_actions=None):
-        """Calculate a dated holding position, including confirmed ratio actions."""
+        """Calculate a dated position, sharing ratio-action replay when applicable."""
         if corporate_actions:
             return calculate_position_with_actions(transactions, corporate_actions)
 
+        # Preserve historical Portfolio Tree inventory reconciliation for legacy
+        # imports, including SELL rows parsed before their BUY rows.
         quantity = Decimal("0")
         invested_value = Decimal("0")
-        ordered_transactions = sorted(
-            transactions,
-            key=lambda tx: (tx.transaction_date, tx.created_at, tx.id),
-        )
-        for tx in ordered_transactions:
+        for tx in transactions:
             tx_quantity = tx.quantity or Decimal("0")
             tx_amount = tx.amount or Decimal("0")
             transaction_type = str(tx.transaction_type).strip().upper()
             if transaction_type in ("BUY", "SIP"):
-                quantity += max(tx_quantity, Decimal("0"))
-                invested_value += max(tx_amount, Decimal("0"))
+                quantity += tx_quantity
+                invested_value += tx_amount
             elif transaction_type == "SELL":
                 if tx_quantity <= 0 or quantity <= 0:
                     continue
-                average_cost = invested_value / quantity
+                average_cost = invested_value / quantity if quantity > 0 else Decimal("0")
                 sell_quantity = min(tx_quantity, quantity)
                 quantity -= sell_quantity
                 invested_value -= average_cost * sell_quantity
@@ -123,9 +121,6 @@ class PortfolioTreeService:
             elif transaction_type in ("BONUS", "SPLIT"):
                 quantity += max(tx_quantity, Decimal("0"))
 
-        # Preserve legacy import handling where out-of-order SELLs can precede
-        # their BUY due to ambiguous spreadsheet date parsing. Reconcile net
-        # units but never carry invested cost for a non-positive position.
         net_quantity = sum(
             (
                 (tx.quantity or Decimal("0"))
@@ -134,13 +129,13 @@ class PortfolioTreeService:
                 if str(tx.transaction_type).strip().upper() == "SELL"
                 else Decimal("0")
             )
-            for tx in ordered_transactions
+            for tx in transactions
         )
         if net_quantity <= 0:
-            return {"quantity": Decimal("0"), "invested_value": Decimal("0"), "average_cost": Decimal("0")}
-        if quantity != net_quantity:
-            quantity = net_quantity
+            quantity = Decimal("0")
             invested_value = Decimal("0")
+        else:
+            quantity = net_quantity
         average_cost = invested_value / quantity if quantity > 0 else Decimal("0")
         return {"quantity": quantity, "invested_value": invested_value, "average_cost": average_cost}
 

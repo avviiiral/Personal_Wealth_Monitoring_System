@@ -345,6 +345,42 @@ class PortfolioTreeServiceTests(TestCase):
         self.assertEqual(node["current_price"], 125.5)
         self.assertEqual(node["current_value"], 1255.0)
 
+    def test_split_adjusts_existing_units_before_a_post_split_sale(self):
+        CorporateAction.objects.create(
+            owner=self.user,
+            action_type=CorporateActionType.STOCK_SPLIT,
+            security_name="Test Equity",
+            isin=self.asset.isin,
+            ex_date=date(2026, 3, 1),
+            old_units=Decimal("1"),
+            new_units=Decimal("2"),
+            status=CorporateActionStatus.CONFIRMED,
+        )
+        Transaction.objects.create(
+            owner=self.user,
+            family=self.family,
+            asset=self.asset,
+            family_name="Family A",
+            portfolio="Portfolio A",
+            asset_class="Equity",
+            sub_class="Large Cap",
+            asset_name="Test Equity",
+            transaction_date=date(2026, 4, 1),
+            transaction_type="SELL",
+            quantity=Decimal("5"),
+            price_per_unit=Decimal("50"),
+            amount=Decimal("250"),
+            fees=Decimal("0"),
+        )
+
+        result = PortfolioTreeService.build(owner=self.user, family_id=self.family.id)
+        node = self._find_asset_node(result, self.asset.isin)
+
+        self.assertIsNotNone(node)
+        self.assertEqual(node["quantity"], 15.0)
+        self.assertEqual(node["invested_value"], 750.0)
+        self.assertEqual(node["average_cost"], 50.0)
+
     def test_confirmed_split_adjusts_tree_quantity_without_changing_cost_basis(self):
         CorporateAction.objects.create(
             owner=self.user,

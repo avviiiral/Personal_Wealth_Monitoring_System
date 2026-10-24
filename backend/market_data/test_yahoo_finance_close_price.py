@@ -4,6 +4,7 @@ from unittest.mock import patch
 import pandas as pd
 from django.test import TestCase
 
+from investments.models import Asset
 from market_data.services.yahoo_finance import YahooFinanceService
 
 
@@ -24,9 +25,7 @@ class YahooFinanceClosePriceTests(TestCase):
             },
             index=pd.to_datetime(["2026-10-22", "2026-10-23"]),
         )
-        asset = __import__(
-            "investments.models", fromlist=["Asset"]
-        ).Asset(id=1, name="Test Asset")
+        asset = Asset(id=1, name="Test Asset")
 
         count = YahooFinanceService.save_history(asset, "TEST.NS")
 
@@ -53,9 +52,7 @@ class YahooFinanceClosePriceTests(TestCase):
             },
             index=pd.to_datetime(["2026-10-23"]),
         )
-        asset = __import__(
-            "investments.models", fromlist=["Asset"]
-        ).Asset(id=1, name="Test Asset")
+        asset = Asset(id=1, name="Test Asset")
 
         with self.assertRaisesRegex(ValueError, "valid Close"):
             YahooFinanceService.save_history(asset, "TEST.NS")

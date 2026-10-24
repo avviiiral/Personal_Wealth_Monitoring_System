@@ -272,3 +272,7 @@ scratch/
 temp/
 test_output/
 debug/
+
+# Graphify generated analysis
+graphify-out/
+.graphify_analysis.json

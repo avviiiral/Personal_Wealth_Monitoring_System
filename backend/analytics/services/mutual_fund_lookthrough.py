@@ -207,7 +207,7 @@ class MutualFundLookThroughService:
             results.append({
                 "category": category,
                 "value": value,
-                "percentage": round((value / grand_total) * 100, 2) if grand_total else 0,
+                "percentage": round((value / grand_total) * 100, 4) if grand_total else 0,
             })
         return results
 
@@ -268,6 +268,6 @@ class MutualFundLookThroughService:
             results.append({
                 "sector": sector,
                 "current_value": value,
-                "percentage": round((value / grand_total) * 100, 2) if grand_total else 0,
+                "percentage": round((value / grand_total) * 100, 4) if grand_total else 0,
             })
         return {"results": results, "total_current_value": grand_total}

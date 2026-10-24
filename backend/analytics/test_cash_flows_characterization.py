@@ -91,6 +91,14 @@ class TransactionCashFlowCharacterizationTests(SimpleTestCase):
         self.assertAlmostEqual(XIRRCalculator.calculate(flows), 0.10, places=5)
         self.assertEqual(xirr_percent(flows), 10.0)
 
+    def test_xirr_percent_preserves_four_decimal_places(self):
+        flows = [
+            (date(2021, 1, 1), -1000.0),
+            (date(2022, 1, 1), 1101.23456),
+        ]
+
+        self.assertEqual(xirr_percent(flows), 10.1235)
+
     def test_xirr_is_undefined_without_both_cash_flow_signs(self):
         self.assertIsNone(XIRRCalculator.calculate([]))
         self.assertIsNone(XIRRCalculator.calculate([

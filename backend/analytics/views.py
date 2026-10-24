@@ -249,7 +249,7 @@ def wealth_standard_allocations(request):
     allocations = {}
     for row in rows:
         percent = Decimal(str(row.allocation_percent))
-        amount = (total_current_value * percent / Decimal("100")).quantize(Decimal("0.01"))
+        amount = (total_current_value * percent / Decimal("100")).quantize(Decimal("0.0001"))
         allocations[row.asset_category] = {
             "percent": float(percent),
             "amount": float(amount),
@@ -303,8 +303,8 @@ def wealth_standard_allocations_update(request):
             elif amount is None:
                 amount = (total_current_value * percent) / Decimal("100")
 
-            percent = percent.quantize(Decimal("0.01"))
-            amount = amount.quantize(Decimal("0.01"))
+            percent = percent.quantize(Decimal("0.0001"))
+            amount = amount.quantize(Decimal("0.0001"))
 
             if percent < 0 or percent > 100 or amount < 0:
                 raise ValueError

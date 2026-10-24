@@ -22,13 +22,13 @@ class StandardAllocation(models.Model):
     )
     asset_category = models.CharField(max_length=100)
     allocation_percent = models.DecimalField(
-        max_digits=6,
-        decimal_places=2,
+        max_digits=8,
+        decimal_places=4,
         default=0,
     )
     allocation_amount = models.DecimalField(
         max_digits=20,
-        decimal_places=2,
+        decimal_places=4,
         default=0,
     )
     created_at = models.DateTimeField(auto_now_add=True)

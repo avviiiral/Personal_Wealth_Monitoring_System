@@ -233,7 +233,7 @@ def portfolio_summary(request):
         "total_invested": total_invested,
         "total_current_value": total_current_value,
         "total_unrealized_pnl": total_unrealized_pnl,
-        "pnl_percentage": round(float(pnl_percentage), 2),
+        "pnl_percentage": round(float(pnl_percentage), 4),
         "number_of_holdings": totals["number_of_holdings"] or 0,
     })
 

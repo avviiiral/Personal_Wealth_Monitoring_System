@@ -63,7 +63,7 @@ def build_cash_flows(transactions, scale=1.0):
 
 
 def xirr_percent(cash_flows):
-    """XIRR as a percentage rounded to 2 dp, or ``None`` if undefined."""
+    """XIRR as a percentage rounded to 4 dp, or ``None`` if undefined."""
     if len(cash_flows) < 2:
         return None
     rate = XIRRCalculator.calculate(cash_flows)

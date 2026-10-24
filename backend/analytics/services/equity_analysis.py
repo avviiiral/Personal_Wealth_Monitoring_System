@@ -94,7 +94,7 @@ class EquityAnalysisService:
             base = weighted_bases[field]
             if not base:
                 return None
-            return round(weighted_sums[field] / base, 2)
+            return round(weighted_sums[field] / base, 4)
 
         market_cap_allocation = []
         for cap_type, value in sorted(
@@ -108,7 +108,7 @@ class EquityAnalysisService:
             market_cap_allocation.append({
                 "cap_type": cap_type,
                 "current_value": value,
-                "percentage": round(percentage, 2),
+                "percentage": round(percentage, 4),
             })
 
         return {

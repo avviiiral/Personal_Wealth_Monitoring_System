@@ -122,7 +122,7 @@ class XIRRByAssetClassService:
             results.append({
                 "asset_category": category_by_asset_class[asset_class],
                 "asset_class": asset_class,
-                "xirr": round(xirr * 100, 2),
+                "xirr": round(xirr * 100, 4),
                 "current_value": current_value,
             })
 

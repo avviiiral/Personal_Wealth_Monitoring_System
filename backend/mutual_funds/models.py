@@ -177,8 +177,8 @@ class MutualFundTransaction(models.Model):
     transaction_date = models.DateField()
     units = models.DecimalField(max_digits=20, decimal_places=6)
     nav = models.DecimalField(max_digits=20, decimal_places=6)
-    amount = models.DecimalField(max_digits=20, decimal_places=2)
-    fees = models.DecimalField(max_digits=20, decimal_places=2, default=0)
+    amount = models.DecimalField(max_digits=20, decimal_places=4)
+    fees = models.DecimalField(max_digits=20, decimal_places=4, default=0)
     notes = models.TextField(blank=True, null=True)
     source_key = models.CharField(max_length=64, blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -227,7 +227,7 @@ class SIP(models.Model):
         on_delete=models.CASCADE,
         related_name="sips",
     )
-    amount = models.DecimalField(max_digits=20, decimal_places=2)
+    amount = models.DecimalField(max_digits=20, decimal_places=4)
     frequency = models.CharField(
         max_length=20,
         choices=SIPFrequency.choices,
@@ -268,11 +268,11 @@ class MutualFundHolding(models.Model):
         scheme_id: int
 
     units = models.DecimalField(max_digits=20, decimal_places=6, default=0)
-    invested_value = models.DecimalField(max_digits=20, decimal_places=2, default=0)
+    invested_value = models.DecimalField(max_digits=20, decimal_places=4, default=0)
     average_nav = models.DecimalField(max_digits=20, decimal_places=6, default=0)
     current_nav = models.DecimalField(max_digits=20, decimal_places=6, default=0)
-    current_value = models.DecimalField(max_digits=20, decimal_places=2, default=0)
-    unrealized_pnl = models.DecimalField(max_digits=20, decimal_places=2, default=0)
+    current_value = models.DecimalField(max_digits=20, decimal_places=4, default=0)
+    unrealized_pnl = models.DecimalField(max_digits=20, decimal_places=4, default=0)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
@@ -299,7 +299,7 @@ class SIPInstallment(models.Model):
         related_name="installments",
     )
     scheduled_date = models.DateField()
-    amount = models.DecimalField(max_digits=20, decimal_places=2)
+    amount = models.DecimalField(max_digits=20, decimal_places=4)
     status = models.CharField(
         max_length=20,
         choices=SIPInstallmentStatus.choices,

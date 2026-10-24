@@ -157,7 +157,7 @@ export class HoldingReportsComponent implements OnInit {
   getAssetKey(subClass: string, holding: HoldingGroup): string { return `${subClass}::${holding.key}`; }
   trackBySubClass(_index: number, group: SubClassGroup): string { return group.sub_class; }
   trackByHolding(_index: number, group: HoldingGroup): string { return group.key; }
-  formatCurrency(value: number): string { return new Intl.NumberFormat('en-IN', { maximumFractionDigits: 0 }).format(this.toNumber(value)); }
+  formatCurrency(value: number): string { return new Intl.NumberFormat('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(this.toNumber(value)); }
   formatAbsoluteCurrency(value: number): string { return this.formatCurrency(Math.abs(this.toNumber(value))); }
   formatNumber(value: number): string { return new Intl.NumberFormat('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 }).format(this.toNumber(value)); }
   formatDecimal(value: number): string { return new Intl.NumberFormat('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(this.toNumber(value)); }

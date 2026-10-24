@@ -79,8 +79,8 @@ class Transaction(models.Model):
     transaction_date = models.DateField()
     quantity = models.DecimalField(max_digits=20, decimal_places=6, default=0)
     price_per_unit = models.DecimalField(max_digits=20, decimal_places=6, default=0)
-    amount = models.DecimalField(max_digits=20, decimal_places=2)
-    fees = models.DecimalField(max_digits=20, decimal_places=2, default=0)
+    amount = models.DecimalField(max_digits=20, decimal_places=4)
+    fees = models.DecimalField(max_digits=20, decimal_places=4, default=0)
     notes = models.TextField(blank=True, null=True)
     source = models.CharField(max_length=20, choices=TransactionSource.choices, default=TransactionSource.MANUAL)
     source_key = models.CharField(max_length=64, blank=True, null=True)
@@ -209,10 +209,10 @@ class Holding(models.Model):
 
     quantity = models.DecimalField(max_digits=20, decimal_places=6, default=0)
     average_cost = models.DecimalField(max_digits=20, decimal_places=6, default=0)
-    invested_value = models.DecimalField(max_digits=20, decimal_places=2, default=0)
+    invested_value = models.DecimalField(max_digits=20, decimal_places=4, default=0)
     current_price = models.DecimalField(max_digits=20, decimal_places=6, default=0)
-    current_value = models.DecimalField(max_digits=20, decimal_places=2, default=0)
-    unrealized_pnl = models.DecimalField(max_digits=20, decimal_places=2, default=0)
+    current_value = models.DecimalField(max_digits=20, decimal_places=4, default=0)
+    unrealized_pnl = models.DecimalField(max_digits=20, decimal_places=4, default=0)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
@@ -231,10 +231,10 @@ class PortfolioPosition(models.Model):
     asset = models.ForeignKey(Asset, on_delete=models.CASCADE, related_name="portfolio_positions")
     quantity = models.DecimalField(max_digits=20, decimal_places=6, default=0)
     average_cost = models.DecimalField(max_digits=20, decimal_places=6, default=0)
-    invested_value = models.DecimalField(max_digits=20, decimal_places=2, default=0)
+    invested_value = models.DecimalField(max_digits=20, decimal_places=4, default=0)
     current_price = models.DecimalField(max_digits=20, decimal_places=6, default=0)
-    current_value = models.DecimalField(max_digits=20, decimal_places=2, default=0)
-    gain = models.DecimalField(max_digits=20, decimal_places=2, default=0)
+    current_value = models.DecimalField(max_digits=20, decimal_places=4, default=0)
+    gain = models.DecimalField(max_digits=20, decimal_places=4, default=0)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:

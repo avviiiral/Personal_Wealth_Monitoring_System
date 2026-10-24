@@ -138,7 +138,7 @@
           </span>
           <span class="kpi-label">XIRR</span>
         </div>
-        <strong>{{ xirr?.xirr_percentage ?? xirr?.xirr ?? summary?.xirr_percentage ?? 0 }}%</strong>
+        <strong>{{ formatPercentage(xirr?.xirr_percentage ?? xirr?.xirr ?? summary?.xirr_percentage ?? 0) }}</strong>
         <span class="kpi-subtitle"> Annualized return </span>
       </div>
     </div>
@@ -206,7 +206,7 @@
           <span *ngIf="!selectedFamilyMember">Set the shared Standard Allocation for all family members. Enter an amount or percentage; the other value is calculated from the current total.</span>
           <span *ngIf="selectedFamilyMember">Set this family member's Standard Allocation independently. Enter an amount or percentage; the other value is calculated from this family's current total.</span>
           <span class="standard-allocation-total" [ngClass]="getStandardAllocationTotalClass()">
-            Portfolio Total: {{ formatDisplayAmount(standardAllocationTotalValue, 0) }} &nbsp; • &nbsp; Target Total: {{ getStandardAllocationDraftTotal() | number:'1.0-2' }}%
+            Portfolio Total: {{ formatDisplayAmount(standardAllocationTotalValue) }} &nbsp; • &nbsp; Target Total: {{ getStandardAllocationDraftTotal() | number:'1.0-2' }}%
           </span>
         </div>
         <div class="standard-allocation-actions">

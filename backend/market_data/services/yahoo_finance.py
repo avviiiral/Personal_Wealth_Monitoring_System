@@ -146,9 +146,18 @@ class YahooFinanceService:
         )
 
         records = []
+        missing_close_dates = []
 
         for index, row in data.iterrows():
             market_date = pd.Timestamp(str(index)).date()
+            close_price = YahooFinanceService._to_decimal(row.get("Close"))
+
+            # close_price is non-nullable in MarketPrice. Yahoo occasionally
+            # returns rows with OHLC gaps; do not let one malformed row abort
+            # the bulk upsert (and roll back otherwise valid history).
+            if close_price is None:
+                missing_close_dates.append(str(market_date))
+                continue
 
             volume_value = row.get("Volume")
             volume = None
@@ -176,9 +185,7 @@ class YahooFinanceService:
                     low_price=YahooFinanceService._to_decimal(
                         row.get("Low")
                     ),
-                    close_price=YahooFinanceService._to_decimal(
-                        row.get("Close")
-                    ),
+                    close_price=close_price,
                     adjusted_close=YahooFinanceService._to_decimal(
                         row.get("Adj Close")
                     ),
@@ -186,10 +193,19 @@ class YahooFinanceService:
                 )
             )
 
+        if missing_close_dates:
+            logging.getLogger(__name__).warning(
+                "Skipping %s Yahoo Finance row(s) without a valid Close "
+                "for symbol %s; dates=%s",
+                len(missing_close_dates),
+                symbol,
+                ", ".join(missing_close_dates[:10]),
+            )
+
         if not records:
             raise ValueError(
-                f"No usable market-price records returned "
-                f"for symbol: {symbol}"
+                f"No usable market-price records with a valid Close "
+                f"returned for symbol: {symbol}"
             )
 
         # PostgreSQL handles the unique constraint

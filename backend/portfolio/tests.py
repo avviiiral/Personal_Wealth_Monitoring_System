@@ -1396,7 +1396,7 @@ class ManualPriceCalculationRegressionTests(TestCase):
 
         actual = UnifiedWealthAnalytics.calculate_xirr(self.user)
 
-        self.assertEqual(actual, round(expected * 100, 2))
+        self.assertEqual(actual, round(expected * 100, 4))
         self.assertNotEqual(
             actual,
             round(

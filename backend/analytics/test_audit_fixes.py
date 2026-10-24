@@ -52,7 +52,7 @@ class CashFlowTests(SimpleTestCase):
             (date(2025, 7, 1), 500.0),
             (date(2026, 1, 1), 11000.0),
         ]
-        self.assertEqual(xirr_percent(flows), 15.37)
+        self.assertEqual(xirr_percent(flows), 15.3738)
 
     def test_xirr_percent_basic_cases(self):
         self.assertEqual(xirr_percent([(date(2025, 1, 1), -100.0), (date(2026, 1, 1), 110.0)]), 10.0)
@@ -63,7 +63,7 @@ class CashFlowTests(SimpleTestCase):
                 (date(2025, 7, 1), -50000.0),
                 (date(2026, 1, 1), 180000.0),
             ]),
-            24.22,
+            24.2227,
         )
 
     def test_one_sided_flows_have_no_xirr(self):

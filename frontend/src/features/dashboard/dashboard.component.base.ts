@@ -111,8 +111,8 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
         : 10000000;
     const suffix = this.displayUnit === 'amount' ? '' : this.displayUnit === 'lakhs' ? ' L' : ' Cr';
     return `₹${(numericValue / divisor).toLocaleString('en-IN', {
-      minimumFractionDigits: this.displayUnit === 'amount' ? 0 : digits,
-      maximumFractionDigits: this.displayUnit === 'amount' ? 0 : digits,
+      minimumFractionDigits: digits,
+      maximumFractionDigits: digits,
     })}${suffix}`;
   }
 
@@ -745,7 +745,8 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
 
   formatCurrency(value: number): string {
     return `₹${value.toLocaleString('en-IN', {
-      maximumFractionDigits: 0,
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
     })}`;
   }
 

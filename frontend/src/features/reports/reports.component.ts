@@ -1218,7 +1218,8 @@ export class ReportsComponent implements OnInit {
 
   formatCurrency(value: number): string {
     return new Intl.NumberFormat('en-IN', {
-      maximumFractionDigits: 0,
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
     }).format(this.toNumber(value));
   }
 

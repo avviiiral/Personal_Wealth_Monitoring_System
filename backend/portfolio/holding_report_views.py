@@ -278,7 +278,7 @@ def holding_report(request):
             "current_price": float(position.current_price or 0),
             "current_value": float(position.current_value or 0),
             "gain": gain,
-            "gain_percentage": round(gain / invested_value * 100, 2) if invested_value else 0,
+            "gain_percentage": round(gain / invested_value * 100, 4) if invested_value else 0,
             "xirr": calculate_position_xirr(position),
             "asset_class_xirr": asset_class_xirr.get(asset_class_key),
             "sub_class_xirr": subclass_xirr.get(subclass_key),

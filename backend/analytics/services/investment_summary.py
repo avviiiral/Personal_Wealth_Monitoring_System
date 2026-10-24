@@ -338,7 +338,7 @@ class InvestmentSummaryService:
                     "asset_category": category,
                     "asset_class": asset_class,
                     "current_value": value,
-                    "percentage_of_total": round(percentage, 2),
+                    "percentage_of_total": round(percentage, 4),
                     "raw_asset_classes": sorted(raw_values_by_asset_class[asset_class]),
                 })
 
@@ -441,7 +441,7 @@ class InvestmentSummaryService:
                     "invested_value": invested,
                     "current_value": current,
                     "unrealized_pnl": pnl,
-                    "pnl_percentage": round(pnl_percentage, 2),
+                    "pnl_percentage": round(pnl_percentage, 4),
                 })
         return sorted(results, key=lambda item: item["pnl_percentage"], reverse=True)
 
@@ -484,7 +484,7 @@ class InvestmentSummaryService:
             if value <= 0:
                 continue
             percentage = (value / total_value) * 100 if total_value else cls.ZERO
-            results.append({"advisor": advisor, "value": value, "percentage": round(percentage, 2)})
+            results.append({"advisor": advisor, "value": value, "percentage": round(percentage, 4)})
 
         return {
             "results": sorted(results, key=lambda item: item["value"], reverse=True),
@@ -519,7 +519,7 @@ class InvestmentSummaryService:
                 "invested_value": invested,
                 "current_value": current,
                 "unrealized_pnl": pnl,
-                "pnl_percentage": round(pnl_percentage, 2),
+                "pnl_percentage": round(pnl_percentage, 4),
             })
         return sorted(results, key=lambda item: item["pnl_percentage"], reverse=True)
 
@@ -569,7 +569,7 @@ class InvestmentSummaryService:
                 "invested_value": entry["invested"],
                 "current_value": current,
                 "holding_count": entry["holding_count"],
-                "percentage": round(percentage, 2),
+                "percentage": round(percentage, 4),
             })
         return {
             "results": sorted(results, key=lambda item: item["current_value"], reverse=True),
@@ -635,14 +635,14 @@ class InvestmentSummaryService:
             market_cap_allocation.append({
                 "cap_type": cap_type,
                 "current_value": value,
-                "percentage": round(percentage, 2),
+                "percentage": round(percentage, 4),
             })
 
         def weighted_average(field):
             base = weighted_bases[field]
             if not base:
                 return None
-            return round(weighted_sums[field] / base, 2)
+            return round(weighted_sums[field] / base, 4)
 
         return {
             "current_value": total_current_value,
@@ -751,14 +751,14 @@ class InvestmentSummaryService:
             rating_distribution.append({
                 "credit_rating": rating,
                 "current_value": value,
-                "percentage": round(percentage, 2),
+                "percentage": round(percentage, 4),
             })
 
         def weighted_average(field):
             base = weighted_bases[field]
             if not base:
                 return None
-            return round(weighted_sums[field] / base, 2)
+            return round(weighted_sums[field] / base, 4)
 
         return {
             "current_value": total_current_value,
@@ -816,7 +816,7 @@ class InvestmentSummaryService:
         results = []
         for sector, value in sorted(totals.items(), key=lambda item: item[1], reverse=True):
             percentage = (value / grand_total) * 100 if grand_total else cls.ZERO
-            results.append({"sector": sector, "current_value": value, "percentage": round(percentage, 2)})
+            results.append({"sector": sector, "current_value": value, "percentage": round(percentage, 4)})
         return {"results": results, "total_current_value": grand_total}
 
     @classmethod
@@ -863,7 +863,7 @@ class InvestmentSummaryService:
         results = []
         for cap_type, value in sorted(totals.items(), key=lambda item: item[1], reverse=True):
             percentage = (value / grand_total) * 100 if grand_total else cls.ZERO
-            results.append({"cap_type": cap_type, "current_value": value, "percentage": round(percentage, 2)})
+            results.append({"cap_type": cap_type, "current_value": value, "percentage": round(percentage, 4)})
         return {"results": results, "total_current_value": grand_total}
 
     @classmethod
@@ -890,6 +890,6 @@ class InvestmentSummaryService:
             results.append({
                 "holding_type": asset_class,
                 "current_value": value,
-                "percentage": round(percentage, 2),
+                "percentage": round(percentage, 4),
             })
         return {"results": results, "total_current_value": grand_total}

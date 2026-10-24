@@ -478,9 +478,9 @@ export class PortfolioComponent implements OnInit, OnDestroy {
   isSavingManualPrice(asset: PortfolioAssetNode): boolean { return this.savingManualPriceAssetId === asset.id; }
   getManualPriceError(asset: PortfolioAssetNode): string { return this.manualPriceErrors[asset.id] || ''; }
   formatAbsoluteCurrency(value: number): string { return this.formatCurrency(Math.abs(this.toNumber(value))); }
-  formatCurrency(value: number): string { return new Intl.NumberFormat('en-IN', { maximumFractionDigits: 0 }).format(this.toNumber(value)); }
-  formatNumber(value: number): string { return new Intl.NumberFormat('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 }).format(this.toNumber(value)); }
-  formatDecimal(value: number): string { return new Intl.NumberFormat('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(this.toNumber(value)); }
+  formatCurrency(value: number | string): string { return new Intl.NumberFormat('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(this.toNumber(value)); }
+  formatNumber(value: number | string): string { return new Intl.NumberFormat('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 }).format(this.toNumber(value)); }
+  formatDecimal(value: number | string): string { return new Intl.NumberFormat('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(this.toNumber(value)); }
   formatPercentage(value: number | null): string { if (value === null || value === undefined) return '-'; return `${this.formatDecimal(value)}%`; }
   formatPriceDate(value: string | null | undefined): string {
     if (!value) return '-';
@@ -503,7 +503,7 @@ export class PortfolioComponent implements OnInit, OnDestroy {
     const day = String(today.getDate()).padStart(2, '0');
     return year + '-' + month + '-' + day;
   }
-  private toNumber(value: number | null | undefined): number { if (value === null || value === undefined) return 0; const numberValue = Number(value); return Number.isFinite(numberValue) ? numberValue : 0; }
+  private toNumber(value: number | string | null | undefined): number { if (value === null || value === undefined) return 0; const numberValue = Number(value); return Number.isFinite(numberValue) ? numberValue : 0; }
   private validateSelections(): void {
     if (this.selectedFamilyMember && !this.familyMemberOptions.includes(this.selectedFamilyMember)) this.selectedFamilyMember = '';
     if (this.selectedAssetClass && !this.assetClassOptions.includes(this.selectedAssetClass)) this.selectedAssetClass = '';

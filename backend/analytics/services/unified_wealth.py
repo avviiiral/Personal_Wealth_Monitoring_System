@@ -583,7 +583,7 @@ class UnifiedWealthAnalytics:
         if result is None:
             return None
 
-        return round(result * 100, 2)
+        return round(result * 100, 4)
 
     @staticmethod
     def _calculate_realized_pnl(transactions):
@@ -878,7 +878,7 @@ class UnifiedWealthAnalytics:
             "realized_pnl": realized_pnl,
             "unrealized_pnl": unrealized_pnl,
             "total_pnl": total_pnl,
-            "return_percentage": round(return_percentage, 2),
+            "return_percentage": round(return_percentage, 4),
             "xirr_percentage": xirr_percentage,
             "number_of_holdings": valuation["count"],
             "equity": {
@@ -1008,7 +1008,7 @@ class UnifiedWealthAnalytics:
 
         return round(
             result * 100,
-            2,
+            4,
         )
 
     # ==========================================================
@@ -1088,7 +1088,7 @@ class UnifiedWealthAnalytics:
                 "value": value,
                 "percentage": round(
                     percentage,
-                    2,
+                    4,
                 ),
             })
 
@@ -1149,7 +1149,7 @@ class UnifiedWealthAnalytics:
                 "unrealized_pnl": pnl,
                 "pnl_percentage": round(
                     percentage,
-                    2,
+                    4,
                 ),
             })
 
@@ -1191,7 +1191,7 @@ class UnifiedWealthAnalytics:
                 "unrealized_pnl": pnl,
                 "pnl_percentage": round(
                     percentage,
-                    2,
+                    4,
                 ),
             })
 

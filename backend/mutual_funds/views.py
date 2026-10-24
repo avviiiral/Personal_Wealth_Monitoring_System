@@ -235,7 +235,7 @@ def mutual_fund_summary(request):
         "total_unrealized_pnl": pnl,
         "pnl_percentage": round(
             float(pnl_percentage),
-            2,
+            4,
         ),
         "number_of_holdings": totals["number_of_holdings"],
     })

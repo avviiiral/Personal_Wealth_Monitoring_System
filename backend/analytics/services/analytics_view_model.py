@@ -155,7 +155,7 @@ class AnalyticsViewModelService:
                 "current_value": float(group_value),
                 "percentage_of_total": round(
                     float((group_value / total) * Decimal("100")) if total else 0,
-                    2,
+                    4,
                 ),
                 "asset_classes": [
                     {
@@ -163,7 +163,7 @@ class AnalyticsViewModelService:
                         "current_value": float(row["current_value"]),
                         "percentage_of_total": round(
                             float((row["current_value"] / total) * Decimal("100")) if total else 0,
-                            2,
+                            4,
                         ),
                         "raw_asset_classes": row["raw_asset_classes"],
                     }
@@ -200,7 +200,7 @@ class AnalyticsViewModelService:
             "best_performer": best,
             "worst_performer": worst,
             "largest_allocation": largest,
-            "period_value_change": round(float(period_value_change), 2),
+            "period_value_change": round(float(period_value_change), 4),
         }
 
     @classmethod
@@ -221,7 +221,7 @@ class AnalyticsViewModelService:
                 {
                     "category": category,
                     "value": value,
-                    "percentage": round((value / allocation_total) * Decimal("100"), 2) if allocation_total else Decimal("0"),
+                    "percentage": round((value / allocation_total) * Decimal("100"), 4) if allocation_total else Decimal("0"),
                 }
                 for category, value in sorted(
                     allocation_totals.items(),
@@ -290,7 +290,7 @@ class AnalyticsViewModelService:
         standard_allocations = {}
         for row in standard_rows:
             percent = cls._number(row.allocation_percent)
-            amount = (total_current_value * percent / Decimal("100")).quantize(Decimal("0.01"))
+            amount = (total_current_value * percent / Decimal("100")).quantize(Decimal("0.0001"))
             standard_allocations[row.asset_category] = {
                 "percent": float(percent),
                 "amount": float(amount),

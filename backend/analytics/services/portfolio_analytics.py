@@ -79,7 +79,7 @@ class PortfolioAnalytics:
         if xirr is None:
             return None
 
-        return round(xirr * 100, 2)
+        return round(xirr * 100, 4)
 
     @staticmethod
     def calculate_xirr(user):
@@ -267,7 +267,7 @@ class PortfolioAnalytics:
             "total_pnl": total_pnl,
             "return_percentage": round(
                 return_percentage,
-                2,
+                4,
             ),
             "xirr_percentage": xirr,
             "number_of_holdings": totals["number_of_holdings"] or 0,
@@ -306,7 +306,7 @@ class PortfolioAnalytics:
                 if total_value
                 else PortfolioAnalytics.ZERO
             )
-            item["percentage"] = round(percentage, 2)
+            item["percentage"] = round(percentage, 4)
 
         return allocation
 
@@ -355,7 +355,7 @@ class PortfolioAnalytics:
                     "unrealized_pnl": row["unrealized_pnl"],
                     "pnl_percentage": round(
                         row["pnl_percentage"],
-                        2,
+                        4,
                     ),
                 }
             )

@@ -525,6 +525,7 @@ class AMFIService:
 
                 report_text = ""
                 last_error = None
+                last_response = None
                 for attempt in range(AMFIService.HISTORICAL_MAX_RETRIES):
                     try:
                         response = requests.get(
@@ -533,12 +534,16 @@ class AMFIService:
                             headers=headers,
                             timeout=90,
                         )
+                        last_response = response
                         response.raise_for_status()
                         candidate = response.text or ""
                         if not AMFIService._is_historical_report(candidate, scheme_codes=mf_codes):
+                            preview = " ".join(candidate.split())[:200]
                             raise RuntimeError(
                                 "AMFI historical response was not a NAV report "
-                                f"(mf={mf_id}, bytes={len(response.content)})"
+                                f"(mf={mf_id}, status={response.status_code}, "
+                                f"content_type={response.headers.get('Content-Type', '')!r}, "
+                                f"bytes={len(response.content)}, preview={preview!r})"
                             )
                         report_text = candidate
                         break
@@ -548,6 +553,17 @@ class AMFIService:
                             time.sleep(1.5 * (attempt + 1))
 
                 if not report_text:
+                    if last_response is not None:
+                        logger.warning(
+                            "AMFI historical NAV request failed after retries: "
+                            "mf=%s from=%s to=%s status=%s content_type=%s bytes=%s",
+                            mf_id,
+                            window_start,
+                            window_end,
+                            getattr(last_response, "status_code", None),
+                            getattr(last_response, "headers", {}).get("Content-Type", ""),
+                            len(getattr(last_response, "content", b"")),
+                        )
                     raise RuntimeError(
                         "Unable to download AMFI historical NAV report "
                         f"for mf={mf_id}, {window_start} to {window_end}"
@@ -1025,7 +1041,9 @@ class AMFIService:
     # AMFI's historical report is large and can intermittently return an
     # incomplete/stub response for long ranges. Small chunks make retries
     # reliable while still keeping the importer independent of third-party APIs.
-    HISTORICAL_WINDOW_DAYS = 90
+    # AMFI's historical endpoint has been returning non-report WebForms bodies
+    # for larger windows. Use conservative weekly chunks to improve reliability.
+    HISTORICAL_WINDOW_DAYS = 7
     HISTORICAL_MAX_RETRIES = 3
 
     # Pause between batch transactions so the write lock is

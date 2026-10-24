@@ -272,6 +272,37 @@ class FamilyScopedFinancialDataTests(TestCase):
             amount=Decimal("1000"),
         )
 
+        other_family_asset = self._asset(
+            self.user3,
+            self.family2,
+            "Family Two XIRR Asset",
+        )
+        Holding.objects.create(
+            owner=self.user3,
+            family=self.family2,
+            asset=other_family_asset,
+            quantity=Decimal("1"),
+            invested_value=Decimal("900000"),
+            current_price=Decimal("950000"),
+            current_value=Decimal("950000"),
+            unrealized_pnl=Decimal("50000"),
+        )
+        Transaction.objects.create(
+            owner=self.user3,
+            family=self.family2,
+            asset=other_family_asset,
+            family_name=self.family2.name,
+            portfolio="Portfolio B",
+            asset_class="Equity",
+            sub_class="Direct Equity",
+            asset_name=other_family_asset.name,
+            transaction_type=TransactionType.BUY,
+            transaction_date="2026-01-02",
+            quantity=Decimal("1"),
+            price_per_unit=Decimal("900000"),
+            amount=Decimal("900000"),
+        )
+
         self.client.force_authenticate(self.user1)
         response = self.client.get(
             "/api/analytics/wealth/performance-by-subclass/"

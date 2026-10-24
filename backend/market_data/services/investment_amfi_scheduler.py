@@ -35,40 +35,55 @@ class InvestmentAMFIScheduler:
 
     @classmethod
     def _run_refresh(cls):
+        # Clear stale connections before acquiring the lock. Do not close the
+        # connection again until after the context exits: PostgreSQL advisory
+        # locks are session-scoped and closing it would release the lock.
         close_old_connections()
         try:
-            from mutual_funds.services.investment_amfi import InvestmentAMFIService
-            from mutual_funds.services.amfi import AMFIService
+            from config.postgres_advisory_lock import postgres_advisory_lock
 
-            result = InvestmentAMFIService.refresh_for_investments_with_history()
-
-            # Materialize the latest master NAV into each user's family
-            # models so existing portfolio/current-value flows see today's NAV.
-            for user_id in User.objects.filter(is_active=True).values_list("id", flat=True):
-                try:
-                    user = User.objects.get(id=user_id)
-                    AMFIService.sync_owned_navs_from_master(user)
-                except Exception:
-                    logger.exception(
-                        "Investment AMFI family sync failed for user %s.",
-                        user_id,
+            with postgres_advisory_lock("pwms_investment_amfi_refresh") as acquired:
+                if not acquired:
+                    logger.info(
+                        "Skipping investment AMFI refresh: another process holds the refresh lock."
                     )
-
-            logger.info(
-                "Investment AMFI refresh completed: requested_isins=%s "
-                "matched_isins=%s schemes=%s nav_records=%s "
-                "unmatched=%s history=%s",
-                result.get("requested_isins", 0),
-                result.get("matched_isins", 0),
-                result.get("schemes", 0),
-                result.get("nav_records", 0),
-                result.get("unmatched_isins", []),
-                result.get("history", {}),
-            )
+                    return
+                cls._run_refresh_locked()
         except Exception:
             logger.exception("Investment AMFI 30-minute refresh failed.")
         finally:
             close_old_connections()
+
+    @classmethod
+    def _run_refresh_locked(cls):
+        from mutual_funds.services.investment_amfi import InvestmentAMFIService
+        from mutual_funds.services.amfi import AMFIService
+
+        result = InvestmentAMFIService.refresh_for_investments_with_history()
+
+        # Materialize the latest master NAV into each user's family models so
+        # existing portfolio/current-value flows see today's NAV.
+        for user_id in User.objects.filter(is_active=True).values_list("id", flat=True):
+            try:
+                user = User.objects.get(id=user_id)
+                AMFIService.sync_owned_navs_from_master(user)
+            except Exception:
+                logger.exception(
+                    "Investment AMFI family sync failed for user %s.",
+                    user_id,
+                )
+
+        logger.info(
+            "Investment AMFI refresh completed: requested_isins=%s "
+            "matched_isins=%s schemes=%s nav_records=%s "
+            "unmatched=%s history=%s",
+            result.get("requested_isins", 0),
+            result.get("matched_isins", 0),
+            result.get("schemes", 0),
+            result.get("nav_records", 0),
+            result.get("unmatched_isins", []),
+            result.get("history", {}),
+        )
 
     @classmethod
     def _run(cls):

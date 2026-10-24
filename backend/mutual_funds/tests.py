@@ -551,9 +551,14 @@ class AMFIHistoricalMasterImportTests(TestCase):
         self.assertEqual(len(records), 1)
         self.assertEqual(records[0]["scheme_code"], "152075")
         self.assertEqual(records[0]["nav"], Decimal("12.9916"))
-        self.assertEqual(mock_get.call_args.kwargs["params"]["mf"], "62")
-        self.assertEqual(mock_get.call_args.kwargs["params"]["frmdt"], "01-Sep-2026")
-        self.assertEqual(mock_get.call_args.kwargs["params"]["todt"], "29-Sep-2026")
+        self.assertEqual(mock_get.call_count, 5)
+        first_history_call = mock_get.call_args_list[0]
+        last_history_call = mock_get.call_args_list[-1]
+        self.assertEqual(first_history_call.kwargs["params"]["mf"], "62")
+        self.assertEqual(first_history_call.kwargs["params"]["frmdt"], "01-Sep-2026")
+        self.assertEqual(first_history_call.kwargs["params"]["todt"], "07-Sep-2026")
+        self.assertEqual(last_history_call.kwargs["params"]["frmdt"], "29-Sep-2026")
+        self.assertEqual(last_history_call.kwargs["params"]["todt"], "29-Sep-2026")
 
     def test_current_api_history_resolves_scheme_code_to_nav_id(self):
         class FakeResponse:
@@ -574,9 +579,6 @@ class AMFIHistoricalMasterImportTests(TestCase):
             "119551;Requested Fund;INF000000001;-;102.50;102.50;102.50;29-Sep-2026\n"
         )
 
-        responses = [
-            FakeResponse(report),
-        ]
         with patch.object(
             AMFIService,
             "_resolve_nav_ids",
@@ -590,7 +592,7 @@ class AMFIHistoricalMasterImportTests(TestCase):
             },
         ), patch(
             "mutual_funds.services.amfi.requests.get",
-            side_effect=responses,
+            return_value=FakeResponse(report),
         ) as mock_get:
             records = AMFIService.download_historical_nav(
                 date(2026, 9, 1),
@@ -604,10 +606,14 @@ class AMFIHistoricalMasterImportTests(TestCase):
         self.assertEqual(records[0]["date"], date(2026, 9, 28))
         self.assertEqual(records[1]["nav"], Decimal("102.50"))
 
-        history_call = mock_get.call_args_list[-1]
-        self.assertEqual(history_call.kwargs["params"]["mf"], "85")
-        self.assertEqual(history_call.kwargs["params"]["frmdt"], "01-Sep-2026")
-        self.assertEqual(history_call.kwargs["params"]["todt"], "29-Sep-2026")
+        self.assertEqual(mock_get.call_count, 5)
+        first_history_call = mock_get.call_args_list[0]
+        last_history_call = mock_get.call_args_list[-1]
+        self.assertEqual(first_history_call.kwargs["params"]["mf"], "85")
+        self.assertEqual(first_history_call.kwargs["params"]["frmdt"], "01-Sep-2026")
+        self.assertEqual(first_history_call.kwargs["params"]["todt"], "07-Sep-2026")
+        self.assertEqual(last_history_call.kwargs["params"]["frmdt"], "29-Sep-2026")
+        self.assertEqual(last_history_call.kwargs["params"]["todt"], "29-Sep-2026")
 
     def test_current_api_history_falls_back_to_explicit_fund_type(self):
         class FakeResponse:

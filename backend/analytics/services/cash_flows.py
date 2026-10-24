@@ -69,4 +69,4 @@ def xirr_percent(cash_flows):
     rate = XIRRCalculator.calculate(cash_flows)
     if rate is None:
         return None
-    return round(rate * 100, 2)
+    return round(rate * 100, 4)

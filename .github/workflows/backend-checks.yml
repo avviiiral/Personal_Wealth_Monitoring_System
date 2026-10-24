@@ -12,6 +12,7 @@ on:
       - "audit/**"
       - "fix/**"
       - "feature/**"
+      - "hardening/**"
     paths:
       - "backend/**"
       - "frontend/**"

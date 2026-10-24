@@ -240,6 +240,51 @@ class FamilyScopedFinancialDataTests(TestCase):
             str(response.data),
         )
 
+    def test_asset_class_xirr_uses_authenticated_user_family_scope(self):
+        asset = self._asset(
+            self.user1,
+            self.family1,
+            "Family One XIRR Asset",
+        )
+        Holding.objects.create(
+            owner=self.user1,
+            family=self.family1,
+            asset=asset,
+            quantity=Decimal("1"),
+            invested_value=Decimal("1000"),
+            current_price=Decimal("1100"),
+            current_value=Decimal("1100"),
+            unrealized_pnl=Decimal("100"),
+        )
+        Transaction.objects.create(
+            owner=self.user1,
+            family=self.family1,
+            asset=asset,
+            family_name=self.family1.name,
+            portfolio="Portfolio A",
+            asset_class="Equity",
+            sub_class="Direct Equity",
+            asset_name=asset.name,
+            transaction_type=TransactionType.BUY,
+            transaction_date="2026-01-01",
+            quantity=Decimal("1"),
+            price_per_unit=Decimal("1000"),
+            amount=Decimal("1000"),
+        )
+
+        self.client.force_authenticate(self.user1)
+        response = self.client.get(
+            "/api/analytics/wealth/performance-by-subclass/"
+        )
+
+        self.assertEqual(response.status_code, 200)
+        rows = response.data["results"]
+        direct_equity = next(
+            row for row in rows if row["asset_class"] == "Direct Equity"
+        )
+        self.assertEqual(Decimal(str(direct_equity["current_value"])), Decimal("1100"))
+        self.assertGreater(direct_equity["xirr"], 0)
+
     def test_system_owner_can_manage_families(self):
         self.client.force_authenticate(self.system_owner)
         response = self.client.post("/api/settings/groups/", {"name": "Managed Family"}, format="json")

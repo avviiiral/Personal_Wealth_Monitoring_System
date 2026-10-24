@@ -180,6 +180,66 @@ class FamilyScopedFinancialDataTests(TestCase):
         response = self.client.get(f"/api/portfolio/assets/{response.data['id']}/")
         self.assertEqual(response.status_code, 404)
 
+    def test_transaction_list_does_not_leak_other_family_records(self):
+        family_one_asset = self._asset(
+            self.user1,
+            self.family1,
+            "Family One Transaction Asset",
+        )
+        family_two_asset = self._asset(
+            self.user3,
+            self.family2,
+            "Family Two Transaction Asset",
+        )
+
+        family_one_transaction = Transaction.objects.create(
+            owner=self.user1,
+            family=self.family1,
+            asset=family_one_asset,
+            family_name=self.family1.name,
+            portfolio="Portfolio A",
+            asset_class="Equity",
+            sub_class="Stocks",
+            asset_name=family_one_asset.name,
+            transaction_type=TransactionType.BUY,
+            transaction_date="2026-01-01",
+            quantity=Decimal("1"),
+            price_per_unit=Decimal("100"),
+            amount=Decimal("100"),
+        )
+        family_two_transaction = Transaction.objects.create(
+            owner=self.user3,
+            family=self.family2,
+            asset=family_two_asset,
+            family_name=self.family2.name,
+            portfolio="Portfolio B",
+            asset_class="Equity",
+            sub_class="Stocks",
+            asset_name=family_two_asset.name,
+            transaction_type=TransactionType.BUY,
+            transaction_date="2026-01-02",
+            quantity=Decimal("1"),
+            price_per_unit=Decimal("900000"),
+            amount=Decimal("900000"),
+        )
+
+        self.client.force_authenticate(self.user1)
+        response = self.client.get("/api/portfolio/transactions/")
+
+        self.assertEqual(response.status_code, 200)
+        rows = (
+            response.data.get("results", [])
+            if isinstance(response.data, dict)
+            else response.data
+        )
+        visible_ids = {row["id"] for row in rows}
+        self.assertIn(family_one_transaction.id, visible_ids)
+        self.assertNotIn(family_two_transaction.id, visible_ids)
+        self.assertNotIn(
+            "Family Two Transaction Asset",
+            str(response.data),
+        )
+
     def test_system_owner_can_manage_families(self):
         self.client.force_authenticate(self.system_owner)
         response = self.client.post("/api/settings/groups/", {"name": "Managed Family"}, format="json")

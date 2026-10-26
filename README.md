@@ -1,10 +1,8 @@
 <div align="center">
 
-<img src="https://capsule-render.vercel.app/api?type=waving&color=0:0f2027,50:203a43,100:2c5364&height=200&section=header&text=PWMS&fontSize=72&fontColor=ffffff&fontAlignY=38&desc=Personal%20Wealth%20Monitoring%20System&descSize=22&descAlignY=60" alt="PWMS - Personal Wealth Monitoring System" width="100%" />
+# Personal Wealth Monitoring System
 
-# 💰 Personal Wealth Monitoring System
-
-### Your family's entire portfolio. Real numbers. One place.
+### Portfolio tracking and investment analytics for Indian investors
 
 **A self-hosted wealth tracker for Indian investors** — stocks, ETFs, bonds, Sovereign Gold Bonds, mutual funds and SIPs — with true **XIRR**, live prices, role-based family sharing, and a deterministic portfolio-news layer that works without any paid AI API.
 
@@ -17,7 +15,7 @@
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-optional-4169E1?style=for-the-badge&logo=postgresql&logoColor=white)
 ![License](https://img.shields.io/badge/License-Proprietary-red?style=for-the-badge)
 
-[🚀 Quick start](#-quick-start) &nbsp;·&nbsp; [✨ Features](#-features) &nbsp;·&nbsp; [🧭 How it works](#-how-it-works) &nbsp;·&nbsp; [🔑 Roles](#-roles-and-permissions) &nbsp;·&nbsp; [🔌 API](#-api-reference) &nbsp;·&nbsp; [📘 Setup guide](./SETUP.md)
+[Quick start](#-quick-start) · [Features](#-features) · [How it works](#-how-it-works) · [Roles](#-roles-and-permissions) · [API reference](#-api-reference) · [Setup guide](./SETUP.md)
 
 </div>
 
@@ -1636,3 +1634,8 @@ python -m pytest -q
 ```
 
 See [News Agent intelligence audit](docs/NEWS_AGENT_INTELLIGENCE_AUDIT.md) and [portfolio news calculation notes](docs/PORTFOLIO_NEWS_CALCULATION.md) for implementation details and limitations.
+
+
+## Project Keywords
+
+`personal-finance` `portfolio-tracker` `wealth-management` `django` `django-rest-framework` `angular` `python` `investment-analytics` `xirr` `mutual-funds` `india`

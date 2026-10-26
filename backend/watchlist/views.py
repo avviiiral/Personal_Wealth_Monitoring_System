@@ -537,7 +537,7 @@ def watch_list_bulk_remove(request):
 
 
 @api_view(["POST"])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, CanWriteFinancialData])
 def watch_list_refresh(request):
     global watch_list_refreshing
 
@@ -563,7 +563,7 @@ def watch_list_refresh_status(request):
 
 
 @api_view(["POST"])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, CanWriteFinancialData])
 def prepare_watch_list(request):
     if not request.user.is_staff:
         return Response({"detail": "Staff permission required."}, status=403)
@@ -578,7 +578,7 @@ def prepare_watch_list(request):
 
 
 @api_view(["POST"])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, CanWriteFinancialData])
 def prepare_watch_list_benchmark(request):
     if not request.user.is_staff:
         return Response({"detail": "Staff permission required."}, status=403)

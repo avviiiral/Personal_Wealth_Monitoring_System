@@ -10,7 +10,7 @@ from rest_framework.response import Response
 from config.database_scheduler_lock import DATABASE_SCHEDULER_LOCK
 
 from investments.models import PortfolioPosition, Transaction
-from users.permissions import get_active_family_group_id, get_visible_owner_ids
+from users.permissions import CanWriteFinancialData, get_active_family_group_id, get_visible_owner_ids
 from watchlist.models import InvestmentProduct, PerformanceSnapshot, ProductType, WatchListEntry
 from watchlist.serializers import PerformanceSnapshotSerializer, WatchListProductSerializer
 from watchlist.services.ownership import OwnershipService
@@ -360,7 +360,7 @@ BENCHMARK_CHOICES = ("BSE 500", "Nifty 50")
 
 
 @api_view(["PATCH"])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, CanWriteFinancialData])
 def watch_list_benchmark(request, product_id):
     product = get_object_or_404(
         InvestmentProduct.objects.select_related("mutual_fund", "pms"),

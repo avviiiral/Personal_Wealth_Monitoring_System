@@ -29,6 +29,9 @@ class MISReportAPITests(TestCase):
             username="mis_report_user",
             password="test-password",
         )
+        # MIS note mutation tests require an authorized financial writer.
+        self.user.profile.role = Role.ADMIN
+        self.user.profile.save(update_fields=["role"])
         self.family = FamilyGroup.objects.create(name="MIS Test Family")
         self.user.profile.family_groups.add(self.family)
         self.user.profile.active_family_group = self.family

@@ -372,6 +372,9 @@ class TaxRateSettingsApiTests(TestCase):
         global_id = create.data["id"]
 
         other_user = User.objects.create_user(username="tax-user-other-family", password="pass123")
+        # This scenario verifies cross-family global policy behavior for an authorized writer.
+        other_user.profile.role = Role.ADMIN
+        other_user.profile.save(update_fields=["role"])
         other_family = FamilyGroup.objects.create(name="Other Tax Family")
         other_user.profile.family_groups.add(other_family)
         other_user.profile.active_family_group = other_family

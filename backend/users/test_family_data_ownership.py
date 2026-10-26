@@ -133,6 +133,9 @@ class FamilyScopedFinancialDataTests(TestCase):
         self.assertEqual(response.data["results"][0]["id"], asset.id)
 
     def test_family_id_in_request_cannot_override_active_family(self):
+        # This test verifies family scoping, not Viewer write access.
+        self.user1.profile.role = Role.ADMIN
+        self.user1.profile.save(update_fields=["role", "updated_at"])
         self.client.force_authenticate(self.user1)
         response = self.client.post("/api/portfolio/assets/", {
             "name": "Family 1 Asset",
@@ -164,6 +167,10 @@ class FamilyScopedFinancialDataTests(TestCase):
         self.assertEqual(response.status_code, 404)
 
     def test_user_can_join_family_two_and_create_family_two_data(self):
+        # This test verifies family membership behavior; use a role that
+        # is authorized to create financial records.
+        self.user1.profile.role = Role.ADMIN
+        self.user1.profile.save(update_fields=["role", "updated_at"])
         self.user1.profile.family_groups.add(self.family2)
         self.user1.profile.active_family_group = self.family2
         self.user1.profile.save(update_fields=["active_family_group", "updated_at"])
@@ -321,3 +328,139 @@ class FamilyScopedFinancialDataTests(TestCase):
         response = self.client.post("/api/settings/groups/", {"name": "Managed Family"}, format="json")
         self.assertEqual(response.status_code, 201)
         self.assertEqual(response.data["name"], "Managed Family")
+
+
+    def test_viewer_can_read_but_cannot_create_portfolio_assets(self):
+        self.client.force_authenticate(self.user1)
+
+        read_response = self.client.get("/api/portfolio/assets/")
+        self.assertEqual(read_response.status_code, 200)
+
+        write_response = self.client.post(
+            "/api/portfolio/assets/",
+            {"name": "Viewer Must Not Create", "category": AssetCategory.STOCK},
+            format="json",
+        )
+        self.assertEqual(write_response.status_code, 403)
+        self.assertFalse(Asset.objects.filter(name="Viewer Must Not Create").exists())
+
+    def test_viewer_cannot_update_or_delete_portfolio_assets(self):
+        asset = self._asset(self.user1, self.family1, "Read Only Asset")
+        self.client.force_authenticate(self.user1)
+
+        update_response = self.client.patch(
+            f"/api/portfolio/assets/{asset.id}/",
+            {"name": "Changed by Viewer"},
+            format="json",
+        )
+        self.assertEqual(update_response.status_code, 403)
+
+        delete_response = self.client.delete(f"/api/portfolio/assets/{asset.id}/")
+        self.assertEqual(delete_response.status_code, 403)
+
+        asset.refresh_from_db()
+        self.assertEqual(asset.name, "Read Only Asset")
+        self.assertTrue(asset.is_active)
+
+    def test_viewer_cannot_create_portfolio_transactions_or_import_transactions(self):
+        asset = self._asset(self.user1, self.family1, "Transaction Permission Asset")
+        self.client.force_authenticate(self.user1)
+
+        transaction_response = self.client.post(
+            "/api/portfolio/transactions/",
+            {
+                "asset": asset.id,
+                "family_name": self.family1.name,
+                "portfolio": "Permission Test",
+                "asset_class": "Equity",
+                "sub_class": "Stocks",
+                "asset_name": asset.name,
+                "transaction_type": "BUY",
+                "transaction_date": "2026-01-01",
+                "quantity": "1",
+                "price_per_unit": "100",
+                "amount": "100",
+            },
+            format="json",
+        )
+        self.assertEqual(transaction_response.status_code, 403)
+
+        import_response = self.client.post("/api/investments/import/")
+        self.assertEqual(import_response.status_code, 403)
+
+    def test_viewer_cannot_write_manual_price(self):
+        asset = self._asset(self.user1, self.family1, "Manual Price Read Only Asset")
+        self.client.force_authenticate(self.user1)
+
+        response = self.client.patch(
+            f"/api/portfolio/assets/{asset.id}/manual-price/",
+            {"price": "123.45"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 403)
+        from market_data.models import DataSource, MarketPrice
+        self.assertFalse(
+            MarketPrice.objects.filter(asset=asset, source=DataSource.MANUAL).exists()
+        )
+
+    def test_viewer_cannot_change_tax_settings(self):
+        self.client.force_authenticate(self.user1)
+        response = self.client.post(
+            "/api/settings/tax-rates/",
+            {"asset_id": 1, "tenure_months": 12, "short_term_tax_rate": 15, "long_term_tax_rate": 10},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 403)
+
+        upload_response = self.client.post("/api/settings/tax-rates/upload/")
+        self.assertEqual(upload_response.status_code, 403)
+
+    def test_viewer_cannot_edit_mis_report_notes(self):
+        self.client.force_authenticate(self.user1)
+        response = self.client.patch(
+            "/api/portfolio/mis-report/notes/",
+            {"notes": {"sections": []}},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 403)
+
+    def test_viewer_cannot_create_or_modify_corporate_actions(self):
+        self.client.force_authenticate(self.user1)
+        create_response = self.client.post(
+            "/api/corporate-actions/",
+            {
+                "action_type": "SPLIT",
+                "security_name": "Viewer Write Test",
+                "ex_date": "2026-01-01",
+                "old_units": "1",
+                "new_units": "2",
+            },
+            format="json",
+        )
+        self.assertEqual(create_response.status_code, 403)
+
+    def test_viewer_cannot_recalculate_portfolio_or_change_standard_allocations(self):
+        self.client.force_authenticate(self.user1)
+
+        recalculate_response = self.client.post("/api/analytics/wealth/recalculate/", {}, format="json")
+        self.assertEqual(recalculate_response.status_code, 403)
+
+        allocation_response = self.client.put(
+            "/api/analytics/wealth/standard-allocations/update/",
+            {"allocations": {"Equity": {"percent": "100"}}},
+            format="json",
+        )
+        self.assertEqual(allocation_response.status_code, 403)
+
+    def test_viewer_cannot_change_watchlist_benchmark_or_trigger_global_refresh(self):
+        self.client.force_authenticate(self.user1)
+
+        benchmark_response = self.client.patch(
+            "/api/watch-list/products/999999/benchmark/",
+            {"benchmark": "Nifty 50"},
+            format="json",
+        )
+        self.assertEqual(benchmark_response.status_code, 403)
+
+        refresh_response = self.client.post("/api/watch-list/refresh/", {}, format="json")
+        self.assertEqual(refresh_response.status_code, 403)

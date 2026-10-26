@@ -34,13 +34,13 @@ from .serializers import (
     TransactionSerializer,
     TransactionEditHistorySerializer,
 )
-from users.permissions import family_scope, require_active_family
+from users.permissions import CanWriteFinancialData, family_scope, require_active_family
 
 logger = logging.getLogger("portfolio.views")
 
 
 @api_view(["GET", "POST"])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, CanWriteFinancialData])
 def portfolio_assets(request):
     if request.method == "GET":
         assets = family_scope(Asset.objects, request.user).order_by("name")
@@ -64,7 +64,7 @@ def portfolio_assets(request):
 
 
 @api_view(["GET", "PUT", "PATCH", "DELETE"])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, CanWriteFinancialData])
 def portfolio_asset_detail(request, asset_id):
     asset = family_scope(Asset.objects, request.user).filter(id=asset_id).first()
     if asset is None:
@@ -86,7 +86,7 @@ def portfolio_asset_detail(request, asset_id):
 
 
 @api_view(["GET", "POST"])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, CanWriteFinancialData])
 def portfolio_transactions(request):
     if request.method == "GET":
         transactions = (
@@ -132,7 +132,7 @@ def _transaction_history_snapshot(transaction_obj):
 
 
 @api_view(["GET", "PUT", "PATCH", "DELETE"])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, CanWriteFinancialData])
 def portfolio_transaction_detail(request, transaction_id):
     transaction_obj = family_scope(Transaction.objects.select_related("asset"), request.user).filter(id=transaction_id).first()
     if transaction_obj is None:
@@ -365,7 +365,7 @@ def portfolio_underlying_template(request):
 
 
 @api_view(["POST"])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, CanWriteFinancialData])
 def portfolio_asset_underlying_import(request, asset_id):
     uploaded_file = request.FILES.get("file")
     if uploaded_file is None:

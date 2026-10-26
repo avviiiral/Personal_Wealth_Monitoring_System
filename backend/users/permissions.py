@@ -380,6 +380,24 @@ class IsViewer(BasePermission):
         return get_role(request.user) is not None
 
 
+class CanWriteFinancialData(BasePermission):
+    """
+    Allow authenticated users to read financial data, but restrict
+    financial mutations to Admin, Super User, and System Owner.
+
+    Pair this permission with IsAuthenticated on financial endpoints.
+    Safe methods remain available to Viewers; unsafe methods require
+    an elevated business role.
+    """
+
+    message = "Viewer accounts are read-only. Admin privileges or above are required to change financial data."
+
+    def has_permission(self, request, view) -> bool:
+        if request.method in ("GET", "HEAD", "OPTIONS"):
+            return True
+        return is_admin_or_above(request.user)
+
+
 class IsAdmin(BasePermission):
     """User's role is exactly Admin."""
 

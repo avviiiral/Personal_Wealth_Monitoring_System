@@ -20,6 +20,7 @@ from investments.models import Asset, Transaction
 
 from .models import FamilyGroup, Role, TaxRateChangeLog, TaxRateSetting, UserAuditLog, UserProfile
 from .permissions import (
+    CanWriteFinancialData,
     IsAdminOrSuperUser,
     IsSystemOwner,
     get_manageable_users_queryset,
@@ -218,7 +219,7 @@ def _tax_setting_response(row, asset, family, asset_name, configuration_conflict
 
 
 @api_view(["GET", "POST"])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, CanWriteFinancialData])
 def tax_rate_list(request):
     """GET/POST /api/settings/tax-rates/ for the active family.
 
@@ -512,7 +513,7 @@ def tax_rate_template(request):
 
 
 @api_view(["POST"])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, CanWriteFinancialData])
 def tax_rate_upload(request):
     """Validate and atomically upsert tax policies from an Excel workbook."""
     uploaded_file = request.FILES.get("file")
@@ -655,7 +656,7 @@ def tax_rate_upload(request):
 
 
 @api_view(["PATCH", "DELETE"])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, CanWriteFinancialData])
 def tax_rate_detail(request, tax_rate_id):
     """PATCH/DELETE a global tax policy visible in the active family."""
 

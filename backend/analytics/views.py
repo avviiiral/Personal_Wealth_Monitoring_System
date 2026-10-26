@@ -18,6 +18,7 @@ from .services.equity_analysis import EquityAnalysisService
 from .services.mutual_fund_lookthrough import MutualFundLookThroughService
 from .services.analytics_view_model import AnalyticsViewModelService
 from users.permissions import (
+    CanWriteFinancialData,
     get_family_group_ids,
     is_system_owner,
     require_active_family,
@@ -121,7 +122,7 @@ def analytics_historical(request):
 
 
 @api_view(["POST"])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, CanWriteFinancialData])
 def wealth_recalculate(request):
     """
     Rebuild persisted portfolio holdings and positions for the active
@@ -264,7 +265,7 @@ def wealth_standard_allocations(request):
 
 
 @api_view(["PUT"])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, CanWriteFinancialData])
 def wealth_standard_allocations_update(request):
     family_name = _standard_allocation_family_name(request)
     raw_allocations = request.data.get("allocations")

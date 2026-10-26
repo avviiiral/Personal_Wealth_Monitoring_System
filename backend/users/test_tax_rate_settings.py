@@ -6,7 +6,7 @@ from datetime import date
 from rest_framework.test import APIClient
 
 from investments.models import Asset, AssetCategory, Transaction, TransactionType
-from users.models import FamilyGroup, TaxRateChangeLog, TaxRateSetting
+from users.models import FamilyGroup, Role, TaxRateChangeLog, TaxRateSetting
 
 
 class TaxRateSettingsApiTests(TestCase):
@@ -14,6 +14,11 @@ class TaxRateSettingsApiTests(TestCase):
         self.client = APIClient()
         self.user1 = User.objects.create_user(username="tax-user-1", password="pass123")
         self.user2 = User.objects.create_user(username="tax-user-2", password="pass123")
+        # These API tests exercise tax-setting behavior as an authorized writer.
+        self.user1.profile.role = Role.ADMIN
+        self.user1.profile.save(update_fields=["role"])
+        self.user2.profile.role = Role.ADMIN
+        self.user2.profile.save(update_fields=["role"])
         self.family = FamilyGroup.objects.create(name="Tax Family")
         self.user1.profile.family_groups.add(self.family)
         self.user2.profile.family_groups.add(self.family)
@@ -367,6 +372,9 @@ class TaxRateSettingsApiTests(TestCase):
         global_id = create.data["id"]
 
         other_user = User.objects.create_user(username="tax-user-other-family", password="pass123")
+        # This scenario verifies cross-family global policy behavior for an authorized writer.
+        other_user.profile.role = Role.ADMIN
+        other_user.profile.save(update_fields=["role"])
         other_family = FamilyGroup.objects.create(name="Other Tax Family")
         other_user.profile.family_groups.add(other_family)
         other_user.profile.active_family_group = other_family

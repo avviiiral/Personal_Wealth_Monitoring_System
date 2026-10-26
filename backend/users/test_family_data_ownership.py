@@ -133,6 +133,9 @@ class FamilyScopedFinancialDataTests(TestCase):
         self.assertEqual(response.data["results"][0]["id"], asset.id)
 
     def test_family_id_in_request_cannot_override_active_family(self):
+        # This test verifies family scoping, not Viewer write access.
+        self.user1.profile.role = Role.ADMIN
+        self.user1.profile.save(update_fields=["role", "updated_at"])
         self.client.force_authenticate(self.user1)
         response = self.client.post("/api/portfolio/assets/", {
             "name": "Family 1 Asset",
@@ -164,6 +167,10 @@ class FamilyScopedFinancialDataTests(TestCase):
         self.assertEqual(response.status_code, 404)
 
     def test_user_can_join_family_two_and_create_family_two_data(self):
+        # This test verifies family membership behavior; use a role that
+        # is authorized to create financial records.
+        self.user1.profile.role = Role.ADMIN
+        self.user1.profile.save(update_fields=["role", "updated_at"])
         self.user1.profile.family_groups.add(self.family2)
         self.user1.profile.active_family_group = self.family2
         self.user1.profile.save(update_fields=["active_family_group", "updated_at"])

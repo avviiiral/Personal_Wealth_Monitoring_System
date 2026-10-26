@@ -48,7 +48,7 @@ from .services.sip_installments import (
     SIPInstallmentService,
 )
 
-from users.permissions import family_scope, require_active_family
+from users.permissions import CanWriteFinancialData, family_scope, require_active_family
 
 from django.views.decorators.csrf import ensure_csrf_cookie
 
@@ -57,7 +57,7 @@ from django.views.decorators.csrf import ensure_csrf_cookie
 # ==========================================================
 
 @api_view(["GET", "POST"])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, CanWriteFinancialData])
 def mutual_fund_schemes(request):
 
     if request.method == "GET":
@@ -125,7 +125,7 @@ def mutual_fund_schemes(request):
 # ==========================================================
 
 @api_view(["POST"])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, CanWriteFinancialData])
 def mutual_fund_transaction_create(request):
 
     serializer = CreateMutualFundTransactionSerializer(
@@ -157,7 +157,7 @@ def mutual_fund_transaction_create(request):
 # ==========================================================
 
 @api_view(["POST"])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, CanWriteFinancialData])
 @ensure_csrf_cookie
 def sip_create(request):
 
@@ -453,7 +453,7 @@ def sip_summary(request):
 # ==========================================================
 
 @api_view(["POST"])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, CanWriteFinancialData])
 def sip_execute(
     request,
     sip_id,
@@ -481,7 +481,7 @@ def sip_execute(
 # ==========================================================
 
 @api_view(["POST"])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, CanWriteFinancialData])
 def sip_installment_execute(
     request,
     installment_id,

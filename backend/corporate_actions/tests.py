@@ -6,6 +6,7 @@ from django.test import TestCase
 from rest_framework.test import APIClient
 
 from .models import CorporateAction, CorporateActionStatus, CorporateActionType
+from users.models import Role
 from .services import quantity_multiplier, resolve_corporate_action_candidates
 
 
@@ -68,6 +69,9 @@ class CorporateActionServiceTests(TestCase):
 class CorporateActionAPITests(TestCase):
     def setUp(self):
         self.user = User.objects.create_user(username="corp-action-api", password="test-password")
+        # API behavior tests use an authorized writer; Viewer denial is covered separately.
+        self.user.profile.role = Role.ADMIN
+        self.user.profile.save(update_fields=["role"])
         self.client = APIClient()
         self.client.force_authenticate(self.user)
 

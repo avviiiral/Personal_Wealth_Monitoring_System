@@ -853,13 +853,27 @@ class MISReportAPITests(TestCase):
 
     def test_unrelated_family_is_not_accessible(self):
         other_family = FamilyGroup.objects.create(name="Other Family")
-        self.user.profile.role = Role.VIEWER
         self.user.profile.family_groups.remove(self.family)
         self.user.profile.active_family_group = other_family
-        self.user.profile.save(update_fields=["role", "active_family_group"])
+        self.user.profile.save(update_fields=["active_family_group"])
 
         response = self.client.get("/api/portfolio/mis-report/")
         self.assertEqual(response.status_code, 403)
+
+    def test_viewer_can_read_mis_report_but_cannot_edit_notes(self):
+        self.user.profile.role = Role.VIEWER
+        self.user.profile.save(update_fields=["role"])
+        self.client.force_authenticate(user=self.user)
+
+        read_response = self.client.get("/api/portfolio/mis-report/")
+        self.assertEqual(read_response.status_code, 200)
+
+        write_response = self.client.patch(
+            "/api/portfolio/mis-report/notes/",
+            {"notes": {"sections": []}},
+            format="json",
+        )
+        self.assertEqual(write_response.status_code, 403)
 
     def test_empty_family_returns_empty_sections(self):
         empty_family = FamilyGroup.objects.create(name="Empty MIS Family")

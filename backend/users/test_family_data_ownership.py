@@ -438,3 +438,29 @@ class FamilyScopedFinancialDataTests(TestCase):
             format="json",
         )
         self.assertEqual(create_response.status_code, 403)
+
+    def test_viewer_cannot_recalculate_portfolio_or_change_standard_allocations(self):
+        self.client.force_authenticate(self.user1)
+
+        recalculate_response = self.client.post("/api/analytics/wealth/recalculate/", {}, format="json")
+        self.assertEqual(recalculate_response.status_code, 403)
+
+        allocation_response = self.client.put(
+            "/api/analytics/wealth/standard-allocations/update/",
+            {"allocations": {"Equity": {"percent": "100"}}},
+            format="json",
+        )
+        self.assertEqual(allocation_response.status_code, 403)
+
+    def test_viewer_cannot_change_watchlist_benchmark_or_trigger_global_refresh(self):
+        self.client.force_authenticate(self.user1)
+
+        benchmark_response = self.client.patch(
+            "/api/watch-list/products/999999/benchmark/",
+            {"benchmark": "Nifty 50"},
+            format="json",
+        )
+        self.assertEqual(benchmark_response.status_code, 403)
+
+        refresh_response = self.client.post("/api/watch-list/refresh/", {}, format="json")
+        self.assertEqual(refresh_response.status_code, 403)

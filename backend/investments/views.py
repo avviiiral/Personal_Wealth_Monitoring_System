@@ -26,7 +26,7 @@ from .services.auto_price_refresh import (
     refresh_assets_async,
 )
 
-from users.permissions import family_scope, require_active_family
+from users.permissions import CanWriteFinancialData, family_scope, require_active_family
 
 
 @api_view(["POST"])
@@ -48,7 +48,7 @@ def preview_transaction_duplicates(request):
 
 
 @api_view(["POST"])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, CanWriteFinancialData])
 def import_transactions(request):
     """Import transaction data and persist an auditable upload summary."""
     uploaded_file = request.FILES.get("file")
@@ -309,7 +309,7 @@ def security_master_list(request):
 
 
 @api_view(["GET", "PATCH"])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, CanWriteFinancialData])
 def security_master_detail(
     request,
     security_id,

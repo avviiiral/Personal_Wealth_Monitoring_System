@@ -21,6 +21,7 @@ from investments.models import Asset, Transaction
 from .models import FamilyGroup, Role, TaxRateChangeLog, TaxRateSetting, UserAuditLog, UserProfile
 from .permissions import (
     CanWriteFinancialData,
+    CanWriteFinancialData,
     IsAdminOrSuperUser,
     IsSystemOwner,
     get_manageable_users_queryset,

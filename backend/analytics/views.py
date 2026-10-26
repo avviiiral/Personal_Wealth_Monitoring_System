@@ -18,6 +18,7 @@ from .services.equity_analysis import EquityAnalysisService
 from .services.mutual_fund_lookthrough import MutualFundLookThroughService
 from .services.analytics_view_model import AnalyticsViewModelService
 from users.permissions import (
+    CanWriteFinancialData,
     get_family_group_ids,
     is_system_owner,
     require_active_family,

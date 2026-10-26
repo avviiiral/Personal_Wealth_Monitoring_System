@@ -318,13 +318,10 @@ Open a **second, separate terminal** and leave the backend running in the first 
 ```bash
 cd frontend
 npm install
-```
-
-This downloads the Angular dependencies — it can take a few minutes the first time. Then start the dev server:
-
-```bash
 npm start
 ```
+
+The Angular development server uses `frontend/proxy.conf.json` to forward requests whose paths start with `/api/` to Django at `http://localhost:8000`. The development environment intentionally sets `apiUrl: ''`, so API services build same-origin paths such as `/api/auth/me/`.
 
 Angular compiles and prints something like:
 
@@ -332,13 +329,13 @@ Angular compiles and prints something like:
 Local:   http://localhost:4200/
 ```
 
-Open **http://localhost:4200** in your browser.
+Open **http://localhost:4200** in your browser. In DevTools → Network, API requests should use URLs such as `http://localhost:4200/api/...`; the browser should not need to call `http://localhost:8000/api/...` directly.
 
 > [!NOTE]
-> The dev server talks to **`http://localhost:8000`**, set as `apiUrl` in `frontend/src/environments/environment.ts`. You don't need to change it for local development — only when building for a real deployment ([section 11](#11--production-style-deployment)).
+> **Development only:** the Angular proxy is used by `ng serve`. It is not a production reverse proxy, does not hide or secure a publicly exposed backend, and is not a replacement for the production web-server configuration. For deployment, see [section 11](#11--production-style-deployment).
 
 > [!TIP]
-> Open the app at **`http://localhost:4200`** consistently. `localhost` and `127.0.0.1` count as _different origins_ for cookies and CORS, and mixing them is the most common cause of "login does nothing".
+> Open the app at **`http://localhost:4200`** consistently. `localhost` and `127.0.0.1` count as different origins for cookies and CSRF handling; avoid mixing them during local login testing.
 
 ---
 
@@ -1014,7 +1011,7 @@ python manage.py migrate
 <details>
 <summary><b>Port 8000 (or 4200) is already in use</b></summary>
 
-Stop the other process, or use another port. If you move the backend to 8001, update `apiUrl` in `frontend/src/environments/environment.ts`. If you move the frontend (`npm start -- --port 4300`), add the new origin to `CORS_ALLOWED_ORIGINS` and `CSRF_TRUSTED_ORIGINS` in `backend/.env` and restart the backend.
+Stop the other process, or use another port. If you move the backend to 8001, update the target in `frontend/proxy.conf.json`. If you move the frontend (`npm start -- --port 4300`), ensure Django's CSRF/CORS settings match the browser origin and restart the backend as needed. With the same-origin Angular proxy, ordinary API calls go through the frontend origin.
 
 </details>
 
@@ -1044,9 +1041,10 @@ Add your host name or IP to `ALLOWED_HOSTS` in `backend/.env` and restart.
 <details>
 <summary><b>The browser can't connect / the frontend can't reach the backend</b></summary>
 
-1. Is the backend running? Open `http://127.0.0.1:8000/api/health/` directly.
-2. Check `apiUrl` in `frontend/src/environments/environment.ts` — for local development it must be `http://localhost:8000`.
-3. Opening the frontend from **another device**? `localhost` there means _that_ device. Set `apiUrl` to your backend machine's real address and add the frontend's origin to `CORS_ALLOWED_ORIGINS` / `CSRF_TRUSTED_ORIGINS`.
+1. Confirm the backend is running by opening `http://127.0.0.1:8000/api/health/` directly.
+2. Confirm `frontend/proxy.conf.json` exists and targets `http://localhost:8000`; confirm `frontend/angular.json` enables that proxy in the development serve configuration.
+3. Keep `apiUrl: ''` in `frontend/src/environments/environment.ts` for this local proxy setup. In DevTools → Network, requests should go to `http://localhost:4200/api/...` and return the expected API response.
+4. If you are opening the frontend from **another device**, this localhost-only proxy target will point to that device, not the backend machine. Configure a reachable backend/reverse-proxy address and the appropriate `CORS_ALLOWED_ORIGINS` / `CSRF_TRUSTED_ORIGINS` for that setup.
 </details>
 
 <details>

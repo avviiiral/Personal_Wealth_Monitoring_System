@@ -172,6 +172,8 @@ npm install
 npm start
 ```
 
+For local development, Angular's `ng serve` uses `frontend/proxy.conf.json` to forward browser requests under `/api/` to Django at `http://localhost:8000`. The development environment therefore uses a relative API URL (`apiUrl: ''`); browser API requests should look like `http://localhost:4200/api/...`, not direct calls to port `8000`. This proxy is for local development only and does not configure or secure a production deployment.
+
 **4 — Open the app**
 
 | Service             | URL                               |

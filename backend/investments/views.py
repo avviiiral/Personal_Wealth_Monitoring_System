@@ -92,7 +92,7 @@ def import_transactions(request):
         upload.error_message = "Unexpected error while importing the transaction file."
         upload.completed_at = timezone.now()
         upload.save(update_fields=["status", "error_message", "completed_at"])
-        return Response({"success": False, "message": upload.error_message, "error": str(exc), "upload_id": upload.id}, status=500)
+        return Response({"success": False, "message": upload.error_message, "upload_id": upload.id}, status=500)
 
     refresh_assets_async(result.get("touched_asset_ids", []))
 

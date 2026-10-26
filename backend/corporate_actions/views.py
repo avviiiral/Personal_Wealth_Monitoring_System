@@ -5,6 +5,7 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
+from users.permissions import CanWriteFinancialData
 from .models import CorporateAction, CorporateActionStatus
 from .services import resolve_corporate_action_candidates
 
@@ -26,7 +27,7 @@ def _serialize(action):
 
 
 @api_view(["GET", "POST"])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, CanWriteFinancialData])
 def corporate_action_list(request):
     if request.method == "GET":
         queryset = CorporateAction.objects.filter(owner=request.user)
@@ -60,7 +61,7 @@ def corporate_action_list(request):
 
 
 @api_view(["GET", "PATCH", "DELETE"])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, CanWriteFinancialData])
 def corporate_action_detail(request, action_id):
     action = CorporateAction.objects.filter(owner=request.user, id=action_id).first()
     if action is None:

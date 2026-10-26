@@ -321,3 +321,62 @@ class FamilyScopedFinancialDataTests(TestCase):
         response = self.client.post("/api/settings/groups/", {"name": "Managed Family"}, format="json")
         self.assertEqual(response.status_code, 201)
         self.assertEqual(response.data["name"], "Managed Family")
+
+
+    def test_viewer_can_read_but_cannot_create_portfolio_assets(self):
+        self.client.force_authenticate(self.user1)
+
+        read_response = self.client.get("/api/portfolio/assets/")
+        self.assertEqual(read_response.status_code, 200)
+
+        write_response = self.client.post(
+            "/api/portfolio/assets/",
+            {"name": "Viewer Must Not Create", "category": AssetCategory.STOCK},
+            format="json",
+        )
+        self.assertEqual(write_response.status_code, 403)
+        self.assertFalse(Asset.objects.filter(name="Viewer Must Not Create").exists())
+
+    def test_viewer_cannot_update_or_delete_portfolio_assets(self):
+        asset = self._asset(self.user1, self.family1, "Read Only Asset")
+        self.client.force_authenticate(self.user1)
+
+        update_response = self.client.patch(
+            f"/api/portfolio/assets/{asset.id}/",
+            {"name": "Changed by Viewer"},
+            format="json",
+        )
+        self.assertEqual(update_response.status_code, 403)
+
+        delete_response = self.client.delete(f"/api/portfolio/assets/{asset.id}/")
+        self.assertEqual(delete_response.status_code, 403)
+
+        asset.refresh_from_db()
+        self.assertEqual(asset.name, "Read Only Asset")
+        self.assertTrue(asset.is_active)
+
+    def test_viewer_cannot_create_portfolio_transactions_or_import_transactions(self):
+        asset = self._asset(self.user1, self.family1, "Transaction Permission Asset")
+        self.client.force_authenticate(self.user1)
+
+        transaction_response = self.client.post(
+            "/api/portfolio/transactions/",
+            {
+                "asset": asset.id,
+                "family_name": self.family1.name,
+                "portfolio": "Permission Test",
+                "asset_class": "Equity",
+                "sub_class": "Stocks",
+                "asset_name": asset.name,
+                "transaction_type": "BUY",
+                "transaction_date": "2026-01-01",
+                "quantity": "1",
+                "price_per_unit": "100",
+                "amount": "100",
+            },
+            format="json",
+        )
+        self.assertEqual(transaction_response.status_code, 403)
+
+        import_response = self.client.post("/api/investments/import/")
+        self.assertEqual(import_response.status_code, 403)

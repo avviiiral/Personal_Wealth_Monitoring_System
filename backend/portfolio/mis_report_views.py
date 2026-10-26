@@ -14,7 +14,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.exceptions import ValidationError
 
-from users.permissions import is_system_owner, require_active_family
+from users.permissions import CanWriteFinancialData, is_system_owner, require_active_family
 from .mis_report_service import MISReportService
 
 logger = logging.getLogger(__name__)
@@ -523,7 +523,7 @@ def _auto_fill_notes_document(document, base_notes, data_rows):
 
 
 @api_view(["GET", "PUT", "PATCH"])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, CanWriteFinancialData])
 def mis_report_notes(request):
     family = _authorized_active_family(request.user)
     from_date, to_date = _parse_report_dates(request)

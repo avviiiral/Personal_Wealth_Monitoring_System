@@ -121,7 +121,7 @@ def analytics_historical(request):
 
 
 @api_view(["POST"])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, CanWriteFinancialData])
 def wealth_recalculate(request):
     """
     Rebuild persisted portfolio holdings and positions for the active
@@ -264,7 +264,7 @@ def wealth_standard_allocations(request):
 
 
 @api_view(["PUT"])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, CanWriteFinancialData])
 def wealth_standard_allocations_update(request):
     family_name = _standard_allocation_family_name(request)
     raw_allocations = request.data.get("allocations")

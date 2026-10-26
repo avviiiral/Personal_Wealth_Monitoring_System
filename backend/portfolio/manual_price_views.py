@@ -27,12 +27,11 @@ from portfolio.services.portfolio_position_engine import (
     PortfolioPositionEngine,
 )
 
-from users.permissions import get_visible_owner_ids
-from users.permissions import is_admin_or_above
+from users.permissions import CanWriteFinancialData, get_visible_owner_ids
 
 
 @api_view(["GET", "PUT", "PATCH", "DELETE"])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, CanWriteFinancialData])
 def manual_asset_price(
     request,
     asset_id,
@@ -126,19 +125,6 @@ def manual_asset_price(
                 ],
             },
             status=status.HTTP_200_OK,
-        )
-
-    # ==========================================================
-    # AUTHORIZE CAPABILITY
-    # ==========================================================
-
-    if not is_admin_or_above(request.user):
-        return Response(
-            {
-                "success": False,
-                "message": "This action requires Admin, Super User, or System Owner privileges.",
-            },
-            status=status.HTTP_403_FORBIDDEN,
         )
 
     # ==========================================================

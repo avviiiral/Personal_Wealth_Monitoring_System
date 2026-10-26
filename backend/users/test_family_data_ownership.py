@@ -387,3 +387,54 @@ class FamilyScopedFinancialDataTests(TestCase):
 
         import_response = self.client.post("/api/investments/import/")
         self.assertEqual(import_response.status_code, 403)
+
+    def test_viewer_cannot_write_manual_price(self):
+        asset = self._asset(self.user1, self.family1, "Manual Price Read Only Asset")
+        self.client.force_authenticate(self.user1)
+
+        response = self.client.patch(
+            f"/api/portfolio/assets/{asset.id}/manual-price/",
+            {"price": "123.45"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 403)
+        from market_data.models import DataSource, MarketPrice
+        self.assertFalse(
+            MarketPrice.objects.filter(asset=asset, source=DataSource.MANUAL).exists()
+        )
+
+    def test_viewer_cannot_change_tax_settings(self):
+        self.client.force_authenticate(self.user1)
+        response = self.client.post(
+            "/api/settings/tax-rates/",
+            {"asset_id": 1, "tenure_months": 12, "short_term_tax_rate": 15, "long_term_tax_rate": 10},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 403)
+
+        upload_response = self.client.post("/api/settings/tax-rates/upload/")
+        self.assertEqual(upload_response.status_code, 403)
+
+    def test_viewer_cannot_edit_mis_report_notes(self):
+        self.client.force_authenticate(self.user1)
+        response = self.client.patch(
+            "/api/portfolio/mis-report/notes/",
+            {"notes": {"sections": []}},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 403)
+
+    def test_viewer_cannot_create_or_modify_corporate_actions(self):
+        self.client.force_authenticate(self.user1)
+        create_response = self.client.post(
+            "/api/corporate-actions/",
+            {
+                "action_type": "SPLIT",
+                "security_name": "Viewer Write Test",
+                "ex_date": "2026-01-01",
+                "old_units": "1",
+                "new_units": "2",
+            },
+            format="json",
+        )
+        self.assertEqual(create_response.status_code, 403)

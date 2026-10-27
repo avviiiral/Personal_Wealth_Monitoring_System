@@ -147,7 +147,7 @@ export class PortfolioComponent implements OnInit, OnDestroy {
         this.toast.success(data ? `Imported ${data.total_imported} transaction(s)` + (data.skipped_duplicates ? ` (${data.skipped_duplicates} duplicate(s) skipped).` : '.') : (response.message || 'Transactions imported.'));
         this.duplicateTransactionRows = []; this.identityReviewRows = []; this.loadPortfolio(true); this.cdr.detectChanges();
       },
-      error: error => { this.uploadingTransactions = false; this.toast.error(error?.error?.message || 'Unable to import the transaction file.', 6000); this.cdr.detectChanges(); },
+      error: error => { this.uploadingTransactions = false; this.showDuplicateReview = true; this.toast.error(error?.error?.message || 'Unable to import the transaction file. Review the decisions and try again.', 6000); this.cdr.detectChanges(); },
     });
   }
 

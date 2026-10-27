@@ -92,3 +92,11 @@ class SecurityResolverHardeningTests(SimpleTestCase):
     def test_ambiguous_name_mapping_is_not_used(self):
         SecurityResolver._security_master_ambiguous_name = {"SAMPLE LIMITED"}
         self.assertIsNone(SecurityResolver.resolve_from_name("Sample Limited"))
+
+    def test_candidate_generation_fails_closed_for_ambiguous_isin(self):
+        SecurityResolver._security_master_ambiguous_isin = {"INE000000001"}
+
+        with self.assertRaisesRegex(ValueError, "conflicting Security Master mappings"):
+            SecurityResolver.candidate_symbols(
+                isin="INE000000001", symbol="SAMPLE",
+            )

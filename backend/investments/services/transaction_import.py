@@ -1499,7 +1499,9 @@ class TransactionImporter:
                 continue
             try:
                 yahoo_symbol = SecurityResolver.resolve_yahoo_symbol(
-                    symbol=asset.symbol, isin=asset.isin,
+                    symbol=asset.symbol,
+                    isin=asset.isin,
+                    name=asset.name,
                 )
                 if yahoo_symbol and asset.symbol != yahoo_symbol:
                     asset.symbol = yahoo_symbol

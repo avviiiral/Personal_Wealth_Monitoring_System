@@ -152,6 +152,8 @@ export class PortfolioComponent implements OnInit, OnDestroy {
     });
   }
 
+  get identityReviewComplete(): boolean { return this.identityReviewRows.every(row => !!row.choice); }
+
   importSelectedDuplicates(): void {
     this.confirmTransactionImport(this.duplicateTransactionRows.filter(row => row.import).map(row => row.row_number));
   }

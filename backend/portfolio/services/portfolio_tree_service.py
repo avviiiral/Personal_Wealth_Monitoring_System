@@ -472,10 +472,8 @@ class PortfolioTreeService:
             or (not asset_isin and not cls._clean(getattr(security_master, "isin", "")))
         ):
             if asset.family_id is not None:
-                scope_prefix = ("family", asset.family_id)
                 legacy_name_key = ("family_name", asset.family_id, asset.name)
             else:
-                scope_prefix = ("owner", asset.owner_id)
                 legacy_name_key = ("owner_name", asset.owner_id, asset.name)
 
             if asset_isin:

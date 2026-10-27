@@ -348,7 +348,7 @@ from .services.transaction_import import (
 )
 
 
-def _build_transactions_workbook(include_summary, transaction_type="Buy", isin="INE002A01018"):
+def _build_transactions_workbook(include_summary, transaction_type="Buy", isin="INE002A01018", asset_name="Reliance Industries", underlying="Reliance Industries Ltd"):
     """
     Build a minimal, valid transaction-import .xlsx file in
     memory, with or without a "Summary" sheet, for testing
@@ -379,8 +379,8 @@ def _build_transactions_workbook(include_summary, transaction_type="Buy", isin="
         "Test Family",
         "Equity",
         "Direct Equity",
-        "Reliance Industries",
-        "Reliance Industries Ltd",
+        asset_name,
+        underlying,
         "DIRECT",
         isin,
         "2026-07-16",
@@ -411,7 +411,7 @@ def _build_transactions_workbook(include_summary, transaction_type="Buy", isin="
             "Direct Equity",
             "Equity",
             "DIRECT",
-            "Reliance Industries",
+            asset_name,
             isin,
         ])
 
@@ -457,7 +457,11 @@ class TransactionImportExcelShapeTests(TestCase):
             TransactionImporter._parse_transaction_date("31-02-2026", 9)
 
     def test_unresolved_identity_automatically_creates_asset_without_review_mapping(self):
-        upload = _build_transactions_workbook(include_summary=False, isin="")
+        upload = _build_transactions_workbook(
+            include_summary=False, isin="",
+            asset_name="PWMS Unknown Instrument XYZ 8472",
+            underlying="PWMS Unknown Instrument XYZ 8472",
+        )
 
         result = TransactionImporter.import_file(
             file=upload,
@@ -466,6 +470,7 @@ class TransactionImportExcelShapeTests(TestCase):
 
         self.assertEqual(result["imported_investments"], 1)
         asset = Asset.objects.get(owner=self.user)
+        self.assertEqual(asset.name, "PWMS Unknown Instrument XYZ 8472")
         self.assertFalse(asset.isin)
 
     def test_unverified_identity_can_create_asset_without_isin(self):

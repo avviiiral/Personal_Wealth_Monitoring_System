@@ -1227,7 +1227,11 @@ class TransactionImporter:
                     family=family, asset_name=parsed["asset_name"], underlying=parsed["underlying"],
                     isin=parsed["isin"], asset_class=parsed["asset_class"], sub_class=parsed["sub_class"],
                 )
-                if resolution["status"] != "MATCHED":
+                is_mutual_fund_row = (
+                    TransactionImporter._normalize(parsed["asset_class"]) in {"MUTUAL_FUND", "MUTUAL FUND"}
+                    or TransactionImporter._normalize(parsed["sub_class"]) in {"MUTUAL_FUND", "MUTUAL FUND"}
+                )
+                if resolution["status"] != "MATCHED" and not is_mutual_fund_row:
                     categories = SecurityIdentityResolver.compatible_categories(parsed["asset_class"], parsed["sub_class"])
                     candidate_queryset = Asset.objects.filter(family=family, is_active=True).order_by("name", "id")
                     if categories is not None:
@@ -1466,6 +1470,12 @@ class TransactionImporter:
                             if not existing_aliases:
                                 SecurityAlias.objects.create(family=family, asset=reviewed_asset, alias=alias_value, approved_by=owner)
                     elif force_new_identity:
+                        if parsed["isin"] and Asset.objects.filter(
+                            family=family, isin__iexact=parsed["isin"].strip()
+                        ).exists():
+                            raise TransactionImportError(
+                                f"Uploaded ISIN already belongs to an existing family asset at row {row_number}. Select that asset instead of creating a duplicate identity."
+                            )
                         identity_key = (
                             SecurityIdentityResolver.normalize_name(original_underlying or parsed["asset_name"]),
                             parsed["asset_class"].strip().upper(),

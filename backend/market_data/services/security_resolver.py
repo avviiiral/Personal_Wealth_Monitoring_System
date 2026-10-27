@@ -37,8 +37,10 @@ class SecurityResolver:
     _security_master_loaded = False
     _security_master_isin = {}
     _security_master_name = {}
+    _security_master_name_to_isin = {}
     _security_master_ambiguous_isin = set()
     _security_master_ambiguous_name = set()
+    _security_master_ambiguous_name_to_isin = set()
 
     @staticmethod
     def clean_symbol(symbol):
@@ -194,8 +196,10 @@ class SecurityResolver:
 
             cls._security_master_isin = {}
             cls._security_master_name = {}
+            cls._security_master_name_to_isin = {}
             cls._security_master_ambiguous_isin = set()
             cls._security_master_ambiguous_name = set()
+            cls._security_master_ambiguous_name_to_isin = set()
 
             for row in worksheet.iter_rows(
                 min_row=2,
@@ -241,6 +245,15 @@ class SecurityResolver:
                         identifier_type="ISIN",
                     )
 
+                if normalized_name and cleaned_isin:
+                    cls._record_master_mapping(
+                        mapping=cls._security_master_name_to_isin,
+                        ambiguous=cls._security_master_ambiguous_name_to_isin,
+                        key=normalized_name,
+                        value=cleaned_isin,
+                        identifier_type="security name to ISIN",
+                    )
+
                 if (
                     normalized_name
                     and cleaned_yahoo
@@ -276,8 +289,10 @@ class SecurityResolver:
 
             cls._security_master_isin = {}
             cls._security_master_name = {}
+            cls._security_master_name_to_isin = {}
             cls._security_master_ambiguous_isin = set()
             cls._security_master_ambiguous_name = set()
+            cls._security_master_ambiguous_name_to_isin = set()
 
     @classmethod
     def _record_master_mapping(cls, *, mapping, ambiguous, key, value, identifier_type):
@@ -350,8 +365,10 @@ class SecurityResolver:
         cls._security_master_loaded = False
         cls._security_master_isin = {}
         cls._security_master_name = {}
+        cls._security_master_name_to_isin = {}
         cls._security_master_ambiguous_isin = set()
         cls._security_master_ambiguous_name = set()
+        cls._security_master_ambiguous_name_to_isin = set()
 
         cls._load_security_master()
 
@@ -401,6 +418,15 @@ class SecurityResolver:
         return cls.ISIN_TO_YAHOO.get(
             cleaned_isin
         )
+
+    @classmethod
+    def resolve_isin_from_name(cls, name):
+        """Return an ISIN only for an exact normalized, unambiguous master name."""
+        cls._load_security_master()
+        normalized_name = cls.normalize_security_name(name)
+        if not normalized_name or normalized_name in cls._security_master_ambiguous_name_to_isin:
+            return ""
+        return cls._security_master_name_to_isin.get(normalized_name, "")
 
     @classmethod
     def resolve_from_name(cls, name):

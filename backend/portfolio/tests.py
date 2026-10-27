@@ -332,6 +332,16 @@ class PortfolioTreeServiceTests(TestCase):
         asset.refresh_from_db()
         self.assertEqual(asset.isin, "")
 
+
+    @patch("market_data.services.security_resolver.SecurityResolver.resolve_isin_from_name", return_value="INE000ANUP001")
+    def test_portfolio_tree_falls_back_to_canonical_workbook_isin(self, resolve_isin):
+        asset = Asset.objects.create(family=self.family, owner=self.user, name="Imported PMS asset row", category="STOCK", isin="")
+        Transaction.objects.create(owner=self.user, family=self.family, asset=asset, family_name="Family A", portfolio="Portfolio A", asset_class="Equity", sub_class="Equity PMS", asset_name="Abakkus Emerging Opportunities Approach PMS", underlying="ANUP ENGINEERING LTD", transaction_date=date(2026, 1, 10), transaction_type="BUY", quantity=Decimal("2"), price_per_unit=Decimal("100"), amount=Decimal("200"), fees=Decimal("0"))
+        result = PortfolioTreeService.build(self.user, family_id=self.family.id)
+        node = next(node for family in result["families"] for portfolio in family["portfolios"] for asset_class in portfolio["asset_classes"] for subclass in asset_class["sub_classes"] for node in subclass["assets"] if node["asset_name"] == "Abakkus Emerging Opportunities Approach PMS")
+        self.assertEqual(node["isin"], "INE000ANUP001")
+        resolve_isin.assert_called()
+
     def test_portfolio_tree_resolves_isin_using_transaction_underlying_label(self):
         asset = Asset.objects.create(
             family=self.family,

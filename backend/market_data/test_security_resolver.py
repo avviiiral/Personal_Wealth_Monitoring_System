@@ -149,3 +149,25 @@ class SecurityResolverHardeningTests(SimpleTestCase):
             SecurityResolver.resolve_yahoo_symbol(
                 isin="INE000000001", symbol="SAMPLE", exchange="BSE",
             )
+
+
+class SecurityMasterNameToIsinTests(TestCase):
+    def setUp(self):
+        from market_data.services.security_resolver import SecurityResolver
+        self.resolver = SecurityResolver
+        self.original = (SecurityResolver._security_master_name_to_isin, SecurityResolver._security_master_ambiguous_name_to_isin, SecurityResolver._security_master_loaded)
+        SecurityResolver._security_master_name_to_isin = {}
+        SecurityResolver._security_master_ambiguous_name_to_isin = set()
+        SecurityResolver._security_master_loaded = True
+
+    def tearDown(self):
+        (self.resolver._security_master_name_to_isin, self.resolver._security_master_ambiguous_name_to_isin, self.resolver._security_master_loaded) = self.original
+
+    def test_name_lookup_returns_isin_for_legal_name_variant(self):
+        self.resolver._security_master_name_to_isin["ANUP ENGINEERING LIMITED"] = "INE000ANUP001"
+        self.assertEqual(self.resolver.resolve_isin_from_name("ANUP ENGINEERING LTD"), "INE000ANUP001")
+
+    def test_name_lookup_fails_closed_for_ambiguous_name(self):
+        self.resolver._security_master_name_to_isin["ANUP ENGINEERING LIMITED"] = "INE000ANUP001"
+        self.resolver._security_master_ambiguous_name_to_isin.add("ANUP ENGINEERING LIMITED")
+        self.assertEqual(self.resolver.resolve_isin_from_name("ANUP ENGINEERING LTD"), "")

@@ -525,6 +525,15 @@ class PortfolioTreeService:
                 # Preserve metadata from legacy no-ISIN Security Master rows
                 # when no unique verified ISIN match exists.
                 security_master = security_master_cache.get(legacy_name_key)
+        resolved_isin = ""
+        if not cls._clean(getattr(asset, "isin", "")):
+            # Canonical workbook fallback uses exact normalized names and quarantines conflicts.
+            from market_data.services.security_resolver import SecurityResolver
+            for candidate_name in (getattr(asset, "name", ""), getattr(first, "asset_name", ""), getattr(first, "underlying", "")):
+                resolved_isin = SecurityResolver.resolve_isin_from_name(candidate_name)
+                if resolved_isin:
+                    break
+
         if security_master is None:
             # Pass primary keys: ORM filters accept them and it avoids two lazy
             # owner/family row loads per asset.
@@ -539,7 +548,7 @@ class PortfolioTreeService:
             "underlying": cls._clean(first.underlying, ""),
             # Prefer the Asset identifier; use Security Master only as a
             # read-only fallback. Never infer or persist an ISIN from a name.
-            "isin": getattr(asset, "isin", None) or (getattr(security_master, "isin", None) if security_master else None),
+            "isin": getattr(asset, "isin", None) or (getattr(security_master, "isin", None) if security_master else None) or resolved_isin or None,
             "symbol": getattr(asset, "symbol", None),
             "advisors": cls._clean(first.advisors, ""),
             "quantity": cls._decimal_to_float(quantity),

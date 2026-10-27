@@ -1059,3 +1059,11 @@
 .duplicate-review-actions { justify-content: flex-end; flex-wrap: wrap; }
 .duplicate-review-actions span { margin-right: auto; color: var(--muted); font-size: 12px; }
 @media (max-width: 700px) { .duplicate-review-backdrop { padding: 8px; } .duplicate-review-panel { padding: 14px; max-height: 95vh; } .duplicate-review-heading { align-items: flex-start; } }
+
+
+.identity-review-section { margin: 18px 0; }
+.identity-review-section h3 { margin: 0 0 8px; font-size: 14px; color: var(--ink); }
+.identity-review-section p { margin: 0 0 12px; color: var(--muted); font-size: 12px; line-height: 1.5; }
+.identity-review-table select { min-width: 220px; max-width: 360px; padding: 8px; border: 1px solid var(--surface-line); border-radius: 6px; background: var(--surface); color: var(--ink); }
+.identity-review-table small { display: block; margin-top: 4px; color: var(--muted); font-size: 11px; white-space: normal; max-width: 260px; }
+.identity-review-table td { vertical-align: top; }

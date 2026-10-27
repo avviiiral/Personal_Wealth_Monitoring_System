@@ -85,6 +85,20 @@ class SecurityResolver:
 
         return value
 
+    @staticmethod
+    def normalize_security_name(name):
+        """Normalize conservative legal-name variants for exact name lookup.
+
+        This intentionally removes only a leading legal/article prefix and
+        standardizes LTD/LIMITED. It does not use substring or fuzzy matching;
+        collisions are quarantined by the Security Master loader.
+        """
+        tokens = re.findall(r"[A-Z0-9]+", str(name or "").upper())
+        if tokens and tokens[0] == "THE":
+            tokens = tokens[1:]
+        tokens = ["LIMITED" if token == "LTD" else token for token in tokens]
+        return " ".join(tokens)
+
     @classmethod
     def _security_master_path(cls):
         """
@@ -213,6 +227,7 @@ class SecurityResolver:
                 cleaned_isin = cls.clean_isin(isin_value)
                 cleaned_yahoo = cls.clean_symbol(yahoo_value)
                 cleaned_name = cls.clean_name(name_value)
+                normalized_name = cls.normalize_security_name(cleaned_name)
 
                 if (
                     cleaned_isin
@@ -227,13 +242,13 @@ class SecurityResolver:
                     )
 
                 if (
-                    cleaned_name
+                    normalized_name
                     and cleaned_yahoo
                 ):
                     cls._record_master_mapping(
                         mapping=cls._security_master_name,
                         ambiguous=cls._security_master_ambiguous_name,
-                        key=cleaned_name,
+                        key=normalized_name,
                         value=cleaned_yahoo,
                         identifier_type="security name",
                     )
@@ -397,25 +412,27 @@ class SecurityResolver:
         """
 
         cleaned_name = cls.clean_name(name)
+        normalized_name = cls.normalize_security_name(cleaned_name)
 
-        if not cleaned_name:
+        if not normalized_name:
             return None
 
         cls._load_security_master()
 
-        if cleaned_name in cls._security_master_ambiguous_name:
+        if normalized_name in cls._security_master_ambiguous_name:
             logger.warning("Ignoring ambiguous Security Master name mapping for %s.", cleaned_name)
             return None
 
         yahoo_from_master = cls._security_master_name.get(
-            cleaned_name
+            normalized_name
         )
 
         if yahoo_from_master:
             return yahoo_from_master
 
-        return cls.NAME_TO_YAHOO.get(
-            cleaned_name
+        return (
+            cls.NAME_TO_YAHOO.get(cleaned_name)
+            or cls.NAME_TO_YAHOO.get(normalized_name)
         )
 
     @classmethod

@@ -467,7 +467,10 @@ class PortfolioTreeService:
         )
         security_master = getattr(asset, "security_master", None)
         asset_isin = cls._clean(getattr(asset, "isin", "")).upper()
-        if security_master is None and security_master_cache is not None:
+        if security_master_cache is not None and (
+            security_master is None
+            or (not asset_isin and not cls._clean(getattr(security_master, "isin", "")))
+        ):
             if asset.family_id is not None:
                 security_key = (
                     ("family_isin", asset.family_id, asset_isin)
@@ -482,8 +485,10 @@ class PortfolioTreeService:
                     else ("owner_name_isin", asset.owner_id, SecurityAlias.normalize(asset.name))
                 )
                 legacy_name_key = ("owner_name", asset.owner_id, asset.name)
-            security_master = security_master_cache.get(security_key)
-            if security_master is None and not asset_isin:
+            cached_security_master = security_master_cache.get(security_key)
+            if cached_security_master is not None:
+                security_master = cached_security_master
+            elif security_master is None and not asset_isin:
                 # Preserve metadata from legacy no-ISIN Security Master rows
                 # when no unique verified ISIN match exists.
                 security_master = security_master_cache.get(legacy_name_key)

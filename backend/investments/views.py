@@ -208,10 +208,20 @@ def download_transaction_template(request):
         for cell in sheet[1]:
             cell.font = Font(bold=True)
         sheet.freeze_panes = "A2"
-        sheet.auto_filter.ref = sheet.dimensions
+        if sheet.title != "Instructions":
+            sheet.auto_filter.ref = sheet.dimensions
         for column in sheet.columns:
-            width = min(max(len(str(cell.value or "")) for cell in column) + 2, 35)
+            width = min(max(len(str(cell.value or "")) for cell in column) + 2, 70 if sheet.title == "Instructions" else 35)
             sheet.column_dimensions[column[0].column_letter].width = width
+
+    for row in instructions.iter_rows():
+        instructions.row_dimensions[row[0].row].height = 30
+        instructions.cell(row=row[0].row, column=1).alignment = Alignment(
+            wrap_text=True,
+            vertical="top",
+        )
+    for row_number in (1, 2, 6, 18, 24, 26):
+        instructions.cell(row=row_number, column=1).font = Font(bold=True)
 
     response = HttpResponse(
         content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"

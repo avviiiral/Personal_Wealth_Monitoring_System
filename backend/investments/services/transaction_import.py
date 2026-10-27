@@ -1408,6 +1408,7 @@ class TransactionImporter:
                     from investments.models import SecurityAlias
 
                     original_underlying = parsed["underlying"]
+                    original_uploaded_isin = parsed["isin"]
                     reviewed_selection = identity_mappings.get(row_number)
                     if isinstance(reviewed_selection, dict):
                         reviewed_choice = reviewed_selection.get("choice", "")
@@ -1545,7 +1546,7 @@ class TransactionImporter:
                     SecurityIdentityResolutionLog.objects.create(
                         family=family, upload=upload_batch, actor=owner, row_number=row_number,
                         input_asset_name=parsed["asset_name"], input_underlying=original_underlying,
-                        input_isin=parsed["isin"], canonical_name=canonical_name,
+                        input_isin=original_uploaded_isin, canonical_name=canonical_name,
                         resolved_asset=resolved_asset, match_method=resolution["method"],
                         status=resolution["status"], details=resolution.get("details", {}),
                     )

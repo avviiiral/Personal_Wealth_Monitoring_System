@@ -37,9 +37,13 @@ class SecurityIdentityResolverTests(TestCase):
         self.assertEqual(result["asset"].id, self.asset.id)
 
     def test_existing_alias_resolves_across_company_name_variants(self):
-        SecurityAlias.objects.create(
+        alias = SecurityAlias.objects.create(
             family=self.family, asset=self.asset,
             alias="Reliance Industries Ltd.", approved_by=self.user,
+        )
+        # Simulate a row created before the canonicalization rules were added.
+        SecurityAlias.objects.filter(pk=alias.pk).update(
+            normalized_alias="RELIANCEINDUSTRIESLTD"
         )
         result = SecurityIdentityResolver.resolve(
             family=self.family, asset_name="Reliance Industry Limited", underlying="",

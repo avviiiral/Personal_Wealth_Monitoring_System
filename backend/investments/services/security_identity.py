@@ -97,6 +97,55 @@ class SecurityIdentityResolver:
                     "details": {"reason": "The verified ISIN exists in this family but its instrument type is incompatible."},
                 }
 
+        # If Underlying was supplied but did not match a family asset, try
+        # the uploaded Asset Name before falling back to the global master.
+        alternate_name = str(asset_name or "").strip()
+        if alternate_name and cls.normalize_name(alternate_name) != cls.normalize_name(input_name):
+            alternate_normalized = cls.normalize_name(alternate_name)
+            alternate_aliases = [
+                alias for alias in SecurityAlias.objects.filter(
+                    family=family, is_active=True
+                ).select_related("asset").order_by("id")
+                if cls.normalize_name(alias.alias) == alternate_normalized
+            ]
+            if len(alternate_aliases) > 1:
+                return {
+                    "asset": None, "canonical_name": "", "method": "APPROVED_ALIAS", "status": "AMBIGUOUS",
+                    "details": {"reason": "Multiple active aliases matched the uploaded Asset Name."},
+                }
+            if alternate_aliases:
+                alternate_asset = alternate_aliases[0].asset
+                if (categories is None or alternate_asset.category not in categories
+                        or (normalized_isin and alternate_asset.isin and alternate_asset.isin.strip().upper() != normalized_isin)):
+                    return {
+                        "asset": None, "canonical_name": alternate_asset.name, "method": "APPROVED_ALIAS", "status": "CONFLICT",
+                        "details": {"reason": "Uploaded Asset Name alias conflicts with the ISIN or instrument type."},
+                    }
+                return {
+                    "asset": alternate_asset, "canonical_name": alternate_asset.name, "method": "APPROVED_ALIAS", "status": "MATCHED",
+                    "details": {"reason": "Matched by approved alias from the uploaded Asset Name."},
+                }
+            if categories is not None:
+                alternate_assets = [
+                    asset for asset in Asset.objects.filter(
+                        family=family, is_active=True, category__in=categories
+                    ).order_by("id")
+                    if cls.normalize_name(asset.name) == alternate_normalized
+                    and (not normalized_isin or not asset.isin or asset.isin.strip().upper() == normalized_isin)
+                ]
+                alternate_assets = cls._unique_assets(alternate_assets)
+                if len(alternate_assets) == 1:
+                    return {
+                        "asset": alternate_assets[0], "canonical_name": alternate_assets[0].name,
+                        "method": "NORMALIZED_NAME", "status": "MATCHED",
+                        "details": {"reason": "Matched by normalized uploaded Asset Name and compatible instrument type."},
+                    }
+                if len(alternate_assets) > 1:
+                    return {
+                        "asset": None, "canonical_name": "", "method": "NORMALIZED_NAME", "status": "AMBIGUOUS",
+                        "details": {"reason": "Multiple family assets matched the normalized uploaded Asset Name."},
+                    }
+
         # Resolve against the canonical Security Master even when this family
         # has not created an Asset record for the security yet.
         # Try the underlying first, then the asset name when it is distinct.
@@ -111,13 +160,24 @@ class SecurityIdentityResolver:
                 name=input_name, isin=normalized_isin,
             )
         else:
+            matched_master_names = []
             for candidate_name in master_names:
                 candidate_resolution = SecurityResolver.resolve_security_from_master(
                     name=candidate_name,
                 )
-                if candidate_resolution["status"] != "NOT_FOUND":
+                if candidate_resolution["status"] in {"CONFLICT", "AMBIGUOUS"}:
                     master_resolution = candidate_resolution
                     break
+                if candidate_resolution["status"] == "MATCHED":
+                    matched_master_names.append(candidate_resolution)
+            if master_resolution is None and matched_master_names:
+                distinct_isins = {item["isin"] for item in matched_master_names}
+                if len(distinct_isins) > 1:
+                    master_resolution = {
+                        "status": "CONFLICT", "canonical_name": "", "isin": "", "yahoo_symbol": "",
+                    }
+                else:
+                    master_resolution = matched_master_names[0]
 
         if master_resolution and master_resolution["status"] == "MATCHED":
             if categories is None:

@@ -1231,15 +1231,10 @@ class TransactionImporter:
                     TransactionImporter._normalize(parsed["asset_class"]) in {"MUTUAL_FUND", "MUTUAL FUND"}
                     or TransactionImporter._normalize(parsed["sub_class"]) in {"MUTUAL_FUND", "MUTUAL FUND"}
                 )
-                needs_identity_review = (
-                    resolution["status"] != "MATCHED"
-                    or (
-                        resolution.get("asset") is not None
-                        and bool(parsed["isin"])
-                        and not resolution["asset"].isin
-                    )
-                )
-                if needs_identity_review and not is_mutual_fund_row:
+                # Every non-mutual-fund security is shown for user verification,
+                # including successful automatic matches. The review UI groups
+                # repeated rows by their normalized security identity.
+                if not is_mutual_fund_row:
                     categories = SecurityIdentityResolver.compatible_categories(parsed["asset_class"], parsed["sub_class"])
                     candidate_queryset = Asset.objects.filter(family=family, is_active=True).order_by("name", "id")
                     if categories is not None:
@@ -1260,7 +1255,8 @@ class TransactionImporter:
                         "underlying": input_name, "isin": parsed["isin"],
                         "asset_class": parsed["asset_class"], "sub_class": parsed["sub_class"],
                         "status": resolution["status"],
-                        "reason": resolution.get("details", {}).get("reason", "Identity needs review."),
+                        "reason": resolution.get("details", {}).get("reason", "Review the automatically suggested identity."),
+                        "suggested_asset_id": resolution.get("asset").id if resolution.get("asset") is not None and resolution["status"] == "MATCHED" else None,
                         "candidates": [{"id": item.id, "name": item.name, "isin": item.isin or ""} for item in candidate_objects],
                     })
             except TransactionImportError:
@@ -1437,7 +1433,19 @@ class TransactionImporter:
                     from investments.models import SecurityAlias
 
                     original_underlying = parsed["underlying"]
-                    reviewed_choice = identity_mappings.get(row_number)
+                    reviewed_selection = identity_mappings.get(row_number)
+                    if isinstance(reviewed_selection, dict):
+                        reviewed_choice = reviewed_selection.get("choice", "")
+                        reviewed_isin = str(reviewed_selection.get("isin") or "").strip().upper()
+                    else:
+                        reviewed_choice = reviewed_selection
+                        reviewed_isin = ""
+                    if reviewed_isin:
+                        if parsed["isin"] and parsed["isin"].strip().upper() != reviewed_isin:
+                            raise TransactionImportError(
+                                f"Reviewed ISIN conflicts with the uploaded ISIN at row {row_number}."
+                            )
+                        parsed["isin"] = reviewed_isin
                     force_new_identity = str(reviewed_choice) == "__NEW__"
                     reviewed_asset = None
                     if reviewed_choice not in (None, "", "__NEW__"):

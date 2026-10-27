@@ -106,6 +106,10 @@ class SecurityResolverHardeningTests(SimpleTestCase):
             SecurityResolver.resolve_from_name("The Anup Engineering Limited"),
             "ANUP.NS",
         )
+        self.assertEqual(
+            SecurityResolver.resolve_yahoo_symbol(name="ANUP ENGINEERING LTD"),
+            "ANUP.NS",
+        )
 
     def test_colliding_normalized_names_are_quarantined(self):
         mapping = {}

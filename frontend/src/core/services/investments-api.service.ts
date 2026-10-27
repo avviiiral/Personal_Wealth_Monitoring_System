@@ -14,7 +14,9 @@ export interface DuplicateTransactionRow {
 }
 export interface SecurityIdentityReviewRow {
   row_number: number; asset_name: string; underlying: string; isin: string; asset_class: string; sub_class: string;
-  status: string; reason: string; candidates: Array<{ id: number; name: string; isin: string }>; choice?: string;
+  status: string; reason: string; suggested_asset_id?: number | null; candidates: Array<{ id: number; name: string; isin: string }>;
+}
+export interface SecurityIdentityMapping { choice: string; isin?: string; }
 }
 export interface DuplicatePreviewResponse {
   success: boolean; message?: string;
@@ -95,7 +97,7 @@ export class InvestmentsApiService {
     return this.getCsrfToken().pipe(switchMap(() => this.http.post<DuplicatePreviewResponse>(this.baseUrl + '/import/preview/', formData, { headers: this.getCsrfHeaders(), withCredentials: true })));
   }
 
-  importTransactions(file: File, selectedDuplicateRows: number[] = [], identityMappings: Record<number, string> = {}): Observable<ImportTransactionsResponse> {
+  importTransactions(file: File, selectedDuplicateRows: number[] = [], identityMappings: Record<number, SecurityIdentityMapping> = {}): Observable<ImportTransactionsResponse> {
     const formData = new FormData();
 
     formData.append('file', file);

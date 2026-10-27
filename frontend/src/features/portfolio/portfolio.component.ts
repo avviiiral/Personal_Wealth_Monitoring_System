@@ -133,12 +133,11 @@ export class PortfolioComponent implements OnInit, OnDestroy {
   confirmTransactionImport(selectedRows: number[]): void {
     const file = this.pendingTransactionFile;
     if (!file) return;
-    this.showDuplicateReview = false; this.uploadingTransactions = true;
     if (this.identityReviewRows.some(row => !row.choice)) {
-      this.showDuplicateReview = true;
       this.toast.error('Review every unresolved security identity before importing.');
       return;
     }
+    this.showDuplicateReview = false; this.uploadingTransactions = true;
     const identityMappings: Record<number, string> = {};
     for (const row of this.identityReviewRows) identityMappings[row.row_number] = row.choice || '';
     this.investmentsApi.importTransactions(file, selectedRows, identityMappings).subscribe({

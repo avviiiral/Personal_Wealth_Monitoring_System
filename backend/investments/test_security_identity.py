@@ -58,6 +58,26 @@ class SecurityIdentityResolverTests(TestCase):
         self.assertEqual(result["status"], "AMBIGUOUS")
         self.assertIsNone(result["asset"])
 
+    def test_limited_and_industry_variants_normalize_equally(self):
+        variants = [
+            "Reliance Industries Limited",
+            "Reliance Industries Ltd",
+            "Reliance Industries Ltd.",
+            "Reliance Industry Ind.",
+            "Reliance Inds. Ltd.",
+        ]
+        normalized = {SecurityIdentityResolver.normalize_name(value) for value in variants}
+        self.assertEqual(len(normalized), 1)
+
+    def test_name_matching_accepts_industry_and_ltd_variants(self):
+        result = SecurityIdentityResolver.resolve(
+            family=self.family, asset_name="Reliance Inds. Ltd.", underlying="",
+            isin="", asset_class="Equity", sub_class="Direct Equity",
+        )
+        self.assertEqual(result["status"], "MATCHED")
+        self.assertEqual(result["method"], "NORMALIZED_NAME")
+        self.assertEqual(result["asset"].id, self.asset.id)
+
     def test_unique_normalized_name_matches_only_compatible_type(self):
         result = SecurityIdentityResolver.resolve(
             family=self.family, asset_name="reliance-industries limited", underlying="",

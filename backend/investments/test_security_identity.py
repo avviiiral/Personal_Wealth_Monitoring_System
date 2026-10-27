@@ -36,6 +36,19 @@ class SecurityIdentityResolverTests(TestCase):
         self.assertEqual(result["method"], "APPROVED_ALIAS")
         self.assertEqual(result["asset"].id, self.asset.id)
 
+    def test_existing_alias_resolves_across_company_name_variants(self):
+        SecurityAlias.objects.create(
+            family=self.family, asset=self.asset,
+            alias="Reliance Industries Ltd.", approved_by=self.user,
+        )
+        result = SecurityIdentityResolver.resolve(
+            family=self.family, asset_name="Reliance Industry Limited", underlying="",
+            isin="", asset_class="Equity", sub_class="Direct Equity",
+        )
+        self.assertEqual(result["status"], "MATCHED")
+        self.assertEqual(result["method"], "APPROVED_ALIAS")
+        self.assertEqual(result["asset"].id, self.asset.id)
+
     def test_matching_never_crosses_family_boundaries(self):
         Asset.objects.create(
             owner=self.user, family=self.other_family, name="Other Family Security",

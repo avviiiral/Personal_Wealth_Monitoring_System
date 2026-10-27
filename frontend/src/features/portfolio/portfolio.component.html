@@ -83,9 +83,8 @@
       <div *ngIf="identityReviewRows.length" class="identity-review-section">
         <h3>Security identity review</h3>
         <p>Verify each unique security once. Automatic matches are preselected where unambiguous; you can confirm them or choose another existing asset. If you cannot identify it, create a separate asset and optionally provide its ISIN.</p>
-        <div class="duplicate-review-table-wrap"><table class="duplicate-review-table identity-review-table"><thead><tr><th>Excel rows</th><th>Asset name / underlying</th><th>Uploaded ISIN</th><th>Auto-map status</th><th>Verify decision</th></tr></thead><tbody>
+        <div class="duplicate-review-table-wrap"><table class="duplicate-review-table identity-review-table"><thead><tr><th>Asset name / underlying</th><th>Uploaded ISIN</th><th>Auto-map status</th><th>Verify decision</th></tr></thead><tbody>
           <tr *ngFor="let group of identityReviewGroups">
-            <td>{{ group.rowNumbers.join(', ') }}</td>
             <td><strong>{{ group.assetName }}</strong><small>Underlying: {{ group.underlying || 'Not provided' }}</small><small>{{ group.assetClass }} / {{ group.subClass }}</small></td>
             <td>{{ group.isins.length ? group.isins.join(', ') : 'Not provided' }}</td>
             <td><strong>{{ group.status }}</strong><small>{{ group.reason }}</small></td>

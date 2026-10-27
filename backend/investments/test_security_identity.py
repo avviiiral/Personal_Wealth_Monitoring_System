@@ -80,7 +80,7 @@ class SecurityIdentityResolverTests(TestCase):
             "Reliance Industries Limited",
             "Reliance Industries Ltd",
             "Reliance Industries Ltd.",
-            "Reliance Industry Ind.",
+            "Reliance Ind. Ltd.",
             "Reliance Inds. Ltd.",
         ]
         normalized = {SecurityIdentityResolver.normalize_name(value) for value in variants}

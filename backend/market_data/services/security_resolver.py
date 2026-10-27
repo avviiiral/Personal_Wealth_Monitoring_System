@@ -37,6 +37,8 @@ class SecurityResolver:
     _security_master_loaded = False
     _security_master_isin = {}
     _security_master_name = {}
+    _security_master_ambiguous_isin = set()
+    _security_master_ambiguous_name = set()
 
     @staticmethod
     def clean_symbol(symbol):
@@ -176,6 +178,11 @@ class SecurityResolver:
                 workbook.close()
                 return
 
+            cls._security_master_isin = {}
+            cls._security_master_name = {}
+            cls._security_master_ambiguous_isin = set()
+            cls._security_master_ambiguous_name = set()
+
             for row in worksheet.iter_rows(
                 min_row=2,
                 values_only=True,
@@ -211,17 +218,25 @@ class SecurityResolver:
                     cleaned_isin
                     and cleaned_yahoo
                 ):
-                    cls._security_master_isin[
-                        cleaned_isin
-                    ] = cleaned_yahoo
+                    cls._record_master_mapping(
+                        mapping=cls._security_master_isin,
+                        ambiguous=cls._security_master_ambiguous_isin,
+                        key=cleaned_isin,
+                        value=cleaned_yahoo,
+                        identifier_type="ISIN",
+                    )
 
                 if (
                     cleaned_name
                     and cleaned_yahoo
                 ):
-                    cls._security_master_name[
-                        cleaned_name
-                    ] = cleaned_yahoo
+                    cls._record_master_mapping(
+                        mapping=cls._security_master_name,
+                        ambiguous=cls._security_master_ambiguous_name,
+                        key=cleaned_name,
+                        value=cleaned_yahoo,
+                        identifier_type="security name",
+                    )
 
             workbook.close()
 
@@ -246,6 +261,24 @@ class SecurityResolver:
 
             cls._security_master_isin = {}
             cls._security_master_name = {}
+            cls._security_master_ambiguous_isin = set()
+            cls._security_master_ambiguous_name = set()
+
+    @classmethod
+    def _record_master_mapping(cls, *, mapping, ambiguous, key, value, identifier_type):
+        """Keep only unambiguous master mappings; never let row order win."""
+        if key in ambiguous:
+            return
+        existing = mapping.get(key)
+        if existing is None:
+            mapping[key] = value
+        elif existing != value:
+            mapping.pop(key, None)
+            ambiguous.add(key)
+            logger.error(
+                "Conflicting Security Master %s mapping for %s; mappings quarantined.",
+                identifier_type, key,
+            )
 
     @classmethod
     def _generate_security_master(cls):
@@ -302,6 +335,8 @@ class SecurityResolver:
         cls._security_master_loaded = False
         cls._security_master_isin = {}
         cls._security_master_name = {}
+        cls._security_master_ambiguous_isin = set()
+        cls._security_master_ambiguous_name = set()
 
         cls._load_security_master()
 
@@ -337,6 +372,10 @@ class SecurityResolver:
 
         cls._load_security_master()
 
+        if cleaned_isin in cls._security_master_ambiguous_isin:
+            logger.error("Cannot resolve ISIN %s because the Security Master has conflicting mappings.", cleaned_isin)
+            return None
+
         yahoo_from_master = cls._security_master_isin.get(
             cleaned_isin
         )
@@ -363,6 +402,10 @@ class SecurityResolver:
             return None
 
         cls._load_security_master()
+
+        if cleaned_name in cls._security_master_ambiguous_name:
+            logger.warning("Ignoring ambiguous Security Master name mapping for %s.", cleaned_name)
+            return None
 
         yahoo_from_master = cls._security_master_name.get(
             cleaned_name
@@ -396,16 +439,38 @@ class SecurityResolver:
             6. Generic symbol + exchange suffix
         """
 
-        yahoo_from_isin = cls.resolve_from_isin(
-            isin
-        )
+        cleaned_isin = cls.clean_isin(isin)
+        cleaned_symbol = cls.clean_symbol(symbol)
+        cleaned_name = cls.clean_name(name)
+
+        yahoo_from_isin = cls.resolve_from_isin(cleaned_isin)
+        if cleaned_isin in cls._security_master_ambiguous_isin:
+            raise ValueError(
+                f"Cannot resolve ISIN {cleaned_isin}: conflicting Security Master mappings."
+            )
 
         if yahoo_from_isin:
+            explicit_symbol = cleaned_symbol
+            if explicit_symbol and not explicit_symbol.endswith(
+                (cls.NSE_SUFFIX, cls.BSE_SUFFIX)
+            ):
+                explicit_symbol = f"{explicit_symbol}{cls.NSE_SUFFIX}"
+            if explicit_symbol:
+                mapped_base = yahoo_from_isin.removesuffix(cls.NSE_SUFFIX).removesuffix(cls.BSE_SUFFIX)
+                explicit_base = cleaned_symbol.removesuffix(cls.NSE_SUFFIX).removesuffix(cls.BSE_SUFFIX)
+                if explicit_base != mapped_base:
+                    raise ValueError(
+                        f"Conflicting security identifiers: ISIN {cleaned_isin} "
+                        f"maps to {yahoo_from_isin}, but symbol {cleaned_symbol} "
+                        "identifies a different candidate."
+                    )
+            name_symbol = cls.resolve_from_name(cleaned_name)
+            if name_symbol and name_symbol != yahoo_from_isin:
+                raise ValueError(
+                    f"Conflicting security identifiers: ISIN {cleaned_isin} "
+                    f"maps to {yahoo_from_isin}, but name mapping points to {name_symbol}."
+                )
             return yahoo_from_isin
-
-        cleaned_symbol = cls.clean_symbol(
-            symbol
-        )
 
         if cleaned_symbol:
 

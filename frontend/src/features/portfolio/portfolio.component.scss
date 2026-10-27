@@ -1046,24 +1046,86 @@
 }
 
 
-.duplicate-review-backdrop { position: fixed; inset: 0; z-index: 1200; display: flex; align-items: center; justify-content: center; padding: 24px; background: rgba(16, 24, 40, .55); }
-.duplicate-review-panel { width: min(1400px, 96vw); max-height: 88vh; display: flex; flex-direction: column; gap: 16px; padding: 24px; border-radius: 14px; background: var(--surface); box-shadow: 0 24px 70px rgba(0,0,0,.24); }
-.duplicate-review-heading, .duplicate-review-actions { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.duplicate-review-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(16, 24, 40, .55);
+}
+
+.duplicate-review-panel {
+  width: min(1400px, 96vw);
+  max-height: min(90dvh, 900px);
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  overflow: hidden;
+  padding: 24px;
+  box-sizing: border-box;
+  border-radius: 14px;
+  background: var(--surface);
+  box-shadow: 0 24px 70px rgba(0,0,0,.24);
+}
+
+.duplicate-review-heading,
+.duplicate-review-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex: 0 0 auto;
+}
+
 .duplicate-review-heading h2 { margin: 0; color: var(--ink); font-size: 21px; }
 .duplicate-review-heading p { margin: 8px 0 0; color: var(--muted); font-size: 13px; }
-.duplicate-review-table-wrap { overflow: auto; border: 1px solid var(--surface-line); border-radius: 8px; }
+
+.duplicate-review-table-wrap {
+  min-height: 0;
+  max-height: 100%;
+  flex: 1 1 auto;
+  overflow: auto;
+  overscroll-behavior: contain;
+  border: 1px solid var(--surface-line);
+  border-radius: 8px;
+}
+
 .duplicate-review-table { width: 100%; border-collapse: collapse; font-size: 12px; white-space: nowrap; }
-.duplicate-review-table th, .duplicate-review-table td { padding: 10px 12px; border-bottom: 1px solid var(--surface-line); text-align: left; }
-.duplicate-review-table th { position: sticky; top: 0; background: var(--canvas-to); color: var(--ink); }
+.duplicate-review-table th, .duplicate-review-table td { padding: 8px 10px; border-bottom: 1px solid var(--surface-line); text-align: left; }
+.duplicate-review-table th { position: sticky; top: 0; z-index: 1; background: var(--canvas-to); color: var(--ink); }
 .duplicate-review-table input { width: 16px; height: 16px; accent-color: var(--ink); }
+
+.duplicate-review-panel > div:not(.duplicate-review-heading):not(.identity-review-section):not(.duplicate-review-actions) {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+}
+
 .duplicate-review-actions { justify-content: flex-end; flex-wrap: wrap; }
 .duplicate-review-actions span { margin-right: auto; color: var(--muted); font-size: 12px; }
-@media (max-width: 700px) { .duplicate-review-backdrop { padding: 8px; } .duplicate-review-panel { padding: 14px; max-height: 95vh; } .duplicate-review-heading { align-items: flex-start; } }
 
+@media (max-width: 700px) {
+  .duplicate-review-backdrop { padding: 8px; }
+  .duplicate-review-panel { width: 100%; max-height: 95dvh; padding: 14px; gap: 12px; }
+  .duplicate-review-heading { align-items: flex-start; }
+  .duplicate-review-actions { padding-top: 8px; }
+}
 
-.identity-review-section { margin: 18px 0; }
+.identity-review-section {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+  margin: 0;
+}
 .identity-review-section h3 { margin: 0 0 8px; font-size: 14px; color: var(--ink); }
-.identity-review-section p { margin: 0 0 12px; color: var(--muted); font-size: 12px; line-height: 1.5; }
+.identity-review-section p { flex: 0 0 auto; margin: 0 0 12px; color: var(--muted); font-size: 12px; line-height: 1.5; }
+.identity-review-section .duplicate-review-table-wrap { flex: 1 1 auto; }
 .identity-review-table select { min-width: 220px; max-width: 360px; padding: 8px; border: 1px solid var(--surface-line); border-radius: 6px; background: var(--surface); color: var(--ink); }
 .identity-review-table small { display: block; margin-top: 4px; color: var(--muted); font-size: 11px; white-space: normal; max-width: 260px; }
 .identity-review-table td { vertical-align: top; }

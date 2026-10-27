@@ -1514,13 +1514,29 @@ class TransactionImporter:
                         }
                     else:
                         resolution = SecurityIdentityResolver.resolve(
-                        family=family,
-                        asset_name=parsed["asset_name"],
-                        underlying=original_underlying,
-                        isin=parsed["isin"],
-                        asset_class=parsed["asset_class"],
-                        sub_class=parsed["sub_class"],
-                    )
+                            family=family,
+                            asset_name=parsed["asset_name"],
+                            underlying=original_underlying,
+                            isin=parsed["isin"],
+                            asset_class=parsed["asset_class"],
+                            sub_class=parsed["sub_class"],
+                        )
+                        is_mutual_fund_row = (
+                            TransactionImporter._normalize(parsed["asset_class"]) in {"MUTUAL_FUND", "MUTUAL FUND"}
+                            or TransactionImporter._normalize(parsed["sub_class"]) in {"MUTUAL_FUND", "MUTUAL FUND"}
+                        )
+                        if resolution["status"] != "MATCHED" and not is_mutual_fund_row:
+                            raise TransactionImportError(
+                                f"Security identity for row {row_number} needs review. Re-upload the file and confirm an identity decision before importing."
+                            )
+                    if force_new_identity and parsed["isin"]:
+                        existing_isin = Asset.objects.filter(
+                            family=family, isin__iexact=parsed["isin"].strip(), is_active=True
+                        ).exists()
+                        if existing_isin:
+                            raise TransactionImportError(
+                                f"Row {row_number} cannot create a separate asset because the uploaded ISIN already belongs to an active family asset."
+                            )
                     canonical_name = resolution.get("canonical_name", "")
                     resolved_asset = resolution.get("asset")
 

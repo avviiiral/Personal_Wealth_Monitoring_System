@@ -43,10 +43,10 @@ class SecurityIdentityResolver:
         if normalized == SecurityIdentityResolver.normalize_name(asset.name):
             return False
         aliases = SecurityAlias.objects.filter(family=family, asset=asset, is_active=True)
-        return not any(cls_alias for cls_alias in (
+        return not any(
             SecurityIdentityResolver.normalize_name(alias.alias) == normalized
             for alias in aliases
-        ))
+        )
 
     @classmethod
     def resolve(cls, *, family, asset_name, underlying, isin, asset_class, sub_class):

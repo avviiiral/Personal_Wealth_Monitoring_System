@@ -82,9 +82,25 @@
       <div class="duplicate-review-heading"><div><h2 id="duplicate-review-title">Review transaction upload</h2><p>{{ duplicateTransactionRows.length }} duplicate row(s) and {{ identityReviewRows.length }} security identity row(s) need review. Duplicate rows are skipped unless selected; every identity row needs a decision.</p></div><button type="button" class="refresh-button" (click)="cancelDuplicateReview()">Cancel</button></div>
       <div *ngIf="identityReviewRows.length" class="identity-review-section">
         <h3>Security identity review</h3>
-        <p>Select the correct existing asset or explicitly create a separate asset. Conflicting uploaded ISINs are never overwritten.</p>
-        <div class="duplicate-review-table-wrap"><table class="duplicate-review-table identity-review-table"><thead><tr><th>Row</th><th>Underlying</th><th>ISIN</th><th>Issue</th><th>Decision</th></tr></thead><tbody>
-          <tr *ngFor="let row of identityReviewRows"><td>{{ row.row_number }}</td><td><strong>{{ row.underlying || row.asset_name }}</strong><small>{{ row.asset_class }} / {{ row.sub_class }}</small></td><td>{{ row.isin || 'Not provided' }}</td><td><strong>{{ row.status }}</strong><small>{{ row.reason }}</small></td><td><select [(ngModel)]="row.choice" [attr.aria-label]="'Choose identity for row ' + row.row_number"><option value="">Select decision</option><option *ngFor="let candidate of row.candidates" [value]="candidate.id">{{ candidate.name }}{{ candidate.isin ? ' — ' + candidate.isin : '' }}</option><option value="__NEW__">Create separate asset</option></select></td></tr>
+        <p>Verify each unique security once. Automatic matches are preselected where unambiguous; you can confirm them or choose another existing asset. If you cannot identify it, create a separate asset and optionally provide its ISIN.</p>
+        <div class="duplicate-review-table-wrap"><table class="duplicate-review-table identity-review-table"><thead><tr><th>Excel rows</th><th>Asset name / underlying</th><th>Uploaded ISIN</th><th>Auto-map status</th><th>Verify decision</th></tr></thead><tbody>
+          <tr *ngFor="let group of identityReviewGroups">
+            <td>{{ group.rowNumbers.join(', ') }}</td>
+            <td><strong>{{ group.assetName }}</strong><small>Underlying: {{ group.underlying || 'Not provided' }}</small><small>{{ group.assetClass }} / {{ group.subClass }}</small></td>
+            <td>{{ group.isins.length ? group.isins.join(', ') : 'Not provided' }}</td>
+            <td><strong>{{ group.status }}</strong><small>{{ group.reason }}</small></td>
+            <td>
+              <select [(ngModel)]="group.choice" [attr.aria-label]="'Verify identity for ' + group.assetName">
+                <option value="">Select / verify identity</option>
+                <option *ngFor="let candidate of group.candidates" [value]="candidate.id">{{ candidate.name }}{{ candidate.isin ? ' — ' + candidate.isin : '' }}</option>
+                <option value="__NEW__">Cannot verify — create separate asset</option>
+              </select>
+              <label *ngIf="group.choice === '__NEW__'" class="identity-isin-fallback">
+                <span>ISIN (optional)</span>
+                <input type="text" [(ngModel)]="group.reviewedIsin" maxlength="12" placeholder="Enter ISIN if known" [attr.aria-label]="'Optional ISIN for ' + group.assetName" />
+              </label>
+            </td>
+          </tr>
         </tbody></table></div>
       </div>
       <div *ngIf="duplicateTransactionRows.length">
@@ -92,7 +108,7 @@
         <p>Check only the transactions you want to import; unchecked rows will be skipped.</p>
         <div class="duplicate-review-table-wrap"><table class="duplicate-review-table"><thead><tr><th>Import</th><th>Excel Row</th><th>Family Member</th><th>Asset Class / Sub Class</th><th>Asset Name</th><th>Date</th><th>Type</th><th>Quantity</th><th>Price</th><th>Amount</th></tr></thead><tbody><tr *ngFor="let row of duplicateTransactionRows"><td><input type="checkbox" [(ngModel)]="row.import" aria-label="Import this duplicate transaction" /></td><td>{{ row.row_number }}</td><td>{{ row.family_name }}</td><td>{{ row.asset_class }} / {{ row.sub_class }}</td><td>{{ row.asset_name }}</td><td>{{ row.transaction_date }}</td><td>{{ row.transaction_type }}</td><td>{{ formatNumber(row.quantity) }}</td><td>₹{{ formatDecimal(row.price) }}</td><td>₹{{ formatCurrency(row.amount) }}</td></tr></tbody></table></div>
       </div>
-      <div class="duplicate-review-actions"><span>{{ duplicateTransactionRows.length }} duplicate(s); {{ identityReviewRows.length }} identity decision(s)</span><button type="button" class="refresh-button" (click)="cancelDuplicateReview()">Cancel Upload</button><button type="button" class="upload-button" [disabled]="uploadingTransactions || !identityReviewComplete" (click)="importSelectedDuplicates()">Confirm Review &amp; Import</button></div>
+      <div class="duplicate-review-actions"><span>{{ duplicateTransactionRows.length }} duplicate(s); {{ identityReviewGroups.length }} unique security decision(s)</span><button type="button" class="refresh-button" (click)="cancelDuplicateReview()">Cancel Upload</button><button type="button" class="upload-button" [disabled]="uploadingTransactions || !identityReviewComplete" (click)="importSelectedDuplicates()">Confirm Review &amp; Import</button></div>
     </section>
   </div>
 

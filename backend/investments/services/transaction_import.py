@@ -14,6 +14,7 @@ from investments.models import (
     Asset,
     AssetCategory,
     SecurityMaster,
+    SecurityIdentityResolutionLog,
     TransactionUpload,
     TransactionUploadFailure,
     Transaction,
@@ -699,6 +700,7 @@ class TransactionImporter:
         asset_class,
         sub_class,
         family=None,
+        allow_name_match=True,
     ):
         normalized_isin = isin.strip()
 
@@ -737,20 +739,26 @@ class TransactionImporter:
                 .filter(
                     family=family,
                     isin=normalized_isin,
-                )
-                .first()
-            )
-
-        if asset is None:
-            asset = (
-                Asset.objects
-                .filter(
-                    family=family,
-                    name=asset_name,
                     category=category,
                 )
                 .first()
             )
+
+        if asset is None and allow_name_match:
+            name_candidates = list(
+                Asset.objects.filter(
+                    family=family,
+                    name=asset_name,
+                    category=category,
+                ).order_by("id")
+            )
+            if normalized_isin:
+                name_candidates = [
+                    candidate for candidate in name_candidates
+                    if not candidate.isin or candidate.isin.strip() == normalized_isin
+                ]
+            if len(name_candidates) == 1:
+                asset = name_candidates[0]
 
         if asset is None:
             asset = Asset.objects.create(
@@ -1380,16 +1388,47 @@ class TransactionImporter:
                         seen_source_keys.add(source_key)
                         continue
 
-                    security_identity_name = TransactionImporter.resolve_security_identity_name(
-                        asset_name=parsed["asset_name"], underlying=parsed["underlying"],
-                    )
-                    asset = TransactionImporter._get_or_create_asset(
-                        owner=owner, family=family,
-                        asset_name=security_identity_name,
+                    from investments.services.security_identity import SecurityIdentityResolver
+
+                    original_underlying = parsed["underlying"]
+                    resolution = SecurityIdentityResolver.resolve(
+                        family=family,
+                        asset_name=parsed["asset_name"],
+                        underlying=original_underlying,
                         isin=parsed["isin"],
                         asset_class=parsed["asset_class"],
                         sub_class=parsed["sub_class"],
                     )
+                    canonical_name = resolution.get("canonical_name", "")
+                    resolved_asset = resolution.get("asset")
+
+                    if not original_underlying and resolution["status"] == "MATCHED" and canonical_name:
+                        parsed["underlying"] = canonical_name
+
+                    SecurityIdentityResolutionLog.objects.create(
+                        family=family, upload=upload_batch, actor=owner, row_number=row_number,
+                        input_asset_name=parsed["asset_name"], input_underlying=original_underlying,
+                        input_isin=parsed["isin"], canonical_name=canonical_name,
+                        resolved_asset=resolved_asset, match_method=resolution["method"],
+                        status=resolution["status"], details=resolution.get("details", {}),
+                    )
+
+                    if resolved_asset is not None:
+                        asset = resolved_asset
+                    else:
+                        security_identity_name = (
+                            canonical_name
+                            if resolution["status"] == "MATCHED" and canonical_name
+                            else TransactionImporter.resolve_security_identity_name(
+                                asset_name=parsed["asset_name"], underlying=parsed["underlying"],
+                            )
+                        )
+                        asset = TransactionImporter._get_or_create_asset(
+                            owner=owner, family=family, asset_name=security_identity_name,
+                            isin=parsed["isin"] if resolution["status"] not in {"CONFLICT", "AMBIGUOUS"} else "",
+                            asset_class=parsed["asset_class"], sub_class=parsed["sub_class"],
+                            allow_name_match=resolution["status"] == "MATCHED",
+                        )
 
                     mapped_transaction_type = INVESTMENT_TRANSACTION_MAP.get(parsed["transaction_type"])
                     if mapped_transaction_type is None:
@@ -1460,7 +1499,7 @@ class TransactionImporter:
                 continue
             try:
                 yahoo_symbol = SecurityResolver.resolve_yahoo_symbol(
-                    symbol=asset.symbol, isin=asset.isin, name=asset.name,
+                    symbol=asset.symbol, isin=asset.isin,
                 )
                 if yahoo_symbol and asset.symbol != yahoo_symbol:
                     asset.symbol = yahoo_symbol

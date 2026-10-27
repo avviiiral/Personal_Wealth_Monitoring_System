@@ -11,7 +11,7 @@ from django.utils import timezone
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment
 
-from .models import SecurityMaster, TransactionUpload, TransactionUploadFailure
+from .models import Asset, SecurityAlias, SecurityIdentityResolutionLog, SecurityMaster, TransactionUpload, TransactionUploadFailure
 
 from .services.transaction_import import (
     TransactionImportError,
@@ -26,7 +26,7 @@ from .services.auto_price_refresh import (
     refresh_assets_async,
 )
 
-from users.permissions import CanWriteFinancialData, family_scope, require_active_family
+from users.permissions import CanWriteFinancialData, family_scope, is_system_owner, require_active_family
 
 
 @api_view(["POST"])
@@ -169,18 +169,60 @@ def download_transaction_template(request):
     summary.append(["Family Name", "Portfolio Name", "Asset Class", "Advisors", "Asset Name", "ISIN"])
 
     instructions = workbook.create_sheet("Instructions")
-    instructions.append(["Standard Transaction Upload Format"])
-    instructions.append(["Use the Transactions sheet for transaction rows. The Summary sheet is optional and maps rows to Portfolio Name."])
-    instructions.append(["Do not rename the required headers. Family Member is accepted as the user-facing replacement for Family Name."])
+    instruction_rows = [
+        ["Standard Transaction Upload Format"],
+        ["1. Transactions sheet"],
+        ["Enter one transaction per row in the Transactions sheet. Keep every required column header unchanged."],
+        ["Required columns: Family Member, Asset Class, Sub Class, Asset Name, Underlying, Advisors, ISIN, Date, Trans. Type, Quantity, Price, Amount."],
+        ["Family Member is the user-facing column name accepted by PWMS; Family Name is also accepted for older files."],
+        ["2. General investment transaction types (Trans. Type)"],
+        ["BUY — Buy/purchase of a security."],
+        ["SELL — Sale of a security."],
+        ["SIP — Systematic investment transaction."],
+        ["DIVIDEND — Dividend received. DIVIDEND PAYOUT is also accepted and maps to DIVIDEND."],
+        ["INTEREST — Interest received."],
+        ["DEPOSIT — Deposit transaction."],
+        ["WITHDRAWAL — Withdrawal transaction."],
+        ["BONUS — Bonus shares/bonus transaction."],
+        ["SPLIT — Stock split. *SPLIT is also accepted and maps to SPLIT."],
+        ["BUYBACK — Accepted and mapped to SELL."],
+        ["DIVIDEND REINVESTMENT — Accepted and mapped to BUY for general investments."],
+        ["3. Mutual fund transaction types"],
+        ["BUY or PURCHASE — Maps to mutual fund PURCHASE."],
+        ["SIP — Maps to mutual fund SIP."],
+        ["SELL or REDEMPTION — Maps to mutual fund REDEMPTION."],
+        ["DIVIDEND — Maps to mutual fund DIVIDEND."],
+        ["DIVIDEND REINVESTMENT — Maps to mutual fund PURCHASE."],
+        ["4. Summary sheet (optional)"],
+        ["Use the Summary sheet to map transactions to Portfolio Name. Required headers: Family Name, Portfolio Name, Asset Class, Advisors, Asset Name, ISIN."],
+        ["5. Important notes"],
+        ["Use the transaction type labels above exactly as written, unless an alternate accepted label is explicitly noted."],
+        ["A dividend payout and a dividend reinvestment are different: payout records dividend income; reinvestment is mapped to a purchase (BUY for general investments and PURCHASE for mutual funds)."],
+        ["Only use transaction types that accurately describe the source transaction. Do not relabel fees, taxes, transfers, corrections, or adjustments as another type without confirming the correct accounting treatment."],
+        ["This workbook is a format template, not a source of prices or transaction values. Enter the figures and dates from your records."]
+    ]
+    for row in instruction_rows:
+        instructions.append(row)
 
     for sheet in (transactions, summary, instructions):
         for cell in sheet[1]:
             cell.font = Font(bold=True)
         sheet.freeze_panes = "A2"
-        sheet.auto_filter.ref = sheet.dimensions
+        if sheet.title != "Instructions":
+            sheet.auto_filter.ref = sheet.dimensions
         for column in sheet.columns:
-            width = min(max(len(str(cell.value or "")) for cell in column) + 2, 35)
+            width = min(max(len(str(cell.value or "")) for cell in column) + 2, 70 if sheet.title == "Instructions" else 35)
             sheet.column_dimensions[column[0].column_letter].width = width
+
+    for row in instructions.iter_rows():
+        instructions.row_dimensions[row[0].row].height = 30
+        instructions.cell(row=row[0].row, column=1).alignment = Alignment(
+            wrap_text=True,
+            vertical="top",
+        )
+    for row_number in (1, 2, 6, 18, 24, 26):
+        if row_number <= instructions.max_row:
+            instructions.cell(row=row_number, column=1).font = Font(bold=True)
 
     response = HttpResponse(
         content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
@@ -429,3 +471,86 @@ def security_master_detail(
             },
         }
     )
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def security_identity_resolution_history(request):
+    """System-owner-only audit view of new security identity mapping activity."""
+    if not is_system_owner(request.user):
+        raise PermissionDenied("Only System Owners may view security identity resolution logs.")
+
+    logs = (
+        SecurityIdentityResolutionLog.objects
+        .select_related("family", "actor", "upload", "resolved_asset")
+        .order_by("-created_at", "-id")[:500]
+    )
+    results = []
+    for item in logs:
+        results.append({
+            "id": item.id,
+            "family_name": item.family.name,
+            "upload_file_name": item.upload.file_name if item.upload else None,
+            "uploaded_by": item.actor.username if item.actor else "Deleted User",
+            "row_number": item.row_number,
+            "created_at": item.created_at,
+            "input_asset_name": item.input_asset_name,
+            "input_underlying": item.input_underlying,
+            "input_isin": item.input_isin,
+            "canonical_name": item.canonical_name,
+            "resolved_asset_name": item.resolved_asset.name if item.resolved_asset else None,
+            "match_method": item.match_method,
+            "status": item.status,
+            "details": item.details,
+        })
+    return Response({"count": len(results), "results": results})
+
+
+@api_view(["GET", "POST"])
+@permission_classes([IsAuthenticated, CanWriteFinancialData])
+def security_alias_list_create(request):
+    """List or explicitly approve a family-scoped alternate security name."""
+    family = require_active_family(request.user)
+    if request.method == "GET":
+        aliases = SecurityAlias.objects.filter(family=family, is_active=True).select_related("asset", "approved_by")
+        results = [{
+            "id": item.id,
+            "asset_id": item.asset_id,
+            "asset_name": item.asset.name,
+            "alias": item.alias,
+            "approved_by": item.approved_by.username if item.approved_by else None,
+            "approved_at": item.approved_at,
+        } for item in aliases.order_by("normalized_alias")]
+        return Response({"count": len(results), "results": results})
+
+    alias = str(request.data.get("alias", "")).strip()
+    asset_id = request.data.get("asset_id")
+    if not alias or not SecurityAlias.normalize(alias):
+        return Response({"detail": "A non-empty alias is required."}, status=400)
+    try:
+        asset = Asset.objects.get(id=asset_id, family=family)
+    except (Asset.DoesNotExist, TypeError, ValueError):
+        return Response({"detail": "Asset not found in the active family."}, status=404)
+
+    from django.db import IntegrityError
+    try:
+        item = SecurityAlias.objects.create(
+            family=family, asset=asset, alias=alias, approved_by=request.user,
+        )
+    except IntegrityError:
+        return Response({"detail": "This normalized alias is already registered for the active family."}, status=409)
+    return Response({
+        "id": item.id, "asset_id": item.asset_id, "asset_name": asset.name,
+        "alias": item.alias, "approved_by": request.user.username, "approved_at": item.approved_at,
+    }, status=201)
+
+
+@api_view(["DELETE"])
+@permission_classes([IsAuthenticated, CanWriteFinancialData])
+def security_alias_deactivate(request, alias_id):
+    family = require_active_family(request.user)
+    item = SecurityAlias.objects.filter(id=alias_id, family=family, is_active=True).first()
+    if item is None:
+        return Response({"detail": "Active security alias not found in the active family."}, status=404)
+    item.is_active = False
+    item.save(update_fields=["is_active"])
+    return Response({"success": True, "message": "Security alias deactivated."})

@@ -16,6 +16,7 @@ import {
   TransactionUploadDetail,
   UnderlyingUploadHistory,
   MISNotesHistoryEntry,
+  SecurityIdentityResolutionLog,
 } from '../../core/services/settings-api.service';
 
 import { UserManagementComponent } from './user-management/user-management.component';
@@ -36,6 +37,7 @@ type LogsTab =
   | 'upload-history'
   | 'underlyings'
   | 'mis-history'
+  | 'security-mappings'
   | 'prices';
 
 @Component({
@@ -109,6 +111,10 @@ export class SettingsComponent implements OnInit {
   misNotesHistoryLoading = false;
   misNotesHistoryError = '';
 
+  securityMappingHistory: SecurityIdentityResolutionLog[] = [];
+  securityMappingHistoryLoading = false;
+  securityMappingHistoryError = '';
+
   historySearch = '';
   historyEditorFilter = '';
   historyDateFilter = '';
@@ -163,6 +169,33 @@ export class SettingsComponent implements OnInit {
     if (this.activeLogTab === 'mis-history' && !this.misNotesHistory.length) {
       this.loadMISNotesHistory();
     }
+
+    if (this.activeLogTab === 'security-mappings' && this.rbac.isSystemOwner() && !this.securityMappingHistory.length) {
+      this.loadSecurityMappingHistory();
+    }
+  }
+
+  canViewSecurityMappingLogs(): boolean {
+    return this.rbac.isSystemOwner();
+  }
+
+  loadSecurityMappingHistory(): void {
+    if (!this.canViewSecurityMappingLogs()) return;
+    this.securityMappingHistoryLoading = true;
+    this.securityMappingHistoryError = '';
+    this.settingsApi.getSecurityIdentityResolutionHistory().subscribe({
+      next: (response) => {
+        this.securityMappingHistory = response.results || [];
+        this.securityMappingHistoryLoading = false;
+        this.cdr.detectChanges();
+      },
+      error: (error) => {
+        this.securityMappingHistoryLoading = false;
+        this.securityMappingHistoryError =
+          error?.error?.detail || 'Unable to load security identity resolution history.';
+        this.cdr.detectChanges();
+      },
+    });
   }
 
   canManageUsers(): boolean {

@@ -1463,12 +1463,18 @@ class TransactionImporter:
                         normalized_alias = SecurityAlias.normalize(alias_value)
                         if normalized_alias and normalized_alias != SecurityAlias.normalize(reviewed_asset.name):
                             existing_aliases = list(SecurityAlias.objects.filter(
-                                family=family, normalized_alias=normalized_alias, is_active=True
+                                family=family, normalized_alias=normalized_alias
                             ).select_related("asset"))
                             if any(alias.asset_id != reviewed_asset.id for alias in existing_aliases):
                                 raise TransactionImportError(f"Alias '{alias_value}' already points to a different security.")
                             if not existing_aliases:
                                 SecurityAlias.objects.create(family=family, asset=reviewed_asset, alias=alias_value, approved_by=owner)
+                            else:
+                                for existing_alias in existing_aliases:
+                                    if not existing_alias.is_active:
+                                        existing_alias.is_active = True
+                                        existing_alias.approved_by = owner
+                                        existing_alias.save(update_fields=["is_active", "approved_by"])
                     elif force_new_identity:
                         if parsed["isin"] and Asset.objects.filter(
                             family=family, isin__iexact=parsed["isin"].strip()

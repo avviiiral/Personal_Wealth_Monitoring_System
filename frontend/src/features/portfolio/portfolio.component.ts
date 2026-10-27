@@ -7,6 +7,7 @@ import { PortfolioApiService, PortfolioAssetNode, FamilyNode, PortfolioCalculati
 import { ManualPriceService } from '../../core/services/manual-price.service';
 import { DuplicateTransactionRow, InvestmentsApiService } from '../../core/services/investments-api.service';
 import { ToastService } from '../../core/services/toast.service';
+import { RbacService } from '../../core/services/rbac.service';
 
 interface SubClassSummary { sub_class: string; current_value: number; invested_value: number; pnl: number; quantity: number; xirr: number | null; assets: PortfolioAssetNode[]; }
 interface AssetGroup { asset_name: string; family_name: string; quantity: number; invested_value: number; current_value: number; pnl: number; xirr: number | null; assets: PortfolioAssetNode[]; }

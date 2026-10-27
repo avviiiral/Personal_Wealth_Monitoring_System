@@ -79,7 +79,7 @@
 
   <div *ngIf="showDuplicateReview" class="duplicate-review-backdrop">
     <section class="duplicate-review-panel" role="dialog" aria-modal="true" aria-labelledby="duplicate-review-title">
-      <div class="duplicate-review-heading"><div><h2 id="duplicate-review-title">Review transaction upload</h2><p>{{ duplicateTransactionRows.length }} duplicate row(s) and {{ identityReviewRows.length }} security identity row(s) need review. Duplicate rows are skipped unless selected; every identity row needs a decision.</p></div><button type="button" class="refresh-button" (click)="cancelDuplicateReview()">Cancel</button></div>
+      <div class="duplicate-review-heading"><div><h2 id="duplicate-review-title">Review transaction upload</h2><p>{{ duplicateTransactionRows.length }} duplicate row(s) and {{ identityReviewGroups.length }} unique security identity/identities need review. Duplicate rows are skipped unless selected; verify each unique security once.</p></div><button type="button" class="refresh-button" (click)="cancelDuplicateReview()">Cancel</button></div>
       <div *ngIf="identityReviewRows.length" class="identity-review-section">
         <h3>Security identity review</h3>
         <p>Verify each unique security once. Automatic matches are preselected where unambiguous; you can confirm them or choose another existing asset. If you cannot identify it, create a separate asset and optionally provide its ISIN.</p>

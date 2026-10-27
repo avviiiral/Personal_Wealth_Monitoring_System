@@ -1247,8 +1247,9 @@ class TransactionImporter:
 
     @staticmethod
     @db_transaction.atomic
-    def import_file(file, owner, upload_batch=None, selected_duplicate_rows=None):
+    def import_file(file, owner, upload_batch=None, selected_duplicate_rows=None, identity_mappings=None):
         selected_duplicate_rows = {int(value) for value in (selected_duplicate_rows or [])}
+        identity_mappings = {int(key): value for key, value in (identity_mappings or {}).items()}
         family = require_active_family(owner)
         dataframe, summary = TransactionImporter._read_file(file)
 
@@ -1409,9 +1410,42 @@ class TransactionImporter:
                         continue
 
                     from investments.services.security_identity import SecurityIdentityResolver
+                    from investments.models import SecurityAlias
 
                     original_underlying = parsed["underlying"]
-                    resolution = SecurityIdentityResolver.resolve(
+                    reviewed_choice = identity_mappings.get(row_number)
+                    force_new_identity = str(reviewed_choice) == "__NEW__"
+                    reviewed_asset = None
+                    if reviewed_choice not in (None, "", "__NEW__"):
+                        try:
+                            reviewed_asset_id = int(reviewed_choice)
+                        except (TypeError, ValueError) as exc:
+                            raise TransactionImportError(f"Invalid reviewed security selection at row {row_number}.") from exc
+                        reviewed_asset = Asset.objects.filter(id=reviewed_asset_id, family=family, is_active=True).first()
+                        if reviewed_asset is None:
+                            raise TransactionImportError(f"Selected security is not available in this family at row {row_number}.")
+                        categories = SecurityIdentityResolver.compatible_categories(parsed["asset_class"], parsed["sub_class"])
+                        if categories is not None and reviewed_asset.category not in categories:
+                            raise TransactionImportError(f"Selected security has an incompatible instrument type at row {row_number}.")
+                        if parsed["isin"] and reviewed_asset.isin and parsed["isin"].strip().upper() != reviewed_asset.isin.strip().upper():
+                            raise TransactionImportError(f"Selected security ISIN conflicts with the uploaded ISIN at row {row_number}.")
+                        resolution = {"asset": reviewed_asset, "canonical_name": reviewed_asset.name, "method": "USER_REVIEW",
+                                      "status": "MATCHED", "details": {"reason": "Explicitly selected during upload review."}}
+                        alias_value = original_underlying or parsed["asset_name"]
+                        normalized_alias = SecurityAlias.normalize(alias_value)
+                        if normalized_alias and normalized_alias != SecurityAlias.normalize(reviewed_asset.name):
+                            existing_aliases = list(SecurityAlias.objects.filter(
+                                family=family, normalized_alias=normalized_alias, is_active=True
+                            ).select_related("asset"))
+                            if any(alias.asset_id != reviewed_asset.id for alias in existing_aliases):
+                                raise TransactionImportError(f"Alias '{alias_value}' already points to a different security.")
+                            if not existing_aliases:
+                                SecurityAlias.objects.create(family=family, asset=reviewed_asset, alias=alias_value, approved_by=owner)
+                    elif force_new_identity:
+                        resolution = {"asset": None, "canonical_name": "", "method": "NONE", "status": "UNRESOLVED",
+                                      "details": {"reason": "User explicitly chose to create a separate asset."}}
+                    else:
+                        resolution = SecurityIdentityResolver.resolve(
                         family=family,
                         asset_name=parsed["asset_name"],
                         underlying=original_underlying,
@@ -1447,7 +1481,7 @@ class TransactionImporter:
                             owner=owner, family=family, asset_name=security_identity_name,
                             isin=parsed["isin"] if resolution["status"] not in {"CONFLICT", "AMBIGUOUS"} else "",
                             asset_class=parsed["asset_class"], sub_class=parsed["sub_class"],
-                            allow_name_match=resolution["status"] == "MATCHED",
+                            allow_name_match=(resolution["status"] == "MATCHED" and not force_new_identity),
                         )
 
                     mapped_transaction_type = INVESTMENT_TRANSACTION_MAP.get(parsed["transaction_type"])

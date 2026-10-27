@@ -10,6 +10,9 @@ import {
 } from '@angular/core';
 import type ExcelJS from 'exceljs';
 
+import { RbacService } from '../../core/services/rbac.service';
+import { ToastService } from '../../core/services/toast.service';
+
 import {
   PortfolioApiService,
   FamilyNode,
@@ -89,6 +92,8 @@ export class ReportsComponent implements OnInit {
   private readonly portfolioApi = inject(PortfolioApiService);
   private readonly cdr = inject(ChangeDetectorRef);
   private readonly elementRef = inject(ElementRef);
+  readonly rbac = inject(RbacService);
+  private readonly toast = inject(ToastService);
 
   /* Raw transactions as returned by the API. Every grouping/filter
      below is derived from this list, the same way the Portfolio
@@ -135,6 +140,9 @@ export class ReportsComponent implements OnInit {
   summaryFamily = '';
 
   downloadMenuOpen = false;
+  deleteAssetName: string | null = null;
+  deleteAssetNameConfirmation = '';
+  deletingAssetTransactions = false;
 
   /* Transaction editor used by the final Transactions table. */
   editingTransaction: Transaction | null = null;
@@ -757,6 +765,50 @@ export class ReportsComponent implements OnInit {
       rows,
       gainKey: 'gain',
       filename: `${this.slugify(familyLabel)}_${this.slugify(summary.sub_class)}_holdings_${this.todayStamp()}.xlsx`,
+    });
+  }
+
+  openDeleteAssetTransactions(event: MouseEvent, assetName: string): void {
+    event.stopPropagation();
+    if (!(this.rbac.isSuperUser() || this.rbac.isSystemOwner())) {
+      this.toast.error('Only Super User and System Owner accounts can delete all transactions for an asset.');
+      return;
+    }
+    const normalizedName = (assetName || '').trim();
+    if (!normalizedName) {
+      this.toast.error('This asset does not have a valid Asset Name.');
+      return;
+    }
+    this.deleteAssetName = normalizedName;
+    this.deleteAssetNameConfirmation = '';
+  }
+
+  cancelDeleteAssetTransactions(): void {
+    if (this.deletingAssetTransactions) return;
+    this.deleteAssetName = null;
+    this.deleteAssetNameConfirmation = '';
+  }
+
+  confirmDeleteAssetTransactions(): void {
+    const assetName = this.deleteAssetName;
+    if (!assetName || this.deletingAssetTransactions || this.deleteAssetNameConfirmation !== assetName) return;
+    this.deletingAssetTransactions = true;
+    this.portfolioApi.deleteTransactionsByAssetName(assetName).subscribe({
+      next: (response) => {
+        this.deletingAssetTransactions = false;
+        this.deleteAssetName = null;
+        this.deleteAssetNameConfirmation = '';
+        this.toast.success('Deleted ' + response.deleted_count + ' transaction(s) for "' + assetName + '".');
+        this.expandedSubClass = '';
+        this.expandedAssetName = '';
+        this.expandedUnderlying = '';
+        this.loadReports();
+      },
+      error: (error) => {
+        this.deletingAssetTransactions = false;
+        this.toast.error(error?.error?.detail || error?.error?.message || 'Unable to delete transactions for this asset.', 6000);
+        this.cdr.detectChanges();
+      },
     });
   }
 

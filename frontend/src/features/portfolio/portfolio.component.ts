@@ -7,7 +7,6 @@ import { PortfolioApiService, PortfolioAssetNode, FamilyNode, PortfolioCalculati
 import { ManualPriceService } from '../../core/services/manual-price.service';
 import { DuplicateTransactionRow, InvestmentsApiService } from '../../core/services/investments-api.service';
 import { ToastService } from '../../core/services/toast.service';
-import { RbacService } from '../../core/services/rbac.service';
 
 interface SubClassSummary { sub_class: string; current_value: number; invested_value: number; pnl: number; quantity: number; xirr: number | null; assets: PortfolioAssetNode[]; }
 interface AssetGroup { asset_name: string; family_name: string; quantity: number; invested_value: number; current_value: number; pnl: number; xirr: number | null; assets: PortfolioAssetNode[]; }
@@ -52,9 +51,6 @@ export class PortfolioComponent implements OnInit, OnDestroy {
   selectedUnderlyingAssetId: number | null = null;
   selectedUnderlyingFile: File | null = null;
   uploadingUnderlying = false;
-  deleteAssetName: string | null = null;
-  deleteAssetNameConfirmation = '';
-  deletingAssetTransactions = false;
 
   ngOnInit(): void {
     this.loadPortfolio();
@@ -151,63 +147,6 @@ export class PortfolioComponent implements OnInit, OnDestroy {
 
   cancelDuplicateReview(): void {
     this.showDuplicateReview = false; this.pendingTransactionFile = null; this.duplicateTransactionRows = [];
-  }
-
-  openDeleteAssetTransactions(assetName: string): void {
-    if (!(this.rbac.isSuperUser() || this.rbac.isSystemOwner())) {
-      this.toast.error('Only Super User and System Owner accounts can delete all transactions for an asset.');
-      return;
-    }
-    const normalizedName = (assetName || '').trim();
-    if (!normalizedName) {
-      this.toast.error('This asset does not have a valid Asset Name.');
-      return;
-    }
-    this.deleteAssetName = normalizedName;
-    this.deleteAssetNameConfirmation = '';
-  }
-
-  cancelDeleteAssetTransactions(): void {
-    if (this.deletingAssetTransactions) return;
-    this.deleteAssetName = null;
-    this.deleteAssetNameConfirmation = '';
-  }
-
-  confirmDeleteAssetTransactions(): void {
-    const assetName = this.deleteAssetName;
-    if (
-      !assetName ||
-      this.deletingAssetTransactions ||
-      this.deleteAssetNameConfirmation !== assetName
-    ) {
-      return;
-    }
-
-    this.deletingAssetTransactions = true;
-    this.portfolioApi.deleteTransactionsByAssetName(assetName).subscribe({
-      next: (response) => {
-        this.deletingAssetTransactions = false;
-        this.deleteAssetName = null;
-        this.deleteAssetNameConfirmation = '';
-        this.toast.success(
-          'Deleted ' + response.deleted_count + ' transaction(s) for "' + assetName + '".',
-        );
-        this.resetExpansion();
-        this.loadPortfolio(true);
-        void this.loadTransactionAssetClasses();
-        this.cdr.detectChanges();
-      },
-      error: (error) => {
-        this.deletingAssetTransactions = false;
-        this.toast.error(
-          error?.error?.detail ||
-            error?.error?.message ||
-            'Unable to delete transactions for this asset.',
-          6000,
-        );
-        this.cdr.detectChanges();
-      },
-    });
   }
 
   get underlyingAssetOptions(): Array<{ id: number; name: string }> {

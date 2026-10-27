@@ -1526,3 +1526,25 @@
 :host-context(html.dark-theme) .transaction-edit-button:hover {
   background: #222834;
 }
+
+/* Asset-name bulk deletion — beside the per-asset download action. */
+.delete-asset-transactions-button { border-color: #b42318; color: #b42318; }
+.delete-asset-transactions-button:hover:not(:disabled) { background: rgba(180, 35, 24, .08); border-color: #b42318; color: #b42318; }
+.delete-asset-transactions-button:disabled { cursor: not-allowed; opacity: .55; }
+.delete-transactions-backdrop { position: fixed; inset: 0; z-index: 1300; display: flex; align-items: center; justify-content: center; padding: 20px; background: rgba(16, 24, 40, .58); }
+.delete-transactions-panel { width: min(560px, 96vw); display: flex; flex-direction: column; gap: 16px; padding: 24px; border: 1px solid var(--surface-line, #d0d5dd); border-radius: 14px; background: var(--surface, #fff); color: var(--ink, #101828); box-shadow: 0 24px 70px rgba(0, 0, 0, .28); }
+.delete-transactions-heading, .delete-transactions-actions { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.delete-transactions-heading h2 { margin: 0; color: var(--ink, #101828); font-size: 20px; }
+.delete-transactions-warning { margin: 0; color: var(--muted, #667085); font-size: 13px; line-height: 1.6; }
+.delete-transactions-warning strong, .delete-transactions-confirm-field strong { color: var(--ink, #101828); overflow-wrap: anywhere; }
+.delete-transactions-confirm-field { display: flex; flex-direction: column; gap: 8px; color: var(--ink, #101828); font-size: 12px; font-weight: 600; }
+.delete-transactions-confirm-field input { width: 100%; box-sizing: border-box; border: 1px solid var(--surface-line, #d0d5dd); border-radius: 8px; padding: 10px 12px; background: var(--canvas, #fff); color: var(--ink, #101828); font: inherit; font-weight: 400; }
+.delete-transactions-confirm-field input:focus { outline: 2px solid var(--ink, #101828); outline-offset: 1px; }
+.delete-transactions-actions { justify-content: flex-end; flex-wrap: wrap; }
+.delete-transactions-confirm-button { border: 1px solid #b42318; border-radius: 6px; background: #b42318; color: #fff; padding: 8px 12px; font-size: 12px; font-weight: 700; cursor: pointer; }
+.delete-transactions-confirm-button:disabled { cursor: not-allowed; opacity: .55; }
+:host-context(html.dark-theme) .delete-transactions-panel { background: #171a21; color: #e5e7eb; border-color: #3a414e; }
+:host-context(html.dark-theme) .delete-transactions-warning, :host-context(html.dark-theme) .delete-transactions-confirm-field { color: #aeb7c6; }
+:host-context(html.dark-theme) .delete-transactions-warning strong, :host-context(html.dark-theme) .delete-transactions-confirm-field strong { color: #e5e7eb; }
+:host-context(html.dark-theme) .delete-transactions-confirm-field input { background: #12151c; border-color: #3a414e; color: #e5e7eb; }
+@media (max-width: 650px) { .delete-transactions-panel { padding: 16px; } .delete-transactions-heading { align-items: flex-start; } }

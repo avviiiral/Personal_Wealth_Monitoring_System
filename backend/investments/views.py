@@ -11,7 +11,7 @@ from django.utils import timezone
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment
 
-from .models import SecurityMaster, TransactionUpload, TransactionUploadFailure
+from .models import Asset, SecurityAlias, SecurityIdentityResolutionLog, SecurityMaster, TransactionUpload, TransactionUploadFailure
 
 from .services.transaction_import import (
     TransactionImportError,
@@ -26,7 +26,7 @@ from .services.auto_price_refresh import (
     refresh_assets_async,
 )
 
-from users.permissions import CanWriteFinancialData, family_scope, require_active_family
+from users.permissions import CanWriteFinancialData, family_scope, is_system_owner, require_active_family
 
 
 @api_view(["POST"])
@@ -429,3 +429,86 @@ def security_master_detail(
             },
         }
     )
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def security_identity_resolution_history(request):
+    """System-owner-only audit view of new security identity mapping activity."""
+    if not is_system_owner(request.user):
+        raise PermissionDenied("Only System Owners may view security identity resolution logs.")
+
+    logs = (
+        SecurityIdentityResolutionLog.objects
+        .select_related("family", "actor", "upload", "resolved_asset")
+        .order_by("-created_at", "-id")[:500]
+    )
+    results = []
+    for item in logs:
+        results.append({
+            "id": item.id,
+            "family_name": item.family.name,
+            "upload_file_name": item.upload.file_name if item.upload else None,
+            "uploaded_by": item.actor.username if item.actor else "Deleted User",
+            "row_number": item.row_number,
+            "created_at": item.created_at,
+            "input_asset_name": item.input_asset_name,
+            "input_underlying": item.input_underlying,
+            "input_isin": item.input_isin,
+            "canonical_name": item.canonical_name,
+            "resolved_asset_name": item.resolved_asset.name if item.resolved_asset else None,
+            "match_method": item.match_method,
+            "status": item.status,
+            "details": item.details,
+        })
+    return Response({"count": len(results), "results": results})
+
+
+@api_view(["GET", "POST"])
+@permission_classes([IsAuthenticated, CanWriteFinancialData])
+def security_alias_list_create(request):
+    """List or explicitly approve a family-scoped alternate security name."""
+    family = require_active_family(request.user)
+    if request.method == "GET":
+        aliases = SecurityAlias.objects.filter(family=family, is_active=True).select_related("asset", "approved_by")
+        results = [{
+            "id": item.id,
+            "asset_id": item.asset_id,
+            "asset_name": item.asset.name,
+            "alias": item.alias,
+            "approved_by": item.approved_by.username if item.approved_by else None,
+            "approved_at": item.approved_at,
+        } for item in aliases.order_by("normalized_alias")]
+        return Response({"count": len(results), "results": results})
+
+    alias = str(request.data.get("alias", "")).strip()
+    asset_id = request.data.get("asset_id")
+    if not alias or not SecurityAlias.normalize(alias):
+        return Response({"detail": "A non-empty alias is required."}, status=400)
+    try:
+        asset = Asset.objects.get(id=asset_id, family=family)
+    except (Asset.DoesNotExist, TypeError, ValueError):
+        return Response({"detail": "Asset not found in the active family."}, status=404)
+
+    from django.db import IntegrityError
+    try:
+        item = SecurityAlias.objects.create(
+            family=family, asset=asset, alias=alias, approved_by=request.user,
+        )
+    except IntegrityError:
+        return Response({"detail": "This normalized alias is already registered for the active family."}, status=409)
+    return Response({
+        "id": item.id, "asset_id": item.asset_id, "asset_name": asset.name,
+        "alias": item.alias, "approved_by": request.user.username, "approved_at": item.approved_at,
+    }, status=201)
+
+
+@api_view(["DELETE"])
+@permission_classes([IsAuthenticated, CanWriteFinancialData])
+def security_alias_deactivate(request, alias_id):
+    family = require_active_family(request.user)
+    item = SecurityAlias.objects.filter(id=alias_id, family=family, is_active=True).first()
+    if item is None:
+        return Response({"detail": "Active security alias not found in the active family."}, status=404)
+    item.is_active = False
+    item.save(update_fields=["is_active"])
+    return Response({"success": True, "message": "Security alias deactivated."})

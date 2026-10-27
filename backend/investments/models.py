@@ -1,5 +1,8 @@
+import re
+
 from django.db import models
 from django.contrib.auth.models import User
+from django.utils import timezone
 
 from users.models import FamilyGroup
 
@@ -345,3 +348,86 @@ class AssetUnderlyingHolding(models.Model):
 
     def __str__(self):
         return f"{self.asset.name} - {self.stock_name} - {self.holding_percentage}%"
+
+
+class SecurityAlias(models.Model):
+    """An explicitly approved, family-scoped alternate security name."""
+
+    family = models.ForeignKey(FamilyGroup, on_delete=models.PROTECT, related_name="security_aliases", db_index=True)
+    asset = models.ForeignKey(Asset, on_delete=models.CASCADE, related_name="approved_security_aliases")
+    alias = models.CharField(max_length=255)
+    normalized_alias = models.CharField(max_length=255, editable=False)
+    approved_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name="approved_security_aliases")
+    approved_at = models.DateTimeField(default=timezone.now)
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["normalized_alias"]
+        constraints = [
+            models.UniqueConstraint(fields=["family", "normalized_alias"], name="sec_alias_family_norm_uniq"),
+        ]
+        indexes = [
+            models.Index(fields=["family", "is_active"], name="sec_alias_family_active_idx"),
+        ]
+
+    @staticmethod
+    def normalize(value):
+        return re.sub(r"[^A-Z0-9]+", "", str(value or "").upper()).strip()
+
+    def save(self, *args, **kwargs):
+        self.alias = str(self.alias or "").strip()
+        self.normalized_alias = self.normalize(self.alias)
+        if self.asset_id and self.family_id and not Asset.objects.filter(id=self.asset_id, family_id=self.family_id).exists():
+            raise ValueError("Security aliases must reference an Asset in the same family.")
+        super().save(*args, **kwargs)
+
+    def clean(self):
+        from django.core.exceptions import ValidationError
+        if self.asset_id and self.family_id and self.asset.family_id != self.family_id:
+            raise ValidationError("Security aliases must reference an Asset in the same family.")
+        if not self.normalized_alias:
+            raise ValidationError("Alias must contain at least one letter or number.")
+
+    def __str__(self):
+        return f"{self.alias} → {self.asset.name}"
+
+
+class SecurityIdentityResolutionLog(models.Model):
+    """Append-only audit event for new security identity resolution activity."""
+
+    class Status(models.TextChoices):
+        MATCHED = "MATCHED", "Matched"
+        UNRESOLVED = "UNRESOLVED", "Unresolved"
+        AMBIGUOUS = "AMBIGUOUS", "Ambiguous"
+        CONFLICT = "CONFLICT", "Conflict"
+
+    class MatchMethod(models.TextChoices):
+        ISIN = "ISIN", "ISIN"
+        APPROVED_ALIAS = "APPROVED_ALIAS", "Approved alias"
+        NORMALIZED_NAME = "NORMALIZED_NAME", "Normalized name"
+        NONE = "NONE", "No match"
+
+    family = models.ForeignKey(FamilyGroup, on_delete=models.PROTECT, related_name="security_identity_resolution_logs", db_index=True)
+    upload = models.ForeignKey("TransactionUpload", on_delete=models.SET_NULL, null=True, blank=True, related_name="security_identity_resolution_logs")
+    actor = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name="security_identity_resolution_logs")
+    row_number = models.PositiveIntegerField()
+    input_asset_name = models.CharField(max_length=255, blank=True, default="")
+    input_underlying = models.CharField(max_length=255, blank=True, default="")
+    input_isin = models.CharField(max_length=20, blank=True, default="")
+    canonical_name = models.CharField(max_length=255, blank=True, default="")
+    resolved_asset = models.ForeignKey(Asset, on_delete=models.SET_NULL, null=True, blank=True, related_name="security_identity_resolution_logs")
+    match_method = models.CharField(max_length=20, choices=MatchMethod.choices, default=MatchMethod.NONE)
+    status = models.CharField(max_length=20, choices=Status.choices)
+    details = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at", "-id"]
+        indexes = [
+            models.Index(fields=["family", "-created_at"], name="sec_res_family_date_idx"),
+            models.Index(fields=["upload", "row_number"], name="sec_res_upload_row_idx"),
+        ]
+
+    def __str__(self):
+        return f"{self.status}: {self.input_asset_name} → {self.canonical_name}"

@@ -118,6 +118,28 @@ export interface MISNotesHistoryResponse {
   results: MISNotesHistoryEntry[];
 }
 
+export interface SecurityIdentityResolutionLog {
+  id: number;
+  family_name: string;
+  upload_file_name: string | null;
+  uploaded_by: string;
+  row_number: number;
+  created_at: string;
+  input_asset_name: string;
+  input_underlying: string;
+  input_isin: string;
+  canonical_name: string;
+  resolved_asset_name: string | null;
+  match_method: string;
+  status: string;
+  details: Record<string, unknown>;
+}
+
+export interface SecurityIdentityResolutionLogResponse {
+  count: number;
+  results: SecurityIdentityResolutionLog[];
+}
+
 export interface ChangePasswordResponse {
   message: string;
 }
@@ -278,6 +300,13 @@ export class SettingsApiService {
   getTransactionEditHistory(): Observable<TransactionEditHistoryResponse> {
     return this.http.get<TransactionEditHistoryResponse>(
       `${environment.apiUrl}/api/portfolio/transactions/edit-history/`,
+      this.requestOptions,
+    );
+  }
+
+  getSecurityIdentityResolutionHistory(): Observable<SecurityIdentityResolutionLogResponse> {
+    return this.http.get<SecurityIdentityResolutionLogResponse>(
+      `${environment.apiUrl}/api/investments/security-identity-resolution-history/`,
       this.requestOptions,
     );
   }

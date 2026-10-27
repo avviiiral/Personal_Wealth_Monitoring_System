@@ -9,6 +9,9 @@ from .views import (
     download_transaction_template,
     security_master_list,
     security_master_detail,
+    security_identity_resolution_history,
+    security_alias_list_create,
+    security_alias_deactivate,
 )
 
 
@@ -50,6 +53,10 @@ urlpatterns = [
         security_master_list,
         name="security-master-list",
     ),
+
+    path("security-identity-resolution-history/", security_identity_resolution_history, name="security-identity-resolution-history"),
+    path("security-aliases/", security_alias_list_create, name="security-alias-list-create"),
+    path("security-aliases/<int:alias_id>/", security_alias_deactivate, name="security-alias-deactivate"),
 
     path(
         "security-master/<int:security_id>/",

@@ -82,7 +82,7 @@
       <div class="duplicate-review-heading"><div><h2 id="duplicate-review-title">Review transaction upload</h2><p>{{ duplicateTransactionRows.length }} duplicate row(s) and {{ identityReviewGroups.length }} unique security identity/identities need review. Duplicate rows are skipped unless selected; verify each unique security once.</p></div><button type="button" class="refresh-button" (click)="cancelDuplicateReview()">Cancel</button></div>
       <div *ngIf="identityReviewRows.length" class="identity-review-section">
         <h3>Security identity review</h3>
-        <p>Verify each unique security once. Automatic matches are preselected where unambiguous; you can confirm them or choose another existing asset. If you cannot identify it, create a separate asset and optionally provide its ISIN.</p>
+        <p>Only securities that could not be confidently resolved are shown here. PWMS automatically maps normalized names and ISINs to canonical Security Master records. Resolve the remaining ambiguous or unknown identities below, or create a separate asset if needed.</p>
         <div class="duplicate-review-table-wrap"><table class="duplicate-review-table identity-review-table"><thead><tr><th>Asset name / underlying</th><th>Uploaded ISIN</th><th>Auto-map status</th><th>Verify decision</th></tr></thead><tbody>
           <tr *ngFor="let group of identityReviewGroups">
             <td><strong>{{ group.assetName }}</strong><small>Underlying: {{ group.underlying || 'Not provided' }}</small><small>{{ group.assetClass }} / {{ group.subClass }}</small></td>

@@ -456,6 +456,18 @@ class TransactionImportExcelShapeTests(TestCase):
         with self.assertRaisesRegex(TransactionImportError, "DD-MM-YYYY"):
             TransactionImporter._parse_transaction_date("31-02-2026", 9)
 
+    def test_unresolved_identity_automatically_creates_asset_without_review_mapping(self):
+        upload = _build_transactions_workbook(include_summary=False, isin="")
+
+        result = TransactionImporter.import_file(
+            file=upload,
+            owner=self.user,
+        )
+
+        self.assertEqual(result["imported_investments"], 1)
+        asset = Asset.objects.get(owner=self.user, name="Reliance Industries Ltd")
+        self.assertFalse(asset.isin)
+
     def test_unverified_identity_can_create_asset_without_isin(self):
         upload = _build_transactions_workbook(include_summary=False, isin="")
 

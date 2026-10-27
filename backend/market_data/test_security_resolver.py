@@ -100,3 +100,13 @@ class SecurityResolverHardeningTests(SimpleTestCase):
             SecurityResolver.candidate_symbols(
                 isin="INE000000001", symbol="SAMPLE",
             )
+
+    def test_isin_and_exchange_conflict_is_rejected(self):
+        SecurityResolver._security_master_isin = {
+            "INE000000001": "SAMPLE.NS",
+        }
+
+        with self.assertRaisesRegex(ValueError, "supplied symbol/exchange"):
+            SecurityResolver.resolve_yahoo_symbol(
+                isin="INE000000001", symbol="SAMPLE", exchange="BSE",
+            )

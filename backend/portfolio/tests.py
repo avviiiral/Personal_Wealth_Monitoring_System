@@ -332,6 +332,50 @@ class PortfolioTreeServiceTests(TestCase):
         asset.refresh_from_db()
         self.assertEqual(asset.isin, "")
 
+    def test_portfolio_tree_resolves_isin_using_transaction_underlying_label(self):
+        asset = Asset.objects.create(
+            family=self.family,
+            owner=self.user,
+            name="PMS imported row",
+            category="STOCK",
+            isin="",
+        )
+        SecurityMaster.objects.create(
+            owner=self.user,
+            family=self.family,
+            asset_name="Anup Engineering Limited",
+            isin="INE000ANUP001",
+        )
+        Transaction.objects.create(
+            owner=self.user,
+            family=self.family,
+            asset=asset,
+            family_name="Family A",
+            portfolio="Portfolio A",
+            asset_class="Equity",
+            sub_class="Equity PMS",
+            asset_name="PMS imported row",
+            underlying="ANUP ENGINEERING LTD",
+            transaction_date=date(2026, 1, 10),
+            transaction_type="BUY",
+            quantity=Decimal("2"),
+            price_per_unit=Decimal("100"),
+            amount=Decimal("200"),
+            fees=Decimal("0"),
+        )
+
+        result = PortfolioTreeService.build(self.user, family_id=self.family.id)
+        node = next(
+            node
+            for family in result["families"]
+            for portfolio in family["portfolios"]
+            for asset_class in portfolio["asset_classes"]
+            for subclass in asset_class["sub_classes"]
+            for node in subclass["assets"]
+            if node["asset_name"] == "PMS imported row"
+        )
+        self.assertEqual(node["isin"], "INE000ANUP001")
+
     def test_portfolio_tree_does_not_guess_isin_for_ambiguous_master_name(self):
         asset = Asset.objects.create(
             family=self.family,

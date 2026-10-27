@@ -472,20 +472,55 @@ class PortfolioTreeService:
             or (not asset_isin and not cls._clean(getattr(security_master, "isin", "")))
         ):
             if asset.family_id is not None:
-                security_key = (
-                    ("family_isin", asset.family_id, asset_isin)
-                    if asset_isin
-                    else ("family_name_isin", asset.family_id, SecurityAlias.normalize(asset.name))
-                )
+                scope_prefix = ("family", asset.family_id)
                 legacy_name_key = ("family_name", asset.family_id, asset.name)
             else:
-                security_key = (
-                    ("owner_isin", asset.owner_id, asset_isin)
-                    if asset_isin
-                    else ("owner_name_isin", asset.owner_id, SecurityAlias.normalize(asset.name))
-                )
+                scope_prefix = ("owner", asset.owner_id)
                 legacy_name_key = ("owner_name", asset.owner_id, asset.name)
-            cached_security_master = security_master_cache.get(security_key)
+
+            if asset_isin:
+                security_key = (
+                    ("family_isin", asset.family_id, asset_isin)
+                    if asset.family_id is not None
+                    else ("owner_isin", asset.owner_id, asset_isin)
+                )
+                cached_security_master = security_master_cache.get(security_key)
+            else:
+                # Underlying transaction labels can differ from Asset.name.
+                # Try each exact normalized label, but accept a fallback only
+                # when all successful labels agree on one canonical ISIN.
+                candidate_names = []
+                for candidate_name in (
+                    getattr(asset, "name", ""),
+                    getattr(first, "asset_name", ""),
+                    getattr(first, "underlying", ""),
+                ):
+                    normalized_name = SecurityAlias.normalize(candidate_name)
+                    if normalized_name and normalized_name not in candidate_names:
+                        candidate_names.append(normalized_name)
+
+                candidate_matches = []
+                for normalized_name in candidate_names:
+                    name_key = (
+                        ("family_name_isin", asset.family_id, normalized_name)
+                        if asset.family_id is not None
+                        else ("owner_name_isin", asset.owner_id, normalized_name)
+                    )
+                    match = security_master_cache.get(name_key)
+                    if match is not None:
+                        candidate_matches.append(match)
+
+                distinct_isins = {
+                    cls._clean(getattr(match, "isin", "")).upper()
+                    for match in candidate_matches
+                    if cls._clean(getattr(match, "isin", ""))
+                }
+                cached_security_master = (
+                    candidate_matches[0]
+                    if len(distinct_isins) == 1
+                    else None
+                )
+
             if cached_security_master is not None:
                 security_master = cached_security_master
             elif security_master is None and not asset_isin:

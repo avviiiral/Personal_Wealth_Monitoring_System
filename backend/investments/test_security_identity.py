@@ -1,5 +1,6 @@
 from django.contrib.auth.models import User
 from django.test import TestCase
+from unittest.mock import patch
 
 from users.models import FamilyGroup
 from investments.models import Asset, AssetCategory, SecurityAlias
@@ -120,6 +121,41 @@ class SecurityIdentityResolverTests(TestCase):
             asset_class="Unknown Asset Class", sub_class="",
         )
         self.assertEqual(result["status"], "UNRESOLVED")
+        self.assertIsNone(result["asset"])
+
+
+    @patch("investments.services.security_identity.SecurityResolver.resolve_security_from_master")
+    def test_security_master_name_variant_resolves_to_canonical_identity_without_isin(self, mock_master):
+        mock_master.return_value = {
+            "status": "MATCHED",
+            "canonical_name": "ABB India Limited",
+            "isin": "INE117A01022",
+            "yahoo_symbol": "ABB.NS",
+        }
+        result = SecurityIdentityResolver.resolve(
+            family=self.family, asset_name="ABB India Ltd.", underlying="",
+            isin="", asset_class="Equity", sub_class="Direct Equity",
+        )
+        self.assertEqual(result["status"], "MATCHED")
+        self.assertEqual(result["canonical_name"], "ABB India Limited")
+        self.assertEqual(result["isin"], "INE117A01022")
+        self.assertIsNone(result["asset"])
+
+    @patch("investments.services.security_identity.SecurityResolver.resolve_security_from_master")
+    def test_security_master_isin_resolves_when_uploaded_name_is_blank(self, mock_master):
+        mock_master.return_value = {
+            "status": "MATCHED",
+            "canonical_name": "ABB India Limited",
+            "isin": "INE117A01022",
+            "yahoo_symbol": "ABB.NS",
+        }
+        result = SecurityIdentityResolver.resolve(
+            family=self.family, asset_name="", underlying="",
+            isin="INE117A01022", asset_class="Equity", sub_class="Direct Equity",
+        )
+        self.assertEqual(result["status"], "MATCHED")
+        self.assertEqual(result["canonical_name"], "ABB India Limited")
+        self.assertEqual(result["isin"], "INE117A01022")
         self.assertIsNone(result["asset"])
 
     def test_alias_cannot_reference_asset_from_another_family(self):

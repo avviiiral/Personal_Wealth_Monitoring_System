@@ -5,7 +5,7 @@ import { Subscription, firstValueFrom, timer } from 'rxjs';
 
 import { PortfolioApiService, PortfolioAssetNode, FamilyNode, PortfolioCalculations, Transaction } from '../../core/services/portfolio-api.service';
 import { ManualPriceService } from '../../core/services/manual-price.service';
-import { DuplicateTransactionRow, InvestmentsApiService } from '../../core/services/investments-api.service';
+import { DuplicateTransactionRow, InvestmentsApiService, SecurityIdentityReviewRow } from '../../core/services/investments-api.service';
 import { ToastService } from '../../core/services/toast.service';
 import { RbacService } from '../../core/services/rbac.service';
 
@@ -46,6 +46,7 @@ export class PortfolioComponent implements OnInit, OnDestroy {
   uploadingTransactions = false;
   pendingTransactionFile: File | null = null;
   duplicateTransactionRows: Array<DuplicateTransactionRow & { import: boolean }> = [];
+  identityReviewRows: SecurityIdentityReviewRow[] = [];
   showDuplicateReview = false;
   reviewingDuplicates = false;
   showUnderlyingUpload = false;
@@ -113,8 +114,10 @@ export class PortfolioComponent implements OnInit, OnDestroy {
       next: response => {
         this.reviewingDuplicates = false;
         const duplicates = response.data?.duplicate_rows ?? [];
-        if (duplicates.length) {
-          this.duplicateTransactionRows = duplicates.map(row => ({ ...row, import: false }));
+        const identities = response.data?.identity_review ?? [];
+        this.duplicateTransactionRows = duplicates.map(row => ({ ...row, import: false }));
+        this.identityReviewRows = identities.map(row => ({ ...row, choice: '' }));
+        if (duplicates.length || identities.length) {
           this.showDuplicateReview = true;
           this.cdr.detectChanges();
         } else { this.confirmTransactionImport([]); }
@@ -131,12 +134,19 @@ export class PortfolioComponent implements OnInit, OnDestroy {
     const file = this.pendingTransactionFile;
     if (!file) return;
     this.showDuplicateReview = false; this.uploadingTransactions = true;
-    this.investmentsApi.importTransactions(file, selectedRows).subscribe({
+    if (this.identityReviewRows.some(row => !row.choice)) {
+      this.showDuplicateReview = true;
+      this.toast.error('Review every unresolved security identity before importing.');
+      return;
+    }
+    const identityMappings: Record<number, string> = {};
+    for (const row of this.identityReviewRows) identityMappings[row.row_number] = row.choice || '';
+    this.investmentsApi.importTransactions(file, selectedRows, identityMappings).subscribe({
       next: response => {
         this.uploadingTransactions = false; this.pendingTransactionFile = null;
         const data = response.data;
         this.toast.success(data ? `Imported ${data.total_imported} transaction(s)` + (data.skipped_duplicates ? ` (${data.skipped_duplicates} duplicate(s) skipped).` : '.') : (response.message || 'Transactions imported.'));
-        this.duplicateTransactionRows = []; this.loadPortfolio(true); this.cdr.detectChanges();
+        this.duplicateTransactionRows = []; this.identityReviewRows = []; this.loadPortfolio(true); this.cdr.detectChanges();
       },
       error: error => { this.uploadingTransactions = false; this.toast.error(error?.error?.message || 'Unable to import the transaction file.', 6000); this.cdr.detectChanges(); },
     });
@@ -147,7 +157,7 @@ export class PortfolioComponent implements OnInit, OnDestroy {
   }
 
   cancelDuplicateReview(): void {
-    this.showDuplicateReview = false; this.pendingTransactionFile = null; this.duplicateTransactionRows = [];
+    this.showDuplicateReview = false; this.pendingTransactionFile = null; this.duplicateTransactionRows = []; this.identityReviewRows = [];
   }
 
   get underlyingAssetOptions(): Array<{ id: number; name: string }> {

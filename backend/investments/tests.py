@@ -348,7 +348,7 @@ from .services.transaction_import import (
 )
 
 
-def _build_transactions_workbook(include_summary, transaction_type="Buy"):
+def _build_transactions_workbook(include_summary, transaction_type="Buy", isin="INE002A01018"):
     """
     Build a minimal, valid transaction-import .xlsx file in
     memory, with or without a "Summary" sheet, for testing
@@ -382,7 +382,7 @@ def _build_transactions_workbook(include_summary, transaction_type="Buy"):
         "Reliance Industries",
         "Reliance Industries Ltd",
         "DIRECT",
-        "INE002A01018",
+        isin,
         "2026-07-16",
         transaction_type,
         "100",
@@ -412,7 +412,7 @@ def _build_transactions_workbook(include_summary, transaction_type="Buy"):
             "Equity",
             "DIRECT",
             "Reliance Industries",
-            "INE002A01018",
+            isin,
         ])
 
     buffer = io.BytesIO()
@@ -455,6 +455,32 @@ class TransactionImportExcelShapeTests(TestCase):
     def test_invalid_text_date_is_rejected_with_format_hint(self):
         with self.assertRaisesRegex(TransactionImportError, "DD-MM-YYYY"):
             TransactionImporter._parse_transaction_date("31-02-2026", 9)
+
+    def test_unverified_identity_can_create_asset_without_isin(self):
+        upload = _build_transactions_workbook(include_summary=False, isin="")
+
+        result = TransactionImporter.import_file(
+            file=upload,
+            owner=self.user,
+            identity_mappings={2: {"choice": "__NEW__", "isin": ""}},
+        )
+
+        self.assertEqual(result["imported_investments"], 1)
+        asset = Asset.objects.get(owner=self.user, name="Reliance Industries Ltd")
+        self.assertFalse(asset.isin)
+
+    def test_unverified_identity_can_use_optional_reviewed_isin(self):
+        upload = _build_transactions_workbook(include_summary=False, isin="")
+
+        result = TransactionImporter.import_file(
+            file=upload,
+            owner=self.user,
+            identity_mappings={2: {"choice": "__NEW__", "isin": "INE002A01018"}},
+        )
+
+        self.assertEqual(result["imported_investments"], 1)
+        asset = Asset.objects.get(owner=self.user, name="Reliance Industries Ltd")
+        self.assertEqual(asset.isin, "INE002A01018")
 
     def test_import_succeeds_without_summary_sheet(self):
         upload = _build_transactions_workbook(include_summary=False)

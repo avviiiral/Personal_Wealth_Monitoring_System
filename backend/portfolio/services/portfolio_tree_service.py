@@ -4,7 +4,7 @@ from decimal import Decimal
 
 from django.db.models import OuterRef, QuerySet, Subquery, Q
 
-from investments.models import Asset, SecurityMaster, Transaction, TransactionType
+from investments.models import Asset, SecurityAlias, SecurityMaster, Transaction, TransactionType
 from corporate_actions.position_adjustment import (
     calculate_position_with_actions,
     confirmed_ratio_actions,
@@ -466,13 +466,27 @@ class PortfolioTreeService:
             priced_value,
         )
         security_master = getattr(asset, "security_master", None)
+        asset_isin = cls._clean(getattr(asset, "isin", "")).upper()
         if security_master is None and security_master_cache is not None:
-            isin = asset.isin.strip() if asset.isin else ""
             if asset.family_id is not None:
-                security_key = ("family_isin", asset.family_id, isin) if isin else ("family_name", asset.family_id, asset.name)
+                security_key = (
+                    ("family_isin", asset.family_id, asset_isin)
+                    if asset_isin
+                    else ("family_name_isin", asset.family_id, SecurityAlias.normalize(asset.name))
+                )
+                legacy_name_key = ("family_name", asset.family_id, asset.name)
             else:
-                security_key = ("owner_isin", asset.owner_id, isin) if isin else ("owner_name", asset.owner_id, asset.name)
+                security_key = (
+                    ("owner_isin", asset.owner_id, asset_isin)
+                    if asset_isin
+                    else ("owner_name_isin", asset.owner_id, SecurityAlias.normalize(asset.name))
+                )
+                legacy_name_key = ("owner_name", asset.owner_id, asset.name)
             security_master = security_master_cache.get(security_key)
+            if security_master is None and not asset_isin:
+                # Preserve metadata from legacy no-ISIN Security Master rows
+                # when no unique verified ISIN match exists.
+                security_master = security_master_cache.get(legacy_name_key)
         if security_master is None:
             # Pass primary keys: ORM filters accept them and it avoids two lazy
             # owner/family row loads per asset.
@@ -485,7 +499,9 @@ class PortfolioTreeService:
             "sub_class": cls._clean(first.sub_class),
             "asset_name": asset_name,
             "underlying": cls._clean(first.underlying, ""),
-            "isin": getattr(asset, "isin", None),
+            # Prefer the Asset identifier; use Security Master only as a
+            # read-only fallback. Never infer or persist an ISIN from a name.
+            "isin": getattr(asset, "isin", None) or (getattr(security_master, "isin", None) if security_master else None),
             "symbol": getattr(asset, "symbol", None),
             "advisors": cls._clean(first.advisors, ""),
             "quantity": cls._decimal_to_float(quantity),
@@ -613,6 +629,10 @@ class PortfolioTreeService:
             security_filters |= Q(family__isnull=True, owner_id__in=owner_ids_for_legacy)
 
         security_master_cache = {}
+        # A missing Asset.isin can be displayed from Security Master only when
+        # the family/owner-scoped normalized name identifies exactly one ISIN.
+        # Conflicting names are deliberately omitted from this fallback cache.
+        security_master_name_candidates = {}
         if security_filters:
             security_masters = SecurityMaster.objects.filter(security_filters).only(
                 "id", "owner_id", "family_id", "isin", "asset_name",
@@ -624,12 +644,31 @@ class PortfolioTreeService:
                 if security.family_id is not None:
                     if security.isin:
                         security_master_cache.setdefault(("family_isin", security.family_id, security.isin), security)
+                        normalized_name = SecurityAlias.normalize(security.asset_name)
+                        if normalized_name:
+                            name_key = ("family_name_isin", security.family_id, normalized_name)
+                            security_master_name_candidates.setdefault(name_key, []).append(security)
                     else:
                         security_master_cache.setdefault(("family_name", security.family_id, security.asset_name), security)
                 elif security.isin:
                     security_master_cache.setdefault(("owner_isin", security.owner_id, security.isin), security)
+                    normalized_name = SecurityAlias.normalize(security.asset_name)
+                    if normalized_name:
+                        name_key = ("owner_name_isin", security.owner_id, normalized_name)
+                        security_master_name_candidates.setdefault(name_key, []).append(security)
                 else:
                     security_master_cache.setdefault(("owner_name", security.owner_id, security.asset_name), security)
+
+        for name_key, candidates in security_master_name_candidates.items():
+            distinct_isins = {
+                str(candidate.isin or "").strip().upper()
+                for candidate in candidates
+                if str(candidate.isin or "").strip()
+            }
+            if len(distinct_isins) == 1:
+                # Duplicate master rows for the same name/ISIN do not make the
+                # identity ambiguous; choose deterministically by primary key.
+                security_master_cache[name_key] = min(candidates, key=lambda item: item.pk)
 
         asset_name_terminal_values = {}
         asset_name_quantities = {}

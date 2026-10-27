@@ -8,7 +8,7 @@ from django.utils import timezone
 from users.models import FamilyGroup
 from rest_framework.test import APIClient
 
-from investments.models import Asset, Transaction
+from investments.models import Asset, SecurityMaster, Transaction
 from corporate_actions.models import CorporateAction, CorporateActionStatus, CorporateActionType
 from market_data.models import MarketPrice
 from portfolio.services.portfolio_tree_service import (
@@ -284,6 +284,98 @@ class PortfolioTreeServiceTests(TestCase):
             asset["isin"],
             "INE000TEST001",
         )
+
+    def test_portfolio_tree_uses_unique_family_security_master_isin_when_asset_is_blank(self):
+        asset = Asset.objects.create(
+            family=self.family,
+            owner=self.user,
+            name="Master Backed Equity",
+            category="STOCK",
+            isin="",
+        )
+        SecurityMaster.objects.create(
+            owner=self.user,
+            family=self.family,
+            asset_name=asset.name,
+            isin="INE000MASTER001",
+        )
+        Transaction.objects.create(
+            owner=self.user,
+            family=self.family,
+            asset=asset,
+            family_name="Family A",
+            portfolio="Portfolio A",
+            asset_class="Equity",
+            sub_class="Large Cap",
+            asset_name=asset.name,
+            underlying=asset.name,
+            transaction_date=date(2026, 1, 10),
+            transaction_type="BUY",
+            quantity=Decimal("2"),
+            price_per_unit=Decimal("100"),
+            amount=Decimal("200"),
+            fees=Decimal("0"),
+        )
+
+        result = PortfolioTreeService.build(self.user, family_id=self.family.id)
+        node = next(
+            node
+            for family in result["families"]
+            for portfolio in family["portfolios"]
+            for asset_class in portfolio["asset_classes"]
+            for subclass in asset_class["sub_classes"]
+            for node in subclass["assets"]
+            if node["asset_name"] == asset.name
+        )
+        self.assertEqual(node["isin"], "INE000MASTER001")
+        # The read path must not mutate canonical asset data as a side effect.
+        asset.refresh_from_db()
+        self.assertEqual(asset.isin, "")
+
+    def test_portfolio_tree_does_not_guess_isin_for_ambiguous_master_name(self):
+        asset = Asset.objects.create(
+            family=self.family,
+            owner=self.user,
+            name="Ambiguous Master Equity",
+            category="STOCK",
+            isin="",
+        )
+        for isin in ("INE000AMBIGUOUS1", "INE000AMBIGUOUS2"):
+            SecurityMaster.objects.create(
+                owner=self.user,
+                family=self.family,
+                asset_name=asset.name,
+                isin=isin,
+            )
+        Transaction.objects.create(
+            owner=self.user,
+            family=self.family,
+            asset=asset,
+            family_name="Family A",
+            portfolio="Portfolio A",
+            asset_class="Equity",
+            sub_class="Large Cap",
+            asset_name=asset.name,
+            underlying=asset.name,
+            transaction_date=date(2026, 1, 10),
+            transaction_type="BUY",
+            quantity=Decimal("2"),
+            price_per_unit=Decimal("100"),
+            amount=Decimal("200"),
+            fees=Decimal("0"),
+        )
+
+        result = PortfolioTreeService.build(self.user, family_id=self.family.id)
+        node = next(
+            node
+            for family in result["families"]
+            for portfolio in family["portfolios"]
+            for asset_class in portfolio["asset_classes"]
+            for subclass in asset_class["sub_classes"]
+            for node in subclass["assets"]
+            if node["asset_name"] == asset.name
+        )
+        self.assertIsNone(node["isin"])
 
     def _find_asset_node(self, tree, isin):
         for family in tree["families"]:

@@ -744,16 +744,21 @@ class TransactionImporter:
                 .first()
             )
 
-        if asset is None:
-            asset = (
-                Asset.objects
-                .filter(
+        if asset is None and allow_name_match:
+            name_candidates = list(
+                Asset.objects.filter(
                     family=family,
                     name=asset_name,
                     category=category,
-                )
-                .first()
+                ).order_by("id")
             )
+            if normalized_isin:
+                name_candidates = [
+                    candidate for candidate in name_candidates
+                    if not candidate.isin or candidate.isin.strip() == normalized_isin
+                ]
+            if len(name_candidates) == 1:
+                asset = name_candidates[0]
 
         if asset is None:
             asset = Asset.objects.create(

@@ -1229,16 +1229,27 @@ class TransactionImporter:
                 )
                 if resolution["status"] != "MATCHED":
                     categories = SecurityIdentityResolver.compatible_categories(parsed["asset_class"], parsed["sub_class"])
-                    candidates = Asset.objects.filter(family=family, is_active=True).order_by("name", "id")
+                    candidate_queryset = Asset.objects.filter(family=family, is_active=True).order_by("name", "id")
                     if categories is not None:
-                        candidates = candidates.filter(category__in=categories)
+                        candidate_queryset = candidate_queryset.filter(category__in=categories)
+                    input_name = parsed["underlying"] or parsed["asset_name"]
+                    normalized_input_name = SecurityIdentityResolver.normalize_name(input_name)
+                    normalized_input_isin = (parsed["isin"] or "").strip().upper()
+                    candidate_objects = []
+                    if resolution.get("asset") is not None:
+                        candidate_objects.append(resolution["asset"])
+                    for candidate in candidate_queryset[:500]:
+                        same_name = SecurityIdentityResolver.normalize_name(candidate.name) == normalized_input_name
+                        same_isin = bool(normalized_input_isin and candidate.isin and candidate.isin.strip().upper() == normalized_input_isin)
+                        if (same_name or same_isin) and candidate.id not in {item.id for item in candidate_objects}:
+                            candidate_objects.append(candidate)
                     identity_review.append({
                         "row_number": row_number, "asset_name": parsed["asset_name"],
-                        "underlying": parsed["underlying"] or parsed["asset_name"], "isin": parsed["isin"],
+                        "underlying": input_name, "isin": parsed["isin"],
                         "asset_class": parsed["asset_class"], "sub_class": parsed["sub_class"],
                         "status": resolution["status"],
                         "reason": resolution.get("details", {}).get("reason", "Identity needs review."),
-                        "candidates": [{"id": item.id, "name": item.name, "isin": item.isin or ""} for item in candidates[:100]],
+                        "candidates": [{"id": item.id, "name": item.name, "isin": item.isin or ""} for item in candidate_objects],
                     })
             except TransactionImportError:
                 continue

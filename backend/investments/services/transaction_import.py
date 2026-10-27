@@ -1463,6 +1463,13 @@ class TransactionImporter:
                             reviewed_asset.save(update_fields=["isin", "updated_at"])
                             security_master = reviewed_asset.security_master
                             if security_master is not None and not security_master.isin:
+                                master_isin_conflict = SecurityMaster.objects.filter(
+                                    family=family, isin__iexact=reviewed_asset.isin
+                                ).exclude(id=security_master.id).exists()
+                                if master_isin_conflict:
+                                    raise TransactionImportError(
+                                        f"Uploaded ISIN conflicts with another Security Master record at row {row_number}."
+                                    )
                                 security_master.isin = reviewed_asset.isin
                                 security_master.save(update_fields=["isin", "updated_at"])
                         resolution = {"asset": reviewed_asset, "canonical_name": reviewed_asset.name, "method": "USER_REVIEW",

@@ -1,5 +1,6 @@
 from decimal import Decimal
 from datetime import date, datetime
+from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
 from django.test import TestCase

@@ -9,21 +9,27 @@ class SecurityResolverHardeningTests(SimpleTestCase):
             "loaded": SecurityResolver._security_master_loaded,
             "isin": SecurityResolver._security_master_isin,
             "name": SecurityResolver._security_master_name,
+            "name_to_isin": SecurityResolver._security_master_name_to_isin,
             "ambiguous_isin": SecurityResolver._security_master_ambiguous_isin,
             "ambiguous_name": SecurityResolver._security_master_ambiguous_name,
+            "ambiguous_name_to_isin": SecurityResolver._security_master_ambiguous_name_to_isin,
         }
         SecurityResolver._security_master_loaded = True
         SecurityResolver._security_master_isin = {}
         SecurityResolver._security_master_name = {}
+        SecurityResolver._security_master_name_to_isin = {}
         SecurityResolver._security_master_ambiguous_isin = set()
         SecurityResolver._security_master_ambiguous_name = set()
+        SecurityResolver._security_master_ambiguous_name_to_isin = set()
 
     def tearDown(self):
         SecurityResolver._security_master_loaded = self.original["loaded"]
         SecurityResolver._security_master_isin = self.original["isin"]
         SecurityResolver._security_master_name = self.original["name"]
+        SecurityResolver._security_master_name_to_isin = self.original["name_to_isin"]
         SecurityResolver._security_master_ambiguous_isin = self.original["ambiguous_isin"]
         SecurityResolver._security_master_ambiguous_name = self.original["ambiguous_name"]
+        SecurityResolver._security_master_ambiguous_name_to_isin = self.original["ambiguous_name_to_isin"]
 
     def test_conflicting_master_isin_mappings_are_quarantined(self):
         mapping = {}
@@ -151,7 +157,7 @@ class SecurityResolverHardeningTests(SimpleTestCase):
             )
 
 
-class SecurityMasterNameToIsinTests(TestCase):
+class SecurityMasterNameToIsinTests(SimpleTestCase):
     def setUp(self):
         from market_data.services.security_resolver import SecurityResolver
         self.resolver = SecurityResolver

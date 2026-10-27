@@ -42,9 +42,11 @@ class SecurityIdentityResolver:
         normalized = SecurityIdentityResolver.normalize_name(input_underlying)
         if normalized == SecurityIdentityResolver.normalize_name(asset.name):
             return False
-        return not SecurityAlias.objects.filter(
-            family=family, asset=asset, normalized_alias=normalized, is_active=True
-        ).exists()
+        aliases = SecurityAlias.objects.filter(family=family, asset=asset, is_active=True)
+        return not any(cls_alias for cls_alias in (
+            SecurityIdentityResolver.normalize_name(alias.alias) == normalized
+            for alias in aliases
+        ))
 
     @classmethod
     def resolve(cls, *, family, asset_name, underlying, isin, asset_class, sub_class):
@@ -101,11 +103,14 @@ class SecurityIdentityResolver:
                 "details": {"reason": "No usable security name or ISIN was provided."},
             }
 
-        aliases = list(
-            SecurityAlias.objects.filter(
-                family=family, normalized_alias=normalized_name, is_active=True
+        # Normalize the stored alias text at read time as well, so aliases created
+        # before a normalization-rule update remain resolvable.
+        aliases = [
+            alias for alias in SecurityAlias.objects.filter(
+                family=family, is_active=True
             ).select_related("asset").order_by("id")
-        )
+            if cls.normalize_name(alias.alias) == normalized_name
+        ]
         if len(aliases) > 1:
             return {
                 "asset": None, "canonical_name": "", "method": "APPROVED_ALIAS", "status": "AMBIGUOUS",

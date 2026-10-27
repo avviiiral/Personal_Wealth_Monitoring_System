@@ -1331,6 +1331,7 @@ class TransactionImporter:
         seen_mutual_fund_keys = set()
         touched_asset_ids = set()
         touched_mutual_fund_scheme_ids = set()
+        reviewed_new_assets = {}
 
         for row_number, parsed, original_row in rows:
             try:
@@ -1442,8 +1443,19 @@ class TransactionImporter:
                             if not existing_aliases:
                                 SecurityAlias.objects.create(family=family, asset=reviewed_asset, alias=alias_value, approved_by=owner)
                     elif force_new_identity:
-                        resolution = {"asset": None, "canonical_name": "", "method": "NONE", "status": "UNRESOLVED",
-                                      "details": {"reason": "User explicitly chose to create a separate asset."}}
+                        identity_key = (
+                            SecurityIdentityResolver.normalize_name(original_underlying or parsed["asset_name"]),
+                            parsed["asset_class"].strip().upper(),
+                            parsed["sub_class"].strip().upper(),
+                        )
+                        existing_reviewed_asset = reviewed_new_assets.get(identity_key)
+                        resolution = {
+                            "asset": existing_reviewed_asset,
+                            "canonical_name": existing_reviewed_asset.name if existing_reviewed_asset else "",
+                            "method": "USER_REVIEW",
+                            "status": "MATCHED" if existing_reviewed_asset else "UNRESOLVED",
+                            "details": {"reason": "User chose to create a separate asset during upload review."},
+                        }
                     else:
                         resolution = SecurityIdentityResolver.resolve(
                         family=family,
@@ -1483,6 +1495,8 @@ class TransactionImporter:
                             asset_class=parsed["asset_class"], sub_class=parsed["sub_class"],
                             allow_name_match=(resolution["status"] == "MATCHED" and not force_new_identity),
                         )
+                        if force_new_identity:
+                            reviewed_new_assets[identity_key] = asset
 
                     mapped_transaction_type = INVESTMENT_TRANSACTION_MAP.get(parsed["transaction_type"])
                     if mapped_transaction_type is None:

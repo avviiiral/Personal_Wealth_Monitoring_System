@@ -1231,10 +1231,9 @@ class TransactionImporter:
                     TransactionImporter._normalize(parsed["asset_class"]) in {"MUTUAL_FUND", "MUTUAL FUND"}
                     or TransactionImporter._normalize(parsed["sub_class"]) in {"MUTUAL_FUND", "MUTUAL FUND"}
                 )
-                # Every non-mutual-fund security is shown for user verification,
-                # including successful automatic matches. The review UI groups
-                # repeated rows by their normalized security identity.
-                if not is_mutual_fund_row:
+                # Only unresolved, ambiguous, or conflicting identities need
+                # manual review. Confident Security Master matches import directly.
+                if not is_mutual_fund_row and resolution["status"] != "MATCHED":
                     categories = SecurityIdentityResolver.compatible_categories(parsed["asset_class"], parsed["sub_class"])
                     candidate_queryset = Asset.objects.filter(family=family, is_active=True).order_by("name", "id")
                     if categories is not None:
@@ -1538,7 +1537,9 @@ class TransactionImporter:
                     canonical_name = resolution.get("canonical_name", "")
                     resolved_asset = resolution.get("asset")
 
-                    if not original_underlying and resolution["status"] == "MATCHED" and canonical_name:
+                    if resolution["status"] == "MATCHED" and canonical_name:
+                        # Store the canonical Security Master identity in the
+                        # transaction, not a spelling variant from the upload.
                         parsed["underlying"] = canonical_name
 
                     SecurityIdentityResolutionLog.objects.create(
@@ -1561,7 +1562,7 @@ class TransactionImporter:
                         )
                         asset = TransactionImporter._get_or_create_asset(
                             owner=owner, family=family, asset_name=security_identity_name,
-                            isin=parsed["isin"] if resolution["status"] not in {"CONFLICT", "AMBIGUOUS"} else "",
+                            isin=(resolution.get("isin") or parsed["isin"]) if resolution["status"] not in {"CONFLICT", "AMBIGUOUS"} else "",
                             asset_class=parsed["asset_class"], sub_class=parsed["sub_class"],
                             allow_name_match=(resolution["status"] == "MATCHED" and not force_new_identity),
                         )

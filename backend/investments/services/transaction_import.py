@@ -1441,6 +1441,18 @@ class TransactionImporter:
                             raise TransactionImportError(f"Selected security has an incompatible instrument type at row {row_number}.")
                         if parsed["isin"] and reviewed_asset.isin and parsed["isin"].strip().upper() != reviewed_asset.isin.strip().upper():
                             raise TransactionImportError(f"Selected security ISIN conflicts with the uploaded ISIN at row {row_number}.")
+                        if parsed["isin"] and not reviewed_asset.isin:
+                            isin_owner = Asset.objects.filter(
+                                family=family, isin__iexact=parsed["isin"].strip()
+                            ).exclude(id=reviewed_asset.id).exists()
+                            if isin_owner:
+                                raise TransactionImportError(f"Uploaded ISIN already belongs to another asset at row {row_number}.")
+                            reviewed_asset.isin = parsed["isin"].strip().upper()
+                            reviewed_asset.save(update_fields=["isin", "updated_at"])
+                            security_master = reviewed_asset.security_master
+                            if security_master is not None and not security_master.isin:
+                                security_master.isin = reviewed_asset.isin
+                                security_master.save(update_fields=["isin", "updated_at"])
                         resolution = {"asset": reviewed_asset, "canonical_name": reviewed_asset.name, "method": "USER_REVIEW",
                                       "status": "MATCHED", "details": {"reason": "Explicitly selected during upload review."}}
                         alias_value = original_underlying or parsed["asset_name"]

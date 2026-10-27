@@ -38,9 +38,11 @@ class SecurityResolver:
     _security_master_isin = {}
     _security_master_name = {}
     _security_master_name_to_isin = {}
+    _security_master_isin_to_name = {}
     _security_master_ambiguous_isin = set()
     _security_master_ambiguous_name = set()
     _security_master_ambiguous_name_to_isin = set()
+    _security_master_ambiguous_isin_to_name = set()
 
     @staticmethod
     def clean_symbol(symbol):
@@ -197,9 +199,11 @@ class SecurityResolver:
             cls._security_master_isin = {}
             cls._security_master_name = {}
             cls._security_master_name_to_isin = {}
+            cls._security_master_isin_to_name = {}
             cls._security_master_ambiguous_isin = set()
             cls._security_master_ambiguous_name = set()
             cls._security_master_ambiguous_name_to_isin = set()
+            cls._security_master_ambiguous_isin_to_name = set()
 
             for row in worksheet.iter_rows(
                 min_row=2,
@@ -254,6 +258,15 @@ class SecurityResolver:
                         identifier_type="security name to ISIN",
                     )
 
+                if normalized_name and cleaned_isin:
+                    cls._record_master_mapping(
+                        mapping=cls._security_master_isin_to_name,
+                        ambiguous=cls._security_master_ambiguous_isin_to_name,
+                        key=cleaned_isin,
+                        value=str(name_value).strip(),
+                        identifier_type="ISIN to canonical security name",
+                    )
+
                 if (
                     normalized_name
                     and cleaned_yahoo
@@ -290,9 +303,11 @@ class SecurityResolver:
             cls._security_master_isin = {}
             cls._security_master_name = {}
             cls._security_master_name_to_isin = {}
+            cls._security_master_isin_to_name = {}
             cls._security_master_ambiguous_isin = set()
             cls._security_master_ambiguous_name = set()
             cls._security_master_ambiguous_name_to_isin = set()
+            cls._security_master_ambiguous_isin_to_name = set()
 
     @classmethod
     def _record_master_mapping(cls, *, mapping, ambiguous, key, value, identifier_type):
@@ -366,9 +381,11 @@ class SecurityResolver:
         cls._security_master_isin = {}
         cls._security_master_name = {}
         cls._security_master_name_to_isin = {}
+        cls._security_master_isin_to_name = {}
         cls._security_master_ambiguous_isin = set()
         cls._security_master_ambiguous_name = set()
         cls._security_master_ambiguous_name_to_isin = set()
+        cls._security_master_ambiguous_isin_to_name = set()
 
         cls._load_security_master()
 
@@ -427,6 +444,43 @@ class SecurityResolver:
         if not normalized_name or normalized_name in cls._security_master_ambiguous_name_to_isin:
             return ""
         return cls._security_master_name_to_isin.get(normalized_name, "")
+
+    @classmethod
+    def resolve_security_from_master(cls, *, name=None, isin=None):
+        """Return canonical Security Master identity by exact normalized name or ISIN.
+
+        No fuzzy matching is performed. Ambiguous or conflicting master records
+        fail closed so a similar-looking security is never silently selected.
+        """
+        cls._load_security_master()
+        cleaned_isin = cls.clean_isin(isin)
+        normalized_name = cls.normalize_security_name(name)
+
+        name_isin = ""
+        if normalized_name:
+            if normalized_name in cls._security_master_ambiguous_name_to_isin:
+                return {"status": "AMBIGUOUS", "canonical_name": "", "isin": "", "yahoo_symbol": ""}
+            name_isin = cls._security_master_name_to_isin.get(normalized_name, "")
+
+        if cleaned_isin:
+            if cleaned_isin in cls._security_master_ambiguous_isin_to_name:
+                return {"status": "AMBIGUOUS", "canonical_name": "", "isin": "", "yahoo_symbol": ""}
+            canonical_name = cls._security_master_isin_to_name.get(cleaned_isin, "")
+            if not canonical_name:
+                return {"status": "NOT_FOUND", "canonical_name": "", "isin": "", "yahoo_symbol": ""}
+            if name_isin and name_isin != cleaned_isin:
+                return {"status": "CONFLICT", "canonical_name": canonical_name, "isin": cleaned_isin, "yahoo_symbol": cls.resolve_from_isin(cleaned_isin) or ""}
+            return {"status": "MATCHED", "canonical_name": canonical_name, "isin": cleaned_isin, "yahoo_symbol": cls.resolve_from_isin(cleaned_isin) or ""}
+
+        if normalized_name and name_isin:
+            if name_isin in cls._security_master_ambiguous_isin_to_name:
+                return {"status": "AMBIGUOUS", "canonical_name": "", "isin": "", "yahoo_symbol": ""}
+            canonical_name = cls._security_master_isin_to_name.get(name_isin, "")
+            if not canonical_name:
+                return {"status": "NOT_FOUND", "canonical_name": "", "isin": "", "yahoo_symbol": ""}
+            return {"status": "MATCHED", "canonical_name": canonical_name, "isin": name_isin, "yahoo_symbol": cls.resolve_from_isin(name_isin) or ""}
+
+        return {"status": "NOT_FOUND", "canonical_name": "", "isin": "", "yahoo_symbol": ""}
 
     @classmethod
     def resolve_from_name(cls, name):

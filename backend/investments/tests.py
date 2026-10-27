@@ -498,10 +498,18 @@ class TransactionImportExcelShapeTests(TestCase):
                     transaction_type=label,
                 )
 
+                existing_asset = Asset.objects.filter(
+                    owner=self.user,
+                    isin="INE002A01018",
+                ).first()
+                identity_choice = (
+                    existing_asset.id if existing_asset is not None else "__NEW__"
+                )
+
                 result = TransactionImporter.import_file(
                     file=upload,
                     owner=self.user,
-                    identity_mappings={2: "__NEW__"},
+                    identity_mappings={2: identity_choice},
                 )
 
                 self.assertEqual(result["imported_investments"], 1)

@@ -169,9 +169,40 @@ def download_transaction_template(request):
     summary.append(["Family Name", "Portfolio Name", "Asset Class", "Advisors", "Asset Name", "ISIN"])
 
     instructions = workbook.create_sheet("Instructions")
-    instructions.append(["Standard Transaction Upload Format"])
-    instructions.append(["Use the Transactions sheet for transaction rows. The Summary sheet is optional and maps rows to Portfolio Name."])
-    instructions.append(["Do not rename the required headers. Family Member is accepted as the user-facing replacement for Family Name."])
+    instruction_rows = [
+        ["Standard Transaction Upload Format"],
+        ["1. Transactions sheet"],
+        ["Enter one transaction per row in the Transactions sheet. Keep every required column header unchanged."],
+        ["Required columns: Family Member, Asset Class, Sub Class, Asset Name, Underlying, Advisors, ISIN, Date, Trans. Type, Quantity, Price, Amount."],
+        ["Family Member is the user-facing column name accepted by PWMS; Family Name is also accepted for older files."],
+        ["2. General investment transaction types (Trans. Type)"],
+        ["BUY — Buy/purchase of a security."],
+        ["SELL — Sale of a security."],
+        ["SIP — Systematic investment transaction."],
+        ["DIVIDEND — Dividend received. DIVIDEND PAYOUT is also accepted and maps to DIVIDEND."],
+        ["INTEREST — Interest received."],
+        ["DEPOSIT — Deposit transaction."],
+        ["WITHDRAWAL — Withdrawal transaction."],
+        ["BONUS — Bonus shares/bonus transaction."],
+        ["SPLIT — Stock split. *SPLIT is also accepted and maps to SPLIT."],
+        ["BUYBACK — Accepted and mapped to SELL."],
+        ["DIVIDEND REINVESTMENT — Accepted and mapped to BUY for general investments."],
+        ["3. Mutual fund transaction types"],
+        ["BUY or PURCHASE — Maps to mutual fund PURCHASE."],
+        ["SIP — Maps to mutual fund SIP."],
+        ["SELL or REDEMPTION — Maps to mutual fund REDEMPTION."],
+        ["DIVIDEND — Maps to mutual fund DIVIDEND."],
+        ["DIVIDEND REINVESTMENT — Maps to mutual fund PURCHASE."],
+        ["4. Summary sheet (optional)"],
+        ["Use the Summary sheet to map transactions to Portfolio Name. Required headers: Family Name, Portfolio Name, Asset Class, Advisors, Asset Name, ISIN."],
+        ["5. Important notes"],
+        ["Use the transaction type labels above exactly as written, unless an alternate accepted label is explicitly noted."],
+        ["A dividend payout and a dividend reinvestment are different: payout records dividend income; reinvestment is mapped to a purchase (BUY for general investments and PURCHASE for mutual funds)."],
+        ["Only use transaction types that accurately describe the source transaction. Do not relabel fees, taxes, transfers, corrections, or adjustments as another type without confirming the correct accounting treatment."],
+        ["This workbook is a format template, not a source of prices or transaction values. Enter the figures and dates from your records."]
+    ]
+    for row in instruction_rows:
+        instructions.append(row)
 
     for sheet in (transactions, summary, instructions):
         for cell in sheet[1]:

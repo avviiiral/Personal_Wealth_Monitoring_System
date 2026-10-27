@@ -150,7 +150,7 @@ export class PortfolioComponent implements OnInit, OnDestroy {
   confirmTransactionImport(selectedRows: number[]): void {
     const file = this.pendingTransactionFile;
     if (!file) return;
-    if (this.identityReviewRows.some(row => !row.choice)) {
+    if (!this.identityReviewComplete) {
       this.toast.error('Review every unresolved security identity before importing.');
       return;
     }

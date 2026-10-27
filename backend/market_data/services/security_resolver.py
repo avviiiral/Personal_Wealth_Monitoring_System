@@ -467,6 +467,8 @@ class SecurityResolver:
                 return {"status": "AMBIGUOUS", "canonical_name": "", "isin": "", "yahoo_symbol": ""}
             canonical_name = cls._security_master_isin_to_name.get(cleaned_isin, "")
             if not canonical_name:
+                if name_isin and name_isin != cleaned_isin:
+                    return {"status": "CONFLICT", "canonical_name": "", "isin": cleaned_isin, "yahoo_symbol": cls.resolve_from_isin(cleaned_isin) or ""}
                 return {"status": "NOT_FOUND", "canonical_name": "", "isin": "", "yahoo_symbol": ""}
             if name_isin and name_isin != cleaned_isin:
                 return {"status": "CONFLICT", "canonical_name": canonical_name, "isin": cleaned_isin, "yahoo_symbol": cls.resolve_from_isin(cleaned_isin) or ""}

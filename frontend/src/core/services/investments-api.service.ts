@@ -17,7 +17,6 @@ export interface SecurityIdentityReviewRow {
   status: string; reason: string; suggested_asset_id?: number | null; candidates: Array<{ id: number; name: string; isin: string }>;
 }
 export interface SecurityIdentityMapping { choice: string; isin?: string; }
-}
 export interface DuplicatePreviewResponse {
   success: boolean; message?: string;
   data?: { duplicate_rows: DuplicateTransactionRow[]; duplicate_count: number; identity_review?: SecurityIdentityReviewRow[]; identity_review_count?: number };

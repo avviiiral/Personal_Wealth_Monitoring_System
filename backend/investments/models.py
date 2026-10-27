@@ -373,7 +373,18 @@ class SecurityAlias(models.Model):
 
     @staticmethod
     def normalize(value):
-        return re.sub(r"[^A-Z0-9]+", "", str(value or "").upper()).strip()
+        """Normalize common legal-name variants without matching substrings."""
+        token_aliases = {
+            "LTD": "LIMITED",
+            "LIMITED": "LIMITED",
+            "IND": "INDUSTRIES",
+            "INDS": "INDUSTRIES",
+            "INDUSTRY": "INDUSTRIES",
+            "INDUSTRIES": "INDUSTRIES",
+        }
+        tokens = re.findall(r"[A-Z0-9]+", str(value or "").upper())
+        normalized_tokens = [token_aliases.get(token, token) for token in tokens]
+        return "".join(normalized_tokens)
 
     def save(self, *args, **kwargs):
         self.alias = str(self.alias or "").strip()

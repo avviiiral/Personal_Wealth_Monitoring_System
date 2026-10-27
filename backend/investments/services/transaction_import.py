@@ -1231,33 +1231,9 @@ class TransactionImporter:
                     TransactionImporter._normalize(parsed["asset_class"]) in {"MUTUAL_FUND", "MUTUAL FUND"}
                     or TransactionImporter._normalize(parsed["sub_class"]) in {"MUTUAL_FUND", "MUTUAL FUND"}
                 )
-                # Only unresolved, ambiguous, or conflicting identities need
-                # manual review. Confident Security Master matches import directly.
-                if not is_mutual_fund_row and resolution["status"] != "MATCHED":
-                    categories = SecurityIdentityResolver.compatible_categories(parsed["asset_class"], parsed["sub_class"])
-                    candidate_queryset = Asset.objects.filter(family=family, is_active=True).order_by("name", "id")
-                    if categories is not None:
-                        candidate_queryset = candidate_queryset.filter(category__in=categories)
-                    input_name = parsed["underlying"] or parsed["asset_name"]
-                    normalized_input_name = SecurityIdentityResolver.normalize_name(input_name)
-                    normalized_input_isin = (parsed["isin"] or "").strip().upper()
-                    candidate_objects = []
-                    if resolution.get("asset") is not None:
-                        candidate_objects.append(resolution["asset"])
-                    for candidate in candidate_queryset[:500]:
-                        same_name = SecurityIdentityResolver.normalize_name(candidate.name) == normalized_input_name
-                        same_isin = bool(normalized_input_isin and candidate.isin and candidate.isin.strip().upper() == normalized_input_isin)
-                        if (same_name or same_isin) and candidate.id not in {item.id for item in candidate_objects}:
-                            candidate_objects.append(candidate)
-                    identity_review.append({
-                        "row_number": row_number, "asset_name": parsed["asset_name"],
-                        "underlying": input_name, "isin": parsed["isin"],
-                        "asset_class": parsed["asset_class"], "sub_class": parsed["sub_class"],
-                        "status": resolution["status"],
-                        "reason": resolution.get("details", {}).get("reason", "Review the automatically suggested identity."),
-                        "suggested_asset_id": resolution.get("asset").id if resolution.get("asset") is not None and resolution["status"] == "MATCHED" else None,
-                        "candidates": [{"id": item.id, "name": item.name, "isin": item.isin or ""} for item in candidate_objects],
-                    })
+                # Unresolved identities are handled automatically during import:
+                # create a separate asset when no confident family/master match exists.
+                # Keep the preview focused on duplicate transaction decisions.
             except TransactionImportError:
                 continue
         return {"duplicate_rows": duplicate_rows, "duplicate_count": len(duplicate_rows),
@@ -1487,12 +1463,6 @@ class TransactionImporter:
                                         existing_alias.approved_by = owner
                                         existing_alias.save(update_fields=["is_active", "approved_by"])
                     elif force_new_identity:
-                        if parsed["isin"] and Asset.objects.filter(
-                            family=family, isin__iexact=parsed["isin"].strip()
-                        ).exists():
-                            raise TransactionImportError(
-                                f"Uploaded ISIN already belongs to an existing family asset at row {row_number}. Select that asset instead of creating a duplicate identity."
-                            )
                         reviewed_categories = SecurityIdentityResolver.compatible_categories(
                             parsed["asset_class"], parsed["sub_class"]
                         )
@@ -1523,14 +1493,44 @@ class TransactionImporter:
                             or TransactionImporter._normalize(parsed["sub_class"]) in {"MUTUAL_FUND", "MUTUAL FUND"}
                         )
                         if resolution["status"] != "MATCHED" and not is_mutual_fund_row:
-                            raise TransactionImportError(
-                                f"Security identity for row {row_number} needs review. Re-upload the file and confirm an identity decision before importing."
+                            # Unknown, ambiguous, or conflicting identity: preserve
+                            # the transaction by creating a separate asset. Reuse
+                            # that asset for matching rows within this upload.
+                            force_new_identity = True
+                            reviewed_categories = SecurityIdentityResolver.compatible_categories(
+                                parsed["asset_class"], parsed["sub_class"]
                             )
+                            identity_key = (
+                                SecurityIdentityResolver.normalize_name(original_underlying),
+                                SecurityIdentityResolver.normalize_name(parsed["asset_name"]),
+                                tuple(sorted(reviewed_categories)) if reviewed_categories is not None else (),
+                            )
+                            existing_reviewed_asset = reviewed_new_assets.get(identity_key)
+                            if existing_reviewed_asset is not None:
+                                resolution = {
+                                    "asset": existing_reviewed_asset,
+                                    "canonical_name": existing_reviewed_asset.name,
+                                    "method": "AUTO_SEPARATE",
+                                    "status": "MATCHED",
+                                    "details": {"reason": "Reused the separate asset created for this identity earlier in the upload."},
+                                }
+                            else:
+                                resolution = {
+                                    "asset": None,
+                                    "canonical_name": "",
+                                    "method": "AUTO_SEPARATE",
+                                    "status": "UNRESOLVED",
+                                    "details": {"reason": "No confident identity match; a separate asset was created automatically."},
+                                }
                     if force_new_identity and parsed["isin"]:
                         existing_isin = Asset.objects.filter(
                             family=family, isin__iexact=parsed["isin"].strip(), is_active=True
                         ).exists()
-                        if existing_isin:
+                        if existing_isin and resolution.get("method") == "AUTO_SEPARATE":
+                            # Keep the uploaded ISIN in the audit log, but do not
+                            # duplicate an ISIN already assigned to another asset.
+                            parsed["isin"] = ""
+                        elif existing_isin:
                             raise TransactionImportError(
                                 f"Row {row_number} cannot create a separate asset because the uploaded ISIN already belongs to an active family asset."
                             )

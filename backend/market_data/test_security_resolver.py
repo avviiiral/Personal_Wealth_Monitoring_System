@@ -10,6 +10,8 @@ class SecurityResolverHardeningTests(SimpleTestCase):
             "isin": SecurityResolver._security_master_isin,
             "name": SecurityResolver._security_master_name,
             "name_to_isin": SecurityResolver._security_master_name_to_isin,
+            "isin_to_name": SecurityResolver._security_master_isin_to_name,
+            "ambiguous_isin_to_name": SecurityResolver._security_master_ambiguous_isin_to_name,
             "ambiguous_isin": SecurityResolver._security_master_ambiguous_isin,
             "ambiguous_name": SecurityResolver._security_master_ambiguous_name,
             "ambiguous_name_to_isin": SecurityResolver._security_master_ambiguous_name_to_isin,
@@ -18,6 +20,8 @@ class SecurityResolverHardeningTests(SimpleTestCase):
         SecurityResolver._security_master_isin = {}
         SecurityResolver._security_master_name = {}
         SecurityResolver._security_master_name_to_isin = {}
+        SecurityResolver._security_master_isin_to_name = {}
+        SecurityResolver._security_master_ambiguous_isin_to_name = set()
         SecurityResolver._security_master_ambiguous_isin = set()
         SecurityResolver._security_master_ambiguous_name = set()
         SecurityResolver._security_master_ambiguous_name_to_isin = set()
@@ -27,6 +31,8 @@ class SecurityResolverHardeningTests(SimpleTestCase):
         SecurityResolver._security_master_isin = self.original["isin"]
         SecurityResolver._security_master_name = self.original["name"]
         SecurityResolver._security_master_name_to_isin = self.original["name_to_isin"]
+        SecurityResolver._security_master_isin_to_name = self.original["isin_to_name"]
+        SecurityResolver._security_master_ambiguous_isin_to_name = self.original["ambiguous_isin_to_name"]
         SecurityResolver._security_master_ambiguous_isin = self.original["ambiguous_isin"]
         SecurityResolver._security_master_ambiguous_name = self.original["ambiguous_name"]
         SecurityResolver._security_master_ambiguous_name_to_isin = self.original["ambiguous_name_to_isin"]
@@ -137,6 +143,36 @@ class SecurityResolverHardeningTests(SimpleTestCase):
         SecurityResolver._security_master_name = mapping
         SecurityResolver._security_master_ambiguous_name = ambiguous
         self.assertIsNone(SecurityResolver.resolve_from_name("ANUP ENGINEERING LTD"))
+
+
+    def test_abb_legal_name_and_punctuation_variants_normalize_identically(self):
+        canonical = SecurityResolver.normalize_security_name("ABB India Limited")
+        for variant in ("ABB India Ltd.", "ABB India Ltd", "ABB INDIA LIMITED", "ABB INDIA LTD.", "abb india limited"):
+            with self.subTest(variant=variant):
+                self.assertEqual(SecurityResolver.normalize_security_name(variant), canonical)
+
+    def test_security_master_identity_resolves_by_name_without_uploaded_isin(self):
+        SecurityResolver._security_master_name_to_isin = {"ABB INDIA LIMITED": "INE117A01022"}
+        SecurityResolver._security_master_isin_to_name = {"INE117A01022": "ABB India Limited"}
+        SecurityResolver._security_master_isin = {"INE117A01022": "ABB.NS"}
+        result = SecurityResolver.resolve_security_from_master(name="ABB India Ltd.")
+        self.assertEqual(result["status"], "MATCHED")
+        self.assertEqual(result["canonical_name"], "ABB India Limited")
+        self.assertEqual(result["isin"], "INE117A01022")
+        self.assertEqual(result["yahoo_symbol"], "ABB.NS")
+
+    def test_security_master_identity_resolves_by_isin_without_uploaded_name(self):
+        SecurityResolver._security_master_isin_to_name = {"INE117A01022": "ABB India Limited"}
+        SecurityResolver._security_master_isin = {"INE117A01022": "ABB.NS"}
+        result = SecurityResolver.resolve_security_from_master(isin="INE117A01022")
+        self.assertEqual(result["status"], "MATCHED")
+        self.assertEqual(result["canonical_name"], "ABB India Limited")
+        self.assertEqual(result["isin"], "INE117A01022")
+
+    def test_security_master_identity_rejects_conflicting_name_and_isin(self):
+        SecurityResolver._security_master_name_to_isin = {"ABB INDIA LIMITED": "INE117A01022"}
+        result = SecurityResolver.resolve_security_from_master(name="ABB India Ltd.", isin="INE999Z01011")
+        self.assertEqual(result["status"], "CONFLICT")
 
     def test_candidate_generation_fails_closed_for_ambiguous_isin(self):
         SecurityResolver._security_master_ambiguous_isin = {"INE000000001"}

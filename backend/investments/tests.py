@@ -462,6 +462,7 @@ class TransactionImportExcelShapeTests(TestCase):
         result = TransactionImporter.import_file(
             file=upload,
             owner=self.user,
+            identity_mappings={2: "__NEW__"},
         )
 
         self.assertEqual(result["imported_investments"], 1)
@@ -479,6 +480,7 @@ class TransactionImportExcelShapeTests(TestCase):
         result = TransactionImporter.import_file(
             file=upload,
             owner=self.user,
+            identity_mappings={2: "__NEW__"},
         )
 
         self.assertEqual(result["imported_investments"], 1)
@@ -499,6 +501,7 @@ class TransactionImportExcelShapeTests(TestCase):
                 result = TransactionImporter.import_file(
                     file=upload,
                     owner=self.user,
+                    identity_mappings={2: "__NEW__"},
                 )
 
                 self.assertEqual(result["imported_investments"], 1)
@@ -546,6 +549,7 @@ class TransactionImportExcelShapeTests(TestCase):
         result = TransactionImporter.import_file(
             file=upload,
             owner=self.user,
+            identity_mappings={2: "__NEW__"},
         )
 
         self.assertEqual(result["imported_investments"], 1)
@@ -565,6 +569,7 @@ class TransactionImportExcelShapeTests(TestCase):
         result = TransactionImporter.import_file(
             file=upload,
             owner=self.user,
+            identity_mappings={2: "__NEW__"},
         )
 
         asset = Asset.objects.get(

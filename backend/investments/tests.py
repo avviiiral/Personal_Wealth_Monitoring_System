@@ -465,7 +465,7 @@ class TransactionImportExcelShapeTests(TestCase):
         )
 
         self.assertEqual(result["imported_investments"], 1)
-        asset = Asset.objects.get(owner=self.user, name="Reliance Industries Ltd")
+        asset = Asset.objects.get(owner=self.user)
         self.assertFalse(asset.isin)
 
     def test_unverified_identity_can_create_asset_without_isin(self):

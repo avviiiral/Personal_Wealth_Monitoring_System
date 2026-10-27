@@ -1498,7 +1498,8 @@ class TransactionImporter:
                             parsed["asset_class"], parsed["sub_class"]
                         )
                         identity_key = (
-                            SecurityIdentityResolver.normalize_name(original_underlying or parsed["asset_name"]),
+                            SecurityIdentityResolver.normalize_name(original_underlying),
+                            SecurityIdentityResolver.normalize_name(parsed["asset_name"]),
                             tuple(sorted(reviewed_categories)) if reviewed_categories is not None else (),
                         )
                         existing_reviewed_asset = reviewed_new_assets.get(identity_key)

@@ -1,5 +1,6 @@
 """Conservative, family-scoped resolution of transaction security identities."""
 from investments.models import Asset, AssetCategory, SecurityAlias, SecurityMaster
+from market_data.services.security_resolver import SecurityResolver
 
 
 class SecurityIdentityResolver:
@@ -95,6 +96,50 @@ class SecurityIdentityResolver:
                     "asset": None, "canonical_name": "", "method": "ISIN", "status": "CONFLICT",
                     "details": {"reason": "The verified ISIN exists in this family but its instrument type is incompatible."},
                 }
+
+        # Resolve against the canonical Security Master even when this family
+        # has not created an Asset record for the security yet.
+        # Try the underlying first, then the asset name when it is distinct.
+        master_names = []
+        for candidate_name in (underlying, asset_name):
+            candidate_name = str(candidate_name or "").strip()
+            if candidate_name and candidate_name not in master_names:
+                master_names.append(candidate_name)
+        master_resolution = None
+        if normalized_isin:
+            master_resolution = SecurityResolver.resolve_security_from_master(
+                name=input_name, isin=normalized_isin,
+            )
+        else:
+            for candidate_name in master_names:
+                candidate_resolution = SecurityResolver.resolve_security_from_master(
+                    name=candidate_name,
+                )
+                if candidate_resolution["status"] != "NOT_FOUND":
+                    master_resolution = candidate_resolution
+                    break
+
+        if master_resolution and master_resolution["status"] == "MATCHED":
+            if categories is None:
+                return {
+                    "asset": None, "canonical_name": master_resolution["canonical_name"],
+                    "isin": master_resolution["isin"], "method": "ISIN" if normalized_isin else "NORMALIZED_NAME",
+                    "status": "UNRESOLVED",
+                    "details": {"reason": "Security Master identity found, but instrument type is unknown; automatic asset creation is disabled."},
+                }
+            return {
+                "asset": None, "canonical_name": master_resolution["canonical_name"],
+                "isin": master_resolution["isin"], "yahoo_symbol": master_resolution.get("yahoo_symbol", ""),
+                "method": "ISIN" if normalized_isin else "NORMALIZED_NAME", "status": "MATCHED",
+                "details": {"reason": "Matched to canonical Security Master identity by ISIN." if normalized_isin else "Matched to canonical Security Master name after legal-name and punctuation normalization."},
+            }
+        if master_resolution and master_resolution["status"] in {"CONFLICT", "AMBIGUOUS"}:
+            return {
+                "asset": None, "canonical_name": master_resolution.get("canonical_name", ""),
+                "isin": master_resolution.get("isin", ""), "method": "ISIN" if normalized_isin else "NORMALIZED_NAME",
+                "status": master_resolution["status"],
+                "details": {"reason": "Uploaded name and ISIN conflict with the Security Master." if master_resolution["status"] == "CONFLICT" else "Security Master identity is ambiguous; automatic matching was blocked."},
+            }
 
         normalized_name = cls.normalize_name(input_name)
         if not normalized_name:

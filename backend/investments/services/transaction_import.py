@@ -1231,7 +1231,15 @@ class TransactionImporter:
                     TransactionImporter._normalize(parsed["asset_class"]) in {"MUTUAL_FUND", "MUTUAL FUND"}
                     or TransactionImporter._normalize(parsed["sub_class"]) in {"MUTUAL_FUND", "MUTUAL FUND"}
                 )
-                if resolution["status"] != "MATCHED" and not is_mutual_fund_row:
+                needs_identity_review = (
+                    resolution["status"] != "MATCHED"
+                    or (
+                        resolution.get("asset") is not None
+                        and bool(parsed["isin"])
+                        and not resolution["asset"].isin
+                    )
+                )
+                if needs_identity_review and not is_mutual_fund_row:
                     categories = SecurityIdentityResolver.compatible_categories(parsed["asset_class"], parsed["sub_class"])
                     candidate_queryset = Asset.objects.filter(family=family, is_active=True).order_by("name", "id")
                     if categories is not None:

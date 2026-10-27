@@ -179,7 +179,7 @@ export class PortfolioComponent implements OnInit, OnDestroy {
 
   private buildIdentityReviewGroups(rows: SecurityIdentityReviewRow[]): SecurityIdentityReviewGroup[] {
     const groups = new Map<string, SecurityIdentityReviewGroup>();
-    const normalize = (value: string): string => (value || '').trim().toUpperCase().replace(/\\s+/g, ' ');
+    const normalize = (value: string): string => (value || '').trim().toUpperCase().replace(/\s+/g, ' ');
     for (const row of rows) {
       const key = [
         normalize(row.underlying || row.asset_name),

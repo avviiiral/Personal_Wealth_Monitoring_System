@@ -529,9 +529,13 @@ class SecurityResolver:
 
         candidates = []
 
-        yahoo_from_isin = cls.resolve_from_isin(
-            isin
-        )
+        cleaned_isin = cls.clean_isin(isin)
+        yahoo_from_isin = cls.resolve_from_isin(cleaned_isin)
+        if cleaned_isin in cls._security_master_ambiguous_isin:
+            raise ValueError(
+                f"Cannot generate candidates for ISIN {cleaned_isin}: "
+                "conflicting Security Master mappings."
+            )
 
         if yahoo_from_isin:
             candidates.append(

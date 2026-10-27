@@ -124,6 +124,21 @@ export class PortfolioApiService {
     return this.getCsrfToken().pipe(switchMap(() => this.http.patch<Transaction>(`${this.baseUrl}/transactions/${transactionId}/`, payload, { headers: this.getCsrfHeaders(), withCredentials: true })));
   }
 
+  deleteTransactionsByAssetName(assetName: string): Observable<{ success: boolean; asset_name: string; deleted_count: number }> {
+    return this.getCsrfToken().pipe(
+      switchMap(() =>
+        this.http.post<{ success: boolean; asset_name: string; deleted_count: number }>(
+          `${this.baseUrl}/transactions/delete-by-asset-name/`,
+          { asset_name: assetName },
+          {
+            headers: this.getCsrfHeaders(),
+            withCredentials: true,
+          },
+        ),
+      ),
+    );
+  }
+
   deleteTransaction(transactionId: number): Observable<void> {
     return this.getCsrfToken().pipe(
       switchMap(() =>

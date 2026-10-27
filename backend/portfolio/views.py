@@ -6,7 +6,7 @@ from typing import cast
 
 from django.http import HttpResponse
 from django.db import transaction
-from django.db.models import Count, Sum
+from django.db.models import Count, Q, Sum
 
 from investments.models import (
     Asset,
@@ -34,7 +34,12 @@ from .serializers import (
     TransactionSerializer,
     TransactionEditHistorySerializer,
 )
-from users.permissions import CanWriteFinancialData, family_scope, require_active_family
+from users.permissions import (
+    CanWriteFinancialData,
+    family_scope,
+    is_super_user_or_above,
+    require_active_family,
+)
 
 logger = logging.getLogger("portfolio.views")
 
@@ -129,6 +134,101 @@ def _transaction_history_snapshot(transaction_obj):
         "asset_id": transaction_obj.asset_id,
         "isin": transaction_obj.asset.isin,
     }
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def portfolio_transactions_delete_by_asset_name(request):
+    """Delete all in-scope transactions for one displayed Asset Name.
+
+    Only Super Users and System Owners may use this destructive action.
+    Matching uses the transaction's displayed asset_name, falling back to
+    Asset.name for legacy transactions that have no displayed name.
+    """
+    if not is_super_user_or_above(request.user):
+        raise PermissionDenied(
+            "Only Super User and System Owner accounts can delete all transactions for an asset name."
+        )
+
+    requested_name = request.data.get("asset_name")
+    if not isinstance(requested_name, str) or not requested_name.strip():
+        return Response(
+            {"detail": "A non-empty asset_name is required."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    asset_name = requested_name.strip()
+
+    name_filter = Q(asset_name__iexact=asset_name) | (
+        (Q(asset_name__isnull=True) | Q(asset_name=""))
+        & Q(asset__name__iexact=asset_name)
+    )
+
+    with transaction.atomic():
+        matching_transactions = list(
+            family_scope(
+                Transaction.objects.select_related("asset", "family"),
+                request.user,
+            )
+            .filter(name_filter)
+            .select_for_update()
+            .order_by("id")
+        )
+        if not matching_transactions:
+            return Response(
+                {
+                    "detail": (
+                        f'No transactions found for asset name "{asset_name}" '
+                        "in your permitted data scope."
+                    )
+                },
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        deleted_fields = ["advisors", "quantity", "price_per_unit", "amount"]
+        for transaction_obj in matching_transactions:
+            old_values = _transaction_history_snapshot(transaction_obj)
+            TransactionEditHistory.objects.create(
+                transaction=transaction_obj,
+                owner=transaction_obj.owner,
+                family=transaction_obj.family,
+                edited_by=request.user,
+                old_values={field: old_values[field] for field in deleted_fields},
+                new_values={field: None for field in deleted_fields},
+                changed_fields=deleted_fields,
+            )
+
+        transaction_ids = [transaction_obj.id for transaction_obj in matching_transactions]
+        deleted_count = len(transaction_ids)
+        Transaction.objects.filter(id__in=transaction_ids).delete()
+
+        touched_assets = {
+            transaction_obj.asset_id: transaction_obj.asset
+            for transaction_obj in matching_transactions
+        }
+        touched_families = {
+            transaction_obj.family_id: transaction_obj.family
+            for transaction_obj in matching_transactions
+            if transaction_obj.family_id is not None and transaction_obj.family is not None
+        }
+        for asset in touched_assets.values():
+            HoldingCalculationEngine.rebuild_holding(asset)
+        for family in touched_families.values():
+            PortfolioPositionEngine.rebuild_all_for_family(family)
+
+    logger.info(
+        "Asset-wide transaction deletion: asset_name=%s deleted_count=%s user_id=%s",
+        asset_name,
+        deleted_count,
+        request.user.id,
+    )
+    return Response(
+        {
+            "success": True,
+            "asset_name": asset_name,
+            "deleted_count": deleted_count,
+        },
+        status=status.HTTP_200_OK,
+    )
 
 
 @api_view(["GET", "PUT", "PATCH", "DELETE"])

@@ -85,6 +85,57 @@
     </section>
   </div>
 
+  <div *ngIf="deleteAssetName !== null" class="delete-transactions-backdrop">
+    <section
+      class="delete-transactions-panel"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="delete-transactions-title"
+    >
+      <div class="delete-transactions-heading">
+        <h2 id="delete-transactions-title">Delete all transactions for this asset?</h2>
+        <button
+          type="button"
+          class="refresh-button"
+          [disabled]="deletingAssetTransactions"
+          (click)="cancelDeleteAssetTransactions()"
+          aria-label="Cancel transaction deletion"
+        >Cancel</button>
+      </div>
+      <p class="delete-transactions-warning">
+        This permanently deletes every transaction matching the Asset Name
+        <strong>{{ deleteAssetName }}</strong> in your permitted data scope, including
+        matching transactions across portfolios and sub-classes. The asset record
+        remains, but holdings, portfolio positions and XIRR will be recalculated.
+        This action cannot be undone.
+      </p>
+      <label class="delete-transactions-confirm-field">
+        <span>Type <strong>{{ deleteAssetName }}</strong> exactly to confirm.</span>
+        <input
+          type="text"
+          [(ngModel)]="deleteAssetNameConfirmation"
+          [disabled]="deletingAssetTransactions"
+          autocomplete="off"
+          aria-label="Type the asset name to confirm deletion"
+        />
+      </label>
+      <div class="delete-transactions-actions">
+        <button
+          type="button"
+          class="refresh-button"
+          [disabled]="deletingAssetTransactions"
+          (click)="cancelDeleteAssetTransactions()"
+        >Cancel</button>
+        <button
+          type="button"
+          class="delete-transactions-button"
+          [disabled]="deletingAssetTransactions || deleteAssetNameConfirmation !== deleteAssetName"
+          (click)="confirmDeleteAssetTransactions()"
+        >{{ deletingAssetTransactions ? 'Deleting…' : 'Delete all transactions' }}</button>
+      </div>
+    </section>
+  </div>
+
   <div *ngIf="showUnderlyingUpload" class="underlying-upload-panel">
     <div class="underlying-upload-content">
       <div>
@@ -484,6 +535,18 @@
                           "
                           class="underlying-container"
                         >
+                          <div *ngIf="rbac.isSuperUser() || rbac.isSystemOwner()" class="asset-transaction-actions">
+                            <div>
+                              <div class="asset-transaction-actions-title">Asset-wide transaction cleanup</div>
+                              <p>Delete every transaction matching this Asset Name.</p>
+                            </div>
+                            <button
+                              type="button"
+                              class="delete-transactions-inline"
+                              [disabled]="deletingAssetTransactions"
+                              (click)="openDeleteAssetTransactions(assetGroup.asset_name)"
+                            >Delete all transactions</button>
+                          </div>
                           <div class="underlying-table-scroll">
                             <table class="asset-table">
                               <thead>

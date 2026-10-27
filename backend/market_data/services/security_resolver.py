@@ -454,16 +454,15 @@ class SecurityResolver:
             if explicit_symbol and not explicit_symbol.endswith(
                 (cls.NSE_SUFFIX, cls.BSE_SUFFIX)
             ):
-                explicit_symbol = f"{explicit_symbol}{cls.NSE_SUFFIX}"
-            if explicit_symbol:
-                mapped_base = yahoo_from_isin.removesuffix(cls.NSE_SUFFIX).removesuffix(cls.BSE_SUFFIX)
-                explicit_base = cleaned_symbol.removesuffix(cls.NSE_SUFFIX).removesuffix(cls.BSE_SUFFIX)
-                if explicit_base != mapped_base:
-                    raise ValueError(
-                        f"Conflicting security identifiers: ISIN {cleaned_isin} "
-                        f"maps to {yahoo_from_isin}, but symbol {cleaned_symbol} "
-                        "identifies a different candidate."
-                    )
+                requested_exchange = (exchange or "NSE").strip().upper()
+                suffix = cls.BSE_SUFFIX if requested_exchange == "BSE" else cls.NSE_SUFFIX
+                explicit_symbol = f"{explicit_symbol}{suffix}"
+            if explicit_symbol and explicit_symbol != yahoo_from_isin:
+                raise ValueError(
+                    f"Conflicting security identifiers: ISIN {cleaned_isin} "
+                    f"maps to {yahoo_from_isin}, but the supplied symbol/exchange "
+                    f"resolves to {explicit_symbol}."
+                )
             name_symbol = cls.resolve_from_name(cleaned_name)
             if name_symbol and name_symbol != yahoo_from_isin:
                 raise ValueError(

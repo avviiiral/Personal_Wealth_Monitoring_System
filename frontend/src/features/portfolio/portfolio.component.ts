@@ -27,6 +27,7 @@ interface SecurityIdentityReviewGroup {
   candidates: Array<{ id: number; name: string; isin: string }>;
   choice: string;
   reviewedIsin: string;
+  suggestedAssetIds: Array<number | null>;
 }
 
 @Component({ selector: 'app-portfolio', standalone: true, imports: [CommonModule, FormsModule], templateUrl: './portfolio.component.html', styleUrl: './portfolio.component.scss' })
@@ -192,7 +193,7 @@ export class PortfolioComponent implements OnInit, OnDestroy {
           key, rowNumbers: [], assetName: row.asset_name, underlying: row.underlying,
           assetClass: row.asset_class, subClass: row.sub_class, isins: [],
           status: row.status, reason: row.reason, candidates: [], choice: '',
-          reviewedIsin: '',
+          reviewedIsin: '', suggestedAssetIds: [],
         };
         groups.set(key, group);
       }
@@ -203,10 +204,13 @@ export class PortfolioComponent implements OnInit, OnDestroy {
       for (const candidate of row.candidates || []) {
         if (!group.candidates.some(existing => existing.id === candidate.id)) group.candidates.push(candidate);
       }
-      if (row.suggested_asset_id != null) {
-        if (!group.choice) group.choice = String(row.suggested_asset_id);
-        else if (group.choice !== String(row.suggested_asset_id)) group.choice = '';
-      } else if (row.status !== 'MATCHED') {
+      group.suggestedAssetIds.push(row.suggested_asset_id ?? null);
+    }
+    for (const group of groups.values()) {
+      const suggestions = group.suggestedAssetIds;
+      if (suggestions.length && suggestions[0] !== null && suggestions.every(id => id === suggestions[0])) {
+        group.choice = String(suggestions[0]);
+      } else {
         group.choice = '';
       }
     }

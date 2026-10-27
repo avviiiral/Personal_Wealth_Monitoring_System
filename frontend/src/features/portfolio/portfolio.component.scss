@@ -1067,3 +1067,6 @@
 .identity-review-table select { min-width: 220px; max-width: 360px; padding: 8px; border: 1px solid var(--surface-line); border-radius: 6px; background: var(--surface); color: var(--ink); }
 .identity-review-table small { display: block; margin-top: 4px; color: var(--muted); font-size: 11px; white-space: normal; max-width: 260px; }
 .identity-review-table td { vertical-align: top; }
+
+.identity-isin-fallback { display: grid; gap: 5px; margin-top: 8px; max-width: 360px; color: var(--muted); font-size: 11px; }
+.identity-isin-fallback input { width: 100%; box-sizing: border-box; padding: 8px; border: 1px solid var(--surface-line); border-radius: 6px; background: var(--surface); color: var(--ink); }

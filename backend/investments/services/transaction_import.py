@@ -1490,10 +1490,12 @@ class TransactionImporter:
                             raise TransactionImportError(
                                 f"Uploaded ISIN already belongs to an existing family asset at row {row_number}. Select that asset instead of creating a duplicate identity."
                             )
+                        reviewed_categories = SecurityIdentityResolver.compatible_categories(
+                            parsed["asset_class"], parsed["sub_class"]
+                        )
                         identity_key = (
                             SecurityIdentityResolver.normalize_name(original_underlying or parsed["asset_name"]),
-                            parsed["asset_class"].strip().upper(),
-                            parsed["sub_class"].strip().upper(),
+                            tuple(sorted(reviewed_categories)) if reviewed_categories is not None else (),
                         )
                         existing_reviewed_asset = reviewed_new_assets.get(identity_key)
                         resolution = {

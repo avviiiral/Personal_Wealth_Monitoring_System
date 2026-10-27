@@ -1191,6 +1191,7 @@ class TransactionImporter:
         TransactionImporter._normalize_family_member_column(summary)
         TransactionImporter._validate_summary_columns(summary)
         duplicate_rows = []
+        identity_review = []
         seen_keys = set()
         for row_number, (_, row) in enumerate(dataframe.iterrows(), start=2):
             try:
@@ -1221,9 +1222,28 @@ class TransactionImporter:
                         "reason": "Matches an existing transaction or an earlier row in this file",
                     })
                 seen_keys.add(key)
+                from investments.services.security_identity import SecurityIdentityResolver
+                resolution = SecurityIdentityResolver.resolve(
+                    family=family, asset_name=parsed["asset_name"], underlying=parsed["underlying"],
+                    isin=parsed["isin"], asset_class=parsed["asset_class"], sub_class=parsed["sub_class"],
+                )
+                if resolution["status"] != "MATCHED":
+                    categories = SecurityIdentityResolver.compatible_categories(parsed["asset_class"], parsed["sub_class"])
+                    candidates = Asset.objects.filter(family=family, is_active=True).order_by("name", "id")
+                    if categories is not None:
+                        candidates = candidates.filter(category__in=categories)
+                    identity_review.append({
+                        "row_number": row_number, "asset_name": parsed["asset_name"],
+                        "underlying": parsed["underlying"] or parsed["asset_name"], "isin": parsed["isin"],
+                        "asset_class": parsed["asset_class"], "sub_class": parsed["sub_class"],
+                        "status": resolution["status"],
+                        "reason": resolution.get("details", {}).get("reason", "Identity needs review."),
+                        "candidates": [{"id": item.id, "name": item.name, "isin": item.isin or ""} for item in candidates[:100]],
+                    })
             except TransactionImportError:
                 continue
-        return {"duplicate_rows": duplicate_rows, "duplicate_count": len(duplicate_rows)}
+        return {"duplicate_rows": duplicate_rows, "duplicate_count": len(duplicate_rows),
+                "identity_review": identity_review, "identity_review_count": len(identity_review)}
 
     @staticmethod
     @db_transaction.atomic

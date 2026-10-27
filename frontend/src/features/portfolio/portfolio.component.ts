@@ -5,7 +5,7 @@ import { Subscription, firstValueFrom, timer } from 'rxjs';
 
 import { PortfolioApiService, PortfolioAssetNode, FamilyNode, PortfolioCalculations, Transaction } from '../../core/services/portfolio-api.service';
 import { ManualPriceService } from '../../core/services/manual-price.service';
-import { DuplicateTransactionRow, InvestmentsApiService, SecurityIdentityReviewRow } from '../../core/services/investments-api.service';
+import { DuplicateTransactionRow, InvestmentsApiService, SecurityIdentityMapping, SecurityIdentityReviewRow } from '../../core/services/investments-api.service';
 import { ToastService } from '../../core/services/toast.service';
 import { RbacService } from '../../core/services/rbac.service';
 
@@ -14,6 +14,20 @@ interface AssetGroup { asset_name: string; family_name: string; quantity: number
 type PortfolioSortColumn = 'sub_class' | 'asset_name' | 'family_name' | 'underlying' | 'family' | 'isin' | 'quantity' | 'invested_value' | 'invested' | 'current_price' | 'current_value' | 'pnl' | 'xirr';
 type PortfolioSortDirection = 'normal' | 'asc' | 'desc';
 interface PortfolioSortState { column: PortfolioSortColumn | null; direction: PortfolioSortDirection; }
+interface SecurityIdentityReviewGroup {
+  key: string;
+  rowNumbers: number[];
+  assetName: string;
+  underlying: string;
+  assetClass: string;
+  subClass: string;
+  isins: string[];
+  status: string;
+  reason: string;
+  candidates: Array<{ id: number; name: string; isin: string }>;
+  choice: string;
+  reviewedIsin: string;
+}
 
 @Component({ selector: 'app-portfolio', standalone: true, imports: [CommonModule, FormsModule], templateUrl: './portfolio.component.html', styleUrl: './portfolio.component.scss' })
 export class PortfolioComponent implements OnInit, OnDestroy {
@@ -47,6 +61,7 @@ export class PortfolioComponent implements OnInit, OnDestroy {
   pendingTransactionFile: File | null = null;
   duplicateTransactionRows: Array<DuplicateTransactionRow & { import: boolean }> = [];
   identityReviewRows: SecurityIdentityReviewRow[] = [];
+  identityReviewGroups: SecurityIdentityReviewGroup[] = [];
   showDuplicateReview = false;
   reviewingDuplicates = false;
   showUnderlyingUpload = false;
@@ -116,7 +131,8 @@ export class PortfolioComponent implements OnInit, OnDestroy {
         const duplicates = response.data?.duplicate_rows ?? [];
         const identities = response.data?.identity_review ?? [];
         this.duplicateTransactionRows = duplicates.map(row => ({ ...row, import: false }));
-        this.identityReviewRows = identities.map(row => ({ ...row, choice: '' }));
+        this.identityReviewRows = identities;
+        this.identityReviewGroups = this.buildIdentityReviewGroups(identities);
         if (duplicates.length || identities.length) {
           this.showDuplicateReview = true;
           this.cdr.detectChanges();
@@ -138,20 +154,64 @@ export class PortfolioComponent implements OnInit, OnDestroy {
       return;
     }
     this.showDuplicateReview = false; this.uploadingTransactions = true;
-    const identityMappings: Record<number, string> = {};
-    for (const row of this.identityReviewRows) identityMappings[row.row_number] = row.choice || '';
+    const identityMappings: Record<number, SecurityIdentityMapping> = {};
+    for (const group of this.identityReviewGroups) {
+      for (const rowNumber of group.rowNumbers) {
+        identityMappings[rowNumber] = {
+          choice: group.choice || '',
+          isin: group.choice === '__NEW__' ? group.reviewedIsin.trim().toUpperCase() : '',
+        };
+      }
+    }
     this.investmentsApi.importTransactions(file, selectedRows, identityMappings).subscribe({
       next: response => {
         this.uploadingTransactions = false; this.pendingTransactionFile = null;
         const data = response.data;
         this.toast.success(data ? `Imported ${data.total_imported} transaction(s)` + (data.skipped_duplicates ? ` (${data.skipped_duplicates} duplicate(s) skipped).` : '.') : (response.message || 'Transactions imported.'));
-        this.duplicateTransactionRows = []; this.identityReviewRows = []; this.loadPortfolio(true); this.cdr.detectChanges();
+        this.duplicateTransactionRows = []; this.identityReviewRows = []; this.identityReviewGroups = []; this.loadPortfolio(true); this.cdr.detectChanges();
       },
       error: error => { this.uploadingTransactions = false; this.showDuplicateReview = true; this.toast.error(error?.error?.message || 'Unable to import the transaction file. Review the decisions and try again.', 6000); this.cdr.detectChanges(); },
     });
   }
 
-  get identityReviewComplete(): boolean { return this.identityReviewRows.every(row => !!row.choice); }
+  get identityReviewComplete(): boolean { return this.identityReviewGroups.every(group => !!group.choice); }
+
+  private buildIdentityReviewGroups(rows: SecurityIdentityReviewRow[]): SecurityIdentityReviewGroup[] {
+    const groups = new Map<string, SecurityIdentityReviewGroup>();
+    const normalize = (value: string): string => (value || '').trim().toUpperCase().replace(/\\s+/g, ' ');
+    for (const row of rows) {
+      const key = [
+        normalize(row.underlying || row.asset_name),
+        normalize(row.asset_name),
+        normalize(row.asset_class),
+        normalize(row.sub_class),
+      ].join('|');
+      let group = groups.get(key);
+      if (!group) {
+        group = {
+          key, rowNumbers: [], assetName: row.asset_name, underlying: row.underlying,
+          assetClass: row.asset_class, subClass: row.sub_class, isins: [],
+          status: row.status, reason: row.reason, candidates: [], choice: '',
+          reviewedIsin: '',
+        };
+        groups.set(key, group);
+      }
+      group.rowNumbers.push(row.row_number);
+      if (row.isin && !group.isins.includes(row.isin)) group.isins.push(row.isin);
+      if (row.status !== 'MATCHED') group.status = row.status;
+      if (row.reason && row.reason !== 'Identity needs review.') group.reason = row.reason;
+      for (const candidate of row.candidates || []) {
+        if (!group.candidates.some(existing => existing.id === candidate.id)) group.candidates.push(candidate);
+      }
+      if (row.suggested_asset_id != null) {
+        if (!group.choice) group.choice = String(row.suggested_asset_id);
+        else if (group.choice !== String(row.suggested_asset_id)) group.choice = '';
+      } else if (row.status !== 'MATCHED') {
+        group.choice = '';
+      }
+    }
+    return Array.from(groups.values()).sort((a, b) => a.rowNumbers[0] - b.rowNumbers[0]);
+  }
 
   importSelectedDuplicates(): void {
     this.confirmTransactionImport(this.duplicateTransactionRows.filter(row => row.import).map(row => row.row_number));

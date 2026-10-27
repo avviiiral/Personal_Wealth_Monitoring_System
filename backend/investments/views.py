@@ -221,7 +221,8 @@ def download_transaction_template(request):
             vertical="top",
         )
     for row_number in (1, 2, 6, 18, 24, 26):
-        instructions.cell(row=row_number, column=1).font = Font(bold=True)
+        if row_number <= instructions.max_row:
+            instructions.cell(row=row_number, column=1).font = Font(bold=True)
 
     response = HttpResponse(
         content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"

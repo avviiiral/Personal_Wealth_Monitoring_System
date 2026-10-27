@@ -93,6 +93,41 @@ class SecurityResolverHardeningTests(SimpleTestCase):
         SecurityResolver._security_master_ambiguous_name = {"SAMPLE LIMITED"}
         self.assertIsNone(SecurityResolver.resolve_from_name("Sample Limited"))
 
+    def test_normalized_legal_name_variant_resolves_without_isin(self):
+        SecurityResolver._security_master_name = {
+            "ANUP ENGINEERING LIMITED": "ANUP.NS",
+        }
+
+        self.assertEqual(
+            SecurityResolver.resolve_from_name("ANUP ENGINEERING LTD"),
+            "ANUP.NS",
+        )
+        self.assertEqual(
+            SecurityResolver.resolve_from_name("The Anup Engineering Limited"),
+            "ANUP.NS",
+        )
+
+    def test_colliding_normalized_names_are_quarantined(self):
+        mapping = {}
+        ambiguous = set()
+        key = SecurityResolver.normalize_security_name("The Anup Engineering Limited")
+
+        SecurityResolver._record_master_mapping(
+            mapping=mapping, ambiguous=ambiguous, key=key,
+            value="ANUP.NS", identifier_type="security name",
+        )
+        SecurityResolver._record_master_mapping(
+            mapping=mapping, ambiguous=ambiguous,
+            key=SecurityResolver.normalize_security_name("ANUP ENGINEERING LTD"),
+            value="OTHER.NS", identifier_type="security name",
+        )
+
+        self.assertNotIn(key, mapping)
+        self.assertIn(key, ambiguous)
+        SecurityResolver._security_master_name = mapping
+        SecurityResolver._security_master_ambiguous_name = ambiguous
+        self.assertIsNone(SecurityResolver.resolve_from_name("ANUP ENGINEERING LTD"))
+
     def test_candidate_generation_fails_closed_for_ambiguous_isin(self):
         SecurityResolver._security_master_ambiguous_isin = {"INE000000001"}
 

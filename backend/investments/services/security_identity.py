@@ -4,7 +4,7 @@ from market_data.services.security_resolver import SecurityResolver
 
 
 class SecurityIdentityResolver:
-    """Resolve only through verified ISINs, approved aliases, or unique typed names."""
+    """Resolve family assets first, then canonical Security Master identities by ISIN or exact normalized name."""
 
     @staticmethod
     def normalize_name(value):

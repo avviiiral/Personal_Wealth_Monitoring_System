@@ -363,7 +363,9 @@ textarea {
   [class*="table-scroll"] {
     width: 100%;
     max-width: 100%;
-    overflow-x: hidden !important;
+    min-width: 0;
+    overflow-x: auto !important;
+    overscroll-behavior-x: contain;
   }
 
   /* Cards/grids collapse naturally as the zoomed CSS viewport narrows. */

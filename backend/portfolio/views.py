@@ -498,6 +498,10 @@ def report_asset_isin_targets(request, asset_id):
     if asset is None:
         return Response({"detail": "Asset not found in the active family."}, status=status.HTTP_404_NOT_FOUND)
 
+    holdings = list(AssetUnderlyingHolding.objects.filter(family=family, asset=asset).order_by("stock_name", "id"))
+    if not holdings:
+        return Response({"asset_id": asset.id, "asset_name": asset.name, "kind": "asset",
+                         "items": [{"id": asset.id, "name": asset.name, "isin": asset.isin or ""}]})
     transactions = list(
         Transaction.objects.filter(family=family, asset=asset)
         .order_by("underlying", "asset_name", "id")
@@ -512,7 +516,7 @@ def report_asset_isin_targets(request, asset_id):
     # Transactions carry the asset ISIN. A unique underlying has its own ISIN only
     # where there is an explicit underlying record in AssetUnderlyingHolding.
     if distinct:
-        stored = list(AssetUnderlyingHolding.objects.filter(family=family, asset=asset).order_by("id"))
+        stored = holdings
         stored_by_name = {}
         for row in stored:
             stored_by_name.setdefault(" ".join(row.stock_name.casefold().split()), row)
@@ -549,17 +553,13 @@ def update_report_asset_isins(request, asset_id):
         key = " ".join(name.casefold().split())
         if name:
             names.setdefault(key, name)
-    stored = list(AssetUnderlyingHolding.objects.filter(asset=asset, family=family).order_by("id"))
     stored_by_name = {}
     for row in stored:
         stored_by_name.setdefault(" ".join(row.stock_name.casefold().split()), row)
 
-    if names:
-        # Every transaction-underlying needs a persisted AssetUnderlyingHolding row.
-        # Reuse an uploaded row where possible; do not invent a holding percentage for a
-        # missing record, so only explicitly uploaded underlying rows are editable here.
+    if stored:
         if any(key not in stored_by_name for key in names):
-            return Response({"detail": "Some transaction underlyings have no underlying holding record. Upload the asset's underlying holdings first so ISINs can be stored against the correct securities."}, status=status.HTTP_409_CONFLICT)
+            return Response({"detail": "Some transaction underlyings do not match the uploaded underlying list. Refresh and try again."}, status=status.HTTP_409_CONFLICT)
         targets = {stored_by_name[key].id: stored_by_name[key] for key in names}
         target_kind = "underlyings"
     else:

@@ -597,14 +597,16 @@ def update_report_asset_isins(request, asset_id):
     if len(supplied_nonempty) != len(set(supplied_nonempty)):
         return Response({"detail": "Each unique underlying must have its own distinct ISIN."}, status=status.HTTP_400_BAD_REQUEST)
 
-    reuse_existing_mapping = request.data.get("reuse_existing_mapping") is True
+    confirmed_existing_isin = request.data.get("confirmed_existing_isin", "")
+    if not isinstance(confirmed_existing_isin, str):
+        confirmed_existing_isin = ""
     existing_mappings = {}
     if target_kind == "asset":
         for isin in supplied_nonempty:
             existing_asset = Asset.objects.filter(family=family, isin__iexact=isin).exclude(id=asset.id).order_by("id").first()
             if existing_asset:
                 existing_mappings[isin] = existing_asset
-                if not reuse_existing_mapping:
+                if confirmed_existing_isin != isin:
                     return Response({
                         "confirmation_required": True,
                         "isin": isin,
@@ -627,7 +629,7 @@ def update_report_asset_isins(request, asset_id):
                 target.uploaded_by = request.user
                 target.save(update_fields=["isin", "uploaded_by", "updated_at"])
             else:
-                if isin and isin in existing_mappings and reuse_existing_mapping:
+                if isin and isin in existing_mappings and confirmed_existing_isin == isin:
                     existing_asset = existing_mappings[isin]
                     security = existing_asset.security_master
                     if security is None:

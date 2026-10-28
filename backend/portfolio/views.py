@@ -492,146 +492,34 @@ def portfolio_asset_underlying_import(request, asset_id):
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def report_asset_isin_targets(request, asset_id):
-    """Return the unique underlying holdings for an asset, or the asset itself when no holdings exist."""
+    """Return distinct transaction underlyings for an asset; fall back to Asset when none exist."""
     family = require_active_family(request.user)
     asset = Asset.objects.filter(id=asset_id, family=family, is_active=True).first()
     if asset is None:
         return Response({"detail": "Asset not found in the active family."}, status=status.HTTP_404_NOT_FOUND)
 
-    holdings = list(
-        AssetUnderlyingHolding.objects.filter(asset=asset, family=family)
-        .order_by("stock_name", "id")
+    transactions = list(
+        Transaction.objects.filter(family=family, asset=asset)
+        .order_by("underlying", "asset_name", "id")
+        .values("underlying", "asset_name", "isin")
     )
-    if holdings:
-        seen = set()
+    distinct = {}
+    for tx in transactions:
+        name = (tx.get("underlying") or "").strip() or (tx.get("asset_name") or "").strip()
+        key = " ".join(name.casefold().split())
+        if name and key not in distinct:
+            distinct[key] = {"id": len(distinct) + 1, "name": name, "isin": ""}
+    # Transactions carry the asset ISIN. A unique underlying has its own ISIN only
+    # where there is an explicit underlying record in AssetUnderlyingHolding.
+    if distinct:
+        stored = list(AssetUnderlyingHolding.objects.filter(family=family, asset=asset).order_by("id"))
+        stored_by_name = {}
+        for row in stored:
+            stored_by_name.setdefault(" ".join(row.stock_name.casefold().split()), row)
         items = []
-        for holding in holdings:
-            key = " ".join((holding.stock_name or "").casefold().split())
-            if not key or key in seen:
-                continue
-            seen.add(key)
-            items.append({
-                "id": holding.id,
-                "name": holding.stock_name,
-                "isin": holding.isin or "",
-                "kind": "underlying",
-            })
-        return Response({"asset_id": asset.id, "asset_name": asset.name, "kind": "underlyings", "items": items})
-
-    return Response({
-        "asset_id": asset.id,
-        "asset_name": asset.name,
-        "kind": "asset",
-        "items": [{"id": asset.id, "name": asset.name, "isin": asset.isin or "", "kind": "asset"}],
-    })
-
-
-@api_view(["PATCH"])
-@permission_classes([IsAuthenticated, CanWriteFinancialData])
-def update_report_asset_isins(request, asset_id):
-    """Update ISINs for unique underlying holdings or, if none exist, the asset."""
-    family = require_active_family(request.user)
-    asset = Asset.objects.filter(id=asset_id, family=family, is_active=True).first()
-    if asset is None:
-        return Response({"detail": "Asset not found in the active family."}, status=status.HTTP_404_NOT_FOUND)
-
-    items = request.data.get("items")
-    if not isinstance(items, list) or not items:
-        return Response({"detail": "Provide at least one ISIN item to save."}, status=status.HTTP_400_BAD_REQUEST)
-
-    holdings = list(AssetUnderlyingHolding.objects.filter(asset=asset, family=family).order_by("id"))
-    targets = {}
-    if holdings:
-        for holding in holdings:
-            key = " ".join((holding.stock_name or "").casefold().split())
-            if key:
-                targets.setdefault(key, holding)
-        target_kind = "underlying"
-    else:
-        targets = {str(asset.id): asset}
-        target_kind = "asset"
-
-    submitted = {}
-    for item in items:
-        if not isinstance(item, dict):
-            return Response({"detail": "Each ISIN item must be an object."}, status=status.HTTP_400_BAD_REQUEST)
-        try:
-            item_id = int(item.get("id"))
-        except (TypeError, ValueError):
-            return Response({"detail": "Every ISIN item needs a valid id."}, status=status.HTTP_400_BAD_REQUEST)
-        if item_id in submitted:
-            return Response({"detail": "Duplicate ISIN item ids are not allowed."}, status=status.HTTP_400_BAD_REQUEST)
-        submitted[item_id] = item
-
-    expected_ids = {obj.id for obj in targets.values()}
-    if set(submitted) != expected_ids:
-        return Response({"detail": "The ISIN list no longer matches the asset's current unique underlying/asset records. Refresh and try again."}, status=status.HTTP_409_CONFLICT)
-
-    normalized_values = {}
-    for item_id, item in submitted.items():
-        raw = item.get("isin", "")
-        if raw is None:
-            raw = ""
-        if not isinstance(raw, str):
-            return Response({"detail": "ISIN values must be text."}, status=status.HTTP_400_BAD_REQUEST)
-        isin = re.sub(r"\\s+", "", raw).upper()
-        if isin and not re.fullmatch(r"[A-Z]{2}[A-Z0-9]{9}[0-9]", isin):
-            return Response({"detail": f"'{raw}' is not a valid 12-character ISIN."}, status=status.HTTP_400_BAD_REQUEST)
-        normalized_values[item_id] = isin
-
-    nonempty = [value for value in normalized_values.values() if value]
-    if len(nonempty) != len(set(nonempty)):
-        return Response({"detail": "Each unique underlying must have its own ISIN. Duplicate ISINs in this asset are not allowed."}, status=status.HTTP_400_BAD_REQUEST)
-
-    from django.db import transaction as db_transaction
-    with db_transaction.atomic():
-        for item_id, isin in normalized_values.items():
-            target = next(obj for obj in targets.values() if obj.id == item_id)
-            if target_kind == "underlying":
-                target.isin = isin or None
-                target.uploaded_by = request.user
-                target.save(update_fields=["isin", "uploaded_by", "updated_at"])
-            else:
-                conflicting_asset = Asset.objects.filter(
-                    family=family, isin__iexact=isin
-                ).exclude(id=asset.id).exclude(isin__isnull=True).exclude(isin="").exists() if isin else False
-                if conflicting_asset:
-                    return Response({"detail": "This ISIN is already assigned to another asset in the active family."}, status=status.HTTP_409_CONFLICT)
-                target.isin = isin or None
-                target.save(update_fields=["isin", "updated_at"])
-                security, _ = SecurityMaster.objects.get_or_create(
-                    family=family, isin=isin or None,
-                    defaults={"owner": request.user, "asset_name": target.name},
-                )
-                if isin:
-                    security.asset_name = target.name
-                    security.owner = request.user
-                    security.save(update_fields=["asset_name", "owner", "updated_at"])
-                else:
-                    SecurityMaster.objects.filter(family=family, asset_name=target.name, isin__isnull=True).update(updated_at=timezone.now())
-
-    logger.info("Reports ISIN update: asset_id=%s target_kind=%s target_count=%s user_id=%s", asset.id, target_kind, len(normalized_values), request.user.id)
-    return Response({"success": True, "asset_id": asset.id, "kind": target_kind, "message": "ISINs saved successfully."})
-
-
-@api_view(["GET"])
-@permission_classes([IsAuthenticated])
-def report_asset_isin_targets(request, asset_id):
-    """Return unique uploaded underlying rows, or the asset itself if none exist."""
-    family = require_active_family(request.user)
-    asset = Asset.objects.filter(id=asset_id, family=family, is_active=True).first()
-    if asset is None:
-        return Response({"detail": "Asset not found in the active family."}, status=status.HTTP_404_NOT_FOUND)
-
-    holdings = list(AssetUnderlyingHolding.objects.filter(asset=asset, family=family).order_by("stock_name", "id"))
-    if holdings:
-        items, ids = [], set()
-        for holding in holdings:
-            key = " ".join((holding.stock_name or "").casefold().split())
-            if not key or key in ids:
-                continue
-            ids.add(key)
-            items.append({"id": holding.id, "name": holding.stock_name, "isin": holding.isin or ""})
+        for key, item in distinct.items():
+            row = stored_by_name.get(key)
+            items.append({**item, "id": row.id if row else item["id"], "isin": row.isin or "" if row else ""})
         return Response({"asset_id": asset.id, "asset_name": asset.name, "kind": "underlyings", "items": items})
 
     return Response({"asset_id": asset.id, "asset_name": asset.name, "kind": "asset",
@@ -641,26 +529,41 @@ def report_asset_isin_targets(request, asset_id):
 @api_view(["PATCH"])
 @permission_classes([IsAuthenticated, CanWriteFinancialData])
 def update_report_asset_isins(request, asset_id):
-    """Save ISINs against unique asset-underlying records, falling back to the Asset itself."""
+    """Persist ISINs for underlying holdings, or the Asset if there is no underlying."""
     family = require_active_family(request.user)
     asset = Asset.objects.filter(id=asset_id, family=family, is_active=True).first()
     if asset is None:
         return Response({"detail": "Asset not found in the active family."}, status=status.HTTP_404_NOT_FOUND)
-
     items = request.data.get("items")
     if not isinstance(items, list) or not items:
         return Response({"detail": "Provide the ISIN values to save."}, status=status.HTTP_400_BAD_REQUEST)
 
-    holdings = list(AssetUnderlyingHolding.objects.filter(asset=asset, family=family).order_by("id"))
-    targets = {}
-    if holdings:
-        for holding in holdings:
-            key = " ".join((holding.stock_name or "").casefold().split())
-            if key:
-                targets.setdefault(key, holding)
+    transactions = list(
+        Transaction.objects.filter(family=family, asset=asset)
+        .order_by("underlying", "asset_name", "id")
+        .values("underlying", "asset_name")
+    )
+    names = {}
+    for tx in transactions:
+        name = (tx.get("underlying") or "").strip() or (tx.get("asset_name") or "").strip()
+        key = " ".join(name.casefold().split())
+        if name:
+            names.setdefault(key, name)
+    stored = list(AssetUnderlyingHolding.objects.filter(asset=asset, family=family).order_by("id"))
+    stored_by_name = {}
+    for row in stored:
+        stored_by_name.setdefault(" ".join(row.stock_name.casefold().split()), row)
+
+    if names:
+        # Every transaction-underlying needs a persisted AssetUnderlyingHolding row.
+        # Reuse an uploaded row where possible; do not invent a holding percentage for a
+        # missing record, so only explicitly uploaded underlying rows are editable here.
+        if any(key not in stored_by_name for key in names):
+            return Response({"detail": "Some transaction underlyings have no underlying holding record. Upload the asset's underlying holdings first so ISINs can be stored against the correct securities."}, status=status.HTTP_409_CONFLICT)
+        targets = {stored_by_name[key].id: stored_by_name[key] for key in names}
         target_kind = "underlyings"
     else:
-        targets = {str(asset.id): asset}
+        targets = {asset.id: asset}
         target_kind = "asset"
 
     submitted = {}
@@ -674,10 +577,8 @@ def update_report_asset_isins(request, asset_id):
         if item_id in submitted:
             return Response({"detail": "Duplicate item ids are not allowed."}, status=status.HTTP_400_BAD_REQUEST)
         submitted[item_id] = item
-
-    expected_ids = {target.id for target in targets.values()}
-    if set(submitted) != expected_ids:
-        return Response({"detail": "The underlying list changed. Refresh the page and try again."}, status=status.HTTP_409_CONFLICT)
+    if set(submitted) != set(targets):
+        return Response({"detail": "The list changed. Refresh and try again."}, status=status.HTTP_409_CONFLICT)
 
     normalized = {}
     for item_id, item in submitted.items():
@@ -691,19 +592,22 @@ def update_report_asset_isins(request, asset_id):
             return Response({"detail": f"'{raw}' is not a valid 12-character ISIN."}, status=status.HTTP_400_BAD_REQUEST)
         normalized[item_id] = isin
 
-    supplied_nonempty = [value for value in normalized.values() if value]
+    supplied_nonempty = [v for v in normalized.values() if v]
     if len(supplied_nonempty) != len(set(supplied_nonempty)):
-        return Response({"detail": "Each unique underlying must have a distinct ISIN."}, status=status.HTTP_400_BAD_REQUEST)
+        return Response({"detail": "Each unique underlying must have its own distinct ISIN."}, status=status.HTTP_400_BAD_REQUEST)
 
-    # Reject ISINs already used by a different asset in the same family.
     if target_kind == "asset":
         for isin in supplied_nonempty:
             if Asset.objects.filter(family=family, isin__iexact=isin).exclude(id=asset.id).exists():
                 return Response({"detail": f"ISIN {isin} is already assigned to another asset in this family."}, status=status.HTTP_409_CONFLICT)
+    else:
+        for isin in supplied_nonempty:
+            if AssetUnderlyingHolding.objects.filter(family=family, isin__iexact=isin).exclude(asset=asset).exists():
+                return Response({"detail": f"ISIN {isin} is already assigned to an underlying of another asset in this family."}, status=status.HTTP_409_CONFLICT)
 
     with transaction.atomic():
         for item_id, isin in normalized.items():
-            target = next(target for target in targets.values() if target.id == item_id)
+            target = targets[item_id]
             target.isin = isin or None
             if target_kind == "underlyings":
                 target.uploaded_by = request.user
@@ -715,12 +619,9 @@ def update_report_asset_isins(request, asset_id):
                         family=family, isin=isin,
                         defaults={"owner": request.user, "asset_name": asset.name},
                     )
-                    if not created and security.asset_name != asset.name:
-                        # Do not rewrite another canonical name just because this Asset uses the same identifier.
-                        pass
-                elif asset.security_master_id and asset.security_master.isin:
-                    # The Asset remains the source of truth; don't delete a shared master record.
-                    pass
+                    if not created and security.asset_name == asset.name:
+                        security.owner = request.user
+                        security.save(update_fields=["owner", "updated_at"])
 
     logger.info("Reports ISIN updated asset_id=%s kind=%s count=%s user_id=%s", asset.id, target_kind, len(normalized), request.user.id)
     return Response({"success": True, "asset_id": asset.id, "kind": target_kind, "message": "ISINs saved successfully."})

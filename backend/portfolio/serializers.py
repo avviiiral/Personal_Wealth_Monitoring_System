@@ -48,7 +48,8 @@ class HoldingSerializer(
     isin = serializers.SerializerMethodField()
 
     def get_isin(self, obj):
-        key = " ".join((obj.underlying or obj.asset_name or "").casefold().split())
+        name = getattr(obj, "underlying", None) or getattr(obj, "asset_name", None) or getattr(getattr(obj, "asset", None), "name", None) or ""
+        key = " ".join(name.casefold().split())
         if key:
             rows = AssetUnderlyingHolding.objects.filter(family=obj.family, asset=obj.asset).only("stock_name", "isin").order_by("id")
             for row in rows:

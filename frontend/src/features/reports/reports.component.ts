@@ -76,6 +76,7 @@ interface SubClassGroup {
 /* Aggregate row used only by the Summary View download. */
 interface SubClassSummaryRow {
   family_name: string;
+  asset_class: string;
   sub_class: string;
   quantity: number;
   invested_value: number;
@@ -526,11 +527,12 @@ This will recalculate the affected holding and cannot be undone.`,
 
             const transaction_count = allAssetTransactions.length;
 
-            const assetNameFinancials = this.portfolioCalculations.asset_names.find(
+            const assetNameFinancials = (this.portfolioCalculations.report_asset_name_summaries ?? []).find(
               (row) =>
+                row.family_name === family_name &&
+                row.asset_class === asset_class &&
                 row.sub_class === sub_class &&
-                row.asset_name === asset_name &&
-                row.family_name === family_name,
+                row.asset_name === asset_name,
             );
 
             return {
@@ -551,8 +553,11 @@ This will recalculate the affected holding and cannot be undone.`,
           0,
         );
 
-        const subClassFinancials = this.portfolioCalculations.subclasses.find(
-          (row) => row.sub_class === sub_class && row.family_name === family_name,
+        const subClassFinancials = this.portfolioCalculations.report_subclass_summaries.find(
+          (row) =>
+            row.family_name === family_name &&
+            row.asset_class === asset_class &&
+            row.sub_class === sub_class,
         );
 
         return {
@@ -1019,6 +1024,7 @@ This will recalculate the affected holding and cannot be undone.`,
       ],
       rows: rows.map((row) => ({
         family_name: row.family_name,
+        asset_class: row.asset_class,
         sub_class: row.sub_class,
         quantity: row.quantity,
         invested_value: row.invested_value,
@@ -1201,10 +1207,11 @@ This will recalculate the affected holding and cannot be undone.`,
    * empty value returns all Families.
    */
   private buildSummaryRows(family?: string): SubClassSummaryRow[] {
-    return this.portfolioCalculations.family_subclasses
+    return this.portfolioCalculations.report_subclass_summaries
       .filter((row) => !family || row.family_name === family)
       .map((row) => ({
         family_name: row.family_name || 'Unassigned',
+        asset_class: row.asset_class,
         sub_class: row.sub_class,
         quantity: row.quantity,
         invested_value: row.invested_value,
@@ -1214,7 +1221,9 @@ This will recalculate the affected holding and cannot be undone.`,
       }))
       .sort(
         (a, b) =>
-          a.family_name.localeCompare(b.family_name) || a.sub_class.localeCompare(b.sub_class),
+          a.family_name.localeCompare(b.family_name) ||
+          a.asset_class.localeCompare(b.asset_class) ||
+          a.sub_class.localeCompare(b.sub_class),
       );
   }
 

@@ -632,7 +632,7 @@ def update_report_asset_isins(request, asset_id):
                 if isin and isin in existing_mappings and confirmed_existing_isin == isin:
                     existing_asset = existing_mappings[isin]
                     security = existing_asset.security_master
-                    if security is None:
+                    if security is None or security.isin != isin:
                         security, _ = SecurityMaster.objects.get_or_create(
                             family=family,
                             isin=isin,

@@ -840,7 +840,7 @@ This will recalculate the affected holding and cannot be undone.`,
     this.isinEditorAssetName = assetGroup.asset_name;
     this.isinEditorItems = [];
     this.isinEditorError = "";
-    this.isinEditorReuseConfirmationRequired = false;
+    this.isinEditorReuseConfirmationIsin = null;
     this.isinEditorLoading = true;
     this.portfolioApi.getAssetIsinTargets(assetId).subscribe({
       next: response => {
@@ -863,7 +863,7 @@ This will recalculate the affected holding and cannot be undone.`,
     this.isinEditorAssetName = null;
     this.isinEditorItems = [];
     this.isinEditorError = "";
-    this.isinEditorReuseConfirmationRequired = false;
+    this.isinEditorReuseConfirmationIsin = false;
   }
 
   saveAssetIsins(confirmedIsin: string | null = null): void {
@@ -886,7 +886,7 @@ This will recalculate the affected holding and cannot be undone.`,
       error: error => {
         this.isinEditorSaving = false;
         if (error?.error?.confirmation_required) {
-          this.isinEditorReuseConfirmationRequired = true;
+          this.isinEditorReuseConfirmationIsin = error?.error?.isin || null;
         }
         this.isinEditorError = error?.error?.detail || "Unable to save ISINs.";
         this.cdr.detectChanges();

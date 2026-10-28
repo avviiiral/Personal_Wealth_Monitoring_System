@@ -796,7 +796,16 @@ class PortfolioTreeService:
             # Consider sales attached to the same Asset across legacy hierarchy
             # labels, but do not consume a sale from a portfolio that has its
             # own matching BUY/SIP hierarchy.
-            all_asset_transactions = transactions_by_asset.get(asset_id, asset_transactions)
+            # Asset records can be shared by transactions imported for multiple
+            # family members. Reconciliation may span legacy hierarchy labels
+            # within one family member, but must never pull another member's
+            # transactions into this position (or overwrite its displayed owner).
+            all_asset_transactions = [
+                tx
+                for tx in transactions_by_asset.get(asset_id, asset_transactions)
+                if cls._clean(tx.family_name).casefold()
+                == cls._clean(first.family_name).casefold()
+            ]
             buy_groups = {
                 (
                     cls._clean(tx.family_name),

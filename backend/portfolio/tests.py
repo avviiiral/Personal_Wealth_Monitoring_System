@@ -241,6 +241,63 @@ class PortfolioTreeServiceTests(TestCase):
         # Strategy B's SELL has no matching BUY within B and cannot affect A.
         self.assertEqual(positions.get("Strategy B", []), [])
 
+    def test_shared_asset_reconciliation_never_crosses_family_members(self):
+        # Imports can reuse one Asset record across family-member labels.
+        # A DAJ sale must not be attached to DJT's position or overwrite the
+        # owner displayed for the DJT tree node.
+        shared_asset = Asset.objects.create(
+            family=self.family,
+            owner=self.user,
+            name="Shared DMZ1 Underlying",
+            category="STOCK",
+            isin="INE000FAMILY001",
+        )
+        common = {
+            "owner": self.user,
+            "family": self.family,
+            "asset": shared_asset,
+            "portfolio": "DMZ1",
+            "asset_class": "Equity",
+            "sub_class": "Equity PMS",
+            "asset_name": "DMZ1",
+            "underlying": "Bajaj Finance Ltd",
+            "fees": Decimal("0"),
+            "price_per_unit": Decimal("100"),
+        }
+        Transaction.objects.create(
+            **common,
+            family_name="DAJ",
+            transaction_date=date(2026, 1, 1),
+            transaction_type="SELL",
+            quantity=Decimal("2155"),
+            amount=Decimal("215500"),
+        )
+        Transaction.objects.create(
+            **common,
+            family_name="DJT",
+            transaction_date=date(2026, 1, 2),
+            transaction_type="BUY",
+            quantity=Decimal("2155"),
+            amount=Decimal("215500"),
+        )
+
+        result = PortfolioTreeService.build(owner=self.user, family_id=self.family.id)
+        nodes = [
+            (family["family_name"], node)
+            for family in result["families"]
+            for portfolio in family["portfolios"]
+            for asset_class in portfolio["asset_classes"]
+            for subclass in asset_class["sub_classes"]
+            for node in subclass["assets"]
+            if node["asset_name"] == "DMZ1"
+        ]
+
+        self.assertEqual(len(nodes), 1)
+        tree_family, node = nodes[0]
+        self.assertEqual(tree_family, "DJT")
+        self.assertEqual(node["family_name"], "DJT")
+        self.assertEqual(node["quantity"], 2155.0)
+
     def test_tree_hierarchy(self):
         result = PortfolioTreeService.build(self.user)
 

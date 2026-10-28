@@ -588,7 +588,7 @@ def update_report_asset_isins(request, asset_id):
             raw = ""
         if not isinstance(raw, str):
             return Response({"detail": "ISIN must be text."}, status=status.HTTP_400_BAD_REQUEST)
-        isin = re.sub(r"\\s+", "", raw).upper()
+        isin = re.sub(r"\s+", "", raw).upper()
         if isin and not re.fullmatch(r"[A-Z]{2}[A-Z0-9]{9}[0-9]", isin):
             return Response({"detail": f"'{raw}' is not a valid 12-character ISIN."}, status=status.HTTP_400_BAD_REQUEST)
         normalized[item_id] = isin
@@ -613,6 +613,10 @@ def update_report_asset_isins(request, asset_id):
             if target_kind == "underlyings":
                 target.uploaded_by = request.user
                 target.save(update_fields=["isin", "uploaded_by", "updated_at"])
+                SecurityMaster.objects.update_or_create(
+                    family=family, asset_name=target.stock_name,
+                    defaults={"owner": request.user, "isin": isin or None},
+                )
             else:
                 target.save(update_fields=["isin", "updated_at"])
                 if isin:

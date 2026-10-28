@@ -876,7 +876,7 @@ This will recalculate the affected holding and cannot be undone.`,
     }
     this.isinEditorSaving = true;
     this.isinEditorError = "";
-    this.portfolioApi.updateAssetIsins(this.isinEditorAssetId, normalizedItems, confirmedIsin.subscribe({
+    this.portfolioApi.updateAssetIsins(this.isinEditorAssetId, normalizedItems, confirmedIsin).subscribe({
       next: () => {
         this.isinEditorSaving = false;
         this.cancelAssetIsinEditor();

@@ -2,6 +2,7 @@ from rest_framework import serializers
 
 from investments.models import (
     Asset,
+    AssetUnderlyingHolding,
     Holding,
     Transaction,
     TransactionEditHistory,
@@ -175,10 +176,16 @@ class TransactionSerializer(
         read_only=True,
     )
 
-    isin = serializers.CharField(
-        source="asset.isin",
-        read_only=True,
-    )
+    isin = serializers.SerializerMethodField()
+
+    def get_isin(self, obj):
+        key = " ".join((obj.underlying or obj.asset_name or "").casefold().split())
+        if key:
+            rows = AssetUnderlyingHolding.objects.filter(family=obj.family, asset=obj.asset).only("stock_name", "isin").order_by("id")
+            for row in rows:
+                if " ".join((row.stock_name or "").casefold().split()) == key and row.isin:
+                    return row.isin
+        return obj.asset.isin
 
     class Meta:
         model = Transaction

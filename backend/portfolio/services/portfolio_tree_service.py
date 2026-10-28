@@ -4,7 +4,7 @@ from decimal import Decimal
 
 from django.db.models import OuterRef, QuerySet, Subquery, Q
 
-from investments.models import Asset, SecurityAlias, SecurityMaster, Transaction, TransactionType
+from investments.models import Asset, AssetUnderlyingHolding, SecurityAlias, SecurityMaster, Transaction, TransactionType
 from corporate_actions.position_adjustment import (
     calculate_position_with_actions,
     confirmed_ratio_actions,
@@ -548,7 +548,7 @@ class PortfolioTreeService:
             "underlying": cls._clean(first.underlying, ""),
             # Prefer the Asset identifier; use Security Master only as a
             # read-only fallback. Never infer or persist an ISIN from a name.
-            "isin": getattr(asset, "isin", None) or (getattr(security_master, "isin", None) if security_master else None) or resolved_isin or None,
+            "isin": (AssetUnderlyingHolding.objects.filter(family=asset.family, asset=asset, stock_name__iexact=cls._clean(first.underlying or first.asset_name)).exclude(isin__isnull=True).exclude(isin="").values_list("isin", flat=True).first() or getattr(asset, "isin", None) or (getattr(security_master, "isin", None) if security_master else None) or resolved_isin or None),
             "symbol": getattr(asset, "symbol", None),
             "advisors": cls._clean(first.advisors, ""),
             "quantity": cls._decimal_to_float(quantity),

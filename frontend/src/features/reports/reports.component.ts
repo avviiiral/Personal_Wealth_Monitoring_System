@@ -863,7 +863,7 @@ This will recalculate the affected holding and cannot be undone.`,
     this.isinEditorAssetName = null;
     this.isinEditorItems = [];
     this.isinEditorError = "";
-    this.isinEditorReuseConfirmationIsin = false;
+    this.isinEditorReuseConfirmationIsin = null;
   }
 
   saveAssetIsins(confirmedIsin: string | null = null): void {

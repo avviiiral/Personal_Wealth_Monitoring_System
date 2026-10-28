@@ -50,6 +50,40 @@ class SecurityIdentityResolver:
         )
 
     @classmethod
+    def _exists_in_other_family(cls, *, family, names=(), isin=""):
+        """Detect identities already owned by a different family before consulting the global master."""
+        other_assets = Asset.objects.filter(
+            is_active=True, family__isnull=False
+        ).exclude(family=family)
+        other_securities = SecurityMaster.objects.filter(
+            family__isnull=False
+        ).exclude(family=family)
+
+        if isin:
+            if other_assets.filter(isin__iexact=isin).exists():
+                return True
+            if other_securities.filter(isin__iexact=isin).exists():
+                return True
+
+        normalized_names = {
+            cls.normalize_name(name)
+            for name in names
+            if str(name or "").strip()
+        }
+        if not normalized_names:
+            return False
+
+        if any(
+            cls.normalize_name(name) in normalized_names
+            for name in other_assets.values_list("name", flat=True)
+        ):
+            return True
+        return any(
+            cls.normalize_name(name) in normalized_names
+            for name in other_securities.values_list("asset_name", flat=True)
+        )
+
+    @classmethod
     def resolve(cls, *, family, asset_name, underlying, isin, asset_class, sub_class):
         input_name = str(underlying or asset_name or "").strip()
         normalized_isin = str(isin or "").strip().upper()
@@ -148,6 +182,24 @@ class SecurityIdentityResolver:
 
         normalized_name = cls.normalize_name(input_name)
         if not normalized_name:
+            if normalized_isin and not cls._exists_in_other_family(
+                family=family, isin=normalized_isin
+            ):
+                master_by_isin = SecurityResolver.resolve_security_from_master(isin=normalized_isin)
+                if master_by_isin["status"] == "MATCHED" and categories is not None:
+                    return {
+                        "asset": None, "canonical_name": master_by_isin["canonical_name"],
+                        "isin": master_by_isin["isin"], "yahoo_symbol": master_by_isin.get("yahoo_symbol", ""),
+                        "method": "ISIN", "status": "MATCHED",
+                        "details": {"reason": "Matched to canonical Security Master identity by ISIN."},
+                    }
+                if master_by_isin["status"] in {"CONFLICT", "AMBIGUOUS"}:
+                    return {
+                        "asset": None, "canonical_name": master_by_isin.get("canonical_name", ""),
+                        "isin": master_by_isin.get("isin", ""), "method": "ISIN",
+                        "status": master_by_isin["status"],
+                        "details": {"reason": "Security Master ISIN identity is ambiguous or conflicting."},
+                    }
             return {
                 "asset": None, "canonical_name": "", "method": "NONE", "status": "UNRESOLVED",
                 "details": {"reason": "No usable security name or family-scoped identifier was provided."},
@@ -209,6 +261,66 @@ class SecurityIdentityResolver:
                 "asset": None, "canonical_name": "", "method": "NORMALIZED_NAME", "status": "AMBIGUOUS",
                 "details": {"reason": "More than one compatible family-scoped Asset has this normalized name."},
             }
+
+        # Use the global canonical master only when it cannot be matching a
+        # security already assigned to a different family.
+        master_names = []
+        for candidate_name in (underlying, asset_name):
+            candidate_name = str(candidate_name or "").strip()
+            if candidate_name and candidate_name not in master_names:
+                master_names.append(candidate_name)
+
+        if not cls._exists_in_other_family(
+            family=family, names=master_names, isin=normalized_isin
+        ):
+            master_resolution = None
+            if normalized_isin:
+                master_resolution = SecurityResolver.resolve_security_from_master(
+                    name=input_name, isin=normalized_isin,
+                )
+            else:
+                matched_master_names = []
+                for candidate_name in master_names:
+                    candidate_resolution = SecurityResolver.resolve_security_from_master(
+                        name=candidate_name,
+                    )
+                    if candidate_resolution["status"] in {"CONFLICT", "AMBIGUOUS"}:
+                        master_resolution = candidate_resolution
+                        break
+                    if candidate_resolution["status"] == "MATCHED":
+                        matched_master_names.append(candidate_resolution)
+                if master_resolution is None and matched_master_names:
+                    distinct_isins = {item["isin"] for item in matched_master_names}
+                    if len(distinct_isins) > 1:
+                        master_resolution = {
+                            "status": "CONFLICT", "canonical_name": "", "isin": "", "yahoo_symbol": "",
+                        }
+                    else:
+                        master_resolution = matched_master_names[0]
+
+            if master_resolution and master_resolution["status"] == "MATCHED":
+                return {
+                    "asset": None, "canonical_name": master_resolution["canonical_name"],
+                    "isin": master_resolution["isin"], "yahoo_symbol": master_resolution.get("yahoo_symbol", ""),
+                    "method": "ISIN" if normalized_isin else "NORMALIZED_NAME", "status": "MATCHED",
+                    "details": {
+                        "reason": "Matched to canonical Security Master identity by ISIN."
+                        if normalized_isin else
+                        "Matched to canonical Security Master name after legal-name and punctuation normalization."
+                    },
+                }
+            if master_resolution and master_resolution["status"] in {"CONFLICT", "AMBIGUOUS"}:
+                return {
+                    "asset": None, "canonical_name": master_resolution.get("canonical_name", ""),
+                    "isin": master_resolution.get("isin", ""),
+                    "method": "ISIN" if normalized_isin else "NORMALIZED_NAME",
+                    "status": master_resolution["status"],
+                    "details": {
+                        "reason": "Uploaded name and ISIN conflict with the Security Master."
+                        if master_resolution["status"] == "CONFLICT" else
+                        "Security Master identity is ambiguous; automatic matching was blocked."
+                    },
+                }
 
         return {
             "asset": None, "canonical_name": "", "method": "NONE", "status": "UNRESOLVED",

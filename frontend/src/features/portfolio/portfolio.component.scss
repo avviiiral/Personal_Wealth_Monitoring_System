@@ -1326,13 +1326,7 @@
   }
 }
 
-/* ==========================================================
-   PORTFOLIO RESPONSIVE TABLES
-   Preserve readable financial columns at narrow zoomed viewports,
-   while allowing tables and detail rows to use available width
-   on wide viewports. Overflow stays inside the relevant wrapper.
-   ========================================================== */
-
+/* Portfolio tables: readable financial columns with local horizontal scrolling. */
 .portfolio-table-card,
 .portfolio-table-card .table-scroll,
 .portfolio-table-card .asset-detail-container,
@@ -1359,7 +1353,9 @@
 }
 
 .portfolio-table-card .portfolio-table th,
-.portfolio-table-card .portfolio-table td {
+.portfolio-table-card .portfolio-table td,
+.portfolio-table-card .underlying-table-scroll .asset-table th,
+.portfolio-table-card .underlying-table-scroll .asset-table td {
   min-width: 120px !important;
   max-width: none !important;
   white-space: nowrap !important;
@@ -1404,15 +1400,6 @@
   min-width: 1200px !important;
   max-width: none !important;
   table-layout: auto !important;
-}
-
-.portfolio-table-card .underlying-table-scroll .asset-table th,
-.portfolio-table-card .underlying-table-scroll .asset-table td {
-  min-width: 120px !important;
-  max-width: none !important;
-  white-space: nowrap !important;
-  overflow-wrap: normal !important;
-  word-break: normal !important;
 }
 
 .portfolio-table-card .underlying-table-scroll .asset-table th:first-child,

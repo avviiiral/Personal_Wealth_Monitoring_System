@@ -56,6 +56,9 @@ interface AssetNameGroup {
 }
 
 interface SubClassGroup {
+  group_key: string;
+  family_name: string;
+  asset_class: string;
   sub_class: string;
   asset_names: AssetNameGroup[];
   transaction_count: number;
@@ -464,35 +467,48 @@ This will recalculate the affected holding and cannot be undone.`,
   private buildSubClassGroups(transactions: Transaction[]): SubClassGroup[] {
     const lookup = this.assetLookup;
 
-    const subClassMap = new Map<string, Map<string, Map<string, Transaction[]>>>();
+    // Keep each displayed group scoped to the complete hierarchy prefix.
+    // Identical subclass/asset labels under another family or asset class
+    // must not share transactions, counts, downloads, or financial joins.
+    const subClassMap = new Map<string, {
+      family_name: string;
+      asset_class: string;
+      sub_class: string;
+      asset_names: Map<string, Map<string, Transaction[]>>;
+    }>();
 
     for (const tx of transactions) {
-      const subClass = this.clean(tx.sub_class);
+      const family_name = this.clean(tx.family_name);
+      const asset_class = this.clean(tx.asset_class);
+      const sub_class = this.clean(tx.sub_class);
       const assetName = this.getAssetName(tx);
       const underlying = this.getUnderlyingName(tx);
+      const groupKey = JSON.stringify([family_name, asset_class, sub_class]);
 
-      if (!subClassMap.has(subClass)) {
-        subClassMap.set(subClass, new Map());
+      if (!subClassMap.has(groupKey)) {
+        subClassMap.set(groupKey, {
+          family_name,
+          asset_class,
+          sub_class,
+          asset_names: new Map(),
+        });
       }
 
-      const assetNameMap = subClassMap.get(subClass)!;
-
+      const assetNameMap = subClassMap.get(groupKey)!.asset_names;
       if (!assetNameMap.has(assetName)) {
         assetNameMap.set(assetName, new Map());
       }
 
       const underlyingMap = assetNameMap.get(assetName)!;
-
       if (!underlyingMap.has(underlying)) {
         underlyingMap.set(underlying, []);
       }
-
       underlyingMap.get(underlying)!.push(tx);
-
     }
 
     const subClasses: SubClassGroup[] = Array.from(subClassMap.entries())
-      .map(([sub_class, assetNameMap]) => {
+      .map(([group_key, scope]) => {
+        const { family_name, asset_class, sub_class, asset_names: assetNameMap } = scope;
         const asset_names: AssetNameGroup[] = Array.from(assetNameMap.entries())
           .map(([asset_name, underlyingMap]) => {
             const underlyings: UnderlyingGroup[] = Array.from(underlyingMap.entries())
@@ -510,7 +526,10 @@ This will recalculate the affected holding and cannot be undone.`,
             );
 
             const assetNameFinancials = this.portfolioCalculations.asset_names.find(
-              (row) => row.sub_class === sub_class && row.asset_name === asset_name,
+              (row) =>
+                row.sub_class === sub_class &&
+                row.asset_name === asset_name &&
+                row.family_name === family_name,
             );
 
             return {
@@ -535,6 +554,9 @@ This will recalculate the affected holding and cannot be undone.`,
         );
 
         return {
+          group_key,
+          family_name,
+          asset_class,
           sub_class,
           asset_names,
           transaction_count,
@@ -545,7 +567,11 @@ This will recalculate the affected holding and cannot be undone.`,
           xirr: subClassFinancials?.xirr ?? null,
         };
       })
-      .sort((a, b) => a.sub_class.localeCompare(b.sub_class));
+      .sort((a, b) =>
+        a.family_name.localeCompare(b.family_name) ||
+        a.asset_class.localeCompare(b.asset_class) ||
+        a.sub_class.localeCompare(b.sub_class),
+      );
 
     return subClasses;
   }
@@ -627,7 +653,7 @@ This will recalculate the affected holding and cannot be undone.`,
 
     if (
       this.expandedSubClass &&
-      !this.subClassGroups.some((group) => group.sub_class === this.expandedSubClass)
+      !this.subClassGroups.some((group) => group.group_key === this.expandedSubClass)
     ) {
       this.resetExpansion();
     }
@@ -680,7 +706,7 @@ This will recalculate the affected holding and cannot be undone.`,
   }
 
   trackBySubClass(_index: number, group: SubClassGroup): string {
-    return group.sub_class;
+    return group.group_key;
   }
 
   trackByAssetName(_index: number, group: AssetNameGroup): string {

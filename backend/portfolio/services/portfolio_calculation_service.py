@@ -160,26 +160,45 @@ class PortfolioCalculationService:
         report_subclass_groups = defaultdict(list)
 
         for row in rows:
-            subclass_groups[row["sub_class"]].append(row)
-            asset_name_groups[(row["sub_class"], row["asset"].get("asset_name") or "Unassigned")].append(row)
-            family_subclass_groups[(row["family_name"], row["sub_class"])].append(row)
-            report_subclass_groups[(row["family_name"], row["asset_class"], row["sub_class"])].append(row)
+            hierarchy_prefix = (
+                row["family_name"], row["asset_class"], row["sub_class"]
+            )
+            subclass_groups[hierarchy_prefix].append(row)
+            asset_name_groups[(
+                row["family_name"],
+                row["asset_class"],
+                row["sub_class"],
+                row["asset"].get("asset_name") or "Unassigned",
+            )].append(row)
+            family_subclass_groups[hierarchy_prefix].append(row)
+            report_subclass_groups[hierarchy_prefix].append(row)
 
         subclasses = [
-            cls._row({"sub_class": key}, group, transactions, family_filter=family, asset_class_filter=asset_class, advisor_filter=advisor)
+            cls._row(
+                {"family_name": key[0], "asset_class": key[1], "sub_class": key[2]},
+                group,
+                transactions,
+                family_filter=family,
+                asset_class_filter=asset_class,
+                advisor_filter=advisor,
+            )
             for key, group in subclass_groups.items()
         ]
-        subclasses.sort(key=lambda item: item["sub_class"].casefold())
+        subclasses.sort(
+            key=lambda item: (
+                item["family_name"].casefold(),
+                item["asset_class"].casefold(),
+                item["sub_class"].casefold(),
+            )
+        )
 
         asset_names = [
             cls._row(
                 {
-                    "sub_class": key[0],
-                    "asset_name": key[1],
-                    "family_names": sorted(
-                        {item["family_name"] for item in group},
-                        key=str.casefold,
-                    ),
+                    "family_name": key[0],
+                    "asset_class": key[1],
+                    "sub_class": key[2],
+                    "asset_name": key[3],
                 },
                 group,
                 transactions,
@@ -190,19 +209,28 @@ class PortfolioCalculationService:
             for key, group in asset_name_groups.items()
         ]
         asset_names.sort(
-            key=lambda item: (item["sub_class"].casefold(), item["asset_name"].casefold())
+            key=lambda item: (
+                item["family_name"].casefold(),
+                item["asset_class"].casefold(),
+                item["sub_class"].casefold(),
+                item["asset_name"].casefold(),
+            )
         )
 
         family_subclasses = [
             cls._row(
-                {"family_name": key[0], "sub_class": key[1]},
+                {"family_name": key[0], "asset_class": key[1], "sub_class": key[2]},
                 group,
                 transactions,
             )
             for key, group in family_subclass_groups.items()
         ]
         family_subclasses.sort(
-            key=lambda item: (item["family_name"].casefold(), item["sub_class"].casefold())
+            key=lambda item: (
+                item["family_name"].casefold(),
+                item["asset_class"].casefold(),
+                item["sub_class"].casefold(),
+            )
         )
 
         report_subclass_summaries = [

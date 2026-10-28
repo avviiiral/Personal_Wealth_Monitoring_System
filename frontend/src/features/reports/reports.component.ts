@@ -524,10 +524,7 @@ This will recalculate the affected holding and cannot be undone.`,
               }))
               .sort((a, b) => a.underlying.localeCompare(b.underlying));
 
-            const transaction_count = underlyings.reduce(
-              (total, group) => total + group.transaction_count,
-              0,
-            );
+            const transaction_count = allAssetTransactions.length;
 
             const assetNameFinancials = this.portfolioCalculations.asset_names.find(
               (row) =>

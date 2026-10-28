@@ -1046,16 +1046,244 @@
 }
 
 
-.duplicate-review-backdrop { position: fixed; inset: 0; z-index: 1200; display: flex; align-items: center; justify-content: center; padding: 24px; background: rgba(16, 24, 40, .55); }
-.duplicate-review-panel { width: min(1400px, 96vw); max-height: 88vh; display: flex; flex-direction: column; gap: 16px; padding: 24px; border-radius: 14px; background: var(--surface); box-shadow: 0 24px 70px rgba(0,0,0,.24); }
-.duplicate-review-heading, .duplicate-review-actions { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.duplicate-review-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(16, 24, 40, .55);
+}
+
+.duplicate-review-panel {
+  width: min(1400px, 96vw);
+  max-height: min(90dvh, 900px);
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  overflow: hidden;
+  padding: 24px;
+  box-sizing: border-box;
+  border-radius: 14px;
+  background: var(--surface);
+  box-shadow: 0 24px 70px rgba(0,0,0,.24);
+}
+
+.duplicate-review-heading,
+.duplicate-review-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex: 0 0 auto;
+}
+
 .duplicate-review-heading h2 { margin: 0; color: var(--ink); font-size: 21px; }
 .duplicate-review-heading p { margin: 8px 0 0; color: var(--muted); font-size: 13px; }
-.duplicate-review-table-wrap { overflow: auto; border: 1px solid var(--surface-line); border-radius: 8px; }
+
+.duplicate-review-table-wrap {
+  min-height: 0;
+  max-height: 100%;
+  flex: 1 1 auto;
+  overflow: auto;
+  overscroll-behavior: contain;
+  border: 1px solid var(--surface-line);
+  border-radius: 8px;
+}
+
 .duplicate-review-table { width: 100%; border-collapse: collapse; font-size: 12px; white-space: nowrap; }
-.duplicate-review-table th, .duplicate-review-table td { padding: 10px 12px; border-bottom: 1px solid var(--surface-line); text-align: left; }
-.duplicate-review-table th { position: sticky; top: 0; background: var(--canvas-to); color: var(--ink); }
+.duplicate-review-table th, .duplicate-review-table td { padding: 8px 10px; border-bottom: 1px solid var(--surface-line); text-align: left; }
+.duplicate-review-table th { position: sticky; top: 0; z-index: 1; background: var(--canvas-to); color: var(--ink); }
 .duplicate-review-table input { width: 16px; height: 16px; accent-color: var(--ink); }
+
+.duplicate-review-panel > div:not(.duplicate-review-heading):not(.identity-review-section):not(.duplicate-review-actions) {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+}
+
 .duplicate-review-actions { justify-content: flex-end; flex-wrap: wrap; }
 .duplicate-review-actions span { margin-right: auto; color: var(--muted); font-size: 12px; }
-@media (max-width: 700px) { .duplicate-review-backdrop { padding: 8px; } .duplicate-review-panel { padding: 14px; max-height: 95vh; } .duplicate-review-heading { align-items: flex-start; } }
+
+@media (max-width: 700px) {
+  .duplicate-review-backdrop { padding: 8px; }
+  .duplicate-review-panel { width: 100%; max-height: 95dvh; padding: 14px; gap: 12px; }
+  .duplicate-review-heading { align-items: flex-start; }
+  .duplicate-review-actions { padding-top: 8px; }
+}
+
+.identity-review-section {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+  margin: 0;
+}
+.identity-review-section h3 { margin: 0 0 8px; font-size: 14px; color: var(--ink); }
+.identity-review-section p { flex: 0 0 auto; margin: 0 0 12px; color: var(--muted); font-size: 12px; line-height: 1.5; }
+.identity-review-section .duplicate-review-table-wrap { flex: 1 1 auto; }
+.identity-review-table select { min-width: 220px; max-width: 360px; padding: 8px; border: 1px solid var(--surface-line); border-radius: 6px; background: var(--surface); color: var(--ink); }
+.identity-review-table small { display: block; margin-top: 4px; color: var(--muted); font-size: 11px; white-space: normal; max-width: 260px; }
+.identity-review-table td { vertical-align: top; }
+
+.identity-isin-fallback { display: grid; gap: 5px; margin-top: 8px; max-width: 360px; color: var(--muted); font-size: 11px; }
+.identity-isin-fallback input { width: 100%; box-sizing: border-box; padding: 8px; border: 1px solid var(--surface-line); border-radius: 6px; background: var(--surface); color: var(--ink); }
+
+/* Responsive page controls; dense financial tables scroll in their own wrappers. */
+.portfolio-page,
+.portfolio-table-card,
+.portfolio-table-card .table-scroll,
+.portfolio-table-card .asset-groups,
+.portfolio-table-card .underlying-table-scroll {
+  min-width: 0;
+  max-width: 100%;
+}
+
+@media (max-width: 760px) {
+  .portfolio-page { padding: 12px; }
+  .portfolio-header { gap: 12px; }
+  .portfolio-header h1 { font-size: clamp(20px, 5vw, 26px); }
+  .portfolio-header-actions { width: 100%; }
+  .portfolio-header-actions .refresh-button,
+  .portfolio-header-actions .upload-button {
+    flex: 1 1 140px;
+    min-width: 0;
+    white-space: normal;
+  }
+  .underlying-container { padding: 0 8px 10px; }
+  .underlying-upload-field { min-width: min(100%, 220px); flex: 1 1 220px; }
+  .underlying-upload-field select,
+  .underlying-upload-file { width: 100%; min-width: 0; }
+}
+
+@media (max-width: 480px) {
+  .portfolio-page { padding: 8px; }
+  .selection-area { gap: 8px; }
+  .selection-box { padding: 10px; }
+  .manual-price-container { align-items: stretch; }
+  .manual-price-field { min-width: 0; flex: 1 1 110px; }
+  .manual-price-input,
+  .manual-price-date-input { width: 100%; max-width: 100%; }
+}
+
+/* Portfolio zoom: keep financial columns readable and scroll within tables. */
+.portfolio-table-card .table-scroll,
+.portfolio-table-card .underlying-table-scroll {
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.portfolio-table-card .portfolio-table {
+  width: 100% !important;
+  min-width: 1050px !important;
+  table-layout: auto !important;
+}
+
+.portfolio-table-card .portfolio-table th,
+.portfolio-table-card .portfolio-table td,
+.portfolio-table-card .asset-table th,
+.portfolio-table-card .asset-table td {
+  min-width: 120px !important;
+  white-space: nowrap !important;
+  overflow-wrap: normal !important;
+}
+
+.portfolio-table-card .portfolio-table th:first-child,
+.portfolio-table-card .portfolio-table td:first-child {
+  min-width: 210px !important;
+}
+
+.portfolio-table-card .asset-group-columns-header,
+.portfolio-table-card .asset-group-header {
+  min-width: 1180px;
+  flex-wrap: nowrap;
+}
+
+.portfolio-table-card .asset-group-name-header,
+.portfolio-table-card .asset-group-name {
+  flex: 0 0 260px;
+  min-width: 260px !important;
+  overflow-wrap: anywhere;
+}
+
+.portfolio-table-card .asset-group-col {
+  flex: 0 0 140px;
+  min-width: 140px !important;
+  white-space: nowrap;
+}
+
+.portfolio-table-card .asset-table {
+  width: 100% !important;
+  min-width: 1200px !important;
+  table-layout: auto !important;
+}
+
+.portfolio-table-card .asset-table th:first-child,
+.portfolio-table-card .asset-table td:first-child {
+  min-width: 320px !important;
+}
+
+/* Use the same grid tracks for asset labels and asset values.
+   A dedicated chevron track prevents the family value from
+   sliding under a long asset name. */
+.portfolio-table-card .asset-group-columns-header,
+.portfolio-table-card .asset-group-header {
+  display: grid;
+  grid-template-columns: 24px minmax(260px, 2fr) repeat(6, minmax(140px, 1fr));
+  align-items: center;
+  column-gap: 12px;
+  width: 100%;
+  min-width: 1220px;
+  box-sizing: border-box;
+}
+
+.portfolio-table-card .asset-group-columns-header {
+  padding-left: 12px;
+  padding-right: 12px;
+}
+
+.portfolio-table-card .asset-group-chevron-spacer {
+  display: block;
+  width: 24px;
+}
+
+.portfolio-table-card .asset-group-header {
+  padding: 12px;
+}
+
+.portfolio-table-card .asset-group-name-header,
+.portfolio-table-card .asset-group-name,
+.portfolio-table-card .asset-group-col {
+  min-width: 0 !important;
+  max-width: none;
+  width: auto;
+  flex: initial;
+  white-space: nowrap;
+}
+
+.portfolio-table-card .asset-group-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.portfolio-table-card .asset-group-name-header {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.portfolio-table-card .asset-group-col {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+@media (max-width: 1250px) {
+  .portfolio-table-card .asset-group-columns-header,
+  .portfolio-table-card .asset-group-header {
+    grid-template-columns: 24px minmax(260px, 2fr) repeat(6, minmax(140px, 1fr));
+  }
+}
+

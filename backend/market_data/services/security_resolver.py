@@ -37,6 +37,12 @@ class SecurityResolver:
     _security_master_loaded = False
     _security_master_isin = {}
     _security_master_name = {}
+    _security_master_name_to_isin = {}
+    _security_master_isin_to_name = {}
+    _security_master_ambiguous_isin = set()
+    _security_master_ambiguous_name = set()
+    _security_master_ambiguous_name_to_isin = set()
+    _security_master_ambiguous_isin_to_name = set()
 
     @staticmethod
     def clean_symbol(symbol):
@@ -82,6 +88,20 @@ class SecurityResolver:
         )
 
         return value
+
+    @staticmethod
+    def normalize_security_name(name):
+        """Normalize conservative legal-name variants for exact name lookup.
+
+        This intentionally removes only a leading legal/article prefix and
+        standardizes LTD/LIMITED. It does not use substring or fuzzy matching;
+        collisions are quarantined by the Security Master loader.
+        """
+        tokens = re.findall(r"[A-Z0-9]+", str(name or "").upper())
+        if tokens and tokens[0] == "THE":
+            tokens = tokens[1:]
+        tokens = ["LIMITED" if token == "LTD" else token for token in tokens]
+        return " ".join(tokens)
 
     @classmethod
     def _security_master_path(cls):
@@ -176,6 +196,15 @@ class SecurityResolver:
                 workbook.close()
                 return
 
+            cls._security_master_isin = {}
+            cls._security_master_name = {}
+            cls._security_master_name_to_isin = {}
+            cls._security_master_isin_to_name = {}
+            cls._security_master_ambiguous_isin = set()
+            cls._security_master_ambiguous_name = set()
+            cls._security_master_ambiguous_name_to_isin = set()
+            cls._security_master_ambiguous_isin_to_name = set()
+
             for row in worksheet.iter_rows(
                 min_row=2,
                 values_only=True,
@@ -206,22 +235,49 @@ class SecurityResolver:
                 cleaned_isin = cls.clean_isin(isin_value)
                 cleaned_yahoo = cls.clean_symbol(yahoo_value)
                 cleaned_name = cls.clean_name(name_value)
+                normalized_name = cls.normalize_security_name(cleaned_name)
 
                 if (
                     cleaned_isin
                     and cleaned_yahoo
                 ):
-                    cls._security_master_isin[
-                        cleaned_isin
-                    ] = cleaned_yahoo
+                    cls._record_master_mapping(
+                        mapping=cls._security_master_isin,
+                        ambiguous=cls._security_master_ambiguous_isin,
+                        key=cleaned_isin,
+                        value=cleaned_yahoo,
+                        identifier_type="ISIN",
+                    )
+
+                if normalized_name and cleaned_isin:
+                    cls._record_master_mapping(
+                        mapping=cls._security_master_name_to_isin,
+                        ambiguous=cls._security_master_ambiguous_name_to_isin,
+                        key=normalized_name,
+                        value=cleaned_isin,
+                        identifier_type="security name to ISIN",
+                    )
+
+                if normalized_name and cleaned_isin:
+                    cls._record_master_mapping(
+                        mapping=cls._security_master_isin_to_name,
+                        ambiguous=cls._security_master_ambiguous_isin_to_name,
+                        key=cleaned_isin,
+                        value=str(name_value).strip(),
+                        identifier_type="ISIN to canonical security name",
+                    )
 
                 if (
-                    cleaned_name
+                    normalized_name
                     and cleaned_yahoo
                 ):
-                    cls._security_master_name[
-                        cleaned_name
-                    ] = cleaned_yahoo
+                    cls._record_master_mapping(
+                        mapping=cls._security_master_name,
+                        ambiguous=cls._security_master_ambiguous_name,
+                        key=normalized_name,
+                        value=cleaned_yahoo,
+                        identifier_type="security name",
+                    )
 
             workbook.close()
 
@@ -246,6 +302,28 @@ class SecurityResolver:
 
             cls._security_master_isin = {}
             cls._security_master_name = {}
+            cls._security_master_name_to_isin = {}
+            cls._security_master_isin_to_name = {}
+            cls._security_master_ambiguous_isin = set()
+            cls._security_master_ambiguous_name = set()
+            cls._security_master_ambiguous_name_to_isin = set()
+            cls._security_master_ambiguous_isin_to_name = set()
+
+    @classmethod
+    def _record_master_mapping(cls, *, mapping, ambiguous, key, value, identifier_type):
+        """Keep only unambiguous master mappings; never let row order win."""
+        if key in ambiguous:
+            return
+        existing = mapping.get(key)
+        if existing is None:
+            mapping[key] = value
+        elif existing != value:
+            mapping.pop(key, None)
+            ambiguous.add(key)
+            logger.error(
+                "Conflicting Security Master %s mapping for %s; mappings quarantined.",
+                identifier_type, key,
+            )
 
     @classmethod
     def _generate_security_master(cls):
@@ -302,6 +380,12 @@ class SecurityResolver:
         cls._security_master_loaded = False
         cls._security_master_isin = {}
         cls._security_master_name = {}
+        cls._security_master_name_to_isin = {}
+        cls._security_master_isin_to_name = {}
+        cls._security_master_ambiguous_isin = set()
+        cls._security_master_ambiguous_name = set()
+        cls._security_master_ambiguous_name_to_isin = set()
+        cls._security_master_ambiguous_isin_to_name = set()
 
         cls._load_security_master()
 
@@ -337,6 +421,10 @@ class SecurityResolver:
 
         cls._load_security_master()
 
+        if cleaned_isin in cls._security_master_ambiguous_isin:
+            logger.error("Cannot resolve ISIN %s because the Security Master has conflicting mappings.", cleaned_isin)
+            return None
+
         yahoo_from_master = cls._security_master_isin.get(
             cleaned_isin
         )
@@ -349,6 +437,54 @@ class SecurityResolver:
         )
 
     @classmethod
+    def resolve_isin_from_name(cls, name):
+        """Return an ISIN only for an exact normalized, unambiguous master name."""
+        cls._load_security_master()
+        normalized_name = cls.normalize_security_name(name)
+        if not normalized_name or normalized_name in cls._security_master_ambiguous_name_to_isin:
+            return ""
+        return cls._security_master_name_to_isin.get(normalized_name, "")
+
+    @classmethod
+    def resolve_security_from_master(cls, *, name=None, isin=None):
+        """Return canonical Security Master identity by exact normalized name or ISIN.
+
+        No fuzzy matching is performed. Ambiguous or conflicting master records
+        fail closed so a similar-looking security is never silently selected.
+        """
+        cls._load_security_master()
+        cleaned_isin = cls.clean_isin(isin)
+        normalized_name = cls.normalize_security_name(name)
+
+        name_isin = ""
+        if normalized_name:
+            if normalized_name in cls._security_master_ambiguous_name_to_isin:
+                return {"status": "AMBIGUOUS", "canonical_name": "", "isin": "", "yahoo_symbol": ""}
+            name_isin = cls._security_master_name_to_isin.get(normalized_name, "")
+
+        if cleaned_isin:
+            if cleaned_isin in cls._security_master_ambiguous_isin_to_name:
+                return {"status": "AMBIGUOUS", "canonical_name": "", "isin": "", "yahoo_symbol": ""}
+            canonical_name = cls._security_master_isin_to_name.get(cleaned_isin, "")
+            if not canonical_name:
+                if name_isin and name_isin != cleaned_isin:
+                    return {"status": "CONFLICT", "canonical_name": "", "isin": cleaned_isin, "yahoo_symbol": cls.resolve_from_isin(cleaned_isin) or ""}
+                return {"status": "NOT_FOUND", "canonical_name": "", "isin": "", "yahoo_symbol": ""}
+            if name_isin and name_isin != cleaned_isin:
+                return {"status": "CONFLICT", "canonical_name": canonical_name, "isin": cleaned_isin, "yahoo_symbol": cls.resolve_from_isin(cleaned_isin) or ""}
+            return {"status": "MATCHED", "canonical_name": canonical_name, "isin": cleaned_isin, "yahoo_symbol": cls.resolve_from_isin(cleaned_isin) or ""}
+
+        if normalized_name and name_isin:
+            if name_isin in cls._security_master_ambiguous_isin_to_name:
+                return {"status": "AMBIGUOUS", "canonical_name": "", "isin": "", "yahoo_symbol": ""}
+            canonical_name = cls._security_master_isin_to_name.get(name_isin, "")
+            if not canonical_name:
+                return {"status": "NOT_FOUND", "canonical_name": "", "isin": "", "yahoo_symbol": ""}
+            return {"status": "MATCHED", "canonical_name": canonical_name, "isin": name_isin, "yahoo_symbol": cls.resolve_from_isin(name_isin) or ""}
+
+        return {"status": "NOT_FOUND", "canonical_name": "", "isin": "", "yahoo_symbol": ""}
+
+    @classmethod
     def resolve_from_name(cls, name):
         """
         Resolve Yahoo symbol from a known asset name.
@@ -358,21 +494,27 @@ class SecurityResolver:
         """
 
         cleaned_name = cls.clean_name(name)
+        normalized_name = cls.normalize_security_name(cleaned_name)
 
-        if not cleaned_name:
+        if not normalized_name:
             return None
 
         cls._load_security_master()
 
+        if normalized_name in cls._security_master_ambiguous_name:
+            logger.warning("Ignoring ambiguous Security Master name mapping for %s.", cleaned_name)
+            return None
+
         yahoo_from_master = cls._security_master_name.get(
-            cleaned_name
+            normalized_name
         )
 
         if yahoo_from_master:
             return yahoo_from_master
 
-        return cls.NAME_TO_YAHOO.get(
-            cleaned_name
+        return (
+            cls.NAME_TO_YAHOO.get(cleaned_name)
+            or cls.NAME_TO_YAHOO.get(normalized_name)
         )
 
     @classmethod
@@ -396,16 +538,37 @@ class SecurityResolver:
             6. Generic symbol + exchange suffix
         """
 
-        yahoo_from_isin = cls.resolve_from_isin(
-            isin
-        )
+        cleaned_isin = cls.clean_isin(isin)
+        cleaned_symbol = cls.clean_symbol(symbol)
+        cleaned_name = cls.clean_name(name)
+
+        yahoo_from_isin = cls.resolve_from_isin(cleaned_isin)
+        if cleaned_isin in cls._security_master_ambiguous_isin:
+            raise ValueError(
+                f"Cannot resolve ISIN {cleaned_isin}: conflicting Security Master mappings."
+            )
 
         if yahoo_from_isin:
+            explicit_symbol = cleaned_symbol
+            if explicit_symbol and not explicit_symbol.endswith(
+                (cls.NSE_SUFFIX, cls.BSE_SUFFIX)
+            ):
+                requested_exchange = (exchange or "NSE").strip().upper()
+                suffix = cls.BSE_SUFFIX if requested_exchange == "BSE" else cls.NSE_SUFFIX
+                explicit_symbol = f"{explicit_symbol}{suffix}"
+            if explicit_symbol and explicit_symbol != yahoo_from_isin:
+                raise ValueError(
+                    f"Conflicting security identifiers: ISIN {cleaned_isin} "
+                    f"maps to {yahoo_from_isin}, but the supplied symbol/exchange "
+                    f"resolves to {explicit_symbol}."
+                )
+            name_symbol = cls.resolve_from_name(cleaned_name)
+            if name_symbol and name_symbol != yahoo_from_isin:
+                raise ValueError(
+                    f"Conflicting security identifiers: ISIN {cleaned_isin} "
+                    f"maps to {yahoo_from_isin}, but name mapping points to {name_symbol}."
+                )
             return yahoo_from_isin
-
-        cleaned_symbol = cls.clean_symbol(
-            symbol
-        )
 
         if cleaned_symbol:
 
@@ -464,9 +627,13 @@ class SecurityResolver:
 
         candidates = []
 
-        yahoo_from_isin = cls.resolve_from_isin(
-            isin
-        )
+        cleaned_isin = cls.clean_isin(isin)
+        yahoo_from_isin = cls.resolve_from_isin(cleaned_isin)
+        if cleaned_isin in cls._security_master_ambiguous_isin:
+            raise ValueError(
+                f"Cannot generate candidates for ISIN {cleaned_isin}: "
+                "conflicting Security Master mappings."
+            )
 
         if yahoo_from_isin:
             candidates.append(

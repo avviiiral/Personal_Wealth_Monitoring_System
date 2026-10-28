@@ -418,6 +418,7 @@ class SecurityIdentityResolutionLog(models.Model):
         APPROVED_ALIAS = "APPROVED_ALIAS", "Approved alias"
         NORMALIZED_NAME = "NORMALIZED_NAME", "Normalized name"
         NONE = "NONE", "No match"
+        USER_REVIEW = "USER_REVIEW", "User review"
 
     family = models.ForeignKey(FamilyGroup, on_delete=models.PROTECT, related_name="security_identity_resolution_logs", db_index=True)
     upload = models.ForeignKey("TransactionUpload", on_delete=models.SET_NULL, null=True, blank=True, related_name="security_identity_resolution_logs")

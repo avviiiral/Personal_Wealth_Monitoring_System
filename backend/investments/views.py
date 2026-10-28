@@ -67,13 +67,18 @@ def import_transactions(request):
     )
 
     try:
+        import json
         selected_duplicate_rows = request.data.get("selected_duplicate_rows", "[]")
+        identity_mappings = request.data.get("identity_mappings", "{}")
         if isinstance(selected_duplicate_rows, str):
-            import json
             selected_duplicate_rows = json.loads(selected_duplicate_rows)
+        if isinstance(identity_mappings, str):
+            identity_mappings = json.loads(identity_mappings)
+        if not isinstance(identity_mappings, dict):
+            raise TransactionImportError("Invalid security identity review selections.")
         result = TransactionImporter.import_file(
             file=uploaded_file, owner=request.user, upload_batch=upload,
-            selected_duplicate_rows=selected_duplicate_rows,
+            selected_duplicate_rows=selected_duplicate_rows, identity_mappings=identity_mappings,
         )
     except PermissionDenied as exc:
         upload.status = "FAILED"

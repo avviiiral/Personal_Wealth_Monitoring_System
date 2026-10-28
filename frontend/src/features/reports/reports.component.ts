@@ -20,6 +20,7 @@ import {
   Transaction,
   UpdateTransactionRequest,
   PortfolioCalculations,
+  AssetIsinTarget,
 } from '../../core/services/portfolio-api.service';
 
 /* ==============================================================
@@ -144,6 +145,15 @@ export class ReportsComponent implements OnInit {
   deleteAssetNameConfirmation = '';
   deletingAssetTransactions = false;
 
+  isinEditorAssetName: string | null = null;
+  isinEditorAssetId: number | null = null;
+  isinEditorKind: "asset" | "underlyings" = "asset";
+  isinEditorItems: AssetIsinTarget[] = [];
+  isinEditorLoading = false;
+  isinEditorSaving = false;
+  isinEditorError = "";
+  isinEditorReuseConfirmationIsin: string | null = null;
+
   /* Transaction editor used by the final Transactions table. */
   editingTransaction: Transaction | null = null;
   editTransactionError = '';
@@ -234,7 +244,14 @@ export class ReportsComponent implements OnInit {
     }
 
     const confirmed = window.confirm(
-      `Delete this transaction permanently?\\n\\nTransaction ID: ${tx.id}\\nDate: ${tx.transaction_date}\\nType: ${tx.transaction_type_display || tx.transaction_type}\\nAmount: ₹${this.formatCurrency(tx.amount)}\\n\\nThis will recalculate the affected holding and cannot be undone.`,
+      `Delete this transaction permanently?\
+\
+Transaction ID: ${tx.id}\
+Date: ${tx.transaction_date}\
+Type: ${tx.transaction_type_display || tx.transaction_type}\
+Amount: ₹${this.formatCurrency(tx.amount)}\
+\
+This will recalculate the affected holding and cannot be undone.`,
     );
 
     if (!confirmed) {
@@ -807,6 +824,71 @@ export class ReportsComponent implements OnInit {
       error: (error) => {
         this.deletingAssetTransactions = false;
         this.toast.error(error?.error?.detail || error?.error?.message || 'Unable to delete transactions for this asset.', 6000);
+        this.cdr.detectChanges();
+      },
+    });
+  }
+
+  openAssetIsinEditor(event: MouseEvent, assetGroup: AssetNameGroup): void {
+    event.stopPropagation();
+    const assetId = assetGroup.underlyings.flatMap(group => group.transactions).find(tx => tx.asset)?.asset;
+    if (!assetId) {
+      this.toast.error("Could not identify the asset record for this report row.");
+      return;
+    }
+    this.isinEditorAssetId = assetId;
+    this.isinEditorAssetName = assetGroup.asset_name;
+    this.isinEditorItems = [];
+    this.isinEditorError = "";
+    this.isinEditorReuseConfirmationIsin = null;
+    this.isinEditorLoading = true;
+    this.portfolioApi.getAssetIsinTargets(assetId).subscribe({
+      next: response => {
+        this.isinEditorKind = response.kind;
+        this.isinEditorItems = response.items.map(item => ({ ...item }));
+        this.isinEditorLoading = false;
+        this.cdr.detectChanges();
+      },
+      error: error => {
+        this.isinEditorLoading = false;
+        this.isinEditorError = error?.error?.detail || "Unable to load ISIN targets.";
+        this.cdr.detectChanges();
+      },
+    });
+  }
+
+  cancelAssetIsinEditor(): void {
+    if (this.isinEditorSaving) return;
+    this.isinEditorAssetId = null;
+    this.isinEditorAssetName = null;
+    this.isinEditorItems = [];
+    this.isinEditorError = "";
+    this.isinEditorReuseConfirmationIsin = null;
+  }
+
+  saveAssetIsins(confirmedIsin: string | null = null): void {
+    if (this.isinEditorAssetId === null || this.isinEditorSaving || !this.isinEditorItems.length) return;
+    const normalizedItems = this.isinEditorItems.map(item => ({ ...item, isin: (item.isin || "").replace(/\s+/g, "").toUpperCase() }));
+    const invalid = normalizedItems.find(item => item.isin && !/^[A-Z]{2}[A-Z0-9]{9}[0-9]$/.test(item.isin));
+    if (invalid) {
+      this.isinEditorError = 'Enter a valid 12-character ISIN for "' + invalid.name + '", or leave it blank.';
+      return;
+    }
+    this.isinEditorSaving = true;
+    this.isinEditorError = "";
+    this.portfolioApi.updateAssetIsins(this.isinEditorAssetId, normalizedItems, confirmedIsin).subscribe({
+      next: () => {
+        this.isinEditorSaving = false;
+        this.cancelAssetIsinEditor();
+        this.toast.success("ISINs saved. Reports and Portfolio will use the updated records.");
+        this.loadReports();
+      },
+      error: error => {
+        this.isinEditorSaving = false;
+        if (error?.error?.confirmation_required) {
+          this.isinEditorReuseConfirmationIsin = error?.error?.isin || null;
+        }
+        this.isinEditorError = error?.error?.detail || "Unable to save ISINs.";
         this.cdr.detectChanges();
       },
     });

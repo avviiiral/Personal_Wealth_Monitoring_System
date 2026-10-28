@@ -127,6 +127,31 @@
     </div>
   </div>
 
+
+  <div *ngIf="isinEditorAssetId !== null" class="isin-editor-backdrop" (click)="cancelAssetIsinEditor()">
+    <section class="isin-editor-panel" role="dialog" aria-modal="true" aria-labelledby="isin-editor-title" (click)="$event.stopPropagation()">
+      <div class="isin-editor-heading">
+        <h2 id="isin-editor-title">Add ISIN</h2>
+        <button type="button" class="transaction-edit-button" [disabled]="isinEditorSaving" (click)="cancelAssetIsinEditor()">Cancel</button>
+      </div>
+      <p class="isin-editor-subtitle"><strong>{{ isinEditorAssetName }}</strong></p>
+      <p class="isin-editor-note" *ngIf="isinEditorKind === 'underlyings'">Enter a separate ISIN for each unique underlying. Duplicate transactions are grouped into one entry.</p>
+      <p class="isin-editor-note" *ngIf="isinEditorKind === 'asset'">This asset has no underlying holdings, so the ISIN will be saved against the asset itself.</p>
+      <div *ngIf="isinEditorLoading" class="loading-state"><span class="loading-spinner"></span> Loading underlying securities…</div>
+      <div *ngIf="!isinEditorLoading && isinEditorItems.length" class="isin-editor-list">
+        <div class="isin-editor-row" *ngFor="let item of isinEditorItems">
+          <label>{{ item.name }}</label>
+          <input type="text" maxlength="12" autocomplete="off" spellcheck="false" [(ngModel)]="item.isin" [disabled]="isinEditorSaving" placeholder="12-character ISIN" />
+        </div>
+      </div>
+      <div *ngIf="isinEditorError" class="modal-error">{{ isinEditorError }}</div>
+      <div class="modal-actions">
+        <button type="button" class="modal-button" [disabled]="isinEditorSaving" (click)="cancelAssetIsinEditor()">Cancel</button>
+        <button type="button" class="modal-button modal-button-primary" [disabled]="isinEditorLoading || isinEditorSaving || !isinEditorItems.length" (click)="saveAssetIsins(isinEditorReuseConfirmationIsin)">{{ isinEditorSaving ? 'Saving…' : (isinEditorReuseConfirmationIsin ? 'Confirm reuse mapping' : 'Save ISINs') }}</button>
+      </div>
+    </section>
+  </div>
+
   <!-- TRANSACTION EDITOR -->
   <div
     *ngIf="editingTransaction"
@@ -576,6 +601,7 @@
                             </svg>
                             Download
                           </button>
+                          <button type="button" class="underlying-action-button" [disabled]="isinEditorLoading || isinEditorSaving" (click)="openAssetIsinEditor($event, assetGroup)">Add ISIN</button>
                           <button
                             *ngIf="rbac.isSuperUser() || rbac.isSystemOwner()"
                             type="button"

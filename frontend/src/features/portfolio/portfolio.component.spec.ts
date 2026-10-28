@@ -619,7 +619,7 @@ describe('PortfolioComponent', () => {
     component.onTransactionFileSelected({ target: input } as unknown as Event);
 
     expect(investmentsApi.previewTransactionDuplicates).toHaveBeenCalledWith(file);
-    expect(investmentsApi.importTransactions).toHaveBeenCalledWith(file, []);
+    expect(investmentsApi.importTransactions).toHaveBeenCalledWith(file, [], {});
     expect(component.uploadingTransactions).toBe(false);
 
     // loadPortfolio(true) should have been triggered after a

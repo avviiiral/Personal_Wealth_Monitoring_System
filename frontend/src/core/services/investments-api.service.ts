@@ -12,7 +12,15 @@ import { environment } from '../../environments/environment';
 export interface DuplicateTransactionRow {
   row_number: number; asset_name: string; family_name: string; asset_class: string; sub_class: string; transaction_date: string; transaction_type: string; quantity: string; price: string; amount: string; reason: string;
 }
-export interface DuplicatePreviewResponse { success: boolean; message?: string; data?: { duplicate_rows: DuplicateTransactionRow[]; duplicate_count: number }; }
+export interface SecurityIdentityReviewRow {
+  row_number: number; asset_name: string; underlying: string; isin: string; asset_class: string; sub_class: string;
+  status: string; reason: string; suggested_asset_id?: number | null; candidates: Array<{ id: number; name: string; isin: string }>;
+}
+export interface SecurityIdentityMapping { choice: string; isin?: string; }
+export interface DuplicatePreviewResponse {
+  success: boolean; message?: string;
+  data?: { duplicate_rows: DuplicateTransactionRow[]; duplicate_count: number; identity_review?: SecurityIdentityReviewRow[]; identity_review_count?: number };
+}
 
 export interface ImportTransactionsResult {
   imported_investments: number;
@@ -88,11 +96,12 @@ export class InvestmentsApiService {
     return this.getCsrfToken().pipe(switchMap(() => this.http.post<DuplicatePreviewResponse>(this.baseUrl + '/import/preview/', formData, { headers: this.getCsrfHeaders(), withCredentials: true })));
   }
 
-  importTransactions(file: File, selectedDuplicateRows: number[] = []): Observable<ImportTransactionsResponse> {
+  importTransactions(file: File, selectedDuplicateRows: number[] = [], identityMappings: Record<number, SecurityIdentityMapping> = {}): Observable<ImportTransactionsResponse> {
     const formData = new FormData();
 
     formData.append('file', file);
     formData.append('selected_duplicate_rows', JSON.stringify(selectedDuplicateRows));
+    formData.append('identity_mappings', JSON.stringify(identityMappings));
 
     return this.getCsrfToken().pipe(
       switchMap(() =>

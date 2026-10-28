@@ -348,7 +348,7 @@ from .services.transaction_import import (
 )
 
 
-def _build_transactions_workbook(include_summary, transaction_type="Buy"):
+def _build_transactions_workbook(include_summary, transaction_type="Buy", isin="INE002A01018", asset_name="Reliance Industries", underlying="Reliance Industries Ltd"):
     """
     Build a minimal, valid transaction-import .xlsx file in
     memory, with or without a "Summary" sheet, for testing
@@ -379,10 +379,10 @@ def _build_transactions_workbook(include_summary, transaction_type="Buy"):
         "Test Family",
         "Equity",
         "Direct Equity",
-        "Reliance Industries",
-        "Reliance Industries Ltd",
+        asset_name,
+        underlying,
         "DIRECT",
-        "INE002A01018",
+        isin,
         "2026-07-16",
         transaction_type,
         "100",
@@ -411,8 +411,8 @@ def _build_transactions_workbook(include_summary, transaction_type="Buy"):
             "Direct Equity",
             "Equity",
             "DIRECT",
-            "Reliance Industries",
-            "INE002A01018",
+            asset_name,
+            isin,
         ])
 
     buffer = io.BytesIO()
@@ -456,12 +456,56 @@ class TransactionImportExcelShapeTests(TestCase):
         with self.assertRaisesRegex(TransactionImportError, "DD-MM-YYYY"):
             TransactionImporter._parse_transaction_date("31-02-2026", 9)
 
+    def test_unresolved_identity_automatically_creates_asset_without_review_mapping(self):
+        upload = _build_transactions_workbook(
+            include_summary=False, isin="",
+            asset_name="PWMS Unknown Instrument XYZ 8472",
+            underlying="PWMS Unknown Instrument XYZ 8472",
+        )
+
+        result = TransactionImporter.import_file(
+            file=upload,
+            owner=self.user,
+        )
+
+        self.assertEqual(result["imported_investments"], 1)
+        asset = Asset.objects.get(owner=self.user)
+        self.assertEqual(asset.name, "PWMS Unknown Instrument XYZ 8472")
+        self.assertFalse(asset.isin)
+
+    def test_unverified_identity_can_create_asset_without_isin(self):
+        upload = _build_transactions_workbook(include_summary=False, isin="")
+
+        result = TransactionImporter.import_file(
+            file=upload,
+            owner=self.user,
+            identity_mappings={2: {"choice": "__NEW__", "isin": ""}},
+        )
+
+        self.assertEqual(result["imported_investments"], 1)
+        asset = Asset.objects.get(owner=self.user, name="Reliance Industries Ltd")
+        self.assertFalse(asset.isin)
+
+    def test_unverified_identity_can_use_optional_reviewed_isin(self):
+        upload = _build_transactions_workbook(include_summary=False, isin="")
+
+        result = TransactionImporter.import_file(
+            file=upload,
+            owner=self.user,
+            identity_mappings={2: {"choice": "__NEW__", "isin": "INE002A01018"}},
+        )
+
+        self.assertEqual(result["imported_investments"], 1)
+        asset = Asset.objects.get(owner=self.user, name="Reliance Industries Ltd")
+        self.assertEqual(asset.isin, "INE002A01018")
+
     def test_import_succeeds_without_summary_sheet(self):
         upload = _build_transactions_workbook(include_summary=False)
 
         result = TransactionImporter.import_file(
             file=upload,
             owner=self.user,
+            identity_mappings={2: "__NEW__"},
         )
 
         self.assertEqual(result["imported_investments"], 1)
@@ -479,6 +523,7 @@ class TransactionImportExcelShapeTests(TestCase):
         result = TransactionImporter.import_file(
             file=upload,
             owner=self.user,
+            identity_mappings={2: "__NEW__"},
         )
 
         self.assertEqual(result["imported_investments"], 1)
@@ -496,9 +541,18 @@ class TransactionImportExcelShapeTests(TestCase):
                     transaction_type=label,
                 )
 
+                existing_asset = Asset.objects.filter(
+                    owner=self.user,
+                    isin="INE002A01018",
+                ).first()
+                identity_choice = (
+                    existing_asset.id if existing_asset is not None else "__NEW__"
+                )
+
                 result = TransactionImporter.import_file(
                     file=upload,
                     owner=self.user,
+                    identity_mappings={2: identity_choice},
                 )
 
                 self.assertEqual(result["imported_investments"], 1)
@@ -546,6 +600,7 @@ class TransactionImportExcelShapeTests(TestCase):
         result = TransactionImporter.import_file(
             file=upload,
             owner=self.user,
+            identity_mappings={2: "__NEW__"},
         )
 
         self.assertEqual(result["imported_investments"], 1)
@@ -565,6 +620,7 @@ class TransactionImportExcelShapeTests(TestCase):
         result = TransactionImporter.import_file(
             file=upload,
             owner=self.user,
+            identity_mappings={2: "__NEW__"},
         )
 
         asset = Asset.objects.get(

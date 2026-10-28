@@ -8,6 +8,8 @@ export interface Holding { id: number; asset: number; asset_name: string; asset_
 export interface Transaction { id: number; asset: number; asset_name: string; transaction_type: string; transaction_type_display: string; transaction_date: string; quantity: number; price_per_unit: number; amount: number; fees: number; notes: string | null; created_at: string; family_name?: string | null; portfolio?: string | null; asset_class?: string | null; sub_class?: string | null; underlying?: string | null; advisors?: string | null; isin?: string | null; }
 export interface PortfolioAsset { id: number; name: string; category: string; category_display: string; symbol: string | null; isin: string | null; institution: string | null; currency: string; is_active: boolean; created_at: string; updated_at: string; }
 export interface ApiListResponse<T> { count: number; results: T[]; }
+export interface AssetIsinTarget { id: number; name: string; isin: string; }
+export interface AssetIsinTargetsResponse { asset_id: number; asset_name: string; kind: "asset" | "underlyings"; items: AssetIsinTarget[]; }
 export interface CreateAssetRequest { name: string; category: string; symbol?: string | null; isin?: string | null; institution?: string | null; currency?: string; }
 export interface CreateTransactionRequest { asset: number; transaction_type: string; transaction_date: string; quantity: number; price_per_unit: number; amount: number; fees?: number; notes?: string | null; }
 export interface UpdateTransactionRequest { family_name?: string | null; portfolio?: string | null; asset_class?: string | null; sub_class?: string | null; asset_name?: string | null; underlying?: string | null; advisors?: string | null; transaction_date?: string; transaction_type?: string; quantity?: number; price_per_unit?: number; amount?: number; fees?: number; notes?: string | null; }
@@ -101,6 +103,11 @@ export class PortfolioApiService {
       },
     });
   }
+  getAssetIsinTargets(assetId: number): Observable<AssetIsinTargetsResponse> { return this.http.get<AssetIsinTargetsResponse>(`${this.baseUrl}/assets/${assetId}/isin-targets/`, this.requestOptions); }
+  updateAssetIsins(assetId: number, items: AssetIsinTarget[], confirmedExistingIsin: string | null = null): Observable<any> {
+    return this.getCsrfToken().pipe(switchMap(() => this.http.patch(`${this.baseUrl}/assets/${assetId}/isins/`, { items, confirmed_existing_isin: confirmedExistingIsin || "" }, { headers: this.getCsrfHeaders(), withCredentials: true })));
+  }
+
   uploadAssetUnderlying(assetId: number, file: File): Observable<any> {
     const formData = new FormData();
     formData.append('file', file);

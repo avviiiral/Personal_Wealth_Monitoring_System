@@ -13,6 +13,8 @@ from .views import (
     portfolio_asset_underlying_import,
     portfolio_underlying_uploads,
     portfolio_underlying_template,
+    report_asset_isin_targets,
+    update_report_asset_isins,
 )
 from .holding_report_views import holding_report, holding_matrix_report
 from .equity_market_cap_views import equity_market_cap_report
@@ -136,6 +138,9 @@ urlpatterns = [
         portfolio_underlying_uploads,
         name="portfolio-underlying-uploads",
     ),
+
+    path("assets/<int:asset_id>/isin-targets/", report_asset_isin_targets, name="report-asset-isin-targets"),
+    path("assets/<int:asset_id>/isins/", update_report_asset_isins, name="report-asset-isin-update"),
 
     path(
         "assets/<int:asset_id>/underlying/import/",

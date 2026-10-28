@@ -37,8 +37,6 @@ class PortfolioCalculationService:
             return False
         if asset_class and row["asset_class"] != asset_class:
             return False
-        if advisor and (asset.get("advisors") or "").strip() != advisor:
-            return False
         return True
 
     @classmethod
@@ -65,8 +63,6 @@ class PortfolioCalculationService:
             if family and tx_family != family:
                 continue
             if asset_class and tx_asset_class != asset_class:
-                continue
-            if advisor and (tx.advisors or "").strip() != advisor:
                 continue
             selected_transactions.append(tx)
 

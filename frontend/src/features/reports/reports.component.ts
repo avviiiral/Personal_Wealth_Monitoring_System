@@ -753,10 +753,8 @@ This will recalculate the affected holding and cannot be undone.`,
     const assetIds = new Set<number>();
 
     for (const assetGroup of summary.asset_names) {
-      for (const underlyingGroup of assetGroup.underlyings) {
-        for (const tx of underlyingGroup.transactions) {
-          assetIds.add(tx.asset);
-        }
+      for (const tx of assetGroup.transactions) {
+        assetIds.add(tx.asset);
       }
     }
 
@@ -769,9 +767,10 @@ This will recalculate the affected holding and cannot be undone.`,
 
       rows.push({
         family_name: this.clean(asset.family_name),
+        asset_class: this.clean(summary.asset_class),
         sub_class: this.clean(summary.sub_class),
         asset_name: this.clean(asset.asset_name),
-        underlying: this.clean(asset.underlying || asset.asset_name),
+        underlying: this.clean(asset.underlying),
         isin: asset.isin || '-',
         advisors: asset.advisors || '-',
         quantity: this.toNumber(asset.quantity),
@@ -798,7 +797,8 @@ This will recalculate the affected holding and cannot be undone.`,
       sheetName: 'Holdings',
       title: `${summary.sub_class} — Holdings (as of ${this.todayLabel()})`,
       columns: [
-        { header: 'Family Name', key: 'family_name', width: 24 },
+        { header: 'Family Member', key: 'family_name', width: 24 },
+        { header: 'Asset Class', key: 'asset_class', width: 20 },
         { header: 'Sub Class', key: 'sub_class', width: 22 },
         { header: 'Asset Name', key: 'asset_name', width: 30 },
         { header: 'Underlying', key: 'underlying', width: 28 },

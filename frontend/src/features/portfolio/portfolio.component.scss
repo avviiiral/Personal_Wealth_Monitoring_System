@@ -1327,10 +1327,10 @@
 }
 
 /* ==========================================================
-   PORTFOLIO TABLE FIX FOR 100–110% BROWSER ZOOM
-   Global responsive table rules intentionally allow other pages
-   to reflow. On this page, dense financial columns must retain
-   readable widths and scroll within their own table containers.
+   PORTFOLIO RESPONSIVE TABLES
+   Preserve readable financial columns at narrow zoomed viewports,
+   while allowing tables and detail rows to use available width
+   on wide viewports. Overflow stays inside the relevant wrapper.
    ========================================================== */
 
 .portfolio-table-card,
@@ -1346,13 +1346,14 @@
 .portfolio-table-card .table-scroll,
 .portfolio-table-card .asset-groups,
 .portfolio-table-card .underlying-table-scroll {
+  width: 100%;
   overflow-x: auto;
   overscroll-behavior-x: contain;
 }
 
 .portfolio-table-card .portfolio-table {
-  width: max-content !important;
-  min-width: 1100px !important;
+  width: 100% !important;
+  min-width: 1050px !important;
   max-width: none !important;
   table-layout: auto !important;
 }
@@ -1371,31 +1372,35 @@
   min-width: 210px !important;
 }
 
+.portfolio-table-card .asset-groups {
+  width: 100%;
+}
+
 .portfolio-table-card .asset-group-columns-header,
 .portfolio-table-card .asset-group-header {
-  width: max-content;
-  min-width: 1240px;
+  width: 100%;
+  min-width: 1180px;
   max-width: none;
   flex-wrap: nowrap;
 }
 
 .portfolio-table-card .asset-group-name-header,
 .portfolio-table-card .asset-group-name {
-  flex: 0 0 320px;
-  min-width: 320px !important;
+  flex: 0 0 280px;
+  min-width: 280px !important;
   max-width: 320px;
   overflow-wrap: anywhere;
 }
 
 .portfolio-table-card .asset-group-col {
-  flex: 0 0 150px;
-  min-width: 150px !important;
-  max-width: 150px;
+  flex: 1 0 135px;
+  min-width: 135px !important;
+  max-width: 180px;
   white-space: nowrap;
 }
 
 .portfolio-table-card .underlying-table-scroll .asset-table {
-  width: max-content !important;
+  width: 100% !important;
   min-width: 1200px !important;
   max-width: none !important;
   table-layout: auto !important;
@@ -1427,15 +1432,14 @@
 
   .portfolio-table-card .asset-group-name-header,
   .portfolio-table-card .asset-group-name {
-    flex-basis: 280px;
-    min-width: 280px !important;
+    flex-basis: 260px;
+    min-width: 260px !important;
     max-width: 280px;
   }
 
   .portfolio-table-card .asset-group-col {
-    flex-basis: 145px;
-    min-width: 145px !important;
-    max-width: 145px;
+    flex: 0 0 140px;
+    min-width: 140px !important;
+    max-width: 150px;
   }
 }
-

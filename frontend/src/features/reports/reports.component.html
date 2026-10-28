@@ -425,15 +425,15 @@
           <ng-container *ngFor="let summary of subClassGroups; trackBy: trackBySubClass">
             <tr
               class="sub-class-row"
-              [class.expanded]="expandedSubClass === summary.sub_class"
-              (click)="toggleSubClass(summary.sub_class)"
+              [class.expanded]="expandedSubClass === summary.group_key"
+              (click)="toggleSubClass(summary.group_key)"
             >
               <td class="sub-class-name">
-                <span class="row-chevron" [class.open]="expandedSubClass === summary.sub_class">
+                <span class="row-chevron" [class.open]="expandedSubClass === summary.group_key">
                   ›
                 </span>
 
-                {{ summary.sub_class }}
+                {{ summary.family_name }} · {{ summary.asset_class }} · {{ summary.sub_class }}
               </td>
 
               <td>{{ formatNumber(summary.quantity) }}</td>
@@ -458,7 +458,7 @@
               <td class="arrow-column">
                 <span
                   class="row-chevron right"
-                  [class.open]="expandedSubClass === summary.sub_class"
+                  [class.open]="expandedSubClass === summary.group_key"
                 >
                   ›
                 </span>
@@ -471,10 +471,10 @@
                  Level 2 (Asset Name) groups, with the same financial
                  columns, plus a Download action underneath.
                  ====================================================== -->
-            <tr *ngIf="expandedSubClass === summary.sub_class" class="asset-detail-row">
+            <tr *ngIf="expandedSubClass === summary.group_key" class="asset-detail-row">
               <td colspan="8">
                 <div class="asset-detail-container">
-                  <div class="asset-detail-title">{{ summary.sub_class }} Assets</div>
+                  <div class="asset-detail-title">{{ summary.family_name }} · {{ summary.asset_class }} · {{ summary.sub_class }} Assets</div>
 
                   <div class="sub-class-download-action">
                     <button
@@ -524,11 +524,11 @@
                           class="asset-group-header"
                           [class.expanded]="
                             expandedAssetName ===
-                            getAssetNameKey(summary.sub_class, assetGroup.asset_name)
+                            getAssetNameKey(summary.group_key, assetGroup.asset_name)
                           "
                           (click)="
                             toggleAssetName(
-                              getAssetNameKey(summary.sub_class, assetGroup.asset_name)
+                              getAssetNameKey(summary.group_key, assetGroup.asset_name)
                             )
                           "
                         >
@@ -536,7 +536,7 @@
                             class="row-chevron"
                             [class.open]="
                               expandedAssetName ===
-                              getAssetNameKey(summary.sub_class, assetGroup.asset_name)
+                              getAssetNameKey(summary.group_key, assetGroup.asset_name)
                             "
                           >
                             ›
@@ -586,7 +586,7 @@
                         <div
                           *ngIf="
                             expandedAssetName ===
-                            getAssetNameKey(summary.sub_class, assetGroup.asset_name)
+                            getAssetNameKey(summary.group_key, assetGroup.asset_name)
                           "
                           class="asset-name-actions"
                         >
@@ -621,7 +621,7 @@
                         <div
                           *ngIf="
                             expandedAssetName ===
-                            getAssetNameKey(summary.sub_class, assetGroup.asset_name)
+                            getAssetNameKey(summary.group_key, assetGroup.asset_name)
                           "
                           class="underlying-container"
                         >

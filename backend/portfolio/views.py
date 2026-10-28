@@ -613,10 +613,6 @@ def update_report_asset_isins(request, asset_id):
             if target_kind == "underlyings":
                 target.uploaded_by = request.user
                 target.save(update_fields=["isin", "uploaded_by", "updated_at"])
-                SecurityMaster.objects.update_or_create(
-                    family=family, asset_name=target.stock_name,
-                    defaults={"owner": request.user, "isin": isin or None},
-                )
             else:
                 target.save(update_fields=["isin", "updated_at"])
                 if isin:

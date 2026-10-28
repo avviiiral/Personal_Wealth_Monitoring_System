@@ -87,8 +87,6 @@ class PortfolioTreeService:
             return False
         if filters.get("asset_class") and cls._clean(tx.asset_class) != filters["asset_class"]:
             return False
-        if filters.get("advisor") and cls._clean(tx.advisors, "") != filters["advisor"]:
-            return False
         return True
 
     @staticmethod

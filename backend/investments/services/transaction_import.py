@@ -600,6 +600,7 @@ class TransactionImporter:
                 & (candidates["_isin"] == normalized_isin)
             ]
 
+            if not filtered.empty:
                 portfolio = (
                     TransactionImporter
                     ._clean_string(

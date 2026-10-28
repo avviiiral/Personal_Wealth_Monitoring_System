@@ -45,6 +45,7 @@ interface UnderlyingGroup {
 interface AssetNameGroup {
   asset_name: string;
   underlyings: UnderlyingGroup[];
+  transactions: Transaction[];
   transaction_count: number;
 
   /* Financial values, joined in from the Portfolio tree by asset id -
@@ -384,7 +385,8 @@ This will recalculate the affected holding and cannot be undone.`,
   }
 
   private getUnderlyingName(tx: Transaction): string {
-    return this.clean(tx.underlying || tx.asset_name);
+    // A blank uploaded Underlying means the hierarchy ends at Asset Name.
+    return this.clean(tx.underlying);
   }
 
   /**
@@ -511,7 +513,9 @@ This will recalculate the affected holding and cannot be undone.`,
         const { family_name, asset_class, sub_class, asset_names: assetNameMap } = scope;
         const asset_names: AssetNameGroup[] = Array.from(assetNameMap.entries())
           .map(([asset_name, underlyingMap]) => {
+            const allAssetTransactions = Array.from(underlyingMap.values()).flat();
             const underlyings: UnderlyingGroup[] = Array.from(underlyingMap.entries())
+              .filter(([underlying]) => !!underlying)
               .map(([underlying, txs]) => ({
                 underlying,
                 isin: txs.find((tx) => tx.isin)?.isin ?? '-',
@@ -535,6 +539,7 @@ This will recalculate the affected holding and cannot be undone.`,
             return {
               asset_name,
               underlyings,
+              transactions: allAssetTransactions,
               transaction_count,
               quantity: assetNameFinancials?.quantity ?? 0,
               invested_value: assetNameFinancials?.invested_value ?? 0,
@@ -926,11 +931,9 @@ This will recalculate the affected holding and cannot be undone.`,
   ): Promise<void> {
     event.stopPropagation();
 
-    const allTransactions: Transaction[] = [];
-
-    for (const underlyingGroup of assetGroup.underlyings) {
-      allTransactions.push(...underlyingGroup.transactions);
-    }
+    // Export from the asset-name scope, not only the visible Underlying
+    // children, so rows with a blank Underlying are retained as-is.
+    const allTransactions = assetGroup.transactions.slice();
 
     const rows = allTransactions
       .slice()

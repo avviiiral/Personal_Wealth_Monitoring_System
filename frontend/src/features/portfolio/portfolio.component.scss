@@ -1325,3 +1325,117 @@
     max-width: 100%;
   }
 }
+
+/* ==========================================================
+   PORTFOLIO TABLE FIX FOR 100–110% BROWSER ZOOM
+   Global responsive table rules intentionally allow other pages
+   to reflow. On this page, dense financial columns must retain
+   readable widths and scroll within their own table containers.
+   ========================================================== */
+
+.portfolio-table-card,
+.portfolio-table-card .table-scroll,
+.portfolio-table-card .asset-detail-container,
+.portfolio-table-card .asset-groups,
+.portfolio-table-card .underlying-container,
+.portfolio-table-card .underlying-table-scroll {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.portfolio-table-card .table-scroll,
+.portfolio-table-card .asset-groups,
+.portfolio-table-card .underlying-table-scroll {
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+}
+
+.portfolio-table-card .portfolio-table {
+  width: max-content !important;
+  min-width: 1100px !important;
+  max-width: none !important;
+  table-layout: auto !important;
+}
+
+.portfolio-table-card .portfolio-table th,
+.portfolio-table-card .portfolio-table td {
+  min-width: 120px !important;
+  max-width: none !important;
+  white-space: nowrap !important;
+  overflow-wrap: normal !important;
+  word-break: normal !important;
+}
+
+.portfolio-table-card .portfolio-table th:first-child,
+.portfolio-table-card .portfolio-table td:first-child {
+  min-width: 210px !important;
+}
+
+.portfolio-table-card .asset-group-columns-header,
+.portfolio-table-card .asset-group-header {
+  width: max-content;
+  min-width: 1240px;
+  max-width: none;
+  flex-wrap: nowrap;
+}
+
+.portfolio-table-card .asset-group-name-header,
+.portfolio-table-card .asset-group-name {
+  flex: 0 0 320px;
+  min-width: 320px !important;
+  max-width: 320px;
+  overflow-wrap: anywhere;
+}
+
+.portfolio-table-card .asset-group-col {
+  flex: 0 0 150px;
+  min-width: 150px !important;
+  max-width: 150px;
+  white-space: nowrap;
+}
+
+.portfolio-table-card .underlying-table-scroll .asset-table {
+  width: max-content !important;
+  min-width: 1200px !important;
+  max-width: none !important;
+  table-layout: auto !important;
+}
+
+.portfolio-table-card .underlying-table-scroll .asset-table th,
+.portfolio-table-card .underlying-table-scroll .asset-table td {
+  min-width: 120px !important;
+  max-width: none !important;
+  white-space: nowrap !important;
+  overflow-wrap: normal !important;
+  word-break: normal !important;
+}
+
+.portfolio-table-card .underlying-table-scroll .asset-table th:first-child,
+.portfolio-table-card .underlying-table-scroll .asset-table td:first-child {
+  min-width: 320px !important;
+}
+
+@media (max-width: 1250px) {
+  .portfolio-table-card .portfolio-table {
+    min-width: 1050px !important;
+  }
+
+  .portfolio-table-card .asset-group-columns-header,
+  .portfolio-table-card .asset-group-header {
+    min-width: 1180px;
+  }
+
+  .portfolio-table-card .asset-group-name-header,
+  .portfolio-table-card .asset-group-name {
+    flex-basis: 280px;
+    min-width: 280px !important;
+    max-width: 280px;
+  }
+
+  .portfolio-table-card .asset-group-col {
+    flex-basis: 145px;
+    min-width: 145px !important;
+    max-width: 145px;
+  }
+}
+

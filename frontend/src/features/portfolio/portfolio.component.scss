@@ -1133,197 +1133,41 @@
 .identity-isin-fallback { display: grid; gap: 5px; margin-top: 8px; max-width: 360px; color: var(--muted); font-size: 11px; }
 .identity-isin-fallback input { width: 100%; box-sizing: border-box; padding: 8px; border: 1px solid var(--surface-line); border-radius: 6px; background: var(--surface); color: var(--ink); }
 
-/* ==========================================================
-   FLUID PORTFOLIO LAYOUT
-   Keep the outer summary table fitted to its container. Expanded
-   detail tables may scroll inside their own wrappers when their
-   columns cannot fit, rather than widening the entire page.
-   ========================================================== */
+/* Responsive page controls; dense financial tables scroll in their own wrappers. */
 .portfolio-page,
 .portfolio-table-card,
-.table-scroll,
-.asset-detail-container,
-.asset-groups,
-.underlying-container,
-.underlying-table-scroll {
+.portfolio-table-card .table-scroll,
+.portfolio-table-card .asset-groups,
+.portfolio-table-card .underlying-table-scroll {
   min-width: 0;
   max-width: 100%;
 }
 
-.portfolio-table {
-  width: 100%;
-  min-width: 0;
-  table-layout: fixed;
-}
-
-.portfolio-table th,
-.portfolio-table td {
-  min-width: 0;
-  overflow-wrap: anywhere;
-  word-break: normal;
-}
-
-.table-scroll,
-.underlying-table-scroll {
-  overflow-x: auto;
-  overscroll-behavior-x: contain;
-}
-
-.asset-table {
-  width: 100%;
-  min-width: 1200px;
-  table-layout: auto;
-}
-
-.asset-group-header,
-.asset-group-columns-header {
-  min-width: 0;
-}
-
-.asset-group-name,
-.asset-group-name-header {
-  min-width: 0;
-  overflow-wrap: anywhere;
-}
-
-@media (max-width: 1100px) {
-  .portfolio-page {
-    padding: 18px;
-  }
-
-  .portfolio-table th,
-  .portfolio-table td {
-    padding: 10px 8px;
-    font-size: 12px;
-  }
-
-  .asset-group-col {
-    flex: 0 0 clamp(110px, 16vw, 160px);
-  }
-
-  .asset-name {
-    min-width: 180px;
-  }
-}
-
 @media (max-width: 760px) {
-  .portfolio-page {
-    padding: 12px;
-  }
-
-  .portfolio-header {
-    gap: 12px;
-  }
-
-  .portfolio-header h1 {
-    font-size: clamp(20px, 5vw, 26px);
-  }
-
-  .portfolio-header-actions {
-    width: 100%;
-  }
-
+  .portfolio-page { padding: 12px; }
+  .portfolio-header { gap: 12px; }
+  .portfolio-header h1 { font-size: clamp(20px, 5vw, 26px); }
+  .portfolio-header-actions { width: 100%; }
   .portfolio-header-actions .refresh-button,
   .portfolio-header-actions .upload-button {
     flex: 1 1 140px;
     min-width: 0;
     white-space: normal;
   }
-
-  .portfolio-table {
-    table-layout: fixed;
-  }
-
-  .portfolio-table th,
-  .portfolio-table td {
-    padding: 8px 5px;
-    font-size: 11px;
-  }
-
-  .portfolio-table th:nth-child(2),
-  .portfolio-table td:nth-child(2) {
-    display: none;
-  }
-
-  .underlying-container {
-    padding: 0 8px 10px;
-  }
-
-  .asset-group-columns-header {
-    padding: 8px;
-  }
-
-  .asset-group-header {
-    padding: 10px 8px;
-    flex-wrap: wrap;
-    row-gap: 6px;
-  }
-
-  .asset-group-name,
-  .asset-group-name-header {
-    flex: 1 1 100%;
-  }
-
-  .asset-group-col {
-    flex: 1 1 30%;
-    padding-right: 6px;
-    overflow-wrap: anywhere;
-  }
-
-  .underlying-upload-field {
-    min-width: min(100%, 220px);
-    flex: 1 1 220px;
-  }
-
+  .underlying-container { padding: 0 8px 10px; }
+  .underlying-upload-field { min-width: min(100%, 220px); flex: 1 1 220px; }
   .underlying-upload-field select,
-  .underlying-upload-file {
-    width: 100%;
-    min-width: 0;
-  }
+  .underlying-upload-file { width: 100%; min-width: 0; }
 }
 
 @media (max-width: 480px) {
-  .portfolio-page {
-    padding: 8px;
-  }
-
-  .selection-area {
-    gap: 8px;
-  }
-
-  .selection-box {
-    padding: 10px;
-  }
-
-  .portfolio-table th,
-  .portfolio-table td {
-    padding: 7px 4px;
-    font-size: 10px;
-  }
-
-  .portfolio-table th:nth-child(3),
-  .portfolio-table td:nth-child(3) {
-    display: none;
-  }
-
-  .asset-group-col {
-    flex-basis: 45%;
-  }
-
-  .manual-price-container {
-    align-items: stretch;
-  }
-
-  .manual-price-field {
-    min-width: 0;
-    flex: 1 1 110px;
-  }
-
+  .portfolio-page { padding: 8px; }
+  .selection-area { gap: 8px; }
+  .selection-box { padding: 10px; }
+  .manual-price-container { align-items: stretch; }
+  .manual-price-field { min-width: 0; flex: 1 1 110px; }
   .manual-price-input,
-  .manual-price-date-input {
-    width: 100%;
-    max-width: 100%;
-  }
+  .manual-price-date-input { width: 100%; max-width: 100%; }
 }
 
 /* Portfolio zoom: keep financial columns readable and scroll within tables. */
@@ -1382,3 +1226,64 @@
 .portfolio-table-card .asset-table td:first-child {
   min-width: 320px !important;
 }
+
+/* Use the same grid tracks for asset labels and asset values.
+   A dedicated chevron track prevents the family value from
+   sliding under a long asset name. */
+.portfolio-table-card .asset-group-columns-header,
+.portfolio-table-card .asset-group-header {
+  display: grid;
+  grid-template-columns: 24px minmax(260px, 2fr) repeat(6, minmax(140px, 1fr));
+  align-items: center;
+  column-gap: 12px;
+  width: 100%;
+  min-width: 1220px;
+  box-sizing: border-box;
+}
+
+.portfolio-table-card .asset-group-columns-header {
+  padding-left: 12px;
+  padding-right: 12px;
+}
+
+.portfolio-table-card .asset-group-chevron-spacer {
+  display: block;
+  width: 24px;
+}
+
+.portfolio-table-card .asset-group-header {
+  padding: 12px;
+}
+
+.portfolio-table-card .asset-group-name-header,
+.portfolio-table-card .asset-group-name,
+.portfolio-table-card .asset-group-col {
+  min-width: 0 !important;
+  max-width: none;
+  width: auto;
+  flex: initial;
+  white-space: nowrap;
+}
+
+.portfolio-table-card .asset-group-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.portfolio-table-card .asset-group-name-header {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.portfolio-table-card .asset-group-col {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+@media (max-width: 1250px) {
+  .portfolio-table-card .asset-group-columns-header,
+  .portfolio-table-card .asset-group-header {
+    grid-template-columns: 24px minmax(260px, 2fr) repeat(6, minmax(140px, 1fr));
+  }
+}
+

@@ -597,10 +597,23 @@ def update_report_asset_isins(request, asset_id):
     if len(supplied_nonempty) != len(set(supplied_nonempty)):
         return Response({"detail": "Each unique underlying must have its own distinct ISIN."}, status=status.HTTP_400_BAD_REQUEST)
 
+    reuse_existing_mapping = request.data.get("reuse_existing_mapping") is True
+    existing_mappings = {}
     if target_kind == "asset":
         for isin in supplied_nonempty:
-            if Asset.objects.filter(family=family, isin__iexact=isin).exclude(id=asset.id).exists():
-                return Response({"detail": f"ISIN {isin} is already assigned to another asset in this family."}, status=status.HTTP_409_CONFLICT)
+            existing_asset = Asset.objects.filter(family=family, isin__iexact=isin).exclude(id=asset.id).order_by("id").first()
+            if existing_asset:
+                existing_mappings[isin] = existing_asset
+                if not reuse_existing_mapping:
+                    return Response({
+                        "confirmation_required": True,
+                        "isin": isin,
+                        "existing_asset_name": existing_asset.name,
+                        "detail": (
+                            f"ISIN {isin} is already mapped to \"{existing_asset.name}\". "
+                            "Verify that both asset records represent the same security before reusing this mapping."
+                        ),
+                    }, status=status.HTTP_409_CONFLICT)
     else:
         for isin in supplied_nonempty:
             if AssetUnderlyingHolding.objects.filter(family=family, isin__iexact=isin).exclude(asset=asset).exists():
@@ -614,15 +627,25 @@ def update_report_asset_isins(request, asset_id):
                 target.uploaded_by = request.user
                 target.save(update_fields=["isin", "uploaded_by", "updated_at"])
             else:
-                target.save(update_fields=["isin", "updated_at"])
-                if isin:
-                    security, created = SecurityMaster.objects.get_or_create(
+                if isin and isin in existing_mappings and reuse_existing_mapping:
+                    existing_asset = existing_mappings[isin]
+                    security = existing_asset.security_master
+                    if security is None:
+                        security, _ = SecurityMaster.objects.get_or_create(
+                            family=family,
+                            isin=isin,
+                            defaults={"owner": request.user, "asset_name": existing_asset.name},
+                        )
+                        existing_asset.security_master = security
+                        existing_asset.save(update_fields=["security_master", "updated_at"])
+                    target.security_master = security
+                elif isin:
+                    security, _ = SecurityMaster.objects.get_or_create(
                         family=family, isin=isin,
                         defaults={"owner": request.user, "asset_name": asset.name},
                     )
-                    if not created and security.asset_name == asset.name:
-                        security.owner = request.user
-                        security.save(update_fields=["owner", "updated_at"])
+                    target.security_master = security
+                target.save(update_fields=["isin", "security_master", "updated_at"])
 
     logger.info("Reports ISIN updated asset_id=%s kind=%s count=%s user_id=%s", asset.id, target_kind, len(normalized), request.user.id)
     return Response({"success": True, "asset_id": asset.id, "kind": target_kind, "message": "ISINs saved successfully."})

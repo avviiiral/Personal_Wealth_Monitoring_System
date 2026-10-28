@@ -104,8 +104,8 @@ export class PortfolioApiService {
     });
   }
   getAssetIsinTargets(assetId: number): Observable<AssetIsinTargetsResponse> { return this.http.get<AssetIsinTargetsResponse>(`${this.baseUrl}/assets/${assetId}/isin-targets/`, this.requestOptions); }
-  updateAssetIsins(assetId: number, items: AssetIsinTarget[], reuseExistingMapping = false): Observable<any> {
-    return this.getCsrfToken().pipe(switchMap(() => this.http.patch(`${this.baseUrl}/assets/${assetId}/isins/`, { items, reuse_existing_mapping: reuseExistingMapping }, { headers: this.getCsrfHeaders(), withCredentials: true })));
+  updateAssetIsins(assetId: number, items: AssetIsinTarget[], confirmedExistingIsin: string | null = null): Observable<any> {
+    return this.getCsrfToken().pipe(switchMap(() => this.http.patch(`${this.baseUrl}/assets/${assetId}/isins/`, { items, confirmed_existing_isin: confirmedExistingIsin || "" }, { headers: this.getCsrfHeaders(), withCredentials: true })));
   }
 
   uploadAssetUnderlying(assetId: number, file: File): Observable<any> {

@@ -490,15 +490,10 @@ class TransactionImporter:
             family_name
         )
 
-        advisor = TransactionImporter._normalize(
-            advisors
-        )
-
-        lookup_name = TransactionImporter._normalize(
-            underlying
-            if underlying
-            else asset_name
-        )
+        # Summary-sheet metadata may help resolve a portfolio label, but
+        # Advisors are informational and must never affect transaction placement.
+        lookup_name = TransactionImporter._normalize(asset_name)
+        normalized_asset_class = TransactionImporter._normalize(asset_class)
 
         normalized_isin = (
             TransactionImporter
@@ -509,14 +504,6 @@ class TransactionImporter:
 
         candidates["_family"] = (
             candidates["Family Name"]
-            .fillna("")
-            .astype(str)
-            .str.strip()
-            .str.upper()
-        )
-
-        candidates["_advisor"] = (
-            candidates["Advisors"]
             .fillna("")
             .astype(str)
             .str.strip()
@@ -548,13 +535,12 @@ class TransactionImporter:
         )
 
         filtered = candidates[
-            candidates["_family"] == family
+            (candidates["_family"] == family)
+            & (
+                candidates["_asset_class"]
+                == normalized_asset_class
+            )
         ]
-
-        if advisor:
-            filtered = filtered[
-                filtered["_advisor"] == advisor
-            ]
 
         if normalized_isin:
             isin_filtered = filtered[
@@ -584,13 +570,12 @@ class TransactionImporter:
                 return portfolio
 
         filtered = candidates[
-            candidates["_family"] == family
+            (candidates["_family"] == family)
+            & (
+                candidates["_asset_class"]
+                == normalized_asset_class
+            )
         ]
-
-        if advisor:
-            filtered = filtered[
-                filtered["_advisor"] == advisor
-            ]
 
         if lookup_name:
             filtered = filtered[
@@ -610,23 +595,10 @@ class TransactionImporter:
 
         if normalized_isin:
             filtered = candidates[
-                (
-                    candidates["_family"] == family
-                )
-                & (
-                    candidates["_isin"]
-                    == normalized_isin
-                )
+                (candidates["_family"] == family)
+                & (candidates["_asset_class"] == normalized_asset_class)
+                & (candidates["_isin"] == normalized_isin)
             ]
-
-            if not filtered.empty:
-                if advisor:
-                    advisor_filtered = filtered[
-                        filtered["_advisor"] == advisor
-                    ]
-
-                    if not advisor_filtered.empty:
-                        filtered = advisor_filtered
 
                 portfolio = (
                     TransactionImporter

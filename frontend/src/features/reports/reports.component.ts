@@ -550,7 +550,7 @@ This will recalculate the affected holding and cannot be undone.`,
         );
 
         const subClassFinancials = this.portfolioCalculations.subclasses.find(
-          (row) => row.sub_class === sub_class,
+          (row) => row.sub_class === sub_class && row.family_name === family_name,
         );
 
         return {

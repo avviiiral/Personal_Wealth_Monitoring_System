@@ -152,7 +152,7 @@ export class ReportsComponent implements OnInit {
   isinEditorLoading = false;
   isinEditorSaving = false;
   isinEditorError = "";
-  isinEditorReuseConfirmationRequired = false;
+  isinEditorReuseConfirmationIsin: string | null = null;
 
   /* Transaction editor used by the final Transactions table. */
   editingTransaction: Transaction | null = null;
@@ -866,7 +866,7 @@ This will recalculate the affected holding and cannot be undone.`,
     this.isinEditorReuseConfirmationRequired = false;
   }
 
-  saveAssetIsins(confirmReuse = false): void {
+  saveAssetIsins(confirmedIsin: string | null = null): void {
     if (this.isinEditorAssetId === null || this.isinEditorSaving || !this.isinEditorItems.length) return;
     const normalizedItems = this.isinEditorItems.map(item => ({ ...item, isin: (item.isin || "").replace(/\s+/g, "").toUpperCase() }));
     const invalid = normalizedItems.find(item => item.isin && !/^[A-Z]{2}[A-Z0-9]{9}[0-9]$/.test(item.isin));
@@ -876,7 +876,7 @@ This will recalculate the affected holding and cannot be undone.`,
     }
     this.isinEditorSaving = true;
     this.isinEditorError = "";
-    this.portfolioApi.updateAssetIsins(this.isinEditorAssetId, normalizedItems, confirmReuse).subscribe({
+    this.portfolioApi.updateAssetIsins(this.isinEditorAssetId, normalizedItems, confirmedIsin.subscribe({
       next: () => {
         this.isinEditorSaving = false;
         this.cancelAssetIsinEditor();

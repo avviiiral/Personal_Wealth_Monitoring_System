@@ -756,6 +756,27 @@ class PortfolioCalculationServiceTests(TestCase):
         self.assertEqual(data["family_subclasses"][0]["family_name"], "Family A")
         self.assertEqual(data["family_subclasses"][0]["sub_class"], "Large Cap")
 
+    def test_advisor_filter_does_not_change_portfolio_calculation_scope(self):
+        unfiltered = PortfolioCalculationService.calculate(
+            owner=self.user,
+            family_id=self.family.id,
+        )
+        advisor_filtered = PortfolioCalculationService.calculate(
+            owner=self.user,
+            family_id=self.family.id,
+            advisor="An Advisor That Is Not Assigned",
+        )
+
+        self.assertEqual(len(advisor_filtered["asset_names"]), len(unfiltered["asset_names"]))
+        self.assertEqual(
+            advisor_filtered["asset_names"][0]["current_value"],
+            unfiltered["asset_names"][0]["current_value"],
+        )
+        self.assertEqual(
+            advisor_filtered["report_subclass_summaries"][0]["xirr"],
+            unfiltered["report_subclass_summaries"][0]["xirr"],
+        )
+
     def test_report_asset_name_summaries_keep_family_scopes_separate(self):
         other_asset = Asset.objects.create(
             family=self.family,

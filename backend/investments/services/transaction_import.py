@@ -1538,10 +1538,16 @@ class TransactionImporter:
                     canonical_name = resolution.get("canonical_name", "")
                     resolved_asset = resolution.get("asset")
 
-                    if resolution["status"] == "MATCHED" and canonical_name:
-                        # Store the canonical Security Master identity in the
-                        # transaction, not a spelling variant from the upload.
-                        parsed["underlying"] = canonical_name
+                    # Enrichment may fill only a missing ISIN. Keep the uploaded
+                    # Asset Name and Underlying exactly as supplied; canonical
+                    # names belong in the resolution log/reference records only.
+                    resolved_isin = (
+                        resolution.get("isin")
+                        or getattr(resolved_asset, "isin", "")
+                        or ""
+                    )
+                    if not parsed["isin"] and resolved_isin:
+                        parsed["isin"] = str(resolved_isin).strip().upper()
 
                     SecurityIdentityResolutionLog.objects.create(
                         family=family, upload=upload_batch, actor=owner, row_number=row_number,

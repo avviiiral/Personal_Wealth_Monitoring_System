@@ -1,5 +1,6 @@
 """Conservative, family-scoped resolution of transaction security identities."""
 from investments.models import Asset, AssetCategory, SecurityAlias, SecurityMaster
+from market_data.services.security_resolver import SecurityResolver
 
 
 class SecurityIdentityResolver:

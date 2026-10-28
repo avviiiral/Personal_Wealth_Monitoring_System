@@ -152,6 +152,7 @@ export class ReportsComponent implements OnInit {
   isinEditorLoading = false;
   isinEditorSaving = false;
   isinEditorError = "";
+  isinEditorReuseConfirmationRequired = false;
 
   /* Transaction editor used by the final Transactions table. */
   editingTransaction: Transaction | null = null;
@@ -839,6 +840,7 @@ This will recalculate the affected holding and cannot be undone.`,
     this.isinEditorAssetName = assetGroup.asset_name;
     this.isinEditorItems = [];
     this.isinEditorError = "";
+    this.isinEditorReuseConfirmationRequired = false;
     this.isinEditorLoading = true;
     this.portfolioApi.getAssetIsinTargets(assetId).subscribe({
       next: response => {
@@ -861,9 +863,10 @@ This will recalculate the affected holding and cannot be undone.`,
     this.isinEditorAssetName = null;
     this.isinEditorItems = [];
     this.isinEditorError = "";
+    this.isinEditorReuseConfirmationRequired = false;
   }
 
-  saveAssetIsins(): void {
+  saveAssetIsins(confirmReuse = false): void {
     if (this.isinEditorAssetId === null || this.isinEditorSaving || !this.isinEditorItems.length) return;
     const normalizedItems = this.isinEditorItems.map(item => ({ ...item, isin: (item.isin || "").replace(/\s+/g, "").toUpperCase() }));
     const invalid = normalizedItems.find(item => item.isin && !/^[A-Z]{2}[A-Z0-9]{9}[0-9]$/.test(item.isin));
@@ -873,7 +876,7 @@ This will recalculate the affected holding and cannot be undone.`,
     }
     this.isinEditorSaving = true;
     this.isinEditorError = "";
-    this.portfolioApi.updateAssetIsins(this.isinEditorAssetId, normalizedItems).subscribe({
+    this.portfolioApi.updateAssetIsins(this.isinEditorAssetId, normalizedItems, confirmReuse).subscribe({
       next: () => {
         this.isinEditorSaving = false;
         this.cancelAssetIsinEditor();
@@ -882,6 +885,9 @@ This will recalculate the affected holding and cannot be undone.`,
       },
       error: error => {
         this.isinEditorSaving = false;
+        if (error?.error?.confirmation_required) {
+          this.isinEditorReuseConfirmationRequired = true;
+        }
         this.isinEditorError = error?.error?.detail || "Unable to save ISINs.";
         this.cdr.detectChanges();
       },

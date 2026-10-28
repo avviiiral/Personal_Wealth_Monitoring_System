@@ -142,7 +142,7 @@ export class ReportsComponent implements OnInit {
   downloadMenuOpen = false;
   deleteAssetName: string | null = null;
   deleteAssetNameConfirmation = '';
-  deletingAssetTransactions = false;
+  deletingAssetTransactions = false;\n\n  isinEditorAssetName: string | null = null;\n  isinEditorAssetId: number | null = null;\n  isinEditorKind: "asset" | "underlyings" = "asset";\n  isinEditorItems: AssetIsinTarget[] = [];\n  isinEditorLoading = false;\n  isinEditorSaving = false;\n  isinEditorError = "";
 
   /* Transaction editor used by the final Transactions table. */
   editingTransaction: Transaction | null = null;
@@ -807,6 +807,66 @@ export class ReportsComponent implements OnInit {
       error: (error) => {
         this.deletingAssetTransactions = false;
         this.toast.error(error?.error?.detail || error?.error?.message || 'Unable to delete transactions for this asset.', 6000);
+        this.cdr.detectChanges();
+      },
+    });
+  }
+
+  openAssetIsinEditor(event: MouseEvent, assetGroup: AssetNameGroup): void {
+    event.stopPropagation();
+    const assetId = assetGroup.underlyings.flatMap(group => group.transactions).find(tx => tx.asset)?.asset;
+    if (!assetId) {
+      this.toast.error("Could not identify the asset record for this report row.");
+      return;
+    }
+    this.isinEditorAssetId = assetId;
+    this.isinEditorAssetName = assetGroup.asset_name;
+    this.isinEditorItems = [];
+    this.isinEditorError = "";
+    this.isinEditorLoading = true;
+    this.portfolioApi.getAssetIsinTargets(assetId).subscribe({
+      next: response => {
+        this.isinEditorKind = response.kind;
+        this.isinEditorItems = response.items.map(item => ({ ...item }));
+        this.isinEditorLoading = false;
+        this.cdr.detectChanges();
+      },
+      error: error => {
+        this.isinEditorLoading = false;
+        this.isinEditorError = error?.error?.detail || "Unable to load ISIN targets.";
+        this.cdr.detectChanges();
+      },
+    });
+  }
+
+  cancelAssetIsinEditor(): void {
+    if (this.isinEditorSaving) return;
+    this.isinEditorAssetId = null;
+    this.isinEditorAssetName = null;
+    this.isinEditorItems = [];
+    this.isinEditorError = "";
+  }
+
+  saveAssetIsins(): void {
+    if (this.isinEditorAssetId === null || this.isinEditorSaving || !this.isinEditorItems.length) return;
+    const normalizedItems = this.isinEditorItems.map(item => ({ ...item, isin: (item.isin || "").replace(/\\s+/g, "").toUpperCase() }));
+    const invalid = normalizedItems.find(item => item.isin && !/^[A-Z]{2}[A-Z0-9]{9}[0-9]$/.test(item.isin));
+    if (invalid) {
+      this.isinEditorError = 'Enter a valid 12-character ISIN for "' + invalid.name + '", or leave it blank.';
+      return;
+    }
+    this.isinEditorSaving = true;
+    this.isinEditorError = "";
+    this.portfolioApi.updateAssetIsins(this.isinEditorAssetId, normalizedItems).subscribe({
+      next: () => {
+        this.isinEditorSaving = false;
+        this.cancelAssetIsinEditor();
+        this.toast.success("ISINs saved. Reports and Portfolio will use the updated records.");
+        this.loadReports();
+      },
+      error: error => {
+        this.isinEditorSaving = false;
+        this.isinEditorError = error?.error?.detail || "Unable to save ISINs.";
         this.cdr.detectChanges();
       },
     });

@@ -542,11 +542,12 @@ def update_report_asset_isins(request, asset_id):
     if not isinstance(items, list) or not items:
         return Response({"detail": "Provide the ISIN values to save."}, status=status.HTTP_400_BAD_REQUEST)
 
+    stored = list(AssetUnderlyingHolding.objects.filter(asset=asset, family=family).order_by("id"))
     transactions = list(
         Transaction.objects.filter(family=family, asset=asset)
         .order_by("underlying", "asset_name", "id")
         .values("underlying", "asset_name")
-    )
+    ) if stored else []
     names = {}
     for tx in transactions:
         name = (tx.get("underlying") or "").strip() or (tx.get("asset_name") or "").strip()

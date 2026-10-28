@@ -1326,14 +1326,11 @@
   }
 }
 
-/* Portfolio table widths and contained scrolling at browser zoom. */
+/* Portfolio zoom: keep financial columns readable and scroll within tables. */
 .portfolio-table-card .table-scroll,
-.portfolio-table-card .asset-groups,
 .portfolio-table-card .underlying-table-scroll {
-  min-width: 0;
   max-width: 100%;
   overflow-x: auto;
-  overscroll-behavior-x: contain;
 }
 
 .portfolio-table-card .portfolio-table {
@@ -1344,12 +1341,11 @@
 
 .portfolio-table-card .portfolio-table th,
 .portfolio-table-card .portfolio-table td,
-.portfolio-table-card .underlying-table-scroll .asset-table th,
-.portfolio-table-card .underlying-table-scroll .asset-table td {
+.portfolio-table-card .asset-table th,
+.portfolio-table-card .asset-table td {
   min-width: 120px !important;
   white-space: nowrap !important;
   overflow-wrap: normal !important;
-  word-break: normal !important;
 }
 
 .portfolio-table-card .portfolio-table th:first-child,
@@ -1359,49 +1355,30 @@
 
 .portfolio-table-card .asset-group-columns-header,
 .portfolio-table-card .asset-group-header {
-  width: 100%;
   min-width: 1180px;
   flex-wrap: nowrap;
 }
 
 .portfolio-table-card .asset-group-name-header,
 .portfolio-table-card .asset-group-name {
-  flex: 0 0 280px;
-  min-width: 280px !important;
+  flex: 0 0 260px;
+  min-width: 260px !important;
   overflow-wrap: anywhere;
 }
 
 .portfolio-table-card .asset-group-col {
-  flex: 1 0 135px;
-  min-width: 135px !important;
+  flex: 0 0 140px;
+  min-width: 140px !important;
   white-space: nowrap;
 }
 
-.portfolio-table-card .underlying-table-scroll .asset-table {
+.portfolio-table-card .asset-table {
   width: 100% !important;
   min-width: 1200px !important;
   table-layout: auto !important;
 }
 
-.portfolio-table-card .underlying-table-scroll .asset-table th:first-child,
-.portfolio-table-card .underlying-table-scroll .asset-table td:first-child {
+.portfolio-table-card .asset-table th:first-child,
+.portfolio-table-card .asset-table td:first-child {
   min-width: 320px !important;
-}
-
-@media (max-width: 1250px) {
-  .portfolio-table-card .asset-group-columns-header,
-  .portfolio-table-card .asset-group-header {
-    min-width: 1180px;
-  }
-
-  .portfolio-table-card .asset-group-name-header,
-  .portfolio-table-card .asset-group-name {
-    flex-basis: 260px;
-    min-width: 260px !important;
-  }
-
-  .portfolio-table-card .asset-group-col {
-    flex: 0 0 140px;
-    min-width: 140px !important;
-  }
 }

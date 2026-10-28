@@ -20,6 +20,7 @@ import {
   Transaction,
   UpdateTransactionRequest,
   PortfolioCalculations,
+  AssetIsinTarget,
 } from '../../core/services/portfolio-api.service';
 
 /* ==============================================================
@@ -142,7 +143,15 @@ export class ReportsComponent implements OnInit {
   downloadMenuOpen = false;
   deleteAssetName: string | null = null;
   deleteAssetNameConfirmation = '';
-  deletingAssetTransactions = false;\n\n  isinEditorAssetName: string | null = null;\n  isinEditorAssetId: number | null = null;\n  isinEditorKind: "asset" | "underlyings" = "asset";\n  isinEditorItems: AssetIsinTarget[] = [];\n  isinEditorLoading = false;\n  isinEditorSaving = false;\n  isinEditorError = "";
+  deletingAssetTransactions = false;
+
+  isinEditorAssetName: string | null = null;
+  isinEditorAssetId: number | null = null;
+  isinEditorKind: "asset" | "underlyings" = "asset";
+  isinEditorItems: AssetIsinTarget[] = [];
+  isinEditorLoading = false;
+  isinEditorSaving = false;
+  isinEditorError = "";
 
   /* Transaction editor used by the final Transactions table. */
   editingTransaction: Transaction | null = null;
@@ -234,7 +243,14 @@ export class ReportsComponent implements OnInit {
     }
 
     const confirmed = window.confirm(
-      `Delete this transaction permanently?\\n\\nTransaction ID: ${tx.id}\\nDate: ${tx.transaction_date}\\nType: ${tx.transaction_type_display || tx.transaction_type}\\nAmount: ₹${this.formatCurrency(tx.amount)}\\n\\nThis will recalculate the affected holding and cannot be undone.`,
+      `Delete this transaction permanently?\
+\
+Transaction ID: ${tx.id}\
+Date: ${tx.transaction_date}\
+Type: ${tx.transaction_type_display || tx.transaction_type}\
+Amount: ₹${this.formatCurrency(tx.amount)}\
+\
+This will recalculate the affected holding and cannot be undone.`,
     );
 
     if (!confirmed) {
@@ -849,7 +865,7 @@ export class ReportsComponent implements OnInit {
 
   saveAssetIsins(): void {
     if (this.isinEditorAssetId === null || this.isinEditorSaving || !this.isinEditorItems.length) return;
-    const normalizedItems = this.isinEditorItems.map(item => ({ ...item, isin: (item.isin || "").replace(/\\s+/g, "").toUpperCase() }));
+    const normalizedItems = this.isinEditorItems.map(item => ({ ...item, isin: (item.isin || "").replace(/\s+/g, "").toUpperCase() }));
     const invalid = normalizedItems.find(item => item.isin && !/^[A-Z]{2}[A-Z0-9]{9}[0-9]$/.test(item.isin));
     if (invalid) {
       this.isinEditorError = 'Enter a valid 12-character ISIN for "' + invalid.name + '", or leave it blank.';

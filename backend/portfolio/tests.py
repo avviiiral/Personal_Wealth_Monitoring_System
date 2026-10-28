@@ -756,6 +756,96 @@ class PortfolioCalculationServiceTests(TestCase):
         self.assertEqual(data["family_subclasses"][0]["family_name"], "Family A")
         self.assertEqual(data["family_subclasses"][0]["sub_class"], "Large Cap")
 
+    def test_report_asset_name_summaries_keep_family_scopes_separate(self):
+        other_asset = Asset.objects.create(
+            family=self.family,
+            owner=self.user,
+            name="Calculation Equity - Family B",
+            category="STOCK",
+            isin="INE000CALCB02",
+        )
+        Transaction.objects.create(
+            owner=self.user,
+            family=self.family,
+            asset=other_asset,
+            family_name="Family B",
+            portfolio="Portfolio B",
+            asset_class="Equity",
+            sub_class="Large Cap",
+            asset_name="Calculation Equity",
+            transaction_date=date(2026, 2, 10),
+            transaction_type="BUY",
+            quantity=Decimal("2"),
+            price_per_unit=Decimal("100"),
+            amount=Decimal("200"),
+            fees=Decimal("0"),
+        )
+        tree = {
+            "families": [
+                {
+                    "family_name": "Family A",
+                    "portfolios": [{
+                        "portfolio": "Portfolio A",
+                        "asset_classes": [{
+                            "asset_class": "Equity",
+                            "sub_classes": [{
+                                "sub_class": "Large Cap",
+                                "assets": [{
+                                    "id": self.asset.id,
+                                    "asset_name": "Calculation Equity",
+                                    "quantity": 10,
+                                    "invested_value": 1000,
+                                    "current_price": 100,
+                                    "current_value": 1000,
+                                    "advisors": "",
+                                }],
+                            }],
+                        }],
+                    }],
+                },
+                {
+                    "family_name": "Family B",
+                    "portfolios": [{
+                        "portfolio": "Portfolio B",
+                        "asset_classes": [{
+                            "asset_class": "Equity",
+                            "sub_classes": [{
+                                "sub_class": "Large Cap",
+                                "assets": [{
+                                    "id": other_asset.id,
+                                    "asset_name": "Calculation Equity",
+                                    "quantity": 2,
+                                    "invested_value": 200,
+                                    "current_price": 100,
+                                    "current_value": 200,
+                                    "advisors": "",
+                                }],
+                            }],
+                        }],
+                    }],
+                },
+            ],
+        }
+
+        data = PortfolioCalculationService.calculate(
+            owner=self.user,
+            family_id=self.family.id,
+            tree=tree,
+        )
+        rows = data["report_asset_name_summaries"]
+        self.assertEqual(len(rows), 2)
+        self.assertEqual(
+            {(row["family_name"], row["asset_class"], row["sub_class"], row["asset_name"])
+             for row in rows},
+            {
+                ("Family A", "Equity", "Large Cap", "Calculation Equity"),
+                ("Family B", "Equity", "Large Cap", "Calculation Equity"),
+            },
+        )
+        values = {row["family_name"]: row["current_value"] for row in rows}
+        self.assertEqual(values["Family A"], 1000.0)
+        self.assertEqual(values["Family B"], 200.0)
+
     def test_asset_name_xirr_includes_fully_sold_strategy_positions(self):
         # This holding has no remaining quantity and therefore is absent from
         # the visible tree, but its historical BUY/SELL cash flows belong to

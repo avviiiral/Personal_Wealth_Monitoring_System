@@ -647,16 +647,14 @@
                                     class="underlying-row"
                                     [class.expanded]="
                                       expandedUnderlying ===
-                                      getUnderlyingKey(
-                                        summary.sub_class,
+                                      getUnderlyingKey(summary.group_key,
                                         assetGroup.asset_name,
                                         underlyingGroup.underlying
                                       )
                                     "
                                     (click)="
                                       toggleUnderlying(
-                                        getUnderlyingKey(
-                                          summary.sub_class,
+                                        getUnderlyingKey(summary.group_key,
                                           assetGroup.asset_name,
                                           underlyingGroup.underlying
                                         )
@@ -668,8 +666,7 @@
                                         class="row-chevron"
                                         [class.open]="
                                           expandedUnderlying ===
-                                          getUnderlyingKey(
-                                            summary.sub_class,
+                                          getUnderlyingKey(summary.group_key,
                                             assetGroup.asset_name,
                                             underlyingGroup.underlying
                                           )
@@ -690,8 +687,7 @@
                                         class="row-chevron right"
                                         [class.open]="
                                           expandedUnderlying ===
-                                          getUnderlyingKey(
-                                            summary.sub_class,
+                                          getUnderlyingKey(summary.group_key,
                                             assetGroup.asset_name,
                                             underlyingGroup.underlying
                                           )
@@ -709,8 +705,7 @@
                                   <tr
                                     *ngIf="
                                       expandedUnderlying ===
-                                      getUnderlyingKey(
-                                        summary.sub_class,
+                                      getUnderlyingKey(summary.group_key,
                                         assetGroup.asset_name,
                                         underlyingGroup.underlying
                                       )

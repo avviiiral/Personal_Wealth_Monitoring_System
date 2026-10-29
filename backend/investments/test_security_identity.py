@@ -86,6 +86,10 @@ class SecurityIdentityResolverTests(TestCase):
         ]
         normalized = {SecurityIdentityResolver.normalize_name(value) for value in variants}
         self.assertEqual(len(normalized), 1)
+        self.assertEqual(
+            SecurityIdentityResolver.normalize_name("Ellenbarrie Industrial Gases"),
+            SecurityIdentityResolver.normalize_name("Ellenbarrie Industrial Gases Ltd"),
+        )
 
     def test_name_matching_accepts_industry_and_ltd_variants(self):
         result = SecurityIdentityResolver.resolve(

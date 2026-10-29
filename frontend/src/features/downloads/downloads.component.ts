@@ -353,101 +353,6 @@ export class DownloadsComponent implements OnInit {
     await this.exportWorkbook('Holdings', 'Sub Class Holdings', this.subClassHoldingColumns(), rows, 'sub_class_holdings');
   }
 
-  private buildSubClassHoldingExportRows(rows: HoldingReportRow[]): Record<string, unknown>[] {
-    const groups = new Map<string, {
-      family_name: string;
-      sub_class: string;
-      asset_classes: Set<string>;
-      quantity: number;
-      invested_value: number;
-      current_value: number;
-      gain: number;
-      xirr_inputs: { invested_value: number; xirr: number | null }[];
-    }>();
-
-    for (const row of rows) {
-      const family = this.clean(row.family_name);
-      const subClass = this.clean(row.sub_class);
-      const key = family + '::' + subClass;
-      let group = groups.get(key);
-
-      if (!group) {
-        group = {
-          family_name: family,
-          sub_class: subClass,
-          asset_classes: new Set<string>(),
-          quantity: 0,
-          invested_value: 0,
-          current_value: 0,
-          gain: 0,
-          xirr_inputs: [],
-        };
-        groups.set(key, group);
-      }
-
-      const investedValue = Number(row.invested_value || 0);
-      const currentValue = Number(row.current_value || 0);
-
-      group.asset_classes.add(this.clean(row.asset_class));
-      group.quantity += Number(row.quantity || 0);
-      group.invested_value += investedValue;
-      group.current_value += currentValue;
-      group.gain += Number(row.gain || 0);
-
-      group.xirr_inputs.push({
-        invested_value: investedValue,
-        xirr: row.asset_name_xirr,
-      });
-    }
-
-    return Array.from(groups.values())
-      .sort((a, b) =>
-        a.family_name.localeCompare(b.family_name) ||
-        a.sub_class.localeCompare(b.sub_class),
-      )
-      .map((group) => ({
-        family_name: group.family_name,
-        portfolio: 'All Portfolios',
-        asset_class: group.asset_classes.size === 1
-          ? Array.from(group.asset_classes)[0]
-          : 'Multiple',
-        sub_class: group.sub_class,
-        quantity: group.quantity,
-        average_cost: group.quantity ? group.invested_value / group.quantity : 0,
-        invested_value: group.invested_value,
-        current_price: group.quantity ? group.current_value / group.quantity : 0,
-        current_value: group.current_value,
-        gain: group.gain,
-        gain_percentage: group.invested_value
-          ? (group.gain / group.invested_value) * 100
-          : 0,
-        xirr: this.weightedXirr(group.xirr_inputs),
-      }));
-  }
-
-  private weightedXirr(
-    inputs: { invested_value: number; xirr: number | null }[],
-  ): number | null {
-    const valid = inputs.filter(
-      item => item.xirr !== null && item.xirr !== undefined && item.invested_value > 0,
-    );
-
-    if (!valid.length) {
-      return null;
-    }
-
-    const totalInvested = valid.reduce((sum, item) => sum + item.invested_value, 0);
-
-    if (!totalInvested) {
-      return null;
-    }
-
-    return valid.reduce(
-      (sum, item) => sum + (item.xirr as number) * item.invested_value,
-      0,
-    ) / totalInvested;
-  }
-
   private async downloadHoldingReport(): Promise<void> {
     const rows = this.filteredHoldingRows().flatMap(row => this.holdingExportRows(row));
     await this.exportWorkbook('Holdings', 'Holding Report', this.holdingColumns(), rows, 'holding_report');
@@ -487,48 +392,7 @@ export class DownloadsComponent implements OnInit {
   }
 
   private async downloadXirr(level: 'asset-class' | 'sub-class' | 'asset-name'): Promise<void> {
-    const filtered = this.filteredHoldingRows();
-
     if (level === 'sub-class') {
-      const groups = new Map<string, {
-        family_name: string;
-        asset_class: string;
-        sub_class: string;
-        invested_value: number;
-        current_value: number;
-        gain: number;
-        xirr_inputs: { invested_value: number; xirr: number | null }[];
-      }>();
-
-      for (const row of filtered) {
-        const family = this.clean(row.family_name);
-        const assetClass = this.clean(row.asset_class);
-        const subClass = this.clean(row.sub_class);
-        const key = family + '::' + assetClass + '::' + subClass;
-        let group = groups.get(key);
-
-        if (!group) {
-          group = {
-            family_name: family,
-            asset_class: assetClass,
-            sub_class: subClass,
-            invested_value: 0,
-            current_value: 0,
-            gain: 0,
-            xirr_inputs: [],
-          };
-          groups.set(key, group);
-        }
-
-        const investedValue = Number(row.invested_value || 0);
-        group.invested_value += investedValue;
-        group.current_value += Number(row.current_value || 0);
-        group.gain += Number(row.gain || 0);
-        group.xirr_inputs.push({
-          invested_value: investedValue,
-          xirr: row.sub_class_xirr,
-        });
-      }
 
       // Use the same cash-flow XIRR summary as the Portfolio page. Averaging
       // individual holding XIRRs (even weighted by invested value) does not
@@ -555,49 +419,6 @@ export class DownloadsComponent implements OnInit {
 
       await this.writeXirr(rows, 'Portfolio Summary');
       return;
-    }
-
-    const groups = new Map<string, {
-      family_name: string;
-      asset_class: string;
-      sub_class: string;
-      asset_name: string;
-      invested_value: number;
-      current_value: number;
-      gain: number;
-      xirr_inputs: { invested_value: number; xirr: number | null }[];
-    }>();
-
-    for (const row of filtered) {
-      const family = this.clean(row.family_name);
-      const assetClass = this.clean(row.asset_class);
-      const subClass = this.clean(row.sub_class);
-      const assetName = this.clean(row.asset_name);
-      const key = family + '::' + assetClass + '::' + subClass + '::' + assetName;
-      let group = groups.get(key);
-
-      if (!group) {
-        group = {
-          family_name: family,
-          asset_class: assetClass,
-          sub_class: subClass,
-          asset_name: assetName,
-          invested_value: 0,
-          current_value: 0,
-          gain: 0,
-          xirr_inputs: [],
-        };
-        groups.set(key, group);
-      }
-
-      const investedValue = Number(row.invested_value || 0);
-      group.invested_value += investedValue;
-      group.current_value += Number(row.current_value || 0);
-      group.gain += Number(row.gain || 0);
-      group.xirr_inputs.push({
-        invested_value: investedValue,
-        xirr: row.asset_name_xirr,
-      });
     }
 
     // Match the Portfolio page's canonical report-level asset-name summaries.
@@ -913,6 +734,9 @@ export class DownloadsComponent implements OnInit {
   }
 
   private async downloadHoldingMatrix(): Promise<void> {
+    // Ensure the member-owned holdings list exists even if Holding Matrix is
+    // the first report downloaded in this page session.
+    if (!this.holdingsLoaded) await this.loadDataForReport('holding-report');
     const response = await firstValueFrom(this.portfolioApi.getHoldingMatrix(this.selectedReportDate));
     const allUnderlyings = response.underlyings ?? [];
     const allDetails = response.underlying_details ?? [];

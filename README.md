@@ -105,6 +105,8 @@ The indexed-performance chart is deliberately protected against sparse source re
 - Historical coverage is validated using configurable minimum row density and date coverage thresholds before a source is considered complete.
 - The selected chart period (`1M`, `3M`, `6M`, `1Y`, `3Y`, or `5Y`) determines the AMFI history that is prepared.
 
+On the Watch List table, the **Product** column remains pinned during horizontal scrolling so the product name and identifier stay visible while reviewing return periods and AUM.
+
 The thresholds and benchmark endpoints are centralized in [`backend/config/pwms_config.json`](./backend/config/pwms_config.json), so source URLs, timeouts and density requirements can be changed without editing the benchmark service code.
 ## 🚀 Quick start
 
@@ -216,6 +218,7 @@ Net worth, asset allocation, key portfolio metrics and an **Investment Summary**
 
 - A hierarchical tree of holdings: **Family → Portfolio → Asset class → Sub-class → Asset**
 - Quantity, invested value, current value, P&L and **XIRR per node**
+- Portfolio holdings and position reconciliation are scoped to the relevant family member; sharing an Asset record does not pull another family member's transactions into that member's displayed position.
 - Full transaction history, create / edit / delete
 - **Excel transaction import** (a _Transactions_ sheet is required; a _Summary_ sheet is optional)
 - **Duplicate transaction review before import** — matching rows are shown in a review table with family member, asset, date, transaction type, quantity, price and amount; select each duplicate row to import or leave it unchecked to skip
@@ -285,6 +288,9 @@ The following user-facing fields are sourced from uploaded transaction records:
 | **Advisors** | Uploaded transaction data |
 
 The application no longer uses synthetic `Unassigned` values or hard-coded user-facing asset-class mappings for these fields. Internal technical asset categories may still be used by market-data services to decide which external price/NAV provider to call; those technical categories are separate from the user uploaded portfolio classification.
+
+Security identity resolution uses **Underlying first when it is populated**. If an explicit Underlying cannot be resolved, the importer does not silently retry using Asset Name. Security enrichment preserves the uploaded Asset Name and Underlying labels, and fills a missing ISIN from a resolved security when available.
+
 ### 📊 Historical MIS valuation
 
 The MIS historical valuation pipeline is designed to use the same portfolio transactions that drive the live portfolio, while valuing each asset with persisted historical market data.
@@ -559,6 +565,18 @@ Optional **Gemini** remains separate for Portfolio Chat and is not required for 
 ### 📄 Reports
 
 Export **transactions, holdings and portfolio summaries** to **Excel or PDF** — matching exactly what the Portfolio and Dashboard pages show.
+
+- Summary placement, report grouping and calculations follow the relevant family member and asset hierarchy; **Advisor** metadata is informational and does not determine transaction placement.
+- Reports exports retain the full transaction hierarchy. A blank **Underlying** remains at the **Asset Name** level instead of being assigned to a fabricated or unrelated underlying.
+
+### 📥 Downloads
+
+The Downloads page provides filtered Excel exports for holdings and XIRR summaries.
+
+- **Holding Matrix** exports respect the selected family member and active asset filters.
+- **Asset Name XIRR** and **Portfolio Summary** exports use the Portfolio API's authoritative grouped XIRR summaries, rather than averaging individual asset XIRR percentages.
+- The two XIRR summary exports omit the **Underlying** column because those reports are grouped at the asset-name or portfolio-summary level.
+- Excel downloads use consistent professional formatting, including readable headers, fitted column widths, alternating row shading, frozen header rows and column filters.
 
 ### 📑 MIS Report
 
@@ -1274,9 +1292,11 @@ All endpoints require authentication. Ratio actions validate positive old/new un
 | `/portfolio`      | Holdings tree, transactions, import, manual price override    |
 | `/mis-report`     | IPS, Data Sheet, Fund Type-wise Summary, Excel download       |
 | `/analytics`      | Allocation, performance, XIRR, historical wealth              |
-| `/reports`        | Excel / PDF exports                                           |
+| `/reports`        | Reports and holdings exports                                  |
+| `/downloads`      | Filtered Excel downloads and XIRR summaries                   |
 | `/ai-chat`        | Gemini portfolio assistant                                    |
 | `/portfolio-news` | News alerts for your holdings                                 |
+| `/watch-list`     | Mutual-fund / PMS research, performance metrics and benchmarks |
 | `/settings`       | Account · Security · Tax Settings · Logs · User Management · Family Management |
 
 All authenticated routes sit under a `ShellComponent` (sidebar + header with the family switcher).

@@ -101,6 +101,10 @@ class SecurityResolver:
         if tokens and tokens[0] == "THE":
             tokens = tokens[1:]
         tokens = ["LIMITED" if token == "LTD" else token for token in tokens]
+        # Treat a terminal Ltd/Limited as an optional legal suffix. Keep all
+        # other tokens exact; this is normalization, not fuzzy matching.
+        if tokens and tokens[-1] == "LIMITED":
+            tokens.pop()
         return " ".join(tokens)
 
     @classmethod

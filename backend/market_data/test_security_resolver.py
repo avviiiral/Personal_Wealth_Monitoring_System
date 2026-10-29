@@ -102,12 +102,12 @@ class SecurityResolverHardeningTests(SimpleTestCase):
         )
 
     def test_ambiguous_name_mapping_is_not_used(self):
-        SecurityResolver._security_master_ambiguous_name = {"SAMPLE LIMITED"}
+        SecurityResolver._security_master_ambiguous_name = {"SAMPLE"}
         self.assertIsNone(SecurityResolver.resolve_from_name("Sample Limited"))
 
     def test_normalized_legal_name_variant_resolves_without_isin(self):
         SecurityResolver._security_master_name = {
-            "ANUP ENGINEERING LIMITED": "ANUP.NS",
+            "ANUP ENGINEERING": "ANUP.NS",
         }
 
         self.assertEqual(
@@ -147,12 +147,12 @@ class SecurityResolverHardeningTests(SimpleTestCase):
 
     def test_abb_legal_name_and_punctuation_variants_normalize_identically(self):
         canonical = SecurityResolver.normalize_security_name("ABB India Limited")
-        for variant in ("ABB India Ltd.", "ABB India Ltd", "ABB INDIA LIMITED", "ABB INDIA LTD.", "abb india limited"):
+        for variant in ("ABB India Ltd.", "ABB India Ltd", "ABB INDIA", "ABB INDIA LTD.", "abb india limited"):
             with self.subTest(variant=variant):
                 self.assertEqual(SecurityResolver.normalize_security_name(variant), canonical)
 
     def test_security_master_identity_resolves_by_name_without_uploaded_isin(self):
-        SecurityResolver._security_master_name_to_isin = {"ABB INDIA LIMITED": "INE117A01022"}
+        SecurityResolver._security_master_name_to_isin = {"ABB INDIA": "INE117A01022"}
         SecurityResolver._security_master_isin_to_name = {"INE117A01022": "ABB India Limited"}
         SecurityResolver._security_master_isin = {"INE117A01022": "ABB.NS"}
         result = SecurityResolver.resolve_security_from_master(name="ABB India Ltd.")
@@ -170,7 +170,7 @@ class SecurityResolverHardeningTests(SimpleTestCase):
         self.assertEqual(result["isin"], "INE117A01022")
 
     def test_security_master_identity_rejects_conflicting_name_and_isin(self):
-        SecurityResolver._security_master_name_to_isin = {"ABB INDIA LIMITED": "INE117A01022"}
+        SecurityResolver._security_master_name_to_isin = {"ABB INDIA": "INE117A01022"}
         result = SecurityResolver.resolve_security_from_master(name="ABB India Ltd.", isin="INE999Z01011")
         self.assertEqual(result["status"], "CONFLICT")
 
@@ -200,8 +200,8 @@ class SecurityResolverHardeningTests(SimpleTestCase):
             normalized_name,
             SecurityResolver.normalize_security_name("Ellenbarrie Industrial Gases"),
         )
-        self._security_master_name_to_isin[normalized_name] = "INE000A01000"
-        self._security_master_isin_to_name["INE000A01000"] = canonical_name
+        SecurityResolver._security_master_name_to_isin[normalized_name] = "INE000A01000"
+        SecurityResolver._security_master_isin_to_name["INE000A01000"] = canonical_name
 
         result = SecurityResolver.resolve_security_from_master(
             name="Ellenbarrie Industrial Gases",
@@ -225,10 +225,10 @@ class SecurityMasterNameToIsinTests(SimpleTestCase):
         (self.resolver._security_master_name_to_isin, self.resolver._security_master_ambiguous_name_to_isin, self.resolver._security_master_loaded) = self.original
 
     def test_name_lookup_returns_isin_for_legal_name_variant(self):
-        self.resolver._security_master_name_to_isin["ANUP ENGINEERING LIMITED"] = "INE000ANUP001"
+        self.resolver._security_master_name_to_isin["ANUP ENGINEERING"] = "INE000ANUP001"
         self.assertEqual(self.resolver.resolve_isin_from_name("ANUP ENGINEERING LTD"), "INE000ANUP001")
 
     def test_name_lookup_fails_closed_for_ambiguous_name(self):
-        self.resolver._security_master_name_to_isin["ANUP ENGINEERING LIMITED"] = "INE000ANUP001"
-        self.resolver._security_master_ambiguous_name_to_isin.add("ANUP ENGINEERING LIMITED")
+        self.resolver._security_master_name_to_isin["ANUP ENGINEERING"] = "INE000ANUP001"
+        self.resolver._security_master_ambiguous_name_to_isin.add("ANUP ENGINEERING")
         self.assertEqual(self.resolver.resolve_isin_from_name("ANUP ENGINEERING LTD"), "")

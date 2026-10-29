@@ -530,11 +530,16 @@ export class DownloadsComponent implements OnInit {
         });
       }
 
-      const rows = Array.from(groups.values())
-        .sort((a, b) =>
-          a.family_name.localeCompare(b.family_name) ||
-          a.asset_class.localeCompare(b.asset_class) ||
-          a.sub_class.localeCompare(b.sub_class),
+      // Use the same cash-flow XIRR summary as the Portfolio page. Averaging
+      // individual holding XIRRs (even weighted by invested value) does not
+      // equal the XIRR of the combined dated cash flows.
+      const tree = await firstValueFrom(this.portfolioApi.getPortfolioTree());
+      const authoritativeSummaries = tree.calculations?.report_subclass_summaries ?? [];
+      const rows = authoritativeSummaries
+        .filter(group =>
+          (!this.selectedFamilyMember || this.clean(group.family_name) === this.selectedFamilyMember)
+          && (!this.selectedAssetClass || this.clean(group.asset_class) === this.selectedAssetClass)
+          && (!this.selectedSubClass || this.clean(group.sub_class) === this.selectedSubClass),
         )
         .map(group => ({
           name: group.sub_class,
@@ -542,11 +547,10 @@ export class DownloadsComponent implements OnInit {
           asset_class: group.asset_class,
           sub_class: group.sub_class,
           asset_name: 'All Assets',
-          underlying: '',
           invested_value: group.invested_value,
           current_value: group.current_value,
-          gain: group.gain,
-          xirr: this.weightedXirr(group.xirr_inputs),
+          gain: group.pnl,
+          xirr: group.xirr,
         }));
 
       await this.writeXirr(rows, 'Portfolio Summary');
@@ -596,12 +600,15 @@ export class DownloadsComponent implements OnInit {
       });
     }
 
-    const rows = Array.from(groups.values())
-      .sort((a, b) =>
-        a.family_name.localeCompare(b.family_name) ||
-        a.asset_class.localeCompare(b.asset_class) ||
-        a.sub_class.localeCompare(b.sub_class) ||
-        a.asset_name.localeCompare(b.asset_name),
+    // Match the Portfolio page's canonical report-level asset-name summaries.
+    const tree = await firstValueFrom(this.portfolioApi.getPortfolioTree());
+    const authoritativeSummaries = tree.calculations?.report_asset_name_summaries ?? [];
+    const rows = authoritativeSummaries
+      .filter(group =>
+        (!this.selectedFamilyMember || this.clean(group.family_name) === this.selectedFamilyMember)
+        && (!this.selectedAssetClass || this.clean(group.asset_class) === this.selectedAssetClass)
+        && (!this.selectedSubClass || this.clean(group.sub_class) === this.selectedSubClass)
+        && (!this.selectedAssetName || this.clean(group.asset_name) === this.selectedAssetName),
       )
       .map(group => ({
         name: group.asset_name,
@@ -609,11 +616,10 @@ export class DownloadsComponent implements OnInit {
         asset_class: group.asset_class,
         sub_class: group.sub_class,
         asset_name: group.asset_name,
-        underlying: '',
         invested_value: group.invested_value,
         current_value: group.current_value,
-        gain: group.gain,
-        xirr: this.weightedXirr(group.xirr_inputs),
+        gain: group.pnl,
+        xirr: group.xirr,
       }));
 
     await this.writeXirr(rows, 'Asset Name XIRR');
@@ -622,7 +628,7 @@ export class DownloadsComponent implements OnInit {
   private async writeXirr(rows: Record<string, unknown>[], title: string): Promise<void> {
     await this.exportWorkbook('XIRR', title, [
       ['Family', 'family_name'], ['Asset Class', 'asset_class'], ['Sub Class', 'sub_class'], ['Asset Name / Group', 'name'],
-      ['Asset Name', 'asset_name'], ['Underlying', 'underlying'], ['Invested Value', 'invested_value'],
+      ['Asset Name', 'asset_name'], ['Invested Value', 'invested_value'],
       ['Current Value', 'current_value'], ['Gain', 'gain'], ['XIRR (%)', 'xirr'],
     ], rows, title.toLowerCase().replace(/[^a-z0-9]+/g, '_'));
   }
@@ -908,9 +914,34 @@ export class DownloadsComponent implements OnInit {
 
   private async downloadHoldingMatrix(): Promise<void> {
     const response = await firstValueFrom(this.portfolioApi.getHoldingMatrix(this.selectedReportDate));
-    const underlyings = response.underlyings ?? [];
-    const details = response.underlying_details ?? [];
-    const sourceRows = response.results ?? [];
+    const allUnderlyings = response.underlyings ?? [];
+    const allDetails = response.underlying_details ?? [];
+    const allSourceRows = response.results ?? [];
+
+    // The API correctly scopes data to the active family, while this selector
+    // chooses an individual family member inside that family. Apply that same
+    // selected-member scope to the transposed Excel matrix, using the asset
+    // names present in the selected member's holdings report rather than
+    // exporting every member's asset columns.
+    const selectedMember = this.selectedFamilyMember.trim();
+    let sourceRows = allSourceRows;
+    if (selectedMember) {
+      const allowedAssetNames = new Set(
+        this.holdingRows
+          .filter(row => this.clean(row.family_name) === selectedMember)
+          .map(row => this.clean(row.asset_name)),
+      );
+      sourceRows = allSourceRows.filter(row =>
+        typeof row.asset_name === 'string' && allowedAssetNames.has(this.clean(row.asset_name)),
+      );
+    }
+
+    const underlyings = Array.from(new Set(
+      sourceRows.flatMap(sourceRow =>
+        allUnderlyings.filter(underlying => Number(sourceRow[underlying] ?? 0) !== 0),
+      ),
+    ));
+    const details = allDetails.filter(detail => underlyings.includes(detail.name));
 
     // Transpose the matrix so Underlying is on rows and Asset Name is on columns.
     const assetNames = sourceRows

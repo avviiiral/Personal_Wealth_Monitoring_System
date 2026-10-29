@@ -928,7 +928,12 @@ export class DownloadsComponent implements OnInit {
     if (selectedMember) {
       const allowedAssetNames = new Set(
         this.holdingRows
-          .filter(row => this.clean(row.family_name) === selectedMember)
+          .filter(row =>
+            this.clean(row.family_name) === selectedMember
+            && (!this.selectedAssetClass || this.clean(row.asset_class) === this.selectedAssetClass)
+            && (!this.selectedSubClass || this.clean(row.sub_class) === this.selectedSubClass)
+            && (!this.selectedAssetName || this.clean(row.asset_name) === this.selectedAssetName),
+          )
           .map(row => this.clean(row.asset_name)),
       );
       sourceRows = allSourceRows.filter(row =>

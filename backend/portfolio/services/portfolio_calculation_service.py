@@ -37,8 +37,6 @@ class PortfolioCalculationService:
             return False
         if asset_class and row["asset_class"] != asset_class:
             return False
-        if advisor and (asset.get("advisors") or "").strip() != advisor:
-            return False
         return True
 
     @classmethod
@@ -65,8 +63,6 @@ class PortfolioCalculationService:
             if family and tx_family != family:
                 continue
             if asset_class and tx_asset_class != asset_class:
-                continue
-            if advisor and (tx.advisors or "").strip() != advisor:
                 continue
             selected_transactions.append(tx)
 
@@ -158,12 +154,19 @@ class PortfolioCalculationService:
         asset_name_groups = defaultdict(list)
         family_subclass_groups = defaultdict(list)
         report_subclass_groups = defaultdict(list)
+        report_asset_name_groups = defaultdict(list)
 
         for row in rows:
             subclass_groups[row["sub_class"]].append(row)
             asset_name_groups[(row["sub_class"], row["asset"].get("asset_name") or "Unassigned")].append(row)
             family_subclass_groups[(row["family_name"], row["sub_class"])].append(row)
             report_subclass_groups[(row["family_name"], row["asset_class"], row["sub_class"])].append(row)
+            report_asset_name_groups[(
+                row["family_name"],
+                row["asset_class"],
+                row["sub_class"],
+                row["asset"].get("asset_name") or "Unassigned",
+            )].append(row)
 
         subclasses = [
             cls._row({"sub_class": key}, group, transactions, family_filter=family, asset_class_filter=asset_class, advisor_filter=advisor)
@@ -225,9 +228,34 @@ class PortfolioCalculationService:
             )
         )
 
+        # Reports needs family/class-scoped asset-name values. Keep the
+        # legacy aggregated asset_names collection unchanged for Portfolio.
+        report_asset_name_summaries = [
+            cls._row(
+                {
+                    "family_name": key[0],
+                    "asset_class": key[1],
+                    "sub_class": key[2],
+                    "asset_name": key[3],
+                },
+                group,
+                transactions,
+            )
+            for key, group in report_asset_name_groups.items()
+        ]
+        report_asset_name_summaries.sort(
+            key=lambda item: (
+                item["family_name"].casefold(),
+                item["asset_class"].casefold(),
+                item["sub_class"].casefold(),
+                item["asset_name"].casefold(),
+            )
+        )
+
         return {
             "subclasses": subclasses,
             "asset_names": asset_names,
             "family_subclasses": family_subclasses,
             "report_subclass_summaries": report_subclass_summaries,
+            "report_asset_name_summaries": report_asset_name_summaries,
         }

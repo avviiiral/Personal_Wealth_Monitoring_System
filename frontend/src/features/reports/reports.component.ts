@@ -45,6 +45,7 @@ interface UnderlyingGroup {
 interface AssetNameGroup {
   asset_name: string;
   underlyings: UnderlyingGroup[];
+  transactions: Transaction[];
   transaction_count: number;
 
   /* Financial values, joined in from the Portfolio tree by asset id -
@@ -56,6 +57,9 @@ interface AssetNameGroup {
 }
 
 interface SubClassGroup {
+  group_key: string;
+  family_name: string;
+  asset_class: string;
   sub_class: string;
   asset_names: AssetNameGroup[];
   transaction_count: number;
@@ -72,6 +76,7 @@ interface SubClassGroup {
 /* Aggregate row used only by the Summary View download. */
 interface SubClassSummaryRow {
   family_name: string;
+  asset_class: string;
   sub_class: string;
   quantity: number;
   invested_value: number;
@@ -381,7 +386,8 @@ This will recalculate the affected holding and cannot be undone.`,
   }
 
   private getUnderlyingName(tx: Transaction): string {
-    return this.clean(tx.underlying || tx.asset_name);
+    // A blank uploaded Underlying means the hierarchy ends at Asset Name.
+    return this.clean(tx.underlying);
   }
 
   /**
@@ -464,38 +470,53 @@ This will recalculate the affected holding and cannot be undone.`,
   private buildSubClassGroups(transactions: Transaction[]): SubClassGroup[] {
     const lookup = this.assetLookup;
 
-    const subClassMap = new Map<string, Map<string, Map<string, Transaction[]>>>();
+    // Keep each displayed group scoped to the complete hierarchy prefix.
+    // Identical subclass/asset labels under another family or asset class
+    // must not share transactions, counts, downloads, or financial joins.
+    const subClassMap = new Map<string, {
+      family_name: string;
+      asset_class: string;
+      sub_class: string;
+      asset_names: Map<string, Map<string, Transaction[]>>;
+    }>();
 
     for (const tx of transactions) {
-      const subClass = this.clean(tx.sub_class);
+      const family_name = this.clean(tx.family_name);
+      const asset_class = this.clean(tx.asset_class);
+      const sub_class = this.clean(tx.sub_class);
       const assetName = this.getAssetName(tx);
       const underlying = this.getUnderlyingName(tx);
+      const groupKey = JSON.stringify([family_name, asset_class, sub_class]);
 
-      if (!subClassMap.has(subClass)) {
-        subClassMap.set(subClass, new Map());
+      if (!subClassMap.has(groupKey)) {
+        subClassMap.set(groupKey, {
+          family_name,
+          asset_class,
+          sub_class,
+          asset_names: new Map(),
+        });
       }
 
-      const assetNameMap = subClassMap.get(subClass)!;
-
+      const assetNameMap = subClassMap.get(groupKey)!.asset_names;
       if (!assetNameMap.has(assetName)) {
         assetNameMap.set(assetName, new Map());
       }
 
       const underlyingMap = assetNameMap.get(assetName)!;
-
       if (!underlyingMap.has(underlying)) {
         underlyingMap.set(underlying, []);
       }
-
       underlyingMap.get(underlying)!.push(tx);
-
     }
 
     const subClasses: SubClassGroup[] = Array.from(subClassMap.entries())
-      .map(([sub_class, assetNameMap]) => {
+      .map(([group_key, scope]) => {
+        const { family_name, asset_class, sub_class, asset_names: assetNameMap } = scope;
         const asset_names: AssetNameGroup[] = Array.from(assetNameMap.entries())
           .map(([asset_name, underlyingMap]) => {
+            const allAssetTransactions = Array.from(underlyingMap.values()).flat();
             const underlyings: UnderlyingGroup[] = Array.from(underlyingMap.entries())
+              .filter(([underlying]) => !!underlying)
               .map(([underlying, txs]) => ({
                 underlying,
                 isin: txs.find((tx) => tx.isin)?.isin ?? '-',
@@ -504,18 +525,20 @@ This will recalculate the affected holding and cannot be undone.`,
               }))
               .sort((a, b) => a.underlying.localeCompare(b.underlying));
 
-            const transaction_count = underlyings.reduce(
-              (total, group) => total + group.transaction_count,
-              0,
-            );
+            const transaction_count = allAssetTransactions.length;
 
-            const assetNameFinancials = this.portfolioCalculations.asset_names.find(
-              (row) => row.sub_class === sub_class && row.asset_name === asset_name,
+            const assetNameFinancials = (this.portfolioCalculations.report_asset_name_summaries ?? []).find(
+              (row) =>
+                row.family_name === family_name &&
+                row.asset_class === asset_class &&
+                row.sub_class === sub_class &&
+                row.asset_name === asset_name,
             );
 
             return {
               asset_name,
               underlyings,
+              transactions: allAssetTransactions,
               transaction_count,
               quantity: assetNameFinancials?.quantity ?? 0,
               invested_value: assetNameFinancials?.invested_value ?? 0,
@@ -530,11 +553,17 @@ This will recalculate the affected holding and cannot be undone.`,
           0,
         );
 
-        const subClassFinancials = this.portfolioCalculations.subclasses.find(
-          (row) => row.sub_class === sub_class,
+        const subClassFinancials = this.portfolioCalculations.report_subclass_summaries.find(
+          (row) =>
+            row.family_name === family_name &&
+            row.asset_class === asset_class &&
+            row.sub_class === sub_class,
         );
 
         return {
+          group_key,
+          family_name,
+          asset_class,
           sub_class,
           asset_names,
           transaction_count,
@@ -545,7 +574,11 @@ This will recalculate the affected holding and cannot be undone.`,
           xirr: subClassFinancials?.xirr ?? null,
         };
       })
-      .sort((a, b) => a.sub_class.localeCompare(b.sub_class));
+      .sort((a, b) =>
+        a.family_name.localeCompare(b.family_name) ||
+        a.asset_class.localeCompare(b.asset_class) ||
+        a.sub_class.localeCompare(b.sub_class),
+      );
 
     return subClasses;
   }
@@ -627,7 +660,7 @@ This will recalculate the affected holding and cannot be undone.`,
 
     if (
       this.expandedSubClass &&
-      !this.subClassGroups.some((group) => group.sub_class === this.expandedSubClass)
+      !this.subClassGroups.some((group) => group.group_key === this.expandedSubClass)
     ) {
       this.resetExpansion();
     }
@@ -680,7 +713,7 @@ This will recalculate the affected holding and cannot be undone.`,
   }
 
   trackBySubClass(_index: number, group: SubClassGroup): string {
-    return group.sub_class;
+    return group.group_key;
   }
 
   trackByAssetName(_index: number, group: AssetNameGroup): string {
@@ -720,10 +753,8 @@ This will recalculate the affected holding and cannot be undone.`,
     const assetIds = new Set<number>();
 
     for (const assetGroup of summary.asset_names) {
-      for (const underlyingGroup of assetGroup.underlyings) {
-        for (const tx of underlyingGroup.transactions) {
-          assetIds.add(tx.asset);
-        }
+      for (const tx of assetGroup.transactions) {
+        assetIds.add(tx.asset);
       }
     }
 
@@ -736,9 +767,10 @@ This will recalculate the affected holding and cannot be undone.`,
 
       rows.push({
         family_name: this.clean(asset.family_name),
+        asset_class: this.clean(summary.asset_class),
         sub_class: this.clean(summary.sub_class),
         asset_name: this.clean(asset.asset_name),
-        underlying: this.clean(asset.underlying || asset.asset_name),
+        underlying: this.clean(asset.underlying),
         isin: asset.isin || '-',
         advisors: asset.advisors || '-',
         quantity: this.toNumber(asset.quantity),
@@ -765,7 +797,8 @@ This will recalculate the affected holding and cannot be undone.`,
       sheetName: 'Holdings',
       title: `${summary.sub_class} — Holdings (as of ${this.todayLabel()})`,
       columns: [
-        { header: 'Family Name', key: 'family_name', width: 24 },
+        { header: 'Family Member', key: 'family_name', width: 24 },
+        { header: 'Asset Class', key: 'asset_class', width: 20 },
         { header: 'Sub Class', key: 'sub_class', width: 22 },
         { header: 'Asset Name', key: 'asset_name', width: 30 },
         { header: 'Underlying', key: 'underlying', width: 28 },
@@ -900,17 +933,18 @@ This will recalculate the affected holding and cannot be undone.`,
   ): Promise<void> {
     event.stopPropagation();
 
-    const allTransactions: Transaction[] = [];
-
-    for (const underlyingGroup of assetGroup.underlyings) {
-      allTransactions.push(...underlyingGroup.transactions);
-    }
+    // Export from the asset-name scope, not only the visible Underlying
+    // children, so rows with a blank Underlying are retained as-is.
+    const allTransactions = assetGroup.transactions.slice();
 
     const rows = allTransactions
       .slice()
       .sort((a, b) => b.transaction_date.localeCompare(a.transaction_date))
       .map((tx) => ({
         family_name: this.clean(tx.family_name),
+        asset_class: this.clean(tx.asset_class),
+        sub_class: this.clean(tx.sub_class),
+        asset_name: this.clean(tx.asset_name),
         underlying: this.getUnderlyingName(tx),
         transaction_date: new Date(tx.transaction_date),
         transaction_type: tx.transaction_type_display || tx.transaction_type,
@@ -924,7 +958,10 @@ This will recalculate the affected holding and cannot be undone.`,
       sheetName: 'Transactions',
       title: `${assetGroup.asset_name} — Transactions (as of ${this.todayLabel()})`,
       columns: [
-        { header: 'Family Name', key: 'family_name', width: 24 },
+        { header: 'Family Member', key: 'family_name', width: 24 },
+        { header: 'Asset Class', key: 'asset_class', width: 20 },
+        { header: 'Sub Class', key: 'sub_class', width: 22 },
+        { header: 'Asset Name', key: 'asset_name', width: 30 },
         { header: 'Underlying', key: 'underlying', width: 24 },
         { header: 'Transaction Date', key: 'transaction_date', width: 18, numFmt: 'dd-mmm-yyyy' },
         { header: 'Type', key: 'transaction_type', width: 16 },
@@ -983,7 +1020,8 @@ This will recalculate the affected holding and cannot be undone.`,
       sheetName: 'Summary',
       title: `Portfolio Summary — ${familyLabel} (as of ${this.todayLabel()})`,
       columns: [
-        { header: 'Family', key: 'family_name', width: 24 },
+        { header: 'Family Member', key: 'family_name', width: 24 },
+        { header: 'Asset Class', key: 'asset_class', width: 20 },
         { header: 'Sub Class', key: 'sub_class', width: 22 },
         { header: 'Quantity', key: 'quantity', width: 16, numFmt: '#,##,##0.00' },
         { header: 'Invested Amount', key: 'invested_value', width: 20, numFmt: '"₹"#,##,##0' },
@@ -993,6 +1031,7 @@ This will recalculate the affected holding and cannot be undone.`,
       ],
       rows: rows.map((row) => ({
         family_name: row.family_name,
+        asset_class: row.asset_class,
         sub_class: row.sub_class,
         quantity: row.quantity,
         invested_value: row.invested_value,
@@ -1058,8 +1097,10 @@ This will recalculate the affected holding and cannot be undone.`,
       sheetName: 'Detailed',
       title: `Portfolio Detailed — ${familyLabel} (${rangeLabel})`,
       columns: [
-        { header: 'Family', key: 'family_name', width: 24 },
+        { header: 'Family Member', key: 'family_name', width: 24 },
+        { header: 'Asset Class', key: 'asset_class', width: 20 },
         { header: 'Sub Class', key: 'sub_class', width: 20 },
+        { header: 'Asset Name', key: 'asset_name', width: 30 },
         { header: 'Underlying', key: 'underlying', width: 28 },
         { header: 'ISIN', key: 'isin', width: 16 },
         { header: 'Transaction Date', key: 'transaction_date', width: 18, numFmt: 'dd-mmm-yyyy' },
@@ -1134,7 +1175,9 @@ This will recalculate the affected holding and cannot be undone.`,
 
     return filtered.map((tx) => ({
       family_name: this.clean(tx.family_name),
+      asset_class: this.clean(tx.asset_class),
       sub_class: this.clean(tx.sub_class),
+      asset_name: this.clean(tx.asset_name),
       underlying: this.getUnderlyingName(tx),
       isin: tx.isin || '-',
       transaction_date: new Date(tx.transaction_date),
@@ -1175,10 +1218,11 @@ This will recalculate the affected holding and cannot be undone.`,
    * empty value returns all Families.
    */
   private buildSummaryRows(family?: string): SubClassSummaryRow[] {
-    return this.portfolioCalculations.family_subclasses
+    return this.portfolioCalculations.report_subclass_summaries
       .filter((row) => !family || row.family_name === family)
       .map((row) => ({
         family_name: row.family_name || 'Unassigned',
+        asset_class: row.asset_class,
         sub_class: row.sub_class,
         quantity: row.quantity,
         invested_value: row.invested_value,
@@ -1188,7 +1232,9 @@ This will recalculate the affected holding and cannot be undone.`,
       }))
       .sort(
         (a, b) =>
-          a.family_name.localeCompare(b.family_name) || a.sub_class.localeCompare(b.sub_class),
+          a.family_name.localeCompare(b.family_name) ||
+          a.asset_class.localeCompare(b.asset_class) ||
+          a.sub_class.localeCompare(b.sub_class),
       );
   }
 

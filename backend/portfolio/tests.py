@@ -241,6 +241,63 @@ class PortfolioTreeServiceTests(TestCase):
         # Strategy B's SELL has no matching BUY within B and cannot affect A.
         self.assertEqual(positions.get("Strategy B", []), [])
 
+    def test_shared_asset_reconciliation_never_crosses_family_members(self):
+        # Imports can reuse one Asset record across family-member labels.
+        # A DAJ sale must not be attached to DJT's position or overwrite the
+        # owner displayed for the DJT tree node.
+        shared_asset = Asset.objects.create(
+            family=self.family,
+            owner=self.user,
+            name="Shared DMZ1 Underlying",
+            category="STOCK",
+            isin="INE000FAMILY001",
+        )
+        common = {
+            "owner": self.user,
+            "family": self.family,
+            "asset": shared_asset,
+            "portfolio": "DMZ1",
+            "asset_class": "Equity",
+            "sub_class": "Equity PMS",
+            "asset_name": "DMZ1",
+            "underlying": "Bajaj Finance Ltd",
+            "fees": Decimal("0"),
+            "price_per_unit": Decimal("100"),
+        }
+        Transaction.objects.create(
+            **common,
+            family_name="DAJ",
+            transaction_date=date(2026, 1, 1),
+            transaction_type="SELL",
+            quantity=Decimal("2155"),
+            amount=Decimal("215500"),
+        )
+        Transaction.objects.create(
+            **common,
+            family_name="DJT",
+            transaction_date=date(2026, 1, 2),
+            transaction_type="BUY",
+            quantity=Decimal("2155"),
+            amount=Decimal("215500"),
+        )
+
+        result = PortfolioTreeService.build(owner=self.user, family_id=self.family.id)
+        nodes = [
+            (family["family_name"], node)
+            for family in result["families"]
+            for portfolio in family["portfolios"]
+            for asset_class in portfolio["asset_classes"]
+            for subclass in asset_class["sub_classes"]
+            for node in subclass["assets"]
+            if node["asset_name"] == "DMZ1"
+        ]
+
+        self.assertEqual(len(nodes), 1)
+        tree_family, node = nodes[0]
+        self.assertEqual(tree_family, "DJT")
+        self.assertEqual(node["family_name"], "DJT")
+        self.assertEqual(node["quantity"], 2155.0)
+
     def test_tree_hierarchy(self):
         result = PortfolioTreeService.build(self.user)
 
@@ -755,6 +812,117 @@ class PortfolioCalculationServiceTests(TestCase):
         self.assertEqual(len(data["family_subclasses"]), 1)
         self.assertEqual(data["family_subclasses"][0]["family_name"], "Family A")
         self.assertEqual(data["family_subclasses"][0]["sub_class"], "Large Cap")
+
+    def test_advisor_filter_does_not_change_portfolio_calculation_scope(self):
+        unfiltered = PortfolioCalculationService.calculate(
+            owner=self.user,
+            family_id=self.family.id,
+        )
+        advisor_filtered = PortfolioCalculationService.calculate(
+            owner=self.user,
+            family_id=self.family.id,
+            advisor="An Advisor That Is Not Assigned",
+        )
+
+        self.assertEqual(len(advisor_filtered["asset_names"]), len(unfiltered["asset_names"]))
+        self.assertEqual(
+            advisor_filtered["asset_names"][0]["current_value"],
+            unfiltered["asset_names"][0]["current_value"],
+        )
+        self.assertEqual(
+            advisor_filtered["report_subclass_summaries"][0]["xirr"],
+            unfiltered["report_subclass_summaries"][0]["xirr"],
+        )
+
+    def test_report_asset_name_summaries_keep_family_scopes_separate(self):
+        other_asset = Asset.objects.create(
+            family=self.family,
+            owner=self.user,
+            name="Calculation Equity - Family B",
+            category="STOCK",
+            isin="INE000CALCB02",
+        )
+        Transaction.objects.create(
+            owner=self.user,
+            family=self.family,
+            asset=other_asset,
+            family_name="Family B",
+            portfolio="Portfolio B",
+            asset_class="Equity",
+            sub_class="Large Cap",
+            asset_name="Calculation Equity",
+            transaction_date=date(2026, 2, 10),
+            transaction_type="BUY",
+            quantity=Decimal("2"),
+            price_per_unit=Decimal("100"),
+            amount=Decimal("200"),
+            fees=Decimal("0"),
+        )
+        tree = {
+            "families": [
+                {
+                    "family_name": "Family A",
+                    "portfolios": [{
+                        "portfolio": "Portfolio A",
+                        "asset_classes": [{
+                            "asset_class": "Equity",
+                            "sub_classes": [{
+                                "sub_class": "Large Cap",
+                                "assets": [{
+                                    "id": self.asset.id,
+                                    "asset_name": "Calculation Equity",
+                                    "quantity": 10,
+                                    "invested_value": 1000,
+                                    "current_price": 100,
+                                    "current_value": 1000,
+                                    "advisors": "",
+                                }],
+                            }],
+                        }],
+                    }],
+                },
+                {
+                    "family_name": "Family B",
+                    "portfolios": [{
+                        "portfolio": "Portfolio B",
+                        "asset_classes": [{
+                            "asset_class": "Equity",
+                            "sub_classes": [{
+                                "sub_class": "Large Cap",
+                                "assets": [{
+                                    "id": other_asset.id,
+                                    "asset_name": "Calculation Equity",
+                                    "quantity": 2,
+                                    "invested_value": 200,
+                                    "current_price": 100,
+                                    "current_value": 200,
+                                    "advisors": "",
+                                }],
+                            }],
+                        }],
+                    }],
+                },
+            ],
+        }
+
+        data = PortfolioCalculationService.calculate(
+            owner=self.user,
+            family_id=self.family.id,
+            tree=tree,
+        )
+        rows = data["report_asset_name_summaries"]
+        self.assertEqual(len(rows), 2)
+        self.assertEqual(
+            {(row["family_name"], row["asset_class"], row["sub_class"], row["asset_name"])
+             for row in rows},
+            {
+                ("Family A", "Equity", "Large Cap", "Calculation Equity"),
+                ("Family B", "Equity", "Large Cap", "Calculation Equity"),
+            },
+        )
+        values = {row["family_name"]: row["current_value"] for row in rows}
+        self.assertEqual(values["Family A"], 1000.0)
+        self.assertEqual(values["Family B"], 200.0)
 
     def test_asset_name_xirr_includes_fully_sold_strategy_positions(self):
         # This holding has no remaining quantity and therefore is absent from

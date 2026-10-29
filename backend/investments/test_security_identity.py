@@ -115,6 +115,37 @@ class SecurityIdentityResolverTests(TestCase):
         self.assertEqual(result["asset"].id, self.asset.id)
         self.assertEqual(result["canonical_name"], "Reliance Industries Limited")
 
+    def test_unresolved_explicit_underlying_does_not_fall_back_to_asset_name(self):
+        result = SecurityIdentityResolver.resolve(
+            family=self.family,
+            asset_name="Reliance Industries Limited",
+            underlying="Unrelated Strategy Underlying",
+            isin="",
+            asset_class="Equity",
+            sub_class="Direct Equity",
+        )
+        self.assertEqual(result["status"], "UNRESOLVED")
+        self.assertIsNone(result["asset"])
+
+    @patch("investments.services.security_identity.SecurityResolver.resolve_security_from_master")
+    def test_global_master_lookup_uses_underlying_only_when_underlying_is_populated(self, mock_master):
+        mock_master.return_value = {
+            "status": "UNRESOLVED",
+            "canonical_name": "",
+            "isin": "",
+            "yahoo_symbol": "",
+        }
+        result = SecurityIdentityResolver.resolve(
+            family=self.family,
+            asset_name="Reliance Industries Limited",
+            underlying="Unrelated Strategy Underlying",
+            isin="",
+            asset_class="Equity",
+            sub_class="Direct Equity",
+        )
+        self.assertEqual(result["status"], "UNRESOLVED")
+        mock_master.assert_called_once_with(name="Unrelated Strategy Underlying")
+
     def test_name_only_match_requires_known_compatible_instrument_type(self):
         result = SecurityIdentityResolver.resolve(
             family=self.family, asset_name="Reliance Industries Limited", underlying="", isin="",

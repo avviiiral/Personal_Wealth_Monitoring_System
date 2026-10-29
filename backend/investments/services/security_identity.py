@@ -131,54 +131,9 @@ class SecurityIdentityResolver:
                     "details": {"reason": "The verified ISIN exists in this family but its instrument type is incompatible."},
                 }
 
-        # If Underlying was supplied but did not match a family asset, try
-        # the uploaded Asset Name before falling back to the global master.
-        alternate_name = str(asset_name or "").strip()
-        if alternate_name and cls.normalize_name(alternate_name) != cls.normalize_name(input_name):
-            alternate_normalized = cls.normalize_name(alternate_name)
-            alternate_aliases = [
-                alias for alias in SecurityAlias.objects.filter(
-                    family=family, is_active=True
-                ).select_related("asset").order_by("id")
-                if cls.normalize_name(alias.alias) == alternate_normalized
-            ]
-            if len(alternate_aliases) > 1:
-                return {
-                    "asset": None, "canonical_name": "", "method": "APPROVED_ALIAS", "status": "AMBIGUOUS",
-                    "details": {"reason": "Multiple active aliases matched the uploaded Asset Name."},
-                }
-            if alternate_aliases:
-                alternate_asset = alternate_aliases[0].asset
-                if (categories is None or alternate_asset.category not in categories
-                        or (normalized_isin and alternate_asset.isin and alternate_asset.isin.strip().upper() != normalized_isin)):
-                    return {
-                        "asset": None, "canonical_name": alternate_asset.name, "method": "APPROVED_ALIAS", "status": "CONFLICT",
-                        "details": {"reason": "Uploaded Asset Name alias conflicts with the ISIN or instrument type."},
-                    }
-                return {
-                    "asset": alternate_asset, "canonical_name": alternate_asset.name, "method": "APPROVED_ALIAS", "status": "MATCHED",
-                    "details": {"reason": "Matched by approved alias from the uploaded Asset Name."},
-                }
-            if categories is not None:
-                alternate_assets = [
-                    asset for asset in Asset.objects.filter(
-                        family=family, is_active=True, category__in=categories
-                    ).order_by("id")
-                    if cls.normalize_name(asset.name) == alternate_normalized
-                    and (not normalized_isin or not asset.isin or asset.isin.strip().upper() == normalized_isin)
-                ]
-                alternate_assets = cls._unique_assets(alternate_assets)
-                if len(alternate_assets) == 1:
-                    return {
-                        "asset": alternate_assets[0], "canonical_name": alternate_assets[0].name,
-                        "method": "NORMALIZED_NAME", "status": "MATCHED",
-                        "details": {"reason": "Matched by normalized uploaded Asset Name and compatible instrument type."},
-                    }
-                if len(alternate_assets) > 1:
-                    return {
-                        "asset": None, "canonical_name": "", "method": "NORMALIZED_NAME", "status": "AMBIGUOUS",
-                        "details": {"reason": "Multiple family assets matched the normalized uploaded Asset Name."},
-                    }
+        # `input_name` already implements the required lookup precedence:
+        # Underlying when populated, otherwise Asset Name. Never try the
+        # alternate Asset Name when an explicit Underlying is unresolved.
 
         normalized_name = cls.normalize_name(input_name)
         if not normalized_name:
@@ -264,11 +219,7 @@ class SecurityIdentityResolver:
 
         # Use the global canonical master only when it cannot be matching a
         # security already assigned to a different family.
-        master_names = []
-        for candidate_name in (underlying, asset_name):
-            candidate_name = str(candidate_name or "").strip()
-            if candidate_name and candidate_name not in master_names:
-                master_names.append(candidate_name)
+        master_names = [input_name] if input_name else []
 
         if not cls._exists_in_other_family(
             family=family, names=master_names, isin=normalized_isin

@@ -699,3 +699,45 @@ class AutoPriceRefreshTests(TransactionTestCase):
             refresh_assets_async([])
 
         mock_thread.assert_not_called()
+
+
+class TransactionImportSummaryPlacementTests(TestCase):
+    def test_advisor_value_does_not_change_summary_portfolio_resolution(self):
+        import pandas as pd
+        from investments.services.transaction_import import TransactionImporter
+
+        summary = pd.DataFrame([
+            {
+                "Family Name": "DAJ",
+                "Advisors": "Advisor One",
+                "Asset Class": "Equity",
+                "Asset Name": "Shared Strategy",
+                "ISIN": "",
+                "Portfolio Name": "Portfolio A",
+            },
+            {
+                "Family Name": "DAJ",
+                "Advisors": "Advisor Two",
+                "Asset Class": "Equity",
+                "Asset Name": "Shared Strategy",
+                "ISIN": "",
+                "Portfolio Name": "Portfolio B",
+            },
+        ])
+
+        common = {
+            "summary": summary,
+            "family_name": "DAJ",
+            "asset_class": "Equity",
+            "asset_name": "Shared Strategy",
+            "underlying": "Underlying One",
+            "isin": "",
+        }
+        first = TransactionImporter._resolve_portfolio_from_summary(
+            **common, advisors="Advisor One",
+        )
+        second = TransactionImporter._resolve_portfolio_from_summary(
+            **common, advisors="Advisor Two",
+        )
+
+        self.assertEqual(first, second)

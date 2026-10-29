@@ -87,8 +87,6 @@ class PortfolioTreeService:
             return False
         if filters.get("asset_class") and cls._clean(tx.asset_class) != filters["asset_class"]:
             return False
-        if filters.get("advisor") and cls._clean(tx.advisors, "") != filters["advisor"]:
-            return False
         return True
 
     @staticmethod
@@ -619,9 +617,14 @@ class PortfolioTreeService:
             xirr_transactions_by_underlying_identity.setdefault(
                 underlying_identity, []
             ).append(tx)
-            # Asset Name XIRR intentionally ignores family/portfolio/asset-class boundaries.
-            asset_name_xirr_grouped.setdefault((sub_class, asset_name), []).append(tx)
-            sub_class_xirr_grouped.setdefault(sub_class, []).append(tx)
+            # XIRR scopes follow the same hierarchy as the Portfolio tree.
+            # Never combine identical labels across family/portfolio/class scopes.
+            asset_name_xirr_grouped.setdefault(
+                (family, portfolio, asset_class, sub_class, asset_name), []
+            ).append(tx)
+            sub_class_xirr_grouped.setdefault(
+                (family, portfolio, asset_class, sub_class), []
+            ).append(tx)
 
         asset_ids = {tx.asset_id for tx in transactions}
         assets_by_id = {}
@@ -725,8 +728,8 @@ class PortfolioTreeService:
         for (family, portfolio, asset_class, sub_class, asset_id), asset_transactions in filtered_grouped.items():
             first = asset_transactions[0]
             asset_name = cls._clean(first.asset_name)
-            asset_name_key = (sub_class, asset_name)
-            sub_class_key = sub_class
+            asset_name_key = (family, portfolio, asset_class, sub_class, asset_name)
+            sub_class_key = (family, portfolio, asset_class, sub_class)
             first_asset = asset_transactions[0].asset
             actions = confirmed_ratio_actions(
                 asset=first_asset,
@@ -767,8 +770,8 @@ class PortfolioTreeService:
             first = asset_transactions[0]
             xirr_key = (family, portfolio, asset_class, sub_class, asset_id)
             asset_name = cls._clean(first.asset_name)
-            asset_name_key = (sub_class, asset_name)
-            sub_class_key = sub_class
+            asset_name_key = (family, portfolio, asset_class, sub_class, asset_name)
+            sub_class_key = (family, portfolio, asset_class, sub_class)
             underlying_identity = (
                 cls._clean(first.family_name).casefold(),
                 cls._clean(first.portfolio).casefold(),
@@ -793,7 +796,16 @@ class PortfolioTreeService:
             # Consider sales attached to the same Asset across legacy hierarchy
             # labels, but do not consume a sale from a portfolio that has its
             # own matching BUY/SIP hierarchy.
-            all_asset_transactions = transactions_by_asset.get(asset_id, asset_transactions)
+            # Asset records can be shared by transactions imported for multiple
+            # family members. Reconciliation may span legacy hierarchy labels
+            # within one family member, but must never pull another member's
+            # transactions into this position (or overwrite its displayed owner).
+            all_asset_transactions = [
+                tx
+                for tx in transactions_by_asset.get(asset_id, asset_transactions)
+                if cls._clean(tx.family_name).casefold()
+                == cls._clean(first.family_name).casefold()
+            ]
             buy_groups = {
                 (
                     cls._clean(tx.family_name),

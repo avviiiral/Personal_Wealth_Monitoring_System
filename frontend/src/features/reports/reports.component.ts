@@ -154,6 +154,9 @@ export class ReportsComponent implements OnInit {
   isinEditorAssetId: number | null = null;
   isinEditorKind: "asset" | "underlyings" = "asset";
   isinEditorItems: AssetIsinTarget[] = [];
+  isinEditorAvailableOptions: string[] = [];
+  isinEditorSelectedUnderlying = "";
+  isinEditorSelectedIsin = "";
   isinEditorLoading = false;
   isinEditorSaving = false;
   isinEditorError = "";

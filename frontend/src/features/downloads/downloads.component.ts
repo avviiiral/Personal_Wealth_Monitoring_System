@@ -362,7 +362,6 @@ export class DownloadsComponent implements OnInit {
       invested_value: number;
       current_value: number;
       gain: number;
-      xirr_inputs: { invested_value: number; xirr: number | null }[];
     }>();
 
     for (const row of rows) {
@@ -380,24 +379,15 @@ export class DownloadsComponent implements OnInit {
           invested_value: 0,
           current_value: 0,
           gain: 0,
-          xirr_inputs: [],
         };
         groups.set(key, group);
       }
 
-      const investedValue = Number(row.invested_value || 0);
-      const currentValue = Number(row.current_value || 0);
-
       group.asset_classes.add(this.clean(row.asset_class));
       group.quantity += Number(row.quantity || 0);
-      group.invested_value += investedValue;
-      group.current_value += currentValue;
+      group.invested_value += Number(row.invested_value || 0);
+      group.current_value += Number(row.current_value || 0);
       group.gain += Number(row.gain || 0);
-
-      group.xirr_inputs.push({
-        invested_value: investedValue,
-        xirr: row.asset_name_xirr,
-      });
     }
 
     return Array.from(groups.values())
@@ -405,7 +395,7 @@ export class DownloadsComponent implements OnInit {
         a.family_name.localeCompare(b.family_name) ||
         a.sub_class.localeCompare(b.sub_class),
       )
-      .map((group) => ({
+      .map(group => ({
         family_name: group.family_name,
         portfolio: 'All Portfolios',
         asset_class: group.asset_classes.size === 1
@@ -421,31 +411,7 @@ export class DownloadsComponent implements OnInit {
         gain_percentage: group.invested_value
           ? (group.gain / group.invested_value) * 100
           : 0,
-        xirr: this.weightedXirr(group.xirr_inputs),
       }));
-  }
-
-  private weightedXirr(
-    inputs: { invested_value: number; xirr: number | null }[],
-  ): number | null {
-    const valid = inputs.filter(
-      item => item.xirr !== null && item.xirr !== undefined && item.invested_value > 0,
-    );
-
-    if (!valid.length) {
-      return null;
-    }
-
-    const totalInvested = valid.reduce((sum, item) => sum + item.invested_value, 0);
-
-    if (!totalInvested) {
-      return null;
-    }
-
-    return valid.reduce(
-      (sum, item) => sum + (item.xirr as number) * item.invested_value,
-      0,
-    ) / totalInvested;
   }
 
   private async downloadHoldingReport(): Promise<void> {
@@ -487,54 +453,18 @@ export class DownloadsComponent implements OnInit {
   }
 
   private async downloadXirr(level: 'asset-class' | 'sub-class' | 'asset-name'): Promise<void> {
-    const filtered = this.filteredHoldingRows();
-
     if (level === 'sub-class') {
-      const groups = new Map<string, {
-        family_name: string;
-        asset_class: string;
-        sub_class: string;
-        invested_value: number;
-        current_value: number;
-        gain: number;
-        xirr_inputs: { invested_value: number; xirr: number | null }[];
-      }>();
 
-      for (const row of filtered) {
-        const family = this.clean(row.family_name);
-        const assetClass = this.clean(row.asset_class);
-        const subClass = this.clean(row.sub_class);
-        const key = family + '::' + assetClass + '::' + subClass;
-        let group = groups.get(key);
-
-        if (!group) {
-          group = {
-            family_name: family,
-            asset_class: assetClass,
-            sub_class: subClass,
-            invested_value: 0,
-            current_value: 0,
-            gain: 0,
-            xirr_inputs: [],
-          };
-          groups.set(key, group);
-        }
-
-        const investedValue = Number(row.invested_value || 0);
-        group.invested_value += investedValue;
-        group.current_value += Number(row.current_value || 0);
-        group.gain += Number(row.gain || 0);
-        group.xirr_inputs.push({
-          invested_value: investedValue,
-          xirr: row.sub_class_xirr,
-        });
-      }
-
-      const rows = Array.from(groups.values())
-        .sort((a, b) =>
-          a.family_name.localeCompare(b.family_name) ||
-          a.asset_class.localeCompare(b.asset_class) ||
-          a.sub_class.localeCompare(b.sub_class),
+      // Use the same cash-flow XIRR summary as the Portfolio page. Averaging
+      // individual holding XIRRs (even weighted by invested value) does not
+      // equal the XIRR of the combined dated cash flows.
+      const tree = await firstValueFrom(this.portfolioApi.getPortfolioTree());
+      const authoritativeSummaries = tree.calculations?.report_subclass_summaries ?? [];
+      const rows = authoritativeSummaries
+        .filter(group =>
+          (!this.selectedFamilyMember || this.clean(group.family_name) === this.selectedFamilyMember)
+          && (!this.selectedAssetClass || this.clean(group.asset_class) === this.selectedAssetClass)
+          && (!this.selectedSubClass || this.clean(group.sub_class) === this.selectedSubClass),
         )
         .map(group => ({
           name: group.sub_class,
@@ -542,66 +472,25 @@ export class DownloadsComponent implements OnInit {
           asset_class: group.asset_class,
           sub_class: group.sub_class,
           asset_name: 'All Assets',
-          underlying: '',
           invested_value: group.invested_value,
           current_value: group.current_value,
-          gain: group.gain,
-          xirr: this.weightedXirr(group.xirr_inputs),
+          gain: group.pnl,
+          xirr: group.xirr,
         }));
 
       await this.writeXirr(rows, 'Portfolio Summary');
       return;
     }
 
-    const groups = new Map<string, {
-      family_name: string;
-      asset_class: string;
-      sub_class: string;
-      asset_name: string;
-      invested_value: number;
-      current_value: number;
-      gain: number;
-      xirr_inputs: { invested_value: number; xirr: number | null }[];
-    }>();
-
-    for (const row of filtered) {
-      const family = this.clean(row.family_name);
-      const assetClass = this.clean(row.asset_class);
-      const subClass = this.clean(row.sub_class);
-      const assetName = this.clean(row.asset_name);
-      const key = family + '::' + assetClass + '::' + subClass + '::' + assetName;
-      let group = groups.get(key);
-
-      if (!group) {
-        group = {
-          family_name: family,
-          asset_class: assetClass,
-          sub_class: subClass,
-          asset_name: assetName,
-          invested_value: 0,
-          current_value: 0,
-          gain: 0,
-          xirr_inputs: [],
-        };
-        groups.set(key, group);
-      }
-
-      const investedValue = Number(row.invested_value || 0);
-      group.invested_value += investedValue;
-      group.current_value += Number(row.current_value || 0);
-      group.gain += Number(row.gain || 0);
-      group.xirr_inputs.push({
-        invested_value: investedValue,
-        xirr: row.asset_name_xirr,
-      });
-    }
-
-    const rows = Array.from(groups.values())
-      .sort((a, b) =>
-        a.family_name.localeCompare(b.family_name) ||
-        a.asset_class.localeCompare(b.asset_class) ||
-        a.sub_class.localeCompare(b.sub_class) ||
-        a.asset_name.localeCompare(b.asset_name),
+    // Match the Portfolio page's canonical report-level asset-name summaries.
+    const tree = await firstValueFrom(this.portfolioApi.getPortfolioTree());
+    const authoritativeSummaries = tree.calculations?.report_asset_name_summaries ?? [];
+    const rows = authoritativeSummaries
+      .filter(group =>
+        (!this.selectedFamilyMember || this.clean(group.family_name) === this.selectedFamilyMember)
+        && (!this.selectedAssetClass || this.clean(group.asset_class) === this.selectedAssetClass)
+        && (!this.selectedSubClass || this.clean(group.sub_class) === this.selectedSubClass)
+        && (!this.selectedAssetName || this.clean(group.asset_name) === this.selectedAssetName),
       )
       .map(group => ({
         name: group.asset_name,
@@ -609,11 +498,10 @@ export class DownloadsComponent implements OnInit {
         asset_class: group.asset_class,
         sub_class: group.sub_class,
         asset_name: group.asset_name,
-        underlying: '',
         invested_value: group.invested_value,
         current_value: group.current_value,
-        gain: group.gain,
-        xirr: this.weightedXirr(group.xirr_inputs),
+        gain: group.pnl,
+        xirr: group.xirr,
       }));
 
     await this.writeXirr(rows, 'Asset Name XIRR');
@@ -622,7 +510,7 @@ export class DownloadsComponent implements OnInit {
   private async writeXirr(rows: Record<string, unknown>[], title: string): Promise<void> {
     await this.exportWorkbook('XIRR', title, [
       ['Family', 'family_name'], ['Asset Class', 'asset_class'], ['Sub Class', 'sub_class'], ['Asset Name / Group', 'name'],
-      ['Asset Name', 'asset_name'], ['Underlying', 'underlying'], ['Invested Value', 'invested_value'],
+      ['Asset Name', 'asset_name'], ['Invested Value', 'invested_value'],
       ['Current Value', 'current_value'], ['Gain', 'gain'], ['XIRR (%)', 'xirr'],
     ], rows, title.toLowerCase().replace(/[^a-z0-9]+/g, '_'));
   }
@@ -907,10 +795,43 @@ export class DownloadsComponent implements OnInit {
   }
 
   private async downloadHoldingMatrix(): Promise<void> {
+    // Ensure the member-owned holdings list exists even if Holding Matrix is
+    // the first report downloaded in this page session.
+    if (!this.holdingsLoaded) await this.loadDataForReport('holding-report');
     const response = await firstValueFrom(this.portfolioApi.getHoldingMatrix(this.selectedReportDate));
-    const underlyings = response.underlyings ?? [];
-    const details = response.underlying_details ?? [];
-    const sourceRows = response.results ?? [];
+    const allUnderlyings = response.underlyings ?? [];
+    const allDetails = response.underlying_details ?? [];
+    const allSourceRows = response.results ?? [];
+
+    // The API correctly scopes data to the active family, while this selector
+    // chooses an individual family member inside that family. Apply that same
+    // selected-member scope to the transposed Excel matrix, using the asset
+    // names present in the selected member's holdings report rather than
+    // exporting every member's asset columns.
+    const selectedMember = this.selectedFamilyMember.trim();
+    let sourceRows = allSourceRows;
+    if (selectedMember) {
+      const allowedAssetNames = new Set(
+        this.holdingRows
+          .filter(row =>
+            this.clean(row.family_name) === selectedMember
+            && (!this.selectedAssetClass || this.clean(row.asset_class) === this.selectedAssetClass)
+            && (!this.selectedSubClass || this.clean(row.sub_class) === this.selectedSubClass)
+            && (!this.selectedAssetName || this.clean(row.asset_name) === this.selectedAssetName),
+          )
+          .map(row => this.clean(row.asset_name)),
+      );
+      sourceRows = allSourceRows.filter(row =>
+        typeof row.asset_name === 'string' && allowedAssetNames.has(this.clean(row.asset_name)),
+      );
+    }
+
+    const underlyings = Array.from(new Set(
+      sourceRows.flatMap(sourceRow =>
+        allUnderlyings.filter(underlying => Number(sourceRow[underlying] ?? 0) !== 0),
+      ),
+    ));
+    const details = allDetails.filter(detail => underlyings.includes(detail.name));
 
     // Transpose the matrix so Underlying is on rows and Asset Name is on columns.
     const assetNames = sourceRows
@@ -1034,7 +955,7 @@ export class DownloadsComponent implements OnInit {
     title.value = 'Watch List Report';
     title.font = { name: 'Aptos Display', size: 18, bold: true, color: { argb: 'FFFFFFFF' } };
     title.alignment = { vertical: 'middle' };
-    title.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1F2937' } };
+    title.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF172033' } };
     sheet.getRow(1).height = 32;
 
     // Match the established Watch List report layout:
@@ -1060,8 +981,8 @@ export class DownloadsComponent implements OnInit {
 
     const benchmarkHeader = sheet.getRow(3);
     benchmarkHeader.eachCell({ includeEmpty: true }, cell => {
-      cell.font = { name: 'Aptos', size: 10, bold: true, color: { argb: 'FFFFFFFF' } };
-      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF374151' } };
+      cell.font = { name: 'Aptos', size: 10, bold: true, color: { argb: 'FF172033' } };
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE7EBF0' } };
       cell.alignment = { vertical: 'middle', horizontal: 'center' };
       cell.border = {
         top: { style: 'thin', color: { argb: 'FFD1D5DB' } },
@@ -1110,8 +1031,8 @@ export class DownloadsComponent implements OnInit {
     });
     headerRow.height = 26;
     headerRow.eachCell(cell => {
-      cell.font = { name: 'Aptos', size: 10, bold: true, color: { argb: 'FFFFFFFF' } };
-      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF374151' } };
+      cell.font = { name: 'Aptos', size: 10, bold: true, color: { argb: 'FF172033' } };
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE7EBF0' } };
       cell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
       cell.border = {
         top: { style: 'thin', color: { argb: 'FFD1D5DB' } },
@@ -1258,34 +1179,35 @@ export class DownloadsComponent implements OnInit {
     const sheet = workbook.addWorksheet(sheetName);
     const isMarketCap = sheetName === 'Market Cap';
 
+    // Clean, consistent report title.
     sheet.mergeCells(1, 1, 1, columns.length);
     const titleCell = sheet.getCell(1, 1);
     titleCell.value = title;
-    titleCell.font = { bold: true, size: 16, color: { argb: 'FFFFFF' } };
-    titleCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: '1F4E78' } };
+    titleCell.font = { name: 'Aptos Display', bold: true, size: 15, color: { argb: 'FFFFFFFF' } };
+    titleCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF172033' } };
     titleCell.alignment = { vertical: 'middle', horizontal: 'left' };
-    titleCell.border = { bottom: { style: 'medium' } };
-    sheet.getRow(1).height = 28;
+    titleCell.border = { bottom: { style: 'medium', color: { argb: 'FF172033' } } };
+    sheet.getRow(1).height = 32;
 
     const header = sheet.getRow(2);
-    columns.forEach(([label, key], index) => {
+    columns.forEach(([label], index) => {
       const cell = header.getCell(index + 1);
       cell.value = label;
-      cell.font = { bold: true, size: 11, color: { argb: 'FFFFFF' } };
-      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: '4472C4' } };
-      cell.alignment = { vertical: 'middle', horizontal: 'center' };
+      cell.font = { name: 'Aptos', bold: true, size: 10, color: { argb: 'FF172033' } };
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE7EBF0' } };
+      cell.alignment = { vertical: 'middle', horizontal: 'left', wrapText: true };
       cell.border = {
-        top: { style: 'thin' },
-        bottom: { style: 'thin' },
+        top: { style: 'thin', color: { argb: 'FFD3D9E1' } },
+        bottom: { style: 'thin', color: { argb: 'FFB8C1CC' } },
       };
     });
-    header.height = 22;
+    header.height = 26;
 
     sheet.columns = columns.map(([label, key], index) => ({
       key,
       width: isMarketCap
         ? (index === 0 ? 34 : 18)
-        : Math.max(14, Math.min(32, Math.max(label.length, key.length) + 8)),
+        : Math.max(12, Math.min(30, label.length + 2, Math.max(label.length + 2, key.length + 2))),
     }));
 
     rows.forEach(row => sheet.addRow(row));
@@ -1296,66 +1218,71 @@ export class DownloadsComponent implements OnInit {
       const firstValue = String(row.getCell(1).value ?? '');
       const isSummaryRow = ['% of Equity', 'Current Value', 'total'].includes(firstValue);
 
-      row.height = 20;
+      row.height = 21;
       row.eachCell({ includeEmpty: true }, (cell, columnNumber) => {
-        cell.border = {
-          bottom: { style: 'hair' },
-        };
+        cell.font = { name: 'Aptos', size: 10, color: { argb: 'FF172033' } };
+        cell.border = { bottom: { style: 'hair', color: { argb: 'FFE1E5EA' } } };
         cell.alignment = {
           vertical: 'middle',
-          horizontal: 'center',
+          horizontal: typeof cell.value === 'number' ? 'right' : 'left',
         };
 
         if (columnNumber > 1 && typeof cell.value === 'number') {
-          cell.numFmt = isMarketCap
-            ? '0.00"%"'
-            : '#,##0.00';
-
+          cell.numFmt = isMarketCap ? '0.00"%"' : '#,##0.00';
           if (cell.value > 0) {
-            cell.font = { color: { argb: '008000' } };
+            cell.font = { name: 'Aptos', size: 10, color: { argb: 'FF008000' } };
           } else if (cell.value < 0) {
-            cell.font = { color: { argb: 'C00000' } };
+            cell.font = { name: 'Aptos', size: 10, color: { argb: 'FFC00000' } };
           }
         }
       });
 
-      if (isSummaryRow) {
-        row.height = 22;
+      // Subtle banding improves readability without changing report values.
+      if ((rowNumber - 3) % 2 === 1) {
         row.eachCell({ includeEmpty: true }, cell => {
-          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: firstValue === 'total' ? 'D9EAF7' : 'EAF2F8' } };
-          if (typeof cell.value === 'number') {
-            cell.font = {
-              bold: true,
-              color: cell.value > 0 ? { argb: '008000' } : cell.value < 0 ? { argb: 'C00000' } : undefined,
-            };
-          } else {
-            cell.font = { bold: true };
-          }
+          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF6F8FA' } };
         });
+      }
+
+      if (isSummaryRow) {
+        row.height = 23;
         row.eachCell({ includeEmpty: true }, cell => {
+          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFEAF0F6' } };
+          cell.font = {
+            name: 'Aptos',
+            size: 10,
+            bold: true,
+            color: typeof cell.value === 'number'
+              ? (cell.value > 0 ? { argb: 'FF008000' } : cell.value < 0 ? { argb: 'FFC00000' } : { argb: 'FF172033' })
+              : { argb: 'FF172033' },
+          };
           cell.border = {
-            top: { style: 'thin' },
-            bottom: { style: 'thin' },
+            top: { style: 'thin', color: { argb: 'FFD3D9E1' } },
+            bottom: { style: 'thin', color: { argb: 'FFD3D9E1' } },
           };
         });
       }
     }
 
-    if (isMarketCap) {
-      // Market-cap data rows are percentage points (0-100), so use a
-      // literal percent sign rather than Excel's fractional percentage format.
-      const firstDataRow = 3;
-      const lastDataRow = lastRow;
-      for (let rowNumber = firstDataRow; rowNumber <= lastDataRow; rowNumber++) {
-        if ((rowNumber - firstDataRow) % 2 === 0) {
-          sheet.getRow(rowNumber).eachCell({ includeEmpty: true }, cell => {
-            cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'F7F9FC' } };
-          });
-        }
+    // Fit each column to its header and displayed values, with practical
+    // minimum/maximum widths so long names remain readable without sprawling.
+    columns.forEach(([label, key], index) => {
+      const column = sheet.getColumn(index + 1);
+      if (isMarketCap) return;
+      let maxLength = label.length;
+      for (let rowNumber = 3; rowNumber <= lastRow; rowNumber++) {
+        const value = sheet.getRow(rowNumber).getCell(index + 1).value;
+        const display = value === null || value === undefined
+          ? ''
+          : typeof value === 'object'
+            ? JSON.stringify(value)
+            : String(value);
+        maxLength = Math.max(maxLength, display.length);
       }
-    }
+      column.width = Math.max(12, Math.min(32, maxLength + 2));
+    });
 
-    sheet.views = [{ state: 'frozen', ySplit: 2 }];
+    sheet.views = [{ state: 'frozen', ySplit: 2, showGridLines: false }];
     sheet.autoFilter = { from: { row: 2, column: 1 }, to: { row: 2, column: columns.length } };
     const buffer = await workbook.xlsx.writeBuffer();
     const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });

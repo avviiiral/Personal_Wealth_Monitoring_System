@@ -955,7 +955,7 @@ export class DownloadsComponent implements OnInit {
     title.value = 'Watch List Report';
     title.font = { name: 'Aptos Display', size: 18, bold: true, color: { argb: 'FFFFFFFF' } };
     title.alignment = { vertical: 'middle' };
-    title.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1F2937' } };
+    title.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF172033' } };
     sheet.getRow(1).height = 32;
 
     // Match the established Watch List report layout:
@@ -981,8 +981,8 @@ export class DownloadsComponent implements OnInit {
 
     const benchmarkHeader = sheet.getRow(3);
     benchmarkHeader.eachCell({ includeEmpty: true }, cell => {
-      cell.font = { name: 'Aptos', size: 10, bold: true, color: { argb: 'FFFFFFFF' } };
-      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF374151' } };
+      cell.font = { name: 'Aptos', size: 10, bold: true, color: { argb: 'FF172033' } };
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE7EBF0' } };
       cell.alignment = { vertical: 'middle', horizontal: 'center' };
       cell.border = {
         top: { style: 'thin', color: { argb: 'FFD1D5DB' } },
@@ -1179,34 +1179,35 @@ export class DownloadsComponent implements OnInit {
     const sheet = workbook.addWorksheet(sheetName);
     const isMarketCap = sheetName === 'Market Cap';
 
+    // Clean, consistent report title.
     sheet.mergeCells(1, 1, 1, columns.length);
     const titleCell = sheet.getCell(1, 1);
     titleCell.value = title;
-    titleCell.font = { bold: true, size: 16, color: { argb: 'FFFFFF' } };
-    titleCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: '1F4E78' } };
+    titleCell.font = { name: 'Aptos Display', bold: true, size: 15, color: { argb: 'FFFFFFFF' } };
+    titleCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF172033' } };
     titleCell.alignment = { vertical: 'middle', horizontal: 'left' };
-    titleCell.border = { bottom: { style: 'medium' } };
-    sheet.getRow(1).height = 28;
+    titleCell.border = { bottom: { style: 'medium', color: { argb: 'FF172033' } } };
+    sheet.getRow(1).height = 32;
 
     const header = sheet.getRow(2);
-    columns.forEach(([label, key], index) => {
+    columns.forEach(([label], index) => {
       const cell = header.getCell(index + 1);
       cell.value = label;
-      cell.font = { bold: true, size: 11, color: { argb: 'FFFFFF' } };
-      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: '4472C4' } };
-      cell.alignment = { vertical: 'middle', horizontal: 'center' };
+      cell.font = { name: 'Aptos', bold: true, size: 10, color: { argb: 'FF172033' } };
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE7EBF0' } };
+      cell.alignment = { vertical: 'middle', horizontal: 'left', wrapText: true };
       cell.border = {
-        top: { style: 'thin' },
-        bottom: { style: 'thin' },
+        top: { style: 'thin', color: { argb: 'FFD3D9E1' } },
+        bottom: { style: 'thin', color: { argb: 'FFB8C1CC' } },
       };
     });
-    header.height = 22;
+    header.height = 26;
 
     sheet.columns = columns.map(([label, key], index) => ({
       key,
       width: isMarketCap
         ? (index === 0 ? 34 : 18)
-        : Math.max(14, Math.min(32, Math.max(label.length, key.length) + 8)),
+        : Math.max(12, Math.min(30, label.length + 2, Math.max(label.length + 2, key.length + 2))),
     }));
 
     rows.forEach(row => sheet.addRow(row));
@@ -1217,66 +1218,71 @@ export class DownloadsComponent implements OnInit {
       const firstValue = String(row.getCell(1).value ?? '');
       const isSummaryRow = ['% of Equity', 'Current Value', 'total'].includes(firstValue);
 
-      row.height = 20;
+      row.height = 21;
       row.eachCell({ includeEmpty: true }, (cell, columnNumber) => {
-        cell.border = {
-          bottom: { style: 'hair' },
-        };
+        cell.font = { name: 'Aptos', size: 10, color: { argb: 'FF172033' } };
+        cell.border = { bottom: { style: 'hair', color: { argb: 'FFE1E5EA' } } };
         cell.alignment = {
           vertical: 'middle',
-          horizontal: 'center',
+          horizontal: typeof cell.value === 'number' ? 'right' : 'left',
         };
 
         if (columnNumber > 1 && typeof cell.value === 'number') {
-          cell.numFmt = isMarketCap
-            ? '0.00"%"'
-            : '#,##0.00';
-
+          cell.numFmt = isMarketCap ? '0.00"%"' : '#,##0.00';
           if (cell.value > 0) {
-            cell.font = { color: { argb: '008000' } };
+            cell.font = { name: 'Aptos', size: 10, color: { argb: 'FF008000' } };
           } else if (cell.value < 0) {
-            cell.font = { color: { argb: 'C00000' } };
+            cell.font = { name: 'Aptos', size: 10, color: { argb: 'FFC00000' } };
           }
         }
       });
 
-      if (isSummaryRow) {
-        row.height = 22;
+      // Subtle banding improves readability without changing report values.
+      if ((rowNumber - 3) % 2 === 1) {
         row.eachCell({ includeEmpty: true }, cell => {
-          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: firstValue === 'total' ? 'D9EAF7' : 'EAF2F8' } };
-          if (typeof cell.value === 'number') {
-            cell.font = {
-              bold: true,
-              color: cell.value > 0 ? { argb: '008000' } : cell.value < 0 ? { argb: 'C00000' } : undefined,
-            };
-          } else {
-            cell.font = { bold: true };
-          }
+          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF6F8FA' } };
         });
+      }
+
+      if (isSummaryRow) {
+        row.height = 23;
         row.eachCell({ includeEmpty: true }, cell => {
+          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFEAF0F6' } };
+          cell.font = {
+            name: 'Aptos',
+            size: 10,
+            bold: true,
+            color: typeof cell.value === 'number'
+              ? (cell.value > 0 ? { argb: 'FF008000' } : cell.value < 0 ? { argb: 'FFC00000' } : { argb: 'FF172033' })
+              : { argb: 'FF172033' },
+          };
           cell.border = {
-            top: { style: 'thin' },
-            bottom: { style: 'thin' },
+            top: { style: 'thin', color: { argb: 'FFD3D9E1' } },
+            bottom: { style: 'thin', color: { argb: 'FFD3D9E1' } },
           };
         });
       }
     }
 
-    if (isMarketCap) {
-      // Market-cap data rows are percentage points (0-100), so use a
-      // literal percent sign rather than Excel's fractional percentage format.
-      const firstDataRow = 3;
-      const lastDataRow = lastRow;
-      for (let rowNumber = firstDataRow; rowNumber <= lastDataRow; rowNumber++) {
-        if ((rowNumber - firstDataRow) % 2 === 0) {
-          sheet.getRow(rowNumber).eachCell({ includeEmpty: true }, cell => {
-            cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'F7F9FC' } };
-          });
-        }
+    // Fit each column to its header and displayed values, with practical
+    // minimum/maximum widths so long names remain readable without sprawling.
+    columns.forEach(([label, key], index) => {
+      const column = sheet.getColumn(index + 1);
+      if (isMarketCap) return;
+      let maxLength = label.length;
+      for (let rowNumber = 3; rowNumber <= lastRow; rowNumber++) {
+        const value = sheet.getRow(rowNumber).getCell(index + 1).value;
+        const display = value === null || value === undefined
+          ? ''
+          : typeof value === 'object'
+            ? JSON.stringify(value)
+            : String(value);
+        maxLength = Math.max(maxLength, display.length);
       }
-    }
+      column.width = Math.max(12, Math.min(32, maxLength + 2));
+    });
 
-    sheet.views = [{ state: 'frozen', ySplit: 2 }];
+    sheet.views = [{ state: 'frozen', ySplit: 2, showGridLines: false }];
     sheet.autoFilter = { from: { row: 2, column: 1 }, to: { row: 2, column: columns.length } };
     const buffer = await workbook.xlsx.writeBuffer();
     const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });

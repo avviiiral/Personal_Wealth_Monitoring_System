@@ -5,6 +5,24 @@ from market_data.services.security_resolver import SecurityResolver
 
 class SecurityResolverHardeningTests(SimpleTestCase):
     def setUp(self):
+    def test_name_without_ltd_matches_security_master_canonical_name(self):
+        canonical_name = "Ellenbarrie Industrial Gases Ltd"
+        normalized_name = SecurityResolver.normalize_security_name(canonical_name)
+        self.assertEqual(
+            normalized_name,
+            SecurityResolver.normalize_security_name("Ellenbarrie Industrial Gases"),
+        )
+        self._security_master_name_to_isin[normalized_name] = "INE000A01000"
+        self._security_master_isin_to_name["INE000A01000"] = canonical_name
+
+        result = SecurityResolver.resolve_security_from_master(
+            name="Ellenbarrie Industrial Gases",
+        )
+
+        self.assertEqual(result["status"], "MATCHED")
+        self.assertEqual(result["canonical_name"], canonical_name)
+        self.assertEqual(result["isin"], "INE000A01000")
+
         self.original = {
             "loaded": SecurityResolver._security_master_loaded,
             "isin": SecurityResolver._security_master_isin,

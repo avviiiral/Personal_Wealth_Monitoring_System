@@ -872,22 +872,36 @@ This will recalculate the affected holding and cannot be undone.`,
     this.isinEditorAssetId = assetId;
     this.isinEditorAssetName = assetGroup.asset_name;
     this.isinEditorItems = [];
+    this.isinEditorAvailableOptions = [];
+    this.isinEditorSelectedUnderlying = "";
+    this.isinEditorSelectedIsin = "";
     this.isinEditorError = "";
     this.isinEditorReuseConfirmationIsin = null;
     this.isinEditorLoading = true;
     this.portfolioApi.getAssetIsinTargets(assetId).subscribe({
       next: response => {
         this.isinEditorKind = response.kind;
+        this.isinEditorAvailableOptions = response.available_underlyings || response.items.map(item => item.name);
         this.isinEditorItems = response.items.map(item => ({ ...item }));
+        this.isinEditorSelectedUnderlying = response.kind === "asset" ? (response.items[0]?.name || "") : "";
+        this.isinEditorSelectedIsin = response.items[0]?.isin || "";
         this.isinEditorLoading = false;
         this.cdr.detectChanges();
       },
       error: error => {
         this.isinEditorLoading = false;
-        this.isinEditorError = error?.error?.detail || "Unable to load ISIN targets.";
+        this.isinEditorError = error?.error?.detail || "Unable to load underlying securities.";
         this.cdr.detectChanges();
       },
     });
+  }
+
+  selectIsinUnderlying(name: string): void {
+    this.isinEditorSelectedUnderlying = name;
+    const existing = this.isinEditorItems.find(item => item.name === name);
+    this.isinEditorSelectedIsin = existing?.isin || "";
+    this.isinEditorReuseConfirmationIsin = null;
+    this.isinEditorError = "";
   }
 
   cancelAssetIsinEditor(): void {
@@ -895,25 +909,36 @@ This will recalculate the affected holding and cannot be undone.`,
     this.isinEditorAssetId = null;
     this.isinEditorAssetName = null;
     this.isinEditorItems = [];
+    this.isinEditorAvailableOptions = [];
+    this.isinEditorSelectedUnderlying = "";
+    this.isinEditorSelectedIsin = "";
     this.isinEditorError = "";
     this.isinEditorReuseConfirmationIsin = null;
   }
 
   saveAssetIsins(confirmedIsin: string | null = null): void {
-    if (this.isinEditorAssetId === null || this.isinEditorSaving || !this.isinEditorItems.length) return;
-    const normalizedItems = this.isinEditorItems.map(item => ({ ...item, isin: (item.isin || "").replace(/\s+/g, "").toUpperCase() }));
-    const invalid = normalizedItems.find(item => item.isin && !/^[A-Z]{2}[A-Z0-9]{9}[0-9]$/.test(item.isin));
-    if (invalid) {
-      this.isinEditorError = 'Enter a valid 12-character ISIN for "' + invalid.name + '", or leave it blank.';
+    if (this.isinEditorAssetId === null || this.isinEditorSaving || !this.isinEditorSelectedUnderlying) return;
+    const isin = (this.isinEditorSelectedIsin || "").replace(/\s+/g, "").toUpperCase();
+    if (isin && !/^[A-Z]{2}[A-Z0-9]{9}[0-9]$/.test(isin)) {
+      this.isinEditorError = 'Enter a valid 12-character ISIN for "' + this.isinEditorSelectedUnderlying + '", or leave it blank.';
+      return;
+    }
+    const selected = this.isinEditorItems.find(item => item.name === this.isinEditorSelectedUnderlying);
+    if (!selected) {
+      this.isinEditorError = "Selected underlying could not be identified. Refresh and try again.";
       return;
     }
     this.isinEditorSaving = true;
     this.isinEditorError = "";
-    this.portfolioApi.updateAssetIsins(this.isinEditorAssetId, normalizedItems, confirmedIsin).subscribe({
+    this.portfolioApi.updateAssetIsins(
+      this.isinEditorAssetId,
+      [{ id: selected.id, name: selected.name, isin }],
+      confirmedIsin,
+    ).subscribe({
       next: () => {
         this.isinEditorSaving = false;
         this.cancelAssetIsinEditor();
-        this.toast.success("ISINs saved. Reports and Portfolio will use the updated records.");
+        this.toast.success("ISIN saved for the selected underlying.");
         this.loadReports();
       },
       error: error => {
@@ -921,7 +946,7 @@ This will recalculate the affected holding and cannot be undone.`,
         if (error?.error?.confirmation_required) {
           this.isinEditorReuseConfirmationIsin = error?.error?.isin || null;
         }
-        this.isinEditorError = error?.error?.detail || "Unable to save ISINs.";
+        this.isinEditorError = error?.error?.detail || "Unable to save ISIN.";
         this.cdr.detectChanges();
       },
     });

@@ -492,7 +492,7 @@ def portfolio_asset_underlying_import(request, asset_id):
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def report_asset_isin_targets(request, asset_id):
-    """Return distinct transaction underlyings for an asset; fall back to Asset when none exist."""
+    """Return selectable underlying names for one family-owned asset."""
     family = require_active_family(request.user)
     asset = Asset.objects.filter(id=asset_id, family=family, is_active=True).first()
     if asset is None:
@@ -500,34 +500,43 @@ def report_asset_isin_targets(request, asset_id):
 
     holdings = list(AssetUnderlyingHolding.objects.filter(family=family, asset=asset).order_by("stock_name", "id"))
     if not holdings:
-        return Response({"asset_id": asset.id, "asset_name": asset.name, "kind": "asset",
-                         "items": [{"id": asset.id, "name": asset.name, "isin": asset.isin or ""}]})
-    transactions = list(
-        Transaction.objects.filter(family=family, asset=asset)
-        .order_by("underlying", "asset_name", "id")
-        .values("underlying", "asset_name", "isin")
-    )
-    distinct = {}
-    for tx in transactions:
-        name = (tx.get("underlying") or "").strip() or (tx.get("asset_name") or "").strip()
-        key = " ".join(name.casefold().split())
-        if name and key not in distinct:
-            distinct[key] = {"id": len(distinct) + 1, "name": name, "isin": ""}
-    # Transactions carry the asset ISIN. A unique underlying has its own ISIN only
-    # where there is an explicit underlying record in AssetUnderlyingHolding.
-    if distinct:
-        stored = holdings
-        stored_by_name = {}
-        for row in stored:
-            stored_by_name.setdefault(" ".join(row.stock_name.casefold().split()), row)
-        items = []
-        for key, item in distinct.items():
-            row = stored_by_name.get(key)
-            items.append({**item, "id": row.id if row else item["id"], "isin": row.isin or "" if row else ""})
-        return Response({"asset_id": asset.id, "asset_name": asset.name, "kind": "underlyings", "items": items})
+        return Response({
+            "asset_id": asset.id,
+            "asset_name": asset.name,
+            "kind": "asset",
+            "items": [{"id": asset.id, "name": asset.name, "isin": asset.isin or ""}],
+            "available_underlyings": [asset.name],
+        })
 
-    return Response({"asset_id": asset.id, "asset_name": asset.name, "kind": "asset",
-                     "items": [{"id": asset.id, "name": asset.name, "isin": asset.isin or ""}]})
+    names_by_key = {}
+    for row in holdings:
+        name = (row.stock_name or "").strip()
+        key = " ".join(name.casefold().split())
+        if key:
+            names_by_key.setdefault(key, name)
+    for row in Transaction.objects.filter(family=family, asset=asset).values("underlying", "asset_name"):
+        name = (row.get("underlying") or "").strip() or (row.get("asset_name") or "").strip()
+        key = " ".join(name.casefold().split())
+        if name and key:
+            names_by_key.setdefault(key, name)
+
+    available = sorted(names_by_key.values(), key=str.casefold)
+    by_name = {" ".join((row.stock_name or "").casefold().split()): row for row in holdings}
+    items = []
+    for name in available:
+        row = by_name.get(" ".join(name.casefold().split()))
+        items.append({
+            "id": row.id if row else 0,
+            "name": name,
+            "isin": (row.isin or "") if row else "",
+        })
+    return Response({
+        "asset_id": asset.id,
+        "asset_name": asset.name,
+        "kind": "underlyings",
+        "items": items,
+        "available_underlyings": available,
+    })
 
 
 @api_view(["PATCH"])

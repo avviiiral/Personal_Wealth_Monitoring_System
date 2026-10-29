@@ -525,10 +525,12 @@ def report_asset_isin_targets(request, asset_id):
     items = []
     for name in available:
         row = by_name.get(" ".join(name.casefold().split()))
+        if row is None:
+            continue
         items.append({
-            "id": row.id if row else 0,
+            "id": row.id,
             "name": name,
-            "isin": (row.isin or "") if row else "",
+            "isin": row.isin or "",
         })
     return Response({
         "asset_id": asset.id,

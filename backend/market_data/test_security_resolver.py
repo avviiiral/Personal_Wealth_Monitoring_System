@@ -193,6 +193,25 @@ class SecurityResolverHardeningTests(SimpleTestCase):
             )
 
 
+    def test_name_without_ltd_matches_security_master_canonical_name(self):
+        canonical_name = "Ellenbarrie Industrial Gases Ltd"
+        normalized_name = SecurityResolver.normalize_security_name(canonical_name)
+        self.assertEqual(
+            normalized_name,
+            SecurityResolver.normalize_security_name("Ellenbarrie Industrial Gases"),
+        )
+        self._security_master_name_to_isin[normalized_name] = "INE000A01000"
+        self._security_master_isin_to_name["INE000A01000"] = canonical_name
+
+        result = SecurityResolver.resolve_security_from_master(
+            name="Ellenbarrie Industrial Gases",
+        )
+
+        self.assertEqual(result["status"], "MATCHED")
+        self.assertEqual(result["canonical_name"], canonical_name)
+        self.assertEqual(result["isin"], "INE000A01000")
+
+
 class SecurityMasterNameToIsinTests(SimpleTestCase):
     def setUp(self):
         from market_data.services.security_resolver import SecurityResolver
@@ -213,21 +232,3 @@ class SecurityMasterNameToIsinTests(SimpleTestCase):
         self.resolver._security_master_name_to_isin["ANUP ENGINEERING LIMITED"] = "INE000ANUP001"
         self.resolver._security_master_ambiguous_name_to_isin.add("ANUP ENGINEERING LIMITED")
         self.assertEqual(self.resolver.resolve_isin_from_name("ANUP ENGINEERING LTD"), "")
-    def test_name_without_ltd_matches_security_master_canonical_name(self):
-        canonical_name = "Ellenbarrie Industrial Gases Ltd"
-        normalized_name = SecurityResolver.normalize_security_name(canonical_name)
-        self.assertEqual(
-            normalized_name,
-            SecurityResolver.normalize_security_name("Ellenbarrie Industrial Gases"),
-        )
-        self._security_master_name_to_isin[normalized_name] = "INE000A01000"
-        self._security_master_isin_to_name["INE000A01000"] = canonical_name
-
-        result = SecurityResolver.resolve_security_from_master(
-            name="Ellenbarrie Industrial Gases",
-        )
-
-        self.assertEqual(result["status"], "MATCHED")
-        self.assertEqual(result["canonical_name"], canonical_name)
-        self.assertEqual(result["isin"], "INE000A01000")
-

@@ -135,7 +135,7 @@
         <button type="button" class="transaction-edit-button" [disabled]="isinEditorSaving" (click)="cancelAssetIsinEditor()">Cancel</button>
       </div>
       <p class="isin-editor-subtitle"><strong>{{ isinEditorAssetName }}</strong></p>
-      <p class="isin-editor-note" *ngIf="isinEditorKind === 'underlyings'">Select the underlying security, then enter its ISIN. Only the selected underlying will be updated.</p>
+      <p class="isin-editor-note" *ngIf="isinEditorKind === 'underlyings'">Select one underlying security and assign its ISIN. Only that underlying will be updated.</p>
       <p class="isin-editor-note" *ngIf="isinEditorKind === 'asset'">This asset has no underlying holdings, so the ISIN will be saved against the asset itself.</p>
       <div *ngIf="isinEditorLoading" class="loading-state"><span class="loading-spinner"></span> Loading underlying securities…</div>
       <div *ngIf="!isinEditorLoading && isinEditorAvailableOptions.length" class="isin-editor-list">

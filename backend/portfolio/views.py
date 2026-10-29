@@ -587,7 +587,21 @@ def update_report_asset_isins(request, asset_id):
         if item_id in submitted:
             return Response({"detail": "Duplicate item ids are not allowed."}, status=status.HTTP_400_BAD_REQUEST)
         submitted[item_id] = item
-    if set(submitted) != set(targets):
+    if target_kind == "underlyings":
+        selected_items = list(submitted.items())
+        if len(selected_items) != 1:
+            return Response({"detail": "Select exactly one underlying security to update."}, status=status.HTTP_400_BAD_REQUEST)
+        item_id, item = selected_items[0]
+        selected_name = " ".join(str(item.get("name") or "").casefold().split())
+        selected_target = next(
+            (row for row in stored if " ".join((row.stock_name or "").casefold().split()) == selected_name),
+            None,
+        )
+        if selected_target is None or item_id not in (selected_target.id, 0):
+            return Response({"detail": "Selected underlying was not found for this asset. Refresh and try again."}, status=status.HTTP_409_CONFLICT)
+        targets = {selected_target.id: selected_target}
+        submitted = {selected_target.id: item}
+    elif set(submitted) != set(targets):
         return Response({"detail": "The list changed. Refresh and try again."}, status=status.HTTP_409_CONFLICT)
 
     normalized = {}

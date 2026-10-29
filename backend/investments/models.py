@@ -384,6 +384,11 @@ class SecurityAlias(models.Model):
         }
         tokens = re.findall(r"[A-Z0-9]+", str(value or "").upper())
         normalized_tokens = [token_aliases.get(token, token) for token in tokens]
+        # A terminal Ltd/Limited is a legal suffix, not part of the security's
+        # distinguishing name. Ignore it so uploaded names without the suffix
+        # can match the same canonical Security Master entry.
+        if normalized_tokens and normalized_tokens[-1] == "LIMITED":
+            normalized_tokens.pop()
         return "".join(normalized_tokens)
 
     def save(self, *args, **kwargs):

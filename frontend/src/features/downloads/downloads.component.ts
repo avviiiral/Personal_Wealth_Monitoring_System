@@ -1031,8 +1031,8 @@ export class DownloadsComponent implements OnInit {
     });
     headerRow.height = 26;
     headerRow.eachCell(cell => {
-      cell.font = { name: 'Aptos', size: 10, bold: true, color: { argb: 'FFFFFFFF' } };
-      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF374151' } };
+      cell.font = { name: 'Aptos', size: 10, bold: true, color: { argb: 'FF172033' } };
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE7EBF0' } };
       cell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
       cell.border = {
         top: { style: 'thin', color: { argb: 'FFD1D5DB' } },

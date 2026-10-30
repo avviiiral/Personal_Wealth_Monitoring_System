@@ -1197,25 +1197,6 @@
   min-width: 210px !important;
 }
 
-.portfolio-table-card .asset-group-columns-header,
-.portfolio-table-card .asset-group-header {
-  min-width: 1180px;
-  flex-wrap: nowrap;
-}
-
-.portfolio-table-card .asset-group-name-header,
-.portfolio-table-card .asset-group-name {
-  flex: 0 0 260px;
-  min-width: 260px !important;
-  overflow-wrap: anywhere;
-}
-
-.portfolio-table-card .asset-group-col {
-  flex: 0 0 140px;
-  min-width: 140px !important;
-  white-space: nowrap;
-}
-
 .portfolio-table-card .asset-table {
   width: 100% !important;
   min-width: 1200px !important;
@@ -1278,13 +1259,6 @@
 .portfolio-table-card .asset-group-col {
   overflow: hidden;
   text-overflow: ellipsis;
-}
-
-@media (max-width: 1250px) {
-  .portfolio-table-card .asset-group-columns-header,
-  .portfolio-table-card .asset-group-header {
-    grid-template-columns: 24px minmax(260px, 2fr) repeat(6, minmax(140px, 1fr));
-  }
 }
 
 

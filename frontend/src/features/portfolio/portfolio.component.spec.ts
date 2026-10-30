@@ -89,6 +89,8 @@ describe('PortfolioComponent', () => {
                         family_name: 'Family A',
                         asset_name: 'Test Equity',
                         underlying: '',
+                        symbol: null,
+                        underlying_symbol: null,
                         isin: 'INE000TEST001',
                         advisors: '',
 

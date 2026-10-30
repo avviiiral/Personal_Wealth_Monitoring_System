@@ -537,6 +537,37 @@ class PortfolioTreeService:
             # owner/family row loads per asset.
             security_master = SecurityMasterService.get_for_asset(owner=asset.owner_id, asset=asset, family=asset.family_id)
         asset_name = cls._clean(first.asset_name)
+        underlying_name = cls._clean(first.underlying or first.asset_name)
+        underlying_holding = (
+            AssetUnderlyingHolding.objects
+            .filter(
+                family_id=asset.family_id,
+                asset_id=asset.id,
+                stock_name__iexact=underlying_name,
+            )
+            .exclude(isin__isnull=True)
+            .exclude(isin="")
+            .only("isin")
+            .first()
+        )
+        underlying_isin = cls._clean(getattr(underlying_holding, "isin", "")).upper()
+        underlying_symbols = []
+        if underlying_isin and asset.family_id is not None:
+            underlying_symbols = list(
+                Asset.objects
+                .filter(
+                    family_id=asset.family_id,
+                    isin__iexact=underlying_isin,
+                    is_active=True,
+                )
+                .exclude(symbol__isnull=True)
+                .exclude(symbol="")
+                .values_list("symbol", flat=True)
+                .distinct()[:2]
+            )
+        # Only publish a symbol when the underlying ISIN resolves to exactly
+        # one family-scoped Asset symbol. Never reuse the parent asset symbol.
+        underlying_symbol = underlying_symbols[0].strip().upper() if len(underlying_symbols) == 1 else None
         return {
             "id": asset.id,
             "family_name": cls._clean(first.family_name),
@@ -546,8 +577,9 @@ class PortfolioTreeService:
             "underlying": cls._clean(first.underlying, ""),
             # Prefer the Asset identifier; use Security Master only as a
             # read-only fallback. Never infer or persist an ISIN from a name.
-            "isin": (AssetUnderlyingHolding.objects.filter(family=asset.family, asset=asset, stock_name__iexact=cls._clean(first.underlying or first.asset_name)).exclude(isin__isnull=True).exclude(isin="").values_list("isin", flat=True).first() or getattr(asset, "isin", None) or (getattr(security_master, "isin", None) if security_master else None) or resolved_isin or None),
+            "isin": (underlying_isin or getattr(asset, "isin", None) or (getattr(security_master, "isin", None) if security_master else None) or resolved_isin or None),
             "symbol": getattr(asset, "symbol", None),
+            "underlying_symbol": underlying_symbol,
             "advisors": cls._clean(first.advisors, ""),
             "quantity": cls._decimal_to_float(quantity),
             "average_cost": cls._decimal_to_float(average_cost),

@@ -684,7 +684,21 @@
                                       {{ underlyingGroup.underlying }}
                                     </td>
 
-                                    <td class="isin">{{ underlyingGroup.isin }}</td>
+                                    <td class="isin">
+                                      <ng-container *ngIf="underlyingGroup.isin && underlyingGroup.isin !== '-'; else missingUnderlyingIsin">
+                                        {{ underlyingGroup.isin }}
+                                      </ng-container>
+                                      <ng-template #missingUnderlyingIsin>
+                                        <button
+                                          type="button"
+                                          class="inline-add-isin-button"
+                                          [disabled]="isinEditorLoading || isinEditorSaving"
+                                          (click)="openUnderlyingIsinEditor($event, assetGroup, underlyingGroup.underlying)"
+                                        >
+                                          + Add ISIN
+                                        </button>
+                                      </ng-template>
+                                    </td>
 
                                     <td>{{ underlyingGroup.transaction_count }}</td>
 

@@ -1507,10 +1507,14 @@
 .isin-editor-subtitle { margin: 12px 0 4px; font-size:14px; }
 .isin-editor-note { margin: 8px 0 16px; color:var(--muted,#667085); font-size:12px; line-height:1.5; }
 .isin-editor-list { display:flex; flex-direction:column; gap:10px; max-height:48vh; overflow-y:auto; }
-.isin-editor-row { display:grid; grid-template-columns:minmax(160px,1fr) minmax(180px,260px); align-items:center; gap:12px; padding:10px 0; border-bottom:1px solid var(--surface-line,#e5e7eb); }
+.isin-editor-row { display:grid; grid-template-columns:minmax(160px,1fr) minmax(180px,260px); align-items:center; gap:12px; padding:10px 0; border-bottom:1px solid var(--surface-line,#e5e7eb); } .isin-editor-row select { width:100%; min-width:0; box-sizing:border-box; border:1px solid #d0d5dd; border-radius:6px; padding:9px 10px; color:var(--ink,#101828); background:var(--canvas,#fff); font:inherit; } .isin-editor-row select:focus { outline:2px solid var(--accent,#0f7a5c); outline-offset:1px; }
 .isin-editor-row label { font-size:13px; font-weight:600; overflow-wrap:anywhere; }
 .isin-editor-row input { width:100%; min-width:0; box-sizing:border-box; border:1px solid #d0d5dd; border-radius:6px; padding:9px 10px; color:var(--ink,#101828); background:var(--canvas,#fff); font:inherit; text-transform:uppercase; }
 .isin-editor-row input:focus { outline:2px solid var(--accent,#0f7a5c); outline-offset:1px; }
 :host-context(html.dark-theme) .isin-editor-panel { background:#171a21; color:#e5e7eb; border-color:#3a414e; }
-:host-context(html.dark-theme) .isin-editor-row input { background:#12151c; border-color:#3a414e; color:#e5e7eb; }
+:host-context(html.dark-theme) .isin-editor-row input, :host-context(html.dark-theme) .isin-editor-row select { background:#12151c; border-color:#3a414e; color:#e5e7eb; }
 @media(max-width:560px) { .isin-editor-panel { padding:16px; } .isin-editor-row { grid-template-columns:1fr; gap:6px; } }
+
+
+/* Compact sizing for the inline missing-ISIN action. */
+.inline-add-isin-button { padding: 4px 8px; font-size: 11px; white-space: nowrap; }

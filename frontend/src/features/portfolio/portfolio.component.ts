@@ -485,6 +485,10 @@ export class PortfolioComponent implements OnInit, OnDestroy {
       'BHARTI AIRTEL LIMITED': 'BHARTIARTL',
       'BHARTI AIRTEL LTD': 'BHARTIARTL',
       'BHARTIARTL': 'BHARTIARTL',
+      'JSW ENERGY': 'JSWENERGY',
+      'JSW ENERGY LIMITED': 'JSWENERGY',
+      'JSW ENERGY LTD': 'JSWENERGY',
+      'JSWENERGY': 'JSWENERGY',
     };
 
     const slug = companySlugs[normalizedName];

@@ -9,7 +9,7 @@ from django.utils import timezone
 from users.models import FamilyGroup
 from rest_framework.test import APIClient
 
-from investments.models import Asset, SecurityMaster, Transaction
+from investments.models import Asset, AssetUnderlyingHolding, SecurityMaster, Transaction
 from corporate_actions.models import CorporateAction, CorporateActionStatus, CorporateActionType
 from market_data.models import MarketPrice
 from portfolio.services.portfolio_tree_service import (
@@ -54,6 +54,45 @@ class PortfolioTreeServiceTests(TestCase):
             amount=Decimal("1000"),
             fees=Decimal("0"),
         )
+
+    def test_portfolio_tree_resolves_symbol_from_matching_underlying_isin(self):
+        # The parent portfolio asset has a deliberately different symbol.
+        self.asset.symbol = "PARENT"
+        self.asset.save(update_fields=["symbol"])
+
+        underlying = Asset.objects.create(
+            family=self.family,
+            owner=self.user,
+            name="Test Equity",
+            category="STOCK",
+            symbol="TESTEQ",
+            isin="INE000UNDER001",
+        )
+        AssetUnderlyingHolding.objects.create(
+            owner=self.user,
+            family=self.family,
+            asset=self.asset,
+            stock_name="Test Equity",
+            isin=underlying.isin,
+            holding_percentage=Decimal("100"),
+        )
+
+        result = PortfolioTreeService.build(
+            owner=self.user,
+            family_id=self.family.id,
+        )
+        nodes = [
+            node
+            for family in result["families"]
+            for portfolio in family["portfolios"]
+            for asset_class in portfolio["asset_classes"]
+            for subclass in asset_class["sub_classes"]
+            for node in subclass["assets"]
+        ]
+
+        self.assertEqual(len(nodes), 1)
+        self.assertEqual(nodes[0]["symbol"], "PARENT")
+        self.assertEqual(nodes[0]["underlying_symbol"], "TESTEQ")
 
     def test_underlying_is_hidden_when_partial_sales_fully_close_position(self):
         asset = Asset.objects.create(

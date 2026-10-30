@@ -94,6 +94,32 @@ class PortfolioTreeServiceTests(TestCase):
         self.assertEqual(nodes[0]["symbol"], "PARENT")
         self.assertEqual(nodes[0]["underlying_symbol"], "TESTEQ")
 
+    def test_direct_equity_uses_its_own_nse_asset_symbol_without_holding_row(self):
+        self.asset.symbol = "BHARTIARTL.NS"
+        self.asset.isin = "INE397D01024"
+        self.asset.save(update_fields=["symbol", "isin"])
+        Transaction.objects.filter(asset=self.asset).update(
+            underlying="Bharti Airtel",
+            sub_class="Direct Equity",
+        )
+
+        result = PortfolioTreeService.build(
+            owner=self.user,
+            family_id=self.family.id,
+        )
+        nodes = [
+            node
+            for family in result["families"]
+            for portfolio in family["portfolios"]
+            for asset_class in portfolio["asset_classes"]
+            for subclass in asset_class["sub_classes"]
+            for node in subclass["assets"]
+        ]
+
+        self.assertEqual(len(nodes), 1)
+        self.assertEqual(nodes[0]["symbol"], "BHARTIARTL.NS")
+        self.assertEqual(nodes[0]["underlying_symbol"], "BHARTIARTL")
+
     @patch("portfolio.services.portfolio_tree_service.SecurityResolver.resolve_from_isin")
     def test_portfolio_tree_resolves_underlying_symbol_from_security_master_isin(self, resolve_from_isin):
         # No separate Asset exists for this underlying; resolution must use its ISIN.

@@ -469,6 +469,46 @@ export class PortfolioComponent implements OnInit, OnDestroy {
   hasQuantDetails(asset: PortfolioAssetNode): boolean { return asset.sector != null || asset.cap_type != null || asset.amc_name != null || asset.credit_rating != null || asset.pe_ratio != null || asset.pb_ratio != null || asset.roe != null || asset.ytm != null || asset.modified_duration != null || asset.average_maturity != null; }
   getAssetKey(subClass: string, assetName: string): string { return `${subClass}::${assetName}`; }
   getUnderlyingName(asset: PortfolioAssetNode): string { return asset.underlying?.trim() || asset.asset_name; }
+  getUnderlyingScreenerUrl(asset: PortfolioAssetNode): string | null {
+    if (!this.isEquityAsset(asset)) return null;
+
+    const normalizedName = this.getUnderlyingName(asset)
+      .trim()
+      .toUpperCase()
+      .replace(/\\s+/g, ' ')
+      .replace(/[.,]/g, '');
+
+    // Screener company identifiers are not reliably derivable from display names.
+    // Keep confirmed identifiers explicit and use Screener search for other equities.
+    const companySlugs: Record<string, string> = {
+      'BHARTI AIRTEL': 'BHARTIARTL',
+      'BHARTI AIRTEL LIMITED': 'BHARTIARTL',
+      'BHARTI AIRTEL LTD': 'BHARTIARTL',
+      'BHARTIARTL': 'BHARTIARTL',
+    };
+
+    const slug = companySlugs[normalizedName];
+    return slug
+      ? `https://www.screener.in/company/${slug}/consolidated/`
+      : `https://www.screener.in/search/?q=${encodeURIComponent(this.getUnderlyingName(asset))}`;
+  }
+
+  private isEquityAsset(asset: PortfolioAssetNode): boolean {
+    for (const family of this.families) {
+      for (const portfolio of family.portfolios ?? []) {
+        for (const assetClass of portfolio.asset_classes ?? []) {
+          if (assetClass.asset_class.trim().toLowerCase() !== 'equity') continue;
+          for (const subClass of assetClass.sub_classes ?? []) {
+            if (subClass.assets?.some((candidate) => candidate.id === asset.id)) {
+              return true;
+            }
+          }
+        }
+      }
+    }
+
+    return false;
+  }
   getUnderlyingInvested(asset: PortfolioAssetNode): number { return this.toNumber(asset.invested_value); }
 
   selectFamilyMember(family: string): void { this.selectedFamilyMember = this.selectedFamilyMember === family ? '' : family; this.selectedAssetClass = ''; this.selectedAdvisor = ''; this.resetExpansion(); this.loadPortfolio(true); }

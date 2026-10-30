@@ -495,17 +495,21 @@ export class PortfolioComponent implements OnInit, OnDestroy {
       .trim()
       .toUpperCase();
 
-    // Do not create a potentially broken Screener URL from a company name.
-    if (!/^[A-Z0-9&-]+$/.test(symbol)) return null;
+    if (/^[A-Z0-9&-]+$/.test(symbol)) {
+      return `https://www.screener.in/company/${encodeURIComponent(symbol)}/consolidated/`;
+    }
 
-    return `https://www.screener.in/company/${encodeURIComponent(symbol)}/consolidated/`;
+    // If the underlying has no mapped NSE symbol yet, keep it actionable
+    // through Screener search instead of rendering an inactive plain label.
+    return `https://www.screener.in/search/?q=${encodeURIComponent(this.getUnderlyingName(asset))}`;
   }
 
   private isEquityAsset(asset: PortfolioAssetNode): boolean {
     for (const family of this.families) {
       for (const portfolio of family.portfolios ?? []) {
         for (const assetClass of portfolio.asset_classes ?? []) {
-          if (assetClass.asset_class.trim().toLowerCase() !== 'equity') continue;
+          const normalizedClass = (assetClass.asset_class || '').trim().toLowerCase();
+          if (!normalizedClass.includes('equity')) continue;
           for (const subClass of assetClass.sub_classes ?? []) {
             if (subClass.assets?.some((candidate) => candidate.id === asset.id)) {
               return true;

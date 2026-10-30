@@ -475,7 +475,7 @@ export class PortfolioComponent implements OnInit, OnDestroy {
     const normalizedName = this.getUnderlyingName(asset)
       .trim()
       .toUpperCase()
-      .replace(/\\s+/g, ' ')
+      .replace(/\s+/g, ' ')
       .replace(/[.,]/g, '');
 
     // Screener company identifiers are not reliably derivable from display names.

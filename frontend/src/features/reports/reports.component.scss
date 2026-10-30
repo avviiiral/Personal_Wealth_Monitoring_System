@@ -1514,3 +1514,26 @@
 :host-context(html.dark-theme) .isin-editor-panel { background:#171a21; color:#e5e7eb; border-color:#3a414e; }
 :host-context(html.dark-theme) .isin-editor-row input, :host-context(html.dark-theme) .isin-editor-row select { background:#12151c; border-color:#3a414e; color:#e5e7eb; }
 @media(max-width:560px) { .isin-editor-panel { padding:16px; } .isin-editor-row { grid-template-columns:1fr; gap:6px; } }
+
+
+/* Inline action for underlying rows that have no ISIN. */
+.inline-add-isin-button {
+  border: 1px solid #b7791f;
+  border-radius: 5px;
+  background: rgba(183, 121, 31, .08);
+  color: #d69e36;
+  padding: 4px 8px;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.3;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.inline-add-isin-button:hover:not(:disabled) {
+  background: rgba(183, 121, 31, .16);
+}
+.inline-add-isin-button:disabled {
+  opacity: .55;
+  cursor: not-allowed;
+}

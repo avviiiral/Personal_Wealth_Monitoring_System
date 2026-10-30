@@ -659,6 +659,21 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
 
     const percentages = results.map((item) => item.percentage);
 
+    // Use a distinct, high-contrast colour for each asset category.
+    // Cycle the palette if a portfolio contains more categories than colours.
+    const allocationColors = [
+      '#2563EB',
+      '#16A34A',
+      '#F59E0B',
+      '#DC2626',
+      '#8B5CF6',
+      '#0891B2',
+      '#DB2777',
+      '#65A30D',
+      '#EA580C',
+      '#4F46E5',
+    ];
+
     const config: ChartConfiguration<'doughnut'> = {
       type: 'doughnut',
 
@@ -669,16 +684,9 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
           {
             data: values,
 
-            backgroundColor: [
-              '#111827',
-              '#334155',
-              '#64748b',
-              '#94a3b8',
-              '#cbd5e1',
-              '#475569',
-              '#1e293b',
-              '#e2e8f0',
-            ],
+            backgroundColor: results.map(
+              (_, index) => allocationColors[index % allocationColors.length],
+            ),
 
             borderWidth: 2,
             borderColor: '#ffffff',

@@ -552,10 +552,9 @@ class PortfolioTreeService:
             .first()
         )
         underlying_isin = cls._clean(getattr(underlying_holding, "isin", "")).upper()
-        # A Direct Equity row represents the underlying security itself. When
-        # there is no separate uploaded holding row, its Asset ISIN is the
-        # underlying ISIN (unlike a fund's parent ISIN).
-        if not underlying_isin and cls._clean(first.sub_class).casefold() == "direct equity":
+        # An Equity asset row represents the underlying security itself.
+        # When there is no separate uploaded holding row, use that Asset's ISIN.
+        if not underlying_isin and cls._clean(first.asset_class).casefold() == "equity":
             underlying_isin = cls._clean(getattr(asset, "isin", "")).upper()
         underlying_symbols = []
         if underlying_isin and asset.family_id is not None:

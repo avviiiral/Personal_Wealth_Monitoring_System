@@ -472,36 +472,12 @@ export class PortfolioComponent implements OnInit, OnDestroy {
   getUnderlyingScreenerUrl(asset: PortfolioAssetNode): string | null {
     if (!this.isEquityAsset(asset)) return null;
 
-    // Prefer the NSE symbol returned by the portfolio API. Fall back only
-    // to verified symbols for legacy records where Asset.symbol is empty.
-    const normalizedName = this.getUnderlyingName(asset)
-      .trim()
-      .toUpperCase()
-      .replace(/\s+/g, ' ')
-      .replace(/[.,]/g, '');
+    // The backend resolves this symbol from the specific underlying's ISIN.
+    // Never fall back to the parent Asset symbol or a name-based search URL.
+    const symbol = (asset.underlying_symbol || '').trim().toUpperCase();
+    if (!/^[A-Z0-9&-]+$/.test(symbol)) return null;
 
-    const knownSymbols: Record<string, string> = {
-      'BHARTI AIRTEL': 'BHARTIARTL',
-      'BHARTI AIRTEL LIMITED': 'BHARTIARTL',
-      'BHARTI AIRTEL LTD': 'BHARTIARTL',
-      'BHARTIARTL': 'BHARTIARTL',
-      'JSW ENERGY': 'JSWENERGY',
-      'JSW ENERGY LIMITED': 'JSWENERGY',
-      'JSW ENERGY LTD': 'JSWENERGY',
-      'JSWENERGY': 'JSWENERGY',
-    };
-
-    const symbol = (asset.symbol || knownSymbols[normalizedName] || '')
-      .trim()
-      .toUpperCase();
-
-    if (/^[A-Z0-9&-]+$/.test(symbol)) {
-      return `https://www.screener.in/company/${encodeURIComponent(symbol)}/consolidated/`;
-    }
-
-    // If the underlying has no mapped NSE symbol yet, keep it actionable
-    // through Screener search instead of rendering an inactive plain label.
-    return `https://www.screener.in/search/?q=${encodeURIComponent(this.getUnderlyingName(asset))}`;
+    return `https://www.screener.in/company/${encodeURIComponent(symbol)}/consolidated/`;
   }
 
   private isEquityAsset(asset: PortfolioAssetNode): boolean {

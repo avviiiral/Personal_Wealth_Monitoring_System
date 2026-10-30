@@ -865,6 +865,49 @@ This will recalculate the affected holding and cannot be undone.`,
     });
   }
 
+  openUnderlyingIsinEditor(event: MouseEvent, assetGroup: AssetNameGroup, underlyingName: string): void {
+    event.stopPropagation();
+    const assetId = assetGroup.underlyings
+      .find(group => group.underlying === underlyingName)
+      ?.transactions.find(tx => tx.asset)?.asset;
+    if (!assetId) {
+      this.toast.error("Could not identify the asset record for this underlying.");
+      return;
+    }
+
+    this.isinEditorAssetId = assetId;
+    this.isinEditorAssetName = assetGroup.asset_name;
+    this.isinEditorItems = [];
+    this.isinEditorAvailableOptions = [];
+    this.isinEditorSelectedUnderlying = underlyingName;
+    this.isinEditorSelectedIsin = "";
+    this.isinEditorError = "";
+    this.isinEditorReuseConfirmationIsin = null;
+    this.isinEditorLoading = true;
+
+    this.portfolioApi.getAssetIsinTargets(assetId).subscribe({
+      next: response => {
+        this.isinEditorKind = response.kind;
+        this.isinEditorAvailableOptions = response.available_underlyings || response.items.map(item => item.name);
+        this.isinEditorItems = response.items.map(item => ({ ...item }));
+        const selected = this.isinEditorItems.find(item => item.name === underlyingName);
+        if (!selected) {
+          this.isinEditorError = "This underlying could not be matched to an ISIN record. Refresh the report and try again.";
+        } else {
+          this.isinEditorSelectedUnderlying = selected.name;
+          this.isinEditorSelectedIsin = selected.isin || "";
+        }
+        this.isinEditorLoading = false;
+        this.cdr.detectChanges();
+      },
+      error: error => {
+        this.isinEditorLoading = false;
+        this.isinEditorError = error?.error?.detail || "Unable to load underlying securities.";
+        this.cdr.detectChanges();
+      },
+    });
+  }
+
   openAssetIsinEditor(event: MouseEvent, assetGroup: AssetNameGroup): void {
     event.stopPropagation();
     const assetId = assetGroup.underlyings.flatMap(group => group.transactions).find(tx => tx.asset)?.asset;

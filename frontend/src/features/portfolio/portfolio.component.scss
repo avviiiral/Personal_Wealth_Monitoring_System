@@ -1144,10 +1144,8 @@
 }
 
 @media (max-width: 760px) {
-  .portfolio-page { padding: 12px; }
   .portfolio-header { gap: 12px; }
   .portfolio-header h1 { font-size: clamp(20px, 5vw, 26px); }
-  .portfolio-header-actions { width: 100%; }
   .portfolio-header-actions .refresh-button,
   .portfolio-header-actions .upload-button {
     flex: 1 1 140px;
@@ -1174,7 +1172,6 @@
 .portfolio-table-card .table-scroll,
 .portfolio-table-card .underlying-table-scroll {
   max-width: 100%;
-  overflow-x: auto;
 }
 
 .portfolio-table-card .portfolio-table {

@@ -726,7 +726,19 @@
                                 >
                                   <tr class="underlying-row">
                                     <td class="asset-name final-underlying">
-                                      {{ getUnderlyingName(asset) }}
+                                      <a
+                                        *ngIf="getUnderlyingScreenerUrl(asset) as screenerUrl; else plainUnderlyingName"
+                                        class="underlying-screener-link"
+                                        [href]="screenerUrl"
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        [attr.aria-label]="'Open ' + getUnderlyingName(asset) + ' on Screener in a new tab'"
+                                      >
+                                        {{ getUnderlyingName(asset) }}
+                                      </a>
+                                      <ng-template #plainUnderlyingName>
+                                        {{ getUnderlyingName(asset) }}
+                                      </ng-template>
                                     </td>
 
                                     <td class="family-name">

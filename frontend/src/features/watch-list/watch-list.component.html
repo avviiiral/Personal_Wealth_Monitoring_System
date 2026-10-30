@@ -53,6 +53,7 @@
           <th class="watch-column"></th>
           <th class="sortable-header" (click)="cycleSort('product')">Product <span class="sort-indicator">{{ getSortIndicator('product') }}</span></th>
           <th class="sortable-header" (click)="cycleSort('provider')">Provider <span class="sort-indicator">{{ getSortIndicator('provider') }}</span></th>
+          <th>Fund Manager</th>
           <th class="sortable-header" (click)="cycleSort('status')">Status <span class="sort-indicator">{{ getSortIndicator('status') }}</span></th>
           <th class="sortable-header" (click)="cycleSort('ownership')">Ownership <span class="sort-indicator">{{ getSortIndicator('ownership') }}</span></th>
           <th *ngIf="status !== 'ALL' && status !== 'UNIVERSAL'">Benchmark</th>
@@ -77,6 +78,10 @@
           </td>
           <td><div class="product-name">{{ product.name }}</div><div class="secondary">{{ product.isin || product.external_identifier || 'Identifier unavailable' }}</div></td>
           <td>{{ product.provider || '—' }}</td>
+          <td class="fund-manager-cell">
+            <a *ngIf="fundManagerWebsite(product) as managerWebsite; else managerNameText" class="fund-manager-link" [href]="managerWebsite" target="_blank" rel="noopener noreferrer">{{ fundManagerName(product) }}</a>
+            <ng-template #managerNameText><span class="fund-manager-name">{{ fundManagerName(product) }}</span></ng-template>
+          </td>
           <td><span class="status" [class.owned]="product.status === 'OWNED'">{{ product.status }}</span></td>
           <td>
             <ng-container *ngIf="ownershipFamilies(product).length; else universalOwnership">
@@ -104,7 +109,7 @@
           <td [class.positive-value]="metric(product, 'CAGR') !== null && metric(product, 'CAGR')! > 0" [class.negative-value]="metric(product, 'CAGR') !== null && metric(product, 'CAGR')! < 0">{{ formatPercent(metric(product, 'CAGR')) }}</td>
           <td>{{ product.mutual_fund?.aum ? formatAmount(product.mutual_fund.aum) : (product.pms?.aum ? formatAmount(product.pms.aum) : '—') }}</td>
         </tr>
-        <tr *ngIf="products.length === 0"><td [attr.colspan]="(status === 'ALL' || status === 'UNIVERSAL') ? 14 : 16" class="empty">No products match the current filters.</td></tr>
+        <tr *ngIf="products.length === 0"><td [attr.colspan]="(status === 'ALL' || status === 'UNIVERSAL') ? 15 : 17" class="empty">No products match the current filters.</td></tr>
       </tbody>
     </table>
   </div>

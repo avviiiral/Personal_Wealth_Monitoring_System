@@ -99,6 +99,7 @@ class PortfolioTreeServiceTests(TestCase):
         # No separate Asset exists for this underlying; resolution must use its ISIN.
         self.asset.symbol = "PARENT"
         self.asset.save(update_fields=["symbol"])
+        Transaction.objects.filter(asset=self.asset).update(underlying="Bharti Airtel")
         resolve_from_isin.return_value = "BHARTIARTL.NS"
         AssetUnderlyingHolding.objects.create(
             owner=self.user,

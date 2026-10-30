@@ -1,4 +1,5 @@
 import logging
+import re
 from datetime import date, timedelta
 from decimal import Decimal
 
@@ -13,6 +14,7 @@ from investments.services.security_master import SecurityMasterService
 from analytics.services.cash_flows import build_cash_flows, xirr_percent
 from market_data.models import DataSource, ManualAssetPrice, MarketPrice
 from market_data.services.mutual_fund_nav_service import MutualFundNAVService
+from market_data.services.security_resolver import SecurityResolver
 from market_data.services.yahoo_finance import YahooFinanceService
 from mutual_funds.models import AMFIMasterNAV, AMFIMasterScheme
 from mutual_funds.services.amfi_asset_resolver import AMFIAssetResolver
@@ -565,9 +567,18 @@ class PortfolioTreeService:
                 .values_list("symbol", flat=True)
                 .distinct()[:2]
             )
-        # Only publish a symbol when the underlying ISIN resolves to exactly
-        # one family-scoped Asset symbol. Never reuse the parent asset symbol.
+        # Prefer a unique family-scoped Asset symbol when available. If the
+        # underlying is not separately represented as an Asset, resolve its
+        # NSE symbol from the underlying ISIN using the existing Security Master.
+        # Never reuse the parent asset symbol or infer a symbol from a name.
         underlying_symbol = underlying_symbols[0].strip().upper() if len(underlying_symbols) == 1 else None
+        if not underlying_symbol and underlying_isin:
+            yahoo_symbol = SecurityResolver.resolve_from_isin(underlying_isin) or ""
+            yahoo_symbol = yahoo_symbol.strip().upper()
+            if yahoo_symbol.endswith(SecurityResolver.NSE_SUFFIX.upper()):
+                underlying_symbol = yahoo_symbol[:-len(SecurityResolver.NSE_SUFFIX)].strip()
+            if not underlying_symbol or not re.fullmatch(r"[A-Z0-9&-]+", underlying_symbol):
+                underlying_symbol = None
         return {
             "id": asset.id,
             "family_name": cls._clean(first.family_name),

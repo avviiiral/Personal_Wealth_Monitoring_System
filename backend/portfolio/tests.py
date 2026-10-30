@@ -9,7 +9,7 @@ from django.utils import timezone
 from users.models import FamilyGroup
 from rest_framework.test import APIClient
 
-from investments.models import Asset, SecurityMaster, Transaction
+from investments.models import Asset, AssetUnderlyingHolding, SecurityMaster, Transaction
 from corporate_actions.models import CorporateAction, CorporateActionStatus, CorporateActionType
 from market_data.models import MarketPrice
 from portfolio.services.portfolio_tree_service import (
@@ -54,6 +54,106 @@ class PortfolioTreeServiceTests(TestCase):
             amount=Decimal("1000"),
             fees=Decimal("0"),
         )
+
+    def test_portfolio_tree_resolves_symbol_from_matching_underlying_isin(self):
+        # The parent portfolio asset has a deliberately different symbol.
+        self.asset.symbol = "PARENT"
+        self.asset.save(update_fields=["symbol"])
+
+        underlying = Asset.objects.create(
+            family=self.family,
+            owner=self.user,
+            name="Test Equity",
+            category="STOCK",
+            symbol="TESTEQ",
+            isin="INE000UNDER001",
+        )
+        AssetUnderlyingHolding.objects.create(
+            owner=self.user,
+            family=self.family,
+            asset=self.asset,
+            stock_name="Test Equity",
+            isin=underlying.isin,
+            holding_percentage=Decimal("100"),
+        )
+
+        result = PortfolioTreeService.build(
+            owner=self.user,
+            family_id=self.family.id,
+        )
+        nodes = [
+            node
+            for family in result["families"]
+            for portfolio in family["portfolios"]
+            for asset_class in portfolio["asset_classes"]
+            for subclass in asset_class["sub_classes"]
+            for node in subclass["assets"]
+        ]
+
+        self.assertEqual(len(nodes), 1)
+        self.assertEqual(nodes[0]["symbol"], "PARENT")
+        self.assertEqual(nodes[0]["underlying_symbol"], "TESTEQ")
+
+    def test_equity_asset_uses_its_own_nse_symbol_without_holding_row(self):
+        self.asset.symbol = "BHARTIARTL.NS"
+        self.asset.isin = "INE397D01024"
+        self.asset.save(update_fields=["symbol", "isin"])
+        Transaction.objects.filter(asset=self.asset).update(
+            asset_class="Equity",
+            underlying="Bharti Airtel",
+            sub_class="Large Cap",
+        )
+
+        result = PortfolioTreeService.build(
+            owner=self.user,
+            family_id=self.family.id,
+        )
+        nodes = [
+            node
+            for family in result["families"]
+            for portfolio in family["portfolios"]
+            for asset_class in portfolio["asset_classes"]
+            for subclass in asset_class["sub_classes"]
+            for node in subclass["assets"]
+        ]
+
+        self.assertEqual(len(nodes), 1)
+        self.assertEqual(nodes[0]["symbol"], "BHARTIARTL.NS")
+        self.assertEqual(nodes[0]["underlying_symbol"], "BHARTIARTL")
+
+    @patch("portfolio.services.portfolio_tree_service.SecurityResolver.resolve_from_isin")
+    def test_portfolio_tree_resolves_underlying_symbol_from_security_master_isin(self, resolve_from_isin):
+        # No separate Asset exists for this underlying; resolution must use its ISIN.
+        self.asset.symbol = "PARENT"
+        self.asset.save(update_fields=["symbol"])
+        Transaction.objects.filter(asset=self.asset).update(underlying="Bharti Airtel")
+        resolve_from_isin.return_value = "BHARTIARTL.NS"
+        AssetUnderlyingHolding.objects.create(
+            owner=self.user,
+            family=self.family,
+            asset=self.asset,
+            stock_name="Bharti Airtel",
+            isin="INE397D01024",
+            holding_percentage=Decimal("100"),
+        )
+
+        result = PortfolioTreeService.build(
+            owner=self.user,
+            family_id=self.family.id,
+        )
+        nodes = [
+            node
+            for family in result["families"]
+            for portfolio in family["portfolios"]
+            for asset_class in portfolio["asset_classes"]
+            for subclass in asset_class["sub_classes"]
+            for node in subclass["assets"]
+        ]
+
+        self.assertEqual(len(nodes), 1)
+        self.assertEqual(nodes[0]["symbol"], "PARENT")
+        self.assertEqual(nodes[0]["underlying_symbol"], "BHARTIARTL")
+        resolve_from_isin.assert_called_once_with("INE397D01024")
 
     def test_underlying_is_hidden_when_partial_sales_fully_close_position(self):
         asset = Asset.objects.create(

@@ -469,6 +469,34 @@ export class PortfolioComponent implements OnInit, OnDestroy {
   hasQuantDetails(asset: PortfolioAssetNode): boolean { return asset.sector != null || asset.cap_type != null || asset.amc_name != null || asset.credit_rating != null || asset.pe_ratio != null || asset.pb_ratio != null || asset.roe != null || asset.ytm != null || asset.modified_duration != null || asset.average_maturity != null; }
   getAssetKey(subClass: string, assetName: string): string { return `${subClass}::${assetName}`; }
   getUnderlyingName(asset: PortfolioAssetNode): string { return asset.underlying?.trim() || asset.asset_name; }
+  getUnderlyingScreenerUrl(asset: PortfolioAssetNode): string | null {
+    if (!this.isEquityAsset(asset)) return null;
+
+    // The backend resolves this symbol from the specific underlying's ISIN.
+    // Never fall back to the parent Asset symbol or a name-based search URL.
+    const symbol = (asset.underlying_symbol || '').trim().toUpperCase();
+    if (!/^[A-Z0-9&-]+$/.test(symbol)) return null;
+
+    return `https://www.screener.in/company/${encodeURIComponent(symbol)}/consolidated/`;
+  }
+
+  private isEquityAsset(asset: PortfolioAssetNode): boolean {
+    for (const family of this.families) {
+      for (const portfolio of family.portfolios ?? []) {
+        for (const assetClass of portfolio.asset_classes ?? []) {
+          const normalizedClass = (assetClass.asset_class || '').trim().toLowerCase();
+          if (!normalizedClass.includes('equity')) continue;
+          for (const subClass of assetClass.sub_classes ?? []) {
+            if (subClass.assets?.some((candidate) => candidate.id === asset.id)) {
+              return true;
+            }
+          }
+        }
+      }
+    }
+
+    return false;
+  }
   getUnderlyingInvested(asset: PortfolioAssetNode): number { return this.toNumber(asset.invested_value); }
 
   selectFamilyMember(family: string): void { this.selectedFamilyMember = this.selectedFamilyMember === family ? '' : family; this.selectedAssetClass = ''; this.selectedAdvisor = ''; this.resetExpansion(); this.loadPortfolio(true); }

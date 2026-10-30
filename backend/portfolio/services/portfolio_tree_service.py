@@ -1,4 +1,5 @@
 import logging
+import re
 from datetime import date, timedelta
 from decimal import Decimal
 
@@ -13,6 +14,7 @@ from investments.services.security_master import SecurityMasterService
 from analytics.services.cash_flows import build_cash_flows, xirr_percent
 from market_data.models import DataSource, ManualAssetPrice, MarketPrice
 from market_data.services.mutual_fund_nav_service import MutualFundNAVService
+from market_data.services.security_resolver import SecurityResolver
 from market_data.services.yahoo_finance import YahooFinanceService
 from mutual_funds.models import AMFIMasterNAV, AMFIMasterScheme
 from mutual_funds.services.amfi_asset_resolver import AMFIAssetResolver
@@ -526,7 +528,6 @@ class PortfolioTreeService:
         resolved_isin = ""
         if not cls._clean(getattr(asset, "isin", "")):
             # Canonical workbook fallback uses exact normalized names and quarantines conflicts.
-            from market_data.services.security_resolver import SecurityResolver
             for candidate_name in (getattr(asset, "name", ""), getattr(first, "asset_name", ""), getattr(first, "underlying", "")):
                 resolved_isin = SecurityResolver.resolve_isin_from_name(candidate_name)
                 if resolved_isin:
@@ -537,6 +538,54 @@ class PortfolioTreeService:
             # owner/family row loads per asset.
             security_master = SecurityMasterService.get_for_asset(owner=asset.owner_id, asset=asset, family=asset.family_id)
         asset_name = cls._clean(first.asset_name)
+        underlying_name = cls._clean(first.underlying or first.asset_name)
+        underlying_holding = (
+            AssetUnderlyingHolding.objects
+            .filter(
+                family_id=asset.family_id,
+                asset_id=asset.id,
+                stock_name__iexact=underlying_name,
+            )
+            .exclude(isin__isnull=True)
+            .exclude(isin="")
+            .only("isin")
+            .first()
+        )
+        underlying_isin = cls._clean(getattr(underlying_holding, "isin", "")).upper()
+        # An Equity asset row represents the underlying security itself.
+        # When there is no separate uploaded holding row, use that Asset's ISIN.
+        if not underlying_isin and cls._clean(first.asset_class).casefold() == "equity":
+            underlying_isin = cls._clean(getattr(asset, "isin", "")).upper()
+        underlying_symbols = []
+        if underlying_isin and asset.family_id is not None:
+            underlying_symbols = list(
+                Asset.objects
+                .filter(
+                    family_id=asset.family_id,
+                    isin__iexact=underlying_isin,
+                    is_active=True,
+                )
+                .exclude(symbol__isnull=True)
+                .exclude(symbol="")
+                .values_list("symbol", flat=True)
+                .distinct()[:2]
+            )
+        # Prefer a unique family-scoped Asset symbol when available. If the
+        # underlying is not separately represented as an Asset, resolve its
+        # NSE symbol from the underlying ISIN using the existing Security Master.
+        # Never reuse the parent asset symbol or infer a symbol from a name.
+        underlying_symbol = underlying_symbols[0].strip().upper() if len(underlying_symbols) == 1 else None
+        if underlying_symbol and underlying_symbol.endswith(SecurityResolver.NSE_SUFFIX.upper()):
+            underlying_symbol = underlying_symbol[:-len(SecurityResolver.NSE_SUFFIX)].strip()
+        if not underlying_symbol or not re.fullmatch(r"[A-Z0-9&-]+", underlying_symbol):
+            underlying_symbol = None
+        if not underlying_symbol and underlying_isin:
+            yahoo_symbol = SecurityResolver.resolve_from_isin(underlying_isin) or ""
+            yahoo_symbol = yahoo_symbol.strip().upper()
+            if yahoo_symbol.endswith(SecurityResolver.NSE_SUFFIX.upper()):
+                underlying_symbol = yahoo_symbol[:-len(SecurityResolver.NSE_SUFFIX)].strip()
+            if not underlying_symbol or not re.fullmatch(r"[A-Z0-9&-]+", underlying_symbol):
+                underlying_symbol = None
         return {
             "id": asset.id,
             "family_name": cls._clean(first.family_name),
@@ -546,8 +595,9 @@ class PortfolioTreeService:
             "underlying": cls._clean(first.underlying, ""),
             # Prefer the Asset identifier; use Security Master only as a
             # read-only fallback. Never infer or persist an ISIN from a name.
-            "isin": (AssetUnderlyingHolding.objects.filter(family=asset.family, asset=asset, stock_name__iexact=cls._clean(first.underlying or first.asset_name)).exclude(isin__isnull=True).exclude(isin="").values_list("isin", flat=True).first() or getattr(asset, "isin", None) or (getattr(security_master, "isin", None) if security_master else None) or resolved_isin or None),
+            "isin": (underlying_isin or getattr(asset, "isin", None) or (getattr(security_master, "isin", None) if security_master else None) or resolved_isin or None),
             "symbol": getattr(asset, "symbol", None),
+            "underlying_symbol": underlying_symbol,
             "advisors": cls._clean(first.advisors, ""),
             "quantity": cls._decimal_to_float(quantity),
             "average_cost": cls._decimal_to_float(average_cost),

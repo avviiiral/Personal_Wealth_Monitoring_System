@@ -1144,10 +1144,8 @@
 }
 
 @media (max-width: 760px) {
-  .portfolio-page { padding: 12px; }
   .portfolio-header { gap: 12px; }
   .portfolio-header h1 { font-size: clamp(20px, 5vw, 26px); }
-  .portfolio-header-actions { width: 100%; }
   .portfolio-header-actions .refresh-button,
   .portfolio-header-actions .upload-button {
     flex: 1 1 140px;
@@ -1174,11 +1172,9 @@
 .portfolio-table-card .table-scroll,
 .portfolio-table-card .underlying-table-scroll {
   max-width: 100%;
-  overflow-x: auto;
 }
 
 .portfolio-table-card .portfolio-table {
-  width: 100% !important;
   min-width: 1050px !important;
   table-layout: auto !important;
 }
@@ -1195,25 +1191,6 @@
 .portfolio-table-card .portfolio-table th:first-child,
 .portfolio-table-card .portfolio-table td:first-child {
   min-width: 210px !important;
-}
-
-.portfolio-table-card .asset-group-columns-header,
-.portfolio-table-card .asset-group-header {
-  min-width: 1180px;
-  flex-wrap: nowrap;
-}
-
-.portfolio-table-card .asset-group-name-header,
-.portfolio-table-card .asset-group-name {
-  flex: 0 0 260px;
-  min-width: 260px !important;
-  overflow-wrap: anywhere;
-}
-
-.portfolio-table-card .asset-group-col {
-  flex: 0 0 140px;
-  min-width: 140px !important;
-  white-space: nowrap;
 }
 
 .portfolio-table-card .asset-table {
@@ -1280,10 +1257,40 @@
   text-overflow: ellipsis;
 }
 
-@media (max-width: 1250px) {
-  .portfolio-table-card .asset-group-columns-header,
-  .portfolio-table-card .asset-group-header {
-    grid-template-columns: 24px minmax(260px, 2fr) repeat(6, minmax(140px, 1fr));
-  }
+
+
+/* Screener links for equity underlyings */
+.underlying-screener-link {
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+  pointer-events: auto;
 }
 
+.underlying-screener-link:hover,
+.underlying-screener-link:focus-visible {
+  color: var(--accent);
+  text-decoration: underline;
+}
+
+/* Keep underlying Screener links visibly green in both themes. */
+.portfolio-page .underlying-screener-link,
+.portfolio-page .underlying-screener-link:visited {
+  color: #0f7a5c !important;
+}
+
+.portfolio-page .underlying-screener-link:hover,
+.portfolio-page .underlying-screener-link:focus-visible {
+  color: #096448 !important;
+}
+
+:host-context(html.dark-theme) .portfolio-page .underlying-screener-link,
+:host-context(html.dark-theme) .portfolio-page .underlying-screener-link:visited {
+  color: #2fbf8f !important;
+}
+
+:host-context(html.dark-theme) .portfolio-page .underlying-screener-link:hover,
+:host-context(html.dark-theme) .portfolio-page .underlying-screener-link:focus-visible {
+  color: #55d9aa !important;
+}

@@ -552,6 +552,11 @@ class PortfolioTreeService:
             .first()
         )
         underlying_isin = cls._clean(getattr(underlying_holding, "isin", "")).upper()
+        # A Direct Equity row represents the underlying security itself. When
+        # there is no separate uploaded holding row, its Asset ISIN is the
+        # underlying ISIN (unlike a fund's parent ISIN).
+        if not underlying_isin and cls._clean(first.sub_class).casefold() == "direct equity":
+            underlying_isin = cls._clean(getattr(asset, "isin", "")).upper()
         underlying_symbols = []
         if underlying_isin and asset.family_id is not None:
             underlying_symbols = list(
@@ -571,6 +576,10 @@ class PortfolioTreeService:
         # NSE symbol from the underlying ISIN using the existing Security Master.
         # Never reuse the parent asset symbol or infer a symbol from a name.
         underlying_symbol = underlying_symbols[0].strip().upper() if len(underlying_symbols) == 1 else None
+        if underlying_symbol and underlying_symbol.endswith(SecurityResolver.NSE_SUFFIX.upper()):
+            underlying_symbol = underlying_symbol[:-len(SecurityResolver.NSE_SUFFIX)].strip()
+        if not underlying_symbol or not re.fullmatch(r"[A-Z0-9&-]+", underlying_symbol):
+            underlying_symbol = None
         if not underlying_symbol and underlying_isin:
             yahoo_symbol = SecurityResolver.resolve_from_isin(underlying_isin) or ""
             yahoo_symbol = yahoo_symbol.strip().upper()

@@ -472,15 +472,15 @@ export class PortfolioComponent implements OnInit, OnDestroy {
   getUnderlyingScreenerUrl(asset: PortfolioAssetNode): string | null {
     if (!this.isEquityAsset(asset)) return null;
 
+    // Prefer the NSE symbol returned by the portfolio API. Fall back only
+    // to verified symbols for legacy records where Asset.symbol is empty.
     const normalizedName = this.getUnderlyingName(asset)
       .trim()
       .toUpperCase()
       .replace(/\s+/g, ' ')
       .replace(/[.,]/g, '');
 
-    // Screener company identifiers are not reliably derivable from display names.
-    // Keep confirmed identifiers explicit and use Screener search for other equities.
-    const companySlugs: Record<string, string> = {
+    const knownSymbols: Record<string, string> = {
       'BHARTI AIRTEL': 'BHARTIARTL',
       'BHARTI AIRTEL LIMITED': 'BHARTIARTL',
       'BHARTI AIRTEL LTD': 'BHARTIARTL',
@@ -491,10 +491,14 @@ export class PortfolioComponent implements OnInit, OnDestroy {
       'JSWENERGY': 'JSWENERGY',
     };
 
-    const slug = companySlugs[normalizedName];
-    return slug
-      ? `https://www.screener.in/company/${slug}/consolidated/`
-      : `https://www.screener.in/search/?q=${encodeURIComponent(this.getUnderlyingName(asset))}`;
+    const symbol = (asset.symbol || knownSymbols[normalizedName] || '')
+      .trim()
+      .toUpperCase();
+
+    // Do not create a potentially broken Screener URL from a company name.
+    if (!/^[A-Z0-9&-]+$/.test(symbol)) return null;
+
+    return `https://www.screener.in/company/${encodeURIComponent(symbol)}/consolidated/`;
   }
 
   private isEquityAsset(asset: PortfolioAssetNode): boolean {

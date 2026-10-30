@@ -94,13 +94,14 @@ class PortfolioTreeServiceTests(TestCase):
         self.assertEqual(nodes[0]["symbol"], "PARENT")
         self.assertEqual(nodes[0]["underlying_symbol"], "TESTEQ")
 
-    def test_direct_equity_uses_its_own_nse_asset_symbol_without_holding_row(self):
+    def test_equity_asset_uses_its_own_nse_symbol_without_holding_row(self):
         self.asset.symbol = "BHARTIARTL.NS"
         self.asset.isin = "INE397D01024"
         self.asset.save(update_fields=["symbol", "isin"])
         Transaction.objects.filter(asset=self.asset).update(
+            asset_class="Equity",
             underlying="Bharti Airtel",
-            sub_class="Direct Equity",
+            sub_class="Large Cap",
         )
 
         result = PortfolioTreeService.build(

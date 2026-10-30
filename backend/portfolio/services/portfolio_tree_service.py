@@ -528,7 +528,6 @@ class PortfolioTreeService:
         resolved_isin = ""
         if not cls._clean(getattr(asset, "isin", "")):
             # Canonical workbook fallback uses exact normalized names and quarantines conflicts.
-            from market_data.services.security_resolver import SecurityResolver
             for candidate_name in (getattr(asset, "name", ""), getattr(first, "asset_name", ""), getattr(first, "underlying", "")):
                 resolved_isin = SecurityResolver.resolve_isin_from_name(candidate_name)
                 if resolved_isin:

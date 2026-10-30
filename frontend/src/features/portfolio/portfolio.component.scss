@@ -1303,3 +1303,24 @@
   color: var(--accent);
   text-decoration: underline;
 }
+
+/* Keep underlying Screener links visibly green in both themes. */
+.portfolio-page .underlying-screener-link,
+.portfolio-page .underlying-screener-link:visited {
+  color: #0f7a5c !important;
+}
+
+.portfolio-page .underlying-screener-link:hover,
+.portfolio-page .underlying-screener-link:focus-visible {
+  color: #096448 !important;
+}
+
+:host-context(html.dark-theme) .portfolio-page .underlying-screener-link,
+:host-context(html.dark-theme) .portfolio-page .underlying-screener-link:visited {
+  color: #2fbf8f !important;
+}
+
+:host-context(html.dark-theme) .portfolio-page .underlying-screener-link:hover,
+:host-context(html.dark-theme) .portfolio-page .underlying-screener-link:focus-visible {
+  color: #55d9aa !important;
+}

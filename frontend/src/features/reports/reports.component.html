@@ -608,7 +608,6 @@
                             </svg>
                             Download
                           </button>
-                          <button type="button" class="underlying-action-button" [disabled]="isinEditorLoading || isinEditorSaving" (click)="openAssetIsinEditor($event, assetGroup)">Add ISIN</button>
                           <button
                             *ngIf="rbac.isSuperUser() || rbac.isSystemOwner()"
                             type="button"

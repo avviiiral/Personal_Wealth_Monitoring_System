@@ -119,10 +119,17 @@ class APMIPMSDiscoveryService:
 
     @classmethod
     def _headers(cls):
-        configured_agent = get_pwms_config("providers", "apmi", {}).get("user_agent", "")
+        configured_agent = str(get_pwms_config("providers", "apmi", {}).get("user_agent", "")).strip()
+        browser_agent = (
+            configured_agent
+            if configured_agent.lower().startswith("mozilla/")
+            else "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                 "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+        )
         return {
-            "User-Agent": configured_agent or "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124.0 Safari/537.36",
+            "User-Agent": browser_agent,
             "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "Accept-Language": "en-IN,en;q=0.9",
             "Referer": cls.REPORT_URL,
         }
 

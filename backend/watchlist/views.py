@@ -18,6 +18,7 @@ from watchlist.services.pms import APMIPMSDiscoveryService
 from watchlist.services.performance import AMFIPerformanceService
 from watchlist.services.benchmark import BenchmarkPerformanceService
 from watchlist.services.universe import AMFIUniverseService
+from watchlist.services.fund_managers import AMFIFundManagerService
 from watchlist.services.amfi_history import prepare_mutual_fund_watchlist_history
 
 
@@ -345,11 +346,12 @@ def _run_watch_list_refresh():
     try:
         with DATABASE_SCHEDULER_LOCK:
             mf_result = AMFIUniverseService.refresh()
+            mf_manager_result = AMFIFundManagerService.refresh_missing()
             # Populate the metrics used by the Watch List visibility filter
             # after the AMFI universe has been created/updated.
             mf_performance_result = AMFIPerformanceService.refresh()
             pms_result = APMIPMSDiscoveryService.refresh()
-        return mf_result, mf_performance_result, pms_result
+        return mf_result, mf_manager_result, mf_performance_result, pms_result
     finally:
         watch_list_refreshing = False
         WATCH_LIST_REFRESH_LOCK.release()

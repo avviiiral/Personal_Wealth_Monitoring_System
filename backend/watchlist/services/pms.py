@@ -1,6 +1,6 @@
 import logging
 import re
-from datetime import datetime
+from datetime import datetime, timedelta
 from decimal import Decimal, InvalidOperation
 
 import requests
@@ -28,6 +28,7 @@ class APMIPMSDiscoveryService:
     REPORT_URL = APMI_CONFIG.get("report_url", "")
     PERFORMANCE_PERIODS = tuple(APMI_CONFIG.get("performance_periods", []))
     INSIGHT_URL = "https://www.apmiindia.org/apmi/IaInsight.htm"
+    MANAGER_RETRY_AFTER = timedelta(days=7)
 
     @classmethod
     def manager_details_url(cls, iaid):
@@ -111,8 +112,13 @@ class APMIPMSDiscoveryService:
             names = cls._extract_fund_manager_names(response.text)
             if not names:
                 logger.info("APMI IA detail page returned no named managers (IAID=%s, status=%s)", iaid, response.status_code)
-                return None
-            return {"fund_manager": "; ".join(names), "website": url}
+            # A successful detail-page response is cached even when APMI has
+            # no manager section, preventing the same empty page being fetched
+            # on every manual universe refresh.
+            return {
+                "fund_manager": "; ".join(names) if names else None,
+                "website": url,
+            }
         except requests.RequestException as exc:
             logger.warning("Unable to retrieve APMI manager details (IAID=%s): %s", iaid, exc)
             return None
@@ -273,19 +279,28 @@ class APMIPMSDiscoveryService:
             }
 
             product_ids = [product.id for product in product_by_identity.values()]
-            populated_manager_ids = set(
-                PMSProduct.objects.filter(product_id__in=product_ids)
-                .exclude(fund_manager__isnull=True)
-                .exclude(fund_manager="")
-                .values_list("product_id", flat=True)
-            )
+            manager_status_by_id = {
+                item.product_id: item
+                for item in PMSProduct.objects.filter(product_id__in=product_ids)
+            }
+            manager_retry_before = timezone.now() - cls.MANAGER_RETRY_AFTER
             manager_records = []
             for record in records:
                 if not record["iaid"]:
                     continue
                 identity = f"PMS:APMI:{record['provider'].upper()}:{record['iaid']}"
                 product = product_by_identity.get(identity)
-                if product and product.id not in populated_manager_ids:
+                pms_product = manager_status_by_id.get(product.id) if product else None
+                manager_missing = (
+                    pms_product is None
+                    or not (pms_product.fund_manager or "").strip()
+                )
+                retry_due = (
+                    pms_product is None
+                    or pms_product.fund_manager_checked_at is None
+                    or pms_product.fund_manager_checked_at <= manager_retry_before
+                )
+                if product and manager_missing and retry_due:
                     manager_records.append(record)
 
             manager_details_by_iaid = {}
@@ -362,18 +377,27 @@ class APMIPMSDiscoveryService:
             for record in manager_records:
                 details = manager_details_by_iaid.get(record["iaid"])
                 if not details:
+                    # Failed HTTP requests are not cached and can be retried.
                     continue
                 identity = f"PMS:APMI:{record['provider'].upper()}:{record['iaid']}"
                 product = product_by_identity.get(identity)
                 pms_product = pms_by_product_id.get(product.id) if product else None
                 if pms_product:
-                    pms_product.fund_manager = details["fund_manager"]
-                    pms_product.fund_manager_website = details["website"]
+                    if details.get("fund_manager"):
+                        pms_product.fund_manager = details["fund_manager"]
+                        pms_product.fund_manager_website = details["website"]
+                    elif not pms_product.fund_manager_website:
+                        pms_product.fund_manager_website = details["website"]
+                    pms_product.fund_manager_checked_at = timezone.now()
                     manager_updates.append(pms_product)
             if manager_updates:
                 PMSProduct.objects.bulk_update(
                     manager_updates,
-                    ["fund_manager", "fund_manager_website"],
+                    [
+                        "fund_manager",
+                        "fund_manager_website",
+                        "fund_manager_checked_at",
+                    ],
                     batch_size=500,
                 )
 
@@ -398,7 +422,10 @@ class APMIPMSDiscoveryService:
                 "source_reference": cls.REPORT_URL,
                 "report_date": report_date.isoformat(),
                 "records_seen": len(records),
-                "fund_managers_enriched": len(manager_updates),
+                "fund_managers_enriched": sum(
+                    bool(item.fund_manager) for item in manager_updates
+                ),
+                "fund_manager_checks": len(manager_updates),
                 "mode": "bulk_upsert",
             }
             run.finished_at = timezone.now()
@@ -408,7 +435,10 @@ class APMIPMSDiscoveryService:
                 "updated": updated,
                 "failed": failed,
                 "report_date": report_date.isoformat(),
-                "fund_managers_enriched": len(manager_updates),
+                "fund_managers_enriched": sum(
+                    bool(item.fund_manager) for item in manager_updates
+                ),
+                "fund_manager_checks": len(manager_updates),
                 "source": "APMI",
             }
         except Exception as exc:

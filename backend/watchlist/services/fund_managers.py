@@ -39,7 +39,7 @@ class AMFIFundManagerService:
         if isinstance(value, dict):
             for key in (
                 "name", "manager_name", "fund_manager_name", "person_name",
-                "full_name", "individual_name", "manager",
+                "full_name", "individual_name", "manager", "fund_manager", "person",
             ):
                 candidate = value.get(key)
                 if isinstance(candidate, dict):
@@ -66,8 +66,8 @@ class AMFIFundManagerService:
             return []
 
         keys = (
-            "managers", "fund_managers", "fund_manager",
-            "manager_names", "ssd_fund_managers",
+            "managers", "fund_managers", "fund_manager", "manager",
+            "portfolio_managers", "manager_names", "ssd_fund_managers",
         )
         entries = next((source.get(key) for key in keys if source.get(key) not in (None, "", [])), None)
         if entries is None:
@@ -77,7 +77,8 @@ class AMFIFundManagerService:
             entries = re.split(r"[;\n|]+", entries)
         elif isinstance(entries, dict):
             if any(key in entries for key in (
-                "name", "manager_name", "fund_manager_name", "person_name", "full_name"
+                "name", "manager_name", "fund_manager_name", "person_name", "full_name",
+                "manager", "fund_manager", "person"
             )):
                 entries = [entries]
             else:

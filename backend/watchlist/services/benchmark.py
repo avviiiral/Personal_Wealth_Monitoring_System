@@ -940,7 +940,7 @@ class BenchmarkPerformanceService:
                     if point["nav"] and float(point["nav"]) > 0
                 ]
 
-                snapshots = list(
+                snapshot_values = (
                     PerformanceSnapshot.objects.filter(
                         product=product,
                         source="AMFI",
@@ -949,14 +949,15 @@ class BenchmarkPerformanceService:
                     )
                     .exclude(nav_or_value__isnull=True)
                     .order_by("date", "id")
+                    .values_list("date", "nav_or_value")
                 )
                 snapshot_series = [
                     {
-                        "date": snapshot.date.isoformat(),
-                        "value": float(snapshot.nav_or_value),
+                        "date": snapshot_date.isoformat(),
+                        "value": float(nav),
                     }
-                    for snapshot in snapshots
-                    if snapshot.nav_or_value and float(snapshot.nav_or_value) > 0
+                    for snapshot_date, nav in snapshot_values
+                    if nav and float(nav) > 0
                 ]
 
                 merged_series = cls._merge_chart_series(
@@ -978,14 +979,15 @@ class BenchmarkPerformanceService:
                 )
                 .exclude(nav_or_value__isnull=True)
                 .order_by("date", "id")
+                .values_list("date", "nav_or_value")
             )
             return [
                 {
-                    "date": snapshot.date.isoformat(),
-                    "value": float(snapshot.nav_or_value),
+                    "date": snapshot_date.isoformat(),
+                    "value": float(nav),
                 }
-                for snapshot in snapshots
-                if snapshot.nav_or_value and float(snapshot.nav_or_value) > 0
+                for snapshot_date, nav in snapshots
+                if nav and float(nav) > 0
             ]
 
         snapshots = (
@@ -996,11 +998,12 @@ class BenchmarkPerformanceService:
             )
             .exclude(nav_or_value__isnull=True)
             .order_by("date", "id")
+            .values_list("date", "nav_or_value")
         )
         return [
-            {"date": snapshot.date.isoformat(), "value": float(snapshot.nav_or_value)}
-            for snapshot in snapshots
-            if snapshot.nav_or_value and float(snapshot.nav_or_value) > 0
+            {"date": snapshot_date.isoformat(), "value": float(nav)}
+            for snapshot_date, nav in snapshots
+            if nav and float(nav) > 0
         ]
 
     @staticmethod

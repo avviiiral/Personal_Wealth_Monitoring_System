@@ -32,13 +32,13 @@ class APMIPMSDiscoveryService:
 
     @classmethod
     def _extract_fund_manager_names(cls, html):
-        """Extract individual names only from APMI's Fund Manager Details section."""
+        """Extract individual names from APMI's Fund Manager Details section."""
         soup = BeautifulSoup(html, "html.parser")
-        headings = soup.find_all(re.compile(r"^h[1-6]$"))
+        candidate_tags = soup.find_all(["h1", "h2", "h3", "h4", "h5", "h6", "strong", "b"])
         section_index = next(
             (
-                index for index, heading in enumerate(headings)
-                if cls._text(heading.get_text(" ", strip=True)).casefold() == "fund manager details"
+                index for index, element in enumerate(candidate_tags)
+                if cls._text(element.get_text(" ", strip=True)).casefold() == "fund manager details"
             ),
             None,
         )
@@ -52,17 +52,46 @@ class APMIPMSDiscoveryService:
             "ia vs. benchmark performance",
             "turnover details",
         }
-        for heading in headings[section_index + 1:]:
-            name = cls._text(heading.get_text(" ", strip=True))
+        for element in candidate_tags[section_index + 1:]:
+            name = cls._text(element.get_text(" ", strip=True))
             normalized = name.casefold()
             if normalized in stop_sections:
                 break
             if not name or normalized == "fund manager details":
                 continue
-            if len(name) > 120 or re.search(r"\b(?:aum|benchmark|strategy name|pms provider)\b", normalized):
+            if len(name) > 120 or re.search(r"\b(?:aum|benchmark|strategy name|pms provider|work exp|email id|mobile no)\b", normalized):
                 continue
             if name not in names:
                 names.append(name)
+
+        # APMI has also rendered the manager cards with bold labels rather
+        # than heading tags. Read standalone lines inside the same section as
+        # a fallback, while excluding the manager's contact/experience fields.
+        if not names:
+            visible_lines = [
+                cls._text(line)
+                for line in soup.get_text("\n", strip=True).splitlines()
+            ]
+            try:
+                start = next(
+                    index for index, line in enumerate(visible_lines)
+                    if line.casefold() == "fund manager details"
+                )
+            except StopIteration:
+                return []
+            for line in visible_lines[start + 1:]:
+                normalized = line.casefold()
+                if normalized in stop_sections:
+                    break
+                if (
+                    not line
+                    or len(line) > 100
+                    or re.search(r"\b(?:work exp|email id|mobile no|details|image|aum|benchmark|provider)\b", normalized)
+                ):
+                    continue
+                if re.fullmatch(r"[A-Za-z][A-Za-z.'-]*(?:\s+[A-Za-z][A-Za-z.'-]*){1,5}", line):
+                    if line not in names:
+                        names.append(line)
         return names
 
     @classmethod
@@ -77,13 +106,22 @@ class APMIPMSDiscoveryService:
             )
             response.raise_for_status()
             names = cls._extract_fund_manager_names(response.text)
-            return {"fund_manager": "; ".join(names), "website": url} if names else None
-        except requests.RequestException:
+            if not names:
+                logger.info("APMI IA detail page returned no named managers (IAID=%s, status=%s)", iaid, response.status_code)
+                return None
+            return {"fund_manager": "; ".join(names), "website": url}
+        except requests.RequestException as exc:
+            logger.warning("Unable to retrieve APMI manager details (IAID=%s): %s", iaid, exc)
             return None
 
-    @staticmethod
-    def _headers():
-        return {"User-Agent": get_pwms_config("providers", "apmi", {}).get("user_agent", "")}
+    @classmethod
+    def _headers(cls):
+        configured_agent = get_pwms_config("providers", "apmi", {}).get("user_agent", "")
+        return {
+            "User-Agent": configured_agent or "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124.0 Safari/537.36",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "Referer": cls.REPORT_URL,
+        }
 
     @staticmethod
     def _decimal(value):

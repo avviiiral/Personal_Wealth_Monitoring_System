@@ -189,6 +189,9 @@ class AMFIPerformanceService:
             if required_fields is not None
             else {field for field, _months in cls.PERIODS}
         )
+        if not requested_fields:
+            return selected, 0
+
         requests_to_make = []
         for field, months in cls.PERIODS:
             if field not in requested_fields:

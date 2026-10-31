@@ -693,6 +693,54 @@ class APMIPMSDiscoveryTests(TestCase):
             "https://example.com/scheme-summary.pdf",
         )
 
+    def test_mutual_fund_manager_parser_handles_flattened_ssd_and_wrapped_batch_records(self):
+        flattened = {
+            "ssd_fund_managers": (
+                "Jane Doe (since 2019-01-01); John Smith (since 2022-06-15)"
+            )
+        }
+        self.assertEqual(
+            AMFIFundManagerService._manager_names(flattened),
+            ["Jane Doe", "John Smith"],
+        )
+
+        payload = {
+            "count": 1,
+            "data": [
+                {
+                    "data": {
+                        "scheme_code": 118989,
+                        "ssd": {
+                            "fund_managers": [
+                                {"name": "Jane Doe", "role": "Fund Manager"}
+                            ]
+                        },
+                    }
+                }
+            ],
+        }
+        records = AMFIFundManagerService._response_records(payload)
+        self.assertEqual(len(records), 1)
+        self.assertEqual(records[0]["scheme_code"], 118989)
+        self.assertEqual(
+            AMFIFundManagerService._manager_names(records[0]["ssd"]),
+            ["Jane Doe"],
+        )
+
+    def test_apmi_parser_supports_bold_manager_cards(self):
+        html = """
+        <html><body>
+          <strong>Fund Manager Details</strong>
+          <div><b>Jane Doe</b><span>Work Exp. 12 years</span></div>
+          <div><b>John Smith</b><span>Work Exp. 8 years</span></div>
+          <strong>Period-Wise Performance</strong>
+        </body></html>
+        """
+        self.assertEqual(
+            APMIPMSDiscoveryService._extract_fund_manager_names(html),
+            ["Jane Doe", "John Smith"],
+        )
+
     def test_apmi_parser_reads_html_rows(self):
         records = APMIPMSDiscoveryService._records(self.SAMPLE_HTML)
         self.assertEqual(len(records), 1)

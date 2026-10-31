@@ -502,9 +502,13 @@ class BenchmarkPerformanceTests(TestCase):
         )
         MutualFundProduct.objects.create(product=product, scheme_code="BSETRI", benchmark="BSE 500")
         csv_text = "Date,Close\n2026-09-15,100.0\n2026-09-16,101.0\n"
-        with patch.object(BenchmarkPerformanceService, "_bse_series", return_value=[]):
+        with patch.object(
+            BenchmarkPerformanceService, "_bse_series",
+            side_effect=AssertionError("comparison attempted a live BSE download"),
+        ) as mocked_source:
             result = BenchmarkPerformanceService.calculate(product)
         self.assertFalse(result["available"])
+        mocked_source.assert_not_called()
 
     def test_nifty50_regression_uses_existing_yahoo_path(self):
         product = InvestmentProduct.objects.create(
@@ -518,8 +522,14 @@ class BenchmarkPerformanceTests(TestCase):
             {"date": "2021-01-02", "value": 100.0},
             {"date": "2026-01-01", "value": 150.0},
         ]
-        with patch.object(BenchmarkPerformanceService, "_nifty_tri_series", return_value=points):
+        with patch.object(
+            BenchmarkPerformanceService, "_benchmark_series", return_value=points
+        ), patch.object(
+            BenchmarkPerformanceService, "_nifty_tri_series",
+            side_effect=AssertionError("comparison attempted a live NSE download"),
+        ) as mocked_source:
             result = BenchmarkPerformanceService.calculate(product)
+        mocked_source.assert_not_called()
         self.assertTrue(result["available"])
         self.assertEqual(result["benchmark"], "Nifty 50")
         self.assertIsNotNone(result["benchmark_metrics"]["5Y"])
@@ -546,13 +556,18 @@ class BenchmarkPerformanceTests(TestCase):
         )
         with patch.object(
             BenchmarkPerformanceService,
-            "_bse_series",
+            "_benchmark_series",
             return_value=[
                 {"date": "2025-09-28", "value": 100.0},
                 {"date": "2026-09-28", "value": 98.0},
             ],
-        ):
+        ), patch.object(
+            BenchmarkPerformanceService,
+            "_bse_series",
+            side_effect=AssertionError("comparison attempted a live BSE download"),
+        ) as mocked_source:
             result = BenchmarkPerformanceService.calculate(product)
+        mocked_source.assert_not_called()
 
         self.assertTrue(result["available"])
         self.assertIsNone(result["fund_metrics"]["1Y"])
@@ -577,10 +592,15 @@ class BenchmarkPerformanceTests(TestCase):
         )
         with patch.object(
             BenchmarkPerformanceService,
-            "_nifty_tri_series",
+            "_benchmark_series",
             return_value=points,
-        ):
+        ), patch.object(
+            BenchmarkPerformanceService,
+            "_nifty_tri_series",
+            side_effect=AssertionError("comparison attempted a live NSE download"),
+        ) as mocked_source:
             result = BenchmarkPerformanceService.calculate(product)
+        mocked_source.assert_not_called()
 
         self.assertEqual(result["benchmark_metrics"]["5Y"], 50.0)
         self.assertEqual(
@@ -617,15 +637,24 @@ class BenchmarkPerformanceTests(TestCase):
         )
         with patch.object(
             BenchmarkPerformanceService,
-            "_bse_series",
+            "_benchmark_series",
             return_value=[
                 {"date": "2021-01-01", "value": 100.0},
                 {"date": "2026-01-01", "value": 150.0},
             ],
-        ):
+        ), patch(
+            "watchlist.views.prepare_mutual_fund_watchlist_history",
+            side_effect=AssertionError("comparison endpoint attempted AMFI history download"),
+        ) as mocked_history, patch.object(
+            BenchmarkPerformanceService,
+            "_bse_series",
+            side_effect=AssertionError("comparison endpoint attempted live BSE download"),
+        ) as mocked_source:
             response = api_client.get(
                 f"/api/watch-list/products/{product.id}/benchmark-performance/?period=1Y"
             )
+        mocked_history.assert_not_called()
+        mocked_source.assert_not_called()
         self.assertEqual(response.status_code, 200)
         self.assertTrue(response.data["available"])
         self.assertEqual(response.data["benchmark"], "BSE 500")
@@ -674,10 +703,17 @@ class BenchmarkPerformanceTests(TestCase):
 
         with patch.object(
             BenchmarkPerformanceService,
-            "_series",
-            side_effect=AssertionError("chart endpoint attempted a network fetch"),
-        ):
+            "_nifty_tri_series",
+            side_effect=AssertionError("chart endpoint attempted a live NSE fetch"),
+        ) as mocked_nifty, patch.object(
+            BenchmarkPerformanceService,
+            "_bse_series",
+            side_effect=AssertionError("chart endpoint attempted a live BSE fetch"),
+        ) as mocked_bse:
             result = BenchmarkPerformanceService.calculate(product, "3Y")
+
+        mocked_nifty.assert_not_called()
+        mocked_bse.assert_not_called()
 
         self.assertTrue(result["available"])
         self.assertGreaterEqual(len(result["chart"]["aligned_points"]), 2)

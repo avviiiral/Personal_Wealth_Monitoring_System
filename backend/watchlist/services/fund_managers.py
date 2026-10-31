@@ -7,9 +7,13 @@ the batch response are supported. Source failures are isolated from NAV refresh.
 
 import logging
 import re
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from datetime import timedelta
 from urllib.parse import urlparse
 
 import requests
+from django.db.models import Q
+from django.utils import timezone
 
 from config.pwms_config import get as get_pwms_config
 from watchlist.models import MutualFundProduct
@@ -22,6 +26,8 @@ class AMFIFundManagerService:
     DETAILS_URL = CONFIG.get("details_url", "https://api.tigzig.com/mf/v1/details")
     BATCH_SIZE = min(max(int(CONFIG.get("batch_size", 50)), 1), 50)
     TIMEOUT_SECONDS = int(CONFIG.get("timeout_seconds", 20))
+    MAX_WORKERS = 4
+    RETRY_AFTER = timedelta(days=7)
 
     @staticmethod
     def _valid_http_url(value):
@@ -157,101 +163,156 @@ class AMFIFundManagerService:
         return None
 
     @classmethod
-    def refresh_missing(cls):
-        """Fetch managers for missing scheme codes in batches of at most 50."""
-        if not cls.DETAILS_URL:
-            return {"requested": 0, "updated": 0, "failed_batches": 0}
-
-        rows = list(
-            MutualFundProduct.objects.filter(fund_manager__isnull=True)
-            .exclude(scheme_code__isnull=True)
-            .exclude(scheme_code="")
-            .values("id", "scheme_code")
+    def _fetch_batch(cls, batch):
+        response = requests.get(
+            cls.DETAILS_URL,
+            params={"schemes": ",".join(batch), "view": "full"},
+            headers={
+                "User-Agent": "PWMS-WatchList/1.0",
+                "Accept": "application/json",
+            },
+            timeout=cls.TIMEOUT_SECONDS,
         )
-        empty_rows = MutualFundProduct.objects.filter(fund_manager="").exclude(
-            scheme_code__isnull=True
-        ).exclude(scheme_code="").values("id", "scheme_code")
-        known_ids = {row["id"] for row in rows}
-        rows.extend(row for row in empty_rows if row["id"] not in known_ids)
+        response.raise_for_status()
+        return cls._response_records(response.json())
 
-        product_ids_by_code = {}
+    @classmethod
+    def refresh_missing(cls):
+        """Enrich missing managers using bounded concurrency and a retry cache.
+
+        Successfully checked schemes are not requested again for seven days,
+        including schemes for which the provider has no manager details. Failed
+        HTTP/API batches are left eligible for the next refresh.
+        """
+        if not cls.DETAILS_URL:
+            return {
+                "requested": 0, "checked": 0, "updated": 0,
+                "failed_batches": 0,
+            }
+
+        retry_before = timezone.now() - cls.RETRY_AFTER
+        rows = list(
+            MutualFundProduct.objects.filter(
+                Q(fund_manager__isnull=True) | Q(fund_manager="")
+            ).filter(
+                Q(fund_manager_checked_at__isnull=True)
+                | Q(fund_manager_checked_at__lte=retry_before)
+            ).exclude(
+                scheme_code__isnull=True
+            ).exclude(
+                scheme_code=""
+            ).values(
+                "id", "scheme_code", "fund_manager", "fund_manager_website"
+            )
+        )
+
+        products_by_code = {}
         for row in rows:
             code = str(row["scheme_code"]).strip()
             if code:
-                product_ids_by_code.setdefault(code, []).append(row["id"])
+                products_by_code.setdefault(code, []).append(row)
 
-        codes = list(product_ids_by_code)
+        codes = list(products_by_code)
         if not codes:
-            return {"requested": 0, "updated": 0, "failed_batches": 0}
+            result = {
+                "requested": 0, "checked": 0, "updated": 0,
+                "failed_batches": 0,
+            }
+            logger.info("Mutual-fund manager enrichment skipped: %s", result)
+            return result
 
+        batches = [
+            codes[start:start + cls.BATCH_SIZE]
+            for start in range(0, len(codes), cls.BATCH_SIZE)
+        ]
         updates_by_id = {}
         failed_batches = 0
         response_records = 0
         matched_schemes = 0
-        for start in range(0, len(codes), cls.BATCH_SIZE):
-            batch = codes[start:start + cls.BATCH_SIZE]
-            try:
-                response = requests.get(
-                    cls.DETAILS_URL,
-                    params={"schemes": ",".join(batch), "view": "full"},
-                    headers={
-                        "User-Agent": "PWMS-WatchList/1.0",
-                        "Accept": "application/json",
-                    },
-                    timeout=cls.TIMEOUT_SECONDS,
-                )
-                response.raise_for_status()
-                records = cls._response_records(response.json())
-                response_records += len(records)
+        updated_count = 0
 
+        # Provider calls are independent. Keep concurrency bounded to avoid
+        # overwhelming the upstream service while avoiding serial batch waits.
+        with ThreadPoolExecutor(max_workers=min(cls.MAX_WORKERS, len(batches))) as executor:
+            futures = {
+                executor.submit(cls._fetch_batch, batch): batch
+                for batch in batches
+            }
+            for future in as_completed(futures):
+                batch = futures[future]
+                try:
+                    records = future.result()
+                except (requests.RequestException, ValueError, TypeError) as exc:
+                    failed_batches += 1
+                    logger.warning(
+                        "Unable to retrieve mutual-fund managers for batch "
+                        "(first_scheme=%s, size=%s): %s",
+                        batch[0] if batch else "unknown",
+                        len(batch),
+                        exc,
+                    )
+                    continue
+
+                response_records += len(records)
+                manager_data_by_code = {}
                 for record in records:
                     code = str(record.get("scheme_code") or record.get("code") or "").strip()
-                    if code not in product_ids_by_code:
+                    if code not in products_by_code or code not in batch:
                         continue
                     matched_schemes += 1
                     ssd = record.get("ssd") or record.get("scheme_summary_document") or {}
-                    names = cls._manager_names(ssd)
-                    if not names:
-                        names = cls._manager_names(record)
-                    if not names:
-                        continue
-
-                    manager_website = cls._manager_website(ssd) or cls._manager_website(record)
-                    for product_id in product_ids_by_code[code]:
-                        updates_by_id[product_id] = {
+                    names = cls._manager_names(ssd) or cls._manager_names(record)
+                    if names:
+                        manager_data_by_code[code] = {
                             "fund_manager": "; ".join(names),
-                            "fund_manager_website": manager_website,
+                            "fund_manager_website": (
+                                cls._manager_website(ssd)
+                                or cls._manager_website(record)
+                            ),
                         }
-            except (requests.RequestException, ValueError, TypeError) as exc:
-                failed_batches += 1
-                logger.warning(
-                    "Unable to retrieve mutual-fund managers for batch %s: %s",
-                    start // cls.BATCH_SIZE + 1,
-                    exc,
-                )
 
-        manager_updates = [
-            MutualFundProduct(
-                id=product_id,
-                fund_manager=value["fund_manager"],
-                fund_manager_website=value["fund_manager_website"],
-            )
-            for product_id, value in updates_by_id.items()
-        ]
-        if manager_updates:
+                checked_at = timezone.now()
+                for code in batch:
+                    manager_data = manager_data_by_code.get(code)
+                    for row in products_by_code.get(code, []):
+                        updates_by_id[row["id"]] = MutualFundProduct(
+                            id=row["id"],
+                            fund_manager=(
+                                manager_data["fund_manager"]
+                                if manager_data
+                                else row["fund_manager"]
+                            ),
+                            fund_manager_website=(
+                                manager_data["fund_manager_website"]
+                                if manager_data
+                                else row["fund_manager_website"]
+                            ),
+                            fund_manager_checked_at=checked_at,
+                        )
+                        if manager_data:
+                            updated_count += 1
+
+        checked_updates = list(updates_by_id.values())
+        if checked_updates:
             MutualFundProduct.objects.bulk_update(
-                manager_updates,
-                ["fund_manager", "fund_manager_website"],
+                checked_updates,
+                [
+                    "fund_manager",
+                    "fund_manager_website",
+                    "fund_manager_checked_at",
+                ],
                 batch_size=500,
             )
 
         result = {
             "requested": len(codes),
-            "batches": (len(codes) + cls.BATCH_SIZE - 1) // cls.BATCH_SIZE,
+            "batches": len(batches),
             "response_records": response_records,
             "matched_schemes": matched_schemes,
-            "updated": len(manager_updates),
+            "checked": len(checked_updates),
+            "updated": updated_count,
             "failed_batches": failed_batches,
+            "retry_after_days": cls.RETRY_AFTER.days,
         }
         logger.info("Mutual-fund manager enrichment completed: %s", result)
         return result

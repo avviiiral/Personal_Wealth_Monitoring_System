@@ -565,7 +565,7 @@ class BenchmarkPerformanceService:
         raise ValueError("BSE 500 TRI data source returned no observations")
 
     @classmethod
-    def _benchmark_series(cls, benchmark, start, allow_source_refresh=True):
+    def _benchmark_series(cls, benchmark, start, allow_source_refresh=False):
         """Read shared benchmark history and optionally bootstrap from its provider.
 
         Interactive comparison requests pass allow_source_refresh=False so a
@@ -609,11 +609,9 @@ class BenchmarkPerformanceService:
         series = read_master()
 
         # A previously bootstrapped master can contain only a few sparse
-        # observations (for example, older Nifty imports). That is enough to
-        # calculate a return but produces a misleading stepped/sparse chart.
-        # Require daily-ish coverage for the 5Y history before accepting the
-        # master series. Rebuild the Nifty TRI master when coverage is thin so
-        # the chart has the same observation density as the BSE 500 TRI chart.
+        # observations (for example, older Nifty imports). The background
+        # refresh rebuilds thin history so charts progressively gain coverage;
+        # interactive reads never trigger that rebuild themselves.
         end = timezone.now().date()
         expected_rows = max(
             cls.MINIMUM_HISTORY_ROWS,

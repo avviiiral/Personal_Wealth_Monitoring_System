@@ -385,7 +385,7 @@ class WatchListTests(TestCase):
         product = InvestmentProduct.objects.create(
             product_type=ProductType.MUTUAL_FUND,
             name="Single Missing Period Fund",
-            external_identifier="SINGLE-MISSING-PERIOD",
+            external_identifier="1",
             identity_key="MUTUAL_FUND:SCHEME:SINGLE-MISSING-PERIOD",
             source="AMFI",
         )
@@ -421,6 +421,7 @@ class WatchListTests(TestCase):
         self.assertEqual(mocked_download.call_count, 1)
         self.assertEqual(result["history_requests"], 1)
         self.assertEqual(latest.return_1m, Decimal("10.000000"))
+
 
 class BenchmarkPerformanceTests(TestCase):
     @patch("watchlist.services.performance.requests.get")

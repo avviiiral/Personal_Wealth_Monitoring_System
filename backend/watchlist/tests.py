@@ -1,6 +1,6 @@
 from datetime import date
 from decimal import Decimal
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 from datetime import timedelta
 
 from django.contrib.auth.models import User
@@ -105,6 +105,47 @@ class WatchListTests(TestCase):
         self.assertEqual(
             pms_response.data["results"][0]["pms"]["fund_manager_website"],
             "https://example.com/john-smith",
+        )
+
+    @patch("watchlist.services.fund_managers.requests.get")
+    def test_mutual_fund_manager_refresh_persists_names_from_batch_details(self, mocked_get):
+        product = InvestmentProduct.objects.create(
+            product_type=ProductType.MUTUAL_FUND,
+            name="Manager Enrichment Fund",
+            identity_key="MUTUAL_FUND:SCHEME:MANAGER-ENRICHMENT",
+            source="AMFI",
+        )
+        mutual_fund = MutualFundProduct.objects.create(
+            product=product,
+            scheme_code="118989",
+            aum=Decimal("100"),
+        )
+        mocked_response = Mock()
+        mocked_response.json.return_value = {
+            "count": 1,
+            "data": [
+                {
+                    "scheme_code": 118989,
+                    "ssd": {
+                        "fund_managers": [
+                            {"name": "Jane Doe", "role": "Fund Manager"},
+                            {"name": "John Smith", "role": "Co-Fund Manager"},
+                        ],
+                        "document_url": "https://example.com/scheme-summary.pdf",
+                    },
+                }
+            ],
+        }
+        mocked_get.return_value = mocked_response
+
+        result = AMFIFundManagerService.refresh_missing()
+
+        mutual_fund.refresh_from_db()
+        self.assertEqual(result["updated"], 1)
+        self.assertEqual(mutual_fund.fund_manager, "Jane Doe; John Smith")
+        self.assertEqual(
+            mutual_fund.fund_manager_website,
+            "https://example.com/scheme-summary.pdf",
         )
 
     def test_api_pagination_and_filters(self):
@@ -758,6 +799,24 @@ class APMIPMSDiscoveryTests(TestCase):
         self.assertEqual(product.external_identifier, "2595")
         self.assertEqual(product.pms.aum, Decimal("75.38"))
         self.assertEqual(PerformanceSnapshot.objects.get(product=product, source="APMI").return_since_inception, Decimal("0.06"))
+
+    @patch("watchlist.services.pms.requests.get")
+    def test_apmi_refresh_persists_individual_manager_from_ia_insight(self, mocked_get):
+        listing_response = Mock()
+        listing_response.text = self.SAMPLE_HTML
+        manager_response = Mock()
+        manager_response.text = self.MANAGER_HTML
+        mocked_get.side_effect = [listing_response, manager_response]
+
+        result = APMIPMSDiscoveryService.refresh()
+
+        product = InvestmentProduct.objects.get(product_type=ProductType.PMS)
+        self.assertEqual(result["fund_managers_enriched"], 1)
+        self.assertEqual(product.pms.fund_manager, "Jane Doe; John Smith")
+        self.assertEqual(
+            product.pms.fund_manager_website,
+            APMIPMSDiscoveryService.manager_details_url("2595"),
+        )
 
     @patch("watchlist.services.pms.requests.get")
     def test_apmi_refresh_is_idempotent(self, mocked_get):

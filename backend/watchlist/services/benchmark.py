@@ -1038,14 +1038,17 @@ class BenchmarkPerformanceService:
         except Exception:
             series = []
 
-        if not series:
+        if len(series) < 2:
             return {
                 "benchmark": benchmark,
                 "available": False,
                 "benchmark_metrics": {
                     period: None for period in cls.PERIOD_DAYS
                 },
-                "message": "Benchmark market data is not available from the configured data source.",
+                "message": (
+                    "Stored benchmark history is not ready yet. "
+                    "The background benchmark refresh will populate it."
+                ),
             }
 
         details = {
@@ -1143,11 +1146,14 @@ class BenchmarkPerformanceService:
         except Exception:
             benchmark_series = []
 
-        if not benchmark_series:
+        if len(benchmark_series) < 2:
             return {
                 "benchmark": benchmark,
                 "available": False,
-                "message": "Benchmark market data is not available from the configured data source.",
+                "message": (
+                    "Stored benchmark history is not ready yet. "
+                    "The background benchmark refresh will populate it."
+                ),
             }
 
         fund_metrics, fund_return_details, latest = cls._fund_metrics(product)

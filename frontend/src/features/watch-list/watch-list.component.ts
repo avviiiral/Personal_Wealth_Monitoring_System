@@ -129,14 +129,17 @@ export class WatchListComponent implements OnInit, OnDestroy {
   fundManagerName(product: WatchListProduct): string {
     const manager = product.product_type === 'MUTUAL_FUND'
       ? product.mutual_fund?.fund_manager
-      : product.provider;
-    return String(manager || product.provider || '').trim() || '—';
+      : product.pms?.fund_manager;
+    return String(manager || '').trim() || '—';
   }
 
   fundManagerWebsite(product: WatchListProduct): string | null {
     if (this.fundManagerName(product) === '—') return null;
 
-    const website = String(product.official_website || '').trim();
+    const managerWebsite = product.product_type === 'MUTUAL_FUND'
+      ? product.mutual_fund?.fund_manager_website
+      : product.pms?.fund_manager_website;
+    const website = String(managerWebsite || '').trim();
     if (!website) return null;
 
     try {

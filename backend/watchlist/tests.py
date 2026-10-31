@@ -410,9 +410,9 @@ class WatchListTests(TestCase):
         )
         mocked_download.return_value = (
             "Scheme Code;ISIN Div Payout/ISIN Growth;ISIN Div Reinvestment;"
-            "Scheme Name;Net Asset Value;Date\\n"
+            "Scheme Name;Net Asset Value;Date\n"
             f"1;INF000000001;-;Single Missing Period Fund;100;"
-            f"{target_date.strftime('%d-%b-%Y')}\\n"
+            f"{target_date.strftime('%d-%b-%Y')}\n"
         )
 
         result = AMFIPerformanceService.refresh()

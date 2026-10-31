@@ -378,6 +378,50 @@ class WatchListTests(TestCase):
         self.assertTrue(PerformanceSnapshot.objects.filter(product=product, source="AMFI").exists())
 
 
+    @patch("watchlist.services.performance.AMFIPerformanceService.download_history")
+    def test_performance_refresh_requests_only_missing_return_periods(self, mocked_download):
+        latest_date = date(2026, 9, 15)
+        target_date = AMFIPerformanceService._subtract_months(latest_date, 1)
+        product = InvestmentProduct.objects.create(
+            product_type=ProductType.MUTUAL_FUND,
+            name="Single Missing Period Fund",
+            external_identifier="SINGLE-MISSING-PERIOD",
+            identity_key="MUTUAL_FUND:SCHEME:SINGLE-MISSING-PERIOD",
+            source="AMFI",
+        )
+        MutualFundProduct.objects.create(
+            product=product,
+            scheme_code="SINGLE-MISSING-PERIOD",
+            option="Growth",
+        )
+        latest = PerformanceSnapshot.objects.create(
+            product=product,
+            date=latest_date,
+            nav_or_value=Decimal("110"),
+            return_1w=Decimal("1"),
+            return_1m=None,
+            return_3m=Decimal("3"),
+            return_6m=Decimal("6"),
+            return_1y=Decimal("12"),
+            return_3y=Decimal("30"),
+            return_5y=Decimal("50"),
+            cagr=Decimal("8"),
+            source="AMFI",
+        )
+        mocked_download.return_value = (
+            "Scheme Code;ISIN Div Payout/ISIN Growth;ISIN Div Reinvestment;"
+            "Scheme Name;Net Asset Value;Date\\n"
+            f"1;INF000000001;-;Single Missing Period Fund;100;"
+            f"{target_date.strftime('%d-%b-%Y')}\\n"
+        )
+
+        result = AMFIPerformanceService.refresh()
+
+        latest.refresh_from_db()
+        self.assertEqual(mocked_download.call_count, 1)
+        self.assertEqual(result["history_requests"], 1)
+        self.assertEqual(latest.return_1m, Decimal("10.000000"))
+
 class BenchmarkPerformanceTests(TestCase):
     @patch("watchlist.services.performance.requests.get")
     def test_idcw_performance_refresh_clears_nav_returns_without_history_requests(self, mocked_get):

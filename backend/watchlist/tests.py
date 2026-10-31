@@ -64,6 +64,49 @@ class WatchListTests(TestCase):
         self.assertEqual(PerformanceSnapshot.objects.filter(product=product).count(), 1)
         self.assertEqual(PerformanceSnapshot.objects.get(product=product).nav_or_value, Decimal("11"))
 
+    def test_watchlist_api_returns_individual_manager_name_and_source_url(self):
+        mutual_fund = InvestmentProduct.objects.create(
+            product_type=ProductType.MUTUAL_FUND,
+            name="Manager Fund",
+            identity_key="MUTUAL_FUND:SCHEME:MANAGER-FUND",
+            source="AMFI",
+        )
+        MutualFundProduct.objects.create(
+            product=mutual_fund,
+            scheme_code="MANAGER-FUND",
+            fund_manager="Jane Doe",
+            fund_manager_website="https://example.com/jane-doe",
+            aum=Decimal("100"),
+        )
+        pms = InvestmentProduct.objects.create(
+            product_type=ProductType.PMS,
+            name="Manager PMS",
+            identity_key="PMS:SCHEME:MANAGER-PMS",
+            source="APMI",
+        )
+        PMSProduct.objects.create(
+            product=pms,
+            fund_manager="John Smith",
+            fund_manager_website="https://example.com/john-smith",
+            aum=Decimal("100"),
+        )
+
+        mf_response = self.client.get("/api/watch-list/products/?product_type=MUTUAL_FUND")
+        pms_response = self.client.get("/api/watch-list/products/?product_type=PMS")
+
+        self.assertEqual(mf_response.status_code, 200)
+        self.assertEqual(pms_response.status_code, 200)
+        self.assertEqual(mf_response.data["results"][0]["mutual_fund"]["fund_manager"], "Jane Doe")
+        self.assertEqual(
+            mf_response.data["results"][0]["mutual_fund"]["fund_manager_website"],
+            "https://example.com/jane-doe",
+        )
+        self.assertEqual(pms_response.data["results"][0]["pms"]["fund_manager"], "John Smith")
+        self.assertEqual(
+            pms_response.data["results"][0]["pms"]["fund_manager_website"],
+            "https://example.com/john-smith",
+        )
+
     def test_api_pagination_and_filters(self):
         for index in range(3):
             product = InvestmentProduct.objects.create(product_type=ProductType.MUTUAL_FUND, name=f"Fund {index}", identity_key=f"MUTUAL_FUND:SCHEME:{index}", source="AMFI")

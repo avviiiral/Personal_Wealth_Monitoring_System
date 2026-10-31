@@ -363,7 +363,7 @@ class AMFIPerformanceService:
                     source=cls.SOURCE,
                     source_reference=cls.HISTORY_URL,
                 )
-                snapshots_to_upsert[(product.id, record["date"])] = snapshot
+                snapshots_to_upsert.setdefault((product.id, record["date"]), snapshot)
 
                 elapsed_days = (latest.date - record["date"]).days
                 values[field] = cls._return_percent(

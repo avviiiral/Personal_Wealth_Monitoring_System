@@ -4,6 +4,7 @@ from datetime import date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 
 import requests
+from django.db.models import OuterRef, Subquery
 from django.utils import timezone
 
 from config.pwms_config import get as get_pwms_config
@@ -258,18 +259,31 @@ class AMFIPerformanceService:
 
     @classmethod
     def refresh(cls):
+        latest_snapshot_query = PerformanceSnapshot.objects.filter(
+            product_id=OuterRef("pk"),
+            source=cls.SOURCE,
+        ).order_by("-date", "-id")
         products = list(
             InvestmentProduct.objects.filter(
                 product_type=ProductType.MUTUAL_FUND,
                 is_active=True,
+            ).annotate(
+                latest_amfi_snapshot_id=Subquery(
+                    latest_snapshot_query.values("id")[:1]
+                )
             ).select_related("mutual_fund")
         )
-        latest_snapshots = {}
-        for snapshot in PerformanceSnapshot.objects.filter(
-            product_id__in=[product.id for product in products],
-            source=cls.SOURCE,
-        ).order_by("-date"):
-            latest_snapshots.setdefault(snapshot.product_id, snapshot)
+        latest_snapshot_ids = [
+            product.latest_amfi_snapshot_id
+            for product in products
+            if product.latest_amfi_snapshot_id is not None
+        ]
+        latest_snapshots = {
+            snapshot.product_id: snapshot
+            for snapshot in PerformanceSnapshot.objects.filter(
+                id__in=latest_snapshot_ids
+            )
+        }
 
         # IDCW NAV history cannot provide total returns without distributions.
         # Clear any legacy NAV-derived metrics in one bulk update and skip

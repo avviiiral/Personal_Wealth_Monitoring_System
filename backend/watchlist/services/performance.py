@@ -285,10 +285,11 @@ class AMFIPerformanceService:
                 cagr=None,
             )
 
+        idcw_product_id_set = set(idcw_product_ids)
         products_needing_history = [
             product
             for product in products
-            if product.id not in set(idcw_product_ids)
+            if product.id not in idcw_product_id_set
             and (
                 latest_snapshots.get(product.id) is None
                 or any(

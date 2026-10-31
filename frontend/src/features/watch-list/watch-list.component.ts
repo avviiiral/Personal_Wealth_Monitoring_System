@@ -126,6 +126,32 @@ export class WatchListComponent implements OnInit, OnDestroy {
     return Array.from(families);
   }
 
+  fundManagerName(product: WatchListProduct): string {
+    const manager = product.product_type === 'MUTUAL_FUND'
+      ? product.mutual_fund?.fund_manager
+      : product.pms?.fund_manager;
+    return String(manager || '').trim() || '—';
+  }
+
+  fundManagerWebsite(product: WatchListProduct): string | null {
+    if (this.fundManagerName(product) === '—') return null;
+
+    const managerWebsite = product.product_type === 'MUTUAL_FUND'
+      ? product.mutual_fund?.fund_manager_website
+      : product.pms?.fund_manager_website;
+    const website = String(managerWebsite || '').trim();
+    if (!website) return null;
+
+    try {
+      const parsedUrl = new URL(website);
+      return parsedUrl.protocol === 'http:' || parsedUrl.protocol === 'https:'
+        ? parsedUrl.toString()
+        : null;
+    } catch {
+      return null;
+    }
+  }
+
   isSelected(productId: number): boolean { return this.selectedIds.has(productId); }
 
   toggleSelection(productId: number, event?: Event): void {

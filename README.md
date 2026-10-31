@@ -83,6 +83,8 @@ The application uses the following external data sources for market and investme
 | Stocks and ETFs | [Yahoo Finance](https://finance.yahoo.com/) via `yfinance` |
 | Mutual-fund latest NAVs | [AMFI India](https://www.amfiindia.com/) — AMFI latest NAV feed |
 | Mutual-fund historical NAVs | [AMFI India](https://www.amfiindia.com/) — AMFI historical NAV report |
+| Mutual-fund fund-manager names | [Tigzig MF API](https://api.tigzig.com/mf/v1/details) — scheme-level manager details sourced from Scheme Summary Document data |
+| PMS fund-manager names | [APMI India](https://www.apmiindia.org/apmi/welcomeiaperformance.htm?action=PMSmenu) — investment-approach listing and individual IA Insight pages |
 | Nifty 50 TRI | [NSE Indices](https://www.niftyindices.com/) — official Nifty 50 Total Return Index historical data |
 | BSE 500 TRI | [BSE India](https://www.bseindia.com/) — BSE500T historical data; deployments may also use the configured BSE 500 TRI CSV/URL or the supported TRI-tracking ETF fallback |
 | Portfolio news | [Google News](https://news.google.com/) RSS — no API key required |
@@ -90,6 +92,15 @@ The application uses the following external data sources for market and investme
 
 | Corporate filings | NSE public Corporate Announcements feed; BSE via an authorized/configured feed |
 | Portfolio News analysis | Deterministic local rules — no hosted AI model or paid AI API required |
+
+### 👤 Watch List fund-manager attribution
+
+The Watch List enriches individual fund-manager names separately from the market/NAV feeds:
+
+- **Mutual funds:** The AMFI universe refresh supplies public scheme codes. PWMS sends those codes to the third-party [Tigzig MF details API](https://api.tigzig.com/mf/v1/details) in batches of up to 50 and reads manager names from the returned Scheme Summary Document (`ssd`) data. Names are stored in `MutualFundProduct.fund_manager`; a supporting manager/document URL is stored in `MutualFundProduct.fund_manager_website`.
+- **PMS:** PWMS downloads the [APMI investment-approach performance listing](https://www.apmiindia.org/apmi/welcomeiaperformance.htm?action=PMSmenu), extracts each approach's `IAID`, then requests its individual `IaInsight.htm?IAID=<IAID>` page. The parser reads the **Fund Manager Details** section. Names are stored in `PMSProduct.fund_manager`, and the IA Insight page URL is stored in `PMSProduct.fund_manager_website`.
+- **Refresh behavior:** These enrichment steps run as part of the Watch List universe refresh. Mutual-fund enrichment follows the AMFI universe import; APMI manager enrichment runs as part of the PMS refresh. Existing manager names are preserved, and only missing names are requested for enrichment.
+- **Availability:** Tigzig and APMI are external dependencies. A scheme/approach can remain without a displayed manager when the source does not provide a name, its detail page cannot be retrieved, or its response format changes. The source URLs and request timeouts are configured/defined in the backend provider configuration and service code.
 
 ### 📈 Watch List benchmark and indexed-performance charts
 
@@ -1526,6 +1537,8 @@ PWMS is self-hosted, so your database never leaves your server. The following ou
 | ------------------- | ------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
 | **Yahoo Finance**   | Price refresh             | Ticker symbols for your Stock / ETF holdings                                                                            |
 | **AMFI**            | NAV refresh               | Nothing personal — a public NAV file is downloaded                                                                      |
+| **Tigzig MF API**   | Watch List MF manager enrichment | Public AMFI mutual-fund scheme codes (batches of up to 50); no holdings or transaction data                              |
+| **APMI India**      | Watch List PMS manager enrichment | Public APMI investment-approach identifiers (`IAID` values) used to retrieve the corresponding detail pages; no personal portfolio data |
 | **Google News RSS** | News monitor              | Search queries built from the securities you hold                                                                       |
 | **Google Gemini**   | AI Chat only | Structured portfolio context is sent only when you explicitly configure a Gemini key. |
 
@@ -1599,7 +1612,7 @@ The `audit/capital-gains-tax-engine-20261013` branch was validated with the foll
 | **Browser permission is required**             | The user must grant notification permission and allow the service worker to subscribe. |
 | **HTTPS is required outside localhost**        | Service workers and Push API require a secure context in production. Localhost is suitable for development. |
 | **Some SIP tests drift with the calendar**   | A few SIP-scheduling tests compare against today's real date; this is a known fixture limitation that does not affect the running app.                                                                  |
-| **Third-party data can lag or fail**         | Yahoo Finance, AMFI and Google News are external sources; use **manual prices** when a quote is missing.                                                                                                |
+| **Third-party data can lag or fail**         | Yahoo Finance, AMFI, Tigzig, APMI and Google News are external sources; quotes, NAVs or manager attribution may be delayed, unavailable or affected by source changes. Use **manual prices** when a quote is missing. |
 | **AMFI refresh is investment-driven**       | The AMFI feed is downloaded as a complete public source file, but PWMS persists and processes only records matching held investment ISINs. Mutual-fund history is persisted locally for MIS. |
 | **MIS valuation depends on available market data** | Historical MIS valuation uses the latest available market price / NAV on or before the requested valuation date; missing valuation data may result in an unavailable market-value figure. |
 | **Corporate filing coverage depends on exchange feeds** | NSE uses the built-in public Corporate Announcements adapter; BSE requires an authorized/configured feed. Unconfigured BSE ingestion is skipped rather than treated as a provider failure. |

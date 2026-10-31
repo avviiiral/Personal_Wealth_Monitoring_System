@@ -1,12 +1,18 @@
+import logging
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 
 import requests
+from django.db.models import OuterRef, Subquery
 from django.utils import timezone
 
 from config.pwms_config import get as get_pwms_config
 
 from watchlist.models import InvestmentProduct, PerformanceSnapshot, ProductType
+
+
+logger = logging.getLogger(__name__)
 
 
 class AMFIPerformanceService:
@@ -169,30 +175,75 @@ class AMFIPerformanceService:
         return min(after, key=lambda record: record["date"]) if after else None
 
     @classmethod
-    def _load_required_history(cls, products, latest_date):
-        codes = {str(product.external_identifier) for product in products if product.external_identifier}
+    def _load_required_history(cls, products, latest_date, required_fields=None):
+        codes = {
+            str(product.external_identifier)
+            for product in products
+            if product.external_identifier
+        }
         if not codes:
             return {}, 0
 
         selected = {code: {} for code in codes}
-        failed = 0
+        requested_fields = (
+            set(required_fields)
+            if required_fields is not None
+            else {field for field, _months in cls.PERIODS}
+        )
+        if not requested_fields:
+            return selected, 0
+
+        requests_to_make = []
         for field, months in cls.PERIODS:
-            target = cls._subtract_months(latest_date, months)
-            start = target - timedelta(days=cls.WINDOW_DAYS)
-            end = target + timedelta(days=cls.WINDOW_DAYS)
-            try:
-                records = cls.parse_history(cls.download_history(start, end))
-            except Exception:
-                failed += 1
+            if field not in requested_fields:
                 continue
-            grouped = {}
-            for record in records:
-                if record["scheme_code"] in codes:
-                    grouped.setdefault(record["scheme_code"], []).append(record)
-            for code, rows in grouped.items():
-                chosen = cls._nearest_on_or_before(rows, target)
-                if chosen:
-                    selected[code][field] = chosen
+            target = cls._subtract_months(latest_date, months)
+            requests_to_make.append((
+                field,
+                target,
+                target - timedelta(days=cls.WINDOW_DAYS),
+                target + timedelta(days=cls.WINDOW_DAYS),
+            ))
+
+        def fetch_period(request_spec):
+            field, target, start, end = request_spec
+            records = cls.parse_history(cls.download_history(start, end))
+            return field, target, records
+
+        failed = 0
+        # The six period windows are independent. Fetch at most three at once
+        # to reduce refresh latency without opening an excessive burst to AMFI.
+        with ThreadPoolExecutor(
+            max_workers=min(3, len(requests_to_make))
+        ) as executor:
+            futures = {
+                executor.submit(fetch_period, request_spec): request_spec[0]
+                for request_spec in requests_to_make
+            }
+            for future in as_completed(futures):
+                field = futures[future]
+                try:
+                    _field, target, records = future.result()
+                except Exception as exc:
+                    failed += 1
+                    logger.warning(
+                        "AMFI historical NAV request failed for %s: %s",
+                        field,
+                        exc,
+                    )
+                    continue
+
+                grouped = {}
+                for record in records:
+                    code = record["scheme_code"]
+                    if code in codes:
+                        grouped.setdefault(code, []).append(record)
+
+                for code, rows in grouped.items():
+                    chosen = cls._nearest_on_or_before(rows, target)
+                    if chosen:
+                        selected[code][field] = chosen
+
         return selected, failed
 
     @classmethod
@@ -208,18 +259,31 @@ class AMFIPerformanceService:
 
     @classmethod
     def refresh(cls):
+        latest_snapshot_query = PerformanceSnapshot.objects.filter(
+            product_id=OuterRef("pk"),
+            source=cls.SOURCE,
+        ).order_by("-date", "-id")
         products = list(
             InvestmentProduct.objects.filter(
                 product_type=ProductType.MUTUAL_FUND,
                 is_active=True,
+            ).annotate(
+                latest_amfi_snapshot_id=Subquery(
+                    latest_snapshot_query.values("id")[:1]
+                )
             ).select_related("mutual_fund")
         )
-        latest_snapshots = {}
-        for snapshot in PerformanceSnapshot.objects.filter(
-            product_id__in=[product.id for product in products],
-            source=cls.SOURCE,
-        ).order_by("-date"):
-            latest_snapshots.setdefault(snapshot.product_id, snapshot)
+        latest_snapshot_ids = [
+            product.latest_amfi_snapshot_id
+            for product in products
+            if product.latest_amfi_snapshot_id is not None
+        ]
+        latest_snapshots = {
+            snapshot.product_id: snapshot
+            for snapshot in PerformanceSnapshot.objects.filter(
+                id__in=latest_snapshot_ids
+            )
+        }
 
         # IDCW NAV history cannot provide total returns without distributions.
         # Clear any legacy NAV-derived metrics in one bulk update and skip
@@ -245,25 +309,57 @@ class AMFIPerformanceService:
                 cagr=None,
             )
 
+        idcw_product_id_set = set(idcw_product_ids)
         products_needing_history = [
             product
             for product in products
-            if latest_snapshots.get(product.id) is None
-            or any(
-                getattr(latest_snapshots[product.id], field) is None
-                for field, _ in cls.PERIODS
+            if product.id not in idcw_product_id_set
+            and (
+                latest_snapshots.get(product.id) is None
+                or any(
+                    getattr(latest_snapshots[product.id], field) is None
+                    for field, _ in cls.PERIODS
+                )
             )
         ]
         if not products_needing_history:
-            return {"products": len(products), "history_requests": 0, "snapshots": 0, "metrics_updated": 0, "failed": 0}
+            return {
+                "products": len(products),
+                "history_requests": 0,
+                "snapshots": 0,
+                "metrics_updated": 0,
+                "failed": 0,
+            }
 
         latest_date = (
             max(snapshot.date for snapshot in latest_snapshots.values())
             if latest_snapshots
             else timezone.localdate()
         )
-        history, failed = cls._load_required_history(products_needing_history, latest_date)
-        snapshots_written = 0
+        required_fields = set()
+        all_period_fields = {field for field, _months in cls.PERIODS}
+        for product in products_needing_history:
+            latest = latest_snapshots.get(product.id)
+            if latest is None:
+                required_fields.update(all_period_fields)
+                continue
+            required_fields.update(
+                field
+                for field, _months in cls.PERIODS
+                if getattr(latest, field) is None
+            )
+
+        history, failed = cls._load_required_history(
+            products_needing_history,
+            latest_date,
+            required_fields=required_fields,
+        )
+
+        # Accumulate observations and metric changes in memory, then persist
+        # them with two bounded bulk writes instead of up to six
+        # update_or_create() calls and one save() per product.
+        snapshots_to_upsert = {}
+        latest_updates = []
         metrics_updated = 0
 
         for product in products_needing_history:
@@ -274,80 +370,111 @@ class AMFIPerformanceService:
                 or ""
             )
             periods = history.get(code, {})
+
             if latest is None and periods:
-                latest_record = max(periods.values(), key=lambda record: record["date"])
-                latest, _ = PerformanceSnapshot.objects.update_or_create(
+                latest_record = max(
+                    periods.values(),
+                    key=lambda record: record["date"],
+                )
+                latest = PerformanceSnapshot(
                     product=product,
                     date=latest_record["date"],
+                    nav_or_value=latest_record["nav"],
                     source=cls.SOURCE,
-                    defaults={
-                        "nav_or_value": latest_record["nav"],
-                        "source_reference": cls.HISTORY_URL,
-                    },
+                    source_reference=cls.HISTORY_URL,
                 )
                 latest_snapshots[product.id] = latest
+                snapshots_to_upsert[(product.id, latest.date)] = latest
 
             if latest is None:
                 continue
 
             values = {}
-            is_idcw = cls._is_idcw_option(
-                getattr(getattr(product, "mutual_fund", None), "option", None)
+            for field, _months in cls.PERIODS:
+                record = periods.get(field)
+                if not record:
+                    continue
+
+                snapshot = PerformanceSnapshot(
+                    product=product,
+                    date=record["date"],
+                    nav_or_value=record["nav"],
+                    source=cls.SOURCE,
+                    source_reference=cls.HISTORY_URL,
+                )
+                snapshots_to_upsert.setdefault((product.id, record["date"]), snapshot)
+
+                elapsed_days = (latest.date - record["date"]).days
+                values[field] = cls._return_percent(
+                    latest.nav_or_value,
+                    record["nav"],
+                    elapsed_days=elapsed_days,
+                )
+
+            if not values:
+                continue
+
+            for field, value in values.items():
+                setattr(latest, field, value)
+
+            # CAGR uses the longest available annual period. IDCW schemes
+            # have already been excluded because distributions are absent
+            # from the NAV series.
+            for field, _months in reversed(cls.PERIODS):
+                record = periods.get(field)
+                if (
+                    not record
+                    or record["nav"] in (None, Decimal("0"))
+                    or latest.nav_or_value in (None, Decimal("0"))
+                ):
+                    continue
+                years = (
+                    Decimal(str((latest.date - record["date"]).days))
+                    / Decimal("365.2425")
+                )
+                if years > 0:
+                    latest.cagr = (
+                        (latest.nav_or_value / record["nav"])
+                        ** (Decimal("1") / years)
+                        - Decimal("1")
+                    ) * Decimal("100")
+                    break
+
+            latest_updates.append(latest)
+            metrics_updated += 1
+
+        if snapshots_to_upsert:
+            PerformanceSnapshot.objects.bulk_create(
+                list(snapshots_to_upsert.values()),
+                batch_size=1000,
+                update_conflicts=True,
+                update_fields=[
+                    "nav_or_value",
+                    "source_reference",
+                    "fetched_at",
+                ],
+                unique_fields=["product", "date", "source"],
             )
 
-            if not is_idcw:
-                for field, _ in cls.PERIODS:
-                    record = periods.get(field)
-                    if record:
-                        PerformanceSnapshot.objects.update_or_create(
-                            product=product,
-                            date=record["date"],
-                            source=cls.SOURCE,
-                            defaults={"nav_or_value": record["nav"], "source_reference": cls.HISTORY_URL},
-                        )
-                        snapshots_written += 1
-                        elapsed_days = (latest.date - record["date"]).days
-                        values[field] = cls._return_percent(
-                            latest.nav_or_value,
-                            record["nav"],
-                            elapsed_days=elapsed_days,
-                        )
-            else:
-                # An IDCW NAV series alone cannot produce investor total
-                # returns because distributions reduce NAV. Do not expose
-                # NAV-only returns as if they were total returns.
-                values = {field: None for field, _ in cls.PERIODS}
-
-            if values:
-                update_fields = []
-                for field, value in values.items():
-                    setattr(latest, field, value)
-                    update_fields.append(field)
-
-                # CAGR uses the longest available annual period. IDCW
-                # NAV history is excluded because distributions are not
-                # represented in the NAV series.
-                if not is_idcw:
-                    for field, months in reversed(cls.PERIODS):
-                        record = periods.get(field)
-                        if not record or record["nav"] in (None, Decimal("0")) or latest.nav_or_value in (None, Decimal("0")):
-                            continue
-                        years = Decimal(str((latest.date - record["date"]).days)) / Decimal("365.2425")
-                        if years > 0:
-                            latest.cagr = ((latest.nav_or_value / record["nav"]) ** (Decimal("1") / years) - Decimal("1")) * Decimal("100")
-                            update_fields.append("cagr")
-                            break
-                else:
-                    latest.cagr = None
-                    update_fields.append("cagr")
-
-                latest.save(update_fields=list(dict.fromkeys(update_fields)))
-                metrics_updated += 1
+        if latest_updates:
+            PerformanceSnapshot.objects.bulk_update(
+                latest_updates,
+                [
+                    "return_1m",
+                    "return_3m",
+                    "return_6m",
+                    "return_1y",
+                    "return_3y",
+                    "return_5y",
+                    "cagr",
+                ],
+                batch_size=500,
+            )
 
         return {
             "products": len(products),
-            "history_requests": len(cls.PERIODS),
-            "snapshots": snapshots_written,
+            "history_requests": len(required_fields),
+            "snapshots": len(snapshots_to_upsert),
             "metrics_updated": metrics_updated,
             "failed": failed,
         }

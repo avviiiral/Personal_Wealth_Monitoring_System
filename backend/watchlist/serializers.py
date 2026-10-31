@@ -123,6 +123,7 @@ class WatchListProductSerializer(serializers.ModelSerializer):
             "expense_ratio": value.expense_ratio,
             "benchmark": value.benchmark,
             "fund_manager": value.fund_manager,
+            "fund_manager_website": value.fund_manager_website,
             "risk_level": value.risk_level,
             "minimum_investment": value.minimum_investment,
             "exit_load": value.exit_load,
@@ -135,6 +136,8 @@ class WatchListProductSerializer(serializers.ModelSerializer):
             return None
         value = obj.pms
         return {
+            "fund_manager": value.fund_manager,
+            "fund_manager_website": value.fund_manager_website,
             "strategy_name": value.strategy_name,
             "strategy_type": value.strategy_type,
             "asset_class": value.asset_class,

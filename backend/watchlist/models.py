@@ -53,6 +53,8 @@ class MutualFundProduct(models.Model):
     expense_ratio = models.DecimalField(max_digits=10, decimal_places=4, blank=True, null=True)
     benchmark = models.CharField(max_length=300, blank=True, null=True)
     fund_manager = models.CharField(max_length=500, blank=True, null=True)
+    fund_manager_website = models.URLField(max_length=1000, blank=True, null=True)
+    fund_manager_checked_at = models.DateTimeField(blank=True, null=True)
     risk_level = models.CharField(max_length=100, blank=True, null=True)
     minimum_investment = models.DecimalField(max_digits=24, decimal_places=2, blank=True, null=True)
     exit_load = models.CharField(max_length=500, blank=True, null=True)
@@ -62,6 +64,9 @@ class MutualFundProduct(models.Model):
 
 class PMSProduct(models.Model):
     product = models.OneToOneField(InvestmentProduct, on_delete=models.CASCADE, related_name="pms")
+    fund_manager = models.CharField(max_length=500, blank=True, null=True)
+    fund_manager_website = models.URLField(max_length=1000, blank=True, null=True)
+    fund_manager_checked_at = models.DateTimeField(blank=True, null=True)
     strategy_name = models.CharField(max_length=500, blank=True, null=True)
     strategy_type = models.CharField(max_length=200, blank=True, null=True)
     asset_class = models.CharField(max_length=200, blank=True, null=True)

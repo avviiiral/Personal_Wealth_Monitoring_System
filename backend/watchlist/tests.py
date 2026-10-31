@@ -1,10 +1,10 @@
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
-from unittest.mock import patch
-from datetime import timedelta
+from unittest.mock import Mock, patch
 
 from django.contrib.auth.models import User
 from django.test import TestCase
+from django.utils import timezone
 from django.urls import reverse
 
 from mutual_funds.models import AMFIMasterNAV, AMFIMasterScheme
@@ -18,6 +18,7 @@ from watchlist.services.ownership import OwnershipService
 from watchlist.services.performance import AMFIPerformanceService
 from watchlist.services.universe import AMFIUniverseService
 from watchlist.services.pms import APMIPMSDiscoveryService
+from watchlist.services.fund_managers import AMFIFundManagerService
 from watchlist.services.benchmark import BenchmarkPerformanceService
 from watchlist.services.amfi_history import WatchListAMFIHistoryService
 
@@ -62,6 +63,120 @@ class WatchListTests(TestCase):
         PerformanceSnapshot.objects.update_or_create(product=product, date="2026-09-15", source="AMFI", defaults={"nav_or_value": Decimal("11")})
         self.assertEqual(PerformanceSnapshot.objects.filter(product=product).count(), 1)
         self.assertEqual(PerformanceSnapshot.objects.get(product=product).nav_or_value, Decimal("11"))
+
+    def test_watchlist_api_returns_individual_manager_name_and_source_url(self):
+        mutual_fund = InvestmentProduct.objects.create(
+            product_type=ProductType.MUTUAL_FUND,
+            name="Manager Fund",
+            identity_key="MUTUAL_FUND:SCHEME:MANAGER-FUND",
+            source="AMFI",
+        )
+        MutualFundProduct.objects.create(
+            product=mutual_fund,
+            scheme_code="MANAGER-FUND",
+            fund_manager="Jane Doe",
+            fund_manager_website="https://example.com/jane-doe",
+            aum=Decimal("100"),
+        )
+        pms = InvestmentProduct.objects.create(
+            product_type=ProductType.PMS,
+            name="Manager PMS",
+            identity_key="PMS:SCHEME:MANAGER-PMS",
+            source="APMI",
+        )
+        PMSProduct.objects.create(
+            product=pms,
+            fund_manager="John Smith",
+            fund_manager_website="https://example.com/john-smith",
+            aum=Decimal("100"),
+        )
+
+        mf_response = self.client.get("/api/watch-list/products/?product_type=MUTUAL_FUND")
+        pms_response = self.client.get("/api/watch-list/products/?product_type=PMS")
+
+        self.assertEqual(mf_response.status_code, 200)
+        self.assertEqual(pms_response.status_code, 200)
+        self.assertEqual(mf_response.data["results"][0]["mutual_fund"]["fund_manager"], "Jane Doe")
+        self.assertEqual(
+            mf_response.data["results"][0]["mutual_fund"]["fund_manager_website"],
+            "https://example.com/jane-doe",
+        )
+        self.assertEqual(pms_response.data["results"][0]["pms"]["fund_manager"], "John Smith")
+        self.assertEqual(
+            pms_response.data["results"][0]["pms"]["fund_manager_website"],
+            "https://example.com/john-smith",
+        )
+
+    @patch("watchlist.services.fund_managers.requests.get")
+    def test_mutual_fund_manager_refresh_persists_names_from_batch_details(self, mocked_get):
+        product = InvestmentProduct.objects.create(
+            product_type=ProductType.MUTUAL_FUND,
+            name="Manager Enrichment Fund",
+            identity_key="MUTUAL_FUND:SCHEME:MANAGER-ENRICHMENT",
+            source="AMFI",
+        )
+        mutual_fund = MutualFundProduct.objects.create(
+            product=product,
+            scheme_code="118989",
+            aum=Decimal("100"),
+        )
+        mocked_response = Mock()
+        mocked_response.json.return_value = {
+            "count": 1,
+            "data": [
+                {
+                    "scheme_code": 118989,
+                    "ssd": {
+                        "fund_managers": [
+                            {"name": "Jane Doe", "role": "Fund Manager"},
+                            {"name": "John Smith", "role": "Co-Fund Manager"},
+                        ],
+                        "document_url": "https://example.com/scheme-summary.pdf",
+                    },
+                }
+            ],
+        }
+        mocked_get.return_value = mocked_response
+
+        result = AMFIFundManagerService.refresh_missing()
+
+        mutual_fund.refresh_from_db()
+        self.assertEqual(result["updated"], 1)
+        self.assertEqual(mutual_fund.fund_manager, "Jane Doe; John Smith")
+        self.assertEqual(
+            mutual_fund.fund_manager_website,
+            "https://example.com/scheme-summary.pdf",
+        )
+
+    @patch("watchlist.services.fund_managers.requests.get")
+    def test_missing_mutual_fund_manager_lookup_is_cached_and_retried_after_window(self, mocked_get):
+        product = InvestmentProduct.objects.create(
+            product_type=ProductType.MUTUAL_FUND,
+            name="Manager Unavailable Fund",
+            identity_key="MUTUAL_FUND:SCHEME:MANAGER-UNAVAILABLE",
+            source="AMFI",
+        )
+        mutual_fund = MutualFundProduct.objects.create(
+            product=product,
+            scheme_code="NO-MANAGER-DETAILS",
+        )
+        mocked_get.return_value.json.return_value = {"count": 0, "data": []}
+        mocked_get.return_value.raise_for_status.return_value = None
+
+        first_result = AMFIFundManagerService.refresh_missing()
+        second_result = AMFIFundManagerService.refresh_missing()
+
+        mutual_fund.refresh_from_db()
+        self.assertEqual(first_result["checked"], 1)
+        self.assertEqual(first_result["updated"], 0)
+        self.assertEqual(second_result["requested"], 0)
+        self.assertEqual(mocked_get.call_count, 1)
+        self.assertIsNotNone(mutual_fund.fund_manager_checked_at)
+
+        mutual_fund.fund_manager_checked_at = timezone.now() - timedelta(days=8)
+        mutual_fund.save(update_fields=["fund_manager_checked_at"])
+        AMFIFundManagerService.refresh_missing()
+        self.assertEqual(mocked_get.call_count, 2)
 
     def test_api_pagination_and_filters(self):
         for index in range(3):
@@ -263,7 +378,85 @@ class WatchListTests(TestCase):
         self.assertTrue(PerformanceSnapshot.objects.filter(product=product, source="AMFI").exists())
 
 
+    @patch("watchlist.services.performance.AMFIPerformanceService.download_history")
+    def test_performance_refresh_requests_only_missing_return_periods(self, mocked_download):
+        latest_date = date(2026, 9, 15)
+        target_date = AMFIPerformanceService._subtract_months(latest_date, 1)
+        product = InvestmentProduct.objects.create(
+            product_type=ProductType.MUTUAL_FUND,
+            name="Single Missing Period Fund",
+            external_identifier="1",
+            identity_key="MUTUAL_FUND:SCHEME:SINGLE-MISSING-PERIOD",
+            source="AMFI",
+        )
+        MutualFundProduct.objects.create(
+            product=product,
+            scheme_code="SINGLE-MISSING-PERIOD",
+            option="Growth",
+        )
+        latest = PerformanceSnapshot.objects.create(
+            product=product,
+            date=latest_date,
+            nav_or_value=Decimal("110"),
+            return_1w=Decimal("1"),
+            return_1m=None,
+            return_3m=Decimal("3"),
+            return_6m=Decimal("6"),
+            return_1y=Decimal("12"),
+            return_3y=Decimal("30"),
+            return_5y=Decimal("50"),
+            cagr=Decimal("8"),
+            source="AMFI",
+        )
+        mocked_download.return_value = (
+            "Scheme Code;ISIN Div Payout/ISIN Growth;ISIN Div Reinvestment;"
+            "Scheme Name;Net Asset Value;Date\n"
+            f"1;INF000000001;-;Single Missing Period Fund;100;"
+            f"{target_date.strftime('%d-%b-%Y')}\n"
+        )
+
+        result = AMFIPerformanceService.refresh()
+
+        latest.refresh_from_db()
+        self.assertEqual(mocked_download.call_count, 1)
+        self.assertEqual(result["history_requests"], 1)
+        self.assertEqual(latest.return_1m, Decimal("10.000000"))
+
+
 class BenchmarkPerformanceTests(TestCase):
+    @patch("watchlist.services.performance.requests.get")
+    def test_idcw_performance_refresh_clears_nav_returns_without_history_requests(self, mocked_get):
+        product = InvestmentProduct.objects.create(
+            product_type=ProductType.MUTUAL_FUND,
+            name="IDCW Performance Refresh Fund",
+            external_identifier="IDCW-PERFORMANCE",
+            identity_key="MUTUAL_FUND:SCHEME:IDCW-PERFORMANCE",
+            source="AMFI",
+        )
+        MutualFundProduct.objects.create(
+            product=product,
+            scheme_code="IDCW-PERFORMANCE",
+            option="IDCW",
+        )
+        snapshot = PerformanceSnapshot.objects.create(
+            product=product,
+            date="2026-09-28",
+            nav_or_value=Decimal("10"),
+            return_1m=Decimal("5"),
+            return_1y=Decimal("12"),
+            cagr=Decimal("8"),
+            source="AMFI",
+        )
+
+        result = AMFIPerformanceService.refresh()
+
+        snapshot.refresh_from_db()
+        mocked_get.assert_not_called()
+        self.assertIsNone(snapshot.return_1m)
+        self.assertIsNone(snapshot.return_1y)
+        self.assertIsNone(snapshot.cagr)
+        self.assertEqual(result["history_requests"], 0)
+
     def test_bse500_csv_validation(self):
         csv_text = "Date,Close\n2021-01-01,100.0\n2021-01-04,101.5\n"
         points = BenchmarkPerformanceService._load_bse_csv(csv_text)
@@ -309,9 +502,13 @@ class BenchmarkPerformanceTests(TestCase):
         )
         MutualFundProduct.objects.create(product=product, scheme_code="BSETRI", benchmark="BSE 500")
         csv_text = "Date,Close\n2026-09-15,100.0\n2026-09-16,101.0\n"
-        with patch.object(BenchmarkPerformanceService, "_bse_series", return_value=[]):
+        with patch.object(
+            BenchmarkPerformanceService, "_bse_series",
+            side_effect=AssertionError("comparison attempted a live BSE download"),
+        ) as mocked_source:
             result = BenchmarkPerformanceService.calculate(product)
         self.assertFalse(result["available"])
+        mocked_source.assert_not_called()
 
     def test_nifty50_regression_uses_existing_yahoo_path(self):
         product = InvestmentProduct.objects.create(
@@ -325,8 +522,14 @@ class BenchmarkPerformanceTests(TestCase):
             {"date": "2021-01-02", "value": 100.0},
             {"date": "2026-01-01", "value": 150.0},
         ]
-        with patch.object(BenchmarkPerformanceService, "_nifty_tri_series", return_value=points):
+        with patch.object(
+            BenchmarkPerformanceService, "_benchmark_series", return_value=points
+        ), patch.object(
+            BenchmarkPerformanceService, "_nifty_tri_series",
+            side_effect=AssertionError("comparison attempted a live NSE download"),
+        ) as mocked_source:
             result = BenchmarkPerformanceService.calculate(product)
+        mocked_source.assert_not_called()
         self.assertTrue(result["available"])
         self.assertEqual(result["benchmark"], "Nifty 50")
         self.assertIsNotNone(result["benchmark_metrics"]["5Y"])
@@ -353,13 +556,18 @@ class BenchmarkPerformanceTests(TestCase):
         )
         with patch.object(
             BenchmarkPerformanceService,
-            "_bse_series",
+            "_benchmark_series",
             return_value=[
                 {"date": "2025-09-28", "value": 100.0},
                 {"date": "2026-09-28", "value": 98.0},
             ],
-        ):
+        ), patch.object(
+            BenchmarkPerformanceService,
+            "_bse_series",
+            side_effect=AssertionError("comparison attempted a live BSE download"),
+        ) as mocked_source:
             result = BenchmarkPerformanceService.calculate(product)
+        mocked_source.assert_not_called()
 
         self.assertTrue(result["available"])
         self.assertIsNone(result["fund_metrics"]["1Y"])
@@ -384,10 +592,15 @@ class BenchmarkPerformanceTests(TestCase):
         )
         with patch.object(
             BenchmarkPerformanceService,
-            "_nifty_tri_series",
+            "_benchmark_series",
             return_value=points,
-        ):
+        ), patch.object(
+            BenchmarkPerformanceService,
+            "_nifty_tri_series",
+            side_effect=AssertionError("comparison attempted a live NSE download"),
+        ) as mocked_source:
             result = BenchmarkPerformanceService.calculate(product)
+        mocked_source.assert_not_called()
 
         self.assertEqual(result["benchmark_metrics"]["5Y"], 50.0)
         self.assertEqual(
@@ -424,15 +637,24 @@ class BenchmarkPerformanceTests(TestCase):
         )
         with patch.object(
             BenchmarkPerformanceService,
-            "_bse_series",
+            "_benchmark_series",
             return_value=[
                 {"date": "2021-01-01", "value": 100.0},
                 {"date": "2026-01-01", "value": 150.0},
             ],
-        ):
+        ), patch(
+            "watchlist.views.prepare_mutual_fund_watchlist_history",
+            side_effect=AssertionError("comparison endpoint attempted AMFI history download"),
+        ) as mocked_history, patch.object(
+            BenchmarkPerformanceService,
+            "_bse_series",
+            side_effect=AssertionError("comparison endpoint attempted live BSE download"),
+        ) as mocked_source:
             response = api_client.get(
                 f"/api/watch-list/products/{product.id}/benchmark-performance/?period=1Y"
             )
+        mocked_history.assert_not_called()
+        mocked_source.assert_not_called()
         self.assertEqual(response.status_code, 200)
         self.assertTrue(response.data["available"])
         self.assertEqual(response.data["benchmark"], "BSE 500")
@@ -481,10 +703,17 @@ class BenchmarkPerformanceTests(TestCase):
 
         with patch.object(
             BenchmarkPerformanceService,
-            "_series",
-            side_effect=AssertionError("chart endpoint attempted a network fetch"),
-        ):
+            "_nifty_tri_series",
+            side_effect=AssertionError("chart endpoint attempted a live NSE fetch"),
+        ) as mocked_nifty, patch.object(
+            BenchmarkPerformanceService,
+            "_bse_series",
+            side_effect=AssertionError("chart endpoint attempted a live BSE fetch"),
+        ) as mocked_bse:
             result = BenchmarkPerformanceService.calculate(product, "3Y")
+
+        mocked_nifty.assert_not_called()
+        mocked_bse.assert_not_called()
 
         self.assertTrue(result["available"])
         self.assertGreaterEqual(len(result["chart"]["aligned_points"]), 2)
@@ -611,6 +840,92 @@ class BenchmarkPerformanceTests(TestCase):
 class APMIPMSDiscoveryTests(TestCase):
     SAMPLE_HTML = '<table><tr><th>PMS Provider Name</th><th>IA Name</th><th>AUM (in INR Cr.)</th><th>1 Month</th><th>3 Months</th><th>6 Months</th><th>1 Year</th><th>2 Years</th><th>3 Years</th><th>4 Years</th><th>5 Years</th><th>Since Inception</th></tr><tr><td>ICICI Prudential Asset Management Company Ltd</td><td><a href="IaInsight.htm?IAID=2595">ICICI Prudential PMS Small and Midcap FPI Strategy</a></td><td>₹75.38</td><td>NA</td><td>NA</td><td>NA</td><td>NA</td><td>NA</td><td>NA</td><td>NA</td><td>NA</td><td>0.06</td></tr></table>'
 
+    MANAGER_HTML = """
+    <html><body>
+      <h4>Fund Manager Details</h4>
+      <table>
+        <tr><td><h4>Jane Doe</h4>Work Exp. 12 years</td></tr>
+        <tr><td><h4>John Smith</h4>Work Exp. 8 years</td></tr>
+      </table>
+      <h4>Period-Wise Performance</h4>
+    </body></html>
+    """
+
+    def test_apmi_parser_extracts_individual_fund_managers(self):
+        self.assertEqual(
+            APMIPMSDiscoveryService._extract_fund_manager_names(self.MANAGER_HTML),
+            ["Jane Doe", "John Smith"],
+        )
+        self.assertEqual(
+            APMIPMSDiscoveryService._extract_fund_manager_names(self.SAMPLE_HTML),
+            [],
+        )
+
+    def test_mutual_fund_manager_parser_reads_individual_names(self):
+        sample = {
+            "managers": [
+                {"name": "Jane Doe", "type": "Primary"},
+                {"manager_name": "John Smith", "type": "Co-manager"},
+            ],
+            "document_url": "https://example.com/scheme-summary.pdf",
+        }
+        self.assertEqual(
+            AMFIFundManagerService._manager_names(sample),
+            ["Jane Doe", "John Smith"],
+        )
+        self.assertEqual(
+            AMFIFundManagerService._manager_website(sample),
+            "https://example.com/scheme-summary.pdf",
+        )
+
+    def test_mutual_fund_manager_parser_handles_flattened_ssd_and_wrapped_batch_records(self):
+        flattened = {
+            "ssd_fund_managers": (
+                "Jane Doe (since 2019-01-01); John Smith (since 2022-06-15)"
+            )
+        }
+        self.assertEqual(
+            AMFIFundManagerService._manager_names(flattened),
+            ["Jane Doe", "John Smith"],
+        )
+
+        payload = {
+            "count": 1,
+            "data": [
+                {
+                    "data": {
+                        "scheme_code": 118989,
+                        "ssd": {
+                            "fund_managers": [
+                                {"name": "Jane Doe", "role": "Fund Manager"}
+                            ]
+                        },
+                    }
+                }
+            ],
+        }
+        records = AMFIFundManagerService._response_records(payload)
+        self.assertEqual(len(records), 1)
+        self.assertEqual(records[0]["scheme_code"], 118989)
+        self.assertEqual(
+            AMFIFundManagerService._manager_names(records[0]["ssd"]),
+            ["Jane Doe"],
+        )
+
+    def test_apmi_parser_supports_bold_manager_cards(self):
+        html = """
+        <html><body>
+          <strong>Fund Manager Details</strong>
+          <div><b>Jane Doe</b><span>Work Exp. 12 years</span></div>
+          <div><b>John Smith</b><span>Work Exp. 8 years</span></div>
+          <strong>Period-Wise Performance</strong>
+        </body></html>
+        """
+        self.assertEqual(
+            APMIPMSDiscoveryService._extract_fund_manager_names(html),
+            ["Jane Doe", "John Smith"],
+        )
+
     def test_apmi_parser_reads_html_rows(self):
         records = APMIPMSDiscoveryService._records(self.SAMPLE_HTML)
         self.assertEqual(len(records), 1)
@@ -628,6 +943,44 @@ class APMIPMSDiscoveryTests(TestCase):
         self.assertEqual(product.external_identifier, "2595")
         self.assertEqual(product.pms.aum, Decimal("75.38"))
         self.assertEqual(PerformanceSnapshot.objects.get(product=product, source="APMI").return_since_inception, Decimal("0.06"))
+
+    @patch("watchlist.services.pms.requests.get")
+    def test_apmi_refresh_persists_individual_manager_from_ia_insight(self, mocked_get):
+        listing_response = Mock()
+        listing_response.text = self.SAMPLE_HTML
+        manager_response = Mock()
+        manager_response.text = self.MANAGER_HTML
+        mocked_get.side_effect = [listing_response, manager_response]
+
+        result = APMIPMSDiscoveryService.refresh()
+
+        product = InvestmentProduct.objects.get(product_type=ProductType.PMS)
+        self.assertEqual(result["fund_managers_enriched"], 1)
+        self.assertEqual(product.pms.fund_manager, "Jane Doe; John Smith")
+        self.assertEqual(
+            product.pms.fund_manager_website,
+            APMIPMSDiscoveryService.manager_details_url("2595"),
+        )
+
+    @patch("watchlist.services.pms.requests.get")
+    def test_apmi_empty_manager_result_is_cached_for_retry_window(self, mocked_get):
+        listing_one = Mock()
+        listing_one.text = self.SAMPLE_HTML
+        empty_manager_page = Mock()
+        empty_manager_page.text = "<html><body><h2>No manager details published</h2></body></html>"
+        listing_two = Mock()
+        listing_two.text = self.SAMPLE_HTML
+        mocked_get.side_effect = [listing_one, empty_manager_page, listing_two]
+
+        first_result = APMIPMSDiscoveryService.refresh()
+        second_result = APMIPMSDiscoveryService.refresh()
+
+        product = InvestmentProduct.objects.get(product_type=ProductType.PMS)
+        self.assertEqual(first_result["fund_manager_checks"], 1)
+        self.assertEqual(first_result["fund_managers_enriched"], 0)
+        self.assertEqual(second_result["fund_manager_checks"], 0)
+        self.assertEqual(mocked_get.call_count, 3)
+        self.assertIsNotNone(product.pms.fund_manager_checked_at)
 
     @patch("watchlist.services.pms.requests.get")
     def test_apmi_refresh_is_idempotent(self, mocked_get):

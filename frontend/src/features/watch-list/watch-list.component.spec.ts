@@ -92,6 +92,40 @@ describe('WatchListComponent benchmark chart', () => {
     expect(points[1].title).toContain('Index 110.000');
   });
 
+  it('shows only the individual manager name and never falls back to the provider', () => {
+    const mutualFund = {
+      product_type: 'MUTUAL_FUND',
+      provider: 'Fallback AMC',
+      mutual_fund: { fund_manager: 'Fund Manager Name' },
+    } as any;
+    const pms = {
+      product_type: 'PMS',
+      provider: 'PMS Provider',
+      pms: { fund_manager: 'PMS Fund Manager' },
+    } as any;
+
+    expect(component.fundManagerName(mutualFund)).toBe('Fund Manager Name');
+    expect(component.fundManagerName(pms)).toBe('PMS Fund Manager');
+    expect(component.fundManagerName({ product_type: 'MUTUAL_FUND', provider: 'Fallback AMC', mutual_fund: {} } as any)).toBe('—');
+    expect(component.fundManagerName({ product_type: 'PMS', provider: 'PMS Provider', pms: {} } as any)).toBe('—');
+  });
+
+  it('only creates external links for valid HTTP(S) manager websites', () => {
+    const product = {
+      product_type: 'MUTUAL_FUND',
+      provider: 'Test AMC',
+      mutual_fund: { fund_manager: 'Test Manager', fund_manager_website: 'https://example.com/fund-manager' },
+    } as any;
+
+    expect(component.fundManagerWebsite(product)).toBe('https://example.com/fund-manager');
+
+    product.mutual_fund.fund_manager_website = 'javascript:alert(1)';
+    expect(component.fundManagerWebsite(product)).toBeNull();
+
+    product.mutual_fund.fund_manager_website = null;
+    expect(component.fundManagerWebsite(product)).toBeNull();
+  });
+
   it('formats historical dates for the X axis across the selected period', () => {
     setChart('MUTUAL_FUND');
 

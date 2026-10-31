@@ -199,6 +199,11 @@
       ],
       "annual_days": 365.2425
     },
+    "amfi_fund_managers": {
+      "details_url": "https://api.tigzig.com/mf/v1/details",
+      "batch_size": 50,
+      "timeout_seconds": 20
+    },
     "yahoo_finance": {
       "doh_url": "https://1.1.1.1/dns-query"
     },

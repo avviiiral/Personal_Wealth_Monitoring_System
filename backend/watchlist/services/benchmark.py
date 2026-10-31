@@ -565,8 +565,14 @@ class BenchmarkPerformanceService:
         raise ValueError("BSE 500 TRI data source returned no observations")
 
     @classmethod
-    def _benchmark_series(cls, benchmark, start):
-        """Read benchmark history from the shared master, bootstrapping once if needed."""
+    def _benchmark_series(cls, benchmark, start, allow_source_refresh=False):
+        """Read shared benchmark history and optionally bootstrap from its provider.
+
+        Interactive comparison requests pass allow_source_refresh=False so a
+        slow NSE/BSE request can never hold the chart API open. The application
+        startup/daily benchmark worker is responsible for keeping this shared
+        master current.
+        """
         def read_master():
             points = list(
                 BenchmarkMasterPoint.objects
@@ -603,11 +609,9 @@ class BenchmarkPerformanceService:
         series = read_master()
 
         # A previously bootstrapped master can contain only a few sparse
-        # observations (for example, older Nifty imports). That is enough to
-        # calculate a return but produces a misleading stepped/sparse chart.
-        # Require daily-ish coverage for the 5Y history before accepting the
-        # master series. Rebuild the Nifty TRI master when coverage is thin so
-        # the chart has the same observation density as the BSE 500 TRI chart.
+        # observations (for example, older Nifty imports). The background
+        # refresh rebuilds thin history so charts progressively gain coverage;
+        # interactive reads never trigger that rebuild themselves.
         end = timezone.now().date()
         expected_rows = max(
             cls.MINIMUM_HISTORY_ROWS,
@@ -622,6 +626,12 @@ class BenchmarkPerformanceService:
             and last_date >= end - timedelta(days=10)
         )
         if len(series) >= expected_rows and coverage_ok:
+            return series
+
+        # Never perform external provider requests inside an interactive chart
+        # request. Return any persisted observations immediately; the existing
+        # background bootstrap/refresh fills missing index history separately.
+        if not allow_source_refresh:
             return series
 
         try:
@@ -755,6 +765,9 @@ class BenchmarkPerformanceService:
         # Growth options. IDCW NAV history cannot produce investor total
         # returns because distributions reduce NAV.
         mutual_fund = getattr(product, "mutual_fund", None)
+        history_start = timezone.now().date() - timedelta(
+            days=cls.PERIOD_DAYS["5Y"] + 31
+        )
         if (
             getattr(product, "product_type", None) == "MUTUAL_FUND"
             and cls._is_idcw_option(getattr(mutual_fund, "option", None))
@@ -763,6 +776,7 @@ class BenchmarkPerformanceService:
                 PerformanceSnapshot.objects.filter(
                     product=product,
                     source="AMFI",
+                    date__gte=history_start,
                 )
                 .exclude(nav_or_value__isnull=True)
                 .order_by("date", "id")
@@ -779,6 +793,7 @@ class BenchmarkPerformanceService:
                 PerformanceSnapshot.objects.filter(
                     product=product,
                     source="AMFI",
+                    date__gte=history_start,
                 )
                 .exclude(nav_or_value__isnull=True)
                 .order_by("date", "id")
@@ -805,8 +820,10 @@ class BenchmarkPerformanceService:
         # PMS/provider-reported returns are retained because nav_or_value is
         # not necessarily a portfolio NAV from which a return can be rebuilt.
         snapshots = list(
-            PerformanceSnapshot.objects.filter(product=product)
-            .order_by("-date", "-id")
+            PerformanceSnapshot.objects.filter(
+                product=product,
+                date__gte=history_start,
+            ).order_by("-date", "-id")
         )
         fields = {
             "1M": "return_1m",
@@ -921,7 +938,7 @@ class BenchmarkPerformanceService:
                     if point["nav"] and float(point["nav"]) > 0
                 ]
 
-                snapshots = list(
+                snapshot_values = (
                     PerformanceSnapshot.objects.filter(
                         product=product,
                         source="AMFI",
@@ -930,14 +947,15 @@ class BenchmarkPerformanceService:
                     )
                     .exclude(nav_or_value__isnull=True)
                     .order_by("date", "id")
+                    .values_list("date", "nav_or_value")
                 )
                 snapshot_series = [
                     {
-                        "date": snapshot.date.isoformat(),
-                        "value": float(snapshot.nav_or_value),
+                        "date": snapshot_date.isoformat(),
+                        "value": float(nav),
                     }
-                    for snapshot in snapshots
-                    if snapshot.nav_or_value and float(snapshot.nav_or_value) > 0
+                    for snapshot_date, nav in snapshot_values
+                    if nav and float(nav) > 0
                 ]
 
                 merged_series = cls._merge_chart_series(
@@ -959,14 +977,15 @@ class BenchmarkPerformanceService:
                 )
                 .exclude(nav_or_value__isnull=True)
                 .order_by("date", "id")
+                .values_list("date", "nav_or_value")
             )
             return [
                 {
-                    "date": snapshot.date.isoformat(),
-                    "value": float(snapshot.nav_or_value),
+                    "date": snapshot_date.isoformat(),
+                    "value": float(nav),
                 }
-                for snapshot in snapshots
-                if snapshot.nav_or_value and float(snapshot.nav_or_value) > 0
+                for snapshot_date, nav in snapshots
+                if nav and float(nav) > 0
             ]
 
         snapshots = (
@@ -977,11 +996,12 @@ class BenchmarkPerformanceService:
             )
             .exclude(nav_or_value__isnull=True)
             .order_by("date", "id")
+            .values_list("date", "nav_or_value")
         )
         return [
-            {"date": snapshot.date.isoformat(), "value": float(snapshot.nav_or_value)}
-            for snapshot in snapshots
-            if snapshot.nav_or_value and float(snapshot.nav_or_value) > 0
+            {"date": snapshot_date.isoformat(), "value": float(nav)}
+            for snapshot_date, nav in snapshots
+            if nav and float(nav) > 0
         ]
 
     @staticmethod
@@ -1010,18 +1030,23 @@ class BenchmarkPerformanceService:
         max_days = cls.PERIOD_DAYS["5Y"] + 31
         start = timezone.now().date() - timedelta(days=max_days)
         try:
-            series = cls._benchmark_series(benchmark, start)
+            series = cls._benchmark_series(
+                benchmark, start, allow_source_refresh=False
+            )
         except Exception:
             series = []
 
-        if not series:
+        if len(series) < 2:
             return {
                 "benchmark": benchmark,
                 "available": False,
                 "benchmark_metrics": {
                     period: None for period in cls.PERIOD_DAYS
                 },
-                "message": "Benchmark market data is not available from the configured data source.",
+                "message": (
+                    "Stored benchmark history is not ready yet. "
+                    "The background benchmark refresh will populate it."
+                ),
             }
 
         details = {
@@ -1113,15 +1138,20 @@ class BenchmarkPerformanceService:
         max_days = cls.PERIOD_DAYS["5Y"] + 31
         start = timezone.now().date() - timedelta(days=max_days)
         try:
-            benchmark_series = cls._benchmark_series(benchmark, start)
+            benchmark_series = cls._benchmark_series(
+                benchmark, start, allow_source_refresh=False
+            )
         except Exception:
             benchmark_series = []
 
-        if not benchmark_series:
+        if len(benchmark_series) < 2:
             return {
                 "benchmark": benchmark,
                 "available": False,
-                "message": "Benchmark market data is not available from the configured data source.",
+                "message": (
+                    "Stored benchmark history is not ready yet. "
+                    "The background benchmark refresh will populate it."
+                ),
             }
 
         fund_metrics, fund_return_details, latest = cls._fund_metrics(product)

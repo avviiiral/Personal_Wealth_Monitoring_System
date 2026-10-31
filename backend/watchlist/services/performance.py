@@ -174,7 +174,7 @@ class AMFIPerformanceService:
         return min(after, key=lambda record: record["date"]) if after else None
 
     @classmethod
-    def _load_required_history(cls, products, latest_date):
+    def _load_required_history(cls, products, latest_date, required_fields=None):
         codes = {
             str(product.external_identifier)
             for product in products
@@ -184,8 +184,15 @@ class AMFIPerformanceService:
             return {}, 0
 
         selected = {code: {} for code in codes}
+        requested_fields = (
+            set(required_fields)
+            if required_fields is not None
+            else {field for field, _months in cls.PERIODS}
+        )
         requests_to_make = []
         for field, months in cls.PERIODS:
+            if field not in requested_fields:
+                continue
             target = cls._subtract_months(latest_date, months)
             requests_to_make.append((
                 field,
@@ -312,8 +319,23 @@ class AMFIPerformanceService:
             if latest_snapshots
             else timezone.localdate()
         )
+        required_fields = set()
+        all_period_fields = {field for field, _months in cls.PERIODS}
+        for product in products_needing_history:
+            latest = latest_snapshots.get(product.id)
+            if latest is None:
+                required_fields.update(all_period_fields)
+                continue
+            required_fields.update(
+                field
+                for field, _months in cls.PERIODS
+                if getattr(latest, field) is None
+            )
+
         history, failed = cls._load_required_history(
-            products_needing_history, latest_date
+            products_needing_history,
+            latest_date,
+            required_fields=required_fields,
         )
 
         # Accumulate observations and metric changes in memory, then persist
@@ -434,7 +456,7 @@ class AMFIPerformanceService:
 
         return {
             "products": len(products),
-            "history_requests": len(cls.PERIODS),
+            "history_requests": len(required_fields),
             "snapshots": len(snapshots_to_upsert),
             "metrics_updated": metrics_updated,
             "failed": failed,

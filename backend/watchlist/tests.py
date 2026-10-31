@@ -5,6 +5,7 @@ from datetime import timedelta
 
 from django.contrib.auth.models import User
 from django.test import TestCase
+from django.utils import timezone
 from django.urls import reverse
 
 from mutual_funds.models import AMFIMasterNAV, AMFIMasterScheme
@@ -147,6 +148,36 @@ class WatchListTests(TestCase):
             mutual_fund.fund_manager_website,
             "https://example.com/scheme-summary.pdf",
         )
+
+    @patch("watchlist.services.fund_managers.requests.get")
+    def test_missing_mutual_fund_manager_lookup_is_cached_and_retried_after_window(self, mocked_get):
+        product = InvestmentProduct.objects.create(
+            product_type=ProductType.MUTUAL_FUND,
+            name="Manager Unavailable Fund",
+            identity_key="MUTUAL_FUND:SCHEME:MANAGER-UNAVAILABLE",
+            source="AMFI",
+        )
+        mutual_fund = MutualFundProduct.objects.create(
+            product=product,
+            scheme_code="NO-MANAGER-DETAILS",
+        )
+        mocked_get.return_value.json.return_value = {"count": 0, "data": []}
+        mocked_get.return_value.raise_for_status.return_value = None
+
+        first_result = AMFIFundManagerService.refresh_missing()
+        second_result = AMFIFundManagerService.refresh_missing()
+
+        mutual_fund.refresh_from_db()
+        self.assertEqual(first_result["checked"], 1)
+        self.assertEqual(first_result["updated"], 0)
+        self.assertEqual(second_result["requested"], 0)
+        self.assertEqual(mocked_get.call_count, 1)
+        self.assertIsNotNone(mutual_fund.fund_manager_checked_at)
+
+        mutual_fund.fund_manager_checked_at = timezone.now() - timedelta(days=8)
+        mutual_fund.save(update_fields=["fund_manager_checked_at"])
+        AMFIFundManagerService.refresh_missing()
+        self.assertEqual(mocked_get.call_count, 2)
 
     def test_api_pagination_and_filters(self):
         for index in range(3):
@@ -817,6 +848,26 @@ class APMIPMSDiscoveryTests(TestCase):
             product.pms.fund_manager_website,
             APMIPMSDiscoveryService.manager_details_url("2595"),
         )
+
+    @patch("watchlist.services.pms.requests.get")
+    def test_apmi_empty_manager_result_is_cached_for_retry_window(self, mocked_get):
+        listing_one = Mock()
+        listing_one.text = self.SAMPLE_HTML
+        empty_manager_page = Mock()
+        empty_manager_page.text = "<html><body><h2>No manager details published</h2></body></html>"
+        listing_two = Mock()
+        listing_two.text = self.SAMPLE_HTML
+        mocked_get.side_effect = [listing_one, empty_manager_page, listing_two]
+
+        first_result = APMIPMSDiscoveryService.refresh()
+        second_result = APMIPMSDiscoveryService.refresh()
+
+        product = InvestmentProduct.objects.get(product_type=ProductType.PMS)
+        self.assertEqual(first_result["fund_manager_checks"], 1)
+        self.assertEqual(first_result["fund_managers_enriched"], 0)
+        self.assertEqual(second_result["fund_manager_checks"], 0)
+        self.assertEqual(mocked_get.call_count, 3)
+        self.assertIsNotNone(product.pms.fund_manager_checked_at)
 
     @patch("watchlist.services.pms.requests.get")
     def test_apmi_refresh_is_idempotent(self, mocked_get):

@@ -1,5 +1,7 @@
 from django.db import close_old_connections
+import logging
 import threading
+import time
 from django.db.models import Exists, OuterRef, Q, Subquery
 from django.shortcuts import get_object_or_404
 from rest_framework.decorators import api_view, permission_classes
@@ -20,6 +22,9 @@ from watchlist.services.benchmark import BenchmarkPerformanceService
 from watchlist.services.universe import AMFIUniverseService
 from watchlist.services.fund_managers import AMFIFundManagerService
 from watchlist.services.amfi_history import prepare_mutual_fund_watchlist_history
+
+
+logger = logging.getLogger(__name__)
 
 
 class WatchListPagination(PageNumberPagination):
@@ -343,15 +348,36 @@ watch_list_refreshing = False
 def _run_watch_list_refresh():
     global watch_list_refreshing
     close_old_connections()
+    refresh_started = time.monotonic()
     try:
         with DATABASE_SCHEDULER_LOCK:
-            mf_result = AMFIUniverseService.refresh()
-            mf_manager_result = AMFIFundManagerService.refresh_missing()
-            # Populate the metrics used by the Watch List visibility filter
-            # after the AMFI universe has been created/updated.
-            mf_performance_result = AMFIPerformanceService.refresh()
-            pms_result = APMIPMSDiscoveryService.refresh()
-        return mf_result, mf_manager_result, mf_performance_result, pms_result
+            stages = (
+                ("amfi_universe", AMFIUniverseService.refresh),
+                ("mutual_fund_managers", AMFIFundManagerService.refresh_missing),
+                ("mutual_fund_performance", AMFIPerformanceService.refresh),
+                ("pms_universe_and_managers", APMIPMSDiscoveryService.refresh),
+            )
+            results = {}
+            for stage_name, refresh_fn in stages:
+                stage_started = time.monotonic()
+                results[stage_name] = refresh_fn()
+                logger.info(
+                    "Watch List refresh stage completed (stage=%s, duration_seconds=%.2f, result=%s)",
+                    stage_name,
+                    time.monotonic() - stage_started,
+                    results[stage_name],
+                )
+        logger.info(
+            "Watch List universe refresh completed (duration_seconds=%.2f)",
+            time.monotonic() - refresh_started,
+        )
+        return results
+    except Exception:
+        logger.exception(
+            "Watch List universe refresh failed (elapsed_seconds=%.2f)",
+            time.monotonic() - refresh_started,
+        )
+        raise
     finally:
         watch_list_refreshing = False
         WATCH_LIST_REFRESH_LOCK.release()

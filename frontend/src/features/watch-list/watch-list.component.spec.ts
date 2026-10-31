@@ -92,7 +92,7 @@ describe('WatchListComponent benchmark chart', () => {
     expect(points[1].title).toContain('Index 110.000');
   });
 
-  it('uses the mutual-fund manager name and the PMS provider as the displayed manager', () => {
+  it('shows only the individual manager name and never falls back to the provider', () => {
     const mutualFund = {
       product_type: 'MUTUAL_FUND',
       provider: 'Fallback AMC',
@@ -101,28 +101,28 @@ describe('WatchListComponent benchmark chart', () => {
     const pms = {
       product_type: 'PMS',
       provider: 'PMS Provider',
-      pms: {},
+      pms: { fund_manager: 'PMS Fund Manager' },
     } as any;
 
     expect(component.fundManagerName(mutualFund)).toBe('Fund Manager Name');
-    expect(component.fundManagerName(pms)).toBe('PMS Provider');
-    expect(component.fundManagerName({ product_type: 'MUTUAL_FUND', provider: 'Fallback AMC', mutual_fund: {} } as any)).toBe('Fallback AMC');
+    expect(component.fundManagerName(pms)).toBe('PMS Fund Manager');
+    expect(component.fundManagerName({ product_type: 'MUTUAL_FUND', provider: 'Fallback AMC', mutual_fund: {} } as any)).toBe('—');
+    expect(component.fundManagerName({ product_type: 'PMS', provider: 'PMS Provider', pms: {} } as any)).toBe('—');
   });
 
   it('only creates external links for valid HTTP(S) manager websites', () => {
     const product = {
       product_type: 'MUTUAL_FUND',
       provider: 'Test AMC',
-      mutual_fund: { fund_manager: 'Test Manager' },
-      official_website: 'https://example.com/fund-manager',
+      mutual_fund: { fund_manager: 'Test Manager', fund_manager_website: 'https://example.com/fund-manager' },
     } as any;
 
     expect(component.fundManagerWebsite(product)).toBe('https://example.com/fund-manager');
 
-    product.official_website = 'javascript:alert(1)';
+    product.mutual_fund.fund_manager_website = 'javascript:alert(1)';
     expect(component.fundManagerWebsite(product)).toBeNull();
 
-    product.official_website = null;
+    product.mutual_fund.fund_manager_website = null;
     expect(component.fundManagerWebsite(product)).toBeNull();
   });
 

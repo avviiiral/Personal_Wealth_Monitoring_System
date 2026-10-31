@@ -565,8 +565,14 @@ class BenchmarkPerformanceService:
         raise ValueError("BSE 500 TRI data source returned no observations")
 
     @classmethod
-    def _benchmark_series(cls, benchmark, start):
-        """Read benchmark history from the shared master, bootstrapping once if needed."""
+    def _benchmark_series(cls, benchmark, start, allow_source_refresh=True):
+        """Read shared benchmark history and optionally bootstrap from its provider.
+
+        Interactive comparison requests pass allow_source_refresh=False so a
+        slow NSE/BSE request can never hold the chart API open. The application
+        startup/daily benchmark worker is responsible for keeping this shared
+        master current.
+        """
         def read_master():
             points = list(
                 BenchmarkMasterPoint.objects
@@ -622,6 +628,12 @@ class BenchmarkPerformanceService:
             and last_date >= end - timedelta(days=10)
         )
         if len(series) >= expected_rows and coverage_ok:
+            return series
+
+        # Never perform external provider requests inside an interactive chart
+        # request. Return any persisted observations immediately; the existing
+        # background bootstrap/refresh fills missing index history separately.
+        if not allow_source_refresh:
             return series
 
         try:
@@ -755,6 +767,9 @@ class BenchmarkPerformanceService:
         # Growth options. IDCW NAV history cannot produce investor total
         # returns because distributions reduce NAV.
         mutual_fund = getattr(product, "mutual_fund", None)
+        history_start = timezone.now().date() - timedelta(
+            days=cls.PERIOD_DAYS["5Y"] + 31
+        )
         if (
             getattr(product, "product_type", None) == "MUTUAL_FUND"
             and cls._is_idcw_option(getattr(mutual_fund, "option", None))
@@ -763,6 +778,7 @@ class BenchmarkPerformanceService:
                 PerformanceSnapshot.objects.filter(
                     product=product,
                     source="AMFI",
+                    date__gte=history_start,
                 )
                 .exclude(nav_or_value__isnull=True)
                 .order_by("date", "id")
@@ -779,6 +795,7 @@ class BenchmarkPerformanceService:
                 PerformanceSnapshot.objects.filter(
                     product=product,
                     source="AMFI",
+                    date__gte=history_start,
                 )
                 .exclude(nav_or_value__isnull=True)
                 .order_by("date", "id")
@@ -805,8 +822,10 @@ class BenchmarkPerformanceService:
         # PMS/provider-reported returns are retained because nav_or_value is
         # not necessarily a portfolio NAV from which a return can be rebuilt.
         snapshots = list(
-            PerformanceSnapshot.objects.filter(product=product)
-            .order_by("-date", "-id")
+            PerformanceSnapshot.objects.filter(
+                product=product,
+                date__gte=history_start,
+            ).order_by("-date", "-id")
         )
         fields = {
             "1M": "return_1m",
@@ -1010,7 +1029,9 @@ class BenchmarkPerformanceService:
         max_days = cls.PERIOD_DAYS["5Y"] + 31
         start = timezone.now().date() - timedelta(days=max_days)
         try:
-            series = cls._benchmark_series(benchmark, start)
+            series = cls._benchmark_series(
+                benchmark, start, allow_source_refresh=False
+            )
         except Exception:
             series = []
 
@@ -1113,7 +1134,9 @@ class BenchmarkPerformanceService:
         max_days = cls.PERIOD_DAYS["5Y"] + 31
         start = timezone.now().date() - timedelta(days=max_days)
         try:
-            benchmark_series = cls._benchmark_series(benchmark, start)
+            benchmark_series = cls._benchmark_series(
+                benchmark, start, allow_source_refresh=False
+            )
         except Exception:
             benchmark_series = []
 

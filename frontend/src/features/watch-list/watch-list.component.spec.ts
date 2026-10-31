@@ -110,8 +110,9 @@ describe('WatchListComponent benchmark chart', () => {
     expect(component.fundManagerName({ product_type: 'PMS', provider: 'PMS Provider', pms: {} } as any)).toBe('—');
   });
 
-  it('only creates external links for valid HTTP(S) manager websites', () => {
+  it('keeps valid HTTP(S) manager source links and safely falls back for mutual funds', () => {
     const product = {
+      name: 'Bluechip Equity Fund',
       product_type: 'MUTUAL_FUND',
       provider: 'Test AMC',
       mutual_fund: { fund_manager: 'Test Manager', fund_manager_website: 'https://example.com/fund-manager' },
@@ -120,9 +121,25 @@ describe('WatchListComponent benchmark chart', () => {
     expect(component.fundManagerWebsite(product)).toBe('https://example.com/fund-manager');
 
     product.mutual_fund.fund_manager_website = 'javascript:alert(1)';
-    expect(component.fundManagerWebsite(product)).toBeNull();
+    const fallbackUrl = component.fundManagerWebsite(product);
+    expect(fallbackUrl).toBeTruthy();
+    const parsedFallback = new URL(fallbackUrl!);
+    expect(parsedFallback.origin).toBe('https://www.google.com');
+    expect(parsedFallback.pathname).toBe('/search');
+    expect(parsedFallback.searchParams.get('q')).toContain('Test Manager');
+    expect(parsedFallback.searchParams.get('q')).toContain('Bluechip Equity Fund');
 
     product.mutual_fund.fund_manager_website = null;
+    expect(component.fundManagerWebsite(product)).toBe(fallbackUrl);
+  });
+
+  it('does not create a search fallback for PMS without its APMI manager URL', () => {
+    const product = {
+      name: 'Test PMS',
+      product_type: 'PMS',
+      pms: { fund_manager: 'PMS Manager', fund_manager_website: null },
+    } as any;
+
     expect(component.fundManagerWebsite(product)).toBeNull();
   });
 

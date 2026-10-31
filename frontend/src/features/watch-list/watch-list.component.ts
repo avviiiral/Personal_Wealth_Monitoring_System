@@ -134,22 +134,35 @@ export class WatchListComponent implements OnInit, OnDestroy {
   }
 
   fundManagerWebsite(product: WatchListProduct): string | null {
-    if (this.fundManagerName(product) === '—') return null;
+    const managerName = this.fundManagerName(product);
+    if (managerName === '—') return null;
 
     const managerWebsite = product.product_type === 'MUTUAL_FUND'
       ? product.mutual_fund?.fund_manager_website
       : product.pms?.fund_manager_website;
     const website = String(managerWebsite || '').trim();
-    if (!website) return null;
 
-    try {
-      const parsedUrl = new URL(website);
-      return parsedUrl.protocol === 'http:' || parsedUrl.protocol === 'https:'
-        ? parsedUrl.toString()
-        : null;
-    } catch {
-      return null;
+    if (website) {
+      try {
+        const parsedUrl = new URL(website);
+        if (parsedUrl.protocol === 'http:' || parsedUrl.protocol === 'https:') {
+          return parsedUrl.toString();
+        }
+      } catch {
+        // Fall back to a manager-and-scheme search for mutual funds only.
+      }
     }
+
+    // MF data providers do not consistently publish a dedicated manager
+    // profile URL. Keep the manager clickable by searching for that person
+    // together with the exact scheme name. PMS continues to use its APMI link.
+    if (product.product_type !== 'MUTUAL_FUND') return null;
+
+    const schemeName = String(product.name || '').trim();
+    const query = [managerName, schemeName, 'mutual fund fund manager']
+      .filter(Boolean)
+      .join(' ');
+    return `https://www.google.com/search?q=${encodeURIComponent(query)}`;
   }
 
   isSelected(productId: number): boolean { return this.selectedIds.has(productId); }

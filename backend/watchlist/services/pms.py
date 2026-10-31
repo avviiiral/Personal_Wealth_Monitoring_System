@@ -1,3 +1,4 @@
+import logging
 import re
 from datetime import datetime
 from decimal import Decimal, InvalidOperation
@@ -9,6 +10,8 @@ from django.utils import timezone
 from config.pwms_config import get as get_pwms_config
 
 from watchlist.models import DiscoveryRun, InvestmentProduct, PerformanceSnapshot, PMSProduct, ProductType
+
+logger = logging.getLogger(__name__)
 
 
 class APMIPMSDiscoveryService:

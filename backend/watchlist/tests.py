@@ -18,6 +18,7 @@ from watchlist.services.ownership import OwnershipService
 from watchlist.services.performance import AMFIPerformanceService
 from watchlist.services.universe import AMFIUniverseService
 from watchlist.services.pms import APMIPMSDiscoveryService
+from watchlist.services.fund_managers import AMFIFundManagerService
 from watchlist.services.benchmark import BenchmarkPerformanceService
 from watchlist.services.amfi_history import WatchListAMFIHistoryService
 
@@ -610,6 +611,44 @@ class BenchmarkPerformanceTests(TestCase):
 
 class APMIPMSDiscoveryTests(TestCase):
     SAMPLE_HTML = '<table><tr><th>PMS Provider Name</th><th>IA Name</th><th>AUM (in INR Cr.)</th><th>1 Month</th><th>3 Months</th><th>6 Months</th><th>1 Year</th><th>2 Years</th><th>3 Years</th><th>4 Years</th><th>5 Years</th><th>Since Inception</th></tr><tr><td>ICICI Prudential Asset Management Company Ltd</td><td><a href="IaInsight.htm?IAID=2595">ICICI Prudential PMS Small and Midcap FPI Strategy</a></td><td>₹75.38</td><td>NA</td><td>NA</td><td>NA</td><td>NA</td><td>NA</td><td>NA</td><td>NA</td><td>NA</td><td>0.06</td></tr></table>'
+
+    MANAGER_HTML = """
+    <html><body>
+      <h4>Fund Manager Details</h4>
+      <table>
+        <tr><td><h4>Jane Doe</h4>Work Exp. 12 years</td></tr>
+        <tr><td><h4>John Smith</h4>Work Exp. 8 years</td></tr>
+      </table>
+      <h4>Period-Wise Performance</h4>
+    </body></html>
+    """
+
+    def test_apmi_parser_extracts_individual_fund_managers(self):
+        self.assertEqual(
+            APMIPMSDiscoveryService._extract_fund_manager_names(self.MANAGER_HTML),
+            ["Jane Doe", "John Smith"],
+        )
+        self.assertEqual(
+            APMIPMSDiscoveryService._extract_fund_manager_names(self.SAMPLE_HTML),
+            [],
+        )
+
+    def test_mutual_fund_manager_parser_reads_individual_names(self):
+        sample = {
+            "managers": [
+                {"name": "Jane Doe", "type": "Primary"},
+                {"manager_name": "John Smith", "type": "Co-manager"},
+            ],
+            "document_url": "https://example.com/scheme-summary.pdf",
+        }
+        self.assertEqual(
+            AMFIFundManagerService._manager_names(sample),
+            ["Jane Doe", "John Smith"],
+        )
+        self.assertEqual(
+            AMFIFundManagerService._manager_website(sample),
+            "https://example.com/scheme-summary.pdf",
+        )
 
     def test_apmi_parser_reads_html_rows(self):
         records = APMIPMSDiscoveryService._records(self.SAMPLE_HTML)

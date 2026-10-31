@@ -20,32 +20,90 @@
     "sector_query_template": "Indian {sector} sector",
     "max_macro_queries_per_holding": 2,
     "macro_topics_by_sector": {
-      "bank": ["RBI", "interest rates", "bond yields"],
-      "financial": ["RBI", "interest rates"],
-      "nbfc": ["RBI", "interest rates"],
-      "insurance": ["interest rates", "IRDAI"],
-      "it": ["USD/INR"],
-      "software": ["USD/INR"],
-      "technology": ["USD/INR"],
-      "oil": ["crude oil prices"],
-      "energy": ["crude oil prices"],
-      "gas": ["crude oil prices"],
-      "power": ["crude oil prices"],
-      "auto": ["fuel prices"],
-      "automobile": ["fuel prices"],
-      "pharma": ["USFDA"],
-      "healthcare": ["USFDA"],
-      "fmcg": ["inflation"],
-      "consumer": ["inflation"],
-      "metal": ["commodity prices"],
-      "mining": ["commodity prices"],
-      "steel": ["commodity prices"],
-      "infrastructure": ["government infrastructure policy"],
-      "construction": ["government infrastructure policy"],
-      "cement": ["government infrastructure policy"],
-      "export": ["USD/INR", "tariffs"],
-      "textile": ["tariffs"],
-      "real estate": ["interest rates"]
+      "bank": [
+        "RBI",
+        "interest rates",
+        "bond yields"
+      ],
+      "financial": [
+        "RBI",
+        "interest rates"
+      ],
+      "nbfc": [
+        "RBI",
+        "interest rates"
+      ],
+      "insurance": [
+        "interest rates",
+        "IRDAI"
+      ],
+      "it": [
+        "USD/INR"
+      ],
+      "software": [
+        "USD/INR"
+      ],
+      "technology": [
+        "USD/INR"
+      ],
+      "oil": [
+        "crude oil prices"
+      ],
+      "energy": [
+        "crude oil prices"
+      ],
+      "gas": [
+        "crude oil prices"
+      ],
+      "power": [
+        "crude oil prices"
+      ],
+      "auto": [
+        "fuel prices"
+      ],
+      "automobile": [
+        "fuel prices"
+      ],
+      "pharma": [
+        "USFDA"
+      ],
+      "healthcare": [
+        "USFDA"
+      ],
+      "fmcg": [
+        "inflation"
+      ],
+      "consumer": [
+        "inflation"
+      ],
+      "metal": [
+        "commodity prices"
+      ],
+      "mining": [
+        "commodity prices"
+      ],
+      "steel": [
+        "commodity prices"
+      ],
+      "infrastructure": [
+        "government infrastructure policy"
+      ],
+      "construction": [
+        "government infrastructure policy"
+      ],
+      "cement": [
+        "government infrastructure policy"
+      ],
+      "export": [
+        "USD/INR",
+        "tariffs"
+      ],
+      "textile": [
+        "tariffs"
+      ],
+      "real estate": [
+        "interest rates"
+      ]
     },
     "tier_1_publishers": [
       "morningstar",
@@ -130,7 +188,10 @@
       "Nifty 50": "^NSEI",
       "BSE 500": "BSE500T"
     },
-    "bse_tri_proxy_tickers": ["HDFCBSE500.NS", "BSE500IETF.NS"],
+    "bse_tri_proxy_tickers": [
+      "HDFCBSE500.NS",
+      "BSE500IETF.NS"
+    ],
     "bse_api": "https://api.bseindia.com/BseIndiaAPI/api/ProduceCSVForDate/w",
     "nifty_tri_urls": [
       "https://www.niftyindices.com/BackPage/getTotalReturnIndexString",
@@ -190,12 +251,30 @@
       "history_url": "https://portal.amfiindia.com/DownloadNAVHistoryReport_Po.aspx",
       "window_days": 15,
       "periods": [
-        ["return_1m", 1],
-        ["return_3m", 3],
-        ["return_6m", 6],
-        ["return_1y", 12],
-        ["return_3y", 36],
-        ["return_5y", 60]
+        [
+          "return_1m",
+          1
+        ],
+        [
+          "return_3m",
+          3
+        ],
+        [
+          "return_6m",
+          6
+        ],
+        [
+          "return_1y",
+          12
+        ],
+        [
+          "return_3y",
+          36
+        ],
+        [
+          "return_5y",
+          60
+        ]
       ],
       "annual_days": 365.2425
     },
@@ -224,6 +303,11 @@
     "amfi_nav": {
       "url": "https://portal.amfiindia.com/spages/NAVAll.txt",
       "timeout_seconds": 30
+    },
+    "amfi_fund_managers": {
+      "details_url": "https://api.tigzig.com/mf/v1/details",
+      "batch_size": 50,
+      "timeout_seconds": 20
     }
   },
   "scheduler": {

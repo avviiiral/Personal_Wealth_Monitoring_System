@@ -24,6 +24,62 @@ class APMIPMSDiscoveryService:
     SOURCE = "APMI"
     REPORT_URL = APMI_CONFIG.get("report_url", "")
     PERFORMANCE_PERIODS = tuple(APMI_CONFIG.get("performance_periods", []))
+    INSIGHT_URL = "https://www.apmiindia.org/apmi/IaInsight.htm"
+
+    @classmethod
+    def manager_details_url(cls, iaid):
+        return f"{cls.INSIGHT_URL}?IAID={iaid}"
+
+    @classmethod
+    def _extract_fund_manager_names(cls, html):
+        """Extract individual names only from APMI's Fund Manager Details section."""
+        soup = BeautifulSoup(html, "html.parser")
+        headings = soup.find_all(re.compile(r"^h[1-6]$"))
+        section_index = next(
+            (
+                index for index, heading in enumerate(headings)
+                if cls._text(heading.get_text(" ", strip=True)).casefold() == "fund manager details"
+            ),
+            None,
+        )
+        if section_index is None:
+            return []
+
+        names = []
+        stop_sections = {
+            "period-wise performance",
+            "period wise performance",
+            "ia vs. benchmark performance",
+            "turnover details",
+        }
+        for heading in headings[section_index + 1:]:
+            name = cls._text(heading.get_text(" ", strip=True))
+            normalized = name.casefold()
+            if normalized in stop_sections:
+                break
+            if not name or normalized == "fund manager details":
+                continue
+            if len(name) > 120 or re.search(r"\b(?:aum|benchmark|strategy name|pms provider)\b", normalized):
+                continue
+            if name not in names:
+                names.append(name)
+        return names
+
+    @classmethod
+    def _fetch_fund_manager_details(cls, iaid):
+        """Fetch APMI's individual IA detail page and return named managers."""
+        url = cls.manager_details_url(iaid)
+        try:
+            response = requests.get(
+                url,
+                headers=cls._headers(),
+                timeout=cls.APMI_CONFIG.get("manager_timeout_seconds", 20),
+            )
+            response.raise_for_status()
+            names = cls._extract_fund_manager_names(response.text)
+            return {"fund_manager": "; ".join(names), "website": url} if names else None
+        except requests.RequestException:
+            return None
 
     @staticmethod
     def _headers():
@@ -168,6 +224,37 @@ class APMIPMSDiscoveryService:
                 )
             }
 
+            product_ids = [product.id for product in product_by_identity.values()]
+            populated_manager_ids = set(
+                PMSProduct.objects.filter(product_id__in=product_ids)
+                .exclude(fund_manager__isnull=True)
+                .exclude(fund_manager="")
+                .values_list("product_id", flat=True)
+            )
+            manager_records = []
+            for record in records:
+                if not record["iaid"]:
+                    continue
+                identity = f"PMS:APMI:{record['provider'].upper()}:{record['iaid']}"
+                product = product_by_identity.get(identity)
+                if product and product.id not in populated_manager_ids:
+                    manager_records.append(record)
+
+            manager_details_by_iaid = {}
+            manager_iaids = list(dict.fromkeys(record["iaid"] for record in manager_records))
+            if manager_iaids:
+                from concurrent.futures import ThreadPoolExecutor
+
+                with ThreadPoolExecutor(max_workers=4) as executor:
+                    futures = {
+                        executor.submit(cls._fetch_fund_manager_details, iaid): iaid
+                        for iaid in manager_iaids
+                    }
+                    for future, iaid in futures.items():
+                        details = future.result()
+                        if details:
+                            manager_details_by_iaid[iaid] = details
+
             pms_products = []
             snapshots = []
             for record in records:
@@ -217,6 +304,31 @@ class APMIPMSDiscoveryService:
                 ],
                 unique_fields=["product"],
             )
+
+            # Preserve existing person attribution; populate only missing names.
+            pms_by_product_id = {
+                item.product_id: item
+                for item in PMSProduct.objects.filter(product_id__in=product_ids)
+            }
+            manager_updates = []
+            for record in manager_records:
+                details = manager_details_by_iaid.get(record["iaid"])
+                if not details:
+                    continue
+                identity = f"PMS:APMI:{record['provider'].upper()}:{record['iaid']}"
+                product = product_by_identity.get(identity)
+                pms_product = pms_by_product_id.get(product.id) if product else None
+                if pms_product:
+                    pms_product.fund_manager = details["fund_manager"]
+                    pms_product.fund_manager_website = details["website"]
+                    manager_updates.append(pms_product)
+            if manager_updates:
+                PMSProduct.objects.bulk_update(
+                    manager_updates,
+                    ["fund_manager", "fund_manager_website"],
+                    batch_size=500,
+                )
+
             PerformanceSnapshot.objects.bulk_create(
                 snapshots,
                 batch_size=1000,
@@ -238,6 +350,7 @@ class APMIPMSDiscoveryService:
                 "source_reference": cls.REPORT_URL,
                 "report_date": report_date.isoformat(),
                 "records_seen": len(records),
+                "fund_managers_enriched": len(manager_updates),
                 "mode": "bulk_upsert",
             }
             run.finished_at = timezone.now()
@@ -247,6 +360,7 @@ class APMIPMSDiscoveryService:
                 "updated": updated,
                 "failed": failed,
                 "report_date": report_date.isoformat(),
+                "fund_managers_enriched": len(manager_updates),
                 "source": "APMI",
             }
         except Exception as exc:

@@ -1,7 +1,6 @@
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 from unittest.mock import Mock, patch
-from datetime import timedelta
 
 from django.contrib.auth.models import User
 from django.test import TestCase
@@ -380,6 +379,39 @@ class WatchListTests(TestCase):
 
 
 class BenchmarkPerformanceTests(TestCase):
+    @patch("watchlist.services.performance.requests.get")
+    def test_idcw_performance_refresh_clears_nav_returns_without_history_requests(self, mocked_get):
+        product = InvestmentProduct.objects.create(
+            product_type=ProductType.MUTUAL_FUND,
+            name="IDCW Performance Refresh Fund",
+            external_identifier="IDCW-PERFORMANCE",
+            identity_key="MUTUAL_FUND:SCHEME:IDCW-PERFORMANCE",
+            source="AMFI",
+        )
+        MutualFundProduct.objects.create(
+            product=product,
+            scheme_code="IDCW-PERFORMANCE",
+            option="IDCW",
+        )
+        snapshot = PerformanceSnapshot.objects.create(
+            product=product,
+            date="2026-09-28",
+            nav_or_value=Decimal("10"),
+            return_1m=Decimal("5"),
+            return_1y=Decimal("12"),
+            cagr=Decimal("8"),
+            source="AMFI",
+        )
+
+        result = AMFIPerformanceService.refresh()
+
+        snapshot.refresh_from_db()
+        mocked_get.assert_not_called()
+        self.assertIsNone(snapshot.return_1m)
+        self.assertIsNone(snapshot.return_1y)
+        self.assertIsNone(snapshot.cagr)
+        self.assertEqual(result["history_requests"], 0)
+
     def test_bse500_csv_validation(self):
         csv_text = "Date,Close\n2021-01-01,100.0\n2021-01-04,101.5\n"
         points = BenchmarkPerformanceService._load_bse_csv(csv_text)

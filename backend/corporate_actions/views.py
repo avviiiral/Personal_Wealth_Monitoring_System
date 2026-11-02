@@ -6,7 +6,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from users.permissions import CanWriteFinancialData
-from .models import (\n    CorporateAction, CorporateActionStatus, CorporateActionReconciliationStatus,\n    CorporateActionReconciliation, CorporateActionNotification,\n)
+from .models import (\n    CorporateAction, CorporateActionStatus, CorporateActionReconciliationStatus,\n    CorporateActionExposure,\n    CorporateActionReconciliation, CorporateActionNotification,\n)
 from .services import resolve_corporate_action_candidates, update_notification_state
 
 
@@ -210,3 +210,80 @@ def corporate_action_reconciliation_update(request, reconciliation_id):
         owner=request.user, action=reconciliation.action
     ).update(reviewed=True, dismissed=(decision == "DISMISSED"), updated_at=timezone.now())
     return Response({"id": reconciliation.id, "status": reconciliation.status})
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated, CanWriteFinancialData])
+def corporate_action_add_transaction(request, reconciliation_id):
+    """Create an investor transaction only for confirmed direct holdings after explicit review."""
+    from datetime import date
+    from decimal import Decimal, InvalidOperation
+    from investments.models import Asset, Transaction, TransactionType
+    from users.permissions import require_active_family
+    from portfolio.serializers import TransactionSerializer
+    from portfolio.views import HoldingCalculationEngine, PortfolioPositionEngine
+
+    reconciliation = CorporateActionReconciliation.objects.filter(
+        owner=request.user, id=reconciliation_id
+    ).select_related("action").first()
+    if reconciliation is None:
+        return Response({"detail": "Reconciliation not found."}, status=404)
+    action = reconciliation.action
+    exposure = CorporateActionExposure.objects.filter(
+        action=action, owner=request.user, exposure_type="DIRECT"
+    ).first()
+    if exposure is None:
+        return Response({"detail": "Indirect exposure cannot be booked as a direct equity transaction."}, status=400)
+    if action.status != CorporateActionStatus.CONFIRMED:
+        return Response({"detail": "The corporate action must be verified and confirmed before a transaction can be recorded."}, status=400)
+
+    transaction_date = action.payment_date or action.ex_date
+    quantity = request.data.get("quantity")
+    amount = request.data.get("amount", "0")
+    try:
+        quantity = Decimal(str(quantity))
+        amount = Decimal(str(amount))
+        if quantity <= 0 or amount < 0:
+            raise ValueError
+    except (InvalidOperation, TypeError, ValueError):
+        return Response({"detail": "Provide a positive quantity and a non-negative amount."}, status=400)
+
+    asset = Asset.objects.filter(id=exposure.investment_id, owner=request.user, is_active=True).first()
+    if asset is None:
+        return Response({"detail": "Direct security asset is no longer available to this user."}, status=404)
+
+    tx_type = TransactionType.DIVIDEND if action.action_type == "CASH_DIVIDEND" else (
+        TransactionType.BONUS if action.action_type in {"BONUS", "STOCK_DIVIDEND"} else TransactionType.SPLIT
+    )
+    family = require_active_family(request.user)
+    source_key = f"corp-action:{action.id}:{reconciliation.id}"
+    if Transaction.objects.filter(family=family, source_key=source_key).exists():
+        return Response({"detail": "This corporate action transaction has already been recorded."}, status=409)
+
+    payload = {
+        "asset": asset.id,
+        "transaction_date": request.data.get("transaction_date", transaction_date.isoformat()),
+        "transaction_type": tx_type,
+        "quantity": str(quantity),
+        "price_per_unit": str(request.data.get("price_per_unit", "0")),
+        "amount": str(amount),
+        "fees": str(request.data.get("fees", "0")),
+        "notes": f"Corporate action #{action.id}: {action.security_name}",
+        "source": "OTHER",
+        "source_key": source_key,
+    }
+    serializer = TransactionSerializer(data=payload, context={"request": request})
+    if not serializer.is_valid():
+        return Response(serializer.errors, status=400)
+    with transaction.atomic():
+        tx = serializer.save(owner=request.user, family=family)
+        reconciliation.status = CorporateActionReconciliationStatus.COMPLETED
+        reconciliation.matched_transaction_ids = [tx.id]
+        reconciliation.reviewed_at = timezone.now()
+        reconciliation.reviewed_by = request.user
+        reconciliation.save(update_fields=["status", "matched_transaction_ids", "reviewed_at", "reviewed_by", "updated_at"])
+        CorporateActionNotification.objects.filter(owner=request.user, action=action).update(reviewed=True, dismissed=False, updated_at=timezone.now())
+        HoldingCalculationEngine.rebuild_holding(asset)
+        PortfolioPositionEngine.rebuild_all_for_user(request.user)
+    return Response({"transaction_id": tx.id, "reconciliation_status": reconciliation.status}, status=201)
+
+

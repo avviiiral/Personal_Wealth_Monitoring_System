@@ -38,7 +38,7 @@
         </div>
 
         <div class="filters">
-          <div class="filter-field" *ngIf="selectedReport !== 'watch-list'">
+          <div class="filter-field" *ngIf="selectedReport !== 'watch-list' && selectedReport !== 'liquid-position-funds'">
             <label>Family Member</label>
             <select [(ngModel)]="selectedFamilyMember" (ngModelChange)="onFamilyChange()">
               <option value="">All Families</option>
@@ -80,7 +80,7 @@
             <input type="date" [(ngModel)]="toDate">
           </div>
 
-          <div class="filter-field" *ngIf="selectedReport === 'market-cap' || selectedReport === 'holding-matrix'">
+          <div class="filter-field" *ngIf="selectedReport === 'market-cap' || selectedReport === 'holding-matrix' || selectedReport === 'liquid-position-funds'">
             <label>As of Date</label>
             <input type="date" [(ngModel)]="selectedReportDate" (ngModelChange)="onReportDateChange()">
           </div>

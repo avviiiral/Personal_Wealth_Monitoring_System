@@ -90,6 +90,7 @@ MIDDLEWARE = [
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
+    'config.performance_middleware.ApiPerformanceLoggingMiddleware',
     'config.middleware.AuthenticatedApiCacheMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
@@ -199,7 +200,7 @@ CACHES = {
     }
 }
 
-REST_FRAMEWORK = {
+# Log API requests slower than this threshold with total and database timings.\nAPI_SLOW_REQUEST_THRESHOLD_MS = max(0, _env_int('API_SLOW_REQUEST_THRESHOLD_MS', 500))\n\nREST_FRAMEWORK = {
     'DEFAULT_PERMISSION_CLASSES': ['rest_framework.permissions.IsAuthenticated'],
     'DEFAULT_AUTHENTICATION_CLASSES': ['rest_framework.authentication.SessionAuthentication'],
 }

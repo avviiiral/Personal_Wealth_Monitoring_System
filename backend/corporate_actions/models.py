@@ -113,3 +113,74 @@ class CorporateAction(models.Model):
 
     def __str__(self):
         return f"{self.security_name} — {self.get_action_type_display()} ({self.ex_date})"
+
+
+
+class CorporateActionReconciliationStatus(models.TextChoices):
+    PENDING = "PENDING", "Pending review"
+    ALREADY_RECORDED = "ALREADY_RECORDED", "Already recorded"
+    COMPLETED = "COMPLETED", "Completed"
+    DISMISSED = "DISMISSED", "Dismissed"
+    MANUAL_REVIEW = "MANUAL_REVIEW", "Manual verification required"
+
+
+class CorporateActionExposure(models.Model):
+    """Snapshot of direct or indirect exposure when an event is matched."""
+
+    action = models.ForeignKey(CorporateAction, on_delete=models.CASCADE, related_name="exposures")
+    owner = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="corporate_action_exposures")
+    family_id_snapshot = models.PositiveBigIntegerField(null=True, blank=True, db_index=True)
+    exposure_type = models.CharField(max_length=20, choices=[("DIRECT", "Direct"), ("MUTUAL_FUND", "Mutual fund underlying"), ("PMS", "PMS underlying")])
+    investment_name = models.CharField(max_length=300)
+    investment_id = models.PositiveBigIntegerField(null=True, blank=True)
+    quantity = models.DecimalField(max_digits=24, decimal_places=8, null=True, blank=True)
+    holding_weight = models.DecimalField(max_digits=12, decimal_places=6, null=True, blank=True)
+    snapshot_date = models.DateField(null=True, blank=True)
+    is_current = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["action", "owner", "exposure_type", "investment_name", "investment_id"], name="uniq_corp_action_exposure"),
+        ]
+        indexes = [
+            models.Index(fields=["owner", "action"], name="corp_exposure_owner_idx"),
+            models.Index(fields=["family_id_snapshot", "owner"], name="corp_exposure_family_idx"),
+        ]
+
+
+class CorporateActionReconciliation(models.Model):
+    """Per-user decision/state; unique action+owner makes repeated scans idempotent."""
+
+    action = models.ForeignKey(CorporateAction, on_delete=models.CASCADE, related_name="reconciliations")
+    owner = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="corporate_action_reconciliations")
+    family_id_snapshot = models.PositiveBigIntegerField(null=True, blank=True, db_index=True)
+    status = models.CharField(max_length=24, choices=CorporateActionReconciliationStatus.choices, default=CorporateActionReconciliationStatus.PENDING)
+    matched_transaction_ids = models.JSONField(default=list, blank=True)
+    suggested_quantity = models.DecimalField(max_digits=24, decimal_places=8, null=True, blank=True)
+    reviewed_at = models.DateTimeField(null=True, blank=True)
+    reviewed_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="reviewed_corporate_action_reconciliations")
+    notes = models.TextField(blank=True, default="")
+    idempotency_key = models.CharField(max_length=64, unique=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=["action", "owner"], name="uniq_corp_action_reconciliation")]
+        indexes = [models.Index(fields=["owner", "status", "-updated_at"], name="corp_recon_owner_status_idx")]
+
+
+class CorporateActionNotification(models.Model):
+    """Deduplicated actionable notification for an individual user."""
+
+    action = models.ForeignKey(CorporateAction, on_delete=models.CASCADE, related_name="notifications")
+    owner = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="corporate_action_notifications")
+    reconciliation = models.ForeignKey(CorporateActionReconciliation, on_delete=models.CASCADE, related_name="notifications")
+    reviewed = models.BooleanField(default=False)
+    dismissed = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=["action", "owner"], name="uniq_corp_action_notification")]
+        indexes = [models.Index(fields=["owner", "reviewed", "dismissed", "-created_at"], name="corp_notif_inbox_idx")]

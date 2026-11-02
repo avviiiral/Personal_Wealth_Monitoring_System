@@ -62,8 +62,8 @@ from django.utils import timezone
 from django.contrib.auth import get_user_model
 from users.models import FamilyMembership
 
-from investments.models import Asset, Transaction, TransactionType
-from mutual_funds.models import MutualFundScheme, MutualFundTransaction, MutualFundTransactionType
+from investments.models import Asset, Transaction, TransactionType, AssetUnderlyingHolding
+from mutual_funds.models import MutualFundScheme, MutualFundTransaction
 from mutual_funds.underlying_models import MutualFundUnderlying
 from .models import (
     CorporateActionExposure,
@@ -124,6 +124,12 @@ def _latest_mf_underlying(action):
     if not latest:
         return snapshots.none()
     return snapshots.filter(portfolio_date=latest).select_related("scheme")
+
+
+def _latest_pms_underlying(action):
+    rows = AssetUnderlyingHolding.objects.filter(isin__iexact=action.isin) if action.isin else AssetUnderlyingHolding.objects.none()
+    latest = rows.order_by("-portfolio_date").values_list("portfolio_date", flat=True).first()
+    return rows.filter(portfolio_date=latest).select_related("asset", "family") if latest else rows.none()
 
 
 def discover_exposures_and_reconcile(action):
@@ -196,6 +202,27 @@ def discover_exposures_and_reconcile(action):
             _create_reconciliation(
                 action, user, CorporateActionReconciliationStatus.MANUAL_REVIEW,
                 notes="Indirect mutual-fund underlying exposure only. Corporate action is reflected inside the fund; do not create a direct equity transaction.",
+            )
+            mf_count += 1
+    for holding in _latest_pms_underlying(action).iterator():
+        # This model represents disclosed underlying positions associated with
+        # an asset/family. Attribute the exposure only to known active family
+        # members; never create a direct equity transaction for it.
+        family_id = holding.family_id
+        member_ids = FamilyMembership.objects.filter(family_group_id=family_id).values_list("profile__user_id", flat=True) if family_id else []
+        for user in get_user_model().objects.filter(id__in=list(member_ids), is_active=True):
+            CorporateActionExposure.objects.get_or_create(
+                action=action, owner=user, exposure_type="PMS",
+                investment_name=holding.asset.name, investment_id=holding.asset_id,
+                defaults={
+                    "family_id_snapshot": family_id,
+                    "holding_weight": getattr(holding, "percentage_of_nav", None),
+                    "snapshot_date": holding.portfolio_date,
+                },
+            )
+            _create_reconciliation(
+                action, user, CorporateActionReconciliationStatus.MANUAL_REVIEW,
+                notes="Indirect PMS underlying exposure only. Review within the PMS statement; do not create a direct stock transaction.",
             )
             mf_count += 1
     return {"direct": direct_count, "mutual_fund": mf_count, "notifications": notification_count}

@@ -1,0 +1,88 @@
+<section class="corporate-actions-page">
+  <header class="page-header">
+    <div>
+      <p class="eyebrow">PORTFOLIO INTELLIGENCE</p>
+      <h1>Corporate Actions</h1>
+      <p class="subtitle">Monitor exchange announcements and reconcile actions against your portfolio.</p>
+    </div>
+    <button class="refresh-button" type="button" (click)="load()" [disabled]="loading">
+      <span aria-hidden="true">↻</span> Refresh
+    </button>
+  </header>
+
+  <div class="summary-grid">
+    <article class="summary-card"><span>Total notifications</span><strong>{{ total }}</strong><small>Across your portfolio exposures</small></article>
+    <article class="summary-card"><span>Pending in this view</span><strong>{{ pendingCount }}</strong><small>Require eligibility review</small></article>
+    <article class="summary-card"><span>Direct exposure</span><strong>{{ directCount }}</strong><small>Potential investor-level action</small></article>
+    <article class="summary-card"><span>Indirect exposure</span><strong>{{ indirectCount }}</strong><small>Mutual-fund holdings only</small></article>
+  </div>
+
+  <nav class="filter-bar" aria-label="Filter corporate actions">
+    <button *ngFor="let filter of filters" type="button" [class.active]="selectedFilter === filter.value"
+      (click)="selectFilter(filter.value)">{{ filter.label }}</button>
+  </nav>
+
+  <div class="state-panel" *ngIf="loading">Loading corporate action notifications…</div>
+  <div class="error-panel" *ngIf="error">{{ error }}</div>
+  <div class="state-panel" *ngIf="!loading && !error && items.length === 0">
+    <strong>No corporate action notifications</strong>
+    <p>New exchange announcements matched to your portfolio will appear here after the scheduled monitoring run.</p>
+  </div>
+
+  <div class="action-list" *ngIf="!loading && items.length">
+    <article class="action-card" *ngFor="let item of items; trackBy: trackById">
+      <div class="action-topline">
+        <div>
+          <div class="action-tags">
+            <span class="type-tag">{{ item.action.action_type.replace('_', ' ') }}</span>
+            <span class="status-tag" [attr.data-status]="item.reconciliation.status">{{ item.reconciliation.status.replace('_', ' ') }}</span>
+            <span class="exposure-tag">{{ item.direct_exposure ? 'Direct exposure' : 'Indirect exposure' }}</span>
+          </div>
+          <h2>{{ item.action.security_name }}</h2>
+          <p class="security-meta">{{ item.action.symbol || '—' }} <span *ngIf="item.action.isin">· {{ item.action.isin }}</span> <span *ngIf="item.action.exchange">· {{ item.action.exchange }}</span></p>
+        </div>
+        <a *ngIf="item.action.source_reference" [href]="item.action.source_reference" target="_blank" rel="noopener noreferrer">Source ↗</a>
+      </div>
+
+      <div class="event-details">
+        <div><span>Ex-date</span><strong>{{ item.action.ex_date | date:'dd MMM yyyy' }}</strong></div>
+        <div><span>Record date</span><strong>{{ item.action.record_date ? (item.action.record_date | date:'dd MMM yyyy') : 'Not available' }}</strong></div>
+        <div><span>Payment date</span><strong>{{ item.action.payment_date ? (item.action.payment_date | date:'dd MMM yyyy') : 'Not applicable / unavailable' }}</strong></div>
+        <div><span>Ratio / amount</span><strong>{{ item.action.old_units && item.action.new_units ? (item.action.old_units + ':' + item.action.new_units) : (item.action.cash_per_unit ? ('₹' + item.action.cash_per_unit) : 'Verify source') }}</strong></div>
+      </div>
+
+      <div class="exposure-list">
+        <span class="section-label">Affected investments</span>
+        <div class="exposure-row" *ngFor="let exposure of item.exposures">
+          <span><b>{{ exposure.investment_name }}</b><small>{{ exposure.type === 'DIRECT' ? 'Direct security holding' : 'Underlying fund exposure' }}</small></span>
+          <span *ngIf="exposure.holding_weight">{{ exposure.holding_weight }}% of fund NAV</span>
+        </div>
+      </div>
+
+      <p class="safety-note" *ngIf="!item.direct_exposure">
+        This is indirect exposure through an investment product. The corporate action is handled within that product. Do not add a direct equity transaction.
+      </p>
+      <p class="safety-note" *ngIf="item.direct_exposure && item.reconciliation.status === 'PENDING'">
+        Verify the official entitlement and depository statement before recording a transaction. A missing transaction alone does not prove shares or cash are owed.
+      </p>
+      <p class="safety-note" *ngIf="item.reconciliation.notes">{{ item.reconciliation.notes }}</p>
+
+      <footer class="action-footer">
+        <button type="button" class="secondary" (click)="markReviewed(item)" [disabled]="busyId === item.id || item.reviewed">
+          {{ item.reviewed ? 'Reviewed' : 'Mark reviewed' }}
+        </button>
+        <button type="button" class="secondary" (click)="markAlreadyRecorded(item)"
+          *ngIf="item.direct_exposure && item.reconciliation.status === 'PENDING'" [disabled]="busyId === item.id">
+          Already recorded
+        </button>
+        <button type="button" class="quiet-danger" (click)="dismiss(item)" [disabled]="busyId === item.id">Dismiss</button>
+      </footer>
+    </article>
+  </div>
+
+  <footer class="pagination" *ngIf="total > pageSize">
+    <span>Showing {{ (page - 1) * pageSize + 1 }}–{{ min(page * pageSize, total) }} of {{ total }}</span>
+    <button type="button" (click)="page = page - 1; load()" [disabled]="page <= 1 || loading">Previous</button>
+    <button type="button" (click)="page = page + 1; load()" [disabled]="page * pageSize >= total || loading">Next</button>
+  </footer>
+</section>

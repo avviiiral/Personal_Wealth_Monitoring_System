@@ -1,14 +1,33 @@
-from datetime import date
-from decimal import Decimal
+import hashlib
+import logging
+from datetime import date, timedelta
 
-from .models import CorporateAction, CorporateActionStatus, RATIO_ACTIONS
+from django.contrib.auth import get_user_model
+from django.db.models import Max, Q
+from django.utils import timezone
+
+from users.permissions import get_active_family_group_id
+from users.models import FamilyMembership
+from investments.models import Asset, Transaction, TransactionType, AssetUnderlyingHolding
+from mutual_funds.models import MutualFundTransaction
+from mutual_funds.underlying_models import MutualFundUnderlying
+
+from .models import (
+    CorporateAction,
+    CorporateActionStatus,
+    CorporateActionExposure,
+    CorporateActionNotification,
+    CorporateActionReconciliation,
+    CorporateActionReconciliationStatus,
+    RATIO_ACTIONS,
+)
+
+
+logger = logging.getLogger(__name__)
 
 
 def resolve_corporate_action_candidates(*, owner, isin="", symbol="", exchange="", event_date=None):
-    """
-    Return exact-identifier candidates only. Names and price/quantity patterns
-    are deliberately not sufficient to auto-identify a security or confirm an action.
-    """
+    """Return exact-identifier candidates; names alone are never sufficient for matching."""
     isin = (isin or "").strip().upper()
     symbol = (symbol or "").strip().upper()
     exchange = (exchange or "").strip().upper()
@@ -30,13 +49,10 @@ def resolve_corporate_action_candidates(*, owner, isin="", symbol="", exchange="
 
 
 def quantity_multiplier(*, owner, isin="", symbol="", exchange="", transaction_date, valuation_date):
-    """
-    Product of confirmed quantity ratios effective after the transaction and
-    on/before valuation date. This is a reusable calculation primitive; callers
-    must ensure market prices use a compatible adjustment convention.
-    """
+    """Multiply confirmed ratio actions effective after the transaction and through valuation date."""
     if valuation_date < transaction_date:
-        return Decimal("1")
+        return __import__("decimal").Decimal("1")
+    from decimal import Decimal
     actions = resolve_corporate_action_candidates(
         owner=owner, isin=isin, symbol=symbol, exchange=exchange, event_date=valuation_date
     ).filter(
@@ -52,34 +68,11 @@ def quantity_multiplier(*, owner, isin="", symbol="", exchange="", transaction_d
     return multiplier
 
 
-import hashlib
-import logging
-from datetime import timedelta
-
-from django.db.models import Max
-from django.utils import timezone
-from django.contrib.auth import get_user_model
-from users.models import FamilyMembership
-
-from investments.models import Asset, Transaction, TransactionType, AssetUnderlyingHolding
-from mutual_funds.models import MutualFundTransaction
-from mutual_funds.underlying_models import MutualFundUnderlying
-from .models import (
-    CorporateActionExposure,
-    CorporateActionNotification,
-    CorporateActionReconciliation,
-    CorporateActionReconciliationStatus,
-)
-
-logger = logging.getLogger(__name__)
-
-
 def _idempotency_key(action_id, owner_id):
     return hashlib.sha256(f"corporate-action:{action_id}:owner:{owner_id}".encode()).hexdigest()
 
 
 def _user_family_id(user):
-    from users.permissions import get_active_family_group_id
     return get_active_family_group_id(user)
 
 
@@ -97,7 +90,11 @@ def _create_reconciliation(action, user, status_value, transaction_ids=None, sug
             "idempotency_key": _idempotency_key(action.id, user.id),
         },
     )
-    if status_value in {CorporateActionReconciliationStatus.PENDING, CorporateActionReconciliationStatus.ALREADY_RECORDED, CorporateActionReconciliationStatus.COMPLETED}:
+    if status_value in {
+        CorporateActionReconciliationStatus.PENDING,
+        CorporateActionReconciliationStatus.ALREADY_RECORDED,
+        CorporateActionReconciliationStatus.COMPLETED,
+    }:
         CorporateActionNotification.objects.get_or_create(
             action=action,
             owner=user,
@@ -118,107 +115,124 @@ def _direct_exposures(action):
 
 
 def _latest_mf_underlying(action):
-    snapshots = MutualFundUnderlying.objects.filter(isin__iexact=action.isin) if action.isin else MutualFundUnderlying.objects.none()
-    latest_by_scheme = snapshots.values("scheme_id").annotate(latest_date=Max("portfolio_date"))
+    rows = MutualFundUnderlying.objects.filter(isin__iexact=action.isin) if action.isin else MutualFundUnderlying.objects.none()
+    latest_by_scheme = rows.values("scheme_id").annotate(latest_date=Max("portfolio_date"))
     latest_filters = None
-    from django.db.models import Q
-    for row in latest_by_scheme:
-        condition = Q(scheme_id=row["scheme_id"], portfolio_date=row["latest_date"])
+    for item in latest_by_scheme:
+        condition = Q(scheme_id=item["scheme_id"], portfolio_date=item["latest_date"])
         latest_filters = condition if latest_filters is None else latest_filters | condition
     if latest_filters is None:
-        return snapshots.none()
-    return snapshots.filter(latest_filters).select_related("scheme")
+        return rows.none()
+    return rows.filter(latest_filters).select_related("scheme")
 
 
-def _latest_pms_underlying(action):
-    rows = AssetUnderlyingHolding.objects.filter(isin__iexact=action.isin) if action.isin else AssetUnderlyingHolding.objects.none()
-    return rows.select_related("asset", "family")
+def _pms_underlying(action):
+    return (
+        AssetUnderlyingHolding.objects.filter(isin__iexact=action.isin).select_related("asset", "family")
+        if action.isin else AssetUnderlyingHolding.objects.none()
+    )
 
 
 def discover_exposures_and_reconcile(action):
-    """Map exact-ISIN direct and current MF underlying exposures; never convert indirect exposure into stock ownership."""
+    """Map exact-ISIN direct/MF/PMS exposure and create idempotent per-user reconciliation state."""
     if not action.isin:
-        return {"direct": 0, "mutual_fund": 0, "notifications": 0}
+        return {"direct": 0, "mutual_fund": 0, "pms": 0, "notifications": 0}
 
-    direct_count = mf_count = notification_count = 0
+    direct_count = mf_count = pms_count = notification_count = 0
     for asset in _direct_exposures(action).iterator():
-        users = [asset.owner] if asset.owner_id else []
         if asset.family_id:
-            member_ids = FamilyMembership.objects.filter(family_group_id=asset.family_id).values_list("profile__user_id", flat=True)
-            users = list(get_user_model().objects.filter(id__in=member_ids, is_active=True))
+            member_ids = FamilyMembership.objects.filter(
+                family_group_id=asset.family_id
+            ).values_list("profile__user_id", flat=True)
+            users = get_user_model().objects.filter(id__in=member_ids, is_active=True)
+        else:
+            users = [asset.owner] if asset.owner_id and asset.owner.is_active else []
+
         for user in users:
-            if not user or not user.is_active:
+            if user is None:
                 continue
-            family_id = asset.family_id
+            family_id = asset.family_id or _user_family_id(user)
             CorporateActionExposure.objects.get_or_create(
                 action=action, owner=user, exposure_type="DIRECT",
                 investment_name=asset.name, investment_id=asset.id,
                 defaults={"family_id_snapshot": family_id, "snapshot_date": timezone.localdate()},
             )
-            txs = Transaction.objects.filter(owner=user, asset=asset, transaction_date__lt=action.ex_date)
-            if family_id:
-                txs = txs.filter(family_id=family_id)
-            # Explicit matching event transaction means the action is likely already booked.
-            expected_type = TransactionType.DIVIDEND if "DIVIDEND" in action.action_type else (
-                TransactionType.BONUS if action.action_type in {"BONUS", "STOCK_DIVIDEND"} else TransactionType.SPLIT
-            )
-            matching = Transaction.objects.filter(
-                owner=user, asset=asset, transaction_date__gte=action.ex_date,
-                transaction_type=expected_type,
+            prior_transactions = Transaction.objects.filter(
+                owner=user, asset=asset, transaction_date__lt=action.ex_date
             )
             if family_id:
-                matching = matching.filter(family_id=family_id)
-            if matching.exists():
-                ids = list(matching.values_list("id", flat=True)[:50])
-                _create_reconciliation(action, user, CorporateActionReconciliationStatus.ALREADY_RECORDED, ids)
-            else:
-                held = txs.exists()
-                # A dated BUY/SIP history is only a screening signal, not a proof of entitlement.
-                # If no eligible quantity can be reconstructed safely, route to manual verification.
-                target_status = CorporateActionReconciliationStatus.PENDING if held else CorporateActionReconciliationStatus.MANUAL_REVIEW
-                reconciliation = _create_reconciliation(
-                    action, user, target_status,
-                    notes="Direct security exposure found. Verify eligible quantity and depository/corporate-action statement before recording.",
+                prior_transactions = prior_transactions.filter(family_id=family_id)
+            expected_type = (
+                TransactionType.DIVIDEND if action.action_type == "CASH_DIVIDEND"
+                else TransactionType.BONUS if action.action_type in {"BONUS", "STOCK_DIVIDEND"}
+                else TransactionType.SPLIT if action.action_type in {"STOCK_SPLIT", "REVERSE_SPLIT"}
+                else None
+            )
+            if expected_type is not None:
+                existing = Transaction.objects.filter(
+                    owner=user, asset=asset,
+                    transaction_date__gte=action.ex_date,
+                    transaction_type=expected_type,
                 )
-                if target_status == CorporateActionReconciliationStatus.PENDING:
+                if family_id:
+                    existing = existing.filter(family_id=family_id)
+            else:
+                existing = Transaction.objects.none()
+
+            if existing.exists():
+                _create_reconciliation(
+                    action, user, CorporateActionReconciliationStatus.ALREADY_RECORDED,
+                    list(existing.values_list("id", flat=True)[:50]),
+                )
+            else:
+                # Only create an actionable record where dated acquisition history exists.
+                # Entitlement quantity still needs investor verification.
+                status_value = (
+                    CorporateActionReconciliationStatus.PENDING
+                    if prior_transactions.exists()
+                    else CorporateActionReconciliationStatus.MANUAL_REVIEW
+                )
+                _create_reconciliation(
+                    action, user, status_value,
+                    notes="Direct security exposure found. Verify eligible holdings and the depository statement before booking.",
+                )
+                if status_value == CorporateActionReconciliationStatus.PENDING:
                     notification_count += 1
             direct_count += 1
 
     for underlying in _latest_mf_underlying(action).iterator():
         scheme = underlying.scheme
-        family_id = scheme.family_id
-        # Determine owners with actual scheme transactions in this family.
-        transactions = MutualFundTransaction.objects.filter(scheme=scheme)
-        if family_id:
-            transactions = transactions.filter(family_id=family_id)
-        owners = transactions.exclude(owner__isnull=True).values_list("owner_id", flat=True).distinct()
-        for user in get_user_model().objects.filter(id__in=list(owners), is_active=True):
+        fund_transactions = MutualFundTransaction.objects.filter(scheme=scheme)
+        if scheme.family_id:
+            fund_transactions = fund_transactions.filter(family_id=scheme.family_id)
+        owner_ids = fund_transactions.exclude(owner__isnull=True).values_list("owner_id", flat=True).distinct()
+        users = get_user_model().objects.filter(id__in=owner_ids, is_active=True)
+        for user in users:
             CorporateActionExposure.objects.get_or_create(
                 action=action, owner=user, exposure_type="MUTUAL_FUND",
                 investment_name=scheme.scheme_name, investment_id=scheme.id,
                 defaults={
-                    "family_id_snapshot": family_id,
+                    "family_id_snapshot": scheme.family_id or _user_family_id(user),
                     "holding_weight": underlying.percentage_of_nav,
                     "snapshot_date": underlying.portfolio_date,
                 },
             )
             _create_reconciliation(
                 action, user, CorporateActionReconciliationStatus.MANUAL_REVIEW,
-                notes="Indirect mutual-fund underlying exposure only. Corporate action is reflected inside the fund; do not create a direct equity transaction.",
+                notes="Indirect mutual-fund underlying exposure only. Do not create a direct stock transaction.",
             )
             mf_count += 1
-    for holding in _latest_pms_underlying(action).iterator():
-        # This model represents disclosed underlying positions associated with
-        # an asset/family. Attribute the exposure only to known active family
-        # members; never create a direct equity transaction for it.
-        family_id = holding.family_id
-        member_ids = FamilyMembership.objects.filter(family_group_id=family_id).values_list("profile__user_id", flat=True) if family_id else []
-        for user in get_user_model().objects.filter(id__in=list(member_ids), is_active=True):
+
+    for holding in _pms_underlying(action).iterator():
+        member_ids = FamilyMembership.objects.filter(
+            family_group_id=holding.family_id
+        ).values_list("profile__user_id", flat=True)
+        for user in get_user_model().objects.filter(id__in=member_ids, is_active=True):
             CorporateActionExposure.objects.get_or_create(
                 action=action, owner=user, exposure_type="PMS",
                 investment_name=holding.asset.name, investment_id=holding.asset_id,
                 defaults={
-                    "family_id_snapshot": family_id,
+                    "family_id_snapshot": holding.family_id,
                     "holding_weight": holding.holding_percentage,
                     "snapshot_date": timezone.localdate(),
                 },
@@ -227,17 +241,23 @@ def discover_exposures_and_reconcile(action):
                 action, user, CorporateActionReconciliationStatus.MANUAL_REVIEW,
                 notes="Indirect PMS underlying exposure only. Review within the PMS statement; do not create a direct stock transaction.",
             )
-            mf_count += 1
-    return {"direct": direct_count, "mutual_fund": mf_count, "notifications": notification_count}
+            pms_count += 1
+
+    return {
+        "direct": direct_count,
+        "mutual_fund": mf_count,
+        "pms": pms_count,
+        "notifications": notification_count,
+    }
 
 
 def reconcile_action_for_all_users(action):
-    """Run for existing active users; writes are idempotent via unique constraints."""
+    """Run for users exposed to this action; model constraints make repeats idempotent."""
     return discover_exposures_and_reconcile(action)
 
 
 def update_notification_state(*, owner, notification_id, reviewed=None, dismissed=None):
-    notification = CorporateActionNotification.objects.filter(owner=owner, id=notification_id).first()
+    notification = CorporateActionNotification.objects.filter(owner=owner, id=notification_id).select_related("reconciliation").first()
     if notification is None:
         return None
     if reviewed is not None:

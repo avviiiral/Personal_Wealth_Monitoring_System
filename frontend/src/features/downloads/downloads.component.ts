@@ -1175,130 +1175,184 @@ export class DownloadsComponent implements OnInit {
   }
 
   private async downloadLiquidPositionFunds(): Promise<void> {
-    const families = this.familyMemberOptions;
-    if (!families.length) {
-      throw new Error('No family members were found in the holding report.');
-    }
-
+    // Reproduce the supplied Book1.xlsx layout: DAJ, DJT and Total columns,
+    // including the PMS exit, deployment and redemption sections.
     const { default: ExcelJS } = await import('exceljs');
     const workbook = new ExcelJS.Workbook();
     workbook.creator = 'PWMS';
     workbook.created = new Date();
-    const sheet = workbook.addWorksheet('Liquid Position Funds');
+    workbook.calcProperties.fullCalcOnLoad = true;
+    workbook.calcProperties.forceFullCalc = true;
 
-    const headers = ['Particulars', ...families];
-    sheet.mergeCells(1, 1, 1, headers.length);
-    const title = sheet.getCell(1, 1);
-    title.value = `Liquidity Position as on ${this.selectedReportDate || this.todayStamp()}`;
-    title.font = { name: 'Aptos Display', bold: true, size: 15, color: { argb: 'FFFFFFFF' } };
-    title.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF172033' } };
-    title.alignment = { vertical: 'middle', horizontal: 'left' };
-    sheet.getRow(1).height = 32;
-
-    headers.forEach((label, index) => {
-      const cell = sheet.getCell(2, index + 1);
-      cell.value = label;
-      cell.font = { name: 'Aptos', bold: true, size: 10, color: { argb: 'FFFFFFFF' } };
-      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF344054' } };
-      cell.alignment = { vertical: 'middle', horizontal: index === 0 ? 'left' : 'right' };
+    const sheet = workbook.addWorksheet('Liquid Position Funds', {
+      properties: { defaultRowHeight: 16.75 },
+      views: [{ state: 'normal', showGridLines: false }],
     });
-    sheet.getRow(2).height = 25;
 
-    const definitions: Array<{ label: string; key?: string; section?: boolean; calculated?: boolean }> = [
-      { label: 'Liquid (MV)', key: 'liquid' },
-      { label: 'Arbitrage (MV)', key: 'arbitrage' },
-      { label: 'Bank', key: 'bank' },
-      { label: 'Arbitrage+Liquid+Bank', key: 'combined', calculated: true },
-      { label: '' },
-      { label: 'Less: Commitments', section: true },
-      { label: 'Proposed immediate top up -', key: 'topUp' },
-      { label: '' },
-      { label: '' },
-      { label: '' },
-      { label: '' },
-      { label: 'Other AIF Pending Drawdowns*', section: true },
-      { label: 'HOABL', key: 'hoabl' },
-      { label: 'Gift to BFT (HOABL)', key: 'giftToBft' },
-      { label: 'Club House, etc**', key: 'clubHouse' },
-      { label: '' },
-      { label: 'Net available Amount (A)', key: 'netAvailable', calculated: true },
-      { label: '' },
-      { label: 'Deployment Plan', section: true },
-      { label: '' },
-      { label: '' },
-      { label: '' },
-      { label: '' },
-      { label: '' },
-      { label: '' },
-      { label: 'Total Deployement Plan', key: 'totalDeployment', calculated: true },
-      { label: 'Balance', key: 'balance', calculated: true },
+    const lastColumn = 20; // T: retains the supporting drawdown schedule.
+    sheet.getCell('B2').value = `Liquidity Position as on ${this.selectedReportDate || this.todayStamp()}`;
+    sheet.getCell('E2').value = '(Rs in lakhs)';
+    sheet.getRow(3).values = [undefined, 'Particulars', 'DAJ', 'DJT', 'Total'];
+
+    const labels: Record<number, string> = {
+      4: 'Liquid (MV)',
+      5: 'Arbitrage (MV)',
+      6: 'Bank',
+      7: 'Arbitrage+Liquid+Bank',
+      9: 'Less: Commitments',
+      10: 'Proposed immediate top up - ',
+      15: 'Other AIF Pending Drawdowns*',
+      16: 'HOABL',
+      17: 'Gift to BFT (HOABL)',
+      18: 'Club House, etc**',
+      20: 'Net available Amount (A)',
+      23: 'Proposed Exit from PMS',
+      24: '  Aequitas',
+      25: '  ASK - Exited',
+      26: '  ENAM',
+      27: 'Sub-Total (B)',
+      29: 'Grand Total (A+B)',
+      31: 'Deployment Plan',
+      32: 'Abakkus',
+      39: 'W Oak Flexi Cap ',
+      40: 'Parag Parikh Flexi Cap',
+      41: 'HDFC Focused * Index switch',
+      42: 'ICICI Value Fund * India Opp switch',
+      43: 'Silver ETF',
+      45: 'Total Deployement Plan',
+      47: 'Balance',
+      49: 'Proposed Redemptions--->',
+      50: 'Gsec STRIPs',
+      51: 'ASK',
+      52: 'Debt MF ',
+    };
+
+    Object.entries(labels).forEach(([row, label]) => {
+      sheet.getCell(`B${row}`).value = label;
+    });
+
+    // Preserve the comments and supporting notes present in the reference file.
+    const notes: Array<[string, string | number]> = [
+      ['G24', 'Full Exit on 01-05-2026'],
+      ['F25', 'Whenever required'],
+      ['G25', 'Keep small amount in account and keep it open without closing- 50L each'],
+      ['H25', 'Carnelian'],
+      ['G26', 'Full Exit after ASK, Unifi'],
+      ['H26', 'Buoyant'],
+      ['G32', 'Hold the top up idea.'],
+      ['G34', 'Replacement to Unifi, Also doable from RKB for ENAM & Unifi'],
+      ['G35', 'Can be replacement to ASK'],
+      ['G39', 'Dropped & allocated to Alchemy'],
+      ['G40', 'NBT- 4.5 Cr & DJT - 3.5 Cr STP started in Oct-25'],
+      ['H40', 8],
+      ['G41', 'Switched to Focused Fund'],
+      ['G42', 'Switched to Value Fund'],
+      ['G43', 'Bought 2.5 Cr each from NBT DJT ~ $42'],
+      ['H43', 5],
+      ['C51', 950],
     ];
-
-    const firstDataRow = 3;
-    definitions.forEach((definition, index) => {
-      const rowNumber = firstDataRow + index;
-      const row = sheet.getRow(rowNumber);
-      row.getCell(1).value = definition.label;
-      row.height = definition.section ? 23 : 21;
-      row.eachCell({ includeEmpty: true }, cell => {
-        cell.font = { name: 'Aptos', size: 10, color: { argb: 'FF172033' } };
-        cell.border = { bottom: { style: 'hair', color: { argb: 'FFE1E5EA' } } };
-        cell.alignment = { vertical: 'middle' };
-      });
-
-      if (definition.section) {
-        for (let column = 1; column <= headers.length; column++) {
-          const cell = row.getCell(column);
-          cell.font = { name: 'Aptos', bold: true, size: 10, color: { argb: 'FF344054' } };
-          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE7EBF0' } };
-        }
-      }
-      if (definition.calculated) {
-        for (let familyIndex = 0; familyIndex < families.length; familyIndex++) {
-          const column = familyIndex + 2;
-          const letter = sheet.getColumn(column).letter;
-          const rowFor = (key: string) => firstDataRow + definitions.findIndex(item => item.key === key);
-          let formula = '';
-          if (definition.key === 'combined') {
-            formula = `SUM(${letter}${rowFor('liquid')},${letter}${rowFor('arbitrage')},${letter}${rowFor('bank')})`;
-          } else if (definition.key === 'netAvailable') {
-            formula = `${letter}${rowFor('combined')}-SUM(${letter}${rowFor('topUp')},${letter}${rowFor('hoabl')},${letter}${rowFor('giftToBft')},${letter}${rowFor('clubHouse')})`;
-          } else if (definition.key === 'totalDeployment') {
-            const deploymentStart = firstDataRow + definitions.findIndex(item => item.label === 'Deployment Plan') + 1;
-            const deploymentEnd = firstDataRow + definitions.findIndex(item => item.key === 'totalDeployment') - 1;
-            formula = `SUM(${letter}${deploymentStart}:${letter}${deploymentEnd})`;
-          } else if (definition.key === 'balance') {
-            formula = `${letter}${rowFor('netAvailable')}-${letter}${rowFor('totalDeployment')}`;
-          }
-          const cell = row.getCell(column);
-          cell.value = { formula };
-          cell.numFmt = '#,##0.00;[Red](#,##0.00);-';
-          cell.font = { name: 'Aptos', bold: true, size: 10, color: { argb: 'FF172033' } };
-          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF2F4F7' } };
-          cell.alignment = { vertical: 'middle', horizontal: 'right' };
-        }
-      } else if (definition.key) {
-        for (let column = 2; column <= headers.length; column++) {
-          const cell = row.getCell(column);
-          cell.numFmt = '#,##0.00;[Red](#,##0.00);-';
-          cell.alignment = { vertical: 'middle', horizontal: 'right' };
-        }
-      }
+    notes.forEach(([address, value]) => {
+      sheet.getCell(String(address)).value = value;
     });
 
-    sheet.getColumn(1).width = 38;
-    for (let column = 2; column <= headers.length; column++) {
-      sheet.getColumn(column).width = 20;
+    // Formula map follows the supplied workbook's row and column references.
+    const formulas: Record<string, string> = {
+      E4: 'SUM(C4:D4)', E5: 'SUM(C5:D5)', E6: 'SUM(C6:D6)',
+      C7: 'SUM(C4:C6)', D7: 'SUM(D4:D6)', E7: 'SUM(C7:D7)',
+      E11: 'SUM(C11:D11)', E12: 'SUM(C12:D12)', E14: 'SUM(C14:D14)',
+      E15: 'SUM(C15:D15)', E16: 'SUM(C16:D16)', E17: 'SUM(C17:D17)', E18: 'SUM(C18:D18)',
+      C20: 'SUM(C7:C19)', D20: 'SUM(D7:D19)', E20: 'SUM(C20:D20)',
+      C24: '150*0', E24: 'SUM(C24:D24)', E25: 'SUM(C25:D25)', E26: 'SUM(C26:D26)',
+      C27: 'SUM(C23:C26)', D27: 'SUM(D23:D26)', E27: 'SUM(E23:E26)',
+      C29: 'C20+C27', D29: 'D20+D27', E29: 'E20+E27',
+      E32: 'SUM(C32:D32)', E33: 'SUM(C33:D33)', E34: 'SUM(C34:D34)',
+      E35: 'SUM(C35:D35)', E36: 'SUM(C36:D36)', E37: 'SUM(C37:D37)',
+      E39: 'SUM(C39:D39)', E40: 'SUM(C40:D40)', E43: 'SUM(C43:D43)',
+      C45: 'SUM(C31:C43)', D45: 'SUM(D31:D43)', E45: 'SUM(E31:E43)',
+      C47: 'C20+C45', D47: 'D20+D45', E47: 'SUM(C47:D47)',
+    };
+    Object.entries(formulas).forEach(([address, formula]) => {
+      sheet.getCell(address).value = { formula };
+    });
+
+    // Supporting AIF drawdown schedule from columns M:T in the reference.
+    const drawdowns: Array<[number, string, string, number, number, number, number]> = [
+      [15, 'NAB', 'Baring Private Equity India Fund 6', 2, 0.81, 1.19, 0],
+      [17, 'NAB', 'Mt K Capital Fund', 5, 3.6, 1.4, 0],
+      [18, 'NAB', '360 One Real Asset Fund Development', 5, 2.5, 2.5, 0],
+      [20, 'DAJ', 'Baring Private Equity India Fund 6', 2, 0.81, 1.19, 0],
+      [21, 'DAJ', 'Mt K Capital Fund', 3, 2.16, 0.84, 0],
+    ];
+    drawdowns.forEach(([row, owner, fund, total, first, second]) => {
+      sheet.getCell(`M${row}`).value = owner;
+      sheet.getCell(`N${row}`).value = fund;
+      sheet.getCell(`R${row}`).value = total;
+      sheet.getCell(`S${row}`).value = first;
+      sheet.getCell(`T${row}`).value = second;
+    });
+
+    // Layout and formatting aligned to the reference workbook's columns.
+    sheet.getColumn(1).width = 2.8;
+    sheet.getColumn(2).width = 34;
+    sheet.getColumn(3).width = 13;
+    sheet.getColumn(4).width = 13;
+    sheet.getColumn(5).width = 13;
+    sheet.getColumn(6).width = 17;
+    sheet.getColumn(7).width = 68;
+    sheet.getColumn(8).width = 14;
+    for (let column = 9; column <= 12; column++) sheet.getColumn(column).width = 12;
+    sheet.getColumn(13).width = 12;
+    sheet.getColumn(14).width = 42;
+    for (let column = 15; column <= 17; column++) sheet.getColumn(column).width = 12;
+    for (let column = 18; column <= 20; column++) sheet.getColumn(column).width = 12;
+
+    sheet.getRow(2).height = 22;
+    sheet.getRow(2).getCell(2).font = { bold: true, size: 14 };
+    sheet.getRow(2).getCell(5).font = { italic: true, size: 10 };
+    sheet.getRow(3).height = 22;
+    for (let column = 2; column <= 5; column++) {
+      const cell = sheet.getRow(3).getCell(column);
+      cell.font = { bold: true };
+      cell.border = { bottom: { style: 'thin' } };
+      cell.alignment = { vertical: 'middle', horizontal: column >= 3 ? 'right' : 'left' };
     }
-    sheet.views = [{ state: 'frozen', xSplit: 1, ySplit: 2, showGridLines: false }];
-    sheet.getRow(firstDataRow + definitions.findIndex(item => item.key === 'netAvailable')).eachCell({ includeEmpty: true }, cell => {
-      cell.border = { top: { style: 'thin', color: { argb: 'FF98A2B3' } }, bottom: { style: 'thin', color: { argb: 'FF98A2B3' } } };
+
+    for (let rowNumber = 4; rowNumber <= 52; rowNumber++) {
+      const row = sheet.getRow(rowNumber);
+      row.height = rowNumber === 13 || rowNumber === 38 ? 8 : 18;
+      for (let column = 2; column <= lastColumn; column++) {
+        const cell = row.getCell(column);
+        cell.alignment = { vertical: 'middle', wrapText: column === 7 || column === 14 };
+        if (column >= 3 && column <= 5) {
+          cell.numFmt = '#,##0.00;[Red](#,##0.00);-';
+          cell.alignment = { vertical: 'middle', horizontal: 'right' };
+        }
+      }
+    }
+
+    [9, 23, 31, 49].forEach(rowNumber => {
+      for (let column = 2; column <= 5; column++) {
+        sheet.getCell(rowNumber, column).font = { bold: true };
+      }
     });
-    sheet.getRow(firstDataRow + definitions.findIndex(item => item.key === 'balance')).eachCell({ includeEmpty: true }, cell => {
-      cell.font = { name: 'Aptos', bold: true, size: 11, color: { argb: 'FF172033' } };
-      cell.border = { top: { style: 'double', color: { argb: 'FF344054' } } };
+    [7, 20, 27, 29, 45, 47].forEach(rowNumber => {
+      for (let column = 2; column <= 5; column++) {
+        const cell = sheet.getCell(rowNumber, column);
+        cell.font = { bold: true };
+        cell.border = {
+          top: { style: 'thin', color: { argb: 'FF808080' } },
+          bottom: { style: rowNumber === 47 ? 'double' : 'hair', color: { argb: 'FF808080' } },
+        };
+      }
     });
 
+    sheet.mergeCells('F35:F36');
+    sheet.mergeCells('N15:Q15');
+    sheet.mergeCells('N17:Q17');
+    sheet.mergeCells('N18:Q18');
+    sheet.mergeCells('N20:Q20');
+
+    sheet.views = [{ state: 'frozen', xSplit: 2, ySplit: 3, showGridLines: false }];
     const buffer = await workbook.xlsx.writeBuffer();
     const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
     const url = URL.createObjectURL(blob);

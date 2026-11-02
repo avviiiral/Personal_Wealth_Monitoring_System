@@ -182,7 +182,16 @@ class TransactionSerializer(
     def get_isin(self, obj):
         key = " ".join((obj.underlying or obj.asset_name or "").casefold().split())
         if key:
-            rows = AssetUnderlyingHolding.objects.filter(family=obj.family, asset=obj.asset).only("stock_name", "isin").order_by("id")
+            # List endpoints pass a preloaded map, avoiding one DB query per
+            # serialized transaction. Detail endpoints retain the safe fallback.
+            isin_map = self.context.get("underlying_isin_map")
+            if isin_map is not None:
+                return isin_map.get((obj.family_id, obj.asset_id, key)) or obj.asset.isin
+
+            rows = AssetUnderlyingHolding.objects.filter(
+                family_id=obj.family_id,
+                asset_id=obj.asset_id,
+            ).only("stock_name", "isin").order_by("id")
             for row in rows:
                 if " ".join((row.stock_name or "").casefold().split()) == key and row.isin:
                     return row.isin

@@ -110,3 +110,104 @@ def corporate_action_candidates(request):
         "results": [_serialize(action) for action in candidates],
         "matching_policy": "Exact ISIN when supplied; otherwise exact symbol and optional exchange. No fuzzy auto-merging.",
     })
+
+
+from django.db.models import Q
+from django.utils import timezone
+from .models import (
+    CorporateActionExposure,
+    CorporateActionNotification,
+    CorporateActionReconciliation,
+    CorporateActionReconciliationStatus,
+)
+from .services import update_notification_state
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def corporate_action_notifications(request):
+    queryset = CorporateActionNotification.objects.filter(owner=request.user).select_related(
+        "action", "reconciliation"
+    ).prefetch_related("action__exposures")
+    status_filter = request.query_params.get("status", "").upper()
+    if status_filter == "NEW":
+        queryset = queryset.filter(reviewed=False, dismissed=False)
+    elif status_filter == "PENDING":
+        queryset = queryset.filter(reconciliation__status=CorporateActionReconciliationStatus.PENDING, dismissed=False)
+    elif status_filter == "RECORDED":
+        queryset = queryset.filter(reconciliation__status=CorporateActionReconciliationStatus.ALREADY_RECORDED)
+    elif status_filter == "COMPLETED":
+        queryset = queryset.filter(reconciliation__status=CorporateActionReconciliationStatus.COMPLETED)
+    elif status_filter == "CANCELLED":
+        queryset = queryset.filter(action__status=CorporateActionStatus.REJECTED)
+    page = max(1, int(request.query_params.get("page", 1) or 1))
+    page_size = min(100, max(1, int(request.query_params.get("page_size", 25) or 25)))
+    total = queryset.count()
+    rows = queryset[(page - 1) * page_size:page * page_size]
+    results = []
+    for row in rows:
+        action = row.action
+        exposures = [{
+            "type": exposure.exposure_type,
+            "investment_name": exposure.investment_name,
+            "investment_id": exposure.investment_id,
+            "holding_weight": exposure.holding_weight,
+            "snapshot_date": exposure.snapshot_date,
+        } for exposure in action.exposures.filter(owner=request.user)]
+        results.append({
+            "id": row.id,
+            "action": _serialize(action),
+            "reconciliation": {
+                "id": row.reconciliation_id,
+                "status": row.reconciliation.status,
+                "matched_transaction_ids": row.reconciliation.matched_transaction_ids,
+                "suggested_quantity": row.reconciliation.suggested_quantity,
+                "notes": row.reconciliation.notes,
+            },
+            "exposures": exposures,
+            "reviewed": row.reviewed,
+            "dismissed": row.dismissed,
+            "direct_exposure": any(item["type"] == "DIRECT" for item in exposures),
+        })
+    return Response({"count": total, "page": page, "page_size": page_size, "results": results})
+
+
+@api_view(["PATCH"])
+@permission_classes([IsAuthenticated, CanWriteFinancialData])
+def corporate_action_notification_update(request, notification_id):
+    notification = update_notification_state(
+        owner=request.user,
+        notification_id=notification_id,
+        reviewed=request.data.get("reviewed") if "reviewed" in request.data else None,
+        dismissed=request.data.get("dismissed") if "dismissed" in request.data else None,
+    )
+    if notification is None:
+        return Response({"detail": "Corporate action notification not found."}, status=404)
+    return Response({
+        "id": notification.id,
+        "reviewed": notification.reviewed,
+        "dismissed": notification.dismissed,
+        "reconciliation_status": notification.reconciliation.status,
+    })
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated, CanWriteFinancialData])
+def corporate_action_reconciliation_update(request, reconciliation_id):
+    reconciliation = CorporateActionReconciliation.objects.filter(
+        owner=request.user, id=reconciliation_id
+    ).select_related("action").first()
+    if reconciliation is None:
+        return Response({"detail": "Reconciliation not found."}, status=404)
+    decision = str(request.data.get("decision", "")).upper()
+    if decision not in {"ALREADY_RECORDED", "DISMISSED"}:
+        return Response({"detail": "Supported decisions: ALREADY_RECORDED, DISMISSED."}, status=400)
+    reconciliation.status = decision
+    reconciliation.notes = str(request.data.get("notes", reconciliation.notes))[:5000]
+    reconciliation.reviewed_at = timezone.now()
+    reconciliation.reviewed_by = request.user
+    reconciliation.save(update_fields=["status", "notes", "reviewed_at", "reviewed_by", "updated_at"])
+    CorporateActionNotification.objects.filter(
+        owner=request.user, action=reconciliation.action
+    ).update(reviewed=True, dismissed=(decision == "DISMISSED"), updated_at=timezone.now())
+    return Response({"id": reconciliation.id, "status": reconciliation.status})

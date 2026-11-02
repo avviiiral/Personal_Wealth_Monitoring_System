@@ -186,7 +186,7 @@ def discover_exposures_and_reconcile(action):
                 if tx_rows:
                     totals = calculate_position_with_actions(
                         tx_rows,
-                        confirmed_ratio_actions(asset=asset, owner=action.owner, as_of_date=action.ex_date),
+                        confirmed_ratio_actions(asset=asset, owner=user, as_of_date=action.ex_date),
                     )
                     eligible_quantity = totals.get("quantity")
 
@@ -203,6 +203,9 @@ def discover_exposures_and_reconcile(action):
                     if prior_transactions.exists()
                     else CorporateActionReconciliationStatus.MANUAL_REVIEW
                 )
+                if eligible_quantity is not None:
+                    exposure.quantity = eligible_quantity
+                    exposure.save(update_fields=["quantity"])
                 _create_reconciliation(
                     action, user, status_value,
                     suggested_quantity=eligible_quantity,

@@ -1,12 +1,25 @@
 from django.core.exceptions import ValidationError
 from django.db import IntegrityError, transaction
+from django.utils import timezone
+from decimal import Decimal, InvalidOperation
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
-from users.permissions import CanWriteFinancialData
-from .models import (\n    CorporateAction, CorporateActionStatus, CorporateActionReconciliationStatus,\n    CorporateActionExposure,\n    CorporateActionReconciliation, CorporateActionNotification,\n)
+from users.permissions import CanWriteFinancialData, require_active_family
+from investments.models import Asset, Transaction, TransactionType
+from portfolio.serializers import TransactionSerializer
+from portfolio.views import HoldingCalculationEngine, PortfolioPositionEngine
+
+from .models import (
+    CorporateAction,
+    CorporateActionStatus,
+    CorporateActionExposure,
+    CorporateActionNotification,
+    CorporateActionReconciliation,
+    CorporateActionReconciliationStatus,
+)
 from .services import resolve_corporate_action_candidates, update_notification_state
 
 
@@ -112,16 +125,6 @@ def corporate_action_candidates(request):
     })
 
 
-from django.utils import timezone
-from .models import (
-    CorporateActionExposure,
-    CorporateActionNotification,
-    CorporateActionReconciliation,
-    CorporateActionReconciliationStatus,
-)
-from .services import update_notification_state
-
-
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def corporate_action_notifications(request):
@@ -139,8 +142,11 @@ def corporate_action_notifications(request):
         queryset = queryset.filter(reconciliation__status=CorporateActionReconciliationStatus.COMPLETED)
     elif status_filter == "CANCELLED":
         queryset = queryset.filter(action__status=CorporateActionStatus.REJECTED)
-    page = max(1, int(request.query_params.get("page", 1) or 1))
-    page_size = min(100, max(1, int(request.query_params.get("page_size", 25) or 25)))
+    try:
+        page = max(1, int(request.query_params.get("page", 1) or 1))
+        page_size = min(100, max(1, int(request.query_params.get("page_size", 25) or 25)))
+    except (TypeError, ValueError):
+        return Response({"detail": "page and page_size must be integers."}, status=400)
     total = queryset.count()
     rows = queryset[(page - 1) * page_size:page * page_size]
     results = []
@@ -211,17 +217,11 @@ def corporate_action_reconciliation_update(request, reconciliation_id):
     ).update(reviewed=True, dismissed=(decision == "DISMISSED"), updated_at=timezone.now())
     return Response({"id": reconciliation.id, "status": reconciliation.status})
 
+
 @api_view(["POST"])
 @permission_classes([IsAuthenticated, CanWriteFinancialData])
 def corporate_action_add_transaction(request, reconciliation_id):
-    """Create an investor transaction only for confirmed direct holdings after explicit review."""
-    from datetime import date
-    from decimal import Decimal, InvalidOperation
-    from investments.models import Asset, Transaction, TransactionType
-    from users.permissions import require_active_family
-    from portfolio.serializers import TransactionSerializer
-    from portfolio.views import HoldingCalculationEngine, PortfolioPositionEngine
-
+    """Record a user-approved split, bonus or cash dividend for a direct security."""
     reconciliation = CorporateActionReconciliation.objects.filter(
         owner=request.user, id=reconciliation_id
     ).select_related("action").first()
@@ -234,39 +234,51 @@ def corporate_action_add_transaction(request, reconciliation_id):
     if exposure is None:
         return Response({"detail": "Indirect exposure cannot be booked as a direct equity transaction."}, status=400)
     if action.status != CorporateActionStatus.CONFIRMED:
-        return Response({"detail": "The corporate action must be verified and confirmed before a transaction can be recorded."}, status=400)
+        return Response({"detail": "Verify and confirm the action details before recording a transaction."}, status=400)
+    if request.data.get("confirmed") is not True:
+        return Response({"detail": "Explicit confirmation is required."}, status=400)
 
-    transaction_date = action.payment_date or action.ex_date
-    quantity = request.data.get("quantity")
-    amount = request.data.get("amount", "0")
+    type_map = {
+        "CASH_DIVIDEND": TransactionType.DIVIDEND,
+        "BONUS": TransactionType.BONUS,
+        "STOCK_DIVIDEND": TransactionType.BONUS,
+        "STOCK_SPLIT": TransactionType.SPLIT,
+        "REVERSE_SPLIT": TransactionType.SPLIT,
+    }
+    tx_type = type_map.get(action.action_type)
+    if tx_type is None:
+        return Response({"detail": "This corporate action type requires a specialist transaction workflow and cannot be booked here."}, status=400)
     try:
-        quantity = Decimal(str(quantity))
-        amount = Decimal(str(amount))
-        if quantity <= 0 or amount < 0:
+        quantity = Decimal(str(request.data.get("quantity")))
+        amount = Decimal(str(request.data.get("amount", "0")))
+        price_per_unit = Decimal(str(request.data.get("price_per_unit", "0")))
+        fees = Decimal(str(request.data.get("fees", "0")))
+        if quantity <= 0 or amount < 0 or price_per_unit < 0 or fees < 0:
             raise ValueError
     except (InvalidOperation, TypeError, ValueError):
-        return Response({"detail": "Provide a positive quantity and a non-negative amount."}, status=400)
+        return Response({"detail": "Provide a positive quantity and non-negative amount, price and fees."}, status=400)
 
     asset = Asset.objects.filter(id=exposure.investment_id, owner=request.user, is_active=True).first()
     if asset is None:
         return Response({"detail": "Direct security asset is no longer available to this user."}, status=404)
-
-    tx_type = TransactionType.DIVIDEND if action.action_type == "CASH_DIVIDEND" else (
-        TransactionType.BONUS if action.action_type in {"BONUS", "STOCK_DIVIDEND"} else TransactionType.SPLIT
-    )
     family = require_active_family(request.user)
     source_key = f"corp-action:{action.id}:{reconciliation.id}"
     if Transaction.objects.filter(family=family, source_key=source_key).exists():
         return Response({"detail": "This corporate action transaction has already been recorded."}, status=409)
-
+    try:
+        transaction_date = request.data.get("transaction_date") or (
+            action.payment_date or action.ex_date
+        ).isoformat()
+    except AttributeError:
+        return Response({"detail": "The corporate action has no valid transaction date."}, status=400)
     payload = {
         "asset": asset.id,
-        "transaction_date": request.data.get("transaction_date", transaction_date.isoformat()),
+        "transaction_date": transaction_date,
         "transaction_type": tx_type,
         "quantity": str(quantity),
-        "price_per_unit": str(request.data.get("price_per_unit", "0")),
+        "price_per_unit": str(price_per_unit),
         "amount": str(amount),
-        "fees": str(request.data.get("fees", "0")),
+        "fees": str(fees),
         "notes": f"Corporate action #{action.id}: {action.security_name}",
         "source": "OTHER",
         "source_key": source_key,
@@ -284,6 +296,4 @@ def corporate_action_add_transaction(request, reconciliation_id):
         CorporateActionNotification.objects.filter(owner=request.user, action=action).update(reviewed=True, dismissed=False, updated_at=timezone.now())
         HoldingCalculationEngine.rebuild_holding(asset)
         PortfolioPositionEngine.rebuild_all_for_user(request.user)
-    return Response({"transaction_id": tx.id, "reconciliation_status": reconciliation.status}, status=201)
-
-
+    return Response({"transaction_id": tx.id, "reconciliation_status": reconciliation.status}, status=status.HTTP_201_CREATED)

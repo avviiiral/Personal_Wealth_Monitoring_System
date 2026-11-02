@@ -1,6 +1,7 @@
 import hashlib
 import logging
-from datetime import date, timedelta
+from datetime import date
+from decimal import Decimal
 
 from django.contrib.auth import get_user_model
 from django.db.models import Max, Q
@@ -51,8 +52,7 @@ def resolve_corporate_action_candidates(*, owner, isin="", symbol="", exchange="
 def quantity_multiplier(*, owner, isin="", symbol="", exchange="", transaction_date, valuation_date):
     """Multiply confirmed ratio actions effective after the transaction and through valuation date."""
     if valuation_date < transaction_date:
-        return __import__("decimal").Decimal("1")
-    from decimal import Decimal
+        return Decimal("1")
     actions = resolve_corporate_action_candidates(
         owner=owner, isin=isin, symbol=symbol, exchange=exchange, event_date=valuation_date
     ).filter(

@@ -1,7 +1,8 @@
 import logging
 import re
-from datetime import date, datetime, timedelta
+from datetime import datetime, timedelta
 
+from django.contrib.auth import get_user_model
 from django.core.management.base import BaseCommand
 from django.db import transaction
 from django.utils import timezone
@@ -11,12 +12,16 @@ from corporate_actions.models import CorporateAction, CorporateActionStatus, Cor
 from corporate_actions.services import reconcile_action_for_all_users
 from filing_intelligence.models import Filing
 from investments.models import Asset, AssetUnderlyingHolding
-from mutual_funds.models import MutualFundScheme, MutualFundTransaction
+from mutual_funds.models import MutualFundTransaction
 from mutual_funds.underlying_models import MutualFundUnderlying
+from users.models import FamilyMembership
 
 
 logger = logging.getLogger(__name__)
-DATE_PATTERN = re.compile(r"(?i)\b(ex\s*[- ]?date|record\s*[- ]?date|payment\s*[- ]?date)\s*[:\-]?\s*(\d{1,2}[./-]\d{1,2}[./-]\d{4}|\d{4}-\d{2}-\d{2}|\d{1,2}\s+[A-Za-z]{3,9}\s+\d{4})")
+DATE_PATTERN = re.compile(
+    r"(?i)\b(ex\s*[- ]?date|record\s*[- ]?date|payment\s*[- ]?date)\s*[:\-]?\s*"
+    r"(\d{1,2}[./-]\d{1,2}[./-]\d{4}|\d{4}-\d{2}-\d{2}|\d{1,2}\s+[A-Za-z]{3,9}\s+\d{4})"
+)
 
 
 def classify_filing(filing):
@@ -72,10 +77,15 @@ class Command(BaseCommand):
         if not cfg.get("enabled", True):
             self.stdout.write("Corporate action monitoring is disabled.")
             return
+
         hours = max(1, options["hours"] or int(cfg.get("lookback_hours", 168)))
         cutoff = timezone.now() - timedelta(hours=hours)
-        filings = Filing.objects.filter(published_at__gte=cutoff).order_by("-published_at")[:int(cfg.get("max_events_per_run", 500))]
+        filings = Filing.objects.filter(
+            published_at__gte=cutoff
+        ).order_by("-published_at")[:int(cfg.get("max_events_per_run", 500))]
+
         scanned = created = updated = matched = skipped = 0
+        User = get_user_model()
 
         for filing in filings.iterator():
             scanned += 1
@@ -85,6 +95,13 @@ class Command(BaseCommand):
                 skipped += 1
                 continue
 
+            # A dividend per-share amount is safe to parse only from an explicitly
+            # labeled "dividend of Rs X per share" phrase. Other ratios remain manual.
+            text = " ".join([filing.subject or "", filing.details or ""])
+            dividend_match = re.search(
+                r"(?i)dividend\s+(?:of\s+)?(?:rs\.?|inr|₹)\s*([0-9]+(?:\.[0-9]+)?)\s*(?:per\s+share)?",
+                text,
+            )
             defaults = {
                 "security_name": filing.company_name,
                 "isin": filing.isin.upper(),
@@ -96,7 +113,7 @@ class Command(BaseCommand):
                 "source": f"{filing.exchange}_FILING",
                 "source_reference": filing.filing_url,
                 "status": CorporateActionStatus.PENDING,
-                "notes": "Detected from exchange filing. Review event terms and eligible entitlement before confirming.",
+                "notes": "Detected from exchange filing. Verify event details and eligibility before confirmation.",
                 "metadata": {
                     "filing_id": filing.id,
                     "announcement_date": filing.published_at.isoformat(),
@@ -105,22 +122,28 @@ class Command(BaseCommand):
                     "event_dates_verified": True,
                 },
             }
+            if action_type == CorporateActionType.CASH_DIVIDEND and dividend_match:
+                defaults["cash_per_unit"] = dividend_match.group(1)
+
             if options["dry_run"]:
                 created += 1
                 continue
 
-            # Find every active owner with either direct or underlying MF/PMS exposure.
-            direct_owner_ids = Asset.objects.filter(is_active=True, isin__iexact=filing.isin).exclude(owner__isnull=True).values_list("owner_id", flat=True)
-            family_ids = set(Asset.objects.filter(is_active=True, isin__iexact=filing.isin).exclude(family_id__isnull=True).values_list("family_id", flat=True))
-            pms_family_ids = set(AssetUnderlyingHolding.objects.filter(isin__iexact=filing.isin).values_list("family_id", flat=True))
+            direct_assets = Asset.objects.filter(is_active=True, isin__iexact=filing.isin)
+            family_ids = set(direct_assets.exclude(family_id__isnull=True).values_list("family_id", flat=True))
+            pms_family_ids = set(
+                AssetUnderlyingHolding.objects.filter(isin__iexact=filing.isin).values_list("family_id", flat=True)
+            )
             mf_scheme_ids = MutualFundUnderlying.objects.filter(isin__iexact=filing.isin).values_list("scheme_id", flat=True)
-            mf_owners = MutualFundTransaction.objects.filter(scheme_id__in=mf_scheme_ids).exclude(owner__isnull=True).values_list("owner_id", flat=True)
-            from users.models import FamilyMembership
-            from django.contrib.auth import get_user_model
-            member_ids = FamilyMembership.objects.filter(family_group_id__in=family_ids | pms_family_ids).values_list("profile__user_id", flat=True)
-            owners = set(direct_owner_ids) | set(mf_owners) | set(member_ids)
-            User = get_user_model()
+            mf_owner_ids = MutualFundTransaction.objects.filter(
+                scheme_id__in=mf_scheme_ids
+            ).exclude(owner__isnull=True).values_list("owner_id", flat=True)
+            direct_owner_ids = direct_assets.exclude(owner__isnull=True).values_list("owner_id", flat=True)
+            member_ids = FamilyMembership.objects.filter(
+                family_group_id__in=family_ids | pms_family_ids
+            ).values_list("profile__user_id", flat=True)
 
+            owners = set(direct_owner_ids) | set(mf_owner_ids) | set(member_ids)
             for owner in User.objects.filter(id__in=owners, is_active=True):
                 with transaction.atomic():
                     action, was_created = CorporateAction.objects.update_or_create(
@@ -135,7 +158,12 @@ class Command(BaseCommand):
                     else:
                         updated += 1
                     stats = reconcile_action_for_all_users(action)
-                    matched += stats.get("direct", 0) + stats.get("mutual_fund", 0)
+                    matched += (
+                        stats.get("direct", 0)
+                        + stats.get("mutual_fund", 0)
+                        + stats.get("pms", 0)
+                    )
+
         self.stdout.write(self.style.SUCCESS(
             f"Corporate action scan: scanned={scanned}, created={created}, updated={updated}, "
             f"exposures={matched}, skipped_unclassified_or_unverified_dates={skipped}, dry_run={options['dry_run']}"

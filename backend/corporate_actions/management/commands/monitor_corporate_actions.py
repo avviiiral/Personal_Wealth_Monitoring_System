@@ -95,13 +95,7 @@ class Command(BaseCommand):
                 skipped += 1
                 continue
 
-            # A dividend per-share amount is safe to parse only from an explicitly
-            # labeled "dividend of Rs X per share" phrase. Other ratios remain manual.
-            text = " ".join([filing.subject or "", filing.details or ""])
-            dividend_match = re.search(
-                r"(?i)dividend\s+(?:of\s+)?(?:rs\.?|inr|₹)\s*([0-9]+(?:\.[0-9]+)?)\s*(?:per\s+share)?",
-                text,
-            )
+            # Amounts and ratios are never inferred from generic filing prose; verify them manually.
             defaults = {
                 "security_name": filing.company_name,
                 "isin": filing.isin.upper(),
@@ -122,9 +116,6 @@ class Command(BaseCommand):
                     "event_dates_verified": True,
                 },
             }
-            if action_type == CorporateActionType.CASH_DIVIDEND and dividend_match:
-                defaults["cash_per_unit"] = dividend_match.group(1)
-
             if options["dry_run"]:
                 created += 1
                 continue

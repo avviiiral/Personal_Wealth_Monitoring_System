@@ -152,7 +152,7 @@ def discover_exposures_and_reconcile(action):
             if user is None:
                 continue
             family_id = asset.family_id or _user_family_id(user)
-            CorporateActionExposure.objects.get_or_create(
+            exposure, _ = CorporateActionExposure.objects.get_or_create(
                 action=action, owner=user, exposure_type="DIRECT",
                 investment_name=asset.name, investment_id=asset.id,
                 defaults={"family_id_snapshot": family_id, "snapshot_date": timezone.localdate()},
@@ -168,6 +168,7 @@ def discover_exposures_and_reconcile(action):
                 else TransactionType.SPLIT if action.action_type in {"STOCK_SPLIT", "REVERSE_SPLIT"}
                 else None
             )
+            eligible_quantity = None
             if expected_type is not None:
                 existing = Transaction.objects.filter(
                     owner=user, asset=asset,
@@ -178,6 +179,16 @@ def discover_exposures_and_reconcile(action):
                     existing = existing.filter(family_id=family_id)
             else:
                 existing = Transaction.objects.none()
+
+            if expected_type is not None and expected_type != TransactionType.DIVIDEND:
+                from corporate_actions.position_adjustment import calculate_position_with_actions, confirmed_ratio_actions
+                tx_rows = list(prior_transactions.order_by("transaction_date", "created_at", "id"))
+                if tx_rows:
+                    totals = calculate_position_with_actions(
+                        tx_rows,
+                        confirmed_ratio_actions(asset=asset, owner=action.owner, as_of_date=action.ex_date),
+                    )
+                    eligible_quantity = totals.get("quantity")
 
             if existing.exists():
                 _create_reconciliation(
@@ -194,6 +205,7 @@ def discover_exposures_and_reconcile(action):
                 )
                 _create_reconciliation(
                     action, user, status_value,
+                    suggested_quantity=eligible_quantity,
                     notes="Direct security exposure found. Verify eligible holdings and the depository statement before booking.",
                 )
                 if status_value == CorporateActionReconciliationStatus.PENDING:

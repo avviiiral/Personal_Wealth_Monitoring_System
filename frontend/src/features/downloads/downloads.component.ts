@@ -1182,7 +1182,6 @@ export class DownloadsComponent implements OnInit {
     workbook.creator = 'PWMS';
     workbook.created = new Date();
     workbook.calcProperties.fullCalcOnLoad = true;
-    workbook.calcProperties.forceFullCalc = true;
 
     const sheet = workbook.addWorksheet('Liquid Position Funds', {
       properties: { defaultRowHeight: 16.75 },

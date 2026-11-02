@@ -21,7 +21,8 @@ type ReportId =
   | 'watch-list'
   | 'market-cap'
   | 'holding-matrix'
-  | 'capital-gain';
+  | 'capital-gain'
+  | 'liquid-position-funds';
 
 interface ReportDefinition {
   id: ReportId;
@@ -47,6 +48,7 @@ export class DownloadsComponent implements OnInit {
   readonly reports: ReportDefinition[] = [
     { id: 'portfolio-detailed', name: 'Portfolio Detailed', type: 'Transaction Report', description: 'Transaction-level portfolio activity for a selected date range.', filters: 'Family + Date Range' },
     { id: 'capital-gain', name: 'Capital Gain Report', type: 'Tax / Realised Gains', description: 'FIFO realised gains from sales; indicative tax uses saved asset rates and excludes loss set-off, exemptions, surcharge/cess, and other filing-specific rules.', filters: 'Family + Asset Class + Sub Class + Date Range' },
+    { id: 'liquid-position-funds', name: 'Liquid Position Funds', type: 'Liquidity Report', description: 'A family-member-wise liquidity position, commitments and deployment plan template.', filters: 'As of Date' },
     { id: 'sub-class-holdings', name: 'Sub Class Holdings', type: 'Holdings Report', description: 'Current holdings belonging to a selected Sub Class.', filters: 'Family + Asset Class + Sub Class' },
     { id: 'holding-report', name: 'Holding Report', type: 'Holdings Report', description: 'Current holdings with quantity, invested value, current value, gain and XIRR.', filters: 'Family + Asset Class' },
     { id: 'sub-class-xirr', name: 'Portfolio Summary', type: 'Performance / XIRR', description: 'Sub Class level portfolio summary with XIRR performance.', filters: 'Family + Asset Class + Sub Class' },
@@ -127,6 +129,14 @@ export class DownloadsComponent implements OnInit {
         this.taxRateSettings = await firstValueFrom(this.settingsApi.getTaxRateSettings());
         this.taxRateSettingsLoaded = true;
       }
+      return;
+    }
+
+    if (report === 'liquid-position-funds') {
+      if (this.holdingsLoaded && !force) return;
+      const holdingResponse = await firstValueFrom(this.portfolioApi.getHoldingReport());
+      this.holdingRows = holdingResponse.results ?? [];
+      this.holdingsLoaded = true;
       return;
     }
 
@@ -313,6 +323,7 @@ export class DownloadsComponent implements OnInit {
         case 'market-cap': await this.downloadMarketCap(); break;
         case 'holding-matrix': await this.downloadHoldingMatrix(); break;
         case 'capital-gain': await this.downloadCapitalGainReport(); break;
+        case 'liquid-position-funds': await this.downloadLiquidPositionFunds(); break;
       }
       this.success = `${this.selectedDefinition.name} downloaded successfully.`;
     } catch (error) {
@@ -1161,6 +1172,132 @@ export class DownloadsComponent implements OnInit {
       ['Current Price / NAV', 'current_price'], ['Current Value', 'current_value'], ['Gain', 'gain'],
       ['Gain %', 'gain_percentage'], ['XIRR (%)', 'xirr'], ['Sector', 'sector'], ['Cap Type', 'cap_type'], ['AMC', 'amc_name'],
     ];
+  }
+
+  private async downloadLiquidPositionFunds(): Promise<void> {
+    // Reproduce the supplied Book1.xlsx layout: DAJ, DJT and Total columns,
+    // including the PMS exit, deployment and redemption sections.
+    const { default: ExcelJS } = await import('exceljs');
+    const workbook = new ExcelJS.Workbook();
+    workbook.creator = 'PWMS';
+    workbook.created = new Date();
+    workbook.calcProperties.fullCalcOnLoad = true;
+
+    const sheet = workbook.addWorksheet('Liquid Position Funds', {
+      properties: { defaultRowHeight: 16.75 },
+      views: [{ state: 'normal', showGridLines: false }],
+    });
+
+    const lastColumn = 6; // Keep the report limited to columns A:F.
+    sheet.getCell('B2').value = `Liquidity Position as on ${this.selectedReportDate || this.todayStamp()}`;
+    sheet.getCell('E2').value = '(Rs in lakhs)';
+    sheet.getRow(3).values = [undefined, 'Particulars', 'DAJ', 'DJT', 'Total'];
+
+    const labels: Record<number, string> = {
+      4: 'Liquid (MV)',
+      5: 'Arbitrage (MV)',
+      6: 'Bank',
+      7: 'Arbitrage+Liquid+Bank',
+      9: 'Less: Commitments',
+      10: 'Proposed immediate top up - ',
+      15: 'Other AIF Pending Drawdowns*',
+      16: 'HOABL',
+      17: 'Gift to BFT (HOABL)',
+      18: 'Club House, etc**',
+      20: 'Net available Amount (A)',
+      31: 'Deployment Plan',
+      32: 'Abakkus',
+      39: 'W Oak Flexi Cap ',
+      40: 'Parag Parikh Flexi Cap',
+      41: 'HDFC Focused * Index switch',
+      42: 'ICICI Value Fund * India Opp switch',
+      43: 'Silver ETF',
+      45: 'Total Deployement Plan',
+      47: 'Balance',
+    };
+
+    Object.entries(labels).forEach(([row, label]) => {
+      sheet.getCell(`B${row}`).value = label;
+    });
+
+    // Formula map follows the supplied workbook's row and column references.
+    const formulas: Record<string, string> = {
+      E4: 'SUM(C4:D4)', E5: 'SUM(C5:D5)', E6: 'SUM(C6:D6)',
+      C7: 'SUM(C4:C6)', D7: 'SUM(D4:D6)', E7: 'SUM(C7:D7)',
+      E11: 'SUM(C11:D11)', E12: 'SUM(C12:D12)', E14: 'SUM(C14:D14)',
+      E15: 'SUM(C15:D15)', E16: 'SUM(C16:D16)', E17: 'SUM(C17:D17)', E18: 'SUM(C18:D18)',
+      C20: 'SUM(C7:C19)', D20: 'SUM(D7:D19)', E20: 'SUM(C20:D20)',
+      E32: 'SUM(C32:D32)', E33: 'SUM(C33:D33)', E34: 'SUM(C34:D34)',
+      E35: 'SUM(C35:D35)', E36: 'SUM(C36:D36)', E37: 'SUM(C37:D37)',
+      E39: 'SUM(C39:D39)', E40: 'SUM(C40:D40)', E43: 'SUM(C43:D43)',
+      C45: 'SUM(C31:C43)', D45: 'SUM(D31:D43)', E45: 'SUM(E31:E43)',
+      C47: 'C20+C45', D47: 'D20+D45', E47: 'SUM(C47:D47)',
+    };
+    Object.entries(formulas).forEach(([address, formula]) => {
+      sheet.getCell(address).value = { formula };
+    });
+
+    // Layout and formatting aligned to the reference workbook's columns.
+    sheet.getColumn(1).width = 2.8;
+    sheet.getColumn(2).width = 34;
+    sheet.getColumn(3).width = 13;
+    sheet.getColumn(4).width = 13;
+    sheet.getColumn(5).width = 13;
+    sheet.getColumn(6).width = 17;
+
+    sheet.getRow(2).height = 22;
+    sheet.getRow(2).getCell(2).font = { bold: true, size: 14 };
+    sheet.getRow(2).getCell(5).font = { italic: true, size: 10 };
+    sheet.getRow(3).height = 22;
+    for (let column = 2; column <= 5; column++) {
+      const cell = sheet.getRow(3).getCell(column);
+      cell.font = { bold: true };
+      cell.border = { bottom: { style: 'thin' } };
+      cell.alignment = { vertical: 'middle', horizontal: column >= 3 ? 'right' : 'left' };
+    }
+
+    for (let rowNumber = 4; rowNumber <= 48; rowNumber++) {
+      const row = sheet.getRow(rowNumber);
+      row.height = rowNumber === 13 || rowNumber === 38 ? 8 : 18;
+      for (let column = 2; column <= lastColumn; column++) {
+        const cell = row.getCell(column);
+        cell.alignment = { vertical: 'middle', wrapText: column === 6 };
+        if (column >= 3 && column <= 5) {
+          cell.numFmt = '#,##0.00;[Red](#,##0.00);-';
+          cell.alignment = { vertical: 'middle', horizontal: 'right' };
+        }
+      }
+    }
+
+    [9, 31].forEach(rowNumber => {
+      for (let column = 2; column <= 5; column++) {
+        sheet.getCell(rowNumber, column).font = { bold: true };
+      }
+    });
+    [7, 20, 45, 47].forEach(rowNumber => {
+      for (let column = 2; column <= 5; column++) {
+        const cell = sheet.getCell(rowNumber, column);
+        cell.font = { bold: true };
+        cell.border = {
+          top: { style: 'thin', color: { argb: 'FF808080' } },
+          bottom: { style: rowNumber === 47 ? 'double' : 'hair', color: { argb: 'FF808080' } },
+        };
+      }
+    });
+
+    sheet.mergeCells('F35:F36');
+
+    sheet.views = [{ state: 'frozen', xSplit: 2, ySplit: 3, showGridLines: false }];
+    const buffer = await workbook.xlsx.writeBuffer();
+    const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = `liquid_position_funds_${this.selectedReportDate || this.todayStamp()}.xlsx`;
+    document.body.appendChild(anchor);
+    anchor.click();
+    document.body.removeChild(anchor);
+    URL.revokeObjectURL(url);
   }
 
   private async exportWorkbook(

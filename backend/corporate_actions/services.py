@@ -1,4 +1,4 @@
-from datetime import date, datetime
+from datetime import date
 from decimal import Decimal
 
 from .models import CorporateAction, CorporateActionStatus, RATIO_ACTIONS
@@ -53,9 +53,9 @@ def quantity_multiplier(*, owner, isin="", symbol="", exchange="", transaction_d
 
 
 import hashlib
+import hashlib
 import logging
 from datetime import timedelta
-from decimal import Decimal
 
 from django.db import transaction
 from django.utils import timezone
@@ -63,7 +63,7 @@ from django.contrib.auth import get_user_model
 from users.models import FamilyMembership
 
 from investments.models import Asset, Transaction, TransactionType, AssetUnderlyingHolding
-from mutual_funds.models import MutualFundScheme, MutualFundTransaction
+from mutual_funds.models import MutualFundTransaction
 from mutual_funds.underlying_models import MutualFundUnderlying
 from .models import (
     CorporateActionExposure,
@@ -80,8 +80,8 @@ def _idempotency_key(action_id, owner_id):
 
 
 def _user_family_id(user):
-    membership = FamilyMembership.objects.filter(profile__user=user).select_related("family_group").order_by("id").first()
-    return membership.family_group_id if membership else None
+    from users.permissions import get_active_family_group_id
+    return get_active_family_group_id(user)
 
 
 def _create_reconciliation(action, user, status_value, transaction_ids=None, suggested_quantity=None, notes=""):
@@ -98,7 +98,7 @@ def _create_reconciliation(action, user, status_value, transaction_ids=None, sug
             "idempotency_key": _idempotency_key(action.id, user.id),
         },
     )
-    if status_value == CorporateActionReconciliationStatus.PENDING:
+    if status_value in {CorporateActionReconciliationStatus.PENDING, CorporateActionReconciliationStatus.ALREADY_RECORDED, CorporateActionReconciliationStatus.COMPLETED}:
         CorporateActionNotification.objects.get_or_create(
             action=action,
             owner=user,
@@ -128,8 +128,7 @@ def _latest_mf_underlying(action):
 
 def _latest_pms_underlying(action):
     rows = AssetUnderlyingHolding.objects.filter(isin__iexact=action.isin) if action.isin else AssetUnderlyingHolding.objects.none()
-    latest = rows.order_by("-portfolio_date").values_list("portfolio_date", flat=True).first()
-    return rows.filter(portfolio_date=latest).select_related("asset", "family") if latest else rows.none()
+    return rows.select_related("asset", "family")
 
 
 def discover_exposures_and_reconcile(action):

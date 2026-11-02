@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 
 from .models import CorporateAction, CorporateActionStatus, RATIO_ACTIONS
@@ -23,6 +23,8 @@ def resolve_corporate_action_candidates(*, owner, isin="", symbol="", exchange="
         if exchange:
             query = query.filter(exchange__iexact=exchange)
     if event_date:
+        if isinstance(event_date, str):
+            event_date = date.fromisoformat(event_date)
         query = query.filter(ex_date__lte=event_date)
     return query.order_by("ex_date", "id")
 
@@ -57,6 +59,8 @@ from decimal import Decimal
 
 from django.db import transaction
 from django.utils import timezone
+from django.contrib.auth import get_user_model
+from users.models import FamilyMember
 
 from investments.models import Asset, Transaction, TransactionType
 from mutual_funds.models import MutualFundScheme, MutualFundTransaction, MutualFundTransactionType
@@ -76,8 +80,12 @@ def _idempotency_key(action_id, owner_id):
 
 
 def _user_family_id(user):
-    profile = getattr(user, "profile", None)
-    return getattr(profile, "active_family_id", None) or getattr(user, "active_family_id", None)
+    try:
+        from users.models import UserProfile
+        profile = UserProfile.objects.filter(user=user).first()
+        return getattr(profile, "active_family_id", None)
+    except Exception:
+        return None
 
 
 def _create_reconciliation(action, user, status_value, transaction_ids=None, suggested_quantity=None, notes=""):
@@ -131,9 +139,8 @@ def discover_exposures_and_reconcile(action):
     for asset in _direct_exposures(action).iterator():
         users = [asset.owner] if asset.owner_id else []
         if asset.family_id:
-            from users.models import FamilyMember
-            users = list(FamilyMember.objects.filter(family_id=asset.family_id, is_active=True).select_related("user").values_list("user", flat=True))
-            users = list(__import__("django.contrib.auth", fromlist=["get_user_model"]).get_user_model().objects.filter(id__in=users))
+            member_ids = FamilyMember.objects.filter(family_id=asset.family_id, is_active=True).values_list("user_id", flat=True)
+            users = list(get_user_model().objects.filter(id__in=member_ids, is_active=True))
         for user in users:
             if not user or not user.is_active:
                 continue
@@ -179,7 +186,7 @@ def discover_exposures_and_reconcile(action):
         if family_id:
             transactions = transactions.filter(family_id=family_id)
         owners = transactions.exclude(owner__isnull=True).values_list("owner_id", flat=True).distinct()
-        for user in __import__("django.contrib.auth", fromlist=["get_user_model"]).get_user_model().objects.filter(id__in=list(owners), is_active=True):
+        for user in get_user_model().objects.filter(id__in=list(owners), is_active=True):
             CorporateActionExposure.objects.get_or_create(
                 action=action, owner=user, exposure_type="MUTUAL_FUND",
                 investment_name=scheme.scheme_name, investment_id=scheme.id,
@@ -199,11 +206,7 @@ def discover_exposures_and_reconcile(action):
 
 def reconcile_action_for_all_users(action):
     """Run for existing active users; writes are idempotent via unique constraints."""
-    from django.contrib.auth import get_user_model
-    stats = {"direct": 0, "mutual_fund": 0, "notifications": 0}
-    for _ in [0]:
-        stats = discover_exposures_and_reconcile(action)
-    return stats
+    return discover_exposures_and_reconcile(action)
 
 
 def update_notification_state(*, owner, notification_id, reviewed=None, dismissed=None):

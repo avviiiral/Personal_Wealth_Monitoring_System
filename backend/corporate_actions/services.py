@@ -53,11 +53,10 @@ def quantity_multiplier(*, owner, isin="", symbol="", exchange="", transaction_d
 
 
 import hashlib
-import hashlib
 import logging
 from datetime import timedelta
 
-from django.db import transaction
+from django.db.models import Max
 from django.utils import timezone
 from django.contrib.auth import get_user_model
 from users.models import FamilyMembership
@@ -120,10 +119,15 @@ def _direct_exposures(action):
 
 def _latest_mf_underlying(action):
     snapshots = MutualFundUnderlying.objects.filter(isin__iexact=action.isin) if action.isin else MutualFundUnderlying.objects.none()
-    latest = snapshots.order_by("-portfolio_date").values_list("portfolio_date", flat=True).first()
-    if not latest:
+    latest_by_scheme = snapshots.values("scheme_id").annotate(latest_date=Max("portfolio_date"))
+    latest_filters = None
+    from django.db.models import Q
+    for row in latest_by_scheme:
+        condition = Q(scheme_id=row["scheme_id"], portfolio_date=row["latest_date"])
+        latest_filters = condition if latest_filters is None else latest_filters | condition
+    if latest_filters is None:
         return snapshots.none()
-    return snapshots.filter(portfolio_date=latest).select_related("scheme")
+    return snapshots.filter(latest_filters).select_related("scheme")
 
 
 def _latest_pms_underlying(action):

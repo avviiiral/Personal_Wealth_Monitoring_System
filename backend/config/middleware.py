@@ -47,7 +47,7 @@ class AuthenticatedApiCacheMiddleware:
             request.method != "GET"
             or not user
             or not user.is_authenticated
-            or not any(request.path.startswith(prefix) for prefix in CACHEABLE_API_PREFIXES)
+            or request.path not in CACHEABLE_API_PREFIXES
             or request.headers.get("Cache-Control", "").lower() == "no-cache"
         ):
             return self.get_response(request)

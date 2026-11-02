@@ -108,7 +108,7 @@ class AuthenticatedApiCacheMiddlewareTests(SimpleTestCase):
         middleware(self._request(user))
 
         request = self._request(user)
-        request.headers = {"Cache-Control": "no-cache"}
+        request.META["HTTP_CACHE_CONTROL"] = "no-cache"
         result = middleware(request)
 
         self.assertFalse(result.has_header("X-PWMS-Cache"))

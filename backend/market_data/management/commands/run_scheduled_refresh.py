@@ -82,7 +82,7 @@ class Command(BaseCommand):
     # in place; portfolio news wants the full day's picture).
     GLOBAL_STEPS_AFTER = [
         ("refresh_security_master", {"apply": True}),
-        ("monitor_portfolio_news", {}),
+        ("monitor_portfolio_news", {}),\n        ("monitor_corporate_actions", {}),
     ]
 
     def add_arguments(self, parser):

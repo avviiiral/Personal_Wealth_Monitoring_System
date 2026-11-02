@@ -29,6 +29,13 @@ export class CorporateActionsComponent implements OnInit {
   loading = false;
   error = '';
   busyId: number | null = null;
+  transactionItem: CorporateActionInboxItem | null = null;
+  transactionQuantity = '';
+  transactionAmount = '0';
+  transactionPrice = '0';
+  transactionFees = '0';
+  transactionDate = '';
+  confirmingTransaction = false;
 
   ngOnInit(): void { this.load(); }
 
@@ -66,6 +73,45 @@ export class CorporateActionsComponent implements OnInit {
       .subscribe({ next: () => this.load(), error: () => this.error = 'Could not dismiss notification.' });
   }
 
+  openAddTransaction(item: CorporateActionInboxItem): void {
+    if (!item.direct_exposure || item.action.status !== 'CONFIRMED') return;
+    this.transactionItem = item;
+    this.transactionQuantity = item.reconciliation.suggested_quantity || '';
+    this.transactionAmount = item.action.cash_per_unit || '0';
+    this.transactionPrice = '0';
+    this.transactionFees = '0';
+    this.transactionDate = item.action.payment_date || item.action.ex_date;
+  }
+
+  closeAddTransaction(): void {
+    this.transactionItem = null;
+    this.transactionQuantity = '';
+    this.confirmingTransaction = false;
+  }
+
+  submitAddTransaction(): void {
+    const item = this.transactionItem;
+    if (!item || !this.transactionQuantity || Number(this.transactionQuantity) <= 0 ||
+        Number(this.transactionAmount) < 0 || Number(this.transactionPrice) < 0 ||
+        Number(this.transactionFees) < 0) {
+      this.error = 'Enter a positive eligible quantity and non-negative amount, price and fees.';
+      return;
+    }
+    this.confirmingTransaction = true;
+    this.service.addTransaction(item.reconciliation.id, {
+      quantity: this.transactionQuantity,
+      amount: this.transactionAmount,
+      price_per_unit: this.transactionPrice,
+      fees: this.transactionFees,
+      transaction_date: this.transactionDate,
+      confirmed: true,
+    }).pipe(finalize(() => this.confirmingTransaction = false))
+      .subscribe({
+        next: () => { this.closeAddTransaction(); this.load(); },
+        error: (error) => { this.error = error?.error?.detail || 'Could not add corporate action transaction.'; },
+      });
+  }
+
   get pendingCount(): number {
     return this.items.filter(item => item.reconciliation.status === 'PENDING').length;
   }
@@ -77,6 +123,8 @@ export class CorporateActionsComponent implements OnInit {
   get indirectCount(): number {
     return this.items.filter(item => !item.direct_exposure && item.exposures.length > 0).length;
   }
+
+  min(value: number, total: number): number { return Math.min(value, total); }
 
   trackById(_: number, item: CorporateActionInboxItem): number { return item.id; }
 }

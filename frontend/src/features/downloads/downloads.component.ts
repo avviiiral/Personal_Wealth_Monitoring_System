@@ -21,7 +21,8 @@ type ReportId =
   | 'watch-list'
   | 'market-cap'
   | 'holding-matrix'
-  | 'capital-gain';
+  | 'capital-gain'
+  | 'liquid-position-funds';
 
 interface ReportDefinition {
   id: ReportId;
@@ -47,6 +48,7 @@ export class DownloadsComponent implements OnInit {
   readonly reports: ReportDefinition[] = [
     { id: 'portfolio-detailed', name: 'Portfolio Detailed', type: 'Transaction Report', description: 'Transaction-level portfolio activity for a selected date range.', filters: 'Family + Date Range' },
     { id: 'capital-gain', name: 'Capital Gain Report', type: 'Tax / Realised Gains', description: 'FIFO realised gains from sales; indicative tax uses saved asset rates and excludes loss set-off, exemptions, surcharge/cess, and other filing-specific rules.', filters: 'Family + Asset Class + Sub Class + Date Range' },
+    { id: 'liquid-position-funds', name: 'Liquid Position Funds', type: 'Liquidity Report', description: 'A family-member-wise liquidity position, commitments and deployment plan template.', filters: 'As of Date' },
     { id: 'sub-class-holdings', name: 'Sub Class Holdings', type: 'Holdings Report', description: 'Current holdings belonging to a selected Sub Class.', filters: 'Family + Asset Class + Sub Class' },
     { id: 'holding-report', name: 'Holding Report', type: 'Holdings Report', description: 'Current holdings with quantity, invested value, current value, gain and XIRR.', filters: 'Family + Asset Class' },
     { id: 'sub-class-xirr', name: 'Portfolio Summary', type: 'Performance / XIRR', description: 'Sub Class level portfolio summary with XIRR performance.', filters: 'Family + Asset Class + Sub Class' },
@@ -127,6 +129,14 @@ export class DownloadsComponent implements OnInit {
         this.taxRateSettings = await firstValueFrom(this.settingsApi.getTaxRateSettings());
         this.taxRateSettingsLoaded = true;
       }
+      return;
+    }
+
+    if (report === 'liquid-position-funds') {
+      if (this.holdingsLoaded && !force) return;
+      const holdingResponse = await firstValueFrom(this.portfolioApi.getHoldingReport());
+      this.holdingRows = holdingResponse.results ?? [];
+      this.holdingsLoaded = true;
       return;
     }
 
@@ -313,6 +323,7 @@ export class DownloadsComponent implements OnInit {
         case 'market-cap': await this.downloadMarketCap(); break;
         case 'holding-matrix': await this.downloadHoldingMatrix(); break;
         case 'capital-gain': await this.downloadCapitalGainReport(); break;
+        case 'liquid-position-funds': await this.downloadLiquidPositionFunds(); break;
       }
       this.success = `${this.selectedDefinition.name} downloaded successfully.`;
     } catch (error) {
@@ -1161,6 +1172,143 @@ export class DownloadsComponent implements OnInit {
       ['Current Price / NAV', 'current_price'], ['Current Value', 'current_value'], ['Gain', 'gain'],
       ['Gain %', 'gain_percentage'], ['XIRR (%)', 'xirr'], ['Sector', 'sector'], ['Cap Type', 'cap_type'], ['AMC', 'amc_name'],
     ];
+  }
+
+  private async downloadLiquidPositionFunds(): Promise<void> {
+    const families = this.familyMemberOptions;
+    if (!families.length) {
+      throw new Error('No family members were found in the holding report.');
+    }
+
+    const { default: ExcelJS } = await import('exceljs');
+    const workbook = new ExcelJS.Workbook();
+    workbook.creator = 'PWMS';
+    workbook.created = new Date();
+    const sheet = workbook.addWorksheet('Liquid Position Funds');
+
+    const headers = ['Particulars', ...families];
+    sheet.mergeCells(1, 1, 1, headers.length);
+    const title = sheet.getCell(1, 1);
+    title.value = `Liquidity Position as on ${this.selectedReportDate || this.todayStamp()}`;
+    title.font = { name: 'Aptos Display', bold: true, size: 15, color: { argb: 'FFFFFFFF' } };
+    title.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF172033' } };
+    title.alignment = { vertical: 'middle', horizontal: 'left' };
+    sheet.getRow(1).height = 32;
+
+    headers.forEach((label, index) => {
+      const cell = sheet.getCell(2, index + 1);
+      cell.value = label;
+      cell.font = { name: 'Aptos', bold: true, size: 10, color: { argb: 'FFFFFFFF' } };
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF344054' } };
+      cell.alignment = { vertical: 'middle', horizontal: index === 0 ? 'left' : 'right' };
+    });
+    sheet.getRow(2).height = 25;
+
+    const definitions: Array<{ label: string; key?: string; section?: boolean; calculated?: boolean }> = [
+      { label: 'Liquid (MV)', key: 'liquid' },
+      { label: 'Arbitrage (MV)', key: 'arbitrage' },
+      { label: 'Bank', key: 'bank' },
+      { label: 'Arbitrage+Liquid+Bank', key: 'combined', calculated: true },
+      { label: '' },
+      { label: 'Less: Commitments', section: true },
+      { label: 'Proposed immediate top up -', key: 'topUp' },
+      { label: '' },
+      { label: '' },
+      { label: '' },
+      { label: '' },
+      { label: 'Other AIF Pending Drawdowns*', section: true },
+      { label: 'HOABL', key: 'hoabl' },
+      { label: 'Gift to BFT (HOABL)', key: 'giftToBft' },
+      { label: 'Club House, etc**', key: 'clubHouse' },
+      { label: '' },
+      { label: 'Net available Amount (A)', key: 'netAvailable', calculated: true },
+      { label: '' },
+      { label: 'Deployment Plan', section: true },
+      { label: '' },
+      { label: '' },
+      { label: '' },
+      { label: '' },
+      { label: '' },
+      { label: '' },
+      { label: 'Total Deployement Plan', key: 'totalDeployment', calculated: true },
+      { label: 'Balance', key: 'balance', calculated: true },
+    ];
+
+    const firstDataRow = 3;
+    definitions.forEach((definition, index) => {
+      const rowNumber = firstDataRow + index;
+      const row = sheet.getRow(rowNumber);
+      row.getCell(1).value = definition.label;
+      row.height = definition.section ? 23 : 21;
+      row.eachCell({ includeEmpty: true }, cell => {
+        cell.font = { name: 'Aptos', size: 10, color: { argb: 'FF172033' } };
+        cell.border = { bottom: { style: 'hair', color: { argb: 'FFE1E5EA' } } };
+        cell.alignment = { vertical: 'middle' };
+      });
+
+      if (definition.section) {
+        for (let column = 1; column <= headers.length; column++) {
+          const cell = row.getCell(column);
+          cell.font = { name: 'Aptos', bold: true, size: 10, color: { argb: 'FF344054' } };
+          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE7EBF0' } };
+        }
+      }
+      if (definition.calculated) {
+        for (let familyIndex = 0; familyIndex < families.length; familyIndex++) {
+          const column = familyIndex + 2;
+          const letter = sheet.getColumn(column).letter;
+          const rowFor = (key: string) => firstDataRow + definitions.findIndex(item => item.key === key);
+          let formula = '';
+          if (definition.key === 'combined') {
+            formula = `SUM(${letter}${rowFor('liquid')},${letter}${rowFor('arbitrage')},${letter}${rowFor('bank')})`;
+          } else if (definition.key === 'netAvailable') {
+            formula = `${letter}${rowFor('combined')}-SUM(${letter}${rowFor('topUp')},${letter}${rowFor('hoabl')},${letter}${rowFor('giftToBft')},${letter}${rowFor('clubHouse')})`;
+          } else if (definition.key === 'totalDeployment') {
+            const deploymentStart = firstDataRow + definitions.findIndex(item => item.label === 'Deployment Plan') + 1;
+            const deploymentEnd = firstDataRow + definitions.findIndex(item => item.key === 'totalDeployment') - 1;
+            formula = `SUM(${letter}${deploymentStart}:${letter}${deploymentEnd})`;
+          } else if (definition.key === 'balance') {
+            formula = `${letter}${rowFor('netAvailable')}-${letter}${rowFor('totalDeployment')}`;
+          }
+          const cell = row.getCell(column);
+          cell.value = { formula };
+          cell.numFmt = '#,##0.00;[Red](#,##0.00);-';
+          cell.font = { name: 'Aptos', bold: true, size: 10, color: { argb: 'FF172033' } };
+          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF2F4F7' } };
+          cell.alignment = { vertical: 'middle', horizontal: 'right' };
+        }
+      } else if (definition.key) {
+        for (let column = 2; column <= headers.length; column++) {
+          const cell = row.getCell(column);
+          cell.numFmt = '#,##0.00;[Red](#,##0.00);-';
+          cell.alignment = { vertical: 'middle', horizontal: 'right' };
+        }
+      }
+    });
+
+    sheet.getColumn(1).width = 38;
+    for (let column = 2; column <= headers.length; column++) {
+      sheet.getColumn(column).width = 20;
+    }
+    sheet.views = [{ state: 'frozen', xSplit: 1, ySplit: 2, showGridLines: false }];
+    sheet.getRow(firstDataRow + definitions.findIndex(item => item.key === 'netAvailable')).eachCell({ includeEmpty: true }, cell => {
+      cell.border = { top: { style: 'thin', color: { argb: 'FF98A2B3' } }, bottom: { style: 'thin', color: { argb: 'FF98A2B3' } } };
+    });
+    sheet.getRow(firstDataRow + definitions.findIndex(item => item.key === 'balance')).eachCell({ includeEmpty: true }, cell => {
+      cell.font = { name: 'Aptos', bold: true, size: 11, color: { argb: 'FF172033' } };
+      cell.border = { top: { style: 'double', color: { argb: 'FF344054' } } };
+    });
+
+    const buffer = await workbook.xlsx.writeBuffer();
+    const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = `liquid_position_funds_${this.selectedReportDate || this.todayStamp()}.xlsx`;
+    document.body.appendChild(anchor);
+    anchor.click();
+    document.body.removeChild(anchor);
+    URL.revokeObjectURL(url);
   }
 
   private async exportWorkbook(

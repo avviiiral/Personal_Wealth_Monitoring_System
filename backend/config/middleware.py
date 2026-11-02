@@ -4,6 +4,7 @@ import hashlib
 
 from django.core.cache import cache
 from django.http import HttpResponse
+from django.utils.deprecation import MiddlewareMixin
 
 
 CACHE_TTL_SECONDS = 20
@@ -35,13 +36,10 @@ CACHEABLE_API_PREFIXES = (
 )
 
 
-class AuthenticatedApiCacheMiddleware:
+class AuthenticatedApiCacheMiddleware(MiddlewareMixin):
     """Cache selected JSON GET responses without crossing user boundaries."""
 
-    def __init__(self, get_response):
-        self.get_response = get_response
-
-    def __call__(self, request):
+    def process_request(self, request):
         user = getattr(request, "user", None)
         if (
             request.method != "GET"
@@ -50,7 +48,7 @@ class AuthenticatedApiCacheMiddleware:
             or request.path not in CACHEABLE_API_PREFIXES
             or request.headers.get("Cache-Control", "").lower() == "no-cache"
         ):
-            return self.get_response(request)
+            return None
 
         query = request.META.get("QUERY_STRING", "")
         material = f"{user.pk}:{request.path}?{query}"
@@ -69,7 +67,7 @@ class AuthenticatedApiCacheMiddleware:
             return response
 
         request._pwms_api_cache_key = key
-        return self.get_response(request)
+        return None
 
     def process_response(self, request, response):
         key = getattr(request, "_pwms_api_cache_key", None)

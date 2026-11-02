@@ -1,0 +1,44 @@
+:host{display:block;color:var(--text-primary,#172033)}
+.corporate-actions-page{padding:28px;max-width:1440px;margin:0 auto}
+.page-header{display:flex;align-items:flex-start;justify-content:space-between;gap:20px;margin-bottom:24px}
+.eyebrow{font-size:11px;letter-spacing:.12em;font-weight:700;color:var(--text-muted,#778196);margin:0 0 8px}
+h1{font-size:28px;line-height:1.2;margin:0 0 8px;font-weight:700}
+.subtitle{margin:0;color:var(--text-secondary,#647084);font-size:14px}
+.refresh-button,.pagination button,.action-footer button{border:1px solid var(--border-color,#dce1e9);border-radius:9px;padding:9px 13px;background:var(--surface,#fff);color:inherit;font-weight:600;cursor:pointer}
+button:disabled{opacity:.5;cursor:not-allowed}
+.summary-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px;margin-bottom:22px}
+.summary-card{background:var(--surface,#fff);border:1px solid var(--border-color,#e2e7ef);border-radius:12px;padding:17px;display:flex;flex-direction:column;gap:7px}
+.summary-card span,.event-details span{font-size:12px;color:var(--text-secondary,#677386)}
+.summary-card strong{font-size:26px;line-height:1.1;font-weight:700}
+.summary-card small{font-size:11px;color:var(--text-muted,#8993a3)}
+.filter-bar{display:flex;gap:7px;overflow:auto;padding-bottom:14px;margin-bottom:14px;border-bottom:1px solid var(--border-color,#e2e7ef)}
+.filter-bar button{white-space:nowrap;border:1px solid transparent;background:transparent;border-radius:8px;padding:8px 12px;color:var(--text-secondary,#657084);cursor:pointer;font-size:13px}
+.filter-bar button.active{background:var(--surface,#fff);color:var(--text-primary,#172033);border-color:var(--border-color,#dce1e9);font-weight:700}
+.action-list{display:grid;gap:14px}
+.action-card{background:var(--surface,#fff);border:1px solid var(--border-color,#e2e7ef);border-radius:14px;padding:19px}
+.action-topline{display:flex;justify-content:space-between;gap:16px}
+.action-topline a{font-size:12px;color:var(--accent,#4169b2);white-space:nowrap}
+.action-tags{display:flex;flex-wrap:wrap;gap:7px;margin-bottom:9px}
+.action-tags span{font-size:10px;letter-spacing:.04em;text-transform:uppercase;padding:4px 7px;border-radius:5px;background:var(--surface-muted,#f1f3f7);color:var(--text-secondary,#657084)}
+.action-tags .status-tag[data-status="PENDING"]{background:#fff4dc;color:#8d5c00}
+.action-tags .status-tag[data-status="COMPLETED"]{background:#e8f6ef;color:#176b43}
+.action-card h2{font-size:17px;margin:0 0 4px}
+.security-meta{font-size:12px;color:var(--text-muted,#828c9d);margin:0}
+.event-details{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;border-top:1px solid var(--border-color,#edf0f4);border-bottom:1px solid var(--border-color,#edf0f4);padding:14px 0;margin:15px 0}
+.event-details div{display:flex;flex-direction:column;gap:5px}
+.event-details strong{font-size:13px;font-weight:600}
+.exposure-list{display:grid;gap:8px}
+.section-label{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--text-muted,#828c9d);font-weight:700}
+.exposure-row{display:flex;justify-content:space-between;gap:12px;font-size:12px}
+.exposure-row span{display:flex;flex-direction:column;gap:3px}
+.exposure-row small{color:var(--text-muted,#828c9d)}
+.safety-note{font-size:12px;line-height:1.5;color:var(--text-secondary,#657084);background:var(--surface-muted,#f6f7f9);padding:10px 12px;border-radius:8px;margin:13px 0 0}
+.action-footer{display:flex;flex-wrap:wrap;gap:8px;margin-top:16px}
+.action-footer .quiet-danger{color:#a23f3f;border-color:transparent;background:transparent}
+.state-panel,.error-panel{background:var(--surface,#fff);border:1px dashed var(--border-color,#dce1e9);border-radius:12px;padding:28px;text-align:center;color:var(--text-secondary,#657084)}
+.state-panel strong{color:var(--text-primary,#172033)}
+.state-panel p{font-size:13px;margin-bottom:0}
+.error-panel{border-color:#e9b4b4;color:#a23f3f;margin-bottom:12px}
+.pagination{display:flex;justify-content:flex-end;align-items:center;gap:8px;margin-top:18px;font-size:12px;color:var(--text-secondary,#657084)}
+@media(max-width:900px){.summary-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.event-details{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:600px){.corporate-actions-page{padding:18px 14px}.page-header{align-items:flex-start}.page-header h1{font-size:23px}.summary-grid{gap:8px}.summary-card{padding:12px}.summary-card strong{font-size:22px}.action-card{padding:14px}.action-topline{flex-direction:column}.pagination{justify-content:space-between}}

@@ -76,6 +76,11 @@ export const routes: Routes = [
           import('../features/portfolio-news/portfolio-news-detail.component').then((m) => m.PortfolioNewsDetailComponent),
       },
       {
+        path: 'corporate-actions',
+        loadComponent: () =>
+          import('../features/corporate-actions/corporate-actions.component').then((m) => m.CorporateActionsComponent),
+      },
+      {
         path: 'watch-list',
         loadComponent: () =>
           import('../features/watch-list/watch-list.component').then((m) => m.WatchListComponent),

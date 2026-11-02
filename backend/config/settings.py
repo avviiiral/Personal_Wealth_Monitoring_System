@@ -200,7 +200,10 @@ CACHES = {
     }
 }
 
-# Log API requests slower than this threshold with total and database timings.\nAPI_SLOW_REQUEST_THRESHOLD_MS = max(0, _env_int('API_SLOW_REQUEST_THRESHOLD_MS', 500))\n\nREST_FRAMEWORK = {
+# Log API requests slower than this threshold with total and database timings.
+API_SLOW_REQUEST_THRESHOLD_MS = max(0, _env_int('API_SLOW_REQUEST_THRESHOLD_MS', 500))
+
+REST_FRAMEWORK = {
     'DEFAULT_PERMISSION_CLASSES': ['rest_framework.permissions.IsAuthenticated'],
     'DEFAULT_AUTHENTICATION_CLASSES': ['rest_framework.authentication.SessionAuthentication'],
 }

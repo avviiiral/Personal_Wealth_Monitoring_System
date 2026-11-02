@@ -181,7 +181,10 @@ def discover_exposures_and_reconcile(action):
                 existing = Transaction.objects.none()
 
             if expected_type is not None and expected_type != TransactionType.DIVIDEND:
-                from corporate_actions.position_adjustment import calculate_position_with_actions, confirmed_ratio_actions
+                from corporate_actions.position_adjustment import (
+                    calculate_position_with_actions,
+                    confirmed_ratio_actions,
+                )
                 tx_rows = list(prior_transactions.order_by("transaction_date", "created_at", "id"))
                 if tx_rows:
                     totals = calculate_position_with_actions(
@@ -223,11 +226,16 @@ def discover_exposures_and_reconcile(action):
         owner_ids = fund_transactions.exclude(owner__isnull=True).values_list("owner_id", flat=True).distinct()
         users = get_user_model().objects.filter(id__in=owner_ids, is_active=True)
         for user in users:
+            quantity = None
+            if underlying.quantity is not None:
+                # Units are in the fund disclosure; retain them as underlying metadata only.
+                quantity = underlying.quantity
             CorporateActionExposure.objects.get_or_create(
                 action=action, owner=user, exposure_type="MUTUAL_FUND",
                 investment_name=scheme.scheme_name, investment_id=scheme.id,
                 defaults={
                     "family_id_snapshot": scheme.family_id or _user_family_id(user),
+                    "quantity": quantity,
                     "holding_weight": underlying.percentage_of_nav,
                     "snapshot_date": underlying.portfolio_date,
                 },

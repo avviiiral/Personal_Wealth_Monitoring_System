@@ -582,12 +582,29 @@ Export **transactions, holdings and portfolio summaries** to **Excel or PDF** �
 
 ### 📥 Downloads
 
-The Downloads page provides filtered Excel exports for holdings and XIRR summaries.
+The **Downloads** page provides a report selector and generates Excel workbooks for transaction activity, holdings, performance, tax, watch-list research and equity exposure. Available report types are:
 
-- **Holding Matrix** exports respect the selected family member and active asset filters.
-- **Asset Name XIRR** and **Portfolio Summary** exports use the Portfolio API's authoritative grouped XIRR summaries, rather than averaging individual asset XIRR percentages.
-- The two XIRR summary exports omit the **Underlying** column because those reports are grouped at the asset-name or portfolio-summary level.
-- Excel downloads use consistent professional formatting, including readable headers, fitted column widths, alternating row shading, frozen header rows and column filters.
+| Report | Contents | Main filters |
+| --- | --- | --- |
+| **Portfolio Detailed** | Transaction-level activity with family, asset classification, underlying, ISIN, date, transaction type, quantity, price and amount | Family, from/to date |
+| **Capital Gain Report** | FIFO realised gains from sale transactions, with indicative tax based on saved asset tax rates | Family, asset class, sub-class, asset name and date range |
+| **Sub Class Holdings** | Current holdings for the selected sub-class | Family, asset class and sub-class |
+| **Holding Report** | Current positions with quantity, invested/current value, gain and XIRR | Family and asset class |
+| **Portfolio Summary** | Sub-class-level XIRR summary | Family, asset class and sub-class |
+| **Asset Name XIRR** | Asset-name-level XIRR summary | Family, asset class, sub-class and asset name |
+| **Watch List** | Watchlisted mutual-fund and/or PMS products | Product type |
+| **Market Cap** | Equity PMS, direct-equity and equity-mutual-fund exposure grouped by market capitalization | Family and as-of date |
+| **Holding Matrix** | Equity PMS and direct-equity exposure aggregated by underlying security | Family and as-of date |
+| **Liquid Position Funds** | Fixed-format liquidity, commitments and deployment-plan workbook | As-of date printed in the report heading |
+
+Additional export behavior:
+
+- **Holding Matrix** exports respect the selected family member and the report's as-of date.
+- **Asset Name XIRR** and **Portfolio Summary** use the Portfolio API's authoritative grouped XIRR summaries; they do not average individual asset XIRR percentages. These grouped reports omit the **Underlying** column.
+- Standard tabular exports use formatted headers, readable column widths, number formats, frozen headers and filters where appropriate.
+- **Liquid Position Funds template:** the workbook is intentionally limited to columns **A:F** and rows **1:48**. Its header contains the selected date and its value columns are **DAJ**, **DJT** and **Total**; column F is retained for notes. The template includes the liquidity and commitment rows, the **Net available Amount (A)** section, the **Deployment Plan**, **Total Deployement Plan**, and **Balance**. Preconfigured Excel formulas calculate the section totals and summaries.
+- The Liquid Position Funds workbook is a **manual-entry template**: its amount cells are not populated from live holdings or historical market values. The selected as-of date is a heading label, not a historical valuation query. Rows 22–29 and all rows after 48 are excluded from the generated workbook.
+- The **Capital Gain Report** is an indicative report, not a tax return or filing calculation; it does not model loss set-off, exemptions, surcharge/cess or other filing-specific adjustments.
 
 ### 📑 MIS Report
 

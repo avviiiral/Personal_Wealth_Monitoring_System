@@ -1347,6 +1347,7 @@ export class DownloadsComponent implements OnInit {
     });
 
     sheet.mergeCells('F35:F36');
+    sheet.mergeCells('N9:Q9');
     sheet.mergeCells('N15:Q15');
     sheet.mergeCells('N17:Q17');
     sheet.mergeCells('N18:Q18');

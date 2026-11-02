@@ -216,8 +216,8 @@ def discover_exposures_and_reconcile(action):
                 investment_name=holding.asset.name, investment_id=holding.asset_id,
                 defaults={
                     "family_id_snapshot": family_id,
-                    "holding_weight": getattr(holding, "percentage_of_nav", None),
-                    "snapshot_date": holding.portfolio_date,
+                    "holding_weight": holding.holding_percentage,
+                    "snapshot_date": timezone.localdate(),
                 },
             )
             _create_reconciliation(

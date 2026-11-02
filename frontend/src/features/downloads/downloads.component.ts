@@ -1188,7 +1188,7 @@ export class DownloadsComponent implements OnInit {
       views: [{ state: 'normal', showGridLines: false }],
     });
 
-    const lastColumn = 20; // T: retains the supporting drawdown schedule.
+    const lastColumn = 6; // Keep the report limited to columns A:F.
     sheet.getCell('B2').value = `Liquidity Position as on ${this.selectedReportDate || this.todayStamp()}`;
     sheet.getCell('E2').value = '(Rs in lakhs)';
     sheet.getRow(3).values = [undefined, 'Particulars', 'DAJ', 'DJT', 'Total'];
@@ -1230,24 +1230,9 @@ export class DownloadsComponent implements OnInit {
       sheet.getCell(`B${row}`).value = label;
     });
 
-    // Preserve the comments and supporting notes present in the reference file.
+    // Retain only notes that belong within the requested A:F report area.
     const notes: Array<[string, string | number]> = [
-      ['G24', 'Full Exit on 01-05-2026'],
       ['F25', 'Whenever required'],
-      ['G25', 'Keep small amount in account and keep it open without closing- 50L each'],
-      ['H25', 'Carnelian'],
-      ['G26', 'Full Exit after ASK, Unifi'],
-      ['H26', 'Buoyant'],
-      ['G32', 'Hold the top up idea.'],
-      ['G34', 'Replacement to Unifi, Also doable from RKB for ENAM & Unifi'],
-      ['G35', 'Can be replacement to ASK'],
-      ['G39', 'Dropped & allocated to Alchemy'],
-      ['G40', 'NBT- 4.5 Cr & DJT - 3.5 Cr STP started in Oct-25'],
-      ['H40', 8],
-      ['G41', 'Switched to Focused Fund'],
-      ['G42', 'Switched to Value Fund'],
-      ['G43', 'Bought 2.5 Cr each from NBT DJT ~ $42'],
-      ['H43', 5],
       ['C51', 950],
     ];
     notes.forEach(([address, value]) => {
@@ -1274,22 +1259,6 @@ export class DownloadsComponent implements OnInit {
       sheet.getCell(address).value = { formula };
     });
 
-    // Supporting AIF drawdown schedule from columns M:T in the reference.
-    const drawdowns: Array<[number, string, string, number, number, number, number]> = [
-      [15, 'NAB', 'Baring Private Equity India Fund 6', 2, 0.81, 1.19, 0],
-      [17, 'NAB', 'Mt K Capital Fund', 5, 3.6, 1.4, 0],
-      [18, 'NAB', '360 One Real Asset Fund Development', 5, 2.5, 2.5, 0],
-      [20, 'DAJ', 'Baring Private Equity India Fund 6', 2, 0.81, 1.19, 0],
-      [21, 'DAJ', 'Mt K Capital Fund', 3, 2.16, 0.84, 0],
-    ];
-    drawdowns.forEach(([row, owner, fund, total, first, second]) => {
-      sheet.getCell(`M${row}`).value = owner;
-      sheet.getCell(`N${row}`).value = fund;
-      sheet.getCell(`R${row}`).value = total;
-      sheet.getCell(`S${row}`).value = first;
-      sheet.getCell(`T${row}`).value = second;
-    });
-
     // Layout and formatting aligned to the reference workbook's columns.
     sheet.getColumn(1).width = 2.8;
     sheet.getColumn(2).width = 34;
@@ -1297,13 +1266,6 @@ export class DownloadsComponent implements OnInit {
     sheet.getColumn(4).width = 13;
     sheet.getColumn(5).width = 13;
     sheet.getColumn(6).width = 17;
-    sheet.getColumn(7).width = 68;
-    sheet.getColumn(8).width = 14;
-    for (let column = 9; column <= 12; column++) sheet.getColumn(column).width = 12;
-    sheet.getColumn(13).width = 12;
-    sheet.getColumn(14).width = 42;
-    for (let column = 15; column <= 17; column++) sheet.getColumn(column).width = 12;
-    for (let column = 18; column <= 20; column++) sheet.getColumn(column).width = 12;
 
     sheet.getRow(2).height = 22;
     sheet.getRow(2).getCell(2).font = { bold: true, size: 14 };
@@ -1321,7 +1283,7 @@ export class DownloadsComponent implements OnInit {
       row.height = rowNumber === 13 || rowNumber === 38 ? 8 : 18;
       for (let column = 2; column <= lastColumn; column++) {
         const cell = row.getCell(column);
-        cell.alignment = { vertical: 'middle', wrapText: column === 7 || column === 14 };
+        cell.alignment = { vertical: 'middle', wrapText: column === 6 };
         if (column >= 3 && column <= 5) {
           cell.numFmt = '#,##0.00;[Red](#,##0.00);-';
           cell.alignment = { vertical: 'middle', horizontal: 'right' };
@@ -1346,11 +1308,6 @@ export class DownloadsComponent implements OnInit {
     });
 
     sheet.mergeCells('F35:F36');
-    sheet.mergeCells('N9:Q9');
-    sheet.mergeCells('N15:Q15');
-    sheet.mergeCells('N17:Q17');
-    sheet.mergeCells('N18:Q18');
-    sheet.mergeCells('N20:Q20');
 
     sheet.views = [{ state: 'frozen', xSplit: 2, ySplit: 3, showGridLines: false }];
     const buffer = await workbook.xlsx.writeBuffer();

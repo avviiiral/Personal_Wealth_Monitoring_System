@@ -1,5 +1,6 @@
 import logging
-from datetime import timedelta
+import re
+from datetime import date, datetime, timedelta
 
 from django.core.management.base import BaseCommand
 from django.db import transaction
@@ -9,13 +10,17 @@ from config.pwms_config import section
 from corporate_actions.models import CorporateAction, CorporateActionStatus, CorporateActionType
 from corporate_actions.services import reconcile_action_for_all_users
 from filing_intelligence.models import Filing
+from investments.models import Asset, AssetUnderlyingHolding
+from mutual_funds.models import MutualFundScheme, MutualFundTransaction
+from mutual_funds.underlying_models import MutualFundUnderlying
 
 
 logger = logging.getLogger(__name__)
+DATE_PATTERN = re.compile(r"(?i)\b(ex\s*[- ]?date|record\s*[- ]?date|payment\s*[- ]?date)\s*[:\-]?\s*(\d{1,2}[./-]\d{1,2}[./-]\d{4}|\d{4}-\d{2}-\d{2}|\d{1,2}\s+[A-Za-z]{3,9}\s+\d{4})")
 
 
 def classify_filing(filing):
-    """Conservative keyword classification. It never infers ratios or event dates."""
+    """Conservative keyword classification; ambiguous subjects are not auto-classified."""
     text = " ".join([filing.filing_type or "", filing.subject or "", filing.details or ""]).lower()
     rules = [
         (("stock split", "split of equity shares", "sub-division"), CorporateActionType.STOCK_SPLIT),
@@ -27,8 +32,32 @@ def classify_filing(filing):
         (("buyback", "buy-back"), CorporateActionType.BUYBACK),
         (("consolidation of shares", "reverse split"), CorporateActionType.REVERSE_SPLIT),
     ]
-    matches = [(terms, action_type) for terms, action_type in rules if any(term in text for term in terms)]
-    return matches[0][1] if len(matches) == 1 else None
+    matches = [action_type for terms, action_type in rules if any(term in text for term in terms)]
+    return matches[0] if len(matches) == 1 else None
+
+
+def extract_event_dates(filing):
+    """Extract explicit labeled dates only; never substitute the announcement timestamp."""
+    text = " ".join([filing.subject or "", filing.details or ""])
+    result = {}
+    for match in DATE_PATTERN.finditer(text):
+        label = re.sub(r"[^a-z]", "", match.group(1).lower())
+        raw = match.group(2).strip()
+        parsed = None
+        for fmt in ("%d-%m-%Y", "%d/%m/%Y", "%d.%m.%Y", "%Y-%m-%d", "%d %b %Y", "%d %B %Y"):
+            try:
+                parsed = datetime.strptime(raw, fmt).date()
+                break
+            except ValueError:
+                continue
+        if parsed:
+            if label.startswith("exdate"):
+                result["ex_date"] = parsed
+            elif label.startswith("recorddate"):
+                result["record_date"] = parsed
+            elif label.startswith("paymentdate"):
+                result["payment_date"] = parsed
+    return result
 
 
 class Command(BaseCommand):
@@ -40,59 +69,65 @@ class Command(BaseCommand):
 
     def handle(self, *args, **options):
         cfg = section("corporate_actions")
+        if not cfg.get("enabled", True):
+            self.stdout.write("Corporate action monitoring is disabled.")
+            return
         hours = max(1, options["hours"] or int(cfg.get("lookback_hours", 168)))
         cutoff = timezone.now() - timedelta(hours=hours)
         filings = Filing.objects.filter(published_at__gte=cutoff).order_by("-published_at")[:int(cfg.get("max_events_per_run", 500))]
         scanned = created = updated = matched = skipped = 0
+
         for filing in filings.iterator():
             scanned += 1
             action_type = classify_filing(filing)
-            if not action_type or not filing.isin:
+            event_dates = extract_event_dates(filing)
+            if not action_type or not filing.isin or "ex_date" not in event_dates:
                 skipped += 1
                 continue
-            # Filing timestamp is announcement date, not ex-date. We deliberately
-            # do not synthesize missing ex/record dates from publication time.
-            # A missing ex-date remains a provider/manual verification task.
-            event_date = filing.published_at.date()
+
             defaults = {
                 "security_name": filing.company_name,
                 "isin": filing.isin.upper(),
                 "symbol": filing.symbol.upper(),
                 "exchange": filing.exchange,
-                "ex_date": event_date,
+                "ex_date": event_dates["ex_date"],
+                "record_date": event_dates.get("record_date"),
+                "payment_date": event_dates.get("payment_date"),
                 "source": f"{filing.exchange}_FILING",
                 "source_reference": filing.filing_url,
                 "status": CorporateActionStatus.PENDING,
-                "notes": "Detected from an exchange filing. Announcement date is not assumed to be the ex-date; verify official event dates and terms before confirmation.",
+                "notes": "Detected from exchange filing. Review event terms and eligible entitlement before confirming.",
                 "metadata": {
                     "filing_id": filing.id,
                     "announcement_date": filing.published_at.isoformat(),
                     "filing_subject": filing.subject,
                     "filing_type": filing.filing_type,
-                    "event_dates_verified": False,
+                    "event_dates_verified": True,
                 },
             }
             if options["dry_run"]:
                 created += 1
                 continue
-            # This feature's action records are owned by the matched asset owner;
-            # resolve exact ISINs from the filing's linked security if available.
-            from investments.models import Asset
-            asset_qs = Asset.objects.filter(is_active=True, isin__iexact=filing.isin)
-            if filing.security_id:
-                asset_qs = asset_qs.filter(id=filing.security_id)
-            owners = list(asset_qs.exclude(owner__isnull=True).values_list("owner_id", flat=True).distinct())
-            for owner_id in owners:
-                from django.contrib.auth import get_user_model
-                owner = get_user_model().objects.filter(id=owner_id, is_active=True).first()
-                if owner is None:
-                    continue
+
+            # Find every active owner with either direct or underlying MF/PMS exposure.
+            direct_owner_ids = Asset.objects.filter(is_active=True, isin__iexact=filing.isin).exclude(owner__isnull=True).values_list("owner_id", flat=True)
+            family_ids = set(Asset.objects.filter(is_active=True, isin__iexact=filing.isin).exclude(family_id__isnull=True).values_list("family_id", flat=True))
+            pms_family_ids = set(AssetUnderlyingHolding.objects.filter(isin__iexact=filing.isin).values_list("family_id", flat=True))
+            mf_scheme_ids = MutualFundUnderlying.objects.filter(isin__iexact=filing.isin).values_list("scheme_id", flat=True)
+            mf_owners = MutualFundTransaction.objects.filter(scheme_id__in=mf_scheme_ids).exclude(owner__isnull=True).values_list("owner_id", flat=True)
+            from users.models import FamilyMembership
+            from django.contrib.auth import get_user_model
+            member_ids = FamilyMembership.objects.filter(family_group_id__in=family_ids | pms_family_ids).values_list("profile__user_id", flat=True)
+            owners = set(direct_owner_ids) | set(mf_owners) | set(member_ids)
+            User = get_user_model()
+
+            for owner in User.objects.filter(id__in=owners, is_active=True):
                 with transaction.atomic():
                     action, was_created = CorporateAction.objects.update_or_create(
                         owner=owner,
                         isin=filing.isin.upper(),
                         action_type=action_type,
-                        ex_date=event_date,
+                        ex_date=event_dates["ex_date"],
                         defaults=defaults,
                     )
                     if was_created:
@@ -103,5 +138,5 @@ class Command(BaseCommand):
                     matched += stats.get("direct", 0) + stats.get("mutual_fund", 0)
         self.stdout.write(self.style.SUCCESS(
             f"Corporate action scan: scanned={scanned}, created={created}, updated={updated}, "
-            f"exposures={matched}, skipped_unclassified_or_missing_isin={skipped}, dry_run={options['dry_run']}"
+            f"exposures={matched}, skipped_unclassified_or_unverified_dates={skipped}, dry_run={options['dry_run']}"
         ))

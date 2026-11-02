@@ -1,4 +1,4 @@
-import { CommonModule, DatePipe, DecimalPipe } from '@angular/common';
+import { CommonModule, DatePipe } from '@angular/common';
 import { Component, OnInit, inject } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { finalize } from 'rxjs';
@@ -7,7 +7,7 @@ import { CorporateActionInboxItem, CorporateActionsService } from '../../app/cor
 @Component({
   selector: 'app-corporate-actions',
   standalone: true,
-  imports: [CommonModule, FormsModule, DatePipe, DecimalPipe],
+  imports: [CommonModule, FormsModule, DatePipe],
   templateUrl: './corporate-actions.component.html',
   styleUrl: './corporate-actions.component.scss',
 })

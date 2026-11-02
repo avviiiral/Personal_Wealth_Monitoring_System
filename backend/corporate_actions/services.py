@@ -60,7 +60,7 @@ from decimal import Decimal
 from django.db import transaction
 from django.utils import timezone
 from django.contrib.auth import get_user_model
-from users.models import FamilyMember
+from users.models import FamilyMembership
 
 from investments.models import Asset, Transaction, TransactionType
 from mutual_funds.models import MutualFundScheme, MutualFundTransaction, MutualFundTransactionType
@@ -80,8 +80,8 @@ def _idempotency_key(action_id, owner_id):
 
 
 def _user_family_id(user):
-    member = FamilyMember.objects.filter(user=user, is_active=True).order_by("id").first()
-    return member.family_id if member else None
+    membership = FamilyMembership.objects.filter(profile__user=user).select_related("family_group").order_by("id").first()
+    return membership.family_group_id if membership else None
 
 
 def _create_reconciliation(action, user, status_value, transaction_ids=None, suggested_quantity=None, notes=""):
@@ -135,7 +135,7 @@ def discover_exposures_and_reconcile(action):
     for asset in _direct_exposures(action).iterator():
         users = [asset.owner] if asset.owner_id else []
         if asset.family_id:
-            member_ids = FamilyMember.objects.filter(family_id=asset.family_id, is_active=True).values_list("user_id", flat=True)
+            member_ids = FamilyMembership.objects.filter(family_group_id=asset.family_id).values_list("profile__user_id", flat=True)
             users = list(get_user_model().objects.filter(id__in=member_ids, is_active=True))
         for user in users:
             if not user or not user.is_active:

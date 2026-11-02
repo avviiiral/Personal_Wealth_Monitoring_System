@@ -1220,12 +1220,6 @@ export class DownloadsComponent implements OnInit {
       sheet.getCell(`B${row}`).value = label;
     });
 
-    // Retain only notes that belong within the requested A:F report area.
-    const notes: Array<[string, string | number]> = [];
-    notes.forEach(([address, value]) => {
-      sheet.getCell(String(address)).value = value;
-    });
-
     // Formula map follows the supplied workbook's row and column references.
     const formulas: Record<string, string> = {
       E4: 'SUM(C4:D4)', E5: 'SUM(C5:D5)', E6: 'SUM(C6:D6)',
@@ -1275,7 +1269,7 @@ export class DownloadsComponent implements OnInit {
       }
     }
 
-    [9, 31, 49].forEach(rowNumber => {
+    [9, 31].forEach(rowNumber => {
       for (let column = 2; column <= 5; column++) {
         sheet.getCell(rowNumber, column).font = { bold: true };
       }

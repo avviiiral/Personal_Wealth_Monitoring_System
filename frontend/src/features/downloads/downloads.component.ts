@@ -1205,12 +1205,6 @@ export class DownloadsComponent implements OnInit {
       17: 'Gift to BFT (HOABL)',
       18: 'Club House, etc**',
       20: 'Net available Amount (A)',
-      23: 'Proposed Exit from PMS',
-      24: '  Aequitas',
-      25: '  ASK - Exited',
-      26: '  ENAM',
-      27: 'Sub-Total (B)',
-      29: 'Grand Total (A+B)',
       31: 'Deployment Plan',
       32: 'Abakkus',
       39: 'W Oak Flexi Cap ',
@@ -1232,7 +1226,6 @@ export class DownloadsComponent implements OnInit {
 
     // Retain only notes that belong within the requested A:F report area.
     const notes: Array<[string, string | number]> = [
-      ['F25', 'Whenever required'],
       ['C51', 950],
     ];
     notes.forEach(([address, value]) => {
@@ -1246,9 +1239,6 @@ export class DownloadsComponent implements OnInit {
       E11: 'SUM(C11:D11)', E12: 'SUM(C12:D12)', E14: 'SUM(C14:D14)',
       E15: 'SUM(C15:D15)', E16: 'SUM(C16:D16)', E17: 'SUM(C17:D17)', E18: 'SUM(C18:D18)',
       C20: 'SUM(C7:C19)', D20: 'SUM(D7:D19)', E20: 'SUM(C20:D20)',
-      C24: '150*0', E24: 'SUM(C24:D24)', E25: 'SUM(C25:D25)', E26: 'SUM(C26:D26)',
-      C27: 'SUM(C23:C26)', D27: 'SUM(D23:D26)', E27: 'SUM(E23:E26)',
-      C29: 'C20+C27', D29: 'D20+D27', E29: 'E20+E27',
       E32: 'SUM(C32:D32)', E33: 'SUM(C33:D33)', E34: 'SUM(C34:D34)',
       E35: 'SUM(C35:D35)', E36: 'SUM(C36:D36)', E37: 'SUM(C37:D37)',
       E39: 'SUM(C39:D39)', E40: 'SUM(C40:D40)', E43: 'SUM(C43:D43)',
@@ -1291,12 +1281,12 @@ export class DownloadsComponent implements OnInit {
       }
     }
 
-    [9, 23, 31, 49].forEach(rowNumber => {
+    [9, 31, 49].forEach(rowNumber => {
       for (let column = 2; column <= 5; column++) {
         sheet.getCell(rowNumber, column).font = { bold: true };
       }
     });
-    [7, 20, 27, 29, 45, 47].forEach(rowNumber => {
+    [7, 20, 45, 47].forEach(rowNumber => {
       for (let column = 2; column <= 5; column++) {
         const cell = sheet.getCell(rowNumber, column);
         cell.font = { bold: true };

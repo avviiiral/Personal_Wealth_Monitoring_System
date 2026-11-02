@@ -80,12 +80,8 @@ def _idempotency_key(action_id, owner_id):
 
 
 def _user_family_id(user):
-    try:
-        from users.models import UserProfile
-        profile = UserProfile.objects.filter(user=user).first()
-        return getattr(profile, "active_family_id", None)
-    except Exception:
-        return None
+    member = FamilyMember.objects.filter(user=user, is_active=True).order_by("id").first()
+    return member.family_id if member else None
 
 
 def _create_reconciliation(action, user, status_value, transaction_ids=None, suggested_quantity=None, notes=""):
@@ -168,7 +164,8 @@ def discover_exposures_and_reconcile(action):
                 _create_reconciliation(action, user, CorporateActionReconciliationStatus.ALREADY_RECORDED, ids)
             else:
                 held = txs.exists()
-                # No transaction is not proof of entitlement: leave for manual eligibility verification.
+                # A dated BUY/SIP history is only a screening signal, not a proof of entitlement.
+                # If no eligible quantity can be reconstructed safely, route to manual verification.
                 target_status = CorporateActionReconciliationStatus.PENDING if held else CorporateActionReconciliationStatus.MANUAL_REVIEW
                 reconciliation = _create_reconciliation(
                     action, user, target_status,

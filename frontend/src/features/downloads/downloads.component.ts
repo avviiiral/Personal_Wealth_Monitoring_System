@@ -1214,10 +1214,6 @@ export class DownloadsComponent implements OnInit {
       43: 'Silver ETF',
       45: 'Total Deployement Plan',
       47: 'Balance',
-      49: 'Proposed Redemptions--->',
-      50: 'Gsec STRIPs',
-      51: 'ASK',
-      52: 'Debt MF ',
     };
 
     Object.entries(labels).forEach(([row, label]) => {
@@ -1225,9 +1221,7 @@ export class DownloadsComponent implements OnInit {
     });
 
     // Retain only notes that belong within the requested A:F report area.
-    const notes: Array<[string, string | number]> = [
-      ['C51', 950],
-    ];
+    const notes: Array<[string, string | number]> = [];
     notes.forEach(([address, value]) => {
       sheet.getCell(String(address)).value = value;
     });
@@ -1268,7 +1262,7 @@ export class DownloadsComponent implements OnInit {
       cell.alignment = { vertical: 'middle', horizontal: column >= 3 ? 'right' : 'left' };
     }
 
-    for (let rowNumber = 4; rowNumber <= 52; rowNumber++) {
+    for (let rowNumber = 4; rowNumber <= 48; rowNumber++) {
       const row = sheet.getRow(rowNumber);
       row.height = rowNumber === 13 || rowNumber === 38 ? 8 : 18;
       for (let column = 2; column <= lastColumn; column++) {

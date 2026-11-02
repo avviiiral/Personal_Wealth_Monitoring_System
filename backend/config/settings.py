@@ -90,6 +90,8 @@ MIDDLEWARE = [
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
+    'config.performance_middleware.ApiPerformanceLoggingMiddleware',
+    'config.middleware.AuthenticatedApiCacheMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
@@ -181,6 +183,25 @@ WATCHLIST_BENCHMARK_BSE500_FILE = os.getenv(
 
 STATIC_ROOT = BASE_DIR / 'staticfiles'
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+
+# Configurable Django cache backend. LocMem is zero-dependency for development;
+# production should use a shared Redis/Memcached backend across workers.
+CACHES = {
+    'default': {
+        'BACKEND': os.environ.get(
+            'CACHE_BACKEND',
+            'django.core.cache.backends.locmem.LocMemCache',
+        ),
+        'LOCATION': os.environ.get('CACHE_LOCATION', 'pwms-api-cache'),
+        'TIMEOUT': _env_int('API_CACHE_TTL_SECONDS', 20),
+        'OPTIONS': {
+            'MAX_ENTRIES': _env_int('API_CACHE_MAX_ENTRIES', 2000),
+        },
+    }
+}
+
+# Log API requests slower than this threshold with total and database timings.
+API_SLOW_REQUEST_THRESHOLD_MS = max(0, _env_int('API_SLOW_REQUEST_THRESHOLD_MS', 500))
 
 REST_FRAMEWORK = {
     'DEFAULT_PERMISSION_CLASSES': ['rest_framework.permissions.IsAuthenticated'],

@@ -97,12 +97,35 @@ def portfolio_asset_detail(request, asset_id):
 @permission_classes([IsAuthenticated, CanWriteFinancialData])
 def portfolio_transactions(request):
     if request.method == "GET":
-        transactions = (
+        transactions = list(
             family_scope(Transaction.objects, request.user)
             .select_related("asset")
             .order_by("-transaction_date", "-created_at")
         )
-        results = TransactionSerializer(transactions, many=True).data
+
+        # Resolve underlying ISINs in one bulk query. TransactionSerializer's
+        # previous per-row lookup caused an N+1 query (one query per transaction).
+        asset_ids = {item.asset_id for item in transactions}
+        family_ids = {item.family_id for item in transactions if item.family_id is not None}
+        underlying_isin_map = {}
+        if asset_ids and family_ids:
+            underlying_rows = AssetUnderlyingHolding.objects.filter(
+                family_id__in=family_ids,
+                asset_id__in=asset_ids,
+            ).only("family_id", "asset_id", "stock_name", "isin").order_by("id")
+            for row in underlying_rows:
+                normalized_name = " ".join((row.stock_name or "").casefold().split())
+                if normalized_name and row.isin:
+                    underlying_isin_map.setdefault(
+                        (row.family_id, row.asset_id, normalized_name),
+                        row.isin,
+                    )
+
+        results = TransactionSerializer(
+            transactions,
+            many=True,
+            context={"underlying_isin_map": underlying_isin_map},
+        ).data
         return Response({"count": len(results), "results": results})
     serializer = TransactionSerializer(data=request.data, context={"request": request})
     if not serializer.is_valid():

@@ -213,7 +213,7 @@ class CorporateActionServiceTests(TestCase):
         )
         action = self.make_action(
             isin="", symbol="EXAMPLE", action_type=CorporateActionType.BONUS,
-            old_units=Decimal("1"), new_units=Decimal("2"), status=CorporateActionStatus.PENDING,
+            old_units=Decimal("2"), new_units=Decimal("1"), status=CorporateActionStatus.PENDING,
         )
         discover_exposures_and_reconcile(action)
         reconciliation = CorporateActionReconciliation.objects.get(action=action, owner=self.user)
@@ -231,6 +231,9 @@ class CorporateActionServiceTests(TestCase):
         self.assertEqual(first.matched_transaction_ids, [
             Transaction.objects.get(id=first.matched_transaction_ids[0]).id
         ])
+        created_bonus = Transaction.objects.get(id=first.matched_transaction_ids[0])
+        self.assertEqual(created_bonus.transaction_type, TransactionType.BONUS)
+        self.assertEqual(created_bonus.quantity, Decimal("5"))
 
     def test_missing_isin_candidate_discovery_does_not_leak_another_users_asset(self):
         other = User.objects.create_user(username="corp-action-other-owner", password="test-password")

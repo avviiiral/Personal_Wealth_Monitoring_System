@@ -31,9 +31,24 @@ DATE_PATTERNS = (
 
 
 def _parse_date(raw):
-    for fmt in ("%d-%m-%Y", "%d/%m/%Y", "%d.%m.%Y", "%Y-%m-%d", "%d %b %Y", "%d %B %Y"):
+    """Parse numeric and month-name dates using the separators accepted by DATE_VALUE."""
+    value = raw.strip()
+    formats = (
+        "%d-%m-%Y", "%d/%m/%Y", "%d.%m.%Y", "%Y-%m-%d",
+        "%d %b %Y", "%d %B %Y",
+    )
+    for fmt in formats:
         try:
-            return datetime.strptime(raw.strip(), fmt).date()
+            return datetime.strptime(value, fmt).date()
+        except ValueError:
+            continue
+
+    # Exchange filings commonly mix separators and month names, e.g. 04-Jun-2026,
+    # 04/Jun/2026, and 04.Jun.2026. Normalize only the date separators, then parse.
+    normalized = re.sub(r"[-./\s]+", " ", value)
+    for fmt in ("%d %m %Y", "%Y %m %d", "%d %b %Y", "%d %B %Y"):
+        try:
+            return datetime.strptime(normalized, fmt).date()
         except ValueError:
             continue
     return None

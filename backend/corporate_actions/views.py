@@ -184,6 +184,26 @@ def corporate_action_notifications(request):
                 "matched_transaction_ids": row.reconciliation.matched_transaction_ids,
                 "suggested_quantity": row.reconciliation.suggested_quantity,
                 "identity_match_method": row.reconciliation.identity_match_method,
+                "candidate_assets": [
+                    {
+                        "id": asset.id,
+                        "name": asset.name,
+                        "symbol": asset.symbol or "",
+                        "isin": asset.isin or "",
+                        "exchange": getattr(asset, "exchange", "") or "",
+                    }
+                    for asset in Asset.objects.filter(
+                        id__in=row.reconciliation.candidate_asset_ids,
+                        is_active=True,
+                    ).order_by("name", "id")
+                    if (
+                        asset.owner_id == request.user.id
+                        or (
+                            row.reconciliation.family_id_snapshot
+                            and asset.family_id == row.reconciliation.family_id_snapshot
+                        )
+                    )
+                ],
                 "candidate_asset_ids": row.reconciliation.candidate_asset_ids,
                 "selected_asset_id": row.reconciliation.selected_asset_id,
                 "notes": row.reconciliation.notes,

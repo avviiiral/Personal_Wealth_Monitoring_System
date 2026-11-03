@@ -189,17 +189,18 @@ def discover_exposures_and_reconcile(action):
             if reconciliation.status == CorporateActionReconciliationStatus.APPROVED:
                 # An approved identity is terminal; do not refresh candidate IDs or create a second transaction.
                 continue
-            if reconciliation.status != CorporateActionReconciliationStatus.PENDING_USER_APPROVAL:
-                reconciliation.status = CorporateActionReconciliationStatus.PENDING_USER_APPROVAL
-                reconciliation.identity_match_method = method
-                reconciliation.candidate_asset_ids = [asset.id for asset in candidates]
-                reconciliation.notes = (
-                    f"Source ISIN unavailable. Exact {method.lower()} candidate(s) require your approval. "
-                    "No transaction has been changed."
-                )
-                reconciliation.save(update_fields=[
-                    "status", "identity_match_method", "candidate_asset_ids", "notes", "updated_at"
-                ])
+            # Populate identity fields on first creation as well as on a refreshed
+            # pending reconciliation. get_or_create() has already set the status.
+            reconciliation.status = CorporateActionReconciliationStatus.PENDING_USER_APPROVAL
+            reconciliation.identity_match_method = method
+            reconciliation.candidate_asset_ids = [asset.id for asset in candidates]
+            reconciliation.notes = (
+                f"Source ISIN unavailable. Exact {method.lower()} candidate(s) require your approval. "
+                "No transaction has been changed."
+            )
+            reconciliation.save(update_fields=[
+                "status", "identity_match_method", "candidate_asset_ids", "notes", "updated_at"
+            ])
             CorporateActionNotification.objects.get_or_create(
                 action=action, owner=user, defaults={"reconciliation": reconciliation}
             )

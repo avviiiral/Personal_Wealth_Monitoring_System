@@ -11,7 +11,7 @@ from .models import (
     CorporateActionExposure, CorporateActionReconciliation,
     CorporateActionReconciliationStatus, CorporateActionNotification,
 )
-from .services import quantity_multiplier, resolve_corporate_action_candidates, discover_exposures_and_reconcile, decide_missing_isin_reconciliation
+from .services import quantity_multiplier, resolve_corporate_action_candidates, discover_exposures_and_reconcile, decide_missing_isin_reconciliation, discover_symbol_name_candidates
 from .management.commands.monitor_corporate_actions import (
     build_symbol_isin_map, classify_filing, classify_exchange_action, extract_event_dates,
 )
@@ -122,6 +122,17 @@ class CorporateActionServiceTests(TestCase):
                 action=action, owner=self.user, idempotency_key="b" * 64
             )
 
+
+    def test_missing_isin_name_only_event_is_classified_for_identity_review(self):
+        from .audit import build_event_audit
+        event = {
+            "action_type": "CASH_DIVIDEND", "isin": "", "source_isin": "",
+            "source_isin_required": True, "company_name": "Example Limited",
+            "ex_date": date(2025, 6, 15), "dividend_per_share": "1.50",
+        }
+        audit = build_event_audit(event, "NSE_CORPORATE_ACTIONS", "", {})
+        self.assertTrue(audit["identity_match_required"])
+        self.assertEqual(audit["reconciliation_status"], "IDENTITY_REVIEW_REQUIRED")
 
     def test_missing_isin_action_requires_user_approval_without_transaction_write(self):
         asset = Asset.objects.create(

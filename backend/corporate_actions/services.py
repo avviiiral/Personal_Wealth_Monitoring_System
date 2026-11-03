@@ -1,7 +1,7 @@
 import hashlib
 import logging
 from datetime import date
-from decimal import Decimal
+from decimal import Decimal, ROUND_FLOOR
 
 from django.contrib.auth import get_user_model
 from django.db.models import Max, Q
@@ -437,7 +437,20 @@ def decide_missing_isin_reconciliation(*, owner, reconciliation_id, decision, as
             else:
                 if not action.old_units or not action.new_units:
                     raise ValidationError("A verified entitlement ratio is required.")
-                tx_quantity = quantity * (action.new_units / action.old_units - Decimal("1"))
+                if transaction_type == TransactionType.BONUS:
+                    # Bonus ratio is bonus shares per existing shares.
+                    # NSE 1:2 means one whole bonus share for every two
+                    # eligible shares. Fractional entitlements are discarded.
+                    eligible_lots = (quantity / action.old_units).to_integral_value(
+                        rounding=ROUND_FLOOR
+                    )
+                    tx_quantity = eligible_lots * action.new_units
+                else:
+                    # Split ratios represent the post-action total share
+                    # multiplier, so record only the incremental quantity.
+                    tx_quantity = quantity * (
+                        action.new_units / action.old_units - Decimal("1")
+                    )
                 if tx_quantity <= 0:
                     raise ValidationError("Calculated entitlement is not positive.")
                 price = Decimal("0")

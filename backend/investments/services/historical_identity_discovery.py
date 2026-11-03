@@ -147,8 +147,8 @@ class TrentHistoricalSplitDocumentProvider(IdentityProvider):
         # Use the issuer report's explicitly labeled table cells, not
         # arbitrary first ISIN occurrences elsewhere in the annual report.
         pair_match = re.search(
-            r"EQUITY\\s+([A-Z]{2}[A-Z0-9]{9}[0-9])\\s+\\(PRIOR TO SUB-DIVISION\\).*?"
-            r"([A-Z]{2}[A-Z0-9]{9}[0-9])\\s+\\(PURSUANT TO SUB-DIVISION\\)",
+            r"EQUITY\s+([A-Z]{2}[A-Z0-9]{9}[0-9])\s+\(PRIOR TO SUB-DIVISION\).*?"
+            r"([A-Z]{2}[A-Z0-9]{9}[0-9])\s+\(PURSUANT TO SUB-DIVISION\)",
             text,
         )
         if not pair_match:

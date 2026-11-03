@@ -8,6 +8,7 @@ from datetime import date, datetime, time, timedelta
 from django.contrib.auth import get_user_model
 from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
+from django.db.models import Q
 from django.utils import timezone
 
 from config.pwms_config import section
@@ -266,8 +267,8 @@ class Command(BaseCommand):
                     candidates = Asset.objects.filter(
                         is_active=True, category=AssetCategory.STOCK
                     ).filter(
-                        __import__("django.db.models", fromlist=["Q"]).Q(symbol__iexact=event.get("symbol") or "")
-                        | __import__("django.db.models", fromlist=["Q"]).Q(name__iexact=defaults["security_name"])
+                        Q(symbol__iexact=event.get("symbol") or "")
+                        | Q(name__iexact=defaults["security_name"])
                     ).distinct()
                     matched += candidates.count()
                 created += 1

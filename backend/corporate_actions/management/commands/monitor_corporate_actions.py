@@ -1,3 +1,4 @@
+import json
 import logging
 import re
 
@@ -12,6 +13,7 @@ from django.utils import timezone
 from config.pwms_config import section
 from corporate_actions.models import CorporateAction, CorporateActionStatus, CorporateActionType
 from corporate_actions.services import reconcile_action_for_all_users
+from corporate_actions.audit import build_event_audit, mark_duplicate_events
 from corporate_actions.providers.exchange import ConfiguredCorporateActionsProvider
 from corporate_actions.providers.nse import NseCorporateActionsProvider, normalize_nse_symbol
 from filing_intelligence.models import Filing
@@ -136,6 +138,7 @@ class Command(BaseCommand):
         parser.add_argument("--until", type=str, default=None)
         parser.add_argument("--source", choices=("nse", "feed", "filings", "both"), default="nse")
         parser.add_argument("--dry-run", action="store_true")
+        parser.add_argument("--report-json", type=str, default=None, help="Write the reconciliation audit as machine-readable JSON.")
 
     def handle(self, *args, **options):
         cfg = section("corporate_actions")
@@ -204,6 +207,7 @@ class Command(BaseCommand):
 
         User = get_user_model()
         created = updated = matched = skipped = 0
+        audit_events = []
 
         def persist_event(event, source_name, source_reference, metadata):
             nonlocal created, updated, matched, skipped
@@ -223,8 +227,15 @@ class Command(BaseCommand):
                 "notes": "Imported from exchange corporate-actions data. Review purpose and entitlement details before confirmation.",
                 "metadata": metadata,
             }
+            audit = build_event_audit(event, source_name, source_reference, metadata)
+            audit_events.append(audit)
             if options["dry_run"]:
-                created += 1
+                # Read-only ORM inspection only; never invoke write-oriented reconciliation.
+                matched += sum(len(audit["exposures"][key]) for key in ("direct_equity", "mutual_fund", "pms"))
+                if audit["validation_status"] != "VALID":
+                    skipped += 1
+                else:
+                    created += 1
                 return
             direct_assets = Asset.objects.filter(is_active=True, isin__iexact=isin)
             family_ids = set(direct_assets.exclude(family_id__isnull=True).values_list("family_id", flat=True))
@@ -292,6 +303,29 @@ class Command(BaseCommand):
                            "event_dates_verified": True})
 
         scanned = len(nse_records) + len(source_records) + len(filings)
+        mark_duplicate_events(audit_events)
+        if options.get("report_json"):
+            report = {
+                "schema_version": 1,
+                "generated_at": timezone.now().isoformat(),
+                "source": options["source"],
+                "dry_run": bool(options["dry_run"]),
+                "date_range": {"since": since.isoformat() if since else None, "until": until.isoformat() if until else None},
+                "summary": {
+                    "scanned": scanned, "nse_symbols": len(nse_symbols), "nse_records": len(nse_records),
+                    "nse_fetch_errors": nse_fetch_errors, "feed_records": len(source_records),
+                    "filings": len(filings), "audit_records": len(audit_events),
+                    "matched_exposures": matched, "skipped": skipped,
+                    "duplicate_events": sum(1 for item in audit_events if item.get("duplicate_of")),
+                },
+                "events": audit_events,
+            }
+            try:
+                with open(options["report_json"], "w", encoding="utf-8") as report_file:
+                    json.dump(report, report_file, ensure_ascii=False, indent=2, default=str)
+            except OSError as exc:
+                raise CommandError(f"Could not write audit report {options['report_json']!r}: {exc}") from exc
+
         self.stdout.write(self.style.SUCCESS(
             f"Corporate action scan: scanned={scanned}, nse_symbols={len(nse_symbols)}, nse_scanned={len(nse_records)}, nse_fetch_errors={nse_fetch_errors}, "
             f"feed_scanned={len(source_records)}, filings_scanned={len(filings)}, created={created}, updated={updated}, "

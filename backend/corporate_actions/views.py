@@ -1,5 +1,6 @@
 from django.core.exceptions import ValidationError
 from django.db import IntegrityError
+from django.db.models import Q
 from django.utils import timezone
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
@@ -7,6 +8,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from users.permissions import CanWriteFinancialData, require_active_family
+from users.models import FamilyMembership
 from investments.models import Asset
 from portfolio.services.holding_engine import HoldingCalculationEngine
 from portfolio.services.portfolio_position_engine import PortfolioPositionEngine
@@ -170,6 +172,10 @@ def corporate_action_notifications(request):
         return Response({"detail": "page and page_size must be integers."}, status=400)
     total = queryset.count()
     rows = queryset[(page - 1) * page_size:page * page_size]
+    visible_family_ids = FamilyMembership.objects.filter(
+        profile__user=request.user
+    ).values_list("family_group_id", flat=True)
+    visible_candidate_scope = Q(owner=request.user) | Q(family_id__in=visible_family_ids)
     results = []
     for row in rows:
         action = row.action
@@ -200,14 +206,7 @@ def corporate_action_notifications(request):
                     for asset in Asset.objects.filter(
                         id__in=row.reconciliation.candidate_asset_ids,
                         is_active=True,
-                    ).order_by("name", "id")
-                    if (
-                        asset.owner_id == request.user.id
-                        or (
-                            row.reconciliation.family_id_snapshot
-                            and asset.family_id == row.reconciliation.family_id_snapshot
-                        )
-                    )
+                    ).filter(visible_candidate_scope).order_by("name", "id")
                 ],
                 "candidate_asset_ids": row.reconciliation.candidate_asset_ids,
                 "selected_asset_id": row.reconciliation.selected_asset_id,

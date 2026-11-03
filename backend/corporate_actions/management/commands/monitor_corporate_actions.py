@@ -1,5 +1,7 @@
 import logging
 import re
+
+import requests
 from datetime import date, datetime, time, timedelta
 
 from django.contrib.auth import get_user_model
@@ -10,9 +12,9 @@ from django.utils import timezone
 from config.pwms_config import section
 from corporate_actions.models import CorporateAction, CorporateActionStatus, CorporateActionType
 from corporate_actions.services import reconcile_action_for_all_users
-from corporate_actions.providers.exchange import ConfiguredCorporateActionsProvider
+from corporate_actions.providers.exchange import ConfiguredCorporateActionsProvider\nfrom corporate_actions.providers.nse import NseCorporateActionsProvider
 from filing_intelligence.models import Filing
-from investments.models import Asset, AssetUnderlyingHolding
+from investments.models import Asset, AssetCategory, AssetUnderlyingHolding, Holding
 from mutual_funds.models import MutualFundTransaction
 from mutual_funds.underlying_models import MutualFundUnderlying
 from users.models import FamilyMembership
@@ -47,10 +49,10 @@ def _parse_date(raw):
 def classify_exchange_action(purpose):
     text = (purpose or "").lower()
     rules = (
-        (CorporateActionType.STOCK_SPLIT, ("stock split", "sub-division", "subdivision")),
-        (CorporateActionType.BONUS, ("bonus issue", "bonus shares", "bonus equity")),
+        (CorporateActionType.STOCK_SPLIT, ("stock split", "sub-division", "subdivision", "face value split")),
+        (CorporateActionType.BONUS, ("bonus",)),
         (CorporateActionType.CASH_DIVIDEND, ("dividend", "idcw")),
-        (CorporateActionType.RIGHTS_ISSUE, ("rights issue", "rights entitlement")),
+        (CorporateActionType.RIGHTS_ISSUE, ("rights",)),
         (CorporateActionType.MERGER, ("merger", "amalgamation")),
         (CorporateActionType.DEMERGER, ("demerger", "spin-off", "spin off")),
         (CorporateActionType.BUYBACK, ("buyback", "buy-back")),
@@ -116,7 +118,7 @@ class Command(BaseCommand):
         parser.add_argument("--hours", type=int, default=None)
         parser.add_argument("--since", type=str, default=None)
         parser.add_argument("--until", type=str, default=None)
-        parser.add_argument("--source", choices=("feed", "filings", "both"), default="both")
+        parser.add_argument("--source", choices=("nse", "feed", "filings", "both"), default="nse")
         parser.add_argument("--dry-run", action="store_true")
 
     def handle(self, *args, **options):
@@ -137,6 +139,36 @@ class Command(BaseCommand):
         range_start = since or (timezone.localdate() - timedelta(days=max(1, (hours + 23) // 24)))
         range_end = until or timezone.localdate()
         source_records = []
+        nse_fetch_errors = 0
+        nse_records = []
+        nse_symbols = set()
+        if options["source"] in {"nse", "both"}:
+            nse_range_start = since or (timezone.localdate() - timedelta(days=int(cfg.get("nse_history_days", 365))))
+            held_assets = Asset.objects.filter(
+                is_active=True,
+                category=AssetCategory.STOCK,
+                symbol__isnull=False,
+                symbol__gt="",
+                holding__quantity__gt=0,
+            ).select_related("holding")
+            nse_symbols = {
+                asset.symbol.strip().upper()
+                for asset in held_assets
+                if asset.symbol and asset.symbol.strip()
+            }
+            if nse_symbols:
+                nse_provider = NseCorporateActionsProvider(
+                    timeout_seconds=cfg.get("nse_timeout_seconds", 20),
+                    max_response_bytes=cfg.get("nse_max_response_bytes", 5000000),
+                    request_delay_seconds=cfg.get("nse_request_delay_seconds", 0.25),
+                )
+                for symbol in sorted(nse_symbols):
+                    try:
+                        nse_records.extend(nse_provider.fetch_symbol(symbol, nse_range_start, range_end))
+                    except (requests.RequestException, ValueError) as exc:
+                        logger.warning("NSE corporate-actions fetch failed for %s: %s", symbol, exc)
+                        nse_fetch_errors += 1
+
         if options["source"] in {"feed", "both"} and cfg.get("feed_url"):
             provider = ConfiguredCorporateActionsProvider(
                 cfg["feed_url"], timeout_seconds=cfg.get("feed_timeout_seconds", 30),
@@ -197,6 +229,18 @@ class Command(BaseCommand):
                     stats = reconcile_action_for_all_users(action)
                     matched += sum(stats.get(key, 0) for key in ("direct", "mutual_fund", "pms"))
 
+        for record in nse_records:
+            action_type = classify_exchange_action(record.get("purpose"))
+            event = {**record, "action_type": action_type}
+            persist_event(
+                event, "NSE_CORPORATE_ACTIONS", record.get("source_url", ""),
+                {"provider": "nse_corporate_actions_api", "purpose": record.get("purpose"),
+                 "series": record.get("series"), "face_value": str(record.get("face_value")) if record.get("face_value") not in (None, "") else None,
+                 "book_closure_start": record.get("book_closure_start").isoformat() if record.get("book_closure_start") else None,
+                 "book_closure_end": record.get("book_closure_end").isoformat() if record.get("book_closure_end") else None,
+                 "raw": record.get("raw", {}), "event_dates_verified": bool(record.get("ex_date"))},
+            )
+
         for record in source_records:
             action_type = classify_exchange_action(record.get("purpose") or record.get("action_type"))
             event = {**record, "action_type": action_type}
@@ -224,9 +268,9 @@ class Command(BaseCommand):
                            "filing_subject": filing.subject, "filing_type": filing.filing_type,
                            "event_dates_verified": True})
 
-        scanned = len(source_records) + len(filings)
+        scanned = len(nse_records) + len(source_records) + len(filings)
         self.stdout.write(self.style.SUCCESS(
-            f"Corporate action scan: scanned={scanned}, feed_scanned={len(source_records)}, "
-            f"filings_scanned={len(filings)}, created={created}, updated={updated}, "
+            f"Corporate action scan: scanned={scanned}, nse_symbols={len(nse_symbols)}, nse_scanned={len(nse_records)}, nse_fetch_errors={nse_fetch_errors}, "
+            f"feed_scanned={len(source_records)}, filings_scanned={len(filings)}, created={created}, updated={updated}, "
             f"exposures={matched}, skipped={skipped}, dry_run={options['dry_run']}"
         ))

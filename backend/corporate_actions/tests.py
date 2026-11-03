@@ -12,7 +12,8 @@ from .models import (
     CorporateActionReconciliationStatus, CorporateActionNotification,
 )
 from .services import quantity_multiplier, resolve_corporate_action_candidates
-from .management.commands.monitor_corporate_actions import classify_filing, extract_event_dates
+from .management.commands.monitor_corporate_actions import classify_filing, classify_exchange_action, extract_event_dates
+from .providers.nse import normalize_nse_action
 from users.models import FamilyGroup, FamilyMembership, Role
 from .position_adjustment import confirmed_ratio_actions
 
@@ -287,3 +288,44 @@ class FilingClassificationTests(TestCase):
                     extract_event_dates(filing),
                     {"ex_date": expected_date, "record_date": expected_date},
                 )
+
+
+
+class NseCorporateActionsProviderTests(TestCase):
+    def test_normalizes_nse_corporate_action_table_fields(self):
+        record = normalize_nse_action({
+            "symbol": "TRENT",
+            "comp": "Trent Limited",
+            "series": "EQ",
+            "subject": "Dividend - Rs 4 Per Share",
+            "faceVal": 1,
+            "exDate": "12-Jun-2026",
+            "recDate": "12-Jun-2026",
+            "bcStartDate": "-",
+            "bcEndDate": "-",
+        }, "TRENT")
+        self.assertEqual(record["symbol"], "TRENT")
+        self.assertEqual(record["company_name"], "Trent Limited")
+        self.assertEqual(record["purpose"], "Dividend - Rs 4 Per Share")
+        self.assertEqual(record["ex_date"], date(2026, 6, 12))
+        self.assertEqual(record["record_date"], date(2026, 6, 12))
+        self.assertIsNone(record["book_closure_start"])
+        self.assertIn("symbol=TRENT", record["source_url"])
+
+    def test_classifies_nse_purpose_wording(self):
+        self.assertEqual(
+            classify_exchange_action("Dividend - Rs 4 Per Share"),
+            CorporateActionType.CASH_DIVIDEND,
+        )
+        self.assertEqual(
+            classify_exchange_action("Bonus 1:2"),
+            CorporateActionType.BONUS,
+        )
+        self.assertEqual(
+            classify_exchange_action("Rights 2:25 @ Premium Rs 17/-"),
+            CorporateActionType.RIGHTS_ISSUE,
+        )
+        self.assertEqual(
+            classify_exchange_action("Face Value Split (Sub-Division)"),
+            CorporateActionType.STOCK_SPLIT,
+        )

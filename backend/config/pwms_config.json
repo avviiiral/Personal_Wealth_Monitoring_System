@@ -430,6 +430,10 @@
     "exposure_snapshot_max_age_days": 45,
     "feed_url": "",
     "feed_timeout_seconds": 30,
-    "feed_max_response_bytes": 10000000
+    "feed_max_response_bytes": 10000000,
+    "nse_timeout_seconds": 20,
+    "nse_max_response_bytes": 5000000,
+    "nse_request_delay_seconds": 0.25,
+    "nse_history_days": 365
   }
 }

@@ -1,6 +1,5 @@
 from django.core.exceptions import ValidationError
-from decimal import Decimal, InvalidOperation
-from django.db import IntegrityError, transaction
+from django.db import IntegrityError
 from django.utils import timezone
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
@@ -8,9 +7,9 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from users.permissions import CanWriteFinancialData, require_active_family
-from investments.models import Asset, Transaction, TransactionType
-from portfolio.serializers import TransactionSerializer
-from portfolio.views import HoldingCalculationEngine, PortfolioPositionEngine
+from investments.models import Asset
+from portfolio.services.holding_engine import HoldingCalculationEngine
+from portfolio.services.portfolio_position_engine import PortfolioPositionEngine
 
 from .models import (
     CorporateAction,
@@ -91,12 +90,29 @@ def corporate_action_detail(request, action_id):
         "resulting_isin", "resulting_symbol", "source", "source_reference",
         "status", "notes", "metadata",
     }
+    previous_status = action.status
     for key, value in request.data.items():
         if key in allowed:
             setattr(action, key, value)
     try:
         action.full_clean()
         action.save()
+        if previous_status != action.status and action.status in {
+            CorporateActionStatus.CONFIRMED, CorporateActionStatus.REJECTED
+        }:
+            # Refresh persisted positions from the corporate-action overlay.
+            # The original transaction ledger is deliberately left unchanged.
+            family = require_active_family(request.user)
+            assets = Asset.objects.filter(family=family, is_active=True)
+            if action.isin:
+                assets = assets.filter(isin__iexact=action.isin.strip())
+            elif action.symbol:
+                assets = assets.filter(symbol__iexact=action.symbol.strip())
+            else:
+                assets = assets.none()
+            for asset in assets.select_related("family", "owner"):
+                HoldingCalculationEngine.rebuild_holding(asset)
+            PortfolioPositionEngine.rebuild_all_for_family(family)
     except ValidationError as exc:
         return Response({"detail": exc.message_dict if hasattr(exc, "message_dict") else exc.messages}, status=400)
     except IntegrityError:
@@ -218,82 +234,3 @@ def corporate_action_reconciliation_update(request, reconciliation_id):
     return Response({"id": reconciliation.id, "status": reconciliation.status})
 
 
-@api_view(["POST"])
-@permission_classes([IsAuthenticated, CanWriteFinancialData])
-def corporate_action_add_transaction(request, reconciliation_id):
-    """Record a user-approved split, bonus or cash dividend for a direct security."""
-    reconciliation = CorporateActionReconciliation.objects.filter(
-        owner=request.user, id=reconciliation_id
-    ).select_related("action").first()
-    if reconciliation is None:
-        return Response({"detail": "Reconciliation not found."}, status=404)
-    action = reconciliation.action
-    exposure = CorporateActionExposure.objects.filter(
-        action=action, owner=request.user, exposure_type="DIRECT"
-    ).first()
-    if exposure is None:
-        return Response({"detail": "Indirect exposure cannot be booked as a direct equity transaction."}, status=400)
-    if action.status != CorporateActionStatus.CONFIRMED:
-        return Response({"detail": "Verify and confirm the action details before recording a transaction."}, status=400)
-    if request.data.get("confirmed") is not True:
-        return Response({"detail": "Explicit confirmation is required."}, status=400)
-
-    type_map = {
-        "CASH_DIVIDEND": TransactionType.DIVIDEND,
-        "BONUS": TransactionType.BONUS,
-        "STOCK_DIVIDEND": TransactionType.BONUS,
-        "STOCK_SPLIT": TransactionType.SPLIT,
-        "REVERSE_SPLIT": TransactionType.SPLIT,
-    }
-    tx_type = type_map.get(action.action_type)
-    if tx_type is None:
-        return Response({"detail": "This corporate action type requires a specialist transaction workflow and cannot be booked here."}, status=400)
-    try:
-        quantity = Decimal(str(request.data.get("quantity")))
-        amount = Decimal(str(request.data.get("amount", "0")))
-        price_per_unit = Decimal(str(request.data.get("price_per_unit", "0")))
-        fees = Decimal(str(request.data.get("fees", "0")))
-        if quantity <= 0 or amount < 0 or price_per_unit < 0 or fees < 0:
-            raise ValueError
-    except (InvalidOperation, TypeError, ValueError):
-        return Response({"detail": "Provide a positive quantity and non-negative amount, price and fees."}, status=400)
-
-    asset = Asset.objects.filter(id=exposure.investment_id, owner=request.user, is_active=True).first()
-    if asset is None:
-        return Response({"detail": "Direct security asset is no longer available to this user."}, status=404)
-    family = require_active_family(request.user)
-    source_key = f"corp-action:{action.id}:{reconciliation.id}"
-    if Transaction.objects.filter(family=family, source_key=source_key).exists():
-        return Response({"detail": "This corporate action transaction has already been recorded."}, status=409)
-    try:
-        transaction_date = request.data.get("transaction_date") or (
-            action.payment_date or action.ex_date
-        ).isoformat()
-    except AttributeError:
-        return Response({"detail": "The corporate action has no valid transaction date."}, status=400)
-    payload = {
-        "asset": asset.id,
-        "transaction_date": transaction_date,
-        "transaction_type": tx_type,
-        "quantity": str(quantity),
-        "price_per_unit": str(price_per_unit),
-        "amount": str(amount),
-        "fees": str(fees),
-        "notes": f"Corporate action #{action.id}: {action.security_name}",
-        "source": "OTHER",
-        "source_key": source_key,
-    }
-    serializer = TransactionSerializer(data=payload, context={"request": request})
-    if not serializer.is_valid():
-        return Response(serializer.errors, status=400)
-    with transaction.atomic():
-        tx = serializer.save(owner=request.user, family=family)
-        reconciliation.status = CorporateActionReconciliationStatus.COMPLETED
-        reconciliation.matched_transaction_ids = [tx.id]
-        reconciliation.reviewed_at = timezone.now()
-        reconciliation.reviewed_by = request.user
-        reconciliation.save(update_fields=["status", "matched_transaction_ids", "reviewed_at", "reviewed_by", "updated_at"])
-        CorporateActionNotification.objects.filter(owner=request.user, action=action).update(reviewed=True, dismissed=False, updated_at=timezone.now())
-        HoldingCalculationEngine.rebuild_holding(asset)
-        PortfolioPositionEngine.rebuild_all_for_user(request.user)
-    return Response({"transaction_id": tx.id, "reconciliation_status": reconciliation.status}, status=status.HTTP_201_CREATED)

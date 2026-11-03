@@ -21,14 +21,12 @@ export class CorporateActionsComponent implements OnInit {
   ngOnInit():void{this.load();}
   load():void{
     this.loading=true;this.error='';
-    const apiStatus=this.selectedFilter==='IDENTITY'?'ALL':this.selectedFilter;
-    this.service.getNotifications(apiStatus,this.page,this.pageSize)
+    this.service.getNotifications(this.selectedFilter,this.page,this.pageSize)
       .pipe(finalize(()=>this.loading=false)).subscribe({
         next:r=>{
           const rows=r.results||[];
-          this.items=this.selectedFilter==='IDENTITY'
-            ? rows.filter(x=>x.reconciliation.status==='PENDING_USER_APPROVAL'):rows;
-          this.total=this.selectedFilter==='IDENTITY'?this.items.length:(r.count||0);
+          this.items=rows;
+          this.total=r.count||0;
           for(const item of this.items){
             if(item.reconciliation.candidate_assets?.length && this.selectedCandidates[item.id]===undefined){
               this.selectedCandidates[item.id]=item.reconciliation.candidate_assets[0].id;

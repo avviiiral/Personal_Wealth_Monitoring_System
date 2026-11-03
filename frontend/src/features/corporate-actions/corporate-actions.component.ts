@@ -1,5 +1,5 @@
 import { CommonModule, DatePipe } from '@angular/common';
-import { Component, OnInit, inject } from '@angular/core';
+import { ChangeDetectorRef, Component, OnInit, inject } from '@angular/core';
 import { finalize } from 'rxjs';
 import { CorporateActionInboxItem, CorporateActionsService } from '../../app/core/services/corporate-actions.service';
 
@@ -9,6 +9,7 @@ import { CorporateActionInboxItem, CorporateActionsService } from '../../app/cor
 })
 export class CorporateActionsComponent implements OnInit {
   private readonly service=inject(CorporateActionsService);
+  private readonly changeDetector=inject(ChangeDetectorRef);
   readonly filters=[
     {label:'All actions',value:'ALL'},{label:'New',value:'NEW'},
     {label:'Pending review',value:'PENDING'},{label:'Identity approval',value:'IDENTITY'},
@@ -21,19 +22,30 @@ export class CorporateActionsComponent implements OnInit {
   ngOnInit():void{this.load();}
   load():void{
     this.loading=true;this.error='';
+    this.changeDetector.markForCheck();
     this.service.getNotifications(this.selectedFilter,this.page,this.pageSize)
-      .pipe(finalize(()=>this.loading=false)).subscribe({
+      .pipe(finalize(()=>{
+        this.loading=false;
+        // Explicitly schedule a view check after the HTTP stream completes.
+        // This also keeps the loading state reliable in zoneless configurations.
+        this.changeDetector.markForCheck();
+      })).subscribe({
         next:r=>{
-          const rows=r.results||[];
+          const rows=Array.isArray(r?.results)?r.results:[];
           this.items=rows;
-          this.total=r.count||0;
+          this.total=Number(r?.count)||0;
           for(const item of this.items){
-            if(item.reconciliation.candidate_assets?.length && this.selectedCandidates[item.id]===undefined){
-              this.selectedCandidates[item.id]=item.reconciliation.candidate_assets[0].id;
+            const candidates=item.reconciliation?.candidate_assets||[];
+            if(candidates.length && this.selectedCandidates[item.id]===undefined){
+              this.selectedCandidates[item.id]=candidates[0].id;
             }
           }
+          this.changeDetector.markForCheck();
         },
-        error:()=>this.error='Corporate action notifications could not be loaded. Please retry.',
+        error:()=>{
+          this.error='Corporate action notifications could not be loaded. Please retry.';
+          this.changeDetector.markForCheck();
+        },
       });
   }
   selectFilter(value:string):void{this.selectedFilter=value;this.page=1;this.load();}

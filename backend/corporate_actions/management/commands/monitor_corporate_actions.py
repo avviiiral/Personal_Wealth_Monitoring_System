@@ -63,7 +63,7 @@ def extract_event_dates(filing):
     result = {}
     for field, pattern in DATE_PATTERNS:
         for match in pattern.finditer(text):
-            parsed = _parse_date(match.group(2))
+            parsed = _parse_date(match.group(match.lastindex))
             if parsed:
                 # Conflicting explicit labels are ambiguous; do not silently pick one.
                 if field in result and result[field] != parsed:

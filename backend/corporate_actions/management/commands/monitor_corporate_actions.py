@@ -12,7 +12,8 @@ from django.utils import timezone
 from config.pwms_config import section
 from corporate_actions.models import CorporateAction, CorporateActionStatus, CorporateActionType
 from corporate_actions.services import reconcile_action_for_all_users
-from corporate_actions.providers.exchange import ConfiguredCorporateActionsProvider\nfrom corporate_actions.providers.nse import NseCorporateActionsProvider
+from corporate_actions.providers.exchange import ConfiguredCorporateActionsProvider
+from corporate_actions.providers.nse import NseCorporateActionsProvider
 from filing_intelligence.models import Filing
 from investments.models import Asset, AssetCategory, AssetUnderlyingHolding, Holding
 from mutual_funds.models import MutualFundTransaction

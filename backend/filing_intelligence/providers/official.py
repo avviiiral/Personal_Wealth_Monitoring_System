@@ -162,14 +162,14 @@ class NSEFilingProvider:
     def __init__(self):
         self.override_url = os.environ.get("EXCHANGE_FILING_FEED_URL_NSE", "").strip()
 
-    def fetch_filings(self, since):
+    def fetch_filings(self, since, until=None, symbols=None, isins=None):
         if self.override_url:
             yield from ConfiguredExchangeFilingProvider("NSE", self.override_url).fetch_filings(since)
             return
 
         from django.utils import timezone
 
-        now = timezone.now()
+        now = until or timezone.now()
         session = requests.Session()
         session.headers.update(self.HEADERS)
 
@@ -237,7 +237,7 @@ class NSEFilingProvider:
                 # page only as a fallback; the source remains explicitly NSE.
                 filing_url = source_url
 
-            yield NormalizedFiling(
+            normalized = NormalizedFiling(
                 exchange="NSE",
                 company_name=company_name or symbol,
                 symbol=symbol,
@@ -251,6 +251,13 @@ class NSEFilingProvider:
                 external_filing_id=external_id,
                 published_at=published_at,
             )
+            normalized_symbol = symbol.upper()
+            normalized_isin = normalized.isin.upper()
+            if symbols and normalized_symbol not in {str(value).strip().upper() for value in symbols}:
+                continue
+            if isins and normalized_isin not in {str(value).strip().upper() for value in isins}:
+                continue
+            yield normalized
 
 
 class BSEFilingProvider(ConfiguredExchangeFilingProvider):

@@ -38,7 +38,7 @@ def extract_entitlement_ratio(purpose, action_type):
         return next(iter(ratios)) if len(ratios) == 1 else (None, None)
     if action_type in {"STOCK_SPLIT", "REVERSE_SPLIT"}:
         matches = re.findall(
-            r"from\s+(?:₹|Rs\.?\s*)([0-9]+(?:\.[0-9]+)?)\s*(?:/-)?\s*(?:to|into)\s+(?:₹|Rs\.?\s*)([0-9]+(?:\.[0-9]+)?)",
+            r"from\s+(?:₹|Rs\.?\s*)([0-9]+(?:\.[0-9]+)?)\s*(?:/-)?\s*(?:per\s+share\s*)?(?:to|into)\s+(?:₹|Rs\.?\s*)([0-9]+(?:\.[0-9]+)?)",
             text, re.I,
         )
         ratios = set()

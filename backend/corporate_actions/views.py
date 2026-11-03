@@ -152,6 +152,11 @@ def corporate_action_notifications(request):
         queryset = queryset.filter(reviewed=False, dismissed=False)
     elif status_filter == "PENDING":
         queryset = queryset.filter(reconciliation__status=CorporateActionReconciliationStatus.PENDING, dismissed=False)
+    elif status_filter == "IDENTITY":
+        queryset = queryset.filter(
+            reconciliation__status=CorporateActionReconciliationStatus.PENDING_USER_APPROVAL,
+            dismissed=False,
+        )
     elif status_filter == "RECORDED":
         queryset = queryset.filter(reconciliation__status=CorporateActionReconciliationStatus.ALREADY_RECORDED)
     elif status_filter == "COMPLETED":

@@ -18,6 +18,12 @@ NSE_ACTIONS_API = "https://www.nseindia.com/api/corporates-corporateActions"
 NSE_ACTIONS_PAGE = "https://www.nseindia.com/companies-listing/corporate-filings-actions"
 
 
+def normalize_nse_symbol(value):
+    """Return the bare NSE equity symbol for values stored with an exchange suffix."""
+    symbol = str(value or "").strip().upper()
+    return symbol[:-3] if symbol.endswith(".NS") else symbol
+
+
 def parse_nse_date(value):
     if value in (None, "", "-"):
         return None
@@ -61,7 +67,7 @@ class NseCorporateActionsProvider:
         self._warmed = False
 
     def fetch_symbol(self, symbol, since, until, session=None):
-        symbol = str(symbol or "").strip().upper()
+        symbol = normalize_nse_symbol(symbol)
         if not symbol:
             return []
         if since and until and since > until:
@@ -77,9 +83,22 @@ class NseCorporateActionsProvider:
         # NSE expects a regular browser session; this is a standard public-page
         # warm-up, not an attempt to defeat a challenge or access restriction.
         if not self._warmed:
-            home = client.get(NSE_HOME, headers=headers, timeout=self.timeout_seconds)
-            home.raise_for_status()
-            self._warmed = True
+            try:
+                home = client.get(NSE_HOME, headers=headers, timeout=self.timeout_seconds)
+                if home.ok:
+                    self._warmed = True
+                else:
+                    logger.warning(
+                        "NSE homepage warm-up returned HTTP %s; attempting the public corporate-actions API directly.",
+                        home.status_code,
+                    )
+                    self._warmed = True
+            except requests.RequestException as exc:
+                logger.warning(
+                    "NSE homepage warm-up failed (%s); attempting the public corporate-actions API directly.",
+                    exc,
+                )
+                self._warmed = True
             if self.request_delay_seconds:
                 time.sleep(self.request_delay_seconds)
 

@@ -13,7 +13,7 @@ from config.pwms_config import section
 from corporate_actions.models import CorporateAction, CorporateActionStatus, CorporateActionType
 from corporate_actions.services import reconcile_action_for_all_users
 from corporate_actions.providers.exchange import ConfiguredCorporateActionsProvider
-from corporate_actions.providers.nse import NseCorporateActionsProvider
+from corporate_actions.providers.nse import NseCorporateActionsProvider, normalize_nse_symbol
 from filing_intelligence.models import Filing
 from investments.models import Asset, AssetCategory, AssetUnderlyingHolding, Holding
 from mutual_funds.models import MutualFundTransaction
@@ -66,7 +66,7 @@ def build_symbol_isin_map(assets):
     """Map an NSE symbol only when held assets resolve it to one unambiguous ISIN."""
     symbol_isins = {}
     for asset in assets:
-        symbol = (asset.symbol or "").strip().upper()
+        symbol = normalize_nse_symbol(asset.symbol)
         isin = (asset.isin or "").strip().upper()
         if symbol and isin:
             symbol_isins.setdefault(symbol, set()).add(isin)
@@ -168,7 +168,7 @@ class Command(BaseCommand):
                 holding__quantity__gt=0,
             ).select_related("holding"))
             nse_symbols = {
-                asset.symbol.strip().upper()
+                normalize_nse_symbol(asset.symbol)
                 for asset in held_assets
                 if asset.symbol and asset.symbol.strip()
             }

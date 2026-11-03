@@ -168,30 +168,20 @@ def discover_exposures_and_reconcile(action):
                 else TransactionType.SPLIT if action.action_type in {"STOCK_SPLIT", "REVERSE_SPLIT"}
                 else None
             )
+            # Compute pre-event eligible units for every direct action type,
+            # including dividends. Cash dividends use this quantity for an
+            # entitlement estimate but never change share quantity.
+            from corporate_actions.position_adjustment import (
+                calculate_position_with_actions,
+                confirmed_ratio_actions,
+            )
+            tx_rows = list(prior_transactions.order_by("transaction_date", "created_at", "id"))
             eligible_quantity = None
-            if expected_type is not None:
-                existing = Transaction.objects.filter(
-                    owner=user, asset=asset,
-                    transaction_date__gte=action.ex_date,
-                    transaction_type=expected_type,
-                )
-                if family_id:
-                    existing = existing.filter(family_id=family_id)
-            else:
-                existing = Transaction.objects.none()
-
-            if expected_type is not None and expected_type != TransactionType.DIVIDEND:
-                from corporate_actions.position_adjustment import (
-                    calculate_position_with_actions,
-                    confirmed_ratio_actions,
-                )
-                tx_rows = list(prior_transactions.order_by("transaction_date", "created_at", "id"))
-                if tx_rows:
-                    # Entitlement is measured immediately before this event's ex-date.
-                    earlier_actions = confirmed_ratio_actions(asset=asset, owner=user)
-                    earlier_actions = [item for item in earlier_actions if item.ex_date < action.ex_date]
-                    totals = calculate_position_with_actions(tx_rows, earlier_actions)
-                    eligible_quantity = totals.get("quantity")
+            if tx_rows:
+                earlier_actions = confirmed_ratio_actions(asset=asset, owner=user)
+                earlier_actions = [item for item in earlier_actions if item.ex_date < action.ex_date]
+                totals = calculate_position_with_actions(tx_rows, earlier_actions)
+                eligible_quantity = totals.get("quantity")
 
             if existing.exists():
                 _create_reconciliation(

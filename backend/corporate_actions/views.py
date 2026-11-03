@@ -16,6 +16,7 @@ from portfolio.services.portfolio_position_engine import PortfolioPositionEngine
 from .models import (
     CorporateAction,
     CorporateActionStatus,
+    CorporateActionType,
     CorporateActionExposure,
     CorporateActionNotification,
     CorporateActionReconciliation,
@@ -146,7 +147,9 @@ def corporate_action_candidates(request):
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def corporate_action_notifications(request):
-    queryset = CorporateActionNotification.objects.filter(owner=request.user).select_related(
+    queryset = CorporateActionNotification.objects.filter(owner=request.user).exclude(
+        action__action_type=CorporateActionType.CASH_DIVIDEND
+    ).select_related(
         "action", "reconciliation"
     ).prefetch_related("action__exposures")
     status_filter = request.query_params.get("status", "").upper()

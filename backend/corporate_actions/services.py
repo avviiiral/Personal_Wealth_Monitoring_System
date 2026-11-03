@@ -111,7 +111,10 @@ def discover_symbol_name_candidates(*, action, user):
     family_id = _user_family_id(user)
     assets = Asset.objects.filter(is_active=True, category="STOCK")
     if family_id:
-        assets = assets.filter(Q(owner=user) | Q(family_id=family_id))
+        member_family_ids = list(
+            FamilyMembership.objects.filter(profile__user=user).values_list("family_group_id", flat=True)
+        )
+        assets = assets.filter(Q(owner=user) | Q(family_id__in=member_family_ids))
     else:
         assets = assets.filter(owner=user)
     if action.symbol:
@@ -388,13 +391,16 @@ def decide_missing_isin_reconciliation(*, owner, reconciliation_id, decision, as
                 raise ValidationError("Choose one of the proposed holdings.")
             family_id = _user_family_id(owner)
             identity_scope = Q(owner=owner)
-            if family_id:
-                identity_scope |= Q(family_id=family_id)
+            member_family_ids = list(
+                FamilyMembership.objects.filter(profile__user=owner).values_list("family_group_id", flat=True)
+            )
+            if member_family_ids:
+                identity_scope |= Q(family_id__in=member_family_ids)
             asset_query = Asset.objects.select_for_update().filter(
                 id=asset_id, is_active=True, category="STOCK"
             ).filter(identity_scope)
             asset = asset_query.first()
-            if asset is not None and asset.family_id:
+            if asset is not None:
                 family_id = asset.family_id
             if asset is None:
                 raise ValidationError("Selected holding is no longer available.")

@@ -75,9 +75,9 @@ class NSESecurityMasterProvider(IdentityProvider):
                 continue
             symbol = str(row.get("SYMBOL") or "").strip().upper()
             name = str(row.get("NAME OF COMPANY") or "").strip()
-            yield IdentifierEvidence(asset.pk, "ISIN", isin, "NSE", None, None,
-                self.name, self.URL, "VERIFIED", Decimal("0.98"),
-                {"coverage": "current-only", "company_name": name, "symbol": symbol})
+            # This feed is current-state data, not historical ISIN evidence.
+            # The pre-existing Asset ISIN is the input; only the exchange symbol
+            # is a newly discovered identifier from this current master row.
             if symbol:
                 yield IdentifierEvidence(asset.pk, "NSE_SYMBOL", symbol, "NSE", None, None,
                     self.name, self.URL, "VERIFIED", Decimal("0.98"),

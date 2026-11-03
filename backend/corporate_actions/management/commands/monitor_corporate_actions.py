@@ -19,14 +19,14 @@ from users.models import FamilyMembership
 
 logger = logging.getLogger(__name__)
 DATE_VALUE = (
-    r"(\\d{1,2}[./-]\\d{1,2}[./-]\\d{4}|\\d{4}-\\d{2}-\\d{2}|"
-    r"\\d{1,2}[-./\\s]+[A-Za-z]{3,9}[-./\\s]+\\d{4})"
+    r"(\d{1,2}[./-]\d{1,2}[./-]\d{4}|\d{4}-\d{2}-\d{2}|"
+    r"\d{1,2}[-./\s]+[A-Za-z]{3,9}[-./\s]+\d{4})"
 )
 DATE_PATTERNS = (
-    ("ex_date", re.compile(r"(?i)\\b(ex\\s*[- ]?date|ex\\s*[- ]?bonus\\s*(?:basis\\s*)?(?:from\\s*)?date)\\s*[:-]?\\s*" + DATE_VALUE)),
-    ("ex_date", re.compile(r"(?i)\\bex\\s*[- ]?bonus\\s+basis\\s+from\\s+" + DATE_VALUE)),
-    ("record_date", re.compile(r"(?i)\\b(record\\s*[- ]?date)(?:\\s+for\\s+the\\s+purpose\\s+of\\s+[^:=;,.]+)?\\s*(?:is|:|-)?\\s*" + DATE_VALUE)),
-    ("payment_date", re.compile(r"(?i)\\b(payment\\s*[- ]?date)\\s*[:-]?\\s*" + DATE_VALUE)),
+    ("ex_date", re.compile(r"(?i)\b(ex\s*[- ]?date|ex\s*[- ]?bonus\s*(?:basis\s*)?(?:from\s*)?date)\s*[:-]?\s*" + DATE_VALUE)),
+    ("ex_date", re.compile(r"(?i)\bex\s*[- ]?bonus\s+basis\s+from\s+" + DATE_VALUE)),
+    ("record_date", re.compile(r"(?i)\b(record\s*[- ]?date)(?:\s+for\s+the\s+purpose\s+of\s+[^:=;,.]+)?\s*(?:is|:|-)?\s*" + DATE_VALUE)),
+    ("payment_date", re.compile(r"(?i)\b(payment\s*[- ]?date)\s*[:-]?\s*" + DATE_VALUE)),
 )
 
 def _parse_date(raw):
@@ -36,7 +36,7 @@ def _parse_date(raw):
             return datetime.strptime(value, fmt).date()
         except ValueError:
             pass
-    normalized = re.sub(r"[-./\\s]+", " ", value)
+    normalized = re.sub(r"[-./\s]+", " ", value)
     for fmt in ("%d %m %Y", "%Y %m %d", "%d %b %Y", "%d %B %Y"):
         try:
             return datetime.strptime(normalized, fmt).date()
@@ -73,7 +73,7 @@ def classify_filing(filing):
     if any(marker in subject or marker in filing_type for marker in lifecycle):
         return None
     # A standalone record-date notice supplements an existing action; it is not a new action.
-    if re.search(r"^record\\s*date$", subject):
+    if re.search(r"^record\s*date$", subject):
         return None
     rules = (
         (CorporateActionType.STOCK_SPLIT, ("stock split", "sub-division of equity shares", "subdivision of equity shares", "split of equity shares"), ("approved", "proposed", "recommend", "subject to", "ratio", "record date", "ex-date", "ex date")),

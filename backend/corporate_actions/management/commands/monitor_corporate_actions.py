@@ -55,20 +55,68 @@ def _parse_date(raw):
 
 
 def classify_filing(filing):
-    """Conservative keyword classification; ambiguous subjects are not auto-classified."""
-    text = " ".join([filing.filing_type or "", filing.subject or "", filing.details or ""]).lower()
-    rules = [
-        (("stock split", "split of equity shares", "sub-division"), CorporateActionType.STOCK_SPLIT),
-        (("bonus issue", "issue of bonus shares", "issuance of bonus shares", "issuance of bonus share",
-          "bonus shares", "bonus equity shares"), CorporateActionType.BONUS),
-        (("dividend", "interim dividend", "final dividend"), CorporateActionType.CASH_DIVIDEND),
-        (("rights issue", "rights entitlement"), CorporateActionType.RIGHTS_ISSUE),
-        (("amalgamation", "merger"), CorporateActionType.MERGER),
-        (("demerger", "scheme of arrangement", "spin-off", "spin off"), CorporateActionType.DEMERGER),
-        (("buyback", "buy-back"), CorporateActionType.BUYBACK),
-        (("consolidation of shares", "reverse split"), CorporateActionType.REVERSE_SPLIT),
-    ]
-    matches = [action_type for terms, action_type in rules if any(term in text for term in terms)]
+    """Return an action type only for a genuine event announcement.
+
+    Routine reports, newspaper copies, allotments and post-event notices are
+    lifecycle communications, not new corporate actions.
+    """
+    subject = (filing.subject or "").strip().lower()
+    details = (filing.details or "").strip().lower()
+    filing_type = (filing.filing_type or "").strip().lower()
+    text = " ".join([filing_type, subject, details])
+
+    lifecycle_markers = (
+        "monitoring agency report",
+        "allotment of securities",
+        "allotment of shares",
+        "extinguishment of shares",
+        "copy of newspaper publication",
+        "newspaper publication",
+        "communication sent to shareholders",
+        "email communication sent to shareholders",
+        "post buy-back",
+        "post buyback",
+        "completion of buy-back",
+        "completion of buyback",
+    )
+    if any(marker in subject or marker in filing_type for marker in lifecycle_markers):
+        return None
+
+    rules = (
+        (CorporateActionType.STOCK_SPLIT,
+         ("stock split", "sub-division of equity shares", "subdivision of equity shares", "split of equity shares"),
+         ("approved", "proposed", "recommend", "subject to", "ratio", "record date", "ex-date", "ex date")),
+        (CorporateActionType.BONUS,
+         ("bonus issue", "issue of bonus shares", "issuance of bonus shares", "issuance of bonus share",
+          "bonus equity shares", "bonus shares"),
+         ("approved", "proposed", "recommend", "subject to", "ratio", "record date", "ex-date", "ex date")),
+        (CorporateActionType.CASH_DIVIDEND,
+         ("dividend", "idcw"),
+         ("declared", "declaration", "recommended", "recommendation", "interim dividend",
+          "final dividend", "dividend per share", "record date for the purpose of dividend", "payment date")),
+        (CorporateActionType.RIGHTS_ISSUE,
+         ("rights issue", "rights entitlement", "issue of shares on rights basis"),
+         ("approve", "approved", "proposed", "offer", "issue price", "record date",
+          "rights entitlement", "rights issue committee")),
+        (CorporateActionType.MERGER,
+         ("amalgamation", "merger"),
+         ("scheme", "appointed date", "effective date", "approval", "approved", "order", "tribunal")),
+        (CorporateActionType.DEMERGER,
+         ("demerger", "spin-off", "spin off"),
+         ("scheme", "appointed date", "effective date", "approval", "approved", "record date")),
+        (CorporateActionType.BUYBACK,
+         ("buyback", "buy-back"),
+         ("board approved", "approved", "proposed", "tender offer", "record date", "buyback price", "buy-back price")),
+        (CorporateActionType.REVERSE_SPLIT,
+         ("consolidation of shares", "reverse stock split", "reverse split"),
+         ("approved", "proposed", "ratio", "record date", "ex-date", "ex date")),
+    )
+
+    matches = []
+    for action_type, keywords, evidence in rules:
+        if any(keyword in text for keyword in keywords) and any(marker in text for marker in evidence):
+            matches.append(action_type)
+
     return matches[0] if len(matches) == 1 else None
 
 

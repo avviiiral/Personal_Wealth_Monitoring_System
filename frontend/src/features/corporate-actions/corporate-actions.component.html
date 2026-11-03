@@ -1,91 +1,84 @@
 <section class="corporate-actions-page">
-  <header class="page-header">
-    <div>
-      <p class="eyebrow">PORTFOLIO INTELLIGENCE</p>
-      <h1>Corporate Actions</h1>
-      <p class="subtitle">Monitor exchange announcements and reconcile actions against your portfolio.</p>
-    </div>
-    <button class="refresh-button" type="button" (click)="load()" [disabled]="loading">
-      <span aria-hidden="true">↻</span> Refresh
-    </button>
+  <header class="page-header"><div><p class="eyebrow">PORTFOLIO INTELLIGENCE</p><h1>Corporate Actions</h1>
+    <p class="subtitle">Monitor exchange announcements and reconcile actions against your portfolio.</p></div>
+    <button class="refresh-button" type="button" (click)="load()" [disabled]="loading">↻ Refresh</button>
   </header>
-
   <div class="summary-grid">
-    <article class="summary-card"><span>Total notifications</span><strong>{{ total }}</strong><small>Across your portfolio exposures</small></article>
-    <article class="summary-card"><span>Pending in this view</span><strong>{{ pendingCount }}</strong><small>Require eligibility review</small></article>
-    <article class="summary-card"><span>Direct exposure</span><strong>{{ directCount }}</strong><small>Potential investor-level action</small></article>
-    <article class="summary-card"><span>Indirect exposure</span><strong>{{ indirectCount }}</strong><small>Mutual-fund holdings only</small></article>
+    <article class="summary-card"><span>Total notifications</span><strong>{{total}}</strong><small>Across your portfolio exposures</small></article>
+    <article class="summary-card"><span>Pending in this view</span><strong>{{pendingCount}}</strong><small>Require investor review</small></article>
+    <article class="summary-card"><span>Direct exposure</span><strong>{{directCount}}</strong><small>Potential investor-level action</small></article>
+    <article class="summary-card"><span>Indirect exposure</span><strong>{{indirectCount}}</strong><small>Mutual-fund / PMS holdings</small></article>
   </div>
-
   <nav class="filter-bar" aria-label="Filter corporate actions">
-    <button *ngFor="let filter of filters" type="button" [class.active]="selectedFilter === filter.value"
-      (click)="selectFilter(filter.value)">{{ filter.label }}</button>
+    <button *ngFor="let filter of filters" type="button" [class.active]="selectedFilter===filter.value"
+      (click)="selectFilter(filter.value)">{{filter.label}}</button>
   </nav>
-
   <div class="state-panel" *ngIf="loading">Loading corporate action notifications…</div>
-  <div class="error-panel" *ngIf="error">{{ error }}</div>
-  <div class="state-panel" *ngIf="!loading && !error && items.length === 0">
+  <div class="error-panel" *ngIf="error">{{error}}</div>
+  <div class="state-panel" *ngIf="!loading&&!error&&items.length===0">
     <strong>No corporate action notifications</strong>
-    <p>New exchange announcements matched to your portfolio will appear here after the scheduled monitoring run.</p>
+    <p>Matched exchange announcements appear here after the monitoring run.</p>
   </div>
-
-  <div class="action-list" *ngIf="!loading && items.length">
-    <article class="action-card" *ngFor="let item of items; trackBy: trackById">
-      <div class="action-topline">
-        <div>
-          <div class="action-tags">
-            <span class="type-tag">{{ item.action.action_type.replace('_', ' ') }}</span>
-            <span class="status-tag" [attr.data-status]="item.reconciliation.status">{{ item.reconciliation.status.replace('_', ' ') }}</span>
-            <span class="exposure-tag">{{ item.direct_exposure ? 'Direct exposure' : 'Indirect exposure' }}</span>
-          </div>
-          <h2>{{ item.action.security_name }}</h2>
-          <p class="security-meta">{{ item.action.symbol || '—' }} <span *ngIf="item.action.isin">· {{ item.action.isin }}</span> <span *ngIf="item.action.exchange">· {{ item.action.exchange }}</span></p>
-        </div>
-        <a *ngIf="item.action.source_reference" [href]="item.action.source_reference" target="_blank" rel="noopener noreferrer">Source ↗</a>
-      </div>
-
+  <div class="action-list" *ngIf="!loading&&items.length">
+    <article class="action-card" *ngFor="let item of items;trackBy:trackById">
+      <div class="action-topline"><div><div class="action-tags">
+        <span class="type-tag">{{item.action.action_type.replace('_',' ')}}</span>
+        <span class="status-tag" [attr.data-status]="item.reconciliation.status">{{item.reconciliation.status.replace('_',' ')}}</span>
+        <span class="exposure-tag">{{item.direct_exposure?'Direct exposure':'Indirect exposure'}}</span>
+      </div><h2>{{item.action.security_name}}</h2>
+      <p class="security-meta">{{item.action.symbol||'—'}} <span *ngIf="item.action.isin">· {{item.action.isin}}</span>
+        <span *ngIf="!item.action.isin">· Source ISIN unavailable</span> <span *ngIf="item.action.exchange">· {{item.action.exchange}}</span></p></div>
+      <a *ngIf="item.action.source_reference" [href]="item.action.source_reference" target="_blank" rel="noopener noreferrer">Source ↗</a></div>
       <div class="event-details">
-        <div><span>Ex-date</span><strong>{{ item.action.ex_date | date:'dd MMM yyyy' }}</strong></div>
-        <div><span>Record date</span><strong>{{ item.action.record_date ? (item.action.record_date | date:'dd MMM yyyy') : 'Not available' }}</strong></div>
-        <div><span>Payment date</span><strong>{{ item.action.payment_date ? (item.action.payment_date | date:'dd MMM yyyy') : 'Not applicable / unavailable' }}</strong></div>
-        <div><span>Ratio / amount</span><strong>{{ item.action.old_units && item.action.new_units ? (item.action.old_units + ':' + item.action.new_units) : (item.action.cash_per_unit ? ('₹' + item.action.cash_per_unit) : 'Verify source') }}</strong></div>
+        <div><span>Ex-date</span><strong>{{item.action.ex_date|date:'dd MMM yyyy'}}</strong></div>
+        <div><span>Record date</span><strong>{{item.action.record_date?(item.action.record_date|date:'dd MMM yyyy'):'Not available'}}</strong></div>
+        <div><span>Payment date</span><strong>{{item.action.payment_date?(item.action.payment_date|date:'dd MMM yyyy'):'Not applicable / unavailable'}}</strong></div>
+        <div><span>Ratio / amount</span><strong>{{item.action.old_units&&item.action.new_units?(item.action.old_units+':'+item.action.new_units):(item.action.cash_per_unit?('₹'+item.action.cash_per_unit):'Verify source')}}</strong></div>
       </div>
-
-      <div class="exposure-list">
-        <span class="section-label">Affected investments</span>
+      <section class="identity-review" *ngIf="item.reconciliation.status==='PENDING_USER_APPROVAL'">
+        <div><strong>Confirm security identity</strong><p>The provider did not supply an ISIN. PWMS found exact {{item.reconciliation.identity_match_method|lowercase}} candidate matches. No transaction will be created unless you approve a specific holding.</p></div>
+        <div class="candidate-list" *ngIf="item.reconciliation.candidate_assets?.length;else noCandidates">
+          <label *ngFor="let candidate of item.reconciliation.candidate_assets" class="candidate-option">
+            <input type="radio" [name]="'candidate-'+item.id" [value]="candidate.id"
+              [checked]="selectedCandidates[item.id]===candidate.id"
+              (change)="selectedCandidates[item.id]=candidate.id">
+            <span><b>{{candidate.name}}</b><small>{{candidate.symbol||'No symbol'}} · {{candidate.isin||'No asset ISIN'}} · {{candidate.exchange||item.action.exchange||'Exchange unavailable'}}</small></span>
+          </label>
+        </div>
+        <ng-template #noCandidates><p>No currently accessible candidates are available. Refresh the notification and review the holding register.</p></ng-template>
+        <div class="identity-actions">
+          <button type="button" class="primary" (click)="decideIdentity(item,'APPROVE')"
+            [disabled]="busyId===item.id||!item.reconciliation.candidate_assets?.length">Approve selected holding</button>
+          <button type="button" class="quiet-danger" (click)="decideIdentity(item,'REJECT')" [disabled]="busyId===item.id">Reject match</button>
+        </div>
+      </section>
+      <div class="exposure-list" *ngIf="item.exposures.length"><span class="section-label">Affected investments</span>
         <div class="exposure-row" *ngFor="let exposure of item.exposures">
-          <span><b>{{ exposure.investment_name }}</b><small>{{ exposure.type === 'DIRECT' ? 'Direct security holding' : 'Underlying fund exposure' }}</small></span>
-          <span *ngIf="exposure.holding_weight">{{ exposure.holding_weight }}% of fund NAV</span>
+          <span><b>{{exposure.investment_name}}</b><small>{{exposure.type==='DIRECT'?'Direct security holding':exposure.type+' underlying exposure'}}</small></span>
+          <span *ngIf="exposure.holding_weight">{{exposure.holding_weight}}% of fund NAV</span>
         </div>
       </div>
-
-      <p class="safety-note" *ngIf="!item.direct_exposure">
-        This is indirect exposure through an investment product. The corporate action is handled within that product. Do not add a direct equity transaction.
+      <p class="safety-note" *ngIf="!item.direct_exposure&&item.exposures.length">
+        This is indirect exposure through an investment product. Do not create a direct stock transaction for this exposure.
       </p>
-      <p class="safety-note" *ngIf="item.direct_exposure && item.reconciliation.status === 'PENDING'">
-        Eligible quantity is calculated from your dated buy/sell history immediately before the ex-date. Once the corporate action is verified and confirmed, PWMS adjusts the calculated position automatically. No corporate-action transaction is added to your uploaded ledger.
+      <p class="safety-note" *ngIf="item.direct_exposure&&item.reconciliation.status==='PENDING'">
+        Eligible quantity is estimated from dated transaction history before the ex-date. Verify the official entitlement before applying the action.
       </p>
-      <p class="safety-note" *ngIf="item.reconciliation.notes">{{ item.reconciliation.notes }}</p>
-
+      <p class="safety-note" *ngIf="item.reconciliation.notes">{{item.reconciliation.notes}}</p>
       <footer class="action-footer">
-        <button type="button" class="secondary" (click)="markReviewed(item)" [disabled]="busyId === item.id || item.reviewed">
-          {{ item.reviewed ? 'Reviewed' : 'Mark reviewed' }}
-        </button>
+        <button type="button" class="secondary" (click)="markReviewed(item)" [disabled]="busyId===item.id||item.reviewed">{{item.reviewed?'Reviewed':'Mark reviewed'}}</button>
         <button type="button" class="secondary" (click)="confirmAction(item)"
-          *ngIf="item.direct_exposure && item.action.status === 'PENDING' && item.reconciliation.status === 'PENDING'"
-          [disabled]="busyId === item.id">Verify and apply action</button>
+          *ngIf="item.direct_exposure&&item.action.status==='PENDING'&&item.reconciliation.status==='PENDING'"
+          [disabled]="busyId===item.id">Verify and apply action</button>
         <button type="button" class="secondary" (click)="markAlreadyRecorded(item)"
-          *ngIf="item.direct_exposure && item.reconciliation.status === 'PENDING'" [disabled]="busyId === item.id">
-          Already recorded
-        </button>
-        <button type="button" class="quiet-danger" (click)="dismiss(item)" [disabled]="busyId === item.id">Dismiss</button>
+          *ngIf="item.direct_exposure&&item.reconciliation.status==='PENDING'" [disabled]="busyId===item.id">Already recorded</button>
+        <button type="button" class="quiet-danger" (click)="dismiss(item)"
+          *ngIf="item.reconciliation.status!=='PENDING_USER_APPROVAL'" [disabled]="busyId===item.id">Dismiss</button>
       </footer>
     </article>
   </div>
-
-  <footer class="pagination" *ngIf="total > pageSize">
-    <span>Showing {{ (page - 1) * pageSize + 1 }}–{{ page * pageSize > total ? total : page * pageSize }} of {{ total }}</span>
-    <button type="button" (click)="page = page - 1; load()" [disabled]="page <= 1 || loading">Previous</button>
-    <button type="button" (click)="page = page + 1; load()" [disabled]="page * pageSize >= total || loading">Next</button>
+  <footer class="pagination" *ngIf="total>pageSize"><span>Showing {{(page-1)*pageSize+1}}–{{page*pageSize>total?total:page*pageSize}} of {{total}}</span>
+    <button type="button" (click)="page=page-1;load()" [disabled]="page<=1||loading">Previous</button>
+    <button type="button" (click)="page=page+1;load()" [disabled]="page*pageSize>=total||loading">Next</button>
   </footer>
 </section>

@@ -132,6 +132,7 @@ class NseCorporateActionsProvider:
                     record["record_date"], record["series"],
                 )
                 records_by_key[key] = record
-            if self.request_delay_seconds and window_index < len(windows) - 1:
+            if self.request_delay_seconds:
+                # Throttle across both date windows and successive symbols.
                 time.sleep(self.request_delay_seconds)
         return list(records_by_key.values())

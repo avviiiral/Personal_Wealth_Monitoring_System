@@ -19,8 +19,8 @@ def extract_dividend_amount(purpose):
     """Extract an explicit rupee-per-share amount; never infer an amount."""
     text = str(purpose or "")
     patterns = (
-        r"(?:₹|INR\s*|Rs\.?\s*)([0-9]+(?:,[0-9]{3})*(?:\.[0-9]+)?)\s*(?:/-)?\s*(?:per\s+(?:equity\s+)?share|each\s+(?:equity\s+)?share)",
-        r"(?:dividend\s*(?:of|@|:)?\s*)(?:₹|INR\s*|Rs\.?\s*)([0-9]+(?:\.[0-9]+)?)",
+        r"(?:₹\s*|INR\s*|Rs\.?\s*)([0-9]+(?:,[0-9]{3})*(?:\.[0-9]+)?)\s*(?:/-)?\s*(?:per\s+(?:equity\s+)?share|each\s+(?:equity\s+)?share)",
+        r"(?:dividend\s*(?:of|@|:)?\s*)(?:₹\s*|INR\s*|Rs\.?\s*)([0-9]+(?:\.[0-9]+)?)",
     )
     values = []
     for pattern in patterns:

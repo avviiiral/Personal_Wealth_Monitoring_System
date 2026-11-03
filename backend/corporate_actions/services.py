@@ -402,6 +402,7 @@ def decide_missing_isin_reconciliation(*, owner, reconciliation_id, decision, as
             asset = asset_query.first()
             if asset is not None:
                 family_id = asset.family_id
+                reconciliation.family_id_snapshot = family_id
             if asset is None:
                 raise ValidationError("Selected holding is no longer available.")
             transaction_type = (

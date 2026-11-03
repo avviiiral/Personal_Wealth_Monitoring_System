@@ -272,8 +272,13 @@ class HistoricalIdentityDiscoveryService:
                   "duplicates": 0, "conflicts": 0, "rejected": 0, "failures": 0, "skipped": 0}
         for asset in assets.iterator():
             totals["assets"] += 1
-            result = cls.discover_asset(asset, since=since, until=until, dry_run=dry_run,
-                                        force_refresh=force_refresh, exchange=exchange)
+            try:
+                result = cls.discover_asset(asset, since=since, until=until, dry_run=dry_run,
+                                            force_refresh=force_refresh, exchange=exchange)
+            except Exception:
+                logger.exception("security identity discovery failed asset=%s", asset.pk)
+                totals["failures"] += 1
+                continue
             for key, value in result.items():
                 totals[key] += value
         logger.info("security identity discovery finished stats=%s dry_run=%s", totals, dry_run)

@@ -15,7 +15,7 @@ from decimal import Decimal
 
 import requests
 from django.core.cache import cache
-from django.db import IntegrityError
+from django.db import IntegrityError, transaction
 from django.db.models import Q
 from django.utils import timezone
 
@@ -181,12 +181,30 @@ class HistoricalIdentityDiscoveryService:
             exchange=item.exchange or "", verification_status="VERIFIED").exclude(asset_id=item.asset_id)
         if conflict.exists():
             if not dry_run:
-                conflict.update(verification_status="CONFLICT")
-                SecurityIdentifierMapping.objects.filter(
-                    asset_id=item.asset_id, identifier_type=item.identifier_type,
-                    identifier_value__iexact=item.identifier_value,
-                    exchange=item.exchange or "").update(verification_status="CONFLICT")
+                with transaction.atomic():
+                    conflict.update(verification_status="CONFLICT")
+                    SecurityIdentifierMapping.objects.filter(
+                        asset_id=item.asset_id, identifier_type=item.identifier_type,
+                        identifier_value__iexact=item.identifier_value,
+                        exchange=item.exchange or "").update(verification_status="CONFLICT")
+                    SecurityIdentifierMapping.objects.get_or_create(
+                        asset_id=item.asset_id, identifier_type=item.identifier_type,
+                        identifier_value=item.identifier_value, valid_from=item.valid_from, source=item.source,
+                        defaults={"exchange": item.exchange, "valid_to": item.valid_to,
+                                  "source_reference": item.source_reference,
+                                  "source_document_hash": item.document_hash,
+                                  "verification_status": "CONFLICT",
+                                  "confidence": item.confidence, "evidence": item.evidence or {}})
             return "conflict"
+        if item.verification_status == "VERIFIED":
+            overlap = SecurityIdentifierMapping.objects.filter(
+                asset_id=item.asset_id, identifier_type=item.identifier_type,
+                exchange=item.exchange or "", verification_status="VERIFIED",
+            ).exclude(identifier_value__iexact=item.identifier_value)
+            if overlap.exists():
+                if not dry_run:
+                    overlap.update(verification_status="CONFLICT")
+                return "conflict"
         if dry_run:
             return "would_create"
         try:

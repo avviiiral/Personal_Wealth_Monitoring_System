@@ -179,7 +179,29 @@ def _process(item,dry_run=False):
         )
     filing.event_type,filing.severity,filing.classification_reason,filing.classification_facts=cls.event_type,cls.severity,cls.reason,cls.facts
     filing.save(update_fields=["event_type","severity","classification_reason","classification_facts","updated_at"])
+    # Historical identifier resolution precedes legacy direct-ISIN matching.
+    # It only attaches a security when an exact verified mapping is valid on
+    # the filing publication date; unresolved/conflicting filings remain reviewable.
+    historical_resolution = None
+    if filing.isin:
+        try:
+            from investments.services.historical_identity_discovery import HistoricalIdentityDiscoveryService
+            historical_resolution = HistoricalIdentityDiscoveryService.resolve_identifier(
+                identifier_type="ISIN", value=filing.isin,
+                exchange=filing.exchange,
+                event_date=filing.published_at.date(),
+            )
+            if historical_resolution["status"] == "MATCHED":
+                filing.security = historical_resolution["asset"]
+                filing.processing_error = ""
+            elif historical_resolution["status"] == "CONFLICT":
+                filing.processing_error = "Historical identifier maps to conflicting canonical assets; manual review required."
+        except Exception:
+            logger.exception("historical identity lookup failed filing=%s", filing.pk)
     assets,method=match_assets(filing); article=_store_article(filing); alerts=0; matched=len(assets)
+    if historical_resolution and historical_resolution.get("status") == "MATCHED":
+        assets = list({item.pk:item for item in [*assets, historical_resolution["asset"]]}.values())
+        matched = len(assets)
     holdings=list(Holding.objects.filter(asset__in=assets,quantity__gt=0).select_related("owner","family","asset"))
     user_ids={u.id for h in holdings for u in users_for_holding(h)}
     totals={h["owner_id"]: float(h["total"] or 0) for h in Holding.objects.filter(owner_id__in=user_ids,quantity__gt=0).values("owner_id").annotate(total=Sum("current_value"))}

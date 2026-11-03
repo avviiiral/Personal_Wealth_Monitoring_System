@@ -62,6 +62,21 @@ def classify_exchange_action(purpose):
     matches = [kind for kind, terms in rules if any(term in text for term in terms)]
     return matches[0] if len(matches) == 1 else None
 
+def build_symbol_isin_map(assets):
+    """Map an NSE symbol only when held assets resolve it to one unambiguous ISIN."""
+    symbol_isins = {}
+    for asset in assets:
+        symbol = (asset.symbol or "").strip().upper()
+        isin = (asset.isin or "").strip().upper()
+        if symbol and isin:
+            symbol_isins.setdefault(symbol, set()).add(isin)
+    return {
+        symbol: next(iter(isins))
+        for symbol, isins in symbol_isins.items()
+        if len(isins) == 1
+    }
+
+
 def classify_filing(filing):
     subject = (filing.subject or "").strip().lower()
     details = (filing.details or "").strip().lower()
@@ -145,18 +160,19 @@ class Command(BaseCommand):
         nse_symbols = set()
         if options["source"] in {"nse", "both"}:
             nse_range_start = since or (timezone.localdate() - timedelta(days=int(cfg.get("nse_history_days", 365))))
-            held_assets = Asset.objects.filter(
+            held_assets = list(Asset.objects.filter(
                 is_active=True,
                 category=AssetCategory.STOCK,
                 symbol__isnull=False,
                 symbol__gt="",
                 holding__quantity__gt=0,
-            ).select_related("holding")
+            ).select_related("holding"))
             nse_symbols = {
                 asset.symbol.strip().upper()
                 for asset in held_assets
                 if asset.symbol and asset.symbol.strip()
             }
+            symbol_isin_map = build_symbol_isin_map(held_assets)
             if nse_symbols:
                 nse_provider = NseCorporateActionsProvider(
                     timeout_seconds=cfg.get("nse_timeout_seconds", 20),
@@ -232,7 +248,13 @@ class Command(BaseCommand):
 
         for record in nse_records:
             action_type = classify_exchange_action(record.get("purpose"))
-            event = {**record, "action_type": action_type}
+            isin = (record.get("isin") or symbol_isin_map.get(record.get("symbol", "").upper()) or "").upper()
+            if not isin:
+                logger.warning(
+                    "Skipping NSE corporate action for %s: held asset symbol does not resolve to one unique ISIN.",
+                    record.get("symbol"),
+                )
+            event = {**record, "isin": isin, "action_type": action_type}
             persist_event(
                 event, "NSE_CORPORATE_ACTIONS", record.get("source_url", ""),
                 {"provider": "nse_corporate_actions_api", "purpose": record.get("purpose"),

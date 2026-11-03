@@ -12,7 +12,9 @@ from .models import (
     CorporateActionReconciliationStatus, CorporateActionNotification,
 )
 from .services import quantity_multiplier, resolve_corporate_action_candidates
-from .management.commands.monitor_corporate_actions import classify_filing, classify_exchange_action, extract_event_dates
+from .management.commands.monitor_corporate_actions import (
+    build_symbol_isin_map, classify_filing, classify_exchange_action, extract_event_dates,
+)
 from .providers.nse import normalize_nse_action
 from users.models import FamilyGroup, FamilyMembership, Role
 from .position_adjustment import confirmed_ratio_actions
@@ -292,6 +294,19 @@ class FilingClassificationTests(TestCase):
 
 
 class NseCorporateActionsProviderTests(TestCase):
+    def test_symbol_isin_mapping_requires_one_unambiguous_held_asset_isin(self):
+        assets = [
+            SimpleNamespace(symbol="TRENT", isin="INE849A01020"),
+            SimpleNamespace(symbol="trent", isin="INE849A01020"),
+            SimpleNamespace(symbol="AMBIGUOUS", isin="INE111A01011"),
+            SimpleNamespace(symbol="AMBIGUOUS", isin="INE222A01022"),
+            SimpleNamespace(symbol="NOISIN", isin=""),
+        ]
+        self.assertEqual(
+            build_symbol_isin_map(assets),
+            {"TRENT": "INE849A01020"},
+        )
+
     def test_normalizes_nse_corporate_action_table_fields(self):
         record = normalize_nse_action({
             "symbol": "TRENT",

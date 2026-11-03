@@ -206,6 +206,8 @@ class HistoricalIdentityDiscoveryService:
             return "rejected"
         if item.identifier_type not in {"ISIN", "NSE_SYMBOL", "BSE_SYMBOL", "DEPOSITORY_ISIN"}:
             return "rejected"
+        if item.identifier_value == "UNVERIFIED":
+            return "rejected"
         conflict = SecurityIdentifierMapping.objects.filter(
             identifier_type=item.identifier_type, identifier_value__iexact=item.identifier_value,
             exchange=item.exchange or "", verification_status="VERIFIED").exclude(asset_id=item.asset_id)

@@ -267,6 +267,11 @@ class HistoricalIdentityDiscoveryService:
     @classmethod
     def run(cls, *, since, until, exchange="", asset_id=None, dry_run=False, force_refresh=False):
         assets = Asset.objects.filter(is_active=True).select_related("security_master").order_by("id")
+        # Discovery targets currently represented portfolio assets. An explicit
+        # asset-id can be used for a one-off investigation even without trades.
+        from investments.models import Transaction
+        active_asset_ids = Transaction.objects.values_list("asset_id", flat=True).distinct()
+        assets = assets.filter(pk__in=active_asset_ids)
         if asset_id:
             assets = assets.filter(pk=asset_id)
         totals = {"assets": 0, "providers": 0, "created": 0, "would_create": 0,

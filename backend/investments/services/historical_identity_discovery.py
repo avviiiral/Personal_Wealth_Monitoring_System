@@ -151,6 +151,36 @@ class HistoricalIdentityDiscoveryService:
                  NSDLIssuerSearchProvider(), CDSLCurrentMasterProvider())
 
     @classmethod
+    def discover_from_document(cls, *, asset, identifier_type, identifier_value,
+                               exchange, valid_from, valid_to, source,
+                               source_reference, document_bytes, evidence=None,
+                               dry_run=False):
+        """Persist an identifier only when a dated source document explicitly proves it."""
+        from datetime import date as date_type
+        if not valid_from or not valid_to:
+            raise ValueError("Dated source evidence must define both validity boundaries.")
+        if isinstance(valid_from, str):
+            valid_from = date_type.fromisoformat(valid_from)
+        if isinstance(valid_to, str):
+            valid_to = date_type.fromisoformat(valid_to)
+        if valid_to < valid_from:
+            raise ValueError("valid_to must not precede valid_from.")
+        if not source_reference.startswith("https://") or not document_bytes:
+            raise ValueError("A retrievable official source document is required.")
+        digest = hashlib.sha256(document_bytes).hexdigest()
+        item = IdentifierEvidence(
+            asset_id=asset.pk, identifier_type=identifier_type,
+            identifier_value=identifier_value.strip().upper(), exchange=exchange,
+            valid_from=valid_from, valid_to=valid_to, source=source,
+            source_reference=source_reference, verification_status="VERIFIED",
+            confidence=Decimal("0.99"),
+            evidence={**(evidence or {}), "document_sha256": digest,
+                      "validity_basis": "explicit source document dates"},
+            document_hash=digest,
+        )
+        return cls.persist_evidence(item, dry_run=dry_run)
+
+    @classmethod
     def resolve_identifier(cls, *, identifier_type, value, exchange="", event_date=None):
         value = str(value or "").strip().upper()
         if not value:

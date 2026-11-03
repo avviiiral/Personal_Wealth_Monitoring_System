@@ -58,6 +58,10 @@ export class CorporateActionsService {
     return this.http.get<any>(`${this.baseUrl}/notifications/`, { params, withCredentials: true });
   }
 
+  confirmAction(id: number): Observable<any> {
+    return this.http.patch(`${this.baseUrl}/${id}/`, { status: 'CONFIRMED' }, { withCredentials: true });
+  }
+
   updateNotification(id: number, changes: { reviewed?: boolean; dismissed?: boolean }): Observable<any> {
     return this.http.patch(`${this.baseUrl}/notifications/${id}/`, changes, { withCredentials: true });
   }

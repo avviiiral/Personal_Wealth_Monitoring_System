@@ -1,5 +1,6 @@
 from datetime import date, datetime, timezone as dt_timezone
 from decimal import Decimal
+from types import SimpleNamespace
 
 from django.contrib.auth.models import User
 from django.test import TestCase
@@ -12,7 +13,8 @@ from .models import (
 )
 from .services import quantity_multiplier, resolve_corporate_action_candidates
 from .management.commands.monitor_corporate_actions import classify_filing, extract_event_dates
-from users.models import Role
+from users.models import FamilyGroup, FamilyMembership, Role
+from .position_adjustment import confirmed_ratio_actions
 
 
 class CorporateActionServiceTests(TestCase):
@@ -56,6 +58,40 @@ class CorporateActionServiceTests(TestCase):
             quantity_multiplier(owner=self.user, isin="INE000A01000",
                                  transaction_date=date(2025, 1, 1), valuation_date=date(2025, 7, 1)),
             Decimal("1"),
+        )
+
+    def test_ratio_actions_use_asset_family_not_selected_family(self):
+        asset_family = FamilyGroup.objects.create(name="Asset family")
+        selected_family = FamilyGroup.objects.create(name="Selected family")
+        other_member = User.objects.create_user(
+            username="corp-action-family-member",
+            password="test-password",
+        )
+        FamilyMembership.objects.create(
+            profile=self.user.profile,
+            family_group=asset_family,
+        )
+        FamilyMembership.objects.create(
+            profile=self.user.profile,
+            family_group=selected_family,
+        )
+        FamilyMembership.objects.create(
+            profile=other_member.profile,
+            family_group=asset_family,
+        )
+        self.user.profile.active_family_group = selected_family
+        self.user.profile.save(update_fields=["active_family_group", "updated_at"])
+
+        action = self.make_action(owner=other_member)
+        asset = SimpleNamespace(
+            family_id=asset_family.id,
+            isin="INE000A01000",
+            symbol="EXAMPLE",
+        )
+
+        self.assertEqual(
+            confirmed_ratio_actions(asset=asset, owner=self.user),
+            [action],
         )
 
     def test_exact_isin_match_prevents_name_based_guessing(self):

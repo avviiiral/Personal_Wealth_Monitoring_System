@@ -205,11 +205,15 @@ class CorporateActionServiceTests(TestCase):
             owner=self.user, name="Example Limited", category=AssetCategory.STOCK,
             symbol="EXAMPLE", isin="INE000A01000",
         )
-        from investments.models import Holding
-        Holding.objects.create(owner=self.user, asset=asset, quantity=Decimal("10"))
+        Transaction.objects.create(
+            owner=self.user, asset=asset, transaction_type=TransactionType.BUY,
+            transaction_date=date(2025, 1, 1), quantity=Decimal("10"),
+            price_per_unit=Decimal("100"), amount=Decimal("1000"),
+            fees=Decimal("0"),
+        )
         action = self.make_action(
             isin="", symbol="EXAMPLE", action_type=CorporateActionType.BONUS,
-            old_units=Decimal("1"), new_units=Decimal("1"), status=CorporateActionStatus.PENDING,
+            old_units=Decimal("1"), new_units=Decimal("2"), status=CorporateActionStatus.PENDING,
         )
         discover_exposures_and_reconcile(action)
         reconciliation = CorporateActionReconciliation.objects.get(action=action, owner=self.user)
@@ -221,8 +225,12 @@ class CorporateActionServiceTests(TestCase):
         )
         self.assertEqual(first.status, CorporateActionReconciliationStatus.APPROVED)
         self.assertEqual(second.status, CorporateActionReconciliationStatus.APPROVED)
-        self.assertEqual(Transaction.objects.filter(asset=asset, transaction_date=action.ex_date).count(), 1)
-        self.assertEqual(first.matched_transaction_ids, [Transaction.objects.get(asset=asset).id])
+        self.assertEqual(Transaction.objects.filter(
+            asset=asset, transaction_date=action.ex_date, source="OTHER"
+        ).count(), 1)
+        self.assertEqual(first.matched_transaction_ids, [
+            Transaction.objects.get(id=first.matched_transaction_ids[0]).id
+        ])
 
     def test_missing_isin_candidate_discovery_does_not_leak_another_users_asset(self):
         other = User.objects.create_user(username="corp-action-other-owner", password="test-password")

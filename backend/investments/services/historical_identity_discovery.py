@@ -112,11 +112,7 @@ class CDSLCurrentMasterProvider(IdentityProvider):
 
 
 class NSEFilingEvidenceProvider(IdentityProvider):
-    """Convert existing dated exchange filings into pending observations.
-
-    An announcement's publication date is not asserted as the identifier's
-    valid-from/to period; historical attachments need explicit review.
-    """
+    """Attach exchange filings as review evidence without asserting validity."""
     name = "NSE_FILING_EVIDENCE"
 
     def discover(self, asset, since, until):
@@ -134,15 +130,16 @@ class NSEFilingEvidenceProvider(IdentityProvider):
             rows = rows.filter(symbol__iexact=symbol)
         for filing in rows.iterator():
             isin = str(filing.isin or "").strip().upper()
-            if not isin:
-                continue
             reference = filing.filing_url or filing.source_url
             if not reference:
                 continue
-            yield IdentifierEvidence(asset.pk, "ISIN", isin, "NSE",
-                None, None, self.name, reference, "PENDING", Decimal("0.55"),
+            # ISIN-less corporate actions (e.g. face-value splits) are still
+            # useful evidence; they stay attached to the filing for review.
+            yield IdentifierEvidence(asset.pk, "ISIN", isin or "UNVERIFIED",
+                "NSE", None, None, self.name, reference, "PENDING", Decimal("0.20"),
                 {"filing_id": filing.pk, "published_at": filing.published_at.isoformat(),
-                 "subject": filing.subject, "note": "requires dated document validity extraction"},
+                 "subject": filing.subject, "details": filing.details[:4000],
+                 "note": "candidate evidence only; analyst must extract explicit identifier validity"},
                 hashlib.sha256(reference.encode()).hexdigest())
 
 

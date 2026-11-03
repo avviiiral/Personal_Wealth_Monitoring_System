@@ -17,6 +17,10 @@ class Command(BaseCommand):
     def handle(self, *args, **options):
         if options["since"] > options["until"]:
             raise CommandError("--since must be on or before --until")
+        if options["exchange"] == "BSE":
+            self.stderr.write(self.style.WARNING(
+                "No verified BSE historical identity feed is integrated; no BSE aliases will be inferred."
+            ))
         stats = HistoricalIdentityDiscoveryService.run(
             since=options["since"], until=options["until"], exchange=options["exchange"],
             asset_id=options["asset_id"], dry_run=options["dry_run"],

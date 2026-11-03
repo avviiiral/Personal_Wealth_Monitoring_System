@@ -211,6 +211,8 @@ class Command(BaseCommand):
 
         def persist_event(event, source_name, source_reference, metadata):
             nonlocal created, updated, matched, skipped
+            audit = build_event_audit(event, source_name, source_reference, metadata)
+            audit_events.append(audit)
             if (not event.get("action_type") or not event.get("isin") or not event.get("ex_date")
                     or event.get("status") in {"CANCELLED", "CANCELED", "DELETED"}):
                 skipped += 1
@@ -227,8 +229,6 @@ class Command(BaseCommand):
                 "notes": "Imported from exchange corporate-actions data. Review purpose and entitlement details before confirmation.",
                 "metadata": metadata,
             }
-            audit = build_event_audit(event, source_name, source_reference, metadata)
-            audit_events.append(audit)
             if options["dry_run"]:
                 # Read-only ORM inspection only; never invoke write-oriented reconciliation.
                 matched += sum(len(audit["exposures"][key]) for key in ("direct_equity", "mutual_fund", "pms"))

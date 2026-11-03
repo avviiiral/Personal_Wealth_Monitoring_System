@@ -149,6 +149,8 @@ class Command(BaseCommand):
         until = _parse_cli_date(options.get("until"), "--until")
         if since and until and since > until:
             raise CommandError("--since cannot be later than --until.")
+        if options.get("report_json") and not options.get("dry_run"):
+            raise CommandError("--report-json is available only with --dry-run to guarantee read-only audit generation.")
         if (since or until) and options.get("hours"):
             raise CommandError("Use either --hours or --since/--until, not both.")
         if options["source"] in {"feed", "both"} and not cfg.get("feed_url") and options["source"] == "feed":

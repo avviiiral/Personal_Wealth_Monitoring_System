@@ -479,9 +479,25 @@ def decide_missing_isin_reconciliation(*, owner, reconciliation_id, decision, as
                         owner=owner, asset=asset, transaction_date__lt=action.ex_date,
                         family__isnull=True,
                     ).order_by("transaction_date", "created_at", "id"))
+
+                # Portfolio Tree derives every hierarchy level from these
+                # transaction labels. Keep the existing member/portfolio/class/
+                # subclass/advisor values, while normalizing absent underlying
+                # labels to the selected canonical security so a bonus is not
+                # emitted as an Unassigned / Unnamed Asset row.
                 grouped_rows = defaultdict(list)
                 for prior in prior_rows:
-                    bucket = tuple(getattr(prior, field) or "" for field in hierarchy_fields)
+                    bucket_values = {
+                        field: (getattr(prior, field) or "").strip()
+                        for field in hierarchy_fields
+                    }
+                    if not bucket_values["asset_name"]:
+                        bucket_values["asset_name"] = asset.name
+                    if not bucket_values["underlying"]:
+                        bucket_values["underlying"] = (
+                            bucket_values["asset_name"] or asset.name
+                        )
+                    bucket = tuple(bucket_values[field] for field in hierarchy_fields)
                     grouped_rows[bucket].append(prior)
 
                 earlier_actions = [

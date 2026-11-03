@@ -31,11 +31,20 @@ class CorporateActionAuditParsingTests(TestCase):
     def test_extracts_explicit_dividend_per_share(self):
         self.assertEqual(extract_dividend_amount("Dividend - Rs 4 Per Share"), Decimal("4"))
         self.assertEqual(extract_dividend_amount("Interim dividend of ₹ 2.50 each share"), Decimal("2.50"))
+        self.assertEqual(extract_dividend_amount("Dividend - Re 1 Per Share"), Decimal("1"))
+        self.assertEqual(extract_dividend_amount("Dividend - Re 0.125 Per Share"), Decimal("0.125"))
+        self.assertEqual(extract_dividend_amount("Interim Dividend - Re 0.60 Per Sh"), Decimal("0.60"))
         self.assertIsNone(extract_dividend_amount("Dividend recommended"))
 
     def test_extracts_bonus_ratio_as_old_units_then_new_units(self):
         self.assertEqual(extract_entitlement_ratio("Bonus 1:2", "BONUS"), (2, 1))
         self.assertEqual(extract_entitlement_ratio("Bonus issue", "BONUS"), (None, None))
+
+    def test_ncrps_bonus_ratio_is_not_treated_as_ordinary_equity_entitlement(self):
+        self.assertEqual(
+            extract_entitlement_ratio("Scheme Of Arrangement - Bonus Ncrps 3:1", "BONUS"),
+            (None, None),
+        )
 
     def test_extracts_split_ratio_from_explicit_face_values(self):
         self.assertEqual(
@@ -43,6 +52,22 @@ class CorporateActionAuditParsingTests(TestCase):
             (Decimal("1"), Decimal("10")),
         )
         self.assertEqual(extract_entitlement_ratio("Stock split approved", "STOCK_SPLIT"), (None, None))
+
+    def test_source_isin_mismatch_blocks_exact_exposure_match(self):
+        from corporate_actions.audit import build_event_audit
+        event = {
+            "isin": "INE238A01034", "source_isin": "INE238A01026",
+            "resolved_isin": "INE238A01034", "source_isin_required": True,
+            "action_type": "CASH_DIVIDEND", "purpose": "Dividend - Rs 1 Per Share",
+            "ex_date": date(2026, 7, 10),
+        }
+        with patch("corporate_actions.audit.inspect_isin_exposures", return_value=(
+            {"direct_equity": [{"investment_id": 1}], "mutual_fund": [], "pms": []}, []
+        )):
+            audit = build_event_audit(event, "NSE", "", {"purpose": event["purpose"]})
+        self.assertEqual(audit["reconciliation_status"], "ISIN_MISMATCH")
+        self.assertEqual(audit["validation_status"], "MANUAL_REVIEW")
+        self.assertEqual(audit["isin"], "INE238A01026")
 
     def test_duplicate_detection_uses_isin_type_and_ex_date(self):
         rows = [

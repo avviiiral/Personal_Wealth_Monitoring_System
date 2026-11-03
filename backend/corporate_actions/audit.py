@@ -18,9 +18,11 @@ def _decimal(value):
 def extract_dividend_amount(purpose):
     """Extract an explicit rupee-per-share amount; never infer an amount."""
     text = str(purpose or "")
+    currency = r"(?:₹\s*|INR\s*|Rs\.?\s*|Re\.?\s*|Rupees?\s*)"
+    per_share = r"(?:per\s+(?:equity\s+)?sh(?:are)?|each\s+(?:equity\s+)?sh(?:are)?)"
     patterns = (
-        r"(?:₹\s*|INR\s*|Rs\.?\s*)([0-9]+(?:,[0-9]{3})*(?:\.[0-9]+)?)\s*(?:/-)?\s*(?:per\s+(?:equity\s+)?share|each\s+(?:equity\s+)?share)",
-        r"(?:dividend\s*(?:of|@|:)?\s*)(?:₹\s*|INR\s*|Rs\.?\s*)([0-9]+(?:\.[0-9]+)?)",
+        currency + r"([0-9]+(?:,[0-9]{3})*(?:\.[0-9]+)?)\s*(?:/-)?\s*" + per_share,
+        r"(?:dividend\s*(?:of|@|:)?\s*)" + currency + r"([0-9]+(?:,[0-9]{3})*(?:\.[0-9]+)?)",
     )
     values = []
     for pattern in patterns:
@@ -33,6 +35,8 @@ def extract_entitlement_ratio(purpose, action_type):
     """Return old/new units only for an unambiguous explicit ratio."""
     text = str(purpose or "")
     if action_type == "BONUS":
+        if re.search(r"\b(?:ncrps|non[- ]?convertible\s+redeemable\s+preference)", text, re.I):
+            return None, None
         matches = re.findall(r"\b(?:bonus\s*)?(\d+)\s*[:/]\s*(\d+)\b", text, re.I)
         ratios = {(int(right), int(left)) for left, right in matches if int(left) > 0 and int(right) > 0}
         return next(iter(ratios)) if len(ratios) == 1 else (None, None)
@@ -114,7 +118,11 @@ def inspect_isin_exposures(isin):
 
 def build_event_audit(event, source, source_url, metadata):
     action_type = event.get("action_type")
-    isin = str(event.get("isin") or "").strip().upper()
+    source_isin = str(event.get("source_isin") or "").strip().upper()
+    resolved_isin = str(event.get("resolved_isin") or event.get("isin") or "").strip().upper()
+    source_isin_required = bool(event.get("source_isin_required"))
+    isin = source_isin or ("" if source_isin_required else resolved_isin)
+    isin_mismatch = bool(source_isin and resolved_isin and source_isin != resolved_isin)
     exposures, errors = inspect_isin_exposures(isin)
     purpose = event.get("purpose") or metadata.get("purpose") or ""
     dividend = _decimal(event.get("dividend_per_share"))
@@ -125,7 +133,11 @@ def build_event_audit(event, source, source_url, metadata):
     if not action_type:
         reasons.append("Corporate-action purpose is ambiguous or unsupported.")
     if not isin:
-        reasons.append("No exact ISIN resolved; symbol/name matching is not permitted.")
+        reasons.append("Source ISIN is unavailable; symbol/name matching is not permitted.")
+    if isin_mismatch:
+        reasons.append(f"Source ISIN {source_isin} differs from portfolio ISIN {resolved_isin}; manual identity review is required.")
+    if action_type == "BONUS" and re.search(r"\b(?:ncrps|non[- ]?convertible\s+redeemable\s+preference)", purpose, re.I):
+        reasons.append("NCRPS/preference-share entitlement requires instrument-class verification; ordinary equity adjustment is blocked.")
     if not event.get("ex_date"):
         reasons.append("Ex-date is missing.")
     if event.get("status") in {"CANCELLED", "CANCELED", "DELETED"}:
@@ -137,13 +149,16 @@ def build_event_audit(event, source, source_url, metadata):
     has_exposure = any(exposures[key] for key in exposures)
     reconciliation = (
         "RECONCILIATION_FAILED" if errors else
-        "NOT_ATTEMPTED" if not isin else
+        "ISIN_MISMATCH" if isin_mismatch else
+        "SOURCE_ISIN_MISSING" if not isin else
         "MATCHED_EXPOSURE" if has_exposure else
         "NO_PORTFOLIO_EXPOSURE"
     )
     return {
         "company_name": event.get("company_name") or "", "nse_symbol": event.get("symbol") or "",
-        "isin": isin or None, "exchange": event.get("exchange") or "", "source": source,
+        "isin": isin or None, "source_isin": source_isin or None,
+        "resolved_isin": resolved_isin or None, "isin_mismatch": isin_mismatch,
+        "exchange": event.get("exchange") or "", "source": source,
         "source_url": source_url or "", "action_type": action_type, "original_nse_purpose": purpose,
         "ex_date": event.get("ex_date").isoformat() if event.get("ex_date") else None,
         "record_date": event.get("record_date").isoformat() if event.get("record_date") else None,

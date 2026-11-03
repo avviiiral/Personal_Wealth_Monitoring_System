@@ -168,6 +168,63 @@ class CorporateActionAPITests(TestCase):
         self.assertIsNone(response.data["quantity_factor"])
 
 
+
+    def test_ignores_rights_issue_monitoring_report(self):
+        filing = SimpleNamespace(
+            filing_type="",
+            subject="Monitoring Agency Report",
+            details="Monitoring Agency report for quarter ended September 30, 2026 of Rights issue",
+        )
+        self.assertIsNone(classify_filing(filing))
+
+    def test_ignores_rights_share_allotment_as_new_action(self):
+        filing = SimpleNamespace(
+            filing_type="",
+            subject="Allotment of Securities",
+            details="Allotment of partly paid-up equity shares on Rights Basis",
+        )
+        self.assertIsNone(classify_filing(filing))
+
+    def test_ignores_buyback_extinguishment_as_new_action(self):
+        filing = SimpleNamespace(
+            filing_type="",
+            subject="General Updates",
+            details="Extinguishment of shares pursuant to buyback of equity shares",
+        )
+        self.assertIsNone(classify_filing(filing))
+
+    def test_ignores_newspaper_copy_even_when_dividend_is_mentioned(self):
+        filing = SimpleNamespace(
+            filing_type="",
+            subject="Copy of Newspaper Publication",
+            details="Notice for Record Date for Interim Dividend",
+        )
+        self.assertIsNone(classify_filing(filing))
+
+    def test_classifies_declared_dividend_and_record_date_notice(self):
+        declaration = SimpleNamespace(
+            filing_type="",
+            subject="Dividend",
+            details="Board of Directors declared Interim Dividend of Rs. 3.05 per equity share.",
+        )
+        record_notice = SimpleNamespace(
+            filing_type="",
+            subject="Record Date",
+            details="Record date for the purpose of Dividend is 06-Nov-2026.",
+        )
+        self.assertEqual(classify_filing(declaration), CorporateActionType.CASH_DIVIDEND)
+        self.assertEqual(classify_filing(record_notice), CorporateActionType.CASH_DIVIDEND)
+
+    def test_classifies_bonus_approval_subject_to_shareholder_approval(self):
+        filing = SimpleNamespace(
+            filing_type="",
+            subject="Outcome of Board Meeting",
+            details="Approval of the Bonus issue in the ratio 1:1, subject to approval of shareholders.",
+        )
+        self.assertEqual(classify_filing(filing), CorporateActionType.BONUS)
+
+    def test_announcement_date_is_not_used_as_ex_date(self):
+
 class FilingClassificationTests(TestCase):
     def test_announcement_date_is_not_used_as_ex_date(self):
         class FakeFiling:

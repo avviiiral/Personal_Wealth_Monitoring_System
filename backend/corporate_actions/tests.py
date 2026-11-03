@@ -169,9 +169,6 @@ class CorporateActionAPITests(TestCase):
 
 
 class FilingClassificationTests(TestCase):
-
-
-
     def test_ignores_rights_issue_monitoring_report(self):
         filing = SimpleNamespace(
             filing_type="",

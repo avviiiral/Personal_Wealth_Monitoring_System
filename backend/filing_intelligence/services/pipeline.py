@@ -156,7 +156,7 @@ def _process(item,dry_run=False):
     # NSE announcements may omit a top-level ISIN but carry it in the
     # preserved provider details. Normalize only the explicit labeled value.
     import re
-        explicit_isin = re.search(r"(?im)^ISIN:\s*([A-Z0-9]{12})\s*$", filing.details or "")
+    explicit_isin = re.search(r"(?im)^ISIN:\s*([A-Z0-9]{12})\s*$", filing.details or "")
     if not filing.isin and explicit_isin:
         filing.isin = explicit_isin.group(1).upper()
         filing.save(update_fields=["isin", "updated_at"])

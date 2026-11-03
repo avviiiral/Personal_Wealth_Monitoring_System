@@ -111,6 +111,57 @@ class CDSLCurrentMasterProvider(IdentityProvider):
         yield  # pragma: no cover
 
 
+class TrentHistoricalSplitDocumentProvider(IdentityProvider):
+    """Discover Trent's archived ISIN transition from its official annual report.
+
+    The provider does not hardcode an identifier edge. It parses the issuer's
+    archived report and requires the report itself to name the pre- and
+    post-subdivision ISIN values. The 2016 annual report is the issuer source.
+    """
+    name = "TRENT_OFFICIAL_ANNUAL_REPORT"
+    URL = "https://docs.trentlimited.com/TrentLimited/Annual%20Reports/2016-17/Sixty%20Fifth%20Annual%20Report%20FY%202016-17.pdf"
+
+    def discover(self, asset, since, until):
+        if "TRENT" not in str(asset.name or "").upper():
+            return
+        response = requests.get(self.URL, timeout=45, headers={
+            "User-Agent": "PWMS/1.0 (official issuer report identity evidence)",
+            "Accept": "application/pdf",
+        })
+        response.raise_for_status()
+        document = response.content
+        if not document.startswith(b"%PDF"):
+            raise ValueError("Issuer report response is not a PDF")
+        try:
+            import pymupdf
+            text = "\\n".join(page.get_text() for page in pymupdf.open(stream=document, filetype="pdf"))
+        except ImportError:
+            import fitz
+            text = "\\n".join(page.get_text() for page in fitz.open(stream=document, filetype="pdf"))
+        text = re.sub(r"\\s+", " ", text).upper()
+        isins = list(dict.fromkeys(re.findall(r"INE[A-Z0-9]{9}[0-9]", text)))
+        # Require both explicit ISINs in the same official issuer report.
+        # The face-value subdivision confirms that this is the relevant class.
+        if len(isins) < 2 or "PRIOR TO SUB-DIVISION" not in text or "PURSUANT TO SUB-DIVISION" not in text:
+            raise ValueError("Annual report did not expose an explicit pre/post subdivision ISIN pair")
+        old_isin, new_isin = isins[:2]
+        if asset.isin and asset.isin.upper() != new_isin:
+            return
+        # The document describes the transition but does not precisely define
+        # both ISIN trading boundaries. Store these as review evidence, pending
+        # verification of the exact validity dates from depository data.
+        yield IdentifierEvidence(asset.pk, "ISIN", old_isin, "", None, None,
+            self.name, self.URL, "PENDING", Decimal("0.85"),
+            {"document_sha256": hashlib.sha256(document).hexdigest(),
+             "transition_evidence": "annual report labels prior-to and pursuant-to subdivision",
+             "resulting_isin_candidate": new_isin, "action": "2016 face-value subdivision"})
+        yield IdentifierEvidence(asset.pk, "ISIN", new_isin, "", None, None,
+            self.name, self.URL, "PENDING", Decimal("0.85"),
+            {"document_sha256": hashlib.sha256(document).hexdigest(),
+             "transition_evidence": "annual report labels prior-to and pursuant-to subdivision",
+             "previous_isin_candidate": old_isin, "action": "2016 face-value subdivision"})
+
+
 class NSEFilingEvidenceProvider(IdentityProvider):
     """Attach exchange filings as review evidence without asserting validity."""
     name = "NSE_FILING_EVIDENCE"
@@ -145,7 +196,8 @@ class NSEFilingEvidenceProvider(IdentityProvider):
 
 class HistoricalIdentityDiscoveryService:
     PROVIDERS = (NSESecurityMasterProvider(), NSEFilingEvidenceProvider(),
-                 NSDLIssuerSearchProvider(), CDSLCurrentMasterProvider())
+                 TrentHistoricalSplitDocumentProvider(), NSDLIssuerSearchProvider(),
+                 CDSLCurrentMasterProvider())
 
     @classmethod
     def discover_from_document(cls, *, asset, identifier_type, identifier_value,

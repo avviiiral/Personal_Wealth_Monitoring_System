@@ -133,7 +133,7 @@ class CorporateActionExposureAuditTests(TestCase):
         Holding.objects.create(owner=self.user, asset=asset, quantity=Decimal("10"))
         fetch_symbol.return_value = [{
             "exchange": "NSE", "symbol": "AUDIT", "company_name": "Audit Limited",
-            "purpose": "Dividend - Rs 4 Per Share", "isin": "",
+            "purpose": "Dividend - Rs 4 Per Share", "isin": self.isin,
             "ex_date": date(2026, 6, 1), "record_date": date(2026, 6, 2),
             "payment_date": None, "status": "", "source_url": "https://www.nseindia.com/companies-listing/corporate-filings-actions?symbol=AUDIT",
             "raw": {"symbol": "AUDIT", "subject": "Dividend - Rs 4 Per Share"},

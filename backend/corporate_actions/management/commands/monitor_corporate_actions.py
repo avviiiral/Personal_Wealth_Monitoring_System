@@ -58,7 +58,7 @@ def classify_exchange_action(purpose):
         (CorporateActionType.RIGHTS_ISSUE, ("rights",)),
         (CorporateActionType.MERGER, ("merger", "amalgamation")),
         (CorporateActionType.DEMERGER, ("demerger", "spin-off", "spin off")),
-        (CorporateActionType.BUYBACK, ("buyback", "buy-back")),
+        (CorporateActionType.BUYBACK, ("buyback", "buy-back", "buy back")),
         (CorporateActionType.REVERSE_SPLIT, ("consolidation of shares", "reverse split")),
     )
     matches = [kind for kind, terms in rules if any(term in text for term in terms)]
@@ -102,7 +102,7 @@ def classify_filing(filing):
         (CorporateActionType.RIGHTS_ISSUE, ("rights issue", "rights entitlement", "issue of shares on rights basis"), ("approve", "approved", "proposed", "offer", "issue price", "record date", "rights entitlement", "rights issue committee")),
         (CorporateActionType.MERGER, ("amalgamation", "merger"), ("scheme", "appointed date", "effective date", "approval", "approved", "order", "tribunal")),
         (CorporateActionType.DEMERGER, ("demerger", "spin-off", "spin off"), ("scheme", "appointed date", "effective date", "approval", "approved", "record date")),
-        (CorporateActionType.BUYBACK, ("buyback", "buy-back"), ("board approved", "approved", "proposed", "tender offer", "record date", "buyback price", "buy-back price")),
+        (CorporateActionType.BUYBACK, ("buyback", "buy-back", "buy back"), ("board approved", "approved", "proposed", "tender offer", "record date", "buyback price", "buy-back price", "buy back price")),
         (CorporateActionType.REVERSE_SPLIT, ("consolidation of shares", "reverse stock split", "reverse split"), ("approved", "proposed", "ratio", "record date", "ex-date", "ex date")),
     )
     matches = [kind for kind, keywords, evidence in rules if any(k in text for k in keywords) and any(e in text for e in evidence)]

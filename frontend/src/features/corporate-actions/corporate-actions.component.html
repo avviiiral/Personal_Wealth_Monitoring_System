@@ -71,6 +71,9 @@
         <button type="button" class="secondary" (click)="markReviewed(item)" [disabled]="busyId === item.id || item.reviewed">
           {{ item.reviewed ? 'Reviewed' : 'Mark reviewed' }}
         </button>
+        <button type="button" class="secondary" (click)="confirmAction(item)"
+          *ngIf="item.direct_exposure && item.action.status === 'PENDING' && item.reconciliation.status === 'PENDING'"
+          [disabled]="busyId === item.id">Verify and apply action</button>
         <button type="button" class="secondary" (click)="markAlreadyRecorded(item)"
           *ngIf="item.direct_exposure && item.reconciliation.status === 'PENDING'" [disabled]="busyId === item.id">
           Already recorded

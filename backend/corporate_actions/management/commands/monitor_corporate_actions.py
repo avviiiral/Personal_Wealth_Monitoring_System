@@ -89,7 +89,7 @@ def classify_filing(filing):
         (CorporateActionType.BONUS,
          ("bonus issue", "issue of bonus shares", "issuance of bonus shares", "issuance of bonus share",
           "bonus equity shares", "bonus shares"),
-         ("approved", "proposed", "recommend", "subject to", "ratio", "record date", "ex-date", "ex date")),
+         ("approved", "proposed", "recommend", "subject to", "ratio", "proportion", "record date", "ex-date", "ex date")),
         (CorporateActionType.CASH_DIVIDEND,
          ("dividend", "idcw"),
          ("declared", "declaration", "recommended", "recommendation", "interim dividend",

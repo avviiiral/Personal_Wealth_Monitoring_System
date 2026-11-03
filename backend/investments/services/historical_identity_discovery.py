@@ -303,9 +303,10 @@ class HistoricalIdentityDiscoveryService:
         # asset-id can be used for a one-off investigation even without trades.
         from investments.models import Transaction
         active_asset_ids = Transaction.objects.values_list("asset_id", flat=True).distinct()
-        assets = assets.filter(pk__in=active_asset_ids)
         if asset_id:
             assets = assets.filter(pk=asset_id)
+        else:
+            assets = assets.filter(pk__in=active_asset_ids)
         totals = {"assets": 0, "providers": 0, "created": 0, "would_create": 0,
                   "duplicates": 0, "conflicts": 0, "rejected": 0, "failures": 0, "skipped": 0}
         for asset in assets.iterator():

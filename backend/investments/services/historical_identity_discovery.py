@@ -121,7 +121,9 @@ class NSEFilingEvidenceProvider(IdentityProvider):
 
     def discover(self, asset, since, until):
         from filing_intelligence.models import Filing
-        symbol = str(asset.symbol or "").strip().upper()
+        from filing_intelligence.services.security_discovery import _asset_identity
+        identity = _asset_identity(asset)
+        symbol = str((identity or {}).get("symbol") or "").strip().upper()
         if symbol.endswith(".NS") or symbol.endswith(".BO"):
             symbol = symbol[:-3]
         rows = Filing.objects.filter(exchange="NSE", published_at__date__gte=since,

@@ -153,6 +153,13 @@ def _process(item,dry_run=False):
         cls=classify(item.subject,item.details,item.filing_type); logger.info("filing dry-run exchange=%s symbol=%s event=%s severity=%s",item.exchange,item.symbol,cls.event_type,cls.severity)
         return {"duplicate":False,"stored":False,"matched":0,"alerts":0}
     filing=Filing.objects.create(exchange=item.exchange,company_name=item.company_name or item.symbol,symbol=item.symbol,isin=item.isin,bse_code=item.bse_code,filing_type=item.filing_type,subject=item.subject or "Exchange filing",details=item.details,filing_url=item.filing_url or item.source_url,source_url=item.source_url,external_filing_id=item.external_filing_id,published_at=item.published_at,content_hash=content_hash)
+    # NSE announcements may omit a top-level ISIN but carry it in the
+    # preserved provider details. Normalize only the explicit labeled value.
+    import re
+    explicit_isin = re.search(r"(?im)^ISIN:\\s*([A-Z0-9]{12})\\s*$", filing.details or "")
+    if not filing.isin and explicit_isin:
+        filing.isin = explicit_isin.group(1).upper()
+        filing.save(update_fields=["isin", "updated_at"])
     cls=classify(filing.subject,filing.details,filing.filing_type)
     previous = (
         Filing.objects

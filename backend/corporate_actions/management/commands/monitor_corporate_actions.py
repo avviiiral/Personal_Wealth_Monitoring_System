@@ -218,9 +218,13 @@ class Command(BaseCommand):
             audit_events.append(audit)
             source_isin = str(event.get("source_isin") or event.get("isin") or "").strip().upper()
             ex_date = event.get("ex_date")
+            non_identity_review_reasons = [
+                reason for reason in audit.get("review_reasons", [])
+                if not reason.startswith("Source ISIN unavailable;")
+            ]
             missing_isin_candidate = bool(
                 not source_isin and (event.get("symbol") or event.get("company_name")) and event.get("action_type")
-                and ex_date and not audit.get("isin_mismatch")
+                and ex_date and not audit.get("isin_mismatch") and not non_identity_review_reasons
                 and event.get("status") not in {"CANCELLED", "CANCELED", "DELETED"}
             )
             if (not event.get("action_type") or not ex_date or audit.get("isin_mismatch")

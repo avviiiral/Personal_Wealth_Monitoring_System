@@ -161,7 +161,7 @@ class HistoricalIdentityDiscoveryService:
         if event_date:
             # An unknown validity boundary cannot prove a historical match.
             query = query.filter(valid_from__isnull=False, valid_from__lte=event_date)
-            query = query.filter(valid_to__isnull=True) | query.filter(valid_to__gte=event_date)
+            query = query.filter(Q(valid_to__isnull=True) | Q(valid_to__gte=event_date))
         matches = list(query.select_related("asset"))
         assets = {row.asset_id: row.asset for row in matches}
         if len(assets) == 1:

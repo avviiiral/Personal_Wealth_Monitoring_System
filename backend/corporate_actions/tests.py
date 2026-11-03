@@ -212,3 +212,23 @@ class FilingClassificationTests(TestCase):
             subject = "Issuance of Bonus shares"
             details = "Board approved a bonus issue on 22-Apr-2026."
         self.assertEqual(extract_event_dates(FakeFiling()), {})
+
+    def test_extracts_month_name_dates_across_exchange_separators(self):
+        expected_date = date(2026, 6, 4)
+        for raw_date in (
+            "04-Jun-2026",
+            "04 Jun 2026",
+            "04/Jun/2026",
+            "04.Jun.2026",
+            "2026-06-04",
+            "04/06/2026",
+        ):
+            with self.subTest(raw_date=raw_date):
+                filing = SimpleNamespace(
+                    subject="Bonus issue",
+                    details=f"Ex-date: {raw_date}; Record date: {raw_date}",
+                )
+                self.assertEqual(
+                    extract_event_dates(filing),
+                    {"ex_date": expected_date, "record_date": expected_date},
+                )

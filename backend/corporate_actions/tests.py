@@ -367,7 +367,8 @@ class CorporateActionServiceTests(TestCase):
         action = self.make_action(
             isin="", symbol="TRENT", action_type=CorporateActionType.BONUS,
             old_units=Decimal("2"), new_units=Decimal("1"),
-            ex_date=date(2025, 6, 15), status=CorporateActionStatus.PENDING,
+            ex_date=date(2025, 6, 15), record_date=date(2025, 6, 10),
+            status=CorporateActionStatus.PENDING,
         )
         discover_exposures_and_reconcile(action)
         reconciliation = CorporateActionReconciliation.objects.get(action=action, owner=self.user)

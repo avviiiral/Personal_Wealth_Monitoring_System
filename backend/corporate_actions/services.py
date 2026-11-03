@@ -455,21 +455,87 @@ def decide_missing_isin_reconciliation(*, owner, reconciliation_id, decision, as
                     raise ValidationError("Calculated entitlement is not positive.")
                 price = Decimal("0")
                 amount = Decimal("0")
-            key = hashlib.sha256(
-                f"corporate-action:{action.id}:owner:{owner.id}:asset:{asset.id}".encode()
-            ).hexdigest()
-            transaction, _ = Transaction.objects.get_or_create(
-                family=asset.family, source=TransactionSource.OTHER, source_key=key,
-                defaults={
-                    "owner": owner, "family": asset.family, "asset": asset,
-                    "transaction_type": transaction_type, "transaction_date": action.ex_date,
-                    "quantity": tx_quantity, "price_per_unit": price, "amount": amount,
-                    "fees": Decimal("0"),
-                    "notes": f"User-approved corporate action #{action.id}; identity matched by {reconciliation.identity_match_method}.",
-                },
-            )
+            created_transactions = []
+            if transaction_type == TransactionType.BONUS:
+                # Preserve every existing portfolio hierarchy bucket. A single
+                # asset can be held under multiple family members / portfolios /
+                # asset classes, so entitlement must be calculated per bucket.
+                from collections import defaultdict
+                from corporate_actions.position_adjustment import (
+                    calculate_position_with_actions,
+                    confirmed_ratio_actions,
+                )
+
+                hierarchy_fields = (
+                    "family_name", "portfolio", "asset_class", "sub_class",
+                    "asset_name", "underlying", "advisors",
+                )
+                prior_rows = list(Transaction.objects.filter(
+                    owner=owner, asset=asset, transaction_date__lt=action.ex_date,
+                    family=asset.family,
+                ).order_by("transaction_date", "created_at", "id"))
+                if not prior_rows:
+                    prior_rows = list(Transaction.objects.filter(
+                        owner=owner, asset=asset, transaction_date__lt=action.ex_date,
+                        family__isnull=True,
+                    ).order_by("transaction_date", "created_at", "id"))
+                grouped_rows = defaultdict(list)
+                for prior in prior_rows:
+                    bucket = tuple(getattr(prior, field) or "" for field in hierarchy_fields)
+                    grouped_rows[bucket].append(prior)
+
+                earlier_actions = [
+                    item for item in confirmed_ratio_actions(asset=asset, owner=owner)
+                    if item.ex_date < action.ex_date
+                ]
+                for bucket, bucket_transactions in grouped_rows.items():
+                    bucket_quantity = calculate_position_with_actions(
+                        bucket_transactions, earlier_actions
+                    ).get("quantity") or Decimal("0")
+                    if bucket_quantity <= 0:
+                        continue
+                    eligible_lots = (bucket_quantity / action.old_units).to_integral_value(
+                        rounding=ROUND_FLOOR
+                    )
+                    bucket_bonus = eligible_lots * action.new_units
+                    if bucket_bonus <= 0:
+                        continue
+                    bucket_identity = "|".join(str(value) for value in bucket)
+                    key = hashlib.sha256(
+                        f"corporate-action:{action.id}:owner:{owner.id}:asset:{asset.id}:bucket:{bucket_identity}".encode()
+                    ).hexdigest()
+                    defaults = {
+                        "owner": owner, "family": asset.family, "asset": asset,
+                        "transaction_type": transaction_type, "transaction_date": action.ex_date,
+                        "quantity": bucket_bonus, "price_per_unit": Decimal("0"),
+                        "amount": Decimal("0"), "fees": Decimal("0"),
+                        "notes": f"User-approved corporate action #{action.id}; identity matched by {reconciliation.identity_match_method}.",
+                    }
+                    defaults.update(dict(zip(hierarchy_fields, bucket)))
+                    transaction, _ = Transaction.objects.get_or_create(
+                        family=asset.family, source=TransactionSource.OTHER,
+                        source_key=key, defaults=defaults,
+                    )
+                    created_transactions.append(transaction)
+                if not created_transactions:
+                    raise ValidationError("No positive whole-share bonus entitlement was found in the existing portfolio groupings.")
+            else:
+                key = hashlib.sha256(
+                    f"corporate-action:{action.id}:owner:{owner.id}:asset:{asset.id}".encode()
+                ).hexdigest()
+                transaction, _ = Transaction.objects.get_or_create(
+                    family=asset.family, source=TransactionSource.OTHER, source_key=key,
+                    defaults={
+                        "owner": owner, "family": asset.family, "asset": asset,
+                        "transaction_type": transaction_type, "transaction_date": action.ex_date,
+                        "quantity": tx_quantity, "price_per_unit": price, "amount": amount,
+                        "fees": Decimal("0"),
+                        "notes": f"User-approved corporate action #{action.id}; identity matched by {reconciliation.identity_match_method}.",
+                    },
+                )
+                created_transactions.append(transaction)
             reconciliation.selected_asset = asset
-            reconciliation.matched_transaction_ids = [transaction.id]
+            reconciliation.matched_transaction_ids = [item.id for item in created_transactions]
             reconciliation.status = CorporateActionReconciliationStatus.APPROVED
             reconciliation.notes = (notes or "Identity approved; transaction created idempotently.")[:5000]
         else:

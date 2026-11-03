@@ -109,9 +109,11 @@ def _create_reconciliation(action, user, status_value, transaction_ids=None, sug
 def discover_symbol_name_candidates(*, action, user):
     """Candidate discovery only: exact symbol first, then exact full security name."""
     family_id = _user_family_id(user)
-    assets = Asset.objects.filter(is_active=True, category="STOCK").filter(
-        Q(owner=user) | Q(family_id=family_id)
-    )
+    assets = Asset.objects.filter(is_active=True, category="STOCK")
+    if family_id:
+        assets = assets.filter(Q(owner=user) | Q(family_id=family_id))
+    else:
+        assets = assets.filter(owner=user)
     if action.symbol:
         symbol_matches = list(assets.filter(symbol__iexact=action.symbol.strip()).order_by("name", "id"))
         if symbol_matches:
@@ -157,7 +159,20 @@ def discover_exposures_and_reconcile(action):
     """Map exact-ISIN direct/MF/PMS exposure and create idempotent per-user reconciliation state."""
     if not action.isin:
         direct_count = notification_count = 0
-        for user in get_user_model().objects.filter(is_active=True).iterator():
+        candidate_query = Asset.objects.filter(is_active=True, category="STOCK")
+        identity_query = Q()
+        if action.symbol:
+            identity_query |= Q(symbol__iexact=action.symbol.strip())
+        if action.security_name:
+            identity_query |= Q(name__iexact=action.security_name.strip())
+        candidate_query = candidate_query.filter(identity_query)
+        candidate_owner_ids = set(candidate_query.exclude(owner__isnull=True).values_list("owner_id", flat=True))
+        family_ids = set(candidate_query.exclude(family_id__isnull=True).values_list("family_id", flat=True))
+        member_ids = FamilyMembership.objects.filter(
+            family_group_id__in=family_ids
+        ).values_list("profile__user_id", flat=True)
+        candidate_owner_ids.update(member_ids)
+        for user in get_user_model().objects.filter(is_active=True, id__in=candidate_owner_ids).iterator():
             candidates, method = discover_symbol_name_candidates(action=action, user=user)
             if not candidates:
                 continue
@@ -165,9 +180,20 @@ def discover_exposures_and_reconcile(action):
                 action, user, CorporateActionReconciliationStatus.PENDING_USER_APPROVAL,
                 notes=f"Source ISIN unavailable. Exact {method.lower()} candidate(s) require your approval. No transaction has been changed.",
             )
-            reconciliation.identity_match_method = method
-            reconciliation.candidate_asset_ids = [asset.id for asset in candidates]
-            reconciliation.save(update_fields=["identity_match_method", "candidate_asset_ids", "updated_at"])
+            if reconciliation.status not in {
+                CorporateActionReconciliationStatus.APPROVED,
+                CorporateActionReconciliationStatus.REJECTED,
+            }:
+                reconciliation.status = CorporateActionReconciliationStatus.PENDING_USER_APPROVAL
+                reconciliation.identity_match_method = method
+                reconciliation.candidate_asset_ids = [asset.id for asset in candidates]
+                reconciliation.notes = (
+                    f"Source ISIN unavailable. Exact {method.lower()} candidate(s) require your approval. "
+                    "No transaction has been changed."
+                )
+                reconciliation.save(update_fields=[
+                    "status", "identity_match_method", "candidate_asset_ids", "notes", "updated_at"
+                ])
             CorporateActionNotification.objects.get_or_create(
                 action=action, owner=user, defaults={"reconciliation": reconciliation}
             )
@@ -356,9 +382,13 @@ def decide_missing_isin_reconciliation(*, owner, reconciliation_id, decision, as
             if asset_id not in reconciliation.candidate_asset_ids:
                 raise ValidationError("Choose one of the proposed holdings.")
             family_id = _user_family_id(owner)
-            asset = Asset.objects.select_for_update().filter(
+            asset_query = Asset.objects.select_for_update().filter(
                 id=asset_id, is_active=True, category="STOCK"
-            ).filter(Q(owner=owner) | Q(family_id=family_id)).first()
+            )
+            asset_query = asset_query.filter(
+                Q(owner=owner) | Q(family_id=family_id)
+            ) if family_id else asset_query.filter(owner=owner)
+            asset = asset_query.first()
             if asset is None:
                 raise ValidationError("Selected holding is no longer available.")
             transaction_type = (

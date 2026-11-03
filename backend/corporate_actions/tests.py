@@ -18,6 +18,8 @@ from users.models import Role
 class CorporateActionServiceTests(TestCase):
     def setUp(self):
         self.user = User.objects.create_user(username="corp-action-test", password="test-password")
+        self.user.profile.role = Role.ADMIN
+        self.user.profile.save(update_fields=["role"])
 
     def make_action(self, **overrides):
         values = {

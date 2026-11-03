@@ -81,7 +81,12 @@ def inspect_isin_exposures(isin):
         errors.append("direct_equity query failed: " + str(exc))
     try:
         rows = MutualFundUnderlying.objects.filter(isin__iexact=normalized)
-        latest = rows.values("scheme_id").annotate(latest_date=Max("portfolio_date"))
+        scheme_ids = rows.values_list("scheme_id", flat=True).distinct()
+        # A scheme's latest portfolio date must be computed across its entire
+        # disclosed portfolio, not only rows that still contain this ISIN.
+        latest = MutualFundUnderlying.objects.filter(
+            scheme_id__in=scheme_ids
+        ).values("scheme_id").annotate(latest_date=Max("portfolio_date"))
         latest_dates = {item["scheme_id"]: item["latest_date"] for item in latest}
         current = rows.filter(scheme__is_active=True, scheme__holding__units__gt=0).select_related("scheme", "scheme__holding")
         for underlying in current.order_by("scheme_id", "-portfolio_date"):

@@ -200,8 +200,9 @@ def _process(item,dry_run=False):
             logger.exception("historical identity lookup failed filing=%s", filing.pk)
     assets,method=match_assets(filing); article=_store_article(filing); alerts=0; matched=len(assets)
     if historical_resolution and historical_resolution.get("status") == "MATCHED":
-        assets = list({item.pk:item for item in [*assets, historical_resolution["asset"]]}.values())
-        matched = len(assets)
+        canonical_asset = historical_resolution["asset"]
+        assets = [canonical_asset]
+        matched = 1
     holdings=list(Holding.objects.filter(asset__in=assets,quantity__gt=0).select_related("owner","family","asset"))
     user_ids={u.id for h in holdings for u in users_for_holding(h)}
     totals={h["owner_id"]: float(h["total"] or 0) for h in Holding.objects.filter(owner_id__in=user_ids,quantity__gt=0).values("owner_id").annotate(total=Sum("current_value"))}

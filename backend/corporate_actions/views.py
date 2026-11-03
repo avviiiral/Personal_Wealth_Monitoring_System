@@ -19,7 +19,7 @@ from .models import (
     CorporateActionReconciliation,
     CorporateActionReconciliationStatus,
 )
-from .services import resolve_corporate_action_candidates, update_notification_state
+from .services import resolve_corporate_action_candidates, update_notification_state, decide_missing_isin_reconciliation
 
 
 def _serialize(action):
@@ -182,7 +182,7 @@ def corporate_action_notifications(request):
                 "id": row.reconciliation_id,
                 "status": row.reconciliation.status,
                 "matched_transaction_ids": row.reconciliation.matched_transaction_ids,
-                "suggested_quantity": row.reconciliation.suggested_quantity,
+                "suggested_quantity": row.reconciliation.suggested_quantity,\n                "identity_match_method": row.reconciliation.identity_match_method,\n                "candidate_asset_ids": row.reconciliation.candidate_asset_ids,\n                "selected_asset_id": row.reconciliation.selected_asset_id,
                 "notes": row.reconciliation.notes,
             },
             "exposures": exposures,
@@ -234,3 +234,28 @@ def corporate_action_reconciliation_update(request, reconciliation_id):
     return Response({"id": reconciliation.id, "status": reconciliation.status})
 
 
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated, CanWriteFinancialData])
+def corporate_action_identity_decision(request, reconciliation_id):
+    decision = str(request.data.get("decision", "")).upper()
+    try:
+        reconciliation = decide_missing_isin_reconciliation(
+            owner=request.user,
+            reconciliation_id=reconciliation_id,
+            decision=decision,
+            asset_id=request.data.get("asset_id"),
+            notes=str(request.data.get("notes", "")),
+        )
+    except LookupError:
+        return Response({"detail": "Reconciliation not found."}, status=404)
+    except ValidationError as exc:
+        return Response({"detail": exc.message_dict if hasattr(exc, "message_dict") else exc.messages}, status=400)
+    return Response({
+        "id": reconciliation.id,
+        "status": reconciliation.status,
+        "selected_asset_id": reconciliation.selected_asset_id,
+        "matched_transaction_ids": reconciliation.matched_transaction_ids,
+        "notes": reconciliation.notes,
+    })

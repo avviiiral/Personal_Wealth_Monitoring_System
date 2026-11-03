@@ -370,10 +370,12 @@ def decide_missing_isin_reconciliation(*, owner, reconciliation_id, decision, as
         ).first()
         if reconciliation is None:
             raise LookupError("Reconciliation not found.")
-        if reconciliation.status in {
-            CorporateActionReconciliationStatus.APPROVED,
-            CorporateActionReconciliationStatus.REJECTED,
-        }:
+        if reconciliation.status == CorporateActionReconciliationStatus.REJECTED:
+            return reconciliation
+        if reconciliation.status == CorporateActionReconciliationStatus.APPROVED:
+            # Only an idempotent retry for the originally approved asset is accepted.
+            if decision != "APPROVE" or asset_id != reconciliation.selected_asset_id:
+                raise ValidationError("This identity has already been approved for a different holding.")
             return reconciliation
         if reconciliation.status != CorporateActionReconciliationStatus.PENDING_USER_APPROVAL:
             raise ValidationError("This action is not awaiting identity approval.")
@@ -411,7 +413,8 @@ def decide_missing_isin_reconciliation(*, owner, reconciliation_id, decision, as
                 from corporate_actions.position_adjustment import calculate_position_with_actions, confirmed_ratio_actions
                 transactions = list(Transaction.objects.filter(
                     owner=owner, asset=asset, transaction_date__lt=action.ex_date
-                ).order_by("transaction_date", "created_at", "id"))
+                ).filter(Q(family_id=asset.family_id) if asset.family_id else Q(family__isnull=True))
+                 .order_by("transaction_date", "created_at", "id"))
                 earlier = [
                     item for item in confirmed_ratio_actions(asset=asset, owner=owner)
                     if item.ex_date < action.ex_date

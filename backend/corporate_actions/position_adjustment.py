@@ -7,6 +7,8 @@ correct family/owner scope and compatible market-price convention.
 from decimal import Decimal
 
 from investments.models import TransactionType
+from users.models import FamilyMembership
+from users.permissions import get_active_family_group_id
 from .models import CorporateAction, CorporateActionStatus, RATIO_ACTIONS
 
 
@@ -19,8 +21,18 @@ def confirmed_ratio_actions(*, asset, owner, as_of_date=None):
     """Return confirmed ratio actions for this exact security, in event-date order."""
     if owner is None or asset is None:
         return []
+    # Corporate-action announcements are shared within the active family.
+    # A family member's asset must not miss an event merely because another
+    # member created/imported the announcement record.
+    family_id = get_active_family_group_id(owner)
+    owner_ids = [owner.id]
+    if family_id:
+        owner_ids = list(
+            FamilyMembership.objects.filter(family_group_id=family_id)
+            .values_list("profile__user_id", flat=True)
+        )
     query = CorporateAction.objects.filter(
-        owner=owner,
+        owner_id__in=owner_ids,
         status=CorporateActionStatus.CONFIRMED,
         action_type__in=RATIO_ACTIONS,
     )

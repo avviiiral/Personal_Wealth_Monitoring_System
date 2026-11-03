@@ -84,6 +84,15 @@ class SecurityIdentityResolver:
         )
 
     @classmethod
+    def resolve_historical_identifier(cls, *, identifier_type, value, exchange="", event_date=None):
+        """Resolve an exact verified temporal identifier; never use company names."""
+        from investments.services.historical_identity_discovery import HistoricalIdentityDiscoveryService
+        return HistoricalIdentityDiscoveryService.resolve_identifier(
+            identifier_type=identifier_type, value=value, exchange=exchange,
+            event_date=event_date,
+        )
+
+    @classmethod
     def resolve(cls, *, family, asset_name, underlying, isin, asset_class, sub_class):
         input_name = str(underlying or asset_name or "").strip()
         normalized_isin = str(isin or "").strip().upper()

@@ -245,6 +245,43 @@ class CorporateActionServiceTests(TestCase):
         self.assertEqual(created_bonus.underlying, "Example Limited")
         self.assertEqual(created_bonus.advisors, "Advisor A")
 
+    def test_bonus_transaction_normalizes_missing_asset_and_underlying_labels(self):
+        asset = Asset.objects.create(
+            owner=self.user, name="Trent Limited", category=AssetCategory.STOCK,
+            symbol="TRENT", isin="INE849A01020",
+        )
+        Transaction.objects.create(
+            owner=self.user, asset=asset, transaction_type=TransactionType.BUY,
+            transaction_date=date(2025, 1, 1), quantity=Decimal("2"),
+            price_per_unit=Decimal("100"), amount=Decimal("200"),
+            fees=Decimal("0"), family_name="Family Member 1",
+            portfolio="Direct Equity", asset_class="Equity",
+            sub_class="Listed Equity", asset_name="",
+            underlying="", advisors="Advisor A",
+        )
+        action = self.make_action(
+            isin="", symbol="TRENT", action_type=CorporateActionType.BONUS,
+            old_units=Decimal("2"), new_units=Decimal("1"),
+            ex_date=date(2025, 6, 15), status=CorporateActionStatus.PENDING,
+        )
+        discover_exposures_and_reconcile(action)
+        reconciliation = CorporateActionReconciliation.objects.get(action=action, owner=self.user)
+
+        approved = decide_missing_isin_reconciliation(
+            owner=self.user, reconciliation_id=reconciliation.id,
+            decision="APPROVE", asset_id=asset.id,
+        )
+
+        bonus = Transaction.objects.get(id=approved.matched_transaction_ids[0])
+        self.assertEqual(bonus.quantity, Decimal("1"))
+        self.assertEqual(bonus.family_name, "Family Member 1")
+        self.assertEqual(bonus.portfolio, "Direct Equity")
+        self.assertEqual(bonus.asset_class, "Equity")
+        self.assertEqual(bonus.sub_class, "Listed Equity")
+        self.assertEqual(bonus.asset_name, "Trent Limited")
+        self.assertEqual(bonus.underlying, "Trent Limited")
+        self.assertEqual(bonus.advisors, "Advisor A")
+
     def test_bonus_entitlement_is_calculated_separately_for_each_family_member(self):
         asset = Asset.objects.create(
             owner=self.user, name="Trent Limited", category=AssetCategory.STOCK,

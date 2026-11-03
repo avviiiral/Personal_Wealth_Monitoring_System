@@ -1,9 +1,9 @@
 import logging
 import re
-from datetime import datetime, timedelta
+from datetime import date, datetime, time, timedelta
 
 from django.contrib.auth import get_user_model
-from django.core.management.base import BaseCommand
+from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
 from django.utils import timezone
 
@@ -18,10 +18,25 @@ from users.models import FamilyMembership
 
 
 logger = logging.getLogger(__name__)
-DATE_PATTERN = re.compile(
-    r"(?i)\b(ex\s*[- ]?date|record\s*[- ]?date|payment\s*[- ]?date)\s*[:\-]?\s*"
-    r"(\d{1,2}[./-]\d{1,2}[./-]\d{4}|\d{4}-\d{2}-\d{2}|\d{1,2}\s+[A-Za-z]{3,9}\s+\d{4})"
+DATE_VALUE = (
+    r"(\\d{1,2}[./-]\\d{1,2}[./-]\\d{4}|\\d{4}-\\d{2}-\\d{2}|"
+    r"\\d{1,2}\\s+[A-Za-z]{3,9}\\s+\\d{4})"
 )
+DATE_PATTERNS = (
+    ("ex_date", re.compile(r"(?i)\\b(ex\\s*[- ]?date|ex\\s*[- ]?bonus\\s*(?:basis\\s*)?(?:from\\s*)?date)\\s*[:\\-]?\\s*" + DATE_VALUE)),
+    ("ex_date", re.compile(r"(?i)\\bex\\s*[- ]?bonus\\s+basis\\s+from\\s+" + DATE_VALUE)),
+    ("record_date", re.compile(r"(?i)\\b(record\\s*[- ]?date)\\s*[:\\-]?\\s*" + DATE_VALUE)),
+    ("payment_date", re.compile(r"(?i)\\b(payment\\s*[- ]?date)\\s*[:\\-]?\\s*" + DATE_VALUE)),
+)
+
+
+def _parse_date(raw):
+    for fmt in ("%d-%m-%Y", "%d/%m/%Y", "%d.%m.%Y", "%Y-%m-%d", "%d %b %Y", "%d %B %Y"):
+        try:
+            return datetime.strptime(raw.strip(), fmt).date()
+        except ValueError:
+            continue
+    return None
 
 
 def classify_filing(filing):
@@ -29,7 +44,8 @@ def classify_filing(filing):
     text = " ".join([filing.filing_type or "", filing.subject or "", filing.details or ""]).lower()
     rules = [
         (("stock split", "split of equity shares", "sub-division"), CorporateActionType.STOCK_SPLIT),
-        (("bonus issue", "issue of bonus shares"), CorporateActionType.BONUS),
+        (("bonus issue", "issue of bonus shares", "issuance of bonus shares", "issuance of bonus share",
+          "bonus shares", "bonus equity shares"), CorporateActionType.BONUS),
         (("dividend", "interim dividend", "final dividend"), CorporateActionType.CASH_DIVIDEND),
         (("rights issue", "rights entitlement"), CorporateActionType.RIGHTS_ISSUE),
         (("amalgamation", "merger"), CorporateActionType.MERGER),
@@ -42,34 +58,37 @@ def classify_filing(filing):
 
 
 def extract_event_dates(filing):
-    """Extract explicit labeled dates only; never substitute the announcement timestamp."""
+    """Extract explicitly labelled event dates; announcement timestamps are never substituted."""
     text = " ".join([filing.subject or "", filing.details or ""])
     result = {}
-    for match in DATE_PATTERN.finditer(text):
-        label = re.sub(r"[^a-z]", "", match.group(1).lower())
-        raw = match.group(2).strip()
-        parsed = None
-        for fmt in ("%d-%m-%Y", "%d/%m/%Y", "%d.%m.%Y", "%Y-%m-%d", "%d %b %Y", "%d %B %Y"):
-            try:
-                parsed = datetime.strptime(raw, fmt).date()
-                break
-            except ValueError:
-                continue
-        if parsed:
-            if label.startswith("exdate"):
-                result["ex_date"] = parsed
-            elif label.startswith("recorddate"):
-                result["record_date"] = parsed
-            elif label.startswith("paymentdate"):
-                result["payment_date"] = parsed
+    for field, pattern in DATE_PATTERNS:
+        for match in pattern.finditer(text):
+            parsed = _parse_date(match.group(2))
+            if parsed:
+                # Conflicting explicit labels are ambiguous; do not silently pick one.
+                if field in result and result[field] != parsed:
+                    result.pop(field)
+                    break
+                result[field] = parsed
     return result
+
+
+def _parse_cli_date(value, option_name):
+    if not value:
+        return None
+    try:
+        return date.fromisoformat(value)
+    except ValueError as exc:
+        raise CommandError(f"{option_name} must use YYYY-MM-DD.") from exc
 
 
 class Command(BaseCommand):
     help = "Match exchange filings to held securities and create reviewable corporate-action events."
 
     def add_arguments(self, parser):
-        parser.add_argument("--hours", type=int, default=None)
+        parser.add_argument("--hours", type=int, default=None, help="Scan filings published within this many hours.")
+        parser.add_argument("--since", type=str, default=None, help="Inclusive historical filing date (YYYY-MM-DD).")
+        parser.add_argument("--until", type=str, default=None, help="Inclusive historical filing date (YYYY-MM-DD).")
         parser.add_argument("--dry-run", action="store_true")
 
     def handle(self, *args, **options):
@@ -78,12 +97,26 @@ class Command(BaseCommand):
             self.stdout.write("Corporate action monitoring is disabled.")
             return
 
-        hours = max(1, options["hours"] or int(cfg.get("lookback_hours", 168)))
-        cutoff = timezone.now() - timedelta(hours=hours)
-        filings = Filing.objects.filter(
-            published_at__gte=cutoff
-        ).order_by("-published_at")[:int(cfg.get("max_events_per_run", 500))]
+        since = _parse_cli_date(options.get("since"), "--since")
+        until = _parse_cli_date(options.get("until"), "--until")
+        if since and until and since > until:
+            raise CommandError("--since cannot be later than --until.")
+        if (since or until) and options.get("hours"):
+            raise CommandError("Use either --hours or --since/--until, not both.")
 
+        queryset = Filing.objects.all()
+        if since or until:
+            if since:
+                start = timezone.make_aware(datetime.combine(since, time.min))
+                queryset = queryset.filter(published_at__gte=start)
+            if until:
+                end = timezone.make_aware(datetime.combine(until + timedelta(days=1), time.min))
+                queryset = queryset.filter(published_at__lt=end)
+        else:
+            hours = max(1, options["hours"] or int(cfg.get("lookback_hours", 168)))
+            queryset = queryset.filter(published_at__gte=timezone.now() - timedelta(hours=hours))
+
+        filings = queryset.order_by("-published_at")[:int(cfg.get("max_events_per_run", 500))]
         scanned = created = updated = matched = skipped = 0
         User = get_user_model()
 
@@ -95,11 +128,10 @@ class Command(BaseCommand):
                 skipped += 1
                 continue
 
-            # Amounts and ratios are never inferred from generic filing prose; verify them manually.
             defaults = {
                 "security_name": filing.company_name,
                 "isin": filing.isin.upper(),
-                "symbol": filing.symbol.upper(),
+                "symbol": (filing.symbol or "").upper(),
                 "exchange": filing.exchange,
                 "ex_date": event_dates["ex_date"],
                 "record_date": event_dates.get("record_date"),
@@ -107,7 +139,7 @@ class Command(BaseCommand):
                 "source": f"{filing.exchange}_FILING",
                 "source_reference": filing.filing_url,
                 "status": CorporateActionStatus.PENDING,
-                "notes": "Detected from exchange filing. Verify event details and eligibility before confirmation.",
+                "notes": "Detected from exchange filing. Verify event details and entitlement ratio before confirmation.",
                 "metadata": {
                     "filing_id": filing.id,
                     "announcement_date": filing.published_at.isoformat(),
@@ -133,27 +165,20 @@ class Command(BaseCommand):
             member_ids = FamilyMembership.objects.filter(
                 family_group_id__in=family_ids | pms_family_ids
             ).values_list("profile__user_id", flat=True)
-
             owners = set(direct_owner_ids) | set(mf_owner_ids) | set(member_ids)
+
             for owner in User.objects.filter(id__in=owners, is_active=True):
                 with transaction.atomic():
                     action, was_created = CorporateAction.objects.update_or_create(
-                        owner=owner,
-                        isin=filing.isin.upper(),
-                        action_type=action_type,
-                        ex_date=event_dates["ex_date"],
-                        defaults=defaults,
+                        owner=owner, isin=filing.isin.upper(), action_type=action_type,
+                        ex_date=event_dates["ex_date"], defaults=defaults,
                     )
                     if was_created:
                         created += 1
                     else:
                         updated += 1
                     stats = reconcile_action_for_all_users(action)
-                    matched += (
-                        stats.get("direct", 0)
-                        + stats.get("mutual_fund", 0)
-                        + stats.get("pms", 0)
-                    )
+                    matched += stats.get("direct", 0) + stats.get("mutual_fund", 0) + stats.get("pms", 0)
 
         self.stdout.write(self.style.SUCCESS(
             f"Corporate action scan: scanned={scanned}, created={created}, updated={updated}, "

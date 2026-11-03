@@ -420,11 +420,16 @@
     "monitor_interval_minutes": 360,
     "lookback_hours": 168,
     "provider_order": [
+      "NSE_CORPORATE_ACTIONS_FEED",
+      "BSE_CORPORATE_ACTIONS_FEED",
       "NSE_FILINGS",
       "BSE_FILINGS"
     ],
     "require_manual_confirmation": true,
     "max_events_per_run": 500,
-    "exposure_snapshot_max_age_days": 45
+    "exposure_snapshot_max_age_days": 45,
+    "feed_url": "",
+    "feed_timeout_seconds": 30,
+    "feed_max_response_bytes": 10000000
   }
 }

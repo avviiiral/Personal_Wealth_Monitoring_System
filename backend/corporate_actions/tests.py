@@ -201,7 +201,7 @@ class FilingClassificationTests(TestCase):
         )
         self.assertIsNone(classify_filing(filing))
 
-    def test_classifies_declared_dividend_and_record_date_notice(self):
+    def test_classifies_dividend_declaration_but_not_standalone_record_date_notice(self):
         declaration = SimpleNamespace(
             filing_type="",
             subject="Dividend",
@@ -213,7 +213,8 @@ class FilingClassificationTests(TestCase):
             details="Record date for the purpose of Dividend is 06-Nov-2026.",
         )
         self.assertEqual(classify_filing(declaration), CorporateActionType.CASH_DIVIDEND)
-        self.assertEqual(classify_filing(record_notice), CorporateActionType.CASH_DIVIDEND)
+        self.assertIsNone(classify_filing(record_notice))
+        self.assertEqual(extract_event_dates(record_notice), {"record_date": date(2026, 11, 6)})
 
     def test_classifies_bonus_approval_subject_to_shareholder_approval(self):
         filing = SimpleNamespace(

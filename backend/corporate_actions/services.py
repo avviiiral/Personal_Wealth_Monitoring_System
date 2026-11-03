@@ -382,13 +382,15 @@ def decide_missing_isin_reconciliation(*, owner, reconciliation_id, decision, as
             if asset_id not in reconciliation.candidate_asset_ids:
                 raise ValidationError("Choose one of the proposed holdings.")
             family_id = _user_family_id(owner)
+            identity_scope = Q(owner=owner)
+            if family_id:
+                identity_scope |= Q(family_id=family_id)
             asset_query = Asset.objects.select_for_update().filter(
                 id=asset_id, is_active=True, category="STOCK"
-            )
-            asset_query = asset_query.filter(
-                Q(owner=owner) | Q(family_id=family_id)
-            ) if family_id else asset_query.filter(owner=owner)
+            ).filter(identity_scope)
             asset = asset_query.first()
+            if asset is not None and asset.family_id:
+                family_id = asset.family_id
             if asset is None:
                 raise ValidationError("Selected holding is no longer available.")
             transaction_type = (
@@ -432,7 +434,7 @@ def decide_missing_isin_reconciliation(*, owner, reconciliation_id, decision, as
             transaction, _ = Transaction.objects.get_or_create(
                 family_id=family_id, source=TransactionSource.OTHER, source_key=key,
                 defaults={
-                    "owner": owner, "family_id": family_id, "asset": asset,
+                    "owner": owner, "family": asset.family, "asset": asset,
                     "transaction_type": transaction_type, "transaction_date": action.ex_date,
                     "quantity": tx_quantity, "price_per_unit": price, "amount": amount,
                     "fees": Decimal("0"),

@@ -159,8 +159,11 @@ class HistoricalIdentityDiscoveryService:
         if exchange:
             query = query.filter(exchange__iexact=exchange)
         if event_date:
-            query = query.filter(Q(valid_from__isnull=True) | Q(valid_from__lte=event_date))
-            query = query.filter(Q(valid_to__isnull=True) | Q(valid_to__gte=event_date))
+            # A mapping with no known effective boundary is not proof that an
+            # identifier was valid on an arbitrary historical event date.
+            query = query.filter(
+                Q(valid_from__lte=event_date) | Q(valid_to__isnull=False, valid_from__isnull=True)
+            ).filter(Q(valid_to__isnull=True) | Q(valid_to__gte=event_date))
         matches = list(query.select_related("asset"))
         assets = {row.asset_id: row.asset for row in matches}
         if len(assets) == 1:

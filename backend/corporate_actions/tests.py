@@ -245,6 +245,61 @@ class CorporateActionServiceTests(TestCase):
         self.assertEqual(created_bonus.underlying, "Example Limited")
         self.assertEqual(created_bonus.advisors, "Advisor A")
 
+    def test_bonus_entitlement_is_calculated_separately_for_each_family_member(self):
+        asset = Asset.objects.create(
+            owner=self.user, name="Trent Limited", category=AssetCategory.STOCK,
+            symbol="TRENT", isin="INE849A01020",
+        )
+        common = {
+            "owner": self.user,
+            "asset": asset,
+            "transaction_type": TransactionType.BUY,
+            "transaction_date": date(2025, 1, 1),
+            "price_per_unit": Decimal("100"),
+            "fees": Decimal("0"),
+            "portfolio": "Direct Equity",
+            "asset_class": "Equity",
+            "sub_class": "Listed Equity",
+            "asset_name": "Trent Limited",
+            "underlying": "Trent Limited",
+        }
+        Transaction.objects.create(
+            **common, quantity=Decimal("2"), amount=Decimal("200"),
+            family_name="Family Member 1",
+        )
+        Transaction.objects.create(
+            **common, quantity=Decimal("4"), amount=Decimal("400"),
+            family_name="Family Member 2",
+        )
+        action = self.make_action(
+            isin="", symbol="TRENT", action_type=CorporateActionType.BONUS,
+            old_units=Decimal("2"), new_units=Decimal("1"),
+            ex_date=date(2025, 6, 15), status=CorporateActionStatus.PENDING,
+        )
+        discover_exposures_and_reconcile(action)
+        reconciliation = CorporateActionReconciliation.objects.get(action=action, owner=self.user)
+
+        approved = decide_missing_isin_reconciliation(
+            owner=self.user, reconciliation_id=reconciliation.id,
+            decision="APPROVE", asset_id=asset.id,
+        )
+
+        bonus_rows = Transaction.objects.filter(
+            id__in=approved.matched_transaction_ids,
+            transaction_type=TransactionType.BONUS,
+            transaction_date=action.ex_date,
+        )
+        self.assertEqual(bonus_rows.count(), 2)
+        quantities_by_member = {
+            row.family_name: row.quantity for row in bonus_rows
+        }
+        self.assertEqual(quantities_by_member, {
+            "Family Member 1": Decimal("1"),
+            "Family Member 2": Decimal("2"),
+        })
+        self.assertTrue(all(row.portfolio == "Direct Equity" for row in bonus_rows))
+        self.assertTrue(all(row.underlying == "Trent Limited" for row in bonus_rows))
+
     def test_missing_isin_candidate_discovery_does_not_leak_another_users_asset(self):
         other = User.objects.create_user(username="corp-action-other-owner", password="test-password")
         Asset.objects.create(

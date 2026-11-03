@@ -438,7 +438,7 @@ def decide_missing_isin_reconciliation(*, owner, reconciliation_id, decision, as
                 f"corporate-action:{action.id}:owner:{owner.id}:asset:{asset.id}".encode()
             ).hexdigest()
             transaction, _ = Transaction.objects.get_or_create(
-                family_id=family_id, source=TransactionSource.OTHER, source_key=key,
+                family=asset.family, source=TransactionSource.OTHER, source_key=key,
                 defaults={
                     "owner": owner, "family": asset.family, "asset": asset,
                     "transaction_type": transaction_type, "transaction_date": action.ex_date,

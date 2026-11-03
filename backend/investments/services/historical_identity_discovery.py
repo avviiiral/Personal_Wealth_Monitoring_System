@@ -314,7 +314,6 @@ class HistoricalIdentityDiscoveryService:
             return "duplicate"
 
     @classmethod
-    @classmethod
     def review_mapping(cls, mapping_id, *, verified, valid_from=None, valid_to=None,
                        evidence_reference=None, reviewer=None, notes=""):
         """Audit a human source review; verified historical intervals must be dated."""
@@ -343,6 +342,7 @@ class HistoricalIdentityDiscoveryService:
                                         "source_reference", "evidence", "updated_at"])
         return mapping
 
+    @classmethod
     def discover_asset(cls, asset, *, since, until, dry_run=False, force_refresh=False, exchange=""):
         stats = {"providers": 0, "created": 0, "would_create": 0, "duplicates": 0,
                  "conflicts": 0, "rejected": 0, "failures": 0, "skipped": 0}

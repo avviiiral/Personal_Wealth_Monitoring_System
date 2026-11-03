@@ -63,7 +63,7 @@
         This is indirect exposure through an investment product. The corporate action is handled within that product. Do not add a direct equity transaction.
       </p>
       <p class="safety-note" *ngIf="item.direct_exposure && item.reconciliation.status === 'PENDING'">
-        Verify the official entitlement and depository statement before recording a transaction. A missing transaction alone does not prove shares or cash are owed.
+        Eligible quantity is calculated from your dated buy/sell history immediately before the ex-date. Once the corporate action is verified and confirmed, PWMS adjusts the calculated position automatically. No corporate-action transaction is added to your uploaded ledger.
       </p>
       <p class="safety-note" *ngIf="item.reconciliation.notes">{{ item.reconciliation.notes }}</p>
 
@@ -71,9 +71,6 @@
         <button type="button" class="secondary" (click)="markReviewed(item)" [disabled]="busyId === item.id || item.reviewed">
           {{ item.reviewed ? 'Reviewed' : 'Mark reviewed' }}
         </button>
-        <button type="button" class="secondary" (click)="openAddTransaction(item)"
-          *ngIf="item.direct_exposure && item.action.status === 'CONFIRMED' && item.reconciliation.status === 'PENDING'"
-          [disabled]="busyId === item.id">Add transaction</button>
         <button type="button" class="secondary" (click)="markAlreadyRecorded(item)"
           *ngIf="item.direct_exposure && item.reconciliation.status === 'PENDING'" [disabled]="busyId === item.id">
           Already recorded
@@ -81,28 +78,6 @@
         <button type="button" class="quiet-danger" (click)="dismiss(item)" [disabled]="busyId === item.id">Dismiss</button>
       </footer>
     </article>
-  </div>
-
-  <div class="modal-backdrop" *ngIf="transactionItem" (click)="closeAddTransaction()">
-    <section class="transaction-modal" role="dialog" aria-modal="true" aria-labelledby="transaction-modal-title" (click)="$event.stopPropagation()">
-      <header>
-        <div><p class="eyebrow">USER CONFIRMATION REQUIRED</p><h2 id="transaction-modal-title">Add corporate action transaction</h2>
-          <p>{{ transactionItem.action.security_name }} · {{ transactionItem.action.action_type }}</p></div>
-        <button type="button" class="modal-close" aria-label="Close" (click)="closeAddTransaction()">×</button>
-      </header>
-      <p class="safety-note">Confirm your eligible quantity from the official depository statement. PWMS does not infer entitlement from a missing transaction.</p>
-      <div class="modal-fields">
-        <label>Eligible quantity<input type="number" min="0" step="0.000001" [(ngModel)]="transactionQuantity"></label>
-        <label>Cash amount (₹)<input type="number" min="0" step="0.01" [(ngModel)]="transactionAmount"></label>
-        <label>Price per unit (₹)<input type="number" min="0" step="0.000001" [(ngModel)]="transactionPrice"></label>
-        <label>Fees (₹)<input type="number" min="0" step="0.01" [(ngModel)]="transactionFees"></label>
-        <label>Transaction date<input type="date" [(ngModel)]="transactionDate"></label>
-      </div>
-      <footer>
-        <button type="button" class="secondary" (click)="closeAddTransaction()">Cancel</button>
-        <button type="button" class="refresh-button" (click)="submitAddTransaction()" [disabled]="confirmingTransaction">Confirm and save</button>
-      </footer>
-    </section>
   </div>
 
   <footer class="pagination" *ngIf="total > pageSize">

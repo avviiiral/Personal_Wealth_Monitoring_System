@@ -51,6 +51,18 @@ export class CorporateActionsComponent implements OnInit {
       .subscribe({ next: () => { item.reviewed = true; }, error: () => this.error = 'Could not update notification.' });
   }
 
+  confirmAction(item: CorporateActionInboxItem): void {
+    if (!item.direct_exposure || item.action.status !== 'PENDING' ||
+        item.reconciliation.status !== 'PENDING') return;
+    this.busyId = item.id;
+    this.service.confirmAction(item.action.id)
+      .pipe(finalize(() => this.busyId = null))
+      .subscribe({
+        next: () => this.load(),
+        error: (error) => { this.error = error?.error?.detail || 'Could not confirm corporate action.'; },
+      });
+  }
+
   markAlreadyRecorded(item: CorporateActionInboxItem): void {
     this.busyId = item.id;
     this.service.decideReconciliation(item.reconciliation.id, 'ALREADY_RECORDED')

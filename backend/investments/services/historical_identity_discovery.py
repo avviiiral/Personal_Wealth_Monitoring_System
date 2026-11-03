@@ -144,7 +144,16 @@ class TrentHistoricalSplitDocumentProvider(IdentityProvider):
         # The face-value subdivision confirms that this is the relevant class.
         if len(isins) < 2 or "PRIOR TO SUB-DIVISION" not in text or "PURSUANT TO SUB-DIVISION" not in text:
             raise ValueError("Annual report did not expose an explicit pre/post subdivision ISIN pair")
-        old_isin, new_isin = isins[:2]
+        # Use the issuer report's explicitly labeled table cells, not
+        # arbitrary first ISIN occurrences elsewhere in the annual report.
+        pair_match = re.search(
+            r"EQUITY\\s+([A-Z]{2}[A-Z0-9]{9}[0-9])\\s+\\(PRIOR TO SUB-DIVISION\\).*?"
+            r"([A-Z]{2}[A-Z0-9]{9}[0-9])\\s+\\(PURSUANT TO SUB-DIVISION\\)",
+            text,
+        )
+        if not pair_match:
+            raise ValueError("Could not parse the issuer's labeled prior/post subdivision ISIN table")
+        old_isin, new_isin = pair_match.groups()
         if asset.isin and asset.isin.upper() != new_isin:
             return
         # The document describes the transition but does not precisely define

@@ -189,6 +189,56 @@ class CorporateActionServiceTests(TestCase):
         self.assertEqual(response.status_code, 404)
 
 
+    def test_approval_creates_one_idempotent_transaction_for_selected_candidate(self):
+        asset = Asset.objects.create(
+            owner=self.user, name="Example Limited", category=AssetCategory.STOCK,
+            symbol="EXAMPLE", isin="INE000A01000",
+        )
+        from investments.models import Holding
+        Holding.objects.create(owner=self.user, asset=asset, quantity=Decimal("10"))
+        action = self.make_action(
+            isin="", symbol="EXAMPLE", action_type=CorporateActionType.BONUS,
+            old_units=Decimal("1"), new_units=Decimal("1"), status=CorporateActionStatus.PENDING,
+        )
+        discover_exposures_and_reconcile(action)
+        reconciliation = CorporateActionReconciliation.objects.get(action=action, owner=self.user)
+        first = decide_missing_isin_reconciliation(
+            owner=self.user, reconciliation_id=reconciliation.id, decision="APPROVE", asset_id=asset.id
+        )
+        second = decide_missing_isin_reconciliation(
+            owner=self.user, reconciliation_id=reconciliation.id, decision="APPROVE", asset_id=asset.id
+        )
+        self.assertEqual(first.status, CorporateActionReconciliationStatus.APPROVED)
+        self.assertEqual(second.status, CorporateActionReconciliationStatus.APPROVED)
+        self.assertEqual(Transaction.objects.filter(asset=asset, transaction_date=action.ex_date).count(), 1)
+        self.assertEqual(first.matched_transaction_ids, [Transaction.objects.get(asset=asset).id])
+
+    def test_missing_isin_candidate_discovery_does_not_leak_another_users_asset(self):
+        other = User.objects.create_user(username="corp-action-other-owner", password="test-password")
+        Asset.objects.create(
+            owner=other, name="Example Limited", category=AssetCategory.STOCK,
+            symbol="EXAMPLE", isin="INE000A01000",
+        )
+        action = self.make_action(isin="", symbol="EXAMPLE", status=CorporateActionStatus.PENDING)
+        discover_exposures_and_reconcile(action)
+        self.assertFalse(CorporateActionReconciliation.objects.filter(action=action, owner=self.user).exists())
+        self.assertFalse(CorporateActionNotification.objects.filter(action=action, owner=self.user).exists())
+
+    def test_approved_or_rejected_identity_decision_is_not_reopened_by_rescan(self):
+        asset = Asset.objects.create(
+            owner=self.user, name="Example Limited", category=AssetCategory.STOCK,
+            symbol="EXAMPLE", isin="INE000A01000",
+        )
+        action = self.make_action(isin="", symbol="EXAMPLE", status=CorporateActionStatus.PENDING)
+        discover_exposures_and_reconcile(action)
+        reconciliation = CorporateActionReconciliation.objects.get(action=action, owner=self.user)
+        decide_missing_isin_reconciliation(
+            owner=self.user, reconciliation_id=reconciliation.id, decision="REJECT"
+        )
+        discover_exposures_and_reconcile(action)
+        reconciliation.refresh_from_db()
+        self.assertEqual(reconciliation.status, CorporateActionReconciliationStatus.REJECTED)
+
 class CorporateActionAPITests(TestCase):
     def setUp(self):
         self.user = User.objects.create_user(username="corp-action-api", password="test-password")

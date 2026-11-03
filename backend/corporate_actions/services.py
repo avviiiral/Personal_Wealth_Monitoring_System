@@ -180,10 +180,13 @@ def discover_exposures_and_reconcile(action):
                 action, user, CorporateActionReconciliationStatus.PENDING_USER_APPROVAL,
                 notes=f"Source ISIN unavailable. Exact {method.lower()} candidate(s) require your approval. No transaction has been changed.",
             )
-            if reconciliation.status not in {
-                CorporateActionReconciliationStatus.APPROVED,
-                CorporateActionReconciliationStatus.REJECTED,
-            }:
+            if reconciliation.status == CorporateActionReconciliationStatus.REJECTED:
+                # An explicit rejection is terminal; later monitoring runs must not reopen it.
+                continue
+            if reconciliation.status == CorporateActionReconciliationStatus.APPROVED:
+                # An approved identity is terminal; do not refresh candidate IDs or create a second transaction.
+                continue
+            if reconciliation.status != CorporateActionReconciliationStatus.PENDING_USER_APPROVAL:
                 reconciliation.status = CorporateActionReconciliationStatus.PENDING_USER_APPROVAL
                 reconciliation.identity_match_method = method
                 reconciliation.candidate_asset_ids = [asset.id for asset in candidates]

@@ -5,6 +5,8 @@ from decimal import Decimal
 
 from django.contrib.auth import get_user_model
 from django.db.models import Max, Q
+from django.db import transaction as db_transaction
+from django.core.exceptions import ValidationError
 from django.utils import timezone
 
 from users.permissions import get_active_family_group_id
@@ -92,6 +94,7 @@ def _create_reconciliation(action, user, status_value, transaction_ids=None, sug
     )
     if status_value in {
         CorporateActionReconciliationStatus.PENDING,
+        CorporateActionReconciliationStatus.PENDING_USER_APPROVAL,
         CorporateActionReconciliationStatus.ALREADY_RECORDED,
         CorporateActionReconciliationStatus.COMPLETED,
     }:
@@ -101,6 +104,23 @@ def _create_reconciliation(action, user, status_value, transaction_ids=None, sug
             defaults={"reconciliation": reconciliation},
         )
     return reconciliation
+
+
+def discover_symbol_name_candidates(*, action, user):
+    """Candidate discovery only: exact symbol first, then exact full security name."""
+    family_id = _user_family_id(user)
+    assets = Asset.objects.filter(is_active=True, category="STOCK").filter(
+        Q(owner=user) | Q(family_id=family_id)
+    )
+    if action.symbol:
+        symbol_matches = list(assets.filter(symbol__iexact=action.symbol.strip()).order_by("name", "id"))
+        if symbol_matches:
+            return symbol_matches, "SYMBOL"
+    if action.security_name:
+        name_matches = list(assets.filter(name__iexact=action.security_name.strip()).order_by("name", "id"))
+        if name_matches:
+            return name_matches, "NAME"
+    return [], "NONE"
 
 
 def _direct_exposures(action):
@@ -136,7 +156,31 @@ def _pms_underlying(action):
 def discover_exposures_and_reconcile(action):
     """Map exact-ISIN direct/MF/PMS exposure and create idempotent per-user reconciliation state."""
     if not action.isin:
-        return {"direct": 0, "mutual_fund": 0, "pms": 0, "notifications": 0}
+        direct_count = notification_count = 0
+        for user in get_user_model().objects.filter(is_active=True).iterator():
+            candidates, method = discover_symbol_name_candidates(action=action, user=user)
+            if not candidates:
+                continue
+            reconciliation = _create_reconciliation(
+                action, user, CorporateActionReconciliationStatus.PENDING_USER_APPROVAL,
+                notes=f"Source ISIN unavailable. Exact {method.lower()} candidate(s) require your approval. No transaction has been changed.",
+            )
+            reconciliation.identity_match_method = method
+            reconciliation.candidate_asset_ids = [asset.id for asset in candidates]
+            reconciliation.save(update_fields=["identity_match_method", "candidate_asset_ids", "updated_at"])
+            CorporateActionNotification.objects.get_or_create(
+                action=action, owner=user, defaults={"reconciliation": reconciliation}
+            )
+            for asset in candidates:
+                CorporateActionExposure.objects.get_or_create(
+                    action=action, owner=user, exposure_type="DIRECT",
+                    investment_name=asset.name, investment_id=asset.id,
+                    defaults={"family_id_snapshot": asset.family_id or _user_family_id(user),
+                              "snapshot_date": timezone.localdate()},
+                )
+            direct_count += len(candidates)
+            notification_count += 1
+        return {"direct": direct_count, "mutual_fund": 0, "pms": 0, "notifications": notification_count}
 
     direct_count = mf_count = pms_count = notification_count = 0
     for asset in _direct_exposures(action).iterator():
@@ -285,3 +329,96 @@ def update_notification_state(*, owner, notification_id, reviewed=None, dismisse
         notification.reconciliation.reviewed_by = owner
         notification.reconciliation.save(update_fields=["status", "reviewed_at", "reviewed_by", "updated_at"])
     return notification
+
+
+def decide_missing_isin_reconciliation(*, owner, reconciliation_id, decision, asset_id=None, notes=""):
+    """Approve/reject a proposed identity; transaction writes occur only on explicit approval."""
+    from investments.models import Transaction, TransactionSource, TransactionType
+
+    with db_transaction.atomic():
+        reconciliation = CorporateActionReconciliation.objects.select_for_update().select_related("action").filter(
+            owner=owner, id=reconciliation_id
+        ).first()
+        if reconciliation is None:
+            raise LookupError("Reconciliation not found.")
+        if reconciliation.status in {
+            CorporateActionReconciliationStatus.APPROVED,
+            CorporateActionReconciliationStatus.REJECTED,
+        }:
+            return reconciliation
+        if reconciliation.status != CorporateActionReconciliationStatus.PENDING_USER_APPROVAL:
+            raise ValidationError("This action is not awaiting identity approval.")
+        action = reconciliation.action
+        if decision == "REJECT":
+            reconciliation.status = CorporateActionReconciliationStatus.REJECTED
+            reconciliation.notes = (notes or "User rejected the proposed identity. No transaction was changed.")[:5000]
+        elif decision == "APPROVE":
+            if asset_id not in reconciliation.candidate_asset_ids:
+                raise ValidationError("Choose one of the proposed holdings.")
+            family_id = _user_family_id(owner)
+            asset = Asset.objects.select_for_update().filter(
+                id=asset_id, is_active=True, category="STOCK"
+            ).filter(Q(owner=owner) | Q(family_id=family_id)).first()
+            if asset is None:
+                raise ValidationError("Selected holding is no longer available.")
+            transaction_type = (
+                TransactionType.DIVIDEND if action.action_type == "CASH_DIVIDEND"
+                else TransactionType.BONUS if action.action_type in {"BONUS", "STOCK_DIVIDEND"}
+                else TransactionType.SPLIT if action.action_type in {"STOCK_SPLIT", "REVERSE_SPLIT"}
+                else None
+            )
+            if transaction_type is None:
+                raise ValidationError("This action type cannot be converted into a transaction automatically.")
+            if not action.ex_date:
+                raise ValidationError("Action ex-date is required.")
+            quantity = reconciliation.suggested_quantity
+            if not quantity or quantity <= 0:
+                from corporate_actions.position_adjustment import calculate_position_with_actions, confirmed_ratio_actions
+                transactions = list(Transaction.objects.filter(
+                    owner=owner, asset=asset, transaction_date__lt=action.ex_date
+                ).order_by("transaction_date", "created_at", "id"))
+                earlier = [
+                    item for item in confirmed_ratio_actions(asset=asset, owner=owner)
+                    if item.ex_date < action.ex_date
+                ]
+                quantity = calculate_position_with_actions(transactions, earlier).get("quantity")
+            if not quantity or quantity <= 0:
+                raise ValidationError("Could not establish a positive eligible quantity.")
+            if transaction_type == TransactionType.DIVIDEND:
+                price = action.cash_per_unit or Decimal("0")
+                tx_quantity = quantity
+                amount = quantity * price
+            else:
+                if not action.old_units or not action.new_units:
+                    raise ValidationError("A verified entitlement ratio is required.")
+                tx_quantity = quantity * (action.new_units / action.old_units - Decimal("1"))
+                if tx_quantity <= 0:
+                    raise ValidationError("Calculated entitlement is not positive.")
+                price = Decimal("0")
+                amount = Decimal("0")
+            key = hashlib.sha256(
+                f"corporate-action:{action.id}:owner:{owner.id}:asset:{asset.id}".encode()
+            ).hexdigest()
+            transaction, _ = Transaction.objects.get_or_create(
+                family_id=family_id, source=TransactionSource.OTHER, source_key=key,
+                defaults={
+                    "owner": owner, "family_id": family_id, "asset": asset,
+                    "transaction_type": transaction_type, "transaction_date": action.ex_date,
+                    "quantity": tx_quantity, "price_per_unit": price, "amount": amount,
+                    "fees": Decimal("0"),
+                    "notes": f"User-approved corporate action #{action.id}; identity matched by {reconciliation.identity_match_method}.",
+                },
+            )
+            reconciliation.selected_asset = asset
+            reconciliation.matched_transaction_ids = [transaction.id]
+            reconciliation.status = CorporateActionReconciliationStatus.APPROVED
+            reconciliation.notes = (notes or "Identity approved; transaction created idempotently.")[:5000]
+        else:
+            raise ValidationError("Decision must be APPROVE or REJECT.")
+        reconciliation.reviewed_at = timezone.now()
+        reconciliation.reviewed_by = owner
+        reconciliation.save()
+        CorporateActionNotification.objects.filter(owner=owner, action=action).update(
+            reviewed=True, dismissed=(decision == "REJECT"), updated_at=timezone.now()
+        )
+        return reconciliation

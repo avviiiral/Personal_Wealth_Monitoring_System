@@ -168,6 +168,9 @@ class CorporateActionAPITests(TestCase):
         self.assertIsNone(response.data["quantity_factor"])
 
 
+class FilingClassificationTests(TestCase):
+
+
 
     def test_ignores_rights_issue_monitoring_report(self):
         filing = SimpleNamespace(
@@ -223,9 +226,6 @@ class CorporateActionAPITests(TestCase):
         )
         self.assertEqual(classify_filing(filing), CorporateActionType.BONUS)
 
-    def test_announcement_date_is_not_used_as_ex_date(self):
-
-class FilingClassificationTests(TestCase):
     def test_announcement_date_is_not_used_as_ex_date(self):
         class FakeFiling:
             filing_type = "Corporate Announcement"

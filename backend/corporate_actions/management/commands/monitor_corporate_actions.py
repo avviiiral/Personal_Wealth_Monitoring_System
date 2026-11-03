@@ -216,6 +216,8 @@ class Command(BaseCommand):
             audit = build_event_audit(event, source_name, source_reference, metadata)
             audit_events.append(audit)
             if (not event.get("action_type") or not event.get("isin") or not event.get("ex_date")
+                    or audit.get("isin_mismatch")
+                    or audit.get("validation_status") != "VALID"
                     or event.get("status") in {"CANCELLED", "CANCELED", "DELETED"}):
                 skipped += 1
                 return
@@ -261,13 +263,18 @@ class Command(BaseCommand):
 
         for record in nse_records:
             action_type = classify_exchange_action(record.get("purpose"))
-            isin = (record.get("isin") or symbol_isin_map.get(record.get("symbol", "").upper()) or "").upper()
-            if not isin:
+            source_isin = str(record.get("isin") or "").strip().upper()
+            resolved_isin = str(symbol_isin_map.get(record.get("symbol", "").upper()) or "").strip().upper()
+            if not source_isin:
                 logger.warning(
-                    "Skipping NSE corporate action for %s: held asset symbol does not resolve to one unique ISIN.",
+                    "NSE corporate action for %s has no source ISIN; symbol-derived portfolio ISIN will not be used for reconciliation or import.",
                     record.get("symbol"),
                 )
-            event = {**record, "isin": isin, "action_type": action_type}
+            event = {
+                **record, "isin": source_isin, "source_isin": source_isin,
+                "resolved_isin": resolved_isin, "source_isin_required": True,
+                "action_type": action_type,
+            }
             persist_event(
                 event, "NSE_CORPORATE_ACTIONS", record.get("source_url", ""),
                 {"provider": "nse_corporate_actions_api", "purpose": record.get("purpose"),
@@ -317,7 +324,8 @@ class Command(BaseCommand):
                     "scanned": scanned, "nse_symbols": len(nse_symbols), "nse_records": len(nse_records),
                     "nse_fetch_errors": nse_fetch_errors, "feed_records": len(source_records),
                     "filings": len(filings), "audit_records": len(audit_events),
-                    "matched_exposures": matched, "skipped": skipped,
+                    "matched_exposures": sum(1 for item in audit_events if item.get("reconciliation_status") == "MATCHED_EXPOSURE"),
+                    "exposure_rows": matched, "skipped": skipped,
                     "duplicate_events": sum(1 for item in audit_events if item.get("duplicate_of")),
                 },
                 "events": audit_events,

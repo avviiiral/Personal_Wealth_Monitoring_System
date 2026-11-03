@@ -216,7 +216,7 @@ class CorporateActionServiceTests(TestCase):
         )
         action = self.make_action(
             isin="", symbol="EXAMPLE", action_type=CorporateActionType.BONUS,
-            old_units=Decimal("2"), new_units=Decimal("1"), status=CorporateActionStatus.PENDING,
+            old_units=Decimal("2"), new_units=Decimal("1"), record_date=date(2025, 6, 10), status=CorporateActionStatus.PENDING,
         )
         discover_exposures_and_reconcile(action)
         reconciliation = CorporateActionReconciliation.objects.get(action=action, owner=self.user)
@@ -245,6 +245,62 @@ class CorporateActionServiceTests(TestCase):
         self.assertEqual(created_bonus.underlying, "Example Limited")
         self.assertEqual(created_bonus.advisors, "Advisor A")
 
+    def test_bonus_allocates_each_underlying_hierarchy_from_record_date_quantity(self):
+        hierarchy = [
+            ("Family Member 1", "Direct Equity", "Equity", "Listed Equity", "Portfolio A", Decimal("10")),
+            ("Family Member 1", "PMS", "Equity", "Equity PMS", "PMS A", Decimal("5")),
+            ("Family Member 2", "Direct Equity", "Equity", "Listed Equity", "Portfolio B", Decimal("4")),
+            ("Family Member 2", "Direct Equity", "Equity", "Large Cap", "Portfolio C", Decimal("6")),
+        ]
+        assets = []
+        for index, row in enumerate(hierarchy):
+            asset = Asset.objects.create(
+                owner=self.user, name=f"TRENT holding {index + 1}", category=AssetCategory.STOCK,
+                symbol="TRENT", isin="INE849A01020",
+            )
+            assets.append(asset)
+            family_name, portfolio, asset_class, sub_class, asset_name, quantity = row
+            Transaction.objects.create(
+                owner=self.user, asset=asset, transaction_type=TransactionType.BUY,
+                transaction_date=date(2025, 1, 1), quantity=quantity,
+                price_per_unit=Decimal("100"), amount=quantity * Decimal("100"), fees=Decimal("0"),
+                family_name=family_name, portfolio=portfolio, asset_class=asset_class,
+                sub_class=sub_class, asset_name=asset_name, underlying="TRENT LTD",
+            )
+            # Acquisitions after the record date must not qualify.
+            Transaction.objects.create(
+                owner=self.user, asset=asset, transaction_type=TransactionType.BUY,
+                transaction_date=date(2025, 6, 12), quantity=Decimal("100"),
+                price_per_unit=Decimal("100"), amount=Decimal("10000"), fees=Decimal("0"),
+                family_name=family_name, portfolio=portfolio, asset_class=asset_class,
+                sub_class=sub_class, asset_name=asset_name, underlying="TRENT LTD",
+            )
+        action = self.make_action(
+            isin="", symbol="TRENT", action_type=CorporateActionType.BONUS,
+            old_units=Decimal("1"), new_units=Decimal("2"),
+            ex_date=date(2025, 6, 15), record_date=date(2025, 6, 10),
+            status=CorporateActionStatus.PENDING,
+        )
+        discover_exposures_and_reconcile(action)
+        reconciliation = CorporateActionReconciliation.objects.get(action=action, owner=self.user)
+        approved = decide_missing_isin_reconciliation(
+            owner=self.user, reconciliation_id=reconciliation.id,
+            decision="APPROVE", asset_id=assets[0].id,
+        )
+        bonus_rows = list(Transaction.objects.filter(
+            id__in=approved.matched_transaction_ids, transaction_type=TransactionType.BONUS,
+        ).order_by("family_name", "portfolio", "sub_class", "asset_name"))
+        self.assertEqual(len(bonus_rows), 4)
+        actual = {
+            (row.family_name, row.portfolio, row.asset_class, row.sub_class, row.asset_name): row.quantity
+            for row in bonus_rows
+        }
+        expected = {
+            (family, portfolio, asset_class, sub_class, asset_name): quantity * Decimal("2")
+            for family, portfolio, asset_class, sub_class, asset_name, quantity in hierarchy
+        }
+        self.assertEqual(actual, expected)
+        self.assertTrue(all(row.transaction_date == action.ex_date for row in bonus_rows))
     def test_bonus_transaction_normalizes_missing_asset_and_underlying_labels(self):
         asset = Asset.objects.create(
             owner=self.user, name="Trent Limited", category=AssetCategory.STOCK,
@@ -262,7 +318,7 @@ class CorporateActionServiceTests(TestCase):
         action = self.make_action(
             isin="", symbol="TRENT", action_type=CorporateActionType.BONUS,
             old_units=Decimal("2"), new_units=Decimal("1"),
-            ex_date=date(2025, 6, 15), status=CorporateActionStatus.PENDING,
+            ex_date=date(2025, 6, 15), record_date=date(2025, 6, 10), status=CorporateActionStatus.PENDING,
         )
         discover_exposures_and_reconcile(action)
         reconciliation = CorporateActionReconciliation.objects.get(action=action, owner=self.user)

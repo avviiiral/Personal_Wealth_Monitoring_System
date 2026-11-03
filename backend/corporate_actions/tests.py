@@ -11,12 +11,13 @@ from .models import (
     CorporateActionExposure, CorporateActionReconciliation,
     CorporateActionReconciliationStatus, CorporateActionNotification,
 )
-from .services import quantity_multiplier, resolve_corporate_action_candidates
+from .services import quantity_multiplier, resolve_corporate_action_candidates, discover_exposures_and_reconcile, decide_missing_isin_reconciliation
 from .management.commands.monitor_corporate_actions import (
     build_symbol_isin_map, classify_filing, classify_exchange_action, extract_event_dates,
 )
 from .providers.nse import normalize_nse_action, normalize_nse_symbol
 from users.models import FamilyGroup, FamilyMembership, Role
+from investments.models import Asset, AssetCategory, Transaction, TransactionType
 from .position_adjustment import confirmed_ratio_actions
 
 
@@ -119,6 +120,54 @@ class CorporateActionServiceTests(TestCase):
         with self.assertRaises(Exception):
             CorporateActionReconciliation.objects.create(
                 action=action, owner=self.user, idempotency_key="b" * 64
+            )
+
+
+    def test_missing_isin_action_requires_user_approval_without_transaction_write(self):
+        asset = Asset.objects.create(
+            owner=self.user, name="Example Limited", category=AssetCategory.STOCK,
+            symbol="EXAMPLE", isin="INE000A01000",
+        )
+        action = self.make_action(isin="", symbol="EXAMPLE", status=CorporateActionStatus.PENDING)
+        stats = discover_exposures_and_reconcile(action)
+        reconciliation = CorporateActionReconciliation.objects.get(action=action, owner=self.user)
+        self.assertEqual(stats["direct"], 1)
+        self.assertEqual(reconciliation.status, CorporateActionReconciliationStatus.PENDING_USER_APPROVAL)
+        self.assertEqual(reconciliation.identity_match_method, "SYMBOL")
+        self.assertEqual(reconciliation.candidate_asset_ids, [asset.id])
+        self.assertFalse(Transaction.objects.filter(asset=asset).exists())
+
+    def test_rejecting_missing_isin_candidate_never_writes_transaction(self):
+        asset = Asset.objects.create(
+            owner=self.user, name="Example Limited", category=AssetCategory.STOCK,
+            symbol="EXAMPLE", isin="INE000A01000",
+        )
+        action = self.make_action(isin="", symbol="EXAMPLE", status=CorporateActionStatus.PENDING)
+        discover_exposures_and_reconcile(action)
+        reconciliation = CorporateActionReconciliation.objects.get(action=action, owner=self.user)
+        result = decide_missing_isin_reconciliation(
+            owner=self.user, reconciliation_id=reconciliation.id, decision="REJECT"
+        )
+        self.assertEqual(result.status, CorporateActionReconciliationStatus.REJECTED)
+        self.assertFalse(Transaction.objects.filter(asset=asset).exists())
+
+    def test_name_fallback_and_ambiguous_candidates_require_selected_asset(self):
+        first = Asset.objects.create(
+            owner=self.user, name="Example Limited", category=AssetCategory.STOCK,
+            symbol="EXAMPLE-A", isin="INE000A01000",
+        )
+        second = Asset.objects.create(
+            owner=self.user, name="Example Limited", category=AssetCategory.STOCK,
+            symbol="EXAMPLE-B", isin="INE000A01001",
+        )
+        action = self.make_action(isin="", symbol="", security_name="Example Limited", status=CorporateActionStatus.PENDING)
+        discover_exposures_and_reconcile(action)
+        reconciliation = CorporateActionReconciliation.objects.get(action=action, owner=self.user)
+        self.assertEqual(reconciliation.identity_match_method, "NAME")
+        self.assertCountEqual(reconciliation.candidate_asset_ids, [first.id, second.id])
+        with self.assertRaises(Exception):
+            decide_missing_isin_reconciliation(
+                owner=self.user, reconciliation_id=reconciliation.id, decision="APPROVE"
             )
 
     def test_legacy_add_transaction_endpoint_is_removed(self):

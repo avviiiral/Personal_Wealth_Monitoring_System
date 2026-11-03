@@ -187,10 +187,10 @@ def discover_exposures_and_reconcile(action):
                 )
                 tx_rows = list(prior_transactions.order_by("transaction_date", "created_at", "id"))
                 if tx_rows:
-                    totals = calculate_position_with_actions(
-                        tx_rows,
-                        confirmed_ratio_actions(asset=asset, owner=user, as_of_date=action.ex_date),
-                    )
+                    # Entitlement is measured immediately before this event's ex-date.
+                    earlier_actions = confirmed_ratio_actions(asset=asset, owner=user)
+                    earlier_actions = [item for item in earlier_actions if item.ex_date < action.ex_date]
+                    totals = calculate_position_with_actions(tx_rows, earlier_actions)
                     eligible_quantity = totals.get("quantity")
 
             if existing.exists():
@@ -201,21 +201,22 @@ def discover_exposures_and_reconcile(action):
             else:
                 # Only create an actionable record where dated acquisition history exists.
                 # Entitlement quantity still needs investor verification.
-                status_value = (
-                    CorporateActionReconciliationStatus.PENDING
-                    if prior_transactions.exists()
-                    else CorporateActionReconciliationStatus.MANUAL_REVIEW
-                )
-                if eligible_quantity is not None:
+                # A transaction history alone does not establish ex-date entitlement.
+                if eligible_quantity is not None and eligible_quantity > Decimal("0"):
                     exposure.quantity = eligible_quantity
                     exposure.save(update_fields=["quantity"])
-                _create_reconciliation(
-                    action, user, status_value,
-                    suggested_quantity=eligible_quantity,
-                    notes="Direct security exposure found. Verify eligible holdings and the depository statement before booking.",
-                )
-                if status_value == CorporateActionReconciliationStatus.PENDING:
+                    _create_reconciliation(
+                        action, user, CorporateActionReconciliationStatus.PENDING,
+                        suggested_quantity=eligible_quantity,
+                        notes="Positive direct holding calculated immediately before the ex-date. Verify the official entitlement before confirming the event.",
+                    )
                     notification_count += 1
+                else:
+                    _create_reconciliation(
+                        action, user, CorporateActionReconciliationStatus.MANUAL_REVIEW,
+                        suggested_quantity=eligible_quantity,
+                        notes="No positive eligible direct holding was established immediately before the ex-date. No automatic position adjustment will be applied for this investor.",
+                    )
             direct_count += 1
 
     for underlying in _latest_mf_underlying(action).iterator():

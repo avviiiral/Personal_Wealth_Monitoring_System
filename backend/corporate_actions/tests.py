@@ -152,3 +152,27 @@ class FilingClassificationTests(TestCase):
             "record_date": date(2026, 11, 16),
             "payment_date": date(2026, 11, 30),
         })
+
+    def test_classifies_exchange_bonus_wording(self):
+        class FakeFiling:
+            filing_type = "Corporate Announcement"
+            subject = "Issuance of Bonus shares"
+            details = "Bonus equity shares in the proportion of 1:2."
+        self.assertEqual(classify_filing(FakeFiling()), CorporateActionType.BONUS)
+
+    def test_extracts_ex_bonus_basis_date(self):
+        class FakeFiling:
+            filing_type = "Corporate Announcement"
+            subject = "Issuance of Bonus shares"
+            details = "The shares will be traded ex-bonus basis from 04-Jun-2026. Record date: 04-Jun-2026."
+        self.assertEqual(extract_event_dates(FakeFiling()), {
+            "ex_date": date(2026, 6, 4),
+            "record_date": date(2026, 6, 4),
+        })
+
+    def test_does_not_treat_announcement_date_as_ex_date_for_bonus_wording(self):
+        class FakeFiling:
+            filing_type = "Corporate Announcement"
+            subject = "Issuance of Bonus shares"
+            details = "Board approved a bonus issue on 22-Apr-2026."
+        self.assertEqual(extract_event_dates(FakeFiling()), {})

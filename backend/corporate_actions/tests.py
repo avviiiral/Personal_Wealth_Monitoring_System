@@ -82,7 +82,7 @@ class CorporateActionServiceTests(TestCase):
                 action=action, owner=self.user, idempotency_key="b" * 64
             )
 
-    def test_indirect_exposure_cannot_add_direct_transaction(self):
+    def test_legacy_add_transaction_endpoint_is_removed(self):
         action = self.make_action()
         reconciliation = CorporateActionReconciliation.objects.create(
             action=action, owner=self.user, idempotency_key="c" * 64
@@ -98,7 +98,7 @@ class CorporateActionServiceTests(TestCase):
             {"quantity": "1", "amount": "0", "confirmed": True},
             format="json",
         )
-        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.status_code, 404)
 
 
 class CorporateActionAPITests(TestCase):

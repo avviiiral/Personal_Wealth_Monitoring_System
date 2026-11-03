@@ -215,44 +215,100 @@ class Command(BaseCommand):
             nonlocal created, updated, matched, skipped
             audit = build_event_audit(event, source_name, source_reference, metadata)
             audit_events.append(audit)
-            if (not event.get("action_type") or not event.get("isin") or not event.get("ex_date")
-                    or audit.get("isin_mismatch")
-                    or audit.get("validation_status") != "VALID"
+            source_isin = str(event.get("source_isin") or event.get("isin") or "").strip().upper()
+            ex_date = event.get("ex_date")
+            missing_isin_candidate = bool(
+                not source_isin and event.get("symbol") and event.get("action_type")
+                and ex_date and not audit.get("isin_mismatch")
+                and event.get("status") not in {"CANCELLED", "CANCELED", "DELETED"}
+            )
+            if (not event.get("action_type") or not ex_date or audit.get("isin_mismatch")
+                    or (audit.get("validation_status") != "VALID" and not missing_isin_candidate)
                     or event.get("status") in {"CANCELLED", "CANCELED", "DELETED"}):
                 skipped += 1
                 return
-            isin, ex_date = event["isin"].upper(), event["ex_date"]
+
+            # For missing source ISIN, persist only the provider identity (empty ISIN)
+            # and let each owner's exact symbol/name candidate require explicit approval.
+            # A symbol-derived portfolio ISIN is never copied into CorporateAction.isin.
+            isin = source_isin
+            identity = isin or (event.get("symbol") or "").strip().upper()
+            if not identity:
+                skipped += 1
+                return
             defaults = {
-                "security_name": event.get("company_name") or event.get("symbol") or isin,
+                "security_name": event.get("company_name") or event.get("symbol") or identity,
                 "isin": isin, "symbol": (event.get("symbol") or "").upper(),
                 "exchange": event.get("exchange") or "", "ex_date": ex_date,
                 "record_date": event.get("record_date"), "payment_date": event.get("payment_date"),
-                "cash_per_unit": event.get("dividend_per_share"),
+                "old_units": audit.get("old_units"), "new_units": audit.get("new_units"),
+                "cash_per_unit": audit.get("dividend_per_share"),
                 "source": source_name, "source_reference": source_reference or "",
                 "status": CorporateActionStatus.PENDING,
-                "notes": "Imported from exchange corporate-actions data. Review purpose and entitlement details before confirmation.",
-                "metadata": metadata,
+                "notes": (
+                    "Source ISIN unavailable. Exact symbol/name identity candidates require explicit user approval. "
+                    "No transaction or portfolio position is changed before approval."
+                    if not isin else
+                    "Imported from exchange corporate-actions data. Review purpose and entitlement details before confirmation."
+                ),
+                "metadata": {
+                    **(metadata or {}),
+                    "source_isin": isin or None,
+                    "resolved_isin": str(event.get("resolved_isin") or "").strip().upper() or None,
+                    "identity_match_required": not bool(isin),
+                },
             }
             if options["dry_run"]:
-                # Read-only ORM inspection only; never invoke write-oriented reconciliation.
-                matched += sum(len(audit["exposures"][key]) for key in ("direct_equity", "mutual_fund", "pms"))
-                if audit["validation_status"] != "VALID":
-                    skipped += 1
+                if isin:
+                    matched += sum(len(audit["exposures"][key]) for key in ("direct_equity", "mutual_fund", "pms"))
                 else:
-                    created += 1
+                    # Read-only candidate inspection. Never invoke write reconciliation in dry-run.
+                    candidates = Asset.objects.filter(
+                        is_active=True, category=AssetCategory.STOCK
+                    ).filter(
+                        __import__("django.db.models", fromlist=["Q"]).Q(symbol__iexact=event.get("symbol") or "")
+                        | __import__("django.db.models", fromlist=["Q"]).Q(name__iexact=defaults["security_name"])
+                    ).distinct()
+                    matched += candidates.count()
+                created += 1
                 return
-            direct_assets = Asset.objects.filter(is_active=True, isin__iexact=isin)
-            family_ids = set(direct_assets.exclude(family_id__isnull=True).values_list("family_id", flat=True))
-            pms_family_ids = set(AssetUnderlyingHolding.objects.filter(isin__iexact=isin).values_list("family_id", flat=True))
-            mf_scheme_ids = MutualFundUnderlying.objects.filter(isin__iexact=isin).values_list("scheme_id", flat=True)
-            mf_owner_ids = MutualFundTransaction.objects.filter(scheme_id__in=mf_scheme_ids).exclude(owner__isnull=True).values_list("owner_id", flat=True)
-            direct_owner_ids = direct_assets.exclude(owner__isnull=True).values_list("owner_id", flat=True)
-            member_ids = FamilyMembership.objects.filter(family_group_id__in=family_ids | pms_family_ids).values_list("profile__user_id", flat=True)
-            owners = set(direct_owner_ids) | set(mf_owner_ids) | set(member_ids)
+
+            if isin:
+                direct_assets = Asset.objects.filter(is_active=True, isin__iexact=isin)
+                family_ids = set(direct_assets.exclude(family_id__isnull=True).values_list("family_id", flat=True))
+                pms_family_ids = set(AssetUnderlyingHolding.objects.filter(isin__iexact=isin).values_list("family_id", flat=True))
+                mf_scheme_ids = MutualFundUnderlying.objects.filter(isin__iexact=isin).values_list("scheme_id", flat=True)
+                mf_owner_ids = MutualFundTransaction.objects.filter(scheme_id__in=mf_scheme_ids).exclude(owner__isnull=True).values_list("owner_id", flat=True)
+                direct_owner_ids = direct_assets.exclude(owner__isnull=True).values_list("owner_id", flat=True)
+                member_ids = FamilyMembership.objects.filter(family_group_id__in=family_ids | pms_family_ids).values_list("profile__user_id", flat=True)
+                owners = set(direct_owner_ids) | set(mf_owner_ids) | set(member_ids)
+            else:
+                # Derive only owners with exact symbol or exact name stock candidates.
+                from django.db.models import Q
+                candidate_assets = Asset.objects.filter(
+                    is_active=True, category=AssetCategory.STOCK
+                ).filter(
+                    Q(symbol__iexact=event.get("symbol") or "") |
+                    Q(name__iexact=defaults["security_name"])
+                )
+                owners = set(candidate_assets.exclude(owner__isnull=True).values_list("owner_id", flat=True))
+                family_ids = set(candidate_assets.exclude(family_id__isnull=True).values_list("family_id", flat=True))
+                member_ids = FamilyMembership.objects.filter(
+                    family_group_id__in=family_ids
+                ).values_list("profile__user_id", flat=True)
+                owners.update(member_ids)
+
             for owner in User.objects.filter(id__in=owners, is_active=True):
                 with transaction.atomic():
+                    lookup = {
+                        "owner": owner, "isin": isin, "action_type": event["action_type"],
+                        "ex_date": ex_date,
+                    } if isin else {
+                        "owner": owner, "isin": "", "symbol": identity,
+                        "action_type": event["action_type"], "ex_date": ex_date,
+                    }
                     action, was_created = CorporateAction.objects.update_or_create(
-                        owner=owner, isin=isin, action_type=event["action_type"], ex_date=ex_date, defaults=defaults
+                        **lookup, defaults=defaults
                     )
                     if was_created:
                         created += 1

@@ -62,10 +62,6 @@ export class CorporateActionsService {
     return this.http.patch(`${this.baseUrl}/notifications/${id}/`, changes, { withCredentials: true });
   }
 
-  addTransaction(id: number, payload: { quantity: string; amount: string; price_per_unit: string; fees: string; transaction_date?: string; confirmed: boolean }): Observable<any> {
-    return this.http.post(`${this.baseUrl}/reconciliations/${id}/add-transaction/`, payload, { withCredentials: true });
-  }
-
   decideReconciliation(id: number, decision: 'ALREADY_RECORDED' | 'DISMISSED', notes = ''): Observable<any> {
     return this.http.post(`${this.baseUrl}/reconciliations/${id}/decision/`, { decision, notes }, { withCredentials: true });
   }

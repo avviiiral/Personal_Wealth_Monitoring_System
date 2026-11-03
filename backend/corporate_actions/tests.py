@@ -312,6 +312,45 @@ class NseCorporateActionsProviderTests(TestCase):
         self.assertIsNone(record["book_closure_start"])
         self.assertIn("symbol=TRENT", record["source_url"])
 
+    def test_fetch_symbol_splits_long_ranges_into_90_day_windows_and_deduplicates(self):
+        class FakeResponse:
+            content = b"[]"
+
+            def raise_for_status(self):
+                return None
+
+            def json(self):
+                return [{
+                    "symbol": "TRENT",
+                    "comp": "Trent Limited",
+                    "series": "EQ",
+                    "subject": "Dividend - Rs 4 Per Share",
+                    "faceVal": 1,
+                    "exDate": "12-Jun-2026",
+                    "recDate": "12-Jun-2026",
+                }]
+
+        class FakeSession:
+            def __init__(self):
+                self.calls = []
+
+            def get(self, url, **kwargs):
+                self.calls.append((url, kwargs))
+                return FakeResponse()
+
+        from .providers.nse import NseCorporateActionsProvider
+
+        session = FakeSession()
+        provider = NseCorporateActionsProvider(request_delay_seconds=0)
+        records = provider.fetch_symbol(
+            "TRENT", date(2025, 11, 3), date(2026, 11, 3), session=session
+        )
+
+        # One homepage warm-up plus five API windows for a 365-day interval.
+        self.assertEqual(len(session.calls), 6)
+        self.assertEqual(len(session.calls[1:]), 5)
+        self.assertEqual(len(records), 1)
+
     def test_classifies_nse_purpose_wording(self):
         self.assertEqual(
             classify_exchange_action("Dividend - Rs 4 Per Share"),

@@ -6,7 +6,7 @@ access controls. If NSE denies access, the caller records the failure.
 """
 import logging
 import time
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from urllib.parse import urlencode
 
 import requests
@@ -16,6 +16,7 @@ logger = logging.getLogger(__name__)
 NSE_HOME = "https://www.nseindia.com/"
 NSE_ACTIONS_API = "https://www.nseindia.com/api/corporates-corporateActions"
 NSE_ACTIONS_PAGE = "https://www.nseindia.com/companies-listing/corporate-filings-actions"
+NSE_MAX_DATE_WINDOW_DAYS = 90
 
 
 def parse_nse_date(value):
@@ -83,32 +84,54 @@ class NseCorporateActionsProvider:
             if self.request_delay_seconds:
                 time.sleep(self.request_delay_seconds)
 
-        params = {"index": "equities", "symbol": symbol}
-        if since:
-            params["from_date"] = since.strftime("%d-%m-%Y")
-        if until:
-            params["to_date"] = until.strftime("%d-%m-%Y")
-        response = client.get(
-            NSE_ACTIONS_API,
-            params=params,
-            headers={**headers, "Referer": f"{NSE_ACTIONS_PAGE}?symbol={symbol}"},
-            timeout=self.timeout_seconds,
-        )
-        response.raise_for_status()
-        content = response.content
-        if len(content) > self.max_response_bytes:
-            raise ValueError(f"NSE response for {symbol} exceeded configured size limit.")
-        payload = response.json()
-        if not isinstance(payload, list):
-            raise ValueError(f"NSE corporate-actions response for {symbol} was not a list.")
-        records = []
-        for row in payload:
-            if not isinstance(row, dict):
-                continue
-            record = normalize_nse_action(row, symbol)
-            # Guard against unexpected cross-symbol records from a provider response.
-            if record["symbol"] != symbol:
-                logger.warning("Ignoring NSE corporate-action row for unexpected symbol %s (requested %s)", record["symbol"], symbol)
-                continue
-            records.append(record)
-        return records
+        # NSE can return an empty list for oversized date ranges. Keep each
+        # request within 90 days and combine the results for the requested period.
+        if since and until:
+            windows = []
+            window_start = since
+            while window_start <= until:
+                window_end = min(
+                    window_start + timedelta(days=NSE_MAX_DATE_WINDOW_DAYS - 1),
+                    until,
+                )
+                windows.append((window_start, window_end))
+                window_start = window_end + timedelta(days=1)
+        else:
+            windows = [(since, until)]
+
+        records_by_key = {}
+        for window_index, (window_start, window_end) in enumerate(windows):
+            params = {"index": "equities", "symbol": symbol}
+            if window_start:
+                params["from_date"] = window_start.strftime("%d-%m-%Y")
+            if window_end:
+                params["to_date"] = window_end.strftime("%d-%m-%Y")
+            response = client.get(
+                NSE_ACTIONS_API,
+                params=params,
+                headers={**headers, "Referer": f"{NSE_ACTIONS_PAGE}?symbol={symbol}"},
+                timeout=self.timeout_seconds,
+            )
+            response.raise_for_status()
+            content = response.content
+            if len(content) > self.max_response_bytes:
+                raise ValueError(f"NSE response for {symbol} exceeded configured size limit.")
+            payload = response.json()
+            if not isinstance(payload, list):
+                raise ValueError(f"NSE corporate-actions response for {symbol} was not a list.")
+            for row in payload:
+                if not isinstance(row, dict):
+                    continue
+                record = normalize_nse_action(row, symbol)
+                # Guard against unexpected cross-symbol records from a provider response.
+                if record["symbol"] != symbol:
+                    logger.warning("Ignoring NSE corporate-action row for unexpected symbol %s (requested %s)", record["symbol"], symbol)
+                    continue
+                key = (
+                    record["symbol"], record["purpose"], record["ex_date"],
+                    record["record_date"], record["series"],
+                )
+                records_by_key[key] = record
+            if self.request_delay_seconds and window_index < len(windows) - 1:
+                time.sleep(self.request_delay_seconds)
+        return list(records_by_key.values())

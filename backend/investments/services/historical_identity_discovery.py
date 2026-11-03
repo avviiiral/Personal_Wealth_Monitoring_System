@@ -134,11 +134,11 @@ class TrentHistoricalSplitDocumentProvider(IdentityProvider):
             raise ValueError("Issuer report response is not a PDF")
         try:
             import pymupdf
-            text = "\\n".join(page.get_text() for page in pymupdf.open(stream=document, filetype="pdf"))
+            text = " ".join(page.get_text() for page in pymupdf.open(stream=document, filetype="pdf"))
         except ImportError:
             import fitz
-            text = "\\n".join(page.get_text() for page in fitz.open(stream=document, filetype="pdf"))
-        text = re.sub(r"\\s+", " ", text).upper()
+            text = " ".join(page.get_text() for page in fitz.open(stream=document, filetype="pdf"))
+        text = re.sub(r"\s+", " ", text).upper()
         isins = list(dict.fromkeys(re.findall(r"INE[A-Z0-9]{9}[0-9]", text)))
         # Require both explicit ISINs in the same official issuer report.
         # The face-value subdivision confirms that this is the relevant class.

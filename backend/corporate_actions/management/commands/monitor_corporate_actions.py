@@ -219,7 +219,7 @@ class Command(BaseCommand):
             source_isin = str(event.get("source_isin") or event.get("isin") or "").strip().upper()
             ex_date = event.get("ex_date")
             missing_isin_candidate = bool(
-                not source_isin and event.get("symbol") and event.get("action_type")
+                not source_isin and (event.get("symbol") or event.get("company_name")) and event.get("action_type")
                 and ex_date and not audit.get("isin_mismatch")
                 and event.get("status") not in {"CANCELLED", "CANCELED", "DELETED"}
             )

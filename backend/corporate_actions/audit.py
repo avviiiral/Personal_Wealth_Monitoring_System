@@ -19,7 +19,7 @@ def extract_dividend_amount(purpose):
     """Extract an explicit rupee-per-share amount; never infer an amount."""
     text = str(purpose or "")
     patterns = (
-        r"(?:₹|INR\s*|Rs\.?\s*)([0-9]+(?:,[0-9]{3})*(?:\.[0-9]+)?)\s*(?:/-)?\s*(?:per\s+(?:equity\s+)?share|each\s+share)",
+        r"(?:₹|INR\s*|Rs\.?\s*)([0-9]+(?:,[0-9]{3})*(?:\.[0-9]+)?)\s*(?:/-)?\s*(?:per\s+(?:equity\s+)?share|each\s+(?:equity\s+)?share)",
         r"(?:dividend\s*(?:of|@|:)?\s*)(?:₹|INR\s*|Rs\.?\s*)([0-9]+(?:\.[0-9]+)?)",
     )
     values = []
@@ -164,6 +164,8 @@ def mark_duplicate_events(events):
     """Flag later occurrences of (ISIN, action type, ex-date), retaining every row."""
     seen = {}
     for index, event in enumerate(events):
+        # Stable schema: every event has a duplicate marker, including unique rows.
+        event.setdefault("duplicate_of", None)
         key = (event.get("isin"), event.get("action_type"), event.get("ex_date"))
         if all(key):
             if key in seen:

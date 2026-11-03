@@ -152,6 +152,7 @@ def build_event_audit(event, source, source_url, metadata):
     if identity_match_required:
         reasons.append("Source ISIN unavailable; any symbol/name candidate requires explicit user approval.")
     reconciliation = (
+        "IDENTITY_REVIEW_REQUIRED" if identity_match_required else
         "RECONCILIATION_FAILED" if errors else
         "ISIN_MISMATCH" if isin_mismatch else
         "SOURCE_ISIN_MISSING" if not isin else

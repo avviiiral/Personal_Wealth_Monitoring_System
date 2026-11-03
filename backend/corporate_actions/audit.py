@@ -145,7 +145,10 @@ def build_event_audit(event, source, source_url, metadata):
     if action_type == "CASH_DIVIDEND" and dividend is None:
         reasons.append("Dividend per-share amount is not explicitly available.")
     has_exposure = any(exposures[key] for key in exposures)
-    identity_match_required = bool(not isin and event.get("symbol"))
+    identity_match_required = bool(not isin and (event.get("symbol") or event.get("company_name")))
+    if identity_match_required and not event.get("symbol"):
+        reasons.append("Source ISIN and symbol are unavailable; exact full-name candidate review may be possible.")
+
     if identity_match_required:
         reasons.append("Source ISIN unavailable; any symbol/name candidate requires explicit user approval.")
     reconciliation = (

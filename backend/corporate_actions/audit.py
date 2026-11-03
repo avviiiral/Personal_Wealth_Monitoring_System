@@ -132,8 +132,6 @@ def build_event_audit(event, source, source_url, metadata):
     reasons = []
     if not action_type:
         reasons.append("Corporate-action purpose is ambiguous or unsupported.")
-    if not isin:
-        reasons.append("Source ISIN is unavailable; symbol/name matching is not permitted.")
     if isin_mismatch:
         reasons.append(f"Source ISIN {source_isin} differs from portfolio ISIN {resolved_isin}; manual identity review is required.")
     if action_type == "BONUS" and re.search(r"\b(?:ncrps|non[- ]?convertible\s+redeemable\s+preference)", purpose, re.I):
@@ -147,6 +145,9 @@ def build_event_audit(event, source, source_url, metadata):
     if action_type == "CASH_DIVIDEND" and dividend is None:
         reasons.append("Dividend per-share amount is not explicitly available.")
     has_exposure = any(exposures[key] for key in exposures)
+    identity_match_required = bool(not isin and event.get("symbol"))
+    if identity_match_required:
+        reasons.append("Source ISIN unavailable; any symbol/name candidate requires explicit user approval.")
     reconciliation = (
         "RECONCILIATION_FAILED" if errors else
         "ISIN_MISMATCH" if isin_mismatch else
@@ -169,6 +170,7 @@ def build_event_audit(event, source, source_url, metadata):
         "exposures": exposures, "exposure_counts": {key: len(value) for key, value in exposures.items()},
         "classification_status": "CLASSIFIED" if action_type else "MANUAL_REVIEW",
         "validation_status": "VALID" if not reasons else "MANUAL_REVIEW",
+        "identity_match_required": identity_match_required,
         "reconciliation_status": reconciliation, "reconciliation_errors": errors,
         "review_reasons": reasons, "skip_reason": "; ".join(reasons) if reasons else None,
         "duplicate_of": None, "source_metadata": metadata,

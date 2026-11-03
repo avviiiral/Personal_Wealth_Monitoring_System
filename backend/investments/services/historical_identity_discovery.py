@@ -305,6 +305,35 @@ class HistoricalIdentityDiscoveryService:
             return "duplicate"
 
     @classmethod
+    @classmethod
+    def review_mapping(cls, mapping_id, *, verified, valid_from=None, valid_to=None,
+                       evidence_reference=None, reviewer=None, notes=""):
+        """Audit a human source review; verified historical intervals must be dated."""
+        from django.db import transaction as db_transaction
+        from investments.models import SecurityIdentifierMapping
+        mapping = SecurityIdentifierMapping.objects.select_for_update().get(pk=mapping_id)
+        if verified and (not valid_from or not valid_to or not evidence_reference):
+            raise ValueError("Verification requires valid_from, valid_to and an official source reference.")
+        if verified and valid_to < valid_from:
+            raise ValueError("valid_to must not precede valid_from.")
+        with db_transaction.atomic():
+            mapping.verification_status = "VERIFIED" if verified else "REJECTED"
+            if valid_from:
+                mapping.valid_from = valid_from
+            if valid_to:
+                mapping.valid_to = valid_to
+            if evidence_reference:
+                mapping.source_reference = evidence_reference
+            mapping.evidence = {
+                **(mapping.evidence or {}),
+                "review": {"reviewed_at": timezone.now().isoformat(),
+                           "reviewer_id": getattr(reviewer, "pk", None),
+                           "verified": bool(verified), "notes": notes},
+            }
+            mapping.save(update_fields=["verification_status", "valid_from", "valid_to",
+                                        "source_reference", "evidence", "updated_at"])
+        return mapping
+
     def discover_asset(cls, asset, *, since, until, dry_run=False, force_refresh=False, exchange=""):
         stats = {"providers": 0, "created": 0, "would_create": 0, "duplicates": 0,
                  "conflicts": 0, "rejected": 0, "failures": 0, "skipped": 0}

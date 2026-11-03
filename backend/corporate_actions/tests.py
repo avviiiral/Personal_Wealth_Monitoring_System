@@ -209,7 +209,10 @@ class CorporateActionServiceTests(TestCase):
             owner=self.user, asset=asset, transaction_type=TransactionType.BUY,
             transaction_date=date(2025, 1, 1), quantity=Decimal("10"),
             price_per_unit=Decimal("100"), amount=Decimal("1000"),
-            fees=Decimal("0"),
+            fees=Decimal("0"), family_name="Member A", portfolio="Direct Equity",
+            asset_class="Equity", sub_class="Listed Equity",
+            asset_name="Example Limited", underlying="Example Limited",
+            advisors="Advisor A",
         )
         action = self.make_action(
             isin="", symbol="EXAMPLE", action_type=CorporateActionType.BONUS,
@@ -234,6 +237,13 @@ class CorporateActionServiceTests(TestCase):
         created_bonus = Transaction.objects.get(id=first.matched_transaction_ids[0])
         self.assertEqual(created_bonus.transaction_type, TransactionType.BONUS)
         self.assertEqual(created_bonus.quantity, Decimal("5"))
+        self.assertEqual(created_bonus.family_name, "Member A")
+        self.assertEqual(created_bonus.portfolio, "Direct Equity")
+        self.assertEqual(created_bonus.asset_class, "Equity")
+        self.assertEqual(created_bonus.sub_class, "Listed Equity")
+        self.assertEqual(created_bonus.asset_name, "Example Limited")
+        self.assertEqual(created_bonus.underlying, "Example Limited")
+        self.assertEqual(created_bonus.advisors, "Advisor A")
 
     def test_missing_isin_candidate_discovery_does_not_leak_another_users_asset(self):
         other = User.objects.create_user(username="corp-action-other-owner", password="test-password")

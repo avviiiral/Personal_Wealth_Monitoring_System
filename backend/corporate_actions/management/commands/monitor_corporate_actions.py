@@ -19,14 +19,14 @@ from users.models import FamilyMembership
 
 logger = logging.getLogger(__name__)
 DATE_VALUE = (
-    r"(\\d{1,2}[./-]\\d{1,2}[./-]\\d{4}|\\d{4}-\\d{2}-\\d{2}|"
-    r"\\d{1,2}\\s+[A-Za-z]{3,9}\\s+\\d{4})"
+    r"(\d{1,2}[./-]\d{1,2}[./-]\d{4}|\d{4}-\d{2}-\d{2}|"
+    r"\d{1,2}\s+[A-Za-z]{3,9}\s+\d{4})"
 )
 DATE_PATTERNS = (
-    ("ex_date", re.compile(r"(?i)\\b(ex\\s*[- ]?date|ex\\s*[- ]?bonus\\s*(?:basis\\s*)?(?:from\\s*)?date)\\s*[:\\-]?\\s*" + DATE_VALUE)),
-    ("ex_date", re.compile(r"(?i)\\bex\\s*[- ]?bonus\\s+basis\\s+from\\s+" + DATE_VALUE)),
-    ("record_date", re.compile(r"(?i)\\b(record\\s*[- ]?date)\\s*[:\\-]?\\s*" + DATE_VALUE)),
-    ("payment_date", re.compile(r"(?i)\\b(payment\\s*[- ]?date)\\s*[:\\-]?\\s*" + DATE_VALUE)),
+    ("ex_date", re.compile(r"(?i)\b(ex\s*[- ]?date|ex\s*[- ]?bonus\s*(?:basis\s*)?(?:from\s*)?date)\s*[:\\-]?\s*" + DATE_VALUE)),
+    ("ex_date", re.compile(r"(?i)\bex\s*[- ]?bonus\s+basis\s+from\s+" + DATE_VALUE)),
+    ("record_date", re.compile(r"(?i)\b(record\s*[- ]?date)\s*[:\\-]?\s*" + DATE_VALUE)),
+    ("payment_date", re.compile(r"(?i)\b(payment\s*[- ]?date)\s*[:\\-]?\s*" + DATE_VALUE)),
 )
 
 

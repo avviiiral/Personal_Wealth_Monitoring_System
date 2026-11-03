@@ -122,6 +122,9 @@ class CorporateActionReconciliationStatus(models.TextChoices):
     COMPLETED = "COMPLETED", "Completed"
     DISMISSED = "DISMISSED", "Dismissed"
     MANUAL_REVIEW = "MANUAL_REVIEW", "Manual verification required"
+    PENDING_USER_APPROVAL = "PENDING_USER_APPROVAL", "Awaiting identity approval"
+    APPROVED = "APPROVED", "Approved"
+    REJECTED = "REJECTED", "Rejected"
 
 
 class CorporateActionExposure(models.Model):
@@ -157,6 +160,9 @@ class CorporateActionReconciliation(models.Model):
     family_id_snapshot = models.PositiveBigIntegerField(null=True, blank=True, db_index=True)
     status = models.CharField(max_length=24, choices=CorporateActionReconciliationStatus.choices, default=CorporateActionReconciliationStatus.PENDING)
     matched_transaction_ids = models.JSONField(default=list, blank=True)
+    identity_match_method = models.CharField(max_length=24, blank=True, default="")
+    candidate_asset_ids = models.JSONField(default=list, blank=True)
+    selected_asset = models.ForeignKey("investments.Asset", on_delete=models.SET_NULL, null=True, blank=True, related_name="corporate_action_reconciliations")
     suggested_quantity = models.DecimalField(max_digits=24, decimal_places=8, null=True, blank=True)
     reviewed_at = models.DateTimeField(null=True, blank=True)
     reviewed_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="reviewed_corporate_action_reconciliations")

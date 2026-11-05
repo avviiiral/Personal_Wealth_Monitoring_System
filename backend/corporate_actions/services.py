@@ -479,7 +479,7 @@ def decide_missing_isin_reconciliation(*, owner, reconciliation_id, decision, as
 
                 hierarchy_fields = (
                     "family_name", "portfolio", "asset_class", "sub_class",
-                    "asset_name", "underlying",
+                    "asset_name", "underlying", "advisors",
                 )
                 matching_assets = Asset.objects.select_for_update().filter(
                     is_active=True, category="STOCK",

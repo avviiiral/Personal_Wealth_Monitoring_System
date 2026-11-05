@@ -93,6 +93,10 @@ class HistoricalIdentityDiscoveryTests(TestCase):
                 source_reference="https://www.nseindia.com/example.pdf", document_bytes=b"pdf")
 
     def test_transaction_ledger_is_preserved(self):
+        # Reload persisted DecimalField values before taking the snapshot.
+        # A newly-created Django model instance may still hold the original
+        # string inputs until it is refreshed from the database.
+        self.tx.refresh_from_db()
         before = (self.tx.transaction_date, self.tx.quantity, self.tx.amount)
         HistoricalIdentityDiscoveryService.persist_evidence(self.evidence())
         self.tx.refresh_from_db()

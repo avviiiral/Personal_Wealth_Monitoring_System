@@ -68,10 +68,16 @@ def _daily_scheduler():
         logger.error("Invalid corporate_actions.daily_run_time=%r; scheduler disabled.", configured_time)
         return
 
+    now = timezone.localtime()
     logger.info(
-        "Daily NSE corporate-action scheduler started; next run is configured for %s local time.",
+        "Daily NSE corporate-action scheduler started; configured run time is %s local time.",
         configured_time,
     )
+    # If the backend starts at or after 06:00, perform today's scan immediately
+    # instead of silently postponing it until tomorrow.
+    if now.time().replace(tzinfo=None) >= run_time:
+        _run_nse_scan("server_start_catchup")
+
     while True:
         now = timezone.localtime()
         target = _next_daily_run(now, run_time)

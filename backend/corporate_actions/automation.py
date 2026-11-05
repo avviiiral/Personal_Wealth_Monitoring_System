@@ -89,7 +89,7 @@ def start_daily_scheduler():
         return False
     # Django's autoreloader starts a parent and a serving child. Only the child
     # may own the scheduler, otherwise every scan would run twice.
-    if settings.DEBUG and os.environ.get("RUN_MAIN") != "true":
+    if os.environ.get("RUN_MAIN") != "true" and "--noreload" not in sys.argv:
         return False
     with _scheduler_guard:
         if _scheduler_started:

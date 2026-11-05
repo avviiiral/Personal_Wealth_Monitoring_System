@@ -37,7 +37,7 @@
       </div>
       <section class="identity-review" *ngIf="item.reconciliation.status==='PENDING_USER_APPROVAL'">
         <div><strong>Confirm security identity</strong><p>The provider did not supply an ISIN. PWMS found exact {{item.reconciliation.identity_match_method|lowercase}} candidate matches. No transaction will be created unless you approve a specific holding.</p></div>
-        <div class="candidate-list" *ngIf="item.reconciliation.candidate_assets?.length;else noCandidates">
+        <div class="candidate-list" *ngIf="item.reconciliation.candidate_assets.length;else noCandidates">
           <label *ngFor="let candidate of item.reconciliation.candidate_assets" class="candidate-option">
             <input type="radio" [name]="'candidate-'+item.id" [value]="candidate.id"
               [checked]="selectedCandidates[item.id]===candidate.id"
@@ -48,7 +48,7 @@
         <ng-template #noCandidates><p>No currently accessible candidates are available. Refresh the notification and review the holding register.</p></ng-template>
         <div class="identity-actions">
           <button type="button" class="primary" (click)="decideIdentity(item,'APPROVE')"
-            [disabled]="busyId===item.id||!item.reconciliation.candidate_assets?.length">Approve selected holding</button>
+            [disabled]="busyId===item.id||!item.reconciliation.candidate_assets.length">Approve selected holding</button>
           <button type="button" class="quiet-danger" (click)="decideIdentity(item,'REJECT')" [disabled]="busyId===item.id">Reject match</button>
         </div>
       </section>

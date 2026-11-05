@@ -101,6 +101,13 @@ def import_transactions(request):
 
     refresh_assets_async(result.get("touched_asset_ids", []))
 
+    # TransactionImporter has completed security identity resolution, Security
+    # Master linking, and portfolio-position rebuilding before this point.
+    if result.get("total_imported", 0) > 0:
+        from corporate_actions.automation import trigger_scan_after_transaction_import
+
+        trigger_scan_after_transaction_import(result.get("total_imported", 0))
+
     return Response({
         "success": True,
         "message": "Transaction file processed successfully.",

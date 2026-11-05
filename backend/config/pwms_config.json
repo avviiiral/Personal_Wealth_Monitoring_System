@@ -434,6 +434,8 @@
     "nse_timeout_seconds": 20,
     "nse_max_response_bytes": 5000000,
     "nse_request_delay_seconds": 0.25,
-    "nse_history_days": 365
+    "nse_history_days": 365,
+    "daily_scheduler_enabled": true,
+    "daily_run_time": "06:00"
   }
 }

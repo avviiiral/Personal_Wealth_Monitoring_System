@@ -26,9 +26,9 @@ _scheduler_guard = threading.Lock()
 
 def _run_nse_scan(trigger):
     """Run the existing idempotent monitor command without blocking an API request."""
-    if not _scan_lock.acquire(blocking=False):
-        logger.info("Skipping overlapping corporate-action scan (trigger=%s).", trigger)
-        return
+    # Serialize scans, but queue later triggers instead of dropping them.
+    # This matters when a transaction upload completes during the daily scan.
+    _scan_lock.acquire()
     try:
         logger.info("Starting NSE corporate-action scan (trigger=%s).", trigger)
         call_command("monitor_corporate_actions", source="nse")

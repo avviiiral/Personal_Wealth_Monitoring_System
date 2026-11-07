@@ -221,11 +221,10 @@ def portfolio_transactions_delete_by_asset_name(request):
         TransactionEditHistory.objects.create(
             transaction=None,
             owner=request.user,
-            family=(
-                matching_transactions[0].family
-                if len(affected_family_ids) == 1
-                else None
-            ),
+            # Keep the event in a concrete family so family-scoped audit
+            # history continues to include it (System Owners still see it
+            # across all families through family_scope).
+            family=matching_transactions[0].family,
             edited_by=request.user,
             old_values={
                 "operation": "bulk_asset_delete",

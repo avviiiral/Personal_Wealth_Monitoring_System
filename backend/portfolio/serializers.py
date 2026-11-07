@@ -272,5 +272,5 @@ class TransactionEditHistorySerializer(
 
     def get_asset_name(self, obj):
         if obj.transaction is None:
-            return "Transaction deleted"
+            return obj.old_values.get("asset_name") or "Transaction deleted"
         return obj.transaction.asset_name or obj.transaction.asset.name

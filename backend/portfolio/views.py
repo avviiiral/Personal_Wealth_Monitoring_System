@@ -212,10 +212,6 @@ def portfolio_transactions_delete_by_asset_name(request):
 
         transaction_ids = [transaction_obj.id for transaction_obj in matching_transactions]
         deleted_count = len(transaction_ids)
-        affected_family_ids = {
-            item.family_id for item in matching_transactions if item.family_id is not None
-        }
-
         # A bulk delete is one user action, so preserve one aggregate audit row
         # rather than generating a misleading row for every deleted transaction.
         TransactionEditHistory.objects.create(

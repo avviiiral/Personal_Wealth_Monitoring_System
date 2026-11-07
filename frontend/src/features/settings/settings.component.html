@@ -326,7 +326,7 @@
 
     <section class="settings-card transaction-history-card" *ngIf="activeTab === 'logs' && activeLogTab === 'transaction-history'">
       <div class="card-header">
-        <div><h2>Transaction Edit History</h2><p>Audit trail of transactions edited from the Report page.</p></div>
+        <div><h2>Transaction Edit History</h2><p>Audit trail of individual transaction edits and deletions, plus asset-wide transaction deletions from the Report page.</p></div>
         <span class="section-badge"> {{ filteredTransactionHistory.length }} of {{ transactionHistory.length }} Edits </span>
       </div>
 
@@ -374,11 +374,11 @@
                 <tr class="tx-history-row">
                   <td class="tx-history-td tx-history-td-nowrap">{{ history.edited_at | date:'dd MMM yyyy, hh:mm a' }}</td>
                   <td class="tx-history-td">{{ history.edited_by_username }}</td>
-                  <td class="tx-history-td tx-history-td-strong">#{{ history.transaction_id || 'Deleted' }}</td>
+                  <td class="tx-history-td tx-history-td-strong">{{ history.old_values['operation'] === 'bulk_asset_delete' ? 'Bulk' : '#' + (history.transaction_id || 'Deleted') }}</td>
                   <td class="tx-history-td tx-history-td-strong">{{ history.asset_name || '—' }}</td>
-                  <td class="tx-history-td">{{ history.new_values['transaction_date'] || history.old_values['transaction_date'] || '—' }}</td>
-                  <td class="tx-history-td">{{ history.new_values['transaction_type'] || history.old_values['transaction_type'] || '—' }}</td>
-                  <td class="tx-history-td">{{ history.transaction_id === null ? 'Transaction Deleted' : history.changed_fields.map(formatHistoryField).join(', ') }}</td>
+                  <td class="tx-history-td">{{ history.old_values['operation'] === 'bulk_asset_delete' ? '—' : (history.new_values['transaction_date'] || history.old_values['transaction_date'] || '—') }}</td>
+                  <td class="tx-history-td">{{ history.old_values['operation'] === 'bulk_asset_delete' ? (history.old_values['deleted_count'] + ' transactions') : (history.new_values['transaction_type'] || history.old_values['transaction_type'] || '—') }}</td>
+                  <td class="tx-history-td">{{ history.old_values['operation'] === 'bulk_asset_delete' ? 'All Transactions Deleted' : (history.transaction_id === null ? 'Transaction Deleted' : history.changed_fields.map(formatHistoryField).join(', ')) }}</td>
                   <td class="tx-history-td">
                     <button type="button" class="secondary-button" style="padding:7px 12px;font-size:12px;" (click)="toggleHistory(history.id)">
                       {{ expandedHistoryId === history.id ? 'Hide' : 'View' }}

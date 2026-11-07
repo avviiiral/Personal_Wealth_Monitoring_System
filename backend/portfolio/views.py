@@ -210,21 +210,27 @@ def portfolio_transactions_delete_by_asset_name(request):
                 status=status.HTTP_404_NOT_FOUND,
             )
 
-        deleted_fields = ["advisors", "quantity", "price_per_unit", "amount"]
-        for transaction_obj in matching_transactions:
-            old_values = _transaction_history_snapshot(transaction_obj)
-            TransactionEditHistory.objects.create(
-                transaction=transaction_obj,
-                owner=transaction_obj.owner,
-                family=transaction_obj.family,
-                edited_by=request.user,
-                old_values={field: old_values[field] for field in deleted_fields},
-                new_values={field: None for field in deleted_fields},
-                changed_fields=deleted_fields,
-            )
-
         transaction_ids = [transaction_obj.id for transaction_obj in matching_transactions]
         deleted_count = len(transaction_ids)
+        # A bulk delete is one user action, so preserve one aggregate audit row
+        # rather than generating a misleading row for every deleted transaction.
+        TransactionEditHistory.objects.create(
+            transaction=None,
+            owner=request.user,
+            # Keep the event in a concrete family so family-scoped audit
+            # history continues to include it (System Owners still see it
+            # across all families through family_scope).
+            family=matching_transactions[0].family,
+            edited_by=request.user,
+            old_values={
+                "operation": "bulk_asset_delete",
+                "asset_name": asset_name,
+                "deleted_count": deleted_count,
+            },
+            new_values={},
+            changed_fields=["all_transactions_deleted"],
+        )
+
         Transaction.objects.filter(id__in=transaction_ids).delete()
 
         touched_assets = {

@@ -104,10 +104,12 @@ class PortfolioBulkDeleteAssetTransactionsTests(TestCase):
         self.assertFalse(Transaction.objects.filter(pk=self.transaction_a.pk).exists())
         self.assertTrue(Transaction.objects.filter(pk=transaction_b.pk).exists())
         self.assertTrue(Asset.objects.filter(pk=self.asset_a.pk).exists())
-        self.assertEqual(
-            TransactionEditHistory.objects.filter(edited_by=self.super_user).count(),
-            1,
-        )
+        history = TransactionEditHistory.objects.get(edited_by=self.super_user)
+        self.assertIsNone(history.transaction_id)
+        self.assertEqual(history.old_values["operation"], "bulk_asset_delete")
+        self.assertEqual(history.old_values["asset_name"], "Test Equity")
+        self.assertEqual(history.old_values["deleted_count"], 1)
+        self.assertEqual(history.changed_fields, ["all_transactions_deleted"])
         self.holding_rebuild.assert_called_once_with(self.asset_a)
         self.position_rebuild.assert_called_once_with(self.family_a)
 
@@ -130,10 +132,13 @@ class PortfolioBulkDeleteAssetTransactionsTests(TestCase):
         self.assertFalse(
             Transaction.objects.filter(pk__in=[self.transaction_a.pk, transaction_b.pk]).exists()
         )
-        self.assertEqual(
-            TransactionEditHistory.objects.filter(edited_by=system_owner).count(),
-            2,
-        )
+        history = TransactionEditHistory.objects.get(edited_by=system_owner)
+        self.assertIsNone(history.transaction_id)
+        self.assertEqual(history.family_id, self.family_a.id)
+        self.assertEqual(history.old_values["operation"], "bulk_asset_delete")
+        self.assertEqual(history.old_values["asset_name"], "Test Equity")
+        self.assertEqual(history.old_values["deleted_count"], 2)
+        self.assertEqual(history.changed_fields, ["all_transactions_deleted"])
         self.assertEqual(self.holding_rebuild.call_count, 2)
         self.position_rebuild.assert_has_calls(
             [call(self.family_a), call(self.family_b)],

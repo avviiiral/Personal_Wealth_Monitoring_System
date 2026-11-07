@@ -134,7 +134,7 @@ class PortfolioBulkDeleteAssetTransactionsTests(TestCase):
         )
         history = TransactionEditHistory.objects.get(edited_by=system_owner)
         self.assertIsNone(history.transaction_id)
-        self.assertIsNone(history.family_id)
+        self.assertEqual(history.family_id, self.family_a.id)
         self.assertEqual(history.old_values["operation"], "bulk_asset_delete")
         self.assertEqual(history.old_values["asset_name"], "Test Equity")
         self.assertEqual(history.old_values["deleted_count"], 2)

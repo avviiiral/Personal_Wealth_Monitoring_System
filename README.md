@@ -244,16 +244,22 @@ Net worth, asset allocation, key portfolio metrics and an **Investment Summary**
 
 ### 🏢 Corporate actions
 
-PWMS now includes a backend corporate-action registry for recording and reviewing security events against the authenticated user's own records.
+PWMS includes an NSE corporate-action monitoring and reconciliation workflow, with a frontend review inbox for matching exchange announcements to portfolio exposure.
 
 - Supported event types include stock splits and reverse splits, bonus issues, stock dividends, cash dividends, mergers, demergers, rights issues, buybacks, tender offers, ticker/ISIN changes, delistings, and mutual-fund distributions or unit adjustments.
-- Each event can store the security name, ISIN, symbol, exchange, ex-date, record/payment dates, ratio units, cash per unit, resulting security identifiers, source/reference, notes and metadata.
-- New actions default to **Pending review**. Only **Confirmed** ratio actions contribute to the quantity-multiplier calculation; pending and rejected actions do not.
-- Candidate resolution prioritizes exact ISIN matching when an ISIN is supplied. Otherwise it uses symbol (and exchange when supplied); display-name similarity alone is not used to guess a match.
-- API access is authenticated and owner-scoped. A user cannot retrieve or change another user's corporate-action records.
+- Events retain security identifiers, exchange, ex-date, record/payment dates, ratio units, cash per unit, source/reference, notes and metadata.
+- The **Corporate Actions** page displays matched notifications, direct and indirect portfolio exposure, event dates, source links, reconciliation status and review controls.
+- Exposure matching includes direct security holdings and supported indirect exposure through investment products. Indirect exposure is identified for review; it must not be treated as a direct stock transaction.
+- Identity matching prefers exact ISIN when supplied. If the exchange announcement has no source ISIN, PWMS can surface exact symbol/name-based candidate holdings for explicit user review. A candidate asset ISIN is **not** substituted for the missing source ISIN.
+- For an identity requiring review, the user must explicitly approve a selected candidate or reject the match. A transaction is not created merely because a candidate was discovered.
+- Approved direct-exposure reconciliations create the applicable transaction idempotently, preventing duplicate transaction creation when the same event is scanned again.
+- Bonus entitlement is calculated from eligible holdings on the record date, including supported portfolio hierarchy buckets. Bonus allocation preserves transaction hierarchy and advisor metadata.
 - The transaction Excel importer recognizes `DIVIDEND PAYOUT` as a dividend and `*SPLIT` as a split transaction type.
+- API access is authenticated and owner-scoped. A user cannot retrieve or change another user's corporate-action records.
 
-**Current scope:** this is the registry and calculation-service foundation. Corporate actions are **not yet automatically applied end-to-end** to portfolio holdings, current valuations, historical MIS or XIRR, and there is no frontend review screen documented as available. Confirmed actions should not be assumed to have changed displayed portfolio quantities until that integration is implemented.
+**Automation:** the NSE monitor can run daily at **06:00 local Django time** while the Django `runserver` process is running. If the server starts after the configured time, it performs a catch-up scan on startup. A completed transaction import also queues a scan after transaction import, Security Master mapping and position rebuilding have finished. The upload response is not held open while the scan runs.
+
+**Operational scope and limitations:** the in-process daily scheduler is tied to Django `runserver` and requires that process to be running; if it is stopped at the scheduled time, the next startup after 06:00 performs catch-up. For production deployments with multiple workers, use a dedicated external scheduler rather than relying on a per-process development-server thread. The workflow creates/reconciles supported transactions; it should not be interpreted as a universal automatic rewrite of all historical valuations, MIS outputs or XIRR for every corporate-action type.
 
 ### 📥 Transaction Uploads
 
@@ -1346,6 +1352,8 @@ PWMS has two layers of automatic refresh:
 | 4   | **Post-import refresh**       | Right after an import commits                | Immediate price refresh for newly added assets. |
 | 5   | **Portfolio News monitor**    | Every `NEWS_MONITOR_INTERVAL` (default 30 min) | Full news discovery → match → analyze → alert pass for every user. |
 | 6   | **MIS reference prices**      | Every 30 minutes while Django is running      | Refreshes Yahoo Finance reference-price history used by the MIS Notes sheet. Starts automatically with the existing background schedulers; no manual command is needed during normal operation. |
+| 7   | **NSE corporate actions**     | Daily at **06:00 local time** while `runserver` is running | Scans NSE announcements and reconciles them against direct/indirect portfolio exposure. If the server starts after 06:00, a catch-up scan runs at startup. |
+| 8   | **Post-import corporate-action scan** | After a successful transaction import | Queues an NSE scan after import, Security Master mapping and position rebuilding complete; the upload response is not blocked. |
 
 ### Windows automatic market-price refresh
 
@@ -1518,6 +1526,7 @@ Run from `backend/` with the virtual environment active: `python manage.py <comm
 | `update_market_prices`           | `market_data`    | One-off listed-asset price refresh; on Windows it can also be run automatically every hour by the documented Task Scheduler setup |
 | `refresh_mis_reference_prices`   | `market_data`    | One-off refresh of Yahoo Finance reference-price history used by the MIS Notes sheet; normally refreshed automatically every 30 minutes while Django is running |
 | `monitor_portfolio_news`         | `portfolio_news` | One full news-monitoring pass for every user (also automatic)                |
+| `monitor_corporate_actions --source nse` | `corporate_actions` | Scan NSE corporate announcements and reconcile matching portfolio exposure; also used by the daily and post-import automation |
 | `ingest_exchange_filings`         | `filing_intelligence` | Ingest corporate filings for a selected exchange; supports `--exchange nse|bse`, `--hours` and dry-run workflows |
 | `diagnose_corporate_filings`      | `filing_intelligence` | Read-only diagnostics for filing identifier coverage, portfolio matches, holding-user matches, watchlists and existing filing alerts |
 | `gemini_usage`                   | `ai`             | Summary of Gemini token usage                                                |
@@ -1594,17 +1603,16 @@ npm test          # unit tests
 npm run build     # verifies the whole app compiles
 ```
 
-### Corporate-actions branch verification
+### Corporate-actions validation
 
-Validation recorded for `feature/corporate-actions-management`:
+Latest recorded validation on `feature/corporate-actions-audit-hardening`:
 
-- `python manage.py test` — **599 backend tests passed**; Django system checks reported no issues.
-- `python manage.py test corporate_actions --verbosity 2` — **6 corporate-action tests passed**, including pending-action behavior, ratio validation, exact-ISIN matching and owner isolation.
-- Frontend `ng test` — **51 tests passed across 4 test files**.
-- `ng build` — production build completed successfully. Non-blocking warnings remain for two component SCSS style budgets and CommonJS dependencies.
-- The importer regression tests cover the `DIVIDEND PAYOUT` and `*SPLIT` transaction labels.
-
-These checks verify the registry/API and importer behavior; they do not establish end-to-end corporate-action adjustment of holdings, valuations or XIRR.
+- `python manage.py check` — passed with no system-check issues.
+- `python manage.py test corporate_actions investments --parallel 1` — **98 tests passed**.
+- The test suite includes corporate-action scanning/reconciliation and investment identity-discovery regression coverage.
+- The daily scheduler's startup catch-up path was observed in a local `runserver` session. The scan completed with no NSE fetch errors.
+- The upload-triggered scan and the scheduled 06:00 execution still require runtime verification in the target environment.
+- The latest Corporate Actions dark-mode stylesheet update was committed; an Angular production build and visual check after that update should be run before merging.
 
 ### Capital-gains tax engine audit verification
 

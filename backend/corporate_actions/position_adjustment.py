@@ -7,6 +7,7 @@ correct family/owner scope and compatible market-price convention.
 from decimal import Decimal
 
 from investments.models import TransactionType
+from users.models import FamilyMembership
 from .models import CorporateAction, CorporateActionStatus, RATIO_ACTIONS
 
 
@@ -19,8 +20,19 @@ def confirmed_ratio_actions(*, asset, owner, as_of_date=None):
     """Return confirmed ratio actions for this exact security, in event-date order."""
     if owner is None or asset is None:
         return []
+    # Corporate actions are shared within the family that owns this asset,
+    # not whichever family the owner currently has selected in the UI. Using
+    # the explicit through model also avoids an unnecessary UserProfile M2M
+    # reverse lookup during every holding rebuild.
+    owner_ids = [owner.id]
+    family_id = getattr(asset, "family_id", None)
+    if family_id:
+        member_ids = FamilyMembership.objects.filter(
+            family_group_id=family_id
+        ).values_list("profile__user_id", flat=True)
+        owner_ids = list(set(member_ids) | {owner.id})
     query = CorporateAction.objects.filter(
-        owner=owner,
+        owner_id__in=owner_ids,
         status=CorporateActionStatus.CONFIRMED,
         action_type__in=RATIO_ACTIONS,
     )

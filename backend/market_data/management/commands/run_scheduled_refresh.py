@@ -83,6 +83,7 @@ class Command(BaseCommand):
     GLOBAL_STEPS_AFTER = [
         ("refresh_security_master", {"apply": True}),
         ("monitor_portfolio_news", {}),
+        ("monitor_corporate_actions", {}),
     ]
 
     def add_arguments(self, parser):

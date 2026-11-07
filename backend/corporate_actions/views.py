@@ -1,13 +1,28 @@
 from django.core.exceptions import ValidationError
 from django.db import IntegrityError
+from django.db.models import Q
+from django.utils import timezone
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
-from users.permissions import CanWriteFinancialData
-from .models import CorporateAction, CorporateActionStatus
-from .services import resolve_corporate_action_candidates
+from users.permissions import CanWriteFinancialData, require_active_family
+from users.models import FamilyMembership
+from investments.models import Asset
+from portfolio.services.holding_engine import HoldingCalculationEngine
+from portfolio.services.portfolio_position_engine import PortfolioPositionEngine
+
+from .models import (
+    CorporateAction,
+    CorporateActionStatus,
+    CorporateActionType,
+    CorporateActionExposure,
+    CorporateActionNotification,
+    CorporateActionReconciliation,
+    CorporateActionReconciliationStatus,
+)
+from .services import resolve_corporate_action_candidates, update_notification_state, decide_missing_isin_reconciliation
 
 
 def _serialize(action):
@@ -78,12 +93,29 @@ def corporate_action_detail(request, action_id):
         "resulting_isin", "resulting_symbol", "source", "source_reference",
         "status", "notes", "metadata",
     }
+    previous_status = action.status
     for key, value in request.data.items():
         if key in allowed:
             setattr(action, key, value)
     try:
         action.full_clean()
         action.save()
+        if previous_status != action.status and action.status in {
+            CorporateActionStatus.CONFIRMED, CorporateActionStatus.REJECTED
+        }:
+            # Refresh persisted positions from the corporate-action overlay.
+            # The original transaction ledger is deliberately left unchanged.
+            family = require_active_family(request.user)
+            assets = Asset.objects.filter(family=family, is_active=True)
+            if action.isin:
+                assets = assets.filter(isin__iexact=action.isin.strip())
+            elif action.symbol:
+                assets = assets.filter(symbol__iexact=action.symbol.strip())
+            else:
+                assets = assets.none()
+            for asset in assets.select_related("family", "owner"):
+                HoldingCalculationEngine.rebuild_holding(asset)
+            PortfolioPositionEngine.rebuild_all_for_family(family)
     except ValidationError as exc:
         return Response({"detail": exc.message_dict if hasattr(exc, "message_dict") else exc.messages}, status=400)
     except IntegrityError:
@@ -109,4 +141,151 @@ def corporate_action_candidates(request):
         "count": candidates.count(),
         "results": [_serialize(action) for action in candidates],
         "matching_policy": "Exact ISIN when supplied; otherwise exact symbol and optional exchange. No fuzzy auto-merging.",
+    })
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def corporate_action_notifications(request):
+    queryset = CorporateActionNotification.objects.filter(owner=request.user).exclude(
+        action__action_type=CorporateActionType.CASH_DIVIDEND
+    ).select_related(
+        "action", "reconciliation"
+    ).prefetch_related("action__exposures")
+    status_filter = request.query_params.get("status", "").upper()
+    if status_filter == "NEW":
+        queryset = queryset.filter(reviewed=False, dismissed=False)
+    elif status_filter == "PENDING":
+        queryset = queryset.filter(reconciliation__status=CorporateActionReconciliationStatus.PENDING, dismissed=False)
+    elif status_filter == "IDENTITY":
+        queryset = queryset.filter(
+            reconciliation__status=CorporateActionReconciliationStatus.PENDING_USER_APPROVAL,
+            dismissed=False,
+        )
+    elif status_filter == "RECORDED":
+        queryset = queryset.filter(reconciliation__status=CorporateActionReconciliationStatus.ALREADY_RECORDED)
+    elif status_filter == "COMPLETED":
+        queryset = queryset.filter(reconciliation__status=CorporateActionReconciliationStatus.COMPLETED)
+    elif status_filter == "CANCELLED":
+        queryset = queryset.filter(action__status=CorporateActionStatus.REJECTED)
+    try:
+        page = max(1, int(request.query_params.get("page", 1) or 1))
+        page_size = min(100, max(1, int(request.query_params.get("page_size", 25) or 25)))
+    except (TypeError, ValueError):
+        return Response({"detail": "page and page_size must be integers."}, status=400)
+    total = queryset.count()
+    rows = queryset[(page - 1) * page_size:page * page_size]
+    visible_family_ids = FamilyMembership.objects.filter(
+        profile__user=request.user
+    ).values_list("family_group_id", flat=True)
+    visible_candidate_scope = Q(owner=request.user) | Q(family_id__in=visible_family_ids)
+    results = []
+    for row in rows:
+        action = row.action
+        exposures = [{
+            "type": exposure.exposure_type,
+            "investment_name": exposure.investment_name,
+            "investment_id": exposure.investment_id,
+            "holding_weight": exposure.holding_weight,
+            "snapshot_date": exposure.snapshot_date,
+        } for exposure in action.exposures.filter(owner=request.user)]
+        results.append({
+            "id": row.id,
+            "action": _serialize(action),
+            "reconciliation": {
+                "id": row.reconciliation_id,
+                "status": row.reconciliation.status,
+                "matched_transaction_ids": row.reconciliation.matched_transaction_ids,
+                "suggested_quantity": row.reconciliation.suggested_quantity,
+                "identity_match_method": row.reconciliation.identity_match_method,
+                "candidate_assets": [
+                    {
+                        "id": asset.id,
+                        "name": asset.name,
+                        "symbol": asset.symbol or "",
+                        "isin": asset.isin or "",
+                        "exchange": getattr(asset, "exchange", "") or "",
+                    }
+                    for asset in Asset.objects.filter(
+                        id__in=row.reconciliation.candidate_asset_ids,
+                        is_active=True,
+                    ).filter(visible_candidate_scope).order_by("name", "id")
+                ],
+                "candidate_asset_ids": row.reconciliation.candidate_asset_ids,
+                "selected_asset_id": row.reconciliation.selected_asset_id,
+                "notes": row.reconciliation.notes,
+            },
+            "exposures": exposures,
+            "reviewed": row.reviewed,
+            "dismissed": row.dismissed,
+            "direct_exposure": any(item["type"] == "DIRECT" for item in exposures),
+        })
+    return Response({"count": total, "page": page, "page_size": page_size, "results": results})
+
+
+@api_view(["PATCH"])
+@permission_classes([IsAuthenticated, CanWriteFinancialData])
+def corporate_action_notification_update(request, notification_id):
+    notification = update_notification_state(
+        owner=request.user,
+        notification_id=notification_id,
+        reviewed=request.data.get("reviewed") if "reviewed" in request.data else None,
+        dismissed=request.data.get("dismissed") if "dismissed" in request.data else None,
+    )
+    if notification is None:
+        return Response({"detail": "Corporate action notification not found."}, status=404)
+    return Response({
+        "id": notification.id,
+        "reviewed": notification.reviewed,
+        "dismissed": notification.dismissed,
+        "reconciliation_status": notification.reconciliation.status,
+    })
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated, CanWriteFinancialData])
+def corporate_action_reconciliation_update(request, reconciliation_id):
+    reconciliation = CorporateActionReconciliation.objects.filter(
+        owner=request.user, id=reconciliation_id
+    ).select_related("action").first()
+    if reconciliation is None:
+        return Response({"detail": "Reconciliation not found."}, status=404)
+    decision = str(request.data.get("decision", "")).upper()
+    if decision not in {"ALREADY_RECORDED", "DISMISSED"}:
+        return Response({"detail": "Supported decisions: ALREADY_RECORDED, DISMISSED."}, status=400)
+    reconciliation.status = decision
+    reconciliation.notes = str(request.data.get("notes", reconciliation.notes))[:5000]
+    reconciliation.reviewed_at = timezone.now()
+    reconciliation.reviewed_by = request.user
+    reconciliation.save(update_fields=["status", "notes", "reviewed_at", "reviewed_by", "updated_at"])
+    CorporateActionNotification.objects.filter(
+        owner=request.user, action=reconciliation.action
+    ).update(reviewed=True, dismissed=(decision == "DISMISSED"), updated_at=timezone.now())
+    return Response({"id": reconciliation.id, "status": reconciliation.status})
+
+
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated, CanWriteFinancialData])
+def corporate_action_identity_decision(request, reconciliation_id):
+    decision = str(request.data.get("decision", "")).upper()
+    try:
+        reconciliation = decide_missing_isin_reconciliation(
+            owner=request.user,
+            reconciliation_id=reconciliation_id,
+            decision=decision,
+            asset_id=request.data.get("asset_id"),
+            notes=str(request.data.get("notes", "")),
+        )
+    except LookupError:
+        return Response({"detail": "Reconciliation not found."}, status=404)
+    except ValidationError as exc:
+        return Response({"detail": exc.message_dict if hasattr(exc, "message_dict") else exc.messages}, status=400)
+    return Response({
+        "id": reconciliation.id,
+        "status": reconciliation.status,
+        "selected_asset_id": reconciliation.selected_asset_id,
+        "matched_transaction_ids": reconciliation.matched_transaction_ids,
+        "notes": reconciliation.notes,
     })

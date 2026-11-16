@@ -558,8 +558,12 @@ class PortfolioTreeService:
         # reuse the existing family/owner-scoped, unambiguous Security Master
         # identity for the exact underlying label before resolving its symbol.
         if not underlying_isin and is_equity_row:
+            # Preserve the established direct-Equity behavior: the Asset ISIN
+            # remains authoritative when the row itself represents the stock.
+            underlying_isin = asset_isin
             normalized_underlying_name = SecurityAlias.normalize(underlying_name)
-            if normalized_underlying_name:
+
+            if not underlying_isin and normalized_underlying_name:
                 underlying_master_key = (
                     ("family_name_isin", asset.family_id, normalized_underlying_name)
                     if asset.family_id is not None
@@ -574,14 +578,14 @@ class PortfolioTreeService:
                     SecurityResolver.resolve_isin_from_name(underlying_name)
                 ).upper()
 
-            # Only reuse the transaction Asset identity when the displayed
+            # Only reuse a resolved Asset identity when the displayed
             # underlying is that same security, not a holding under a parent.
             same_asset_identity = normalized_underlying_name in {
                 SecurityAlias.normalize(getattr(asset, "name", "")),
                 SecurityAlias.normalize(asset_name),
             }
             if not underlying_isin and same_asset_identity:
-                underlying_isin = asset_isin or resolved_isin
+                underlying_isin = resolved_isin
 
         underlying_symbols = []
         if underlying_isin and asset.family_id is not None:

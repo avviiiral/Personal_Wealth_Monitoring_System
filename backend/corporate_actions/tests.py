@@ -245,6 +245,121 @@ class CorporateActionServiceTests(TestCase):
         self.assertEqual(created_bonus.underlying, "Example Limited")
         self.assertEqual(created_bonus.advisors, "Advisor A")
 
+    def test_approval_skips_existing_same_day_transaction_for_same_hierarchy(self):
+        asset = Asset.objects.create(
+            owner=self.user, name="Example Limited", category=AssetCategory.STOCK,
+            symbol="EXAMPLE", isin="INE000A01000",
+        )
+        Transaction.objects.create(
+            owner=self.user, asset=asset, transaction_type=TransactionType.BUY,
+            transaction_date=date(2025, 1, 1), quantity=Decimal("10"),
+            price_per_unit=Decimal("100"), amount=Decimal("1000"),
+            family_name="Member A", portfolio="Direct Equity", asset_class="Equity",
+            sub_class="Listed Equity", asset_name="Example Limited",
+            underlying="Example Limited", advisors="Advisor A",
+        )
+        uploaded = Transaction.objects.create(
+            owner=self.user, asset=asset, transaction_type=TransactionType.BONUS,
+            transaction_date=date(2025, 6, 15), quantity=Decimal("99"),
+            price_per_unit=Decimal("0"), amount=Decimal("0"), source="EXCEL",
+            notes="Uploaded action row",
+            family_name="Member A", portfolio="Imported Portfolio", asset_class="Equity",
+            sub_class="Listed Equity", asset_name="Example Limited",
+            underlying="Example Limited", advisors="Another Advisor",
+        )
+        action = self.make_action(
+            isin="", symbol="EXAMPLE", action_type=CorporateActionType.BONUS,
+            old_units=Decimal("2"), new_units=Decimal("1"),
+            record_date=date(2025, 6, 10), status=CorporateActionStatus.PENDING,
+        )
+        discover_exposures_and_reconcile(action)
+        reconciliation = CorporateActionReconciliation.objects.get(action=action, owner=self.user)
+
+        approved = decide_missing_isin_reconciliation(
+            owner=self.user, reconciliation_id=reconciliation.id,
+            decision="APPROVE", asset_id=asset.id,
+        )
+
+        uploaded.refresh_from_db()
+        self.assertEqual(approved.status, CorporateActionReconciliationStatus.APPROVED)
+        self.assertEqual(approved.matched_transaction_ids, [uploaded.id])
+        self.assertEqual(
+            Transaction.objects.filter(
+                transaction_type=TransactionType.BONUS,
+                transaction_date=action.ex_date,
+                underlying="Example Limited",
+                asset_name="Example Limited",
+                sub_class="Listed Equity",
+                asset_class="Equity",
+                family_name="Member A",
+            ).count(),
+            1,
+        )
+        self.assertEqual(uploaded.quantity, Decimal("99"))
+        self.assertEqual(uploaded.source, "EXCEL")
+        self.assertEqual(uploaded.notes, "Uploaded action row")
+        self.assertIn("no existing transaction was modified", approved.notes.lower())
+
+    def test_approval_skips_only_duplicate_hierarchy_and_creates_missing_bucket(self):
+        hierarchy = [
+            ("Member A", "Direct Equity", "Equity", "Listed Equity", "Holding A", Decimal("10")),
+            ("Member B", "Direct Equity", "Equity", "Large Cap", "Holding B", Decimal("5")),
+        ]
+        assets = []
+        for index, row in enumerate(hierarchy):
+            asset = Asset.objects.create(
+                owner=self.user, name=f"Example holding {index + 1}",
+                category=AssetCategory.STOCK, symbol="EXAMPLE", isin="INE000A01000",
+            )
+            assets.append(asset)
+            family_name, portfolio, asset_class, sub_class, asset_name, quantity = row
+            Transaction.objects.create(
+                owner=self.user, asset=asset, transaction_type=TransactionType.BUY,
+                transaction_date=date(2025, 1, 1), quantity=quantity,
+                price_per_unit=Decimal("100"), amount=quantity * Decimal("100"),
+                family_name=family_name, portfolio=portfolio, asset_class=asset_class,
+                sub_class=sub_class, asset_name=asset_name, underlying="EXAMPLE LTD",
+                advisors="Advisor A",
+            )
+
+        uploaded = Transaction.objects.create(
+            owner=self.user, asset=assets[0], transaction_type=TransactionType.BONUS,
+            transaction_date=date(2025, 6, 15), quantity=Decimal("777"),
+            price_per_unit=Decimal("0"), amount=Decimal("0"), source="EXCEL",
+            notes="Keep this imported row unchanged",
+            family_name="Member A", portfolio="Imported Portfolio", asset_class="Equity",
+            sub_class="Listed Equity", asset_name="Holding A",
+            underlying="EXAMPLE LTD", advisors="Imported Advisor",
+        )
+        action = self.make_action(
+            isin="", symbol="EXAMPLE", action_type=CorporateActionType.BONUS,
+            old_units=Decimal("1"), new_units=Decimal("2"),
+            record_date=date(2025, 6, 10), status=CorporateActionStatus.PENDING,
+        )
+        discover_exposures_and_reconcile(action)
+        reconciliation = CorporateActionReconciliation.objects.get(action=action, owner=self.user)
+
+        approved = decide_missing_isin_reconciliation(
+            owner=self.user, reconciliation_id=reconciliation.id,
+            decision="APPROVE", asset_id=assets[0].id,
+        )
+
+        uploaded.refresh_from_db()
+        bonus_rows = list(Transaction.objects.filter(
+            transaction_type=TransactionType.BONUS,
+            transaction_date=action.ex_date,
+        ).order_by("family_name"))
+        self.assertEqual(len(bonus_rows), 2)
+        self.assertEqual(uploaded.quantity, Decimal("777"))
+        self.assertEqual(uploaded.notes, "Keep this imported row unchanged")
+        self.assertEqual(set(approved.matched_transaction_ids), {row.id for row in bonus_rows})
+        created = next(row for row in bonus_rows if row.id != uploaded.id)
+        self.assertEqual(created.family_name, "Member B")
+        self.assertEqual(created.asset_name, "Holding B")
+        self.assertEqual(created.sub_class, "Large Cap")
+        self.assertEqual(created.quantity, Decimal("10"))
+        self.assertIn("Created 1 missing transaction", approved.notes)
+
     def test_bonus_allocates_each_underlying_hierarchy_from_record_date_quantity(self):
         hierarchy = [
             ("Family Member 1", "Direct Equity", "Equity", "Listed Equity", "Portfolio A", Decimal("10")),

@@ -240,6 +240,10 @@ Net worth, asset allocation, key portfolio metrics and an **Investment Summary**
 - **Asset Underlying uploads** from Portfolio for supported assets using the standard Excel format (`Stocks`, `% Holding`)
 - **Underlying upload visibility in Settings** with asset name, uploader, upload timestamp, and expandable underlying holdings
 - **Sample Underlying Format** download from Settings as an Excel workbook with an `Underlying` sheet and upload instructions
+- **Underlying Screener links for Equity holdings** — the Portfolio tree exposes a clickable Screener link when the backend can resolve the specific underlying's market symbol, including supported cases where uploaded transactions do not contain an ISIN.
+- **Underlying identity resolution** — resolution checks the uploaded underlying-holding ISIN, preserves the direct Equity asset ISIN behavior, then uses a unique family/owner-scoped Security Master match or the exact-name, ambiguity-aware security resolver. The resolved ISIN is used to obtain the underlying symbol.
+- **Safe no-ISIN fallback** — for a direct Equity holding, a stored market symbol can be used only when the underlying name exactly matches the asset identity. The parent PMS/fund symbol is never substituted for a different underlying, and symbols are not guessed from names. If a reliable symbol cannot be resolved, the Screener link is omitted.
+- **Valuation remains independent** — underlying-link resolution does not replace or alter the existing market-price and portfolio valuation flow.
 - **Transaction Edit History** records edits made from Transaction Reports and retains a durable audit record when a transaction is deleted. Deleted transactions remain visible in the audit history with their previous values.
 
 ### 🏢 Corporate actions

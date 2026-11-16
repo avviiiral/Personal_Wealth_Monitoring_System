@@ -443,7 +443,11 @@ class PortfolioTreeServiceTests(TestCase):
             "INE000TEST001",
         )
 
-    def test_portfolio_tree_uses_unique_family_security_master_isin_when_asset_is_blank(self):
+    @patch(
+        "portfolio.services.portfolio_tree_service.SecurityResolver.resolve_from_isin",
+        return_value="MASTERBACKEDEQ.NS",
+    )
+    def test_portfolio_tree_uses_unique_family_security_master_isin_when_asset_is_blank(self, resolve_from_isin):
         asset = Asset.objects.create(
             family=self.family,
             owner=self.user,
@@ -474,6 +478,11 @@ class PortfolioTreeServiceTests(TestCase):
             amount=Decimal("200"),
             fees=Decimal("0"),
         )
+        MarketPrice.objects.create(
+            asset=asset,
+            date=date(2026, 11, 16),
+            close_price=Decimal("123.45"),
+        )
 
         result = PortfolioTreeService.build(self.user, family_id=self.family.id)
         node = next(
@@ -486,9 +495,115 @@ class PortfolioTreeServiceTests(TestCase):
             if node["asset_name"] == asset.name
         )
         self.assertEqual(node["isin"], "INE000MASTER001")
+        self.assertEqual(node["underlying_symbol"], "MASTERBACKEDEQ")
+        self.assertEqual(node["current_price"], 123.45)
+        # setUp() also creates a separate equity holding, so the resolver is
+        # expected to be called for that fixture as well as this test asset.
+        resolve_from_isin.assert_any_call("INE000MASTER001")
         # The read path must not mutate canonical asset data as a side effect.
         asset.refresh_from_db()
         self.assertEqual(asset.isin, "")
+
+    @patch(
+        "portfolio.services.portfolio_tree_service.SecurityResolver.resolve_isin_from_name",
+        return_value="",
+    )
+    def test_equity_with_price_symbol_is_linkable_without_uploaded_isin(self, resolve_isin_from_name):
+        asset = Asset.objects.create(
+            family=self.family,
+            owner=self.user,
+            name="No ISIN Priced Equity",
+            category="STOCK",
+            symbol="NOISINPRICE.NS",
+            isin="",
+        )
+        Transaction.objects.create(
+            owner=self.user,
+            family=self.family,
+            asset=asset,
+            family_name="Family A",
+            portfolio="Portfolio A",
+            asset_class="Equity",
+            sub_class="Large Cap",
+            asset_name=asset.name,
+            underlying=asset.name,
+            transaction_date=date(2026, 1, 10),
+            transaction_type="BUY",
+            quantity=Decimal("2"),
+            price_per_unit=Decimal("100"),
+            amount=Decimal("200"),
+            fees=Decimal("0"),
+        )
+        MarketPrice.objects.create(
+            asset=asset,
+            date=date(2026, 11, 16),
+            close_price=Decimal("125.50"),
+        )
+
+        result = PortfolioTreeService.build(self.user, family_id=self.family.id)
+        node = next(
+            node
+            for family in result["families"]
+            for portfolio in family["portfolios"]
+            for asset_class in portfolio["asset_classes"]
+            for subclass in asset_class["sub_classes"]
+            for node in subclass["assets"]
+            if node["asset_name"] == asset.name
+        )
+        self.assertIsNone(node["isin"])
+        self.assertEqual(node["underlying_symbol"], "NOISINPRICE")
+        self.assertEqual(node["current_price"], 125.5)
+        resolve_isin_from_name.assert_called()
+
+    @patch(
+        "portfolio.services.portfolio_tree_service.SecurityResolver.resolve_isin_from_name",
+        return_value="",
+    )
+    def test_parent_symbol_is_not_used_for_a_different_unresolved_underlying(self, resolve_isin_from_name):
+        asset = Asset.objects.create(
+            family=self.family,
+            owner=self.user,
+            name="Parent PMS Instrument",
+            category="STOCK",
+            symbol="PARENT.NS",
+            isin="",
+        )
+        Transaction.objects.create(
+            owner=self.user,
+            family=self.family,
+            asset=asset,
+            family_name="Family A",
+            portfolio="Portfolio A",
+            asset_class="Equity",
+            sub_class="Equity PMS",
+            asset_name=asset.name,
+            underlying="Unmapped Underlying Company",
+            transaction_date=date(2026, 1, 10),
+            transaction_type="BUY",
+            quantity=Decimal("2"),
+            price_per_unit=Decimal("100"),
+            amount=Decimal("200"),
+            fees=Decimal("0"),
+        )
+        MarketPrice.objects.create(
+            asset=asset,
+            date=date(2026, 11, 16),
+            close_price=Decimal("125.50"),
+        )
+
+        result = PortfolioTreeService.build(self.user, family_id=self.family.id)
+        node = next(
+            node
+            for family in result["families"]
+            for portfolio in family["portfolios"]
+            for asset_class in portfolio["asset_classes"]
+            for subclass in asset_class["sub_classes"]
+            for node in subclass["assets"]
+            if node["asset_name"] == asset.name
+        )
+        self.assertIsNone(node["underlying_symbol"])
+        self.assertEqual(node["current_price"], 125.5)
+        resolve_isin_from_name.assert_called()
 
 
     @patch("market_data.services.security_resolver.SecurityResolver.resolve_isin_from_name", return_value="INE000ANUP001")

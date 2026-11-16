@@ -224,6 +224,16 @@ describe('PortfolioComponent', () => {
     expect(component.families[0].portfolios[0].portfolio).toBe('Portfolio A');
   });
 
+  it('builds a Screener link from the resolved underlying symbol without an ISIN', () => {
+    const asset = component.families[0].portfolios[0].asset_classes[0].sub_classes[0].assets[0];
+    asset.isin = null;
+    asset.underlying_symbol = 'PRICEONLY';
+
+    expect(component.getUnderlyingScreenerUrl(asset)).toBe(
+      'https://www.screener.in/company/PRICEONLY/consolidated/',
+    );
+  });
+
   // ==========================================================
   // FAMILY OPTIONS
   // ==========================================================

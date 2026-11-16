@@ -497,7 +497,9 @@ class PortfolioTreeServiceTests(TestCase):
         self.assertEqual(node["isin"], "INE000MASTER001")
         self.assertEqual(node["underlying_symbol"], "MASTERBACKEDEQ")
         self.assertEqual(node["current_price"], 123.45)
-        resolve_from_isin.assert_called_once_with("INE000MASTER001")
+        # setUp() also creates a separate equity holding, so the resolver is
+        # expected to be called for that fixture as well as this test asset.
+        resolve_from_isin.assert_any_call("INE000MASTER001")
         # The read path must not mutate canonical asset data as a side effect.
         asset.refresh_from_db()
         self.assertEqual(asset.isin, "")

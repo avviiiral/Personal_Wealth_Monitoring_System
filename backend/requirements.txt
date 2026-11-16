@@ -32,7 +32,7 @@ python-dotenv==1.2.2
 pytz==2026.3.post1
 requests==2.34.2
 six==1.17.0
-soupsieve==2.9.2
+soupsieve==4.0.0
 sqlparse==0.6.0
 types-PyYAML==6.0.12.20260724
 typing_extensions==4.16.0

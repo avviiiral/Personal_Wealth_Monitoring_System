@@ -539,7 +539,7 @@ def decide_missing_isin_reconciliation(*, owner, reconciliation_id, decision, as
             eligibility_date = action.record_date if is_bonus else action.ex_date
             prior_rows = Transaction.objects.filter(
                 asset_id__in=matching_asset_ids,
-                transaction_date__lte=eligibility_date if is_bonus else eligibility_date,
+                transaction_date__lte=eligibility_date,
             )
             if not is_bonus:
                 prior_rows = prior_rows.filter(transaction_date__lt=action.ex_date)
@@ -578,12 +578,12 @@ def decide_missing_isin_reconciliation(*, owner, reconciliation_id, decision, as
                     prior_asset = asset_rows[0].asset
                     earlier_actions = [
                         item for item in confirmed_ratio_actions(asset=prior_asset, owner=owner)
-                        if item.ex_date <= eligibility_date if is_bonus
+                        if (
+                            item.ex_date <= eligibility_date
+                            if is_bonus
+                            else item.ex_date < action.ex_date
+                        )
                     ]
-                    if not is_bonus:
-                        earlier_actions = [
-                            item for item in earlier_actions if item.ex_date < action.ex_date
-                        ]
                     position = calculate_position_with_actions(asset_rows, earlier_actions)
                     bucket_quantity += position.get("quantity") or Decimal("0")
 

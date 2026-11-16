@@ -97,6 +97,7 @@ def _existing_corporate_action_transaction(
     transaction_date,
     transaction_type,
     hierarchy_values,
+    lock=False,
 ):
     """Find an existing same-day action row for the same investor hierarchy.
 
@@ -104,10 +105,12 @@ def _existing_corporate_action_transaction(
     identity is the underlying, asset name, subclass, asset class and family
     member, within the family (or individual account) and transaction date.
     """
-    query = Transaction.objects.select_for_update().select_related("asset").filter(
+    query = Transaction.objects.select_related("asset").filter(
         transaction_date=transaction_date,
         transaction_type=transaction_type,
     )
+    if lock:
+        query = query.select_for_update()
     if family_id is not None:
         query = query.filter(family_id=family_id)
     else:
@@ -639,6 +642,7 @@ def decide_missing_isin_reconciliation(*, owner, reconciliation_id, decision, as
                     transaction_date=action.ex_date,
                     transaction_type=transaction_type,
                     hierarchy_values=duplicate_hierarchy,
+                    lock=True,
                 )
                 if existing is not None:
                     if existing.id not in {item.id for item in matched_transactions}:

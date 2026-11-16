@@ -77,6 +77,62 @@ def _idempotency_key(action_id, owner_id):
 def _user_family_id(user):
     return get_active_family_group_id(user)
 
+CORPORATE_ACTION_DUPLICATE_FIELDS = (
+    "underlying",
+    "asset_name",
+    "sub_class",
+    "asset_class",
+    "family_name",
+)
+
+
+def _normalized_hierarchy_value(value):
+    return str(value or "").strip().casefold()
+
+
+def _existing_corporate_action_transaction(
+    *,
+    owner,
+    family_id,
+    transaction_date,
+    transaction_type,
+    hierarchy_values,
+):
+    """Find an existing same-day action row for the same investor hierarchy.
+
+    Portfolio and advisor labels are intentionally excluded: the duplicate
+    identity is the underlying, asset name, subclass, asset class and family
+    member, within the family (or individual account) and transaction date.
+    """
+    query = Transaction.objects.select_for_update().select_related("asset").filter(
+        transaction_date=transaction_date,
+        transaction_type=transaction_type,
+    )
+    if family_id is not None:
+        query = query.filter(family_id=family_id)
+    else:
+        query = query.filter(owner=owner, family__isnull=True)
+
+    target = {
+        field: _normalized_hierarchy_value(hierarchy_values.get(field))
+        for field in CORPORATE_ACTION_DUPLICATE_FIELDS
+    }
+    for candidate in query.order_by("id"):
+        candidate_asset_name = candidate.asset_name or candidate.asset.name
+        candidate_values = {
+            "underlying": candidate.underlying or candidate_asset_name,
+            "asset_name": candidate_asset_name,
+            "sub_class": candidate.sub_class,
+            "asset_class": candidate.asset_class,
+            "family_name": candidate.family_name,
+        }
+        if all(
+            _normalized_hierarchy_value(candidate_values[field]) == target[field]
+            for field in CORPORATE_ACTION_DUPLICATE_FIELDS
+        ):
+            return candidate
+    return None
+
 
 def _create_reconciliation(action, user, status_value, transaction_ids=None, suggested_quantity=None, notes=""):
     family_id = _user_family_id(user)
@@ -260,10 +316,33 @@ def discover_exposures_and_reconcile(action):
                 totals = calculate_position_with_actions(tx_rows, earlier_actions)
                 eligible_quantity = totals.get("quantity")
 
-            if existing.exists():
+            existing_transactions = []
+            if expected_type is not None:
+                for prior in tx_rows:
+                    hierarchy_values = {
+                        "underlying": prior.underlying or prior.asset_name or prior.asset.name,
+                        "asset_name": prior.asset_name or prior.asset.name,
+                        "sub_class": prior.sub_class,
+                        "asset_class": prior.asset_class,
+                        "family_name": prior.family_name,
+                    }
+                    match = _existing_corporate_action_transaction(
+                        owner=user,
+                        family_id=family_id,
+                        transaction_date=action.ex_date,
+                        transaction_type=expected_type,
+                        hierarchy_values=hierarchy_values,
+                    )
+                    if match is not None and match.id not in {
+                        item.id for item in existing_transactions
+                    }:
+                        existing_transactions.append(match)
+            existing = existing_transactions
+
+            if existing:
                 _create_reconciliation(
                     action, user, CorporateActionReconciliationStatus.ALREADY_RECORDED,
-                    list(existing.values_list("id", flat=True)[:50]),
+                    [item.id for item in existing[:50]],
                 )
             else:
                 # Only create an actionable record where dated acquisition history exists.
@@ -365,8 +444,13 @@ def update_notification_state(*, owner, notification_id, reviewed=None, dismisse
 
 
 def decide_missing_isin_reconciliation(*, owner, reconciliation_id, decision, asset_id=None, notes=""):
-    """Approve/reject a proposed identity; transaction writes occur only on explicit approval."""
+    """Approve/reject a proposed identity without duplicating existing transaction rows."""
+    from collections import defaultdict
     from investments.models import Transaction, TransactionSource, TransactionType
+    from corporate_actions.position_adjustment import (
+        calculate_position_with_actions,
+        confirmed_ratio_actions,
+    )
 
     with db_transaction.atomic():
         reconciliation = CorporateActionReconciliation.objects.select_for_update().select_related("action").filter(
@@ -383,13 +467,17 @@ def decide_missing_isin_reconciliation(*, owner, reconciliation_id, decision, as
             return reconciliation
         if reconciliation.status != CorporateActionReconciliationStatus.PENDING_USER_APPROVAL:
             raise ValidationError("This action is not awaiting identity approval.")
+
         action = reconciliation.action
         if decision == "REJECT":
             reconciliation.status = CorporateActionReconciliationStatus.REJECTED
-            reconciliation.notes = (notes or "User rejected the proposed identity. No transaction was changed.")[:5000]
+            reconciliation.notes = (
+                notes or "User rejected the proposed identity. No transaction was changed."
+            )[:5000]
         elif decision == "APPROVE":
             if asset_id not in reconciliation.candidate_asset_ids:
                 raise ValidationError("Choose one of the proposed holdings.")
+
             family_id = _user_family_id(owner)
             identity_scope = Q(owner=owner)
             member_family_ids = list(
@@ -397,15 +485,14 @@ def decide_missing_isin_reconciliation(*, owner, reconciliation_id, decision, as
             )
             if member_family_ids:
                 identity_scope |= Q(family_id__in=member_family_ids)
-            asset_query = Asset.objects.select_for_update().filter(
+            asset = Asset.objects.select_for_update().filter(
                 id=asset_id, is_active=True, category="STOCK"
-            ).filter(identity_scope)
-            asset = asset_query.first()
-            if asset is not None:
-                family_id = asset.family_id
-                reconciliation.family_id_snapshot = family_id
+            ).filter(identity_scope).first()
             if asset is None:
                 raise ValidationError("Selected holding is no longer available.")
+            family_id = asset.family_id
+            reconciliation.family_id_snapshot = family_id
+
             transaction_type = (
                 TransactionType.DIVIDEND if action.action_type == "CASH_DIVIDEND"
                 else TransactionType.BONUS if action.action_type in {"BONUS", "STOCK_DIVIDEND"}
@@ -416,176 +503,199 @@ def decide_missing_isin_reconciliation(*, owner, reconciliation_id, decision, as
                 raise ValidationError("This action type cannot be converted into a transaction automatically.")
             if not action.ex_date:
                 raise ValidationError("Action ex-date is required.")
-            quantity = reconciliation.suggested_quantity
-            if not quantity or quantity <= 0:
-                from corporate_actions.position_adjustment import calculate_position_with_actions, confirmed_ratio_actions
-                transactions = list(Transaction.objects.filter(
-                    owner=owner, asset=asset, transaction_date__lt=action.ex_date
-                ).filter(Q(family_id=asset.family_id) if asset.family_id else Q(family__isnull=True))
-                 .order_by("transaction_date", "created_at", "id"))
-                earlier = [
-                    item for item in confirmed_ratio_actions(asset=asset, owner=owner)
-                    if item.ex_date < action.ex_date
-                ]
-                quantity = calculate_position_with_actions(transactions, earlier).get("quantity")
-            if not quantity or quantity <= 0:
-                raise ValidationError("Could not establish a positive eligible quantity.")
-            if transaction_type == TransactionType.DIVIDEND:
-                price = action.cash_per_unit or Decimal("0")
-                tx_quantity = quantity
-                amount = quantity * price
-            else:
+
+            is_bonus = transaction_type == TransactionType.BONUS
+            if is_bonus and not action.record_date:
+                raise ValidationError("Official record date is required to allocate bonus shares.")
+            if transaction_type != TransactionType.DIVIDEND:
                 if not action.old_units or not action.new_units:
                     raise ValidationError("A verified entitlement ratio is required.")
-                if transaction_type == TransactionType.BONUS:
-                    # Bonus ratio is bonus shares per existing shares.
-                    # NSE 1:2 means one whole bonus share for every two
-                    # eligible shares. Fractional entitlements are discarded.
-                    eligible_lots = (quantity / action.old_units).to_integral_value(
-                        rounding=ROUND_FLOOR
-                    )
-                    tx_quantity = eligible_lots * action.new_units
-                else:
-                    # Split ratios represent the post-action total share
-                    # multiplier, so record only the incremental quantity.
-                    tx_quantity = quantity * (
-                        action.new_units / action.old_units - Decimal("1")
-                    )
-                if tx_quantity <= 0:
-                    raise ValidationError("Calculated entitlement is not positive.")
-                price = Decimal("0")
-                amount = Decimal("0")
-            created_transactions = []
-            if transaction_type == TransactionType.BONUS:
-                # Preserve every existing portfolio hierarchy bucket. A single
-                # asset can be held under multiple family members / portfolios /
-                # asset classes, so entitlement must be calculated per bucket.
-                from collections import defaultdict
-                from corporate_actions.position_adjustment import (
-                    calculate_position_with_actions,
-                    confirmed_ratio_actions,
-                )
 
-                # Bonus eligibility is evaluated on the official record date,
-                # across every Asset record for this security in the selected family.
-                if not action.record_date:
-                    raise ValidationError("Official record date is required to allocate bonus shares.")
+            # Preserve portfolio hierarchy and allocate the event separately for
+            # every eligible bucket. The duplicate identity deliberately omits
+            # portfolio/advisor, matching the requested five-field scope.
+            hierarchy_fields = (
+                "family_name", "portfolio", "asset_class", "sub_class",
+                "asset_name", "underlying", "advisors",
+            )
+            matching_assets = Asset.objects.select_for_update().filter(
+                is_active=True, category="STOCK",
+            )
+            if asset.family_id:
+                matching_assets = matching_assets.filter(family_id=asset.family_id)
+            else:
+                matching_assets = matching_assets.filter(owner=owner, family__isnull=True)
+            if asset.isin:
+                matching_assets = matching_assets.filter(isin__iexact=asset.isin)
+            elif asset.symbol:
+                matching_assets = matching_assets.filter(symbol__iexact=asset.symbol)
+            else:
+                matching_assets = matching_assets.filter(pk=asset.pk)
 
-                from collections import defaultdict
-                from corporate_actions.position_adjustment import (
-                    calculate_position_with_actions,
-                    confirmed_ratio_actions,
-                )
+            matching_asset_ids = list(matching_assets.values_list("id", flat=True))
+            if asset.id not in matching_asset_ids:
+                matching_asset_ids.append(asset.id)
 
-                hierarchy_fields = (
-                    "family_name", "portfolio", "asset_class", "sub_class",
-                    "asset_name", "underlying", "advisors",
-                )
-                matching_assets = Asset.objects.select_for_update().filter(
-                    is_active=True, category="STOCK",
-                )
-                if asset.family_id:
-                    matching_assets = matching_assets.filter(family_id=asset.family_id)
-                else:
-                    matching_assets = matching_assets.filter(owner=owner, family__isnull=True)
-                if asset.isin:
-                    matching_assets = matching_assets.filter(isin__iexact=asset.isin)
-                elif asset.symbol:
-                    matching_assets = matching_assets.filter(symbol__iexact=asset.symbol)
-                else:
-                    matching_assets = matching_assets.filter(pk=asset.pk)
-                matching_asset_ids = list(matching_assets.values_list("id", flat=True))
-                if asset.id not in matching_asset_ids:
-                    matching_asset_ids.append(asset.id)
+            eligibility_date = action.record_date if is_bonus else action.ex_date
+            prior_rows = Transaction.objects.filter(
+                asset_id__in=matching_asset_ids,
+                transaction_date__lte=eligibility_date if is_bonus else eligibility_date,
+            )
+            if not is_bonus:
+                prior_rows = prior_rows.filter(transaction_date__lt=action.ex_date)
+            if asset.family_id:
+                prior_rows = prior_rows.filter(family_id=asset.family_id)
+            else:
+                prior_rows = prior_rows.filter(owner=owner, family__isnull=True)
+            prior_rows = list(prior_rows.select_related("asset").order_by(
+                "transaction_date", "created_at", "id"
+            ))
 
-                prior_rows = Transaction.objects.filter(
-                    asset_id__in=matching_asset_ids, transaction_date__lte=action.record_date,
-                )
-                if asset.family_id:
-                    prior_rows = prior_rows.filter(family_id=asset.family_id)
-                else:
-                    prior_rows = prior_rows.filter(owner=owner, family__isnull=True)
-                prior_rows = list(prior_rows.select_related("asset").order_by(
-                    "transaction_date", "created_at", "id"
-                ))
+            grouped_rows = defaultdict(list)
+            for prior in prior_rows:
+                values = {
+                    field: (getattr(prior, field) or "").strip()
+                    for field in hierarchy_fields
+                }
+                if not values["asset_name"]:
+                    values["asset_name"] = prior.asset.name or asset.name
+                if not values["underlying"]:
+                    values["underlying"] = values["asset_name"]
+                grouped_rows[tuple(values[field] for field in hierarchy_fields)].append(prior)
 
-                grouped_rows = defaultdict(list)
-                for prior in prior_rows:
-                    values = {
-                        field: (getattr(prior, field) or "").strip()
-                        for field in hierarchy_fields
-                    }
-                    if not values["asset_name"]:
-                        values["asset_name"] = prior.asset.name or asset.name
-                    if not values["underlying"]:
-                        values["underlying"] = values["asset_name"]
-                    grouped_rows[tuple(values[field] for field in hierarchy_fields)].append(prior)
+            matched_transactions = []
+            created_count = 0
+            skipped_count = 0
+            for bucket, bucket_transactions in grouped_rows.items():
+                # Reconstruct each Asset-specific position, then aggregate only
+                # within the same complete hierarchy path.
+                rows_by_asset = defaultdict(list)
+                for prior in bucket_transactions:
+                    rows_by_asset[prior.asset_id].append(prior)
 
-                for bucket, bucket_transactions in grouped_rows.items():
-                    # Reconstruct each Asset-specific position, then aggregate
-                    # within this exact hierarchy path. This avoids mixing
-                    # unrelated family/portfolio/class/subclass occurrences.
-                    rows_by_asset = defaultdict(list)
-                    for prior in bucket_transactions:
-                        rows_by_asset[prior.asset_id].append(prior)
-                    bucket_quantity = Decimal("0")
-                    for prior_asset_id, asset_rows in rows_by_asset.items():
-                        prior_asset = asset_rows[0].asset
+                bucket_quantity = Decimal("0")
+                for prior_asset_id, asset_rows in rows_by_asset.items():
+                    prior_asset = asset_rows[0].asset
+                    earlier_actions = [
+                        item for item in confirmed_ratio_actions(asset=prior_asset, owner=owner)
+                        if item.ex_date <= eligibility_date if is_bonus
+                    ]
+                    if not is_bonus:
                         earlier_actions = [
-                            item for item in confirmed_ratio_actions(asset=prior_asset, owner=owner)
-                            if item.ex_date <= action.record_date
+                            item for item in earlier_actions if item.ex_date < action.ex_date
                         ]
-                        position = calculate_position_with_actions(asset_rows, earlier_actions)
-                        bucket_quantity += position.get("quantity") or Decimal("0")
-                    if bucket_quantity <= 0:
-                        continue
+                    position = calculate_position_with_actions(asset_rows, earlier_actions)
+                    bucket_quantity += position.get("quantity") or Decimal("0")
+
+                if bucket_quantity <= 0:
+                    continue
+
+                if is_bonus:
                     eligible_lots = (bucket_quantity / action.old_units).to_integral_value(
                         rounding=ROUND_FLOOR
                     )
-                    bucket_bonus = eligible_lots * action.new_units
-                    if bucket_bonus <= 0:
-                        continue
-                    bucket_identity = "|".join(str(value) for value in bucket)
-                    key = hashlib.sha256(
-                        f"corporate-action:{action.id}:owner:{owner.id}:family:{asset.family_id}:bucket:{bucket_identity}".encode()
-                    ).hexdigest()
-                    representative_asset = bucket_transactions[0].asset
-                    defaults = {
-                        "owner": owner, "family": representative_asset.family, "asset": representative_asset,
-                        "transaction_type": transaction_type, "transaction_date": action.ex_date,
-                        "quantity": bucket_bonus, "price_per_unit": Decimal("0"),
-                        "amount": Decimal("0"), "fees": Decimal("0"),
-                        "notes": f"User-approved corporate action #{action.id}; record-date allocation; identity matched by {reconciliation.identity_match_method}.",
-                    }
-                    defaults.update(dict(zip(hierarchy_fields, bucket)))
-                    transaction, _ = Transaction.objects.get_or_create(
-                        family=representative_asset.family, source=TransactionSource.OTHER,
-                        source_key=key, defaults=defaults,
+                    transaction_quantity = eligible_lots * action.new_units
+                    price = Decimal("0")
+                    amount = Decimal("0")
+                elif transaction_type == TransactionType.DIVIDEND:
+                    transaction_quantity = bucket_quantity
+                    price = action.cash_per_unit or Decimal("0")
+                    amount = transaction_quantity * price
+                else:
+                    transaction_quantity = bucket_quantity * (
+                        action.new_units / action.old_units - Decimal("1")
                     )
-                    created_transactions.append(transaction)
-                if not created_transactions:
-                    raise ValidationError("No positive whole-share bonus entitlement was found across the record-date portfolio hierarchy.")
-            else:
-                key = hashlib.sha256(
-                    f"corporate-action:{action.id}:owner:{owner.id}:asset:{asset.id}".encode()
-                ).hexdigest()
-                transaction, _ = Transaction.objects.get_or_create(
-                    family=asset.family, source=TransactionSource.OTHER, source_key=key,
-                    defaults={
-                        "owner": owner, "family": asset.family, "asset": asset,
-                        "transaction_type": transaction_type, "transaction_date": action.ex_date,
-                        "quantity": tx_quantity, "price_per_unit": price, "amount": amount,
-                        "fees": Decimal("0"),
-                        "notes": f"User-approved corporate action #{action.id}; identity matched by {reconciliation.identity_match_method}.",
-                    },
+                    price = Decimal("0")
+                    amount = Decimal("0")
+
+                if transaction_quantity <= 0:
+                    continue
+
+                bucket_identity = "|".join(str(value) for value in bucket)
+                representative_asset = bucket_transactions[0].asset
+                defaults = {
+                    "owner": owner,
+                    "family": representative_asset.family,
+                    "asset": representative_asset,
+                    "transaction_type": transaction_type,
+                    "transaction_date": action.ex_date,
+                    "quantity": transaction_quantity,
+                    "price_per_unit": price,
+                    "amount": amount,
+                    "fees": Decimal("0"),
+                    "notes": (
+                        f"User-approved corporate action #{action.id}; "
+                        f"identity matched by {reconciliation.identity_match_method}."
+                    ),
+                }
+                defaults.update(dict(zip(hierarchy_fields, bucket)))
+                duplicate_hierarchy = {
+                    field: defaults.get(field)
+                    for field in CORPORATE_ACTION_DUPLICATE_FIELDS
+                }
+                existing = _existing_corporate_action_transaction(
+                    owner=owner,
+                    family_id=representative_asset.family_id,
+                    transaction_date=action.ex_date,
+                    transaction_type=transaction_type,
+                    hierarchy_values=duplicate_hierarchy,
                 )
-                created_transactions.append(transaction)
+                if existing is not None:
+                    if existing.id not in {item.id for item in matched_transactions}:
+                        matched_transactions.append(existing)
+                    skipped_count += 1
+                    continue
+
+                key = hashlib.sha256(
+                    (
+                        f"corporate-action:{action.id}:owner:{owner.id}:"
+                        f"family:{representative_asset.family_id}:bucket:{bucket_identity}"
+                    ).encode()
+                ).hexdigest()
+                transaction, was_created = Transaction.objects.get_or_create(
+                    family=representative_asset.family,
+                    source=TransactionSource.OTHER,
+                    source_key=key,
+                    defaults=defaults,
+                )
+                if transaction.id not in {item.id for item in matched_transactions}:
+                    matched_transactions.append(transaction)
+                if was_created:
+                    created_count += 1
+                else:
+                    skipped_count += 1
+
+            if not matched_transactions:
+                if is_bonus:
+                    raise ValidationError(
+                        "No positive whole-share bonus entitlement was found across the record-date portfolio hierarchy."
+                    )
+                raise ValidationError(
+                    "No positive eligible entitlement was found across the portfolio hierarchy."
+                )
+
             reconciliation.selected_asset = asset
-            reconciliation.matched_transaction_ids = [item.id for item in created_transactions]
+            reconciliation.matched_transaction_ids = [item.id for item in matched_transactions]
             reconciliation.status = CorporateActionReconciliationStatus.APPROVED
-            reconciliation.notes = (notes or "Identity approved; transaction created idempotently.")[:5000]
+            if notes:
+                reconciliation.notes = notes[:5000]
+            elif created_count == 0:
+                reconciliation.notes = (
+                    "Identity approved. Matching same-day transactions already existed for the "
+                    "eligible hierarchy; no existing transaction was modified and no duplicate was created."
+                )
+            elif skipped_count:
+                reconciliation.notes = (
+                    f"Identity approved. Created {created_count} missing transaction(s) and skipped "
+                    f"{skipped_count} same-day duplicate(s); existing transactions were not modified."
+                )
+            else:
+                reconciliation.notes = (
+                    f"Identity approved; created {created_count} transaction(s) idempotently."
+                )
         else:
             raise ValidationError("Decision must be APPROVE or REJECT.")
+
         reconciliation.reviewed_at = timezone.now()
         reconciliation.reviewed_by = owner
         reconciliation.save()

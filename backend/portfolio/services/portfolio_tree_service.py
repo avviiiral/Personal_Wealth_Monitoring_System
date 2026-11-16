@@ -552,10 +552,37 @@ class PortfolioTreeService:
             .first()
         )
         underlying_isin = cls._clean(getattr(underlying_holding, "isin", "")).upper()
-        # An Equity asset row represents the underlying security itself.
-        # When there is no separate uploaded holding row, use that Asset's ISIN.
-        if not underlying_isin and cls._clean(first.asset_class).casefold() == "equity":
-            underlying_isin = cls._clean(getattr(asset, "isin", "")).upper()
+        is_equity_row = cls._clean(first.asset_class).casefold() == "equity"
+
+        # Uploaded transactions do not always carry an ISIN. For Equity rows,
+        # reuse the existing family/owner-scoped, unambiguous Security Master
+        # identity for the exact underlying label before resolving its symbol.
+        if not underlying_isin and is_equity_row:
+            normalized_underlying_name = SecurityAlias.normalize(underlying_name)
+            if normalized_underlying_name:
+                underlying_master_key = (
+                    ("family_name_isin", asset.family_id, normalized_underlying_name)
+                    if asset.family_id is not None
+                    else ("owner_name_isin", asset.owner_id, normalized_underlying_name)
+                )
+                underlying_master = (security_master_cache or {}).get(underlying_master_key)
+                underlying_isin = cls._clean(getattr(underlying_master, "isin", "")).upper()
+
+            # The canonical workbook resolver is exact-name and ambiguity-aware.
+            if not underlying_isin:
+                underlying_isin = cls._clean(
+                    SecurityResolver.resolve_isin_from_name(underlying_name)
+                ).upper()
+
+            # Only reuse the transaction Asset identity when the displayed
+            # underlying is that same security, not a holding under a parent.
+            same_asset_identity = normalized_underlying_name in {
+                SecurityAlias.normalize(getattr(asset, "name", "")),
+                SecurityAlias.normalize(asset_name),
+            }
+            if not underlying_isin and same_asset_identity:
+                underlying_isin = asset_isin or resolved_isin
+
         underlying_symbols = []
         if underlying_isin and asset.family_id is not None:
             underlying_symbols = list(
@@ -586,6 +613,28 @@ class PortfolioTreeService:
                 underlying_symbol = yahoo_symbol[:-len(SecurityResolver.NSE_SUFFIX)].strip()
             if not underlying_symbol or not re.fullmatch(r"[A-Z0-9&-]+", underlying_symbol):
                 underlying_symbol = None
+
+        # When there is no ISIN at all, a stored market symbol is still a
+        # valid link source for a direct Equity row. Guard it by exact identity
+        # so a PMS/fund parent symbol is never shown for a different underlying.
+        if not underlying_symbol and not underlying_isin and is_equity_row:
+            normalized_underlying_name = SecurityAlias.normalize(underlying_name)
+            same_asset_identity = normalized_underlying_name in {
+                SecurityAlias.normalize(getattr(asset, "name", "")),
+                SecurityAlias.normalize(asset_name),
+            }
+            if same_asset_identity:
+                stored_symbol = cls._clean(getattr(asset, "symbol", "")).upper()
+                if stored_symbol.endswith(".NS"):
+                    stored_symbol = stored_symbol[:-3].strip()
+                elif stored_symbol.endswith(".BO"):
+                    stored_symbol = ""
+                underlying_symbol = (
+                    stored_symbol
+                    if re.fullmatch(r"[A-Z0-9&-]+", stored_symbol)
+                    else None
+                )
+
         return {
             "id": asset.id,
             "family_name": cls._clean(first.family_name),

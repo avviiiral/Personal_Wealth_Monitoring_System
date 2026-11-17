@@ -98,13 +98,13 @@ export class LiquidPositionComponent implements OnInit {
   }
 
   addDeployment(): void {
-    if (!this.report?.can_edit) return;
+    if (!this.report?.can_edit || !this.isEditing) return;
     this.report.deployment.push(this.newLine('New deployment'));
     this.markDirty();
   }
 
   removeLine(section: 'commitments' | 'deployment', index: number): void {
-    if (!this.report?.can_edit) return;
+    if (!this.report?.can_edit || !this.isEditing) return;
     this.report[section].splice(index, 1);
     this.markDirty();
   }

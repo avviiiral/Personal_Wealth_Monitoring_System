@@ -7,8 +7,7 @@ import { authGuard } from '../core/guards/auth.guard';
 export const routes: Routes = [
   {
     path: 'login',
-    loadComponent: () =>
-      import('../features/login/login.component').then((m) => m.LoginComponent),
+    loadComponent: () => import('../features/login/login.component').then((m) => m.LoginComponent),
   },
   {
     path: '',
@@ -33,7 +32,7 @@ export const routes: Routes = [
       {
         path: 'mis-report',
         loadComponent: () =>
-          import('./features/mis-report/mis-report.component').then((m) => m.MISReportComponent),
+          import('../features/mis-report/mis-report.component').then((m) => m.MISReportComponent),
       },
       {
         path: 'reports',
@@ -43,7 +42,9 @@ export const routes: Routes = [
       {
         path: 'reports/holdings',
         loadComponent: () =>
-          import('../features/holding-reports/holding-reports.component').then((m) => m.HoldingReportsComponent),
+          import('../features/holding-reports/holding-reports.component').then(
+            (m) => m.HoldingReportsComponent,
+          ),
       },
       {
         path: 'downloads',
@@ -53,7 +54,9 @@ export const routes: Routes = [
       {
         path: 'liquid-position',
         loadComponent: () =>
-          import('../features/liquid-position/liquid-position.component').then((m) => m.LiquidPositionComponent),
+          import('../features/liquid-position/liquid-position.component').then(
+            (m) => m.LiquidPositionComponent,
+          ),
       },
       {
         path: 'analytics',
@@ -73,17 +76,23 @@ export const routes: Routes = [
       {
         path: 'portfolio-news',
         loadComponent: () =>
-          import('../features/portfolio-news/portfolio-news-list.component').then((m) => m.PortfolioNewsListComponent),
+          import('../features/portfolio-news/portfolio-news-list.component').then(
+            (m) => m.PortfolioNewsListComponent,
+          ),
       },
       {
         path: 'portfolio-news/:id',
         loadComponent: () =>
-          import('../features/portfolio-news/portfolio-news-detail.component').then((m) => m.PortfolioNewsDetailComponent),
+          import('../features/portfolio-news/portfolio-news-detail.component').then(
+            (m) => m.PortfolioNewsDetailComponent,
+          ),
       },
       {
         path: 'corporate-actions',
         loadComponent: () =>
-          import('../features/corporate-actions/corporate-actions.component').then((m) => m.CorporateActionsComponent),
+          import('../features/corporate-actions/corporate-actions.component').then(
+            (m) => m.CorporateActionsComponent,
+          ),
       },
       {
         path: 'watch-list',

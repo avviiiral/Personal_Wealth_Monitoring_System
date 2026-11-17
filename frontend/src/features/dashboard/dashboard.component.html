@@ -4,35 +4,65 @@
     <div class="page-header-copy">
       <h1>Dashboard</h1>
       <p>Overview of your personal wealth and investments.</p>
-
     </div>
 
     <div class="page-header-actions">
       <div class="header-action-row">
         <button class="refresh-button" type="button" (click)="refreshDashboard()">
-          <svg class="refresh-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+          <svg
+            class="refresh-icon"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.8"
+            aria-hidden="true"
+          >
             <path d="M20 11A8 8 0 1 0 18.5 16" stroke-linecap="round" stroke-linejoin="round" />
             <path d="M20 5v6h-6" stroke-linecap="round" stroke-linejoin="round" />
           </svg>
           Refresh
         </button>
 
-        <button class="download-report-button" type="button" [disabled]="loading || generatingReport" (click)="downloadPortfolioReview()">
-          <svg class="button-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
-            <path d="M12 15V4M12 15 8.5 11.5M12 15l3.5-3.5" stroke-linecap="round" stroke-linejoin="round" />
-            <path d="M4 16v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2" stroke-linecap="round" stroke-linejoin="round" />
+        <button
+          class="download-report-button"
+          type="button"
+          [disabled]="loading || generatingReport"
+          (click)="downloadPortfolioReview()"
+        >
+          <svg
+            class="button-icon"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.8"
+            aria-hidden="true"
+          >
+            <path
+              d="M12 15V4M12 15 8.5 11.5M12 15l3.5-3.5"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            />
+            <path
+              d="M4 16v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            />
           </svg>
           {{ generatingReport ? 'Generating…' : 'Download Report' }}
         </button>
       </div>
-
     </div>
 
     <div class="header-controls-row">
       <div class="family-filter-inline" *ngIf="familyMemberOptions.length > 0">
         <span class="header-control-label">Family Member</span>
         <div class="header-control-buttons">
-          <button type="button" class="header-control-button" [class.active]="!selectedFamilyMember" (click)="clearFamilyMember()">
+          <button
+            type="button"
+            class="header-control-button"
+            [class.active]="!selectedFamilyMember"
+            (click)="clearFamilyMember()"
+          >
             All
           </button>
           <button
@@ -82,14 +112,24 @@
         <div class="kpi-card-top">
           <span class="kpi-icon" aria-hidden="true">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
-              <path d="M3 7a2 2 0 0 1 2-2h13a1 1 0 0 1 1 1v2" stroke-linecap="round" stroke-linejoin="round" />
-              <path d="M3 7v11a2 2 0 0 0 2 2h14a1 1 0 0 0 1-1v-8a1 1 0 0 0-1-1H8a2 2 0 0 1 0-4h11" stroke-linecap="round" stroke-linejoin="round" />
+              <path
+                d="M3 7a2 2 0 0 1 2-2h13a1 1 0 0 1 1 1v2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              />
+              <path
+                d="M3 7v11a2 2 0 0 0 2 2h14a1 1 0 0 0 1-1v-8a1 1 0 0 0-1-1H8a2 2 0 0 1 0-4h11"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              />
               <circle cx="16.5" cy="14.5" r="1.4" />
             </svg>
           </span>
           <span class="kpi-label">Total Wealth</span>
         </div>
-        <strong>{{ formatDisplayAmount(summary?.total_current_value ?? summary?.total_wealth ?? 0) }}</strong>
+        <strong>{{
+          formatDisplayAmount(summary?.total_current_value ?? summary?.total_wealth ?? 0)
+        }}</strong>
         <span class="kpi-subtitle"> Current portfolio value </span>
       </div>
 
@@ -97,31 +137,56 @@
         <div class="kpi-card-top">
           <span class="kpi-icon" aria-hidden="true">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
-              <path d="M12 21c-4-2.6-7-6-7-10a7 7 0 0 1 14 0c0 4-3 7.4-7 10Z" stroke-linecap="round" stroke-linejoin="round" />
+              <path
+                d="M12 21c-4-2.6-7-6-7-10a7 7 0 0 1 14 0c0 4-3 7.4-7 10Z"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              />
               <path d="M12 7v7M9 11.5 12 14l3-2.5" stroke-linecap="round" stroke-linejoin="round" />
             </svg>
           </span>
           <span class="kpi-label">Invested Value</span>
         </div>
-        <strong>{{ formatDisplayAmount(summary?.total_invested ?? summary?.invested_value ?? 0) }}</strong>
+        <strong>{{
+          formatDisplayAmount(summary?.total_invested ?? summary?.invested_value ?? 0)
+        }}</strong>
         <span class="kpi-subtitle"> Total invested </span>
       </div>
 
-      <div class="kpi-card kpi-card--pnl" [class.is-positive]="(summary?.total_pnl ?? summary?.pnl ?? 0) >= 0" [class.is-negative]="(summary?.total_pnl ?? summary?.pnl ?? 0) < 0">
+      <div
+        class="kpi-card kpi-card--pnl"
+        [class.is-positive]="(summary?.total_pnl ?? summary?.pnl ?? 0) >= 0"
+        [class.is-negative]="(summary?.total_pnl ?? summary?.pnl ?? 0) < 0"
+      >
         <div class="kpi-card-top">
           <span class="kpi-icon" aria-hidden="true">
-            <svg *ngIf="(summary?.total_pnl ?? summary?.pnl ?? 0) >= 0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
+            <svg
+              *ngIf="(summary?.total_pnl ?? summary?.pnl ?? 0) >= 0"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.6"
+            >
               <path d="M4 16 10 10l3.5 3.5L20 6" stroke-linecap="round" stroke-linejoin="round" />
               <path d="M14 6h6v6" stroke-linecap="round" stroke-linejoin="round" />
             </svg>
-            <svg *ngIf="(summary?.total_pnl ?? summary?.pnl ?? 0) < 0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
+            <svg
+              *ngIf="(summary?.total_pnl ?? summary?.pnl ?? 0) < 0"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.6"
+            >
               <path d="M4 8 10 14l3.5-3.5L20 18" stroke-linecap="round" stroke-linejoin="round" />
               <path d="M14 18h6v-6" stroke-linecap="round" stroke-linejoin="round" />
             </svg>
           </span>
           <span class="kpi-label">Profit / Loss</span>
         </div>
-        <strong [class.positive]="(summary?.total_pnl ?? summary?.pnl ?? 0) >= 0" [class.negative]="(summary?.total_pnl ?? summary?.pnl ?? 0) < 0">
+        <strong
+          [class.positive]="(summary?.total_pnl ?? summary?.pnl ?? 0) >= 0"
+          [class.negative]="(summary?.total_pnl ?? summary?.pnl ?? 0) < 0"
+        >
           {{ formatDisplayAmount(summary?.total_pnl ?? summary?.pnl ?? 0) }}
         </strong>
         <span class="kpi-subtitle"> Overall P&amp;L </span>
@@ -138,7 +203,9 @@
           </span>
           <span class="kpi-label">XIRR</span>
         </div>
-        <strong>{{ formatPercentage(xirr?.xirr_percentage ?? xirr?.xirr ?? summary?.xirr_percentage ?? 0) }}</strong>
+        <strong>{{
+          formatPercentage(xirr?.xirr_percentage ?? xirr?.xirr ?? summary?.xirr_percentage ?? 0)
+        }}</strong>
         <span class="kpi-subtitle"> Annualized return </span>
       </div>
     </div>
@@ -200,13 +267,15 @@
         </div>
       </div>
 
-      <div class="standard-allocation-toolbar" *ngIf="!investmentSummaryError && investmentSummary && investmentSummaryGroups.length > 0">
+      <div
+        class="standard-allocation-toolbar"
+        *ngIf="!investmentSummaryError && investmentSummary && investmentSummaryGroups.length > 0"
+      >
         <div class="standard-allocation-toolbar-info">
           <strong>Standard Allocation</strong>
-          <span *ngIf="!selectedFamilyMember">Set the shared Standard Allocation for all family members. Enter an amount or percentage; the other value is calculated from the current total.</span>
-          <span *ngIf="selectedFamilyMember">Set this family member's Standard Allocation independently. Enter an amount or percentage; the other value is calculated from this family's current total.</span>
           <span class="standard-allocation-total" [ngClass]="getStandardAllocationTotalClass()">
-            Portfolio Total: {{ formatDisplayAmount(standardAllocationTotalValue) }} &nbsp; • &nbsp; Target Total: {{ getStandardAllocationDraftTotal() | number:'1.0-2' }}%
+            Portfolio Total: {{ formatDisplayAmount(standardAllocationTotalValue) }} &nbsp; • &nbsp;
+            Target Total: {{ getStandardAllocationDraftTotal() | number: '1.0-2' }}%
           </span>
         </div>
         <div class="standard-allocation-actions">
@@ -219,10 +288,20 @@
             Edit Standard Allocation
           </button>
           <ng-container *ngIf="standardAllocationEditing">
-            <button type="button" class="standard-allocation-cancel-button" (click)="cancelStandardAllocationEdit()" [disabled]="standardAllocationSaving">
+            <button
+              type="button"
+              class="standard-allocation-cancel-button"
+              (click)="cancelStandardAllocationEdit()"
+              [disabled]="standardAllocationSaving"
+            >
               Cancel
             </button>
-            <button type="button" class="standard-allocation-save-button" (click)="saveStandardAllocations()" [disabled]="standardAllocationSaving || getStandardAllocationDraftTotal() !== 100">
+            <button
+              type="button"
+              class="standard-allocation-save-button"
+              (click)="saveStandardAllocations()"
+              [disabled]="standardAllocationSaving || getStandardAllocationDraftTotal() !== 100"
+            >
               {{ standardAllocationSaving ? 'Saving…' : 'Save Allocation' }}
             </button>
           </ng-container>
@@ -242,7 +321,10 @@
         <span> Loading investment summary... </span>
       </div>
 
-      <div class="investment-summary-table-wrapper" *ngIf="!investmentSummaryError && investmentSummary">
+      <div
+        class="investment-summary-table-wrapper"
+        *ngIf="!investmentSummaryError && investmentSummary"
+      >
         <div class="empty-state" *ngIf="investmentSummaryGroups.length === 0">
           No investment summary data available.
         </div>
@@ -261,14 +343,20 @@
           </thead>
 
           <tbody>
-            <ng-container *ngFor="let group of investmentSummaryGroups; trackBy: trackByInvestmentCategory">
+            <ng-container
+              *ngFor="let group of investmentSummaryGroups; trackBy: trackByInvestmentCategory"
+            >
               <tr
                 class="investment-category-row"
                 [class.expanded]="expandedInvestmentCategory === group.asset_category"
                 (click)="toggleInvestmentCategory(group.asset_category)"
               >
                 <td class="category-cell">
-                  <span class="row-chevron" [class.open]="expandedInvestmentCategory === group.asset_category">›</span>
+                  <span
+                    class="row-chevron"
+                    [class.open]="expandedInvestmentCategory === group.asset_category"
+                    >›</span
+                  >
                   {{ group.asset_category }}
                 </td>
 
@@ -283,7 +371,12 @@
                     min="0"
                     step="0.01"
                     [value]="getStandardAllocationAmountInputValue(group.asset_category)"
-                    (input)="updateStandardAllocationAmount(group.asset_category, $any($event.target).value)"
+                    (input)="
+                      updateStandardAllocationAmount(
+                        group.asset_category,
+                        $any($event.target).value
+                      )
+                    "
                     (click)="$event.stopPropagation()"
                   />
                   <span *ngIf="!standardAllocationEditing">
@@ -300,11 +393,16 @@
                     max="100"
                     step="0.01"
                     [value]="getStandardAllocation(group.asset_category)"
-                    (input)="updateStandardAllocationPercent(group.asset_category, $any($event.target).value)"
+                    (input)="
+                      updateStandardAllocationPercent(
+                        group.asset_category,
+                        $any($event.target).value
+                      )
+                    "
                     (click)="$event.stopPropagation()"
                   />
                   <span *ngIf="!standardAllocationEditing">
-                    {{ getStandardAllocation(group.asset_category) | number:'1.0-2' }}%
+                    {{ getStandardAllocation(group.asset_category) | number: '1.0-2' }}%
                   </span>
                 </td>
 
@@ -315,12 +413,19 @@
                 </td>
 
                 <td class="arrow-column">
-                  <span class="row-chevron right" [class.open]="expandedInvestmentCategory === group.asset_category">›</span>
+                  <span
+                    class="row-chevron right"
+                    [class.open]="expandedInvestmentCategory === group.asset_category"
+                    >›</span
+                  >
                 </td>
               </tr>
 
               <!-- LEVEL 2: ASSET CLASS -->
-              <tr *ngIf="expandedInvestmentCategory === group.asset_category" class="asset-class-detail-row">
+              <tr
+                *ngIf="expandedInvestmentCategory === group.asset_category"
+                class="asset-class-detail-row"
+              >
                 <td colspan="7">
                   <div class="asset-class-detail-container">
                     <table class="asset-class-table">
@@ -332,10 +437,20 @@
                         </tr>
                       </thead>
                       <tbody>
-                        <tr *ngFor="let assetClass of group.asset_classes; trackBy: trackByInvestmentAssetClass" class="asset-class-detail-item">
+                        <tr
+                          *ngFor="
+                            let assetClass of group.asset_classes;
+                            trackBy: trackByInvestmentAssetClass
+                          "
+                          class="asset-class-detail-item"
+                        >
                           <td>{{ assetClass.asset_class }}</td>
-                          <td class="align-right">{{ formatDisplayAmount(assetClass.current_value) }}</td>
-                          <td class="align-right">{{ formatPercentage(assetClass.percentage_of_total) }}</td>
+                          <td class="align-right">
+                            {{ formatDisplayAmount(assetClass.current_value) }}
+                          </td>
+                          <td class="align-right">
+                            {{ formatPercentage(assetClass.percentage_of_total) }}
+                          </td>
                         </tr>
                       </tbody>
                     </table>
@@ -354,20 +469,38 @@
         <div class="card-header-title">
           <span class="card-icon" aria-hidden="true">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
-              <path d="M4 19V9M10 19V5M16 19v-7M20 19H4" stroke-linecap="round" stroke-linejoin="round" />
+              <path
+                d="M4 19V9M10 19V5M16 19v-7M20 19H4"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              />
             </svg>
           </span>
           <div>
             <h2>XIRR Performance</h2>
-            <p>Top and bottom asset names by Asset XIRR</p>
+            <p>Top and bottom asset names by Asset`s XIRR</p>
           </div>
         </div>
       </div>
 
       <div class="xirr-category-selector">
-        <button type="button" class="xirr-category-arrow" aria-label="Previous asset category" (click)="previousXirrAssetCategory()">←</button>
+        <button
+          type="button"
+          class="xirr-category-arrow"
+          aria-label="Previous asset category"
+          (click)="previousXirrAssetCategory()"
+        >
+          ←
+        </button>
         <div class="xirr-category-name">{{ selectedXirrAssetCategory }}</div>
-        <button type="button" class="xirr-category-arrow" aria-label="Next asset category" (click)="nextXirrAssetCategory()">→</button>
+        <button
+          type="button"
+          class="xirr-category-arrow"
+          aria-label="Next asset category"
+          (click)="nextXirrAssetCategory()"
+        >
+          →
+        </button>
       </div>
 
       <div class="xirr-ranking-grid" *ngIf="topXirrRows.length > 0 || bottomXirrRows.length > 0">
@@ -379,7 +512,10 @@
           <div class="xirr-ranking-table-wrapper">
             <table class="xirr-ranking-table">
               <thead>
-                <tr><th>Asset Name</th><th class="align-right">XIRR</th></tr>
+                <tr>
+                  <th>Asset Name</th>
+                  <th class="align-right">XIRR</th>
+                </tr>
               </thead>
               <tbody>
                 <tr *ngFor="let row of topXirrRows; trackBy: trackByXirrUnderlying">
@@ -387,7 +523,9 @@
                     <div class="xirr-underlying-name">{{ row.underlying }}</div>
                     <div class="xirr-asset-class">{{ row.assetClass }}</div>
                   </td>
-                  <td class="align-right" [ngClass]="getXirrClass(row.xirr)">{{ formatXirr(row.xirr) }}</td>
+                  <td class="align-right" [ngClass]="getXirrClass(row.xirr)">
+                    {{ formatXirr(row.xirr) }}
+                  </td>
                 </tr>
               </tbody>
             </table>
@@ -402,7 +540,10 @@
           <div class="xirr-ranking-table-wrapper">
             <table class="xirr-ranking-table">
               <thead>
-                <tr><th>Asset Name</th><th class="align-right">XIRR</th></tr>
+                <tr>
+                  <th>Asset Name</th>
+                  <th class="align-right">XIRR</th>
+                </tr>
               </thead>
               <tbody>
                 <tr *ngFor="let row of bottomXirrRows; trackBy: trackByXirrUnderlying">
@@ -410,7 +551,9 @@
                     <div class="xirr-underlying-name">{{ row.underlying }}</div>
                     <div class="xirr-asset-class">{{ row.assetClass }}</div>
                   </td>
-                  <td class="align-right" [ngClass]="getXirrClass(row.xirr)">{{ formatXirr(row.xirr) }}</td>
+                  <td class="align-right" [ngClass]="getXirrClass(row.xirr)">
+                    {{ formatXirr(row.xirr) }}
+                  </td>
                 </tr>
               </tbody>
             </table>
@@ -418,7 +561,10 @@
         </div>
       </div>
 
-      <div class="empty-state xirr-empty-state" *ngIf="topXirrRows.length === 0 && bottomXirrRows.length === 0">
+      <div
+        class="empty-state xirr-empty-state"
+        *ngIf="topXirrRows.length === 0 && bottomXirrRows.length === 0"
+      >
         No XIRR data available for {{ selectedXirrAssetCategory }}.
       </div>
     </div>

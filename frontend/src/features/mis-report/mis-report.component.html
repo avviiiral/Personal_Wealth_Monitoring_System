@@ -15,12 +15,38 @@
         <div class="header-control-inline">
           <span class="header-control-label">Display As</span>
           <div class="header-control-buttons">
-            <button type="button" class="header-control-button" [class.active]="displayUnit === 'amount'" (click)="setDisplayUnit('amount')">Amount</button>
-            <button type="button" class="header-control-button" [class.active]="displayUnit === 'lakhs'" (click)="setDisplayUnit('lakhs')">Lakhs</button>
-            <button type="button" class="header-control-button" [class.active]="displayUnit === 'crores'" (click)="setDisplayUnit('crores')">Crores</button>
+            <button
+              type="button"
+              class="header-control-button"
+              [class.active]="displayUnit === 'amount'"
+              (click)="setDisplayUnit('amount')"
+            >
+              Amount
+            </button>
+            <button
+              type="button"
+              class="header-control-button"
+              [class.active]="displayUnit === 'lakhs'"
+              (click)="setDisplayUnit('lakhs')"
+            >
+              Lakhs
+            </button>
+            <button
+              type="button"
+              class="header-control-button"
+              [class.active]="displayUnit === 'crores'"
+              (click)="setDisplayUnit('crores')"
+            >
+              Crores
+            </button>
           </div>
         </div>
-        <button type="button" class="generate-button" (click)="loadReport()" [disabled]="loading || !fromDate || !toDate">
+        <button
+          type="button"
+          class="generate-button"
+          (click)="loadReport()"
+          [disabled]="loading || !fromDate || !toDate"
+        >
           {{ loading ? 'Generating…' : 'Generate Report' }}
         </button>
       </div>
@@ -32,7 +58,12 @@
         Opening: {{ formatDate(report.opening_date) }}
       </p>
     </div>
-    <button class="download-button" type="button" (click)="downloadExcel()" [disabled]="loading || downloading || !report">
+    <button
+      class="download-button"
+      type="button"
+      (click)="downloadExcel()"
+      [disabled]="loading || downloading || !report"
+    >
       {{ downloading ? 'Preparing Excel…' : 'Download Excel' }}
     </button>
   </header>
@@ -98,7 +129,12 @@
                 <td></td>
                 <td>Diff- {{ formatDate(report.reporting_date) }}</td>
                 <td class="number" *ngFor="let family of report.family_names">
-                  {{ formatDisplayAmount(row.family_values[family] - row.prior_family_values[family], 2) }}
+                  {{
+                    formatDisplayAmount(
+                      row.family_values[family] - row.prior_family_values[family],
+                      2
+                    )
+                  }}
                 </td>
                 <td class="number">{{ formatDisplayAmount(row.difference, 2) }}</td>
               </tr>
@@ -109,10 +145,14 @@
               <td class="number" *ngFor="let family of report.family_names">
                 {{ formatDisplayAmount(ipsGrandTotal(family), 2) }}
               </td>
-              <td class="number"><strong>{{ formatDisplayAmount(ipsGrandTotal(), 2) }}</strong></td>
+              <td class="number">
+                <strong>{{ formatDisplayAmount(ipsGrandTotal(), 2) }}</strong>
+              </td>
             </tr>
             <tr *ngIf="report.ips.length === 0">
-              <td [attr.colspan]="report.family_names.length + 3" class="empty">No IPS data available.</td>
+              <td [attr.colspan]="report.family_names.length + 3" class="empty">
+                No IPS data available.
+              </td>
             </tr>
           </tbody>
         </table>
@@ -151,7 +191,9 @@
           </thead>
           <tbody>
             <tr *ngFor="let row of dataRows; trackBy: trackByDataRow">
-              <td><strong>{{ row.asset_name }}</strong></td>
+              <td>
+                <strong>{{ row.asset_name }}</strong>
+              </td>
               <td>{{ row.family_name }}</td>
               <td>{{ row.asset_class }}</td>
               <td>{{ row.advisor || '—' }}</td>
@@ -216,7 +258,9 @@
           </thead>
           <tbody>
             <tr *ngFor="let row of taxRows; trackBy: trackByDataRow">
-              <td><strong>{{ row.asset_name }}</strong></td>
+              <td>
+                <strong>{{ row.asset_name }}</strong>
+              </td>
               <td>{{ row.family_name }}</td>
               <td>{{ row.asset_class }}</td>
               <td>{{ row.advisor || '—' }}</td>
@@ -249,20 +293,44 @@
     <section class="report-card" *ngIf="activeSheet === 'notes'">
       <div class="section-header notes-editor-header">
         <div>
-          <input *ngIf="editingNotes && editableNotes" class="notes-title-input notes-main-title-input" [(ngModel)]="editableNotes.title" />
+          <input
+            *ngIf="editingNotes && editableNotes"
+            class="notes-title-input notes-main-title-input"
+            [(ngModel)]="editableNotes.title"
+          />
           <h2 *ngIf="!editingNotes">{{ report.notes.title }}</h2>
-          <span>Family-wide editable MIS Notes. Changes are shared with the active family.</span>
         </div>
         <div class="notes-actions">
-          <button *ngIf="!editingNotes" type="button" class="secondary-button" (click)="startNotesEditing()">Edit Notes</button>
+          <button
+            *ngIf="!editingNotes"
+            type="button"
+            class="secondary-button"
+            (click)="startNotesEditing()"
+          >
+            Edit Notes
+          </button>
           <ng-container *ngIf="editingNotes">
             <label class="auto-fill-toggle">
               <input type="checkbox" [(ngModel)]="autoFillNewRows" />
               Auto-fill recognized values
             </label>
-            <button type="button" class="secondary-button" (click)="addSection()">Add Section</button>
-            <button type="button" class="secondary-button" (click)="cancelNotesEditing()" [disabled]="savingNotes">Cancel</button>
-            <button type="button" class="primary-button" (click)="saveNotes()" [disabled]="savingNotes">
+            <button type="button" class="secondary-button" (click)="addSection()">
+              Add Section
+            </button>
+            <button
+              type="button"
+              class="secondary-button"
+              (click)="cancelNotesEditing()"
+              [disabled]="savingNotes"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              class="primary-button"
+              (click)="saveNotes()"
+              [disabled]="savingNotes"
+            >
               {{ savingNotes ? 'Saving...' : 'Save Notes' }}
             </button>
           </ng-container>
@@ -270,26 +338,46 @@
       </div>
 
       <p class="notes-ticker-help" *ngIf="editingNotes">
-        Add Row in a rate-tracking section asks for the asset name and Yahoo Finance ticker.
-        Use exchange-qualified symbols such as RELIANCE.NS or INFY.BO; leave the ticker blank for manual/unlisted valuations.
-        Saved tickers are refreshed in the background.
+        Add Row in a rate-tracking section asks for the asset name and Yahoo Finance ticker. Use
+        exchange-qualified symbols such as RELIANCE.NS or INFY.BO; leave the ticker blank for
+        manual/unlisted valuations. Saved tickers are refreshed in the background.
       </p>
 
       <div class="notes-editor-error" *ngIf="notesError">{{ notesError }}</div>
 
       <div class="asset-ticker-overlay" *ngIf="showAddColumnForm" (click)="closeAddColumnForm()">
-        <section class="asset-ticker-dialog" role="dialog" aria-modal="true" aria-labelledby="add-column-dialog-title" (click)="$event.stopPropagation()">
+        <section
+          class="asset-ticker-dialog"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="add-column-dialog-title"
+          (click)="$event.stopPropagation()"
+        >
           <div class="asset-ticker-dialog-header">
             <div>
               <h3 id="add-column-dialog-title">Add Column</h3>
               <p>Choose a column name and the type of values it will contain.</p>
             </div>
-            <button type="button" class="notes-icon-button" aria-label="Close" (click)="closeAddColumnForm()">×</button>
+            <button
+              type="button"
+              class="notes-icon-button"
+              aria-label="Close"
+              (click)="closeAddColumnForm()"
+            >
+              ×
+            </button>
           </div>
           <form class="asset-ticker-form" (ngSubmit)="confirmAddColumn()">
             <label>
               <span>Column name <strong>*</strong></span>
-              <input name="newColumnName" type="text" [(ngModel)]="newColumnName" placeholder="e.g. Notes or Units" required autofocus />
+              <input
+                name="newColumnName"
+                type="text"
+                [(ngModel)]="newColumnName"
+                placeholder="e.g. Notes or Units"
+                required
+                autofocus
+              />
             </label>
             <label>
               <span>Column type</span>
@@ -300,35 +388,75 @@
               <small>Choose Text for descriptions and Number for numeric values.</small>
             </label>
             <div class="asset-ticker-dialog-actions">
-              <button type="button" class="secondary-button" (click)="closeAddColumnForm()">Cancel</button>
-              <button type="submit" class="primary-button" [disabled]="!newColumnName.trim()">Add Column</button>
+              <button type="button" class="secondary-button" (click)="closeAddColumnForm()">
+                Cancel
+              </button>
+              <button type="submit" class="primary-button" [disabled]="!newColumnName.trim()">
+                Add Column
+              </button>
             </div>
           </form>
         </section>
       </div>
 
-      <div class="asset-ticker-overlay" *ngIf="showAssetTickerForm" (click)="closeAssetTickerForm()">
-        <section class="asset-ticker-dialog" role="dialog" aria-modal="true" aria-labelledby="asset-ticker-dialog-title" (click)="$event.stopPropagation()">
+      <div
+        class="asset-ticker-overlay"
+        *ngIf="showAssetTickerForm"
+        (click)="closeAssetTickerForm()"
+      >
+        <section
+          class="asset-ticker-dialog"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="asset-ticker-dialog-title"
+          (click)="$event.stopPropagation()"
+        >
           <div class="asset-ticker-dialog-header">
             <div>
               <h3 id="asset-ticker-dialog-title">Add Asset / Instrument</h3>
               <p>Enter the name and ticker to fetch historical prices for MIS.</p>
             </div>
-            <button type="button" class="notes-icon-button" aria-label="Close" (click)="closeAssetTickerForm()">×</button>
+            <button
+              type="button"
+              class="notes-icon-button"
+              aria-label="Close"
+              (click)="closeAssetTickerForm()"
+            >
+              ×
+            </button>
           </div>
           <form class="asset-ticker-form" (ngSubmit)="confirmAddAssetRow()">
             <label>
               <span>Asset / instrument name <strong>*</strong></span>
-              <input name="assetTickerName" type="text" [(ngModel)]="assetTickerName" placeholder="e.g. Reliance Industries" required autofocus />
+              <input
+                name="assetTickerName"
+                type="text"
+                [(ngModel)]="assetTickerName"
+                placeholder="e.g. Reliance Industries"
+                required
+                autofocus
+              />
             </label>
             <label>
               <span>Yahoo Finance ticker / symbol</span>
-              <input name="assetTickerSymbol" type="text" [(ngModel)]="assetTickerSymbol" placeholder="e.g. RELIANCE.NS or ^NSEI" />
-              <small>Use an exchange suffix for Indian shares, such as .NS or .BO. Leave blank for manual/unlisted valuations.</small>
+              <input
+                name="assetTickerSymbol"
+                type="text"
+                [(ngModel)]="assetTickerSymbol"
+                placeholder="e.g. RELIANCE.NS or ^NSEI"
+              />
+              <small
+                >Use an exchange suffix for Indian shares, such as .NS or .BO. Leave blank for
+                manual/unlisted valuations.</small
+              >
             </label>
             <div class="asset-ticker-dialog-actions">
-              <button type="button" class="secondary-button" (click)="closeAssetTickerForm()">Cancel</button>
-              <button type="submit" class="primary-button" [disabled]="!assetTickerName.trim()">Add Asset</button>
+              <button type="button" class="secondary-button" (click)="closeAssetTickerForm()">
+                Cancel
+              </button>
+              <button type="submit" class="primary-button" [disabled]="!assetTickerName.trim()">
+                Add Asset
+              </button>
             </div>
           </form>
         </section>
@@ -340,18 +468,41 @@
             <strong>{{ section.section_number }}</strong>
             <input *ngIf="editingNotes" class="notes-title-input" [(ngModel)]="section.title" />
             <span *ngIf="!editingNotes">{{ section.title }}</span>
-            <button *ngIf="editingNotes" type="button" class="notes-danger-button" (click)="removeSection(sectionIndex)">Remove Section</button>
+            <button
+              *ngIf="editingNotes"
+              type="button"
+              class="notes-danger-button"
+              (click)="removeSection(sectionIndex)"
+            >
+              Remove Section
+            </button>
           </div>
 
           <div class="table-wrap">
             <table class="notes-table editable-notes-table">
               <thead>
                 <tr>
-                  <th *ngFor="let column of section.columns; let columnIndex = index; trackBy: trackByEditableColumn">
-                    <ng-container *ngIf="editingNotes && !isSystemColumn(column); else readonlyColumn">
+                  <th
+                    *ngFor="
+                      let column of section.columns;
+                      let columnIndex = index;
+                      trackBy: trackByEditableColumn
+                    "
+                  >
+                    <ng-container
+                      *ngIf="editingNotes && !isSystemColumn(column); else readonlyColumn"
+                    >
                       <div class="notes-column-editor">
                         <input class="notes-column-input" [(ngModel)]="column.label" />
-                        <button *ngIf="!isSystemColumn(column)" type="button" class="notes-icon-button" title="Remove column" (click)="removeColumn(section, columnIndex)">×</button>
+                        <button
+                          *ngIf="!isSystemColumn(column)"
+                          type="button"
+                          class="notes-icon-button"
+                          title="Remove column"
+                          (click)="removeColumn(section, columnIndex)"
+                        >
+                          ×
+                        </button>
                       </div>
                     </ng-container>
                     <ng-template #readonlyColumn>{{ column.label }}</ng-template>
@@ -360,7 +511,13 @@
                 </tr>
               </thead>
               <tbody>
-                <tr *ngFor="let row of section.rows; let rowIndex = index; trackBy: trackByEditableRow">
+                <tr
+                  *ngFor="
+                    let row of section.rows;
+                    let rowIndex = index;
+                    trackBy: trackByEditableRow
+                  "
+                >
                   <td *ngFor="let column of section.columns; trackBy: trackByEditableColumn">
                     <input
                       *ngIf="editingNotes && !isCalculatedColumn(column)"
@@ -369,22 +526,39 @@
                       [ngModel]="row.cells[column.id]"
                       (ngModelChange)="row.cells[column.id] = coerceCellValue(column, $event)"
                     />
-                    <span *ngIf="!editingNotes || isCalculatedColumn(column)">{{ formatNotesCalculatedValue(column, row.cells[column.id]) }}</span>
+                    <span *ngIf="!editingNotes || isCalculatedColumn(column)">{{
+                      formatNotesCalculatedValue(column, row.cells[column.id])
+                    }}</span>
                   </td>
                   <td *ngIf="editingNotes" class="notes-row-actions">
-                    <button type="button" class="notes-danger-button" (click)="removeRow(section, rowIndex)">Remove</button>
+                    <button
+                      type="button"
+                      class="notes-danger-button"
+                      (click)="removeRow(section, rowIndex)"
+                    >
+                      Remove
+                    </button>
                   </td>
                 </tr>
                 <tr *ngIf="!section.rows.length">
-                  <td [attr.colspan]="section.columns.length + (editingNotes ? 1 : 0)" class="empty">No rows in this section.</td>
+                  <td
+                    [attr.colspan]="section.columns.length + (editingNotes ? 1 : 0)"
+                    class="empty"
+                  >
+                    No rows in this section.
+                  </td>
                 </tr>
               </tbody>
             </table>
           </div>
 
           <div class="notes-section-toolbar" *ngIf="editingNotes">
-            <button type="button" class="secondary-button" (click)="addRow(section)">Add Row</button>
-            <button type="button" class="secondary-button" (click)="addColumn(section)">Add Column</button>
+            <button type="button" class="secondary-button" (click)="addRow(section)">
+              Add Row
+            </button>
+            <button type="button" class="secondary-button" (click)="addColumn(section)">
+              Add Column
+            </button>
           </div>
 
           <div class="notes-note-editor" *ngIf="editingNotes">
@@ -405,7 +579,6 @@
       <div class="section-header">
         <div>
           <h2>Fund Type wise Summary</h2>
-          <span>Fund Type.V2 with subtotal for each category and grand total</span>
         </div>
       </div>
       <div class="table-wrap">

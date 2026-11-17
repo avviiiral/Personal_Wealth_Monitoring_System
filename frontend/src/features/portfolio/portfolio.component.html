@@ -2,7 +2,7 @@
   <div class="portfolio-header">
     <div>
       <h1>Portfolio</h1>
-      <p>Your holdings, drilled down from sub class to underlying asset.</p>
+      <p>Holdings, drilled down from sub class to underlying asset.</p>
     </div>
 
     <div class="portfolio-header-actions">
@@ -46,7 +46,6 @@
         {{ uploadingTransactions ? 'Uploading…' : 'Upload Transactions' }}
       </button>
 
-
       <button
         type="button"
         class="upload-button underlying-upload-trigger"
@@ -74,40 +73,144 @@
     </div>
   </div>
 
-
-  <div *ngIf="reviewingDuplicates" class="duplicate-review-backdrop"><section class="duplicate-review-panel"><h2>Checking transactions…</h2><p>Looking for duplicate rows before import.</p></section></div>
+  <div *ngIf="reviewingDuplicates" class="duplicate-review-backdrop">
+    <section class="duplicate-review-panel">
+      <h2>Checking transactions…</h2>
+      <p>Looking for duplicate rows before import.</p>
+    </section>
+  </div>
 
   <div *ngIf="showDuplicateReview" class="duplicate-review-backdrop">
-    <section class="duplicate-review-panel" role="dialog" aria-modal="true" aria-labelledby="duplicate-review-title">
-      <div class="duplicate-review-heading"><div><h2 id="duplicate-review-title">Review transaction upload</h2><p>{{ duplicateTransactionRows.length }} duplicate row(s) need review. Duplicate rows are skipped unless selected; unresolved securities are automatically created as separate assets during import.</p></div><button type="button" class="refresh-button" (click)="cancelDuplicateReview()">Cancel</button></div>
+    <section
+      class="duplicate-review-panel"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="duplicate-review-title"
+    >
+      <div class="duplicate-review-heading">
+        <div>
+          <h2 id="duplicate-review-title">Review transaction upload</h2>
+          <p>
+            {{ duplicateTransactionRows.length }} duplicate row(s) need review. Duplicate rows are
+            skipped unless selected; unresolved securities are automatically created as separate
+            assets during import.
+          </p>
+        </div>
+        <button type="button" class="refresh-button" (click)="cancelDuplicateReview()">
+          Cancel
+        </button>
+      </div>
       <div *ngIf="identityReviewRows.length" class="identity-review-section">
         <h3>Security identity review</h3>
-        <p>Only securities that could not be confidently resolved are shown here. PWMS automatically maps normalized names and ISINs to canonical Security Master records. Resolve the remaining ambiguous or unknown identities below, or create a separate asset if needed.</p>
-        <div class="duplicate-review-table-wrap"><table class="duplicate-review-table identity-review-table"><thead><tr><th>Asset name / underlying</th><th>Uploaded ISIN</th><th>Auto-map status</th><th>Verify decision</th></tr></thead><tbody>
-          <tr *ngFor="let group of identityReviewGroups">
-            <td><strong>{{ group.assetName }}</strong><small>Underlying: {{ group.underlying || 'Not provided' }}</small><small>{{ group.assetClass }} / {{ group.subClass }}</small></td>
-            <td>{{ group.isins.length ? group.isins.join(', ') : 'Not provided' }}</td>
-            <td><strong>{{ group.status }}</strong><small>{{ group.reason }}</small></td>
-            <td>
-              <select [(ngModel)]="group.choice" [attr.aria-label]="'Verify identity for ' + group.assetName">
-                <option value="">Select / verify identity</option>
-                <option *ngFor="let candidate of group.candidates" [value]="candidate.id">{{ candidate.name }}{{ candidate.isin ? ' — ' + candidate.isin : '' }}</option>
-                <option value="__NEW__">Cannot verify — create separate asset</option>
-              </select>
-              <label *ngIf="group.choice === '__NEW__'" class="identity-isin-fallback">
-                <span>ISIN (optional)</span>
-                <input type="text" [(ngModel)]="group.reviewedIsin" maxlength="12" placeholder="Enter ISIN if known" [attr.aria-label]="'Optional ISIN for ' + group.assetName" />
-              </label>
-            </td>
-          </tr>
-        </tbody></table></div>
+        <p>
+          Only securities that could not be confidently resolved are shown here. PWMS automatically
+          maps normalized names and ISINs to canonical Security Master records. Resolve the
+          remaining ambiguous or unknown identities below, or create a separate asset if needed.
+        </p>
+        <div class="duplicate-review-table-wrap">
+          <table class="duplicate-review-table identity-review-table">
+            <thead>
+              <tr>
+                <th>Asset name / underlying</th>
+                <th>Uploaded ISIN</th>
+                <th>Auto-map status</th>
+                <th>Verify decision</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr *ngFor="let group of identityReviewGroups">
+                <td>
+                  <strong>{{ group.assetName }}</strong
+                  ><small>Underlying: {{ group.underlying || 'Not provided' }}</small
+                  ><small>{{ group.assetClass }} / {{ group.subClass }}</small>
+                </td>
+                <td>{{ group.isins.length ? group.isins.join(', ') : 'Not provided' }}</td>
+                <td>
+                  <strong>{{ group.status }}</strong
+                  ><small>{{ group.reason }}</small>
+                </td>
+                <td>
+                  <select
+                    [(ngModel)]="group.choice"
+                    [attr.aria-label]="'Verify identity for ' + group.assetName"
+                  >
+                    <option value="">Select / verify identity</option>
+                    <option *ngFor="let candidate of group.candidates" [value]="candidate.id">
+                      {{ candidate.name }}{{ candidate.isin ? ' — ' + candidate.isin : '' }}
+                    </option>
+                    <option value="__NEW__">Cannot verify — create separate asset</option>
+                  </select>
+                  <label *ngIf="group.choice === '__NEW__'" class="identity-isin-fallback">
+                    <span>ISIN (optional)</span>
+                    <input
+                      type="text"
+                      [(ngModel)]="group.reviewedIsin"
+                      maxlength="12"
+                      placeholder="Enter ISIN if known"
+                      [attr.aria-label]="'Optional ISIN for ' + group.assetName"
+                    />
+                  </label>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
       </div>
       <div *ngIf="duplicateTransactionRows.length">
         <h3>Duplicate transaction review</h3>
         <p>Check only the transactions you want to import; unchecked rows will be skipped.</p>
-        <div class="duplicate-review-table-wrap"><table class="duplicate-review-table"><thead><tr><th>Import</th><th>Excel Row</th><th>Family Member</th><th>Asset Class / Sub Class</th><th>Asset Name</th><th>Date</th><th>Type</th><th>Quantity</th><th>Price</th><th>Amount</th></tr></thead><tbody><tr *ngFor="let row of duplicateTransactionRows"><td><input type="checkbox" [(ngModel)]="row.import" aria-label="Import this duplicate transaction" /></td><td>{{ row.row_number }}</td><td>{{ row.family_name }}</td><td>{{ row.asset_class }} / {{ row.sub_class }}</td><td>{{ row.asset_name }}</td><td>{{ row.transaction_date }}</td><td>{{ row.transaction_type }}</td><td>{{ formatNumber(row.quantity) }}</td><td>₹{{ formatDecimal(row.price) }}</td><td>₹{{ formatCurrency(row.amount) }}</td></tr></tbody></table></div>
+        <div class="duplicate-review-table-wrap">
+          <table class="duplicate-review-table">
+            <thead>
+              <tr>
+                <th>Import</th>
+                <th>Excel Row</th>
+                <th>Family Member</th>
+                <th>Asset Class / Sub Class</th>
+                <th>Asset Name</th>
+                <th>Date</th>
+                <th>Type</th>
+                <th>Quantity</th>
+                <th>Price</th>
+                <th>Amount</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr *ngFor="let row of duplicateTransactionRows">
+                <td>
+                  <input
+                    type="checkbox"
+                    [(ngModel)]="row.import"
+                    aria-label="Import this duplicate transaction"
+                  />
+                </td>
+                <td>{{ row.row_number }}</td>
+                <td>{{ row.family_name }}</td>
+                <td>{{ row.asset_class }} / {{ row.sub_class }}</td>
+                <td>{{ row.asset_name }}</td>
+                <td>{{ row.transaction_date }}</td>
+                <td>{{ row.transaction_type }}</td>
+                <td>{{ formatNumber(row.quantity) }}</td>
+                <td>₹{{ formatDecimal(row.price) }}</td>
+                <td>₹{{ formatCurrency(row.amount) }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
       </div>
-      <div class="duplicate-review-actions"><span>{{ duplicateTransactionRows.length }} duplicate transaction(s) to review</span><button type="button" class="refresh-button" (click)="cancelDuplicateReview()">Cancel Upload</button><button type="button" class="upload-button" [disabled]="uploadingTransactions || !identityReviewComplete" (click)="importSelectedDuplicates()">Confirm Review &amp; Import</button></div>
+      <div class="duplicate-review-actions">
+        <span>{{ duplicateTransactionRows.length }} duplicate transaction(s) to review</span
+        ><button type="button" class="refresh-button" (click)="cancelDuplicateReview()">
+          Cancel Upload</button
+        ><button
+          type="button"
+          class="upload-button"
+          [disabled]="uploadingTransactions || !identityReviewComplete"
+          (click)="importSelectedDuplicates()"
+        >
+          Confirm Review &amp; Import
+        </button>
+      </div>
     </section>
   </div>
 
@@ -115,7 +218,10 @@
     <div class="underlying-upload-content">
       <div>
         <div class="underlying-upload-title">Upload Underlying</div>
-        <div class="underlying-upload-help">Select an Asset Name and upload an Excel file containing <strong>Stocks</strong> and <strong>% Holding</strong>.</div>
+        <div class="underlying-upload-help">
+          Select an Asset Name and upload an Excel file containing <strong>Stocks</strong> and
+          <strong>% Holding</strong>.
+        </div>
       </div>
 
       <div class="underlying-upload-fields">
@@ -123,24 +229,42 @@
           <span>Asset Name</span>
           <select [(ngModel)]="selectedUnderlyingAssetId" [disabled]="uploadingUnderlying">
             <option [ngValue]="null">Select Asset Name</option>
-            <option *ngFor="let asset of underlyingAssetOptions" [ngValue]="asset.id">{{ asset.name }}</option>
+            <option *ngFor="let asset of underlyingAssetOptions" [ngValue]="asset.id">
+              {{ asset.name }}
+            </option>
           </select>
         </label>
 
         <label class="underlying-upload-file">
           <span>{{ selectedUnderlyingFile?.name || 'Choose Excel file' }}</span>
-          <input type="file" accept=".xlsx" (change)="onUnderlyingFileSelected($event)" [disabled]="uploadingUnderlying" />
+          <input
+            type="file"
+            accept=".xlsx"
+            (change)="onUnderlyingFileSelected($event)"
+            [disabled]="uploadingUnderlying"
+          />
         </label>
 
-        <button type="button" class="upload-button" [disabled]="uploadingUnderlying || !selectedUnderlyingAssetId || !selectedUnderlyingFile" (click)="uploadSelectedUnderlying()">
+        <button
+          type="button"
+          class="upload-button"
+          [disabled]="uploadingUnderlying || !selectedUnderlyingAssetId || !selectedUnderlyingFile"
+          (click)="uploadSelectedUnderlying()"
+        >
           {{ uploadingUnderlying ? 'Uploading…' : 'Upload' }}
         </button>
 
-        <button type="button" class="underlying-upload-cancel" [disabled]="uploadingUnderlying" (click)="toggleUnderlyingUpload()">Cancel</button>
+        <button
+          type="button"
+          class="underlying-upload-cancel"
+          [disabled]="uploadingUnderlying"
+          (click)="toggleUnderlyingUpload()"
+        >
+          Cancel
+        </button>
       </div>
     </div>
   </div>
-
 
   <!-- FILTERS -->
   <div *ngIf="!loading && !error" class="selection-area">
@@ -727,12 +851,19 @@
                                   <tr class="underlying-row">
                                     <td class="asset-name final-underlying">
                                       <a
-                                        *ngIf="getUnderlyingScreenerUrl(asset) as screenerUrl; else plainUnderlyingName"
+                                        *ngIf="
+                                          getUnderlyingScreenerUrl(asset) as screenerUrl;
+                                          else plainUnderlyingName
+                                        "
                                         class="underlying-screener-link"
                                         [href]="screenerUrl"
                                         target="_blank"
                                         rel="noopener noreferrer"
-                                        [attr.aria-label]="'Open ' + getUnderlyingName(asset) + ' on Screener in a new tab'"
+                                        [attr.aria-label]="
+                                          'Open ' +
+                                          getUnderlyingName(asset) +
+                                          ' on Screener in a new tab'
+                                        "
                                       >
                                         {{ getUnderlyingName(asset) }}
                                       </a>
@@ -799,7 +930,9 @@
                                           </div>
 
                                           <div class="manual-price-field">
-                                            <label for="manual-price-date-{{ asset.id }}">As on Date</label>
+                                            <label for="manual-price-date-{{ asset.id }}"
+                                              >As on Date</label
+                                            >
                                             <input
                                               id="manual-price-date-{{ asset.id }}"
                                               type="date"
@@ -898,14 +1031,21 @@
                                   >
                                     <td colspan="10">
                                       <div class="quant-details">
-                                        <div class="quant-chip" *ngIf="asset.price_date || asset.price_source">
+                                        <div
+                                          class="quant-chip"
+                                          *ngIf="asset.price_date || asset.price_source"
+                                        >
                                           <span class="quant-chip-label">Last Updated</span>
-                                          <span class="quant-chip-value">{{ formatPriceDate(asset.price_date) }}</span>
+                                          <span class="quant-chip-value">{{
+                                            formatPriceDate(asset.price_date)
+                                          }}</span>
                                         </div>
 
                                         <div class="quant-chip" *ngIf="asset.price_source">
                                           <span class="quant-chip-label">Price / NAV Source</span>
-                                          <span class="quant-chip-value">{{ formatPriceSource(asset.price_source) }}</span>
+                                          <span class="quant-chip-value">{{
+                                            formatPriceSource(asset.price_source)
+                                          }}</span>
                                         </div>
                                         <div class="quant-chip" *ngIf="asset.sector">
                                           <span class="quant-chip-label">Sector</span>

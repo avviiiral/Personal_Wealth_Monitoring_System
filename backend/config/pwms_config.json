@@ -189,8 +189,8 @@
       "BSE 500": "BSE500T"
     },
     "bse_tri_proxy_tickers": [
-      "HDFCBSE500.NS",
-      "BSE500IETF.NS"
+      "BSE500IETF.NS",
+      "HDFCBSE500.NS"
     ],
     "bse_api": "https://api.bseindia.com/BseIndiaAPI/api/ProduceCSVForDate/w",
     "nifty_tri_urls": [

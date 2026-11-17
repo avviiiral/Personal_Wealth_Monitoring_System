@@ -1057,13 +1057,14 @@ export class WatchListComponent implements OnInit, OnDestroy {
         }
       }
 
-      let benchmarkRows: any[] = [
-        { benchmark: 'Nifty 50', available: false },
-        { benchmark: 'BSE 500', available: false },
-      ];
+      const benchmarkNames = this.benchmarkOptions.map(option => option.value);
+      let benchmarkRows: any[] = benchmarkNames.map(benchmark => ({
+        benchmark,
+        available: false,
+      }));
       try {
         const response = await firstValueFrom(this.api.getBenchmarksPerformance());
-        benchmarkRows = ['Nifty 50', 'BSE 500'].map(name =>
+        benchmarkRows = benchmarkNames.map(name =>
           response.benchmarks.find(item => item?.benchmark === name) || {
             benchmark: name,
             available: false,
@@ -1091,8 +1092,12 @@ export class WatchListComponent implements OnInit, OnDestroy {
     workbook.title = 'Watch List';
     workbook.created = new Date();
 
+    const benchmarkNames = this.benchmarkOptions.map(option => option.value);
+    const firstBenchmarkRow = 6;
+    const noteRow = firstBenchmarkRow + benchmarkNames.length + 1;
+    const productHeaderRow = noteRow + 2;
     const sheet = workbook.addWorksheet('Watch List', {
-      views: [{ state: 'frozen', ySplit: 11, showGridLines: false }],
+      views: [{ state: 'frozen', ySplit: productHeaderRow, showGridLines: false }],
       properties: { defaultRowHeight: 21 },
     });
 
@@ -1142,10 +1147,6 @@ export class WatchListComponent implements OnInit, OnDestroy {
     // existing Watch List product table.
     const benchmarkSectionTitleRow = 4;
     const benchmarkHeaderRow = 5;
-    const firstBenchmarkRow = 6;
-    const noteRow = 9;
-    const productHeaderRow = 11;
-
     sheet.mergeCells('A' + benchmarkSectionTitleRow + ':O' + benchmarkSectionTitleRow);
     const benchmarkTitle = sheet.getCell('A' + benchmarkSectionTitleRow);
     benchmarkTitle.value = 'Benchmark Performance';
@@ -1169,7 +1170,7 @@ export class WatchListComponent implements OnInit, OnDestroy {
     });
     benchmarkHeader.height = 24;
 
-    ['Nifty 50', 'BSE 500'].forEach((benchmarkName, index) => {
+    benchmarkNames.forEach((benchmarkName, index) => {
       const data = benchmarkRows.find(item => item?.benchmark === benchmarkName) || {};
       const metrics = data?.benchmark_metrics || {};
       const values = [
@@ -1200,7 +1201,7 @@ export class WatchListComponent implements OnInit, OnDestroy {
     });
 
     const noteCell = sheet.getCell('A' + noteRow);
-    noteCell.value = 'Note: Product return columns are Watch List returns. Benchmark Performance shows the selected Nifty 50 and BSE 500 TRI market benchmark returns as of the latest available benchmark date.';
+    noteCell.value = 'Note: Product return columns are Watch List returns. Benchmark Performance shows the selected NSE and BSE TRI market benchmark returns as of the latest available benchmark date.';
     sheet.mergeCells('A' + noteRow + ':O' + noteRow);
     noteCell.font = { name: 'Aptos', size: 9, italic: true, color: { argb: 'FF6B7280' } };
     noteCell.alignment = { vertical: 'middle' };

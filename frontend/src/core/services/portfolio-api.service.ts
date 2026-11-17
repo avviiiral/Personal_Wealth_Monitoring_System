@@ -1,6 +1,6 @@
 import { Injectable, inject } from '@angular/core';
 import { HttpClient, HttpHeaders } from '@angular/common/http';
-import { Observable, switchMap } from 'rxjs';
+import { Observable, finalize, share, switchMap } from 'rxjs';
 import { environment } from '../../environments/environment';
 
 export interface PortfolioSummary { total_invested: number; total_current_value: number; total_unrealized_pnl: number; pnl_percentage: number; number_of_holdings: number; }
@@ -51,6 +51,7 @@ export class PortfolioApiService {
   private readonly baseUrl = `${environment.apiUrl}/api/portfolio`;
   private readonly csrfUrl = `${environment.apiUrl}/api/health/`;
   private readonly requestOptions = { withCredentials: true };
+  private readonly inFlightPortfolioTreeRequests = new Map<string, Observable<PortfolioTreeResponse>>();
 
   private getCsrfToken(): Observable<any> { return this.http.get(this.csrfUrl, { withCredentials: true }); }
   private readCsrfToken(): string {
@@ -77,14 +78,35 @@ export class PortfolioApiService {
   }
   getAssets(): Observable<ApiListResponse<PortfolioAsset>> { return this.http.get<ApiListResponse<PortfolioAsset>>(`${this.baseUrl}/assets/`, this.requestOptions); }
   getPortfolioTree(filters: { family?: string; asset_class?: string; advisor?: string } = {}): Observable<PortfolioTreeResponse> {
-    return this.http.get<PortfolioTreeResponse>(`${this.baseUrl}/tree/`, {
+    const normalizedFilters = {
+      family: filters.family || '',
+      asset_class: filters.asset_class || '',
+      advisor: filters.advisor || '',
+    };
+    const requestKey = JSON.stringify(normalizedFilters);
+    const existingRequest = this.inFlightPortfolioTreeRequests.get(requestKey);
+
+    if (existingRequest) {
+      return existingRequest;
+    }
+
+    let sharedRequest: Observable<PortfolioTreeResponse>;
+    sharedRequest = this.http.get<PortfolioTreeResponse>(`${this.baseUrl}/tree/`, {
       ...this.requestOptions,
-      params: {
-        family: filters.family || '',
-        asset_class: filters.asset_class || '',
-        advisor: filters.advisor || '',
-      },
-    });
+      params: normalizedFilters,
+    }).pipe(
+      // Share only concurrent requests. Once a request completes or fails,
+      // remove it so later page visits and refreshes always fetch fresh data.
+      finalize(() => {
+        if (this.inFlightPortfolioTreeRequests.get(requestKey) === sharedRequest) {
+          this.inFlightPortfolioTreeRequests.delete(requestKey);
+        }
+      }),
+      share(),
+    );
+
+    this.inFlightPortfolioTreeRequests.set(requestKey, sharedRequest);
+    return sharedRequest;
   }
   getHoldingReport(): Observable<HoldingReportResponse> { return this.http.get<HoldingReportResponse>(`${this.baseUrl}/holding-report/`, { ...this.requestOptions, params: { _t: Date.now().toString() } }); }
   getHoldingMatrix(asOfDate?: string): Observable<HoldingMatrixResponse> {

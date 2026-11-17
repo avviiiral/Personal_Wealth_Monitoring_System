@@ -204,7 +204,11 @@ class BenchmarkPerformanceService:
         for benchmark in ("Nifty 50", "BSE 500"):
             aggregate = BenchmarkMasterPoint.objects.filter(
                 benchmark=benchmark,
-                source="MASTER",
+                source__in=(
+                    ["MASTER", "BSE500_TRI_PROXY"]
+                    if benchmark == "BSE 500"
+                    else ["MASTER"]
+                ),
                 date__gte=start,
                 date__lte=end,
             ).aggregate(
@@ -500,6 +504,30 @@ class BenchmarkPerformanceService:
         return points
 
     @classmethod
+    def _has_sufficient_history(cls, points, start, end):
+        """Reject partial provider responses before persisting benchmark history."""
+        valid = [
+            point for point in (points or [])
+            if point.get("date") and point.get("value") is not None
+            and float(point["value"]) > 0
+            and start <= date.fromisoformat(point["date"]) <= end
+        ]
+        unique_dates = {point["date"] for point in valid}
+        expected_rows = max(
+            cls.MINIMUM_HISTORY_ROWS,
+            int((end - start).days * cls.MINIMUM_DAILY_COVERAGE_RATIO),
+        )
+        if not unique_dates:
+            return False
+        first_date = date.fromisoformat(min(unique_dates))
+        last_date = date.fromisoformat(max(unique_dates))
+        return (
+            len(unique_dates) >= expected_rows
+            and first_date <= start + timedelta(days=10)
+            and last_date >= end - timedelta(days=10)
+        )
+
+    @classmethod
     def _fetch_bse_history(cls, start):
         end = timezone.now().date()
         all_points = {}
@@ -518,51 +546,56 @@ class BenchmarkPerformanceService:
 
     @classmethod
     def _bse_series(cls, start):
+        end = timezone.now().date()
         source_file = Path(cls.BSE500_FILE)
         # Only read the configured CSV when the path points to a regular file.
-        # A misconfigured value such as "." is a directory on Windows and
-        # attempting read_text() on it raises PermissionError: [Errno 13].
         if source_file.is_file():
             points = cls._load_bse_csv(
                 source_file.read_text(encoding="utf-8-sig")
             )
             filtered = [
-                point
-                for point in points
-                if date.fromisoformat(point["date"]) >= start
+                point for point in points
+                if start <= date.fromisoformat(point["date"]) <= end
             ]
-            # A bundled CSV is authoritative only when it actually covers the
-            # requested start date. Otherwise continue to the live sources so
-            # 5Y/other long periods are not silently truncated.
-            if points and date.fromisoformat(points[0]["date"]) <= start:
-                return filtered
+            if cls._has_sufficient_history(filtered, start, end):
+                return [dict(point, source="MASTER") for point in filtered]
 
-        # First try the BSE historical endpoint. If the public endpoint does
-        # not provide BSE500T, fall back to exchange-traded products that
-        # explicitly track the BSE 500 TRI. This requires no manual CSV.
+        # A short BSE response is not a usable history. The public BSE CSV
+        # interface is an OHLC/price-index interface; accept BSE500T only when
+        # the returned series covers the full requested range at daily density.
+        bse_error = None
         try:
             points = cls._fetch_bse_history(start)
-            if points:
-                return points
-        except Exception as bse_error:
-            last_error = bse_error
-        else:
-            last_error = None
+            if cls._has_sufficient_history(points, start, end):
+                return [dict(point, source="MASTER") for point in points]
+            bse_error = ValueError(
+                "BSE500T endpoint returned insufficient daily coverage "
+                f"({len(points)} observations for {start.isoformat()} to {end.isoformat()})"
+            )
+        except Exception as exc:
+            bse_error = exc
 
+        # These listed ETFs explicitly track BSE 500 TRI. Their adjusted closes
+        # are a proxy, not the official index level. Validate coverage before
+        # accepting one so a newer ETF cannot truncate a 5Y comparison.
+        proxy_errors = []
         for ticker in cls.BSE_TRI_PROXY_TICKERS:
             try:
                 points = cls._series(ticker, start)
-                if points:
-                    return points
-            except Exception as proxy_error:
-                last_error = proxy_error
+                if not cls._has_sufficient_history(points, start, end):
+                    proxy_errors.append(
+                        f"{ticker}: insufficient daily coverage ({len(points)} observations)"
+                    )
+                    continue
+                return [dict(point, source="BSE500_TRI_PROXY") for point in points]
+            except Exception as exc:
+                proxy_errors.append(f"{ticker}: {exc}")
 
-        if last_error:
-            raise ValueError(
-                f"BSE 500 TRI data unavailable from BSE and public TRI-tracking "
-                f"fallbacks: {last_error}"
-            ) from last_error
-        raise ValueError("BSE 500 TRI data source returned no observations")
+        detail = "; ".join(proxy_errors) or "no configured TRI-tracking ETF proxy returned data"
+        raise ValueError(
+            "BSE 500 TRI history is unavailable. "
+            f"BSE source: {bse_error}. ETF fallback: {detail}"
+        ) from bse_error
 
     @classmethod
     def _benchmark_series(cls, benchmark, start, allow_source_refresh=False):
@@ -574,36 +607,56 @@ class BenchmarkPerformanceService:
         master current.
         """
         def read_master():
-            points = list(
+            allowed_sources = (
+                ["MASTER", "BSE500_TRI_PROXY"]
+                if benchmark == "BSE 500"
+                else ["MASTER"]
+            )
+            stored = list(
                 BenchmarkMasterPoint.objects
                 .filter(
                     benchmark=benchmark,
-                    source="MASTER",
+                    source__in=allowed_sources,
                     date__gte=start,
                 )
                 .order_by("date", "id")
-                .values("date", "value")
+                .values("date", "value", "source")
             )
             boundary = (
                 BenchmarkMasterPoint.objects
                 .filter(
                     benchmark=benchmark,
-                    source="MASTER",
+                    source__in=allowed_sources,
                     date__lt=start,
                 )
                 .order_by("-date", "-id")
-                .values("date", "value")
+                .values("date", "value", "source")
                 .first()
             )
             if boundary is not None:
-                points.insert(0, boundary)
+                stored.insert(0, boundary)
+
+            # Prefer official observations on duplicate dates; use the ETF
+            # proxy only to fill gaps in the official series.
+            by_date = {}
+            for point in stored:
+                if point["value"] is None or float(point["value"]) <= 0:
+                    continue
+                key = point["date"]
+                current = by_date.get(key)
+                if current is None or (
+                    current["source"] != "MASTER"
+                    and point["source"] == "MASTER"
+                ):
+                    by_date[key] = point
+
             return [
                 {
                     "date": point["date"].isoformat(),
                     "value": float(point["value"]),
+                    "source": point["source"],
                 }
-                for point in points
-                if point["value"] is not None and float(point["value"]) > 0
+                for _, point in sorted(by_date.items())
             ]
 
         series = read_master()
@@ -670,7 +723,7 @@ class BenchmarkPerformanceService:
                 benchmark=benchmark,
                 date=date.fromisoformat(point["date"]),
                 value=point["value"],
-                source="MASTER",
+                source=point.get("source", "MASTER"),
             )
             for point in points
             if point.get("date") and point.get("value") is not None

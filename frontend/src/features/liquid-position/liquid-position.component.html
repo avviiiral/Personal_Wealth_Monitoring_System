@@ -11,9 +11,22 @@
         <span>As of date</span>
         <input type="date" [(ngModel)]="asOfDate" (ngModelChange)="loadPosition()" [disabled]="loading || saving">
       </label>
-      <button type="button" class="secondary-button" (click)="loadPosition()" [disabled]="loading || saving">
+      <button type="button" class="secondary-button" (click)="loadPosition()" [disabled]="loading || saving || isEditing">
         Refresh
       </button>
+      <ng-container *ngIf="report?.can_edit">
+        <button *ngIf="!isEditing" type="button" class="primary-button" (click)="beginEdit()" [disabled]="loading || saving">
+          Edit
+        </button>
+        <ng-container *ngIf="isEditing">
+          <button type="button" class="secondary-button" (click)="cancelEdit()" [disabled]="saving">
+            Cancel
+          </button>
+          <button type="button" class="primary-button" (click)="save()" [disabled]="!isDirty || saving">
+            {{ saving ? 'Saving…' : 'Save Changes' }}
+          </button>
+        </ng-container>
+      </ng-container>
     </div>
   </header>
 
@@ -34,9 +47,6 @@
         <div>
           <h2>Liquidity Position as on {{ report.as_of_date }}</h2>
           <p class="unit-note">All amounts are shown in ₹ lakhs. Liquid and Arbitrage market values are calculated from the portfolio’s mutual-fund holdings.</p>
-        </div>
-        <div class="report-mode-actions" *ngIf="report.can_edit">
-          <button type="button" class="secondary-button" (click)="beginEdit()" [disabled]="isEditing || saving">Edit</button>
         </div>
         <div class="saved-meta">
           <span>Last saved</span>
@@ -169,12 +179,6 @@
         <span *ngIf="report.can_edit && isEditing && isDirty">Unsaved changes — save to refresh calculated totals.</span>
         <span *ngIf="report.can_edit && isEditing && !isDirty">Editing mode is active. Save or cancel your changes.</span>
         <span *ngIf="report.can_edit && !isEditing">Read-only view. Select Edit to make changes.</span>
-        <ng-container *ngIf="isEditing">
-          <button type="button" class="secondary-button" (click)="cancelEdit()" [disabled]="saving">Cancel</button>
-          <button type="button" class="primary-button" (click)="save()" [disabled]="!isDirty || saving">
-            {{ saving ? 'Saving…' : 'Save Changes' }}
-          </button>
-        </ng-container>
       </footer>
     </section>
   </ng-container>

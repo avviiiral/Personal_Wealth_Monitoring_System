@@ -26,6 +26,8 @@ export class LiquidPositionComponent implements OnInit {
   loading = true;
   saving = false;
   isDirty = false;
+  isEditing = false;
+  private editBackup: LiquidPositionReport | null = null;
   error = '';
   success = '';
 
@@ -42,6 +44,8 @@ export class LiquidPositionComponent implements OnInit {
 
     this.loading = true;
     this.isDirty = false;
+    this.isEditing = false;
+    this.editBackup = null;
     this.error = '';
     this.success = '';
 
@@ -63,13 +67,32 @@ export class LiquidPositionComponent implements OnInit {
     });
   }
 
+  beginEdit(): void {
+    if (!this.report?.can_edit || this.saving || this.isEditing) return;
+    this.editBackup = JSON.parse(JSON.stringify(this.report)) as LiquidPositionReport;
+    this.isEditing = true;
+    this.success = '';
+  }
+
+  cancelEdit(): void {
+    if (!this.isEditing || this.saving) return;
+    if (this.editBackup) this.report = this.editBackup;
+    this.editBackup = null;
+    this.isEditing = false;
+    this.isDirty = false;
+    this.error = '';
+    this.success = '';
+    this.cdr.markForCheck();
+  }
+
   markDirty(): void {
+    if (!this.isEditing) return;
     this.isDirty = true;
     this.success = '';
   }
 
   addCommitment(): void {
-    if (!this.report?.can_edit) return;
+    if (!this.report?.can_edit || !this.isEditing) return;
     this.report.commitments.push(this.newLine('New commitment'));
     this.markDirty();
   }
@@ -91,7 +114,7 @@ export class LiquidPositionComponent implements OnInit {
   }
 
   save(): void {
-    if (!this.report?.can_edit || !this.isDirty || this.saving) return;
+    if (!this.report?.can_edit || !this.isEditing || !this.isDirty || this.saving) return;
 
     const document: LiquidPositionDocument = {
       bank: {
@@ -114,6 +137,8 @@ export class LiquidPositionComponent implements OnInit {
       next: (report) => {
         this.report = report;
         this.isDirty = false;
+        this.isEditing = false;
+        this.editBackup = null;
         this.saving = false;
         this.success = 'Liquid Position saved. Backend totals have been refreshed.';
         this.cdr.markForCheck();

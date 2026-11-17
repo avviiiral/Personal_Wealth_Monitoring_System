@@ -203,12 +203,12 @@ class LiquidPositionService:
         }
 
         net_available = cls._pair({
-            member: Decimal(str(available[member])) - commitment_totals[member]
+            member: Decimal(str(available[member])) + commitment_totals[member]
             for member in cls.MEMBERS
         })
         total_deployment = cls._pair(deployment_totals)
         balance = cls._pair({
-            member: Decimal(str(net_available[member])) - deployment_totals[member]
+            member: Decimal(str(net_available[member])) + deployment_totals[member]
             for member in cls.MEMBERS
         })
 

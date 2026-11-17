@@ -41,9 +41,9 @@ class LiquidPositionService:
             amount = Decimal(str(value).replace(",", ""))
         except (InvalidOperation, ValueError):
             raise ValidationError({field_name: "Enter a valid numeric amount."})
-        if not amount.is_finite() or amount < 0:
-            raise ValidationError({field_name: "Amount must be a finite, non-negative number."})
-        if amount > Decimal("999999999999.99"):
+        if not amount.is_finite():
+            raise ValidationError({field_name: "Amount must be a finite number."})
+        if abs(amount) > Decimal("999999999999.99"):
             raise ValidationError({field_name: "Amount is above the supported limit."})
         return amount.quantize(cls.MONEY_QUANTUM, rounding=ROUND_HALF_UP)
 

@@ -115,6 +115,12 @@ h1 {
   line-height: 1.5;
 }
 
+.report-mode-actions {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
 .saved-meta {
   display: flex;
   flex-direction: column;

@@ -742,6 +742,80 @@ class BenchmarkPerformanceTests(TestCase):
             ],
         )
 
+    def test_weekly_chart_observations_keep_last_trading_day_per_iso_week(self):
+        points = [
+            {"date": "2026-09-14", "product_value": 100.0, "benchmark_value": 20000.0},
+            {"date": "2026-09-15", "product_value": 101.0, "benchmark_value": 20100.0},
+            {"date": "2026-09-18", "product_value": 103.0, "benchmark_value": 20300.0},
+            {"date": "2026-09-21", "product_value": 104.0, "benchmark_value": 20400.0},
+            {"date": "2026-09-25", "product_value": 105.0, "benchmark_value": 20500.0},
+        ]
+
+        weekly = BenchmarkPerformanceService._weekly_chart_observations(points)
+
+        self.assertEqual(
+            [point["date"] for point in weekly],
+            ["2026-09-18", "2026-09-25"],
+        )
+        self.assertEqual(weekly[0]["product_value"], 103.0)
+        self.assertEqual(weekly[0]["benchmark_value"], 20300.0)
+
+    def test_weekly_indexed_chart_starts_both_investments_at_100(self):
+        product = InvestmentProduct.objects.create(
+            product_type=ProductType.MUTUAL_FUND,
+            name="Weekly Growth Fund",
+            identity_key="MUTUAL_FUND:SCHEME:WEEKLY-GROWTH",
+            source="AMFI",
+        )
+        scheme = AMFIMasterScheme.objects.create(
+            scheme_code="WEEKLY-GROWTH",
+            scheme_name="Weekly Growth Fund",
+        )
+        MutualFundProduct.objects.create(
+            product=product,
+            scheme_code="WEEKLY-GROWTH",
+            benchmark="Nifty 50",
+        )
+        dates = [
+            date(2026, 9, 14),
+            date(2026, 9, 15),
+            date(2026, 9, 18),
+            date(2026, 9, 21),
+            date(2026, 9, 25),
+        ]
+        navs = [Decimal("100"), Decimal("101"), Decimal("103"), Decimal("104"), Decimal("106")]
+        benchmark_values = [20000.0, 20100.0, 20300.0, 20400.0, 20500.0]
+
+        AMFIMasterNAV.objects.bulk_create([
+            AMFIMasterNAV(scheme=scheme, date=point_date, nav=nav)
+            for point_date, nav in zip(dates, navs)
+        ])
+        benchmark_points = [
+            {"date": point_date.isoformat(), "value": value}
+            for point_date, value in zip(dates, benchmark_values)
+        ]
+
+        with patch.object(
+            BenchmarkPerformanceService,
+            "_benchmark_series",
+            return_value=benchmark_points,
+        ):
+            result = BenchmarkPerformanceService.calculate(product, "1M")
+
+        self.assertTrue(result["available"])
+        self.assertEqual(result["chart"]["frequency"], "weekly")
+        self.assertEqual(result["chart"]["investment_amount"], 100)
+        indexed = result["chart"]["indexed_points"]
+        self.assertGreaterEqual(len(indexed), 2)
+        self.assertEqual(indexed[0]["product_indexed"], 100.0)
+        self.assertEqual(indexed[0]["benchmark_indexed"], 100.0)
+        self.assertEqual(
+            [point["date"] for point in indexed],
+            ["2026-09-18", "2026-09-25"],
+        )
+        self.assertAlmostEqual(indexed[-1]["product_indexed"], (106 / 103) * 100, places=5)
+        self.assertAlmostEqual(indexed[-1]["benchmark_indexed"], (20500 / 20300) * 100, places=5)
+
     def test_chart_never_uses_future_benchmark_value(self):
         aligned = BenchmarkPerformanceService._aligned_chart_series(
             [

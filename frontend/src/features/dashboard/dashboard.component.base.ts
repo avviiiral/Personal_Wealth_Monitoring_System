@@ -662,16 +662,16 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
     // Use a distinct, high-contrast colour for each asset category.
     // Cycle the palette if a portfolio contains more categories than colours.
     const allocationColors = [
-      '#2563EB',
-      '#16A34A',
-      '#F59E0B',
-      '#DC2626',
-      '#8B5CF6',
-      '#0891B2',
-      '#DB2777',
-      '#65A30D',
-      '#EA580C',
-      '#4F46E5',
+      '#64748B', // Slate blue
+      '#6B8F71', // Sage green
+      '#C49A5A', // Muted ochre
+      '#B86B6B', // Dusty red
+      '#8B7AAE', // Soft violet
+      '#5F9298', // Muted teal
+      '#B97891', // Dusty rose
+      '#8A965F', // Soft olive
+      '#B8794B', // Muted terracotta
+      '#7379A8', // Soft indigo
     ];
 
     const config: ChartConfiguration<'doughnut'> = {

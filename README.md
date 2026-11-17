@@ -228,6 +228,8 @@ Log in with the account you just created, open **Portfolio → Import** and load
 
 Net worth, asset allocation, key portfolio metrics and an **Investment Summary** table broken down by asset class — all computed server-side and scoped to your own data plus your currently active family's data (or everyone's, for a System Owner).
 
+- The **Allocation** doughnut chart uses the current rupee-denominated category values from **Investment Summary** for hover tooltips; the displayed amount follows the selected Amount / Lakhs / Crores unit, while the category percentage remains shown separately.
+- Allocation chart categories use a muted, low-saturation color palette to reduce visual brightness while keeping categories distinguishable.
 - **Standard Allocation** supports both **Amount** and **Percentage** views.
 - The **percentage allocation is authoritative**; the amount is recalculated from the current scoped total wealth.
 - A global allocation can be shared across family members, while selecting a family member can create an independent family-specific allocation override.
@@ -277,6 +279,7 @@ PWMS includes an NSE corporate-action monitoring and reconciliation workflow, wi
 - Exposure matching includes direct security holdings and supported indirect exposure through investment products. Indirect exposure is identified for review; it must not be treated as a direct stock transaction.
 - Identity matching prefers exact ISIN when supplied. If the exchange announcement has no source ISIN, PWMS can surface exact symbol/name-based candidate holdings for explicit user review. A candidate asset ISIN is **not** substituted for the missing source ISIN.
 - For an identity requiring review, the user must explicitly approve a selected candidate or reject the match. A transaction is not created merely because a candidate was discovered.
+- The identity-review **Approve selected holding** and **Reject match** controls use the same rounded button treatment, spacing, typography and theme-aware interaction states as the other Corporate Actions page buttons.
 - Approved direct-exposure reconciliations create the applicable transaction idempotently, preventing duplicate transaction creation when the same event is scanned again.
 - Bonus entitlement is calculated from eligible holdings on the record date, including supported portfolio hierarchy buckets. Bonus allocation preserves transaction hierarchy and advisor metadata.
 - The transaction Excel importer recognizes `DIVIDEND PAYOUT` as a dividend and `*SPLIT` as a split transaction type.
@@ -1346,6 +1349,7 @@ All endpoints require authentication. Ratio actions validate positive old/new un
 - `frontend/public/push-sw.js` is the service worker that receives push events and displays notifications even when the Angular page is closed.
 - The backend stores browser subscriptions in `PushSubscription` and sends qualifying alerts through VAPID/Web Push when `WEB_PUSH_ENABLED=True`.
 - `auth.guard` protects every route and loads the RBAC role before rendering.
+- **Holding Reports** is currently hidden from the sidebar navigation as a frontend-only presentation change; its Angular route and page implementation remain in the codebase.
 
 | Route             | Screen                                                        |
 | ----------------- | ------------------------------------------------------------- |

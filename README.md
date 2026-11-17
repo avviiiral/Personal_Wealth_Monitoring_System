@@ -256,6 +256,17 @@ Net worth, asset allocation, key portfolio metrics and an **Investment Summary**
 - **Valuation remains independent** — underlying-link resolution does not replace or alter the existing market-price and portfolio valuation flow.
 - **Transaction Edit History** records edits made from Transaction Reports and retains a durable audit record when a transaction is deleted. Deleted transactions remain visible in the audit history with their previous values.
 
+### 💧 Liquid Position
+
+The **Liquid Position** page provides a family-scoped liquidity position for a selected reporting date. It combines current Liquid and Arbitrage mutual-fund market values with editable bank balances, commitments and deployment-plan entries.
+
+- **Liquid (MV)** and **Arbitrage (MV)** are derived from the same backend `PortfolioTreeService` used by **Our Holdings**. The service sums current values for the matching Liquid Mutual Funds and Arbitrage Mutual Funds holdings and separates them by family member (DAJ / DJT).
+- **Bank** balances are editable independently for DAJ and DJT.
+- **Commitments** and **Deployment Plan** support editable labels and amounts, including user-added and removable rows (up to 40 rows per section).
+- The backend calculates **Arbitrage + Liquid + Bank**, **Net available Amount (A)**, **Total Deployment Plan**, and **Balance**. The browser does not act as the authoritative calculation layer.
+- Editable data is persisted per active family and reporting date. The page displays monetary values in **Rs in lakhs**; stored amounts remain rupee-denominated.
+- Read access and edit access are enforced by the API using the authenticated user's family scope and role.
+
 ### 🏢 Corporate actions
 
 PWMS includes an NSE corporate-action monitoring and reconciliation workflow, with a frontend review inbox for matching exchange announcements to portfolio exposure.
@@ -615,15 +626,16 @@ The **Downloads** page provides a report selector and generates Excel workbooks 
 | **Watch List** | Watchlisted mutual-fund and/or PMS products | Product type |
 | **Market Cap** | Equity PMS, direct-equity and equity-mutual-fund exposure grouped by market capitalization | Family and as-of date |
 | **Holding Matrix** | Equity PMS and direct-equity exposure aggregated by underlying security | Family and as-of date |
-| **Liquid Position Funds** | Fixed-format liquidity, commitments and deployment-plan workbook | As-of date printed in the report heading |
+| **Liquid Position Funds** | Excel export of the saved Liquid Position page, including current Liquid / Arbitrage market values, bank balances, all saved commitment and deployment rows, and backend-calculated totals | As-of date |
 
 Additional export behavior:
 
 - **Holding Matrix** exports respect the selected family member and the report's as-of date.
 - **Asset Name XIRR** and **Portfolio Summary** use the Portfolio API's authoritative grouped XIRR summaries; they do not average individual asset XIRR percentages. These grouped reports omit the **Underlying** column.
 - Standard tabular exports use formatted headers, readable column widths, number formats, frozen headers and filters where appropriate.
-- **Liquid Position Funds template:** the workbook is intentionally limited to columns **A:F** and rows **1:48**. Its header contains the selected date and its value columns are **DAJ**, **DJT** and **Total**; column F is the final template column. The template includes the liquidity and commitment rows, the **Net available Amount (A)** section, the **Deployment Plan**, **Total Deployement Plan**, and **Balance**. Preconfigured Excel formulas calculate the section totals and summaries.
-- The Liquid Position Funds workbook is a **manual-entry template**: its amount cells are not populated from live holdings or historical market values. The selected as-of date is a heading label, not a historical valuation query. Rows 22–29 remain blank (their former entries and formulas are removed), and no entries are generated after row 48.
+- **Liquid Position Funds** reads the persisted Liquid Position document through `GET /api/portfolio/liquid-position/?as_of=<date>` when the download is requested. The workbook uses the backend response rather than rebuilding values from a separate report dataset.
+- The export preserves the **DAJ**, **DJT** and **Total** columns and includes every saved commitment and deployment-plan row, including custom rows. It exports the backend-calculated liquidity, net-available, deployment and balance totals; it does not rely on fixed row numbers or client-side Excel formulas to calculate those totals.
+- The Liquid Position export uses the selected as-of date to retrieve the saved document and to label the workbook. Liquid / Arbitrage market values are current values from Our Holdings, not a historical market-value reconstruction for that date.
 - The **Capital Gain Report** is an indicative report, not a tax return or filing calculation; it does not model loss set-off, exemptions, surcharge/cess or other filing-specific adjustments.
 
 ### 📑 MIS Report
@@ -1133,7 +1145,7 @@ Each Django app owns one area of the domain and is mounted under a fixed prefix 
 | -------------- | --------------------------- | ---------------------------------------------------------------------------- |
 | `api`          | `/api/`                     | Health check, login / logout / current user, profile settings                |
 | `users`        | `/api/settings/`            | RBAC, user management, family management                                     |
-| `portfolio`    | `/api/portfolio/`           | Assets, transactions, portfolio tree / summary / holdings, manual price edit |
+| `portfolio`    | `/api/portfolio/`           | Assets, transactions, portfolio tree / summary / holdings, Liquid Position and manual price edit |
 | `analytics`    | `/api/analytics/`           | Wealth allocation, performance, XIRR, historical analytics                   |
 | `mutual_funds` | `/api/mutual-funds/`        | Schemes, MF transactions, MF holdings, SIPs                                  |
 | `market_data`  | _(internal + stock search)_ | Price providers, background price refresh                                    |
@@ -1180,6 +1192,7 @@ _A simplified conceptual view — see each app's `models.py` for exact fields an
 | `investments`    | `Asset`, `Transaction`, `Holding`, `SecurityMaster`                                                        | `Transaction` is the source of truth for quantity and invested value; `Holding` is derived and rebuildable. Generic `Transaction` rows can also contain legacy/imported mutual-fund transactions. `SecurityMaster` stores sector, cap-type, AMC name, P/E, P/B, ROE and credit rating |
 | `market_data`    | `MarketPrice`                                                                                              | Tagged by source: **Yahoo Finance**, **AMFI** or **Manual**                                                                                                                                     |
 | `mutual_funds`   | `MutualFundScheme`, `MutualFundNAV`, `MutualFundTransaction`, `MutualFundHolding`, `AMFIMasterScheme`, `AMFIMasterNAV`, `SIP`, `SIPInstallment` | Dedicated mutual-fund models plus the persisted AMFI master scheme/NAV history used for current data, Watch List benchmarks and historical MIS valuation of legacy mutual-fund holdings |
+| `portfolio`      | `FamilyLiquidPosition` | Editable Liquid Position document, unique per family and reporting date; stores bank balances, commitment rows and deployment-plan rows. Market values and summary totals are calculated by the portfolio service. |
 | `portfolio_news` | `NewsArticle`, `NewsArticleSource`, `PortfolioNewsAlert`                                                   | Alerts are unique per user / article / holding                                                                                                                                                  |
 | `ai`             | `GeminiUsageLog`                                                                                           | Token usage per Gemini call — Portfolio Chat only                                                                                                                                         |
 
@@ -1244,6 +1257,7 @@ All endpoints require an authenticated Django session unless noted. Auth uses **
 | `GET`                        | `/api/portfolio/transactions/edit-history/` | Transaction edit and deletion audit history |
 | `GET`                        | `/api/portfolio/summary/`                  | Portfolio summary                        |
 | `GET`                        | `/api/portfolio/holdings/`                 | Holdings                                 |
+| `GET` `PUT`                  | `/api/portfolio/liquid-position/`          | Read or save the active family's Liquid Position document and calculated values (`as_of` query parameter) |
 | `GET`                        | `/api/portfolio/underlying-uploads/`       | Latest underlying upload snapshot per asset |
 | `GET`                        | `/api/portfolio/underlying-template/`      | Download sample underlying Excel format   |
 | `POST`                       | `/api/portfolio/assets/<id>/underlying/import/` | Upload underlying holdings for an asset |
@@ -1341,7 +1355,8 @@ All endpoints require authentication. Ratio actions validate positive old/new un
 | `/mis-report`     | IPS, Data Sheet, Fund Type-wise Summary, Excel download       |
 | `/analytics`      | Allocation, performance, XIRR, historical wealth              |
 | `/reports`        | Reports and holdings exports                                  |
-| `/downloads`      | Filtered Excel downloads and XIRR summaries                   |
+| `/downloads`      | Filtered Excel downloads, including the saved Liquid Position Funds report |
+| `/liquid-position` | Family-scoped liquidity, commitments and deployment planning |
 | `/ai-chat`        | Gemini portfolio assistant                                    |
 | `/portfolio-news` | News alerts for your holdings                                 |
 | `/watch-list`     | Mutual-fund / PMS research, performance metrics and benchmarks |
@@ -1609,6 +1624,13 @@ python manage.py test portfolio_news.test_web_push -v 2 # Web Push delivery beha
 | `analytics/tests.py` | Dashboard view-model calculations, XIRR category matching, investment summary and Standard Allocation APIs |
 | `analytics/test_historical_wealth.py` | Historical wealth regression coverage, including legacy mutual-fund classification and AMFI master NAV valuation |
 | `filing_intelligence` | Corporate filing classifier, event precedence, material-change detection, deterministic portfolio matching, filing ingestion, deduplication, cross-source clustering and alert creation. Current branch verification: **20 tests, all passing** |
+
+### Liquid Position branch validation (2026-11-17)
+
+The `feature/liquid-position` branch was locally validated after the Downloads export was connected to the saved Liquid Position document:
+
+- `python manage.py test portfolio.test_liquid_position` — **3 tests passed**; Django system checks reported no issues.
+- `npm run build` — Angular production build completed successfully. It emitted existing style-budget and CommonJS dependency warnings, but no build failure.
 
 **Frontend** — from `frontend/`:
 

@@ -144,10 +144,10 @@ class Command(BaseCommand):
             )
 
         # Benchmark master history is shared across every Mutual Fund and
-        # PMS product. Always prepare BOTH supported benchmarks so opening
-        # the comparison chart never depends on which product was prepared
-        # first. Product-specific preparation is only needed for AMFI NAV data.
-        benchmark_names = ["Nifty 50", "BSE 500"]
+        # PMS product. Prepare every configured NSE TRI and BSE benchmark so
+        # comparison charts never depend on which product was prepared first.
+        # Product-specific preparation is only needed for AMFI NAV data.
+        benchmark_names = BenchmarkPerformanceService.SUPPORTED_BENCHMARKS
         for benchmark_name in benchmark_names:
             benchmark_count = BenchmarkMasterPoint.objects.filter(
                 benchmark=benchmark_name,
@@ -168,7 +168,9 @@ class Command(BaseCommand):
                     points = BenchmarkPerformanceService._bse_series(benchmark_start)
                 else:
                     points = BenchmarkPerformanceService._nifty_tri_series(
-                        benchmark_start, today
+                        benchmark_start,
+                        today,
+                        index_name=BenchmarkPerformanceService.NIFTY_TRI_INDICES[benchmark_name],
                     )
                 saved = BenchmarkPerformanceService.save_benchmark_master(
                     benchmark_name,
@@ -206,7 +208,7 @@ class Command(BaseCommand):
         else:
             self.stdout.write(
                 self.style.SUCCESS(
-                    "Shared Watch List Nifty 50 and BSE 500 benchmark data is ready "
+                    "Shared Watch List benchmark data is ready "
                     "for all Mutual Fund and PMS products."
                 )
             )

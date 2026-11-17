@@ -264,6 +264,202 @@ class WatchListTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data["count"], 0)
 
+
+    def test_watchlist_status_returns_only_watchlisted_products(self):
+        watchlisted = InvestmentProduct.objects.create(
+            product_type=ProductType.MUTUAL_FUND,
+            name="Watchlisted Fund",
+            isin="INFWW001",
+            identity_key="MUTUAL_FUND:ISIN:INFWW001",
+            source="AMFI",
+        )
+        universal = InvestmentProduct.objects.create(
+            product_type=ProductType.MUTUAL_FUND,
+            name="Universal Fund",
+            isin="INFWW002",
+            identity_key="MUTUAL_FUND:ISIN:INFWW002",
+            source="AMFI",
+        )
+        MutualFundProduct.objects.create(product=watchlisted, scheme_code="WW001", aum=Decimal("100"))
+        MutualFundProduct.objects.create(product=universal, scheme_code="WW002", aum=Decimal("200"))
+        WatchListEntry.objects.create(user=self.user, product=watchlisted)
+
+        response = self.client.get("/api/watch-list/products/?product_type=MUTUAL_FUND&status=WATCHLIST")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["count"], 1)
+        self.assertEqual([row["name"] for row in response.data["results"]], ["Watchlisted Fund"])
+        self.assertTrue(response.data["results"][0]["is_watchlisted"])
+
+    def test_watchlist_status_combines_with_search_provider_and_category_filters(self):
+        matching = InvestmentProduct.objects.create(
+            product_type=ProductType.MUTUAL_FUND,
+            name="Alpha Watch Fund",
+            provider="Alpha AMC",
+            category="Equity",
+            identity_key="MUTUAL_FUND:SCHEME:ALPHA-WATCH",
+            source="AMFI",
+        )
+        different_provider = InvestmentProduct.objects.create(
+            product_type=ProductType.MUTUAL_FUND,
+            name="Alpha Other Fund",
+            provider="Other AMC",
+            category="Equity",
+            identity_key="MUTUAL_FUND:SCHEME:ALPHA-OTHER",
+            source="AMFI",
+        )
+        different_category = InvestmentProduct.objects.create(
+            product_type=ProductType.MUTUAL_FUND,
+            name="Alpha Debt Fund",
+            provider="Alpha AMC",
+            category="Debt",
+            identity_key="MUTUAL_FUND:SCHEME:ALPHA-DEBT",
+            source="AMFI",
+        )
+        for product in (matching, different_provider, different_category):
+            MutualFundProduct.objects.create(product=product, aum=Decimal("100"))
+            WatchListEntry.objects.create(user=self.user, product=product)
+
+        response = self.client.get(
+            "/api/watch-list/products/?product_type=MUTUAL_FUND&status=WATCHLIST&search=Alpha&provider=Alpha%20AMC&category=Equity"
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["count"], 1)
+        self.assertEqual([row["name"] for row in response.data["results"]], ["Alpha Watch Fund"])
+
+    def test_universal_status_returns_only_non_owned_mutual_funds(self):
+        watchlisted = InvestmentProduct.objects.create(
+            product_type=ProductType.MUTUAL_FUND,
+            name="Universal Watchlisted Fund",
+            isin="INFUN001",
+            identity_key="MUTUAL_FUND:ISIN:INFUN001",
+            source="AMFI",
+        )
+        owned = InvestmentProduct.objects.create(
+            product_type=ProductType.MUTUAL_FUND,
+            name="Owned Fund",
+            isin="INFOWN001",
+            identity_key="MUTUAL_FUND:ISIN:INFOWN001",
+            source="AMFI",
+        )
+        MutualFundProduct.objects.create(product=watchlisted, aum=Decimal("100"))
+        MutualFundProduct.objects.create(product=owned, aum=Decimal("100"))
+        WatchListEntry.objects.create(user=self.user, product=watchlisted)
+        asset = Asset.objects.create(
+            owner=self.user, family=self.family, name="Owned Asset",
+            symbol="OWN001", isin="INFOWN001", category=AssetCategory.MUTUAL_FUND,
+        )
+        PortfolioPosition.objects.create(
+            owner=self.user, family=self.family, asset=asset, quantity=1, current_value=100,
+        )
+
+        response = self.client.get("/api/watch-list/products/?product_type=MUTUAL_FUND&status=UNIVERSAL")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["count"], 1)
+        self.assertEqual([row["name"] for row in response.data["results"]], ["Universal Watchlisted Fund"])
+
+    def test_all_status_returns_owned_universal_and_watchlisted_products(self):
+        products = [
+            InvestmentProduct.objects.create(
+                product_type=ProductType.MUTUAL_FUND,
+                name=name,
+                isin=isin,
+                identity_key=f"MUTUAL_FUND:ISIN:{isin}",
+                source="AMFI",
+            )
+            for name, isin in (
+                ("Owned Fund", "INFALL001"),
+                ("Universal Fund", "INFALL002"),
+                ("Watchlisted Fund", "INFALL003"),
+            )
+        ]
+        for product in products:
+            MutualFundProduct.objects.create(product=product, aum=Decimal("100"))
+        WatchListEntry.objects.create(user=self.user, product=products[2])
+        asset = Asset.objects.create(
+            owner=self.user, family=self.family, name="Owned Asset",
+            symbol="ALL001", isin="INFALL001", category=AssetCategory.MUTUAL_FUND,
+        )
+        PortfolioPosition.objects.create(
+            owner=self.user, family=self.family, asset=asset, quantity=1, current_value=100,
+        )
+
+        response = self.client.get("/api/watch-list/products/?product_type=MUTUAL_FUND&status=ALL")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["count"], 3)
+        self.assertEqual({row["name"] for row in response.data["results"]}, {
+            "Owned Fund", "Universal Fund", "Watchlisted Fund",
+        })
+
+    def test_watchlist_accepts_all_supported_benchmarks(self):
+        self.user.profile.role = "ADMIN"
+        self.user.profile.save(update_fields=["role"])
+        product = InvestmentProduct.objects.create(
+            product_type=ProductType.MUTUAL_FUND,
+            name="Benchmark Options Fund",
+            identity_key="MUTUAL_FUND:SCHEME:BENCHMARK-OPTIONS",
+            source="TEST",
+        )
+        MutualFundProduct.objects.create(product=product)
+
+        expected = {
+            "Nifty 50",
+            "Nifty 100",
+            "Nifty Small Cap 250",
+            "Nifty Mid Cap 150",
+            "BSE 500",
+        }
+        for benchmark in expected:
+            with self.subTest(benchmark=benchmark):
+                response = self.client.patch(
+                    f"/api/watch-list/products/{product.id}/benchmark/",
+                    {"benchmark": benchmark},
+                    format="json",
+                )
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual(response.data["benchmark"], benchmark)
+
+    def test_nifty_tri_history_requests_the_selected_official_index(self):
+        start = date(2026, 9, 15)
+        index_names = {
+            "Nifty 50": "NIFTY 50",
+            "Nifty 100": "NIFTY 100",
+            "Nifty Small Cap 250": "NIFTY SMALLCAP 250",
+            "Nifty Mid Cap 150": "NIFTY MIDCAP 150",
+        }
+
+        for benchmark, index_name in index_names.items():
+            with self.subTest(benchmark=benchmark):
+                session = Mock()
+                response = Mock()
+                response.json.return_value = {
+                    "d": [{"Date": "15-Sep-2026", "TotalReturnsIndex": "100.0"}]
+                }
+                session.post.return_value = response
+                session.get.return_value = Mock()
+                with patch(
+                    "watchlist.services.benchmark.curl_requests.Session",
+                    return_value=session,
+                ), patch.object(
+                    BenchmarkPerformanceService, "MINIMUM_HISTORY_ROWS", 1
+                ), patch.object(
+                    BenchmarkPerformanceService, "MINIMUM_DAILY_COVERAGE_RATIO", 0
+                ):
+                    points = BenchmarkPerformanceService._nifty_tri_series(
+                        start, start, index_name=index_name
+                    )
+
+                self.assertEqual(len(points), 1)
+                self.assertEqual(points[0]["value"], 100.0)
+                request_payload = session.post.call_args.kwargs.get("json")
+                self.assertIsNotNone(request_payload)
+                self.assertIn(f"'name':'{index_name}'", request_payload["cinfo"])
+                self.assertIn(f"'indexName':'{index_name}'", request_payload["cinfo"])
+                session.close.assert_called_once()
+
     def test_watchlist_toggle(self):
         product = InvestmentProduct.objects.create(product_type=ProductType.MUTUAL_FUND, name="Toggle Fund", identity_key="MUTUAL_FUND:SCHEME:TOGGLE", source="AMFI")
         response = self.client.post(f"/api/watch-list/products/{product.id}/toggle/")
@@ -740,6 +936,206 @@ class BenchmarkPerformanceTests(TestCase):
                 {"date": "2026-09-16", "product_value": 121.25, "benchmark_value": 25100.0},
                 {"date": "2026-09-17", "product_value": 122.00, "benchmark_value": 25100.0},
             ],
+        )
+
+    def test_weekly_chart_observations_keep_last_trading_day_per_iso_week(self):
+        points = [
+            {"date": "2026-09-14", "product_value": 100.0, "benchmark_value": 20000.0},
+            {"date": "2026-09-15", "product_value": 101.0, "benchmark_value": 20100.0},
+            {"date": "2026-09-18", "product_value": 103.0, "benchmark_value": 20300.0},
+            {"date": "2026-09-21", "product_value": 104.0, "benchmark_value": 20400.0},
+            {"date": "2026-09-25", "product_value": 105.0, "benchmark_value": 20500.0},
+        ]
+
+        weekly = BenchmarkPerformanceService._weekly_chart_observations(points)
+
+        self.assertEqual(
+            [point["date"] for point in weekly],
+            ["2026-09-18", "2026-09-25"],
+        )
+        self.assertEqual(weekly[0]["product_value"], 103.0)
+        self.assertEqual(weekly[0]["benchmark_value"], 20300.0)
+
+    def test_weekly_indexed_chart_starts_both_investments_at_100(self):
+        product = InvestmentProduct.objects.create(
+            product_type=ProductType.MUTUAL_FUND,
+            name="Weekly Growth Fund",
+            identity_key="MUTUAL_FUND:SCHEME:WEEKLY-GROWTH",
+            source="AMFI",
+        )
+        scheme = AMFIMasterScheme.objects.create(
+            scheme_code="WEEKLY-GROWTH",
+            scheme_name="Weekly Growth Fund",
+        )
+        MutualFundProduct.objects.create(
+            product=product,
+            scheme_code="WEEKLY-GROWTH",
+            benchmark="Nifty 50",
+        )
+        dates = [
+            date(2026, 9, 14),
+            date(2026, 9, 15),
+            date(2026, 9, 18),
+            date(2026, 9, 21),
+            date(2026, 9, 25),
+        ]
+        navs = [Decimal("100"), Decimal("101"), Decimal("103"), Decimal("104"), Decimal("106")]
+        benchmark_values = [20000.0, 20100.0, 20300.0, 20400.0, 20500.0]
+
+        AMFIMasterNAV.objects.bulk_create([
+            AMFIMasterNAV(scheme=scheme, date=point_date, nav=nav)
+            for point_date, nav in zip(dates, navs)
+        ])
+        benchmark_points = [
+            {"date": point_date.isoformat(), "value": value}
+            for point_date, value in zip(dates, benchmark_values)
+        ]
+
+        with patch.object(
+            BenchmarkPerformanceService,
+            "_benchmark_series",
+            return_value=benchmark_points,
+        ):
+            result = BenchmarkPerformanceService.calculate(product, "1M")
+
+        self.assertTrue(result["available"])
+        self.assertEqual(result["chart"]["frequency"], "weekly")
+        self.assertEqual(result["chart"]["investment_amount"], 100)
+        indexed = result["chart"]["indexed_points"]
+        self.assertGreaterEqual(len(indexed), 2)
+        self.assertEqual(indexed[0]["product_indexed"], 100.0)
+        self.assertEqual(indexed[0]["benchmark_indexed"], 100.0)
+        self.assertEqual(
+            [point["date"] for point in indexed],
+            ["2026-09-18", "2026-09-25"],
+        )
+        self.assertAlmostEqual(indexed[-1]["product_indexed"], (106 / 103) * 100, places=5)
+        self.assertAlmostEqual(indexed[-1]["benchmark_indexed"], (20500 / 20300) * 100, places=5)
+
+    def test_bse_history_uses_full_history_amfi_etf_nav_before_yahoo_etf_prices(self):
+        end = timezone.now().date()
+        start = end - timedelta(
+            days=BenchmarkPerformanceService.PERIOD_DAYS["5Y"] + 31
+        )
+        scheme = AMFIMasterScheme.objects.create(
+            scheme_code="143247",
+            scheme_name="ICICI Prudential BSE 500 ETF",
+        )
+        AMFIMasterNAV.objects.bulk_create([
+            AMFIMasterNAV(
+                scheme=scheme,
+                date=start,
+                nav=Decimal("25.00"),
+                source="AMFI",
+            ),
+            AMFIMasterNAV(
+                scheme=scheme,
+                date=end,
+                nav=Decimal("40.00"),
+                source="AMFI",
+            ),
+        ])
+
+        with patch.object(
+            BenchmarkPerformanceService,
+            "BSE500_FILE",
+            ".",
+        ), patch.object(
+            BenchmarkPerformanceService,
+            "_fetch_bse_history",
+            side_effect=ValueError("BSE endpoint returned HTTP 403"),
+        ), patch.object(
+            BenchmarkPerformanceService,
+            "MINIMUM_HISTORY_ROWS",
+            2,
+        ), patch.object(
+            BenchmarkPerformanceService,
+            "MINIMUM_DAILY_COVERAGE_RATIO",
+            0,
+        ), patch.object(
+            AMFIService,
+            "import_historical_master_navs",
+            return_value={"schemes": 1, "nav_records": 2},
+        ) as import_history, patch.object(
+            BenchmarkPerformanceService,
+            "_series",
+        ) as yahoo_proxy:
+            points = BenchmarkPerformanceService._bse_series(start)
+
+        import_history.assert_called_once_with(
+            start,
+            end,
+            scheme_codes={"143247"},
+        )
+        yahoo_proxy.assert_not_called()
+        self.assertEqual(len(points), 2)
+        self.assertEqual(points[0]["source"], "BSE500_TRI_PROXY_AMFI_NAV")
+        self.assertEqual(points[0]["value"], 25.0)
+        self.assertEqual(points[-1]["value"], 40.0)
+
+    def test_bse_sparse_official_response_falls_back_to_complete_tri_tracking_history(self):
+        start = date(2025, 1, 1)
+        end = timezone.now().date()
+        proxy_points = []
+        current = start
+        value = 100.0
+        while current <= end:
+            if current.weekday() < 5:
+                proxy_points.append({
+                    "date": current.isoformat(),
+                    "value": value,
+                })
+                value += 0.1
+            current += timedelta(days=1)
+
+        sparse_bse_points = [
+            {"date": "2025-01-02", "value": 100.0},
+            {"date": end.isoformat(), "value": 120.0},
+        ]
+
+        with patch.object(
+            BenchmarkPerformanceService,
+            "BSE500_FILE",
+            ".",
+        ), patch.object(
+            BenchmarkPerformanceService,
+            "_fetch_bse_history",
+            return_value=sparse_bse_points,
+        ), patch.object(
+            BenchmarkPerformanceService,
+            "_amfi_bse_tri_proxy_series",
+            side_effect=ValueError("AMFI NAV proxy unavailable in this fallback test"),
+        ), patch.object(
+            BenchmarkPerformanceService,
+            "BSE_TRI_PROXY_TICKERS",
+            ("BSE500IETF.NS",),
+        ), patch.object(
+            BenchmarkPerformanceService,
+            "_series",
+            return_value=proxy_points,
+        ) as mocked_proxy:
+            result = BenchmarkPerformanceService._bse_series(start)
+
+        mocked_proxy.assert_called_once_with("BSE500IETF.NS", start)
+        self.assertGreater(len(result), 200)
+        self.assertEqual(result[0]["source"], "BSE500_TRI_PROXY")
+        self.assertEqual(result[-1]["date"], end.isoformat())
+
+    def test_bse_proxy_observations_are_persisted_with_source_provenance(self):
+        points = [
+            {"date": "2026-09-25", "value": 100.0, "source": "BSE500_TRI_PROXY"},
+            {"date": "2026-09-28", "value": 101.0, "source": "BSE500_TRI_PROXY"},
+        ]
+
+        saved = BenchmarkPerformanceService.save_benchmark_master("BSE 500", points)
+
+        self.assertEqual(saved, 2)
+        self.assertEqual(
+            set(BenchmarkMasterPoint.objects.filter(
+                benchmark="BSE 500",
+                date__in=["2026-09-25", "2026-09-28"],
+            ).values_list("source", flat=True)),
+            {"BSE500_TRI_PROXY"},
         )
 
     def test_chart_never_uses_future_benchmark_value(self):

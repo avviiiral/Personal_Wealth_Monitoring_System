@@ -384,7 +384,7 @@ def _run_watch_list_refresh():
         close_old_connections()
 
 
-BENCHMARK_CHOICES = ("BSE 500", "Nifty 50")
+BENCHMARK_CHOICES = BenchmarkPerformanceService.SUPPORTED_BENCHMARKS
 
 
 @api_view(["PATCH"])
@@ -398,7 +398,7 @@ def watch_list_benchmark(request, product_id):
     benchmark = str(request.data.get("benchmark") or "").strip()
     if benchmark not in BENCHMARK_CHOICES:
         return Response(
-            {"detail": "Benchmark must be one of: BSE 500, Nifty 50."},
+            {"detail": f"Benchmark must be one of: {', '.join(BENCHMARK_CHOICES)}."},
             status=400,
         )
 
@@ -440,7 +440,7 @@ def watch_list_benchmark_performance(request, product_id):
 @permission_classes([IsAuthenticated])
 def watch_list_benchmarks_performance(request):
     results = []
-    for benchmark in ("Nifty 50", "BSE 500"):
+    for benchmark in BenchmarkPerformanceService.SUPPORTED_BENCHMARKS:
         results.append(BenchmarkPerformanceService.calculate_benchmark(benchmark))
     return Response({"benchmarks": results})
 

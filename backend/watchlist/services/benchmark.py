@@ -13,6 +13,7 @@ from django.db import models
 from django.utils import timezone
 
 from mutual_funds.models import AMFIMasterNAV
+from mutual_funds.services.amfi import AMFIService
 from watchlist.models import BenchmarkMasterPoint, PerformanceSnapshot
 from config.pwms_config import get as get_pwms_config
 
@@ -26,9 +27,14 @@ class BenchmarkPerformanceService:
     BSE500_URL = settings.WATCHLIST_BENCHMARK_BSE500_URL
     BSE500_API = get_pwms_config("benchmarks", "bse_api", "")
     NIFTY_TRI_URLS = tuple(get_pwms_config("benchmarks", "nifty_tri_urls", []))
+    NIFTY_TRI_INDICES = dict(get_pwms_config("benchmarks", "nifty_tri_indices", {}))
+    SUPPORTED_BENCHMARKS = tuple(NIFTY_TRI_INDICES) + ("BSE 500",)
     NIFTY_TRI_HEADERS = dict(get_pwms_config("benchmarks", "nifty_headers", {}))
     NIFTY_TRI_HEADERS["Referer"] = get_pwms_config("benchmarks", "nifty_historical_page", "")
     BSE_TRI_PROXY_TICKERS = tuple(get_pwms_config("benchmarks", "bse_tri_proxy_tickers", []))
+    BSE_TRI_AMFI_SCHEME_CODE = str(
+        get_pwms_config("benchmarks", "bse_tri_amfi_scheme_code", "143247")
+    )
     BSE_HEADERS = dict(get_pwms_config("benchmarks", "bse_headers", {}))
     MINIMUM_HISTORY_ROWS = int(
         get_pwms_config("benchmarks", "minimum_history_rows", 20)
@@ -42,8 +48,8 @@ class BenchmarkPerformanceService:
         return cls.TICKERS[benchmark]
 
     @classmethod
-    def _nifty_tri_series(cls, start, end=None):
-        """Fetch official Nifty 50 Gross TRI history from NSE Indices."""
+    def _nifty_tri_series(cls, start, end=None, index_name="NIFTY 50"):
+        """Fetch official Gross TRI history for an NSE index."""
         end = end or timezone.now().date()
         all_points = {}
 
@@ -67,10 +73,10 @@ class BenchmarkPerformanceService:
 
         def request_rows(request_start, request_end):
             cinfo = (
-                "{'name':'NIFTY 50',"
+                "{'name':'"+index_name+"',"
                 f"'startDate':'{request_start.strftime('%d-%b-%Y')}',"
                 f"'endDate':'{request_end.strftime('%d-%b-%Y')}',"
-                "'indexName':'NIFTY 50'}"
+                "'indexName':'"+index_name+"'}"
             )
             payload = {"cinfo": cinfo}
             last_error = None
@@ -192,7 +198,7 @@ class BenchmarkPerformanceService:
 
     @classmethod
     def ensure_benchmark_master_history(cls, start=None, end=None, force=False):
-        """Ensure both supported benchmark masters exist locally."""
+        """Ensure every configured NSE TRI and BSE 500 benchmark master exists locally."""
         end = end or timezone.now().date()
         start = start or (end - timedelta(days=cls.PERIOD_DAYS["5Y"] + 31))
         results = {}
@@ -201,10 +207,14 @@ class BenchmarkPerformanceService:
             int((end - start).days * cls.MINIMUM_DAILY_COVERAGE_RATIO),
         )
 
-        for benchmark in ("Nifty 50", "BSE 500"):
+        for benchmark in cls.SUPPORTED_BENCHMARKS:
             aggregate = BenchmarkMasterPoint.objects.filter(
                 benchmark=benchmark,
-                source="MASTER",
+                source__in=(
+                    ["BSE500T_OFFICIAL", "BSE500T_FILE", "BSE500_TRI_PROXY_AMFI_NAV", "BSE500_TRI_PROXY"]
+                    if benchmark == "BSE 500"
+                    else ["MASTER"]
+                ),
                 date__gte=start,
                 date__lte=end,
             ).aggregate(
@@ -232,8 +242,10 @@ class BenchmarkPerformanceService:
 
             try:
                 points = (
-                    cls._nifty_tri_series(start, end)
-                    if benchmark == "Nifty 50"
+                    cls._nifty_tri_series(
+                        start, end, index_name=cls.NIFTY_TRI_INDICES[benchmark]
+                    )
+                    if benchmark in cls.NIFTY_TRI_INDICES
                     else cls._bse_series(start)
                 )
                 saved = cls.save_benchmark_master(benchmark, points)
@@ -500,6 +512,30 @@ class BenchmarkPerformanceService:
         return points
 
     @classmethod
+    def _has_sufficient_history(cls, points, start, end):
+        """Reject partial provider responses before persisting benchmark history."""
+        valid = [
+            point for point in (points or [])
+            if point.get("date") and point.get("value") is not None
+            and float(point["value"]) > 0
+            and start <= date.fromisoformat(point["date"]) <= end
+        ]
+        unique_dates = {point["date"] for point in valid}
+        expected_rows = max(
+            cls.MINIMUM_HISTORY_ROWS,
+            int((end - start).days * cls.MINIMUM_DAILY_COVERAGE_RATIO),
+        )
+        if not unique_dates:
+            return False
+        first_date = date.fromisoformat(min(unique_dates))
+        last_date = date.fromisoformat(max(unique_dates))
+        return (
+            len(unique_dates) >= expected_rows
+            and first_date <= start + timedelta(days=10)
+            and last_date >= end - timedelta(days=10)
+        )
+
+    @classmethod
     def _fetch_bse_history(cls, start):
         end = timezone.now().date()
         all_points = {}
@@ -517,52 +553,108 @@ class BenchmarkPerformanceService:
         return [all_points[key] for key in sorted(all_points)]
 
     @classmethod
+    def _amfi_bse_tri_proxy_series(cls, start, end):
+        """Use the BSE 500 ETF's AMFI NAV history as a long-history TRI proxy.
+
+        The ICICI Prudential BSE 500 ETF (AMFI scheme 143247) tracks BSE 500
+        TRI and has NAV history from 2018. This is not the official index
+        level: its NAV includes fund expenses and tracking difference.
+        """
+        scheme_code = cls.BSE_TRI_AMFI_SCHEME_CODE
+        AMFIService.import_historical_master_navs(
+            start,
+            end,
+            scheme_codes={scheme_code},
+        )
+        navs = (
+            AMFIMasterNAV.objects
+            .filter(
+                scheme__scheme_code=scheme_code,
+                source="AMFI",
+                date__gte=start,
+                date__lte=end,
+            )
+            .order_by("date")
+            .values_list("date", "nav")
+        )
+        points = [
+            {
+                "date": nav_date.isoformat(),
+                "value": float(nav),
+                "source": "BSE500_TRI_PROXY_AMFI_NAV",
+            }
+            for nav_date, nav in navs
+            if nav is not None and float(nav) > 0
+        ]
+        if not cls._has_sufficient_history(points, start, end):
+            raise ValueError(
+                "ICICI Prudential BSE 500 ETF AMFI NAV history is incomplete "
+                f"for {start.isoformat()} to {end.isoformat()} "
+                f"({len(points)} observations)"
+            )
+        return points
+
+    @classmethod
     def _bse_series(cls, start):
+        end = timezone.now().date()
         source_file = Path(cls.BSE500_FILE)
         # Only read the configured CSV when the path points to a regular file.
-        # A misconfigured value such as "." is a directory on Windows and
-        # attempting read_text() on it raises PermissionError: [Errno 13].
         if source_file.is_file():
             points = cls._load_bse_csv(
                 source_file.read_text(encoding="utf-8-sig")
             )
             filtered = [
-                point
-                for point in points
-                if date.fromisoformat(point["date"]) >= start
+                point for point in points
+                if start <= date.fromisoformat(point["date"]) <= end
             ]
-            # A bundled CSV is authoritative only when it actually covers the
-            # requested start date. Otherwise continue to the live sources so
-            # 5Y/other long periods are not silently truncated.
-            if points and date.fromisoformat(points[0]["date"]) <= start:
-                return filtered
+            if cls._has_sufficient_history(filtered, start, end):
+                return [dict(point, source="BSE500T_FILE") for point in filtered]
 
-        # First try the BSE historical endpoint. If the public endpoint does
-        # not provide BSE500T, fall back to exchange-traded products that
-        # explicitly track the BSE 500 TRI. This requires no manual CSV.
+        # A short BSE response is not a usable history. The public BSE CSV
+        # interface is an OHLC/price-index interface; accept BSE500T only when
+        # the returned series covers the full requested range at daily density.
+        bse_error = None
         try:
             points = cls._fetch_bse_history(start)
-            if points:
-                return points
-        except Exception as bse_error:
-            last_error = bse_error
-        else:
-            last_error = None
+            if cls._has_sufficient_history(points, start, end):
+                return [dict(point, source="BSE500T_OFFICIAL") for point in points]
+            bse_error = ValueError(
+                "BSE500T endpoint returned insufficient daily coverage "
+                f"({len(points)} observations for {start.isoformat()} to {end.isoformat()})"
+            )
+        except Exception as exc:
+            bse_error = exc
 
+        # AMFI carries the ICICI Prudential BSE 500 ETF NAV history from
+        # 2018 (scheme 143247). It tracks BSE 500 TRI and is a better long-
+        # history proxy than exchange-listed ETF prices, which begin later.
+        # NAV is still a fund proxy, not the official index level.
+        proxy_errors = []
+        try:
+            points = cls._amfi_bse_tri_proxy_series(start, end)
+            return points
+        except Exception as exc:
+            proxy_errors.append(f"AMFI ETF NAV: {exc}")
+
+        # Last-resort listed ETF adjusted closes. They are proxies and are
+        # accepted only when they cover the complete requested period.
         for ticker in cls.BSE_TRI_PROXY_TICKERS:
             try:
                 points = cls._series(ticker, start)
-                if points:
-                    return points
-            except Exception as proxy_error:
-                last_error = proxy_error
+                if not cls._has_sufficient_history(points, start, end):
+                    proxy_errors.append(
+                        f"{ticker}: insufficient daily coverage ({len(points)} observations)"
+                    )
+                    continue
+                return [dict(point, source="BSE500_TRI_PROXY") for point in points]
+            except Exception as exc:
+                proxy_errors.append(f"{ticker}: {exc}")
 
-        if last_error:
-            raise ValueError(
-                f"BSE 500 TRI data unavailable from BSE and public TRI-tracking "
-                f"fallbacks: {last_error}"
-            ) from last_error
-        raise ValueError("BSE 500 TRI data source returned no observations")
+        detail = "; ".join(proxy_errors) or "no configured TRI-tracking ETF proxy returned data"
+        raise ValueError(
+            "BSE 500 TRI history is unavailable. "
+            f"BSE source: {bse_error}. ETF fallback: {detail}"
+        ) from bse_error
 
     @classmethod
     def _benchmark_series(cls, benchmark, start, allow_source_refresh=False):
@@ -574,36 +666,63 @@ class BenchmarkPerformanceService:
         master current.
         """
         def read_master():
-            points = list(
+            allowed_sources = (
+                ["BSE500T_OFFICIAL", "BSE500T_FILE", "BSE500_TRI_PROXY_AMFI_NAV", "BSE500_TRI_PROXY", "MASTER"]
+                if benchmark == "BSE 500"
+                else ["MASTER"]
+            )
+            stored = list(
                 BenchmarkMasterPoint.objects
                 .filter(
                     benchmark=benchmark,
-                    source="MASTER",
+                    source__in=allowed_sources,
                     date__gte=start,
                 )
                 .order_by("date", "id")
-                .values("date", "value")
+                .values("date", "value", "source")
             )
             boundary = (
                 BenchmarkMasterPoint.objects
                 .filter(
                     benchmark=benchmark,
-                    source="MASTER",
+                    source__in=allowed_sources,
                     date__lt=start,
                 )
                 .order_by("-date", "-id")
-                .values("date", "value")
+                .values("date", "value", "source")
                 .first()
             )
             if boundary is not None:
-                points.insert(0, boundary)
+                stored.insert(0, boundary)
+
+            # Prefer official observations on duplicate dates; use the ETF
+            # proxy only to fill gaps in the official series.
+            by_date = {}
+            for point in stored:
+                if point["value"] is None or float(point["value"]) <= 0:
+                    continue
+                key = point["date"]
+                current = by_date.get(key)
+                source_priority = {
+                    "BSE500T_OFFICIAL": 5,
+                    "BSE500T_FILE": 4,
+                    "BSE500_TRI_PROXY_AMFI_NAV": 3,
+                    "BSE500_TRI_PROXY": 2,
+                    "MASTER": 1,
+                }
+                if current is None or (
+                    source_priority.get(point["source"], 0)
+                    > source_priority.get(current["source"], 0)
+                ):
+                    by_date[key] = point
+
             return [
                 {
                     "date": point["date"].isoformat(),
                     "value": float(point["value"]),
+                    "source": point["source"],
                 }
-                for point in points
-                if point["value"] is not None and float(point["value"]) > 0
+                for _, point in sorted(by_date.items())
             ]
 
         series = read_master()
@@ -636,8 +755,10 @@ class BenchmarkPerformanceService:
 
         try:
             points = (
-                cls._nifty_tri_series(start, end)
-                if benchmark == "Nifty 50"
+                cls._nifty_tri_series(
+                    start, end, index_name=cls.NIFTY_TRI_INDICES[benchmark]
+                )
+                if benchmark in cls.NIFTY_TRI_INDICES
                 else cls._bse_series(start)
                 if benchmark == "BSE 500"
                 else []
@@ -670,7 +791,7 @@ class BenchmarkPerformanceService:
                 benchmark=benchmark,
                 date=date.fromisoformat(point["date"]),
                 value=point["value"],
-                source="MASTER",
+                source=point.get("source", "MASTER"),
             )
             for point in points
             if point.get("date") and point.get("value") is not None
@@ -1020,7 +1141,7 @@ class BenchmarkPerformanceService:
 
     @classmethod
     def calculate_benchmark(cls, benchmark):
-        if benchmark not in cls.TICKERS:
+        if benchmark not in cls.SUPPORTED_BENCHMARKS:
             return {
                 "benchmark": benchmark,
                 "available": False,
@@ -1129,10 +1250,32 @@ class BenchmarkPerformanceService:
             "end_date": aligned[-1]["date"],
         }
 
+    @staticmethod
+    def _weekly_chart_observations(points):
+        """Reduce aligned daily observations to the last available trading date per week.
+
+        The supplied observations are already aligned on fund valuation dates.
+        Grouping uses ISO calendar weeks and preserves the actual observed value;
+        no interpolation, averaging, or forward filling is performed.
+        """
+        weekly = {}
+        for point in points or []:
+            point_date = date.fromisoformat(point["date"])
+            iso_year, iso_week, _ = point_date.isocalendar()
+            key = (iso_year, iso_week)
+            current = weekly.get(key)
+            if current is None or point_date > date.fromisoformat(current["date"]):
+                weekly[key] = point
+
+        return [
+            weekly[key]
+            for key in sorted(weekly)
+        ]
+
     @classmethod
     def calculate(cls, product, chart_period="1Y"):
         benchmark = cls._product_benchmark(product)
-        if not benchmark or benchmark not in cls.TICKERS:
+        if not benchmark or benchmark not in cls.SUPPORTED_BENCHMARKS:
             return None
 
         max_days = cls.PERIOD_DAYS["5Y"] + 31
@@ -1224,6 +1367,34 @@ class BenchmarkPerformanceService:
             benchmark_chart,
             chart_days,
         )
+        weekly_chart_points = (
+            cls._weekly_chart_observations(aligned_chart["points"])
+            if aligned_chart
+            else []
+        )
+
+        # Normalize both investments from the same first weekly observation.
+        # Keep actual NAV/index values alongside the indexed ₹100 series for
+        # chart tooltips. Return tables and their calculations remain untouched.
+        if len(weekly_chart_points) >= 2:
+            fund_base = weekly_chart_points[0]["product_value"]
+            benchmark_base = weekly_chart_points[0]["benchmark_value"]
+            indexed_chart_points = [
+                {
+                    "date": point["date"],
+                    "product_value": point["product_value"],
+                    "benchmark_value": point["benchmark_value"],
+                    "product_indexed": round(
+                        (point["product_value"] / fund_base) * 100.0, 6
+                    ),
+                    "benchmark_indexed": round(
+                        (point["benchmark_value"] / benchmark_base) * 100.0, 6
+                    ),
+                }
+                for point in weekly_chart_points
+            ]
+        else:
+            indexed_chart_points = []
 
         return {
             "benchmark": benchmark,
@@ -1239,24 +1410,41 @@ class BenchmarkPerformanceService:
             ),
             "benchmark_metrics": benchmark_metrics,
             "benchmark_return_details": benchmark_return_details,
+            "benchmark_data_source": (
+                "ICICI Prudential BSE 500 ETF AMFI NAV proxy (tracks BSE 500 TRI; fund expenses and tracking difference apply)"
+                if benchmark == "BSE 500"
+                and any(point.get("source") == "BSE500_TRI_PROXY_AMFI_NAV" for point in benchmark_series)
+                else "BSE 500 TRI-tracking ETF adjusted-close proxy (tracking error may apply)"
+                if benchmark == "BSE 500"
+                and any(point.get("source") == "BSE500_TRI_PROXY" for point in benchmark_series)
+                else "Official BSE 500 TRI history"
+                if benchmark == "BSE 500"
+                and any(point.get("source") in {"BSE500T_OFFICIAL", "BSE500T_FILE"} for point in benchmark_series)
+                else "Stored BSE benchmark history (legacy source provenance unavailable)"
+                if benchmark == "BSE 500"
+                else f"Official {benchmark} TRI history"
+            ),
             "differences": differences,
             "comparison": comparison,
             "chart_period": chart_period,
             "chart": (
                 {
+                    "frequency": "weekly",
+                    "investment_amount": 100,
                     "fund": [
                         {"date": point["date"], "value": point["product_value"]}
-                        for point in aligned_chart["points"]
+                        for point in indexed_chart_points
                     ],
                     "benchmark": [
                         {"date": point["date"], "value": point["benchmark_value"]}
-                        for point in aligned_chart["points"]
+                        for point in indexed_chart_points
                     ],
-                    "aligned_points": aligned_chart["points"],
-                    "start_date": aligned_chart["start_date"],
-                    "end_date": aligned_chart["end_date"],
+                    "aligned_points": weekly_chart_points,
+                    "indexed_points": indexed_chart_points,
+                    "start_date": indexed_chart_points[0]["date"],
+                    "end_date": indexed_chart_points[-1]["date"],
                 }
-                if aligned_chart
+                if len(indexed_chart_points) >= 2
                 else {
                     "fund": [],
                     "benchmark": [],

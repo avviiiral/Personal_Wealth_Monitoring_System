@@ -60,9 +60,12 @@ export class WatchListComponent implements OnInit, OnDestroy {
   downloadModalOpen = false;
   downloadType: 'PMS' | 'MUTUAL_FUND' | 'ALL' = 'ALL';
   downloading = false;
-  readonly benchmarkOptions: Array<{ value: 'BSE 500' | 'Nifty 50'; label: string }> = [
+  readonly benchmarkOptions: Array<{ value: 'BSE 500' | 'Nifty 50' | 'Nifty 100' | 'Nifty Small Cap 250' | 'Nifty Mid Cap 150'; label: string }> = [
+    { value: 'Nifty 50', label: 'Nifty 50 TRI' },
+    { value: 'Nifty 100', label: 'Nifty 100 TRI' },
+    { value: 'Nifty Small Cap 250', label: 'Nifty Small Cap 250 TRI' },
+    { value: 'Nifty Mid Cap 150', label: 'Nifty Mid Cap 150 TRI' },
     { value: 'BSE 500', label: 'BSE 500 TRI' },
-    { value: 'Nifty 50', label: 'Nifty 50' },
   ];
   readonly benchmarkPeriods: BenchmarkPeriod[] = ['1M', '3M', '6M', '1Y', '3Y', '5Y'];
   private readonly updatingBenchmarkIds = new Set<number>();
@@ -268,10 +271,25 @@ export class WatchListComponent implements OnInit, OnDestroy {
       if (!raw) return;
       const cached = JSON.parse(raw) as WatchListResponse;
       if (!cached || !Array.isArray(cached.results)) return;
-      this.products = this.sortProducts(this.state.filterVisible(cached.results));
+      const cachedResults = this.state.filterVisible(cached.results);
+      this.products = this.sortProducts(this.filterProductsForStatus(cachedResults, this.status));
       this.count = Number(cached.count) || this.products.length;
       this.loading = false;
     } catch (error) { console.warn('Failed to restore Watch List cache:', error); }
+  }
+
+  private filterProductsForStatus(products: WatchListProduct[], status: StatusTab): WatchListProduct[] {
+    switch (status) {
+      case 'WATCHLIST':
+        return products.filter(product => product.is_watchlisted === true || product.status === 'WATCHLIST');
+      case 'OWNED':
+        return products.filter(product => product.status === 'OWNED');
+      case 'UNIVERSAL':
+        return products.filter(product => product.status === 'UNIVERSAL');
+      case 'ALL':
+      default:
+        return products;
+    }
   }
 
   private invalidateUniverseCache(): void {
@@ -348,11 +366,12 @@ export class WatchListComponent implements OnInit, OnDestroy {
           // refresh will reload the data when it completes.
           return;
         }
-        const serverResults = this.state.filterVisible(response.results);
+        const serverResults = this.filterProductsForStatus(this.state.filterVisible(response.results), requestedStatus);
         if (requestedStatus === 'WATCHLIST' && requestedPage === 1) {
           const optimistic = this.state.getAdded(requestedProductTab);
           const serverIds = new Set(serverResults.map(product => product.id));
-          const optimisticResults = optimistic.filter(product => !serverIds.has(product.id));
+          const optimisticResults = this.filterProductsForStatus(optimistic, 'WATCHLIST')
+            .filter(product => !serverIds.has(product.id));
           this.products = this.sortProducts([...optimisticResults, ...serverResults].slice(0, this.pageSize));
           this.count = response.count + optimisticResults.length;
         } else {
@@ -489,14 +508,14 @@ export class WatchListComponent implements OnInit, OnDestroy {
 
   isUpdatingBenchmark(productId: number): boolean { return this.updatingBenchmarkIds.has(productId); }
 
-  updateBenchmark(product: WatchListProduct, benchmark: 'BSE 500' | 'Nifty 50'): void {
+  updateBenchmark(product: WatchListProduct, benchmark: 'BSE 500' | 'Nifty 50' | 'Nifty 100' | 'Nifty Small Cap 250' | 'Nifty Mid Cap 150'): void {
     const previous = product.benchmark;
     if (previous === benchmark || this.updatingBenchmarkIds.has(product.id)) return;
     this.updatingBenchmarkIds.add(product.id);
     this.error = '';
     this.api.updateBenchmark(product.id, benchmark).subscribe({
       next: response => {
-        product.benchmark = response.benchmark as 'BSE 500' | 'Nifty 50';
+        product.benchmark = response.benchmark as 'BSE 500' | 'Nifty 50' | 'Nifty 100' | 'Nifty Small Cap 250' | 'Nifty Mid Cap 150';
         this.updatingBenchmarkIds.delete(product.id);
         this.cacheCurrentPage();
       },
@@ -641,6 +660,30 @@ export class WatchListComponent implements OnInit, OnDestroy {
     productValue: number;
     benchmarkValue: number;
   }> {
+    const indexed = this.benchmarkData?.chart?.indexed_points;
+    if (Array.isArray(indexed) && indexed.length >= 2) {
+      return indexed
+        .map((point: any) => ({
+          date: String(point.date),
+          productValue: Number(point.product_value),
+          benchmarkValue: Number(point.benchmark_value),
+          productIndexed: Number(point.product_indexed),
+          benchmarkIndexed: Number(point.benchmark_indexed),
+        }))
+        .filter((point: any) =>
+          Boolean(point.date)
+          && Number.isFinite(point.productValue)
+          && Number.isFinite(point.benchmarkValue)
+          && Number.isFinite(point.productIndexed)
+          && Number.isFinite(point.benchmarkIndexed)
+          && point.productValue > 0
+          && point.benchmarkValue > 0,
+        )
+        .sort((a: any, b: any) => a.date.localeCompare(b.date));
+    }
+
+    // Compatibility with responses produced before weekly indexed points
+    // were added. These are normalized client-side as a fallback.
     const aligned = this.benchmarkData?.chart?.aligned_points;
     if (Array.isArray(aligned) && aligned.length >= 2) {
       return aligned
@@ -1014,13 +1057,14 @@ export class WatchListComponent implements OnInit, OnDestroy {
         }
       }
 
-      let benchmarkRows: any[] = [
-        { benchmark: 'Nifty 50', available: false },
-        { benchmark: 'BSE 500', available: false },
-      ];
+      const benchmarkNames = this.benchmarkOptions.map(option => option.value);
+      let benchmarkRows: any[] = benchmarkNames.map(benchmark => ({
+        benchmark,
+        available: false,
+      }));
       try {
         const response = await firstValueFrom(this.api.getBenchmarksPerformance());
-        benchmarkRows = ['Nifty 50', 'BSE 500'].map(name =>
+        benchmarkRows = benchmarkNames.map(name =>
           response.benchmarks.find(item => item?.benchmark === name) || {
             benchmark: name,
             available: false,
@@ -1048,8 +1092,12 @@ export class WatchListComponent implements OnInit, OnDestroy {
     workbook.title = 'Watch List';
     workbook.created = new Date();
 
+    const benchmarkNames = this.benchmarkOptions.map(option => option.value);
+    const firstBenchmarkRow = 6;
+    const noteRow = firstBenchmarkRow + benchmarkNames.length + 1;
+    const productHeaderRow = noteRow + 2;
     const sheet = workbook.addWorksheet('Watch List', {
-      views: [{ state: 'frozen', ySplit: 11, showGridLines: false }],
+      views: [{ state: 'frozen', ySplit: productHeaderRow, showGridLines: false }],
       properties: { defaultRowHeight: 21 },
     });
 
@@ -1099,10 +1147,6 @@ export class WatchListComponent implements OnInit, OnDestroy {
     // existing Watch List product table.
     const benchmarkSectionTitleRow = 4;
     const benchmarkHeaderRow = 5;
-    const firstBenchmarkRow = 6;
-    const noteRow = 9;
-    const productHeaderRow = 11;
-
     sheet.mergeCells('A' + benchmarkSectionTitleRow + ':O' + benchmarkSectionTitleRow);
     const benchmarkTitle = sheet.getCell('A' + benchmarkSectionTitleRow);
     benchmarkTitle.value = 'Benchmark Performance';
@@ -1126,7 +1170,7 @@ export class WatchListComponent implements OnInit, OnDestroy {
     });
     benchmarkHeader.height = 24;
 
-    ['Nifty 50', 'BSE 500'].forEach((benchmarkName, index) => {
+    benchmarkNames.forEach((benchmarkName, index) => {
       const data = benchmarkRows.find(item => item?.benchmark === benchmarkName) || {};
       const metrics = data?.benchmark_metrics || {};
       const values = [
@@ -1157,7 +1201,7 @@ export class WatchListComponent implements OnInit, OnDestroy {
     });
 
     const noteCell = sheet.getCell('A' + noteRow);
-    noteCell.value = 'Note: Product return columns are Watch List returns. Benchmark Performance shows the selected Nifty 50 and BSE 500 TRI market benchmark returns as of the latest available benchmark date.';
+    noteCell.value = 'Note: Product return columns are Watch List returns. Benchmark Performance shows the selected NSE and BSE TRI market benchmark returns as of the latest available benchmark date.';
     sheet.mergeCells('A' + noteRow + ':O' + noteRow);
     noteCell.font = { name: 'Aptos', size: 9, italic: true, color: { argb: 'FF6B7280' } };
     noteCell.alignment = { vertical: 'middle' };

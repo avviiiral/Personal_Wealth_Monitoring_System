@@ -816,6 +816,65 @@ class BenchmarkPerformanceTests(TestCase):
         self.assertAlmostEqual(indexed[-1]["product_indexed"], (106 / 103) * 100, places=5)
         self.assertAlmostEqual(indexed[-1]["benchmark_indexed"], (20500 / 20300) * 100, places=5)
 
+    def test_bse_history_uses_full_history_amfi_etf_nav_before_yahoo_etf_prices(self):
+        start = date(2021, 10, 18)
+        end = date(2026, 11, 17)
+        scheme = AMFIMasterScheme.objects.create(
+            scheme_code="143247",
+            scheme_name="ICICI Prudential BSE 500 ETF",
+        )
+        AMFIMasterNAV.objects.bulk_create([
+            AMFIMasterNAV(
+                scheme=scheme,
+                date=start,
+                nav=Decimal("25.00"),
+                source="AMFI",
+            ),
+            AMFIMasterNAV(
+                scheme=scheme,
+                date=end,
+                nav=Decimal("40.00"),
+                source="AMFI",
+            ),
+        ])
+
+        with patch.object(
+            BenchmarkPerformanceService,
+            "BSE500_FILE",
+            ".",
+        ), patch.object(
+            BenchmarkPerformanceService,
+            "_fetch_bse_history",
+            side_effect=ValueError("BSE endpoint returned HTTP 403"),
+        ), patch.object(
+            BenchmarkPerformanceService,
+            "MINIMUM_HISTORY_ROWS",
+            2,
+        ), patch.object(
+            BenchmarkPerformanceService,
+            "MINIMUM_DAILY_COVERAGE_RATIO",
+            0,
+        ), patch.object(
+            AMFIService,
+            "import_historical_master_navs",
+            return_value={"schemes": 1, "nav_records": 2},
+        ) as import_history, patch.object(
+            BenchmarkPerformanceService,
+            "_series",
+        ) as yahoo_proxy:
+            points = BenchmarkPerformanceService._bse_series(start)
+
+        import_history.assert_called_once_with(
+            start,
+            end,
+            scheme_codes={"143247"},
+        )
+        yahoo_proxy.assert_not_called()
+        self.assertEqual(len(points), 2)
+        self.assertEqual(points[0]["source"], "BSE500_TRI_PROXY_AMFI_NAV")
+        self.assertEqual(points[0]["value"], 25.0)
+        self.assertEqual(points[-1]["value"], 40.0)
+
     def test_bse_sparse_official_response_falls_back_to_complete_tri_tracking_history(self):
         start = date(2025, 1, 1)
         end = timezone.now().date()

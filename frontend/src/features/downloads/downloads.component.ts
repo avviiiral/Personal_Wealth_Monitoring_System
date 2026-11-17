@@ -1172,8 +1172,7 @@ export class DownloadsComponent implements OnInit {
 
   private async downloadLiquidPositionFunds(): Promise<void> {
     const asOfDate = this.selectedReportDate || this.todayStamp();
-    // Fetch the persisted Liquid Position document and backend-calculated values.
-    // This deliberately avoids rebuilding the report from a separate holdings export.
+    // Export the same persisted, backend-calculated report shown on the Liquid Position page.
     const report: LiquidPositionReport = await firstValueFrom(
       this.liquidPositionApi.getPosition(asOfDate),
     );
@@ -1183,95 +1182,125 @@ export class DownloadsComponent implements OnInit {
     workbook.creator = 'PWMS';
     workbook.created = new Date();
 
-    const sheet = workbook.addWorksheet('Liquid Position Funds', {
-      properties: { defaultRowHeight: 18 },
+    const sheet = workbook.addWorksheet('Liquid Position', {
+      properties: { defaultRowHeight: 22 },
       views: [{ state: 'normal', showGridLines: false }],
     });
 
     sheet.columns = [
       { width: 3 },
-      { width: 42 },
-      { width: 15 },
-      { width: 15 },
-      { width: 15 },
+      { width: 43 },
+      { width: 16 },
+      { width: 16 },
+      { width: 16 },
     ];
 
-    sheet.getCell('B2').value = `Liquidity Position as on ${asOfDate}`;
-    sheet.getCell('E2').value = '(All amounts in ₹ lakhs)';
-    sheet.getRow(2).height = 24;
-    sheet.getCell('B2').font = { bold: true, size: 14 };
-    sheet.getCell('E2').font = { italic: true, size: 10 };
+    // Mirror the page heading, report title and lakhs note.
+    sheet.mergeCells('B2:D2');
+    sheet.getCell('B2').value = 'Liquid Position';
+    sheet.getCell('B2').font = { name: 'Aptos Display', bold: true, size: 18, color: { argb: 'FF172033' } };
+    sheet.getRow(2).height = 30;
+
+    sheet.mergeCells('B3:E3');
+    sheet.getCell('B3').value = 'Current Liquid and Arbitrage mutual-fund market values, commitments, and planned deployments.';
+    sheet.getCell('B3').font = { name: 'Aptos', size: 10, color: { argb: 'FF667085' } };
+    sheet.getCell('B3').alignment = { wrapText: true, vertical: 'middle' };
+    sheet.getRow(3).height = 24;
+
+    sheet.mergeCells('B5:D5');
+    sheet.getCell('B5').value = `Liquidity Position as on ${report.as_of_date || asOfDate}`;
+    sheet.getCell('B5').font = { name: 'Aptos', bold: true, size: 13, color: { argb: 'FF172033' } };
+    sheet.getCell('E5').value = '(All amounts in ₹ lakhs)';
+    sheet.getCell('E5').font = { name: 'Aptos', italic: true, size: 10, color: { argb: 'FF667085' } };
+    sheet.getCell('E5').alignment = { horizontal: 'right', vertical: 'middle' };
+    sheet.getRow(5).height = 25;
 
     const header = sheet.addRow(['', 'Particulars', 'DAJ', 'DJT', 'Total']);
-    header.height = 22;
+    header.height = 25;
     header.eachCell((cell, columnNumber) => {
       if (columnNumber < 2) return;
-      cell.font = { bold: true };
-      cell.border = { bottom: { style: 'thin' } };
-      cell.alignment = {
-        vertical: 'middle',
-        horizontal: columnNumber >= 3 ? 'right' : 'left',
-      };
+      cell.font = { name: 'Aptos', bold: true, size: 9, color: { argb: 'FF667085' } };
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF1F4F8' } };
+      cell.alignment = { vertical: 'middle', horizontal: columnNumber >= 3 ? 'right' : 'left' };
+      cell.border = { bottom: { style: 'thin', color: { argb: 'FFD9DEE7' } } };
     });
 
-    const addValueRow = (label: string, values: LiquidPositionPair, bold = false) => {
+    const addValueRow = (
+      label: string,
+      values: LiquidPositionPair,
+      style: 'normal' | 'market' | 'calculated' | 'grand' | 'balance' = 'normal',
+    ) => {
       const row = sheet.addRow(['', label, values.daj, values.djt, values.total]);
+      row.height = 24;
       for (let column = 2; column <= 5; column++) {
         const cell = row.getCell(column);
+        cell.font = {
+          name: 'Aptos',
+          size: 10,
+          bold: style !== 'normal' || column === 5,
+          color: { argb: 'FF172033' },
+        };
         cell.alignment = {
           vertical: 'middle',
           horizontal: column >= 3 ? 'right' : 'left',
           wrapText: column === 2,
         };
         if (column >= 3) cell.numFmt = '#,##0.00;-#,##0.00;-';
-        if (bold) cell.font = { bold: true };
+        cell.border = { bottom: { style: 'thin', color: { argb: 'FFE1E5EA' } } };
+        if (style === 'market' || style === 'balance') {
+          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFEAF1FA' } };
+        } else if (style === 'calculated' || style === 'grand') {
+          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF1F4F8' } };
+        }
+        if (style === 'grand' || style === 'balance') {
+          cell.border = {
+            top: { style: style === 'balance' ? 'medium' : 'thin', color: { argb: 'FFD1D8E2' } },
+            bottom: { style: 'thin', color: { argb: 'FFD1D8E2' } },
+          };
+        }
+        if (column >= 3 && typeof cell.value === 'number' && cell.value < 0) {
+          cell.font = { name: 'Aptos', size: 10, bold: style !== 'normal', color: { argb: 'FFC0392B' } };
+        }
       }
       return row;
     };
 
     const addSection = (label: string) => {
       const row = sheet.addRow(['', label]);
-      row.height = 21;
+      row.height = 25;
       for (let column = 2; column <= 5; column++) {
         const cell = row.getCell(column);
-        cell.font = { bold: true };
-        cell.fill = {
-          type: 'pattern',
-          pattern: 'solid',
-          fgColor: { argb: 'FFEAEFF5' },
-        };
+        cell.font = { name: 'Aptos', bold: true, size: 10, color: { argb: 'FF172033' } };
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF1F4F8' } };
+        cell.border = { bottom: { style: 'thin', color: { argb: 'FFD9DEE7' } } };
       }
     };
 
-    addValueRow('Liquid (MV)', report.liquid_mv);
-    addValueRow('Arbitrage (MV)', report.arbitrage_mv);
+    addValueRow('Liquid (MV)', report.liquid_mv, 'market');
+    addValueRow('Arbitrage (MV)', report.arbitrage_mv, 'market');
     addValueRow('Bank', report.bank);
-    addValueRow('Arbitrage + Liquid + Bank', report.available_liquidity, true);
+    addValueRow('Arbitrage + Liquid + Bank', report.available_liquidity, 'calculated');
 
     sheet.addRow([]);
     addSection('Less: Commitments');
-    report.commitments.forEach((entry) => addValueRow(entry.label, entry));
-    addValueRow('Net available Amount (A)', report.net_available_amount, true);
+    report.commitments.forEach(entry => addValueRow(entry.label, entry));
+    addValueRow('Net available Amount (A)', report.net_available_amount, 'grand');
 
     sheet.addRow([]);
     addSection('Deployment Plan');
-    report.deployment.forEach((entry) => addValueRow(entry.label, entry));
-    addValueRow('Total Deployment Plan', report.total_deployment_plan, true);
-    addValueRow('Balance', report.balance, true);
+    report.deployment.forEach(entry => addValueRow(entry.label, entry));
+    addValueRow('Total Deployment Plan', report.total_deployment_plan, 'calculated');
+    addValueRow('Balance', report.balance, 'balance');
 
-    // Apply consistent numeric alignment and borders to the populated report.
-    sheet.eachRow((row, rowNumber) => {
-      if (rowNumber <= 2) return;
-      row.eachCell((cell, columnNumber) => {
-        if (columnNumber >= 2 && columnNumber <= 5) {
-          cell.border = {
-            bottom: { style: 'hair', color: { argb: 'FFD9DEE7' } },
-          };
-        }
-      });
-    });
+    sheet.addRow([]);
+    sheet.mergeCells(`B${sheet.rowCount + 1}:E${sheet.rowCount + 1}`);
+    const note = sheet.getCell(`B${sheet.rowCount}`);
+    note.value = 'All amounts are in ₹ lakhs. Commitments retain their entered positive or negative signs; calculated totals follow the Liquid Position page.';
+    note.font = { name: 'Aptos', italic: true, size: 9, color: { argb: 'FF667085' } };
+    note.alignment = { wrapText: true, vertical: 'middle' };
+    sheet.getRow(sheet.rowCount).height = 30;
 
-    sheet.views = [{ state: 'frozen', xSplit: 2, ySplit: 3, showGridLines: false }];
+    sheet.views = [{ state: 'frozen', xSplit: 2, ySplit: 6, showGridLines: false }];
     const buffer = await workbook.xlsx.writeBuffer();
     const blob = new Blob([buffer], {
       type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',

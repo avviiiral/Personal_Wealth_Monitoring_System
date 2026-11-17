@@ -1197,7 +1197,7 @@ export class DownloadsComponent implements OnInit {
     ];
 
     sheet.getCell('B2').value = `Liquidity Position as on ${asOfDate}`;
-    sheet.getCell('E2').value = '(Rs in lakhs)';
+    sheet.getCell('E2').value = '(All amounts in ₹ lakhs)';
     sheet.getRow(2).height = 24;
     sheet.getCell('B2').font = { bold: true, size: 14 };
     sheet.getCell('E2').font = { italic: true, size: 10 };
@@ -1223,7 +1223,7 @@ export class DownloadsComponent implements OnInit {
           horizontal: column >= 3 ? 'right' : 'left',
           wrapText: column === 2,
         };
-        if (column >= 3) cell.numFmt = '#,##0.00;[Red](#,##0.00);-';
+        if (column >= 3) cell.numFmt = '#,##0.00;-#,##0.00;-';
         if (bold) cell.font = { bold: true };
       }
       return row;
@@ -1249,7 +1249,7 @@ export class DownloadsComponent implements OnInit {
     addValueRow('Arbitrage + Liquid + Bank', report.available_liquidity, true);
 
     sheet.addRow([]);
-    addSection('Commitments');
+    addSection('Less: Commitments');
     report.commitments.forEach((entry) => addValueRow(entry.label, entry));
     addValueRow('Net available Amount (A)', report.net_available_amount, true);
 

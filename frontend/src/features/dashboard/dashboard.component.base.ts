@@ -775,7 +775,9 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
       .filter((group) => Number(group.current_value) > 0)
       .map((group) => ({
         category: group.asset_category,
-        value: Number(group.percentage_of_total) || 0,
+        // Chart.js tooltip values must use the same absolute current value
+        // displayed in Investment Summary; percentages remain a separate label.
+        value: Number(group.current_value) || 0,
         percentage: Number(group.percentage_of_total) || 0,
       }));
   }

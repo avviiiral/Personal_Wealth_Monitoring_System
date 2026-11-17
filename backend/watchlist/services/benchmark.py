@@ -49,7 +49,7 @@ class BenchmarkPerformanceService:
 
     @classmethod
     def _nifty_tri_series(cls, start, end=None, index_name="NIFTY 50"):
-        """Fetch official Gross TRI history for an NSE index."
+        """Fetch official Gross TRI history for an NSE index."""
         end = end or timezone.now().date()
         all_points = {}
 

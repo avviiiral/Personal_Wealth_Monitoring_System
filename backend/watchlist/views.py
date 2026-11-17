@@ -398,7 +398,7 @@ def watch_list_benchmark(request, product_id):
     benchmark = str(request.data.get("benchmark") or "").strip()
     if benchmark not in BENCHMARK_CHOICES:
         return Response(
-            {"detail": "Benchmark must be one of: BSE 500, Nifty 50."},
+            {"detail": f"Benchmark must be one of: {', '.join(BENCHMARK_CHOICES)}."},
             status=400,
         )
 

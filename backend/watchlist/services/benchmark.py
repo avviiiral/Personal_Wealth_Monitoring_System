@@ -1342,6 +1342,14 @@ class BenchmarkPerformanceService:
             ),
             "benchmark_metrics": benchmark_metrics,
             "benchmark_return_details": benchmark_return_details,
+            "benchmark_data_source": (
+                "BSE 500 TRI-tracking ETF adjusted-close proxy (tracking error may apply)"
+                if benchmark == "BSE 500"
+                and any(point.get("source") == "BSE500_TRI_PROXY" for point in benchmark_series)
+                else "Official BSE 500 TRI history"
+                if benchmark == "BSE 500"
+                else "Official Nifty 50 TRI history"
+            ),
             "differences": differences,
             "comparison": comparison,
             "chart_period": chart_period,

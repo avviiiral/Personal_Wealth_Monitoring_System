@@ -102,3 +102,64 @@ html.dark-theme .action-footer .quiet-danger {
   color: var(--negative, #f2685c);
 }
 
+
+
+/* Identity review actions use the same button treatment as the rest of the page. */
+.identity-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.identity-actions button {
+  appearance: none;
+  border: 1px solid var(--surface-line, #e2e7ef);
+  border-radius: 9px;
+  padding: 9px 13px;
+  min-height: 36px;
+  background: var(--surface, #fff);
+  color: var(--ink, #172033);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.2;
+  cursor: pointer;
+  transition: background-color 150ms ease, border-color 150ms ease, color 150ms ease;
+}
+
+.identity-actions button:hover:not(:disabled) {
+  background: var(--surface-hover, #f3f5f8);
+  border-color: var(--accent, #0f7a5c);
+}
+
+.identity-actions button.primary {
+  background: var(--accent, #0f7a5c);
+  border-color: var(--accent, #0f7a5c);
+  color: #fff;
+}
+
+.identity-actions button.primary:hover:not(:disabled) {
+  filter: brightness(.94);
+}
+
+.identity-actions button.quiet-danger {
+  color: var(--negative, #b54747);
+  background: transparent;
+}
+
+.identity-actions button.quiet-danger:hover:not(:disabled) {
+  background: var(--negative-soft, #fff1f1);
+  border-color: var(--negative, #b54747);
+}
+
+.identity-actions button:focus-visible {
+  outline: 2px solid var(--accent, #0f7a5c);
+  outline-offset: 2px;
+}
+
+.identity-actions button:disabled {
+  opacity: .5;
+  cursor: not-allowed;
+}

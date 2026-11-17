@@ -64,7 +64,7 @@ def liquid_position(request):
     else:
         document = position.document if position else LiquidPositionService.DEFAULT_DOCUMENT
 
-    snapshot = LiquidPositionService.build(family, as_of_date, document)
+    snapshot = LiquidPositionService.build(family, request.user, as_of_date, document)
 
     return Response({
         "as_of_date": as_of_date.isoformat(),

@@ -51,7 +51,8 @@ export class WatchListStateService {
   }
 
   getAdded(productType: 'MUTUAL_FUND' | 'PMS'): WatchListProduct[] {
-    return Array.from(this.addedBucket(productType).values());
+    return Array.from(this.addedBucket(productType).values())
+      .filter(product => product.is_watchlisted === true);
   }
 
   isRemoved(productType: 'MUTUAL_FUND' | 'PMS', productId: number): boolean {

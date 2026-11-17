@@ -4,7 +4,7 @@ import { WatchListApiService } from '../../core/services/watch-list-api.service'
 import { WatchListStateService } from '../../core/services/watch-list-state.service';
 import { WatchListComponent } from './watch-list.component';
 
-describe('WatchListComponent benchmark chart', () => {
+describe('WatchListComponent', () => {
   let fixture: ComponentFixture<WatchListComponent>;
   let component: WatchListComponent;
 
@@ -19,6 +19,19 @@ describe('WatchListComponent benchmark chart', () => {
 
     fixture = TestBed.createComponent(WatchListComponent);
     component = fixture.componentInstance;
+  });
+
+  it('filters returned and cached rows according to the selected status tab', () => {
+    const products = [
+      { id: 1, status: 'WATCHLIST', is_watchlisted: true },
+      { id: 2, status: 'UNIVERSAL', is_watchlisted: false },
+      { id: 3, status: 'OWNED', is_watchlisted: false },
+    ] as any[];
+
+    expect((component as any).filterProductsForStatus(products, 'WATCHLIST').map((product: any) => product.id)).toEqual([1]);
+    expect((component as any).filterProductsForStatus(products, 'UNIVERSAL').map((product: any) => product.id)).toEqual([2]);
+    expect((component as any).filterProductsForStatus(products, 'OWNED').map((product: any) => product.id)).toEqual([3]);
+    expect((component as any).filterProductsForStatus(products, 'ALL').map((product: any) => product.id)).toEqual([1, 2, 3]);
   });
 
   afterEach(() => {

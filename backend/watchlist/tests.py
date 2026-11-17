@@ -264,6 +264,136 @@ class WatchListTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data["count"], 0)
 
+
+    def test_watchlist_status_returns_only_watchlisted_products(self):
+        watchlisted = InvestmentProduct.objects.create(
+            product_type=ProductType.MUTUAL_FUND,
+            name="Watchlisted Fund",
+            isin="INFWW001",
+            identity_key="MUTUAL_FUND:ISIN:INFWW001",
+            source="AMFI",
+        )
+        universal = InvestmentProduct.objects.create(
+            product_type=ProductType.MUTUAL_FUND,
+            name="Universal Fund",
+            isin="INFWW002",
+            identity_key="MUTUAL_FUND:ISIN:INFWW002",
+            source="AMFI",
+        )
+        MutualFundProduct.objects.create(product=watchlisted, scheme_code="WW001", aum=Decimal("100"))
+        MutualFundProduct.objects.create(product=universal, scheme_code="WW002", aum=Decimal("200"))
+        WatchListEntry.objects.create(user=self.user, product=watchlisted)
+
+        response = self.client.get("/api/watch-list/products/?product_type=MUTUAL_FUND&status=WATCHLIST")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["count"], 1)
+        self.assertEqual([row["name"] for row in response.data["results"]], ["Watchlisted Fund"])
+        self.assertTrue(response.data["results"][0]["is_watchlisted"])
+
+    def test_watchlist_status_combines_with_search_provider_and_category_filters(self):
+        matching = InvestmentProduct.objects.create(
+            product_type=ProductType.MUTUAL_FUND,
+            name="Alpha Watch Fund",
+            provider="Alpha AMC",
+            category="Equity",
+            identity_key="MUTUAL_FUND:SCHEME:ALPHA-WATCH",
+            source="AMFI",
+        )
+        different_provider = InvestmentProduct.objects.create(
+            product_type=ProductType.MUTUAL_FUND,
+            name="Alpha Other Fund",
+            provider="Other AMC",
+            category="Equity",
+            identity_key="MUTUAL_FUND:SCHEME:ALPHA-OTHER",
+            source="AMFI",
+        )
+        different_category = InvestmentProduct.objects.create(
+            product_type=ProductType.MUTUAL_FUND,
+            name="Alpha Debt Fund",
+            provider="Alpha AMC",
+            category="Debt",
+            identity_key="MUTUAL_FUND:SCHEME:ALPHA-DEBT",
+            source="AMFI",
+        )
+        for product in (matching, different_provider, different_category):
+            MutualFundProduct.objects.create(product=product, aum=Decimal("100"))
+            WatchListEntry.objects.create(user=self.user, product=product)
+
+        response = self.client.get(
+            "/api/watch-list/products/?product_type=MUTUAL_FUND&status=WATCHLIST&search=Alpha&provider=Alpha%20AMC&category=Equity"
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["count"], 1)
+        self.assertEqual([row["name"] for row in response.data["results"]], ["Alpha Watch Fund"])
+
+    def test_universal_status_returns_only_non_owned_mutual_funds(self):
+        watchlisted = InvestmentProduct.objects.create(
+            product_type=ProductType.MUTUAL_FUND,
+            name="Universal Watchlisted Fund",
+            isin="INFUN001",
+            identity_key="MUTUAL_FUND:ISIN:INFUN001",
+            source="AMFI",
+        )
+        owned = InvestmentProduct.objects.create(
+            product_type=ProductType.MUTUAL_FUND,
+            name="Owned Fund",
+            isin="INFOWN001",
+            identity_key="MUTUAL_FUND:ISIN:INFOWN001",
+            source="AMFI",
+        )
+        MutualFundProduct.objects.create(product=watchlisted, aum=Decimal("100"))
+        MutualFundProduct.objects.create(product=owned, aum=Decimal("100"))
+        WatchListEntry.objects.create(user=self.user, product=watchlisted)
+        asset = Asset.objects.create(
+            owner=self.user, family=self.family, name="Owned Asset",
+            symbol="OWN001", isin="INFOWN001", category=AssetCategory.MUTUAL_FUND,
+        )
+        PortfolioPosition.objects.create(
+            owner=self.user, family=self.family, asset=asset, quantity=1, current_value=100,
+        )
+
+        response = self.client.get("/api/watch-list/products/?product_type=MUTUAL_FUND&status=UNIVERSAL")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["count"], 1)
+        self.assertEqual([row["name"] for row in response.data["results"]], ["Universal Watchlisted Fund"])
+
+    def test_all_status_returns_owned_universal_and_watchlisted_products(self):
+        products = [
+            InvestmentProduct.objects.create(
+                product_type=ProductType.MUTUAL_FUND,
+                name=name,
+                isin=isin,
+                identity_key=f"MUTUAL_FUND:ISIN:{isin}",
+                source="AMFI",
+            )
+            for name, isin in (
+                ("Owned Fund", "INFALL001"),
+                ("Universal Fund", "INFALL002"),
+                ("Watchlisted Fund", "INFALL003"),
+            )
+        ]
+        for product in products:
+            MutualFundProduct.objects.create(product=product, aum=Decimal("100"))
+        WatchListEntry.objects.create(user=self.user, product=products[2])
+        asset = Asset.objects.create(
+            owner=self.user, family=self.family, name="Owned Asset",
+            symbol="ALL001", isin="INFALL001", category=AssetCategory.MUTUAL_FUND,
+        )
+        PortfolioPosition.objects.create(
+            owner=self.user, family=self.family, asset=asset, quantity=1, current_value=100,
+        )
+
+        response = self.client.get("/api/watch-list/products/?product_type=MUTUAL_FUND&status=ALL")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["count"], 3)
+        self.assertEqual({row["name"] for row in response.data["results"]}, {
+            "Owned Fund", "Universal Fund", "Watchlisted Fund",
+        })
+
     def test_watchlist_toggle(self):
         product = InvestmentProduct.objects.create(product_type=ProductType.MUTUAL_FUND, name="Toggle Fund", identity_key="MUTUAL_FUND:SCHEME:TOGGLE", source="AMFI")
         response = self.client.post(f"/api/watch-list/products/{product.id}/toggle/")

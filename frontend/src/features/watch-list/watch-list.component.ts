@@ -268,10 +268,25 @@ export class WatchListComponent implements OnInit, OnDestroy {
       if (!raw) return;
       const cached = JSON.parse(raw) as WatchListResponse;
       if (!cached || !Array.isArray(cached.results)) return;
-      this.products = this.sortProducts(this.state.filterVisible(cached.results));
+      const cachedResults = this.state.filterVisible(cached.results);
+      this.products = this.sortProducts(this.filterProductsForStatus(cachedResults, this.status));
       this.count = Number(cached.count) || this.products.length;
       this.loading = false;
     } catch (error) { console.warn('Failed to restore Watch List cache:', error); }
+  }
+
+  private filterProductsForStatus(products: WatchListProduct[], status: StatusTab): WatchListProduct[] {
+    switch (status) {
+      case 'WATCHLIST':
+        return products.filter(product => product.is_watchlisted === true || product.status === 'WATCHLIST');
+      case 'OWNED':
+        return products.filter(product => product.status === 'OWNED');
+      case 'UNIVERSAL':
+        return products.filter(product => product.status === 'UNIVERSAL');
+      case 'ALL':
+      default:
+        return products;
+    }
   }
 
   private invalidateUniverseCache(): void {
@@ -348,11 +363,12 @@ export class WatchListComponent implements OnInit, OnDestroy {
           // refresh will reload the data when it completes.
           return;
         }
-        const serverResults = this.state.filterVisible(response.results);
+        const serverResults = this.filterProductsForStatus(this.state.filterVisible(response.results), requestedStatus);
         if (requestedStatus === 'WATCHLIST' && requestedPage === 1) {
           const optimistic = this.state.getAdded(requestedProductTab);
           const serverIds = new Set(serverResults.map(product => product.id));
-          const optimisticResults = optimistic.filter(product => !serverIds.has(product.id));
+          const optimisticResults = this.filterProductsForStatus(optimistic, 'WATCHLIST')
+            .filter(product => !serverIds.has(product.id));
           this.products = this.sortProducts([...optimisticResults, ...serverResults].slice(0, this.pageSize));
           this.count = response.count + optimisticResults.length;
         } else {

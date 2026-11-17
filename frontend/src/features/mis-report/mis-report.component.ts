@@ -11,7 +11,7 @@ import {
   MISEditableSection,
   MISEditableColumn,
   MISEditableRow,
-} from '../../core/services/mis-report.service';
+} from '../../app/core/services/mis-report.service';
 
 type MISSheet = 'ips' | 'data' | 'tax' | 'fund-summary' | 'notes';
 

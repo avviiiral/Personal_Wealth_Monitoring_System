@@ -816,6 +816,67 @@ class BenchmarkPerformanceTests(TestCase):
         self.assertAlmostEqual(indexed[-1]["product_indexed"], (106 / 103) * 100, places=5)
         self.assertAlmostEqual(indexed[-1]["benchmark_indexed"], (20500 / 20300) * 100, places=5)
 
+    def test_bse_sparse_official_response_falls_back_to_complete_tri_tracking_history(self):
+        start = date(2025, 1, 1)
+        end = timezone.now().date()
+        proxy_points = []
+        current = start
+        value = 100.0
+        while current <= end:
+            if current.weekday() < 5:
+                proxy_points.append({
+                    "date": current.isoformat(),
+                    "value": value,
+                })
+                value += 0.1
+            current += timedelta(days=1)
+
+        sparse_bse_points = [
+            {"date": "2025-01-02", "value": 100.0},
+            {"date": end.isoformat(), "value": 120.0},
+        ]
+
+        with patch.object(
+            BenchmarkPerformanceService,
+            "BSE500_FILE",
+            ".",
+        ), patch.object(
+            BenchmarkPerformanceService,
+            "_fetch_bse_history",
+            return_value=sparse_bse_points,
+        ), patch.object(
+            BenchmarkPerformanceService,
+            "BSE_TRI_PROXY_TICKERS",
+            ("BSE500IETF.NS",),
+        ), patch.object(
+            BenchmarkPerformanceService,
+            "_series",
+            return_value=proxy_points,
+        ) as mocked_proxy:
+            result = BenchmarkPerformanceService._bse_series(start)
+
+        mocked_proxy.assert_called_once_with("BSE500IETF.NS", start)
+        self.assertGreater(len(result), 200)
+        self.assertEqual(result[0]["source"], "BSE500_TRI_PROXY")
+        self.assertEqual(result[-1]["date"], end.isoformat())
+
+    def test_bse_proxy_observations_are_persisted_with_source_provenance(self):
+        points = [
+            {"date": "2026-09-25", "value": 100.0, "source": "BSE500_TRI_PROXY"},
+            {"date": "2026-09-28", "value": 101.0, "source": "BSE500_TRI_PROXY"},
+        ]
+
+        saved = BenchmarkPerformanceService.save_benchmark_master("BSE 500", points)
+
+        self.assertEqual(saved, 2)
+        self.assertEqual(
+            set(BenchmarkMasterPoint.objects.filter(
+                benchmark="BSE 500",
+                date__in=["2026-09-25", "2026-09-28"],
+            ).values_list("source", flat=True)),
+            {"BSE500_TRI_PROXY"},
+        )
+
     def test_chart_never_uses_future_benchmark_value(self):
         aligned = BenchmarkPerformanceService._aligned_chart_series(
             [

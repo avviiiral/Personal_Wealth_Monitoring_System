@@ -3,7 +3,7 @@ from uuid import uuid4
 
 from rest_framework.exceptions import ValidationError
 
-from .mis_report_service import MISReportService
+from .services.portfolio_tree_service import PortfolioTreeService
 
 
 class LiquidPositionService:
@@ -101,36 +101,44 @@ class LiquidPositionService:
         return normalized
 
     @classmethod
-    def current_market_values(cls, data_rows):
-        """Return INR market values for Liquid and Arbitrage mutual-fund rows."""
+    def current_market_values(cls, holdings_tree):
+        """Sum current Liquid and Arbitrage MF values from the Our Holdings tree."""
         values = {
             "liquid": {member: Decimal("0") for member in cls.MEMBERS},
             "arbitrage": {member: Decimal("0") for member in cls.MEMBERS},
         }
 
-        for row in data_rows or []:
-            asset_class = str(row.get("asset_class") or "").strip().casefold()
-            if "mutual fund" not in asset_class:
-                continue
-
-            category = str(row.get("sub_class") or "").strip().casefold()
-            if "arbitrage" in category:
-                fund_type = "arbitrage"
-            elif "liquid" in category:
-                fund_type = "liquid"
-            else:
-                continue
-
-            member = str(row.get("family_name") or "").strip().casefold()
+        for family_row in (holdings_tree or {}).get("families", []):
+            member = str(family_row.get("family_name") or "").strip().casefold()
             if member not in cls.MEMBERS:
                 continue
 
-            try:
-                market_value = Decimal(str(row.get("closing_amount") or 0))
-            except (InvalidOperation, ValueError):
-                continue
-            if market_value.is_finite():
-                values[fund_type][member] += market_value
+            for portfolio in family_row.get("portfolios", []):
+                for asset_class in portfolio.get("asset_classes", []):
+                    for sub_class in asset_class.get("sub_classes", []):
+                        asset_class_name = str(asset_class.get("asset_class") or "").strip().casefold()
+                        sub_class_name = str(sub_class.get("sub_class") or "").strip().casefold()
+                        classification = asset_class_name + " " + sub_class_name
+
+                        if "mutual fund" not in classification:
+                            continue
+                        if "arbitrage" in classification:
+                            fund_type = "arbitrage"
+                        elif "liquid" in classification:
+                            fund_type = "liquid"
+                        else:
+                            continue
+
+                        for holding in sub_class.get("assets", []):
+                            raw_value = holding.get("current_value")
+                            if raw_value is None:
+                                continue
+                            try:
+                                market_value = Decimal(str(raw_value))
+                            except (InvalidOperation, ValueError):
+                                continue
+                            if market_value.is_finite():
+                                values[fund_type][member] += market_value
 
         return values
 
@@ -217,14 +225,11 @@ class LiquidPositionService:
         }
 
     @classmethod
-    def build(cls, family, as_of_date, document):
-        """Re-use MIS's valuation engine so market values follow existing portfolio pricing rules."""
-        period_start = MISReportService._period_start(as_of_date)
-        report = MISReportService.build(
-            family,
-            from_date=period_start,
-            to_date=as_of_date,
-            ensure_history=False,
+    def build(cls, family, owner, as_of_date, document):
+        """Use the same current holdings and valuation engine as the Our Holdings page."""
+        holdings_tree = PortfolioTreeService.build(
+            owner=owner,
+            family_id=family.id,
         )
-        market_values = cls.current_market_values(report.get("data_sheet", []))
+        market_values = cls.current_market_values(holdings_tree)
         return cls.calculate_snapshot(market_values, document)

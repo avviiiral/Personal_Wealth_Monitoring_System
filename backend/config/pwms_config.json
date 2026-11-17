@@ -192,6 +192,7 @@
       "BSE500IETF.NS",
       "HDFCBSE500.NS"
     ],
+    "bse_tri_amfi_scheme_code": "143247",
     "bse_api": "https://api.bseindia.com/BseIndiaAPI/api/ProduceCSVForDate/w",
     "nifty_tri_urls": [
       "https://www.niftyindices.com/BackPage/getTotalReturnIndexString",

@@ -85,7 +85,7 @@ The application uses the following external data sources for market and investme
 | Mutual-fund historical NAVs | [AMFI India](https://www.amfiindia.com/) — AMFI historical NAV report |
 | Mutual-fund fund-manager names | [Tigzig MF API](https://api.tigzig.com/mf/v1/details) — scheme-level manager details sourced from Scheme Summary Document data |
 | PMS fund-manager names | [APMI India](https://www.apmiindia.org/apmi/welcomeiaperformance.htm?action=PMSmenu) — investment-approach listing and individual IA Insight pages |
-| Nifty 50 TRI | [NSE Indices](https://www.niftyindices.com/) — official Nifty 50 Total Return Index historical data |
+| Nifty TRI benchmarks | [NSE Indices](https://www.niftyindices.com/) — official Total Return Index historical data for Nifty 50, Nifty 100, Nifty Mid Cap 150 and Nifty Small Cap 250 |
 | BSE 500 TRI | [BSE India](https://www.bseindia.com/) — BSE500T historical data; deployments may also use the configured BSE 500 TRI CSV/URL or the supported TRI-tracking ETF fallback |
 | Portfolio news | [Google News](https://news.google.com/) RSS — no API key required |
 | AI explanations | [Google Gemini](https://ai.google.dev/) — optional, only for Portfolio Chat; not required by Portfolio News |
@@ -104,17 +104,27 @@ The Watch List enriches individual fund-manager names separately from the market
 
 ### 📈 Watch List benchmark and indexed-performance charts
 
-Watch List benchmark comparisons use **official Nifty 50 Gross TRI** data from NSE Indices and BSE 500 TRI data from the configured BSE source/fallback path.
+Watch List benchmark comparisons support five selectable benchmarks:
+
+- **Nifty 50 TRI**
+- **Nifty 100 TRI**
+- **Nifty Mid Cap 150 TRI**
+- **Nifty Small Cap 250 TRI**
+- **BSE 500 TRI**
+
+The four Nifty benchmarks are retrieved from the NSE Indices historical TRI source using the selected index's official identifier. BSE 500 TRI continues to use the configured BSE source/fallback path. The selected benchmark is used consistently for the Watch List comparison and its displayed source label.
 
 The indexed-performance chart is deliberately protected against sparse source responses:
 
-- Nifty 50 TRI history is accepted only when it has sufficient row density and covers the requested date range.
-- If the Nifty endpoint returns sparse or incomplete data, PWMS automatically retries using smaller historical windows instead of rendering a sparse annual-point series.
+- Each Nifty TRI series is accepted only when it has sufficient row density and covers the requested date range.
+- If the selected Nifty endpoint returns sparse or incomplete data, PWMS automatically retries using smaller historical windows instead of rendering a sparse annual-point series.
 - Mutual-fund benchmark charts use the shared **AMFI master NAV history** for the selected fund.
 - Older Watch List entries that only contain the six performance-anchor snapshots (`1M`, `3M`, `6M`, `1Y`, `3Y`, `5Y`) are automatically backfilled with actual AMFI historical NAV observations when the chart is opened.
 - The chart uses actual observations; PWMS does not interpolate synthetic NAV or benchmark values merely to make the line look denser.
 - Historical coverage is validated using configurable minimum row density and date coverage thresholds before a source is considered complete.
+- Benchmark history preparation covers all five supported benchmark choices, rather than preparing only Nifty 50 and BSE 500.
 - The selected chart period (`1M`, `3M`, `6M`, `1Y`, `3Y`, or `5Y`) determines the AMFI history that is prepared.
+- The selected benchmark is also reflected in the Watch List benchmark selector and Excel report export; the export includes the supported benchmark comparisons dynamically.
 
 On the Watch List table, the **Product** column remains pinned during horizontal scrolling so the product name and identifier stay visible while reviewing return periods and AUM.
 

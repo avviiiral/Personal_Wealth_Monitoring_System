@@ -395,6 +395,8 @@ class WatchListTests(TestCase):
         })
 
     def test_watchlist_accepts_all_supported_benchmarks(self):
+        self.user.profile.role = "ADMIN"
+        self.user.profile.save(update_fields=["role"])
         product = InvestmentProduct.objects.create(
             product_type=ProductType.MUTUAL_FUND,
             name="Benchmark Options Fund",

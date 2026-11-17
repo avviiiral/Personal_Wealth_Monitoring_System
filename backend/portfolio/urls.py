@@ -24,6 +24,7 @@ from .mis_report_views import (
     mis_report_notes,
     mis_report_notes_history,
 )
+from .liquid_position_views import liquid_position
 
 from .manual_price_views import (
     manual_asset_price,
@@ -119,6 +120,12 @@ urlpatterns = [
         "mis-report/notes/history/",
         mis_report_notes_history,
         name="mis-report-notes-history",
+    ),
+
+    path(
+        "liquid-position/",
+        liquid_position,
+        name="liquid-position",
     ),
 
     path(

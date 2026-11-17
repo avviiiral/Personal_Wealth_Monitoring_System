@@ -51,6 +51,11 @@ export const routes: Routes = [
           import('../features/downloads/downloads.component').then((m) => m.DownloadsComponent),
       },
       {
+        path: 'liquid-position',
+        loadComponent: () =>
+          import('../features/liquid-position/liquid-position.component').then((m) => m.LiquidPositionComponent),
+      },
+      {
         path: 'analytics',
         loadComponent: () =>
           import('../features/analytics/analytics.component').then((m) => m.AnalyticsComponent),

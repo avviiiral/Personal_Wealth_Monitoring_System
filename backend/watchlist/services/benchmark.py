@@ -1422,7 +1422,7 @@ class BenchmarkPerformanceService:
                 and any(point.get("source") in {"BSE500T_OFFICIAL", "BSE500T_FILE"} for point in benchmark_series)
                 else "Stored BSE benchmark history (legacy source provenance unavailable)"
                 if benchmark == "BSE 500"
-                else "Official Nifty 50 TRI history"
+                else f"Official {benchmark} TRI history"
             ),
             "differences": differences,
             "comparison": comparison,

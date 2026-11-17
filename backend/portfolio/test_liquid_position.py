@@ -102,10 +102,32 @@ class LiquidPositionCalculationTests(SimpleTestCase):
         self.assertEqual(result["total_deployment_plan"]["total"], 5.0)
         self.assertEqual(result["balance"]["total"], 52.0)
 
-    def test_invalid_negative_amount_is_rejected(self):
+    def test_negative_amounts_are_accepted_and_calculated(self):
+        document = {
+            "bank": {"daj": "-1.5", "djt": "0"},
+            "commitments": [
+                {"id": "c1", "label": "Credit adjustment", "daj": "-2", "djt": "0"},
+            ],
+            "deployment": [
+                {"id": "d1", "label": "Reversal", "daj": "0", "djt": "-3"},
+            ],
+        }
+        market_values = {
+            "liquid": {"daj": Decimal("0"), "djt": Decimal("0")},
+            "arbitrage": {"daj": Decimal("0"), "djt": Decimal("0")},
+        }
+
+        result = LiquidPositionService.calculate_snapshot(market_values, document)
+
+        self.assertEqual(result["bank"]["daj"], -1.5)
+        self.assertEqual(result["net_available_amount"]["daj"], 0.5)
+        self.assertEqual(result["total_deployment_plan"]["djt"], -3.0)
+        self.assertEqual(result["balance"]["total"], 3.5)
+
+    def test_non_finite_amount_is_rejected(self):
         with self.assertRaises(ValidationError):
             LiquidPositionService.normalize_document({
-                "bank": {"daj": "-1", "djt": "0"},
+                "bank": {"daj": "NaN", "djt": "0"},
                 "commitments": [],
                 "deployment": [],
             })

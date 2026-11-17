@@ -817,8 +817,10 @@ class BenchmarkPerformanceTests(TestCase):
         self.assertAlmostEqual(indexed[-1]["benchmark_indexed"], (20500 / 20300) * 100, places=5)
 
     def test_bse_history_uses_full_history_amfi_etf_nav_before_yahoo_etf_prices(self):
-        start = date(2021, 10, 18)
-        end = date(2026, 11, 17)
+        end = timezone.now().date()
+        start = end - timedelta(
+            days=BenchmarkPerformanceService.PERIOD_DAYS["5Y"] + 31
+        )
         scheme = AMFIMasterScheme.objects.create(
             scheme_code="143247",
             scheme_name="ICICI Prudential BSE 500 ETF",

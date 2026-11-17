@@ -205,7 +205,7 @@ class BenchmarkPerformanceService:
             aggregate = BenchmarkMasterPoint.objects.filter(
                 benchmark=benchmark,
                 source__in=(
-                    ["MASTER", "BSE500_TRI_PROXY"]
+                    ["BSE500T_OFFICIAL", "BSE500T_FILE", "BSE500_TRI_PROXY"]
                     if benchmark == "BSE 500"
                     else ["MASTER"]
                 ),
@@ -558,7 +558,7 @@ class BenchmarkPerformanceService:
                 if start <= date.fromisoformat(point["date"]) <= end
             ]
             if cls._has_sufficient_history(filtered, start, end):
-                return [dict(point, source="MASTER") for point in filtered]
+                return [dict(point, source="BSE500T_FILE") for point in filtered]
 
         # A short BSE response is not a usable history. The public BSE CSV
         # interface is an OHLC/price-index interface; accept BSE500T only when
@@ -567,7 +567,7 @@ class BenchmarkPerformanceService:
         try:
             points = cls._fetch_bse_history(start)
             if cls._has_sufficient_history(points, start, end):
-                return [dict(point, source="MASTER") for point in points]
+                return [dict(point, source="BSE500T_OFFICIAL") for point in points]
             bse_error = ValueError(
                 "BSE500T endpoint returned insufficient daily coverage "
                 f"({len(points)} observations for {start.isoformat()} to {end.isoformat()})"
@@ -608,7 +608,7 @@ class BenchmarkPerformanceService:
         """
         def read_master():
             allowed_sources = (
-                ["MASTER", "BSE500_TRI_PROXY"]
+                ["BSE500T_OFFICIAL", "BSE500T_FILE", "BSE500_TRI_PROXY", "MASTER"]
                 if benchmark == "BSE 500"
                 else ["MASTER"]
             )
@@ -644,9 +644,15 @@ class BenchmarkPerformanceService:
                     continue
                 key = point["date"]
                 current = by_date.get(key)
+                source_priority = {
+                    "BSE500T_OFFICIAL": 4,
+                    "BSE500T_FILE": 3,
+                    "BSE500_TRI_PROXY": 2,
+                    "MASTER": 1,
+                }
                 if current is None or (
-                    current["source"] != "MASTER"
-                    and point["source"] == "MASTER"
+                    source_priority.get(point["source"], 0)
+                    > source_priority.get(current["source"], 0)
                 ):
                     by_date[key] = point
 
@@ -1347,6 +1353,9 @@ class BenchmarkPerformanceService:
                 if benchmark == "BSE 500"
                 and any(point.get("source") == "BSE500_TRI_PROXY" for point in benchmark_series)
                 else "Official BSE 500 TRI history"
+                if benchmark == "BSE 500"
+                and any(point.get("source") in {"BSE500T_OFFICIAL", "BSE500T_FILE"} for point in benchmark_series)
+                else "Stored BSE benchmark history (legacy source provenance unavailable)"
                 if benchmark == "BSE 500"
                 else "Official Nifty 50 TRI history"
             ),

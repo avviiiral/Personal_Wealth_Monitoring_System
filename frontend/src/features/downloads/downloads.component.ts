@@ -11,6 +11,7 @@ import {
 } from '../../core/services/portfolio-api.service';
 import { WatchListApiService, WatchListProduct } from '../../core/services/watch-list-api.service';
 import { SettingsApiService, TaxRateSetting } from '../../core/services/settings-api.service';
+import { LiquidPositionService, LiquidPositionReport, LiquidPositionPair } from '../../core/services/liquid-position.service';
 
 type ReportId =
   | 'portfolio-detailed'
@@ -43,12 +44,13 @@ export class DownloadsComponent implements OnInit {
   private readonly portfolioApi = inject(PortfolioApiService);
   private readonly watchListApi = inject(WatchListApiService);
   private readonly settingsApi = inject(SettingsApiService);
+  private readonly liquidPositionApi = inject(LiquidPositionService);
   private readonly cdr = inject(ChangeDetectorRef);
 
   readonly reports: ReportDefinition[] = [
     { id: 'portfolio-detailed', name: 'Portfolio Detailed', type: 'Transaction Report', description: 'Transaction-level portfolio activity for a selected date range.', filters: 'Family + Date Range' },
     { id: 'capital-gain', name: 'Capital Gain Report', type: 'Tax / Realised Gains', description: 'FIFO realised gains from sales; indicative tax uses saved asset rates and excludes loss set-off, exemptions, surcharge/cess, and other filing-specific rules.', filters: 'Family + Asset Class + Sub Class + Date Range' },
-    { id: 'liquid-position-funds', name: 'Liquid Position Funds', type: 'Liquidity Report', description: 'A family-member-wise liquidity position, commitments and deployment plan template.', filters: 'As of Date' },
+    { id: 'liquid-position-funds', name: 'Liquid Position Funds', type: 'Liquidity Report', description: 'Downloads the saved Liquid Position page, including current holdings values, commitments and deployment plan.', filters: 'As of Date' },
     { id: 'sub-class-holdings', name: 'Sub Class Holdings', type: 'Holdings Report', description: 'Current holdings belonging to a selected Sub Class.', filters: 'Family + Asset Class + Sub Class' },
     { id: 'holding-report', name: 'Holding Report', type: 'Holdings Report', description: 'Current holdings with quantity, invested value, current value, gain and XIRR.', filters: 'Family + Asset Class' },
     { id: 'sub-class-xirr', name: 'Portfolio Summary', type: 'Performance / XIRR', description: 'Sub Class level portfolio summary with XIRR performance.', filters: 'Family + Asset Class + Sub Class' },
@@ -132,13 +134,7 @@ export class DownloadsComponent implements OnInit {
       return;
     }
 
-    if (report === 'liquid-position-funds') {
-      if (this.holdingsLoaded && !force) return;
-      const holdingResponse = await firstValueFrom(this.portfolioApi.getHoldingReport());
-      this.holdingRows = holdingResponse.results ?? [];
-      this.holdingsLoaded = true;
-      return;
-    }
+    if (report === 'liquid-position-funds') return;
 
     if (report === 'market-cap') {
       if (this.marketCapLoaded && !force) return;
@@ -1175,125 +1171,144 @@ export class DownloadsComponent implements OnInit {
   }
 
   private async downloadLiquidPositionFunds(): Promise<void> {
-    // Reproduce the supplied Book1.xlsx layout: DAJ, DJT and Total columns,
-    // including the PMS exit, deployment and redemption sections.
+    const asOfDate = this.selectedReportDate || this.todayStamp();
+    // Export the same persisted, backend-calculated report shown on the Liquid Position page.
+    const report: LiquidPositionReport = await firstValueFrom(
+      this.liquidPositionApi.getPosition(asOfDate),
+    );
+
     const { default: ExcelJS } = await import('exceljs');
     const workbook = new ExcelJS.Workbook();
     workbook.creator = 'PWMS';
     workbook.created = new Date();
-    workbook.calcProperties.fullCalcOnLoad = true;
 
-    const sheet = workbook.addWorksheet('Liquid Position Funds', {
-      properties: { defaultRowHeight: 16.75 },
+    const sheet = workbook.addWorksheet('Liquid Position', {
+      properties: { defaultRowHeight: 22 },
       views: [{ state: 'normal', showGridLines: false }],
     });
 
-    const lastColumn = 6; // Keep the report limited to columns A:F.
-    sheet.getCell('B2').value = `Liquidity Position as on ${this.selectedReportDate || this.todayStamp()}`;
-    sheet.getCell('E2').value = '(Rs in lakhs)';
-    sheet.getRow(3).values = [undefined, 'Particulars', 'DAJ', 'DJT', 'Total'];
+    sheet.columns = [
+      { width: 3 },
+      { width: 43 },
+      { width: 16 },
+      { width: 16 },
+      { width: 16 },
+    ];
 
-    const labels: Record<number, string> = {
-      4: 'Liquid (MV)',
-      5: 'Arbitrage (MV)',
-      6: 'Bank',
-      7: 'Arbitrage+Liquid+Bank',
-      9: 'Less: Commitments',
-      10: 'Proposed immediate top up - ',
-      15: 'Other AIF Pending Drawdowns*',
-      16: 'HOABL',
-      17: 'Gift to BFT (HOABL)',
-      18: 'Club House, etc**',
-      20: 'Net available Amount (A)',
-      31: 'Deployment Plan',
-      32: 'Abakkus',
-      39: 'W Oak Flexi Cap ',
-      40: 'Parag Parikh Flexi Cap',
-      41: 'HDFC Focused * Index switch',
-      42: 'ICICI Value Fund * India Opp switch',
-      43: 'Silver ETF',
-      45: 'Total Deployement Plan',
-      47: 'Balance',
-    };
+    // Mirror the page heading, report title and lakhs note.
+    sheet.mergeCells('B2:D2');
+    sheet.getCell('B2').value = 'Liquid Position';
+    sheet.getCell('B2').font = { name: 'Aptos Display', bold: true, size: 18, color: { argb: 'FF172033' } };
+    sheet.getRow(2).height = 30;
 
-    Object.entries(labels).forEach(([row, label]) => {
-      sheet.getCell(`B${row}`).value = label;
+    sheet.mergeCells('B3:E3');
+    sheet.getCell('B3').value = 'Current Liquid and Arbitrage mutual-fund market values, commitments, and planned deployments.';
+    sheet.getCell('B3').font = { name: 'Aptos', size: 10, color: { argb: 'FF667085' } };
+    sheet.getCell('B3').alignment = { wrapText: true, vertical: 'middle' };
+    sheet.getRow(3).height = 24;
+
+    sheet.mergeCells('B5:D5');
+    sheet.getCell('B5').value = `Liquidity Position as on ${report.as_of_date || asOfDate}`;
+    sheet.getCell('B5').font = { name: 'Aptos', bold: true, size: 13, color: { argb: 'FF172033' } };
+    sheet.getCell('E5').value = '(All amounts in ₹ lakhs)';
+    sheet.getCell('E5').font = { name: 'Aptos', italic: true, size: 10, color: { argb: 'FF667085' } };
+    sheet.getCell('E5').alignment = { horizontal: 'right', vertical: 'middle' };
+    sheet.getRow(5).height = 25;
+
+    const header = sheet.addRow(['', 'Particulars', 'DAJ', 'DJT', 'Total']);
+    header.height = 25;
+    header.eachCell((cell, columnNumber) => {
+      if (columnNumber < 2) return;
+      cell.font = { name: 'Aptos', bold: true, size: 9, color: { argb: 'FF667085' } };
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF1F4F8' } };
+      cell.alignment = { vertical: 'middle', horizontal: columnNumber >= 3 ? 'right' : 'left' };
+      cell.border = { bottom: { style: 'thin', color: { argb: 'FFD9DEE7' } } };
     });
 
-    // Formula map follows the supplied workbook's row and column references.
-    const formulas: Record<string, string> = {
-      E4: 'SUM(C4:D4)', E5: 'SUM(C5:D5)', E6: 'SUM(C6:D6)',
-      C7: 'SUM(C4:C6)', D7: 'SUM(D4:D6)', E7: 'SUM(C7:D7)',
-      E11: 'SUM(C11:D11)', E12: 'SUM(C12:D12)', E14: 'SUM(C14:D14)',
-      E15: 'SUM(C15:D15)', E16: 'SUM(C16:D16)', E17: 'SUM(C17:D17)', E18: 'SUM(C18:D18)',
-      C20: 'SUM(C7:C19)', D20: 'SUM(D7:D19)', E20: 'SUM(C20:D20)',
-      E32: 'SUM(C32:D32)', E33: 'SUM(C33:D33)', E34: 'SUM(C34:D34)',
-      E35: 'SUM(C35:D35)', E36: 'SUM(C36:D36)', E37: 'SUM(C37:D37)',
-      E39: 'SUM(C39:D39)', E40: 'SUM(C40:D40)', E43: 'SUM(C43:D43)',
-      C45: 'SUM(C31:C43)', D45: 'SUM(D31:D43)', E45: 'SUM(E31:E43)',
-      C47: 'C20+C45', D47: 'D20+D45', E47: 'SUM(C47:D47)',
-    };
-    Object.entries(formulas).forEach(([address, formula]) => {
-      sheet.getCell(address).value = { formula };
-    });
-
-    // Layout and formatting aligned to the reference workbook's columns.
-    sheet.getColumn(1).width = 2.8;
-    sheet.getColumn(2).width = 34;
-    sheet.getColumn(3).width = 13;
-    sheet.getColumn(4).width = 13;
-    sheet.getColumn(5).width = 13;
-    sheet.getColumn(6).width = 17;
-
-    sheet.getRow(2).height = 22;
-    sheet.getRow(2).getCell(2).font = { bold: true, size: 14 };
-    sheet.getRow(2).getCell(5).font = { italic: true, size: 10 };
-    sheet.getRow(3).height = 22;
-    for (let column = 2; column <= 5; column++) {
-      const cell = sheet.getRow(3).getCell(column);
-      cell.font = { bold: true };
-      cell.border = { bottom: { style: 'thin' } };
-      cell.alignment = { vertical: 'middle', horizontal: column >= 3 ? 'right' : 'left' };
-    }
-
-    for (let rowNumber = 4; rowNumber <= 48; rowNumber++) {
-      const row = sheet.getRow(rowNumber);
-      row.height = rowNumber === 13 || rowNumber === 38 ? 8 : 18;
-      for (let column = 2; column <= lastColumn; column++) {
+    const addValueRow = (
+      label: string,
+      values: LiquidPositionPair,
+      style: 'normal' | 'market' | 'calculated' | 'grand' | 'balance' = 'normal',
+    ) => {
+      const row = sheet.addRow(['', label, values.daj, values.djt, values.total]);
+      row.height = 24;
+      for (let column = 2; column <= 5; column++) {
         const cell = row.getCell(column);
-        cell.alignment = { vertical: 'middle', wrapText: column === 6 };
-        if (column >= 3 && column <= 5) {
-          cell.numFmt = '#,##0.00;[Red](#,##0.00);-';
-          cell.alignment = { vertical: 'middle', horizontal: 'right' };
+        cell.font = {
+          name: 'Aptos',
+          size: 10,
+          bold: style !== 'normal' || column === 5,
+          color: { argb: 'FF172033' },
+        };
+        cell.alignment = {
+          vertical: 'middle',
+          horizontal: column >= 3 ? 'right' : 'left',
+          wrapText: column === 2,
+        };
+        if (column >= 3) cell.numFmt = '#,##0.00;-#,##0.00;-';
+        cell.border = { bottom: { style: 'thin', color: { argb: 'FFE1E5EA' } } };
+        if (style === 'market' || style === 'balance') {
+          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFEAF1FA' } };
+        } else if (style === 'calculated' || style === 'grand') {
+          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF1F4F8' } };
+        }
+        if (style === 'grand' || style === 'balance') {
+          cell.border = {
+            top: { style: style === 'balance' ? 'medium' : 'thin', color: { argb: 'FFD1D8E2' } },
+            bottom: { style: 'thin', color: { argb: 'FFD1D8E2' } },
+          };
+        }
+        if (column >= 3 && typeof cell.value === 'number' && cell.value < 0) {
+          cell.font = { name: 'Aptos', size: 10, bold: style !== 'normal', color: { argb: 'FFC0392B' } };
         }
       }
-    }
+      return row;
+    };
 
-    [9, 31].forEach(rowNumber => {
+    const addSection = (label: string) => {
+      const row = sheet.addRow(['', label]);
+      row.height = 25;
       for (let column = 2; column <= 5; column++) {
-        sheet.getCell(rowNumber, column).font = { bold: true };
+        const cell = row.getCell(column);
+        cell.font = { name: 'Aptos', bold: true, size: 10, color: { argb: 'FF172033' } };
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF1F4F8' } };
+        cell.border = { bottom: { style: 'thin', color: { argb: 'FFD9DEE7' } } };
       }
-    });
-    [7, 20, 45, 47].forEach(rowNumber => {
-      for (let column = 2; column <= 5; column++) {
-        const cell = sheet.getCell(rowNumber, column);
-        cell.font = { bold: true };
-        cell.border = {
-          top: { style: 'thin', color: { argb: 'FF808080' } },
-          bottom: { style: rowNumber === 47 ? 'double' : 'hair', color: { argb: 'FF808080' } },
-        };
-      }
-    });
+    };
 
-    sheet.mergeCells('F35:F36');
+    addValueRow('Liquid (MV)', report.liquid_mv, 'market');
+    addValueRow('Arbitrage (MV)', report.arbitrage_mv, 'market');
+    addValueRow('Bank', report.bank);
+    addValueRow('Arbitrage + Liquid + Bank', report.available_liquidity, 'calculated');
 
-    sheet.views = [{ state: 'frozen', xSplit: 2, ySplit: 3, showGridLines: false }];
+    sheet.addRow([]);
+    addSection('Less: Commitments');
+    report.commitments.forEach(entry => addValueRow(entry.label, entry));
+    addValueRow('Net available Amount (A)', report.net_available_amount, 'grand');
+
+    sheet.addRow([]);
+    addSection('Deployment Plan');
+    report.deployment.forEach(entry => addValueRow(entry.label, entry));
+    addValueRow('Total Deployment Plan', report.total_deployment_plan, 'calculated');
+    addValueRow('Balance', report.balance, 'balance');
+
+    sheet.addRow([]);
+    sheet.mergeCells(`B${sheet.rowCount + 1}:E${sheet.rowCount + 1}`);
+    const note = sheet.getCell(`B${sheet.rowCount}`);
+    note.value = 'All amounts are in ₹ lakhs. Commitments retain their entered positive or negative signs; calculated totals follow the Liquid Position page.';
+    note.font = { name: 'Aptos', italic: true, size: 9, color: { argb: 'FF667085' } };
+    note.alignment = { wrapText: true, vertical: 'middle' };
+    sheet.getRow(sheet.rowCount).height = 30;
+
+    sheet.views = [{ state: 'frozen', xSplit: 2, ySplit: 6, showGridLines: false }];
     const buffer = await workbook.xlsx.writeBuffer();
-    const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    const blob = new Blob([buffer], {
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    });
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement('a');
     anchor.href = url;
-    anchor.download = `liquid_position_funds_${this.selectedReportDate || this.todayStamp()}.xlsx`;
+    anchor.download = `liquid_position_funds_${asOfDate}.xlsx`;
     document.body.appendChild(anchor);
     anchor.click();
     document.body.removeChild(anchor);

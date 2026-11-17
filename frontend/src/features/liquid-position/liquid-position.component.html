@@ -1,0 +1,185 @@
+<main class="liquid-page">
+  <header class="page-header">
+    <div class="page-heading">
+      <p class="eyebrow">Portfolio · Liquidity</p>
+      <h1>Liquid Position</h1>
+      <p class="subtitle">Current Liquid and Arbitrage mutual-fund market values, commitments, and planned deployments.</p>
+    </div>
+
+    <div class="page-controls">
+      <label class="date-control">
+        <span>As of date</span>
+        <input type="date" [(ngModel)]="asOfDate" (ngModelChange)="loadPosition()" [disabled]="loading || saving">
+      </label>
+      <button type="button" class="secondary-button" (click)="loadPosition()" [disabled]="loading || saving || isEditing">
+        Refresh
+      </button>
+      <ng-container *ngIf="report?.can_edit">
+        <button *ngIf="!isEditing" type="button" class="primary-button" (click)="beginEdit()" [disabled]="loading || saving">
+          Edit
+        </button>
+        <ng-container *ngIf="isEditing">
+          <button type="button" class="secondary-button" (click)="cancelEdit()" [disabled]="saving">
+            Cancel
+          </button>
+          <button type="button" class="primary-button" (click)="save()" [disabled]="!isDirty || saving">
+            {{ saving ? 'Saving…' : 'Save Changes' }}
+          </button>
+        </ng-container>
+      </ng-container>
+    </div>
+  </header>
+
+  <div class="state-card" *ngIf="loading">
+    <span class="loading-indicator"></span>
+    <span>Calculating the current Liquid Position…</span>
+  </div>
+
+  <div class="state-card error-state" *ngIf="!loading && error">
+    <strong>Unable to load Liquid Position</strong>
+    <span>{{ error }}</span>
+    <button type="button" class="secondary-button" (click)="loadPosition()">Retry</button>
+  </div>
+
+  <ng-container *ngIf="!loading && report">
+    <section class="report-card">
+      <div class="report-heading">
+        <div>
+          <h2>Liquidity Position as on {{ report.as_of_date }}</h2>
+          <p class="unit-note">All amounts are shown in ₹ lakhs. Liquid and Arbitrage market values are calculated from the portfolio’s mutual-fund holdings.</p>
+        </div>
+        <div class="saved-meta">
+          <span>Last saved</span>
+          <strong>{{ formatSavedAt(report.updated_at) }}</strong>
+        </div>
+      </div>
+
+      <div class="table-wrap">
+        <table class="position-table">
+          <thead>
+            <tr>
+              <th scope="col">Particulars</th>
+              <th scope="col" class="number">DAJ</th>
+              <th scope="col" class="number">DJT</th>
+              <th scope="col" class="number">Total</th>
+              <th scope="col" class="actions-column" *ngIf="isEditing">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr class="market-value-row">
+              <th scope="row">Liquid (MV)</th>
+              <td class="number">{{ formatAmount(report.liquid_mv.daj) }}</td>
+              <td class="number">{{ formatAmount(report.liquid_mv.djt) }}</td>
+              <td class="number total-cell">{{ formatAmount(report.liquid_mv.total) }}</td>
+              <td *ngIf="isEditing"></td>
+            </tr>
+            <tr class="market-value-row">
+              <th scope="row">Arbitrage (MV)</th>
+              <td class="number">{{ formatAmount(report.arbitrage_mv.daj) }}</td>
+              <td class="number">{{ formatAmount(report.arbitrage_mv.djt) }}</td>
+              <td class="number total-cell">{{ formatAmount(report.arbitrage_mv.total) }}</td>
+              <td *ngIf="isEditing"></td>
+            </tr>
+            <tr>
+              <th scope="row">Bank</th>
+              <td class="number">
+                <input aria-label="Bank DAJ amount" type="number" step="0.01" [(ngModel)]="report.bank.daj" (ngModelChange)="markDirty()" [disabled]="!isEditing || saving">
+              </td>
+              <td class="number">
+                <input aria-label="Bank DJT amount" type="number" step="0.01" [(ngModel)]="report.bank.djt" (ngModelChange)="markDirty()" [disabled]="!isEditing || saving">
+              </td>
+              <td class="number total-cell">{{ formatCalculated(report.bank.total) }}</td>
+              <td *ngIf="isEditing"></td>
+            </tr>
+            <tr class="calculated-row">
+              <th scope="row">Arbitrage + Liquid + Bank</th>
+              <td class="number">{{ formatCalculated(report.available_liquidity.daj) }}</td>
+              <td class="number">{{ formatCalculated(report.available_liquidity.djt) }}</td>
+              <td class="number total-cell">{{ formatCalculated(report.available_liquidity.total) }}</td>
+              <td *ngIf="isEditing"></td>
+            </tr>
+
+            <tr class="section-row">
+              <th scope="row" [attr.colspan]="isEditing ? 5 : 4">Less: Commitments</th>
+            </tr>
+            <tr *ngFor="let line of report.commitments; let i = index; trackBy: trackByLine">
+              <td>
+                <input class="label-input" type="text" maxlength="150" [(ngModel)]="line.label" (ngModelChange)="markDirty()" [disabled]="!isEditing || saving" [attr.aria-label]="'Commitment name ' + (i + 1)">
+              </td>
+              <td class="number">
+                <input type="number" step="0.01" [(ngModel)]="line.daj" (ngModelChange)="markDirty()" [disabled]="!isEditing || saving" [attr.aria-label]="line.label + ' DAJ amount'">
+              </td>
+              <td class="number">
+                <input type="number" step="0.01" [(ngModel)]="line.djt" (ngModelChange)="markDirty()" [disabled]="!isEditing || saving" [attr.aria-label]="line.label + ' DJT amount'">
+              </td>
+              <td class="number total-cell">{{ formatCalculated(line.total) }}</td>
+              <td class="number" *ngIf="isEditing">
+                <button type="button" class="remove-button" (click)="removeLine('commitments', i)" aria-label="Remove commitment row">Remove</button>
+              </td>
+            </tr>
+            <tr class="calculated-row grand-row">
+              <th scope="row">Net available Amount (A)</th>
+              <td class="number">{{ formatCalculated(report.net_available_amount.daj) }}</td>
+              <td class="number">{{ formatCalculated(report.net_available_amount.djt) }}</td>
+              <td class="number total-cell">{{ formatCalculated(report.net_available_amount.total) }}</td>
+              <td *ngIf="isEditing"></td>
+            </tr>
+
+            <tr class="section-row">
+              <th scope="row" [attr.colspan]="isEditing ? 5 : 4">Deployment Plan</th>
+            </tr>
+            <tr *ngFor="let line of report.deployment; let i = index; trackBy: trackByLine">
+              <td>
+                <input class="label-input" type="text" maxlength="150" [(ngModel)]="line.label" (ngModelChange)="markDirty()" [disabled]="!isEditing || saving" [attr.aria-label]="'Deployment name ' + (i + 1)">
+              </td>
+              <td class="number">
+                <input type="number" step="0.01" [(ngModel)]="line.daj" (ngModelChange)="markDirty()" [disabled]="!isEditing || saving" [attr.aria-label]="line.label + ' DAJ amount'">
+              </td>
+              <td class="number">
+                <input type="number" step="0.01" [(ngModel)]="line.djt" (ngModelChange)="markDirty()" [disabled]="!isEditing || saving" [attr.aria-label]="line.label + ' DJT amount'">
+              </td>
+              <td class="number total-cell">{{ formatCalculated(line.total) }}</td>
+              <td class="number" *ngIf="isEditing">
+                <button type="button" class="remove-button" (click)="removeLine('deployment', i)" aria-label="Remove deployment row">Remove</button>
+              </td>
+            </tr>
+            <tr class="calculated-row">
+              <th scope="row">Total Deployment Plan</th>
+              <td class="number">{{ formatCalculated(report.total_deployment_plan.daj) }}</td>
+              <td class="number">{{ formatCalculated(report.total_deployment_plan.djt) }}</td>
+              <td class="number total-cell">{{ formatCalculated(report.total_deployment_plan.total) }}</td>
+              <td *ngIf="isEditing"></td>
+            </tr>
+            <tr class="balance-row">
+              <th scope="row">Balance</th>
+              <td class="number">{{ formatCalculated(report.balance.daj) }}</td>
+              <td class="number">{{ formatCalculated(report.balance.djt) }}</td>
+              <td class="number total-cell">{{ formatCalculated(report.balance.total) }}</td>
+              <td *ngIf="isEditing"></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="table-actions" *ngIf="isEditing">
+        <button type="button" class="secondary-button" (click)="addCommitment()" [disabled]="saving">Add commitment</button>
+        <button type="button" class="secondary-button" (click)="addDeployment()" [disabled]="saving">Add deployment</button>
+      </div>
+
+      <div class="calculation-note">
+        <strong>Backend calculations:</strong>
+        commitments are deducted from available liquidity, and the deployment plan is deducted from the net available amount to calculate Balance. Calculated totals refresh after saving.
+      </div>
+
+      <div class="status-message success-message" *ngIf="success">{{ success }}</div>
+      <div class="status-message error-message" *ngIf="error">{{ error }}</div>
+
+      <footer class="report-footer">
+        <span *ngIf="!report.can_edit">Read-only access. Admin privileges or above are required to edit financial values.</span>
+        <span *ngIf="report.can_edit && isEditing && isDirty">Unsaved changes — save to refresh calculated totals.</span>
+        <span *ngIf="report.can_edit && isEditing && !isDirty">Editing mode is active. Save or cancel your changes.</span>
+        <span *ngIf="report.can_edit && !isEditing">Read-only view. Select Edit to make changes.</span>
+      </footer>
+    </section>
+  </ng-container>
+</main>

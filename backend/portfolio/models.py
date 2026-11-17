@@ -50,3 +50,37 @@ class FamilyMISNotesChangeLog(models.Model):
 
     def __str__(self):
         return f"MIS Notes change - {self.family.name} - {self.created_at:%Y-%m-%d %H:%M}"
+
+
+class FamilyLiquidPosition(models.Model):
+    """Family-scoped editable Liquid Position inputs for a reporting date."""
+
+    family = models.ForeignKey(
+        "users.FamilyGroup",
+        on_delete=models.CASCADE,
+        related_name="liquid_positions",
+    )
+    reporting_date = models.DateField()
+    document = models.JSONField(default=dict)
+    updated_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="updated_family_liquid_positions",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["reporting_date", "family_id"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["family", "reporting_date"],
+                name="uniq_fam_liquid_pos_date",
+            ),
+        ]
+
+    def __str__(self):
+        return f"Liquid Position - {self.family.name} - {self.reporting_date}"
+

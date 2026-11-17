@@ -68,7 +68,7 @@ def liquid_position(request):
 
     return Response({
         "as_of_date": as_of_date.isoformat(),
-        "unit_label": "Rs in lakhs",
+        "unit_label": "₹ lakhs",
         "can_edit": is_admin_or_above(request.user),
         "updated_at": position.updated_at.isoformat() if position else None,
         **snapshot,

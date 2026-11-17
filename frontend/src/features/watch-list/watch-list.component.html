@@ -203,6 +203,9 @@
             <div class="relative-chart" *ngIf="benchmarkModalProduct.product_type !== 'PMS'">
               <div class="chart-title">Indexed Performance — {{ benchmarkPeriod }}</div>
               <div class="chart-subtitle">₹100 invested in each series · Weekly closing observations</div>
+              <div class="chart-subtitle" *ngIf="benchmarkData?.benchmark_data_source">
+                Data source: {{ benchmarkData.benchmark_data_source }}
+              </div>
               <div class="chart-legend">
                 <span><i class="legend-fund"></i>{{ benchmarkChartProductLabel() }} — {{ benchmarkChartProductUnit() }}</span>
                 <span><i class="legend-benchmark"></i>{{ benchmarkDisplayName(benchmarkData.benchmark || benchmarkModalProduct.benchmark) }}</span>

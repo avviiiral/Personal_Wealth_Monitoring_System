@@ -7,40 +7,74 @@ from .liquid_position_service import LiquidPositionService
 
 
 class LiquidPositionCalculationTests(SimpleTestCase):
-    def test_market_values_only_include_liquid_and_arbitrage_mutual_funds(self):
-        rows = [
-            {
-                "asset_class": "Mutual Funds",
-                "sub_class": "Liquid Fund",
-                "family_name": "DAJ",
-                "closing_amount": Decimal("1250000"),
-            },
-            {
-                "asset_class": "Mutual Funds",
-                "sub_class": "Arbitrage Fund",
-                "family_name": "DJT",
-                "closing_amount": Decimal("2500000"),
-            },
-            {
-                "asset_class": "Mutual Funds",
-                "sub_class": "Equity Fund",
-                "family_name": "DAJ",
-                "closing_amount": Decimal("9000000"),
-            },
-            {
-                "asset_class": "Direct Equity",
-                "sub_class": "Liquid",
-                "family_name": "DAJ",
-                "closing_amount": Decimal("700000"),
-            },
-        ]
+    def test_market_values_are_summed_from_our_holdings_tree(self):
+        holdings_tree = {
+            "families": [
+                {
+                    "family_name": "DAJ",
+                    "portfolios": [
+                        {
+                            "asset_classes": [
+                                {
+                                    "asset_class": "Mutual Fund",
+                                    "sub_classes": [
+                                        {
+                                            "sub_class": "Liquid Mutual Funds",
+                                            "assets": [
+                                                {"current_value": 1250000},
+                                                {"current_value": 250000},
+                                            ],
+                                        },
+                                        {
+                                            "sub_class": "Arbitrage Mutual Funds",
+                                            "assets": [{"current_value": 500000}],
+                                        },
+                                        {
+                                            "sub_class": "Equity Mutual Funds",
+                                            "assets": [{"current_value": 9000000}],
+                                        },
+                                    ],
+                                },
+                                {
+                                    "asset_class": "Equity",
+                                    "sub_classes": [
+                                        {
+                                            "sub_class": "Liquid",
+                                            "assets": [{"current_value": 700000}],
+                                        }
+                                    ],
+                                },
+                            ],
+                        }
+                    ],
+                },
+                {
+                    "family_name": "DJT",
+                    "portfolios": [
+                        {
+                            "asset_classes": [
+                                {
+                                    "asset_class": "Mutual Fund",
+                                    "sub_classes": [
+                                        {
+                                            "sub_class": "Arbitrage Mutual Funds",
+                                            "assets": [{"current_value": 2500000}],
+                                        }
+                                    ],
+                                }
+                            ],
+                        }
+                    ],
+                },
+            ]
+        }
 
-        values = LiquidPositionService.current_market_values(rows)
+        values = LiquidPositionService.current_market_values(holdings_tree)
 
-        self.assertEqual(values["liquid"]["daj"], Decimal("1250000"))
+        self.assertEqual(values["liquid"]["daj"], Decimal("1500000"))
+        self.assertEqual(values["arbitrage"]["daj"], Decimal("500000"))
         self.assertEqual(values["arbitrage"]["djt"], Decimal("2500000"))
         self.assertEqual(values["liquid"]["djt"], Decimal("0"))
-        self.assertEqual(values["arbitrage"]["daj"], Decimal("0"))
 
     def test_totals_are_calculated_in_backend_for_commitments_and_deployments(self):
         document = {

@@ -641,6 +641,30 @@ export class WatchListComponent implements OnInit, OnDestroy {
     productValue: number;
     benchmarkValue: number;
   }> {
+    const indexed = this.benchmarkData?.chart?.indexed_points;
+    if (Array.isArray(indexed) && indexed.length >= 2) {
+      return indexed
+        .map((point: any) => ({
+          date: String(point.date),
+          productValue: Number(point.product_value),
+          benchmarkValue: Number(point.benchmark_value),
+          productIndexed: Number(point.product_indexed),
+          benchmarkIndexed: Number(point.benchmark_indexed),
+        }))
+        .filter((point: any) =>
+          Boolean(point.date)
+          && Number.isFinite(point.productValue)
+          && Number.isFinite(point.benchmarkValue)
+          && Number.isFinite(point.productIndexed)
+          && Number.isFinite(point.benchmarkIndexed)
+          && point.productValue > 0
+          && point.benchmarkValue > 0,
+        )
+        .sort((a: any, b: any) => a.date.localeCompare(b.date));
+    }
+
+    // Compatibility with responses produced before weekly indexed points
+    // were added. These are normalized client-side as a fallback.
     const aligned = this.benchmarkData?.chart?.aligned_points;
     if (Array.isArray(aligned) && aligned.length >= 2) {
       return aligned

@@ -50,7 +50,7 @@ export class DownloadsComponent implements OnInit {
   readonly reports: ReportDefinition[] = [
     { id: 'portfolio-detailed', name: 'Portfolio Detailed', type: 'Transaction Report', description: 'Transaction-level portfolio activity for a selected date range.', filters: 'Family + Date Range' },
     { id: 'capital-gain', name: 'Capital Gain Report', type: 'Tax / Realised Gains', description: 'FIFO realised gains from sales; indicative tax uses saved asset rates and excludes loss set-off, exemptions, surcharge/cess, and other filing-specific rules.', filters: 'Family + Asset Class + Sub Class + Date Range' },
-    { id: 'liquid-position-funds', name: 'Liquid Position Funds', type: 'Liquidity Report', description: 'A family-member-wise liquidity position, commitments and deployment plan template.', filters: 'As of Date' },
+    { id: 'liquid-position-funds', name: 'Liquid Position Funds', type: 'Liquidity Report', description: 'Downloads the saved Liquid Position page, including current holdings values, commitments and deployment plan.', filters: 'As of Date' },
     { id: 'sub-class-holdings', name: 'Sub Class Holdings', type: 'Holdings Report', description: 'Current holdings belonging to a selected Sub Class.', filters: 'Family + Asset Class + Sub Class' },
     { id: 'holding-report', name: 'Holding Report', type: 'Holdings Report', description: 'Current holdings with quantity, invested value, current value, gain and XIRR.', filters: 'Family + Asset Class' },
     { id: 'sub-class-xirr', name: 'Portfolio Summary', type: 'Performance / XIRR', description: 'Sub Class level portfolio summary with XIRR performance.', filters: 'Family + Asset Class + Sub Class' },

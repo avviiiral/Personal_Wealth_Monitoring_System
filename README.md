@@ -1,149 +1,809 @@
-<div align="center">
-
 # Personal Wealth Monitoring System
 
-### Portfolio tracking and investment analytics for Indian investors
+Personal Wealth Monitoring System (PWMS) is a self-hosted web application for tracking a family's investments held in Indian markets. A Django REST backend stores transactions, derives holdings, values them from market and NAV data, and computes returns (XIRR), allocations, MIS reports, tax estimates and liquidity figures. An Angular single-page application presents those results and handles imports, reviews and exports.
 
-**A self-hosted wealth tracker for Indian investors** — stocks, ETFs, bonds, Sovereign Gold Bonds, mutual funds and SIPs — with true **XIRR**, live prices, role-based family sharing, and a deterministic portfolio-news layer that works without any paid AI API.
+The application is built around two separate ideas:
 
-![Django](https://img.shields.io/badge/Django-5.2-092E20?style=for-the-badge&logo=django&logoColor=white)
-![DRF](https://img.shields.io/badge/DRF-3.18-A30000?style=for-the-badge&logo=django&logoColor=white)
-![Angular](https://img.shields.io/badge/Angular-21-DD0031?style=for-the-badge&logo=angular&logoColor=white)
-![Python](https://img.shields.io/badge/Python-3.12-3776AB?style=for-the-badge&logo=python&logoColor=white)
-![TypeScript](https://img.shields.io/badge/TypeScript-Angular-3178C6?style=for-the-badge&logo=typescript&logoColor=white)
-![SQLite](https://img.shields.io/badge/SQLite-default-003B57?style=for-the-badge&logo=sqlite&logoColor=white)
-![PostgreSQL](https://img.shields.io/badge/PostgreSQL-optional-4169E1?style=for-the-badge&logo=postgresql&logoColor=white)
-![License](https://img.shields.io/badge/License-Proprietary-red?style=for-the-badge)
+- **Role** (Viewer, Admin, Super User, System Owner) decides what a user may do.
+- **Family membership** decides whose financial data a user may see. Every financial record belongs to a family, and each request is scoped to the user's currently active family.
 
-[Quick start](#-quick-start) · [Features](#-features) · [How it works](#-how-it-works) · [Roles](#-roles-and-permissions) · [API reference](#-api-reference) · [Setup guide](./SETUP.md)
+All financial calculations run on the backend. The frontend formats and displays the values it receives, with two exceptions noted under [Reports and data exports](#reports-and-data-exports).
 
-</div>
+## Contents
 
----
-
-## 📑 Table of contents
-
-|                                                     |                                                   |                                                                            |
-| --------------------------------------------------- | ------------------------------------------------- | -------------------------------------------------------------------------- |
-| [🌟 Overview](#-overview)                           | [🧰 Tech stack](#-tech-stack)                     | [🔧 Configuration](#-configuration)                                        |
-| [🚀 Quick start](#-quick-start)                     | [📂 Repository structure](#-repository-structure) | [📜 Management commands](#-management-commands)                            |
-| [✨ Features](#-features)                           | [🧱 Backend architecture](#-backend-architecture) | [🔒 Security model and privacy](#-security-model-and-privacy)              |
-| [🧭 How it works](#-how-it-works)                   | [🧬 Data model](#-data-model)                     | [✅ Testing](#-testing)                                                    |
-| [🔑 Roles and permissions](#-roles-and-permissions) | [🔌 API reference](#-api-reference)               | [🚧 Known limitations](#-known-limitations)                                |
-| [🎨 Frontend architecture](#-frontend-architecture) | [⏰ Background jobs](#-background-jobs)           | [🤝 Contributing](#-contributing) · [📄 License](#-license-and-disclaimer) |
-
----
-
-## 🌟 Overview
-
-**PWMS** is a full-stack **personal and family wealth management system** for investors who hold **Indian equities, ETFs, bonds, Sovereign Gold Bonds (SGBs), mutual funds and SIPs** and want one place that _computes_ the numbers instead of estimating them.
-
-Every figure you see — holdings, invested value, current value, unrealized and realized P&L, **XIRR**, **CAGR** and asset allocation — is calculated **server-side from your real transactions**. Prices stay fresh through automatic background refreshes (**Yahoo Finance** for stocks and ETFs, **AMFI** for mutual-fund NAVs). Historical MIS valuations use persisted market/NAV history prepared by background jobs, so the interactive report does not perform live provider downloads. Mutual-fund history supports both the dedicated mutual-fund transaction models and legacy/imported mutual-fund transactions stored in the generic investment transaction model, with AMFI master scheme/NAV history used to value legacy holdings.
-
-It is built for **households, not just individuals**: a four-tier role hierarchy (System Owner / Super User / Admin / Viewer) plus many-to-many family membership lets several people share visibility into the same portfolio — or several portfolios — with permissions enforced independently on the backend, not merely hidden in the UI.
-
-### Investment-driven market and NAV refresh
-
-Automatic valuation refresh is investment-driven rather than a blanket provider sync. Active investment ISINs are collected from portfolio assets and legacy/imported mutual-fund transactions, then matched to the AMFI master **by ISIN**. The AMFI latest feed is downloaded once per refresh, but only records matching held investment ISINs are persisted. Mutual-fund history is backfilled from the persisted AMFI master history for MIS valuation.
-
-A lightweight in-process scheduler runs the investment-driven AMFI refresh and MIS history prefetch every **30 minutes**. Daily market-price scheduling remains responsible for listed-stock/ETF market data. AMFI is used for mutual-fund NAVs; listed ETFs with an AMFI-looking ISIN are routed to market-price data instead. Manual prices remain authoritative over automatic sources.
-
-### At a glance
-
-|     | Highlight                     | What it means                                                                                 |
-| --- | ----------------------------- | --------------------------------------------------------------------------------------------- |
-| 📈  | **Real returns**              | XIRR, CAGR and realized / unrealized P&L computed from actual transactions                    |
-| 🇮🇳  | **Built for India**           | Stocks, ETFs, bonds, SGBs, mutual funds and SIPs; Yahoo Finance + AMFI data                   |
-| 👨‍👩‍👧  | **Family-ready**              | Four roles, many-to-many families, and an active-family switcher                              |
-| 🤖  | **Deterministic intelligence** | Portfolio News classification and alerting run locally with rules; no AI API key is required |
-| 📰  | **News that matters**         | An agent reads your _actual_ holdings, matches articles deterministically, then scores impact |
-| 🪶  | **Low infrastructure overhead** | SQLite by default; optional Windows Task Scheduler for automatic hourly market-price refresh; no Celery or Redis required |
-| 📤  | **Export anything**           | Transactions, holdings and summaries to Excel or PDF                                          |
-| 📥  | **Controlled transaction imports** | Upload history, row-level failures and a downloadable standard transaction format              |
-| 📊  | **MIS reporting**             | IPS, Data Sheet, Tax Report and Fund Type-wise Summary with persisted historical valuation and Excel download |
-| 🔢  | **Flexible display units**    | View monetary values as Amount, Lakhs or Crores without changing stored rupee values          |
-| 🔐  | **Backend-enforced security** | Every request re-derives role and family scope from the database                              |
-
-### Design principles
-
-1. **Numbers are computed, never guessed.** The AI layer only interprets figures the backend hands it.
-2. **Transactions are the source of truth.** Holdings are derived and can be rebuilt at any time.
-3. **The server decides who can do what.** The UI hides controls for convenience; the API blocks them for real.
-4. **Role and family are separate ideas.** Role controls what you can _do_; family membership controls whose data you can _see_.
-5. **Run it anywhere, simply.** One Django process, one Angular app, one database file to start.
+1. [Key features](#key-features)
+2. [Technology stack](#technology-stack)
+3. [System architecture](#system-architecture)
+4. [Repository structure](#repository-structure)
+5. [Backend architecture](#backend-architecture)
+6. [Frontend architecture](#frontend-architecture)
+7. [Functional modules](#functional-modules)
+8. [Core business workflows](#core-business-workflows)
+9. [Database overview](#database-overview)
+10. [Authentication and authorization](#authentication-and-authorization)
+11. [API reference](#api-reference)
+12. [Reports and data exports](#reports-and-data-exports)
+13. [Audit logging](#audit-logging)
+14. [Prerequisites](#prerequisites)
+15. [Installation and setup](#installation-and-setup)
+16. [Environment configuration](#environment-configuration)
+17. [Background jobs and management commands](#background-jobs-and-management-commands)
+18. [Running tests](#running-tests)
+19. [Build and deployment](#build-and-deployment)
+20. [Troubleshooting](#troubleshooting)
+21. [Security considerations](#security-considerations)
+22. [Known limitations](#known-limitations)
+23. [Contributing](#contributing)
+24. [License and disclaimer](#license-and-disclaimer)
 
 ---
 
-## 🔗 Data sources
+## Key features
 
-The application uses the following external data sources for market and investment data:
+| Area | What is implemented | Frontend route |
+| --- | --- | --- |
+| Dashboard | Net worth, allocation, Investment Summary, Standard Allocation targets, XIRR rankings, Portfolio Review PDF | `/dashboard` |
+| Portfolio | Holdings tree (Family Member → Portfolio → Asset Class → Sub Class → Asset) with invested value, current value, gain and XIRR; transaction import; underlying-holding upload; manual price override | `/portfolio` |
+| Transaction Reports | Transaction listing grouped by asset, edit and delete, bulk delete by asset name, ISIN editing, Excel export | `/reports` |
+| MIS Report | IPS, Data Sheet, Tax Report (FIFO), Fund Type Summary and editable Notes for a date range; server-generated Excel download | `/mis-report` |
+| Liquid Position | Liquid and arbitrage mutual-fund values plus editable bank balances, commitments and deployment plan, per reporting date | `/liquid-position` |
+| Downloads | Ten Excel reports, including capital gains, holdings, XIRR summaries, market cap and holding matrix | `/downloads` |
+| Analytics | Allocation by asset class, sector, market cap, AMC and advisor; performance; equity and fixed-income analysis; historical wealth | `/analytics` |
+| Corporate Actions | NSE corporate-action monitoring, exposure matching, and user review that creates bonus, split or dividend transactions | `/corporate-actions` |
+| Portfolio News | Google News RSS monitoring and NSE/BSE filing ingestion, matched to holdings, scored by rules, with optional Web Push | `/portfolio-news` |
+| Watch List | Mutual fund (AMFI) and PMS (APMI) research universe, returns, benchmark comparison, personal watch list | `/watch-list` |
+| AI Portfolio Chat | Optional Google Gemini chat over the user's own portfolio context | header panel, `/ai-chat` |
+| Settings | Account, password, tax settings, logs and audit history, user management, family management, manual prices | `/settings` |
 
-| Data | Source |
+---
+
+## Technology stack
+
+Versions are taken from `backend/requirements.txt`, `frontend/package.json` and the CI workflows.
+
+| Layer | Technology | Declared version |
+| --- | --- | --- |
+| Backend language | Python | 3.12 in CI; pinned `pandas` and `numpy` require 3.11 or later |
+| Web framework | Django | 5.2.17 |
+| REST API | Django REST Framework | 3.18.3 |
+| CORS | django-cors-headers | 4.9.0 |
+| Database | SQLite (default, WAL mode) or PostgreSQL via `psycopg[binary]` | psycopg `>=3.2,<4`; PostgreSQL 16 in CI |
+| Data processing | pandas, numpy, openpyxl | 3.0.5, 2.4.6, 3.1.5 |
+| Market data | yfinance (with curl_cffi), requests | 1.5.2, 2.34.2 |
+| News and filings | feedparser, beautifulsoup4, lxml | 6.0.11, 4.15.0, 6.1.3 |
+| Web Push | pywebpush | 2.5.0 |
+| WSGI / ASGI servers | waitress, uvicorn (installed; no server configuration is committed) | 3.0.2, 0.52.4 |
+| Frontend framework | Angular (standalone components) | 21.2.x |
+| Frontend language | TypeScript | ~5.9.2 |
+| Node.js | Node.js | 22 in CI; Angular CLI 21 supports `^20.19`, `^22.12` or `>=24` |
+| Package manager | npm | `npm@11.12.1` declared in `packageManager` |
+| Charts | chart.js, ng2-charts | ^4.5.1, ^10.0.0 |
+| Client-side exports | exceljs, jspdf, jspdf-autotable | ^4.4.0, ^4.2.1, ^5.0.8 |
+| Frontend tests | Vitest via `@angular/build:unit-test`, jsdom | ^4.0.8, ^28.0.0 |
+| AI (optional) | Google Gemini REST API (`generativelanguage.googleapis.com`) | model from `GEMINI_MODEL`, default `gemini-3.6-flash` |
+
+There is no Dockerfile, Celery, Redis or other task queue in the repository. Background work runs in daemon threads inside the Django process, plus an optional Windows Task Scheduler script.
+
+---
+
+## System architecture
+
+```mermaid
+flowchart LR
+    subgraph Browser
+        SPA["Angular 21 SPA"]
+        SW["push-sw.js service worker"]
+    end
+
+    subgraph Django["Django 5.2 process"]
+        MW["Middleware: CORS, security, gzip, session, CSRF, auth, timing, per-user API cache"]
+        API["DRF function-based views"]
+        PERM["users.permissions: role and family scope"]
+        SVC["Domain services: holdings, tree, analytics, MIS, imports, news, corporate actions"]
+        SCHED["In-process scheduler threads"]
+    end
+
+    DB[("SQLite or PostgreSQL")]
+    YF["Yahoo Finance"]
+    AMFI["AMFI NAV and history"]
+    NSE["NSE and BSE feeds"]
+    GN["Google News RSS"]
+    OTHER["APMI, Tigzig MF API, NSE indices"]
+    GEM["Google Gemini, optional"]
+    WTS["Windows Task Scheduler, optional"]
+
+    SPA -->|"JSON over /api, session cookie and CSRF header"| MW
+    MW --> API --> PERM --> SVC --> DB
+    SCHED --> SVC
+    SCHED --> YF
+    SCHED --> AMFI
+    SCHED --> NSE
+    SCHED --> GN
+    SCHED --> OTHER
+    API -->|"portfolio chat only"| GEM
+    SCHED -->|"VAPID Web Push"| SW
+    WTS -->|"manage.py update_market_prices"| SVC
+```
+
+In development, `ng serve` proxies `/api` to Django on port 8000, so the browser talks to a single origin. The production frontend build also uses relative `/api` URLs and expects a reverse proxy to route `/api` to Django.
+
+---
+
+## Repository structure
+
+Generated folders (`node_modules/`, `venv/`, `dist/`, `logs/`, `__pycache__/`) are omitted.
+
+```text
+Personal_Wealth_Monitoring_System/
+├── backend/
+│   ├── manage.py
+│   ├── requirements.txt
+│   ├── .env.example              Environment template (production-style defaults)
+│   ├── config/                   Settings, root URLs, middleware, scheduler guard,
+│   │                             PostgreSQL advisory lock, pwms_config.json / .py
+│   ├── api/                      Health check, login/logout, current user, profile settings
+│   ├── users/                    Roles, families, memberships, preferences, tax settings,
+│   │                             audit log, permissions.py (central authorization)
+│   ├── investments/              Asset, Transaction, Holding, PortfolioPosition, SecurityMaster,
+│   │                             security identity/alias models, Excel/CSV importer
+│   ├── portfolio/                Portfolio tree, holdings engine, transactions API, MIS report,
+│   │                             Liquid Position, holding/market-cap reports, manual prices
+│   ├── analytics/                Dashboard view model, unified wealth, XIRR, historical wealth,
+│   │                             look-through, Standard Allocation
+│   ├── market_data/              MarketPrice, Yahoo/AMFI/bond/SGB providers, schedulers
+│   ├── mutual_funds/             Schemes, NAVs, MF transactions and holdings, SIPs,
+│   │                             AMFI master, MF underlying disclosures
+│   ├── corporate_actions/        Corporate actions, exposures, reconciliations, NSE provider
+│   ├── filing_intelligence/      NSE/BSE filing ingestion and rule-based classification
+│   ├── portfolio_news/           News retrieval, matching, scoring, alerts, Web Push
+│   ├── watchlist/                MF/PMS research universe, performance, benchmarks
+│   └── ai/                       Gemini portfolio chat and token-usage log
+├── frontend/
+│   ├── angular.json, package.json, proxy.conf.json
+│   ├── public/                   favicon, push-sw.js (Web Push service worker), sitemap.xml
+│   └── src/
+│       ├── app/                  Root config and routes, layout (shell, header, sidebar),
+│       │                         MIS Report feature and its service, corporate-actions service
+│       ├── core/                 auth.guard and API/state services
+│       ├── features/             One folder per screen (dashboard, portfolio, reports, ...)
+│       ├── shared/               Toast and placeholder components
+│       └── environments/         environment.ts / environment.prod.ts (apiUrl)
+├── scripts/windows/              Task Scheduler scripts for hourly market-price refresh
+├── docs/                         Feature notes, audits and operations notes
+├── .github/workflows/            backend-checks.yml, security-audit.yml
+├── SETUP.md, SECURITY.md, SECURITY_HARDENING.md, CONTRIBUTING.md, CODE_OF_CONDUCT.md
+└── License.md
+```
+
+---
+
+## Backend architecture
+
+### Django applications and URL prefixes
+
+Routes are mounted in `backend/config/urls.py`.
+
+| App | URL prefix | Responsibility |
+| --- | --- | --- |
+| `api` | `/api/` | Health check (also issues the CSRF cookie), login, logout, current user, profile settings, password change |
+| `users` | `/api/settings/` | Active family, user and family management, tax settings, manual price list |
+| `portfolio` | `/api/portfolio/` | Assets, transactions, tree, summary, holdings, holding/market-cap reports, MIS report, Liquid Position, underlying uploads, manual prices |
+| `analytics` | `/api/analytics/` | Dashboard view model and wealth analytics endpoints |
+| `mutual_funds` | `/api/mutual-funds/` | MF summary, holdings, transactions, schemes, SIPs, MF underlying |
+| `investments` | `/api/investments/` | Transaction import and duplicate preview, upload history, templates, Security Master, security aliases |
+| `market_data` | `/api/market-data/stocks/search/` | Yahoo Finance stock and ETF search; price providers and schedulers |
+| `ai` | `/api/ai/` | Portfolio chat; also mounts the `portfolio_news` routes |
+| `portfolio_news` | `/api/ai/news/`, `/api/ai/notifications/` | News feed, alerts, digest, notifications, push subscriptions |
+| `watchlist` | `/api/watch-list/` | Products, filters, performance, benchmarks, watch list membership, refresh |
+| `filing_intelligence` | `/api/filings/` | Filing detail |
+| `corporate_actions` | `/api/corporate-actions/` | Actions, candidates, notifications, reconciliation decisions |
+
+Django admin is available at `/admin/` for registered models.
+
+### Request processing
+
+```mermaid
+flowchart TD
+    R["HTTP request"] --> C["CorsMiddleware"]
+    C --> S["SecurityMiddleware"]
+    S --> G["GZipMiddleware"]
+    G --> SE["Session, Common, CSRF, Authentication middleware"]
+    SE --> P["ApiPerformanceLoggingMiddleware: timing headers, slow-request log"]
+    P --> K{"AuthenticatedApiCacheMiddleware: cacheable GET?"}
+    K -->|"cache hit"| HIT["Cached JSON, X-PWMS-Cache: HIT"]
+    K -->|"miss or not cacheable"| V["DRF view: SessionAuthentication, IsAuthenticated, plus CanWriteFinancialData or role class"]
+    V --> F["users.permissions: active family, visible owners"]
+    F --> SV["Service layer"]
+    SV --> ORM["Django ORM"]
+    ORM --> DB[("Database")]
+    SV --> RESP["JSON or file response"]
+```
+
+- DRF defaults are `SessionAuthentication` and `IsAuthenticated` (`config/settings.py`). Views are function-based (`@api_view`) and add `CanWriteFinancialData`, `IsAdminOrSuperUser` or `IsSystemOwner` where needed.
+- `ApiPerformanceLoggingMiddleware` adds `X-PWMS-Request-Time-Ms`, `X-PWMS-DB-Queries`, `X-PWMS-DB-Time-Ms` and `Server-Timing` headers to `/api/` responses, and logs requests slower than `API_SLOW_REQUEST_THRESHOLD_MS` (default 500 ms) without SQL text.
+- `AuthenticatedApiCacheMiddleware` caches successful JSON responses for a fixed list of portfolio and analytics GET endpoints for 20 seconds, keyed by user ID, path and query string. A request sent with `Cache-Control: no-cache` bypasses it. The default cache backend is in-process `LocMemCache`.
+- Business logic lives in service classes, for example `HoldingCalculationEngine`, `PortfolioPositionEngine`, `PortfolioTreeService`, `UnifiedWealthAnalytics`, `AnalyticsViewModelService`, `MISReportService`, `LiquidPositionService` and `TransactionImporter`.
+- Logs are written to `backend/logs/` as rotating files (10 MB, five backups) split by area: `application.log`, `errors.log`, `price_updates.log`, `transactions.log`, `portfolio.log`, `mutual_funds.log`, `watchlist.log`, `news.log`, `filings.log`, `authentication.log` and `imports.log`.
+
+### Configuration layers
+
+- **Secrets and deployment values** come from `backend/.env`, loaded by `python-dotenv` in `config/settings.py`.
+- **Non-secret business and provider settings** live in `backend/config/pwms_config.json`: market hours and timezone (`Asia/Kolkata`), news scoring weights and publisher tiers, benchmark sources, provider URLs and timeouts, scheduler intervals, logging limits, database defaults, security-resolver mappings and corporate-action settings. Set `PWMS_CONFIG_OVERRIDES` to a JSON object to override values for a deployment without editing the file.
+
+---
+
+## Frontend architecture
+
+```mermaid
+flowchart TD
+    MAIN["main.ts, app.config.ts: router with PreloadAllModules, HttpClient with fetch and XSRF config"] --> ROUTES["app.routes.ts"]
+    ROUTES --> LOGIN["/login: LoginComponent"]
+    ROUTES --> GUARD["authGuard"]
+    GUARD --> SHELL["ShellComponent: header with family switcher, notifications, AI chat panel, sidebar"]
+    SHELL --> FEAT["Lazy-loaded feature components"]
+    FEAT --> SERV["API services in src/core/services and src/app/core/services"]
+    GUARD --> AUTH["AuthService: /api/auth/me/"]
+    GUARD --> RBAC["RbacService: /api/settings/me/"]
+    SERV -->|"withCredentials, X-CSRFToken"| BACK["Django /api"]
+    RBAC -.->|"show or hide controls only"| FEAT
+```
+
+- **Bootstrap.** `app.config.ts` registers the router with `PreloadAllModules` and `HttpClient` with `withFetch()` and an XSRF configuration that reads the `csrftoken` cookie and sends `X-CSRFToken`. There are no HTTP interceptors; services pass `withCredentials: true` and, for writes, fetch a CSRF token from `/api/health/` first.
+- **Routing.** `/login` is public. Every other route is a lazy-loaded standalone component under `ShellComponent`, protected by `authGuard`. Unknown paths redirect to `/dashboard`.
+- **Guard.** `authGuard` calls `/api/auth/me/` when the session state is unknown and redirects to `/login` on failure. It then loads the role and family state through `RbacService` (`/api/settings/me/`). A failed role lookup does not block navigation; the UI falls back to the most restrictive view and the backend still enforces every permission.
+- **State.** Services hold state in RxJS `BehaviorSubject`s and plain fields. There is no NgRx or other store library. `WatchListStateService` and `ThemeService` (light/dark mode) hold client-only state.
+- **Charts.** Chart.js through `ng2-charts` on the Dashboard and Analytics pages.
+- **Exports.** ExcelJS builds workbooks in the browser for Downloads, Transaction Reports, Holding Reports, Portfolio and Watch List. jsPDF and jspdf-autotable build the Dashboard Portfolio Review PDF (`portfolio-report-pdf.service.ts`).
+- **Push notifications.** `BrowserNotificationService` registers `public/push-sw.js` and subscribes through the Push API using the VAPID public key from `/api/ai/notifications/push/config/`.
+
+### Routes
+
+| Route | Component | Sidebar link |
+| --- | --- | --- |
+| `/login` | `LoginComponent` | none |
+| `/dashboard` | `DashboardComponent` | Overview → Dashboard |
+| `/portfolio` | `PortfolioComponent` | Portfolio |
+| `/mis-report` | `MISReportComponent` | MIS Report |
+| `/reports` | `ReportsComponent` | Transaction Reports |
+| `/corporate-actions` | `CorporateActionsComponent` | Corporate Actions |
+| `/portfolio-news`, `/portfolio-news/:id` | `PortfolioNewsListComponent`, `PortfolioNewsDetailComponent` | Portfolio News |
+| `/downloads` | `DownloadsComponent` | Downloads |
+| `/liquid-position` | `LiquidPositionComponent` | Liquid Position |
+| `/watch-list` | `WatchListComponent` | Watch List |
+| `/analytics` | `AnalyticsComponent` | Planning → Analytics |
+| `/settings` | `SettingsComponent` | Settings |
+| `/ai-chat` | `AiChatComponent` | none; chat is normally opened from the header panel |
+| `/reports/holdings` | `HoldingReportsComponent` | none; reachable by URL only |
+
+### Frontend services and backend areas
+
+| Service | Backend prefix |
 | --- | --- |
-| Stocks and ETFs | [Yahoo Finance](https://finance.yahoo.com/) via `yfinance` |
-| Mutual-fund latest NAVs | [AMFI India](https://www.amfiindia.com/) — AMFI latest NAV feed |
-| Mutual-fund historical NAVs | [AMFI India](https://www.amfiindia.com/) — AMFI historical NAV report |
-| Mutual-fund fund-manager names | [Tigzig MF API](https://api.tigzig.com/mf/v1/details) — scheme-level manager details sourced from Scheme Summary Document data |
-| PMS fund-manager names | [APMI India](https://www.apmiindia.org/apmi/welcomeiaperformance.htm?action=PMSmenu) — investment-approach listing and individual IA Insight pages |
-| Nifty TRI benchmarks | [NSE Indices](https://www.niftyindices.com/) — official Total Return Index historical data for Nifty 50, Nifty 100, Nifty Mid Cap 150 and Nifty Small Cap 250 |
-| BSE 500 TRI | [BSE India](https://www.bseindia.com/) — BSE500T historical data; deployments may also use the configured BSE 500 TRI CSV/URL or the supported TRI-tracking ETF fallback |
-| Portfolio news | [Google News](https://news.google.com/) RSS — no API key required |
-| AI explanations | [Google Gemini](https://ai.google.dev/) — optional, only for Portfolio Chat; not required by Portfolio News |
+| `auth.service.ts` | `/api/auth/` |
+| `rbac.service.ts`, `user-management-api.service.ts`, `settings-price-api.service.ts` | `/api/settings/` |
+| `settings-api.service.ts` | `/api/settings/`, tax rates, logs and templates under `/api/investments/` and `/api/portfolio/` |
+| `portfolio-api.service.ts`, `manual-price.service.ts`, `liquid-position.service.ts` | `/api/portfolio/` |
+| `app/core/services/mis-report.service.ts` | `/api/portfolio/mis-report/` |
+| `wealth-api.service.ts` | `/api/analytics/wealth/` |
+| `investments-api.service.ts` | `/api/investments/` |
+| `news-api.service.ts`, `ai-chat-api.service.ts` | `/api/ai/` |
+| `watch-list-api.service.ts` | `/api/watch-list/` |
+| `app/core/services/corporate-actions.service.ts` | `/api/corporate-actions/` |
 
-| Corporate filings | NSE public Corporate Announcements feed; BSE via an authorized/configured feed |
-| Portfolio News analysis | Deterministic local rules — no hosted AI model or paid AI API required |
+The `/api/mutual-funds/`, `/api/filings/`, `/api/market-data/` and the non-`wealth` `/api/analytics/` endpoints have no frontend consumer in the current code.
 
-### 👤 Watch List fund-manager attribution
+---
 
-The Watch List enriches individual fund-manager names separately from the market/NAV feeds:
+## Functional modules
 
-- **Mutual funds:** The AMFI universe refresh supplies public scheme codes. PWMS sends those codes to the third-party [Tigzig MF details API](https://api.tigzig.com/mf/v1/details) in batches of up to 50 and reads manager names from the returned Scheme Summary Document (`ssd`) data. Names are stored in `MutualFundProduct.fund_manager`; a supporting manager/document URL is stored in `MutualFundProduct.fund_manager_website`.
-- **PMS:** PWMS downloads the [APMI investment-approach performance listing](https://www.apmiindia.org/apmi/welcomeiaperformance.htm?action=PMSmenu), extracts each approach's `IAID`, then requests its individual `IaInsight.htm?IAID=<IAID>` page. The parser reads the **Fund Manager Details** section. Names are stored in `PMSProduct.fund_manager`, and the IA Insight page URL is stored in `PMSProduct.fund_manager_website`.
-- **Refresh behavior:** These enrichment steps run as part of the Watch List universe refresh. Mutual-fund enrichment follows the AMFI universe import; APMI manager enrichment runs as part of the PMS refresh. Existing manager names are preserved, and only missing names are requested for enrichment.
-- **Availability:** Tigzig and APMI are external dependencies. A scheme/approach can remain without a displayed manager when the source does not provide a name, its detail page cannot be retrieved, or its response format changes. The source URLs and request timeouts are configured/defined in the backend provider configuration and service code.
+### Dashboard and Analytics
 
-### 📈 Watch List benchmark and indexed-performance charts
+The Dashboard loads one backend view model from `GET /api/analytics/wealth/dashboard/` (built by `AnalyticsViewModelService`), with `days`, `period` and `family` query parameters. Analytics uses the granular `/api/analytics/wealth/*` endpoints.
 
-Watch List benchmark comparisons support five selectable benchmarks:
+- Current value, invested value, gain and XIRR per asset category, computed by `UnifiedWealthAnalytics` and `XIRRCalculator`.
+- **Standard Allocation**: target percentages per asset category, either a global baseline or an override for one Family Member label (`analytics.StandardAllocation`). The percentage is authoritative; the amount is recalculated from current total wealth. Saving requires Admin or above.
+- Allocation by advisor, AMC, sector and market cap; equity valuation metrics weighted by current value; fixed-income metrics from Security Master; mutual-fund look-through exposure from disclosed underlying holdings.
+- Historical wealth for a rolling period or explicit `start_date`/`end_date` (`HistoricalWealthAnalytics`).
+- `POST /api/analytics/wealth/recalculate/` rebuilds derived positions (Admin or above).
+- The **Portfolio Review** PDF is generated in the browser from the Dashboard data.
 
-- **Nifty 50 TRI**
-- **Nifty 100 TRI**
-- **Nifty Mid Cap 150 TRI**
-- **Nifty Small Cap 250 TRI**
-- **BSE 500 TRI**
+**XIRR.** Cash flows are built in `analytics/services/cash_flows.py` from the investor's point of view. Purchases, SIPs and deposits are negative; sales, dividends, interest and withdrawals are positive, net of fees. `DIVIDEND REINVESTMENT` purchases are skipped as external cash. Current value is the closing inflow. `XIRRCalculator` solves with Newton-Raphson and falls back to bisection.
 
-The four Nifty benchmarks are retrieved from the NSE Indices historical TRI source using the selected index's official identifier. BSE 500 TRI continues to use the configured BSE source/fallback path. The selected benchmark is used consistently for the Watch List comparison and its displayed source label.
+### Portfolio
 
-The indexed-performance chart is deliberately protected against sparse source responses:
+`GET /api/portfolio/tree/` returns the holdings hierarchy built by `PortfolioTreeService`: Family Member → Portfolio → Asset Class → Sub Class → Asset (and Underlying). Each node carries quantity, invested value, current value, gain and XIRR.
 
-- Each Nifty TRI series is accepted only when it has sufficient row density and covers the requested date range.
-- If the selected Nifty endpoint returns sparse or incomplete data, PWMS automatically retries using smaller historical windows instead of rendering a sparse annual-point series.
-- Mutual-fund benchmark charts use the shared **AMFI master NAV history** for the selected fund.
-- Older Watch List entries that only contain the six performance-anchor snapshots (`1M`, `3M`, `6M`, `1Y`, `3Y`, `5Y`) are automatically backfilled with actual AMFI historical NAV observations when the chart is opened.
-- The chart uses actual observations; PWMS does not interpolate synthetic NAV or benchmark values merely to make the line look denser.
-- Historical coverage is validated using configurable minimum row density and date coverage thresholds before a source is considered complete.
-- Benchmark history preparation covers all five supported benchmark choices, rather than preparing only Nifty 50 and BSE 500.
-- The selected chart period (`1M`, `3M`, `6M`, `1Y`, `3Y`, or `5Y`) determines the AMFI history that is prepared.
-- The selected benchmark is also reflected in the Watch List benchmark selector and Excel report export; the export includes the supported benchmark comparisons dynamically.
+- **Family Member** is the `Family Name` label from imported transactions (for example, one member of the household). It is different from the `FamilyGroup` that controls data visibility.
+- From this page users can import a transaction workbook, upload an asset's underlying holdings (`Stocks`, `% Holding` columns), and set a manual price inline (Admin or above).
+- Equity underlyings show a Screener link only when a market symbol can be resolved reliably.
 
-On the Watch List table, the **Product** column remains pinned during horizontal scrolling so the product name and identifier stay visible while reviewing return periods and AUM.
+### Transaction import
 
-The thresholds and benchmark endpoints are centralized in [`backend/config/pwms_config.json`](./backend/config/pwms_config.json), so source URLs, timeouts and density requirements can be changed without editing the benchmark service code.
-## 🚀 Quick start
+`TransactionImporter` (`investments/services/transaction_import.py`) accepts `.xlsx` or `.csv`.
 
-> Full walkthrough with troubleshooting: **[SETUP.md](./SETUP.md)**. Prerequisites: Git, Python 3.12 (3.11+), Node.js 20+ (22 recommended).
+- Every worksheet is scanned. A sheet is used as transaction data when a header row contains all of: `Family Name` (or `Family Member`), `Asset Class`, `Sub Class`, `Asset Name`, `Underlying`, `Advisors`, `ISIN`, `Date`, `Trans. Type`, `Quantity`, `Price`, `Amount`. Sheet names and header positions do not matter.
+- An optional summary sheet with `Family Name`, `Portfolio Name`, `Asset Class`, `Advisors`, `Asset Name`, `ISIN` maps rows to portfolio names.
+- Recognised transaction types: `BUY`, `SELL`, `SIP`, `DIVIDEND`, `DIVIDEND PAYOUT`, `INTEREST`, `DEPOSIT`, `WITHDRAWAL`, `BONUS`, `SPLIT`, `*SPLIT`, `BUYBACK` (stored as SELL), `DIVIDEND REINVESTMENT` (stored as BUY) and `OTHER`.
+- Rows whose asset class or sub class is "Mutual Fund" become `MutualFundTransaction` rows. All other rows become `investments.Transaction` rows.
+- The standard template is downloadable from `GET /api/investments/transaction-template/` (Settings → Logs → Transaction Uploads).
 
-**1 — Clone**
+See [Transaction import and holdings](#transaction-import-and-holdings) for the full flow.
+
+### Transaction Reports
+
+The `/reports` page lists transactions grouped by asset and underlying, supports editing and deleting individual transactions (each change is written to `TransactionEditHistory`), editing asset and underlying ISINs, and exporting summary or date-range Excel files. Deleting every transaction for one asset name (`POST /api/portfolio/transactions/delete-by-asset-name/`) is limited to Super User and System Owner.
+
+### MIS Report
+
+`MISReportService` (`portfolio/mis_report_service.py`) builds the report for the active family between `from_date` and `to_date`.
+
+- **IPS**: market values by asset class and family member for the current and prior period, with differences.
+- **Data Sheet**: investment cost, opening market value, period transactions and closing market value.
+- **Tax Report**: Data Sheet plus realized and unrealized P/L and tax. Realized P/L uses FIFO lots isolated by asset, family member and portfolio. Buy fees increase cost basis; sell fees reduce proceeds. Splits adjust open lots proportionally; bonuses are zero-cost lots. Short or long term is decided by completed calendar months against the tenure in Tax Settings. Negative P/L produces a negative tax value.
+- **Fund Type Summary** and **Notes** (reference rates such as Nifty 50, BSE 500, gold bonds, silver ETF and USD/INR from stored Yahoo Finance history). Notes are editable by Admin or above, and every change is logged.
+- Historical valuation reads persisted `MarketPrice` and `AMFIMasterNAV` rows; the interactive report does not download provider data.
+- `GET /api/portfolio/mis-report/download/` returns an `.xlsx` workbook generated with openpyxl, named `MIS_Report_<family>_<date>.xlsx`. The download path first refreshes reference prices and builds the report with `ensure_history=True`, which can backfill missing history.
+- Values can be displayed as amount, lakhs or crores. Conversion affects presentation only.
+
+### Liquid Position
+
+`LiquidPositionService` produces a family-scoped snapshot for an `as_of` date. Values are shown in rupees lakhs.
+
+- **Liquid (MV)** and **Arbitrage (MV)** are summed from the current values in the portfolio tree for sub classes classified as liquid or arbitrage mutual funds.
+- **Bank**, **Commitments** and **Deployment plan** rows are entered by the user and stored in `FamilyLiquidPosition.document` (up to 40 rows per section).
+- The backend computes Available liquidity (Liquid + Arbitrage + Bank), **Net available amount** (Available plus the commitment entries as entered), **Total deployment plan** and **Balance**.
+- The implementation uses two fixed member columns, `DAJ` and `DJT`. Market values are attributed only to tree rows whose Family Member label matches one of those names (case-insensitive).
+- Market values come from current holdings even when an earlier `as_of` date is selected.
+
+### Downloads
+
+The `/downloads` page generates Excel workbooks in the browser with ExcelJS from backend API data:
+
+| Report | Contents |
+| --- | --- |
+| Portfolio Detailed | Transaction-level activity for a date range |
+| Capital Gain Report | FIFO realised gains from sales with indicative tax from saved tax rates; calculated in the browser |
+| Liquid Position Funds | The saved Liquid Position for a date, using backend-calculated totals |
+| Sub Class Holdings | Current holdings for one sub class |
+| Holding Report | Holdings with quantity, invested value, current value, gain and XIRR |
+| Portfolio Summary | Sub-class XIRR summary from the portfolio API |
+| Asset Name XIRR | Asset-name XIRR summary from the portfolio API |
+| Watch List | Watch-listed MF and/or PMS products |
+| Market Cap | Equity PMS, direct equity and equity MF exposure by market cap |
+| Holding Matrix | Equity PMS and direct equity aggregated by security |
+
+### Corporate actions
+
+- **Sources.** `monitor_corporate_actions --source nse` queries NSE's public corporate-actions JSON once per held NSE symbol. `--source feed` reads a configured authorised feed (`corporate_actions.feed_url` in `pwms_config.json`). `--source filings` derives actions from stored exchange filings. `--source both` runs NSE, the feed (when configured) and filings.
+- **Exposure.** Each action is matched to direct holdings, mutual-fund underlying holdings and PMS underlying holdings by exact ISIN. If the source has no ISIN, exact symbol or full security-name candidates are offered for user review instead.
+- **Review.** The Corporate Actions page lists notifications per user. A user can mark an item as already recorded or dismissed, or approve or reject a proposed holding identity.
+- **Approval.** Approving an identity creates a `BONUS`, `SPLIT` or `DIVIDEND` transaction for each eligible portfolio hierarchy bucket. Bonus entitlement uses holdings on the record date; split and dividend use holdings before the ex-date. Other action types are recorded for review but not converted into transactions.
+- **Idempotency.** Reconciliations carry an idempotency key, and an existing same-day action transaction for the same hierarchy is reused instead of duplicated. Approvals run inside `select_for_update` transactions.
+- **Valuation effect.** Confirmed split and bonus ratios are applied to quantity (not cost basis) when positions are calculated (`corporate_actions/position_adjustment.py`).
+- **Automation.** A completed import starts a background NSE scan. A daily scan at `daily_run_time` (06:00) runs only under `manage.py runserver`.
+
+### Portfolio News and filing intelligence
+
+- **Pipeline.** `run_portfolio_news_monitor` (`portfolio_news/services/pipeline.py`) builds the holdings registry for each active family (direct holdings and uploaded underlyings), generates queries, fetches Google News RSS, matches articles to holdings deterministically on headline and description, de-duplicates articles and sources, and stores `PortfolioNewsMatch` rows.
+- **Analysis.** Matches are classified by `RuleBasedArticleAnalyzer`, which uses keyword and event rules and no external AI call. Alerts are scored from impact, portfolio weight, confidence, source quality and recency (weights in `pwms_config.json`) and stored as `PortfolioNewsAlert` with a notification tier.
+- **Filings.** On the same schedule, `ingest_exchange_filings` reads NSE's public corporate-announcement feed and BSE only when `EXCHANGE_FILING_FEED_URL_BSE` is set. `filing_intelligence` classifies filings with deterministic rules and links them to securities by ISIN, symbol or BSE code.
+- **Delivery.** The UI offers News (raw matches), Alerts and Digest views. Critical and High alerts are sent through Web Push when VAPID keys are configured.
+- Further detail: [docs/PORTFOLIO_NEWS_CALCULATION.md](./docs/PORTFOLIO_NEWS_CALCULATION.md), [docs/FILING_INTELLIGENCE.md](./docs/FILING_INTELLIGENCE.md), [docs/NEWS_AGENT_INTELLIGENCE_AUDIT.md](./docs/NEWS_AGENT_INTELLIGENCE_AUDIT.md), [docs/PORTFOLIO_NEWS_LIVE_UPDATES.md](./docs/PORTFOLIO_NEWS_LIVE_UPDATES.md).
+
+`portfolio_news/services/gemini_analyzer.py` still exists, but the pipeline does not call it. Portfolio News does not need a Gemini key.
+
+### Watch List
+
+- **Universe.** `InvestmentProduct` with `MutualFundProduct` (AMFI scheme data, NAV history and fund managers from the Tigzig MF details API) and `PMSProduct` (APMI investment-approach listing). Additional PMS sources can be supplied through `WATCHLIST_PMS_SOURCE_URLS`.
+- **Performance.** `PerformanceSnapshot` returns and `BenchmarkMasterPoint` series. Benchmarks are Nifty TRI indices (NSE Indices) and BSE 500 TRI (configured URL or file, with fallbacks in `pwms_config.json`).
+- **Watch list.** Each user maintains their own list (`WatchListEntry`) by toggling or bulk-adding products. Refreshing the universe and changing a product's benchmark require Admin or above.
+- See [backend/watchlist/BENCHMARKS.md](./backend/watchlist/BENCHMARKS.md) for benchmark source details.
+
+### AI Portfolio Chat
+
+`POST /api/ai/chat/` accepts a `message` of up to 4,000 characters. The backend builds a context from holdings and mutual-fund holdings owned by the requesting user, plus their recent Portfolio News alerts, and sends it to Gemini. If `GEMINI_API_KEY` (or `GOOGLE_API_KEY`) is not set, the endpoint returns HTTP 500 with an explanatory message. Token usage is stored in `GeminiUsageLog`; `manage.py gemini_usage` summarises it.
+
+### Settings
+
+| Tab | Content | Who sees it |
+| --- | --- | --- |
+| Account, Security | Email and password change. Currency, date format and default analytics period can be changed through `PATCH /api/settings/update/`, but the UI does not show them. | All users |
+| Tax Settings | Tenure and short/long-term rates per displayed asset name; template download and Excel upload; conflicting legacy rows flagged for review | All users can read; Admin or above can write |
+| Logs | Tax updates, transaction edit history, transaction uploads with row failures, underlying uploads, MIS notes history, security identity mappings, manual prices | Security identity mappings: System Owner. Manual prices: Admin or above. Other logs: all users |
+| User Management | Create, edit, activate, deactivate, delete users and reset passwords, within role limits | Admin or above |
+| Family Management | Create, rename and delete families; add and remove members | System Owner |
+
+### Backend-only capabilities
+
+These are implemented and routed but have no screen in the current frontend:
+
+- `/api/mutual-funds/*`: mutual-fund schemes, transactions, holdings, SIP creation, due SIPs and SIP or installment execution. SIP installments are also synced and executed by the daily refresh.
+- `/api/investments/security-master/`, `security-aliases/`, `underlyings/`, `security-identity-resolution-history/` (the last is used by Settings).
+- `/api/market-data/stocks/search/`: Yahoo Finance search.
+- Legacy `/api/analytics/summary|allocation|performance|historical/`.
+
+---
+
+## Core business workflows
+
+### Authentication
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant B as Angular
+    participant D as Django
+    participant DB as Database
+
+    B->>D: GET /api/health/
+    D-->>B: Sets the csrftoken cookie
+    B->>D: POST /api/auth/login/ with username or email and password
+    D->>DB: Case-insensitive lookup by username, then email
+    D->>D: authenticate() and login() create the session
+    D-->>B: Session cookie and current user with role and families
+    B->>D: GET /api/settings/me/
+    D-->>B: Role, permission flags, families, active family
+    B->>D: Later requests with the session cookie, X-CSRFToken on writes
+    D->>DB: Re-derive role and active family on every request
+    D-->>B: Scoped JSON, or 401 or 403
+```
+
+`POST /api/auth/login/` is CSRF-exempt and ignores any existing session, so a stale session cannot block a new login. Passwords remain case-sensitive. `POST /api/auth/logout/` ends the session.
+
+### Transaction import and holdings
+
+```mermaid
+flowchart TD
+    U["User selects .xlsx or .csv on Portfolio"] --> P["POST /api/investments/import/preview/"]
+    P --> D{"Duplicates found?"}
+    D -->|"yes"| R["Review dialog: tick duplicates to import, others are skipped"]
+    D -->|"no"| I
+    R --> I["POST /api/investments/import/ with selected_duplicate_rows"]
+    I --> F["require_active_family: active FamilyGroup is required"]
+    F --> V["Validate each row; record failures in TransactionUploadFailure"]
+    V --> ID["Resolve security identity: alias, Security Master, resolver"]
+    ID --> T{"Mutual fund row?"}
+    T -->|"yes"| MF["MutualFundTransaction and MutualFundScheme"]
+    T -->|"no"| TX["Asset and Transaction with SHA-256 source_key"]
+    MF --> RB["PortfolioPositionEngine rebuild and MF holdings"]
+    TX --> RB
+    RB --> UP["TransactionUpload status and counts"]
+    UP --> AFTER["After commit: NAV refresh for touched schemes, quant enrichment, background NSE corporate-action scan"]
+```
+
+- The duplicate key is a SHA-256 hash of family name, asset class, sub class, asset name, underlying, advisors, ISIN, date, type, quantity, price and amount. A database constraint enforces uniqueness of (`family`, `source`, `source_key`). Duplicates the user selects to import receive distinct keys.
+- Holdings use weighted average cost. Buys and SIPs add quantity and amount; a sell removes quantity at the current average cost; bonus and split rows add quantity only; dividend, interest, deposit, withdrawal and other rows do not change the position. Confirmed corporate-action ratios are replayed in date order.
+- `python manage.py import_transactions --file <path> --username <user>` runs the same importer from the command line.
+
+### Valuation and price selection
+
+`PortfolioTreeService` selects one current price per asset in this order:
+
+1. The latest manual `MarketPrice` (source `MANUAL`) for the asset.
+2. A legacy `ManualAssetPrice` row, if no manual `MarketPrice` exists.
+3. For assets identified as mutual funds (by AMFI identity or portfolio hierarchy), the latest `AMFIMasterNAV` matched by ISIN.
+4. Otherwise, the latest non-manual, non-AMFI `MarketPrice` (Yahoo Finance, bond or SGB providers).
+
+ETFs stay on market-price routing even when their ISIN also appears in the AMFI master.
+
+### Corporate action review
+
+```mermaid
+flowchart TD
+    S["NSE scan: scheduled, after import, or command"] --> A["CorporateAction rows"]
+    A --> E["Exposure discovery by exact ISIN: direct, MF underlying, PMS underlying"]
+    E --> REC["CorporateActionReconciliation and notification per user, with idempotency key"]
+    REC --> UI["Corporate Actions page"]
+    UI --> D1["Already recorded or dismissed"]
+    UI --> D2{"Identity decision"}
+    D2 -->|"reject"| RJ["Status REJECTED, no transaction change"]
+    D2 -->|"approve candidate"| AP["Replay prior transactions per hierarchy bucket"]
+    AP --> TX["Create BONUS, SPLIT or DIVIDEND transaction, or reuse an existing one"]
+    TX --> ST["Status APPROVED, matched_transaction_ids stored"]
+```
+
+### Reporting
+
+1. Report pages request scoped data from the portfolio, analytics or MIS endpoints. Each request is scoped to the active family on the server.
+2. Calculations (positions, XIRR, MIS FIFO tax, Liquid Position totals) run in backend services. Downloads and Transaction Reports reuse the API values, so exported figures match the screens. The two exceptions are the client-side Capital Gain Report and the Dashboard PDF layout.
+3. Excel files are written by ExcelJS in the browser, except the MIS workbook, which the server builds with openpyxl. The Portfolio Review PDF is built with jsPDF.
+
+### Audit trail
+
+Changes to users, tax settings, transactions, MIS notes, security identities and imports are written to append-only log tables and shown under Settings → Logs. See [Audit logging](#audit-logging).
+
+---
+
+## Database overview
+
+The default database is SQLite at `backend/db.sqlite3` (or `SQLITE_DB_PATH`). WAL journal mode, `synchronous=NORMAL` and a 60-second busy timeout are set on each connection. PostgreSQL is selected with `DATABASE_ENGINE=postgresql`. CI runs migrations and the full test suite against both engines.
+
+```mermaid
+erDiagram
+    USER ||--|| USERPROFILE : has
+    USERPROFILE }o--o{ FAMILYGROUP : "FamilyMembership"
+    FAMILYGROUP ||--o{ ASSET : scopes
+    FAMILYGROUP ||--o{ TRANSACTION : scopes
+    ASSET ||--o{ TRANSACTION : "recorded against"
+    ASSET ||--o| HOLDING : "derived into"
+    ASSET ||--o{ PORTFOLIOPOSITION : "per member and portfolio"
+    ASSET }o--o| SECURITYMASTER : "linked by ISIN"
+    ASSET ||--o{ MARKETPRICE : "priced by"
+    ASSET ||--o{ ASSETUNDERLYINGHOLDING : "look-through"
+    TRANSACTION ||--o{ TRANSACTIONEDITHISTORY : audited
+    TRANSACTIONUPLOAD ||--o{ TRANSACTIONUPLOADFAILURE : records
+    MUTUALFUNDSCHEME ||--o{ MUTUALFUNDTRANSACTION : "traded as"
+    MUTUALFUNDSCHEME ||--o{ SIP : "invested via"
+    SIP ||--o{ SIPINSTALLMENT : generates
+    AMFIMASTERSCHEME ||--o{ AMFIMASTERNAV : "NAV history"
+    CORPORATEACTION ||--o{ CORPORATEACTIONEXPOSURE : "exposes"
+    CORPORATEACTION ||--o{ CORPORATEACTIONRECONCILIATION : "reviewed as"
+    NEWSARTICLE ||--o{ PORTFOLIONEWSALERT : raises
+    FILING ||--o{ PORTFOLIONEWSALERT : raises
+    INVESTMENTPRODUCT ||--o{ WATCHLISTENTRY : "watched in"
+```
+
+The diagram shows the main relationships only. See each app's `models.py` for fields and constraints.
+
+| App | Models |
+| --- | --- |
+| `users` | `UserProfile` (role, active family), `FamilyGroup`, `FamilyMembership`, `UserPreference`, `TaxRateSetting`, `TaxRateChangeLog`, `UserAuditLog` |
+| `investments` | `Asset`, `Transaction`, `TransactionEditHistory`, `TransactionUpload`, `TransactionUploadFailure`, `Holding`, `PortfolioPosition`, `SecurityMaster`, `AssetUnderlyingHolding`, `SecurityAlias`, `SecurityIdentityResolutionLog`, `SecurityIdentifierMapping`, `SecurityIdentityDiscoveryCheckpoint` |
+| `market_data` | `MarketPrice` (source `YAHOO_FINANCE`, `AMFI`, `MANUAL`, `OTHER`; manual rows record `updated_by`), `ManualAssetPrice` (legacy) |
+| `mutual_funds` | `MutualFundScheme`, `MutualFundNAV`, `MutualFundTransaction`, `MutualFundHolding`, `SIP`, `SIPInstallment`, `AMFIMasterScheme`, `AMFIMasterNAV`, `MutualFundUnderlying` |
+| `portfolio` | `FamilyMISNotes`, `FamilyMISNotesChangeLog`, `FamilyLiquidPosition` |
+| `analytics` | `StandardAllocation` |
+| `corporate_actions` | `CorporateAction`, `CorporateActionExposure`, `CorporateActionReconciliation`, `CorporateActionNotification` |
+| `filing_intelligence` | `Filing` |
+| `portfolio_news` | `NewsArticle`, `NewsArticleSource`, `PortfolioNewsMatch`, `PortfolioNewsAlert`, `PushSubscription` |
+| `watchlist` | `InvestmentProduct`, `MutualFundProduct`, `PMSProduct`, `PerformanceSnapshot`, `BenchmarkMasterPoint`, `WatchListEntry`, `DiscoveryRun` |
+| `ai` | `GeminiUsageLog` |
+
+Enumerations defined in the models:
+
+- **Asset categories:** `STOCK`, `MUTUAL_FUND`, `ETF`, `FIXED_DEPOSIT`, `GOLD`, `CASH`, `REAL_ESTATE`, `BOND`, `CRYPTO`, `OTHER`.
+- **Transaction types:** `BUY`, `SELL`, `SIP`, `DIVIDEND`, `INTEREST`, `DEPOSIT`, `WITHDRAWAL`, `BONUS`, `SPLIT`, `OTHER`.
+- **Mutual-fund transaction types:** `PURCHASE`, `SIP`, `REDEMPTION`, `DIVIDEND`.
+
+Financial records carry both an `owner` (the user who created them) and a `family` foreign key. Queries are scoped through `users.permissions.family_scope()`, and rows without a family are excluded by default.
+
+---
+
+## Authentication and authorization
+
+- **Authentication.** Django session cookies with CSRF protection, using DRF `SessionAuthentication`. No token or JWT authentication is implemented. Session cookies are `HttpOnly` and `SameSite=Lax`, and `Secure` when `DEBUG=False`.
+- **Single source of truth.** `backend/users/permissions.py` re-derives the role and family memberships from the database on every request and never trusts role or family IDs sent by the client.
+- **Profiles.** A `post_save` signal creates a `UserProfile` for every user. Users created with `createsuperuser` (`is_superuser=True`) become System Owner, and the two flags are kept in sync.
+
+### Roles
+
+`VIEWER < ADMIN < SUPER_USER < SYSTEM_OWNER`. The stored value for Super User is `SUPERUSER`.
+
+| Capability | Viewer | Admin | Super User | System Owner |
+| --- | :-: | :-: | :-: | :-: |
+| Log in and view permitted portfolio data | Yes | Yes | Yes | Yes |
+| Edit own profile and password | Yes | Yes | Yes | Yes |
+| Change financial data: imports, transactions, manual prices, tax settings, MIS notes, Liquid Position, Standard Allocation, corporate-action decisions, watch-list refresh | No | Yes | Yes | Yes |
+| Delete all transactions for an asset name | No | No | Yes | Yes |
+| Create users | No | Viewer | Viewer, Admin | Any role |
+| Manage users (edit, activate, deactivate, delete, reset password) | No | Viewers | Admins, Viewers | Anyone |
+| Change another user's role | No | No | Between Admin and Viewer only | Yes |
+| Create and manage families and memberships | No | No | No | Yes |
+| View data across all families | No | No | No | Yes |
+
+Nobody can change their own role, and the last active System Owner cannot be deactivated, demoted or deleted. Viewers are read-only through `CanWriteFinancialData`, which allows `GET`, `HEAD` and `OPTIONS` and requires Admin or above for every other method.
+
+### Family scope
+
+- A user can belong to zero, one or many `FamilyGroup`s. Data screens are scoped to the **active family**, which is chosen with the header family switcher (`POST /api/settings/me/active-family/` with `{"family_id": <id>}`). There is no combined multi-family view.
+- If the stored active family is no longer valid, the user's lowest-ID family is used.
+- A user with no family cannot read or import family-owned financial data. `require_active_family` returns HTTP 403.
+- System Owners get cross-family visibility wherever `family_scope()` is used. Endpoints that call `require_active_family()` (including the portfolio tree and imports) still need the System Owner to be a member of an active family, so add the first superuser to a family before using the app.
+- Account management is scoped by role only, never by family.
+
+---
+
+## API reference
+
+All endpoints need an authenticated session unless marked "public". Methods listed are those accepted by the view. Write methods on financial endpoints require Admin or above unless noted.
+
+**Auth and profile (`/api/`)**
+
+| Method | Endpoint | Notes |
+| --- | --- | --- |
+| GET | `/api/health/` | Public; sets the CSRF cookie and returns a token |
+| POST | `/api/auth/login/` | Public; body `username` (username or email) and `password` |
+| POST | `/api/auth/logout/` | |
+| GET | `/api/auth/me/` | Current user, role, families |
+| GET | `/api/settings/` | Profile and preferences |
+| PATCH | `/api/settings/update/` | `email`, `currency`, `date_format`, `default_analytics_period` |
+| POST | `/api/settings/change-password/` | `current_password`, `new_password`, `confirm_password` |
+
+**Settings, users and families (`/api/settings/`)**
+
+| Method | Endpoint | Notes |
+| --- | --- | --- |
+| GET | `me/` | Role, permission flags, family state |
+| POST | `me/active-family/` | Switch active family |
+| GET, POST | `tax-rates/` | List or save tax settings |
+| PATCH, DELETE | `tax-rates/<id>/` | |
+| GET | `tax-rates/template/`, `tax-rates/history/` | Template download, change log |
+| POST | `tax-rates/upload/` | Excel upload |
+| GET, POST | `users/` | Admin or above |
+| GET, PUT, PATCH, DELETE | `users/<id>/` | Role-scoped |
+| POST | `users/<id>/activate/`, `users/<id>/deactivate/`, `users/<id>/reset-password/` | Admin or above, role-scoped |
+| GET, POST | `groups/` | System Owner |
+| PATCH, DELETE | `groups/<id>/` | System Owner |
+| POST | `groups/<id>/members/` | System Owner; body `user_id` |
+| DELETE | `groups/<id>/members/<user_id>/` | System Owner |
+| GET | `prices/` | Assets with current and manual prices |
+| GET, PUT, PATCH, DELETE | `prices/<asset_id>/` | Manual price for an asset |
+
+**Portfolio (`/api/portfolio/`)**
+
+| Method | Endpoint | Notes |
+| --- | --- | --- |
+| GET, POST | `assets/` | |
+| GET, PUT, PATCH, DELETE | `assets/<id>/` | |
+| GET, PUT, PATCH, DELETE | `assets/<id>/manual-price/` | |
+| GET | `assets/<id>/isin-targets/` | ISIN edit targets |
+| PATCH | `assets/<id>/isins/` | Update asset or underlying ISINs |
+| POST | `assets/<id>/underlying/import/` | Underlying holdings upload |
+| GET, POST | `transactions/` | |
+| GET, PUT, PATCH, DELETE | `transactions/<id>/` | Edits and deletes are logged |
+| POST | `transactions/delete-by-asset-name/` | Super User or System Owner |
+| GET | `transactions/edit-history/` | |
+| GET | `summary/`, `holdings/`, `tree/` | |
+| GET | `holding-report/`, `holding-matrix/`, `equity-market-cap/` | |
+| GET | `mis-report/` | `from_date`, `to_date` |
+| GET | `mis-report/download/` | `.xlsx` |
+| GET, PUT, PATCH | `mis-report/notes/` | |
+| GET | `mis-report/notes/history/` | |
+| GET, PUT | `liquid-position/` | `as_of` |
+| GET | `underlying-template/`, `underlying-uploads/` | |
+
+**Analytics (`/api/analytics/`)**
+
+| Method | Endpoint | Notes |
+| --- | --- | --- |
+| GET | `wealth/dashboard/` | Dashboard view model; `days`, `period`, `family` |
+| GET | `wealth/summary/`, `wealth/allocation/`, `wealth/performance/`, `wealth/xirr/`, `wealth/investment-summary/` | |
+| GET | `wealth/performance-by-subclass/`, `wealth/allocation-by-advisor/`, `wealth/performance-by-advisor/`, `wealth/composition-by-amc/` | |
+| GET | `wealth/equity-analysis/`, `wealth/fixed-income-analysis/`, `wealth/sector-allocation/`, `wealth/market-cap-allocation/`, `wealth/non-stock-holding-types/` | |
+| GET | `wealth/historical/`, `wealth/historical-period/` | `start_date`, `end_date`, `days`, `period` |
+| GET | `wealth/standard-allocations/` | |
+| PUT | `wealth/standard-allocations/update/` | |
+| POST | `wealth/recalculate/` | |
+| GET | `summary/`, `allocation/`, `performance/`, `historical/` | Legacy; not used by the frontend |
+
+**Investments (`/api/investments/`)**
+
+| Method | Endpoint | Notes |
+| --- | --- | --- |
+| POST | `import/preview/` | Duplicate preview; saves nothing |
+| POST | `import/` | Multipart `file`, optional `selected_duplicate_rows` |
+| GET | `upload-history/`, `upload-history/<id>/` | |
+| GET | `transaction-template/`, `underlyings/` | |
+| GET | `security-master/` | |
+| GET, PATCH | `security-master/<id>/` | |
+| GET | `security-identity-resolution-history/` | |
+| GET, POST | `security-aliases/` | |
+| DELETE | `security-aliases/<id>/` | Deactivates an alias |
+
+**Mutual funds (`/api/mutual-funds/`)**
+
+| Method | Endpoint |
+| --- | --- |
+| GET | `summary/`, `holdings/`, `transactions/`, `sips/`, `sips/due/`, `sips/summary/`, `underlying/<scheme_id>/`, `csrf/` |
+| GET, POST | `schemes/` |
+| POST | `transactions/create/`, `sips/create/`, `sips/<id>/execute/`, `sip-installments/<id>/execute/` |
+
+**AI, news and notifications (`/api/ai/`)**
+
+| Method | Endpoint | Notes |
+| --- | --- | --- |
+| POST | `chat/` | Requires `GEMINI_API_KEY` |
+| GET | `news/`, `news/raw/`, `news/digest/`, `news/<alert_id>/` | |
+| GET | `notifications/` | |
+| POST | `notifications/<alert_id>/read/`, `notifications/read-all/` | |
+| GET | `notifications/push/config/` | VAPID public key and enabled flag |
+| POST | `notifications/push/subscribe/`, `notifications/push/unsubscribe/` | |
+
+**Watch list (`/api/watch-list/`)**
+
+| Method | Endpoint | Notes |
+| --- | --- | --- |
+| GET | `filters/`, `products/`, `products/<id>/`, `products/<id>/performance/`, `products/<id>/benchmark-performance/`, `benchmarks-performance/`, `refresh/status/` | |
+| PATCH | `products/<id>/benchmark/` | Admin or above |
+| POST | `products/<id>/toggle/`, `bulk-add/`, `bulk-remove/` | Any authenticated user (own list) |
+| POST | `refresh/` | Admin or above |
+
+**Corporate actions, filings and market data**
+
+| Method | Endpoint | Notes |
+| --- | --- | --- |
+| GET, POST | `/api/corporate-actions/` | Owner-scoped list; POST creates an action manually |
+| GET, PATCH, DELETE | `/api/corporate-actions/<id>/` | |
+| GET | `/api/corporate-actions/candidates/` | Exact-identifier candidates |
+| GET | `/api/corporate-actions/notifications/` | |
+| PATCH | `/api/corporate-actions/notifications/<id>/` | |
+| POST | `/api/corporate-actions/reconciliations/<id>/decision/` | `ALREADY_RECORDED` or `DISMISSED` |
+| POST | `/api/corporate-actions/reconciliations/<id>/identity-decision/` | `APPROVE` with `asset_id`, or `REJECT` |
+| GET | `/api/filings/<id>/` | |
+| GET | `/api/market-data/stocks/search/` | `search`, `type`; plain Django view without an authentication check |
+
+---
+
+## Reports and data exports
+
+| Output | Format | Generated by | Location |
+| --- | --- | --- | --- |
+| MIS Report (IPS, Data Sheet, Tax Report, Fund Type Summary, Notes) | `.xlsx` | Backend (openpyxl) | MIS Report → Download |
+| Portfolio Review | `.pdf` | Browser (jsPDF, jspdf-autotable) | Dashboard |
+| Downloads catalogue (ten reports) | `.xlsx` | Browser (ExcelJS) from API data | Downloads |
+| Transaction summary and date-range exports | `.xlsx` | Browser (ExcelJS) | Transaction Reports |
+| Holding reports, portfolio and watch-list exports | `.xlsx` | Browser (ExcelJS) | Holding Reports, Portfolio, Watch List |
+| Standard transaction template | `.xlsx` | Backend | Settings → Logs → Transaction Uploads |
+| Underlying holdings template | `.xlsx` | Backend | Settings → Logs → Underlyings |
+| Tax settings template | `.xlsx` | Backend | Settings → Tax Settings |
+
+Two calculations run in the browser rather than on the backend:
+
+- The **Capital Gain Report** in Downloads computes FIFO realised gains and indicative tax in `downloads.component.ts`. It does not model loss set-off, exemptions, surcharge or cess.
+- The **Portfolio Review PDF** layout is assembled in the browser from Dashboard API values.
+
+All other exports reuse values returned by the backend.
+
+---
+
+## Audit logging
+
+| Activity | Storage | Displayed in |
+| --- | --- | --- |
+| User created, role changed, family added or removed, activated, deactivated, deleted | `users.UserAuditLog` (actor, target, old/new value) | Django admin only |
+| Family membership grants | `users.FamilyMembership.added_by` | Family Management |
+| Tax setting changes | `users.TaxRateChangeLog` (before/after JSON) | Settings → Logs → Tax Update |
+| Transaction edits and deletions | `investments.TransactionEditHistory` (old/new values, changed fields) | Settings → Logs → Transaction Edit History |
+| Transaction imports | `investments.TransactionUpload` and `TransactionUploadFailure` (counts, status, failed row data) | Settings → Logs → Transaction Uploads |
+| Security identity resolution during import | `investments.SecurityIdentityResolutionLog` | Settings → Logs → Security Identity Mappings |
+| Underlying uploads | `investments.AssetUnderlyingHolding.uploaded_by`, `uploaded_at` | Settings → Logs → Underlyings |
+| MIS Notes changes | `portfolio.FamilyMISNotesChangeLog` | Settings → Logs → MIS Edit History |
+| Manual price changes | `market_data.MarketPrice` rows with source `MANUAL` and `updated_by` | Settings → Logs → Manual Prices |
+| Corporate-action decisions | `CorporateActionReconciliation.reviewed_by`, `reviewed_at`, `notes` | Corporate Actions |
+| Gemini token usage | `ai.GeminiUsageLog` | `manage.py gemini_usage`, Django admin |
+
+Bulk deletion by asset name writes one aggregate `TransactionEditHistory` row (`operation: bulk_asset_delete`, asset name, deleted count) instead of one row per deleted transaction.
+
+---
+
+## Prerequisites
+
+| Tool | Version |
+| --- | --- |
+| Git | Any recent version |
+| Python | 3.12 recommended (CI); 3.11 or later required by pinned dependencies |
+| Node.js | 22 recommended (CI); `^20.19`, `^22.12` or `>=24` for Angular CLI 21 |
+| npm | Bundled with Node.js; the repository declares `npm@11.12.1` |
+| PostgreSQL | Optional; CI uses PostgreSQL 16 |
+
+Outbound internet access is required for market data, AMFI, news and filing refreshes. The application still starts without it.
+
+---
+
+## Installation and setup
+
+[SETUP.md](./SETUP.md) has a longer walkthrough. The steps below are the minimum needed to run PWMS locally.
+
+### 1. Clone
 
 ```bash
 git clone https://github.com/avviiiral/Personal_Wealth_Monitoring_System.git
 cd Personal_Wealth_Monitoring_System
 ```
 
-**2 — Backend** (terminal 1)
+### 2. Backend
 
-<details open>
-<summary><b>Windows (PowerShell)</b></summary>
+Windows PowerShell:
 
 ```powershell
 cd backend
@@ -151,22 +811,13 @@ python -m venv venv
 .\venv\Scripts\Activate.ps1
 python -m pip install --upgrade pip
 python -m pip install -r requirements.txt
-
-# Minimal local .env (Gemini is optional and only enables Portfolio Chat)
-@"
-DEBUG=True
-GEMINI_API_KEY=paste-your-key-here  # optional: Portfolio Chat only
-"@ | Set-Content .env
-
+"DEBUG=True" | Set-Content .env
 python manage.py migrate
 python manage.py createsuperuser
 python manage.py runserver
 ```
 
-</details>
-
-<details>
-<summary><b>macOS / Linux</b></summary>
+Linux or macOS:
 
 ```bash
 cd backend
@@ -174,1566 +825,293 @@ python3 -m venv venv
 source venv/bin/activate
 python -m pip install --upgrade pip
 python -m pip install -r requirements.txt
-
-# Minimal local .env (Gemini is optional and only enables Portfolio Chat)
-printf 'DEBUG=True\nGEMINI_API_KEY=paste-your-key-here  # optional: Portfolio Chat only\n' > .env
-
+printf 'DEBUG=True\n' > .env
 python manage.py migrate
 python manage.py createsuperuser
 python manage.py runserver
 ```
 
-</details>
+With `DEBUG=True` and no `SECRET_KEY`, Django generates a temporary key at startup, so sessions are invalidated on every restart. Set `SECRET_KEY` in `.env` to keep sessions across restarts.
 
-**3 — Frontend** (terminal 2)
+Do not copy `backend/.env.example` unchanged for local HTTP development. It sets `SESSION_COOKIE_SECURE=True`, `CSRF_COOKIE_SECURE=True` and `SECURE_SSL_REDIRECT=True`, and browsers will not send secure cookies over `http://localhost`, so login fails.
+
+### 3. Frontend
+
+In a second terminal:
 
 ```bash
 cd frontend
-npm install
+npm ci
 npm start
 ```
 
-For local development, Angular's `ng serve` uses `frontend/proxy.conf.json` to forward browser requests under `/api/` to Django at `http://localhost:8000`. The development environment therefore uses a relative API URL (`apiUrl: ''`); browser API requests should look like `http://localhost:4200/api/...`, not direct calls to port `8000`. This proxy is for local development only and does not configure or secure a production deployment.
+`npm start` runs `ng serve` with the development configuration, which proxies `/api` to `http://localhost:8000` (`frontend/proxy.conf.json`). Open `http://localhost:4200`.
 
-**4 — Open the app**
+### 4. First use
 
-| Service             | URL                               |
-| ------------------- | --------------------------------- |
-| 🌐 Web app          | http://localhost:4200             |
-| ⚙️ API health check | http://127.0.0.1:8000/api/health/ |
+1. Sign in with the superuser you created. It has the System Owner role.
+2. Open **Settings → Family Management**, create a family and add yourself as a member. Financial data and imports require an active family.
+3. Select the family in the header switcher if it is not already active.
+4. Download the standard transaction template from **Settings → Logs → Transaction Uploads**, fill it in, and import it from **Portfolio**.
+5. Create other users from **Settings → User Management** and add them to the family.
 
-Log in with the account you just created, open **Portfolio → Import** and load your transactions workbook.
-
-> 💡 **Local `.env` tip:** `backend/.env.example` is a _production-style_ template (HTTPS redirect, secure cookies). Do not copy it unchanged for local development — browsers reject `Secure` cookies over plain `http://localhost`, which breaks login. Use the minimal `.env` above, or see [SETUP.md](./SETUP.md#43-create-your-env-file).
-
-<!--
-📸 SCREENSHOTS — add your own images to docs/ and uncomment this block.
-
-## 📸 Screenshots
-
-| Dashboard | Portfolio tree |
-|---|---|
-| ![Dashboard](docs/screenshots/dashboard.png) | ![Portfolio](docs/screenshots/portfolio.png) |
-
-| Analytics | AI chat | Portfolio news |
-|---|---|---|
-| ![Analytics](docs/screenshots/analytics.png) | ![AI chat](docs/screenshots/ai-chat.png) | ![News](docs/screenshots/news.png) |
--->
-
----
-
-## ✨ Features
-
-### 📊 Dashboard
-
-Net worth, asset allocation, key portfolio metrics and an **Investment Summary** table broken down by asset class — all computed server-side and scoped to your own data plus your currently active family's data (or everyone's, for a System Owner).
-
-- The **Allocation** doughnut chart uses the current rupee-denominated category values from **Investment Summary** for hover tooltips; the displayed amount follows the selected Amount / Lakhs / Crores unit, while the category percentage remains shown separately.
-- Allocation chart categories use a muted, low-saturation color palette to reduce visual brightness while keeping categories distinguishable.
-- **Standard Allocation** supports both **Amount** and **Percentage** views.
-- The **percentage allocation is authoritative**; the amount is recalculated from the current scoped total wealth.
-- A global allocation can be shared across family members, while selecting a family member can create an independent family-specific allocation override.
-- Family-specific amounts recalculate against that family member's current portfolio total without changing the configured allocation percentages.
-- Standard Allocation percentages are validated to total **100%** before saving.
-- **XIRR Performance** ranks the top and bottom five asset names for each available Dashboard asset category using backend-calculated asset XIRR. The category labels follow the same portfolio hierarchy shown by the Dashboard, so rankings remain attached to the correct category.
-
-### 📁 Portfolio
-
-- A hierarchical tree of holdings: **Family → Portfolio → Asset class → Sub-class → Asset**
-- Quantity, invested value, current value, P&L and **XIRR per node**
-- Portfolio holdings and position reconciliation are scoped to the relevant family member; sharing an Asset record does not pull another family member's transactions into that member's displayed position.
-- Full transaction history, create / edit / delete
-- **Excel transaction import** (a _Transactions_ sheet is required; a _Summary_ sheet is optional)
-- **Duplicate transaction review before import** — matching rows are shown in a review table with family member, asset, date, transaction type, quantity, price and amount; select each duplicate row to import or leave it unchecked to skip
-- **Standard transaction format download** from Settings for consistent transaction uploads
-- **Transaction upload history** with upload status, imported/failed row counts and row-level failure details
-- **Data-driven classification** — Family Member, Asset Class, Sub Class, Asset Name, Underlying and Advisors are sourced from uploaded transaction/database records rather than hard-coded user-facing classification lists
-- Inline **manual price override** for Admin and above, for any asset in your visible family scope
-- **Asset Underlying uploads** from Portfolio for supported assets using the standard Excel format (`Stocks`, `% Holding`)
-- **Underlying upload visibility in Settings** with asset name, uploader, upload timestamp, and expandable underlying holdings
-- **Sample Underlying Format** download from Settings as an Excel workbook with an `Underlying` sheet and upload instructions
-- **Underlying Screener links for Equity holdings** — the Portfolio tree exposes a clickable Screener link when the backend can resolve the specific underlying's market symbol, including supported cases where uploaded transactions do not contain an ISIN.
-- **Underlying identity resolution** — resolution checks the uploaded underlying-holding ISIN, preserves the direct Equity asset ISIN behavior, then uses a unique family/owner-scoped Security Master match or the exact-name, ambiguity-aware security resolver. The resolved ISIN is used to obtain the underlying symbol.
-- **Safe no-ISIN fallback** — for a direct Equity holding, a stored market symbol can be used only when the underlying name exactly matches the asset identity. The parent PMS/fund symbol is never substituted for a different underlying, and symbols are not guessed from names. If a reliable symbol cannot be resolved, the Screener link is omitted.
-- **Valuation remains independent** — underlying-link resolution does not replace or alter the existing market-price and portfolio valuation flow.
-- **Transaction Edit History** records edits made from Transaction Reports and retains a durable audit record when a transaction is deleted. Deleted transactions remain visible in the audit history with their previous values.
-
-### 💧 Liquid Position
-
-The **Liquid Position** page provides a family-scoped liquidity position for a selected reporting date. It combines current Liquid and Arbitrage mutual-fund market values with editable bank balances, commitments and deployment-plan entries.
-
-- **Liquid (MV)** and **Arbitrage (MV)** are derived from the same backend `PortfolioTreeService` used by **Our Holdings**. The service sums current values for the matching Liquid Mutual Funds and Arbitrage Mutual Funds holdings and separates them by family member (DAJ / DJT).
-- **Bank** balances are editable independently for DAJ and DJT.
-- **Commitments** and **Deployment Plan** support editable labels and amounts, including user-added and removable rows (up to 40 rows per section).
-- The backend calculates **Arbitrage + Liquid + Bank**, **Net available Amount (A)**, **Total Deployment Plan**, and **Balance**. The browser does not act as the authoritative calculation layer.
-- Editable data is persisted per active family and reporting date. The page displays monetary values in **Rs in lakhs**; stored amounts remain rupee-denominated.
-- Read access and edit access are enforced by the API using the authenticated user's family scope and role.
-
-### 🏢 Corporate actions
-
-PWMS includes an NSE corporate-action monitoring and reconciliation workflow, with a frontend review inbox for matching exchange announcements to portfolio exposure.
-
-- Supported event types include stock splits and reverse splits, bonus issues, stock dividends, cash dividends, mergers, demergers, rights issues, buybacks, tender offers, ticker/ISIN changes, delistings, and mutual-fund distributions or unit adjustments.
-- Events retain security identifiers, exchange, ex-date, record/payment dates, ratio units, cash per unit, source/reference, notes and metadata.
-- The **Corporate Actions** page displays matched notifications, direct and indirect portfolio exposure, event dates, source links, reconciliation status and review controls.
-- Exposure matching includes direct security holdings and supported indirect exposure through investment products. Indirect exposure is identified for review; it must not be treated as a direct stock transaction.
-- Identity matching prefers exact ISIN when supplied. If the exchange announcement has no source ISIN, PWMS can surface exact symbol/name-based candidate holdings for explicit user review. A candidate asset ISIN is **not** substituted for the missing source ISIN.
-- For an identity requiring review, the user must explicitly approve a selected candidate or reject the match. A transaction is not created merely because a candidate was discovered.
-- The identity-review **Approve selected holding** and **Reject match** controls use the same rounded button treatment, spacing, typography and theme-aware interaction states as the other Corporate Actions page buttons.
-- Approved direct-exposure reconciliations create the applicable transaction idempotently, preventing duplicate transaction creation when the same event is scanned again.
-- Bonus entitlement is calculated from eligible holdings on the record date, including supported portfolio hierarchy buckets. Bonus allocation preserves transaction hierarchy and advisor metadata.
-- The transaction Excel importer recognizes `DIVIDEND PAYOUT` as a dividend and `*SPLIT` as a split transaction type.
-- API access is authenticated and owner-scoped. A user cannot retrieve or change another user's corporate-action records.
-
-**Automation:** the NSE monitor can run daily at **06:00 local Django time** while the Django `runserver` process is running. If the server starts after the configured time, it performs a catch-up scan on startup. A completed transaction import also queues a scan after transaction import, Security Master mapping and position rebuilding have finished. The upload response is not held open while the scan runs.
-
-**Operational scope and limitations:** the in-process daily scheduler is tied to Django `runserver` and requires that process to be running; if it is stopped at the scheduled time, the next startup after 06:00 performs catch-up. For production deployments with multiple workers, use a dedicated external scheduler rather than relying on a per-process development-server thread. The workflow creates/reconciles supported transactions; it should not be interpreted as a universal automatic rewrite of all historical valuations, MIS outputs or XIRR for every corporate-action type.
-
-### 📥 Transaction Uploads
-
-Transaction imports are tracked as auditable upload records so users can review what happened after an Excel upload.
-
-- Upload history is available from **Settings → Transaction Uploads**.
-- Each upload records its processing status and row-level import statistics.
-- Failed rows can be inspected through the upload details view.
-- Users can download the **Standard Transaction Format** directly from Settings.
-- The standard workbook includes the transaction fields expected by the importer and supports the existing `Summary` / portfolio-mapping structure.
-- Transaction upload failures are recorded without silently treating invalid rows as successful imports.
-- Before committing an upload, PWMS checks the workbook for duplicates and opens a **Review duplicate transactions** dialog when matches are found.
-- Each duplicate is displayed with its Excel row number, family member, asset class/sub-class, asset name, date, transaction type, quantity, price and amount.
-- Select the **Import** checkbox for each duplicate you intentionally want to add. Unchecked duplicate rows are skipped; non-duplicate rows continue through the normal import flow.
-- **Import Selected & Skip Others** applies the individual choices. **Cancel Upload** closes the review without importing the file.
-- Duplicate preview does not save transactions. The final import request reprocesses the workbook and preserves the database source-key uniqueness guard; selected duplicate rows receive distinct import identities.
-- The importer accepts uploaded classification values as authoritative application data; it does not replace them with hard-coded asset-class or family-name values.
-
-### 🧩 Asset Underlying management
-
-Asset-level underlying holdings can be uploaded from the Portfolio page using an Excel workbook.
-
-- The upload format uses **`Stocks`** and **`% Holding`** columns.
-- Uploading an underlying replaces the current underlying snapshot for that asset/family.
-- Each imported holding stores the uploader and upload timestamp for audit visibility.
-- **Settings → Underlyings** shows the latest underlying upload for each asset in the active family, including uploader, upload time, and the underlying rows.
-- The Settings page provides a downloadable **Sample Underlying Format** Excel workbook with example rows and a separate instructions sheet.
-- Underlying holdings are stored as the current snapshot; the application does not currently retain every prior upload as a separate historical version.
-
-### 🧩 Data-driven portfolio classification
-
-Portfolio hierarchy and MIS grouping are driven by transaction/database data uploaded by the user.
-
-The following user-facing fields are sourced from uploaded transaction records:
-
-| Field | Source |
-| --- | --- |
-| **Family Member** | Uploaded transaction data |
-| **Asset Class** | Uploaded transaction data |
-| **Sub Class** | Uploaded transaction data |
-| **Asset Name** | Uploaded transaction data |
-| **Underlying** | Uploaded transaction data |
-| **Advisors** | Uploaded transaction data |
-
-The application no longer uses synthetic `Unassigned` values or hard-coded user-facing asset-class mappings for these fields. Internal technical asset categories may still be used by market-data services to decide which external price/NAV provider to call; those technical categories are separate from the user uploaded portfolio classification.
-
-Security identity resolution uses **Underlying first when it is populated**. If an explicit Underlying cannot be resolved, the importer does not silently retry using Asset Name. Security enrichment preserves the uploaded Asset Name and Underlying labels, and fills a missing ISIN from a resolved security when available.
-
-### 📊 Historical MIS valuation
-
-The MIS historical valuation pipeline is designed to use the same portfolio transactions that drive the live portfolio, while valuing each asset with persisted historical market data.
-
-- Historical valuation is calculated **server-side**; the Angular frontend only requests and displays the results.
-- Equity transactions are kept separate from mutual-fund transactions during historical replay.
-- Mutual funds are supported through both:
-  - the dedicated `mutual_funds` transaction/NAV models; and
-  - legacy/imported mutual-fund transactions stored in `investments.Transaction` and identified from their uploaded mutual-fund subclass.
-- Legacy mutual-fund holdings are resolved from the asset/security **ISIN** to `AMFIMasterScheme`, then valued from `AMFIMasterNAV` history.
-- AMFI master history is persisted locally, so an MIS request does not require a live AMFI download.
-- Historical mutual-fund invested value, portfolio value and P&L are included in the returned wealth history rather than being misclassified as equity.
-- The current-day historical point is reconciled with the canonical portfolio valuation so dashboard and historical wealth totals remain consistent.
-- Historical valuation supports user-selected dates; available market/NAV history is used for the requested valuation date according to the backend's persisted-history rules.
-
-
-### 📰 Portfolio News & Corporate Filing Intelligence
-
-The **Portfolio News** feature is a deterministic, portfolio-aware news and corporate-filing monitoring layer. It does **not** require an AI model API key and does not add a hosted AI inference cost.
-
-#### News monitoring
-
-- Builds news searches from the securities actually held in the user's visible portfolio scope.
-- Uses **Google News RSS** for general news discovery; no Google News API key is required.
-- Matches articles to holdings using deterministic identifiers and text signals.
-- Uses event clustering and source aggregation to avoid creating duplicate alerts when multiple sources report the same event.
-- Classifies sentiment, impact, materiality, confidence and time horizon using transparent rule-based analysis.
-- Calculates portfolio-aware alert priority from impact, holding weight, confidence, source quality and recency.
-- Supports notification tiers:
-  - **Critical / High** — eligible for immediate Web Push notification.
-  - **Moderate** — stored for digest handling.
-  - **Low / Very Low** — retained in the feed without an immediate notification.
-- Includes an unusual-activity signal based on recent deterministic article-match volume versus the holding's baseline.
-- The Portfolio News list supports live polling and incrementally refreshes recently changed alerts without requiring a full page reload.
-
-#### Corporate filing intelligence
-
-Corporate announcements are processed through a separate deterministic filing pipeline and can enrich an existing Portfolio News event instead of creating a duplicate alert.
-
-Supported filing/event categories include, among others:
-
-- Financial results and earnings-related announcements
-- Board meetings and board-meeting outcomes
-- Dividends, bonus issues and stock splits
-- Buybacks, acquisitions, mergers and demergers
-- Fundraising, preferential issues, warrants and capital allotments
-- Promoter pledge / pledge release and shareholding changes
-- CEO, CFO, director and auditor changes
-- Auditor qualifications and regulatory actions
-- Credit-rating changes and defaults
-- Insolvency / bankruptcy and litigation
-- Material contracts, orders and other material disclosures
-- Investor presentations and earnings calls
-- Shareholding patterns, related-party transactions and trading-window disclosures
-- Regulation 30 / Regulation 32 disclosures and routine corporate updates
-
-Filing severity is determined by deterministic event rules, including combined adverse signals where applicable. Filing sources contribute to event confidence, and the pipeline records the source and external filing identifiers for diagnostics.
-
-#### Exchange feed behavior
-
-- **NSE** uses the public NSE Corporate Announcements endpoint and establishes the required public session before requesting announcements.
-- **BSE** is supported through an authorized/configured feed. The application skips an unconfigured BSE provider rather than failing the entire monitoring run.
-- Filing ingestion is deduplicated using stable filing/source identifiers.
-- Portfolio matching prioritizes **ISIN**, exchange symbol/BSE code and exact security/company identity. Generic company-name matching is deliberately conservative so similarly named securities are not incorrectly linked.
-- Filing matching is limited to listed **stocks and ETFs**; mutual funds and non-listed portfolio assets are not treated as exchange-filing holdings.
-
-#### Portfolio News detail experience
-
-The detail page exposes:
-
-- Why the event matters to the portfolio
-- Deterministic source-reported summary
-- Potential portfolio implication
-- Sentiment, impact, materiality and impact score
-- Relevance score, portfolio weight and confidence
-- Time horizon and internal alert priority
-- Source links and source tiers
-- Deterministic interpretation and uncertainty notes
-
-The frontend uses the shared light/dark design tokens, renders asynchronous API responses explicitly, and keeps the detail metrics responsive across desktop, tablet and mobile layouts.
-
-#### Portfolio Impact & Alert Scoring
-
-Portfolio News uses a **deterministic internal scoring model**. The numerical scores are not supplied by Google News, NSE, BSE, SEBI, or an external financial-risk API, and Portfolio News does not call an LLM to generate these scores.
-
-The external sources provide the underlying facts (article/filing text, publisher, publication time, company identifiers), while PWMS converts those facts and the user's live portfolio exposure into transparent numerical factors.
-
-| Score / Factor | Source in PWMS | How it is calculated |
-| --- | --- | --- |
-| **Event Impact Score** | Local RuleBasedArticleAnalyzer; corporate filings use the deterministic filing_intelligence classifier | News impact starts from **20** and increases from detected event signals. Critical signals add up to **38 points each** (maximum two), high-impact signals add up to **22 points each** (maximum three), and additional medium signals add up to **8 points each** (maximum four). Tier 1 sources add 8 points and Tier 2 sources add 4 points. The final news impact score is capped at **100**. Corporate filings use their deterministic event rules and representative severity scores: **INFO 20, LOW 30, MEDIUM 50, HIGH 70, CRITICAL 90**. |
-| **Portfolio Weight** | Live PWMS holdings from the unified wealth analytics layer | Holding Current Value ÷ Total Current Portfolio Value × 100. The weight is calculated from the current equity + mutual-fund portfolio values for the monitored user. It is captured as portfolio_weight_at_alert when the alert is created. |
-| **Confidence** | Local RuleBasedArticleAnalyzer | Starts at **0.78**. It is reduced by **0.12** when the RSS article has no description, by **0.08** when the publisher is missing or reported only as Google News, and by another **0.08** for broad sector/macro queries that have no direct holding-name hit. The final confidence is bounded to **0.35–0.95**. |
-| **Source Quality** | Local publisher/source classification in source_quality.py | Publisher names are matched against deterministic Tier 1/Tier 2 lists, with optional configured overrides. **Tier 1 = 1.00**, **Tier 2 = 0.75**, **Tier 3 = 0.50**. Unknown/empty publishers default to Tier 3. For clustered sources, the best available tier is retained. |
-| **Recency** | Article/filing publication timestamp | **≤1 day = 1.00**. Between **1 and 7 days**, the multiplier decreases linearly from **1.00 to 0.50**. **≥7 days = 0.50**. If publication time is unavailable, the neutral value **1.00** is used rather than penalizing missing metadata. |
-| **Final Alert Score** | Local compute_alert_score() formula | Impact Score × (Portfolio Weight % ÷ 100) × Confidence × Source Quality × Recency. The result is rounded to two decimals and constrained to **0–100**. |
-
-##### Event Impact: ordinary news
-
-The local news analyzer looks at the article title and provider-supplied description/snippet. It uses transparent keyword/event rules rather than an LLM.
-
-The main impact signal groups are:
-
-- **Critical:** fraud/accounting fraud, insolvency/bankruptcy, default, licence cancellation/revocation, major regulatory action, regulatory/trading ban.
-- **High:** major penalty, material litigation, regulatory action, merger/acquisition/takeover, CEO/CFO resignation, guidance cuts/withdrawal, plant/business shutdown, major/material orders or contracts, promoter pledge/increase, major investigation.
-- **Medium:** earnings/results, guidance, orders, dividends, buybacks, approvals, fundraising, rating upgrade/downgrade, lawsuits/investigations, profit/revenue decline, margin decline and similar events.
-
-The analyzer also determines **sentiment, category, materiality and time horizon** from the same deterministic rule set. These are analytical attributes; they are not additional multipliers in the final alert-score formula.
-
-Impact levels are mapped deterministically from the 0–100 impact score:
-
-| Impact score | Impact level |
-| ---: | --- |
-| **0–20** | Very Low |
-| **21–40** | Low |
-| **41–60** | Moderate |
-| **61–80** | High |
-| **81–100** | Critical |
-
-##### Corporate filing impact
-
-Corporate filings have a dedicated deterministic classifier because exchange announcements contain structured event information. Representative filing scores are:
-
-| Filing severity | Representative impact score |
-| --- | ---: |
-| **INFO** | 20 |
-| **LOW** | 30 |
-| **MEDIUM** | 50 |
-| **HIGH** | 70 |
-| **CRITICAL** | 90 |
-
-Individual filing event rules have their own base scores and can combine contextual/adverse signals before severity is assigned. The filing then enters the shared Portfolio News alert-scoring path.
-
-##### Portfolio Weight calculation
-
-For every monitored holding:
-
-Portfolio Weight % = Holding Current Value ÷ Total Current Portfolio Value × 100
-
-Example:
-
-₹2,00,000 ÷ ₹10,00,000 × 100 = **20%**
-
-The final formula uses **0.20**, not 20, for the multiplication.
-
-This is why the same company event can have different portfolio impact for different users:
-
-1% exposure → lower portfolio-weight contribution
-
-30% exposure → higher portfolio-weight contribution
-
-##### Confidence calculation
-
-Confidence is a **deterministic data-quality / matching-confidence factor**, not a probability of future returns.
-
-Current rule:
-
-- Base confidence: **0.78**
-- No article description: **−0.12**
-- Missing publisher / publisher reported only as Google News: **−0.08**
-- Broad sector/macro query with no direct holding-name hit: **−0.08**
-- Final value is bounded between **0.35 and 0.95**
-
-For example:
-
-0.78 − 0.12 − 0.08 = **0.58**
-
-if both the description and usable publisher are missing.
-
-##### Source-quality calculation
-
-Source quality is assigned from the publisher name using deterministic substring matching.
-
-**Tier 1** includes primary/official and top financial sources such as exchange/regulator sources and publishers including Reuters, Bloomberg, CNBC, Financial Times, Economic Times, Moneycontrol, Business Standard and Mint/Livemint.
-
-**Tier 2** includes reputable business/general financial publishers such as The Hindu, BusinessLine, Business Today, Financial Express, NDTV Profit/Business, Zee Business, CNBC-TV18, Forbes India and similar configured sources.
-
-**Tier 3** is the fallback for all other, unknown or unclassified publishers.
-
-The multiplier is:
-
-Tier 1 = **1.00**
-
-Tier 2 = **0.75**
-
-Tier 3 = **0.50**
-
-For multiple reports clustered around the same event, source aggregation retains supporting source records while using the best available source tier for scoring.
-
-##### Recency calculation
-
-Recency is a deterministic linear decay:
-
-Age ≤ 1 day → **1.00**
-
-1 < Age < 7 days → **1.00 − ((Age − 1) ÷ 6 × 0.50)**
-
-Age ≥ 7 days → **0.50**
-
-A missing publication date receives **1.00** so missing metadata does not automatically make a story look stale.
-
-##### Final mathematical calculation
-
-The complete current formula is:
-
-Final Alert Score = Event Impact × (Portfolio Weight % ÷ 100) × Confidence × Source Quality × Recency
-
-Example:
-
-Event Impact = **90**
-
-Portfolio Weight = **20%**
-
-Confidence = **0.90**
-
-Source Quality = **1.00**
-
-Recency = **1.00**
-
-Therefore:
-
-90 × 0.20 × 0.90 × 1.00 × 1.00 = **16.20**
-
-So the stored **alert score is 16.20**.
-
-The score is an **internal alert-priority/ranking number**. It is **not** a prediction of future returns, a probability of loss, a VaR calculation, a credit score, or investment advice.
-
-##### Score versus notification tier
-
-The **final alert score is a ranking/relevance signal** and is separate from the notification tier.
-
-Notification tier is derived from the analyzed **impact level**:
-
-| Impact level | Notification behavior |
-| --- | --- |
-| **Critical** | Immediate notification eligible |
-| **High** | Immediate notification eligible |
-| **Moderate** | Daily digest |
-| **Low / Very Low** | Feed/history only |
-
-The configured minimum alert score (default **2.0**) controls whether an alert remains user-facing/relevant, but a high/critical impact event can still be treated as an immediate-notification candidate based on its notification tier. The score itself does not predict investment performance.
-
-##### Where the numbers come from
-
-The data flow is:
-
-News / Filing Sources → Facts → Deterministic Classification → Impact + Confidence + Source Quality + Recency → Portfolio Weight → Final Alert Score → Notification Handling
-
-External providers supply the **facts**. PWMS supplies the **rules and mathematics**. The current numeric weights are **internal design parameters**, not values prescribed by SEBI, NSE, BSE, or a universal financial-risk standard. They can therefore be recalibrated later using historical outcomes without changing the data-ingestion architecture.
-
-#### Zero-cost design
-
-Portfolio News and corporate filing intelligence are intentionally implemented without an LLM dependency:
-
-`NewsArticle`, source records, event clustering, deterministic classification, filing intelligence, portfolio matching, scoring and notification decisions all execute in the application/backend.
-
-Optional **Gemini** remains separate for Portfolio Chat and is not required for Portfolio News.
-
-### 📈 Analytics
-
-- Wealth allocation by **asset class, sector, market cap, AMC and advisor**
-- Performance ranking and portfolio **XIRR**
-- **Historical wealth** over any date range
-- Dedicated **equity** and **fixed-income** breakdowns
-
-### 🏦 Mutual funds and SIPs
-
-- Scheme holdings with **NAV-based valuation** (AMFI feed)
-- Mutual-fund transaction recording
-- **SIP creation**, due / overdue tracking and **per-installment execution**
-- SIPs are synced and executed automatically by the daily job
-
-### 📄 Reports
-
-Export **transactions, holdings and portfolio summaries** to **Excel or PDF** — matching exactly what the Portfolio and Dashboard pages show.
-
-- Summary placement, report grouping and calculations follow the relevant family member and asset hierarchy; **Advisor** metadata is informational and does not determine transaction placement.
-- Reports exports retain the full transaction hierarchy. A blank **Underlying** remains at the **Asset Name** level instead of being assigned to a fabricated or unrelated underlying.
-
-### 📥 Downloads
-
-The **Downloads** page provides a report selector and generates Excel workbooks for transaction activity, holdings, performance, tax, watch-list research and equity exposure. Available report types are:
-
-| Report | Contents | Main filters |
-| --- | --- | --- |
-| **Portfolio Detailed** | Transaction-level activity with family, asset classification, underlying, ISIN, date, transaction type, quantity, price and amount | Family, from/to date |
-| **Capital Gain Report** | FIFO realised gains from sale transactions, with indicative tax based on saved asset tax rates | Family, asset class, sub-class, asset name and date range |
-| **Sub Class Holdings** | Current holdings for the selected sub-class | Family, asset class and sub-class |
-| **Holding Report** | Current positions with quantity, invested/current value, gain and XIRR | Family and asset class |
-| **Portfolio Summary** | Sub-class-level XIRR summary | Family, asset class and sub-class |
-| **Asset Name XIRR** | Asset-name-level XIRR summary | Family, asset class, sub-class and asset name |
-| **Watch List** | Watchlisted mutual-fund and/or PMS products | Product type |
-| **Market Cap** | Equity PMS, direct-equity and equity-mutual-fund exposure grouped by market capitalization | Family and as-of date |
-| **Holding Matrix** | Equity PMS and direct-equity exposure aggregated by underlying security | Family and as-of date |
-| **Liquid Position Funds** | Excel export of the saved Liquid Position page, including current Liquid / Arbitrage market values, bank balances, all saved commitment and deployment rows, and backend-calculated totals | As-of date |
-
-Additional export behavior:
-
-- **Holding Matrix** exports respect the selected family member and the report's as-of date.
-- **Asset Name XIRR** and **Portfolio Summary** use the Portfolio API's authoritative grouped XIRR summaries; they do not average individual asset XIRR percentages. These grouped reports omit the **Underlying** column.
-- Standard tabular exports use formatted headers, readable column widths, number formats, frozen headers and filters where appropriate.
-- **Liquid Position Funds** reads the persisted Liquid Position document through `GET /api/portfolio/liquid-position/?as_of=<date>` when the download is requested. The workbook uses the backend response rather than rebuilding values from a separate report dataset.
-- The export preserves the **DAJ**, **DJT** and **Total** columns and includes every saved commitment and deployment-plan row, including custom rows. It exports the backend-calculated liquidity, net-available, deployment and balance totals; it does not rely on fixed row numbers or client-side Excel formulas to calculate those totals.
-- The Liquid Position export uses the selected as-of date to retrieve the saved document and to label the workbook. Liquid / Arbitrage market values are current values from Our Holdings, not a historical market-value reconstruction for that date.
-- The **Capital Gain Report** is an indicative report, not a tax return or filing calculation; it does not model loss set-off, exemptions, surcharge/cess or other filing-specific adjustments.
-
-### 📑 MIS Report
-
-The **MIS Report** is available at **Portfolio → MIS Report** and contains the following sections:
-
-- **IPS** — current and prior-period market values by asset class and family, including differences and grand totals.
-- **Data Sheet** — investment cost, opening MTM, period transactions, and closing MTM with grouped section headers from the MIS format.
-- **Tax Report** — the Data Sheet structure plus four taxation columns: **Realized P/L**, **Unrealized P/L**, **Realized Tax**, and **Unrealized Tax**.
-- **Fund Type-wise Summary** — `Fund Type.V2` maps to **Asset class**, `Fund Name` maps to **Asset name**, and `Total` is the **Current Market Value**.
-- **Notes** — standard MIS reference-rate observations for REITs/InvITs, Sovereign Gold Bonds, Silver ETF, Nifty 50, BSE 500 and Dollar Rate, including opening/closing values, change and percentage change where source data is available.
-- **Custom date range** — select `From Date` and `To Date`; opening valuation is reconstructed from the day before the selected start date and closing valuation is calculated as of the selected end date.
-- **Display As** — **Amount**, **Lakhs**, or **Crores**. Conversion is presentation-only; source financial values remain in rupees.
-- **FIFO taxation** — realized P/L is calculated using **First-In, First-Out (FIFO)** transaction matching. FIFO inventories are isolated by asset, family member, and portfolio so transactions from one member or portfolio do not consume another inventory's lots. Tax is calculated separately for realized and unrealized P/L using the configured asset-specific tenure and tax rates. The same tenure-based rate is applied regardless of P/L sign, so a negative realized or unrealized P/L produces a **negative tax value (tax benefit)** in the report.
-- **Transaction fees in tax basis** — buy-side fees are added to acquisition cost basis; sell-side fees reduce net sale proceeds. This ensures realized and unrealized gains reflect the supported transaction fees.
-- **Split and bonus transactions** — a `Split` transaction's quantity is treated as additional shares received; open FIFO lots are adjusted proportionally to preserve total acquisition cost and original acquisition dates. `Bonus` transactions remain separately represented as zero-cost lots.
-- **Holding-period boundaries** — completed holding months are measured against calendar-month anniversaries, including month-end dates (for example, 31 January to 28 February is one completed month). The configured tenure threshold determines short-term versus long-term tax treatment.
-- **Tax Settings** — taxation settings are configured by **Asset Name** for the active family, including **Tenure (Months)**, **Short Term Tax**, and **Long Term Tax**. Settings determine the rates applied to matching asset names, while FIFO inventory accounting remains isolated by family member and portfolio.
-- **Download Excel** — exports `IPS`, `Data Sheet`, `Tax Report`, `Fund Type Summary`, and `Notes` in `.xlsx` format.
-- **Uploaded classification source** — IPS and related MIS grouping use the stored/uploaded family and asset classification data rather than synthetic classification defaults.
-- **Asset-name basis** — MIS grouping uses the stored/uploaded **Asset Name** and **Family Member** values where those fields are part of the report grouping.
-- **Standard transaction workbook** — the separate transaction template download is available from Settings and is intended for future transaction imports.
-- **Indian INR formatting** — monetary values in the downloaded **Data Sheet** and **Tax Report** use the **₹ symbol with Indian lakh/crore comma grouping** (for example, `₹1,20,880.00`). Quantity/unit columns remain numeric without the currency symbol.
-- **Automatic reference-price refresh** — MIS reference prices are refreshed automatically by the background scheduler every 30 minutes, are included in the scheduled refresh flow, and are refreshed again immediately before an MIS Excel download. The refresh uses stored market history and supported Yahoo Finance symbols; unavailable third-party data is not fabricated.
-
-### 🗂️ MIS historical valuation data
-
-MIS historical valuations use **stored market history**, not live provider calls while the interactive report is being generated.
-
-- **Mutual-fund historical NAVs** are stored in the shared **AMFI master NAV history** (AMFIMasterNAV) and are the source used by MIS for historical MF valuations.
-- The MIS history prefetcher keeps held schemes covered for approximately **five years** and imports only missing date ranges.
-- Historical AMFI coverage is prepared automatically **after transaction imports** and during the **daily scheduled refresh**.
-- The interactive MIS endpoint is intentionally **database-only** for historical MF valuation. It does not wait for an AMFI download while the user is viewing the report.
-- The explicit **Excel download** path can perform a targeted AMFI history backfill when required before generating the workbook.
-- Existing historical price/NAV rows are reused across MIS valuations instead of downloading the same history repeatedly.
-- The manual historical import command supports a complete date range when an initial database backfill is required:
+### Database setup and migrations
 
 ```bash
-python manage.py fetch_amfi_nav --from-date 2025-10-01 --to-date 2026-10-05
+python manage.py migrate                          # apply migrations
+python manage.py makemigrations --check --dry-run # confirm models and migrations agree (run in CI)
+python manage.py showmigrations                   # list migration state
 ```
 
-This architecture keeps the report responsive while ensuring historical Data Sheet, IPS and Tax Report valuations can be reconstructed from persisted observations.
+To use PostgreSQL, create the database and user, then set the following in `backend/.env` and run `python manage.py migrate`:
 
-### 🔐 Settings
-
-- **Account and preferences**, including password change
-- **Tax Settings** — configure tenure, Short Term Tax and Long Term Tax policies by displayed asset name. A saved policy is shared globally across families holding that displayed asset name. Conflicting legacy policies are flagged for review rather than silently selected; saving an explicit policy resolves the conflict. FIFO transaction and lot matching remains separate for each underlying asset.
-- **User Management** — role-scoped: you only see and manage the roles you're allowed to
-- **Family Management** — System Owner only
-- **Logs** — operational and audit history is grouped under one Settings entry. Logs contains:
-  - **Tax Update** — history of tax-setting changes, including user, timestamp, asset name, previous values and new values.
-  - **Transaction Edit History** — audit history of transaction edits and deletions. A deleted transaction is retained as an audit record and displayed as **Transaction Deleted**, with the original transaction values available from **View**.
-  - **Transaction Uploads** — upload status, imported/failed/duplicate counts, row-level failures and standard transaction template download.
-  - **Underlyings** — latest underlying upload per asset, uploader, upload time, underlying rows and sample Excel format.
-  - **MIS Edit History** — audit history of editable MIS Notes changes.
-  - **Manual Prices** — override any asset's price within your visible family scope; every override is **audit-logged** (who, when, from what).
-
-### 📰 Portfolio News workflow
-
-
-The Portfolio News pipeline is fully deterministic: retrieval, portfolio matching, event classification, alert scoring and notification tiering run locally without a hosted AI model. The **News** layer is metadata-first; the alert layer is classified locally without an AI API.
-
-```text
-┌──────────────────────────────┐
-│       ACTIVE FAMILY          │
-│                              │
-│ Family Stocks / Mutual Funds │
-└──────────────┬───────────────┘
-               │
-               ▼
-┌──────────────────────────────┐
-│   HOLDINGS REGISTRY          │
-│                              │
-│ Builds live holdings         │
-│ + names / aliases / symbols  │
-│ + ISIN / scheme information  │
-└──────────────┬───────────────┘
-               │
-               ▼
-┌──────────────────────────────┐
-│       QUERY BUILDER          │
-│                              │
-│ Creates search queries       │
-│ for each portfolio holding   │
-└──────────────┬───────────────┘
-               │
-               ▼
-┌──────────────────────────────┐
-│     GOOGLE NEWS RSS          │
-│                              │
-│ Fetches matching news        │
-│ articles                     │
-└──────────────┬───────────────┘
-               │
-               ▼
-┌──────────────────────────────┐
-│      HOLDING MATCHER         │
-│                              │
-│ Deterministically checks     │
-│ headline + body/description  │
-│ ↔ portfolio holding          │
-└──────────────┬───────────────┘
-               │
-               ▼
-        ┌─────────────────┐
-        │ PortfolioNews   │
-        │     Match       │
-        └────────┬────────┘
-                 │
-                 │
-       ┌─────────┴──────────┐
-       │                    │
-       ▼                    ▼
-┌───────────────┐   ┌──────────────────┐
-│   ALL NEWS    │   │      GEMINI       │
-│               │   │   AI ANALYSIS     │
-│ No Gemini     │   │                  │
-│ required      │   │ Relevance        │
-│               │   │ Sentiment        │
-│ Raw matched   │   │ Impact           │
-│ articles      │   │ Category         │
-└───────┬───────┘   └────────┬─────────┘
-        │                    │
-        ▼                    ▼
-┌───────────────┐   ┌──────────────────┐
-│ /news/raw/    │   │ PortfolioNews    │
-│               │   │ Alert            │
-└───────┬───────┘   └────────┬─────────┘
-        │                    │
-        │                    ▼
-        │             ┌──────────────┐
-        │             │   AI FEED    │
-        │             └──────┬───────┘
-        │                    │
-        │                    ▼
-        │             ┌──────────────┐
-        │             │    DIGEST    │
-        │             └──────────────┘
-        │
-        ▼
-┌────────────────────────────────────┐
-│          PORTFOLIO NEWS UI         │
-│                                    │
-│  [ News ] [ Alerts ] [Digest] │
-└────────────────────────────────────┘
+```ini
+DATABASE_ENGINE=postgresql
+POSTGRES_DB=pwms
+POSTGRES_USER=pwms_user
+POSTGRES_PASSWORD=<your-password>
+POSTGRES_HOST=localhost
+POSTGRES_PORT=5432
 ```
 
-**Workflow summary:**
-
-1. The **Active Family** supplies the current stocks and mutual funds across the family-scoped portfolio.
-2. The **Holdings Registry** builds the live family holding set and its searchable identifiers, including names, aliases, symbols, ISINs and scheme information where available.
-3. The **Query Builder** creates search queries for each portfolio holding.
-4. **Google News RSS** retrieves matching articles.
-5. The **Holding Matcher** deterministically checks both the news headline and the provider-supplied article body/description against the holding's names, aliases, ticker and ISIN. For underlying queries it applies the same headline/body check to the requested underlying name or ISIN.
-6. Each deterministic association is persisted as a **PortfolioNewsMatch** record.
-7. **News** reads these raw family matches through `/api/ai/news/raw/` and does not require paid AI.
-8. The local **RuleBasedArticleAnalyzer** enriches matched articles with relevance, sentiment, impact and category information and stores the resulting **PortfolioNewsAlert** records.
-9. The enriched records power the **Alerts** and **Digest** views.
-10. The **Portfolio News UI** presents the three layers as **News**, **Alerts**, and **Today's Digest**.
-
-This separation means a news article can appear in **News** independently of analysis; the alert layer is now generated by the local rule-based analyzer.
-
-
-### Corporate Filing Intelligence
-
-Corporate filings are first-class Portfolio News inputs, distinct from ordinary news. The existing `filing_intelligence` app stores filing metadata, performs deterministic classification, matches securities by ISIN/symbol/company identity, and feeds the existing PortfolioNewsAlert/Web Push/digest path.
-
-**Supported event families include:** financial results, board meetings, dividends, bonus issues, stock splits, buybacks, acquisitions, mergers, demergers, fund raising, preferential issues, promoter pledges/releases, management/auditor changes, regulatory action, credit-rating downgrades, defaults, litigation, material contracts/orders, shareholding/promoter transactions, investor presentations, earnings calls and routine announcements.
-
-**Event clustering:** NSE/BSE/company filings and independent news reports are stored through the same `NewsArticle`/`NewsArticleSource` layer. URL, normalized-title, recent fuzzy-title and conservative event-family/entity matching collapse reports of the same event into one underlying article while retaining supporting source URLs and source count. A later primary filing can upgrade an existing clustered alert rather than creating another notification.
-
-**Source priority:** exchange/company/regulatory evidence is treated as Tier 1. Cross-source confidence increases only when distinct URLs/publishers are attached; syndicated copies are not intentionally counted as independent confirmation.
-
-**Official-source limitation:** NSE publicly exposes Corporate Filings/Announcements pages with CSV download controls, while BSE exposes Corporate Data through its official market-data products. This branch does not bypass anti-bot controls or claim an undocumented production endpoint is available. The production adapters therefore accept an authorized HTTP/CSV/JSON feed via `EXCHANGE_FILING_FEED_URL_NSE` / `EXCHANGE_FILING_FEED_URL_BSE`. If a feed is unavailable, that exchange fails independently and no fake filing is created.
-
-**Commands:**
-
-```powershell
-python manage.py ingest_exchange_filings --exchange=nse --hours=24 --dry-run
-python manage.py ingest_exchange_filings --exchange=bse --hours=24 --dry-run
-python manage.py ingest_exchange_filings --hours=24
-```
-
-The background scheduler runs filing ingestion only when corporate filing intelligence is enabled and an exchange feed is configured. This keeps the default deployment zero-cost and quiet when no authorized feed endpoint is available.
-
-### Family-scoped Portfolio News
-
-Portfolio News follows the same family boundary used by the portfolio and analytics views.
-
-- The **active family** is the authoritative scope for **News** for users who belong to a family.
-- Deterministic matches are stored with a **FamilyGroup** reference in `PortfolioNewsMatch`.
-- The same article/holding/connection combination is stored only once per family, while separate underlying relationships can be retained when one article is connected through more than one uploaded underlying.
-- The raw endpoint `/api/ai/news/raw/` returns only the currently selected family's deterministic news for normal users.
-- The response includes `family_id` and `family_name` so the UI can make the active family scope explicit.
-- A user with no family retains access to legacy user-scoped raw matches; this is a compatibility path and does not weaken family authorization.
-- System Owners can view stored family-scoped raw news across families.
-- Family membership controls **visibility**; role-based permissions continue to control what users can do. Client-supplied family IDs are not trusted for authorization.
-- **News remains analysis-independent.** The local rule-based analyzer produces the `PortfolioNewsAlert` records used by Alerts and Today's Digest.
-- **Asset-underlying relationships are explicit.** Uploaded `AssetUnderlyingHolding` rows are loaded into the news holdings registry. The monitor issues bounded queries for the largest uploaded underlyings and only accepts an underlying match when that underlying's name or ISIN appears in the news headline or provider-supplied body/description.
-- **Deterministic matching uses headline + body/description.** Portfolio News does not rely on headline-only matching. A holding can match when its identifier appears in either the headline or the provider-supplied article description/body snippet. Google News RSS does not provide the publisher's complete article body, so this layer does not perform an additional full-article fetch just for deterministic matching.
-- **News connection metadata is persisted.** Each raw/AI relationship records `connection_type` (`direct` or `underlying`), the matched `underlying_name`, and the uploaded `underlying_weight`. The UI displays this connection so users can see why an article is associated with an asset.
-- **Underlying news is deterministic first.** The local analyzer receives the deterministic connection as context and does not invent the asset-to-underlying relationship.
-
-
-
-### Portfolio News data flow details
-
-The raw and AI paths intentionally share the same deterministic retrieval stage:
-
-```text
-Portfolio holdings
-      ↓
-Holdings Registry
-      ↓
-Query Builder
-      ↓
-Google News RSS
-      ↓
-Holding Matcher
-(headline + body/description)
-      ↓
-PortfolioNewsMatch
-      ├──→ /api/ai/news/raw/ → News
-      │
-      └──→ local rule-based analysis
-                ↓
-          PortfolioNewsAlert
-                ├──→ Alerts
-                └──→ Today's Digest
-```
-
-- **`PortfolioNewsMatch` is the raw-news persistence layer.** A match stores the article, holding type/id, holding display name, matched query and, for family-scoped matches, the authoritative `FamilyGroup`. The database prevents the same article/holding combination from being stored more than once within the same family. Users without a family retain the legacy user-scoped uniqueness path.
-- **No paid AI call is part of article retrieval or analysis.** Google News RSS retrieves articles, the deterministic matcher associates them with portfolio holdings, and the local analyzer classifies them.
-- **Analysis limits do not remove raw matches.** Articles matched by the deterministic layer remain available to **News** even if local analysis is disabled or fails.
-- **News is metadata-first.** The raw endpoint returns the article title, original URL, source, description, publication time, source quality/count, matched query and matched holdings; users can open the original publisher article from the UI.
-- **Family visibility is enforced server-side.** For normal users, the raw endpoint derives the active family from the authenticated user and returns only that family's deterministic matches. System Owners can view stored family-scoped matches across families. Users without a family use the legacy user-scoped path. Client-supplied family IDs are not trusted for authorization.
-- **Monitoring is automatic.** The `monitor_portfolio_news` management command performs the news-monitoring pass and is also used by the application's background scheduler.
-- **Gemini is not required for Portfolio News.** A Gemini key is only used by the separate Portfolio Chat feature.
-
-### 🤖 AI Portfolio Chat
-
-A **Gemini-backed** assistant scoped to the logged-in user's own portfolio. The backend builds a structured context (holdings, allocation, recent performance) and hands it to Gemini. **Gemini interprets the numbers it is given — it never computes or invents them.** Token usage is logged per call.
-
-### 📰 Portfolio News Intelligence
-
-Portfolio News has deterministic news, corporate filings, alerts and digest layers. **News** shows every article that the deterministic portfolio matcher fetched and associated with the user's holdings. **Alerts** and the digest use the same stored alerts, now enriched by the zero-cost rule-based analyzer. The raw layer stores only article metadata/snippets and links users to the original publisher.
-
-A background agent that:
-
-1. reads each user's **actual holdings** (there is no hard-coded stock list),
-2. searches **Google News RSS** (no paid news API),
-3. **deterministically matches** articles to holdings,
-4. classifies sentiment/category/materiality/impact using local keyword and event rules,
-5. scores each alert by the existing **`impact × portfolio_weight × confidence`** formula plus source-quality and recency multipliers,
-6. raises a **browser notification** for Critical / High items.
-
-It is fully automatic — no paid AI key is required. Browser push delivery still requires the existing VAPID configuration. Critical / High alerts can be delivered through the browser Push API even when the Angular page is closed.
+The repository does not include a script to migrate data from an existing SQLite database to PostgreSQL. See [SETUP.md](./SETUP.md) for the PostgreSQL walkthrough.
 
 ---
 
-## 🧭 How it works
+## Environment configuration
 
-### 1 · System architecture
+`backend/.env` is read at startup. Never commit it. `backend/.env.example` lists the documented variables with production-style values.
 
-```mermaid
-flowchart LR
-    subgraph Client["Browser"]
-        UI["Angular 21 SPA<br/>standalone components<br/>Chart.js · jsPDF · ExcelJS"]
-    end
-
-    subgraph Server["Django 5.2 + DRF"]
-        API["REST API<br/>session auth + CSRF"]
-        RBAC["users.permissions<br/>role + family scope"]
-        APPS["Domain apps<br/>portfolio · analytics · mutual_funds<br/>investments · ai · portfolio_news"]
-        SCH["In-process background jobs"]
-    end
-
-    WTS["Windows Task Scheduler<br/>Hourly market-price refresh"]
-
-    DB[("SQLite - WAL mode<br/>or PostgreSQL")]
-    YF["Yahoo Finance<br/>stocks and ETFs"]
-    AMFI["AMFI<br/>mutual fund NAVs"]
-    GN["Google News RSS"]
-    GEM["Google Gemini API<br/>optional: AI Chat"]
-    NLG["RuleBasedArticleAnalyzer<br/>local NLP"]
-
-    UI -->|"JSON over HTTP"| API
-    API --> RBAC --> APPS --> DB
-    SCH --> DB
-    SCH --> YF
-    SCH --> AMFI
-    SCH --> GN
-    SCH --> NLG
-    WTS -->|"update_market_prices"| APPS
-    APPS -->|"AI chat"| GEM
-```
-
-### 2 · From transactions to insight
-
-```mermaid
-flowchart TD
-    A["Excel import<br/>or manual entry"] --> U["Upload audit<br/>status + failures"]
-    U --> B["Transactions<br/>source of truth"]
-    B --> C["Holdings<br/>derived and rebuildable"]
-    C --> D["Post-import price refresh"]
-    D --> E["MarketPrice<br/>Yahoo · AMFI · Manual"]
-    E --> F["Server-side calculations<br/>P&L · XIRR · CAGR · allocation"]
-    C --> F
-    F --> G["Dashboard · Portfolio · Analytics"]
-    F --> H["Excel and PDF reports"]
-    F --> I["Structured context for AI chat"]
-    I --> J["Gemini explains<br/>never calculates"]
-```
-
-### 3 · Request lifecycle and authorization
-
-Nothing trusts a role or family ID claimed by the client — every check is re-derived from the database on every request.
-
-```mermaid
-sequenceDiagram
-    autonumber
-    participant B as Browser - Angular
-    participant D as Django REST API
-    participant P as users.permissions
-    participant DB as Database
-
-    B->>D: Request + session cookie (CSRF token on writes)
-    D->>D: Authenticate the session
-    D->>P: Who is this user and what may they do?
-    P->>DB: Re-derive role and family memberships
-    DB-->>P: UserProfile + FamilyMembership
-    P-->>D: Role check + visible owner IDs
-    alt Not permitted
-        D-->>B: 403 Forbidden
-    else Permitted
-        D->>DB: Query only rows owned by visible owners
-        DB-->>D: Rows
-        D-->>B: JSON response
-    end
-```
-
-### 4 · Portfolio News agent pipeline
-
-```mermaid
-flowchart TD
-    T["Timer<br/>every NEWS_MONITOR_INTERVAL"] --> H["Read each user's active holdings"]
-    H --> Q["Build search queries<br/>from real holdings"]
-    Q --> R["Google News RSS<br/>via feedparser"]
-    R --> D["De-duplicate<br/>NewsArticle + NewsArticleSource"]
-    D --> M{"Deterministic match<br/>to a holding?"}
-    M -- no --> X["Discard<br/>no AI call spent"]
-    M -- yes --> G["Local rule-based analysis<br/>impact + confidence"]
-    G --> S["Score = impact × portfolio weight × confidence"]
-    S --> A["PortfolioNewsAlert<br/>unique per user, article, holding"]
-    A --> C{"Critical or High?"}
-    C -- yes --> N["Web Push<br/>service worker + VAPID"]
-    C -- no --> P["Listed on the Portfolio News page"]
-```
-
-### 5 · Scheduler start-up
-
-```mermaid
-flowchart LR
-    R["Django starts<br/>runserver · waitress · uvicorn"] --> G{"scheduler_guard<br/>correct process?"}
-    G -- yes --> J1["Price refresh<br/>every 15 min"]
-    G -- yes --> J2["Daily refresh<br/>once per day of uptime"]
-    G -- yes --> J3["Post-import refresh<br/>on demand"]
-    G -- yes --> J4["News monitor<br/>every 30 min"]
-    G -- no --> Z["Skip<br/>avoids duplicate schedulers"]
-```
-
----
-
-## 🔑 Roles and permissions
-
-Four hierarchical roles are enforced on **every request** by one centralized permission service ([`backend/users/permissions.py`](./backend/users/permissions.py)). The frontend hides controls for convenience; the backend independently blocks anything unauthorized, no matter what the UI shows.
-
-```
-VIEWER  <  ADMIN  <  SUPER_USER  <  SYSTEM_OWNER
-```
-
-```mermaid
-flowchart LR
-    O["System Owner<br/>everything + families"] -->|"creates and manages"| S["Super User"]
-    S -->|"creates and manages"| A["Admin"]
-    A -->|"creates and manages"| V["Viewer"]
-```
-
-> **Role ≠ family.** Role decides what a user can **do**. Family membership decides whose data they can **see**. The two are deliberately never inferred from one another.
-
-### Permission matrix
-
-| Capability                                                                     | 👁️ Viewer | 🛠️ Admin | ⭐ Super User | 👑 System Owner |
-| ------------------------------------------------------------------------------ | :-------: | :------: | :-----------: | :-------------: |
-| Log in                                                                         |    ✅     |    ✅    |      ✅       |       ✅        |
-| View permitted portfolio data (Dashboard, Portfolio, Analytics, AI Chat, News) |    ✅     |    ✅    |      ✅       |       ✅        |
-| Edit own profile                                                               |    ✅     |    ✅    |      ✅       |       ✅        |
-| Edit manual prices (family-shared)                                             |    ❌     |    ✅    |      ✅       |       ✅        |
-| Create a Viewer                                                                |    ❌     |    ✅    |      ✅       |       ✅        |
-| Create an Admin                                                                |    ❌     |    ❌    |      ✅       |       ✅        |
-| Create a Super User or System Owner                                            |    ❌     |    ❌    |      ❌       |       ✅        |
-| Manage Viewers ¹                                                               |    ❌     |    ✅    |      ✅       |       ✅        |
-| Manage Admins ¹                                                                |    ❌     |    ❌    |      ✅       |       ✅        |
-| Manage Super Users / System Owners ¹                                           |    ❌     |    ❌    |      ❌       |       ✅        |
-| Change another user's role ²                                                   |    ❌     |    ❌    |    Limited    |       ✅        |
-| Create / manage families and memberships                                       |    ❌     |    ❌    |      ❌       |       ✅        |
-| Assign a user to multiple families                                             |    ❌     |    ❌    |      ❌       |       ✅        |
-| View every family's data                                                       |    ❌     |    ❌    |      ❌       |       ✅        |
-
-¹ _Manage_ = edit, activate, deactivate, delete and reset password. Account management is scoped **by role only** — family membership never gates it.
-² A Super User may only move accounts between **Admin** and **Viewer**, and only when the target is currently Admin or Viewer. Nobody — including the System Owner — can change their **own** role (privilege-escalation guard), and the last active System Owner can never be demoted.
-
-### What each user can see
-
-| Role               | Visible portfolio data                                                    |
-| ------------------ | ------------------------------------------------------------------------- |
-| **System Owner**   | Every user in the system, across all families                             |
-| **Everyone else**  | Their own data **plus** every member of their **currently active family** |
-| No family assigned | Only their own data                                                       |
-
-A user may belong to **zero, one or many** families. A personal **active-family selector** scopes every data screen to one family at a time — a combined view of several families is deliberately not shown.
-
-> [!NOTE]
-> `Asset` and `Transaction` records are still stored against a single owning user account. Family-shared _visibility_ is layered on top through the authorization helpers in `users/permissions.py`, not by changing the ownership field.
-
----
-
-## 🧰 Tech stack
-
-| Layer                 | Technology                                                                                                                               |
-| --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
-| Backend framework     | Django 5.2 + Django REST Framework 3.18                                                                                                  |
-| Backend language      | Python 3.12                                                                                                                              |
-| Database              | SQLite by default (WAL journal mode + busy-timeout for scheduler concurrency); **PostgreSQL** supported via `DATABASE_ENGINE=postgresql` |
-| Production serving    | `runserver` for development; **waitress** (WSGI) or **uvicorn** (ASGI) for production                                                    |
-| Authentication        | Django session authentication (cookie + CSRF)                                                                                            |
-| Frontend framework    | Angular 21 — standalone components, no NgModules                                                                                         |
-| Frontend language     | TypeScript                                                                                                                               |
-| Charts                | Chart.js / ng2-charts                                                                                                                    |
-| Excel import / export | `openpyxl` (backend), `exceljs` (frontend)                                                                                               |
-| PDF export            | `jspdf` + `jspdf-autotable` (frontend)                                                                                                   |
-| Market data           | Yahoo Finance (`yfinance` + `curl_cffi`), AMFI NAV feed over HTTP                                                                        |
-| News retrieval        | Google News RSS via `feedparser` — no paid news API                                                                                      |
-| AI                    | Google Gemini REST API — optional for Portfolio Chat; Portfolio News uses local rule-based NLP only                                                                 |
-| Background scheduling | In-process Python threads — **no Celery, no Redis**                                                                                      |
-| Logging               | Centralized rotating file handler (`backend/logs/pwms.log`)                                                                              |
-
----
-
-## 📂 Repository structure
-
-```
-Personal_Wealth_Monitoring_System/
-├── backend/
-│   ├── manage.py
-│   ├── requirements.txt
-│   ├── .env.example            Template for every deployment-sensitive setting
-│   ├── config/                 Settings (env-driven), scheduler_guard.py, root urls.py, WSGI/ASGI
-│   ├── api/                    Health check, login / logout, profile settings
-│   ├── users/                  RBAC: 4-tier roles, FamilyGroup, FamilyMembership,
-│   │                           UserAuditLog, centralized permissions.py
-│   ├── investments/            Asset, Transaction, Holding, SecurityMaster,
-│   │                           Excel importer, AMC-name / quant enrichment
-│   ├── market_data/            MarketPrice, price providers, background scheduler
-│   ├── portfolio/              Portfolio tree / summary / holdings / transactions APIs
-│   ├── mutual_funds/           Schemes, NAVs, MF transactions, SIPs, MF holdings
-│   ├── analytics/              Wealth / allocation / performance / XIRR analytics
-│   ├── ai/                     Gemini portfolio chat, Gemini usage tracking
-│   ├── portfolio_news/         News discovery, matching, de-duplication, alert scoring
-│   └── data/
-│       ├── security_master.xlsx            Reference security data
-│       └── security_master_lookups.json    Researched sector / AMC / ratio data
-│
-├── frontend/
-│   ├── package.json · angular.json
-│   └── src/
-│       ├── environments/       environment.ts (dev) and environment.prod.ts
-│       │                       (swapped at build time) — the ONE place the API URL is set
-│       ├── app/                Shell, layout (sidebar / header with family switcher), routing
-│       ├── core/
-│       │   ├── services/       One API client per backend area + RBAC service
-│       │   │                       includes MIS Report API / Excel download service
-│       │   └── guards/         auth.guard (also loads the RBAC role)
-│       ├── features/
-│       │   ├── dashboard/  portfolio/  mis-report/  analytics/  reports/
-│       │   ├── ai-chat/  portfolio-news/  login/
-│       │   └── settings/
-│       │       ├── user-management/
-│       │       ├── family-management/
-│       │       └── manual-prices/
-│       └── shared/
-│
-├── docs/                       Supporting documentation and assets
-├── README.md                   You are here
-├── SETUP.md                    Step-by-step install guide
-├── License.md
-└── .gitignore
-```
-
----
-
-## 🧱 Backend architecture
-
-Each Django app owns one area of the domain and is mounted under a fixed prefix in `backend/config/urls.py`:
-
-| App            | URL prefix                  | Responsibility                                                               |
-| -------------- | --------------------------- | ---------------------------------------------------------------------------- |
-| `api`          | `/api/`                     | Health check, login / logout / current user, profile settings                |
-| `users`        | `/api/settings/`            | RBAC, user management, family management                                     |
-| `portfolio`    | `/api/portfolio/`           | Assets, transactions, portfolio tree / summary / holdings, Liquid Position and manual price edit |
-| `analytics`    | `/api/analytics/`           | Wealth allocation, performance, XIRR, historical analytics                   |
-| `mutual_funds` | `/api/mutual-funds/`        | Schemes, MF transactions, MF holdings, SIPs                                  |
-| `market_data`  | _(internal + stock search)_ | Price providers, background price refresh                                    |
-| `ai`           | `/api/ai/`                  | Portfolio chat; also mounts `portfolio_news` URLs                            |
-| `investments`  | `/api/investments/`         | Excel transaction import, Security Master                                    |
-
-**`users.permissions` is the single authorization service** — role-rank helpers, family-scope helpers (`get_visible_owner_ids`, `get_manageable_users_queryset`) and reusable DRF permission classes (`IsViewer`, `IsAdmin`, `IsSuperUser`, `IsSystemOwner`, `IsAdminOrSuperUser`). Its docstring holds the canonical permission matrix — keep it in sync with the table in this README.
-
----
-
-## 🧬 Data model
-
-```mermaid
-erDiagram
-    USER ||--|| USERPROFILE : "has role"
-    USERPROFILE }o--o{ FAMILYGROUP : "FamilyMembership"
-    USER ||--o{ USERAUDITLOG : "audit trail"
-
-    USER ||--o{ ASSET : owns
-    ASSET ||--o{ TRANSACTION : "bought / sold via"
-    ASSET ||--o{ HOLDING : "derived into"
-    ASSET ||--o{ MARKETPRICE : "priced by"
-    ASSET }o--o| SECURITYMASTER : "linked by ISIN"
-
-    USER ||--o{ MUTUALFUNDTRANSACTION : records
-    USER ||--o{ SIP : schedules
-    MUTUALFUNDSCHEME ||--o{ MUTUALFUNDNAV : "daily NAV"
-    MUTUALFUNDSCHEME ||--o{ MUTUALFUNDTRANSACTION : "traded as"
-    MUTUALFUNDSCHEME ||--o{ MUTUALFUNDHOLDING : "held as"
-    MUTUALFUNDSCHEME ||--o{ SIP : "invested via"
-    SIP ||--o{ SIPINSTALLMENT : "generates"
-
-    NEWSARTICLE ||--o{ NEWSARTICLESOURCE : "seen at"
-    NEWSARTICLE ||--o{ PORTFOLIONEWSALERT : "raises"
-    USER ||--o{ PORTFOLIONEWSALERT : receives
-    HOLDING ||--o{ PORTFOLIONEWSALERT : "matched to"
-```
-
-_A simplified conceptual view — see each app's `models.py` for exact fields and constraints._
-
-| App              | Models                                                                                                     | Notes                                                                                                                                                                                           |
-| ---------------- | ---------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `users`          | `UserProfile`, `FamilyGroup`, `FamilyMembership`, `UserAuditLog`                                           | `UserProfile` holds role and active family; the audit log is append-only                                                                                                                        |
-| `investments`    | `Asset`, `Transaction`, `Holding`, `SecurityMaster`                                                        | `Transaction` is the source of truth for quantity and invested value; `Holding` is derived and rebuildable. Generic `Transaction` rows can also contain legacy/imported mutual-fund transactions. `SecurityMaster` stores sector, cap-type, AMC name, P/E, P/B, ROE and credit rating |
-| `market_data`    | `MarketPrice`                                                                                              | Tagged by source: **Yahoo Finance**, **AMFI** or **Manual**                                                                                                                                     |
-| `mutual_funds`   | `MutualFundScheme`, `MutualFundNAV`, `MutualFundTransaction`, `MutualFundHolding`, `AMFIMasterScheme`, `AMFIMasterNAV`, `SIP`, `SIPInstallment` | Dedicated mutual-fund models plus the persisted AMFI master scheme/NAV history used for current data, Watch List benchmarks and historical MIS valuation of legacy mutual-fund holdings |
-| `portfolio`      | `FamilyLiquidPosition` | Editable Liquid Position document, unique per family and reporting date; stores bank balances, commitment rows and deployment-plan rows. Market values and summary totals are calculated by the portfolio service. |
-| `portfolio_news` | `NewsArticle`, `NewsArticleSource`, `PortfolioNewsAlert`                                                   | Alerts are unique per user / article / holding                                                                                                                                                  |
-| `ai`             | `GeminiUsageLog`                                                                                           | Token usage per Gemini call — Portfolio Chat only                                                                                                                                         |
-
----
-
-## Dashboard and Analytics calculation ownership
-
-Dashboard and Analytics use backend view models as the authoritative financial/business calculation layer. Django owns valuation, P&L, XIRR, allocation, historical valuation, standard-allocation targets, advisor metrics, market-cap/sector analytics, performance aggregation, and page-level insights. Angular consumes the aggregated view model and is responsible for presentation, formatting, filters, interaction state, and chart rendering.
-
-The page-level Dashboard/Analytics response is available at `GET /api/analytics/wealth/dashboard/` with `days` for rolling periods, `period=this-month|last-month|inception`, and an optional `family` filter. Existing granular wealth endpoints remain available for other consumers and are not removed by this refactor.
-
-## 🔌 API reference
-
-All endpoints require an authenticated Django session unless noted. Auth uses **session cookie + CSRF token** (no bearer tokens).
-
-<details open>
-<summary><b>Auth and profile</b> — <code>/api/</code></summary>
-
-| Method | Endpoint                         | Purpose                      |
-| ------ | -------------------------------- | ---------------------------- |
-| `GET`  | `/api/health/`                   | Health check _(no auth)_     |
-| `POST` | `/api/auth/login/`               | Log in (starts a session)    |
-| `POST` | `/api/auth/logout/`              | Log out                      |
-| `GET`  | `/api/auth/me/`                  | Current user                 |
-| `GET`  | `/api/settings/`                 | Account settings             |
-| `POST` | `/api/settings/update/`          | Update profile / preferences |
-| `POST` | `/api/settings/change-password/` | Change own password          |
-
-</details>
-
-<details>
-<summary><b>RBAC, users, families and manual prices</b> — <code>/api/settings/</code></summary>
-
-| Method                       | Endpoint                                         | Purpose                              |
-| ---------------------------- | ------------------------------------------------ | ------------------------------------ |
-| `GET`                        | `/api/settings/me/`                              | Current user's role and family state |
-| `POST`                       | `/api/settings/me/active-family/`                | Switch the active family             |
-| `GET` `POST`                 | `/api/settings/users/`                           | List / create users (role-scoped)    |
-| `GET` `PUT` `PATCH` `DELETE` | `/api/settings/users/<id>/`                      | Retrieve / update / delete a user    |
-| `POST`                       | `/api/settings/users/<id>/activate/`             | Activate a user                      |
-| `POST`                       | `/api/settings/users/<id>/deactivate/`           | Deactivate a user                    |
-| `POST`                       | `/api/settings/users/<id>/reset-password/`       | Reset a user's password              |
-| `GET` `POST`                 | `/api/settings/groups/`                          | List / create families               |
-| `PATCH` `DELETE`             | `/api/settings/groups/<id>/`                     | Update / delete a family             |
-| `POST` `DELETE`              | `/api/settings/groups/<id>/members/[<user_id>/]` | Add / remove a family member         |
-| `GET`                        | `/api/settings/prices/`                          | List overridable prices              |
-| `PUT` `PATCH` `DELETE`       | `/api/settings/prices/<asset_id>/`               | Set / clear a manual price           |
-| `GET` `POST` `PATCH` `DELETE` | `/api/settings/tax-rates/`                      | List, create/update, or clear shared asset-name tax settings |
-| `GET`                        | `/api/settings/tax-rates/history/`              | Tax-setting change history            |
-
-</details>
-
-<details>
-<summary><b>Portfolio</b> — <code>/api/portfolio/</code></summary>
-
-| Method                       | Endpoint                                   | Purpose                                  |
-| ---------------------------- | ------------------------------------------ | ---------------------------------------- |
-| `GET` `POST`                 | `/api/portfolio/assets/`                   | List / create assets                     |
-| `GET` `PUT` `PATCH` `DELETE` | `/api/portfolio/assets/<id>/`              | Retrieve / update / delete an asset      |
-| `GET` `POST`                 | `/api/portfolio/transactions/`             | List / create transactions               |
-| `GET` `PUT` `PATCH` `DELETE` | `/api/portfolio/transactions/<id>/`        | Retrieve / update / delete a transaction |
-| `GET`                        | `/api/portfolio/transactions/edit-history/` | Transaction edit and deletion audit history |
-| `GET`                        | `/api/portfolio/summary/`                  | Portfolio summary                        |
-| `GET`                        | `/api/portfolio/holdings/`                 | Holdings                                 |
-| `GET` `PUT`                  | `/api/portfolio/liquid-position/`          | Read or save the active family's Liquid Position document and calculated values (`as_of` query parameter) |
-| `GET`                        | `/api/portfolio/underlying-uploads/`       | Latest underlying upload snapshot per asset |
-| `GET`                        | `/api/portfolio/underlying-template/`      | Download sample underlying Excel format   |
-| `POST`                       | `/api/portfolio/assets/<id>/underlying/import/` | Upload underlying holdings for an asset |
-| `GET`                        | `/api/portfolio/tree/`                     | Hierarchical portfolio tree              |
-| `PUT` `PATCH` `DELETE`       | `/api/portfolio/assets/<id>/manual-price/` | Manual price override                    |
-| `GET`                        | `/api/portfolio/mis-report/`              | MIS Report data                           |
-| `GET`                        | `/api/portfolio/mis-report/download/`    | Download MIS Report Excel                |
-| `GET`                        | `/api/portfolio/mis-report/notes/`       | MIS Notes                                 |
-| `GET`                        | `/api/portfolio/mis-report/notes/history/` | MIS Notes edit history                 |
-
-</details>
-
-<details>
-<summary><b>Analytics</b> — <code>/api/analytics/</code></summary>
-
-| Method | Endpoint                                       |
-| ------ | ---------------------------------------------- |
-| `GET`  | `/api/analytics/wealth/summary/`               |
-| `GET`  | `/api/analytics/wealth/allocation/`            |
-| `GET`  | `/api/analytics/wealth/performance/`           |
-| `GET`  | `/api/analytics/wealth/xirr/`                  |
-| `GET`  | `/api/analytics/wealth/investment-summary/`    |
-| `GET`  | `/api/analytics/wealth/standard-allocations/`  | Read global/family Standard Allocation        |
-| `POST` | `/api/analytics/wealth/standard-allocations/update/` | Save global/family Standard Allocation |
-| `GET`  | `/api/analytics/wealth/sector-allocation/`     |
-| `GET`  | `/api/analytics/wealth/market-cap-allocation/` |
-| `GET`  | `/api/analytics/wealth/equity-analysis/`       |
-| `GET`  | `/api/analytics/wealth/fixed-income-analysis/` |
-| `GET`  | `/api/analytics/wealth/historical/`            |
-
-</details>
-
-<details>
-<summary><b>Mutual funds and SIPs</b> — <code>/api/mutual-funds/</code></summary>
-
-| Method | Endpoint                                           | Purpose                  |
-| ------ | -------------------------------------------------- | ------------------------ |
-| `GET`  | `/api/mutual-funds/summary/`                       | MF summary               |
-| `GET`  | `/api/mutual-funds/holdings/`                      | MF holdings              |
-| `GET`  | `/api/mutual-funds/transactions/`                  | MF transactions          |
-| `POST` | `/api/mutual-funds/transactions/create/`           | Record an MF transaction |
-| `GET`  | `/api/mutual-funds/schemes/`                       | Scheme list              |
-| `GET`  | `/api/mutual-funds/sips/`                          | SIPs                     |
-| `GET`  | `/api/mutual-funds/sips/due/`                      | Due / overdue SIPs       |
-| `POST` | `/api/mutual-funds/sips/create/`                   | Create a SIP             |
-| `POST` | `/api/mutual-funds/sip-installments/<id>/execute/` | Execute one installment  |
-
-</details>
-
-<details>
-<summary><b>Investments, AI and news</b> — <code>/api/investments/</code>, <code>/api/ai/</code></summary>
-
-| Method        | Endpoint                                 | Purpose                               |
-| ------------- | ---------------------------------------- | ------------------------------------- |
-| `POST`        | `/api/investments/import/`               | Import transactions from Excel        |
-| `GET`         | `/api/investments/security-master/`      | Security Master list                  |
-| `GET` `PATCH` | `/api/investments/security-master/<id>/` | Retrieve / edit a Security Master row |
-| `POST`        | `/api/ai/chat/`                          | Portfolio chat (Gemini)               |
-| `GET`         | `/api/ai/news/`                          | Portfolio news alerts                 |
-| `GET`         | `/api/ai/notifications/`                 | Notification feed                     |
-| `POST`        | `/api/ai/notifications/<alert_id>/read/` | Mark an alert as read                 |
-
-</details>
-
-<details>
-<summary><b>Corporate actions</b> — <code>/api/corporate-actions/</code></summary>
-
-| Method | Endpoint | Purpose |
+| Variable | Default in code | Purpose |
 | --- | --- | --- |
-| `GET` `POST` | `/api/corporate-actions/` | List the current user's actions (optional `status`, `isin` or `symbol` filters) / create an action |
-| `GET` | `/api/corporate-actions/candidates/` | Find candidate actions by exact security identifier and optional event date |
-| `GET` `PATCH` `DELETE` | `/api/corporate-actions/<id>/` | Retrieve, update or delete one of the current user's actions |
+| `SECRET_KEY` | none | Required when `DEBUG=False`; generated per process when `DEBUG=True` |
+| `DEBUG` | `False` | Development mode; also sets the defaults for the secure-cookie and SSL-redirect flags |
+| `ALLOWED_HOSTS` | empty | Comma-separated host names |
+| `CORS_ALLOWED_ORIGINS`, `CSRF_TRUSTED_ORIGINS` | `http://localhost:4200` | Frontend origins (comma-separated) |
+| `SESSION_COOKIE_SECURE`, `CSRF_COOKIE_SECURE`, `SECURE_SSL_REDIRECT` | `not DEBUG` | Enable only when HTTPS is in place |
+| `SECURE_HSTS_SECONDS`, `SECURE_HSTS_INCLUDE_SUBDOMAINS`, `SECURE_HSTS_PRELOAD` | `0`, `False`, `False` | HSTS |
+| `SECURE_REFERRER_POLICY` | `same-origin` | Referrer-Policy header |
+| `DATABASE_ENGINE` | `sqlite` | `sqlite` or `postgresql` |
+| `SQLITE_DB_PATH` | `backend/db.sqlite3` | SQLite file location |
+| `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_HOST`, `POSTGRES_PORT` | from `pwms_config.json` (`pwms`, `pwms_user`, empty password, `localhost`, `5432`) | PostgreSQL connection |
+| `POSTGRES_CONN_MAX_AGE` | `60` | Persistent connection lifetime in seconds |
+| `CACHE_BACKEND`, `CACHE_LOCATION` | `LocMemCache`, `pwms-api-cache` | Django cache used by the API response cache |
+| `API_CACHE_TTL_SECONDS`, `API_CACHE_MAX_ENTRIES` | `20`, `2000` | Cache defaults (the API cache middleware itself uses a fixed 20-second TTL) |
+| `API_SLOW_REQUEST_THRESHOLD_MS` | `500` | Slow-request logging threshold |
+| `PWMS_CONFIG_OVERRIDES` | empty | JSON object merged into `pwms_config.json` |
+| `GEMINI_API_KEY` (or `GOOGLE_API_KEY`), `GEMINI_MODEL` | none, `gemini-3.6-flash` | AI Portfolio Chat only |
+| `NEWS_MONITOR_INTERVAL` | `scheduler.news_interval_seconds` (180) | Seconds between news and filing monitor runs |
+| `NEWS_MONITOR_LOOKBACK_DAYS`, `NEWS_MONITOR_MAX_ARTICLES_PER_HOLDING`, `NEWS_MONITOR_MAX_BATCH_ARTICLES`, `NEWS_MONITOR_MIN_RELEVANCE_SCORE`, `NEWS_MONITOR_MIN_ALERT_SCORE`, `NEWS_MONITOR_ANALYSIS_DELAY_SECONDS` | `3`, `15`, `50`, `30`, `2.0`, `0` | News pipeline limits |
+| `NEWS_CORPORATE_FILINGS_ENABLED`, `NEWS_NSE_FILINGS_ENABLED`, `NEWS_BSE_FILINGS_ENABLED` | `True` | Filing ingestion switches used by the news scheduler |
+| `FILING_INTELLIGENCE_ENABLED` | `true` when unset (`.env.example` sets `False`) | Master switch for scheduled filing ingestion |
+| `EXCHANGE_FILING_FEED_URL_NSE`, `EXCHANGE_FILING_FEED_URL_BSE` | empty | Authorised filing feed URLs; BSE is skipped when unset |
+| `NEWS_EVENT_CLUSTER_WINDOW`, `NEWS_NOTIFICATION_COOLDOWN` | `3`, `86400` | Event clustering window (days), push retry cutoff (seconds) |
+| `WATCHLIST_PMS_SOURCE_URLS` | empty | Additional authoritative PMS sources |
+| `WATCHLIST_BENCHMARK_BSE500_URL`, `WATCHLIST_BENCHMARK_BSE500_FILE` | empty, `backend/watchlist/data/bse500_tri.csv` | BSE 500 TRI source |
+| `WEB_PUSH_VAPID_PUBLIC_KEY`, `WEB_PUSH_VAPID_PRIVATE_KEY`, `WEB_PUSH_VAPID_SUBJECT` | empty | Web Push is enabled when both keys are set |
 
-All endpoints require authentication. Ratio actions validate positive old/new units; duplicate owner/ISIN/type/ex-date combinations are rejected. The candidate endpoint returns only the authenticated user's records.
+Example local development `.env` (placeholders only):
 
-</details>
+```ini
+DEBUG=True
+SECRET_KEY=<generate-a-random-key>
+# Optional
+GEMINI_API_KEY=<your-gemini-key>
+WEB_PUSH_VAPID_PUBLIC_KEY=<generated-public-key>
+WEB_PUSH_VAPID_PRIVATE_KEY=<generated-private-key>
+WEB_PUSH_VAPID_SUBJECT=mailto:<you@example.com>
+```
+
+Generate a secret key and VAPID keys:
+
+```bash
+python -c "from django.core.management.utils import get_random_secret_key; print(get_random_secret_key())"
+python manage.py generate_web_push_keys
+```
+
+**Frontend.** `frontend/src/environments/environment.ts` and `environment.prod.ts` both set `apiUrl: ''`, so the app calls relative `/api/...` URLs. To point at a different backend origin, set `apiUrl` in the production environment file before building and add that origin's frontend URL to `CORS_ALLOWED_ORIGINS` and `CSRF_TRUSTED_ORIGINS`.
 
 ---
 
-## 🎨 Frontend architecture
+## Background jobs and management commands
 
-- **Standalone Angular components** throughout — no `NgModule`s.
-- `core/services/rbac.service.ts` is the single source of role / permission / family state. It hides controls, but every action is still independently authorized by the backend.
-- **One API client service per backend area** under `core/services/`, each reading its base URL from `environment.apiUrl` — nothing hardcodes a host.
-- `core/services/browser-notification.service.ts` manages browser notification permission and Web Push subscriptions for **Critical / High** news alerts.
-- `frontend/public/push-sw.js` is the service worker that receives push events and displays notifications even when the Angular page is closed.
-- The backend stores browser subscriptions in `PushSubscription` and sends qualifying alerts through VAPID/Web Push when `WEB_PUSH_ENABLED=True`.
-- `auth.guard` protects every route and loads the RBAC role before rendering.
-- **Holding Reports** is currently hidden from the sidebar navigation as a frontend-only presentation change; its Angular route and page implementation remain in the codebase.
+### In-process schedulers
 
-| Route             | Screen                                                        |
-| ----------------- | ------------------------------------------------------------- |
-| `/login`          | Sign in                                                       |
-| `/dashboard`      | Net worth, allocation, investment summary                     |
-| `/portfolio`      | Holdings tree, transactions, import, manual price override    |
-| `/mis-report`     | IPS, Data Sheet, Fund Type-wise Summary, Excel download       |
-| `/analytics`      | Allocation, performance, XIRR, historical wealth              |
-| `/reports`        | Reports and holdings exports                                  |
-| `/downloads`      | Filtered Excel downloads, including the saved Liquid Position Funds report |
-| `/liquid-position` | Family-scoped liquidity, commitments and deployment planning |
-| `/ai-chat`        | Gemini portfolio assistant                                    |
-| `/portfolio-news` | News alerts for your holdings                                 |
-| `/watch-list`     | Mutual-fund / PMS research, performance metrics and benchmarks |
-| `/settings`       | Account · Security · Tax Settings · Logs · User Management · Family Management |
+Schedulers start from `AppConfig.ready()`. `config/scheduler_guard.py` starts them under `manage.py runserver` (only in the autoreloader's worker process) and under any WSGI/ASGI server, and never for other management commands or tests. Two schedulers apply a narrower rule.
 
-All authenticated routes sit under a `ShellComponent` (sidebar + header with the family switcher).
+| Scheduler | Cadence | Work | Starts under |
+| --- | --- | --- | --- |
+| `MarketPriceScheduler` | Every 15 minutes | Prices for STOCK, ETF, MUTUAL_FUND and BOND assets and names containing " ETF" | runserver, WSGI/ASGI |
+| `DailyRefreshScheduler` | Checks every 30 minutes; runs once per calendar day (marker `backend/data/.last_scheduled_refresh_date`) | `run_scheduled_refresh` | runserver, WSGI/ASGI |
+| `InvestmentAMFIScheduler` | Every 30 minutes | Latest AMFI NAVs for held ISINs and missing MIS history | runserver, WSGI/ASGI |
+| `MISReferencePriceScheduler` | 20 seconds after start, then every 30 minutes | MIS Notes reference prices | runserver, WSGI/ASGI |
+| `SecurityMetricsScheduler` | At start, then every 24 hours | P/E, P/B, PEG, sector and market cap from Yahoo Finance | runserver, WSGI/ASGI |
+| `SecurityMasterScheduler` | At start, then every 24 hours | ISIN security master refresh | runserver, WSGI/ASGI |
+| `MutualFundUnderlyingScheduler` | At start, then daily at 06:00 IST | Official MF portfolio disclosures | runserver, WSGI/ASGI |
+| `PortfolioNewsScheduler` | 10 seconds after start, then every `NEWS_MONITOR_INTERVAL` (180 seconds by default) | News monitor, then exchange filing ingestion | runserver, WSGI/ASGI |
+| Watch List refresh (`watchlist/apps.py`) | At start (benchmark history), then daily at 06:00 IST | Benchmark master and Watch List universe | runserver only (`RUN_MAIN=true`) |
+| Corporate-action daily scan (`corporate_actions/automation.py`) | Daily at `daily_run_time` (06:00), with catch-up if started later | `monitor_corporate_actions --source nse` | runserver only |
 
----
+`run_scheduled_refresh` runs `update_market_prices` and `refresh_mis_reference_prices`, then `sync_sip_installments` and `execute_sips` for each active user, then `refresh_security_master --apply`, `monitor_portfolio_news` and `monitor_corporate_actions`. A failing step does not stop the rest. Pass `--skip <command>` to omit a step.
 
-## ⏰ Background jobs
+On PostgreSQL, `update_market_prices`, `run_scheduled_refresh` and the market-price scheduler share an advisory lock (`pwms_refresh_pipeline`) so that several processes do not run the same refresh at once. On SQLite the lock does nothing, and background writers share a process-level `RLock`.
 
-PWMS has two layers of automatic refresh:
+### Windows Task Scheduler (optional)
 
-1. **In-process jobs** run while Django is running. They handle the normal application background work, including post-import refreshes, the daily refresh pipeline and Portfolio News monitoring.
-2. **Windows Task Scheduler** can run the market-price command independently of the Django server process. This is the recommended Windows mechanism for keeping Stock / ETF / Bond / SGB prices refreshed automatically.
-
-| #   | Job / mechanism              | Cadence                                      | What it does |
-| --- | ---------------------------- | -------------------------------------------- | ------------ |
-| 1   | **Market price refresh**     | **Every hour on Windows**                    | Runs `update_market_prices` for Stock, ETF, Bond and SGB prices. ETFs use AMFI first when covered, with Yahoo fallback. |
-| 2   | **In-process price refresh** | While Django is running                      | Existing application-level price refresh mechanism; PostgreSQL advisory locks prevent overlapping refresh work. |
-| 3   | **Daily refresh**             | Once per calendar day of uptime              | AMFI NAV, security-master ratios, benchmark master coverage, SIP sync and execute. |
-| 4   | **Post-import refresh**       | Right after an import commits                | Immediate price refresh for newly added assets. |
-| 5   | **Portfolio News monitor**    | Every `NEWS_MONITOR_INTERVAL` (default 30 min) | Full news discovery → match → analyze → alert pass for every user. |
-| 6   | **MIS reference prices**      | Every 30 minutes while Django is running      | Refreshes Yahoo Finance reference-price history used by the MIS Notes sheet. Starts automatically with the existing background schedulers; no manual command is needed during normal operation. |
-| 7   | **NSE corporate actions**     | Daily at **06:00 local time** while `runserver` is running | Scans NSE announcements and reconciles them against direct/indirect portfolio exposure. If the server starts after 06:00, a catch-up scan runs at startup. |
-| 8   | **Post-import corporate-action scan** | After a successful transaction import | Queues an NSE scan after import, Security Master mapping and position rebuilding complete; the upload response is not blocked. |
-
-### Windows automatic market-price refresh
-
-The repository includes a Windows Task Scheduler setup so market prices can continue refreshing even when the Django development server is not running.
-
-From the repository root in PowerShell:
+`scripts/windows/register_market_price_scheduler.ps1` registers the task `PWMS-Market-Price-Refresh`. It runs `backend\venv\Scripts\python.exe manage.py update_market_prices` every hour and writes output to `backend\logs\scheduled_market_price_refresh.log`.
 
 ```powershell
 Set-ExecutionPolicy -Scope Process Bypass
 .\scripts\windows\register_market_price_scheduler.ps1
-```
-
-This creates the scheduled task `PWMS-Market-Price-Refresh`.
-
-The task:
-
-- runs `backend\venv\Scripts\python.exe manage.py update_market_prices`
-- runs once every hour
-- starts shortly after registration
-- uses `-StartWhenAvailable` so a missed run can start when Windows becomes available
-- prevents overlapping instances
-- writes execution output to `backend\logs\scheduled_market_price_refresh.log`
-
-Verify the task:
-
-```powershell
-Get-ScheduledTask -TaskName "PWMS-Market-Price-Refresh"
 Get-ScheduledTaskInfo -TaskName "PWMS-Market-Price-Refresh"
-```
-
-Remove it with:
-
-```powershell
 Unregister-ScheduledTask -TaskName "PWMS-Market-Price-Refresh" -Confirm:$false
 ```
 
-The setup is documented further in [`scripts/windows/README.md`](./scripts/windows/README.md).
+See [scripts/windows/README.md](./scripts/windows/README.md).
 
-**MIS reference prices are refreshed separately from listed-asset market prices.** When Django starts serving requests, the existing `MISReferencePriceScheduler` waits 20 seconds for startup to settle, then calls `MISReportService.refresh_reference_prices()` every 30 minutes. This refresh is guarded by the shared scheduler startup check, so it does not start for one-off commands such as `migrate`, `shell` or `test`. It runs only while a Django application process is running. The management command `refresh_mis_reference_prices` remains available for an explicit one-off refresh; routine operation does not require running it manually.
+### Management commands
 
-The daily refresh also runs the **benchmark master coverage check** for Nifty 50 and BSE 500 before the normal daily refresh. The BSE 500 loader only reads the configured local source when it is a regular file, so a directory or invalid file-path setting does not cause the scheduler to fail; supported remote/fallback benchmark sources remain available.
+Run from `backend/` with the virtual environment active. Use `python manage.py <command> --help` for options.
 
----
-
-## 🔔 Background Web Push notifications
-
-PWMS supports **Web Push notifications** for newly created **Critical** and **High** Portfolio News alerts. The browser registers `/push-sw.js`, stores its Push API subscription in Django, and the backend sends a push message using VAPID credentials.
-
-### Setup
-
-From `backend/` with the virtual environment active:
-
-```powershell
-python manage.py migrate
-python manage.py generate_web_push_keys
-```
-
-Copy the generated values into your local `backend/.env`:
-
-```ini
-WEB_PUSH_VAPID_PUBLIC_KEY=<generated-public-key>
-WEB_PUSH_VAPID_PRIVATE_KEY=<generated-private-key>
-WEB_PUSH_VAPID_SUBJECT=mailto:your-email@example.com
-```
-
-Restart Django after changing `.env`.
-
-> **Security:** the public VAPID key is sent to the browser and is safe to expose. The private VAPID key is a server secret and must never be committed to Git or exposed to frontend code.
-
-### Browser subscription
-
-1. Start the Django backend and Angular frontend.
-2. Open `http://localhost:4200` in a supported browser.
-3. Sign in and open the notification center / Portfolio News area.
-4. Grant browser notification permission when prompted.
-5. The Angular service registers `/push-sw.js`, creates a Push API subscription, and sends that subscription to Django.
-6. Django stores the subscription in `portfolio_news.PushSubscription`.
-
-Verify from the Django shell:
-
-```python
-from portfolio_news.models import PushSubscription
-PushSubscription.objects.all().values("user_id", "endpoint", "enabled")
-```
-
-### End-to-end background test
-
-After the subscription exists:
-
-1. Leave the browser running but close the PWMS tab.
-2. Trigger or ingest a new qualifying **Critical / High** Portfolio News alert.
-3. Confirm the operating system/browser displays the notification while the Angular page is closed.
-4. Re-open PWMS and verify the alert is also present in the in-app notification feed.
-5. Check `PortfolioNewsAlert.notification_sent` if you need to confirm that the backend recorded a successful push delivery.
-
-The backend disables stale subscriptions when a push provider returns HTTP **404** or **410**.
-
-### Troubleshooting
-
-- **No permission prompt:** check the browser's site notification settings and make sure the browser supports Notifications, Service Workers and Push API.
-- **No service worker:** check browser DevTools → **Application → Service Workers** and confirm `/push-sw.js` is registered.
-- **Subscription missing:** confirm `WEB_PUSH_VAPID_PUBLIC_KEY` and `WEB_PUSH_VAPID_PRIVATE_KEY` are both configured and restart Django.
-- **Alert appears in PWMS but no popup:** verify the alert is newly created and has **Critical** or **High** notification tier; lower tiers are intentionally not pushed.
-- **Production deployment:** serve the frontend over **HTTPS**. Do not use the development `ng serve` server as an internet-facing production server.
-
-See [SETUP.md](./SETUP.md#84-background-web-push-notifications) for the full setup and troubleshooting checklist.
+| App | Command | Purpose |
+| --- | --- | --- |
+| `market_data` | `run_scheduled_refresh` | Daily refresh pipeline (see above) |
+| `market_data` | `update_market_prices` | Listed-asset price refresh (`--user-id` optional) |
+| `market_data` | `refresh_mis_reference_prices` | MIS Notes reference prices |
+| `market_data` | `refresh_security_metrics` | Yahoo Finance valuation metrics |
+| `market_data` | `fetch_market_data`, `refresh_market_data` | Yahoo Finance history and refresh helpers |
+| `investments` | `import_transactions` | Import a workbook (`--file`, plus `--username`, `--user-id` or `--all-users`) |
+| `investments` | `refresh_security_master`, `link_security_master`, `load_security_master_data` | Security Master maintenance; report only unless `--apply` |
+| `investments` | `import_amfi_cap_classification` | Market-cap classification from an AMFI `.xlsx` |
+| `investments` | `discover_security_identities`, `repair_asset_identity`, `refresh_underlying_metadata`, `backfill_price_history` | Identity and data repair utilities |
+| `portfolio` | `rebuild_holdings` | Rebuild holdings (`--user-id`, `--asset-id`) |
+| `portfolio` | `audit_portfolio_xirr` | XIRR diagnostics |
+| `mutual_funds` | `refresh_amfi_master`, `refresh_investment_amfi`, `fetch_amfi_nav` | AMFI master and NAV import (`fetch_amfi_nav --from-date YYYY-MM-DD --to-date YYYY-MM-DD` for history) |
+| `mutual_funds` | `sync_sip_installments`, `execute_sips` | SIP installment generation and execution (`--user-id`) |
+| `mutual_funds` | `rebuild_mf_holdings`, `recalculate_mf_transactions`, `import_mf_nav`, `resolve_amfi_scheme`, `fetch_mf_underlying` | MF maintenance |
+| `corporate_actions` | `monitor_corporate_actions` | `--source nse|feed|filings|both`, `--hours`, `--since`, `--until`, `--dry-run`, `--report-json` |
+| `filing_intelligence` | `ingest_exchange_filings` | `--exchange nse|bse` (repeatable), `--hours`, `--dry-run` |
+| `filing_intelligence` | `diagnose_corporate_filings` | Read-only filing coverage diagnostics |
+| `portfolio_news` | `monitor_portfolio_news` | One news pass (`--loop` to repeat) |
+| `portfolio_news` | `generate_web_push_keys` | Generate a VAPID key pair |
+| `watchlist` | `refresh_watchlist`, `prepare_watchlist_benchmark_chart` | Watch List universe and benchmark data |
+| `ai` | `gemini_usage` | Gemini token usage summary |
 
 ---
 
-## 🚀 Deployment and refresh performance
+## Running tests
 
-The deployment refresh path includes protections for production-style multi-worker environments and avoids unnecessary market-data work. Benchmark history and Watch List chart preparation also validate data density before accepting historical series.
-
-- **PostgreSQL advisory locks** prevent concurrent scheduled/manual market refresh workers from performing the same refresh simultaneously.
-- Advisory locking is applied to the scheduled refresh command, one-off market-price updates, and the market-price scheduler.
-- **PostgreSQL connection reuse** uses `CONN_MAX_AGE` through `POSTGRES_CONN_MAX_AGE`, with Django connection health checks enabled.
-- **Current-data reuse** avoids recreating an existing holding/data record when the required market data is already current.
-- **Historical Yahoo Finance writes** use bulk upsert-style persistence rather than one database operation per historical price row.
-- **Angular route preloading** uses `PreloadAllModules` to reduce navigation latency after the application starts.
-- These changes do not introduce Celery, Redis, cron, or a new background-job architecture; they harden the existing in-process refresh flow.
-
-> **PostgreSQL note:** advisory-lock coordination is available when the application is running against PostgreSQL. SQLite remains supported for local development, but it does not provide PostgreSQL advisory-lock semantics.
-
----
-
-## 🔧 Configuration
-
-Settings are split into two layers: **secrets and deployment-specific values** come from `backend/.env` (template: [`backend/.env.example`](./backend/.env.example)), while **non-secret application/provider settings** are centralized in [`backend/config/pwms_config.json`](./backend/config/pwms_config.json). The Python loader [`backend/config/pwms_config.py`](./backend/config/pwms_config.py) reads that JSON and supports the optional `PWMS_CONFIG_OVERRIDES` environment variable for deployment-specific JSON overrides. `SECRET_KEY` is required when `DEBUG=False`; when `DEBUG=True`, Django generates a development-only random key at startup.
-
-| Variable                                                                                  | Purpose                                                     | Local default                               | Production / template value                                                                                   |
-| ----------------------------------------------------------------------------------------- | ----------------------------------------------------------- | ------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
-| `SECRET_KEY`                                                                              | Django's cryptographic signing key                          | Generated automatically only when `DEBUG=True` | Required when `DEBUG=False`; random key — never committed                                                     |
-| `DEBUG`                                                                                   | Debug mode                                                  | `False`                                     | `False`                                                                                                       |
-| `ALLOWED_HOSTS`                                                                           | Comma-separated allowed hosts                               | _(empty)_                                   | Your domain(s) / IP(s) — Django rejects everything else once `DEBUG=False`                                    |
-| `CORS_ALLOWED_ORIGINS`                                                                    | Allowed frontend origins                                    | `http://localhost:4200`                     | Exact `https://` origin of the frontend                                                                       |
-| `CSRF_TRUSTED_ORIGINS`                                                                    | Trusted origins for CSRF                                    | `http://localhost:4200`                     | Same as above                                                                                                 |
-| `SESSION_COOKIE_SECURE`                                                                   | Require HTTPS for the session cookie                        | `False`                                     | `True` — only once real HTTPS is in place                                                                     |
-| `CSRF_COOKIE_SECURE`                                                                      | Require HTTPS for the CSRF cookie                           | `False`                                     | `True` — only once real HTTPS is in place                                                                     |
-| `SECURE_SSL_REDIRECT`                                                                     | Redirect HTTP → HTTPS                                       | `False`                                     | `True`                                                                                                        |
-| `DATABASE_ENGINE`                                                                         | `sqlite` or `postgresql`                                    | `sqlite`                                    | `sqlite` until your PostgreSQL migration is validated                                                         |
-| `POSTGRES_DB` · `POSTGRES_USER` · `POSTGRES_PASSWORD` · `POSTGRES_HOST` · `POSTGRES_PORT` | PostgreSQL connection                                       | used only when `DATABASE_ENGINE=postgresql` | template: `pwms` · `pwms_user` · _(set a password)_ · `localhost` · `5432`                                    |
-| `POSTGRES_CONN_MAX_AGE`                                                                   | Persistent PostgreSQL connection lifetime                    | `60` seconds when PostgreSQL is enabled       | Tune for the deployment; database health checks remain enabled                                                    |
-| `GEMINI_API_KEY` _(or `GOOGLE_API_KEY`)_                                                  | Enables Portfolio Chat only                                  | —                                           | Optional; Portfolio News does not use this key |
-| `NEWS_CORPORATE_FILINGS_ENABLED` | Enable corporate filing ingestion in the scheduler | `True` | Enabled by default; disable only when filing monitoring is not required |
-| `NEWS_NSE_FILINGS_ENABLED` | Enable NSE filing adapter | `True` | Applies only when corporate filing intelligence is enabled |
-| `NEWS_BSE_FILINGS_ENABLED` | Enable BSE filing adapter | `True` | Applies only when corporate filing intelligence is enabled |
-| `EXCHANGE_FILING_FEED_URL_NSE` | Optional configured NSE HTTP/CSV/JSON feed or mirror | — | The built-in NSE public Corporate Announcements adapter is used when this is not set |
-| `EXCHANGE_FILING_FEED_URL_BSE` | Authorized BSE HTTP/CSV/JSON feed or mirror | — | BSE ingestion requires a configured/authorized feed; an unconfigured BSE provider is skipped |
-| `NEWS_EVENT_CLUSTER_WINDOW` | Recent event-clustering window in days | `3` | Conservative cross-source clustering |
-| `NEWS_NOTIFICATION_COOLDOWN` | Maximum age for retrying an unsent immediate notification | `86400` | Prevents stale push retries; does not suppress new events |
-| `NEWS_MONITOR_INTERVAL`                                                                   | Seconds between automatic news runs                         | `1800`                                      | Tune as needed                                                                                                |
-| `NEWS_MONITOR_ANALYSIS_DELAY_SECONDS`                                                      | Optional pause between local analysis batches              | `0`                                         | Usually leave at `0`; no external AI rate limit exists                                                            |
-| `WATCHLIST_PMS_SOURCE_URLS`                                                               | Optional comma-separated authoritative PMS source endpoints | _(blank)_                                   | Leave blank when no reliable source exists — no PMS values are ever fabricated                                |
-| `WEB_PUSH_VAPID_PUBLIC_KEY`                                                                | Browser Web Push public VAPID key                          | _(blank)_                                   | Generate with `python manage.py generate_web_push_keys`                                                      |
-| `WEB_PUSH_VAPID_PRIVATE_KEY`                                                               | Browser Web Push private VAPID key                         | _(blank)_                                   | Keep secret; never commit it                                                                                   |
-| `WEB_PUSH_VAPID_SUBJECT`                                                                   | VAPID contact / application subject                        | `mailto:admin@example.com`                | Use a real maintainer email or HTTPS subject                                                                    |
-
-> ⚠️ **Turn the `*_SECURE` flags and `SECURE_SSL_REDIRECT` on only after HTTPS is working.** Browsers refuse `Secure` cookies over plain HTTP, so enabling them early breaks login.
-
-**Frontend:** the backend URL lives in `frontend/src/environments/environment.ts` for development (`http://localhost:8000`). The production environment currently uses an empty `apiUrl`, so production builds expect `/api` to be routed by the same-origin reverse proxy. If your deployment uses a separate backend origin, set `frontend/src/environments/environment.prod.ts` before building.
-
----
-
-## 📜 Management commands
-
-Run from `backend/` with the virtual environment active: `python manage.py <command>`.
-
-| Command                          | App              | What it does                                                                 |
-| -------------------------------- | ---------------- | ---------------------------------------------------------------------------- |
-| `update_market_prices`           | `market_data`    | One-off listed-asset price refresh; on Windows it can also be run automatically every hour by the documented Task Scheduler setup |
-| `refresh_mis_reference_prices`   | `market_data`    | One-off refresh of Yahoo Finance reference-price history used by the MIS Notes sheet; normally refreshed automatically every 30 minutes while Django is running |
-| `monitor_portfolio_news`         | `portfolio_news` | One full news-monitoring pass for every user (also automatic)                |
-| `monitor_corporate_actions --source nse` | `corporate_actions` | Scan NSE corporate announcements and reconcile matching portfolio exposure; also used by the daily and post-import automation |
-| `ingest_exchange_filings`         | `filing_intelligence` | Ingest corporate filings for a selected exchange; supports `--exchange nse|bse`, `--hours` and dry-run workflows |
-| `diagnose_corporate_filings`      | `filing_intelligence` | Read-only diagnostics for filing identifier coverage, portfolio matches, holding-user matches, watchlists and existing filing alerts |
-| `gemini_usage`                   | `ai`             | Summary of Gemini token usage                                                |
-| `fetch_amfi_nav`                 | `mutual_funds`   | Import latest AMFI NAV master, or historical AMFI master data with `--from-date` / `--to-date` |
-| `execute_sips`                   | `mutual_funds`   | Execute all due SIP installments for a user                                  |
-| `rebuild_holdings`               | `portfolio`      | Rebuild holdings from transactions — `--user-id <id>`                        |
-| `load_security_master_data`      | `investments`    | Load researched sector / cap-type / P/E / P/B / ROE data into SecurityMaster |
-| `link_security_master`           | `investments`    | Link Assets to their SecurityMaster row by ISIN _(dry-run by default)_       |
-| `import_amfi_cap_classification` | `investments`    | Classify stocks Large / Mid / Small Cap by AMFI rank _(dry-run by default)_  |
-| `generate_web_push_keys`           | `portfolio_news` | Generate URL-safe VAPID keys for browser Web Push |
-| `run_scheduled_refresh`           | `market_data`    | Run the scheduled market-price/security/news refresh pipeline; investment-driven AMFI refresh and MIS history are handled by the separate 30-minute in-process scheduler |
-Standard Django commands you'll use as well: `migrate`, `check`, `createsuperuser`, `changepassword <username>`, `shell`, `test`.
-
-> Tip: run any command with `--help` to see its options — including how to apply the _dry-run by default_ commands.
-
----
-
-## 🔒 Security model and privacy
-
-**Security**
-
-- **Session auth + CSRF** — no long-lived bearer tokens to leak.
-- **Server-side authorization on every request.** Role and family memberships are re-read from the database each time; a client-claimed role or family ID is never trusted.
-- **Privilege-escalation guards** — nobody can change their own role; the last active System Owner cannot be demoted; missing profiles never grant access.
-- **Audit trail** — user-management activity is written to an append-only audit log, and every manual price override is audit-logged (who, when, from what).
-- **Secrets stay out of git** — `.env` is gitignored; only `.env.example` is committed.
-- **Tested** — `users/tests.py` covers every role × capability combination and privilege-escalation attempt.
-
-**What leaves your machine**
-
-PWMS is self-hosted, so your database never leaves your server. The following outbound calls do happen:
-
-| Destination         | When                      | What is sent                                                                                                            |
-| ------------------- | ------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
-| **Yahoo Finance**   | Price refresh             | Ticker symbols for your Stock / ETF holdings                                                                            |
-| **AMFI**            | NAV refresh               | Nothing personal — a public NAV file is downloaded                                                                      |
-| **Tigzig MF API**   | Watch List MF manager enrichment | Public AMFI mutual-fund scheme codes (batches of up to 50); no holdings or transaction data                              |
-| **APMI India**      | Watch List PMS manager enrichment | Public APMI investment-approach identifiers (`IAID` values) used to retrieve the corresponding detail pages; no personal portfolio data |
-| **Google News RSS** | News monitor              | Search queries built from the securities you hold                                                                       |
-| **Google Gemini**   | AI Chat only | Structured portfolio context is sent only when you explicitly configure a Gemini key. |
-
-Prefer to keep everything local? Leave `GEMINI_API_KEY` unset — Portfolio News remains fully functional; only Portfolio Chat is unavailable.
-
----
-
-## ✅ Testing
-
-**Backend** — from `backend/` with the virtual environment active:
+Backend tests use Django's test runner, with `test*.py` modules in each app. `pytest` is not listed in `requirements.txt`.
 
 ```bash
-python manage.py test                       # everything
-python manage.py test users portfolio -v 2  # RBAC + portfolio, verbose
-python manage.py test analytics.tests -v 2  # Dashboard view model, XIRR category mapping and allocation APIs
-python manage.py test portfolio_news.test_web_push -v 2 # Web Push delivery behavior
+cd backend
+python manage.py check
+python manage.py makemigrations --check --dry-run
+python manage.py test
+python manage.py test users portfolio.test_mis_report -v 2   # selected modules
 ```
 
-| Suite                   | Covers                                                                |
-| ----------------------- | --------------------------------------------------------------------- |
-| `users/tests.py`        | Every role × capability combination and privilege-escalation attempts |
-| `mutual_funds/tests.py` | Batched AMFI NAV import                                               |
-| `investments/tests.py`  | The transaction importer and AMC-name / quant auto-enrichment         |
-| Transaction upload workflow | Upload audit/history, standard template endpoints, row-level failure handling, and transaction import behavior |
-| `portfolio_news/test_web_push.py` | VAPID/Web Push delivery, subscription handling and notification_sent semantics |
-| `portfolio/test_mis_report.py` | MIS Report API, historical valuation, Excel structure, display units, FIFO taxation, transaction fees, split basis preservation, calendar-month holding boundaries, negative-loss tax benefits, and family authorization |
-| `users/test_tax_rate_settings.py` | Shared displayed-asset tax policies, cross-family visibility, legacy conflict review, and tax-setting change history |
-| `analytics/tests.py` | Dashboard view-model calculations, XIRR category matching, investment summary and Standard Allocation APIs |
-| `analytics/test_historical_wealth.py` | Historical wealth regression coverage, including legacy mutual-fund classification and AMFI master NAV valuation |
-| `filing_intelligence` | Corporate filing classifier, event precedence, material-change detection, deterministic portfolio matching, filing ingestion, deduplication, cross-source clustering and alert creation. Current branch verification: **20 tests, all passing** |
+PowerShell uses the same commands. CI sets `DEBUG=True`, a placeholder `SECRET_KEY` and `ALLOWED_HOSTS=localhost,127.0.0.1,testserver`, and runs the suite against SQLite and PostgreSQL 16.
 
-### Liquid Position branch validation (2026-11-17)
-
-The `feature/liquid-position` branch was locally validated after the Downloads export was connected to the saved Liquid Position document:
-
-- `python manage.py test portfolio.test_liquid_position` — **3 tests passed**; Django system checks reported no issues.
-- `npm run build` — Angular production build completed successfully. It emitted existing style-budget and CommonJS dependency warnings, but no build failure.
-
-**Frontend** — from `frontend/`:
+Frontend:
 
 ```bash
-npm test          # unit tests
-npm run build     # verifies the whole app compiles
+cd frontend
+npm run build                  # production build
+npm run test -- --watch=false  # Vitest unit tests (app, analytics, portfolio, watch-list specs)
 ```
 
-### Corporate-actions validation
+CI workflows:
 
-Latest recorded validation on `feature/corporate-actions-audit-hardening`:
-
-- `python manage.py check` — passed with no system-check issues.
-- `python manage.py test corporate_actions investments --parallel 1` — **98 tests passed**.
-- The test suite includes corporate-action scanning/reconciliation and investment identity-discovery regression coverage.
-- The daily scheduler's startup catch-up path was observed in a local `runserver` session. The scan completed with no NSE fetch errors.
-- The upload-triggered scan and the scheduled 06:00 execution still require runtime verification in the target environment.
-- The latest Corporate Actions dark-mode stylesheet update was committed; an Angular production build and visual check after that update should be run before merging.
-
-### Capital-gains tax engine audit verification
-
-The `audit/capital-gains-tax-engine-20261013` branch was validated with the following checks:
-
-- `python manage.py test portfolio.test_mis_report` — **35 tests passed**, covering MIS reporting and tax/FIFO regressions.
-- `python manage.py test` — **563 tests passed**; Django system checks reported no issues.
-- `npm run build` — Angular production build completed successfully. The build reported style-budget and CommonJS dependency warnings, but no build failure.
-- `git diff --check origin/main...HEAD` — passed, and the audit branch working tree was clean.
-- The active Django default database setting reported `django.db.backends.postgresql`. The recorded full-suite output did not independently identify the test database engine, so this result should not be read as proof that every test ran against PostgreSQL.
+- `.github/workflows/backend-checks.yml`: Django check, migration check and tests on SQLite and PostgreSQL; Angular build and unit tests (Python 3.12, Node 22).
+- `.github/workflows/security-audit.yml`: `pip-audit -r backend/requirements.txt` and `npm audit --audit-level=high`. Runs on pushes, pull requests, every Monday and on demand.
 
 ---
 
-## 🚧 Known limitations
-
-| Limitation                                   | Details                                                                                                                                                                                                 |
-| -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **SQLite is the default database**           | WAL mode + busy-timeout reduce — but do not eliminate — write contention under concurrent load, and there is no automated backup yet. Fine for a household; for many concurrent writers use PostgreSQL. |
-| **Windows market-price scheduling is OS-level** | Windows automatic market-price refresh uses Task Scheduler to invoke `update_market_prices` hourly. The in-process application jobs remain separate; PostgreSQL advisory locks prevent overlapping refresh work when PostgreSQL is used. |
-| **Single owning user per record**            | `Asset` / `Transaction` are stored against one owning `User`; family sharing is a visibility layer on top.                                                                                              |
-| **Web Push requires VAPID configuration**     | Background browser delivery requires `WEB_PUSH_VAPID_PUBLIC_KEY`, `WEB_PUSH_VAPID_PRIVATE_KEY` and `WEB_PUSH_VAPID_SUBJECT`. Without them, news alerts still appear in the in-app notification feed but no push is sent. |
-| **Browser permission is required**             | The user must grant notification permission and allow the service worker to subscribe. |
-| **HTTPS is required outside localhost**        | Service workers and Push API require a secure context in production. Localhost is suitable for development. |
-| **Some SIP tests drift with the calendar**   | A few SIP-scheduling tests compare against today's real date; this is a known fixture limitation that does not affect the running app.                                                                  |
-| **Third-party data can lag or fail**         | Yahoo Finance, AMFI, Tigzig, APMI and Google News are external sources; quotes, NAVs or manager attribution may be delayed, unavailable or affected by source changes. Use **manual prices** when a quote is missing. |
-| **AMFI refresh is investment-driven**       | The AMFI feed is downloaded as a complete public source file, but PWMS persists and processes only records matching held investment ISINs. Mutual-fund history is persisted locally for MIS. |
-| **MIS valuation depends on available market data** | Historical MIS valuation uses the latest available market price / NAV on or before the requested valuation date; missing valuation data may result in an unavailable market-value figure. |
-| **Corporate filing coverage depends on exchange feeds** | NSE uses the built-in public Corporate Announcements adapter; BSE requires an authorized/configured feed. Unconfigured BSE ingestion is skipped rather than treated as a provider failure. |
-| **Deterministic news is intentionally not LLM-generated** | Portfolio News classifications, filing categories, scoring and notification tiers use transparent rules. This avoids hosted AI cost but cannot provide open-ended semantic reasoning. |
-
-See [SETUP.md](./SETUP.md) for what to configure before any real deployment (`.env`, `environment.prod.ts` and the WSGI / ASGI options).
-
----
-
-## 🤝 Contributing
-
-Found a bug or have an idea? **Open an issue** on the [issue tracker](https://github.com/avviiiral/Personal_Wealth_Monitoring_System/issues). If you're proposing a change:
-
-1. Create a feature branch from `main`.
-2. Run `python manage.py test` (backend) and `npm run build` (frontend) before pushing.
-3. If you touch roles or capabilities, update **both** the matrix in `backend/users/permissions.py` and the table in this README.
-4. Keep every new endpoint behind the central permission classes — never trust client-supplied roles or family IDs.
-
----
-
-## 📄 License and disclaimer
-
-Released under a **proprietary license** — see [`License.md`](./License.md).
-
-> **Disclaimer.** PWMS is a personal record-keeping and analytics tool. It is **not** investment, tax or legal advice. Prices and NAVs come from third-party sources and may be delayed, adjusted or unavailable, and AI-generated commentary can be wrong. Always reconcile against your broker, depository and AMC statements before making decisions. PWMS is not affiliated with Yahoo, AMFI, Google or any exchange.
-
----
-
-<div align="center">
-
-**Built by [@avviiiral](https://github.com/avviiiral)**
-
-[⬆ Back to top](#-personal-wealth-monitoring-system)
-
-</div>
-
-
-## News Agent intelligence audit
-
-The News Agent's source architecture and current limitations are documented in the code and operational notes. See [News Agent Intelligence Audit](docs/NEWS_AGENT_INTELLIGENCE_AUDIT.md) for verified findings, the event-deduplication fixes, regression coverage, and validation commands.
-
-### News Agent relevance and event deduplication
-
-The News Agent includes relevance checks intended to prioritize portfolio-related evidence, while retaining clearly labeled sector or macro context where useful. Portfolio-aware explanations connect a story to the affected holding or exposure when the available data supports that connection.
-
-URL normalization and event-specific deduplication reduce duplicate stories from alternate URL forms without treating generic action words as sufficient evidence that two articles describe the same event. These are heuristic safeguards, not a guarantee that every duplicate or related story will be classified perfectly.
-
-Run the backend regression suite from `backend/`:
+## Build and deployment
 
 ```bash
-python -m pytest -q
+cd frontend
+npm ci
+npm run build          # production configuration by default; output in frontend/dist/frontend/browser/
 ```
 
-See [News Agent intelligence audit](docs/NEWS_AGENT_INTELLIGENCE_AUDIT.md) and [portfolio news calculation notes](docs/PORTFOLIO_NEWS_CALCULATION.md) for implementation details and limitations.
+The committed configuration does not include a complete production deployment. Verified facts:
 
+- The production frontend calls relative `/api` URLs. Serve `dist/frontend/browser/` and `/api/` from the same origin, for example with a reverse proxy that forwards `/api/` to Django.
+- `waitress` and `uvicorn` are installed by `requirements.txt`, and `config/wsgi.py` and `config/asgi.py` exist. The repository contains no server start script, reverse-proxy configuration or service definition.
+- `SECURE_PROXY_SSL_HEADER` trusts `X-Forwarded-Proto`. Run Django only behind a proxy that overwrites this header.
+- Django admin needs static files: set up `python manage.py collectstatic` (`STATIC_ROOT` is `backend/staticfiles`) and serve that directory.
+- Every server process starts its own scheduler threads. With several worker processes, each runs the schedulers; PostgreSQL advisory locks protect only the market-price refresh pipeline. The Watch List refresh and the daily corporate-action scan do not start outside `runserver`. Run `run_scheduled_refresh`, `refresh_watchlist` and `monitor_corporate_actions` from an external scheduler when you are not using `runserver`.
+- The API response cache defaults to per-process `LocMemCache`. Set `CACHE_BACKEND` to a shared backend for multi-process deployments.
+- `frontend/src/server.ts`, `main.server.ts` and `app.routes.server.ts` exist, but `angular.json` does not enable server-side rendering. The build produces only browser output, so the `serve:ssr:frontend` script has no server bundle to run.
+- Web Push needs HTTPS outside `localhost`.
 
-## Project Keywords
+Use the [Django deployment checklist](https://docs.djangoproject.com/en/5.2/howto/deployment/checklist/) and [docs/operations/pwms-production-readiness.md](./docs/operations/pwms-production-readiness.md) before exposing the application.
 
-`personal-finance` `portfolio-tracker` `wealth-management` `django` `django-rest-framework` `angular` `python` `investment-analytics` `xirr` `mutual-funds` `india`
+---
+
+## Troubleshooting
+
+| Symptom | Likely cause and fix |
+| --- | --- |
+| `RuntimeError: SECRET_KEY must be configured when DEBUG=False.` | Set `SECRET_KEY` in `backend/.env`, or set `DEBUG=True` for local development. |
+| Login appears to succeed, then every request returns 403 | Secure cookies over HTTP. Remove `SESSION_COOKIE_SECURE`, `CSRF_COOKIE_SECURE` and `SECURE_SSL_REDIRECT` from a local `.env` or set them to `False`. |
+| "You must belong to an active family to access family-owned financial data." | Add the user to a family in Settings → Family Management and select it in the header. |
+| Logged out after every backend restart | `SECRET_KEY` is unset with `DEBUG=True`, so a new key is generated per start. Set a fixed key. |
+| API calls fail from `http://localhost:4200` | Start the backend on port 8000. `ng serve` proxies `/api` there. |
+| `database is locked` with SQLite | Concurrent background writes. WAL mode and a 60-second busy timeout reduce this; use PostgreSQL for heavier use. |
+| Prices or NAVs missing | External provider unavailable or the symbol cannot be resolved. Check `backend/logs/price_updates.log`, then set a manual price. |
+| AI chat returns "GEMINI_API_KEY is not configured on the backend." | Set `GEMINI_API_KEY` and restart Django. |
+| No push notifications | Set both VAPID keys, restart Django, allow notifications in the browser, use HTTPS outside localhost. Only Critical and High alerts are pushed. |
+| Liquid Position shows zero market values | Family Member labels in transactions must be `DAJ` or `DJT`, and the sub class must contain "liquid" or "arbitrage" with a mutual-fund asset class. |
+| Values look stale for a few seconds after an edit | The per-user API cache holds selected GET responses for 20 seconds. |
+| Slow pages | Check the `X-PWMS-Request-Time-Ms` and `X-PWMS-DB-Queries` response headers and the slow-request warnings in the application log. |
+
+---
+
+## Security considerations
+
+- Authorization is enforced on the server for every request. The frontend `RbacService` only hides controls.
+- `.env`, `*.sqlite3`, logs and secret files are git-ignored. Only `backend/.env.example` is committed. Keep `WEB_PUSH_VAPID_PRIVATE_KEY`, `SECRET_KEY`, database passwords and `GEMINI_API_KEY` server-side.
+- With `DEBUG=False`, secure cookies and the HTTPS redirect are on by default. `X-Frame-Options: DENY`, `nosniff`, `Cross-Origin-Opener-Policy: same-origin` and a configurable Referrer-Policy are always set. HSTS is off until `SECURE_HSTS_SECONDS` is set.
+- Data sent to third parties: ticker symbols to Yahoo Finance; holding names and identifiers as Google News search queries; scheme codes to the Tigzig MF API; APMI investment-approach IDs; NSE symbols to NSE. AMFI files are downloaded with no user data. The Gemini chat sends the requesting user's portfolio context to Google, and only when a key is configured and the user sends a message.
+- `/api/health/` and `/api/market-data/stocks/search/` are reachable without logging in. The search endpoint forwards the query to Yahoo Finance.
+- `/api/auth/login/` is CSRF-exempt by design. No login rate limiting or account lockout is implemented in the code.
+- Dependency audits run in `security-audit.yml`. See [SECURITY.md](./SECURITY.md) for reporting vulnerabilities and [SECURITY_HARDENING.md](./SECURITY_HARDENING.md) for hardening notes.
+
+---
+
+## Known limitations
+
+- **Single-process background design.** Schedulers are daemon threads inside the web process. Multi-worker deployments need care (see [Build and deployment](#build-and-deployment)).
+- **SQLite by default.** Suitable for a single household. No automated backup is included.
+- **Liquid Position member columns are fixed** to `DAJ` and `DJT` in `LiquidPositionService`.
+- **External data sources** (Yahoo Finance, AMFI, NSE, BSE, APMI, Tigzig, Google News) can be delayed, change format or block requests. Missing values are left unavailable rather than estimated.
+- **BSE filings** need an authorised feed URL. The configured NSE providers use public endpoints and do not bypass access controls.
+- **Portfolio News is rule-based.** Classification and scoring use keywords and configured weights, not semantic understanding.
+- **Capital Gain Report** in Downloads is indicative and calculated in the browser.
+- **No frontend screen** exists for the mutual-fund/SIP API or Security Master editing.
+- **Unused code.** `src/app/core/services/auth.service.ts` (the app uses `src/core/services/auth.service.ts`), `portfolio_news/services/gemini_analyzer.py`, and the unrouted `prepare_watch_list` and `prepare_watch_list_benchmark` views in `watchlist/views.py`.
+
+---
+
+## Contributing
+
+See [CONTRIBUTING.md](./CONTRIBUTING.md) and [CODE_OF_CONDUCT.md](./CODE_OF_CONDUCT.md). Pull requests use `.github/PULL_REQUEST_TEMPLATE.md`.
+
+Before opening a pull request:
+
+1. Branch from `main`. CI also runs on `feature/**`, `fix/**`, `audit/**` and `hardening/**` pushes.
+2. Run `python manage.py check`, `python manage.py makemigrations --check --dry-run` and `python manage.py test` in `backend/`.
+3. Run `npm run build` and `npm run test -- --watch=false` in `frontend/`.
+4. Protect new endpoints with the classes in `users/permissions.py` and scope financial queries with `family_scope()` or `require_active_family()`.
+5. If you change roles or capabilities, update the matrix in the `users/permissions.py` docstring and the table in this README.
+
+---
+
+## License and disclaimer
+
+Proprietary software. See [License.md](./License.md).
+
+PWMS is a record-keeping and analytics tool. It does not provide investment, tax or legal advice. Prices, NAVs, filings and news come from third parties and may be delayed or wrong. Tax figures are estimates. Reconcile against broker, depository and AMC statements before acting on any figure.

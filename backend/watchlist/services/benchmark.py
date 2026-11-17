@@ -13,6 +13,7 @@ from django.db import models
 from django.utils import timezone
 
 from mutual_funds.models import AMFIMasterNAV
+from mutual_funds.services.amfi import AMFIService
 from watchlist.models import BenchmarkMasterPoint, PerformanceSnapshot
 from config.pwms_config import get as get_pwms_config
 
@@ -29,6 +30,9 @@ class BenchmarkPerformanceService:
     NIFTY_TRI_HEADERS = dict(get_pwms_config("benchmarks", "nifty_headers", {}))
     NIFTY_TRI_HEADERS["Referer"] = get_pwms_config("benchmarks", "nifty_historical_page", "")
     BSE_TRI_PROXY_TICKERS = tuple(get_pwms_config("benchmarks", "bse_tri_proxy_tickers", []))
+    BSE_TRI_AMFI_SCHEME_CODE = str(
+        get_pwms_config("benchmarks", "bse_tri_amfi_scheme_code", "143247")
+    )
     BSE_HEADERS = dict(get_pwms_config("benchmarks", "bse_headers", {}))
     MINIMUM_HISTORY_ROWS = int(
         get_pwms_config("benchmarks", "minimum_history_rows", 20)
@@ -205,7 +209,7 @@ class BenchmarkPerformanceService:
             aggregate = BenchmarkMasterPoint.objects.filter(
                 benchmark=benchmark,
                 source__in=(
-                    ["BSE500T_OFFICIAL", "BSE500T_FILE", "BSE500_TRI_PROXY"]
+                    ["BSE500T_OFFICIAL", "BSE500T_FILE", "BSE500_TRI_PROXY_AMFI_NAV", "BSE500_TRI_PROXY"]
                     if benchmark == "BSE 500"
                     else ["MASTER"]
                 ),
@@ -545,6 +549,48 @@ class BenchmarkPerformanceService:
         return [all_points[key] for key in sorted(all_points)]
 
     @classmethod
+    def _amfi_bse_tri_proxy_series(cls, start, end):
+        """Use the BSE 500 ETF's AMFI NAV history as a long-history TRI proxy.
+
+        The ICICI Prudential BSE 500 ETF (AMFI scheme 143247) tracks BSE 500
+        TRI and has NAV history from 2018. This is not the official index
+        level: its NAV includes fund expenses and tracking difference.
+        """
+        scheme_code = cls.BSE_TRI_AMFI_SCHEME_CODE
+        AMFIService.import_historical_master_navs(
+            start,
+            end,
+            scheme_codes={scheme_code},
+        )
+        navs = (
+            AMFIMasterNAV.objects
+            .filter(
+                scheme__scheme_code=scheme_code,
+                source="AMFI",
+                date__gte=start,
+                date__lte=end,
+            )
+            .order_by("date")
+            .values_list("date", "nav")
+        )
+        points = [
+            {
+                "date": nav_date.isoformat(),
+                "value": float(nav),
+                "source": "BSE500_TRI_PROXY_AMFI_NAV",
+            }
+            for nav_date, nav in navs
+            if nav is not None and float(nav) > 0
+        ]
+        if not cls._has_sufficient_history(points, start, end):
+            raise ValueError(
+                "ICICI Prudential BSE 500 ETF AMFI NAV history is incomplete "
+                f"for {start.isoformat()} to {end.isoformat()} "
+                f"({len(points)} observations)"
+            )
+        return points
+
+    @classmethod
     def _bse_series(cls, start):
         end = timezone.now().date()
         source_file = Path(cls.BSE500_FILE)
@@ -575,10 +621,19 @@ class BenchmarkPerformanceService:
         except Exception as exc:
             bse_error = exc
 
-        # These listed ETFs explicitly track BSE 500 TRI. Their adjusted closes
-        # are a proxy, not the official index level. Validate coverage before
-        # accepting one so a newer ETF cannot truncate a 5Y comparison.
+        # AMFI carries the ICICI Prudential BSE 500 ETF NAV history from
+        # 2018 (scheme 143247). It tracks BSE 500 TRI and is a better long-
+        # history proxy than exchange-listed ETF prices, which begin later.
+        # NAV is still a fund proxy, not the official index level.
         proxy_errors = []
+        try:
+            points = cls._amfi_bse_tri_proxy_series(start, end)
+            return points
+        except Exception as exc:
+            proxy_errors.append(f"AMFI ETF NAV: {exc}")
+
+        # Last-resort listed ETF adjusted closes. They are proxies and are
+        # accepted only when they cover the complete requested period.
         for ticker in cls.BSE_TRI_PROXY_TICKERS:
             try:
                 points = cls._series(ticker, start)
@@ -608,7 +663,7 @@ class BenchmarkPerformanceService:
         """
         def read_master():
             allowed_sources = (
-                ["BSE500T_OFFICIAL", "BSE500T_FILE", "BSE500_TRI_PROXY", "MASTER"]
+                ["BSE500T_OFFICIAL", "BSE500T_FILE", "BSE500_TRI_PROXY_AMFI_NAV", "BSE500_TRI_PROXY", "MASTER"]
                 if benchmark == "BSE 500"
                 else ["MASTER"]
             )
@@ -645,8 +700,9 @@ class BenchmarkPerformanceService:
                 key = point["date"]
                 current = by_date.get(key)
                 source_priority = {
-                    "BSE500T_OFFICIAL": 4,
-                    "BSE500T_FILE": 3,
+                    "BSE500T_OFFICIAL": 5,
+                    "BSE500T_FILE": 4,
+                    "BSE500_TRI_PROXY_AMFI_NAV": 3,
                     "BSE500_TRI_PROXY": 2,
                     "MASTER": 1,
                 }
@@ -1349,7 +1405,10 @@ class BenchmarkPerformanceService:
             "benchmark_metrics": benchmark_metrics,
             "benchmark_return_details": benchmark_return_details,
             "benchmark_data_source": (
-                "BSE 500 TRI-tracking ETF adjusted-close proxy (tracking error may apply)"
+                "ICICI Prudential BSE 500 ETF AMFI NAV proxy (tracks BSE 500 TRI; fund expenses and tracking difference apply)"
+                if benchmark == "BSE 500"
+                and any(point.get("source") == "BSE500_TRI_PROXY_AMFI_NAV" for point in benchmark_series)
+                else "BSE 500 TRI-tracking ETF adjusted-close proxy (tracking error may apply)"
                 if benchmark == "BSE 500"
                 and any(point.get("source") == "BSE500_TRI_PROXY" for point in benchmark_series)
                 else "Official BSE 500 TRI history"

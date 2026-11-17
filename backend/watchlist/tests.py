@@ -907,6 +907,10 @@ class BenchmarkPerformanceTests(TestCase):
             return_value=sparse_bse_points,
         ), patch.object(
             BenchmarkPerformanceService,
+            "_amfi_bse_tri_proxy_series",
+            side_effect=ValueError("AMFI NAV proxy unavailable in this fallback test"),
+        ), patch.object(
+            BenchmarkPerformanceService,
             "BSE_TRI_PROXY_TICKERS",
             ("BSE500IETF.NS",),
         ), patch.object(

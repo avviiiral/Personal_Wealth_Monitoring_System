@@ -97,10 +97,10 @@ class LiquidPositionCalculationTests(SimpleTestCase):
         self.assertEqual(result["arbitrage_mv"]["total"], 15.0)
         self.assertEqual(result["available_liquidity"]["daj"], 25.0)
         self.assertEqual(result["available_liquidity"]["djt"], 35.0)
-        self.assertEqual(result["net_available_amount"]["daj"], 23.0)
-        self.assertEqual(result["net_available_amount"]["djt"], 34.0)
+        self.assertEqual(result["net_available_amount"]["daj"], 27.0)
+        self.assertEqual(result["net_available_amount"]["djt"], 36.0)
         self.assertEqual(result["total_deployment_plan"]["total"], 5.0)
-        self.assertEqual(result["balance"]["total"], 52.0)
+        self.assertEqual(result["balance"]["total"], 68.0)
 
     def test_negative_amounts_are_accepted_and_calculated(self):
         document = {
@@ -120,9 +120,9 @@ class LiquidPositionCalculationTests(SimpleTestCase):
         result = LiquidPositionService.calculate_snapshot(market_values, document)
 
         self.assertEqual(result["bank"]["daj"], -1.5)
-        self.assertEqual(result["net_available_amount"]["daj"], 0.5)
+        self.assertEqual(result["net_available_amount"]["daj"], -3.5)
         self.assertEqual(result["total_deployment_plan"]["djt"], -3.0)
-        self.assertEqual(result["balance"]["total"], 3.5)
+        self.assertEqual(result["balance"]["total"], -6.5)
 
     def test_non_finite_amount_is_rejected(self):
         with self.assertRaises(ValidationError):

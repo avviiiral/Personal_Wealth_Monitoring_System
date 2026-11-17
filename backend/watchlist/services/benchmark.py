@@ -1129,6 +1129,28 @@ class BenchmarkPerformanceService:
             "end_date": aligned[-1]["date"],
         }
 
+    @staticmethod
+    def _weekly_chart_observations(points):
+        """Reduce aligned daily observations to the last available trading date per week.
+
+        The supplied observations are already aligned on fund valuation dates.
+        Grouping uses ISO calendar weeks and preserves the actual observed value;
+        no interpolation, averaging, or forward filling is performed.
+        """
+        weekly = {}
+        for point in points or []:
+            point_date = date.fromisoformat(point["date"])
+            iso_year, iso_week, _ = point_date.isocalendar()
+            key = (iso_year, iso_week)
+            current = weekly.get(key)
+            if current is None or point_date > date.fromisoformat(current["date"]):
+                weekly[key] = point
+
+        return [
+            weekly[key]
+            for key in sorted(weekly)
+        ]
+
     @classmethod
     def calculate(cls, product, chart_period="1Y"):
         benchmark = cls._product_benchmark(product)
@@ -1224,6 +1246,34 @@ class BenchmarkPerformanceService:
             benchmark_chart,
             chart_days,
         )
+        weekly_chart_points = (
+            cls._weekly_chart_observations(aligned_chart["points"])
+            if aligned_chart
+            else []
+        )
+
+        # Normalize both investments from the same first weekly observation.
+        # Keep actual NAV/index values alongside the indexed ₹100 series for
+        # chart tooltips. Return tables and their calculations remain untouched.
+        if len(weekly_chart_points) >= 2:
+            fund_base = weekly_chart_points[0]["product_value"]
+            benchmark_base = weekly_chart_points[0]["benchmark_value"]
+            indexed_chart_points = [
+                {
+                    "date": point["date"],
+                    "product_value": point["product_value"],
+                    "benchmark_value": point["benchmark_value"],
+                    "product_indexed": round(
+                        (point["product_value"] / fund_base) * 100.0, 6
+                    ),
+                    "benchmark_indexed": round(
+                        (point["benchmark_value"] / benchmark_base) * 100.0, 6
+                    ),
+                }
+                for point in weekly_chart_points
+            ]
+        else:
+            indexed_chart_points = []
 
         return {
             "benchmark": benchmark,
@@ -1244,19 +1294,22 @@ class BenchmarkPerformanceService:
             "chart_period": chart_period,
             "chart": (
                 {
+                    "frequency": "weekly",
+                    "investment_amount": 100,
                     "fund": [
                         {"date": point["date"], "value": point["product_value"]}
-                        for point in aligned_chart["points"]
+                        for point in indexed_chart_points
                     ],
                     "benchmark": [
                         {"date": point["date"], "value": point["benchmark_value"]}
-                        for point in aligned_chart["points"]
+                        for point in indexed_chart_points
                     ],
-                    "aligned_points": aligned_chart["points"],
-                    "start_date": aligned_chart["start_date"],
-                    "end_date": aligned_chart["end_date"],
+                    "aligned_points": weekly_chart_points,
+                    "indexed_points": indexed_chart_points,
+                    "start_date": indexed_chart_points[0]["date"],
+                    "end_date": indexed_chart_points[-1]["date"],
                 }
-                if aligned_chart
+                if len(indexed_chart_points) >= 2
                 else {
                     "fund": [],
                     "benchmark": [],

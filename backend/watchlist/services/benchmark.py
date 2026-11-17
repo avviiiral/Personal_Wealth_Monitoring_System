@@ -27,6 +27,8 @@ class BenchmarkPerformanceService:
     BSE500_URL = settings.WATCHLIST_BENCHMARK_BSE500_URL
     BSE500_API = get_pwms_config("benchmarks", "bse_api", "")
     NIFTY_TRI_URLS = tuple(get_pwms_config("benchmarks", "nifty_tri_urls", []))
+    NIFTY_TRI_INDICES = dict(get_pwms_config("benchmarks", "nifty_tri_indices", {}))
+    SUPPORTED_BENCHMARKS = tuple(NIFTY_TRI_INDICES) + ("BSE 500",)
     NIFTY_TRI_HEADERS = dict(get_pwms_config("benchmarks", "nifty_headers", {}))
     NIFTY_TRI_HEADERS["Referer"] = get_pwms_config("benchmarks", "nifty_historical_page", "")
     BSE_TRI_PROXY_TICKERS = tuple(get_pwms_config("benchmarks", "bse_tri_proxy_tickers", []))
@@ -46,8 +48,8 @@ class BenchmarkPerformanceService:
         return cls.TICKERS[benchmark]
 
     @classmethod
-    def _nifty_tri_series(cls, start, end=None):
-        """Fetch official Nifty 50 Gross TRI history from NSE Indices."""
+    def _nifty_tri_series(cls, start, end=None, index_name="NIFTY 50"):
+        """Fetch official Gross TRI history for an NSE index."
         end = end or timezone.now().date()
         all_points = {}
 
@@ -71,10 +73,10 @@ class BenchmarkPerformanceService:
 
         def request_rows(request_start, request_end):
             cinfo = (
-                "{'name':'NIFTY 50',"
+                "{'name':'"+index_name+"',"
                 f"'startDate':'{request_start.strftime('%d-%b-%Y')}',"
                 f"'endDate':'{request_end.strftime('%d-%b-%Y')}',"
-                "'indexName':'NIFTY 50'}"
+                "'indexName':'"+index_name+"'}"
             )
             payload = {"cinfo": cinfo}
             last_error = None
@@ -196,7 +198,7 @@ class BenchmarkPerformanceService:
 
     @classmethod
     def ensure_benchmark_master_history(cls, start=None, end=None, force=False):
-        """Ensure both supported benchmark masters exist locally."""
+        """Ensure every configured NSE TRI and BSE 500 benchmark master exists locally."""
         end = end or timezone.now().date()
         start = start or (end - timedelta(days=cls.PERIOD_DAYS["5Y"] + 31))
         results = {}
@@ -205,7 +207,7 @@ class BenchmarkPerformanceService:
             int((end - start).days * cls.MINIMUM_DAILY_COVERAGE_RATIO),
         )
 
-        for benchmark in ("Nifty 50", "BSE 500"):
+        for benchmark in cls.SUPPORTED_BENCHMARKS:
             aggregate = BenchmarkMasterPoint.objects.filter(
                 benchmark=benchmark,
                 source__in=(
@@ -240,8 +242,10 @@ class BenchmarkPerformanceService:
 
             try:
                 points = (
-                    cls._nifty_tri_series(start, end)
-                    if benchmark == "Nifty 50"
+                    cls._nifty_tri_series(
+                        start, end, index_name=cls.NIFTY_TRI_INDICES[benchmark]
+                    )
+                    if benchmark in cls.NIFTY_TRI_INDICES
                     else cls._bse_series(start)
                 )
                 saved = cls.save_benchmark_master(benchmark, points)
@@ -751,8 +755,10 @@ class BenchmarkPerformanceService:
 
         try:
             points = (
-                cls._nifty_tri_series(start, end)
-                if benchmark == "Nifty 50"
+                cls._nifty_tri_series(
+                    start, end, index_name=cls.NIFTY_TRI_INDICES[benchmark]
+                )
+                if benchmark in cls.NIFTY_TRI_INDICES
                 else cls._bse_series(start)
                 if benchmark == "BSE 500"
                 else []
@@ -1135,7 +1141,7 @@ class BenchmarkPerformanceService:
 
     @classmethod
     def calculate_benchmark(cls, benchmark):
-        if benchmark not in cls.TICKERS:
+        if benchmark not in cls.SUPPORTED_BENCHMARKS:
             return {
                 "benchmark": benchmark,
                 "available": False,
@@ -1269,7 +1275,7 @@ class BenchmarkPerformanceService:
     @classmethod
     def calculate(cls, product, chart_period="1Y"):
         benchmark = cls._product_benchmark(product)
-        if not benchmark or benchmark not in cls.TICKERS:
+        if not benchmark or benchmark not in cls.SUPPORTED_BENCHMARKS:
             return None
 
         max_days = cls.PERIOD_DAYS["5Y"] + 31

@@ -216,7 +216,13 @@
     "nifty_request_timeout_seconds": 60,
     "bse_request_timeout_seconds": 45,
     "minimum_history_rows": 20,
-    "minimum_daily_coverage_ratio": 0.5
+    "minimum_daily_coverage_ratio": 0.5,
+    "nifty_tri_indices": {
+      "Nifty 50": "NIFTY 50",
+      "Nifty 100": "NIFTY 100",
+      "Nifty Small Cap 250": "NIFTY SMALLCAP 250",
+      "Nifty Mid Cap 150": "NIFTY MIDCAP 150"
+    }
   },
   "providers": {
     "google_news": {

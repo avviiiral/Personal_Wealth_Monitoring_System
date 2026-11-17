@@ -21,6 +21,16 @@ describe('WatchListComponent', () => {
     component = fixture.componentInstance;
   });
 
+  it('offers all supported NSE and BSE benchmark choices', () => {
+    expect(component.benchmarkOptions.map(option => option.value)).toEqual([
+      'Nifty 50',
+      'Nifty 100',
+      'Nifty Small Cap 250',
+      'Nifty Mid Cap 150',
+      'BSE 500',
+    ]);
+  });
+
   it('filters returned and cached rows according to the selected status tab', () => {
     const products = [
       { id: 1, status: 'WATCHLIST', is_watchlisted: true },

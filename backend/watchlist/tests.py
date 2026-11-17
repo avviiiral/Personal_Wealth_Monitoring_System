@@ -394,6 +394,70 @@ class WatchListTests(TestCase):
             "Owned Fund", "Universal Fund", "Watchlisted Fund",
         })
 
+    def test_watchlist_accepts_all_supported_benchmarks(self):
+        product = InvestmentProduct.objects.create(
+            product_type=ProductType.MUTUAL_FUND,
+            name="Benchmark Options Fund",
+            identity_key="MUTUAL_FUND:SCHEME:BENCHMARK-OPTIONS",
+            source="TEST",
+        )
+        MutualFundProduct.objects.create(product=product)
+
+        expected = {
+            "Nifty 50",
+            "Nifty 100",
+            "Nifty Small Cap 250",
+            "Nifty Mid Cap 150",
+            "BSE 500",
+        }
+        for benchmark in expected:
+            with self.subTest(benchmark=benchmark):
+                response = self.client.patch(
+                    f"/api/watch-list/products/{product.id}/benchmark/",
+                    {"benchmark": benchmark},
+                    format="json",
+                )
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual(response.data["benchmark"], benchmark)
+
+    def test_nifty_tri_history_requests_the_selected_official_index(self):
+        start = date(2026, 9, 15)
+        index_names = {
+            "Nifty 50": "NIFTY 50",
+            "Nifty 100": "NIFTY 100",
+            "Nifty Small Cap 250": "NIFTY SMALLCAP 250",
+            "Nifty Mid Cap 150": "NIFTY MIDCAP 150",
+        }
+
+        for benchmark, index_name in index_names.items():
+            with self.subTest(benchmark=benchmark):
+                session = Mock()
+                response = Mock()
+                response.json.return_value = {
+                    "d": [{"Date": "15-Sep-2026", "TotalReturnsIndex": "100.0"}]
+                }
+                session.post.return_value = response
+                session.get.return_value = Mock()
+                with patch(
+                    "watchlist.services.benchmark.curl_requests.Session",
+                    return_value=session,
+                ), patch.object(
+                    BenchmarkPerformanceService, "MINIMUM_HISTORY_ROWS", 1
+                ), patch.object(
+                    BenchmarkPerformanceService, "MINIMUM_DAILY_COVERAGE_RATIO", 0
+                ):
+                    points = BenchmarkPerformanceService._nifty_tri_series(
+                        start, start, index_name=index_name
+                    )
+
+                self.assertEqual(len(points), 1)
+                self.assertEqual(points[0]["value"], 100.0)
+                request_payload = session.post.call_args.kwargs.get("json")
+                self.assertIsNotNone(request_payload)
+                self.assertIn(f"'name':'{index_name}'", request_payload["cinfo"])
+                self.assertIn(f"'indexName':'{index_name}'", request_payload["cinfo"])
+                session.close.assert_called_once()
+
     def test_watchlist_toggle(self):
         product = InvestmentProduct.objects.create(product_type=ProductType.MUTUAL_FUND, name="Toggle Fund", identity_key="MUTUAL_FUND:SCHEME:TOGGLE", source="AMFI")
         response = self.client.post(f"/api/watch-list/products/{product.id}/toggle/")

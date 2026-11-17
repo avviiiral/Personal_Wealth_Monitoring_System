@@ -11,6 +11,7 @@ import {
 } from '../../core/services/portfolio-api.service';
 import { WatchListApiService, WatchListProduct } from '../../core/services/watch-list-api.service';
 import { SettingsApiService, TaxRateSetting } from '../../core/services/settings-api.service';
+import { LiquidPositionService, LiquidPositionReport, LiquidPositionPair } from '../../core/services/liquid-position.service';
 
 type ReportId =
   | 'portfolio-detailed'
@@ -43,6 +44,7 @@ export class DownloadsComponent implements OnInit {
   private readonly portfolioApi = inject(PortfolioApiService);
   private readonly watchListApi = inject(WatchListApiService);
   private readonly settingsApi = inject(SettingsApiService);
+  private readonly liquidPositionApi = inject(LiquidPositionService);
   private readonly cdr = inject(ChangeDetectorRef);
 
   readonly reports: ReportDefinition[] = [
@@ -132,13 +134,7 @@ export class DownloadsComponent implements OnInit {
       return;
     }
 
-    if (report === 'liquid-position-funds') {
-      if (this.holdingsLoaded && !force) return;
-      const holdingResponse = await firstValueFrom(this.portfolioApi.getHoldingReport());
-      this.holdingRows = holdingResponse.results ?? [];
-      this.holdingsLoaded = true;
-      return;
-    }
+    if (report === 'liquid-position-funds') return;
 
     if (report === 'market-cap') {
       if (this.marketCapLoaded && !force) return;
@@ -1175,125 +1171,115 @@ export class DownloadsComponent implements OnInit {
   }
 
   private async downloadLiquidPositionFunds(): Promise<void> {
-    // Reproduce the supplied Book1.xlsx layout: DAJ, DJT and Total columns,
-    // including the PMS exit, deployment and redemption sections.
+    const asOfDate = this.selectedReportDate || this.todayStamp();
+    // Fetch the persisted Liquid Position document and backend-calculated values.
+    // This deliberately avoids rebuilding the report from a separate holdings export.
+    const report: LiquidPositionReport = await firstValueFrom(
+      this.liquidPositionApi.getPosition(asOfDate),
+    );
+
     const { default: ExcelJS } = await import('exceljs');
     const workbook = new ExcelJS.Workbook();
     workbook.creator = 'PWMS';
     workbook.created = new Date();
-    workbook.calcProperties.fullCalcOnLoad = true;
 
     const sheet = workbook.addWorksheet('Liquid Position Funds', {
-      properties: { defaultRowHeight: 16.75 },
+      properties: { defaultRowHeight: 18 },
       views: [{ state: 'normal', showGridLines: false }],
     });
 
-    const lastColumn = 6; // Keep the report limited to columns A:F.
-    sheet.getCell('B2').value = `Liquidity Position as on ${this.selectedReportDate || this.todayStamp()}`;
+    sheet.columns = [
+      { width: 3 },
+      { width: 42 },
+      { width: 15 },
+      { width: 15 },
+      { width: 15 },
+    ];
+
+    sheet.getCell('B2').value = `Liquidity Position as on ${asOfDate}`;
     sheet.getCell('E2').value = '(Rs in lakhs)';
-    sheet.getRow(3).values = [undefined, 'Particulars', 'DAJ', 'DJT', 'Total'];
+    sheet.getRow(2).height = 24;
+    sheet.getCell('B2').font = { bold: true, size: 14 };
+    sheet.getCell('E2').font = { italic: true, size: 10 };
 
-    const labels: Record<number, string> = {
-      4: 'Liquid (MV)',
-      5: 'Arbitrage (MV)',
-      6: 'Bank',
-      7: 'Arbitrage+Liquid+Bank',
-      9: 'Less: Commitments',
-      10: 'Proposed immediate top up - ',
-      15: 'Other AIF Pending Drawdowns*',
-      16: 'HOABL',
-      17: 'Gift to BFT (HOABL)',
-      18: 'Club House, etc**',
-      20: 'Net available Amount (A)',
-      31: 'Deployment Plan',
-      32: 'Abakkus',
-      39: 'W Oak Flexi Cap ',
-      40: 'Parag Parikh Flexi Cap',
-      41: 'HDFC Focused * Index switch',
-      42: 'ICICI Value Fund * India Opp switch',
-      43: 'Silver ETF',
-      45: 'Total Deployement Plan',
-      47: 'Balance',
-    };
-
-    Object.entries(labels).forEach(([row, label]) => {
-      sheet.getCell(`B${row}`).value = label;
-    });
-
-    // Formula map follows the supplied workbook's row and column references.
-    const formulas: Record<string, string> = {
-      E4: 'SUM(C4:D4)', E5: 'SUM(C5:D5)', E6: 'SUM(C6:D6)',
-      C7: 'SUM(C4:C6)', D7: 'SUM(D4:D6)', E7: 'SUM(C7:D7)',
-      E11: 'SUM(C11:D11)', E12: 'SUM(C12:D12)', E14: 'SUM(C14:D14)',
-      E15: 'SUM(C15:D15)', E16: 'SUM(C16:D16)', E17: 'SUM(C17:D17)', E18: 'SUM(C18:D18)',
-      C20: 'SUM(C7:C19)', D20: 'SUM(D7:D19)', E20: 'SUM(C20:D20)',
-      E32: 'SUM(C32:D32)', E33: 'SUM(C33:D33)', E34: 'SUM(C34:D34)',
-      E35: 'SUM(C35:D35)', E36: 'SUM(C36:D36)', E37: 'SUM(C37:D37)',
-      E39: 'SUM(C39:D39)', E40: 'SUM(C40:D40)', E43: 'SUM(C43:D43)',
-      C45: 'SUM(C31:C43)', D45: 'SUM(D31:D43)', E45: 'SUM(E31:E43)',
-      C47: 'C20+C45', D47: 'D20+D45', E47: 'SUM(C47:D47)',
-    };
-    Object.entries(formulas).forEach(([address, formula]) => {
-      sheet.getCell(address).value = { formula };
-    });
-
-    // Layout and formatting aligned to the reference workbook's columns.
-    sheet.getColumn(1).width = 2.8;
-    sheet.getColumn(2).width = 34;
-    sheet.getColumn(3).width = 13;
-    sheet.getColumn(4).width = 13;
-    sheet.getColumn(5).width = 13;
-    sheet.getColumn(6).width = 17;
-
-    sheet.getRow(2).height = 22;
-    sheet.getRow(2).getCell(2).font = { bold: true, size: 14 };
-    sheet.getRow(2).getCell(5).font = { italic: true, size: 10 };
-    sheet.getRow(3).height = 22;
-    for (let column = 2; column <= 5; column++) {
-      const cell = sheet.getRow(3).getCell(column);
+    const header = sheet.addRow(['', 'Particulars', 'DAJ', 'DJT', 'Total']);
+    header.height = 22;
+    header.eachCell((cell, columnNumber) => {
+      if (columnNumber < 2) return;
       cell.font = { bold: true };
       cell.border = { bottom: { style: 'thin' } };
-      cell.alignment = { vertical: 'middle', horizontal: column >= 3 ? 'right' : 'left' };
-    }
-
-    for (let rowNumber = 4; rowNumber <= 48; rowNumber++) {
-      const row = sheet.getRow(rowNumber);
-      row.height = rowNumber === 13 || rowNumber === 38 ? 8 : 18;
-      for (let column = 2; column <= lastColumn; column++) {
-        const cell = row.getCell(column);
-        cell.alignment = { vertical: 'middle', wrapText: column === 6 };
-        if (column >= 3 && column <= 5) {
-          cell.numFmt = '#,##0.00;[Red](#,##0.00);-';
-          cell.alignment = { vertical: 'middle', horizontal: 'right' };
-        }
-      }
-    }
-
-    [9, 31].forEach(rowNumber => {
-      for (let column = 2; column <= 5; column++) {
-        sheet.getCell(rowNumber, column).font = { bold: true };
-      }
+      cell.alignment = {
+        vertical: 'middle',
+        horizontal: columnNumber >= 3 ? 'right' : 'left',
+      };
     });
-    [7, 20, 45, 47].forEach(rowNumber => {
+
+    const addValueRow = (label: string, values: LiquidPositionPair, bold = false) => {
+      const row = sheet.addRow(['', label, values.daj, values.djt, values.total]);
       for (let column = 2; column <= 5; column++) {
-        const cell = sheet.getCell(rowNumber, column);
+        const cell = row.getCell(column);
+        cell.alignment = {
+          vertical: 'middle',
+          horizontal: column >= 3 ? 'right' : 'left',
+          wrapText: column === 2,
+        };
+        if (column >= 3) cell.numFmt = '#,##0.00;[Red](#,##0.00);-';
+        if (bold) cell.font = { bold: true };
+      }
+      return row;
+    };
+
+    const addSection = (label: string) => {
+      const row = sheet.addRow(['', label]);
+      row.height = 21;
+      for (let column = 2; column <= 5; column++) {
+        const cell = row.getCell(column);
         cell.font = { bold: true };
-        cell.border = {
-          top: { style: 'thin', color: { argb: 'FF808080' } },
-          bottom: { style: rowNumber === 47 ? 'double' : 'hair', color: { argb: 'FF808080' } },
+        cell.fill = {
+          type: 'pattern',
+          pattern: 'solid',
+          fgColor: { argb: 'FFEAEFF5' },
         };
       }
-    });
+    };
 
-    sheet.mergeCells('F35:F36');
+    addValueRow('Liquid (MV)', report.liquid_mv);
+    addValueRow('Arbitrage (MV)', report.arbitrage_mv);
+    addValueRow('Bank', report.bank);
+    addValueRow('Arbitrage + Liquid + Bank', report.available_liquidity, true);
+
+    sheet.addRow([]);
+    addSection('Commitments');
+    report.commitments.forEach((entry) => addValueRow(entry.label, entry));
+    addValueRow('Net available Amount (A)', report.net_available_amount, true);
+
+    sheet.addRow([]);
+    addSection('Deployment Plan');
+    report.deployment.forEach((entry) => addValueRow(entry.label, entry));
+    addValueRow('Total Deployment Plan', report.total_deployment_plan, true);
+    addValueRow('Balance', report.balance, true);
+
+    // Apply consistent numeric alignment and borders to the populated report.
+    sheet.eachRow((row, rowNumber) => {
+      if (rowNumber <= 2) return;
+      row.eachCell((cell, columnNumber) => {
+        if (columnNumber >= 2 && columnNumber <= 5) {
+          cell.border = {
+            bottom: { style: 'hair', color: { argb: 'FFD9DEE7' } },
+          };
+        }
+      });
+    });
 
     sheet.views = [{ state: 'frozen', xSplit: 2, ySplit: 3, showGridLines: false }];
     const buffer = await workbook.xlsx.writeBuffer();
-    const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    const blob = new Blob([buffer], {
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    });
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement('a');
     anchor.href = url;
-    anchor.download = `liquid_position_funds_${this.selectedReportDate || this.todayStamp()}.xlsx`;
+    anchor.download = `liquid_position_funds_${asOfDate}.xlsx`;
     document.body.appendChild(anchor);
     anchor.click();
     document.body.removeChild(anchor);

@@ -1294,3 +1294,30 @@
 :host-context(html.dark-theme) .portfolio-page .underlying-screener-link:focus-visible {
   color: #55d9aa !important;
 }
+
+/* Center-align all Portfolio page table headers and data cells. */
+.portfolio-page .portfolio-table th,
+.portfolio-page .portfolio-table td,
+.portfolio-page .asset-table th,
+.portfolio-page .asset-table td {
+  text-align: center !important;
+}
+
+.portfolio-page .asset-group-columns-header,
+.portfolio-page .asset-group-header {
+  text-align: center;
+}
+
+.portfolio-page .asset-group-name-header,
+.portfolio-page .asset-group-name,
+.portfolio-page .asset-group-col {
+  text-align: center;
+}
+
+.portfolio-page .asset-group-name {
+  justify-self: stretch;
+}
+
+.portfolio-page .quant-toggle-cell {
+  text-align: center !important;
+}

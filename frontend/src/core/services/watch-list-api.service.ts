@@ -50,6 +50,8 @@ export interface WatchListResponse {
 export interface WatchListFilterOptions {
   providers: string[];
   categories: string[];
+  fund_managers: string[];
+  benchmarks: string[];
 }
 
 @Injectable({ providedIn: 'root' })

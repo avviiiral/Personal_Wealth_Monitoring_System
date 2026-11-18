@@ -228,12 +228,6 @@ class BackgroundWatchListRefreshService:
             report_date = APMIPMSDiscoveryService._report_date(response.text)
             records = APMIPMSDiscoveryService._records(response.text)
 
-            # Resolve missing PMS benchmark/manager metadata from APMI's own
-            # IA Insight page before starting database writes.
-            identities = {
-                f"PMS:APMI:{record['provider'].upper()}:{record['iaid'] or record['name'].upper()}"
-                for record in records
-            }
             existing_products = {
                 item.identity_key: item
                 for item in InvestmentProduct.objects.filter(identity_key__in=identities)
@@ -244,61 +238,7 @@ class BackgroundWatchListRefreshService:
                     product_id__in=[item.id for item in existing_products.values()]
                 )
             }
-            detail_records = []
-            retry_before = timezone.now() - APMIPMSDiscoveryService.MANAGER_RETRY_AFTER
-            for record in records:
-                if not record.get("iaid"):
-                    continue
-                identity = f"PMS:APMI:{record['provider'].upper()}:{record['iaid']}"
-                existing_product = existing_products.get(identity)
-                existing_pms = (
-                    existing_pms_by_product_id.get(existing_product.id)
-                    if existing_product else None
-                )
-                benchmark_missing = (
-                    existing_pms is None
-                    or not APMIPMSDiscoveryService._normalize_benchmark(existing_pms.benchmark)
-                )
-                manager_missing = (
-                    existing_pms is None or not (existing_pms.fund_manager or "").strip()
-                )
-                # Retry blank benchmarks even if a prior parser marked an
-                # unsuccessful lookup as checked.
-                benchmark_retry_due = benchmark_missing
-                manager_retry_due = (
-                    existing_pms is None
-                    or existing_pms.fund_manager_checked_at is None
-                    or existing_pms.fund_manager_checked_at <= retry_before
-                )
-                if (
-                    (benchmark_missing and benchmark_retry_due)
-                    or (manager_missing and manager_retry_due)
-                ):
-                    detail_records.append(record)
 
-            details_by_iaid = {}
-            if detail_records:
-                from concurrent.futures import ThreadPoolExecutor, as_completed
-
-                with ThreadPoolExecutor(max_workers=min(4, len(detail_records))) as executor:
-                    futures = {
-                        executor.submit(
-                            APMIPMSDiscoveryService._fetch_fund_manager_details,
-                            str(record["iaid"]),
-                        ): str(record["iaid"])
-                        for record in detail_records
-                    }
-                    for future in as_completed(futures):
-                        iaid = futures[future]
-                        try:
-                            details = future.result()
-                        except Exception:
-                            logger.exception("Background APMI detail lookup failed (IAID=%s)", iaid)
-                            continue
-                        if details is not None:
-                            details_by_iaid[iaid] = details
-
-            benchmarks_enriched = 0
             for record in records:
                 try:
                     identity_suffix = record["iaid"] or record["name"].upper()
@@ -321,17 +261,14 @@ class BackgroundWatchListRefreshService:
                         },
                     )
                     existing_pms = existing_pms_by_product_id.get(product.id)
-                    detail_data = details_by_iaid.get(str(record["iaid"])) if record.get("iaid") else None
+                    detail_data = None
                     source_benchmark = (
                         APMIPMSDiscoveryService._normalize_benchmark(record.get("benchmark"))
-                        or APMIPMSDiscoveryService._normalize_benchmark(
-                            detail_data.get("benchmark") if detail_data else None
-                        )
                         or APMIPMSDiscoveryService._normalize_benchmark(
                             existing_pms.benchmark if existing_pms else None
                         )
                     )
-                    checked_at = timezone.now() if detail_data is not None else None
+                    checked_at = None
                     pms_product, _ = PMSProduct.objects.update_or_create(
                         product=product,
                         defaults={
@@ -341,35 +278,11 @@ class BackgroundWatchListRefreshService:
                             "aum": record["aum"],
                             "latest_value": record["aum"],
                             "benchmark": source_benchmark,
-                            "fund_manager": (
-                                detail_data.get("fund_manager")
-                                if detail_data and detail_data.get("fund_manager")
-                                else (existing_pms.fund_manager if existing_pms else None)
-                            ),
-                            "fund_manager_website": (
-                                detail_data.get("website")
-                                if detail_data and detail_data.get("website")
-                                else (existing_pms.fund_manager_website if existing_pms else None)
-                            ),
-                            "benchmark_checked_at": (
-                                checked_at
-                                if checked_at is not None and APMIPMSDiscoveryService._normalize_benchmark(detail_data.get("benchmark"))
-                                else (
-                                    None if detail_data is not None
-                                    else (existing_pms.benchmark_checked_at if existing_pms else None)
-                                )
-                            ),
-                            "fund_manager_checked_at": (
-                                checked_at if checked_at is not None
-                                else (existing_pms.fund_manager_checked_at if existing_pms else None)
-                            ),
+                            "fund_manager": existing_pms.fund_manager if existing_pms else None,
+                            "fund_manager_website": existing_pms.fund_manager_website if existing_pms else None,
+                            "benchmark_checked_at": existing_pms.benchmark_checked_at if existing_pms else None,
+                            "fund_manager_checked_at": existing_pms.fund_manager_checked_at if existing_pms else None,
                         },
-                    )
-                    benchmarks_enriched += int(
-                        bool(
-                            detail_data
-                            and APMIPMSDiscoveryService._normalize_benchmark(detail_data.get("benchmark"))
-                        )
                     )
                     PerformanceSnapshot.objects.update_or_create(
                         product=product,
@@ -401,8 +314,8 @@ class BackgroundWatchListRefreshService:
                 "source_reference": APMIPMSDiscoveryService.REPORT_URL,
                 "report_date": report_date.isoformat(),
                 "records_seen": len(records),
-                "benchmarks_enriched": benchmarks_enriched,
-                "detail_pages_checked": len(details_by_iaid),
+                "benchmarks_enriched": 0,
+                "detail_pages_checked": 0,
                 "background_mode": True,
             }
             run.finished_at = timezone.now()
@@ -412,8 +325,8 @@ class BackgroundWatchListRefreshService:
                 "updated": updated,
                 "failed": failed,
                 "report_date": report_date.isoformat(),
-                "benchmarks_enriched": benchmarks_enriched,
-                "detail_pages_checked": len(details_by_iaid),
+                "benchmarks_enriched": 0,
+                "detail_pages_checked": 0,
                 "source": "APMI",
             }
         except Exception as exc:

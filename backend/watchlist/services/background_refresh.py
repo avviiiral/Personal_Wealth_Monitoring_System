@@ -256,7 +256,8 @@ class BackgroundWatchListRefreshService:
                     if existing_product else None
                 )
                 benchmark_missing = (
-                    existing_pms is None or not (existing_pms.benchmark or "").strip()
+                    existing_pms is None
+                    or not APMIPMSDiscoveryService._normalize_benchmark(existing_pms.benchmark)
                 )
                 manager_missing = (
                     existing_pms is None or not (existing_pms.fund_manager or "").strip()
@@ -322,9 +323,13 @@ class BackgroundWatchListRefreshService:
                     existing_pms = existing_pms_by_product_id.get(product.id)
                     detail_data = details_by_iaid.get(str(record["iaid"])) if record.get("iaid") else None
                     source_benchmark = (
-                        record.get("benchmark")
-                        or (detail_data.get("benchmark") if detail_data else None)
-                        or (existing_pms.benchmark if existing_pms else None)
+                        APMIPMSDiscoveryService._normalize_benchmark(record.get("benchmark"))
+                        or APMIPMSDiscoveryService._normalize_benchmark(
+                            detail_data.get("benchmark") if detail_data else None
+                        )
+                        or APMIPMSDiscoveryService._normalize_benchmark(
+                            existing_pms.benchmark if existing_pms else None
+                        )
                     )
                     checked_at = timezone.now() if detail_data is not None else None
                     pms_product, _ = PMSProduct.objects.update_or_create(
@@ -348,7 +353,7 @@ class BackgroundWatchListRefreshService:
                             ),
                             "benchmark_checked_at": (
                                 checked_at
-                                if checked_at is not None and detail_data.get("benchmark")
+                                if checked_at is not None and APMIPMSDiscoveryService._normalize_benchmark(detail_data.get("benchmark"))
                                 else (
                                     None if detail_data is not None
                                     else (existing_pms.benchmark_checked_at if existing_pms else None)
@@ -361,7 +366,10 @@ class BackgroundWatchListRefreshService:
                         },
                     )
                     benchmarks_enriched += int(
-                        bool(detail_data and detail_data.get("benchmark"))
+                        bool(
+                            detail_data
+                            and APMIPMSDiscoveryService._normalize_benchmark(detail_data.get("benchmark"))
+                        )
                     )
                     PerformanceSnapshot.objects.update_or_create(
                         product=product,

@@ -44,6 +44,54 @@ class WatchListTests(TestCase):
             "Nifty 500 TRI",
         )
 
+    def test_apmi_benchmark_parser_treats_placeholder_values_as_missing(self):
+        for value in ("NA", "N/A", "N.A.", "-", "—", "Not Available"):
+            with self.subTest(value=value):
+                html = f"<table><tr><td>Benchmark</td><td>{value}</td></tr></table>"
+                self.assertIsNone(APMIPMSDiscoveryService._extract_benchmark(html))
+
+    @patch("watchlist.services.pms.requests.get")
+    @patch.object(APMIPMSDiscoveryService, "_records")
+    @patch.object(APMIPMSDiscoveryService, "_fetch_fund_manager_details")
+    def test_apmi_refresh_retries_placeholder_benchmark_from_ia_insight(
+        self, mocked_details, mocked_records, mocked_get
+    ):
+        mocked_get.return_value.text = "<html>APMI report</html>"
+        mocked_get.return_value.raise_for_status.return_value = None
+        product = InvestmentProduct.objects.create(
+            product_type=ProductType.PMS,
+            name="Placeholder Benchmark Strategy",
+            identity_key="PMS:APMI:EXAMPLE PORTFOLIO MANAGER:IA-PLACEHOLDER",
+            source="APMI",
+        )
+        pms_product = PMSProduct.objects.create(
+            product=product,
+            fund_manager="Existing Manager",
+            fund_manager_checked_at=timezone.now(),
+            benchmark="N/A",
+            benchmark_checked_at=timezone.now(),
+        )
+        mocked_records.return_value = [{
+            "provider": "Example Portfolio Manager",
+            "name": "Placeholder Benchmark Strategy",
+            "iaid": "IA-PLACEHOLDER",
+            "aum": Decimal("125.50"),
+            "performance": {},
+            "benchmark": None,
+        }]
+        mocked_details.return_value = {
+            "fund_manager": "Jane Doe",
+            "website": "https://www.apmiindia.org/apmi/IaInsight.htm?IAID=IA-PLACEHOLDER",
+            "benchmark": "BSE 500 TRI",
+        }
+
+        APMIPMSDiscoveryService.refresh()
+
+        pms_product.refresh_from_db()
+        self.assertEqual(pms_product.benchmark, "BSE 500 TRI")
+        self.assertIsNotNone(pms_product.benchmark_checked_at)
+        mocked_details.assert_called_once_with("IA-PLACEHOLDER")
+
     @patch("watchlist.services.pms.requests.get")
     @patch.object(APMIPMSDiscoveryService, "_records")
     @patch.object(APMIPMSDiscoveryService, "_fetch_fund_manager_details")
@@ -156,6 +204,7 @@ class WatchListTests(TestCase):
             product=pms,
             fund_manager="John Smith",
             fund_manager_website="https://example.com/john-smith",
+            benchmark="Nifty 50 TRI",
             aum=Decimal("100"),
         )
 
@@ -174,6 +223,8 @@ class WatchListTests(TestCase):
             pms_response.data["results"][0]["pms"]["fund_manager_website"],
             "https://example.com/john-smith",
         )
+        self.assertEqual(pms_response.data["results"][0]["benchmark"], "Nifty 50 TRI")
+        self.assertEqual(pms_response.data["results"][0]["pms"]["benchmark"], "Nifty 50 TRI")
 
     @patch("watchlist.services.fund_managers.requests.get")
     def test_mutual_fund_manager_refresh_persists_names_from_batch_details(self, mocked_get):

@@ -30,6 +30,18 @@ class APMIPMSDiscoveryService:
     PERFORMANCE_PERIODS = tuple(APMI_CONFIG.get("performance_periods", []))
     INSIGHT_URL = "https://www.apmiindia.org/apmi/IaInsight.htm"
     MANAGER_RETRY_AFTER = timedelta(days=7)
+    UNAVAILABLE_BENCHMARK_VALUES = {
+        "", "na", "n/a", "n.a", "n.a.", "-", "—", "–",
+        "not available", "not applicable", "none", "null",
+    }
+
+    @staticmethod
+    def _normalize_benchmark(value):
+        """Return a usable benchmark label, treating provider placeholders as missing."""
+        benchmark = re.sub(r"\\s+", " ", str(value or "")).strip()
+        if benchmark.casefold() in APMIPMSDiscoveryService.UNAVAILABLE_BENCHMARK_VALUES:
+            return None
+        return benchmark
 
     @classmethod
     def manager_details_url(cls, iaid):
@@ -117,9 +129,7 @@ class APMIPMSDiscoveryService:
                 value = APMIPMSDiscoveryService._text(
                     cells[1].get_text(" ", strip=True)
                 )
-                if value and value.casefold() not in {"na", "n/a", "-", "not available"}:
-                    return value
-                return None
+                return APMIPMSDiscoveryService._normalize_benchmark(value)
 
         # APMI's live IA Insight page has multiple label/value layouts. Some
         # versions use table rows (handled above); others place labels and
@@ -145,9 +155,9 @@ class APMIPMSDiscoveryService:
             re.IGNORECASE,
         )
         if benchmark_match:
-            value = APMIPMSDiscoveryService._text(benchmark_match.group(1)).strip(" :-|")
-            if value and value.casefold() not in {"na", "n/a", "-", "not available"}:
-                return value
+            return APMIPMSDiscoveryService._normalize_benchmark(
+                APMIPMSDiscoveryService._text(benchmark_match.group(1)).strip(" :-|")
+            )
 
         # Fallback for legacy pages that expose the value on the next line.
         lines = [re.sub(r"\s+", " ", line).strip() for line in soup.get_text("\n").splitlines()]
@@ -157,7 +167,7 @@ class APMIPMSDiscoveryService:
                     if candidate:
                         if candidate.lower() in {"strategy name", "product name", "date of inception"}:
                             return None
-                        return candidate
+                        return APMIPMSDiscoveryService._normalize_benchmark(candidate)
         return None
 
     @classmethod
@@ -250,8 +260,7 @@ class APMIPMSDiscoveryService:
         index = next((idx for label, idx in header_map.items() if "benchmark" in label), None)
         if index is None or index >= len(values):
             return None
-        value = values[index]
-        return value if value and value.casefold() not in {"na", "n/a", "-", "not available"} else None
+        return cls._normalize_benchmark(values[index])
 
     @classmethod
     def _records(cls, html):
@@ -384,11 +393,11 @@ class APMIPMSDiscoveryService:
                     or pms_product.fund_manager_checked_at is None
                     or pms_product.fund_manager_checked_at <= manager_retry_before
                 )
-                report_benchmark = record.get("benchmark")
-                benchmark_missing = (
-                    not report_benchmark
-                    and (pms_product is None or not (pms_product.benchmark or "").strip())
+                report_benchmark = cls._normalize_benchmark(record.get("benchmark"))
+                existing_benchmark = cls._normalize_benchmark(
+                    pms_product.benchmark if pms_product else None
                 )
+                benchmark_missing = not report_benchmark and not existing_benchmark
                 # A blank benchmark is retried on each refresh. Earlier versions
                 # cached unsuccessful parses as checked, which could hide the
                 # newly-supported APMI detail-page benchmark for seven days.
@@ -426,7 +435,11 @@ class APMIPMSDiscoveryService:
 
                 existing_pms = manager_status_by_id.get(product.id)
                 detail_data = manager_details_by_iaid.get(record["iaid"])
-                source_benchmark = record.get("benchmark") or (existing_pms.benchmark if existing_pms else None)
+                source_benchmark = (
+                    cls._normalize_benchmark(record.get("benchmark"))
+                    or cls._normalize_benchmark(detail_data.get("benchmark") if detail_data else None)
+                    or cls._normalize_benchmark(existing_pms.benchmark if existing_pms else None)
+                )
                 pms_products.append(
                     PMSProduct(
                         product_id=product.id,
@@ -490,8 +503,9 @@ class APMIPMSDiscoveryService:
                         pms_product.fund_manager_website = details["website"]
                     checked_at = timezone.now()
                     pms_product.fund_manager_checked_at = checked_at
-                    if details.get("benchmark"):
-                        pms_product.benchmark = details["benchmark"]
+                    detail_benchmark = cls._normalize_benchmark(details.get("benchmark"))
+                    if detail_benchmark:
+                        pms_product.benchmark = detail_benchmark
                         pms_product.benchmark_checked_at = checked_at
                     else:
                         pms_product.benchmark_checked_at = None

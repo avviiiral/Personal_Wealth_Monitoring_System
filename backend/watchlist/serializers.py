@@ -23,13 +23,14 @@ class WatchListProductSerializer(serializers.ModelSerializer):
     pms = serializers.SerializerMethodField()
     is_watchlisted = serializers.SerializerMethodField()
     benchmark = serializers.SerializerMethodField()
+    comparison_benchmark = serializers.SerializerMethodField()
 
     class Meta:
         model = InvestmentProduct
         fields = [
             "id", "product_type", "name", "provider", "country", "category", "sub_category",
             "isin", "external_identifier", "currency", "source", "source_reference", "source_date",
-            "official_website", "benchmark", "status", "ownership", "performance", "metrics", "mutual_fund", "pms",
+            "official_website", "benchmark", "comparison_benchmark", "status", "ownership", "performance", "metrics", "mutual_fund", "pms",
             "is_watchlisted",
         ]
 
@@ -39,6 +40,10 @@ class WatchListProductSerializer(serializers.ModelSerializer):
         if obj.product_type == ProductType.PMS and hasattr(obj, "pms"):
             return obj.pms.benchmark
         return None
+
+    def get_comparison_benchmark(self, obj):
+        # Preserve the user's comparison choice separately from source data.
+        return obj.comparison_benchmark or self.get_benchmark(obj)
 
     def get_is_watchlisted(self, obj):
         watchlisted_ids = self.context.get("watchlisted_ids")

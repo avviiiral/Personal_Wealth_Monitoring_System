@@ -23,6 +23,7 @@ class InvestmentProduct(models.Model):
     source_reference = models.CharField(max_length=1000, blank=True, null=True)
     source_date = models.DateField(blank=True, null=True)
     official_website = models.URLField(max_length=1000, blank=True, null=True)
+    comparison_benchmark = models.CharField(max_length=300, blank=True, null=True)
     is_active = models.BooleanField(default=True)
     identity_key = models.CharField(max_length=600, unique=True)
     created_at = models.DateTimeField(auto_now_add=True)

@@ -19,7 +19,8 @@ export interface WatchListProduct {
   source_reference: string | null;
   source_date: string | null;
   official_website: string | null;
-  benchmark: 'BSE 500' | 'Nifty 50' | 'Nifty 100' | 'Nifty Small Cap 250' | 'Nifty Mid Cap 150' | null;
+  benchmark: string | null;
+  comparison_benchmark: 'BSE 500' | 'Nifty 50' | 'Nifty 100' | 'Nifty Small Cap 250' | 'Nifty Mid Cap 150' | null;
   status: 'OWNED' | 'UNIVERSAL' | 'WATCHLIST';
   is_watchlisted: boolean;
   ownership: Array<{
@@ -76,8 +77,8 @@ export class WatchListApiService {
     });
   }
 
-  updateBenchmark(productId: number, benchmark: 'BSE 500' | 'Nifty 50' | 'Nifty 100' | 'Nifty Small Cap 250' | 'Nifty Mid Cap 150'): Observable<{ id: number; benchmark: string }> {
-    return this.patchWithCsrf<{ id: number; benchmark: string }>(
+  updateBenchmark(productId: number, benchmark: 'BSE 500' | 'Nifty 50' | 'Nifty 100' | 'Nifty Small Cap 250' | 'Nifty Mid Cap 150'): Observable<{ id: number; comparison_benchmark: string }> {
+    return this.patchWithCsrf<{ id: number; comparison_benchmark: string }>(
       `${this.baseUrl}/products/${productId}/benchmark/`,
       { benchmark },
     );

@@ -510,19 +510,19 @@ export class WatchListComponent implements OnInit, OnDestroy {
   isUpdatingBenchmark(productId: number): boolean { return this.updatingBenchmarkIds.has(productId); }
 
   updateBenchmark(product: WatchListProduct, benchmark: 'BSE 500' | 'Nifty 50' | 'Nifty 100' | 'Nifty Small Cap 250' | 'Nifty Mid Cap 150'): void {
-    const previous = product.benchmark;
+    const previous = product.comparison_benchmark;
     if (previous === benchmark || this.updatingBenchmarkIds.has(product.id)) return;
     this.updatingBenchmarkIds.add(product.id);
     this.error = '';
     this.api.updateBenchmark(product.id, benchmark).subscribe({
       next: response => {
-        product.benchmark = response.benchmark as 'BSE 500' | 'Nifty 50' | 'Nifty 100' | 'Nifty Small Cap 250' | 'Nifty Mid Cap 150';
+        product.comparison_benchmark = response.comparison_benchmark as 'BSE 500' | 'Nifty 50' | 'Nifty 100' | 'Nifty Small Cap 250' | 'Nifty Mid Cap 150';
         this.updatingBenchmarkIds.delete(product.id);
         this.cacheCurrentPage();
       },
       error: error => {
         console.error('Failed to update Watch List benchmark:', error);
-        product.benchmark = previous;
+        product.comparison_benchmark = previous;
         this.updatingBenchmarkIds.delete(product.id);
         this.error = 'Unable to update the benchmark right now.';
       },
@@ -530,7 +530,7 @@ export class WatchListComponent implements OnInit, OnDestroy {
   }
 
   openBenchmarkComparison(product: WatchListProduct): void {
-    if (!product.benchmark) return;
+    if (!product.comparison_benchmark) return;
 
     const requestId = ++this.benchmarkRequestSequence;
     const productId = product.id;

@@ -402,16 +402,14 @@ def watch_list_benchmark(request, product_id):
             status=400,
         )
 
-    if product.product_type == ProductType.MUTUAL_FUND:
-        product.mutual_fund.benchmark = benchmark
-        product.mutual_fund.save(update_fields=["benchmark"])
-    elif product.product_type == ProductType.PMS:
-        product.pms.benchmark = benchmark
-        product.pms.save(update_fields=["benchmark"])
-    else:
+    if product.product_type not in (ProductType.MUTUAL_FUND, ProductType.PMS):
         return Response({"detail": "Benchmark is supported only for Mutual Fund and PMS products."}, status=400)
 
-    return Response({"id": product.id, "benchmark": benchmark})
+    # Store the user's comparison index without overwriting source benchmark data.
+    product.comparison_benchmark = benchmark
+    product.save(update_fields=["comparison_benchmark", "updated_at"])
+
+    return Response({"id": product.id, "comparison_benchmark": benchmark})
 
 
 @api_view(["GET"])

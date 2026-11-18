@@ -1129,6 +1129,9 @@ class BenchmarkPerformanceService:
     def _product_benchmark(product):
         if not product:
             return None
+        selected = getattr(product, "comparison_benchmark", None)
+        if selected:
+            return "BSE 500" if selected == "BSE 500 TRI" else selected
         if getattr(product, "product_type", None) == "MUTUAL_FUND":
             mutual_fund = getattr(product, "mutual_fund", None)
             benchmark = getattr(mutual_fund, "benchmark", None) if mutual_fund else None

@@ -504,6 +504,7 @@ class WatchListTests(TestCase):
             product=mutual_fund,
             scheme_code="SOURCE-BENCHMARK",
             benchmark="Nifty 50 TRI",
+            aum=Decimal("100"),
         )
         pms = InvestmentProduct.objects.create(
             product_type=ProductType.PMS,
@@ -511,7 +512,7 @@ class WatchListTests(TestCase):
             identity_key="PMS:SOURCE-BENCHMARK",
             source="TEST",
         )
-        PMSProduct.objects.create(product=pms, benchmark="BSE 500 TRI")
+        PMSProduct.objects.create(product=pms, benchmark="BSE 500 TRI", aum=Decimal("100"))
 
         for product, relation, source_benchmark in (
             (mutual_fund, "mutual_fund", "Nifty 50 TRI"),
@@ -1448,6 +1449,36 @@ class APMIPMSDiscoveryTests(TestCase):
         records = APMIPMSDiscoveryService._records(html)
         self.assertEqual(records[0]["benchmark"], "Nifty 500 TRI")
 
+    def test_apmi_insight_parser_reads_benchmark_from_live_label_value_layout(self):
+        html = """
+        <html><body>
+          <h3>Investment Approach Details</h3>
+          <div><span>PMS Provider Name</span><strong>Example Capital</strong></div>
+          <div><span>Benchmark</span><strong>MSEI SX 40 TRI</strong></div>
+          <div><span>Strategy Name</span><strong>Equity</strong></div>
+          <div><span>Product Name</span><strong>Equity</strong></div>
+          <h3>Fund Manager Details</h3>
+          <strong>Jane Doe</strong>
+        </body></html>
+        """
+        self.assertEqual(
+            APMIPMSDiscoveryService._extract_benchmark(html),
+            "MSEI SX 40 TRI",
+        )
+
+    def test_apmi_insight_parser_reads_inline_benchmark_label_and_value(self):
+        html = """
+        <html><body>
+          <h3>Investment Approach Details</h3>
+          <p>Benchmark MSEI SX 40 TRI Strategy Name Equity</p>
+          <h3>Fund Manager Details</h3>
+        </body></html>
+        """
+        self.assertEqual(
+            APMIPMSDiscoveryService._extract_benchmark(html),
+            "MSEI SX 40 TRI",
+        )
+
     def test_apmi_parser_reads_html_rows(self):
         records = APMIPMSDiscoveryService._records(self.SAMPLE_HTML)
         self.assertEqual(len(records), 1)
@@ -1492,7 +1523,14 @@ class APMIPMSDiscoveryTests(TestCase):
         empty_manager_page.text = "<html><body><h2>No manager details published</h2></body></html>"
         listing_two = Mock()
         listing_two.text = self.SAMPLE_HTML
-        mocked_get.side_effect = [listing_one, empty_manager_page, listing_two]
+        empty_manager_page_two = Mock()
+        empty_manager_page_two.text = "<html><body><h2>No manager details published</h2></body></html>"
+        mocked_get.side_effect = [
+            listing_one,
+            empty_manager_page,
+            listing_two,
+            empty_manager_page_two,
+        ]
 
         first_result = APMIPMSDiscoveryService.refresh()
         second_result = APMIPMSDiscoveryService.refresh()
@@ -1500,8 +1538,10 @@ class APMIPMSDiscoveryTests(TestCase):
         product = InvestmentProduct.objects.get(product_type=ProductType.PMS)
         self.assertEqual(first_result["fund_manager_checks"], 1)
         self.assertEqual(first_result["fund_managers_enriched"], 0)
-        self.assertEqual(second_result["fund_manager_checks"], 0)
-        self.assertEqual(mocked_get.call_count, 3)
+        # Missing benchmarks are retried on every refresh, even while the
+        # fund-manager lookup remains inside its seven-day retry window.
+        self.assertEqual(second_result["fund_manager_checks"], 1)
+        self.assertEqual(mocked_get.call_count, 4)
         self.assertIsNotNone(product.pms.fund_manager_checked_at)
 
     @patch("watchlist.services.pms.requests.get")

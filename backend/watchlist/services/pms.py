@@ -570,60 +570,134 @@ class APMIPMSDiscoveryService:
             run.save(update_fields=["failed", "details", "finished_at"])
             raise
 
+    
     @classmethod
     def refresh_missing_benchmarks(cls):
-        """Backfill missing PMS primary benchmarks from official APMI IA insight pages.
+        """Backfill missing PMS benchmarks in resumable batches."""
+        batch_size = 100
+        max_workers = 10
+        max_attempts = 2
 
-        APMI's public IA performance report provides the approach and returns;
-        the matching IA Insight page exposes that approach's actual benchmark.
-        Persist only the value explicitly published on that APMI detail page.
-        """
-        retry_before = timezone.now() - cls.MANAGER_RETRY_AFTER
         rows = list(
             PMSProduct.objects.filter(
                 product__source="APMI",
             ).filter(
                 Q(benchmark__isnull=True)
                 | Q(benchmark__in=cls.UNAVAILABLE_BENCHMARK_VALUES)
-            ).values("product_id", "product__external_identifier")
+            ).exclude(
+                product__external_identifier__isnull=True
+            ).exclude(
+                product__external_identifier=""
+            ).values(
+                "product_id",
+                "product__external_identifier",
+            )
         )
-        rows = [row for row in rows if row["product__external_identifier"]]
-        if not rows:
-            return {"requested": 0, "checked": 0, "updated": 0}
+
+        total = len(rows)
+        if not total:
+            return {
+                "requested": 0,
+                "checked": 0,
+                "updated": 0,
+                "failed": 0,
+            }
 
         from concurrent.futures import ThreadPoolExecutor, as_completed
 
-        details_by_iaid = {}
-        with ThreadPoolExecutor(max_workers=min(4, len(rows))) as executor:
-            futures = {
-                executor.submit(cls._fetch_fund_manager_details, str(row["product__external_identifier"])): row
-                for row in rows
-            }
-            for future in as_completed(futures):
-                row = futures[future]
-                try:
-                    details = future.result()
-                except Exception:
-                    logger.exception("APMI benchmark enrichment failed for product=%s", row["product_id"])
-                    continue
-                if details is not None:
-                    details_by_iaid[row["product__external_identifier"]] = (row, details)
+        checked = 0
+        updated = 0
+        failed = 0
 
-        checked_at = timezone.now()
-        updates = []
-        for row, details in details_by_iaid.values():
-            product = PMSProduct.objects.get(product_id=row["product_id"])
-            detail_benchmark = cls._normalize_benchmark(details.get("benchmark"))
-            if detail_benchmark:
-                product.benchmark = detail_benchmark
-                product.benchmark_checked_at = checked_at
-            else:
-                product.benchmark_checked_at = None
-            updates.append(product)
-        if updates:
-            PMSProduct.objects.bulk_update(updates, ["benchmark", "benchmark_checked_at"], batch_size=500)
+        for start in range(0, total, batch_size):
+            batch = rows[start:start + batch_size]
+            details_by_product = {}
+
+            def fetch_with_retry(row):
+                iaid = str(row["product__external_identifier"])
+
+                for attempt in range(max_attempts):
+                    details = cls._fetch_fund_manager_details(iaid)
+                    if details is not None:
+                        return row, details
+
+                return row, None
+
+            with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                futures = [
+                    executor.submit(fetch_with_retry, row)
+                    for row in batch
+                ]
+
+                for future in as_completed(futures):
+                    try:
+                        row, details = future.result()
+                        if details is not None:
+                            details_by_product[row["product_id"]] = details
+                        else:
+                            failed += 1
+                    except Exception:
+                        failed += 1
+                        logger.exception(
+                            "APMI benchmark backfill request failed"
+                        )
+
+            product_ids = list(details_by_product.keys())
+
+            products = {
+                item.product_id: item
+                for item in PMSProduct.objects.filter(
+                    product_id__in=product_ids
+                )
+            }
+
+            batch_updates = []
+
+            for product_id, details in details_by_product.items():
+                product = products.get(product_id)
+                if product is None:
+                    continue
+
+                benchmark = cls._normalize_benchmark(
+                    details.get("benchmark")
+                )
+
+                if benchmark:
+                    product.benchmark = benchmark
+                    product.benchmark_checked_at = timezone.now()
+                    updated += 1
+                else:
+                    product.benchmark_checked_at = None
+
+                batch_updates.append(product)
+                checked += 1
+
+            if batch_updates:
+                PMSProduct.objects.bulk_update(
+                    batch_updates,
+                    ["benchmark", "benchmark_checked_at"],
+                    batch_size=batch_size,
+                )
+
+            logger.info(
+                "APMI benchmark backfill progress: %s/%s processed, "
+                "%s updated, %s failed",
+                min(start + len(batch), total),
+                total,
+                updated,
+                failed,
+            )
+
+            print(
+                f"APMI Benchmark Progress: "
+                f"{min(start + len(batch), total)}/{total} | "
+                f"Updated: {updated} | Failed: {failed}",
+                flush=True,
+            )
+
         return {
-            "requested": len(rows),
-            "checked": len(updates),
-            "updated": sum(bool(item.benchmark) for item in updates),
+            "requested": total,
+            "checked": checked,
+            "updated": updated,
+            "failed": failed,
         }

@@ -86,7 +86,7 @@
           <td class="watch-column">
             <button type="button" class="watch-toggle" [class.active]="product.is_watchlisted" [disabled]="isToggling(product.id)" (click)="toggleWatch(product, $event)" [attr.aria-pressed]="product.is_watchlisted" [attr.aria-label]="product.is_watchlisted ? 'Remove from Watch List' : 'Add to Watch List'" title="{{ product.is_watchlisted ? 'Remove from Watch List' : 'Add to Watch List' }}">✓</button>
           </td>
-          <td><div class="product-name">{{ product.name }}</div><div class="secondary">{{ product.external_identifier || 'Source ID unavailable' }}</div></td>
+          <td><a class="product-name product-detail-link" [routerLink]="['/watch-list', product.id]" [attr.aria-label]="'View source details for ' + product.name">{{ product.name }}</a><div class="secondary">{{ product.external_identifier || 'Source ID unavailable' }}</div></td>
           <td *ngIf="productTab !== 'PMS'">{{ product.isin || '—' }}</td>
           <td>{{ product.provider || '—' }}</td>
           <td class="fund-manager-cell">

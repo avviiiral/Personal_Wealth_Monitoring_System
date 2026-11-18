@@ -77,7 +77,7 @@ class BackgroundWatchListRefreshService:
                             "fund_type": record.get("category"),
                             "latest_nav": record["nav"],
                             "latest_nav_date": record["date"],
-                            "benchmark": AMFIUniverseService._source_benchmark(record),
+                            "benchmark": AMFIUniverseService._source_benchmark(record) or MutualFundProduct.objects.filter(product=product).values_list("benchmark", flat=True).first(),
                             "benchmark": AMFIUniverseService._source_benchmark(record),
                         },
                     )

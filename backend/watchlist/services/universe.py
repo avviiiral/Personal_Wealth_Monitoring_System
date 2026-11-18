@@ -97,7 +97,7 @@ class AMFIUniverseService:
                     isin2 = parts[2] if parts[2] not in {"-", ""} else None
                     growth_isin = isin1 if "growth" in name.lower() and "idcw" not in name.lower() else None
                     selected_isin = growth_isin or isin1 or isin2
-                    benchmark_index = next((column_indexes[key] for key in ("benchmark", "benchmark name", "benchmark index", "benchmark index name") if key in column_indexes), None)
+                    benchmark_index = next((index for name, index in column_indexes.items() if "benchmark" in name), None)
                     records.append({
                         "scheme_code": parts[0], "name": name, "provider": provider, "category": category,
                         "plan": parts[4] or None, "option": parts[5] or None,
@@ -120,7 +120,7 @@ class AMFIUniverseService:
             isin2 = parts[2] if parts[2] not in {"-", ""} else None
             growth_isin = isin1 if "growth" in name.lower() and "idcw" not in name.lower() else None
             selected_isin = growth_isin or isin1 or isin2
-            benchmark_index = next((column_indexes[key] for key in ("benchmark", "benchmark name", "benchmark index", "benchmark index name") if key in column_indexes), None)
+            benchmark_index = next((index for name, index in column_indexes.items() if "benchmark" in name), None)
             records.append({
                 "scheme_code": parts[0], "name": name, "provider": provider, "category": category,
                 "plan": None, "option": None,
@@ -141,21 +141,12 @@ class AMFIUniverseService:
             return f"MUTUAL_FUND:ISIN:{record['isin'].upper()}"
         return f"MUTUAL_FUND:SCHEME:{record['scheme_code']}"
 
-    @staticmethod
-    def _source_benchmark(record):
+    @classmethod
+    def _source_benchmark(cls, record):
         """Return only a benchmark explicitly supplied by AMFI's source record."""
-        keys = (
-            "benchmark",
-            "benchmark_name",
-            "benchmark_index",
-            "benchmark_index_name",
-            "primary_benchmark",
-            "tier_1_benchmark",
-        )
-        for key in keys:
-            value = cls._normalize(record.get(key))
-            if value and value.casefold() not in {"na", "n/a", "not available", "not applicable", "-"}:
-                return value
+        value = cls._normalize(record.get("benchmark"))
+        if value and value.casefold() not in {"na", "n/a", "not available", "not applicable", "-"}:
+            return value
         return None
 
     @classmethod

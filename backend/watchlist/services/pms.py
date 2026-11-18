@@ -38,7 +38,7 @@ class APMIPMSDiscoveryService:
     @staticmethod
     def _normalize_benchmark(value):
         """Return a usable benchmark label, treating provider placeholders as missing."""
-        benchmark = re.sub(r"\\s+", " ", str(value or "")).strip()
+        benchmark = re.sub(r"\s+", " ", str(value or "")).strip()
         if benchmark.casefold() in APMIPMSDiscoveryService.UNAVAILABLE_BENCHMARK_VALUES:
             return None
         return benchmark

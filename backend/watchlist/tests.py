@@ -420,7 +420,54 @@ class WatchListTests(TestCase):
                     format="json",
                 )
                 self.assertEqual(response.status_code, 200)
-                self.assertEqual(response.data["benchmark"], benchmark)
+                self.assertEqual(response.data["comparison_benchmark"], benchmark)
+
+    def test_comparison_benchmark_does_not_overwrite_source_benchmark_for_mf_or_pms(self):
+        self.user.profile.role = "ADMIN"
+        self.user.profile.save(update_fields=["role"])
+
+        mutual_fund = InvestmentProduct.objects.create(
+            product_type=ProductType.MUTUAL_FUND,
+            name="Source Benchmark Fund",
+            identity_key="MUTUAL_FUND:SCHEME:SOURCE-BENCHMARK",
+            source="TEST",
+        )
+        MutualFundProduct.objects.create(
+            product=mutual_fund,
+            scheme_code="SOURCE-BENCHMARK",
+            benchmark="Nifty 50 TRI",
+        )
+        pms = InvestmentProduct.objects.create(
+            product_type=ProductType.PMS,
+            name="Source Benchmark PMS",
+            identity_key="PMS:SOURCE-BENCHMARK",
+            source="TEST",
+        )
+        PMSProduct.objects.create(product=pms, benchmark="BSE 500 TRI")
+
+        for product, relation, source_benchmark in (
+            (mutual_fund, "mutual_fund", "Nifty 50 TRI"),
+            (pms, "pms", "BSE 500 TRI"),
+        ):
+            with self.subTest(product_type=product.product_type):
+                response = self.client.patch(
+                    f"/api/watch-list/products/{product.id}/benchmark/",
+                    {"benchmark": "Nifty 100"},
+                    format="json",
+                )
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual(response.data["comparison_benchmark"], "Nifty 100")
+                product.refresh_from_db()
+                self.assertEqual(product.comparison_benchmark, "Nifty 100")
+                source = getattr(product, relation)
+                self.assertEqual(source.benchmark, source_benchmark)
+
+                listing = self.client.get(
+                    f"/api/watch-list/products/?product_type={product.product_type}"
+                )
+                row = next(item for item in listing.data["results"] if item["id"] == product.id)
+                self.assertEqual(row["benchmark"], source_benchmark)
+                self.assertEqual(row["comparison_benchmark"], "Nifty 100")
 
     def test_nifty_tri_history_requests_the_selected_official_index(self):
         start = date(2026, 9, 15)

@@ -826,7 +826,7 @@ export class WatchListComponent implements OnInit, OnDestroy {
     const valueRange = Math.max(max - min, 1e-9);
     const aligned = this.benchmarkChartAlignedPoints();
     const benchmarkName = this.benchmarkDisplayName(
-      this.benchmarkData?.benchmark || this.benchmarkModalProduct?.benchmark,
+      this.benchmarkData?.benchmark || this.benchmarkModalProduct?.comparison_benchmark,
     );
     const productName = this.benchmarkChartProductLabel();
 

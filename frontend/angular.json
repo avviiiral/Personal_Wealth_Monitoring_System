@@ -31,6 +31,13 @@
               }
             ],
             "styles": ["src/styles.scss", "src/dark-mode-overrides.scss"],
+            "allowedCommonJsDependencies": [
+              "exceljs",
+              "core-js",
+              "raf",
+              "rgbcolor",
+              "html2canvas"
+            ],
             "security": {
               "allowedHosts": []
             }

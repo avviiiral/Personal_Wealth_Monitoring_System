@@ -126,6 +126,7 @@ class WatchListTests(TestCase):
             "data": [
                 {
                     "scheme_code": 118989,
+                    "amfi_daily": {"benchmark": "Nifty 500 TRI"},
                     "ssd": {
                         "fund_managers": [
                             {"name": "Jane Doe", "role": "Fund Manager"},
@@ -143,12 +144,44 @@ class WatchListTests(TestCase):
         mutual_fund.refresh_from_db()
         self.assertEqual(result["updated"], 1)
         self.assertEqual(mutual_fund.fund_manager, "Jane Doe; John Smith")
+        self.assertEqual(mutual_fund.benchmark, "Nifty 500 TRI")
         self.assertEqual(
             mutual_fund.fund_manager_website,
             "https://example.com/scheme-summary.pdf",
         )
 
     @patch("watchlist.services.fund_managers.requests.get")
+    @patch("watchlist.services.fund_managers.requests.get")
+    def test_mutual_fund_benchmark_backfills_when_manager_already_exists(self, mocked_get):
+        product = InvestmentProduct.objects.create(
+            product_type=ProductType.MUTUAL_FUND,
+            name="Benchmark Enrichment Fund",
+            identity_key="MUTUAL_FUND:SCHEME:BENCHMARK-ENRICHMENT",
+            source="AMFI",
+        )
+        mutual_fund = MutualFundProduct.objects.create(
+            product=product,
+            scheme_code="118990",
+            fund_manager="Existing Manager",
+        )
+        mocked_get.return_value.json.return_value = {
+            "count": 1,
+            "data": [{
+                "scheme_code": "118990",
+                "amfi_daily": {"benchmark": "Nifty 100 TRI"},
+                "ssd": {"benchmark_tier1_std": "Nifty 100 TRI"},
+            }],
+        }
+        mocked_get.return_value.raise_for_status.return_value = None
+
+        result = AMFIFundManagerService.refresh_missing()
+
+        mutual_fund.refresh_from_db()
+        self.assertEqual(result["updated"], 1)
+        self.assertEqual(mutual_fund.fund_manager, "Existing Manager")
+        self.assertEqual(mutual_fund.benchmark, "Nifty 100 TRI")
+        self.assertIsNotNone(mutual_fund.benchmark_checked_at)
+
     def test_missing_mutual_fund_manager_lookup_is_cached_and_retried_after_window(self, mocked_get):
         product = InvestmentProduct.objects.create(
             product_type=ProductType.MUTUAL_FUND,
@@ -1285,6 +1318,7 @@ class APMIPMSDiscoveryTests(TestCase):
 
     MANAGER_HTML = """
     <html><body>
+      <div>Benchmark</div><div>BSE 500 TRI</div>
       <h4>Fund Manager Details</h4>
       <table>
         <tr><td><h4>Jane Doe</h4>Work Exp. 12 years</td></tr>
@@ -1299,6 +1333,7 @@ class APMIPMSDiscoveryTests(TestCase):
             APMIPMSDiscoveryService._extract_fund_manager_names(self.MANAGER_HTML),
             ["Jane Doe", "John Smith"],
         )
+        self.assertEqual(APMIPMSDiscoveryService._extract_benchmark(self.MANAGER_HTML), "BSE 500 TRI")
         self.assertEqual(
             APMIPMSDiscoveryService._extract_fund_manager_names(self.SAMPLE_HTML),
             [],
@@ -1400,6 +1435,8 @@ class APMIPMSDiscoveryTests(TestCase):
         product = InvestmentProduct.objects.get(product_type=ProductType.PMS)
         self.assertEqual(result["fund_managers_enriched"], 1)
         self.assertEqual(product.pms.fund_manager, "Jane Doe; John Smith")
+        self.assertEqual(product.pms.benchmark, "BSE 500 TRI")
+        self.assertIsNotNone(product.pms.benchmark_checked_at)
         self.assertEqual(
             product.pms.fund_manager_website,
             APMIPMSDiscoveryService.manager_details_url("2595"),

@@ -6,6 +6,7 @@ from decimal import Decimal, InvalidOperation
 import requests
 from bs4 import BeautifulSoup
 from django.utils import timezone
+from django.db.models import Q
 
 from config.pwms_config import get as get_pwms_config
 

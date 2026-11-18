@@ -125,11 +125,11 @@ class APMIPMSDiscoveryService:
         # versions use table rows (handled above); others place labels and
         # values in adjacent blocks or collapse both into one text line.
         visible_text = APMIPMSDiscoveryService._text(soup.get_text(" ", strip=True))
-        details_match = re.search(r"Investment\\s+Approach\\s+Details", visible_text, re.IGNORECASE)
+        details_match = re.search(r"Investment\s+Approach\s+Details", visible_text, re.IGNORECASE)
         if details_match:
             visible_text = visible_text[details_match.end():]
         section_end = re.search(
-            r"Fund\\s+Manager\\s+Details|Period[- ]Wise\\s+Performance|IA\\s+vs\\.?\\s+Benchmark\\s+Performance",
+            r"Fund\s+Manager\s+Details|Period[- ]Wise\s+Performance|IA\s+vs\.?\s+Benchmark\s+Performance",
             visible_text,
             re.IGNORECASE,
         )
@@ -137,10 +137,10 @@ class APMIPMSDiscoveryService:
             visible_text = visible_text[:section_end.start()]
 
         benchmark_match = re.search(
-            r"\\bBenchmark\\b\\s*:?\\s*(.*?)"
-            r"(?=\\b(?:Strategy\\s+Name|Product\\s+Name|Date\\s+Of\\s+Inception|"
-            r"Age|Min\\.?\\s*Inv\\.?\\s*Amount|Fixed\\s+Fees\\s+Structure|"
-            r"Variable\\s+Fees\\s+Structure|Exit\\s+Load|Purpose)\\b|$)",
+            r"\bBenchmark\b\s*:?\s*(.*?)"
+            r"(?=\b(?:Strategy\s+Name|Product\s+Name|Date\s+Of\s+Inception|"
+            r"Age|Min\.?\s*Inv\.?\s*Amount|Fixed\s+Fees\s+Structure|"
+            r"Variable\s+Fees\s+Structure|Exit\s+Load|Purpose)\b|$)",
             visible_text,
             re.IGNORECASE,
         )
@@ -150,7 +150,7 @@ class APMIPMSDiscoveryService:
                 return value
 
         # Fallback for legacy pages that expose the value on the next line.
-        lines = [re.sub(r"\\s+", " ", line).strip() for line in soup.get_text("\\n").splitlines()]
+        lines = [re.sub(r"\s+", " ", line).strip() for line in soup.get_text("\n").splitlines()]
         for index, line in enumerate(lines):
             if line.rstrip(":").strip().lower() == "benchmark":
                 for candidate in lines[index + 1:]:

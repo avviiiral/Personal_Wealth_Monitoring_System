@@ -399,7 +399,7 @@ def _run_watch_list_refresh():
             stages = (
                 ("amfi_universe", AMFIUniverseService.refresh),
                 ("mutual_fund_performance", AMFIPerformanceService.refresh),
-                ("pms_universe_and_managers", APMIPMSDiscoveryService.refresh),
+                ("pms_universe", APMIPMSDiscoveryService.refresh),
             )
             results = {}
             for stage_name, refresh_fn in stages:

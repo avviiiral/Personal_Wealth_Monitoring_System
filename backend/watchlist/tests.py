@@ -44,10 +44,54 @@ class WatchListTests(TestCase):
             "Nifty 500 TRI",
         )
 
+    def test_apmi_benchmark_parser_treats_placeholder_values_as_missing(self):
+        for value in ("NA", "N/A", "N.A.", "-", "—", "Not Available"):
+            with self.subTest(value=value):
+                html = f"<table><tr><td>Benchmark</td><td>{value}</td></tr></table>"
+                self.assertIsNone(APMIPMSDiscoveryService._extract_benchmark(html))
+
     @patch("watchlist.services.pms.requests.get")
     @patch.object(APMIPMSDiscoveryService, "_records")
     @patch.object(APMIPMSDiscoveryService, "_fetch_fund_manager_details")
-    def test_background_pms_refresh_persists_official_benchmark(
+    def test_apmi_universe_refresh_does_not_fetch_detail_pages(
+        self, mocked_details, mocked_records, mocked_get
+    ):
+        mocked_get.return_value.text = "<html>APMI report</html>"
+        mocked_get.return_value.raise_for_status.return_value = None
+        product = InvestmentProduct.objects.create(
+            product_type=ProductType.PMS,
+            name="Placeholder Benchmark Strategy",
+            identity_key="PMS:APMI:EXAMPLE PORTFOLIO MANAGER:IA-PLACEHOLDER",
+            source="APMI",
+        )
+        pms_product = PMSProduct.objects.create(
+            product=product,
+            fund_manager="Existing Manager",
+            fund_manager_checked_at=timezone.now(),
+            benchmark="N/A",
+            benchmark_checked_at=timezone.now(),
+        )
+        mocked_records.return_value = [{
+            "provider": "Example Portfolio Manager",
+            "name": "Placeholder Benchmark Strategy",
+            "iaid": "IA-PLACEHOLDER",
+            "aum": Decimal("125.50"),
+            "performance": {},
+            "benchmark": None,
+        }]
+
+        result = APMIPMSDiscoveryService.refresh()
+
+        pms_product.refresh_from_db()
+        self.assertIsNone(pms_product.benchmark)
+        self.assertEqual(result["discovered"], 1)
+        mocked_details.assert_not_called()
+        mocked_get.assert_called_once()
+
+    @patch("watchlist.services.pms.requests.get")
+    @patch.object(APMIPMSDiscoveryService, "_records")
+    @patch.object(APMIPMSDiscoveryService, "_fetch_fund_manager_details")
+    def test_background_pms_universe_refresh_does_not_fetch_detail_pages(
         self, mocked_details, mocked_records, mocked_get
     ):
         from watchlist.services.background_refresh import BackgroundWatchListRefreshService
@@ -72,24 +116,73 @@ class WatchListTests(TestCase):
             "iaid": "IA-123",
             "aum": Decimal("125.50"),
             "performance": {},
+            "benchmark": None,
         }]
-        mocked_details.return_value = {
-            "fund_manager": "Jane Doe",
-            "website": "https://www.apmiindia.org/apmi/IaInsight.htm?IAID=IA-123",
-            "benchmark": "Nifty 500 TRI",
-        }
 
         result = BackgroundWatchListRefreshService.refresh_pms()
 
         product = InvestmentProduct.objects.get(
             identity_key="PMS:APMI:EXAMPLE PORTFOLIO MANAGER:IA-123"
         )
-        product.pms.refresh_from_db()
-        self.assertEqual(product.pms.benchmark, "Nifty 500 TRI")
-        self.assertEqual(product.pms.fund_manager, "Jane Doe")
-        self.assertIsNotNone(product.pms.benchmark_checked_at)
-        self.assertEqual(result["benchmarks_enriched"], 1)
-        mocked_details.assert_called_once_with("IA-123")
+        self.assertIsNone(product.pms.benchmark)
+        self.assertEqual(result["discovered"], 1)
+        mocked_details.assert_not_called()
+        mocked_get.assert_called_once()
+
+    @patch.object(APMIPMSDiscoveryService, "_fetch_fund_manager_details")
+    def test_bounded_detail_enrichment_updates_benchmark_and_manager(self, mocked_details):
+        product = InvestmentProduct.objects.create(
+            product_type=ProductType.PMS,
+            name="Background Enrichment Strategy",
+            identity_key="PMS:APMI:EXAMPLE:IA-BACKGROUND",
+            source="APMI",
+            external_identifier="IA-BACKGROUND",
+        )
+        pms_product = PMSProduct.objects.create(product=product, benchmark=None)
+        mocked_details.return_value = {
+            "fund_manager": "Jane Doe",
+            "website": "https://www.apmiindia.org/apmi/IaInsight.htm?IAID=IA-BACKGROUND",
+            "benchmark": "BSE 500 TRI",
+        }
+
+        result = APMIPMSDiscoveryService.refresh_missing_benchmarks(
+            batch_size=1,
+            max_workers=1,
+        )
+
+        pms_product.refresh_from_db()
+        self.assertEqual(pms_product.benchmark, "BSE 500 TRI")
+        self.assertEqual(pms_product.fund_manager, "Jane Doe")
+        self.assertIsNotNone(pms_product.benchmark_checked_at)
+        self.assertEqual(result["requested"], 1)
+        self.assertEqual(result["benchmarks_updated"], 1)
+        self.assertEqual(result["managers_updated"], 1)
+        mocked_details.assert_called_once_with("IA-BACKGROUND")
+
+    @patch.object(APMIPMSDiscoveryService, "_fetch_fund_manager_details")
+    def test_bounded_detail_enrichment_throttles_successful_empty_benchmark(self, mocked_details):
+        product = InvestmentProduct.objects.create(
+            product_type=ProductType.PMS,
+            name="No Benchmark Strategy",
+            identity_key="PMS:APMI:EXAMPLE:IA-NO-BENCHMARK",
+            source="APMI",
+            external_identifier="IA-NO-BENCHMARK",
+        )
+        pms_product = PMSProduct.objects.create(product=product, benchmark=None)
+        mocked_details.return_value = {
+            "fund_manager": None,
+            "website": "https://www.apmiindia.org/apmi/IaInsight.htm?IAID=IA-NO-BENCHMARK",
+            "benchmark": None,
+        }
+
+        first = APMIPMSDiscoveryService.refresh_missing_benchmarks(batch_size=1, max_workers=1)
+        second = APMIPMSDiscoveryService.refresh_missing_benchmarks(batch_size=1, max_workers=1)
+
+        pms_product.refresh_from_db()
+        self.assertEqual(first["checked"], 1)
+        self.assertEqual(second["requested"], 0)
+        self.assertIsNotNone(pms_product.benchmark_checked_at)
+        self.assertEqual(mocked_details.call_count, 1)
 
     def test_amfi_parser_is_data_driven(self):
         feed = "Scheme Code;ISIN1;ISIN2;Scheme Name;Plan;Option;NAV;Date;Benchmark\nProvider One\n1;INF000000001;-;Generic Equity Fund;Direct Plan;Growth;100.25;15-Sep-2026;Nifty 500 TRI\nProvider Two\n2;INF000000002;-;Another Fund;Regular Plan;IDCW;50.10;15-Sep-2026;\n"
@@ -156,6 +249,7 @@ class WatchListTests(TestCase):
             product=pms,
             fund_manager="John Smith",
             fund_manager_website="https://example.com/john-smith",
+            benchmark="Nifty 50 TRI",
             aum=Decimal("100"),
         )
 
@@ -174,6 +268,8 @@ class WatchListTests(TestCase):
             pms_response.data["results"][0]["pms"]["fund_manager_website"],
             "https://example.com/john-smith",
         )
+        self.assertEqual(pms_response.data["results"][0]["benchmark"], "Nifty 50 TRI")
+        self.assertEqual(pms_response.data["results"][0]["pms"]["benchmark"], "Nifty 50 TRI")
 
     @patch("watchlist.services.fund_managers.requests.get")
     def test_mutual_fund_manager_refresh_persists_names_from_batch_details(self, mocked_get):
@@ -1498,51 +1594,87 @@ class APMIPMSDiscoveryTests(TestCase):
         self.assertEqual(PerformanceSnapshot.objects.get(product=product, source="APMI").return_since_inception, Decimal("0.06"))
 
     @patch("watchlist.services.pms.requests.get")
-    def test_apmi_refresh_persists_individual_manager_from_ia_insight(self, mocked_get):
-        listing_response = Mock()
-        listing_response.text = self.SAMPLE_HTML
-        manager_response = Mock()
-        manager_response.text = self.MANAGER_HTML
-        mocked_get.side_effect = [listing_response, manager_response]
+    @patch.object(APMIPMSDiscoveryService, "_fetch_fund_manager_details")
+    def test_apmi_refresh_persists_individual_manager_from_background_enrichment(
+        self, mocked_details, mocked_get
+    ):
+        mocked_get.return_value.text = self.SAMPLE_HTML
+        mocked_get.return_value.raise_for_status.return_value = None
+        mocked_details.return_value = {
+            "fund_manager": "Jane Doe; John Smith",
+            "website": APMIPMSDiscoveryService.manager_details_url("2595"),
+            "benchmark": None,
+        }
 
-        result = APMIPMSDiscoveryService.refresh()
+        APMIPMSDiscoveryService.refresh()
+        result = APMIPMSDiscoveryService.refresh_missing_benchmarks(
+            batch_size=1,
+            max_workers=1,
+        )
 
         product = InvestmentProduct.objects.get(product_type=ProductType.PMS)
-        self.assertEqual(result["fund_managers_enriched"], 1)
+        self.assertEqual(result["managers_updated"], 1)
         self.assertEqual(product.pms.fund_manager, "Jane Doe; John Smith")
         self.assertEqual(
             product.pms.fund_manager_website,
             APMIPMSDiscoveryService.manager_details_url("2595"),
         )
+        mocked_details.assert_called_once_with("2595")
 
     @patch("watchlist.services.pms.requests.get")
-    def test_apmi_empty_manager_result_is_cached_for_retry_window(self, mocked_get):
-        listing_one = Mock()
-        listing_one.text = self.SAMPLE_HTML
-        empty_manager_page = Mock()
-        empty_manager_page.text = "<html><body><h2>No manager details published</h2></body></html>"
-        listing_two = Mock()
-        listing_two.text = self.SAMPLE_HTML
-        empty_manager_page_two = Mock()
-        empty_manager_page_two.text = "<html><body><h2>No manager details published</h2></body></html>"
-        mocked_get.side_effect = [
-            listing_one,
-            empty_manager_page,
-            listing_two,
-            empty_manager_page_two,
-        ]
+    @patch.object(APMIPMSDiscoveryService, "_fetch_fund_manager_details")
+    def test_apmi_empty_manager_result_is_cached_for_retry_window(
+        self, mocked_details, mocked_get
+    ):
+        mocked_get.return_value.text = self.SAMPLE_HTML
+        mocked_get.return_value.raise_for_status.return_value = None
+        mocked_details.return_value = {
+            "fund_manager": None,
+            "website": APMIPMSDiscoveryService.manager_details_url("2595"),
+            "benchmark": None,
+        }
 
-        first_result = APMIPMSDiscoveryService.refresh()
-        second_result = APMIPMSDiscoveryService.refresh()
+        APMIPMSDiscoveryService.refresh()
+        first_result = APMIPMSDiscoveryService.refresh_missing_benchmarks(
+            batch_size=1,
+            max_workers=1,
+        )
+        APMIPMSDiscoveryService.refresh()
+        second_result = APMIPMSDiscoveryService.refresh_missing_benchmarks(
+            batch_size=1,
+            max_workers=1,
+        )
 
         product = InvestmentProduct.objects.get(product_type=ProductType.PMS)
-        self.assertEqual(first_result["fund_manager_checks"], 1)
-        self.assertEqual(first_result["fund_managers_enriched"], 0)
-        # Missing benchmarks are retried on every refresh, even while the
-        # fund-manager lookup remains inside its seven-day retry window.
-        self.assertEqual(second_result["fund_manager_checks"], 1)
-        self.assertEqual(mocked_get.call_count, 4)
+        self.assertEqual(first_result["checked"], 1)
+        self.assertEqual(first_result["managers_updated"], 0)
+        self.assertEqual(second_result["requested"], 0)
+        self.assertEqual(mocked_get.call_count, 2)
+        mocked_details.assert_called_once_with("2595")
         self.assertIsNotNone(product.pms.fund_manager_checked_at)
+
+    @patch("watchlist.services.pms.requests.get")
+    def test_apmi_refresh_preserves_existing_benchmark_without_detail_lookup(self, mocked_get):
+        mocked_get.return_value.text = self.SAMPLE_HTML
+        mocked_get.return_value.raise_for_status.return_value = None
+        product = InvestmentProduct.objects.create(
+            product_type=ProductType.PMS,
+            name="Existing Benchmark Strategy",
+            identity_key="PMS:APMI:ICICI:2595",
+            source="APMI",
+        )
+        pms_product = PMSProduct.objects.create(
+            product=product,
+            benchmark="Existing Benchmark TRI",
+            fund_manager="Existing Manager",
+        )
+
+        APMIPMSDiscoveryService.refresh()
+
+        pms_product.refresh_from_db()
+        self.assertEqual(pms_product.benchmark, "Existing Benchmark TRI")
+        self.assertEqual(pms_product.fund_manager, "Existing Manager")
+        self.assertEqual(mocked_get.call_count, 1)
 
     @patch("watchlist.services.pms.requests.get")
     def test_apmi_refresh_is_idempotent(self, mocked_get):

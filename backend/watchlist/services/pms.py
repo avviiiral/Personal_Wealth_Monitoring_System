@@ -372,10 +372,6 @@ class APMIPMSDiscoveryService:
             }
 
             product_ids = [product.id for product in product_by_identity.values()]
-            manager_status_by_id = {
-                item.product_id: item
-                for item in PMSProduct.objects.filter(product_id__in=product_ids)
-            }
             # Detail-page fund-manager/benchmark enrichment is deliberately
             # deferred to refresh_missing_benchmarks(), which processes a
             # bounded batch in the background. Listing benchmarks are persisted
@@ -391,7 +387,7 @@ class APMIPMSDiscoveryService:
                     failed += 1
                     continue
 
-                existing_pms = manager_status_by_id.get(product.id)
+                existing_pms = PMSProduct.objects.filter(product_id=product.id).first()
                 source_benchmark = (
                     cls._normalize_benchmark(record.get("benchmark"))
                     or cls._normalize_benchmark(existing_pms.benchmark if existing_pms else None)

@@ -99,6 +99,10 @@ def _filtered_products(request, product_type=None):
             | Q(category__icontains=search)
             | Q(sub_category__icontains=search)
             | Q(external_identifier__icontains=search)
+            | Q(mutual_fund__fund_manager__icontains=search)
+            | Q(pms__fund_manager__icontains=search)
+            | Q(benchmark__icontains=search)
+            | Q(comparison_benchmark__icontains=search)
         )
 
     for field in ("provider", "category"):

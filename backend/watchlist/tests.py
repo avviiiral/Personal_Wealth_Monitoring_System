@@ -1641,6 +1641,29 @@ class APMIPMSDiscoveryTests(TestCase):
         self.assertIsNotNone(product.pms.fund_manager_checked_at)
 
     @patch("watchlist.services.pms.requests.get")
+    @patch("watchlist.services.pms.requests.get")
+    def test_apmi_refresh_preserves_existing_benchmark_without_detail_lookup(self, mocked_get):
+        mocked_get.return_value.text = self.SAMPLE_HTML
+        mocked_get.return_value.raise_for_status.return_value = None
+        product = InvestmentProduct.objects.create(
+            product_type=ProductType.PMS,
+            name="Existing Benchmark Strategy",
+            identity_key="PMS:APMI:ICICI:2595",
+            source="APMI",
+        )
+        pms_product = PMSProduct.objects.create(
+            product=product,
+            benchmark="Existing Benchmark TRI",
+            fund_manager="Existing Manager",
+        )
+
+        APMIPMSDiscoveryService.refresh()
+
+        pms_product.refresh_from_db()
+        self.assertEqual(pms_product.benchmark, "Existing Benchmark TRI")
+        self.assertEqual(pms_product.fund_manager, "Existing Manager")
+        self.assertEqual(mocked_get.call_count, 1)
+
     def test_apmi_refresh_is_idempotent(self, mocked_get):
         mocked_get.return_value.text = self.SAMPLE_HTML
         mocked_get.return_value.raise_for_status.return_value = None

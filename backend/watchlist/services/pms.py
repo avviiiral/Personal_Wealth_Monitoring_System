@@ -376,52 +376,11 @@ class APMIPMSDiscoveryService:
                 item.product_id: item
                 for item in PMSProduct.objects.filter(product_id__in=product_ids)
             }
-            manager_retry_before = timezone.now() - cls.MANAGER_RETRY_AFTER
-            manager_records = []
-            for record in records:
-                if not record["iaid"]:
-                    continue
-                identity = f"PMS:APMI:{record['provider'].upper()}:{record['iaid']}"
-                product = product_by_identity.get(identity)
-                pms_product = manager_status_by_id.get(product.id) if product else None
-                manager_missing = (
-                    pms_product is None
-                    or not (pms_product.fund_manager or "").strip()
-                )
-                manager_retry_due = (
-                    pms_product is None
-                    or pms_product.fund_manager_checked_at is None
-                    or pms_product.fund_manager_checked_at <= manager_retry_before
-                )
-                report_benchmark = cls._normalize_benchmark(record.get("benchmark"))
-                existing_benchmark = cls._normalize_benchmark(
-                    pms_product.benchmark if pms_product else None
-                )
-                benchmark_missing = not report_benchmark and not existing_benchmark
-                # A blank benchmark is retried on each refresh. Earlier versions
-                # cached unsuccessful parses as checked, which could hide the
-                # newly-supported APMI detail-page benchmark for seven days.
-                benchmark_retry_due = benchmark_missing
-                if product and (
-                    (manager_missing and manager_retry_due)
-                    or (benchmark_missing and benchmark_retry_due)
-                ):
-                    manager_records.append(record)
-
-            manager_details_by_iaid = {}
-            manager_iaids = list(dict.fromkeys(record["iaid"] for record in manager_records))
-            if manager_iaids:
-                from concurrent.futures import ThreadPoolExecutor
-
-                with ThreadPoolExecutor(max_workers=4) as executor:
-                    futures = {
-                        executor.submit(cls._fetch_fund_manager_details, iaid): iaid
-                        for iaid in manager_iaids
-                    }
-                    for future, iaid in futures.items():
-                        details = future.result()
-                        if details:
-                            manager_details_by_iaid[iaid] = details
+            # Detail-page fund-manager/benchmark enrichment is deliberately
+            # deferred to refresh_missing_benchmarks(), which processes a
+            # bounded batch in the background. Listing benchmarks are persisted
+            # immediately below when APMI publishes them.
+            manager_status_by_id = manager_status_by_id
 
             pms_products = []
             snapshots = []
@@ -434,10 +393,9 @@ class APMIPMSDiscoveryService:
                     continue
 
                 existing_pms = manager_status_by_id.get(product.id)
-                detail_data = manager_details_by_iaid.get(record["iaid"])
+                detail_data = None
                 source_benchmark = (
                     cls._normalize_benchmark(record.get("benchmark"))
-                    or cls._normalize_benchmark(detail_data.get("benchmark") if detail_data else None)
                     or cls._normalize_benchmark(existing_pms.benchmark if existing_pms else None)
                 )
                 pms_products.append(
@@ -481,48 +439,6 @@ class APMIPMSDiscoveryService:
                 unique_fields=["product"],
             )
 
-            # Preserve existing person attribution; populate only missing names.
-            pms_by_product_id = {
-                item.product_id: item
-                for item in PMSProduct.objects.filter(product_id__in=product_ids)
-            }
-            manager_updates = []
-            for record in manager_records:
-                details = manager_details_by_iaid.get(record["iaid"])
-                if not details:
-                    # Failed HTTP requests are not cached and can be retried.
-                    continue
-                identity = f"PMS:APMI:{record['provider'].upper()}:{record['iaid']}"
-                product = product_by_identity.get(identity)
-                pms_product = pms_by_product_id.get(product.id) if product else None
-                if pms_product:
-                    if details.get("fund_manager"):
-                        pms_product.fund_manager = details["fund_manager"]
-                        pms_product.fund_manager_website = details["website"]
-                    elif not pms_product.fund_manager_website:
-                        pms_product.fund_manager_website = details["website"]
-                    checked_at = timezone.now()
-                    pms_product.fund_manager_checked_at = checked_at
-                    detail_benchmark = cls._normalize_benchmark(details.get("benchmark"))
-                    if detail_benchmark:
-                        pms_product.benchmark = detail_benchmark
-                        pms_product.benchmark_checked_at = checked_at
-                    else:
-                        pms_product.benchmark_checked_at = None
-                    manager_updates.append(pms_product)
-            if manager_updates:
-                PMSProduct.objects.bulk_update(
-                    manager_updates,
-                    [
-                        "fund_manager",
-                        "fund_manager_website",
-                        "fund_manager_checked_at",
-                        "benchmark",
-                        "benchmark_checked_at",
-                    ],
-                    batch_size=500,
-                )
-
             PerformanceSnapshot.objects.bulk_create(
                 snapshots,
                 batch_size=1000,
@@ -544,10 +460,8 @@ class APMIPMSDiscoveryService:
                 "source_reference": cls.REPORT_URL,
                 "report_date": report_date.isoformat(),
                 "records_seen": len(records),
-                "fund_managers_enriched": sum(
-                    bool(item.fund_manager) for item in manager_updates
-                ),
-                "fund_manager_checks": len(manager_updates),
+                "fund_managers_enriched": 0,
+                "fund_manager_checks": 0,
                 "mode": "bulk_upsert",
             }
             run.finished_at = timezone.now()
@@ -557,10 +471,8 @@ class APMIPMSDiscoveryService:
                 "updated": updated,
                 "failed": failed,
                 "report_date": report_date.isoformat(),
-                "fund_managers_enriched": sum(
-                    bool(item.fund_manager) for item in manager_updates
-                ),
-                "fund_manager_checks": len(manager_updates),
+                "fund_managers_enriched": 0,
+                "fund_manager_checks": 0,
                 "source": "APMI",
             }
         except Exception as exc:
@@ -572,132 +484,113 @@ class APMIPMSDiscoveryService:
 
     
     @classmethod
-    def refresh_missing_benchmarks(cls):
-        """Backfill missing PMS benchmarks in resumable batches."""
-        batch_size = 100
-        max_workers = 10
-        max_attempts = 2
+    def refresh_missing_benchmarks(cls, batch_size=25, max_workers=5):
+        """Enrich a bounded batch of PMS rows; intended for scheduled background use.
 
+        Successful detail-page responses with no benchmark are put on the
+        existing seven-day retry cadence. Network failures remain eligible
+        for the next scheduler run. No full-universe request fan-out occurs.
+        """
+        retry_before = timezone.now() - cls.MANAGER_RETRY_AFTER
         rows = list(
-            PMSProduct.objects.filter(
-                product__source="APMI",
-            ).filter(
+            PMSProduct.objects.filter(product__source="APMI")
+            .filter(
                 Q(benchmark__isnull=True)
                 | Q(benchmark__in=cls.UNAVAILABLE_BENCHMARK_VALUES)
-            ).exclude(
-                product__external_identifier__isnull=True
-            ).exclude(
-                product__external_identifier=""
-            ).values(
-                "product_id",
-                "product__external_identifier",
+                | Q(fund_manager__isnull=True)
+                | Q(fund_manager="")
             )
+            .filter(
+                Q(benchmark_checked_at__isnull=True)
+                | Q(benchmark_checked_at__lte=retry_before)
+                | Q(fund_manager_checked_at__isnull=True)
+                | Q(fund_manager_checked_at__lte=retry_before)
+            )
+            .exclude(product__external_identifier__isnull=True)
+            .exclude(product__external_identifier="")
+            .order_by("benchmark_checked_at", "fund_manager_checked_at", "product_id")
+            .values("product_id", "product__external_identifier")[:max(1, batch_size)]
         )
-
-        total = len(rows)
-        if not total:
-            return {
-                "requested": 0,
-                "checked": 0,
-                "updated": 0,
-                "failed": 0,
-            }
+        if not rows:
+            return {"requested": 0, "checked": 0, "benchmarks_updated": 0,
+                    "managers_updated": 0, "failed": 0, "remaining": 0}
 
         from concurrent.futures import ThreadPoolExecutor, as_completed
 
-        checked = 0
-        updated = 0
+        def fetch(row):
+            return row, cls._fetch_fund_manager_details(
+                str(row["product__external_identifier"])
+            )
+
+        details_by_product = {}
         failed = 0
-
-        for start in range(0, total, batch_size):
-            batch = rows[start:start + batch_size]
-            details_by_product = {}
-
-            def fetch_with_retry(row):
-                iaid = str(row["product__external_identifier"])
-
-                for attempt in range(max_attempts):
-                    details = cls._fetch_fund_manager_details(iaid)
-                    if details is not None:
-                        return row, details
-
-                return row, None
-
-            with ThreadPoolExecutor(max_workers=max_workers) as executor:
-                futures = [
-                    executor.submit(fetch_with_retry, row)
-                    for row in batch
-                ]
-
-                for future in as_completed(futures):
-                    try:
-                        row, details = future.result()
-                        if details is not None:
-                            details_by_product[row["product_id"]] = details
-                        else:
-                            failed += 1
-                    except Exception:
+        with ThreadPoolExecutor(max_workers=max(1, min(max_workers, len(rows)))) as executor:
+            futures = [executor.submit(fetch, row) for row in rows]
+            for future in as_completed(futures):
+                try:
+                    row, details = future.result()
+                    if details is None:
                         failed += 1
-                        logger.exception(
-                            "APMI benchmark backfill request failed"
-                        )
+                    else:
+                        details_by_product[row["product_id"]] = details
+                except Exception:
+                    failed += 1
+                    logger.exception("APMI detail enrichment failed")
 
-            product_ids = list(details_by_product.keys())
-
-            products = {
-                item.product_id: item
-                for item in PMSProduct.objects.filter(
-                    product_id__in=product_ids
-                )
-            }
-
-            batch_updates = []
-
-            for product_id, details in details_by_product.items():
-                product = products.get(product_id)
-                if product is None:
-                    continue
-
-                benchmark = cls._normalize_benchmark(
-                    details.get("benchmark")
-                )
-
-                if benchmark:
-                    product.benchmark = benchmark
-                    product.benchmark_checked_at = timezone.now()
-                    updated += 1
-                else:
-                    product.benchmark_checked_at = None
-
-                batch_updates.append(product)
-                checked += 1
-
-            if batch_updates:
-                PMSProduct.objects.bulk_update(
-                    batch_updates,
-                    ["benchmark", "benchmark_checked_at"],
-                    batch_size=batch_size,
-                )
-
-            logger.info(
-                "APMI benchmark backfill progress: %s/%s processed, "
-                "%s updated, %s failed",
-                min(start + len(batch), total),
-                total,
-                updated,
-                failed,
+        products = {
+            item.product_id: item
+            for item in PMSProduct.objects.filter(
+                product_id__in=list(details_by_product.keys())
             )
-
-            print(
-                f"APMI Benchmark Progress: "
-                f"{min(start + len(batch), total)}/{total} | "
-                f"Updated: {updated} | Failed: {failed}",
-                flush=True,
-            )
-
-        return {
-            "requested": total,
-            "checked": checked,
-            "updated": updated,
-            "failed": failed,
         }
+        now = timezone.now()
+        updates = []
+        benchmarks_updated = managers_updated = checked = 0
+
+        for product_id, details in details_by_product.items():
+            product = products.get(product_id)
+            if product is None:
+                continue
+            benchmark = cls._normalize_benchmark(details.get("benchmark"))
+            manager = details.get("fund_manager")
+            if benchmark and not cls._normalize_benchmark(product.benchmark):
+                product.benchmark = benchmark
+                product.benchmark_checked_at = now
+                benchmarks_updated += 1
+            elif not cls._normalize_benchmark(product.benchmark):
+                # A successful response with no published benchmark is
+                # retried after MANAGER_RETRY_AFTER, not every scheduler tick.
+                product.benchmark_checked_at = now
+            if manager and not (product.fund_manager or "").strip():
+                product.fund_manager = manager
+                managers_updated += 1
+            if details.get("website") and not product.fund_manager_website:
+                product.fund_manager_website = details["website"]
+            product.fund_manager_checked_at = now
+            updates.append(product)
+            checked += 1
+
+        if updates:
+            PMSProduct.objects.bulk_update(
+                updates,
+                ["benchmark", "benchmark_checked_at", "fund_manager",
+                 "fund_manager_website", "fund_manager_checked_at"],
+                batch_size=max(1, batch_size),
+            )
+
+        remaining = PMSProduct.objects.filter(product__source="APMI").filter(
+            Q(benchmark__isnull=True)
+            | Q(benchmark__in=cls.UNAVAILABLE_BENCHMARK_VALUES)
+            | Q(fund_manager__isnull=True)
+            | Q(fund_manager="")
+        ).count()
+        result = {
+            "requested": len(rows),
+            "checked": checked,
+            "benchmarks_updated": benchmarks_updated,
+            "managers_updated": managers_updated,
+            "failed": failed,
+            "remaining": remaining,
+        }
+        logger.info("APMI bounded detail enrichment completed: %s", result)
+        return result

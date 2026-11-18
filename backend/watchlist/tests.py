@@ -39,6 +39,17 @@ class WatchListTests(TestCase):
         self.assertEqual(records[0]["provider"], "Provider One")
         self.assertEqual(records[1]["provider"], "Provider Two")
 
+    def test_amfi_parser_reads_benchmark_only_when_source_row_includes_it(self):
+        feed = (
+            "Scheme Code;ISIN;ISIN2;Scheme Name;Net Asset Value;Date;Benchmark\n"
+            "Provider One\n"
+            "1;INF000000001;-;Generic Equity Fund;100.25;15-Sep-2026;Nifty 500 TRI\n"
+            "2;INF000000002;-;Another Fund;50.10;15-Sep-2026;\n"
+        )
+        records = AMFIUniverseService.parse_latest_feed(feed)
+        self.assertEqual(records[0].get("benchmark"), "Nifty 500 TRI")
+        self.assertIsNone(records[1].get("benchmark"))
+
     def test_amfi_parser_supports_six_column_legacy_format(self):
         feed = ("Scheme Code;ISIN Div Payout/ISIN Growth;ISIN Div Reinvestment;Scheme Name;Net Asset Value;Date\nProvider One\n1;INF000000001;-;Generic Equity Fund;100.25;15-Sep-2026\n")
         records = AMFIUniverseService.parse_latest_feed(feed)
@@ -1403,6 +1414,16 @@ class APMIPMSDiscoveryTests(TestCase):
             APMIPMSDiscoveryService._extract_fund_manager_names(html),
             ["Jane Doe", "John Smith"],
         )
+
+    def test_apmi_parser_reads_primary_benchmark_column_from_report(self):
+        html = """
+        <table>
+          <tr><th>PMS Provider Name</th><th>IA Name</th><th>AUM</th><th>Benchmark</th><th>1 Month</th></tr>
+          <tr><td>Example AMC</td><td><a href="IaInsight.htm?IAID=123">Example Strategy</a></td><td>100</td><td>Nifty 500 TRI</td><td>1.2</td></tr>
+        </table>
+        """
+        records = APMIPMSDiscoveryService._records(html)
+        self.assertEqual(records[0]["benchmark"], "Nifty 500 TRI")
 
     def test_apmi_parser_reads_html_rows(self):
         records = APMIPMSDiscoveryService._records(self.SAMPLE_HTML)

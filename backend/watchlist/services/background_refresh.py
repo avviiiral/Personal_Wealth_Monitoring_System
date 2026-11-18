@@ -24,7 +24,6 @@ from watchlist.models import (
 )
 from watchlist.services.performance import AMFIPerformanceService
 from watchlist.services.pms import APMIPMSDiscoveryService
-from watchlist.services.fund_managers import AMFIFundManagerService
 from watchlist.services.universe import AMFIUniverseService
 
 logger = logging.getLogger(__name__)
@@ -78,6 +77,7 @@ class BackgroundWatchListRefreshService:
                             "fund_type": record.get("category"),
                             "latest_nav": record["nav"],
                             "latest_nav_date": record["date"],
+                            "benchmark": AMFIUniverseService._source_benchmark(record),
                         },
                     )
                     PerformanceSnapshot.objects.update_or_create(
@@ -258,6 +258,7 @@ class BackgroundWatchListRefreshService:
                             "asset_class": "PMS",
                             "aum": record["aum"],
                             "latest_value": record["aum"],
+                            "benchmark": record.get("benchmark") or PMSProduct.objects.filter(product=product).values_list("benchmark", flat=True).first(),
                         },
                     )
                     PerformanceSnapshot.objects.update_or_create(

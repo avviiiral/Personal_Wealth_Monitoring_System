@@ -125,7 +125,7 @@ class APMIPMSDiscoveryService:
             )
             response.raise_for_status()
             names = cls._extract_fund_manager_names(response.text)
-            benchmark = None
+            benchmark = cls._extract_benchmark(response.text)
             if not names:
                 logger.info("APMI IA detail page returned no named managers (IAID=%s, status=%s)", iaid, response.status_code)
             # A successful detail-page response is cached even when APMI has
@@ -338,11 +338,18 @@ class APMIPMSDiscoveryService:
                     or pms_product.fund_manager_checked_at <= manager_retry_before
                 )
                 report_benchmark = record.get("benchmark")
-                benchmark_missing = False
-                benchmark_retry_due = False
+                benchmark_missing = (
+                    not report_benchmark
+                    and (pms_product is None or not (pms_product.benchmark or "").strip())
+                )
+                benchmark_retry_due = (
+                    pms_product is None
+                    or pms_product.benchmark_checked_at is None
+                    or pms_product.benchmark_checked_at <= manager_retry_before
+                )
                 if product and (
                     (manager_missing and manager_retry_due)
-
+                    or (benchmark_missing and benchmark_retry_due)
                 ):
                     manager_records.append(record)
 
@@ -503,7 +510,12 @@ class APMIPMSDiscoveryService:
 
     @classmethod
     def refresh_missing_benchmarks(cls):
-        """Backfill missing PMS primary benchmarks from APMI IA insight pages."""
+        """Backfill missing PMS primary benchmarks from official APMI IA insight pages.
+
+        APMI's public IA performance report provides the approach and returns;
+        the matching IA Insight page exposes that approach's actual benchmark.
+        Persist only the value explicitly published on that APMI detail page.
+        """
         retry_before = timezone.now() - cls.MANAGER_RETRY_AFTER
         rows = list(
             PMSProduct.objects.filter(

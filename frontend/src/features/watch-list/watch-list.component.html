@@ -32,6 +32,14 @@
       <option value="">All Categories</option>
       <option *ngFor="let option of categories" [value]="option">{{ option }}</option>
     </select>
+    <select [(ngModel)]="fundManager" aria-label="Fund Manager">
+      <option value="">All Fund Managers</option>
+      <option *ngFor="let option of fundManagers" [value]="option">{{ option }}</option>
+    </select>
+    <select [(ngModel)]="benchmark" aria-label="Benchmark">
+      <option value="">All Benchmarks</option>
+      <option *ngFor="let option of benchmarks" [value]="option">{{ option }}</option>
+    </select>
     <button type="button" class="apply-button" (click)="applyFilters()">Apply</button>
     <button type="button" class="apply-button" [disabled]="selectedAddCount === 0 || movingToWatchList || removingFromWatchList" (click)="moveSelectedToWatchList()">
       {{ movingToWatchList ? 'Moving…' : 'Move to Watch List' }}<span *ngIf="selectedAddCount > 0"> ({{ selectedAddCount }})</span>

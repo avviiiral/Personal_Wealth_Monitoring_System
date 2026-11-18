@@ -227,6 +227,10 @@ class BackgroundWatchListRefreshService:
             response.raise_for_status()
             report_date = APMIPMSDiscoveryService._report_date(response.text)
             records = APMIPMSDiscoveryService._records(response.text)
+            identities = {
+                f"PMS:APMI:{record['provider'].upper()}:{record['iaid'] or record['name'].upper()}"
+                for record in records
+            }
 
             existing_products = {
                 item.identity_key: item
@@ -261,14 +265,12 @@ class BackgroundWatchListRefreshService:
                         },
                     )
                     existing_pms = existing_pms_by_product_id.get(product.id)
-                    detail_data = None
                     source_benchmark = (
                         APMIPMSDiscoveryService._normalize_benchmark(record.get("benchmark"))
                         or APMIPMSDiscoveryService._normalize_benchmark(
                             existing_pms.benchmark if existing_pms else None
                         )
                     )
-                    checked_at = None
                     pms_product, _ = PMSProduct.objects.update_or_create(
                         product=product,
                         defaults={

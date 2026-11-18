@@ -1,7 +1,6 @@
 import { CommonModule } from '@angular/common';
 import { ChangeDetectorRef, Component, OnDestroy, OnInit, inject } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { RouterModule } from '@angular/router';
 import { firstValueFrom, Subject } from 'rxjs';
 import { debounceTime, distinctUntilChanged, finalize, takeUntil } from 'rxjs/operators';
 
@@ -19,7 +18,7 @@ interface WatchListSortState { column: WatchListSortColumn | null; direction: Wa
 @Component({
   selector: 'app-watch-list',
   standalone: true,
-  imports: [CommonModule, FormsModule, RouterModule],
+  imports: [CommonModule, FormsModule],
   templateUrl: './watch-list.component.html',
   styleUrl: './watch-list.component.scss',
 })

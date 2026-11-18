@@ -1321,3 +1321,38 @@
 .portfolio-page .quant-toggle-cell {
   text-align: center !important;
 }
+
+/* Center-align expanded asset group and underlying detail content. */
+.portfolio-page .asset-group-columns-header,
+.portfolio-page .asset-group-header {
+  justify-items: center;
+}
+
+.portfolio-page .asset-group-name-header,
+.portfolio-page .asset-group-name,
+.portfolio-page .asset-group-col {
+  justify-self: stretch;
+  text-align: center !important;
+}
+
+.portfolio-page .underlying-table-scroll .asset-table th,
+.portfolio-page .underlying-table-scroll .asset-table td {
+  text-align: center !important;
+}
+
+.portfolio-page .underlying-table-scroll .asset-name,
+.portfolio-page .underlying-table-scroll .isin,
+.portfolio-page .underlying-table-scroll .price-cell,
+.portfolio-page .underlying-table-scroll .pnl-cell {
+  text-align: center !important;
+}
+
+.portfolio-page .manual-price-container,
+.portfolio-page .manual-price-actions {
+  justify-content: center;
+}
+
+.portfolio-page .asset-detail-title,
+.portfolio-page .quant-toggle-cell {
+  text-align: center !important;
+}

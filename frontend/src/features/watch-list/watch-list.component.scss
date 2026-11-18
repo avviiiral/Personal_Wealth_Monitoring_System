@@ -15,7 +15,7 @@
 .tabs button { border: 1px solid var(--surface-line); background: transparent; color: var(--ink); border-radius: 7px; padding: 8px 14px; cursor: pointer; }
 .tabs button.active { background: var(--accent); color: white; border-color: var(--accent); }
 .status-tabs button.active { background: var(--ink); border-color: var(--ink); color: var(--surface); }
-.filters { display: grid; grid-template-columns: minmax(240px, 2fr) minmax(160px, 1fr) minmax(160px, 1fr) 150px auto; gap: 8px; margin: 18px 0; }
+.filters { display: grid; grid-template-columns: minmax(240px, 2fr) repeat(4, minmax(150px, 1fr)) 150px auto auto; gap: 8px; margin: 18px 0; }
 .filters input, .filters select { min-width: 0; border: 1px solid var(--surface-line); border-radius: 8px; padding: 9px 11px; background: var(--surface); color: var(--ink); }
 .filters input::placeholder { color: var(--muted); }
 .apply-button { background: var(--ink); color: var(--surface); }

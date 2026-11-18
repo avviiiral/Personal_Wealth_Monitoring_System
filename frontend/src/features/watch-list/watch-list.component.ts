@@ -1374,6 +1374,20 @@ export class WatchListComponent implements OnInit, OnDestroy {
     }, 1000);
   }
 
+  externalProductUrl(product: WatchListProduct): string | null {
+    const candidates = [product.source_reference, product.official_website];
+    for (const candidate of candidates) {
+      if (!candidate) continue;
+      try {
+        const url = new URL(candidate);
+        if (url.protocol === 'http:' || url.protocol === 'https:') return url.href;
+      } catch {
+        // Source references may be identifiers rather than web URLs.
+      }
+    }
+    return null;
+  }
+
   benchmarkDisplayName(benchmark: string | null | undefined): string {
     return benchmark === 'BSE 500' ? 'BSE 500 TRI' : (benchmark || '—');
   }

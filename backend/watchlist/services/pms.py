@@ -125,7 +125,7 @@ class APMIPMSDiscoveryService:
             )
             response.raise_for_status()
             names = cls._extract_fund_manager_names(response.text)
-            benchmark = cls._extract_benchmark(response.text)
+            benchmark = None
             if not names:
                 logger.info("APMI IA detail page returned no named managers (IAID=%s, status=%s)", iaid, response.status_code)
             # A successful detail-page response is cached even when APMI has
@@ -339,11 +339,7 @@ class APMIPMSDiscoveryService:
                 )
                 report_benchmark = record.get("benchmark")
                 benchmark_missing = False
-                benchmark_retry_due = (
-                    pms_product is None
-                    or pms_product.benchmark_checked_at is None
-                    or pms_product.benchmark_checked_at <= manager_retry_before
-                )
+                benchmark_retry_due = False
                 if product and (
                     (manager_missing and manager_retry_due)
 

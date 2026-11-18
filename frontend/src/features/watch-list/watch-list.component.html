@@ -88,15 +88,14 @@
           </td>
           <td>
             <div class="product-title-cell">
-              <a class="product-name product-detail-link" [routerLink]="['/watch-list', product.id]" [attr.aria-label]="'View source details for ' + product.name">{{ product.name }}</a>
+              <span class="product-name">{{ product.name }}</span>
               <a *ngIf="externalProductUrl(product) as sourceUrl"
                 class="external-source-link"
                 [href]="sourceUrl"
                 target="_blank"
                 rel="noopener noreferrer"
                 [attr.aria-label]="'Open external source for ' + product.name + ' in a new tab'"
-                title="Open external source in a new tab"
-                (click)="$event.stopPropagation()">↗</a>
+                title="Open external source in a new tab">↗</a>
             </div>
             <div class="secondary">{{ product.external_identifier || 'Source ID unavailable' }}</div>
           </td>

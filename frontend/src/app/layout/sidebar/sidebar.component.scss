@@ -224,3 +224,11 @@
 
   .brand-mark:hover { transform: rotate(-3deg) scale(1.04); }
 }
+
+
+/* Keep the brand mark legible against the dark theme surface. */
+:host-context(html.dark-theme) .brand-mark {
+  background: var(--accent);
+  color: #07140f;
+  box-shadow: 0 0 0 1px rgba(47, 191, 143, 0.22);
+}

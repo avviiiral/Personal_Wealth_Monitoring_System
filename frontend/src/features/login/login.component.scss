@@ -230,3 +230,11 @@ form > button:disabled {
   color: var(--muted-soft);
   font-size: 11px;
 }
+
+
+/* Preserve strong contrast for the login brand mark in dark mode. */
+:host-context(html.dark-theme) .brand-logo {
+  background: var(--accent);
+  color: #07140f;
+  box-shadow: 0 0 0 1px rgba(47, 191, 143, 0.22);
+}

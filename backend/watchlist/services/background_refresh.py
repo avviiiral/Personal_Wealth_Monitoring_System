@@ -437,8 +437,14 @@ class BackgroundWatchListRefreshService:
                 mf_result = cls.refresh_mutual_funds()
                 close_old_connections()
                 pms_result = cls.refresh_pms()
+                close_old_connections()
+                pms_benchmark_result = APMIPMSDiscoveryService.refresh_missing_benchmarks()
 
             logger.info("Background Watch List refresh completed successfully.")
-            return {"mutual_funds": mf_result, "pms": pms_result}
+            return {
+                "mutual_funds": mf_result,
+                "pms": pms_result,
+                "pms_benchmark_backfill": pms_benchmark_result,
+            }
         finally:
             close_old_connections()

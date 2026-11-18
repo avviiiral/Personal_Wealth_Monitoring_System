@@ -583,7 +583,8 @@ class APMIPMSDiscoveryService:
             PMSProduct.objects.filter(
                 product__source="APMI",
             ).filter(
-                Q(benchmark__isnull=True) | Q(benchmark="")
+                Q(benchmark__isnull=True)
+                | Q(benchmark__in=cls.UNAVAILABLE_BENCHMARK_VALUES)
             ).values("product_id", "product__external_identifier")
         )
         rows = [row for row in rows if row["product__external_identifier"]]
@@ -612,8 +613,9 @@ class APMIPMSDiscoveryService:
         updates = []
         for row, details in details_by_iaid.values():
             product = PMSProduct.objects.get(product_id=row["product_id"])
-            if details.get("benchmark"):
-                product.benchmark = details["benchmark"]
+            detail_benchmark = cls._normalize_benchmark(details.get("benchmark"))
+            if detail_benchmark:
+                product.benchmark = detail_benchmark
                 product.benchmark_checked_at = checked_at
             else:
                 product.benchmark_checked_at = None

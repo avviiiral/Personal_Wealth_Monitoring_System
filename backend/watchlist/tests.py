@@ -33,7 +33,7 @@ class WatchListTests(TestCase):
         self.client.force_authenticate(self.user)
 
     def test_amfi_parser_is_data_driven(self):
-        feed = "Header\nProvider One\n1;INF000000001;-;Generic Equity Fund;Direct Plan;Growth;100.25;15-Sep-2026\nProvider Two\n2;INF000000002;-;Another Fund;Regular Plan;IDCW;50.10;15-Sep-2026\n"
+        feed = "Scheme Code;ISIN1;ISIN2;Scheme Name;Plan;Option;NAV;Date;Benchmark\nProvider One\n1;INF000000001;-;Generic Equity Fund;Direct Plan;Growth;100.25;15-Sep-2026;Nifty 500 TRI\nProvider Two\n2;INF000000002;-;Another Fund;Regular Plan;IDCW;50.10;15-Sep-2026;\n"
         records = AMFIUniverseService.parse_latest_feed(feed)
         self.assertEqual(len(records), 2)
         self.assertEqual(records[0]["provider"], "Provider One")

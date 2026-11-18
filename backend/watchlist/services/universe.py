@@ -57,6 +57,7 @@ class AMFIUniverseService:
         """
         provider = None
         category = None
+        column_indexes = {}
         records = []
         for raw_line in text.splitlines():
             line = raw_line.strip()
@@ -66,6 +67,7 @@ class AMFIUniverseService:
             if not parts[0].isdigit():
                 header = parts[0]
                 if header.lower() == "scheme code":
+                    column_indexes = {name.casefold(): index for index, name in enumerate(parts)}
                     continue
                 # A category header always precedes the fund-house name for
                 # that block, so seeing one resets the provider until AMFI
@@ -95,10 +97,12 @@ class AMFIUniverseService:
                     isin2 = parts[2] if parts[2] not in {"-", ""} else None
                     growth_isin = isin1 if "growth" in name.lower() and "idcw" not in name.lower() else None
                     selected_isin = growth_isin or isin1 or isin2
+                    benchmark_index = next((column_indexes[key] for key in ("benchmark", "benchmark name", "benchmark index", "benchmark index name") if key in column_indexes), None)
                     records.append({
                         "scheme_code": parts[0], "name": name, "provider": provider, "category": category,
                         "plan": parts[4] or None, "option": parts[5] or None,
                         "isin": selected_isin, "nav": nav, "date": nav_date,
+                        "benchmark": parts[benchmark_index] if benchmark_index is not None and benchmark_index < len(parts) and parts[benchmark_index] else None,
                     })
                     continue
 
@@ -116,10 +120,12 @@ class AMFIUniverseService:
             isin2 = parts[2] if parts[2] not in {"-", ""} else None
             growth_isin = isin1 if "growth" in name.lower() and "idcw" not in name.lower() else None
             selected_isin = growth_isin or isin1 or isin2
+            benchmark_index = next((column_indexes[key] for key in ("benchmark", "benchmark name", "benchmark index", "benchmark index name") if key in column_indexes), None)
             records.append({
                 "scheme_code": parts[0], "name": name, "provider": provider, "category": category,
                 "plan": None, "option": None,
                 "isin": selected_isin, "nav": nav, "date": nav_date,
+                "benchmark": parts[benchmark_index] if benchmark_index is not None and benchmark_index < len(parts) and parts[benchmark_index] else None,
             })
         return records
 

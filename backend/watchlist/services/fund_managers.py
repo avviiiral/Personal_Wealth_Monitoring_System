@@ -152,16 +152,11 @@ class AMFIFundManagerService:
         """Return the source-reported benchmark, preferring AMFI daily data."""
         if not isinstance(record, dict):
             return None
-        daily = record.get("amfi_daily") or {}
+        # This endpoint is used only to enrich manager names. Benchmark data
+        # must be taken directly from the primary AMFI universe response.
+        return None
         ssd = record.get("ssd") or record.get("scheme_summary_document") or {}
-        candidates = (
-            daily.get("benchmark"),
-            record.get("amfi_daily_benchmark"),
-            ssd.get("benchmark_tier1_std"),
-            record.get("ssd_benchmark_tier1_std"),
-            ssd.get("benchmark_tier1_filed"),
-            record.get("ssd_benchmark_tier1_filed"),
-        )
+        candidates = ()
         for candidate in candidates:
             value = re.sub(r"\\s+", " ", str(candidate or "")).strip()
             if value and value.lower() not in {"na", "n/a", "not applicable", "-"}:

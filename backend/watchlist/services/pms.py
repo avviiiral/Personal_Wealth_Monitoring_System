@@ -189,22 +189,22 @@ class APMIPMSDiscoveryService:
 
     @classmethod
     def _table_benchmark_column(cls, soup, row, values):
-        """Read the benchmark only when the APMI report provides a named column."""
-        for table in row.find_parents("table"):
-            headers = []
-            for header_row in table.find_all("tr"):
-                header_cells = header_row.find_all(["th", "td"], recursive=False)
-                labels = [cls._text(cell.get_text(" ", strip=True)).casefold() for cell in header_cells]
-                if any("benchmark" in label for label in labels):
-                    headers = labels
-                    break
-            if headers:
-                for index, label in enumerate(headers):
-                    if "benchmark" in label and index < len(values):
-                        value = values[index]
-                        if value and value.casefold() not in {"na", "n/a", "-", "not available"}:
-                            return value
-        return None
+        """Read a benchmark only when it is a labelled column in the APMI report."""
+        table = row.find_parent("table")
+        if table is None:
+            return None
+        header_map = {}
+        for header_row in table.find_all("tr"):
+            cells = header_row.find_all(["th", "td"], recursive=False)
+            labels = [cls._text(cell.get_text(" ", strip=True)).casefold() for cell in cells]
+            if any("benchmark" in label for label in labels):
+                header_map = {label: index for index, label in enumerate(labels)}
+                break
+        index = next((idx for label, idx in header_map.items() if "benchmark" in label), None)
+        if index is None or index >= len(values):
+            return None
+        value = values[index]
+        return value if value and value.casefold() not in {"na", "n/a", "-", "not available"} else None
 
     @classmethod
     def _records(cls, html):

@@ -46,8 +46,12 @@ export class WatchListComponent implements OnInit, OnDestroy {
   readonly selectedIds = new Set<number>();
   provider = '';
   category = '';
+  fundManager = '';
+  benchmark = '';
   providers: string[] = [];
   categories: string[] = [];
+  fundManagers: string[] = [];
+  benchmarks: string[] = [];
   status: StatusTab = 'ALL';
   productTab: ProductTab = 'MUTUAL_FUND';
   private readonly sortState: WatchListSortState = { column: null, direction: 'normal' };
@@ -255,15 +259,19 @@ export class WatchListComponent implements OnInit, OnDestroy {
       next: response => {
         this.providers = response.providers;
         this.categories = response.categories;
+        this.fundManagers = response.fund_managers;
+        this.benchmarks = response.benchmarks;
         if (this.provider && !this.providers.includes(this.provider)) this.provider = '';
         if (this.category && !this.categories.includes(this.category)) this.category = '';
+        if (this.fundManager && !this.fundManagers.includes(this.fundManager)) this.fundManager = '';
+        if (this.benchmark && !this.benchmarks.includes(this.benchmark)) this.benchmark = '';
       },
       error: error => console.error('Failed to load Watch List filter options:', error),
     });
   }
 
   private cacheKey(): string {
-    return `${this.cachePrefix}${this.productTab}.${this.status}.${this.page}.${this.provider}.${this.category}.${this.search.trim()}`;
+    return `${this.cachePrefix}${this.productTab}.${this.status}.${this.page}.${this.provider}.${this.category}.${this.fundManager}.${this.benchmark}.${this.search.trim()}`;
   }
 
   private restoreCachedPage(): void {
@@ -319,7 +327,8 @@ export class WatchListComponent implements OnInit, OnDestroy {
 
   private shouldBootstrapUniverse(response: WatchListResponse): boolean {
     return response.count === 0 && !this.autoRefreshAttempted && !this.refreshing && this.page === 1
-      && this.status === 'ALL' && !this.search.trim() && !this.provider && !this.category;
+      && this.status === 'ALL' && !this.search.trim() && !this.provider && !this.category
+      && !this.fundManager && !this.benchmark;
   }
 
   load(): void {
@@ -329,6 +338,8 @@ export class WatchListComponent implements OnInit, OnDestroy {
     const requestedPage = this.page;
     const requestedProvider = this.provider;
     const requestedCategory = this.category;
+    const requestedFundManager = this.fundManager;
+    const requestedBenchmark = this.benchmark;
     const requestedSearch = this.search.trim();
 
     this.restoreCachedPage();
@@ -340,6 +351,8 @@ export class WatchListComponent implements OnInit, OnDestroy {
       search: requestedSearch || undefined,
       provider: requestedProvider || undefined,
       category: requestedCategory || undefined,
+      fund_manager: requestedFundManager || undefined,
+      benchmark_filter: requestedBenchmark || undefined,
       page: requestedPage,
       page_size: this.pageSize,
     }).pipe(
@@ -354,6 +367,8 @@ export class WatchListComponent implements OnInit, OnDestroy {
           || requestedPage !== this.page
           || requestedProvider !== this.provider
           || requestedCategory !== this.category
+          || requestedFundManager !== this.fundManager
+          || requestedBenchmark !== this.benchmark
           || requestedSearch !== this.search.trim()) return;
 
         // A completed response for the active request always ends the
@@ -490,6 +505,8 @@ export class WatchListComponent implements OnInit, OnDestroy {
       this.productTab = tab;
       this.provider = '';
       this.category = '';
+      this.fundManager = '';
+      this.benchmark = '';
       this.selectedIds.clear();
       this.page = 1;
       this.loadFilters();

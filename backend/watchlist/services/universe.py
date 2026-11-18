@@ -135,6 +135,23 @@ class AMFIUniverseService:
             return f"MUTUAL_FUND:ISIN:{record['isin'].upper()}"
         return f"MUTUAL_FUND:SCHEME:{record['scheme_code']}"
 
+    @staticmethod
+    def _source_benchmark(record):
+        """Return only a benchmark explicitly supplied by AMFI's source record."""
+        keys = (
+            "benchmark",
+            "benchmark_name",
+            "benchmark_index",
+            "benchmark_index_name",
+            "primary_benchmark",
+            "tier_1_benchmark",
+        )
+        for key in keys:
+            value = cls._normalize(record.get(key))
+            if value and value.casefold() not in {"na", "n/a", "not available", "not applicable", "-"}:
+                return value
+        return None
+
     @classmethod
     def refresh(cls):
         """
@@ -219,6 +236,7 @@ class AMFIUniverseService:
                         fund_type=record.get("category"),
                         latest_nav=record["nav"],
                         latest_nav_date=record["date"],
+                        benchmark=cls._source_benchmark(record),
                     )
                 )
                 snapshots.append(
@@ -237,7 +255,7 @@ class AMFIUniverseService:
                 update_conflicts=True,
                 update_fields=[
                     "scheme_code", "plan", "option", "fund_type",
-                    "latest_nav", "latest_nav_date",
+                    "latest_nav", "latest_nav_date", "benchmark", "benchmark_checked_at",
                 ],
                 unique_fields=["product"],
             )

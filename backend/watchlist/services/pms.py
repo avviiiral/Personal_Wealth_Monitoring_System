@@ -188,6 +188,25 @@ class APMIPMSDiscoveryService:
         return timezone.now().date()
 
     @classmethod
+    def _table_benchmark_column(cls, soup, row, values):
+        """Read the benchmark only when the APMI report provides a named column."""
+        for table in row.find_parents("table"):
+            headers = []
+            for header_row in table.find_all("tr"):
+                header_cells = header_row.find_all(["th", "td"], recursive=False)
+                labels = [cls._text(cell.get_text(" ", strip=True)).casefold() for cell in header_cells]
+                if any("benchmark" in label for label in labels):
+                    headers = labels
+                    break
+            if headers:
+                for index, label in enumerate(headers):
+                    if "benchmark" in label and index < len(values):
+                        value = values[index]
+                        if value and value.casefold() not in {"na", "n/a", "-", "not available"}:
+                            return value
+        return None
+
+    @classmethod
     def _records(cls, html):
         """Parse APMI PMS rows without depending on pandas header inference."""
         soup = BeautifulSoup(html, "html.parser")
@@ -230,6 +249,7 @@ class APMIPMSDiscoveryService:
                     "iaid": iaid,
                     "aum": aum,
                     "performance": performance,
+                    "benchmark": cls._table_benchmark_column(soup, row, values),
                 }
             )
         return records
@@ -317,9 +337,10 @@ class APMIPMSDiscoveryService:
                     or pms_product.fund_manager_checked_at is None
                     or pms_product.fund_manager_checked_at <= manager_retry_before
                 )
+                report_benchmark = record.get("benchmark")
                 benchmark_missing = (
-                    pms_product is None
-                    or not (pms_product.benchmark or "").strip()
+                    not report_benchmark
+                    and (pms_product is None or not (pms_product.benchmark or "").strip())
                 )
                 benchmark_retry_due = (
                     pms_product is None
@@ -360,8 +381,10 @@ class APMIPMSDiscoveryService:
                 existing_pms = manager_status_by_id.get(product.id)
                 detail_data = manager_details_by_iaid.get(record["iaid"])
                 source_benchmark = (
-                    detail_data.get("benchmark") if detail_data else None
-                ) or (existing_pms.benchmark if existing_pms else None)
+                    record.get("benchmark")
+                    or (detail_data.get("benchmark") if detail_data else None)
+                    or (existing_pms.benchmark if existing_pms else None)
+                )
                 pms_products.append(
                     PMSProduct(
                         product_id=product.id,

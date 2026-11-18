@@ -96,7 +96,6 @@ class BackgroundWatchListRefreshService:
                     logger.exception("Background AMFI write failed for %s", record.get("name"))
 
             performance = cls.refresh_performance()
-            benchmark_result = AMFIFundManagerService.refresh_missing()
             run.discovered = discovered
             run.updated = updated
             run.failed = failed
@@ -104,7 +103,6 @@ class BackgroundWatchListRefreshService:
                 "source_reference": AMFIUniverseService.NAV_URL,
                 "background_mode": True,
                 "performance": performance,
-                "source_benchmark_enrichment": benchmark_result,
             }
             run.finished_at = timezone.now()
             run.save(update_fields=["discovered", "updated", "failed", "details", "finished_at"])
@@ -285,13 +283,11 @@ class BackgroundWatchListRefreshService:
                     failed += 1
                     logger.exception("Background APMI write failed for %s", record.get("name"))
 
-            benchmark_result = APMIPMSDiscoveryService.refresh_missing_benchmarks()
             run.discovered = discovered
             run.updated = updated
             run.failed = failed
             run.details = {
                 "source_reference": APMIPMSDiscoveryService.REPORT_URL,
-                "source_benchmark_enrichment": benchmark_result,
                 "report_date": report_date.isoformat(),
                 "records_seen": len(records),
                 "background_mode": True,

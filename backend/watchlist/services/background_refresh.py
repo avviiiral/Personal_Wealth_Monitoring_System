@@ -232,17 +232,6 @@ class BackgroundWatchListRefreshService:
                 for record in records
             }
 
-            existing_products = {
-                item.identity_key: item
-                for item in InvestmentProduct.objects.filter(identity_key__in=identities)
-            }
-            existing_pms_by_product_id = {
-                item.product_id: item
-                for item in PMSProduct.objects.filter(
-                    product_id__in=[item.id for item in existing_products.values()]
-                )
-            }
-
             for record in records:
                 try:
                     identity_suffix = record["iaid"] or record["name"].upper()
@@ -264,7 +253,7 @@ class BackgroundWatchListRefreshService:
                             "is_active": True,
                         },
                     )
-                    existing_pms = existing_pms_by_product_id.get(product.id)
+                    existing_pms = PMSProduct.objects.filter(product_id=product.id).first()
                     source_benchmark = (
                         APMIPMSDiscoveryService._normalize_benchmark(record.get("benchmark"))
                         or APMIPMSDiscoveryService._normalize_benchmark(

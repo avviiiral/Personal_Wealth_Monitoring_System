@@ -52,6 +52,7 @@
           <th class="select-column"><input type="checkbox" [checked]="allVisibleSelected" (change)="toggleSelectAll($event)" aria-label="Select all visible products" /></th>
           <th class="watch-column"></th>
           <th class="sortable-header" (click)="cycleSort('product')">Product <span class="sort-indicator">{{ getSortIndicator('product') }}</span></th>
+          <th>ISIN</th>
           <th class="sortable-header" (click)="cycleSort('provider')">Provider <span class="sort-indicator">{{ getSortIndicator('provider') }}</span></th>
           <th>Fund Manager</th>
           <th class="sortable-header" (click)="cycleSort('status')">Status <span class="sort-indicator">{{ getSortIndicator('status') }}</span></th>
@@ -77,7 +78,8 @@
           <td class="watch-column">
             <button type="button" class="watch-toggle" [class.active]="product.is_watchlisted" [disabled]="isToggling(product.id)" (click)="toggleWatch(product, $event)" [attr.aria-pressed]="product.is_watchlisted" [attr.aria-label]="product.is_watchlisted ? 'Remove from Watch List' : 'Add to Watch List'" title="{{ product.is_watchlisted ? 'Remove from Watch List' : 'Add to Watch List' }}">✓</button>
           </td>
-          <td><div class="product-name">{{ product.name }}</div><div class="secondary">{{ product.isin || product.external_identifier || 'Identifier unavailable' }}</div></td>
+          <td><div class="product-name">{{ product.name }}</div><div class="secondary">{{ product.external_identifier || 'Source ID unavailable' }}</div></td>
+          <td>{{ product.isin || '—' }}</td>
           <td>{{ product.provider || '—' }}</td>
           <td class="fund-manager-cell">
             <a *ngIf="fundManagerWebsite(product) as managerWebsite; else managerNameText" class="fund-manager-link" [href]="managerWebsite" target="_blank" rel="noopener noreferrer">{{ fundManagerName(product) }}</a>
@@ -109,9 +111,9 @@
           <td [class.positive-value]="metric(product, '3Y') !== null && metric(product, '3Y')! > 0" [class.negative-value]="metric(product, '3Y') !== null && metric(product, '3Y')! < 0">{{ formatPercent(metric(product, '3Y')) }}</td>
           <td [class.positive-value]="metric(product, '5Y') !== null && metric(product, '5Y')! > 0" [class.negative-value]="metric(product, '5Y') !== null && metric(product, '5Y')! < 0">{{ formatPercent(metric(product, '5Y')) }}</td>
           <td [class.positive-value]="metric(product, 'CAGR') !== null && metric(product, 'CAGR')! > 0" [class.negative-value]="metric(product, 'CAGR') !== null && metric(product, 'CAGR')! < 0">{{ formatPercent(metric(product, 'CAGR')) }}</td>
-          <td>{{ product.mutual_fund?.aum ? formatAmount(product.mutual_fund.aum) : (product.pms?.aum ? formatAmount(product.pms.aum) : '—') }}</td>
+          <td>{{ formatAmount(product.mutual_fund?.aum ?? product.pms?.aum ?? null) }}</td>
         </tr>
-        <tr *ngIf="products.length === 0"><td [attr.colspan]="status === 'WATCHLIST' ? 18 : 16" class="empty">No products match the current filters.</td></tr>
+        <tr *ngIf="products.length === 0"><td [attr.colspan]="status === 'WATCHLIST' ? 19 : 17" class="empty">No products match the current filters.</td></tr>
       </tbody>
     </table>
   </div>

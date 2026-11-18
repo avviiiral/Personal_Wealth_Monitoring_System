@@ -10,7 +10,7 @@ import { WatchListStateService } from '../../core/services/watch-list-state.serv
 type ProductTab = 'MUTUAL_FUND' | 'PMS';
 type StatusTab = 'ALL' | 'OWNED' | 'UNIVERSAL' | 'WATCHLIST';
 type PageItem = number | 'ellipsis';
-type WatchListSortColumn = 'product' | 'provider' | 'status' | 'ownership' | '1M' | '3M' | '6M' | '1Y' | '3Y' | '5Y' | 'CAGR' | 'AUM';
+type WatchListSortColumn = 'product' | 'isin' | 'provider' | 'status' | 'ownership' | '1M' | '3M' | '6M' | '1Y' | '3Y' | '5Y' | 'CAGR' | 'AUM';
 type WatchListSortDirection = 'normal' | 'asc' | 'desc';
 type BenchmarkPeriod = '1M' | '3M' | '6M' | '1Y' | '3Y' | '5Y';
 interface WatchListSortState { column: WatchListSortColumn | null; direction: WatchListSortDirection; }
@@ -432,6 +432,7 @@ export class WatchListComponent implements OnInit, OnDestroy {
   private getSortValue(product: WatchListProduct, column: WatchListSortColumn): unknown {
     switch (column) {
       case 'product': return product.name;
+      case 'isin': return product.isin || '';
       case 'provider': return product.provider || '';
       case 'status': return product.status || '';
       case 'ownership': return this.ownershipFamilies(product).join(', ');

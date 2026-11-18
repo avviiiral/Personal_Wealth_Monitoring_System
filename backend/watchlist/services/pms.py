@@ -102,7 +102,7 @@ class APMIPMSDiscoveryService:
     def _extract_benchmark(html):
         """Read the primary benchmark label/value from an APMI IA detail page."""
         soup = BeautifulSoup(html or "", "html.parser")
-        lines = [re.sub(r"\\s+", " ", line).strip() for line in soup.get_text("\\n").splitlines()]
+        lines = [re.sub(r"\s+", " ", line).strip() for line in soup.get_text("\n").splitlines()]
         for index, line in enumerate(lines):
             if line.rstrip(":").strip().lower() == "benchmark":
                 for candidate in lines[index + 1:]:
@@ -487,3 +487,54 @@ class APMIPMSDiscoveryService:
             run.finished_at = timezone.now()
             run.save(update_fields=["failed", "details", "finished_at"])
             raise
+
+    @classmethod
+    def refresh_missing_benchmarks(cls):
+        """Backfill missing PMS primary benchmarks from APMI IA insight pages."""
+        retry_before = timezone.now() - cls.MANAGER_RETRY_AFTER
+        rows = list(
+            PMSProduct.objects.filter(
+                (Q(benchmark__isnull=True) | Q(benchmark=""))
+                & (
+                    Q(benchmark_checked_at__isnull=True)
+                    | Q(benchmark_checked_at__lte=retry_before)
+                )
+            ).values("product_id", "product__external_identifier")
+        )
+        rows = [row for row in rows if row["product__external_identifier"]]
+        if not rows:
+            return {"requested": 0, "checked": 0, "updated": 0}
+
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+
+        details_by_iaid = {}
+        with ThreadPoolExecutor(max_workers=min(4, len(rows))) as executor:
+            futures = {
+                executor.submit(cls._fetch_fund_manager_details, str(row["product__external_identifier"])): row
+                for row in rows
+            }
+            for future in as_completed(futures):
+                row = futures[future]
+                try:
+                    details = future.result()
+                except Exception:
+                    logger.exception("APMI benchmark enrichment failed for product=%s", row["product_id"])
+                    continue
+                if details is not None:
+                    details_by_iaid[row["product__external_identifier"]] = (row, details)
+
+        checked_at = timezone.now()
+        updates = []
+        for row, details in details_by_iaid.values():
+            product = PMSProduct.objects.get(product_id=row["product_id"])
+            if details.get("benchmark"):
+                product.benchmark = details["benchmark"]
+            product.benchmark_checked_at = checked_at
+            updates.append(product)
+        if updates:
+            PMSProduct.objects.bulk_update(updates, ["benchmark", "benchmark_checked_at"], batch_size=500)
+        return {
+            "requested": len(rows),
+            "checked": len(updates),
+            "updated": sum(bool(item.benchmark) for item in updates),
+        }

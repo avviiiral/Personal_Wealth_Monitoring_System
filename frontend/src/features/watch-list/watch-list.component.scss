@@ -21,8 +21,15 @@
 .apply-button { background: var(--ink); color: var(--surface); }
 .table-wrap { overflow: auto; border: 1px solid var(--surface-line); border-radius: 10px; background: var(--surface); }
 table { width: 100%; min-width: 1380px; border-collapse: collapse; color: var(--ink); }
-th, td { padding: 12px 14px; border-bottom: 1px solid var(--surface-line); text-align: right; white-space: nowrap; }
-th:first-child, td:first-child, th:nth-child(2), td:nth-child(2), th:nth-child(3), td:nth-child(3), th:nth-child(4), td:nth-child(4), th:nth-child(5), td:nth-child(5), th:nth-child(6), td:nth-child(6) { text-align: left; }
+/* Center every header and value in the Watch List table. */
+.table-wrap table th,
+.table-wrap table td {
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--surface-line);
+  text-align: center;
+  vertical-align: middle;
+  white-space: nowrap;
+}
 th { font-size: 12px; color: var(--muted); font-weight: 600; }
 /* Keep the Product column visible while horizontally scrolling the Watch List. */
 .table-wrap table th:nth-child(3),

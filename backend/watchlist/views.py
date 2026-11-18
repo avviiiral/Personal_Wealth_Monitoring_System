@@ -20,7 +20,6 @@ from watchlist.services.pms import APMIPMSDiscoveryService
 from watchlist.services.performance import AMFIPerformanceService
 from watchlist.services.benchmark import BenchmarkPerformanceService
 from watchlist.services.universe import AMFIUniverseService
-from watchlist.services.fund_managers import AMFIFundManagerService
 from watchlist.services.amfi_history import prepare_mutual_fund_watchlist_history
 
 
@@ -353,7 +352,6 @@ def _run_watch_list_refresh():
         with DATABASE_SCHEDULER_LOCK:
             stages = (
                 ("amfi_universe", AMFIUniverseService.refresh),
-                ("mutual_fund_managers", AMFIFundManagerService.refresh_missing),
                 ("mutual_fund_performance", AMFIPerformanceService.refresh),
                 ("pms_universe_and_managers", APMIPMSDiscoveryService.refresh),
             )

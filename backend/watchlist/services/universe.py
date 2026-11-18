@@ -57,7 +57,6 @@ class AMFIUniverseService:
         """
         provider = None
         category = None
-        column_indexes = {}
         records = []
         for raw_line in text.splitlines():
             line = raw_line.strip()
@@ -67,7 +66,6 @@ class AMFIUniverseService:
             if not parts[0].isdigit():
                 header = parts[0]
                 if header.lower() == "scheme code":
-                    column_indexes = {name.casefold(): index for index, name in enumerate(parts)}
                     continue
                 # A category header always precedes the fund-house name for
                 # that block, so seeing one resets the provider until AMFI
@@ -97,12 +95,10 @@ class AMFIUniverseService:
                     isin2 = parts[2] if parts[2] not in {"-", ""} else None
                     growth_isin = isin1 if "growth" in name.lower() and "idcw" not in name.lower() else None
                     selected_isin = growth_isin or isin1 or isin2
-                    benchmark_index = next((index for name, index in column_indexes.items() if "benchmark" in name), None)
                     records.append({
                         "scheme_code": parts[0], "name": name, "provider": provider, "category": category,
                         "plan": parts[4] or None, "option": parts[5] or None,
                         "isin": selected_isin, "nav": nav, "date": nav_date,
-                        "benchmark": parts[benchmark_index] if benchmark_index is not None and benchmark_index < len(parts) and parts[benchmark_index] else None,
                     })
                     continue
 
@@ -120,12 +116,10 @@ class AMFIUniverseService:
             isin2 = parts[2] if parts[2] not in {"-", ""} else None
             growth_isin = isin1 if "growth" in name.lower() and "idcw" not in name.lower() else None
             selected_isin = growth_isin or isin1 or isin2
-            benchmark_index = next((index for name, index in column_indexes.items() if "benchmark" in name), None)
             records.append({
                 "scheme_code": parts[0], "name": name, "provider": provider, "category": category,
                 "plan": None, "option": None,
                 "isin": selected_isin, "nav": nav, "date": nav_date,
-                "benchmark": parts[benchmark_index] if benchmark_index is not None and benchmark_index < len(parts) and parts[benchmark_index] else None,
             })
         return records
 
@@ -140,14 +134,6 @@ class AMFIUniverseService:
         if record.get("isin"):
             return f"MUTUAL_FUND:ISIN:{record['isin'].upper()}"
         return f"MUTUAL_FUND:SCHEME:{record['scheme_code']}"
-
-    @classmethod
-    def _source_benchmark(cls, record):
-        """Return only a benchmark explicitly supplied by AMFI's source record."""
-        value = cls._normalize(record.get("benchmark"))
-        if value and value.casefold() not in {"na", "n/a", "not available", "not applicable", "-"}:
-            return value
-        return None
 
     @classmethod
     def refresh(cls):
@@ -233,7 +219,6 @@ class AMFIUniverseService:
                         fund_type=record.get("category"),
                         latest_nav=record["nav"],
                         latest_nav_date=record["date"],
-                        benchmark=cls._source_benchmark(record),
                     )
                 )
                 snapshots.append(
@@ -252,7 +237,7 @@ class AMFIUniverseService:
                 update_conflicts=True,
                 update_fields=[
                     "scheme_code", "plan", "option", "fund_type",
-                    "latest_nav", "latest_nav_date", "benchmark", "benchmark_checked_at",
+                    "latest_nav", "latest_nav_date",
                 ],
                 unique_fields=["product"],
             )

@@ -78,7 +78,6 @@ class BackgroundWatchListRefreshService:
                             "latest_nav": record["nav"],
                             "latest_nav_date": record["date"],
                             "benchmark": AMFIUniverseService._source_benchmark(record) or MutualFundProduct.objects.filter(product=product).values_list("benchmark", flat=True).first(),
-                            "benchmark": AMFIUniverseService._source_benchmark(record),
                         },
                     )
                     PerformanceSnapshot.objects.update_or_create(
@@ -259,7 +258,6 @@ class BackgroundWatchListRefreshService:
                             "asset_class": "PMS",
                             "aum": record["aum"],
                             "latest_value": record["aum"],
-                            "benchmark": record.get("benchmark") or PMSProduct.objects.filter(product=product).values_list("benchmark", flat=True).first(),
                             "benchmark": record.get("benchmark") or PMSProduct.objects.filter(product=product).values_list("benchmark", flat=True).first(),
                         },
                     )

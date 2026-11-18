@@ -616,3 +616,9 @@ html.dark-theme .watch-list-page .status.owned {
     height: 172px;
   }
 }
+
+
+.actual-benchmark-cell {
+  white-space: nowrap;
+  color: var(--ink);
+}

@@ -20,7 +20,7 @@ export interface WatchListProduct {
   source_date: string | null;
   official_website: string | null;
   benchmark: string | null;
-  comparison_benchmark: 'BSE 500' | 'Nifty 50' | 'Nifty 100' | 'Nifty Small Cap 250' | 'Nifty Mid Cap 150' | null;
+  comparison_benchmark: string | null;
   status: 'OWNED' | 'UNIVERSAL' | 'WATCHLIST';
   is_watchlisted: boolean;
   ownership: Array<{

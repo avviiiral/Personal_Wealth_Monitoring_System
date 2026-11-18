@@ -95,6 +95,11 @@ export const routes: Routes = [
           ),
       },
       {
+        path: 'watch-list/:id',
+        loadComponent: () =>
+          import('../features/watch-list/watch-list-product-detail.component').then((m) => m.WatchListProductDetailComponent),
+      },
+      {
         path: 'watch-list',
         loadComponent: () =>
           import('../features/watch-list/watch-list.component').then((m) => m.WatchListComponent),

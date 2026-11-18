@@ -53,7 +53,7 @@ class WatchListTests(TestCase):
     @patch("watchlist.services.pms.requests.get")
     @patch.object(APMIPMSDiscoveryService, "_records")
     @patch.object(APMIPMSDiscoveryService, "_fetch_fund_manager_details")
-    def test_apmi_refresh_retries_placeholder_benchmark_from_ia_insight(
+    def test_apmi_universe_refresh_does_not_fetch_detail_pages(
         self, mocked_details, mocked_records, mocked_get
     ):
         mocked_get.return_value.text = "<html>APMI report</html>"
@@ -79,23 +79,19 @@ class WatchListTests(TestCase):
             "performance": {},
             "benchmark": None,
         }]
-        mocked_details.return_value = {
-            "fund_manager": "Jane Doe",
-            "website": "https://www.apmiindia.org/apmi/IaInsight.htm?IAID=IA-PLACEHOLDER",
-            "benchmark": "BSE 500 TRI",
-        }
 
-        APMIPMSDiscoveryService.refresh()
+        result = APMIPMSDiscoveryService.refresh()
 
         pms_product.refresh_from_db()
-        self.assertEqual(pms_product.benchmark, "BSE 500 TRI")
-        self.assertIsNotNone(pms_product.benchmark_checked_at)
-        mocked_details.assert_called_once_with("IA-PLACEHOLDER")
+        self.assertIsNone(pms_product.benchmark)
+        self.assertEqual(result["discovered"], 1)
+        mocked_details.assert_not_called()
+        mocked_get.assert_called_once()
 
     @patch("watchlist.services.pms.requests.get")
     @patch.object(APMIPMSDiscoveryService, "_records")
     @patch.object(APMIPMSDiscoveryService, "_fetch_fund_manager_details")
-    def test_background_pms_refresh_persists_official_benchmark(
+    def test_background_pms_universe_refresh_does_not_fetch_detail_pages(
         self, mocked_details, mocked_records, mocked_get
     ):
         from watchlist.services.background_refresh import BackgroundWatchListRefreshService
@@ -120,24 +116,73 @@ class WatchListTests(TestCase):
             "iaid": "IA-123",
             "aum": Decimal("125.50"),
             "performance": {},
+            "benchmark": None,
         }]
-        mocked_details.return_value = {
-            "fund_manager": "Jane Doe",
-            "website": "https://www.apmiindia.org/apmi/IaInsight.htm?IAID=IA-123",
-            "benchmark": "Nifty 500 TRI",
-        }
 
         result = BackgroundWatchListRefreshService.refresh_pms()
 
         product = InvestmentProduct.objects.get(
             identity_key="PMS:APMI:EXAMPLE PORTFOLIO MANAGER:IA-123"
         )
-        product.pms.refresh_from_db()
-        self.assertEqual(product.pms.benchmark, "Nifty 500 TRI")
-        self.assertEqual(product.pms.fund_manager, "Jane Doe")
-        self.assertIsNotNone(product.pms.benchmark_checked_at)
-        self.assertEqual(result["benchmarks_enriched"], 1)
-        mocked_details.assert_called_once_with("IA-123")
+        self.assertIsNone(product.pms.benchmark)
+        self.assertEqual(result["discovered"], 1)
+        mocked_details.assert_not_called()
+        mocked_get.assert_called_once()
+
+    @patch.object(APMIPMSDiscoveryService, "_fetch_fund_manager_details")
+    def test_bounded_detail_enrichment_updates_benchmark_and_manager(self, mocked_details):
+        product = InvestmentProduct.objects.create(
+            product_type=ProductType.PMS,
+            name="Background Enrichment Strategy",
+            identity_key="PMS:APMI:EXAMPLE:IA-BACKGROUND",
+            source="APMI",
+            external_identifier="IA-BACKGROUND",
+        )
+        pms_product = PMSProduct.objects.create(product=product, benchmark=None)
+        mocked_details.return_value = {
+            "fund_manager": "Jane Doe",
+            "website": "https://www.apmiindia.org/apmi/IaInsight.htm?IAID=IA-BACKGROUND",
+            "benchmark": "BSE 500 TRI",
+        }
+
+        result = APMIPMSDiscoveryService.refresh_missing_benchmarks(
+            batch_size=1,
+            max_workers=1,
+        )
+
+        pms_product.refresh_from_db()
+        self.assertEqual(pms_product.benchmark, "BSE 500 TRI")
+        self.assertEqual(pms_product.fund_manager, "Jane Doe")
+        self.assertIsNotNone(pms_product.benchmark_checked_at)
+        self.assertEqual(result["requested"], 1)
+        self.assertEqual(result["benchmarks_updated"], 1)
+        self.assertEqual(result["managers_updated"], 1)
+        mocked_details.assert_called_once_with("IA-BACKGROUND")
+
+    @patch.object(APMIPMSDiscoveryService, "_fetch_fund_manager_details")
+    def test_bounded_detail_enrichment_throttles_successful_empty_benchmark(self, mocked_details):
+        product = InvestmentProduct.objects.create(
+            product_type=ProductType.PMS,
+            name="No Benchmark Strategy",
+            identity_key="PMS:APMI:EXAMPLE:IA-NO-BENCHMARK",
+            source="APMI",
+            external_identifier="IA-NO-BENCHMARK",
+        )
+        pms_product = PMSProduct.objects.create(product=product, benchmark=None)
+        mocked_details.return_value = {
+            "fund_manager": None,
+            "website": "https://www.apmiindia.org/apmi/IaInsight.htm?IAID=IA-NO-BENCHMARK",
+            "benchmark": None,
+        }
+
+        first = APMIPMSDiscoveryService.refresh_missing_benchmarks(batch_size=1, max_workers=1)
+        second = APMIPMSDiscoveryService.refresh_missing_benchmarks(batch_size=1, max_workers=1)
+
+        pms_product.refresh_from_db()
+        self.assertEqual(first["checked"], 1)
+        self.assertEqual(second["requested"], 0)
+        self.assertIsNotNone(pms_product.benchmark_checked_at)
+        self.assertEqual(mocked_details.call_count, 1)
 
     def test_amfi_parser_is_data_driven(self):
         feed = "Scheme Code;ISIN1;ISIN2;Scheme Name;Plan;Option;NAV;Date;Benchmark\nProvider One\n1;INF000000001;-;Generic Equity Fund;Direct Plan;Growth;100.25;15-Sep-2026;Nifty 500 TRI\nProvider Two\n2;INF000000002;-;Another Fund;Regular Plan;IDCW;50.10;15-Sep-2026;\n"

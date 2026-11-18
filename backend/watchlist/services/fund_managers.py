@@ -147,6 +147,27 @@ class AMFIFundManagerService:
         unwrapped = cls._unwrap_record(payload)
         return [unwrapped] if unwrapped.get("scheme_code") or unwrapped.get("code") else []
 
+    @staticmethod
+    def _benchmark_value(record):
+        """Return the source-reported benchmark, preferring AMFI daily data."""
+        if not isinstance(record, dict):
+            return None
+        daily = record.get("amfi_daily") or {}
+        ssd = record.get("ssd") or record.get("scheme_summary_document") or {}
+        candidates = (
+            daily.get("benchmark"),
+            record.get("amfi_daily_benchmark"),
+            ssd.get("benchmark_tier1_std"),
+            record.get("ssd_benchmark_tier1_std"),
+            ssd.get("benchmark_tier1_filed"),
+            record.get("ssd_benchmark_tier1_filed"),
+        )
+        for candidate in candidates:
+            value = re.sub(r"\\s+", " ", str(candidate or "")).strip()
+            if value and value.lower() not in {"na", "n/a", "not applicable", "-"}:
+                return value
+        return None
+
     @classmethod
     def _manager_website(cls, payload):
         if not isinstance(payload, dict):
@@ -193,16 +214,21 @@ class AMFIFundManagerService:
         retry_before = timezone.now() - cls.RETRY_AFTER
         rows = list(
             MutualFundProduct.objects.filter(
-                Q(fund_manager__isnull=True) | Q(fund_manager="")
-            ).filter(
-                Q(fund_manager_checked_at__isnull=True)
-                | Q(fund_manager_checked_at__lte=retry_before)
+                (
+                    (Q(fund_manager__isnull=True) | Q(fund_manager=""))
+                    & (Q(fund_manager_checked_at__isnull=True) | Q(fund_manager_checked_at__lte=retry_before))
+                )
+                | (
+                    (Q(benchmark__isnull=True) | Q(benchmark=""))
+                    & (Q(benchmark_checked_at__isnull=True) | Q(benchmark_checked_at__lte=retry_before))
+                )
             ).exclude(
                 scheme_code__isnull=True
             ).exclude(
                 scheme_code=""
             ).values(
-                "id", "scheme_code", "fund_manager", "fund_manager_website"
+                "id", "scheme_code", "fund_manager", "fund_manager_website",
+                "benchmark",
             )
         )
 
@@ -262,13 +288,15 @@ class AMFIFundManagerService:
                     matched_schemes += 1
                     ssd = record.get("ssd") or record.get("scheme_summary_document") or {}
                     names = cls._manager_names(ssd) or cls._manager_names(record)
-                    if names:
+                    benchmark = cls._benchmark_value(record)
+                    if names or benchmark:
                         manager_data_by_code[code] = {
-                            "fund_manager": "; ".join(names),
+                            "fund_manager": "; ".join(names) if names else None,
                             "fund_manager_website": (
                                 cls._manager_website(ssd)
                                 or cls._manager_website(record)
                             ),
+                            "benchmark": benchmark,
                         }
 
                 checked_at = timezone.now()
@@ -288,6 +316,12 @@ class AMFIFundManagerService:
                                 else row["fund_manager_website"]
                             ),
                             fund_manager_checked_at=checked_at,
+                            benchmark=(
+                                manager_data["benchmark"]
+                                if manager_data and manager_data.get("benchmark")
+                                else row["benchmark"]
+                            ),
+                            benchmark_checked_at=checked_at,
                         )
                         if manager_data:
                             updated_count += 1
@@ -300,6 +334,8 @@ class AMFIFundManagerService:
                     "fund_manager",
                     "fund_manager_website",
                     "fund_manager_checked_at",
+                    "benchmark",
+                    "benchmark_checked_at",
                 ],
                 batch_size=500,
             )

@@ -95,6 +95,11 @@ class BackgroundWatchListRefreshService:
                     logger.exception("Background AMFI write failed for %s", record.get("name"))
 
             performance = cls.refresh_performance()
+            benchmark_result = APMIPMSDiscoveryService.refresh_missing_benchmarks()
+            run.details = {
+                **(run.details or {}),
+                "source_benchmark_enrichment": benchmark_result,
+            }
             run.discovered = discovered
             run.updated = updated
             run.failed = failed

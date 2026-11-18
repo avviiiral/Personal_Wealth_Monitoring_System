@@ -98,6 +98,20 @@ class APMIPMSDiscoveryService:
                         names.append(line)
         return names
 
+    @staticmethod
+    def _extract_benchmark(html):
+        """Read the primary benchmark label/value from an APMI IA detail page."""
+        soup = BeautifulSoup(html or "", "html.parser")
+        lines = [re.sub(r"\\s+", " ", line).strip() for line in soup.get_text("\\n").splitlines()]
+        for index, line in enumerate(lines):
+            if line.rstrip(":").strip().lower() == "benchmark":
+                for candidate in lines[index + 1:]:
+                    if candidate:
+                        if candidate.lower() in {"strategy name", "product name", "date of inception"}:
+                            return None
+                        return candidate
+        return None
+
     @classmethod
     def _fetch_fund_manager_details(cls, iaid):
         """Fetch APMI's individual IA detail page and return named managers."""
@@ -110,6 +124,7 @@ class APMIPMSDiscoveryService:
             )
             response.raise_for_status()
             names = cls._extract_fund_manager_names(response.text)
+            benchmark = cls._extract_benchmark(response.text)
             if not names:
                 logger.info("APMI IA detail page returned no named managers (IAID=%s, status=%s)", iaid, response.status_code)
             # A successful detail-page response is cached even when APMI has
@@ -118,6 +133,7 @@ class APMIPMSDiscoveryService:
             return {
                 "fund_manager": "; ".join(names) if names else None,
                 "website": url,
+                "benchmark": benchmark,
             }
         except requests.RequestException as exc:
             logger.warning("Unable to retrieve APMI manager details (IAID=%s): %s", iaid, exc)
@@ -295,12 +311,24 @@ class APMIPMSDiscoveryService:
                     pms_product is None
                     or not (pms_product.fund_manager or "").strip()
                 )
-                retry_due = (
+                manager_retry_due = (
                     pms_product is None
                     or pms_product.fund_manager_checked_at is None
                     or pms_product.fund_manager_checked_at <= manager_retry_before
                 )
-                if product and manager_missing and retry_due:
+                benchmark_missing = (
+                    pms_product is None
+                    or not (pms_product.benchmark or "").strip()
+                )
+                benchmark_retry_due = (
+                    pms_product is None
+                    or pms_product.benchmark_checked_at is None
+                    or pms_product.benchmark_checked_at <= manager_retry_before
+                )
+                if product and (
+                    (manager_missing and manager_retry_due)
+                    or (benchmark_missing and benchmark_retry_due)
+                ):
                     manager_records.append(record)
 
             manager_details_by_iaid = {}
@@ -328,10 +356,16 @@ class APMIPMSDiscoveryService:
                     failed += 1
                     continue
 
+                existing_pms = manager_status_by_id.get(product.id)
+                detail_data = manager_details_by_iaid.get(record["iaid"])
+                source_benchmark = (
+                    detail_data.get("benchmark") if detail_data else None
+                ) or (existing_pms.benchmark if existing_pms else None)
                 pms_products.append(
                     PMSProduct(
                         product_id=product.id,
                         strategy_name=record["name"],
+                        benchmark=source_benchmark,
                         strategy_type=cls.APMI_CONFIG.get("strategy_type", "Investment Approach"),
                         asset_class=cls.APMI_CONFIG.get("asset_class", "PMS"),
                         aum=record["aum"],
@@ -363,7 +397,7 @@ class APMIPMSDiscoveryService:
                 update_conflicts=True,
                 update_fields=[
                     "strategy_name", "strategy_type", "asset_class",
-                    "aum", "latest_value",
+                    "aum", "latest_value", "benchmark",
                 ],
                 unique_fields=["product"],
             )
@@ -388,7 +422,11 @@ class APMIPMSDiscoveryService:
                         pms_product.fund_manager_website = details["website"]
                     elif not pms_product.fund_manager_website:
                         pms_product.fund_manager_website = details["website"]
-                    pms_product.fund_manager_checked_at = timezone.now()
+                    checked_at = timezone.now()
+                    pms_product.fund_manager_checked_at = checked_at
+                    pms_product.benchmark_checked_at = checked_at
+                    if details.get("benchmark"):
+                        pms_product.benchmark = details["benchmark"]
                     manager_updates.append(pms_product)
             if manager_updates:
                 PMSProduct.objects.bulk_update(
@@ -397,6 +435,8 @@ class APMIPMSDiscoveryService:
                         "fund_manager",
                         "fund_manager_website",
                         "fund_manager_checked_at",
+                        "benchmark",
+                        "benchmark_checked_at",
                     ],
                     batch_size=500,
                 )

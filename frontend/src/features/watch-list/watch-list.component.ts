@@ -133,7 +133,7 @@ export class WatchListComponent implements OnInit, OnDestroy {
     const manager = product.product_type === 'MUTUAL_FUND'
       ? product.mutual_fund?.fund_manager
       : product.pms?.fund_manager;
-    const displayName = String(manager || '').replace(/\s*;\s*Details\s*$/i, '').trim();
+    const displayName = String(manager || '').replace(/\s*;\s*Details\b/gi, '').replace(/\s{2,}/g, ' ').trim();
     return displayName || '—';
   }
 

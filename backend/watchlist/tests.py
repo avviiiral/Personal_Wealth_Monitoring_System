@@ -54,6 +54,18 @@ class WatchListTests(TestCase):
 
         mocked_get.return_value.text = "<html>APMI report</html>"
         mocked_get.return_value.raise_for_status.return_value = None
+        existing_product = InvestmentProduct.objects.create(
+            product_type=ProductType.PMS,
+            name="Example Equity Strategy",
+            identity_key="PMS:APMI:EXAMPLE PORTFOLIO MANAGER:IA-123",
+            source="APMI",
+        )
+        PMSProduct.objects.create(
+            product=existing_product,
+            fund_manager="Existing Manager",
+            benchmark="",
+            benchmark_checked_at=timezone.now(),
+        )
         mocked_records.return_value = [{
             "provider": "Example Portfolio Manager",
             "name": "Example Equity Strategy",

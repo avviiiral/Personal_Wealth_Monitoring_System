@@ -261,11 +261,9 @@ class BackgroundWatchListRefreshService:
                 manager_missing = (
                     existing_pms is None or not (existing_pms.fund_manager or "").strip()
                 )
-                benchmark_retry_due = (
-                    existing_pms is None
-                    or existing_pms.benchmark_checked_at is None
-                    or existing_pms.benchmark_checked_at <= retry_before
-                )
+                # Retry blank benchmarks even if a prior parser marked an
+                # unsuccessful lookup as checked.
+                benchmark_retry_due = benchmark_missing
                 manager_retry_due = (
                     existing_pms is None
                     or existing_pms.fund_manager_checked_at is None
@@ -349,8 +347,12 @@ class BackgroundWatchListRefreshService:
                                 else (existing_pms.fund_manager_website if existing_pms else None)
                             ),
                             "benchmark_checked_at": (
-                                checked_at if checked_at is not None
-                                else (existing_pms.benchmark_checked_at if existing_pms else None)
+                                checked_at
+                                if checked_at is not None and detail_data.get("benchmark")
+                                else (
+                                    None if detail_data is not None
+                                    else (existing_pms.benchmark_checked_at if existing_pms else None)
+                                )
                             ),
                             "fund_manager_checked_at": (
                                 checked_at if checked_at is not None

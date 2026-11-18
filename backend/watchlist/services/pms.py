@@ -360,11 +360,10 @@ class APMIPMSDiscoveryService:
                     not report_benchmark
                     and (pms_product is None or not (pms_product.benchmark or "").strip())
                 )
-                benchmark_retry_due = (
-                    pms_product is None
-                    or pms_product.benchmark_checked_at is None
-                    or pms_product.benchmark_checked_at <= manager_retry_before
-                )
+                # A blank benchmark is retried on each refresh. Earlier versions
+                # cached unsuccessful parses as checked, which could hide the
+                # newly-supported APMI detail-page benchmark for seven days.
+                benchmark_retry_due = benchmark_missing
                 if product and (
                     (manager_missing and manager_retry_due)
                     or (benchmark_missing and benchmark_retry_due)
@@ -462,9 +461,11 @@ class APMIPMSDiscoveryService:
                         pms_product.fund_manager_website = details["website"]
                     checked_at = timezone.now()
                     pms_product.fund_manager_checked_at = checked_at
-                    pms_product.benchmark_checked_at = checked_at
                     if details.get("benchmark"):
                         pms_product.benchmark = details["benchmark"]
+                        pms_product.benchmark_checked_at = checked_at
+                    else:
+                        pms_product.benchmark_checked_at = None
                     manager_updates.append(pms_product)
             if manager_updates:
                 PMSProduct.objects.bulk_update(
@@ -539,11 +540,7 @@ class APMIPMSDiscoveryService:
             PMSProduct.objects.filter(
                 product__source="APMI",
             ).filter(
-                (Q(benchmark__isnull=True) | Q(benchmark=""))
-                & (
-                    Q(benchmark_checked_at__isnull=True)
-                    | Q(benchmark_checked_at__lte=retry_before)
-                )
+                Q(benchmark__isnull=True) | Q(benchmark="")
             ).values("product_id", "product__external_identifier")
         )
         rows = [row for row in rows if row["product__external_identifier"]]
@@ -574,7 +571,9 @@ class APMIPMSDiscoveryService:
             product = PMSProduct.objects.get(product_id=row["product_id"])
             if details.get("benchmark"):
                 product.benchmark = details["benchmark"]
-            product.benchmark_checked_at = checked_at
+                product.benchmark_checked_at = checked_at
+            else:
+                product.benchmark_checked_at = None
             updates.append(product)
         if updates:
             PMSProduct.objects.bulk_update(updates, ["benchmark", "benchmark_checked_at"], batch_size=500)

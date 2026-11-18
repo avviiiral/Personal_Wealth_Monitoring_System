@@ -495,6 +495,8 @@ class APMIPMSDiscoveryService:
         retry_before = timezone.now() - cls.MANAGER_RETRY_AFTER
         rows = list(
             PMSProduct.objects.filter(
+                product__source="APMI",
+            ).filter(
                 (Q(benchmark__isnull=True) | Q(benchmark=""))
                 & (
                     Q(benchmark_checked_at__isnull=True)

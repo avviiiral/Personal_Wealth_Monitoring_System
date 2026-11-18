@@ -307,12 +307,12 @@ class AMFIFundManagerService:
                             id=row["id"],
                             fund_manager=(
                                 manager_data["fund_manager"]
-                                if manager_data
+                                if manager_data and manager_data.get("fund_manager")
                                 else row["fund_manager"]
                             ),
                             fund_manager_website=(
                                 manager_data["fund_manager_website"]
-                                if manager_data
+                                if manager_data and manager_data.get("fund_manager_website")
                                 else row["fund_manager_website"]
                             ),
                             fund_manager_checked_at=checked_at,

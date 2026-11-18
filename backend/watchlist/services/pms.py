@@ -380,7 +380,6 @@ class APMIPMSDiscoveryService:
             # deferred to refresh_missing_benchmarks(), which processes a
             # bounded batch in the background. Listing benchmarks are persisted
             # immediately below when APMI publishes them.
-            manager_status_by_id = manager_status_by_id
 
             pms_products = []
             snapshots = []
@@ -393,7 +392,6 @@ class APMIPMSDiscoveryService:
                     continue
 
                 existing_pms = manager_status_by_id.get(product.id)
-                detail_data = None
                 source_benchmark = (
                     cls._normalize_benchmark(record.get("benchmark"))
                     or cls._normalize_benchmark(existing_pms.benchmark if existing_pms else None)
@@ -487,25 +485,27 @@ class APMIPMSDiscoveryService:
     def refresh_missing_benchmarks(cls, batch_size=25, max_workers=5):
         """Enrich a bounded batch of PMS rows; intended for scheduled background use.
 
-        Successful detail-page responses with no benchmark are put on the
-        existing seven-day retry cadence. Network failures remain eligible
-        for the next scheduler run. No full-universe request fan-out occurs.
+        Successful detail-page responses are cached for the existing seven-day
+        retry cadence. Network failures remain eligible for the next scheduler
+        run. No full-universe request fan-out occurs.
         """
         retry_before = timezone.now() - cls.MANAGER_RETRY_AFTER
+        missing_benchmark = (
+            Q(benchmark__isnull=True)
+            | Q(benchmark__in=cls.UNAVAILABLE_BENCHMARK_VALUES)
+        )
+        missing_manager = Q(fund_manager__isnull=True) | Q(fund_manager="")
+        benchmark_due = missing_benchmark & (
+            Q(benchmark_checked_at__isnull=True)
+            | Q(benchmark_checked_at__lte=retry_before)
+        )
+        manager_due = missing_manager & (
+            Q(fund_manager_checked_at__isnull=True)
+            | Q(fund_manager_checked_at__lte=retry_before)
+        )
         rows = list(
             PMSProduct.objects.filter(product__source="APMI")
-            .filter(
-                Q(benchmark__isnull=True)
-                | Q(benchmark__in=cls.UNAVAILABLE_BENCHMARK_VALUES)
-                | Q(fund_manager__isnull=True)
-                | Q(fund_manager="")
-            )
-            .filter(
-                Q(benchmark_checked_at__isnull=True)
-                | Q(benchmark_checked_at__lte=retry_before)
-                | Q(fund_manager_checked_at__isnull=True)
-                | Q(fund_manager_checked_at__lte=retry_before)
-            )
+            .filter(benchmark_due | manager_due)
             .exclude(product__external_identifier__isnull=True)
             .exclude(product__external_identifier="")
             .order_by("benchmark_checked_at", "fund_manager_checked_at", "product_id")

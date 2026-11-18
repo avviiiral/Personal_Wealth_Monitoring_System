@@ -438,13 +438,20 @@ class BackgroundWatchListRefreshService:
                 close_old_connections()
                 pms_result = cls.refresh_pms()
                 close_old_connections()
-                pms_benchmark_result = APMIPMSDiscoveryService.refresh_missing_benchmarks()
+
+            # External detail-page enrichment is deliberately bounded and
+            # runs after the universe write lock is released. It never delays
+            # the user's manual refresh request or blocks PMS listing ingestion.
+            pms_enrichment_result = APMIPMSDiscoveryService.refresh_missing_benchmarks(
+                batch_size=25,
+                max_workers=5,
+            )
 
             logger.info("Background Watch List refresh completed successfully.")
             return {
                 "mutual_funds": mf_result,
                 "pms": pms_result,
-                "pms_benchmark_backfill": pms_benchmark_result,
+                "pms_detail_enrichment": pms_enrichment_result,
             }
         finally:
             close_old_connections()

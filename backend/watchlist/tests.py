@@ -135,7 +135,6 @@ class WatchListTests(TestCase):
             "data": [
                 {
                     "scheme_code": 118989,
-                    "amfi_daily": {"benchmark": "Nifty 500 TRI"},
                     "ssd": {
                         "fund_managers": [
                             {"name": "Jane Doe", "role": "Fund Manager"},

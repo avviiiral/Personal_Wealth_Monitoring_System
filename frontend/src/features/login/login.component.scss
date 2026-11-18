@@ -134,6 +134,58 @@
   box-shadow: 0 0 0 3px rgba(17, 24, 39, 0.08);
 }
 
+.password-input-wrapper {
+  position: relative;
+}
+
+.password-input-wrapper input {
+  padding-right: 46px;
+}
+
+.password-toggle {
+  position: absolute;
+  top: 50%;
+  right: 10px;
+  transform: translateY(-50%);
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  width: 32px;
+  height: 32px;
+  padding: 0;
+
+  border: 0;
+  border-radius: 6px;
+
+  background: transparent;
+  color: var(--muted);
+
+  cursor: pointer;
+}
+
+.password-toggle:hover {
+  background: var(--surface-line);
+  color: var(--ink);
+}
+
+.password-toggle:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+}
+
+.password-toggle svg {
+  width: 18px;
+  height: 18px;
+
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
 .field-error {
   display: block;
   margin-top: 5px;
@@ -142,7 +194,7 @@
   font-size: 12px;
 }
 
-form button {
+form > button {
   width: 100%;
 
   margin-top: 5px;
@@ -160,11 +212,11 @@ form button {
   cursor: pointer;
 }
 
-form button:hover:not(:disabled) {
+form > button:hover:not(:disabled) {
   opacity: 0.92;
 }
 
-form button:disabled {
+form > button:disabled {
   cursor: not-allowed;
   opacity: 0.55;
 }

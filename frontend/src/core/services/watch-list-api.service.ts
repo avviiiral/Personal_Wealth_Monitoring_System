@@ -72,6 +72,12 @@ export class WatchListApiService {
     });
   }
 
+  getProduct(productId: number): Observable<WatchListProduct> {
+    return this.http.get<WatchListProduct>(`${this.baseUrl}/products/${productId}/`, {
+      withCredentials: true,
+    });
+  }
+
   getFilters(productType: 'MUTUAL_FUND' | 'PMS'): Observable<WatchListFilterOptions> {
     return this.http.get<WatchListFilterOptions>(`${this.baseUrl}/filters/`, {
       params: new HttpParams().set('product_type', productType),

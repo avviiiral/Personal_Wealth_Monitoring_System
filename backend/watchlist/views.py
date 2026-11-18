@@ -109,6 +109,21 @@ def _filtered_products(request, product_type=None):
         value = params.get(field)
         if value:
             queryset = queryset.filter(**{field: value})
+
+    fund_manager = params.get("fund_manager", "").strip()
+    if fund_manager:
+        queryset = queryset.filter(
+            Q(mutual_fund__fund_manager=fund_manager)
+            | Q(pms__fund_manager=fund_manager)
+        )
+
+    benchmark_filter = params.get("benchmark_filter", "").strip()
+    if benchmark_filter:
+        queryset = queryset.filter(
+            Q(mutual_fund__benchmark=benchmark_filter)
+            | Q(pms__benchmark=benchmark_filter)
+            | Q(comparison_benchmark=benchmark_filter)
+        )
     for field in ("country", "sub_category", "isin"):
         value = params.get(field)
         if value:
@@ -291,7 +306,33 @@ def watch_list_filters(request):
         .distinct()
         .order_by("category")
     )
-    return Response({"providers": providers, "categories": categories})
+    fund_manager_values = (
+        list(queryset.exclude(mutual_fund__fund_manager__isnull=True)
+             .exclude(mutual_fund__fund_manager="")
+             .values_list("mutual_fund__fund_manager", flat=True))
+        + list(queryset.exclude(pms__fund_manager__isnull=True)
+               .exclude(pms__fund_manager="")
+               .values_list("pms__fund_manager", flat=True))
+    )
+    benchmark_values = (
+        list(queryset.exclude(mutual_fund__benchmark__isnull=True)
+             .exclude(mutual_fund__benchmark="")
+             .values_list("mutual_fund__benchmark", flat=True))
+        + list(queryset.exclude(pms__benchmark__isnull=True)
+               .exclude(pms__benchmark="")
+               .values_list("pms__benchmark", flat=True))
+        + list(queryset.exclude(comparison_benchmark__isnull=True)
+               .exclude(comparison_benchmark="")
+               .values_list("comparison_benchmark", flat=True))
+    )
+    fund_managers = sorted({value.strip() for value in fund_manager_values if value and value.strip()}, key=str.casefold)
+    benchmarks = sorted({value.strip() for value in benchmark_values if value and value.strip()}, key=str.casefold)
+    return Response({
+        "providers": providers,
+        "categories": categories,
+        "fund_managers": fund_managers,
+        "benchmarks": benchmarks,
+    })
 
 
 @api_view(["GET"])

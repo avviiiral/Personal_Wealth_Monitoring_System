@@ -22,7 +22,7 @@ import { WatchListApiService, WatchListProduct } from '../../core/services/watch
             <h1>{{ p.name }}</h1>
             <p>{{ p.provider || 'Provider unavailable' }}</p>
           </div>
-          <a *ngIf="p.official_website" class="source-button" [href]="p.official_website" target="_blank" rel="noopener noreferrer">Open Official Source ↗</a>
+          <a *ngIf="externalProductUrl(p) as sourceUrl" class="source-button" [href]="sourceUrl" target="_blank" rel="noopener noreferrer">Open External Source ↗</a>
         </header>
 
         <section class="detail-section">
@@ -136,6 +136,20 @@ export class WatchListProductDetailComponent implements OnInit {
       next: product => { this.product = product; this.loading = false; },
       error: () => { this.error = 'Unable to load this product source data. It may have been removed or is no longer available.'; this.loading = false; },
     });
+  }
+
+  externalProductUrl(product: WatchListProduct): string | null {
+    const candidates = [product.source_reference, product.official_website];
+    for (const candidate of candidates) {
+      if (!candidate) continue;
+      try {
+        const url = new URL(candidate);
+        if (url.protocol === 'http:' || url.protocol === 'https:') return url.href;
+      } catch {
+        // Source references may be identifiers rather than web URLs.
+      }
+    }
+    return null;
   }
 
   amount(value: number | string | null | undefined): string {

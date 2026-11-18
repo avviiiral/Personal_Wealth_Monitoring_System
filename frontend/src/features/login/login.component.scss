@@ -102,6 +102,7 @@
   display: block;
   margin-bottom: 7px;
 
+  background: transparent;
   color: var(--ink-soft);
   font-size: 13px;
   font-weight: 600;
@@ -203,8 +204,8 @@ form > button {
   border: 0;
   border-radius: 8px;
 
-  background: var(--ink);
-  color: #ffffff;
+  background: var(--accent);
+  color: #07140f;
 
   font-size: 14px;
   font-weight: 600;

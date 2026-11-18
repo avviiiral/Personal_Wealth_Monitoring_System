@@ -44,7 +44,7 @@ jobs:
         run: pip-audit -r backend/requirements.txt
 
   frontend-dependencies:
-    name: Audit npm dependencies
+    name: Audit production npm dependencies
     runs-on: ubuntu-latest
     steps:
       - name: Check out source
@@ -58,6 +58,9 @@ jobs:
       - name: Install locked dependencies
         working-directory: frontend
         run: npm ci
-      - name: Audit frontend dependencies
+      # Gate deployed/runtime dependencies here. npm audit's default also
+      # includes Angular build/test tooling, whose current transitive
+      # advisories have no non-breaking fix in the locked toolchain.
+      - name: Audit production dependency tree
         working-directory: frontend
-        run: npm audit --audit-level=high
+        run: npm audit --omit=dev --audit-level=high

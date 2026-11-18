@@ -58,9 +58,6 @@ th { font-size: 12px; color: var(--muted); font-weight: 600; }
 .watch-toggle.active { background: var(--accent); border-color: var(--accent); color: white; }
 html.dark-theme .watch-list-page .watch-toggle { background: #1b1f27; }
 .product-name { font-weight: 600; color: var(--ink); }
-.product-detail-link { display: inline-block; text-decoration: none; cursor: pointer; }
-.product-detail-link:hover { color: var(--accent); text-decoration: underline; text-underline-offset: 3px; }
-.product-detail-link:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 2px; }
 .product-title-cell { display: flex; align-items: center; gap: 7px; min-width: 0; }
 .external-source-link { flex: 0 0 auto; display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; border: 1px solid var(--surface-line); border-radius: 5px; color: var(--accent); text-decoration: none; font-size: 13px; line-height: 1; }
 .external-source-link:hover { background: var(--canvas-from, var(--surface)); border-color: var(--accent); }

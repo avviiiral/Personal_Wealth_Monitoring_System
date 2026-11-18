@@ -1294,3 +1294,18 @@
 :host-context(html.dark-theme) .portfolio-page .underlying-screener-link:focus-visible {
   color: #55d9aa !important;
 }
+
+/* Center all Portfolio table values and expanded grid columns. */
+.portfolio-page .portfolio-table th,
+.portfolio-page .portfolio-table td,
+.portfolio-page .asset-table th,
+.portfolio-page .asset-table td { text-align: center !important; }
+.portfolio-page .asset-group-columns-header,
+.portfolio-page .asset-group-header { justify-items: center; }
+.portfolio-page .asset-group-name-header,
+.portfolio-page .asset-group-name,
+.portfolio-page .asset-group-col { justify-self: stretch; text-align: center !important; }
+.portfolio-page .manual-price-container,
+.portfolio-page .manual-price-actions { justify-content: center; }
+.portfolio-page .asset-detail-title,
+.portfolio-page .quant-toggle-cell { text-align: center !important; }

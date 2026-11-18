@@ -10,7 +10,7 @@ import { WatchListStateService } from '../../core/services/watch-list-state.serv
 type ProductTab = 'MUTUAL_FUND' | 'PMS';
 type StatusTab = 'ALL' | 'OWNED' | 'UNIVERSAL' | 'WATCHLIST';
 type PageItem = number | 'ellipsis';
-type WatchListSortColumn = 'product' | 'provider' | 'status' | 'ownership' | '1M' | '3M' | '6M' | '1Y' | '3Y' | '5Y' | 'CAGR' | 'AUM';
+type WatchListSortColumn = 'product' | 'isin' | 'provider' | 'status' | 'ownership' | '1M' | '3M' | '6M' | '1Y' | '3Y' | '5Y' | 'CAGR' | 'AUM';
 type WatchListSortDirection = 'normal' | 'asc' | 'desc';
 type BenchmarkPeriod = '1M' | '3M' | '6M' | '1Y' | '3Y' | '5Y';
 interface WatchListSortState { column: WatchListSortColumn | null; direction: WatchListSortDirection; }
@@ -46,8 +46,12 @@ export class WatchListComponent implements OnInit, OnDestroy {
   readonly selectedIds = new Set<number>();
   provider = '';
   category = '';
+  fundManager = '';
+  benchmark = '';
   providers: string[] = [];
   categories: string[] = [];
+  fundManagers: string[] = [];
+  benchmarks: string[] = [];
   status: StatusTab = 'ALL';
   productTab: ProductTab = 'MUTUAL_FUND';
   private readonly sortState: WatchListSortState = { column: null, direction: 'normal' };
@@ -133,7 +137,8 @@ export class WatchListComponent implements OnInit, OnDestroy {
     const manager = product.product_type === 'MUTUAL_FUND'
       ? product.mutual_fund?.fund_manager
       : product.pms?.fund_manager;
-    return String(manager || '').trim() || '—';
+    const displayName = String(manager || '').replace(/\s*;\s*Details\b/gi, '').replace(/\s{2,}/g, ' ').trim();
+    return displayName || '—';
   }
 
   fundManagerWebsite(product: WatchListProduct): string | null {
@@ -254,15 +259,19 @@ export class WatchListComponent implements OnInit, OnDestroy {
       next: response => {
         this.providers = response.providers;
         this.categories = response.categories;
+        this.fundManagers = response.fund_managers;
+        this.benchmarks = response.benchmarks;
         if (this.provider && !this.providers.includes(this.provider)) this.provider = '';
         if (this.category && !this.categories.includes(this.category)) this.category = '';
+        if (this.fundManager && !this.fundManagers.includes(this.fundManager)) this.fundManager = '';
+        if (this.benchmark && !this.benchmarks.includes(this.benchmark)) this.benchmark = '';
       },
       error: error => console.error('Failed to load Watch List filter options:', error),
     });
   }
 
   private cacheKey(): string {
-    return `${this.cachePrefix}${this.productTab}.${this.status}.${this.page}.${this.provider}.${this.category}.${this.search.trim()}`;
+    return `${this.cachePrefix}${this.productTab}.${this.status}.${this.page}.${this.provider}.${this.category}.${this.fundManager}.${this.benchmark}.${this.search.trim()}`;
   }
 
   private restoreCachedPage(): void {
@@ -318,7 +327,8 @@ export class WatchListComponent implements OnInit, OnDestroy {
 
   private shouldBootstrapUniverse(response: WatchListResponse): boolean {
     return response.count === 0 && !this.autoRefreshAttempted && !this.refreshing && this.page === 1
-      && this.status === 'ALL' && !this.search.trim() && !this.provider && !this.category;
+      && this.status === 'ALL' && !this.search.trim() && !this.provider && !this.category
+      && !this.fundManager && !this.benchmark;
   }
 
   load(): void {
@@ -328,6 +338,8 @@ export class WatchListComponent implements OnInit, OnDestroy {
     const requestedPage = this.page;
     const requestedProvider = this.provider;
     const requestedCategory = this.category;
+    const requestedFundManager = this.fundManager;
+    const requestedBenchmark = this.benchmark;
     const requestedSearch = this.search.trim();
 
     this.restoreCachedPage();
@@ -339,6 +351,8 @@ export class WatchListComponent implements OnInit, OnDestroy {
       search: requestedSearch || undefined,
       provider: requestedProvider || undefined,
       category: requestedCategory || undefined,
+      fund_manager: requestedFundManager || undefined,
+      benchmark_filter: requestedBenchmark || undefined,
       page: requestedPage,
       page_size: this.pageSize,
     }).pipe(
@@ -353,6 +367,8 @@ export class WatchListComponent implements OnInit, OnDestroy {
           || requestedPage !== this.page
           || requestedProvider !== this.provider
           || requestedCategory !== this.category
+          || requestedFundManager !== this.fundManager
+          || requestedBenchmark !== this.benchmark
           || requestedSearch !== this.search.trim()) return;
 
         // A completed response for the active request always ends the
@@ -431,6 +447,7 @@ export class WatchListComponent implements OnInit, OnDestroy {
   private getSortValue(product: WatchListProduct, column: WatchListSortColumn): unknown {
     switch (column) {
       case 'product': return product.name;
+      case 'isin': return product.isin || '';
       case 'provider': return product.provider || '';
       case 'status': return product.status || '';
       case 'ownership': return this.ownershipFamilies(product).join(', ');
@@ -488,6 +505,8 @@ export class WatchListComponent implements OnInit, OnDestroy {
       this.productTab = tab;
       this.provider = '';
       this.category = '';
+      this.fundManager = '';
+      this.benchmark = '';
       this.selectedIds.clear();
       this.page = 1;
       this.loadFilters();
@@ -509,19 +528,19 @@ export class WatchListComponent implements OnInit, OnDestroy {
   isUpdatingBenchmark(productId: number): boolean { return this.updatingBenchmarkIds.has(productId); }
 
   updateBenchmark(product: WatchListProduct, benchmark: 'BSE 500' | 'Nifty 50' | 'Nifty 100' | 'Nifty Small Cap 250' | 'Nifty Mid Cap 150'): void {
-    const previous = product.benchmark;
+    const previous = product.comparison_benchmark;
     if (previous === benchmark || this.updatingBenchmarkIds.has(product.id)) return;
     this.updatingBenchmarkIds.add(product.id);
     this.error = '';
     this.api.updateBenchmark(product.id, benchmark).subscribe({
       next: response => {
-        product.benchmark = response.benchmark as 'BSE 500' | 'Nifty 50' | 'Nifty 100' | 'Nifty Small Cap 250' | 'Nifty Mid Cap 150';
+        product.comparison_benchmark = response.comparison_benchmark as 'BSE 500' | 'Nifty 50' | 'Nifty 100' | 'Nifty Small Cap 250' | 'Nifty Mid Cap 150';
         this.updatingBenchmarkIds.delete(product.id);
         this.cacheCurrentPage();
       },
       error: error => {
         console.error('Failed to update Watch List benchmark:', error);
-        product.benchmark = previous;
+        product.comparison_benchmark = previous;
         this.updatingBenchmarkIds.delete(product.id);
         this.error = 'Unable to update the benchmark right now.';
       },
@@ -529,7 +548,7 @@ export class WatchListComponent implements OnInit, OnDestroy {
   }
 
   openBenchmarkComparison(product: WatchListProduct): void {
-    if (!product.benchmark) return;
+    if (!product.comparison_benchmark) return;
 
     const requestId = ++this.benchmarkRequestSequence;
     const productId = product.id;
@@ -825,7 +844,7 @@ export class WatchListComponent implements OnInit, OnDestroy {
     const valueRange = Math.max(max - min, 1e-9);
     const aligned = this.benchmarkChartAlignedPoints();
     const benchmarkName = this.benchmarkDisplayName(
-      this.benchmarkData?.benchmark || this.benchmarkModalProduct?.benchmark,
+      this.benchmarkData?.benchmark || this.benchmarkModalProduct?.comparison_benchmark,
     );
     const productName = this.benchmarkChartProductLabel();
 
@@ -1352,6 +1371,20 @@ export class WatchListComponent implements OnInit, OnDestroy {
         },
       });
     }, 1000);
+  }
+
+  externalProductUrl(product: WatchListProduct): string | null {
+    const candidates = [product.source_reference, product.official_website];
+    for (const candidate of candidates) {
+      if (!candidate) continue;
+      try {
+        const url = new URL(candidate);
+        if (url.protocol === 'http:' || url.protocol === 'https:') return url.href;
+      } catch {
+        // Source references may be identifiers rather than web URLs.
+      }
+    }
+    return null;
   }
 
   benchmarkDisplayName(benchmark: string | null | undefined): string {

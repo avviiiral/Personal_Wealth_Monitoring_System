@@ -24,11 +24,17 @@ export class LoginComponent {
 
   error = '';
 
+  showPassword = false;
+
   readonly loginForm = this.fb.nonNullable.group({
     username: ['', Validators.required],
 
     password: ['', Validators.required],
   });
+
+  togglePasswordVisibility(): void {
+    this.showPassword = !this.showPassword;
+  }
 
   // ==========================================================
   // LOGIN

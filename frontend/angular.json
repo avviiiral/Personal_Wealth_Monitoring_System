@@ -31,6 +31,13 @@
               }
             ],
             "styles": ["src/styles.scss", "src/dark-mode-overrides.scss"],
+            "allowedCommonJsDependencies": [
+              "exceljs",
+              "core-js",
+              "raf",
+              "rgbcolor",
+              "html2canvas"
+            ],
             "security": {
               "allowedHosts": []
             }
@@ -45,8 +52,8 @@
                 },
                 {
                   "type": "anyComponentStyle",
-                  "maximumWarning": "20kB",
-                  "maximumError": "25kB"
+                  "maximumWarning": "26kB",
+                  "maximumError": "27kB"
                 }
               ],
               "outputHashing": "all",

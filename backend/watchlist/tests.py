@@ -32,12 +32,80 @@ class WatchListTests(TestCase):
         self.client = APIClient()
         self.client.force_authenticate(self.user)
 
+    def test_apmi_benchmark_parser_reads_official_label_value_table(self):
+        html = """
+        <table>
+          <tr><td>PMS Provider Name</td><td>Example Portfolio Manager</td></tr>
+          <tr><td>Benchmark</td><td>Nifty 500 TRI</td></tr>
+        </table>
+        """
+        self.assertEqual(
+            APMIPMSDiscoveryService._extract_benchmark(html),
+            "Nifty 500 TRI",
+        )
+
+    @patch("watchlist.services.pms.requests.get")
+    @patch.object(APMIPMSDiscoveryService, "_records")
+    @patch.object(APMIPMSDiscoveryService, "_fetch_fund_manager_details")
+    def test_background_pms_refresh_persists_official_benchmark(
+        self, mocked_details, mocked_records, mocked_get
+    ):
+        from watchlist.services.background_refresh import BackgroundWatchListRefreshService
+
+        mocked_get.return_value.text = "<html>APMI report</html>"
+        mocked_get.return_value.raise_for_status.return_value = None
+        existing_product = InvestmentProduct.objects.create(
+            product_type=ProductType.PMS,
+            name="Example Equity Strategy",
+            identity_key="PMS:APMI:EXAMPLE PORTFOLIO MANAGER:IA-123",
+            source="APMI",
+        )
+        PMSProduct.objects.create(
+            product=existing_product,
+            fund_manager="Existing Manager",
+            benchmark="",
+            benchmark_checked_at=timezone.now(),
+        )
+        mocked_records.return_value = [{
+            "provider": "Example Portfolio Manager",
+            "name": "Example Equity Strategy",
+            "iaid": "IA-123",
+            "aum": Decimal("125.50"),
+            "performance": {},
+        }]
+        mocked_details.return_value = {
+            "fund_manager": "Jane Doe",
+            "website": "https://www.apmiindia.org/apmi/IaInsight.htm?IAID=IA-123",
+            "benchmark": "Nifty 500 TRI",
+        }
+
+        result = BackgroundWatchListRefreshService.refresh_pms()
+
+        product = InvestmentProduct.objects.get(
+            identity_key="PMS:APMI:EXAMPLE PORTFOLIO MANAGER:IA-123"
+        )
+        product.pms.refresh_from_db()
+        self.assertEqual(product.pms.benchmark, "Nifty 500 TRI")
+        self.assertEqual(product.pms.fund_manager, "Jane Doe")
+        self.assertIsNotNone(product.pms.benchmark_checked_at)
+        self.assertEqual(result["benchmarks_enriched"], 1)
+        mocked_details.assert_called_once_with("IA-123")
+
     def test_amfi_parser_is_data_driven(self):
-        feed = "Header\nProvider One\n1;INF000000001;-;Generic Equity Fund;Direct Plan;Growth;100.25;15-Sep-2026\nProvider Two\n2;INF000000002;-;Another Fund;Regular Plan;IDCW;50.10;15-Sep-2026\n"
+        feed = "Scheme Code;ISIN1;ISIN2;Scheme Name;Plan;Option;NAV;Date;Benchmark\nProvider One\n1;INF000000001;-;Generic Equity Fund;Direct Plan;Growth;100.25;15-Sep-2026;Nifty 500 TRI\nProvider Two\n2;INF000000002;-;Another Fund;Regular Plan;IDCW;50.10;15-Sep-2026;\n"
         records = AMFIUniverseService.parse_latest_feed(feed)
         self.assertEqual(len(records), 2)
         self.assertEqual(records[0]["provider"], "Provider One")
         self.assertEqual(records[1]["provider"], "Provider Two")
+
+    def test_amfi_nav_feed_does_not_invent_benchmark_values(self):
+        feed = (
+            "Scheme Code;ISIN;ISIN2;Scheme Name;Net Asset Value;Date\n"
+            "Provider One\n"
+            "1;INF000000001;-;Generic Equity Fund;100.25;15-Sep-2026\n"
+        )
+        record = AMFIUniverseService.parse_latest_feed(feed)[0]
+        self.assertNotIn("benchmark", record)
 
     def test_amfi_parser_supports_six_column_legacy_format(self):
         feed = ("Scheme Code;ISIN Div Payout/ISIN Growth;ISIN Div Reinvestment;Scheme Name;Net Asset Value;Date\nProvider One\n1;INF000000001;-;Generic Equity Fund;100.25;15-Sep-2026\n")
@@ -420,7 +488,55 @@ class WatchListTests(TestCase):
                     format="json",
                 )
                 self.assertEqual(response.status_code, 200)
-                self.assertEqual(response.data["benchmark"], benchmark)
+                self.assertEqual(response.data["comparison_benchmark"], benchmark)
+
+    def test_comparison_benchmark_does_not_overwrite_source_benchmark_for_mf_or_pms(self):
+        self.user.profile.role = "ADMIN"
+        self.user.profile.save(update_fields=["role"])
+
+        mutual_fund = InvestmentProduct.objects.create(
+            product_type=ProductType.MUTUAL_FUND,
+            name="Source Benchmark Fund",
+            identity_key="MUTUAL_FUND:SCHEME:SOURCE-BENCHMARK",
+            source="TEST",
+        )
+        MutualFundProduct.objects.create(
+            product=mutual_fund,
+            scheme_code="SOURCE-BENCHMARK",
+            benchmark="Nifty 50 TRI",
+            aum=Decimal("100"),
+        )
+        pms = InvestmentProduct.objects.create(
+            product_type=ProductType.PMS,
+            name="Source Benchmark PMS",
+            identity_key="PMS:SOURCE-BENCHMARK",
+            source="TEST",
+        )
+        PMSProduct.objects.create(product=pms, benchmark="BSE 500 TRI", aum=Decimal("100"))
+
+        for product, relation, source_benchmark in (
+            (mutual_fund, "mutual_fund", "Nifty 50 TRI"),
+            (pms, "pms", "BSE 500 TRI"),
+        ):
+            with self.subTest(product_type=product.product_type):
+                response = self.client.patch(
+                    f"/api/watch-list/products/{product.id}/benchmark/",
+                    {"benchmark": "Nifty 100"},
+                    format="json",
+                )
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual(response.data["comparison_benchmark"], "Nifty 100")
+                product.refresh_from_db()
+                self.assertEqual(product.comparison_benchmark, "Nifty 100")
+                source = getattr(product, relation)
+                self.assertEqual(source.benchmark, source_benchmark)
+
+                listing = self.client.get(
+                    f"/api/watch-list/products/?product_type={product.product_type}"
+                )
+                row = next(item for item in listing.data["results"] if item["id"] == product.id)
+                self.assertEqual(row["benchmark"], source_benchmark)
+                self.assertEqual(row["comparison_benchmark"], "Nifty 100")
 
     def test_nifty_tri_history_requests_the_selected_official_index(self):
         start = date(2026, 9, 15)
@@ -1238,6 +1354,7 @@ class APMIPMSDiscoveryTests(TestCase):
 
     MANAGER_HTML = """
     <html><body>
+      <div>Benchmark</div><div>BSE 500 TRI</div>
       <h4>Fund Manager Details</h4>
       <table>
         <tr><td><h4>Jane Doe</h4>Work Exp. 12 years</td></tr>
@@ -1322,6 +1439,46 @@ class APMIPMSDiscoveryTests(TestCase):
             ["Jane Doe", "John Smith"],
         )
 
+    def test_apmi_parser_reads_primary_benchmark_column_from_report(self):
+        html = """
+        <table>
+          <tr><th>PMS Provider Name</th><th>IA Name</th><th>AUM</th><th>Benchmark</th><th>1 Month</th></tr>
+          <tr><td>Example AMC</td><td><a href="IaInsight.htm?IAID=123">Example Strategy</a></td><td>100</td><td>Nifty 500 TRI</td><td>1.2</td></tr>
+        </table>
+        """
+        records = APMIPMSDiscoveryService._records(html)
+        self.assertEqual(records[0]["benchmark"], "Nifty 500 TRI")
+
+    def test_apmi_insight_parser_reads_benchmark_from_live_label_value_layout(self):
+        html = """
+        <html><body>
+          <h3>Investment Approach Details</h3>
+          <div><span>PMS Provider Name</span><strong>Example Capital</strong></div>
+          <div><span>Benchmark</span><strong>MSEI SX 40 TRI</strong></div>
+          <div><span>Strategy Name</span><strong>Equity</strong></div>
+          <div><span>Product Name</span><strong>Equity</strong></div>
+          <h3>Fund Manager Details</h3>
+          <strong>Jane Doe</strong>
+        </body></html>
+        """
+        self.assertEqual(
+            APMIPMSDiscoveryService._extract_benchmark(html),
+            "MSEI SX 40 TRI",
+        )
+
+    def test_apmi_insight_parser_reads_inline_benchmark_label_and_value(self):
+        html = """
+        <html><body>
+          <h3>Investment Approach Details</h3>
+          <p>Benchmark MSEI SX 40 TRI Strategy Name Equity</p>
+          <h3>Fund Manager Details</h3>
+        </body></html>
+        """
+        self.assertEqual(
+            APMIPMSDiscoveryService._extract_benchmark(html),
+            "MSEI SX 40 TRI",
+        )
+
     def test_apmi_parser_reads_html_rows(self):
         records = APMIPMSDiscoveryService._records(self.SAMPLE_HTML)
         self.assertEqual(len(records), 1)
@@ -1366,7 +1523,14 @@ class APMIPMSDiscoveryTests(TestCase):
         empty_manager_page.text = "<html><body><h2>No manager details published</h2></body></html>"
         listing_two = Mock()
         listing_two.text = self.SAMPLE_HTML
-        mocked_get.side_effect = [listing_one, empty_manager_page, listing_two]
+        empty_manager_page_two = Mock()
+        empty_manager_page_two.text = "<html><body><h2>No manager details published</h2></body></html>"
+        mocked_get.side_effect = [
+            listing_one,
+            empty_manager_page,
+            listing_two,
+            empty_manager_page_two,
+        ]
 
         first_result = APMIPMSDiscoveryService.refresh()
         second_result = APMIPMSDiscoveryService.refresh()
@@ -1374,8 +1538,10 @@ class APMIPMSDiscoveryTests(TestCase):
         product = InvestmentProduct.objects.get(product_type=ProductType.PMS)
         self.assertEqual(first_result["fund_manager_checks"], 1)
         self.assertEqual(first_result["fund_managers_enriched"], 0)
-        self.assertEqual(second_result["fund_manager_checks"], 0)
-        self.assertEqual(mocked_get.call_count, 3)
+        # Missing benchmarks are retried on every refresh, even while the
+        # fund-manager lookup remains inside its seven-day retry window.
+        self.assertEqual(second_result["fund_manager_checks"], 1)
+        self.assertEqual(mocked_get.call_count, 4)
         self.assertIsNotNone(product.pms.fund_manager_checked_at)
 
     @patch("watchlist.services.pms.requests.get")

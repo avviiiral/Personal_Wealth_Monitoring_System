@@ -6,6 +6,7 @@ from decimal import Decimal, InvalidOperation
 import requests
 from bs4 import BeautifulSoup
 from django.utils import timezone
+from django.db.models import Q
 
 from config.pwms_config import get as get_pwms_config
 
@@ -98,6 +99,67 @@ class APMIPMSDiscoveryService:
                         names.append(line)
         return names
 
+    @staticmethod
+    def _extract_benchmark(html):
+        """Read the primary benchmark label/value from an APMI IA detail page."""
+        soup = BeautifulSoup(html or "", "html.parser")
+
+        # APMI renders Investment Approach Details as label/value table cells.
+        # Read the explicit Benchmark row before falling back to visible text.
+        for row in soup.find_all("tr"):
+            cells = row.find_all(["th", "td"], recursive=False)
+            if len(cells) < 2:
+                continue
+            label = APMIPMSDiscoveryService._text(
+                cells[0].get_text(" ", strip=True)
+            ).rstrip(":").casefold()
+            if label == "benchmark":
+                value = APMIPMSDiscoveryService._text(
+                    cells[1].get_text(" ", strip=True)
+                )
+                if value and value.casefold() not in {"na", "n/a", "-", "not available"}:
+                    return value
+                return None
+
+        # APMI's live IA Insight page has multiple label/value layouts. Some
+        # versions use table rows (handled above); others place labels and
+        # values in adjacent blocks or collapse both into one text line.
+        visible_text = APMIPMSDiscoveryService._text(soup.get_text(" ", strip=True))
+        details_match = re.search(r"Investment\s+Approach\s+Details", visible_text, re.IGNORECASE)
+        if details_match:
+            visible_text = visible_text[details_match.end():]
+        section_end = re.search(
+            r"Fund\s+Manager\s+Details|Period[- ]Wise\s+Performance|IA\s+vs\.?\s+Benchmark\s+Performance",
+            visible_text,
+            re.IGNORECASE,
+        )
+        if section_end:
+            visible_text = visible_text[:section_end.start()]
+
+        benchmark_match = re.search(
+            r"\bBenchmark\b\s*:?\s*(.*?)"
+            r"(?=\b(?:Strategy\s+Name|Product\s+Name|Date\s+Of\s+Inception|"
+            r"Age|Min\.?\s*Inv\.?\s*Amount|Fixed\s+Fees\s+Structure|"
+            r"Variable\s+Fees\s+Structure|Exit\s+Load|Purpose)\b|$)",
+            visible_text,
+            re.IGNORECASE,
+        )
+        if benchmark_match:
+            value = APMIPMSDiscoveryService._text(benchmark_match.group(1)).strip(" :-|")
+            if value and value.casefold() not in {"na", "n/a", "-", "not available"}:
+                return value
+
+        # Fallback for legacy pages that expose the value on the next line.
+        lines = [re.sub(r"\s+", " ", line).strip() for line in soup.get_text("\n").splitlines()]
+        for index, line in enumerate(lines):
+            if line.rstrip(":").strip().lower() == "benchmark":
+                for candidate in lines[index + 1:]:
+                    if candidate:
+                        if candidate.lower() in {"strategy name", "product name", "date of inception"}:
+                            return None
+                        return candidate
+        return None
+
     @classmethod
     def _fetch_fund_manager_details(cls, iaid):
         """Fetch APMI's individual IA detail page and return named managers."""
@@ -110,6 +172,7 @@ class APMIPMSDiscoveryService:
             )
             response.raise_for_status()
             names = cls._extract_fund_manager_names(response.text)
+            benchmark = cls._extract_benchmark(response.text)
             if not names:
                 logger.info("APMI IA detail page returned no named managers (IAID=%s, status=%s)", iaid, response.status_code)
             # A successful detail-page response is cached even when APMI has
@@ -118,6 +181,7 @@ class APMIPMSDiscoveryService:
             return {
                 "fund_manager": "; ".join(names) if names else None,
                 "website": url,
+                "benchmark": benchmark,
             }
         except requests.RequestException as exc:
             logger.warning("Unable to retrieve APMI manager details (IAID=%s): %s", iaid, exc)
@@ -171,6 +235,25 @@ class APMIPMSDiscoveryService:
         return timezone.now().date()
 
     @classmethod
+    def _table_benchmark_column(cls, soup, row, values):
+        """Read a benchmark only when it is a labelled column in the APMI report."""
+        table = row.find_parent("table")
+        if table is None:
+            return None
+        header_map = {}
+        for header_row in table.find_all("tr"):
+            cells = header_row.find_all(["th", "td"], recursive=False)
+            labels = [cls._text(cell.get_text(" ", strip=True)).casefold() for cell in cells]
+            if any("benchmark" in label for label in labels):
+                header_map = {label: index for index, label in enumerate(labels)}
+                break
+        index = next((idx for label, idx in header_map.items() if "benchmark" in label), None)
+        if index is None or index >= len(values):
+            return None
+        value = values[index]
+        return value if value and value.casefold() not in {"na", "n/a", "-", "not available"} else None
+
+    @classmethod
     def _records(cls, html):
         """Parse APMI PMS rows without depending on pandas header inference."""
         soup = BeautifulSoup(html, "html.parser")
@@ -213,6 +296,7 @@ class APMIPMSDiscoveryService:
                     "iaid": iaid,
                     "aum": aum,
                     "performance": performance,
+                    "benchmark": cls._table_benchmark_column(soup, row, values),
                 }
             )
         return records
@@ -295,12 +379,24 @@ class APMIPMSDiscoveryService:
                     pms_product is None
                     or not (pms_product.fund_manager or "").strip()
                 )
-                retry_due = (
+                manager_retry_due = (
                     pms_product is None
                     or pms_product.fund_manager_checked_at is None
                     or pms_product.fund_manager_checked_at <= manager_retry_before
                 )
-                if product and manager_missing and retry_due:
+                report_benchmark = record.get("benchmark")
+                benchmark_missing = (
+                    not report_benchmark
+                    and (pms_product is None or not (pms_product.benchmark or "").strip())
+                )
+                # A blank benchmark is retried on each refresh. Earlier versions
+                # cached unsuccessful parses as checked, which could hide the
+                # newly-supported APMI detail-page benchmark for seven days.
+                benchmark_retry_due = benchmark_missing
+                if product and (
+                    (manager_missing and manager_retry_due)
+                    or (benchmark_missing and benchmark_retry_due)
+                ):
                     manager_records.append(record)
 
             manager_details_by_iaid = {}
@@ -328,10 +424,14 @@ class APMIPMSDiscoveryService:
                     failed += 1
                     continue
 
+                existing_pms = manager_status_by_id.get(product.id)
+                detail_data = manager_details_by_iaid.get(record["iaid"])
+                source_benchmark = record.get("benchmark") or (existing_pms.benchmark if existing_pms else None)
                 pms_products.append(
                     PMSProduct(
                         product_id=product.id,
                         strategy_name=record["name"],
+                        benchmark=source_benchmark,
                         strategy_type=cls.APMI_CONFIG.get("strategy_type", "Investment Approach"),
                         asset_class=cls.APMI_CONFIG.get("asset_class", "PMS"),
                         aum=record["aum"],
@@ -363,7 +463,7 @@ class APMIPMSDiscoveryService:
                 update_conflicts=True,
                 update_fields=[
                     "strategy_name", "strategy_type", "asset_class",
-                    "aum", "latest_value",
+                    "aum", "latest_value", "benchmark",
                 ],
                 unique_fields=["product"],
             )
@@ -388,7 +488,13 @@ class APMIPMSDiscoveryService:
                         pms_product.fund_manager_website = details["website"]
                     elif not pms_product.fund_manager_website:
                         pms_product.fund_manager_website = details["website"]
-                    pms_product.fund_manager_checked_at = timezone.now()
+                    checked_at = timezone.now()
+                    pms_product.fund_manager_checked_at = checked_at
+                    if details.get("benchmark"):
+                        pms_product.benchmark = details["benchmark"]
+                        pms_product.benchmark_checked_at = checked_at
+                    else:
+                        pms_product.benchmark_checked_at = None
                     manager_updates.append(pms_product)
             if manager_updates:
                 PMSProduct.objects.bulk_update(
@@ -397,6 +503,8 @@ class APMIPMSDiscoveryService:
                         "fund_manager",
                         "fund_manager_website",
                         "fund_manager_checked_at",
+                        "benchmark",
+                        "benchmark_checked_at",
                     ],
                     batch_size=500,
                 )
@@ -447,3 +555,59 @@ class APMIPMSDiscoveryService:
             run.finished_at = timezone.now()
             run.save(update_fields=["failed", "details", "finished_at"])
             raise
+
+    @classmethod
+    def refresh_missing_benchmarks(cls):
+        """Backfill missing PMS primary benchmarks from official APMI IA insight pages.
+
+        APMI's public IA performance report provides the approach and returns;
+        the matching IA Insight page exposes that approach's actual benchmark.
+        Persist only the value explicitly published on that APMI detail page.
+        """
+        retry_before = timezone.now() - cls.MANAGER_RETRY_AFTER
+        rows = list(
+            PMSProduct.objects.filter(
+                product__source="APMI",
+            ).filter(
+                Q(benchmark__isnull=True) | Q(benchmark="")
+            ).values("product_id", "product__external_identifier")
+        )
+        rows = [row for row in rows if row["product__external_identifier"]]
+        if not rows:
+            return {"requested": 0, "checked": 0, "updated": 0}
+
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+
+        details_by_iaid = {}
+        with ThreadPoolExecutor(max_workers=min(4, len(rows))) as executor:
+            futures = {
+                executor.submit(cls._fetch_fund_manager_details, str(row["product__external_identifier"])): row
+                for row in rows
+            }
+            for future in as_completed(futures):
+                row = futures[future]
+                try:
+                    details = future.result()
+                except Exception:
+                    logger.exception("APMI benchmark enrichment failed for product=%s", row["product_id"])
+                    continue
+                if details is not None:
+                    details_by_iaid[row["product__external_identifier"]] = (row, details)
+
+        checked_at = timezone.now()
+        updates = []
+        for row, details in details_by_iaid.values():
+            product = PMSProduct.objects.get(product_id=row["product_id"])
+            if details.get("benchmark"):
+                product.benchmark = details["benchmark"]
+                product.benchmark_checked_at = checked_at
+            else:
+                product.benchmark_checked_at = None
+            updates.append(product)
+        if updates:
+            PMSProduct.objects.bulk_update(updates, ["benchmark", "benchmark_checked_at"], batch_size=500)
+        return {
+            "requested": len(rows),
+            "checked": len(updates),
+            "updated": sum(bool(item.benchmark) for item in updates),
+        }

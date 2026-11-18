@@ -20,7 +20,6 @@ from watchlist.services.pms import APMIPMSDiscoveryService
 from watchlist.services.performance import AMFIPerformanceService
 from watchlist.services.benchmark import BenchmarkPerformanceService
 from watchlist.services.universe import AMFIUniverseService
-from watchlist.services.fund_managers import AMFIFundManagerService
 from watchlist.services.amfi_history import prepare_mutual_fund_watchlist_history
 
 
@@ -100,12 +99,32 @@ def _filtered_products(request, product_type=None):
             | Q(category__icontains=search)
             | Q(sub_category__icontains=search)
             | Q(external_identifier__icontains=search)
+            | Q(mutual_fund__fund_manager__icontains=search)
+            | Q(pms__fund_manager__icontains=search)
+            | Q(mutual_fund__benchmark__icontains=search)
+            | Q(pms__benchmark__icontains=search)
+            | Q(comparison_benchmark__icontains=search)
         )
 
     for field in ("provider", "category"):
         value = params.get(field)
         if value:
             queryset = queryset.filter(**{field: value})
+
+    fund_manager = params.get("fund_manager", "").strip()
+    if fund_manager:
+        queryset = queryset.filter(
+            Q(mutual_fund__fund_manager=fund_manager)
+            | Q(pms__fund_manager=fund_manager)
+        )
+
+    benchmark_filter = params.get("benchmark_filter", "").strip()
+    if benchmark_filter:
+        queryset = queryset.filter(
+            Q(mutual_fund__benchmark=benchmark_filter)
+            | Q(pms__benchmark=benchmark_filter)
+            | Q(comparison_benchmark=benchmark_filter)
+        )
     for field in ("country", "sub_category", "isin"):
         value = params.get(field)
         if value:
@@ -288,7 +307,33 @@ def watch_list_filters(request):
         .distinct()
         .order_by("category")
     )
-    return Response({"providers": providers, "categories": categories})
+    fund_manager_values = (
+        list(queryset.exclude(mutual_fund__fund_manager__isnull=True)
+             .exclude(mutual_fund__fund_manager="")
+             .values_list("mutual_fund__fund_manager", flat=True))
+        + list(queryset.exclude(pms__fund_manager__isnull=True)
+               .exclude(pms__fund_manager="")
+               .values_list("pms__fund_manager", flat=True))
+    )
+    benchmark_values = (
+        list(queryset.exclude(mutual_fund__benchmark__isnull=True)
+             .exclude(mutual_fund__benchmark="")
+             .values_list("mutual_fund__benchmark", flat=True))
+        + list(queryset.exclude(pms__benchmark__isnull=True)
+               .exclude(pms__benchmark="")
+               .values_list("pms__benchmark", flat=True))
+        + list(queryset.exclude(comparison_benchmark__isnull=True)
+               .exclude(comparison_benchmark="")
+               .values_list("comparison_benchmark", flat=True))
+    )
+    fund_managers = sorted({value.strip() for value in fund_manager_values if value and value.strip()}, key=str.casefold)
+    benchmarks = sorted({value.strip() for value in benchmark_values if value and value.strip()}, key=str.casefold)
+    return Response({
+        "providers": providers,
+        "categories": categories,
+        "fund_managers": fund_managers,
+        "benchmarks": benchmarks,
+    })
 
 
 @api_view(["GET"])
@@ -353,7 +398,6 @@ def _run_watch_list_refresh():
         with DATABASE_SCHEDULER_LOCK:
             stages = (
                 ("amfi_universe", AMFIUniverseService.refresh),
-                ("mutual_fund_managers", AMFIFundManagerService.refresh_missing),
                 ("mutual_fund_performance", AMFIPerformanceService.refresh),
                 ("pms_universe_and_managers", APMIPMSDiscoveryService.refresh),
             )
@@ -402,16 +446,14 @@ def watch_list_benchmark(request, product_id):
             status=400,
         )
 
-    if product.product_type == ProductType.MUTUAL_FUND:
-        product.mutual_fund.benchmark = benchmark
-        product.mutual_fund.save(update_fields=["benchmark"])
-    elif product.product_type == ProductType.PMS:
-        product.pms.benchmark = benchmark
-        product.pms.save(update_fields=["benchmark"])
-    else:
+    if product.product_type not in (ProductType.MUTUAL_FUND, ProductType.PMS):
         return Response({"detail": "Benchmark is supported only for Mutual Fund and PMS products."}, status=400)
 
-    return Response({"id": product.id, "benchmark": benchmark})
+    # Store the user's comparison index without overwriting source benchmark data.
+    product.comparison_benchmark = benchmark
+    product.save(update_fields=["comparison_benchmark", "updated_at"])
+
+    return Response({"id": product.id, "comparison_benchmark": benchmark})
 
 
 @api_view(["GET"])

@@ -193,16 +193,16 @@ class AMFIFundManagerService:
         retry_before = timezone.now() - cls.RETRY_AFTER
         rows = list(
             MutualFundProduct.objects.filter(
-                Q(fund_manager__isnull=True) | Q(fund_manager="")
-            ).filter(
-                Q(fund_manager_checked_at__isnull=True)
-                | Q(fund_manager_checked_at__lte=retry_before)
+                (
+                    (Q(fund_manager__isnull=True) | Q(fund_manager=""))
+                    & (Q(fund_manager_checked_at__isnull=True) | Q(fund_manager_checked_at__lte=retry_before))
+                )
             ).exclude(
                 scheme_code__isnull=True
             ).exclude(
                 scheme_code=""
             ).values(
-                "id", "scheme_code", "fund_manager", "fund_manager_website"
+                "id", "scheme_code", "fund_manager", "fund_manager_website",
             )
         )
 
@@ -264,7 +264,7 @@ class AMFIFundManagerService:
                     names = cls._manager_names(ssd) or cls._manager_names(record)
                     if names:
                         manager_data_by_code[code] = {
-                            "fund_manager": "; ".join(names),
+                            "fund_manager": "; ".join(names) if names else None,
                             "fund_manager_website": (
                                 cls._manager_website(ssd)
                                 or cls._manager_website(record)
@@ -279,12 +279,12 @@ class AMFIFundManagerService:
                             id=row["id"],
                             fund_manager=(
                                 manager_data["fund_manager"]
-                                if manager_data
+                                if manager_data and manager_data.get("fund_manager")
                                 else row["fund_manager"]
                             ),
                             fund_manager_website=(
                                 manager_data["fund_manager_website"]
-                                if manager_data
+                                if manager_data and manager_data.get("fund_manager_website")
                                 else row["fund_manager_website"]
                             ),
                             fund_manager_checked_at=checked_at,

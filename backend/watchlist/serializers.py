@@ -19,18 +19,20 @@ class WatchListProductSerializer(serializers.ModelSerializer):
     ownership = serializers.SerializerMethodField()
     performance = serializers.SerializerMethodField()
     metrics = serializers.SerializerMethodField()
+    metrics_as_of = serializers.SerializerMethodField()
     mutual_fund = serializers.SerializerMethodField()
     pms = serializers.SerializerMethodField()
     is_watchlisted = serializers.SerializerMethodField()
     benchmark = serializers.SerializerMethodField()
+    comparison_benchmark = serializers.SerializerMethodField()
 
     class Meta:
         model = InvestmentProduct
         fields = [
             "id", "product_type", "name", "provider", "country", "category", "sub_category",
             "isin", "external_identifier", "currency", "source", "source_reference", "source_date",
-            "official_website", "benchmark", "status", "ownership", "performance", "metrics", "mutual_fund", "pms",
-            "is_watchlisted",
+            "official_website", "benchmark", "comparison_benchmark", "status", "ownership",
+            "performance", "metrics", "metrics_as_of", "mutual_fund", "pms", "is_watchlisted",
         ]
 
     def get_benchmark(self, obj):
@@ -39,6 +41,9 @@ class WatchListProductSerializer(serializers.ModelSerializer):
         if obj.product_type == ProductType.PMS and hasattr(obj, "pms"):
             return obj.pms.benchmark
         return None
+
+    def get_comparison_benchmark(self, obj):
+        return obj.comparison_benchmark or self.get_benchmark(obj)
 
     def get_is_watchlisted(self, obj):
         watchlisted_ids = self.context.get("watchlisted_ids")
@@ -64,14 +69,10 @@ class WatchListProductSerializer(serializers.ModelSerializer):
         return obj.performance_snapshots.order_by("-date", "-id").first()
 
     def _metric_snapshot(self, obj):
-        """Return the newest snapshot containing at least one return metric."""
         metric_snapshots = self.context.get("metric_snapshots", {})
         return metric_snapshots.get(obj.id) or self._latest_snapshot(obj)
 
     def get_status(self, obj):
-        # Watch List is an explicit user selection and takes precedence over
-        # the ownership-derived status. This makes the checkmark immediately
-        # represent the product's Watch List state.
         if self.get_is_watchlisted(obj):
             return "WATCHLIST"
         return self._ownership(obj)["status"]
@@ -81,7 +82,16 @@ class WatchListProductSerializer(serializers.ModelSerializer):
 
     def get_performance(self, obj):
         latest = self._latest_snapshot(obj)
-        return [PerformanceSnapshotSerializer(latest).data] if latest else []
+        metric_snapshot = self._metric_snapshot(obj)
+        snapshots = []
+        for snapshot in (latest, metric_snapshot):
+            if snapshot is not None and all(existing.pk != snapshot.pk for existing in snapshots):
+                snapshots.append(snapshot)
+        return PerformanceSnapshotSerializer(snapshots, many=True).data
+
+    def get_metrics_as_of(self, obj):
+        metric_snapshot = self._metric_snapshot(obj)
+        return metric_snapshot.date if metric_snapshot else None
 
     def get_metrics(self, obj):
         latest = self._latest_snapshot(obj)
@@ -101,10 +111,13 @@ class WatchListProductSerializer(serializers.ModelSerializer):
             ("CAGR", "cagr"),
         )
         return {
-            key: (
-                getattr(latest, field, None)
-                if getattr(latest, field, None) is not None
-                else getattr(metric_snapshot, field, None)
+            key: next(
+                (
+                    getattr(snapshot, field)
+                    for snapshot in (latest, metric_snapshot)
+                    if snapshot is not None and getattr(snapshot, field, None) is not None
+                ),
+                None,
             )
             for key, field in fields
         }

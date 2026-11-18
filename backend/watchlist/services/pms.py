@@ -103,6 +103,24 @@ class APMIPMSDiscoveryService:
     def _extract_benchmark(html):
         """Read the primary benchmark label/value from an APMI IA detail page."""
         soup = BeautifulSoup(html or "", "html.parser")
+
+        # APMI renders Investment Approach Details as label/value table cells.
+        # Read the explicit Benchmark row before falling back to visible text.
+        for row in soup.find_all("tr"):
+            cells = row.find_all(["th", "td"], recursive=False)
+            if len(cells) < 2:
+                continue
+            label = APMIPMSDiscoveryService._text(
+                cells[0].get_text(" ", strip=True)
+            ).rstrip(":").casefold()
+            if label == "benchmark":
+                value = APMIPMSDiscoveryService._text(
+                    cells[1].get_text(" ", strip=True)
+                )
+                if value and value.casefold() not in {"na", "n/a", "-", "not available"}:
+                    return value
+                return None
+
         lines = [re.sub(r"\s+", " ", line).strip() for line in soup.get_text("\n").splitlines()]
         for index, line in enumerate(lines):
             if line.rstrip(":").strip().lower() == "benchmark":

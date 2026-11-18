@@ -32,6 +32,53 @@ class WatchListTests(TestCase):
         self.client = APIClient()
         self.client.force_authenticate(self.user)
 
+    def test_apmi_benchmark_parser_reads_official_label_value_table(self):
+        html = """
+        <table>
+          <tr><td>PMS Provider Name</td><td>Example Portfolio Manager</td></tr>
+          <tr><td>Benchmark</td><td>Nifty 500 TRI</td></tr>
+        </table>
+        """
+        self.assertEqual(
+            APMIPMSDiscoveryService._extract_benchmark(html),
+            "Nifty 500 TRI",
+        )
+
+    @patch("watchlist.services.pms.requests.get")
+    @patch.object(APMIPMSDiscoveryService, "_records")
+    @patch.object(APMIPMSDiscoveryService, "_fetch_fund_manager_details")
+    def test_background_pms_refresh_persists_official_benchmark(
+        self, mocked_details, mocked_records, mocked_get
+    ):
+        from watchlist.services.background_refresh import BackgroundWatchListRefreshService
+
+        mocked_get.return_value.text = "<html>APMI report</html>"
+        mocked_get.return_value.raise_for_status.return_value = None
+        mocked_records.return_value = [{
+            "provider": "Example Portfolio Manager",
+            "name": "Example Equity Strategy",
+            "iaid": "IA-123",
+            "aum": Decimal("125.50"),
+            "performance": {},
+        }]
+        mocked_details.return_value = {
+            "fund_manager": "Jane Doe",
+            "website": "https://www.apmiindia.org/apmi/IaInsight.htm?IAID=IA-123",
+            "benchmark": "Nifty 500 TRI",
+        }
+
+        result = BackgroundWatchListRefreshService.refresh_pms()
+
+        product = InvestmentProduct.objects.get(
+            identity_key="PMS:APMI:EXAMPLE PORTFOLIO MANAGER:IA-123"
+        )
+        product.pms.refresh_from_db()
+        self.assertEqual(product.pms.benchmark, "Nifty 500 TRI")
+        self.assertEqual(product.pms.fund_manager, "Jane Doe")
+        self.assertIsNotNone(product.pms.benchmark_checked_at)
+        self.assertEqual(result["benchmarks_enriched"], 1)
+        mocked_details.assert_called_once_with("IA-123")
+
     def test_amfi_parser_is_data_driven(self):
         feed = "Scheme Code;ISIN1;ISIN2;Scheme Name;Plan;Option;NAV;Date;Benchmark\nProvider One\n1;INF000000001;-;Generic Equity Fund;Direct Plan;Growth;100.25;15-Sep-2026;Nifty 500 TRI\nProvider Two\n2;INF000000002;-;Another Fund;Regular Plan;IDCW;50.10;15-Sep-2026;\n"
         records = AMFIUniverseService.parse_latest_feed(feed)

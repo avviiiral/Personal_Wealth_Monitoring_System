@@ -23,7 +23,7 @@
   </div>
 
   <div class="filters">
-    <input [(ngModel)]="search" (ngModelChange)="onSearchInput()" (keyup.enter)="applyFilters()" placeholder="Search fund, provider, category, ISIN…" aria-label="Search Watch List" />
+    <input [(ngModel)]="search" (ngModelChange)="onSearchInput()" (keyup.enter)="applyFilters()" placeholder="Search fund, provider, category, ISIN, fund manager, benchmark…" aria-label="Search Watch List" />
     <select [(ngModel)]="provider" aria-label="Provider">
       <option value="">All Providers</option>
       <option *ngFor="let option of providers" [value]="option">{{ option }}</option>

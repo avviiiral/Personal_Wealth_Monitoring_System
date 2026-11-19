@@ -4,7 +4,8 @@
       <span class="eyebrow">INVESTMENT RESEARCH · SOURCE-DRIVEN ANALYTICS</span>
       <h1>Mutual Fund Analytics</h1>
       <p *ngIf="report?.available">{{ report?.report_cycle }} · Data as of {{ report?.report_date | date:'dd MMM yyyy' }} · {{ funds.length }} funds in source universe</p>
-      <p *ngIf="!report?.available">Import the Nexedge HTML report to populate the complete analytical dashboard.</p>
+      <p *ngIf="!report?.available && indiaFeed?.available">{{ indiaFeed?.source_label }} · {{ indiaFeed?.total_count }} schemes · Data date {{ indiaFeed?.report_date | date:'dd MMM yyyy' }}</p>
+      <p *ngIf="!report?.available && !indiaFeed?.available">Load the keyless AMFI scheme/NAV master or enable optional IndianAPI enrichment.</p>
     </div>
     <div class="header-actions">
       <label *ngIf="funds.length">Selected fund
@@ -18,11 +19,45 @@
 
   <div class="error-state" *ngIf="error">{{ error }}</div>
   <div class="loading-state" *ngIf="loading">Loading research report…</div>
-  <section class="empty-state" *ngIf="!loading && report && !report.available">
+  <section class="empty-state" *ngIf="!loading && report && !report.available && !indiaFeed?.available">
     <h2>No research report imported</h2>
     <p>{{ report.message }}</p>
     <pre>python manage.py import_mutual_fund_research_report --file "C:\path\to\Nexedge_multicap_dashboard_Oct2026.html"</pre>
     <p>The import stores the original RAW, P2P and ATTR objects as a dated report snapshot. It does not create or overwrite live investment products.</p>
+  </section>
+
+  <section class="india-feed-section" *ngIf="!loading && !report?.available && indiaFeed?.available">
+    <div class="section-intro">
+      <h2>India Mutual Fund Universe</h2>
+      <p>{{ indiaFeed?.message }} · {{ indiaFeed?.count }} records displayed of {{ indiaFeed?.total_count }}</p>
+    </div>
+    <div class="metric-grid">
+      <article class="metric-card"><span>Available schemes</span><strong>{{ indiaFeed?.total_count }}</strong><small>{{ indiaFeed?.source_label }}</small></article>
+      <article class="metric-card"><span>Data date</span><strong class="small-value">{{ indiaFeed?.report_date | date:'dd MMM yyyy' }}</strong><small>Source observation date</small></article>
+      <article class="metric-card"><span>IndianAPI enrichment</span><strong class="small-value">{{ indiaFeed?.provider_configured ? 'Enabled' : 'Optional / not configured' }}</strong><small>AMFI data does not require an API key</small></article>
+    </div>
+    <article class="content-card">
+      <h3>Scheme universe and available metrics</h3>
+      <div class="table-scroll">
+        <table>
+          <thead><tr><th>Fund / Scheme</th><th>Asset class</th><th>Category</th><th>Latest NAV</th><th>1M</th><th>1Y</th><th>Asset Size</th><th>Rating</th><th>Scheme Code</th></tr></thead>
+          <tbody>
+            <tr *ngFor="let fund of indiaFeed?.funds; trackBy: trackByName">
+              <td class="left">{{ fund.fund_name }}</td>
+              <td>{{ fund.asset_class || '—' }}</td>
+              <td>{{ fund.category || '—' }}</td>
+              <td>{{ format(fund.latest_nav, 4) }}</td>
+              <td>{{ formatPct(fund.returns?.['1M']) }}</td>
+              <td>{{ formatPct(fund.returns?.['1Y']) }}</td>
+              <td>{{ fund.asset_size === null ? '—' : formatAum(fund.asset_size) }}</td>
+              <td>{{ fund.star_rating ?? '—' }}</td>
+              <td>{{ fund.scheme_code || '—' }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="muted">AMFI fallback provides scheme identity and NAV only. Returns, AUM and ratings remain unavailable unless supplied by the optional IndianAPI snapshot.</p>
+    </article>
   </section>
 
   <ng-container *ngIf="!loading && report?.available && raw">

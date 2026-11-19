@@ -7,6 +7,10 @@ authentication, portfolio features, or the existing AMFI workflows.
 from decimal import Decimal, InvalidOperation
 import requests
 from django.conf import settings
+from django.db import transaction
+from django.utils import timezone
+
+from watchlist.models import IndianAPIRequestUsage
 
 
 class IndianAPIError(Exception):
@@ -15,6 +19,21 @@ class IndianAPIError(Exception):
 
 class IndianAPIConfigurationError(IndianAPIError):
     """Raised when an IndianAPI operation is requested without an API key."""
+
+
+class IndianAPIQuotaExceeded(IndianAPIError):
+    """Raised when PWMS reaches its configured monthly request budget."""
+
+    def __init__(self, month, used, limit):
+        self.month = month
+        self.used = used
+        self.limit = limit
+        super().__init__(
+            f"PWMS IndianAPI monthly budget exhausted for {month}: "
+            f"{used}/{limit} requests used. No provider request was sent. "
+            "Wait for the next calendar month or deliberately adjust "
+            "INDIANAPI_MONTHLY_REQUEST_BUDGET for the applicable plan."
+        )
 
 
 class IndianAPIRateLimitError(IndianAPIError):
@@ -88,10 +107,32 @@ class IndianAPIClient:
             getattr(settings, "INDIANAPI_BASE_URL", "https://stock.indianapi.in") or ""
         ).strip().rstrip("/")
         self.timeout = max(1, int(getattr(settings, "INDIANAPI_TIMEOUT_SECONDS", 20)))
+        self.monthly_budget = max(1, int(getattr(settings, "INDIANAPI_MONTHLY_REQUEST_BUDGET", 450)))
+        self.last_request_usage = None
 
     @property
     def is_configured(self):
         return bool(self.api_key)
+
+    def _reserve_monthly_request(self):
+        """Reserve one request before network I/O; failed attempts count conservatively."""
+        now = timezone.now()
+        month = timezone.localdate(now).strftime("%Y-%m")
+        with transaction.atomic():
+            usage, _ = IndianAPIRequestUsage.objects.get_or_create(month=month)
+            usage = IndianAPIRequestUsage.objects.select_for_update().get(pk=usage.pk)
+            if usage.request_count >= self.monthly_budget:
+                raise IndianAPIQuotaExceeded(month, usage.request_count, self.monthly_budget)
+            usage.request_count += 1
+            usage.last_requested_at = now
+            usage.save(update_fields=["request_count", "last_requested_at", "updated_at"])
+            self.last_request_usage = {
+                "month": month,
+                "used": usage.request_count,
+                "limit": self.monthly_budget,
+                "remaining": max(0, self.monthly_budget - usage.request_count),
+            }
+        return self.last_request_usage
 
     def fetch_mutual_funds(self):
         if not self.is_configured:
@@ -100,6 +141,9 @@ class IndianAPIClient:
             )
         if not self.base_url:
             raise IndianAPIConfigurationError("INDIANAPI_BASE_URL is empty.")
+        # Reserve before sending. This also counts timeouts/connection failures,
+        # because the provider may have received and charged for the request.
+        self._reserve_monthly_request()
         try:
             response = requests.get(
                 f"{self.base_url}/mutual_funds",

@@ -1031,11 +1031,21 @@ def _add_category_benchmarks(
             continue
         percentile = valid.rank(method="average", ascending=True, pct=True) * 100.0
         ranked.loc[percentile.index, "Percentile_Rank_3Y"] = percentile
-        for index, value in percentile.items():
+
+        # Percentile thresholds alone put the 25th-percentile fund in Q3
+        # and can double the Q1 bucket for a four-fund peer group. Use
+        # descending rank cutoffs so each quartile contains the expected
+        # share of a small peer group, with ties sharing their rank.
+        descending_rank = valid.rank(method="min", ascending=False)
+        fund_count = len(valid)
+        q1_cutoff = math.ceil(fund_count * 0.25)
+        q2_cutoff = math.ceil(fund_count * 0.50)
+        q3_cutoff = math.ceil(fund_count * 0.75)
+        for index, rank in descending_rank.items():
             ranked.at[index, "Quartile"] = (
-                "Q1" if value >= 75 else
-                "Q2" if value >= 50 else
-                "Q3" if value >= 25 else "Q4"
+                "Q1" if rank <= q1_cutoff else
+                "Q2" if rank <= q2_cutoff else
+                "Q3" if rank <= q3_cutoff else "Q4"
             )
         ranked.loc[valid.index, "Beat_Category_Avg"] = (
             valid > ranked.loc[valid.index, "Category_Avg_CAGR_3Y_pct"]

@@ -175,7 +175,7 @@ export interface MutualFundAnalyticsFund {
 @Injectable({ providedIn: 'root' })
 export class MutualFundAnalyticsService {
   private readonly http = inject(HttpClient);
-  private readonly baseUrl = `${environment.apiUrl}/api/watch-list/analytics/`;
+  private readonly baseUrl = `${environment.apiUrl}/api/mutual-fund-analytics/`;
 
   getResearchReport(): Observable<MutualFundResearchReportResponse> {
     return this.http.get<MutualFundResearchReportResponse>(

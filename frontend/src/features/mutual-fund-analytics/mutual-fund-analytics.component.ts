@@ -104,6 +104,19 @@ export class MutualFundAnalyticsComponent implements OnInit {
       .map(([name, value]) => ({ name, value: this.numeric(value) }))
       .sort((a, b) => b.value - a.value);
   }
+  get selectedFundTrend(): any[] {
+    const fund = this.selectedFund;
+    if (!fund) return [];
+    return (fund.ts_large || []).map((large: any, index: number) => ({
+      month: this.raw?.months?.[index] || String(index + 1),
+      large,
+      mid: fund.ts_mid?.[index] ?? null,
+      small: fund.ts_small?.[index] ?? null,
+      cash: fund.ts_cash?.[index] ?? null,
+      pe: fund.pe_ts?.[index] ?? null,
+      aum: fund.aum_ts?.[index] ?? null,
+    }));
+  }
   get topSectorRows(): Array<{ sector: string; total_contrib: number; fund_count: number; stocks: number; avg_pr: number }> {
     return [...(this.attr?.category_sector || [])].sort((a, b) => this.numeric(b.total_contrib) - this.numeric(a.total_contrib)).slice(0, 12);
   }
@@ -161,6 +174,12 @@ export class MutualFundAnalyticsComponent implements OnInit {
   }
   axisLabel(key: string): string {
     return this.axisOptions.find(o => o.key === key)?.label || key;
+  }
+  benchmarkValue(period: string): any {
+    return this.p2p?.bm?.vals?.[period.toLowerCase()] ?? null;
+  }
+  benchmarkCytd(name: string): any {
+    return this.raw?.benchmarks?.cytd_bench?.[name] ?? null;
   }
   barWidth(value: any, max: any): number {
     const v = Math.abs(this.numeric(value));

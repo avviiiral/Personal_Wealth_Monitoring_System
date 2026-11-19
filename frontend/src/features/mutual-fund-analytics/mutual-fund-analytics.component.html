@@ -80,7 +80,7 @@
       </div>
       <article class="content-card"><h3>12-month trend series (source order)</h3>
         <div class="table-scroll"><table><thead><tr><th>Month index</th><th>Large %</th><th>Mid %</th><th>Small %</th><th>Cash %</th><th>P/E</th><th>AUM (₹ Cr)</th></tr></thead>
-          <tbody><tr *ngFor="let value of selectedFund?.ts_large || []; let i = index"><td>{{ i + 1 }}</td><td>{{ format(selectedFund.ts_large?.[i]) }}</td><td>{{ format(selectedFund.ts_mid?.[i]) }}</td><td>{{ format(selectedFund.ts_small?.[i]) }}</td><td>{{ format(selectedFund.ts_cash?.[i]) }}</td><td>{{ format(selectedFund.pe_ts?.[i]) }}</td><td>{{ formatAum(selectedFund.aum_ts?.[i]) }}</td></tr></tbody></table></div>
+          <tbody><tr *ngFor="let trend of selectedFundTrend"><td>{{ trend.month }}</td><td>{{ format(trend.large) }}</td><td>{{ format(trend.mid) }}</td><td>{{ format(trend.small) }}</td><td>{{ format(trend.cash) }}</td><td>{{ format(trend.pe) }}</td><td>{{ formatAum(trend.aum) }}</td></tr></tbody></table></div>
       </article>
     </section>
 
@@ -104,7 +104,7 @@
       <div class="table-scroll"><table><thead><tr><th>Fund</th><th>2021</th><th>2022</th><th>2023</th><th>2024</th><th>2025</th><th>CYTD 2026</th></tr></thead>
         <tbody><tr><td class="left">Category Avg</td><td *ngFor="let year of ['cy2021','cy2022','cy2023','cy2024','cy2025','cytd']">{{ formatPct(category[year]) }}</td></tr>
           <tr *ngFor="let benchmark of raw.benchmarks?.cy | keyvalue"><td class="left">{{ benchmark.key }} · TRI</td><td *ngFor="let year of ['2021','2022','2023','2024','2025']">{{ formatPct(benchmark.value[year]) }}</td><td>—</td></tr>
-          <tr><td class="left">NIFTY 500 TRI · CYTD</td><td colspan="5">—</td><td>{{ formatPct(raw.benchmarks?.cytd_bench?.['NIFTY 500 - TRI']) }}</td></tr>
+          <tr><td class="left">NIFTY 500 TRI · CYTD</td><td colspan="5">—</td><td>{{ formatPct(benchmarkCytd('NIFTY 500 - TRI')) }}</td></tr>
           <tr><td class="left">NIFTY 50 TRI · CYTD</td><td colspan="5">—</td><td>{{ formatPct(raw.benchmarks?.nifty50_ytd) }}</td></tr>
           <tr *ngFor="let fund of funds"><td class="left">{{ fund.short || fund.name }}</td><td *ngFor="let year of ['cy2021','cy2022','cy2023','cy2024','cy2025','cytd']">{{ formatPct(fund[year]) }}</td></tr></tbody>
       </table></div>

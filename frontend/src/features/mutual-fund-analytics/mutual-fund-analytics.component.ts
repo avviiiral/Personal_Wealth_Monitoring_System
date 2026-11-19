@@ -1,5 +1,5 @@
 import { CommonModule } from '@angular/common';
-import { Component, OnInit, inject } from '@angular/core';
+import { Component, OnDestroy, OnInit, inject } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { catchError, forkJoin, of } from 'rxjs';
 import {
@@ -21,7 +21,7 @@ type Period = '1M' | '3M' | '6M' | '1Y' | '3Y' | '5Y' | 'YTD';
   templateUrl: './mutual-fund-analytics.component.html',
   styleUrl: './mutual-fund-analytics.component.scss',
 })
-export class MutualFundAnalyticsComponent implements OnInit {
+export class MutualFundAnalyticsComponent implements OnInit, OnDestroy {
   private readonly analytics = inject(MutualFundAnalyticsService);
 
   report: MutualFundResearchReportResponse | null = null;
@@ -30,6 +30,8 @@ export class MutualFundAnalyticsComponent implements OnInit {
   personalPortfolio: PersonalMutualFundPortfolioResponse | null = null;
   sebiSummary: SebiUniverseSummaryResponse | null = null;
   sebiRankings: SebiUniverseRankingsResponse | null = null;
+  sebiCategoryRiskChartSrc: string | null = null;
+  sebiTopQ1ChartSrc: string | null = null;
   loading = false;
   refreshing = false;
   refreshMessage = '';
@@ -85,6 +87,8 @@ export class MutualFundAnalyticsComponent implements OnInit {
       personalPortfolio: this.analytics.getPersonalPortfolio().pipe(catchError(() => of(null))),
       sebiSummary: this.analytics.getSebiUniverseSummary().pipe(catchError(() => of(null))),
       sebiRankings: this.analytics.getSebiUniverseRankings({ page_size: 100 }).pipe(catchError(() => of(null))),
+      sebiCategoryRiskChart: this.analytics.getSebiCategoryRiskChart().pipe(catchError(() => of(null))),
+      sebiTopQ1Chart: this.analytics.getSebiTopQ1Chart().pipe(catchError(() => of(null))),
     }).subscribe({
       next: value => {
         this.report = value.report;
@@ -93,6 +97,8 @@ export class MutualFundAnalyticsComponent implements OnInit {
         this.personalPortfolio = value.personalPortfolio;
         this.sebiSummary = value.sebiSummary;
         this.sebiRankings = value.sebiRankings;
+        this.replaceChartObjectUrl('category', value.sebiCategoryRiskChart);
+        this.replaceChartObjectUrl('q1', value.sebiTopQ1Chart);
         if (value.report.available && !this.selectedFundName) {
           this.selectedFundName = value.report.payload?.RAW?.funds?.[0]?.name || '';
         }
@@ -135,16 +141,27 @@ export class MutualFundAnalyticsComponent implements OnInit {
     return this.sebiSummary?.top_q1_funds || [];
   }
 
+  private replaceChartObjectUrl(kind: 'category' | 'q1', blob: Blob | null): void {
+    const previous = kind === 'category'
+      ? this.sebiCategoryRiskChartSrc
+      : this.sebiTopQ1ChartSrc;
+    if (previous) URL.revokeObjectURL(previous);
+
+    const next = blob ? URL.createObjectURL(blob) : null;
+    if (kind === 'category') {
+      this.sebiCategoryRiskChartSrc = next;
+    } else {
+      this.sebiTopQ1ChartSrc = next;
+    }
+  }
+
+  ngOnDestroy(): void {
+    if (this.sebiCategoryRiskChartSrc) URL.revokeObjectURL(this.sebiCategoryRiskChartSrc);
+    if (this.sebiTopQ1ChartSrc) URL.revokeObjectURL(this.sebiTopQ1ChartSrc);
+  }
+
   get sebiWorkbookUrl(): string {
     return this.analytics.getSebiWorkbookUrl();
-  }
-
-  get sebiCategoryRiskChartUrl(): string {
-    return this.analytics.getSebiCategoryRiskChartUrl();
-  }
-
-  get sebiTopQ1ChartUrl(): string {
-    return this.analytics.getSebiTopQ1ChartUrl();
   }
 
   formatNumber(value: any, digits = 2): string {

@@ -217,7 +217,14 @@ def _normalise_text(value: Any) -> str:
 
 
 def _normalise_key(value: Any) -> str:
-    return _normalise_text(value).casefold().replace("_", " ")
+    return (
+        _normalise_text(value)
+        .casefold()
+        .replace("_", " ")
+        .replace("–", "-")
+        .replace("—", "-")
+        .replace("−", "-")
+    )
 
 
 def _date_value(value: Any) -> date | None:
@@ -411,8 +418,13 @@ def parse_amfi_navall_feed(source_text: str) -> list[dict[str, Any]]:
             continue
 
         scheme_code = first
-        isin_growth = parts[1] if len(parts) > 1 and parts[1] not in {"", "-"} else ""
-        isin_dividend = parts[2] if len(parts) > 2 and parts[2] not in {"", "-"} else ""
+        # NAVAll's legacy header combines "ISIN Div Payout / ISIN Growth"
+        # in the first ISIN column and places dividend reinvestment in the
+        # second. Assign the identity according to the actual scheme option.
+        raw_isin_primary = parts[1] if len(parts) > 1 and parts[1] not in {"", "-"} else ""
+        raw_isin_secondary = parts[2] if len(parts) > 2 and parts[2] not in {"", "-"} else ""
+        isin_growth = raw_isin_primary
+        isin_dividend = raw_isin_secondary
         scheme_name = parts[3] if len(parts) > 3 else ""
         if not scheme_name:
             continue
@@ -434,6 +446,16 @@ def parse_amfi_navall_feed(source_text: str) -> list[dict[str, Any]]:
             continue
 
         plan, option = _extract_plan_option(scheme_name, plan, option)
+        if option == "Growth":
+            isin_growth = raw_isin_primary
+            isin_dividend = ""
+        elif option == "IDCW":
+            isin_growth = ""
+            isin_dividend = (
+                raw_isin_secondary
+                if "reinvest" in _normalise_key(scheme_name)
+                else raw_isin_primary
+            ) or raw_isin_secondary
         hierarchy = map_sebi_hierarchy(raw_category_header, scheme_name)
         row = {
             "scheme_code": scheme_code,

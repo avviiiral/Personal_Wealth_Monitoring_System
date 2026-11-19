@@ -51,7 +51,7 @@ class MutualFundAnalyticsApiTests(TestCase):
         self._create_fund("Other Category Fund", "OTHER", "Large Cap", "99.00", "500")
 
         response = self.client.get(
-            "/api/watch-list/analytics/overview/?category=Multi%20Cap&ranking_period=1Y"
+            "/api/mutual-fund-analytics/overview/?category=Multi%20Cap&ranking_period=1Y"
         )
 
         self.assertEqual(response.status_code, 200)
@@ -74,5 +74,5 @@ class MutualFundAnalyticsApiTests(TestCase):
 
     def test_overview_requires_authentication(self):
         self.client.force_authenticate(user=None)
-        response = self.client.get("/api/watch-list/analytics/overview/")
+        response = self.client.get("/api/mutual-fund-analytics/overview/")
         self.assertEqual(response.status_code, 403)

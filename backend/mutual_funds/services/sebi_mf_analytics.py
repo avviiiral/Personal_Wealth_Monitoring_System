@@ -141,7 +141,6 @@ CATEGORY_ALIASES = {
     "multi asset allocation fund": "Multi Asset Allocation",
     "arbitrage fund": "Arbitrage",
     "sectoral/thematic fund": "Sectoral",
-    "sectoral debt fund": "Sectoral Debt",
     "10-year constant maturity gilt": "10-year Constant Maturity Gilt",
     "10 year constant maturity gilt": "10-year Constant Maturity Gilt",
     "money market": "Money Market",
@@ -307,6 +306,13 @@ def map_sebi_hierarchy(raw_header: str, scheme_name: str = "") -> dict[str, str]
     category_raw = _category_from_raw_header(raw_header)
     key = _normalise_key(category_raw)
     category = CATEGORY_ALIASES.get(key)
+
+    # AMFI sometimes publishes one combined "Sectoral/Thematic" raw header.
+    # The 2026 SEBI taxonomy separates the two; use the scheme's own category
+    # label where it is explicit instead of classifying every row as Sectoral.
+    if key in {"sectoral/thematic", "sectoral/thematic fund", "sectoral or thematic fund"}:
+        name_key = _normalise_key(scheme_name)
+        category = "Thematic" if "thematic" in name_key else "Sectoral"
 
     if category is None:
         # A small name fallback handles six-column legacy feeds whose category

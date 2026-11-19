@@ -17,6 +17,17 @@ class IndianAPIConfigurationError(IndianAPIError):
     """Raised when an IndianAPI operation is requested without an API key."""
 
 
+class IndianAPIRateLimitError(IndianAPIError):
+    """Raised when the provider refuses a request due to quota or rate limits."""
+
+    def __init__(self, message, *, retry_after=None, remaining=None, reset=None, provider_message=None):
+        super().__init__(message)
+        self.retry_after = retry_after
+        self.remaining = remaining
+        self.reset = reset
+        self.provider_message = provider_message
+
+
 def _number(value):
     if value in (None, ""):
         return None
@@ -95,6 +106,51 @@ class IndianAPIClient:
                 headers={"X-Api-Key": self.api_key, "Accept": "application/json"},
                 timeout=self.timeout,
             )
+        except requests.RequestException as exc:
+            raise IndianAPIError(f"IndianAPI connection failed: {exc}") from exc
+
+        if response.status_code == 429:
+            # Do not automatically retry: provider documentation says 429 can
+            # mean exhausted credits or a plan rate limit, and retries may
+            # consume additional quota. Preserve any previously stored snapshot.
+            try:
+                error_payload = response.json()
+            except ValueError:
+                error_payload = {}
+            provider_message = ""
+            if isinstance(error_payload, dict):
+                provider_message = (
+                    error_payload.get("message")
+                    or error_payload.get("detail")
+                    or error_payload.get("error")
+                    or ""
+                )
+            headers = response.headers or {}
+            retry_after = headers.get("Retry-After")
+            remaining = headers.get("X-RateLimit-Remaining")
+            reset = headers.get("X-RateLimit-Reset")
+            details = ["IndianAPI returned HTTP 429 (rate limit or API credits exhausted)."]
+            if provider_message:
+                details.append(f"Provider: {provider_message}")
+            if remaining is not None:
+                details.append(f"Credits/requests remaining header: {remaining}.")
+            if retry_after:
+                details.append(f"Retry-After: {retry_after} seconds.")
+            if reset:
+                details.append(f"Rate-limit reset header: {reset}.")
+            details.append(
+                "Check your IndianAPI dashboard for remaining credits and plan limits. "
+                "No automatic retry was attempted; the previous PWMS snapshot, if any, is unchanged."
+            )
+            raise IndianAPIRateLimitError(
+                " ".join(details),
+                retry_after=retry_after,
+                remaining=remaining,
+                reset=reset,
+                provider_message=str(provider_message) if provider_message else None,
+            )
+
+        try:
             response.raise_for_status()
         except requests.RequestException as exc:
             raise IndianAPIError(f"IndianAPI request failed: {exc}") from exc

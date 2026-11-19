@@ -1,0 +1,168 @@
+<section class="mf-analytics-page">
+  <header class="page-header">
+    <div>
+      <span class="eyebrow">INVESTMENT RESEARCH</span>
+      <h1>Mutual Fund Analytics</h1>
+      <p>Peer performance and benchmark comparison using persisted PWMS fund data.</p>
+    </div>
+    <button type="button" class="refresh-button" (click)="load()" [disabled]="loading">
+      {{ loading ? 'Refreshing…' : 'Refresh' }}
+    </button>
+  </header>
+
+  <section class="filter-panel">
+    <label>
+      Category
+      <select [(ngModel)]="category">
+        <option value="">All categories</option>
+        <option *ngFor="let item of data?.filters?.categories || []" [value]="item">{{ item }}</option>
+      </select>
+    </label>
+    <label>
+      AMC / Provider
+      <select [(ngModel)]="provider">
+        <option value="">All providers</option>
+        <option *ngFor="let item of data?.filters?.providers || []" [value]="item">{{ item }}</option>
+      </select>
+    </label>
+    <label>
+      Plan
+      <select [(ngModel)]="plan">
+        <option value="">All plans</option>
+        <option value="Direct">Direct</option>
+        <option value="Regular">Regular</option>
+      </select>
+    </label>
+    <label>
+      Benchmark
+      <select [(ngModel)]="benchmark">
+        <option value="">No benchmark overlay</option>
+        <option *ngFor="let item of benchmarkOptions" [value]="item">{{ item }}</option>
+      </select>
+    </label>
+    <label>
+      Ranking period
+      <select [(ngModel)]="rankingPeriod">
+        <option *ngFor="let period of periods" [value]="period">{{ period }}</option>
+      </select>
+    </label>
+    <button type="button" class="apply-button" (click)="load()" [disabled]="loading">Apply filters</button>
+  </section>
+
+  <div class="error-state" *ngIf="error">{{ error }}</div>
+  <div class="loading-state" *ngIf="loading">Loading mutual fund analytics…</div>
+
+  <ng-container *ngIf="!loading && data as result">
+    <section class="metric-grid">
+      <article class="metric-card">
+        <span>Funds in selection</span>
+        <strong>{{ result.summary.fund_count | number }}</strong>
+        <small>{{ result.summary.funds_with_metrics | number }} with performance data</small>
+      </article>
+      <article class="metric-card">
+        <span>Combined reported AUM</span>
+        <strong>{{ formatCurrency(result.summary.aum) }}</strong>
+        <small>Sum of available scheme AUM values</small>
+      </article>
+      <article class="metric-card">
+        <span>Average {{ rankingPeriod }} return</span>
+        <strong [class]="returnClass(averageReturn)">{{ formatPercent(averageReturn) }}</strong>
+        <small>{{ result.summary.average_returns[rankingPeriod]?.covered_funds || 0 }} funds covered</small>
+      </article>
+      <article class="metric-card">
+        <span>{{ result.benchmark.name || 'Benchmark' }} · {{ rankingPeriod }}</span>
+        <strong [class]="returnClass(benchmarkReturn)">{{ formatPercent(benchmarkReturn) }}</strong>
+        <small *ngIf="excessReturn !== null">Peer average excess: {{ formatPercent(excessReturn) }}</small>
+        <small *ngIf="excessReturn === null">{{ result.benchmark.message || 'Select a benchmark to compare.' }}</small>
+      </article>
+    </section>
+
+    <section class="data-note">
+      <span>Data date: <strong>{{ result.summary.metrics_as_of || 'Not available' }}</strong></span>
+      <span>Returns use the latest persisted performance snapshot per scheme.</span>
+      <span>Missing values are excluded, not treated as zero.</span>
+    </section>
+
+    <section class="content-card">
+      <div class="section-heading">
+        <div>
+          <h2>Top performers</h2>
+          <p>Ranked by {{ rankingPeriod }} return. Only funds with an available observation are ranked.</p>
+        </div>
+      </div>
+      <div class="table-scroll" *ngIf="rankedFunds.length; else noRankings">
+        <table>
+          <thead>
+            <tr>
+              <th>Rank</th>
+              <th>Fund</th>
+              <th>AMC</th>
+              <th>Category</th>
+              <th>Plan</th>
+              <th>{{ rankingPeriod }}</th>
+              <th>AUM</th>
+              <th>Data date</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr *ngFor="let fund of rankedFunds; let i = index; trackBy: trackByFund">
+              <td>{{ i + 1 }}</td>
+              <td class="fund-name">{{ fund.name }}</td>
+              <td>{{ fund.provider || '—' }}</td>
+              <td>{{ fund.category || '—' }}</td>
+              <td>{{ fund.plan || '—' }}</td>
+              <td [class]="returnClass(fund.returns[rankingPeriod])">{{ formatPercent(fund.returns[rankingPeriod]) }}</td>
+              <td>{{ formatCurrency(fund.aum) }}</td>
+              <td>{{ fund.as_of || '—' }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <ng-template #noRankings>
+        <div class="empty-state">No funds have a return observation for this period and filter selection.</div>
+      </ng-template>
+    </section>
+
+    <section class="content-card">
+      <div class="section-heading">
+        <div>
+          <h2>Peer universe</h2>
+          <p>{{ funds.length | number }} schemes included in the current selection.</p>
+        </div>
+      </div>
+      <div class="table-scroll">
+        <table>
+          <thead>
+            <tr>
+              <th>Fund</th>
+              <th>Category</th>
+              <th>Provider</th>
+              <th>Plan</th>
+              <th *ngFor="let period of periods">{{ period }}</th>
+              <th>AUM</th>
+              <th>Source</th>
+              <th>As of</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr *ngFor="let fund of funds; trackBy: trackByFund">
+              <td class="fund-name">{{ fund.name }}</td>
+              <td>{{ fund.category || '—' }}</td>
+              <td>{{ fund.provider || '—' }}</td>
+              <td>{{ fund.plan || '—' }}</td>
+              <td *ngFor="let period of periods" [class]="returnClass(fund.returns[period])">
+                {{ formatPercent(fund.returns[period]) }}
+              </td>
+              <td>{{ formatCurrency(fund.aum) }}</td>
+              <td>{{ fund.source || '—' }}</td>
+              <td>{{ fund.as_of || '—' }}</td>
+            </tr>
+            <tr *ngIf="!funds.length">
+              <td colspan="11" class="empty-state">No mutual funds match the selected filters.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </ng-container>
+</section>

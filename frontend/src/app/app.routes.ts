@@ -95,6 +95,13 @@ export const routes: Routes = [
           ),
       },
       {
+        path: 'mutual-fund-analytics',
+        loadComponent: () =>
+          import('../features/mutual-fund-analytics/mutual-fund-analytics.component').then(
+            (m) => m.MutualFundAnalyticsComponent,
+          ),
+      },
+      {
         path: 'watch-list',
         loadComponent: () =>
           import('../features/watch-list/watch-list.component').then((m) => m.WatchListComponent),

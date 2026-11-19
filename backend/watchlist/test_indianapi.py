@@ -123,3 +123,22 @@ class IndianAPIFeedTests(TestCase):
         call_command("sync_indianapi_mutual_funds", stdout=output)
         self.assertIn("Skipped IndianAPI sync", output.getvalue())
         self.assertEqual(MutualFundResearchReport.objects.count(), 0)
+
+    @override_settings(INDIANAPI_API_KEY="test-secret")
+    @patch(
+        "watchlist.management.commands.sync_indianapi_mutual_funds.IndianAPIClient.fetch_mutual_funds",
+        return_value={
+            "Equity": {
+                "Large Cap": [{
+                    "fund_name": "Imported Fund",
+                    "latest_nav": "10.25",
+                    "1_year_return": "8.5",
+                }]
+            }
+        },
+    )
+    def test_sync_command_persists_a_dated_snapshot(self, _mock_fetch):
+        call_command("sync_indianapi_mutual_funds")
+        report = MutualFundResearchReport.objects.get(report_key="indianapi-india")
+        self.assertEqual(report.payload["funds"][0]["fund_name"], "Imported Fund")
+        self.assertEqual(report.payload["funds"][0]["latest_nav"], 10.25)

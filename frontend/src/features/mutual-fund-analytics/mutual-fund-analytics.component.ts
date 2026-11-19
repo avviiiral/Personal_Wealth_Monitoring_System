@@ -22,7 +22,7 @@ export class MutualFundAnalyticsComponent implements OnInit {
   data: MutualFundAnalyticsResponse | null = null;
   loading = false;
   error = '';
-  category = '';
+  category = 'Multi Cap Fund';
   provider = '';
   plan = '';
   benchmark = '';

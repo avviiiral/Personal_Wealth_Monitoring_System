@@ -900,7 +900,7 @@ The repository does not include a script to migrate data from an existing SQLite
 | `API_SLOW_REQUEST_THRESHOLD_MS` | `500` | Slow-request logging threshold |
 | `PWMS_CONFIG_OVERRIDES` | empty | JSON object merged into `pwms_config.json` |
 | `GEMINI_API_KEY` (or `GOOGLE_API_KEY`), `GEMINI_MODEL` | none, `gemini-3.6-flash` | AI Portfolio Chat only |
-| `INDIANAPI_API_KEY`, `INDIANAPI_BASE_URL`, `INDIANAPI_TIMEOUT_SECONDS` | blank, `https://stock.indianapi.in`, `20` | Optional IndianAPI mutual-fund enrichment; AMFI and all other PWMS modules work without the key |
+| `INDIANAPI_API_KEY`, `INDIANAPI_BASE_URL`, `INDIANAPI_TIMEOUT_SECONDS`, `INDIANAPI_MONTHLY_REQUEST_BUDGET` | blank, `https://stock.indianapi.in`, `20`, `450` | Optional IndianAPI mutual-fund enrichment; persistent monthly request ledger; AMFI and all other PWMS modules work without the key |
 | `NEWS_MONITOR_INTERVAL` | `scheduler.news_interval_seconds` (180) | Seconds between news and filing monitor runs |
 | `NEWS_MONITOR_LOOKBACK_DAYS`, `NEWS_MONITOR_MAX_ARTICLES_PER_HOLDING`, `NEWS_MONITOR_MAX_BATCH_ARTICLES`, `NEWS_MONITOR_MIN_RELEVANCE_SCORE`, `NEWS_MONITOR_MIN_ALERT_SCORE`, `NEWS_MONITOR_ANALYSIS_DELAY_SECONDS` | `3`, `15`, `50`, `30`, `2.0`, `0` | News pipeline limits |
 | `NEWS_CORPORATE_FILINGS_ENABLED`, `NEWS_NSE_FILINGS_ENABLED`, `NEWS_BSE_FILINGS_ENABLED` | `True` | Filing ingestion switches used by the news scheduler |
@@ -1145,4 +1145,4 @@ python manage.py refresh_amfi_master
 python manage.py sync_indianapi_mutual_funds
 ```
 
-The second command skips successfully when no IndianAPI key is configured. See [docs/india-mutual-fund-data-integration.md](./docs/india-mutual-fund-data-integration.md) for source coverage and limitations.
+The second command skips successfully when no IndianAPI key is configured. Development defaults to a persistent cap of 450 outbound requests per calendar month, reserving 50 credits against the stated 500-credit allowance. The `/mutual_funds` endpoint returns the categorized universe in one bulk request, so the number of funds does not multiply API usage. Every attempted outbound request is recorded before network I/O; the budget is enforced across restarts and application workers. Configure `INDIANAPI_MONTHLY_REQUEST_BUDGET` to the purchased production plan's allowance minus a safety reserve. See [docs/india-mutual-fund-data-integration.md](./docs/india-mutual-fund-data-integration.md) for details.

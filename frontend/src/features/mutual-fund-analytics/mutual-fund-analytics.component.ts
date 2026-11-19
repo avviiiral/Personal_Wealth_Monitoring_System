@@ -8,6 +8,8 @@ import {
   PersonalMutualFundPortfolioResponse,
   MutualFundResearchReportResponse,
   MutualFundAnalyticsService,
+  SebiUniverseRankingsResponse,
+  SebiUniverseSummaryResponse,
 } from '../../core/services/mutual-fund-analytics.service';
 
 type Period = '1M' | '3M' | '6M' | '1Y' | '3Y' | '5Y' | 'YTD';
@@ -26,6 +28,8 @@ export class MutualFundAnalyticsComponent implements OnInit {
   indiaFeed: IndiaMutualFundFeedResponse | null = null;
   apiUsage: IndianApiUsageResponse | null = null;
   personalPortfolio: PersonalMutualFundPortfolioResponse | null = null;
+  sebiSummary: SebiUniverseSummaryResponse | null = null;
+  sebiRankings: SebiUniverseRankingsResponse | null = null;
   loading = false;
   refreshing = false;
   refreshMessage = '';
@@ -49,6 +53,7 @@ export class MutualFundAnalyticsComponent implements OnInit {
     { id: 'universe', label: 'Universe' },
     { id: 'attribution', label: 'Attribution' },
     { id: 'india', label: 'India Universe' },
+    { id: 'sebi-universe', label: 'SEBI Analytics' },
   ];
   readonly periods: Period[] = ['1M', '3M', '6M', '1Y', '3Y', '5Y', 'YTD'];
   readonly axisOptions = [
@@ -78,12 +83,16 @@ export class MutualFundAnalyticsComponent implements OnInit {
       indiaFeed: this.analytics.getIndiaMarketFeed(),
       apiUsage: this.analytics.getApiUsage().pipe(catchError(() => of(null))),
       personalPortfolio: this.analytics.getPersonalPortfolio().pipe(catchError(() => of(null))),
+      sebiSummary: this.analytics.getSebiUniverseSummary().pipe(catchError(() => of(null))),
+      sebiRankings: this.analytics.getSebiUniverseRankings({ page_size: 100 }).pipe(catchError(() => of(null))),
     }).subscribe({
       next: value => {
         this.report = value.report;
         this.indiaFeed = value.indiaFeed;
         this.apiUsage = value.apiUsage;
         this.personalPortfolio = value.personalPortfolio;
+        this.sebiSummary = value.sebiSummary;
+        this.sebiRankings = value.sebiRankings;
         if (value.report.available && !this.selectedFundName) {
           this.selectedFundName = value.report.payload?.RAW?.funds?.[0]?.name || '';
         }
@@ -120,6 +129,30 @@ export class MutualFundAnalyticsComponent implements OnInit {
         });
       },
     });
+  }
+
+  get sebiQ1Funds(): Array<Record<string, any>> {
+    return this.sebiSummary?.top_q1_funds || [];
+  }
+
+  get sebiWorkbookUrl(): string {
+    return this.analytics.getSebiWorkbookUrl();
+  }
+
+  get sebiCategoryRiskChartUrl(): string {
+    return this.analytics.getSebiCategoryRiskChartUrl();
+  }
+
+  get sebiTopQ1ChartUrl(): string {
+    return this.analytics.getSebiTopQ1ChartUrl();
+  }
+
+  formatNumber(value: any, digits = 2): string {
+    if (value === null || value === undefined || value === '') return '—';
+    const number = Number(value);
+    return Number.isFinite(number)
+      ? new Intl.NumberFormat('en-IN', { maximumFractionDigits: digits }).format(number)
+      : '—';
   }
 
   usagePercent(): number {

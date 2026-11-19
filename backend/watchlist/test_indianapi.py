@@ -1,5 +1,6 @@
 from datetime import date
 from decimal import Decimal
+import requests
 from unittest.mock import Mock, patch
 
 from django.test import SimpleTestCase, TestCase, override_settings
@@ -195,7 +196,7 @@ class IndianAPIFeedTests(TestCase):
         self.assertEqual(usage.request_count, 1)
 
     @override_settings(INDIANAPI_API_KEY="test-secret", INDIANAPI_MONTHLY_REQUEST_BUDGET=2)
-    @patch("watchlist.services.indianapi.requests.get", side_effect=__import__("requests").Timeout("timeout"))
+    @patch("watchlist.services.indianapi.requests.get", side_effect=requests.Timeout("timeout"))
     def test_network_failure_still_consumes_reserved_budget(self, mock_get):
         from watchlist.models import IndianAPIRequestUsage
 

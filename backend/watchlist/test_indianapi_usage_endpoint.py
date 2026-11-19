@@ -25,7 +25,7 @@ class IndianAPIUsageAndFeedTests(TestCase):
             request_count=7,
             refresh_status="SUCCESS",
         )
-        request = self.factory.get("/api/watch-list/analytics/api-usage/")
+        request = self.factory.get("/api/mutual-fund-analytics/api-usage/")
         force_authenticate(request, user=self.user)
         response = indianapi_usage_status(request)
 
@@ -64,7 +64,7 @@ class IndianAPIUsageAndFeedTests(TestCase):
                 ],
             },
         )
-        request = self.factory.get("/api/watch-list/analytics/india-market-feed/")
+        request = self.factory.get("/api/mutual-fund-analytics/india-market-feed/")
         force_authenticate(request, user=self.user)
         response = india_mutual_fund_feed(request)
 

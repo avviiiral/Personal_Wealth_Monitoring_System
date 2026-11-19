@@ -37,7 +37,7 @@ Mutual Fund Analytics endpoints are mounted under `/api/mutual-fund-analytics/`,
 
 ## Data sources
 
-AMFI remains the keyless primary source for scheme identity and NAV history. The personal portfolio endpoint uses the latest stored scheme NAV; if no NAV is available, it falls back to stored holding valuation and labels the source.
+AMFI remains the keyless primary source for scheme identity and NAV history. The personal portfolio endpoint uses the latest stored scheme NAV for dedicated schemes and the global AMFI master NAV for legacy Asset-based mutual funds mapped by ISIN. If no NAV is available, it falls back to the stored family holding valuation (or cost basis when no stored price exists) and labels the source.
 
 IndianAPI /mutual_funds is only used for the Mutual Fund Analytics enrichment snapshot. It is not called by Watch List refreshes, dashboard page loads, tab switches, filter changes or GET endpoints. The explicit refresh endpoint returns a cached snapshot without provider access when it is less than 24 hours old. Failed refreshes preserve the last good snapshot.
 

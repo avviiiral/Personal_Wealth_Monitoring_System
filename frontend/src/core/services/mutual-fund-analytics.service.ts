@@ -281,12 +281,18 @@ export class MutualFundAnalyticsService {
     return `${this.baseUrl}sebi/export/`;
   }
 
-  getSebiCategoryRiskChartUrl(): string {
-    return `${this.baseUrl}sebi/charts/category-risk/`;
+  getSebiCategoryRiskChart(): Observable<Blob> {
+    return this.http.get(`${this.baseUrl}sebi/charts/category-risk/`, {
+      responseType: 'blob',
+      withCredentials: true,
+    });
   }
 
-  getSebiTopQ1ChartUrl(): string {
-    return `${this.baseUrl}sebi/charts/top-q1/`;
+  getSebiTopQ1Chart(): Observable<Blob> {
+    return this.http.get(`${this.baseUrl}sebi/charts/top-q1/`, {
+      responseType: 'blob',
+      withCredentials: true,
+    });
   }
 
   getPersonalPortfolio(): Observable<PersonalMutualFundPortfolioResponse> {

@@ -137,6 +137,8 @@ Import each scheme disclosure by its AMFI scheme code:
 python manage.py import_sebi_mf_portfolio --file "D:\\disclosures\\fund_portfolio.xlsx" --scheme-code 100001 --portfolio-date 2026-10-31
 ```
 
+The actual disclosure date is required explicitly. The importer never treats a file's modification timestamp as the portfolio's as-of date.
+
 Pairwise overlap is computed only for schemes in the same Level 3 category using common ISINs and the sum of minimum disclosed weights. The implementation uses the latest cached disclosure per scheme. It is a point-in-time pairwise research comparison, not the SEBI-prescribed quarterly average of daily overlap values used for regulatory compliance disclosures.
 
 ### Cached APIs

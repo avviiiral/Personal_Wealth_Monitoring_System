@@ -4,7 +4,7 @@
       <span class="eyebrow">INVESTMENT RESEARCH · SOURCE-DRIVEN ANALYTICS</span>
       <h1>Mutual Fund Analytics</h1>
       <p *ngIf="report?.available">{{ report?.report_cycle }} · Data as of {{ report?.report_date | date:'dd MMM yyyy' }} · {{ funds.length }} funds in source universe</p>
-      <p *ngIf="!report?.available && indiaFeed?.available">{{ indiaFeed?.source_label }} · {{ indiaFeed?.total_count }} schemes · Data date {{ indiaFeed?.report_date | date:'dd MMM yyyy' }}</p>
+      <p *ngIf="!report?.available && indiaFeed?.available">{{ indiaFeed?.source_label }} · {{ indiaFeed?.total_count }} schemes · Snapshot / NAV date {{ indiaFeed?.report_date | date:'dd MMM yyyy' }}</p>
       <p *ngIf="!report?.available && !indiaFeed?.available">Load the keyless AMFI scheme/NAV master or enable optional IndianAPI enrichment.</p>
     </div>
     <div class="header-actions">
@@ -36,7 +36,7 @@
     </div>
     <div class="metric-grid">
       <article class="metric-card"><span>Available schemes</span><strong>{{ indiaFeed?.total_count }}</strong><small>{{ indiaFeed?.source_label }}</small></article>
-      <article class="metric-card"><span>Data date</span><strong class="small-value">{{ indiaFeed?.report_date | date:'dd MMM yyyy' }}</strong><small>Source observation date</small></article>
+      <article class="metric-card"><span>Snapshot / NAV date</span><strong class="small-value">{{ indiaFeed?.report_date | date:'dd MMM yyyy' }}</strong><small>Source observation date</small></article>
       <article class="metric-card"><span>IndianAPI enrichment</span><strong class="small-value">{{ indiaFeed?.provider_configured ? 'Enabled' : 'Optional / not configured' }}</strong><small>AMFI data does not require an API key</small></article>
     </div>
     <article class="content-card">

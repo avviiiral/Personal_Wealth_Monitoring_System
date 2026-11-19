@@ -276,3 +276,6 @@ debug/
 # Graphify generated analysis
 graphify-out/
 .graphify_analysis.json
+# SEBI mutual-fund NAV/API caches and generated analytics exports
+/backend/data_cache/sebi_mf_analytics/
+/backend/exports/

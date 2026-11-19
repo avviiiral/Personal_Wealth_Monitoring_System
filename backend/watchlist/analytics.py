@@ -1,4 +1,4 @@
-from datetime import timedelta
+from datetime import date, timedelta
 from decimal import Decimal
 
 from django.db.models import OuterRef, Q, Subquery, Sum
@@ -154,7 +154,7 @@ def mutual_fund_analytics_overview(request):
     )
     benchmark_data = _benchmark_returns(
         benchmark,
-        timezone.datetime.fromisoformat(latest_date).date() if latest_date else timezone.now().date(),
+        date.fromisoformat(latest_date) if latest_date else timezone.now().date(),
     )
 
     total_aum = sum(

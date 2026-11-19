@@ -65,3 +65,11 @@ td.left,th:first-child { text-align:left; }
 .compact-error { padding:7px 9px; margin-top:8px !important; }
 .personal-portfolio-section { margin:10px 0 20px; }
 .personal-portfolio-section .wide-table { min-width:1350px; }
+
+
+.sebi-actions { display:flex; flex-wrap:wrap; align-items:center; gap:12px; margin:10px 0 14px; }
+.sebi-actions a { display:inline-flex; align-items:center; text-decoration:none; }
+.sebi-chart-grid img { display:block; width:100%; height:auto; border:1px solid var(--surface-line); border-radius:7px; background:var(--canvas-from); }
+.sebi-chart-grid .content-card { min-width:0; }
+.sebi-chart-grid .muted { margin-top:8px; }
+.sebi-universe-table { min-width:1450px; }

@@ -275,17 +275,24 @@ def _extract_plan_option(name: str, plan: str = "", option: str = "") -> tuple[s
 
 
 def _category_from_raw_header(raw_header: str) -> str:
-    raw = _normalise_text(raw_header)
-    if not raw:
+    """Remove AMFI's scheme-type wrapper while preserving nested FoF labels."""
+    category = _normalise_text(raw_header)
+    if not category:
         return ""
-    match = re.search(r"\((.*?)\)", raw)
-    category = match.group(1).strip() if match else raw
+
     category = re.sub(
         r"^(?:Open|Close|Interval)\s+Ended\s+Schemes\s*[-:]?\s*",
         "",
         category,
         flags=re.IGNORECASE,
-    )
+    ).strip()
+
+    # AMFI wraps category names in one outer parenthesis pair. Strip only
+    # that pair rather than using a non-greedy regex, which truncates nested
+    # labels such as "FoFs (Overseas/Domestic)".
+    if category.startswith("(") and category.endswith(")"):
+        category = category[1:-1].strip()
+
     category = re.sub(
         r"^(?:Equity|Debt|Hybrid|Solution\s+Oriented|Other)\s+Schemes?\s*[-:]\s*",
         "",

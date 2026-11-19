@@ -20,13 +20,16 @@
   <div class="error-state" *ngIf="error">{{ error }}</div>
   <div class="loading-state" *ngIf="loading">Loading research report…</div>
   <section class="empty-state" *ngIf="!loading && report && !report.available && !indiaFeed?.available">
-    <h2>No research report imported</h2>
+    <h2>No research report or India fund data available</h2>
     <p>{{ report.message }}</p>
+    <p>Start with the keyless AMFI master:</p>
+    <pre>python manage.py refresh_amfi_master</pre>
+    <p>Optional: import a Nexedge research snapshot when one is available.</p>
     <pre>python manage.py import_mutual_fund_research_report --file "C:\path\to\Nexedge_multicap_dashboard_Oct2026.html"</pre>
     <p>The import stores the original RAW, P2P and ATTR objects as a dated report snapshot. It does not create or overwrite live investment products.</p>
   </section>
 
-  <section class="india-feed-section" *ngIf="!loading && !report?.available && indiaFeed?.available">
+  <section class="india-feed-section" *ngIf="!loading && indiaFeed?.available && (!report?.available || activeTab === 'india')">
     <div class="section-intro">
       <h2>India Mutual Fund Universe</h2>
       <p>{{ indiaFeed?.message }} · {{ indiaFeed?.count }} records displayed of {{ indiaFeed?.total_count }}</p>

@@ -6,7 +6,7 @@ import {
   MutualFundAnalyticsService,
 } from '../../core/services/mutual-fund-analytics.service';
 
-type Period = '1M' | '3M' | '6M' | '1Y' | '3Y' | '5Y';
+type Period = '1M' | '3M' | '6M' | '1Y' | '3Y' | '5Y' | 'YTD';
 
 @Component({
   selector: 'app-mutual-fund-analytics',
@@ -39,7 +39,7 @@ export class MutualFundAnalyticsComponent implements OnInit {
     { id: 'universe', label: 'Universe' },
     { id: 'attribution', label: 'Attribution' },
   ];
-  readonly periods: Period[] = ['1M', '3M', '6M', '1Y', '3Y', '5Y'];
+  readonly periods: Period[] = ['1M', '3M', '6M', '1Y', '3Y', '5Y', 'YTD'];
   readonly axisOptions = [
     { key: 'large', label: 'Large Cap %' }, { key: 'mid', label: 'Mid Cap %' },
     { key: 'small', label: 'Small Cap %' }, { key: 'cash', label: 'Cash %' },
@@ -118,10 +118,10 @@ export class MutualFundAnalyticsComponent implements OnInit {
   }
 
   fundReturn(fund: any, period: string): number | null {
-    const key = ({ '1M': 'r1m', '3M': 'r3m', '6M': 'r6m', '1Y': 'r1y', '3Y': 'r3y', '5Y': 'r5y' } as Record<string, string>)[period];
-    const p2pValue = this.p2p?.funds?.[fund?.name]?.[key];
-    const rawValue = fund?.[key];
-    const value = p2pValue ?? rawValue;
+    const key = ({ '1M': 'r1m', '3M': 'r3m', '6M': 'r6m', '1Y': 'r1y', '3Y': 'r3y', '5Y': 'r5y', 'YTD': 'ytd' } as Record<string, string>)[period];
+    const p2pFund = this.p2p?.funds?.[fund?.name];
+    if (!p2pFund) return null;
+    const value = p2pFund[key];
     return value === null || value === undefined || value === '' ? null : this.numeric(value);
   }
 

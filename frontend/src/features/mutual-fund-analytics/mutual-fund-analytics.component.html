@@ -104,6 +104,8 @@
       <div class="table-scroll"><table><thead><tr><th>Fund</th><th>2021</th><th>2022</th><th>2023</th><th>2024</th><th>2025</th><th>CYTD 2026</th></tr></thead>
         <tbody><tr><td class="left">Category Avg</td><td *ngFor="let year of ['cy2021','cy2022','cy2023','cy2024','cy2025','cytd']">{{ formatPct(category[year]) }}</td></tr>
           <tr *ngFor="let benchmark of raw.benchmarks?.cy | keyvalue"><td class="left">{{ benchmark.key }} · TRI</td><td *ngFor="let year of ['2021','2022','2023','2024','2025']">{{ formatPct(benchmark.value[year]) }}</td><td>—</td></tr>
+          <tr><td class="left">NIFTY 500 TRI · CYTD</td><td colspan="5">—</td><td>{{ formatPct(raw.benchmarks?.cytd_bench?.['NIFTY 500 - TRI']) }}</td></tr>
+          <tr><td class="left">NIFTY 50 TRI · CYTD</td><td colspan="5">—</td><td>{{ formatPct(raw.benchmarks?.nifty50_ytd) }}</td></tr>
           <tr *ngFor="let fund of funds"><td class="left">{{ fund.short || fund.name }}</td><td *ngFor="let year of ['cy2021','cy2022','cy2023','cy2024','cy2025','cytd']">{{ formatPct(fund[year]) }}</td></tr></tbody>
       </table></div>
       <article class="content-card"><h3>Point-to-point benchmark reference</h3><p>{{ p2p.bm?.label || 'Benchmark not supplied' }} {{ p2p.bm?.proxy ? '(proxy)' : '' }} · As of {{ p2p.asof || '—' }}</p>
@@ -113,6 +115,7 @@
 
     <section *ngIf="activeTab === 'performance'">
       <div class="section-intro"><h2>Performance Overview</h2><p>Point-to-point returns, ranks and peer quartiles; use the period selector to change ranking order.</p></div>
+      <article class="content-card"><p>Point-to-point source: <strong>{{ p2p.source || '—' }}</strong> · As of {{ p2p.asof || '—' }} · {{ p2p.n_covered || 0 }} of {{ p2p.n_total || funds.length }} funds covered. 3Y and 5Y values are annualised CAGR; other periods are absolute returns.</p><p *ngIf="p2p.uncovered?.length" class="muted">Not covered by the reckoner: <span *ngFor="let name of p2p.uncovered; let last = last">{{ name }}<span *ngIf="!last">, </span></span></p></article>
       <div class="period-picker"><label>Ranking period <select [(ngModel)]="activePeriod"><option *ngFor="let p of periods" [value]="p">{{ p }}</option></select></label></div>
       <div class="table-scroll"><table><thead><tr><th>Rank</th><th>Fund</th><th>1M</th><th>3M</th><th>6M</th><th>1Y</th><th>3Y</th><th>5Y</th><th>Quartile (3M)</th><th>Quartile (6M)</th><th>Quartile (1Y)</th></tr></thead>
         <tbody><tr *ngFor="let fund of rankedFunds; let i = index"><td>{{ i + 1 }}</td><td class="left">{{ fund.short || fund.name }}</td>

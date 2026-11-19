@@ -900,6 +900,7 @@ The repository does not include a script to migrate data from an existing SQLite
 | `API_SLOW_REQUEST_THRESHOLD_MS` | `500` | Slow-request logging threshold |
 | `PWMS_CONFIG_OVERRIDES` | empty | JSON object merged into `pwms_config.json` |
 | `GEMINI_API_KEY` (or `GOOGLE_API_KEY`), `GEMINI_MODEL` | none, `gemini-3.6-flash` | AI Portfolio Chat only |
+| `INDIANAPI_API_KEY`, `INDIANAPI_BASE_URL`, `INDIANAPI_TIMEOUT_SECONDS` | blank, `https://stock.indianapi.in`, `20` | Optional IndianAPI mutual-fund enrichment; AMFI and all other PWMS modules work without the key |
 | `NEWS_MONITOR_INTERVAL` | `scheduler.news_interval_seconds` (180) | Seconds between news and filing monitor runs |
 | `NEWS_MONITOR_LOOKBACK_DAYS`, `NEWS_MONITOR_MAX_ARTICLES_PER_HOLDING`, `NEWS_MONITOR_MAX_BATCH_ARTICLES`, `NEWS_MONITOR_MIN_RELEVANCE_SCORE`, `NEWS_MONITOR_MIN_ALERT_SCORE`, `NEWS_MONITOR_ANALYSIS_DELAY_SECONDS` | `3`, `15`, `50`, `30`, `2.0`, `0` | News pipeline limits |
 | `NEWS_CORPORATE_FILINGS_ENABLED`, `NEWS_NSE_FILINGS_ENABLED`, `NEWS_BSE_FILINGS_ENABLED` | `True` | Filing ingestion switches used by the news scheduler |
@@ -1129,3 +1130,19 @@ python manage.py import_mutual_fund_research_report --file "D:\path\to\Nexedge_m
 ```
 
 The import is repeatable for the same report key and report date. A later report date becomes the latest dashboard snapshot. The API is authenticated at `GET /api/watch-list/analytics/research-report/`. The report's own coverage is preserved: RAW universe count, P2P-covered count and ATTR-covered count are distinct and should not be assumed to match. Imported reports are historical research snapshots, not live data.
+
+
+### India Mutual Fund Data Feed
+
+PWMS keeps AMFI as its keyless baseline for the shared Indian mutual-fund scheme master and NAV history. IndianAPI is an optional server-side enrichment source for category-level NAV, returns, asset size and provider ratings.
+
+Set `INDIANAPI_API_KEY` in `backend/.env` only if you want the optional provider. The key is never sent to Angular. Without it, Django, existing PWMS features and AMFI ingestion continue to work; the India fund-feed API falls back to locally stored AMFI scheme/NAV data.
+
+Run from `backend/`:
+
+```powershell
+python manage.py refresh_amfi_master
+python manage.py sync_indianapi_mutual_funds
+```
+
+The second command skips successfully when no IndianAPI key is configured. See [docs/india-mutual-fund-data-integration.md](./docs/india-mutual-fund-data-integration.md) for source coverage and limitations.

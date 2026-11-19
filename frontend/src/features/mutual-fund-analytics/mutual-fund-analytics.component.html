@@ -50,8 +50,8 @@
               <td>{{ fund.asset_class || '—' }}</td>
               <td>{{ fund.category || '—' }}</td>
               <td>{{ format(fund.latest_nav, 4) }}</td>
-              <td>{{ formatPct(fund.returns?.['1M']) }}</td>
-              <td>{{ formatPct(fund.returns?.['1Y']) }}</td>
+              <td>{{ formatPct(indiaFundReturn(fund, '1M')) }}</td>
+              <td>{{ formatPct(indiaFundReturn(fund, '1Y')) }}</td>
               <td>{{ fund.asset_size === null ? '—' : formatAum(fund.asset_size) }}</td>
               <td>{{ fund.star_rating ?? '—' }}</td>
               <td>{{ fund.scheme_code || '—' }}</td>

@@ -1,7 +1,9 @@
 import { CommonModule } from '@angular/common';
 import { Component, OnInit, inject } from '@angular/core';
 import { FormsModule } from '@angular/forms';
+import { forkJoin } from 'rxjs';
 import {
+  IndiaMutualFundFeedResponse,
   MutualFundResearchReportResponse,
   MutualFundAnalyticsService,
 } from '../../core/services/mutual-fund-analytics.service';
@@ -19,6 +21,7 @@ export class MutualFundAnalyticsComponent implements OnInit {
   private readonly analytics = inject(MutualFundAnalyticsService);
 
   report: MutualFundResearchReportResponse | null = null;
+  indiaFeed: IndiaMutualFundFeedResponse | null = null;
   loading = false;
   error = '';
   activeTab = 'overview';
@@ -62,16 +65,20 @@ export class MutualFundAnalyticsComponent implements OnInit {
   load(): void {
     this.loading = true;
     this.error = '';
-    this.analytics.getResearchReport().subscribe({
+    forkJoin({
+      report: this.analytics.getResearchReport(),
+      indiaFeed: this.analytics.getIndiaMarketFeed(),
+    }).subscribe({
       next: value => {
-        this.report = value;
-        if (value.available && !this.selectedFundName) {
-          this.selectedFundName = value.payload?.RAW?.funds?.[0]?.name || '';
+        this.report = value.report;
+        this.indiaFeed = value.indiaFeed;
+        if (value.report.available && !this.selectedFundName) {
+          this.selectedFundName = value.report.payload?.RAW?.funds?.[0]?.name || '';
         }
         this.loading = false;
       },
       error: err => {
-        this.error = err?.error?.detail || 'Unable to load the mutual-fund research report.';
+        this.error = err?.error?.detail || 'Unable to load mutual-fund research data.';
         this.loading = false;
       },
     });

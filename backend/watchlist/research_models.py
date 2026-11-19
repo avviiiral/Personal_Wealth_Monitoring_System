@@ -29,3 +29,18 @@ class MutualFundResearchReport(models.Model):
 
     def __str__(self):
         return f"{self.report_key} ({self.report_date})"
+
+
+class IndianAPIRequestUsage(models.Model):
+    """Persistent monthly ledger for every attempted outbound IndianAPI request."""
+
+    month = models.CharField(max_length=7, unique=True, help_text="Calendar month in YYYY-MM format.")
+    request_count = models.PositiveIntegerField(default=0)
+    last_requested_at = models.DateTimeField(blank=True, null=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-month"]
+
+    def __str__(self):
+        return f"IndianAPI usage {self.month}: {self.request_count} requests"

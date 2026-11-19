@@ -103,9 +103,11 @@ CATEGORY_ALIASES = {
     "value fund": "Value",
     "contra fund": "Contra",
     "focused fund": "Focused",
+    "focused fund (no. of stocks)": "Focused",
     "sectoral fund": "Sectoral",
     "thematic fund": "Thematic",
     "elss tax saver fund": "ELSS - Tax Saver",
+    "elss - tax saver fund": "ELSS - Tax Saver",
     "elss fund": "ELSS - Tax Saver",
     "overnight fund": "Overnight",
     "liquid fund": "Liquid",
@@ -320,6 +322,11 @@ def map_sebi_hierarchy(raw_header: str, scheme_name: str = "") -> dict[str, str]
     if key in {"sectoral/thematic", "sectoral/thematic fund", "sectoral or thematic fund"}:
         name_key = _normalise_key(scheme_name)
         category = "Thematic" if "thematic" in name_key else "Sectoral"
+
+    # SEBI uses the leaf label "Sectoral Fund" in both Equity and Debt.
+    # Preserve the distinction using the branch in the original AMFI header.
+    if key == "sectoral fund" and re.search(r"\bDebt\s+Scheme\b", raw_header, re.IGNORECASE):
+        category = "Sectoral Debt"
 
     if category is None:
         # A small name fallback handles six-column legacy feeds whose category

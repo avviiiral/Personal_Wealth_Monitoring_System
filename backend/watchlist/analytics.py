@@ -1,7 +1,7 @@
 from datetime import date, timedelta
 from decimal import Decimal
 
-from django.db.models import OuterRef, Q, Subquery, Sum
+from django.db.models import OuterRef, Q, Subquery
 from django.utils import timezone
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated

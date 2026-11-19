@@ -198,5 +198,5 @@ export class MutualFundAnalyticsComponent implements OnInit {
     const m = Math.max(Math.abs(this.numeric(max)), 0.0001);
     return Math.max(2, Math.min(100, v / m * 100));
   }
-  trackByName(_index: number, item: any): string { return item?.name || item?.company || item?.sector || String(_index); }
+  trackByName(_index: number, item: any): string { return item?.name || item?.fund_name || item?.company || item?.sector || String(_index); }
 }

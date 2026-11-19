@@ -13,7 +13,7 @@
           <option *ngFor="let fund of funds; trackBy: trackByName" [value]="fund.name">{{ fund.short || fund.name }}</option>
         </select>
       </label>
-      <button type="button" class="refresh-button" (click)="refreshProviderData()" [disabled]="loading || refreshing">{{ refreshing ? 'Refreshing…' : 'Refresh market data' }}</button>
+      <button type="button" class="refresh-button" [hidden]="activeTab === 'sebi-universe'" (click)="refreshProviderData()" [disabled]="loading || refreshing">{{ refreshing ? 'Refreshing…' : 'Refresh market data' }}</button>
     </div>
   </header>
 

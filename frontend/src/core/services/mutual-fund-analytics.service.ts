@@ -19,6 +19,34 @@ export interface MutualFundResearchReportResponse {
   };
 }
 
+export interface IndiaMutualFundFeedRecord {
+  fund_name: string;
+  asset_class: string | null;
+  category: string | null;
+  latest_nav: number | null;
+  nav_date?: string | null;
+  percentage_change: number | null;
+  asset_size: number | null;
+  returns: Record<string, number | null>;
+  star_rating: number | null;
+  scheme_code?: string | null;
+  isin_growth?: string | null;
+  isin_dividend?: string | null;
+}
+
+export interface IndiaMutualFundFeedResponse {
+  available: boolean;
+  provider_configured: boolean;
+  source: 'IndianAPI' | 'AMFI';
+  source_label: string;
+  report_date: string | null;
+  imported_at: string | null;
+  count: number;
+  total_count: number;
+  message: string;
+  funds: IndiaMutualFundFeedRecord[];
+}
+
 export interface MutualFundAnalyticsResponse {
   filters: {
     category: string | null;
@@ -76,6 +104,13 @@ export class MutualFundAnalyticsService {
   getResearchReport(): Observable<MutualFundResearchReportResponse> {
     return this.http.get<MutualFundResearchReportResponse>(
       `${this.baseUrl}research-report/`,
+      { withCredentials: true },
+    );
+  }
+
+  getIndiaMarketFeed(): Observable<IndiaMutualFundFeedResponse> {
+    return this.http.get<IndiaMutualFundFeedResponse>(
+      `${this.baseUrl}india-market-feed/`,
       { withCredentials: true },
     );
   }

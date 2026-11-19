@@ -117,7 +117,7 @@ class IndianAPIFeedTests(TestCase):
             nav=Decimal("123.456700"),
             source="AMFI",
         )
-        request = self.factory.get("/api/watch-list/analytics/india-market-feed/")
+        request = self.factory.get("/api/mutual-fund-analytics/india-market-feed/")
         force_authenticate(request, user=self.user)
         response = india_mutual_fund_feed(request)
         self.assertEqual(response.status_code, 200)
@@ -133,7 +133,7 @@ class IndianAPIFeedTests(TestCase):
             report_cycle="IndianAPI India mutual funds",
             payload={"funds": [{"fund_name": "Cached Fund", "returns": {}}]},
         )
-        request = self.factory.get("/api/watch-list/analytics/india-market-feed/")
+        request = self.factory.get("/api/mutual-fund-analytics/india-market-feed/")
         force_authenticate(request, user=self.user)
         response = india_mutual_fund_feed(request)
         self.assertEqual(response.status_code, 200)
@@ -155,7 +155,7 @@ class IndianAPIFeedTests(TestCase):
             report_cycle="IndianAPI India mutual funds",
             payload={"funds": [{"fund_name": "IndianAPI Fund", "returns": {}}]},
         )
-        request = self.factory.get("/api/watch-list/analytics/research-report/")
+        request = self.factory.get("/api/mutual-fund-analytics/research-report/")
         force_authenticate(request, user=self.user)
         response = latest_mutual_fund_research_report(request)
         self.assertEqual(response.status_code, 200)

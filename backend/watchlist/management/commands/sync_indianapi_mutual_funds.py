@@ -5,6 +5,7 @@ from watchlist.models import MutualFundResearchReport
 from watchlist.services.indianapi import (
     IndianAPIClient,
     IndianAPIError,
+    IndianAPIQuotaExceeded,
     IndianAPIRateLimitError,
     normalize_mutual_fund_payload,
 )
@@ -27,6 +28,11 @@ class Command(BaseCommand):
         try:
             raw_payload = client.fetch_mutual_funds()
             funds = normalize_mutual_fund_payload(raw_payload)
+        except IndianAPIQuotaExceeded as exc:
+            raise CommandError(
+                f"{exc}\n"
+                "The keyless AMFI data feed remains available. No IndianAPI call was made."
+            ) from exc
         except IndianAPIRateLimitError as exc:
             raise CommandError(
                 f"{exc}\n"
@@ -56,6 +62,10 @@ class Command(BaseCommand):
             },
         )
         action = "Created" if created else "Updated"
+        usage = client.last_request_usage or {}
         self.stdout.write(self.style.SUCCESS(
-            f"{action} IndianAPI snapshot ({report.report_date}): {len(funds)} funds."
+            f"{action} IndianAPI snapshot ({report.report_date}): {len(funds)} funds. "
+            f"Monthly API usage: {usage.get('used', '?')}/{usage.get('limit', '?')} "
+            f"requests for {usage.get('month', 'current month')} "
+            f"({usage.get('remaining', '?')} remaining in PWMS budget)."
         ))

@@ -29,7 +29,7 @@ export class MutualFundAnalyticsComponent implements OnInit {
   rankingPeriod: Period = '1Y';
 
   readonly periods: Period[] = ['1M', '3M', '6M', '1Y', '3Y', '5Y'];
-  readonly benchmarkOptions = ['Nifty 500', 'Nifty 50', 'Nifty 100', 'BSE 500'];
+  readonly benchmarkOptions = ['Nifty 50', 'Nifty 100', 'Nifty Small Cap 250', 'Nifty Mid Cap 150', 'BSE 500'];
 
   ngOnInit(): void {
     this.load();

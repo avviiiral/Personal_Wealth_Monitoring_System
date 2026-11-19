@@ -15,6 +15,7 @@ from watchlist.services.indianapi import (
     IndianAPIClient,
     IndianAPIConfigurationError,
     IndianAPIError,
+    IndianAPIQuotaExceeded,
     IndianAPIRateLimitError,
     normalize_mutual_fund_payload,
 )
@@ -47,7 +48,7 @@ class IndianAPINormalizationTests(SimpleTestCase):
             normalize_mutual_fund_payload(["not", "an", "object"])
 
 
-class IndianAPIClientTests(SimpleTestCase):
+class IndianAPIClientTests(TestCase):
     @override_settings(INDIANAPI_API_KEY="", INDIANAPI_BASE_URL="https://stock.indianapi.in")
     def test_missing_key_disables_only_optional_provider(self):
         client = IndianAPIClient()
@@ -74,7 +75,7 @@ class IndianAPIClientTests(SimpleTestCase):
         self.assertEqual(mock_get.call_args.kwargs["headers"]["X-Api-Key"], "test-secret")
         self.assertEqual(mock_get.call_args.kwargs["timeout"], 7)
 
-    @override_settings(INDIANAPI_API_KEY="test-secret")
+    @override_settings(INDIANAPI_API_KEY="test-secret", INDIANAPI_MONTHLY_REQUEST_BUDGET=5)
     @patch("watchlist.services.indianapi.requests.get")
     def test_429_exposes_retry_headers_and_does_not_retry(self, mock_get):
         response = Mock()
@@ -167,6 +168,43 @@ class IndianAPIFeedTests(TestCase):
         call_command("sync_indianapi_mutual_funds", stdout=output)
         self.assertIn("Skipped IndianAPI sync", output.getvalue())
         self.assertEqual(MutualFundResearchReport.objects.count(), 0)
+
+
+    @override_settings(INDIANAPI_API_KEY="test-secret", INDIANAPI_MONTHLY_REQUEST_BUDGET=1)
+    @patch("watchlist.services.indianapi.requests.get")
+    def test_monthly_budget_blocks_request_before_network_call(self, mock_get):
+        response = Mock()
+        response.status_code = 200
+        response.json.return_value = {"Equity": {"Large Cap": [{"fund_name": "Example Fund"}]}}
+        response.raise_for_status.return_value = None
+        mock_get.return_value = response
+
+        client = IndianAPIClient()
+        client.fetch_mutual_funds()
+
+        from watchlist.models import IndianAPIRequestUsage
+        usage = IndianAPIRequestUsage.objects.get()
+        self.assertEqual(usage.request_count, 1)
+        self.assertEqual(client.last_request_usage["limit"], 1)
+
+        with self.assertRaises(IndianAPIQuotaExceeded):
+            client.fetch_mutual_funds()
+
+        self.assertEqual(mock_get.call_count, 1)
+        usage.refresh_from_db()
+        self.assertEqual(usage.request_count, 1)
+
+    @override_settings(INDIANAPI_API_KEY="test-secret", INDIANAPI_MONTHLY_REQUEST_BUDGET=2)
+    @patch("watchlist.services.indianapi.requests.get", side_effect=__import__("requests").Timeout("timeout"))
+    def test_network_failure_still_consumes_reserved_budget(self, mock_get):
+        from watchlist.models import IndianAPIRequestUsage
+
+        with self.assertRaises(IndianAPIError):
+            IndianAPIClient().fetch_mutual_funds()
+
+        usage = IndianAPIRequestUsage.objects.get()
+        self.assertEqual(usage.request_count, 1)
+        self.assertEqual(mock_get.call_count, 1)
 
     @override_settings(INDIANAPI_API_KEY="test-secret")
     @patch(

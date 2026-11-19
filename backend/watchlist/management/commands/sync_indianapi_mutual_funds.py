@@ -5,6 +5,7 @@ from watchlist.models import MutualFundResearchReport
 from watchlist.services.indianapi import (
     IndianAPIClient,
     IndianAPIError,
+    IndianAPIRateLimitError,
     normalize_mutual_fund_payload,
 )
 
@@ -26,6 +27,14 @@ class Command(BaseCommand):
         try:
             raw_payload = client.fetch_mutual_funds()
             funds = normalize_mutual_fund_payload(raw_payload)
+        except IndianAPIRateLimitError as exc:
+            raise CommandError(
+                f"{exc}\n"
+                "Next step: inspect the IndianAPI account dashboard. If credits are exhausted, "
+                "wait for renewal or upgrade; if the plan's short-window rate limit was hit, "
+                "wait for the indicated reset before running this command once again. "
+                "PWMS remains usable with AMFI and any previously cached snapshot."
+            ) from exc
         except IndianAPIError as exc:
             raise CommandError(str(exc)) from exc
         if not funds:

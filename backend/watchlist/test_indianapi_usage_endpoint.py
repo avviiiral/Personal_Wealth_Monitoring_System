@@ -3,6 +3,7 @@ from decimal import Decimal
 
 from django.contrib.auth import get_user_model
 from django.test import TestCase, override_settings
+from django.utils import timezone
 from rest_framework.test import APIRequestFactory, force_authenticate
 
 from mutual_funds.models import AMFIMasterNAV, AMFIMasterScheme
@@ -18,7 +19,7 @@ class IndianAPIUsageAndFeedTests(TestCase):
 
     @override_settings(INDIANAPI_MONTHLY_REQUEST_BUDGET=900, INDIANAPI_API_KEY="")
     def test_usage_endpoint_reports_persisted_ledger_and_clamps_budget(self):
-        month = date.today().strftime("%Y-%m")
+        month = timezone.localdate().strftime("%Y-%m")
         IndianAPIRequestUsage.objects.create(
             month=month,
             request_count=7,

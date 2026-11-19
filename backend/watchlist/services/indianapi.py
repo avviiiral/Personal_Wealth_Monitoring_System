@@ -244,5 +244,9 @@ class IndianAPIClient:
             message = str(payload["error"])
             self.mark_refresh_status("FAILED", message)
             raise IndianAPIError(message)
-        normalize_mutual_fund_payload(payload)
+        try:
+            normalize_mutual_fund_payload(payload)
+        except IndianAPIError as exc:
+            self.mark_refresh_status("FAILED", str(exc))
+            raise
         return payload

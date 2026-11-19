@@ -33,7 +33,7 @@ Authenticated endpoints:
 | /api/mutual-fund-analytics/refresh/ | POST | Explicit cache-first refresh; write-capable financial role required |
 | /api/mutual-funds/analytics/portfolio/ | GET | Active-family holdings, XIRR and latest disclosed exposures |
 
-Mutual Fund Analytics endpoints are mounted under `/api/mutual-fund-analytics/`, separate from the Watch List API namespace. The report API keeps dated source snapshots separate from live Watch List NAV/performance data. Personal portfolio analytics reads only the existing family-scoped MutualFundHolding and MutualFundTransaction ledgers. It does not combine the generic investment Transaction ledger or create duplicate transactions.
+Mutual Fund Analytics endpoints are mounted under `/api/mutual-fund-analytics/`, separate from the Watch List API namespace. The report API keeps dated source snapshots separate from live Watch List NAV/performance data. Personal portfolio analytics reads family-scoped MutualFundHolding/MutualFundTransaction records and also supports legacy Asset/Holding/Transaction positions explicitly tagged as mutual funds. Legacy positions are de-duplicated by exact ISIN or exact normalized name; ambiguous positions without ISINs are excluded and reported rather than double-counted.
 
 ## Data sources
 

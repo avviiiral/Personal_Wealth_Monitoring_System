@@ -16,12 +16,12 @@ from watchlist.models import (
 
 
 PERIODS = {
-    "1M": ("return_1m", 30),
-    "3M": ("return_3m", 90),
-    "6M": ("return_6m", 182),
+    "1M": ("return_1m", 31),
+    "3M": ("return_3m", 92),
+    "6M": ("return_6m", 184),
     "1Y": ("return_1y", 365),
     "3Y": ("return_3y", 1095),
-    "5Y": ("return_5y", 1826),
+    "5Y": ("return_5y", 1825),
 }
 
 

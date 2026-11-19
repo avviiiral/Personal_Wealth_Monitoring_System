@@ -172,6 +172,39 @@ export interface MutualFundAnalyticsFund {
   returns: Record<string, number | string | null>;
 }
 
+export interface SebiUniverseSummaryResponse {
+  available: boolean;
+  message?: string;
+  generated_at?: string;
+  source?: string;
+  plans_processed?: string[];
+  risk_free_rate_pct?: number;
+  schemes_requested?: number;
+  funds_with_history?: number;
+  funds_without_history?: number;
+  mfapi_cache_hits?: number;
+  categories_count?: number;
+  category_tree_nodes?: number;
+  current_sebi_leaf_categories?: number;
+  portfolio_overlap_pairs?: number;
+  tree_summary?: Array<Record<string, any>>;
+  top_q1_funds?: Array<Record<string, any>>;
+  download_url?: string;
+  workbook_path?: string;
+  category_risk_chart?: string;
+  top_q1_chart?: string;
+  fetch_errors?: Array<{ scheme_code: string; error: string }>;
+}
+
+export interface SebiUniverseRankingsResponse {
+  available: boolean;
+  message?: string;
+  count: number;
+  page?: number;
+  page_size?: number;
+  results: Array<Record<string, any>>;
+}
+
 @Injectable({ providedIn: 'root' })
 export class MutualFundAnalyticsService {
   private readonly http = inject(HttpClient);
@@ -216,6 +249,44 @@ export class MutualFundAnalyticsService {
 
   refreshIndiaMarketFeed(): Observable<IndianApiRefreshResponse> {
     return this.http.post<IndianApiRefreshResponse>(`${this.baseUrl}refresh/`, {}, { withCredentials: true });
+  }
+
+  getSebiUniverseSummary(): Observable<SebiUniverseSummaryResponse> {
+    return this.http.get<SebiUniverseSummaryResponse>(
+      `${this.baseUrl}sebi/summary/`,
+      { withCredentials: true },
+    );
+  }
+
+  getSebiUniverseRankings(filters: {
+    category?: string;
+    plan?: string;
+    quartile?: string;
+    page?: number;
+    page_size?: number;
+  } = {}): Observable<SebiUniverseRankingsResponse> {
+    let params = new HttpParams();
+    Object.entries(filters).forEach(([key, value]) => {
+      if (value !== undefined && value !== null && value !== '') {
+        params = params.set(key, String(value));
+      }
+    });
+    return this.http.get<SebiUniverseRankingsResponse>(
+      `${this.baseUrl}sebi/rankings/`,
+      { params, withCredentials: true },
+    );
+  }
+
+  getSebiWorkbookUrl(): string {
+    return `${this.baseUrl}sebi/export/`;
+  }
+
+  getSebiCategoryRiskChartUrl(): string {
+    return `${this.baseUrl}sebi/charts/category-risk/`;
+  }
+
+  getSebiTopQ1ChartUrl(): string {
+    return `${this.baseUrl}sebi/charts/top-q1/`;
   }
 
   getPersonalPortfolio(): Observable<PersonalMutualFundPortfolioResponse> {

@@ -1,6 +1,6 @@
 from django.urls import path
 
-from watchlist.views import (
+from watchlist.analytics import mutual_fund_analytics_overview\n\nfrom watchlist.views import (
     watch_list_bulk_add,
     watch_list_bulk_remove,
     watch_list_filters,
@@ -15,7 +15,7 @@ from watchlist.views import (
     watch_list_toggle,
 )
 
-urlpatterns = [
+urlpatterns = [\n    path("analytics/overview/", mutual_fund_analytics_overview, name="mutual-fund-analytics-overview"),
     path("filters/", watch_list_filters, name="watch-list-filters"),
     path("products/", watch_list_products, name="watch-list-products"),
     path("products/<int:product_id>/", watch_list_product_detail, name="watch-list-product-detail"),

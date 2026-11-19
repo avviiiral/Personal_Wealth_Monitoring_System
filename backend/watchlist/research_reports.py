@@ -9,7 +9,12 @@ from watchlist.models import MutualFundResearchReport
 @permission_classes([IsAuthenticated])
 def latest_mutual_fund_research_report(request):
     """Return the latest imported, source-faithful multi-cap research report."""
-    report = MutualFundResearchReport.objects.order_by("-report_date", "-imported_at").first()
+    report = (
+        MutualFundResearchReport.objects
+        .exclude(report_key="indianapi-india")
+        .order_by("-report_date", "-imported_at")
+        .first()
+    )
     if report is None:
         return Response({
             "available": False,

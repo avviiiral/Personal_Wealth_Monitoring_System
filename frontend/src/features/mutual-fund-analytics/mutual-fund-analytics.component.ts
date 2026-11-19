@@ -138,6 +138,11 @@ export class MutualFundAnalyticsComponent implements OnInit {
     return result;
   }
 
+  indiaFundReturn(fund: any, period: string): number | null {
+    const value = fund?.returns?.[period];
+    return value === null || value === undefined || value === '' ? null : this.numeric(value);
+  }
+
   fundReturn(fund: any, period: string): number | null {
     const key = ({ '1M': 'r1m', '3M': 'r3m', '6M': 'r6m', '1Y': 'r1y', '3Y': 'r3y', '5Y': 'r5y', 'YTD': 'ytd' } as Record<string, string>)[period];
     const p2pFund = this.p2p?.funds?.[fund?.name];

@@ -54,6 +54,14 @@ class SEBITaxonomyTests(SimpleTestCase):
         self.assertEqual(mapped["level_1_branch"], "Other Schemes")
         self.assertEqual(mapped["level_3_category"], "Fund of Funds (Overseas/Domestic)")
 
+    def test_debt_sectoral_fund_is_not_mapped_to_equity_sectoral(self):
+        mapped = map_sebi_hierarchy(
+            "Open Ended Schemes (Debt Scheme - Sectoral Fund)",
+            "Example Financial Services Debt Fund - Direct Plan - Growth",
+        )
+        self.assertEqual(mapped["level_1_branch"], "Debt")
+        self.assertEqual(mapped["level_3_category"], "Sectoral Debt")
+
     def test_sectoral_and_thematic_are_separate_current_leaf_categories(self):
         sectoral = map_sebi_hierarchy(
             "Open Ended Schemes (Equity Scheme - Sectoral/Thematic Fund)",

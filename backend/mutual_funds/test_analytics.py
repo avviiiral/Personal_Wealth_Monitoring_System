@@ -3,7 +3,8 @@ from types import SimpleNamespace
 
 from django.test import SimpleTestCase
 
-from mutual_funds.analytics import _transaction_cashflow
+from investments.models import TransactionType as InvestmentTransactionType
+from mutual_funds.analytics import _legacy_transaction_cashflow, _transaction_cashflow
 from mutual_funds.models import MutualFundTransactionType
 
 
@@ -47,3 +48,46 @@ class MutualFundPortfolioCashflowTests(SimpleTestCase):
             fees=Decimal("0.00"),
         )
         self.assertEqual(_transaction_cashflow(transaction), (None, None))
+
+
+
+class LegacyMutualFundCashflowTests(SimpleTestCase):
+    def test_buy_and_sip_are_negative_outflows_including_fees(self):
+        for transaction_type in (InvestmentTransactionType.BUY, InvestmentTransactionType.SIP):
+            transaction = SimpleNamespace(
+                transaction_type=transaction_type,
+                amount=Decimal("1000.00"),
+                fees=Decimal("5.00"),
+            )
+            self.assertEqual(
+                _legacy_transaction_cashflow(transaction),
+                (Decimal("-1005.00"), "purchase"),
+            )
+
+    def test_sell_and_dividend_are_positive_net_inflows(self):
+        sell = SimpleNamespace(
+            transaction_type=InvestmentTransactionType.SELL,
+            amount=Decimal("600.00"),
+            fees=Decimal("2.00"),
+        )
+        dividend = SimpleNamespace(
+            transaction_type=InvestmentTransactionType.DIVIDEND,
+            amount=Decimal("25.00"),
+            fees=Decimal("0.00"),
+        )
+        self.assertEqual(
+            _legacy_transaction_cashflow(sell),
+            (Decimal("598.00"), "redemption"),
+        )
+        self.assertEqual(
+            _legacy_transaction_cashflow(dividend),
+            (Decimal("25.00"), "dividend"),
+        )
+
+    def test_non_cash_position_adjustments_are_not_xirr_flows(self):
+        transaction = SimpleNamespace(
+            transaction_type=InvestmentTransactionType.BONUS,
+            amount=Decimal("500.00"),
+            fees=Decimal("0.00"),
+        )
+        self.assertEqual(_legacy_transaction_cashflow(transaction), (None, None))

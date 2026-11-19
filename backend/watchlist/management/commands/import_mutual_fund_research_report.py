@@ -11,7 +11,7 @@ from watchlist.models import MutualFundResearchReport
 
 def extract_js_json(source, variable):
     """Read a JSON object assigned to a JS const/let/var without evaluating JS."""
-    match = re.search(r"\\b(?:const|let|var)\\s+" + re.escape(variable) + r"\\s*=\\s*", source)
+    match = re.search(r"\b(?:const|let|var)\s+" + re.escape(variable) + r"\s*=\s*", source)
     if not match:
         raise ValueError(f"JavaScript data object {variable} was not found")
     decoder = json.JSONDecoder()
@@ -33,7 +33,7 @@ class Command(BaseCommand):
     def add_arguments(self, parser):
         parser.add_argument("--file", required=True, help="Path to Nexedge_multicap_dashboard_*.html")
         parser.add_argument("--report-key", default="", help="Optional report key; defaults to category slug")
-    
+
     def handle(self, *args, **options):
         path = Path(options["file"]).expanduser()
         if not path.is_file():

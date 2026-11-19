@@ -449,7 +449,7 @@ def download_amfi_navall(timeout: int = 60) -> str:
         timeout=timeout,
     )
     response.raise_for_status()
-    if not response.text or "scheme code" not in response.text[:2000].lower():
+    if not response.text or "scheme code" not in response.text.lower():
         raise RuntimeError("AMFI NAVAll response did not contain the expected scheme-code header.")
     return response.text
 
@@ -782,11 +782,21 @@ def compute_fund_performance_metrics(
     metrics["Rolling_3Y_CAGR_Min_pct"] = min(rolling_cagrs) if rolling_cagrs else None
     metrics["Rolling_3Y_CAGR_Max_pct"] = max(rolling_cagrs) if rolling_cagrs else None
 
+    # Use the most recent three-year daily NAV window for risk-adjusted metrics.
+    # When a fund is younger than three years, use all available observations and
+    # expose the observed window so users do not mistake it for a full 3Y sample.
+    risk_target = _anniversary(latest_date, 3)
+    risk_start_index = max(0, bisect_right(dates, risk_target) - 1)
+    risk_dates = dates[risk_start_index:]
+    risk_navs = navs[risk_start_index:]
     daily_returns = [
-        (navs[index] / navs[index - 1]) - 1.0
-        for index in range(1, len(navs))
-        if navs[index - 1] > 0
+        (risk_navs[index] / risk_navs[index - 1]) - 1.0
+        for index in range(1, len(risk_navs))
+        if risk_navs[index - 1] > 0
     ]
+    metrics["Risk_Window_Start_Date"] = risk_dates[0].isoformat() if risk_dates else None
+    metrics["Risk_Window_Days"] = (latest_date - risk_dates[0]).days if risk_dates else 0
+    metrics["Risk_Return_Observations"] = len(daily_returns)
     if len(daily_returns) >= 2:
         mean_daily = sum(daily_returns) / len(daily_returns)
         daily_variance = sum((value - mean_daily) ** 2 for value in daily_returns) / (len(daily_returns) - 1)
@@ -1429,7 +1439,10 @@ def build_sebi_universe_analytics(
         "mfapi_cache_hits": cache_hits,
         "categories_count": int(funds["Level_3_Category"].nunique()),
         "category_tree_nodes": len(CATEGORY_TREE),
-        "current_sebi_leaf_categories": len(taxonomy_categories),
+        "current_sebi_leaf_categories": sum(
+            1 for category, (branch, _group) in CATEGORY_TREE.items()
+            if category != "Unclassified" and branch != "Solution Oriented (Discontinued)"
+        ),
         "portfolio_overlap_pairs": len(overlap_frame),
         "workbook_path": str(workbook_path),
         "category_risk_chart": str(category_chart_path),

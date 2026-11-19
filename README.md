@@ -51,7 +51,7 @@ All financial calculations run on the backend. The frontend formats and displays
 | Analytics | Allocation by asset class, sector, market cap, AMC and advisor; performance; equity and fixed-income analysis; historical wealth | `/analytics` |
 | Corporate Actions | NSE corporate-action monitoring, exposure matching, and user review that creates bonus, split or dividend transactions | `/corporate-actions` |
 | Portfolio News | Google News RSS monitoring and NSE/BSE filing ingestion, matched to holdings, scored by rules, with optional Web Push | `/portfolio-news` |
-| Watch List | Mutual fund (AMFI) and PMS (APMI) research universe, returns, benchmark comparison, personal watch list | `/watch-list` |\n| Mutual Fund Analytics | Imported, dated research report with category overview, fund scorecards, EDGE rankings, calendar/P2P returns, portfolio composition, configurable positioning, full universe and stock-level attribution | `/mutual-fund-analytics` |
+| Watch List | Mutual fund (AMFI) and PMS (APMI) research universe, returns, benchmark comparison, personal watch list | `/watch-list` |\n| Mutual Fund Analytics | Imported dated research reports, personal portfolio XIRR, AMFI/SEBI universe, historical NAV performance and risk, category peer rankings, portfolio overlap and Excel exports | `/mutual-fund-analytics` |
 | AI Portfolio Chat | Optional Google Gemini chat over the user's own portfolio context | header panel, `/ai-chat` |
 | Settings | Account, password, tax settings, logs and audit history, user management, family management, manual prices | `/settings` |
 

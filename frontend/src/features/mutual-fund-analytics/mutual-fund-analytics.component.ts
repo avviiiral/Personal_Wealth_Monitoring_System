@@ -97,7 +97,7 @@ export class MutualFundAnalyticsComponent implements OnInit {
           this.selectedFundName = value.report.payload?.RAW?.funds?.[0]?.name || '';
         }
         if (!value.report.available && this.activeTab === 'overview') {
-          this.activeTab = 'my-portfolio';
+          this.activeTab = 'sebi-universe';
         }
         this.loading = false;
       },

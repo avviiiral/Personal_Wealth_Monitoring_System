@@ -17,7 +17,7 @@
     </div>
   </header>
 
-  <section class="api-budget-panel" *ngIf="apiUsage">
+  <section class="api-budget-panel" *ngIf="apiUsage && activeTab !== 'sebi-universe'">
     <div class="api-budget-heading">
       <div><span class="eyebrow">INDIANAPI · PWMS REQUEST LEDGER</span><strong>{{ apiUsage.requests_used }} / {{ apiUsage.monthly_budget }} requests used</strong></div>
       <span class="api-budget-remaining">{{ apiUsage.requests_remaining }} remaining</span>
@@ -32,7 +32,7 @@
   </section>
   <div class="error-state" *ngIf="error">{{ error }}</div>
   <div class="loading-state" *ngIf="loading">Loading mutual-fund data…</div>
-  <section class="empty-state" *ngIf="!loading && report && !report.available && !indiaFeed?.available">
+  <section class="empty-state" *ngIf="!loading && report && !report.available && !indiaFeed?.available && !sebiSummary?.available">
     <h2>No research report or India fund data available</h2>
     <p>{{ report.message }}</p>
     <p>Start with the keyless AMFI master:</p>

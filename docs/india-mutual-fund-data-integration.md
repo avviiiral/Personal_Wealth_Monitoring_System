@@ -54,7 +54,7 @@ Every attempted outbound request is reserved in the database under its calendar 
 
 ## HTTP 429 / quota handling
 
-IndianAPI documents HTTP 429 as either exhausted API credits or a plan rate limit. Check the account dashboard for current usage and remaining credits. The Free plan's published starting allowance is 500 API credits; plan allowances and rate limits can change. If the account was just renewed/upgraded and the error continues after a few minutes, contact IndianAPI support at contact@indianapi.in.
+IndianAPI documents HTTP 429 as either exhausted API credits or a plan rate limit. Check the account dashboard for current usage and remaining credits. Its current getting-started guide describes 500 credits as the initial Free-plan allowance; confirm whether your account has a monthly renewal before treating it as a recurring monthly quota. Plan allowances and rate limits can change. PWMS independently enforces the configured monthly budget. If the account was just renewed/upgraded and the error continues after a few minutes, contact IndianAPI support at contact@indianapi.in.
 
 PWMS does not automatically retry a 429. The sync command reports provider details and any Retry-After / rate-limit headers. This avoids a tight retry loop and unnecessary requests. A failed refresh does not overwrite the last successfully stored IndianAPI snapshot; the keyless AMFI feed remains available.
 

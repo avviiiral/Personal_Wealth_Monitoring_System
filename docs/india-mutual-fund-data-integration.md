@@ -50,6 +50,8 @@ python manage.py sync_indianapi_mutual_funds
 
 The IndianAPI command stores a dated snapshot under report key indianapi-india; it does not overwrite the Nexedge report or investment transactions.
 
+Every attempted outbound request is reserved in the database under its calendar month before network I/O. The ledger survives application restarts and is shared by all application workers using the same database. Timeouts and other connection failures count conservatively because the provider may have received the request. Once the configured budget is reached, PWMS blocks the request before contacting IndianAPI. No automatic retries are made.
+
 ## HTTP 429 / quota handling
 
 IndianAPI documents HTTP 429 as either exhausted API credits or a plan rate limit. Check the account dashboard for current usage and remaining credits. The Free plan's published starting allowance is 500 API credits; plan allowances and rate limits can change. If the account was just renewed/upgraded and the error continues after a few minutes, contact IndianAPI support at contact@indianapi.in.

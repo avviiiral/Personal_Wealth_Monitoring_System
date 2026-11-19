@@ -42,7 +42,7 @@
     <p>The import stores the original RAW, P2P and ATTR objects as a dated report snapshot. It does not create or overwrite live investment products.</p>
   </section>
 
-  <section class="india-feed-section" *ngIf="!loading && indiaFeed?.available && (!report?.available || activeTab === 'india')">
+  <section class="india-feed-section" *ngIf="!loading && indiaFeed?.available && activeTab === 'india'">
     <div class="section-intro">
       <h2>India Mutual Fund Universe</h2>
       <p>{{ indiaFeed?.message }} · {{ indiaFeed?.count }} records displayed of {{ indiaFeed?.total_count }}</p>

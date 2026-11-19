@@ -75,3 +75,78 @@ Sector and stock exposure uses the latest stored underlying disclosure for each 
 - AMFI NAV history supports return calculations only where the required dates exist.
 - Portfolio disclosure coverage and freshness depend on the existing underlying ingestion pipeline.
 - PWMS quota accounting cannot observe provider-side adjustments or use outside this application.
+
+
+## SEBI universe and historical NAV analytics
+
+The SEBI research pipeline is independent of IndianAPI and does not consume the 400-request IndianAPI allowance.
+
+### Sources and boundaries
+
+- AMFI scheme master: `https://www.amfiindia.com/spages/NAVAll.txt` (semicolon-delimited NAVAll feed). The ingestion retains the AMFI AMC header, raw category header, scheme code, both ISIN columns, scheme name, NAV/date and inferred or explicit plan/option fields.
+- Historical NAV: MFapi.in documented endpoint `https://api.mfapi.in/mf/{scheme_code}`. Its full JSON response is cached under `backend/data_cache/sebi_mf_analytics/nav/`; normal builds use local cache. `--refresh-cache` explicitly bypasses it.
+- Current category mapping: SEBI Circular HO/24/13/15(2)2026-IMD-RAC4/I/5764/2026 dated 26 February 2026. It defines 40 current leaf categories: 13 Equity, 17 Debt, 7 Hybrid, 1 Life Cycle and 2 Other Schemes. Solution Oriented is discontinued and remains only as a legacy classification for older feed labels.
+- Monthly holdings disclosures: user-supplied AMC/AMFI `.xlsx` files with ISIN and `% to Net Assets`. Files are cached locally; no scraping or invented holdings are performed.
+
+### Build commands
+
+From the `backend` directory:
+
+```powershell
+python manage.py migrate
+python manage.py ingest_sebi_mf_universe
+python manage.py build_sebi_mf_analytics
+```
+
+Direct Plan - Growth is the default analysis universe. To evaluate Direct and Regular Growth as separate peer groups, run:
+
+```powershell
+python manage.py build_sebi_mf_analytics --plans both
+```
+
+Optional constraints/settings:
+
+```powershell
+python manage.py build_sebi_mf_analytics --categories "Large Cap" "Flexi Cap" --max-schemes 100 --workers 4 --requests-per-second 1.0
+python manage.py build_sebi_mf_analytics --refresh-cache
+python manage.py build_sebi_mf_analytics --risk-free-rate 6.5 --expense-ratio-file "D:\\data\\scheme_ter.xlsx" --category-flow-file "D:\\data\\category_flows.xlsx"
+```
+
+The worker pool is bounded to 16 threads and outbound MFapi requests share a thread-safe rate limiter (default one request/second). Failed requests use bounded retries; valid cached responses are reused. The analytics command writes:
+
+- `backend/exports/SEBI_Universe_MF_Analytics.xlsx`
+- `backend/exports/SEBI_Category_Return_vs_Risk.png`
+- `backend/exports/SEBI_Top_Q1_vs_Category_Average.png`
+
+The workbook includes `Tree_Summary` and `Fund_vs_Category_Rankings`; `Portfolio_Overlap` is added when monthly portfolio disclosures have been imported. TER and category AUM/net flow columns remain empty unless corresponding optional source files are supplied.
+
+### Performance, peer and risk conventions
+
+- Trailing CAGR: 1Y, 3Y, 5Y and 10Y, using the latest stored NAV and the nearest available NAV observation on/before the target anniversary date. Missing history remains null.
+- Rolling consistency: each observed NAV date is an endpoint for a 3-year trailing CAGR when a valid start NAV exists; mean, minimum and maximum are reported.
+- Risk ratios: annualized daily NAV volatility, Sharpe and Sortino are calculated over the most recent three-year NAV window (or all available observations for younger schemes). The annual risk-free rate defaults to 6.5%; the window start and observation count are included in the fund rows.
+- Maximum drawdown and peak-to-trough duration/recovery use the full available NAV history.
+- Category average and median are grouped by exact Level 3 category and plan. Outperformance is the 3Y CAGR difference from the corresponding peer average, multiplied by 100 to express basis points. Percentiles and quartiles are assigned within that same category/plan group.
+- The simple CAGR/volatility/risk-ratio outputs are NAV series metrics; they do not include investor cash-flow timing or personal portfolio transactions. Use the separate My Portfolio section for actual family-ledger XIRR.
+
+### Monthly portfolio overlap
+
+Import each scheme disclosure by its AMFI scheme code:
+
+```powershell
+python manage.py import_sebi_mf_portfolio --file "D:\\disclosures\\fund_portfolio.xlsx" --scheme-code 100001 --portfolio-date 2026-10-31
+```
+
+Pairwise overlap is computed only for schemes in the same Level 3 category using common ISINs and the sum of minimum disclosed weights. The implementation uses the latest cached disclosure per scheme. It is a point-in-time pairwise research comparison, not the SEBI-prescribed quarterly average of daily overlap values used for regulatory compliance disclosures.
+
+### Cached APIs
+
+Authenticated read-only endpoints serve the last built snapshot and never call AMFI/MFapi/IndianAPI:
+
+- `GET /api/mutual-fund-analytics/sebi/summary/`
+- `GET /api/mutual-fund-analytics/sebi/rankings/?page=1&page_size=100&plan=Direct%20Plan`
+- `GET /api/mutual-fund-analytics/sebi/export/`
+- `GET /api/mutual-fund-analytics/sebi/charts/category-risk/`
+- `GET /api/mutual-fund-analytics/sebi/charts/top-q1/`
+
+The local filesystem cache and generated workbook are intentionally ignored by Git; deployments must run the ingestion/build commands on their own environment after migration.

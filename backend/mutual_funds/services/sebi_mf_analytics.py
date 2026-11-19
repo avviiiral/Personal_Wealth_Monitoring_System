@@ -25,14 +25,13 @@ from django.conf import settings
 from django.db import transaction
 from django.utils import timezone
 from openpyxl import load_workbook
-from openpyxl.drawing.image import Image as ExcelImage
 
 from mutual_funds.models import AMFIMasterNAV, AMFIMasterScheme
 
 
 logger = logging.getLogger("mutual_funds.sebi_analytics")
 
-AMFI_NAVALL_URL = "https://portal.amfiindia.com/spages/NAVAll.txt"
+AMFI_NAVALL_URL = "https://www.amfiindia.com/spages/NAVAll.txt"
 MFAPI_BASE_URL = "https://api.mfapi.in/mf"
 MFAPI_SOURCE = "mfapi.in"
 DEFAULT_RISK_FREE_RATE = 0.065
@@ -44,6 +43,7 @@ DEFAULT_WORKERS = 4
 # dated 26-Feb-2026. Solution Oriented schemes are retained only as a
 # discontinued legacy branch for old feed labels and historical comparability.
 CATEGORY_TREE = {
+    # 13 Equity categories from SEBI's 26-Feb-2026 circular.
     "Multi Cap": ("Equity", "By Market Cap"),
     "Large Cap": ("Equity", "By Market Cap"),
     "Large & Mid Cap": ("Equity", "By Market Cap"),
@@ -54,14 +54,15 @@ CATEGORY_TREE = {
     "Value": ("Equity", "By Strategy"),
     "Contra": ("Equity", "By Strategy"),
     "Focused": ("Equity", "By Strategy"),
-    "Sectoral": ("Equity", "By Sector"),
-    "Thematic": ("Equity", "By Sector"),
+    "Sectoral": ("Equity", "By Sector & Theme"),
+    "Thematic": ("Equity", "By Sector & Theme"),
     "ELSS - Tax Saver": ("Equity", "Tax Saving"),
+    # 17 Debt categories.
     "Overnight": ("Debt", "By Duration"),
     "Liquid": ("Debt", "By Duration"),
     "Ultra Short Term": ("Debt", "By Duration"),
     "Ultra Short to Short Term": ("Debt", "By Duration"),
-    "Money Market": ("Debt", "By Duration"),
+    "Money Market": ("Debt", "By Strategy"),
     "Short Term": ("Debt", "By Duration"),
     "Medium Term": ("Debt", "By Duration"),
     "Medium to Long Term": ("Debt", "By Duration"),
@@ -70,10 +71,11 @@ CATEGORY_TREE = {
     "Corporate Bond": ("Debt", "By Credit"),
     "Credit Risk": ("Debt", "By Credit"),
     "Banking and PSU Debt": ("Debt", "By Issuer"),
-    "Gilt": ("Debt", "By Government Securities"),
-    "10-year Constant Maturity Gilt": ("Debt", "By Government Securities"),
+    "Gilt": ("Debt", "Government Securities"),
+    "10-year Constant Maturity Gilt": ("Debt", "Government Securities"),
     "Floating Interest Rates": ("Debt", "By Strategy"),
     "Sectoral Debt": ("Debt", "By Sector"),
+    # 7 Hybrid categories.
     "Conservative Hybrid": ("Hybrid", "Hybrid Allocation"),
     "Balanced Hybrid": ("Hybrid", "Hybrid Allocation"),
     "Aggressive Hybrid": ("Hybrid", "Hybrid Allocation"),
@@ -81,9 +83,9 @@ CATEGORY_TREE = {
     "Multi Asset Allocation": ("Hybrid", "Hybrid Allocation"),
     "Arbitrage": ("Hybrid", "Arbitrage Strategy"),
     "Equity Savings": ("Hybrid", "Hybrid Allocation"),
-    "Life Cycle Funds": ("Life Cycle Funds", "Goal Based Lifecycle"),
-    "Index Funds/ETFs": ("Other Schemes", "Passive/FoF"),
-    "Fund of Funds (Overseas/Domestic)": ("Other Schemes", "Passive/FoF"),
+    "Life Cycle Funds": ("Life Cycle Funds", "Goal Based Glide Path"),
+    "Index Funds/ETFs": ("Other Schemes", "Passive Schemes"),
+    "Fund of Funds (Overseas/Domestic)": ("Other Schemes", "Fund of Funds"),
     "Retirement Fund": ("Solution Oriented (Discontinued)", "Legacy Goal Based"),
     "Children's Fund": ("Solution Oriented (Discontinued)", "Legacy Goal Based"),
     "Unclassified": ("Unclassified", "Unmapped"),
@@ -138,6 +140,13 @@ CATEGORY_ALIASES = {
     "balanced advantage fund": "Dynamic Asset Allocation",
     "multi asset allocation fund": "Multi Asset Allocation",
     "arbitrage fund": "Arbitrage",
+    "sectoral/thematic fund": "Sectoral",
+    "sectoral debt fund": "Sectoral Debt",
+    "10-year constant maturity gilt": "10-year Constant Maturity Gilt",
+    "10 year constant maturity gilt": "10-year Constant Maturity Gilt",
+    "money market": "Money Market",
+    "multi asset allocation": "Multi Asset Allocation",
+    "fofs overseas/domestic": "Fund of Funds (Overseas/Domestic)",
     "equity savings fund": "Equity Savings",
     "life cycle fund": "Life Cycle Funds",
     "life cycle funds": "Life Cycle Funds",
@@ -454,10 +463,8 @@ def persist_sebi_universe(records: list[dict[str, Any]]) -> dict[str, int]:
     scheme_objects = []
     latest_nav_rows = []
 
-    # Refresh the SEBI-universe membership marker only after a non-empty feed
-    # has been parsed successfully; do not change AMFIMasterScheme.is_active.
-    AMFIMasterScheme.objects.filter(sebi_universe_active=True).update(sebi_universe_active=False)
-
+    # Membership changes are committed atomically with the valid non-empty feed.
+    # Do not change AMFIMasterScheme.is_active (used by other PWMS flows).
     for row in records:
         scheme_objects.append(
             AMFIMasterScheme(
@@ -481,6 +488,7 @@ def persist_sebi_universe(records: list[dict[str, Any]]) -> dict[str, int]:
         )
 
     with transaction.atomic():
+        AMFIMasterScheme.objects.filter(sebi_universe_active=True).update(sebi_universe_active=False)
         AMFIMasterScheme.objects.bulk_create(
             scheme_objects,
             batch_size=1000,
@@ -924,7 +932,10 @@ def _add_category_benchmarks(
     observed_categories = sorted(
         set(funds["Level_3_Category"].dropna().astype(str))
     )
-    taxonomy_categories = sorted(CATEGORY_TREE.keys())
+    taxonomy_categories = sorted(
+        category for category, (branch, _group) in CATEGORY_TREE.items()
+        if category != "Unclassified" and branch != "Solution Oriented (Discontinued)"
+    )
     all_categories = sorted(set(observed_categories) | set(taxonomy_categories))
 
     rows = []
@@ -1418,6 +1429,7 @@ def build_sebi_universe_analytics(
         "mfapi_cache_hits": cache_hits,
         "categories_count": int(funds["Level_3_Category"].nunique()),
         "category_tree_nodes": len(CATEGORY_TREE),
+        "current_sebi_leaf_categories": len(taxonomy_categories),
         "portfolio_overlap_pairs": len(overlap_frame),
         "workbook_path": str(workbook_path),
         "category_risk_chart": str(category_chart_path),
@@ -1440,4 +1452,5 @@ def build_sebi_universe_analytics(
         ][:500],
     }
     _write_json_atomic(_summary_json_path(), summary)
+    _write_json_atomic(analytics_data_dir() / "latest_rankings.json", {"rankings": _safe_records(rankings)})
     return summary

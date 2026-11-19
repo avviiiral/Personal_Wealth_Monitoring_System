@@ -13,8 +13,8 @@ class Command(BaseCommand):
         parser.add_argument("--scheme-code", required=True)
         parser.add_argument(
             "--portfolio-date",
-            default=None,
-            help="Disclosure date in YYYY-MM-DD. Defaults to the file's modified date.",
+            required=True,
+            help="Actual disclosure date in YYYY-MM-DD.",
         )
 
     def handle(self, *args, **options):

@@ -1,7 +1,7 @@
 from django.core.management.base import BaseCommand, CommandError
 from django.utils import timezone
 
-from watchlist.models import MutualFundResearchReport
+from watchlist.models import IndianAPIRequestUsage, MutualFundResearchReport
 from watchlist.services.indianapi import (
     IndianAPIClient,
     IndianAPIError,
@@ -62,10 +62,21 @@ class Command(BaseCommand):
             },
         )
         action = "Created" if created else "Updated"
-        usage = client.last_request_usage or {}
+
+        # Read the persisted ledger rather than relying on client instance state.
+        # This keeps reporting accurate if the fetch method is wrapped or mocked,
+        # and makes the database the single source of truth for monthly usage.
+        usage_month = timezone.localdate(now).strftime("%Y-%m")
+        usage_record = IndianAPIRequestUsage.objects.filter(month=usage_month).only(
+            "request_count"
+        ).first()
+        used = usage_record.request_count if usage_record else 0
+        limit = client.monthly_budget
+        remaining = max(0, limit - used)
+        month_label = timezone.localdate(now).strftime("%B %Y")
+
         self.stdout.write(self.style.SUCCESS(
             f"{action} IndianAPI snapshot ({report.report_date}): {len(funds)} funds. "
-            f"Monthly API usage: {usage.get('used', '?')}/{usage.get('limit', '?')} "
-            f"requests for {usage.get('month', 'current month')} "
-            f"({usage.get('remaining', '?')} remaining in PWMS budget)."
+            f"Monthly API usage: {used}/{limit} requests for {month_label} "
+            f"({remaining} remaining in PWMS budget)."
         ))

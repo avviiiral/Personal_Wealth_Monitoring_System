@@ -92,10 +92,12 @@ def _distribution(values, total):
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def personal_mutual_fund_portfolio_analytics(request):
-    """Return active-family positions, XIRR and latest stored look-through data.
+    """Return active-family MF analytics from dedicated and legacy PWMS ledgers.
 
-    Only MutualFundHolding and MutualFundTransaction are read. The generic
-    investment Transaction ledger is deliberately not queried or combined.
+    Dedicated mutual-fund holdings take precedence over a matching legacy
+    Asset/Holding position. Generic-ledger rows are included only when their
+    subclass is explicitly marked as mutual funds and identity can be matched
+    safely through an ISIN or exact normalized scheme/asset name.
     """
     family = require_active_family(request.user)
     today = timezone.localdate()
@@ -131,7 +133,6 @@ def personal_mutual_fund_portfolio_analytics(request):
     )
     legacy_positions_all = list(
         Holding.objects.filter(
-            family_id=family.id,
             asset__family_id=family.id,
             asset__is_active=True,
             asset_id__in=legacy_asset_ids,
@@ -190,7 +191,9 @@ def personal_mutual_fund_portfolio_analytics(request):
             "allocations": {"categories": [], "amcs": [], "sectors": [], "top_stocks": []},
             "message": (
                 "No positive-unit mutual-fund holdings were found in the active family's "
-                "dedicated or safely identifiable legacy mutual-fund ledgers."
+                "dedicated or safely identifiable legacy mutual-fund ledgers. "
+                f"{legacy_positions_without_isin} legacy position(s) without an ISIN were "
+                "excluded because they cannot be safely de-duplicated."
             ),
         })
 
@@ -459,7 +462,7 @@ def personal_mutual_fund_portfolio_analytics(request):
             f"Included {len(legacy_positions)} safely identified legacy mutual-fund asset position(s); "
             f"excluded {duplicate_legacy_positions} duplicate legacy position(s) and "
             f"{legacy_positions_without_isin} legacy position(s) without an ISIN because they cannot be safely de-duplicated. "
-            "and current market value as the terminal cash flow. Sector and stock exposure uses "
+            "Current market value is used as the terminal cash flow. Sector and stock exposure uses "
             "the latest stored fund disclosures and any latest uploaded legacy asset-underlying snapshots; "
             "the reported disclosure date is shown separately. "
             "The simple total return is a non-annualized gross-cash-flow return, not CAGR."

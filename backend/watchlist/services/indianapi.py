@@ -4,6 +4,7 @@ AMFI remains the keyless source of truth for scheme identity and NAV history.
 IndianAPI is an optional enrichment source and is never required for PWMS startup,
 authentication, portfolio features, or the existing AMFI workflows.
 """
+from datetime import timedelta
 from decimal import Decimal, InvalidOperation
 import requests
 from django.conf import settings
@@ -11,6 +12,10 @@ from django.db import transaction
 from django.utils import timezone
 
 from watchlist.models import IndianAPIRequestUsage
+
+
+MAX_MONTHLY_REQUEST_BUDGET = 400
+IN_PROGRESS_TIMEOUT = timedelta(minutes=15)
 
 
 class IndianAPIError(Exception):
@@ -34,6 +39,10 @@ class IndianAPIQuotaExceeded(IndianAPIError):
             "Wait for the next calendar month or deliberately adjust "
             "INDIANAPI_MONTHLY_REQUEST_BUDGET for the applicable plan."
         )
+
+
+class IndianAPIRefreshInProgress(IndianAPIError):
+    """Raised when another process already reserved a monthly refresh."""
 
 
 class IndianAPIRateLimitError(IndianAPIError):
@@ -107,7 +116,8 @@ class IndianAPIClient:
             getattr(settings, "INDIANAPI_BASE_URL", "https://stock.indianapi.in") or ""
         ).strip().rstrip("/")
         self.timeout = max(1, int(getattr(settings, "INDIANAPI_TIMEOUT_SECONDS", 20)))
-        self.monthly_budget = max(1, int(getattr(settings, "INDIANAPI_MONTHLY_REQUEST_BUDGET", 450)))
+        configured_budget = int(getattr(settings, "INDIANAPI_MONTHLY_REQUEST_BUDGET", MAX_MONTHLY_REQUEST_BUDGET))
+        self.monthly_budget = min(MAX_MONTHLY_REQUEST_BUDGET, max(1, configured_budget))
         self.last_request_usage = None
 
     @property
@@ -121,11 +131,17 @@ class IndianAPIClient:
         with transaction.atomic():
             usage, _ = IndianAPIRequestUsage.objects.get_or_create(month=month)
             usage = IndianAPIRequestUsage.objects.select_for_update().get(pk=usage.pk)
+            started_at = usage.last_refresh_started_at
+            if usage.refresh_status == "IN_PROGRESS" and started_at and now - started_at < IN_PROGRESS_TIMEOUT:
+                raise IndianAPIRefreshInProgress("A mutual-fund analytics refresh is already in progress. No second provider request was sent.")
             if usage.request_count >= self.monthly_budget:
                 raise IndianAPIQuotaExceeded(month, usage.request_count, self.monthly_budget)
             usage.request_count += 1
             usage.last_requested_at = now
-            usage.save(update_fields=["request_count", "last_requested_at", "updated_at"])
+            usage.refresh_status = "IN_PROGRESS"
+            usage.last_refresh_started_at = now
+            usage.last_refresh_error = ""
+            usage.save(update_fields=["request_count", "last_requested_at", "refresh_status", "last_refresh_started_at", "last_refresh_error", "updated_at"])
             self.last_request_usage = {
                 "month": month,
                 "used": usage.request_count,
@@ -133,6 +149,20 @@ class IndianAPIClient:
                 "remaining": max(0, self.monthly_budget - usage.request_count),
             }
         return self.last_request_usage
+
+    def mark_refresh_status(self, status, error=""):
+        """Persist refresh outcome after network or snapshot processing."""
+        month = (self.last_request_usage or {}).get("month", timezone.localdate().strftime("%Y-%m"))
+        usage = IndianAPIRequestUsage.objects.filter(month=month).first()
+        if usage is None:
+            return
+        usage.refresh_status = status
+        usage.last_refresh_error = str(error or "")[:4000]
+        fields = ["refresh_status", "last_refresh_error", "updated_at"]
+        if status != "IN_PROGRESS":
+            usage.last_refresh_completed_at = timezone.now()
+            fields.append("last_refresh_completed_at")
+        usage.save(update_fields=fields)
 
     def fetch_mutual_funds(self):
         if not self.is_configured:
@@ -151,7 +181,9 @@ class IndianAPIClient:
                 timeout=self.timeout,
             )
         except requests.RequestException as exc:
-            raise IndianAPIError(f"IndianAPI connection failed: {exc}") from exc
+            message = f"IndianAPI connection failed: {exc}"
+            self.mark_refresh_status("FAILED", message)
+            raise IndianAPIError(message) from exc
 
         if response.status_code == 429:
             # Do not automatically retry: provider documentation says 429 can
@@ -186,8 +218,10 @@ class IndianAPIClient:
                 "Check your IndianAPI dashboard for remaining credits and plan limits. "
                 "No automatic retry was attempted; the previous PWMS snapshot, if any, is unchanged."
             )
+            error = " ".join(details)
+            self.mark_refresh_status("RATE_LIMITED", error)
             raise IndianAPIRateLimitError(
-                " ".join(details),
+                error,
                 retry_after=retry_after,
                 remaining=remaining,
                 reset=reset,
@@ -197,12 +231,18 @@ class IndianAPIClient:
         try:
             response.raise_for_status()
         except requests.RequestException as exc:
-            raise IndianAPIError(f"IndianAPI request failed: {exc}") from exc
+            message = f"IndianAPI request failed: {exc}"
+            self.mark_refresh_status("FAILED", message)
+            raise IndianAPIError(message) from exc
         try:
             payload = response.json()
         except ValueError as exc:
-            raise IndianAPIError("IndianAPI returned a non-JSON response.") from exc
+            message = "IndianAPI returned a non-JSON response."
+            self.mark_refresh_status("FAILED", message)
+            raise IndianAPIError(message) from exc
         if isinstance(payload, dict) and payload.get("error"):
-            raise IndianAPIError(str(payload["error"]))
+            message = str(payload["error"])
+            self.mark_refresh_status("FAILED", message)
+            raise IndianAPIError(message)
         normalize_mutual_fund_payload(payload)
         return payload

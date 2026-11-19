@@ -247,9 +247,8 @@ INDIANAPI_BASE_URL = os.environ.get(
     "INDIANAPI_BASE_URL", "https://stock.indianapi.in"
 ).strip().rstrip("/")
 INDIANAPI_TIMEOUT_SECONDS = max(1, _env_int("INDIANAPI_TIMEOUT_SECONDS", 20))
-# Default development cap leaves 50 credits of headroom against a 500-credit allowance.
-# Set this to the purchased plan's monthly allowance minus an operational reserve.
-INDIANAPI_MONTHLY_REQUEST_BUDGET = max(1, _env_int("INDIANAPI_MONTHLY_REQUEST_BUDGET", 450))
+# PWMS hard cap: the request dispatcher also clamps this setting to 400.
+INDIANAPI_MONTHLY_REQUEST_BUDGET = min(400, max(1, _env_int("INDIANAPI_MONTHLY_REQUEST_BUDGET", 400)))
 
 
 # Browser Web Push (VAPID). Keep the private key server-side only.

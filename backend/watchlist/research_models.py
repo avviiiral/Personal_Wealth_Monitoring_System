@@ -37,6 +37,10 @@ class IndianAPIRequestUsage(models.Model):
     month = models.CharField(max_length=7, unique=True, help_text="Calendar month in YYYY-MM format.")
     request_count = models.PositiveIntegerField(default=0)
     last_requested_at = models.DateTimeField(blank=True, null=True)
+    refresh_status = models.CharField(max_length=20, choices=[("NEVER", "Never"), ("IN_PROGRESS", "In progress"), ("SUCCESS", "Success"), ("FAILED", "Failed"), ("RATE_LIMITED", "Rate limited")], default="NEVER")
+    last_refresh_started_at = models.DateTimeField(blank=True, null=True)
+    last_refresh_completed_at = models.DateTimeField(blank=True, null=True)
+    last_refresh_error = models.TextField(blank=True, default="")
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:

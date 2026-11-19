@@ -1,3 +1,5 @@
+from datetime import timedelta
+
 from django.core.management.base import BaseCommand, CommandError
 from django.utils import timezone
 
@@ -25,6 +27,10 @@ class Command(BaseCommand):
                 "PWMS remains fully operational; use refresh_amfi_master for keyless AMFI data."
             ))
             return
+        cached = MutualFundResearchReport.objects.filter(report_key="indianapi-india").order_by("-report_date", "-imported_at").first()
+        if cached and cached.imported_at and timezone.now() - cached.imported_at < timedelta(hours=24):
+            self.stdout.write(self.style.SUCCESS(f"Skipped IndianAPI sync: cached snapshot from {cached.imported_at} is fresh. No provider request was made."))
+            return
         try:
             raw_payload = client.fetch_mutual_funds()
             funds = normalize_mutual_fund_payload(raw_payload)
@@ -44,7 +50,9 @@ class Command(BaseCommand):
         except IndianAPIError as exc:
             raise CommandError(str(exc)) from exc
         if not funds:
-            raise CommandError("IndianAPI returned no mutual-fund records in the documented category structure.")
+            message = "IndianAPI returned no mutual-fund records in the documented category structure."
+            client.mark_refresh_status("FAILED", message)
+            raise CommandError(message)
 
         now = timezone.now()
         report, created = MutualFundResearchReport.objects.update_or_create(
@@ -61,6 +69,7 @@ class Command(BaseCommand):
                 },
             },
         )
+        client.mark_refresh_status("SUCCESS")
         action = "Created" if created else "Updated"
 
         # Read the persisted ledger rather than relying on client instance state.

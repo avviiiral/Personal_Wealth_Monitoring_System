@@ -10,6 +10,11 @@ class MutualFundAnalyticsRouteTests(SimpleTestCase):
             "/api/mutual-fund-analytics/india-market-feed/": "india-mutual-fund-market-feed",
             "/api/mutual-fund-analytics/api-usage/": "indianapi-usage-status",
             "/api/mutual-fund-analytics/refresh/": "mutual-fund-analytics-refresh",
+            "/api/mutual-fund-analytics/sebi/summary/": "sebi-mf-universe-summary",
+            "/api/mutual-fund-analytics/sebi/rankings/": "sebi-mf-universe-rankings",
+            "/api/mutual-fund-analytics/sebi/export/": "sebi-mf-analytics-export",
+            "/api/mutual-fund-analytics/sebi/charts/category-risk/": "sebi-mf-category-risk-chart",
+            "/api/mutual-fund-analytics/sebi/charts/top-q1/": "sebi-mf-top-q1-chart",
         }
 
         for route, expected_name in expected_routes.items():

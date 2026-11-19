@@ -22,6 +22,8 @@ INDIANAPI_TIMEOUT_SECONDS=20
 INDIANAPI_MONTHLY_REQUEST_BUDGET=450
 ```
 
+Select `INDIANAPI_BASE_URL` to match the purchased plan: Free/Hobby uses `https://stock.indianapi.in`, Developer uses `https://dev.indianapi.in`, Growth Analyst uses `https://analyst.indianapi.in`, and Pro uses `https://pro.indianapi.in`. Keep development and production keys in their respective backend environment configurations; do not reuse a development key in production.
+
 The development default is a PWMS-side cap of 450 outbound requests per calendar month, reserving 50 credits against a 500-credit allowance. For production, configure this value to the purchased plan's monthly allowance minus a deliberate safety reserve. This is an application guardrail; it does not query or synchronize the provider's own quota dashboard.
 
 The `/mutual_funds` endpoint returns the categorized mutual-fund universe in one bulk response. PWMS does not call the endpoint once per fund. The number of returned schemes therefore does not multiply the request count.

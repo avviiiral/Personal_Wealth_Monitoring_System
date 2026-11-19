@@ -178,6 +178,10 @@ export class MutualFundAnalyticsComponent implements OnInit {
   benchmarkValue(period: string): any {
     return this.p2p?.bm?.vals?.[period.toLowerCase()] ?? null;
   }
+  categoryPeriodReturn(period: string): any {
+    const key = ({ '1M': 'r1m', '3M': 'r3m', '6M': 'r6m', '1Y': 'r1y', '3Y': 'r3y', '5Y': 'r5y', 'YTD': 'ytd' } as Record<string, string>)[period];
+    return this.p2p?.cat?.[key] ?? null;
+  }
   benchmarkCytd(name: string): any {
     return this.raw?.benchmarks?.cytd_bench?.[name] ?? null;
   }

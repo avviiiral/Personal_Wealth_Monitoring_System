@@ -122,7 +122,7 @@
           <td *ngFor="let p of periods">{{ formatPct(fundReturn(fund,p)) }}</td><td>{{ quartile(fund,'3M') }}</td><td>{{ quartile(fund,'6M') }}</td><td>{{ quartile(fund,'1Y') }}</td></tr></tbody>
       </table></div>
       <div class="metric-grid">
-        <article class="metric-card" *ngFor="let p of periods"><span>{{ p }} category average</span><strong>{{ formatPct(p2p.cat?.[('r'+p.toLowerCase())] ?? category[('r'+p.toLowerCase())]) }}</strong><small>{{ p2p.n_covered || 0 }} funds have P2P coverage overall</small></article>
+        <article class="metric-card" *ngFor="let p of periods"><span>{{ p }} category average</span><strong>{{ formatPct(categoryPeriodReturn(p)) }}</strong><small>{{ p2p.n_covered || 0 }} funds have P2P coverage overall</small></article>
       </div>
     </section>
 

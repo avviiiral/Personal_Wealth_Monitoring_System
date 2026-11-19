@@ -18,7 +18,7 @@
   </header>
 
   <div class="error-state" *ngIf="error">{{ error }}</div>
-  <div class="loading-state" *ngIf="loading">Loading research report…</div>
+  <div class="loading-state" *ngIf="loading">Loading mutual-fund data…</div>
   <section class="empty-state" *ngIf="!loading && report && !report.available && !indiaFeed?.available">
     <h2>No research report or India fund data available</h2>
     <p>{{ report.message }}</p>
@@ -65,7 +65,7 @@
 
   <ng-container *ngIf="!loading && report?.available && raw">
     <nav class="tab-nav" aria-label="Mutual fund analytics sections">
-      <button *ngFor="let tab of tabs" type="button" [class.active]="activeTab === tab.id" (click)="activeTab = tab.id">{{ tab.label }}</button>
+      <button *ngFor="let tab of tabs" type="button" [hidden]="tab.id === 'india' && !indiaFeed?.available" [class.active]="activeTab === tab.id" (click)="activeTab = tab.id">{{ tab.label }}</button>
     </nav>
 
     <section *ngIf="activeTab === 'overview'">

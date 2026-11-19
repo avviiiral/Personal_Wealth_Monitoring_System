@@ -76,11 +76,6 @@
     </article>
   </section>
 
-  <ng-container *ngIf="!loading && report?.available && raw">
-    <nav class="tab-nav" aria-label="Mutual fund analytics sections">
-      <button *ngFor="let tab of tabs" type="button" [hidden]="tab.id === 'india' && !indiaFeed?.available" [class.active]="activeTab === tab.id" (click)="activeTab = tab.id">{{ tab.label }}</button>
-    </nav>
-
     <section class="personal-portfolio-section" *ngIf="activeTab === 'my-portfolio'">
       <div class="section-intro"><h2>My Mutual Fund Portfolio</h2><p>Active family holdings · {{ personalPortfolio?.source || 'Existing PWMS mutual-fund ledger' }} · Latest NAV {{ personalPortfolio?.as_of ? (personalPortfolio?.as_of | date:'dd MMM yyyy') : 'not available' }}</p></div>
       <ng-container *ngIf="personalPortfolio?.available; else noPersonalMfHoldings">
@@ -107,6 +102,11 @@
       </ng-container>
       <ng-template #noPersonalMfHoldings><div class="empty-state"><h3>Personal mutual-fund portfolio unavailable</h3><p>{{ personalPortfolio?.message || 'The active-family portfolio endpoint did not return data. Existing investment records have not been changed.' }}</p></div></ng-template>
     </section>
+
+  <ng-container *ngIf="!loading && report?.available && raw">
+    <nav class="tab-nav" aria-label="Mutual fund analytics sections">
+      <button *ngFor="let tab of tabs" type="button" [hidden]="tab.id === 'india' && !indiaFeed?.available" [class.active]="activeTab === tab.id" (click)="activeTab = tab.id">{{ tab.label }}</button>
+    </nav>
 
     <section *ngIf="activeTab === 'overview'">
       <div class="section-intro"><h2>Category Overview</h2><p>{{ raw.meta?.category }} · {{ raw.meta?.cycle }} · Source reports {{ raw.meta?.n_funds }} funds</p></div>

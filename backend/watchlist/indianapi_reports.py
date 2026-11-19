@@ -34,6 +34,48 @@ def _latest_indianapi_report():
     )
 
 
+def _overlay_amfi_nav(funds):
+    """Overlay AMFI identity and NAV when an exact scheme-name mapping exists."""
+    names = {
+        str(row.get("fund_name") or "").strip()
+        for row in funds
+        if isinstance(row, dict) and str(row.get("fund_name") or "").strip()
+    }
+    if not names:
+        return funds
+
+    latest_nav = AMFIMasterNAV.objects.filter(
+        scheme_id=OuterRef("pk")
+    ).order_by("-date", "-id")
+    schemes = AMFIMasterScheme.objects.filter(
+        is_active=True,
+        scheme_name__in=names,
+    ).annotate(
+        latest_nav_value=Subquery(latest_nav.values("nav")[:1]),
+        latest_nav_date=Subquery(latest_nav.values("date")[:1]),
+    )
+    by_name = {scheme.scheme_name.casefold(): scheme for scheme in schemes}
+
+    for fund in funds:
+        if not isinstance(fund, dict):
+            continue
+        scheme = by_name.get(str(fund.get("fund_name") or "").strip().casefold())
+        if scheme is None:
+            # Do not label a provider-supplied NAV as AMFI sourced.
+            fund["latest_nav"] = None
+            fund["nav_date"] = None
+            continue
+        fund["scheme_code"] = scheme.scheme_code
+        fund["isin_growth"] = scheme.isin_growth
+        fund["isin_dividend"] = scheme.isin_dividend
+        fund["latest_nav"] = (
+            float(scheme.latest_nav_value)
+            if scheme.latest_nav_value is not None else None
+        )
+        fund["nav_date"] = scheme.latest_nav_date
+    return funds
+
+
 def _usage_payload():
     month = timezone.localdate().strftime("%Y-%m")
     configured_budget = int(getattr(settings, "INDIANAPI_MONTHLY_REQUEST_BUDGET", MAX_MONTHLY_REQUEST_BUDGET))
@@ -144,17 +186,18 @@ def india_mutual_fund_feed(request):
         funds = payload.get("funds")
         if not isinstance(funds, list):
             funds = normalize_mutual_fund_payload(payload.get("raw", {}))
+        funds = _overlay_amfi_nav(funds)
         return Response({
             "available": bool(funds),
             "provider_configured": configured,
             "source": "IndianAPI",
-            "source_label": "IndianAPI · cached mutual-fund snapshot",
+            "source_label": "IndianAPI enrichment · AMFI identity and NAV where exact scheme mapping exists",
             "report_date": report.report_date,
             "imported_at": report.imported_at,
             "count": len(funds),
             "total_count": len(funds),
             "message": (
-                "Showing the last stored IndianAPI snapshot."
+                "Showing the last stored IndianAPI enrichment snapshot with AMFI NAV values where exact scheme mapping exists."
                 if configured else
                 "Showing the last stored IndianAPI snapshot. Provider refresh is disabled until an API key is configured."
             ),

@@ -28,7 +28,7 @@ class Command(BaseCommand):
             ))
             return
         cached = MutualFundResearchReport.objects.filter(report_key="indianapi-india").order_by("-report_date", "-imported_at").first()
-        if cached and cached.imported_at and timezone.now() - cached.imported_at < timedelta(hours=24):
+        if cached and cached.report_date == timezone.localdate() and cached.imported_at and timezone.now() - cached.imported_at < timedelta(hours=24):
             self.stdout.write(self.style.SUCCESS(f"Skipped IndianAPI sync: cached snapshot from {cached.imported_at} is fresh. No provider request was made."))
             return
         try:

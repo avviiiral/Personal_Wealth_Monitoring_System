@@ -2,14 +2,17 @@
 from collections import defaultdict
 from decimal import Decimal, InvalidOperation
 
-from django.db.models import OuterRef, Subquery
+from django.db.models import OuterRef, Q, Subquery
 from django.utils import timezone
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from analytics.services.mutual_fund_lookthrough import MutualFundLookThroughService
+from investments.models import Holding, Transaction, TransactionType as InvestmentTransactionType
+from investments.services.asset_underlying import AssetUnderlyingService
 from analytics.services.xirr import XIRRCalculator
+from mutual_funds.models import AMFIMasterNAV, AMFIMasterScheme
 from users.permissions import require_active_family
 
 from .models import MutualFundHolding, MutualFundNAV, MutualFundTransaction, MutualFundTransactionType
@@ -39,6 +42,24 @@ def _transaction_cashflow(transaction):
     if transaction.transaction_type == MutualFundTransactionType.DIVIDEND:
         return max(ZERO, amount - fees), "dividend"
     return None, None
+
+
+
+def _legacy_transaction_cashflow(transaction):
+    """Convert legacy investments.Transaction mutual-fund rows to investor cash flows."""
+    amount = abs(_decimal(transaction.amount))
+    fees = abs(_decimal(transaction.fees))
+    if transaction.transaction_type in (InvestmentTransactionType.BUY, InvestmentTransactionType.SIP):
+        return -(amount + fees), "purchase"
+    if transaction.transaction_type == InvestmentTransactionType.SELL:
+        return max(ZERO, amount - fees), "redemption"
+    if transaction.transaction_type == InvestmentTransactionType.DIVIDEND:
+        return max(ZERO, amount - fees), "dividend"
+    return None, None
+
+
+def _normalised_identity(value):
+    return " ".join(str(value or "").strip().casefold().split())
 
 
 def _percentage(numerator, denominator):
@@ -97,7 +118,57 @@ def personal_mutual_fund_portfolio_analytics(request):
         .order_by("scheme__scheme_name")
     )
 
-    if not holdings:
+    # PWMS has two historical representations of personal mutual-fund positions:
+    # the dedicated mutual_funds ledger and legacy Asset/Holding/Transaction rows.
+    # Load legacy positions only when the generic transaction subclass explicitly
+    # identifies them as mutual funds. They are de-duplicated against dedicated
+    # positions by exact ISIN or exact normalized scheme/asset name before use.
+    legacy_asset_ids = set(
+        Transaction.objects.filter(
+            family_id=family.id,
+            sub_class__icontains="mutual fund",
+        ).values_list("asset_id", flat=True).distinct()
+    )
+    legacy_positions_all = list(
+        Holding.objects.filter(
+            family_id=family.id,
+            asset__family_id=family.id,
+            asset__is_active=True,
+            asset_id__in=legacy_asset_ids,
+            quantity__gt=0,
+        ).select_related("asset", "asset__security_master").order_by("asset__name")
+    )
+
+    dedicated_isins = {
+        str(value or "").strip().upper()
+        for holding in holdings
+        for value in (holding.scheme.isin_growth, holding.scheme.isin_dividend)
+        if str(value or "").strip()
+    }
+    dedicated_names = {
+        _normalised_identity(holding.scheme.scheme_name)
+        for holding in holdings
+        if _normalised_identity(holding.scheme.scheme_name)
+    }
+
+    legacy_positions = []
+    duplicate_legacy_positions = 0
+    legacy_positions_without_isin = 0
+    for position in legacy_positions_all:
+        isin = str(position.asset.isin or "").strip().upper()
+        name_key = _normalised_identity(position.asset.name)
+        if (isin and isin in dedicated_isins) or (name_key and name_key in dedicated_names):
+            duplicate_legacy_positions += 1
+            continue
+        # Without an ISIN or an exact name match, we cannot prove that the
+        # generic row is distinct from an existing dedicated scheme. Exclude
+        # it rather than risking a duplicate portfolio valuation.
+        if not isin:
+            legacy_positions_without_isin += 1
+            continue
+        legacy_positions.append(position)
+
+    if not holdings and not legacy_positions:
         return Response({
             "available": False,
             "family_id": family.id,
@@ -117,7 +188,10 @@ def personal_mutual_fund_portfolio_analytics(request):
             },
             "holdings": [],
             "allocations": {"categories": [], "amcs": [], "sectors": [], "top_stocks": []},
-            "message": "No positive-unit mutual-fund holdings are recorded for the active family.",
+            "message": (
+                "No positive-unit mutual-fund holdings were found in the active family's "
+                "dedicated or safely identifiable legacy mutual-fund ledgers."
+            ),
         })
 
     scheme_ids = [holding.scheme_id for holding in holdings]
@@ -139,6 +213,66 @@ def personal_mutual_fund_portfolio_analytics(request):
             cash_totals[kind] += abs(cashflow)
         else:
             cash_totals[kind] += cashflow
+
+    legacy_cashflows_by_asset = defaultdict(list)
+    legacy_transactions = list(
+        Transaction.objects.filter(
+            family_id=family.id,
+            asset_id__in=[position.asset_id for position in legacy_positions],
+            sub_class__icontains="mutual fund",
+        ).order_by("transaction_date", "created_at", "id")
+    )
+    legacy_category_by_asset = {}
+    for tx in legacy_transactions:
+        if tx.sub_class:
+            legacy_category_by_asset[tx.asset_id] = tx.sub_class.strip()
+        cashflow, kind = _legacy_transaction_cashflow(tx)
+        if cashflow is None or cashflow == ZERO:
+            continue
+        legacy_cashflows_by_asset[tx.asset_id].append((tx.transaction_date, cashflow))
+        portfolio_cashflows.append((tx.transaction_date, cashflow))
+        if kind == "purchase":
+            cash_totals[kind] += abs(cashflow)
+        else:
+            cash_totals[kind] += cashflow
+
+    # Resolve each legacy Asset ISIN against the global AMFI master and use
+    # the latest persisted AMFI NAV when available; no provider call is made.
+    legacy_isins = {
+        str(position.asset.isin or "").strip().upper()
+        for position in legacy_positions
+        if str(position.asset.isin or "").strip()
+    }
+    legacy_nav_by_isin = {}
+    if legacy_isins:
+        isin_query = Q()
+        for isin in legacy_isins:
+            isin_query |= Q(isin_growth__iexact=isin) | Q(isin_dividend__iexact=isin)
+        master_nav = AMFIMasterNAV.objects.filter(
+            scheme_id=OuterRef("pk")
+        ).order_by("-date", "-id")
+        master_schemes = AMFIMasterScheme.objects.filter(
+            is_active=True
+        ).filter(isin_query).annotate(
+            latest_nav_value=Subquery(master_nav.values("nav")[:1]),
+            latest_nav_date=Subquery(master_nav.values("date")[:1]),
+        )
+        for master in master_schemes:
+            if master.latest_nav_value is None:
+                continue
+            for isin in (master.isin_growth, master.isin_dividend):
+                key = str(isin or "").strip().upper()
+                if not key or key not in legacy_isins:
+                    continue
+                existing = legacy_nav_by_isin.get(key)
+                if existing is None or (
+                    master.latest_nav_date and
+                    (existing[1] is None or master.latest_nav_date > existing[1])
+                ):
+                    legacy_nav_by_isin[key] = (
+                        _decimal(master.latest_nav_value),
+                        master.latest_nav_date,
+                    )
 
     holding_rows = []
     market_values = {}
@@ -176,6 +310,7 @@ def personal_mutual_fund_portfolio_analytics(request):
             scheme_flows.append((today, market_value))
         holding_rows.append({
             "scheme_id": scheme.id,
+            "position_source": "mutual_fund_ledger",
             "scheme_name": scheme.scheme_name,
             "amc_name": scheme.amc_name,
             "category": scheme.category or "Unclassified",
@@ -190,6 +325,67 @@ def personal_mutual_fund_portfolio_analytics(request):
             "unrealized_gain": str(unrealized.quantize(Decimal("0.01"))),
             "unrealized_gain_pct": str(_percentage(unrealized, invested)) if invested > 0 else None,
             "xirr_pct": _xirr_percent(scheme_flows),
+        })
+
+    legacy_asset_market_values = {}
+    for position in legacy_positions:
+        asset = position.asset
+        units = _decimal(position.quantity)
+        invested = _decimal(position.invested_value)
+        isin = str(asset.isin or "").strip().upper()
+        nav_entry = legacy_nav_by_isin.get(isin)
+        if nav_entry:
+            nav, nav_date = nav_entry
+            market_value = units * nav
+            valuation_source = "AMFI master NAV history"
+        else:
+            nav = _decimal(position.current_price) if _decimal(position.current_price) > 0 else None
+            nav_date = None
+            stored_value = _decimal(position.current_value)
+            if stored_value > 0:
+                market_value = stored_value
+                valuation_source = "Stored legacy holding valuation"
+            else:
+                market_value = invested
+                valuation_source = "Cost basis fallback (no stored NAV/price)"
+
+        category = (
+            legacy_category_by_asset.get(position.asset_id)
+            or "Unclassified"
+        )
+        amc_name = (
+            str(asset.institution or "").strip()
+            or str(getattr(asset.security_master, "amc_name", "") or "").strip()
+            or "Unclassified"
+        )
+        invested_total += invested
+        market_total += market_value
+        category_values[category] += market_value
+        amc_values[amc_name] += market_value
+        legacy_asset_market_values[position.asset_id] = market_value
+        if nav_date and (latest_nav_date is None or nav_date > latest_nav_date):
+            latest_nav_date = nav_date
+
+        legacy_flows = list(legacy_cashflows_by_asset.get(position.asset_id, []))
+        if market_value > 0:
+            legacy_flows.append((today, market_value))
+        holding_rows.append({
+            "scheme_id": asset.id,
+            "position_source": "legacy_asset_ledger",
+            "scheme_name": asset.name,
+            "amc_name": amc_name,
+            "category": category,
+            "plan": None,
+            "option": None,
+            "units": str(units.quantize(Decimal("0.000001"))),
+            "nav": str(nav) if nav is not None else None,
+            "nav_date": nav_date.isoformat() if nav_date else None,
+            "valuation_source": valuation_source,
+            "invested_value": str(invested.quantize(Decimal("0.01"))),
+            "market_value": str(market_value.quantize(Decimal("0.01"))),
+            "unrealized_gain": str((market_value - invested).quantize(Decimal("0.01"))),
+            "unrealized_gain_pct": str(_percentage(market_value - invested, invested)) if invested > 0 else None,
+            "xirr_pct": _xirr_percent(legacy_flows),
         })
 
     if market_total > 0:
@@ -216,12 +412,29 @@ def personal_mutual_fund_portfolio_analytics(request):
             sector_values[(row.sector or "").strip() or "Unclassified"] += exposure
             stock_values[(row.security_name or "").strip() or "Unclassified"] += exposure
 
+    # Legacy Asset-based funds use PWMS's existing uploaded-underlying ledger.
+    legacy_underlyings = AssetUnderlyingService.latest_by_asset(request.user)
+    for asset_id, asset_value in legacy_asset_market_values.items():
+        if asset_value <= 0:
+            continue
+        for row in legacy_underlyings.get(asset_id, []):
+            disclosed_pct = _decimal(row.holding_percentage)
+            if disclosed_pct <= 0:
+                continue
+            exposure = asset_value * disclosed_pct / HUNDRED
+            sector_values[(row.sector or "").strip() or "Unclassified"] += exposure
+            stock_values[(row.stock_name or "").strip() or "Unclassified"] += exposure
+            uploaded_at = getattr(row, "uploaded_at", None)
+            uploaded_date = uploaded_at.date() if uploaded_at else None
+            if uploaded_date and (disclosure_as_of is None or uploaded_date > disclosure_as_of):
+                disclosure_as_of = uploaded_date
+
     return Response({
         "available": True,
         "family_id": family.id,
         "as_of": latest_nav_date.isoformat() if latest_nav_date else None,
         "disclosure_as_of": disclosure_as_of.isoformat() if disclosure_as_of else None,
-        "source": "Existing family-scoped MutualFundHolding and MutualFundTransaction ledgers; latest stored AMFI NAV and portfolio disclosures.",
+        "source": "Family-scoped dedicated mutual-fund ledger plus legacy Asset/Holding/Transaction positions, de-duplicated by exact ISIN or exact scheme/asset name; stored AMFI NAV and underlying disclosures.",
         "summary": {
             "holdings_count": len(holding_rows),
             "invested_value": str(invested_total.quantize(Decimal("0.01"))),
@@ -242,9 +455,13 @@ def personal_mutual_fund_portfolio_analytics(request):
             "top_stocks": _distribution(stock_values, market_total)[:20],
         },
         "message": (
-            "XIRR treats purchases and SIPs as outflows, redemptions and dividends as inflows, "
+            f"XIRR treats purchases and SIPs as outflows, redemptions and dividends as inflows. "
+            f"Included {len(legacy_positions)} safely identified legacy mutual-fund asset position(s); "
+            f"excluded {duplicate_legacy_positions} duplicate legacy position(s) and "
+            f"{legacy_positions_without_isin} legacy position(s) without an ISIN because they cannot be safely de-duplicated. "
             "and current market value as the terminal cash flow. Sector and stock exposure uses "
-            "the latest stored fund portfolio disclosures; their date is shown separately. "
+            "the latest stored fund disclosures and any latest uploaded legacy asset-underlying snapshots; "
+            "the reported disclosure date is shown separately. "
             "The simple total return is a non-annualized gross-cash-flow return, not CAGR."
         ),
     })

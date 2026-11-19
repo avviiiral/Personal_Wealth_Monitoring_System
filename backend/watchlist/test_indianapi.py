@@ -9,6 +9,7 @@ from rest_framework.test import APIRequestFactory, force_authenticate
 
 from mutual_funds.models import AMFIMasterNAV, AMFIMasterScheme
 from watchlist.indianapi_reports import india_mutual_fund_feed
+from watchlist.research_reports import latest_mutual_fund_research_report
 from watchlist.models import MutualFundResearchReport
 from watchlist.services.indianapi import (
     IndianAPIClient,
@@ -115,6 +116,27 @@ class IndianAPIFeedTests(TestCase):
         self.assertTrue(response.data["available"])
         self.assertFalse(response.data["provider_configured"])
         self.assertEqual(response.data["funds"][0]["fund_name"], "Cached Fund")
+
+    @override_settings(INDIANAPI_API_KEY="")
+    def test_indianapi_snapshot_does_not_replace_nexedge_report_endpoint(self):
+        MutualFundResearchReport.objects.create(
+            report_key="multi-cap",
+            report_date=date(2026, 10, 30),
+            report_cycle="October 2026",
+            payload={"RAW": {"funds": [{"name": "Nexedge Fund"}]}, "P2P": {}, "ATTR": {}},
+        )
+        MutualFundResearchReport.objects.create(
+            report_key="indianapi-india",
+            report_date=date(2026, 11, 19),
+            report_cycle="IndianAPI India mutual funds",
+            payload={"funds": [{"fund_name": "IndianAPI Fund", "returns": {}}]},
+        )
+        request = self.factory.get("/api/watch-list/analytics/research-report/")
+        force_authenticate(request, user=self.user)
+        response = latest_mutual_fund_research_report(request)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["report_key"], "multi-cap")
+        self.assertIn("RAW", response.data["payload"])
 
     @override_settings(INDIANAPI_API_KEY="")
     def test_sync_command_skips_cleanly_without_key(self):

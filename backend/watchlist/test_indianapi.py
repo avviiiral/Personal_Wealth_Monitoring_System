@@ -15,6 +15,7 @@ from watchlist.services.indianapi import (
     IndianAPIClient,
     IndianAPIConfigurationError,
     IndianAPIError,
+    IndianAPIRateLimitError,
     normalize_mutual_fund_payload,
 )
 
@@ -72,6 +73,27 @@ class IndianAPIClientTests(SimpleTestCase):
         self.assertEqual(mock_get.call_args.args[0], "https://stock.indianapi.in/mutual_funds")
         self.assertEqual(mock_get.call_args.kwargs["headers"]["X-Api-Key"], "test-secret")
         self.assertEqual(mock_get.call_args.kwargs["timeout"], 7)
+
+    @override_settings(INDIANAPI_API_KEY="test-secret")
+    @patch("watchlist.services.indianapi.requests.get")
+    def test_429_exposes_retry_headers_and_does_not_retry(self, mock_get):
+        response = Mock()
+        response.status_code = 429
+        response.headers = {
+            "Retry-After": "60",
+            "X-RateLimit-Remaining": "0",
+            "X-RateLimit-Reset": "1795100000",
+        }
+        response.json.return_value = {"message": "API credits exhausted"}
+        mock_get.return_value = response
+
+        with self.assertRaises(IndianAPIRateLimitError) as context:
+            IndianAPIClient().fetch_mutual_funds()
+
+        self.assertEqual(context.exception.retry_after, "60")
+        self.assertEqual(context.exception.remaining, "0")
+        self.assertIn("API credits exhausted", str(context.exception))
+        self.assertEqual(mock_get.call_count, 1)
 
 
 class IndianAPIFeedTests(TestCase):
@@ -145,6 +167,29 @@ class IndianAPIFeedTests(TestCase):
         call_command("sync_indianapi_mutual_funds", stdout=output)
         self.assertIn("Skipped IndianAPI sync", output.getvalue())
         self.assertEqual(MutualFundResearchReport.objects.count(), 0)
+
+    @override_settings(INDIANAPI_API_KEY="test-secret")
+    @patch(
+        "watchlist.management.commands.sync_indianapi_mutual_funds.IndianAPIClient.fetch_mutual_funds",
+        side_effect=IndianAPIRateLimitError(
+            "IndianAPI returned HTTP 429 (rate limit or API credits exhausted).",
+            retry_after="60",
+            remaining="0",
+        ),
+    )
+    def test_rate_limit_preserves_existing_snapshot(self, _mock_fetch):
+        from django.core.management.base import CommandError
+        existing = MutualFundResearchReport.objects.create(
+            report_key="indianapi-india",
+            report_date=date(2026, 11, 18),
+            report_cycle="IndianAPI India mutual funds",
+            payload={"funds": [{"fund_name": "Last Good Snapshot"}]},
+        )
+        with self.assertRaises(CommandError) as context:
+            call_command("sync_indianapi_mutual_funds")
+        existing.refresh_from_db()
+        self.assertEqual(existing.payload["funds"][0]["fund_name"], "Last Good Snapshot")
+        self.assertIn("previously cached snapshot", str(context.exception))
 
     @override_settings(INDIANAPI_API_KEY="test-secret")
     @patch(

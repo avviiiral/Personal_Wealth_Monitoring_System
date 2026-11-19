@@ -44,6 +44,14 @@ python manage.py sync_indianapi_mutual_funds
 
 The IndianAPI command stores a dated snapshot under report key indianapi-india; it does not overwrite the Nexedge report or investment transactions.
 
+## HTTP 429 / quota handling
+
+IndianAPI documents HTTP 429 as either exhausted API credits or a plan rate limit. Check the account dashboard for current usage and remaining credits. The Free plan's published starting allowance is 500 API credits; plan allowances and rate limits can change. If the account was just renewed/upgraded and the error continues after a few minutes, contact IndianAPI support at contact@indianapi.in.
+
+PWMS does not automatically retry a 429. The sync command reports provider details and any Retry-After / rate-limit headers. This avoids a tight retry loop and unnecessary requests. A failed refresh does not overwrite the last successfully stored IndianAPI snapshot; the keyless AMFI feed remains available.
+
+Official provider guidance: https://indianapi.in/indian-stock-market
+
 ## API
 
 Authenticated endpoint:

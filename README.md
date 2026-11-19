@@ -51,7 +51,7 @@ All financial calculations run on the backend. The frontend formats and displays
 | Analytics | Allocation by asset class, sector, market cap, AMC and advisor; performance; equity and fixed-income analysis; historical wealth | `/analytics` |
 | Corporate Actions | NSE corporate-action monitoring, exposure matching, and user review that creates bonus, split or dividend transactions | `/corporate-actions` |
 | Portfolio News | Google News RSS monitoring and NSE/BSE filing ingestion, matched to holdings, scored by rules, with optional Web Push | `/portfolio-news` |
-| Watch List | Mutual fund (AMFI) and PMS (APMI) research universe, returns, benchmark comparison, personal watch list | `/watch-list` |
+| Watch List | Mutual fund (AMFI) and PMS (APMI) research universe, returns, benchmark comparison, personal watch list | `/watch-list` |\n| Mutual Fund Analytics | Mutual-fund peer universe, category/provider/plan filters, persisted return rankings and benchmark comparison | `/mutual-fund-analytics` |
 | AI Portfolio Chat | Optional Google Gemini chat over the user's own portfolio context | header panel, `/ai-chat` |
 | Settings | Account, password, tax settings, logs and audit history, user management, family management, manual prices | `/settings` |
 
@@ -156,7 +156,7 @@ Personal_Wealth_Monitoring_System/
 │   ├── corporate_actions/        Corporate actions, exposures, reconciliations, NSE provider
 │   ├── filing_intelligence/      NSE/BSE filing ingestion and rule-based classification
 │   ├── portfolio_news/           News retrieval, matching, scoring, alerts, Web Push
-│   ├── watchlist/                MF/PMS research universe, performance, benchmarks
+│   ├── watchlist/                MF/PMS research universe, performance, benchmarks, peer analytics
 │   └── ai/                       Gemini portfolio chat and token-usage log
 ├── frontend/
 │   ├── angular.json, package.json, proxy.conf.json

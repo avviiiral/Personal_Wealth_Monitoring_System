@@ -25,12 +25,12 @@ class MutualFundResearchReportTests(TestCase):
         )
         client = APIClient()
         client.force_authenticate(user)
-        response = client.get("/api/watch-list/analytics/research-report/")
+        response = client.get("/api/mutual-fund-analytics/research-report/")
         self.assertEqual(response.status_code, 200)
         self.assertTrue(response.data["available"])
         self.assertEqual(response.data["id"], report.id)
         self.assertEqual(response.data["payload"]["RAW"]["funds"][0]["name"], "Fund A")
 
     def test_report_endpoint_requires_authentication(self):
-        response = APIClient().get("/api/watch-list/analytics/research-report/")
+        response = APIClient().get("/api/mutual-fund-analytics/research-report/")
         self.assertEqual(response.status_code, 403)

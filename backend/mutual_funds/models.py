@@ -347,6 +347,18 @@ class AMFIMasterScheme(models.Model):
     scheme_name = models.CharField(max_length=300)
     isin_growth = models.CharField(max_length=30, blank=True, null=True)
     isin_dividend = models.CharField(max_length=30, blank=True, null=True)
+    amc_name = models.CharField(max_length=200, blank=True, default="")
+    raw_category_header = models.CharField(max_length=300, blank=True, default="")
+    plan = models.CharField(max_length=40, blank=True, default="")
+    option = models.CharField(max_length=60, blank=True, default="")
+    level_1_branch = models.CharField(max_length=80, blank=True, default="")
+    level_2_group = models.CharField(max_length=120, blank=True, default="")
+    level_3_category = models.CharField(max_length=160, blank=True, default="")
+    is_growth_plan = models.BooleanField(default=False)
+    is_direct_plan_growth = models.BooleanField(default=False)
+    sebi_universe_active = models.BooleanField(default=False)
+    amfi_source_date = models.DateField(blank=True, null=True)
+    universe_last_seen_at = models.DateTimeField(blank=True, null=True)
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -356,6 +368,10 @@ class AMFIMasterScheme(models.Model):
         indexes = [
             models.Index(fields=["isin_growth"]),
             models.Index(fields=["isin_dividend"]),
+            models.Index(
+                fields=["level_1_branch", "level_3_category", "plan", "option"],
+                name="amfi_sebi_tree_plan_idx",
+            ),
         ]
 
     def __str__(self):

@@ -46,6 +46,26 @@ class SEBITaxonomyTests(SimpleTestCase):
         self.assertEqual(records[0]["level_3_category"], "Large Cap")
         self.assertTrue(records[0]["is_direct_plan_growth"])
 
+    def test_fund_of_funds_header_preserves_nested_parentheses(self):
+        mapped = map_sebi_hierarchy(
+            "Open Ended Schemes (Other Schemes - FoFs (Overseas/Domestic))",
+            "Example Overseas Fund of Funds - Direct Plan - Growth",
+        )
+        self.assertEqual(mapped["level_1_branch"], "Other Schemes")
+        self.assertEqual(mapped["level_3_category"], "Fund of Funds (Overseas/Domestic)")
+
+    def test_sectoral_and_thematic_are_separate_current_leaf_categories(self):
+        sectoral = map_sebi_hierarchy(
+            "Open Ended Schemes (Equity Scheme - Sectoral/Thematic Fund)",
+            "Example Sectoral Fund - Direct Plan - Growth",
+        )
+        thematic = map_sebi_hierarchy(
+            "Open Ended Schemes (Equity Scheme - Sectoral/Thematic Fund)",
+            "Example Thematic Fund - Direct Plan - Growth",
+        )
+        self.assertEqual(sectoral["level_3_category"], "Sectoral")
+        self.assertEqual(thematic["level_3_category"], "Thematic")
+
     def test_regular_growth_is_separate_from_direct_growth(self):
         source = (
             "Scheme Code;ISIN Growth;ISIN Dividend;Scheme Name;Plan;Option;Net Asset Value;Date\n"

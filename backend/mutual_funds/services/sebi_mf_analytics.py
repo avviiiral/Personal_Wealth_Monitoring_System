@@ -1191,7 +1191,12 @@ def import_monthly_portfolio_holdings_xlsx(
     if not holdings_by_isin:
         raise ValueError("No valid ISIN-weight rows were found in the portfolio workbook.")
 
-    as_of = portfolio_date or date.fromtimestamp(file_path.stat().st_mtime)
+    if portfolio_date is None:
+        raise ValueError(
+            "Provide the portfolio disclosure date explicitly with --portfolio-date; "
+            "a file modification timestamp is not a reliable disclosure date."
+        )
+    as_of = portfolio_date
     payload = {
         "scheme_code": scheme.scheme_code,
         "scheme_name": scheme.scheme_name,

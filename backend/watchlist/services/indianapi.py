@@ -99,7 +99,7 @@ def normalize_mutual_fund_payload(payload):
 
 
 class IndianAPIClient:
-    """Small server-side client for the IndianAPI Free/Hobby mutual-fund endpoint."""
+    """Server-side client for the configured IndianAPI plan's mutual-fund endpoint."""
 
     def __init__(self):
         self.api_key = str(getattr(settings, "INDIANAPI_API_KEY", "") or "").strip()

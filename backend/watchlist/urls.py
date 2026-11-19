@@ -2,7 +2,7 @@ from django.urls import path
 
 from watchlist.analytics import mutual_fund_analytics_overview
 from watchlist.research_reports import latest_mutual_fund_research_report
-from watchlist.indianapi_reports import india_mutual_fund_feed
+from watchlist.indianapi_reports import india_mutual_fund_feed, indianapi_usage_status, refresh_india_mutual_fund_feed
 
 from watchlist.views import (
     watch_list_bulk_add,
@@ -23,6 +23,8 @@ urlpatterns = [
     path("analytics/overview/", mutual_fund_analytics_overview, name="mutual-fund-analytics-overview"),
     path("analytics/research-report/", latest_mutual_fund_research_report, name="mutual-fund-research-report"),
     path("analytics/india-market-feed/", india_mutual_fund_feed, name="india-mutual-fund-market-feed"),
+    path("analytics/api-usage/", indianapi_usage_status, name="indianapi-usage-status"),
+    path("analytics/refresh/", refresh_india_mutual_fund_feed, name="mutual-fund-analytics-refresh"),
     path("filters/", watch_list_filters, name="watch-list-filters"),
     path("products/", watch_list_products, name="watch-list-products"),
     path("products/<int:product_id>/", watch_list_product_detail, name="watch-list-product-detail"),

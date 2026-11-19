@@ -131,12 +131,14 @@
         <div class="two-col sebi-chart-grid">
           <article class="content-card">
             <h3>Category return vs risk</h3>
-            <img [src]="sebiCategoryRiskChartUrl" alt="SEBI category average 3-year CAGR versus annualized NAV volatility">
+            <img *ngIf="sebiCategoryRiskChartSrc as chartSrc" [src]="chartSrc" alt="SEBI category average 3-year CAGR versus annualized NAV volatility">
+            <p *ngIf="!sebiCategoryRiskChartSrc" class="muted">Category chart is not available yet. Build the SEBI analytics workbook to generate it.</p>
             <p class="muted">Category average 3Y CAGR versus annualized daily NAV volatility.</p>
           </article>
           <article class="content-card">
             <h3>Top Q1 funds vs category average</h3>
-            <img [src]="sebiTopQ1ChartUrl" alt="Top Q1 funds compared with their SEBI category average 3-year CAGR">
+            <img *ngIf="sebiTopQ1ChartSrc as chartSrc" [src]="chartSrc" alt="Top Q1 funds compared with their SEBI category average 3-year CAGR">
+            <p *ngIf="!sebiTopQ1ChartSrc" class="muted">Q1 chart is not available yet. Build the SEBI analytics workbook to generate it.</p>
             <p class="muted">Each Q1 fund is compared with the average for its exact SEBI category and plan.</p>
           </article>
         </div>

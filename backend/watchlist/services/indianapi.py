@@ -131,11 +131,11 @@ class IndianAPIClient:
         with transaction.atomic():
             usage, _ = IndianAPIRequestUsage.objects.get_or_create(month=month)
             usage = IndianAPIRequestUsage.objects.select_for_update().get(pk=usage.pk)
+            if usage.request_count >= self.monthly_budget:
+                raise IndianAPIQuotaExceeded(month, usage.request_count, self.monthly_budget)
             started_at = usage.last_refresh_started_at
             if usage.refresh_status == "IN_PROGRESS" and started_at and now - started_at < IN_PROGRESS_TIMEOUT:
                 raise IndianAPIRefreshInProgress("A mutual-fund analytics refresh is already in progress. No second provider request was sent.")
-            if usage.request_count >= self.monthly_budget:
-                raise IndianAPIQuotaExceeded(month, usage.request_count, self.monthly_budget)
             usage.request_count += 1
             usage.last_requested_at = now
             usage.refresh_status = "IN_PROGRESS"

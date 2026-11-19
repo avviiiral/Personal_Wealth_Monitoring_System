@@ -3,6 +3,22 @@ import { HttpClient, HttpParams } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import { environment } from '../../environments/environment';
 
+export interface MutualFundResearchReportResponse {
+  available: boolean;
+  message?: string;
+  id?: number;
+  report_key?: string;
+  report_date?: string;
+  report_cycle?: string;
+  source_file?: string;
+  imported_at?: string;
+  payload?: {
+    RAW: any;
+    P2P: any;
+    ATTR: any;
+  };
+}
+
 export interface MutualFundAnalyticsResponse {
   filters: {
     category: string | null;
@@ -55,7 +71,14 @@ export interface MutualFundAnalyticsFund {
 @Injectable({ providedIn: 'root' })
 export class MutualFundAnalyticsService {
   private readonly http = inject(HttpClient);
-  private readonly url = `${environment.apiUrl}/api/watch-list/analytics/overview/`;
+  private readonly baseUrl = `${environment.apiUrl}/api/watch-list/analytics/`;
+
+  getResearchReport(): Observable<MutualFundResearchReportResponse> {
+    return this.http.get<MutualFundResearchReportResponse>(
+      `${this.baseUrl}research-report/`,
+      { withCredentials: true },
+    );
+  }
 
   getOverview(filters: {
     category?: string;
@@ -70,7 +93,7 @@ export class MutualFundAnalyticsService {
         params = params.set(key, value);
       }
     });
-    return this.http.get<MutualFundAnalyticsResponse>(this.url, {
+    return this.http.get<MutualFundAnalyticsResponse>(`${this.baseUrl}overview/`, {
       params,
       withCredentials: true,
     });

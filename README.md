@@ -51,7 +51,7 @@ All financial calculations run on the backend. The frontend formats and displays
 | Analytics | Allocation by asset class, sector, market cap, AMC and advisor; performance; equity and fixed-income analysis; historical wealth | `/analytics` |
 | Corporate Actions | NSE corporate-action monitoring, exposure matching, and user review that creates bonus, split or dividend transactions | `/corporate-actions` |
 | Portfolio News | Google News RSS monitoring and NSE/BSE filing ingestion, matched to holdings, scored by rules, with optional Web Push | `/portfolio-news` |
-| Watch List | Mutual fund (AMFI) and PMS (APMI) research universe, returns, benchmark comparison, personal watch list | `/watch-list` |\n| Mutual Fund Analytics | Mutual-fund peer universe, category/provider/plan filters, persisted return rankings and benchmark comparison | `/mutual-fund-analytics` |
+| Watch List | Mutual fund (AMFI) and PMS (APMI) research universe, returns, benchmark comparison, personal watch list | `/watch-list` |\n| Mutual Fund Analytics | Imported, dated research report with category overview, fund scorecards, EDGE rankings, calendar/P2P returns, portfolio composition, configurable positioning, full universe and stock-level attribution | `/mutual-fund-analytics` |
 | AI Portfolio Chat | Optional Google Gemini chat over the user's own portfolio context | header panel, `/ai-chat` |
 | Settings | Account, password, tax settings, logs and audit history, user management, family management, manual prices | `/settings` |
 
@@ -1115,3 +1115,17 @@ Before opening a pull request:
 Proprietary software. See [License.md](./License.md).
 
 PWMS is a record-keeping and analytics tool. It does not provide investment, tax or legal advice. Prices, NAVs, filings and news come from third parties and may be delayed or wrong. Tax figures are estimates. Reconcile against broker, depository and AMC statements before acting on any figure.
+
+
+### Mutual Fund Research Report Import
+
+The Mutual Fund Analytics screen reads a dated research snapshot imported from the supplied Nexedge HTML report. The importer extracts the report's `RAW`, `P2P` and `ATTR` JSON objects without executing the HTML or its JavaScript. It stores the original payload as a report snapshot and does not overwrite live Watch List products, NAVs or portfolio positions.
+
+Run from the backend directory:
+
+```powershell
+python manage.py migrate
+python manage.py import_mutual_fund_research_report --file "D:\path\to\Nexedge_multicap_dashboard_Oct2026.html"
+```
+
+The import is repeatable for the same report key and report date. A later report date becomes the latest dashboard snapshot. The API is authenticated at `GET /api/watch-list/analytics/research-report/`. The report's own coverage is preserved: RAW universe count, P2P-covered count and ATTR-covered count are distinct and should not be assumed to match. Imported reports are historical research snapshots, not live data.

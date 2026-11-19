@@ -157,4 +157,7 @@ class DiscoveryRun(models.Model):
 
 
 # Keep the report snapshot model registered with Django's model loader.
-from watchlist.research_models import IndianAPIRequestUsage, MutualFundResearchReport
+from watchlist.research_models import (
+    IndianAPIRequestUsage,
+    MutualFundResearchReport,
+)

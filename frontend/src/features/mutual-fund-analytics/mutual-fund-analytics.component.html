@@ -13,10 +13,23 @@
           <option *ngFor="let fund of funds; trackBy: trackByName" [value]="fund.name">{{ fund.short || fund.name }}</option>
         </select>
       </label>
-      <button type="button" class="refresh-button" (click)="load()" [disabled]="loading">{{ loading ? 'Refreshing…' : 'Refresh' }}</button>
+      <button type="button" class="refresh-button" (click)="refreshProviderData()" [disabled]="loading || refreshing">{{ refreshing ? 'Refreshing…' : 'Refresh market data' }}</button>
     </div>
   </header>
 
+  <section class="api-budget-panel" *ngIf="apiUsage">
+    <div class="api-budget-heading">
+      <div><span class="eyebrow">INDIANAPI · PWMS REQUEST LEDGER</span><strong>{{ apiUsage.requests_used }} / {{ apiUsage.monthly_budget }} requests used</strong></div>
+      <span class="api-budget-remaining">{{ apiUsage.requests_remaining }} remaining</span>
+    </div>
+    <div class="quota-track" role="progressbar" [attr.aria-valuenow]="apiUsage.requests_used" [attr.aria-valuemin]="0" [attr.aria-valuemax]="apiUsage.monthly_budget">
+      <i [style.width.%]="usagePercent()"></i>
+    </div>
+    <p>Month {{ apiUsage.month }} · Last request {{ apiUsage.last_request_timestamp ? (apiUsage.last_request_timestamp | date:'medium') : 'none' }} · Refresh status {{ apiUsage.last_refresh_status }} · Data updated {{ apiUsage.data_last_updated_at ? (apiUsage.data_last_updated_at | date:'medium') : 'not yet available' }}</p>
+    <p>This is PWMS-side accounting. The IndianAPI account dashboard remains authoritative for provider billing and actual quota.</p>
+    <p class="refresh-message" *ngIf="refreshMessage">{{ refreshMessage }}</p>
+    <p class="error-state compact-error" *ngIf="apiUsage.last_refresh_error">{{ apiUsage.last_refresh_error }}</p>
+  </section>
   <div class="error-state" *ngIf="error">{{ error }}</div>
   <div class="loading-state" *ngIf="loading">Loading mutual-fund data…</div>
   <section class="empty-state" *ngIf="!loading && report && !report.available && !indiaFeed?.available">
@@ -67,6 +80,33 @@
     <nav class="tab-nav" aria-label="Mutual fund analytics sections">
       <button *ngFor="let tab of tabs" type="button" [hidden]="tab.id === 'india' && !indiaFeed?.available" [class.active]="activeTab === tab.id" (click)="activeTab = tab.id">{{ tab.label }}</button>
     </nav>
+
+    <section class="personal-portfolio-section" *ngIf="activeTab === 'my-portfolio'">
+      <div class="section-intro"><h2>My Mutual Fund Portfolio</h2><p>Active family holdings · {{ personalPortfolio?.source || 'Existing PWMS mutual-fund ledger' }} · Latest NAV {{ personalPortfolio?.as_of ? (personalPortfolio?.as_of | date:'dd MMM yyyy') : 'not available' }}</p></div>
+      <ng-container *ngIf="personalPortfolio?.available; else noPersonalMfHoldings">
+        <div class="metric-grid">
+          <article class="metric-card"><span>Invested value</span><strong>{{ formatMoney(personalPortfolio?.summary?.invested_value) }}</strong><small>Cost basis of current units</small></article>
+          <article class="metric-card"><span>Current market value</span><strong>{{ formatMoney(personalPortfolio?.summary?.market_value) }}</strong><small>AMFI NAV where available</small></article>
+          <article class="metric-card"><span>Unrealized gain / loss</span><strong>{{ formatMoney(personalPortfolio?.summary?.unrealized_gain) }}</strong><small>{{ formatPct(personalPortfolio?.summary?.unrealized_gain_pct) }}</small></article>
+          <article class="metric-card"><span>Simple total return</span><strong>{{ formatPct(personalPortfolio?.summary?.simple_total_return_pct) }}</strong><small>Non-annualized, includes proceeds and dividends</small></article>
+          <article class="metric-card"><span>Portfolio XIRR</span><strong>{{ formatPct(personalPortfolio?.summary?.xirr_pct) }}</strong><small>Annualized dated cash-flow return</small></article>
+          <article class="metric-card"><span>Mutual-fund schemes</span><strong>{{ personalPortfolio?.summary?.holdings_count || 0 }}</strong><small>Positive-unit holdings in active family</small></article>
+        </div>
+        <article class="content-card"><h3>Current holdings</h3><div class="table-scroll"><table class="wide-table"><thead><tr><th>Scheme</th><th>Category</th><th>Units</th><th>NAV</th><th>NAV date</th><th>Invested</th><th>Market value</th><th>Unrealized P/L</th><th>XIRR</th><th>Valuation source</th></tr></thead>
+          <tbody><tr *ngFor="let h of personalPortfolio?.holdings"><td class="left">{{ h.scheme_name }}</td><td>{{ h.category }}</td><td>{{ format(h.units,6) }}</td><td>{{ format(h.nav,4) }}</td><td>{{ h.nav_date ? (h.nav_date | date:'dd MMM yyyy') : '—' }}</td><td>{{ formatMoney(h.invested_value) }}</td><td>{{ formatMoney(h.market_value) }}</td><td>{{ formatMoney(h.unrealized_gain) }}</td><td>{{ formatPct(h.xirr_pct) }}</td><td>{{ h.valuation_source }}</td></tr></tbody>
+        </table></div></article>
+        <div class="two-col">
+          <article class="content-card"><h3>Category allocation</h3><div *ngFor="let row of personalPortfolio?.allocations?.categories" class="holding-row"><span>{{ row.name }}</span><b>{{ formatMoney(row.market_value) }} · {{ formatPct(row.weight_pct) }}</b></div><p *ngIf="!personalPortfolio?.allocations?.categories?.length" class="muted">No category classification is available.</p></article>
+          <article class="content-card"><h3>AMC allocation</h3><div *ngFor="let row of personalPortfolio?.allocations?.amcs" class="holding-row"><span>{{ row.name }}</span><b>{{ formatMoney(row.market_value) }} · {{ formatPct(row.weight_pct) }}</b></div></article>
+        </div>
+        <div class="two-col">
+          <article class="content-card"><h3>Disclosed sector exposure</h3><div *ngFor="let row of personalPortfolio?.allocations?.sectors" class="holding-row"><span>{{ row.name }}</span><b>{{ formatMoney(row.market_value) }} · {{ formatPct(row.weight_pct) }}</b></div><p class="muted">Underlying disclosure date: {{ personalPortfolio?.disclosure_as_of ? (personalPortfolio?.disclosure_as_of | date:'dd MMM yyyy') : 'not available' }}. Exposure is not inferred when disclosures are missing.</p></article>
+          <article class="content-card"><h3>Top disclosed stocks</h3><div *ngFor="let row of personalPortfolio?.allocations?.top_stocks" class="holding-row"><span>{{ row.name }}</span><b>{{ formatMoney(row.market_value) }} · {{ formatPct(row.weight_pct) }}</b></div><p *ngIf="!personalPortfolio?.allocations?.top_stocks?.length" class="muted">No stored underlying stock disclosures are available.</p></article>
+        </div>
+        <p class="muted">{{ personalPortfolio?.message }}</p>
+      </ng-container>
+      <ng-template #noPersonalMfHoldings><div class="empty-state"><h3>Personal mutual-fund portfolio unavailable</h3><p>{{ personalPortfolio?.message || 'The active-family portfolio endpoint did not return data. Existing investment records have not been changed.' }}</p></div></ng-template>
+    </section>
 
     <section *ngIf="activeTab === 'overview'">
       <div class="section-intro"><h2>Category Overview</h2><p>{{ raw.meta?.category }} · {{ raw.meta?.cycle }} · Source reports {{ raw.meta?.n_funds }} funds</p></div>

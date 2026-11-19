@@ -47,6 +47,82 @@ export interface IndiaMutualFundFeedResponse {
   funds: IndiaMutualFundFeedRecord[];
 }
 
+export interface IndianApiUsageResponse {
+  month: string;
+  monthly_budget: number;
+  requests_used: number;
+  requests_remaining: number;
+  last_request_timestamp: string | null;
+  last_refresh_status: string;
+  last_refresh_at: string | null;
+  last_refresh_error: string;
+  budget_exhausted: boolean;
+  provider_configured: boolean;
+  data_last_updated_at: string | null;
+  data_report_date: string | null;
+}
+
+export interface IndianApiRefreshResponse {
+  refreshed: boolean;
+  cached?: boolean;
+  created?: boolean;
+  message: string;
+  data_last_updated_at?: string | null;
+  usage: IndianApiUsageResponse;
+}
+
+export interface PortfolioAllocationRow {
+  name: string;
+  market_value: string;
+  weight_pct: string | null;
+}
+
+export interface PersonalMutualFundHolding {
+  scheme_id: number;
+  scheme_name: string;
+  amc_name: string | null;
+  category: string;
+  plan: string | null;
+  option: string | null;
+  units: string;
+  nav: string | null;
+  nav_date: string | null;
+  valuation_source: string;
+  invested_value: string;
+  market_value: string;
+  unrealized_gain: string;
+  unrealized_gain_pct: string | null;
+  xirr_pct: number | null;
+}
+
+export interface PersonalMutualFundPortfolioResponse {
+  available: boolean;
+  family_id: number;
+  as_of: string | null;
+  disclosure_as_of: string | null;
+  source?: string;
+  summary: {
+    holdings_count: number;
+    invested_value: string;
+    market_value: string;
+    unrealized_gain: string;
+    unrealized_gain_pct: string | null;
+    gross_purchase_outflow: string;
+    redemption_proceeds: string;
+    dividend_income: string;
+    simple_total_return_pct: string | null;
+    xirr_pct: number | null;
+  };
+  holdings: PersonalMutualFundHolding[];
+  allocations: {
+    categories: PortfolioAllocationRow[];
+    amcs: PortfolioAllocationRow[];
+    sectors: PortfolioAllocationRow[];
+    top_stocks: PortfolioAllocationRow[];
+  };
+  message: string;
+}
+
 export interface MutualFundAnalyticsResponse {
   filters: {
     category: string | null;
@@ -132,5 +208,20 @@ export class MutualFundAnalyticsService {
       params,
       withCredentials: true,
     });
+  }
+
+  getApiUsage(): Observable<IndianApiUsageResponse> {
+    return this.http.get<IndianApiUsageResponse>(`${this.baseUrl}api-usage/`, { withCredentials: true });
+  }
+
+  refreshIndiaMarketFeed(): Observable<IndianApiRefreshResponse> {
+    return this.http.post<IndianApiRefreshResponse>(`${this.baseUrl}refresh/`, {}, { withCredentials: true });
+  }
+
+  getPersonalPortfolio(): Observable<PersonalMutualFundPortfolioResponse> {
+    return this.http.get<PersonalMutualFundPortfolioResponse>(
+      `${environment.apiUrl}/api/mutual-funds/analytics/portfolio/`,
+      { withCredentials: true },
+    );
   }
 }

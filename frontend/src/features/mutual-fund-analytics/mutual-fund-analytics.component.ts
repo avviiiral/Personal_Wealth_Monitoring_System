@@ -1,9 +1,11 @@
 import { CommonModule } from '@angular/common';
 import { Component, OnInit, inject } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { forkJoin } from 'rxjs';
+import { catchError, forkJoin, of } from 'rxjs';
 import {
   IndiaMutualFundFeedResponse,
+  IndianApiUsageResponse,
+  PersonalMutualFundPortfolioResponse,
   MutualFundResearchReportResponse,
   MutualFundAnalyticsService,
 } from '../../core/services/mutual-fund-analytics.service';
@@ -22,7 +24,11 @@ export class MutualFundAnalyticsComponent implements OnInit {
 
   report: MutualFundResearchReportResponse | null = null;
   indiaFeed: IndiaMutualFundFeedResponse | null = null;
+  apiUsage: IndianApiUsageResponse | null = null;
+  personalPortfolio: PersonalMutualFundPortfolioResponse | null = null;
   loading = false;
+  refreshing = false;
+  refreshMessage = '';
   error = '';
   activeTab = 'overview';
   selectedFundName = '';
@@ -32,6 +38,7 @@ export class MutualFundAnalyticsComponent implements OnInit {
   bubbleAxis = 'aum';
 
   readonly tabs = [
+    { id: 'my-portfolio', label: 'My Portfolio' },
     { id: 'overview', label: 'Overview' },
     { id: 'scorecard', label: 'Fund Scorecard' },
     { id: 'edge', label: 'EDGE Scores' },
@@ -69,12 +76,19 @@ export class MutualFundAnalyticsComponent implements OnInit {
     forkJoin({
       report: this.analytics.getResearchReport(),
       indiaFeed: this.analytics.getIndiaMarketFeed(),
+      apiUsage: this.analytics.getApiUsage().pipe(catchError(() => of(null))),
+      personalPortfolio: this.analytics.getPersonalPortfolio().pipe(catchError(() => of(null))),
     }).subscribe({
       next: value => {
         this.report = value.report;
         this.indiaFeed = value.indiaFeed;
+        this.apiUsage = value.apiUsage;
+        this.personalPortfolio = value.personalPortfolio;
         if (value.report.available && !this.selectedFundName) {
           this.selectedFundName = value.report.payload?.RAW?.funds?.[0]?.name || '';
+        }
+        if (!value.report.available && this.activeTab === 'overview') {
+          this.activeTab = 'my-portfolio';
         }
         this.loading = false;
       },
@@ -83,6 +97,45 @@ export class MutualFundAnalyticsComponent implements OnInit {
         this.loading = false;
       },
     });
+  }
+
+  refreshProviderData(): void {
+    if (this.refreshing) return;
+    this.refreshing = true;
+    this.refreshMessage = '';
+    this.analytics.refreshIndiaMarketFeed().subscribe({
+      next: result => {
+        this.refreshMessage = result.message;
+        this.apiUsage = result.usage;
+        this.refreshing = false;
+        // Follow-up loads only read the PWMS database/cache; they do not call IndianAPI.
+        this.load();
+      },
+      error: err => {
+        this.refreshMessage = err?.error?.message || err?.error?.detail ||
+          'Refresh failed. Cached IndianAPI and AMFI data remain available.';
+        this.refreshing = false;
+        this.analytics.getApiUsage().subscribe({
+          next: usage => this.apiUsage = usage,
+        });
+      },
+    });
+  }
+
+  usagePercent(): number {
+    if (!this.apiUsage?.monthly_budget) return 0;
+    return Math.max(0, Math.min(100,
+      this.apiUsage.requests_used / this.apiUsage.monthly_budget * 100));
+  }
+
+  formatMoney(value: any): string {
+    if (value === null || value === undefined || value === '') return '—';
+    const amount = Number(value);
+    return Number.isFinite(amount)
+      ? new Intl.NumberFormat('en-IN', {
+        style: 'currency', currency: 'INR', maximumFractionDigits: 0,
+      }).format(amount)
+      : '—';
   }
 
   get raw(): any { return this.report?.payload?.RAW || null; }

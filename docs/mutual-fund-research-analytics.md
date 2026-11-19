@@ -27,13 +27,13 @@ Authenticated endpoints:
 
 | Endpoint | Method | Purpose |
 | --- | --- | --- |
-| /api/watch-list/analytics/research-report/ | GET | Latest imported RAW/P2P/ATTR research snapshot |
-| /api/watch-list/analytics/india-market-feed/ | GET | Cached IndianAPI snapshot or keyless AMFI scheme/NAV fallback |
-| /api/watch-list/analytics/api-usage/ | GET | PWMS-side monthly IndianAPI request ledger |
-| /api/watch-list/analytics/refresh/ | POST | Explicit cache-first refresh; write-capable financial role required |
+| /api/mutual-fund-analytics/research-report/ | GET | Latest imported RAW/P2P/ATTR research snapshot |
+| /api/mutual-fund-analytics/india-market-feed/ | GET | Cached IndianAPI snapshot or keyless AMFI scheme/NAV fallback |
+| /api/mutual-fund-analytics/api-usage/ | GET | PWMS-side monthly IndianAPI request ledger |
+| /api/mutual-fund-analytics/refresh/ | POST | Explicit cache-first refresh; write-capable financial role required |
 | /api/mutual-funds/analytics/portfolio/ | GET | Active-family holdings, XIRR and latest disclosed exposures |
 
-The report API keeps dated source snapshots separate from live Watch List NAV/performance data. Personal portfolio analytics reads only the existing family-scoped MutualFundHolding and MutualFundTransaction ledgers. It does not combine the generic investment Transaction ledger or create duplicate transactions.
+Mutual Fund Analytics endpoints are mounted under `/api/mutual-fund-analytics/`, separate from the Watch List API namespace. The report API keeps dated source snapshots separate from live Watch List NAV/performance data. Personal portfolio analytics reads only the existing family-scoped MutualFundHolding and MutualFundTransaction ledgers. It does not combine the generic investment Transaction ledger or create duplicate transactions.
 
 ## Data sources
 

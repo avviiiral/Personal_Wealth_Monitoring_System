@@ -112,6 +112,30 @@ class SEBIPerformanceTests(SimpleTestCase):
         self.assertLess(metrics["Max_Drawdown_pct"], 0)
         self.assertGreater(metrics["Max_Drawdown_Peak_to_Trough_Days"], 0)
 
+    def test_four_fund_peer_group_assigns_one_fund_to_each_quartile(self):
+        base = {
+            "Level_1_Branch": "Equity",
+            "Level_2_Group": "By Market Cap",
+            "Level_3_Category": "Large Cap",
+            "Plan": "Direct Plan",
+            "CAGR_1Y_pct": 10.0,
+            "CAGR_5Y_pct": 10.0,
+            "Rolling_3Y_CAGR_Mean_pct": 10.0,
+            "Annualized_Volatility_pct": 12.0,
+            "Sharpe_Ratio": 0.8,
+            "Max_Drawdown_pct": -20.0,
+            "Sortino_Ratio": 1.0,
+        }
+        funds = pd.DataFrame([
+            {**base, "Scheme_Code": "1", "Scheme_Name": "Fund A", "CAGR_3Y_pct": 30.0},
+            {**base, "Scheme_Code": "2", "Scheme_Name": "Fund B", "CAGR_3Y_pct": 20.0},
+            {**base, "Scheme_Code": "3", "Scheme_Name": "Fund C", "CAGR_3Y_pct": 10.0},
+            {**base, "Scheme_Code": "4", "Scheme_Name": "Fund D", "CAGR_3Y_pct": 0.0},
+        ])
+        _summary, ranked = _add_category_benchmarks(funds, plans=["Direct Plan"])
+        quartiles = dict(zip(ranked["Scheme_Code"], ranked["Quartile"]))
+        self.assertEqual(quartiles, {"1": "Q1", "2": "Q2", "3": "Q3", "4": "Q4"})
+
     def test_category_peer_rankings_split_direct_and_regular(self):
         funds = pd.DataFrame([
             {"Scheme_Code": "1", "Scheme_Name": "Direct A", "Level_1_Branch": "Equity", "Level_2_Group": "By Market Cap", "Level_3_Category": "Large Cap", "Plan": "Direct Plan", "CAGR_1Y_pct": 12.0, "CAGR_3Y_pct": 15.0, "CAGR_5Y_pct": 14.0, "Rolling_3Y_CAGR_Mean_pct": 13.0, "Annualized_Volatility_pct": 12.0, "Sharpe_Ratio": 0.8, "Max_Drawdown_pct": -20.0, "Sortino_Ratio": 1.0},

@@ -900,7 +900,7 @@ The repository does not include a script to migrate data from an existing SQLite
 | `API_SLOW_REQUEST_THRESHOLD_MS` | `500` | Slow-request logging threshold |
 | `PWMS_CONFIG_OVERRIDES` | empty | JSON object merged into `pwms_config.json` |
 | `GEMINI_API_KEY` (or `GOOGLE_API_KEY`), `GEMINI_MODEL` | none, `gemini-3.6-flash` | AI Portfolio Chat only |
-| `INDIANAPI_API_KEY`, `INDIANAPI_BASE_URL`, `INDIANAPI_TIMEOUT_SECONDS`, `INDIANAPI_MONTHLY_REQUEST_BUDGET` | blank, `https://stock.indianapi.in`, `20`, `450` | Optional IndianAPI mutual-fund enrichment; persistent monthly request ledger; AMFI and all other PWMS modules work without the key |
+| `INDIANAPI_API_KEY`, `INDIANAPI_BASE_URL`, `INDIANAPI_TIMEOUT_SECONDS`, `INDIANAPI_MONTHLY_REQUEST_BUDGET` | blank, `https://stock.indianapi.in`, `20`, `400` | Optional IndianAPI mutual-fund enrichment; persistent monthly request ledger; AMFI and all other PWMS modules work without the key |
 | `NEWS_MONITOR_INTERVAL` | `scheduler.news_interval_seconds` (180) | Seconds between news and filing monitor runs |
 | `NEWS_MONITOR_LOOKBACK_DAYS`, `NEWS_MONITOR_MAX_ARTICLES_PER_HOLDING`, `NEWS_MONITOR_MAX_BATCH_ARTICLES`, `NEWS_MONITOR_MIN_RELEVANCE_SCORE`, `NEWS_MONITOR_MIN_ALERT_SCORE`, `NEWS_MONITOR_ANALYSIS_DELAY_SECONDS` | `3`, `15`, `50`, `30`, `2.0`, `0` | News pipeline limits |
 | `NEWS_CORPORATE_FILINGS_ENABLED`, `NEWS_NSE_FILINGS_ENABLED`, `NEWS_BSE_FILINGS_ENABLED` | `True` | Filing ingestion switches used by the news scheduler |
@@ -1129,7 +1129,7 @@ python manage.py migrate
 python manage.py import_mutual_fund_research_report --file "D:\path\to\Nexedge_multicap_dashboard_Oct2026.html"
 ```
 
-The import is repeatable for the same report key and report date. A later report date becomes the latest dashboard snapshot. The API is authenticated at `GET /api/watch-list/analytics/research-report/`. The report's own coverage is preserved: RAW universe count, P2P-covered count and ATTR-covered count are distinct and should not be assumed to match. Imported reports are historical research snapshots, not live data.
+The import is repeatable for the same report key and report date. A later report date becomes the latest dashboard snapshot. The API is authenticated at `GET /api/mutual-fund-analytics/research-report/`. The report's own coverage is preserved: RAW universe count, P2P-covered count and ATTR-covered count are distinct and should not be assumed to match. Imported reports are historical research snapshots, not live data.
 
 
 ### India Mutual Fund Data Feed
@@ -1145,4 +1145,28 @@ python manage.py refresh_amfi_master
 python manage.py sync_indianapi_mutual_funds
 ```
 
-The second command skips successfully when no IndianAPI key is configured. Development defaults to a persistent cap of 450 outbound requests per calendar month, reserving 50 credits against the stated 500-credit allowance. The `/mutual_funds` endpoint returns the categorized universe in one bulk request, so the number of funds does not multiply API usage. Every attempted outbound request is recorded before network I/O; the budget is enforced across restarts and application workers. Configure `INDIANAPI_MONTHLY_REQUEST_BUDGET` to the purchased production plan's allowance minus a safety reserve. See [docs/india-mutual-fund-data-integration.md](./docs/india-mutual-fund-data-integration.md) for details.
+The second command skips successfully when no IndianAPI key is configured. The default PWMS-side monthly cap is 400 outbound requests; the dispatcher clamps any configured value to a hard maximum of 400. The `/mutual_funds` endpoint returns the categorized universe in one bulk request, so the number of funds does not multiply API usage. Every attempted outbound request is recorded before network I/O; the budget is enforced across restarts and application workers. Configure `INDIANAPI_MONTHLY_REQUEST_BUDGET` to the purchased production plan's allowance minus a safety reserve. See [docs/india-mutual-fund-data-integration.md](./docs/india-mutual-fund-data-integration.md) for details.
+
+
+### SEBI Mutual Fund Universe & Risk Analytics
+
+The Mutual Fund Analytics page includes a separate SEBI Universe tab. It builds a scheme-level research universe from the public AMFI NAVAll feed, maps schemes to the current SEBI three-level taxonomy, and computes historical NAV performance/risk from MFapi.in. This pipeline is independent of IndianAPI and does not consume the 400-request IndianAPI budget.
+
+Run from `backend/` after migrations:
+
+```powershell
+python manage.py ingest_sebi_mf_universe
+python manage.py build_sebi_mf_analytics
+```
+
+Direct Plan - Growth is the default analytics universe. Use `--plans both` to compare Direct and Regular Growth as distinct peer groups. MFapi JSON is cached locally under `backend/data_cache/sebi_mf_analytics/`; subsequent builds reuse valid caches unless `--refresh-cache` is specified. The build generates `backend/exports/SEBI_Universe_MF_Analytics.xlsx` with `Tree_Summary` and `Fund_vs_Category_Rankings`, plus category return/risk and Q1-vs-category charts.
+
+The current SEBI circular dated 26 February 2026 defines 40 current leaf categories (13 Equity, 17 Debt, 7 Hybrid, 1 Life Cycle and 2 Other Schemes). Solution Oriented schemes are retained only as discontinued legacy categories. The cached authenticated endpoints are under `/api/mutual-fund-analytics/sebi/`; they serve the last build and do not refresh provider data on page load.
+
+Import each monthly AMC portfolio disclosure workbook by scheme code to calculate pairwise overlap within a Level 3 category:
+
+```powershell
+python manage.py import_sebi_mf_portfolio --file "D:\\disclosures\\scheme_portfolio.xlsx" --scheme-code 100001 --portfolio-date 2026-10-31
+```
+
+The overlap uses common ISINs and the sum of minimum weights. It is a point-in-time research comparison, not the SEBI-prescribed quarterly average of daily overlap values for regulatory compliance. See [docs/mutual-fund-research-analytics.md](./docs/mutual-fund-research-analytics.md) for source fields, metric conventions, optional TER/AUM/flow inputs and all command options.

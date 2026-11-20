@@ -351,7 +351,7 @@ python manage.py build_sebi_mf_analytics</pre>
               <p class="muted">Equal-weighted average allocation across reported fund records.</p>
             </div>
           </div>
-          <ng-container *ngIf="overviewDashboard?.styleComposition?.some(hasStyleValue); else noStyleComposition">
+          <ng-container *ngIf="overviewDashboard?.hasStyleValues; else noStyleComposition">
             <div class="style-composition-chart">
               <div *ngFor="let item of overviewDashboard.styleComposition" class="style-composition-row">
                 <span>{{ item.label }}</span>

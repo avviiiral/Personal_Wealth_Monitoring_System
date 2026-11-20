@@ -22,7 +22,6 @@ type Period = '1M' | '3M' | '6M' | '1Y' | '3Y' | '5Y' | 'YTD';
   standalone: true,
   imports: [CommonModule, FormsModule],
   templateUrl: './mutual-fund-analytics.component.html',
-  styleUrl: './mutual-fund-analytics.component.scss',
 })
 export class MutualFundAnalyticsComponent implements OnInit, OnDestroy {
   private readonly analytics = inject(MutualFundAnalyticsService);

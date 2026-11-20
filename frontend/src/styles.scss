@@ -2029,6 +2029,23 @@ app-mutual-fund-analytics { display: block; }
   font-size: 11px;
   line-height: 1.75;
 }
+.mf-analytics-page .mf-overview-chart-stack .mf-chart-card {
+  padding: 18px 22px;
+}
+.mf-analytics-page .mf-overview-chart-stack .card-title {
+  margin-bottom: 14px;
+  font-size: 10px;
+  letter-spacing: .12em;
+}
+.mf-analytics-page .mf-overview-chart-stack .inline-insight {
+  gap: 10px;
+  padding: 11px 15px;
+  margin-top: 14px;
+}
+.mf-analytics-page .mf-overview-chart-stack .inline-insight p {
+  font-size: 11.5px;
+  line-height: 1.65;
+}
 .mf-analytics-page .mf-chart-card .inline-insight strong {
   color: #051233;
 }

@@ -241,36 +241,232 @@ python manage.py build_sebi_mf_analytics</pre>
       </ng-template>
     </section>
 
-    <section *ngIf="activeTab === 'overview'">
-      <div class="section-intro"><h2>Category Overview</h2><p>{{ raw.meta?.category }} · {{ raw.meta?.cycle }} · Source reports {{ raw.meta?.n_funds }} funds</p></div>
-      <div class="metric-grid">
-        <article class="metric-card"><span>Funds in source universe</span><strong>{{ funds.length }}</strong><small>RAW fund records</small></article>
-        <article class="metric-card"><span>Point-to-point coverage</span><strong>{{ p2p.n_covered || 0 }} / {{ p2p.n_total || funds.length }}</strong><small>{{ p2p.asof || 'P2P date unavailable' }}</small></article>
-        <article class="metric-card"><span>Category AUM</span><strong>₹{{ formatAum(category.aum) }} Cr</strong><small>As reported in source</small></article>
-        <article class="metric-card"><span>EDGE score</span><strong>{{ format(category.edge_score, 3) }}</strong><small>Category average</small></article>
-        <article class="metric-card"><span>1Y category return</span><strong>{{ formatPct(p2p.cat?.r1y ?? category.r1y) }}</strong><small>Point-to-point category average</small></article>
-        <article class="metric-card"><span>Maximum drawdown</span><strong>{{ formatPct(category.max_drawdown) }}</strong><small>Category reference</small></article>
-      </div>
-      <div class="two-col">
-        <article class="content-card"><h3>Market-cap allocation</h3>
-          <div *ngFor="let item of [{label:'Large Cap',value:category.large},{label:'Mid Cap',value:category.mid},{label:'Small Cap',value:category.small}]" class="bar-row">
-            <span>{{ item.label }}</span><div class="bar-track"><i [style.width.%]="barWidth(item.value,100)"></i></div><b>{{ formatPct(item.value) }}</b>
-          </div>
-        </article>
-        <article class="content-card"><h3>Risk and style profile</h3>
-          <div *ngFor="let item of [{label:'Cyclical',value:category.cyclical},{label:'Defensive',value:category.defensive},{label:'Sensitive',value:category.sensitive}]" class="bar-row">
-            <span>{{ item.label }}</span><div class="bar-track"><i [style.width.%]="barWidth(item.value,100)"></i></div><b>{{ formatPct(item.value) }}</b>
-          </div>
-          <p class="muted">P/E {{ format(category.pe) }}x · P/B {{ format(category.pbv) }}x · Beta {{ format(category.beta,3) }} · Top-10 concentration {{ formatPct(category.top10) }}</p>
-        </article>
-      </div>
-      <article class="content-card"><h3>Best 1Y performers</h3>
-        <div *ngFor="let fund of rankedFunds.slice(0,10); let i = index" class="rank-bar">
-          <span class="rank-no">{{ i + 1 }}</span><span class="rank-name">{{ fund.short || fund.name }}</span>
-          <div class="bar-track"><i [style.width.%]="barWidth(fundReturn(fund,'1Y'), rankedFunds[0] ? fundReturn(rankedFunds[0],'1Y') : 1)"></i></div>
-          <b>{{ formatPct(fundReturn(fund,'1Y')) }}</b>
+    <section *ngIf="activeTab === 'overview'" class="mf-overview-dashboard">
+      <div class="section-intro dashboard-intro">
+        <div>
+          <h2>{{ raw.meta?.category || 'Selected Mutual Fund Universe' }} · Category Dashboard</h2>
+          <p>{{ raw.meta?.cycle }} · {{ raw.meta?.data_date || raw.meta?.date || report?.report_date }} · {{ funds.length }} funds in selected source universe</p>
         </div>
+        <span class="dashboard-asof">Point-to-point data {{ p2p.asof || '—' }}</span>
+      </div>
+
+      <div class="metric-grid mf-overview-kpis">
+        <article class="metric-card kpi-card">
+          <span>Funds</span>
+          <strong>{{ overviewDashboard?.fundCount || 0 }}</strong>
+          <small>Number of funds in selected universe</small>
+        </article>
+        <article class="metric-card kpi-card">
+          <span>Cat Avg P/E</span>
+          <strong>{{ overviewDashboard?.weightedPe === null || overviewDashboard?.weightedPe === undefined ? '—' : format(overviewDashboard.weightedPe, 2) + 'x' }}</strong>
+          <small>AUM-weighted · {{ overviewDashboard?.weightedPeCoverage || 0 }} funds with P/E and AUM</small>
+        </article>
+        <article class="metric-card kpi-card">
+          <span>Avg Large Cap</span>
+          <strong>{{ formatPct(overviewDashboard?.largeCapRebased) }}</strong>
+          <small>Large / Mid / Small rebased to 100 · {{ overviewDashboard?.capCoverage || 0 }} funds</small>
+        </article>
+        <article class="metric-card kpi-card">
+          <span>Cat Avg 3M Ret</span>
+          <strong>{{ formatPct(overviewDashboard?.average3M) }}</strong>
+          <small>Point-to-point · {{ overviewDashboard?.returnCoverage?.['3M'] || 0 }} funds covered</small>
+        </article>
+        <article class="metric-card kpi-card">
+          <span>Cat Avg Sharpe</span>
+          <strong>{{ formatNumber(overviewDashboard?.averageSharpe, 3) }}</strong>
+          <small>Mean fund-level 3Y calculated Sharpe · {{ overviewDashboard?.sharpeCoverage || 0 }} funds</small>
+        </article>
+        <article class="metric-card kpi-card">
+          <span>Cat Avg Max DD</span>
+          <strong>{{ formatPct(overviewDashboard?.averageMaxDrawdown) }}</strong>
+          <small>Mean peak-to-trough drawdown · {{ overviewDashboard?.drawdownCoverage || 0 }} funds</small>
+        </article>
+      </div>
+
+      <article class="content-card dashboard-chart-card">
+        <div class="chart-heading">
+          <div>
+            <h3>Category Returns Distribution — 3M / 6M / 1Y</h3>
+            <p class="muted">Number of funds by point-to-point return range. Each period uses its own available fund coverage.</p>
+          </div>
+          <div class="chart-legend">
+            <span><i class="legend-dot series-one"></i>3M</span>
+            <span><i class="legend-dot series-two"></i>6M</span>
+            <span><i class="legend-dot series-three"></i>1Y</span>
+          </div>
+        </div>
+        <ng-container *ngIf="overviewDashboard?.returnDistribution?.length; else noReturnDistribution">
+          <div class="svg-chart-wrap">
+            <svg class="distribution-chart" viewBox="0 0 1080 292" role="img" aria-label="Grouped bar chart showing number of funds across three-month, six-month and one-year return ranges">
+              <line x1="62" y1="238" x2="1044" y2="238" class="chart-axis"></line>
+              <g *ngFor="let bucket of overviewDashboard.returnDistribution">
+                <rect *ngFor="let bar of bucket.bars" [attr.x]="bar.x" [attr.y]="bar.y" [attr.width]="bar.width" [attr.height]="bar.height" [attr.fill]="bar.color" rx="2">
+                  <title>{{ bar.period }} · {{ bucket.label }} · {{ bar.count }} funds</title>
+                </rect>
+                <text [attr.x]="bucket.centerX" y="260" text-anchor="middle" class="chart-tick-label">{{ bucket.label }}</text>
+              </g>
+              <text x="553" y="286" text-anchor="middle" class="chart-axis-label">Point-to-point return range</text>
+              <text x="20" y="130" text-anchor="middle" transform="rotate(-90 20 130)" class="chart-axis-label">Number of funds</text>
+            </svg>
+          </div>
+          <div class="chart-coverage">
+            <span>3M: {{ overviewDashboard?.returnCoverage?.['3M'] || 0 }} funds</span>
+            <span>6M: {{ overviewDashboard?.returnCoverage?.['6M'] || 0 }} funds</span>
+            <span>1Y: {{ overviewDashboard?.returnCoverage?.['1Y'] || 0 }} funds</span>
+          </div>
+        </ng-container>
+        <ng-template #noReturnDistribution><p class="chart-empty">Point-to-point returns are not available in this report.</p></ng-template>
       </article>
+
+      <div class="two-col dashboard-two-chart-grid">
+        <article class="content-card dashboard-chart-card">
+          <div class="chart-heading">
+            <div>
+              <h3>Large / Mid / Small Cap Split — All Funds</h3>
+              <p class="muted">Equal-weighted average fund allocation, rebased to 100. Cash is excluded from the rebasing denominator.</p>
+            </div>
+          </div>
+          <ng-container *ngIf="overviewDashboard?.marketCapSplit?.length; else noMarketCapSplit">
+            <div class="svg-chart-wrap cap-split-wrap">
+              <svg viewBox="0 0 1050 170" role="img" aria-label="One hundred percent stacked bar showing average large, mid and small cap exposure">
+                <rect x="34" y="50" width="980" height="58" rx="8" class="chart-track"></rect>
+                <rect *ngFor="let segment of overviewDashboard.marketCapSplit" [attr.x]="segment.x" y="50" [attr.width]="segment.width" height="58" [attr.fill]="segment.color"></rect>
+                <text *ngFor="let segment of overviewDashboard.marketCapSplit" [attr.x]="segment.x + segment.width / 2" y="85" text-anchor="middle" class="stacked-label">{{ formatPct(segment.value) }}</text>
+              </svg>
+            </div>
+            <div class="chart-legend cap-legend">
+              <span *ngFor="let segment of overviewDashboard.marketCapSplit">
+                <i [style.background]="segment.color"></i>{{ segment.label }} <b>{{ formatPct(segment.value) }}</b>
+              </span>
+            </div>
+            <p class="chart-footnote">Based on {{ overviewDashboard?.capCoverage || 0 }} funds with all three market-cap fields available.</p>
+          </ng-container>
+          <ng-template #noMarketCapSplit><p class="chart-empty">Large, Mid and Small Cap fields are not available for this universe.</p></ng-template>
+        </article>
+
+        <article class="content-card dashboard-chart-card">
+          <div class="chart-heading">
+            <div>
+              <h3>Cyclical · Defensive · Sensitive Composition</h3>
+              <p class="muted">Equal-weighted average allocation across reported fund records.</p>
+            </div>
+          </div>
+          <ng-container *ngIf="overviewDashboard?.styleComposition?.some(hasStyleValue); else noStyleComposition">
+            <div class="style-composition-chart">
+              <div *ngFor="let item of overviewDashboard.styleComposition" class="style-composition-row">
+                <span>{{ item.label }}</span>
+                <div class="style-track"><i [style.width.%]="item.width" [style.background]="item.color"></i></div>
+                <b>{{ formatPct(item.value) }}</b>
+              </div>
+            </div>
+            <p class="chart-footnote">Coverage: {{ overviewDashboard?.styleCoverage || 0 }} of {{ overviewDashboard?.fundCount || 0 }} funds have at least one style-composition field.</p>
+          </ng-container>
+          <ng-template #noStyleComposition><p class="chart-empty">Cyclical, Defensive and Sensitive fields are not available for this universe.</p></ng-template>
+        </article>
+      </div>
+
+      <div class="two-col dashboard-two-chart-grid">
+        <article class="content-card dashboard-chart-card">
+          <div class="chart-heading">
+            <div>
+              <h3>AUM Concentration — Top 12 Funds</h3>
+              <p class="muted">Reported assets under management (₹ Cr), ranked highest to lowest.</p>
+            </div>
+          </div>
+          <ng-container *ngIf="overviewDashboard?.topAumFunds?.length; else noAumData">
+            <div class="svg-chart-wrap aum-chart-wrap">
+              <svg viewBox="0 0 1080 340" role="img" aria-label="Column chart of the twelve largest funds by assets under management">
+                <line x1="44" y1="235" x2="1040" y2="235" class="chart-axis"></line>
+                <g *ngFor="let fund of overviewDashboard.topAumFunds; let i = index">
+                  <rect [attr.x]="fund.x" [attr.y]="fund.y" [attr.width]="fund.width" [attr.height]="fund.height" rx="4" class="aum-column">
+                    <title>{{ fund.fullName }} · ₹{{ formatAum(fund.aum) }} Cr</title>
+                  </rect>
+                  <text [attr.x]="fund.centerX" [attr.y]="fund.y - 8" text-anchor="middle" class="chart-value-label">{{ formatAum(fund.aum) }}</text>
+                  <text [attr.x]="fund.centerX" y="254" [attr.transform]="'rotate(-42 ' + fund.centerX + ' 254)'" text-anchor="end" class="chart-tick-label">{{ fund.label }}</text>
+                </g>
+                <text x="540" y="334" text-anchor="middle" class="chart-axis-label">Fund · AUM in ₹ Cr</text>
+              </svg>
+            </div>
+          </ng-container>
+          <ng-template #noAumData><p class="chart-empty">AUM data is not available for these funds.</p></ng-template>
+        </article>
+
+        <article class="content-card dashboard-chart-card">
+          <div class="chart-heading">
+            <div>
+              <h3>Max Drawdown vs Calmar Ratio — Category Map</h3>
+              <p class="muted">Each dot represents a fund. Hover over a dot to inspect its name and values.</p>
+            </div>
+          </div>
+          <ng-container *ngIf="overviewDashboard?.drawdownPoints?.length; else noRiskMap">
+            <div class="svg-chart-wrap scatter-chart-wrap">
+              <svg viewBox="0 0 1080 350" role="img" aria-label="Scatter plot of fund maximum drawdown against Calmar ratio">
+                <g *ngFor="let tick of overviewDashboard.scatterYTicks">
+                  <line [attr.x1]="overviewDashboard.scatterPlot.left" [attr.x2]="overviewDashboard.scatterPlot.right" [attr.y1]="tick.y" [attr.y2]="tick.y" class="chart-gridline"></line>
+                  <text [attr.x]="overviewDashboard.scatterPlot.left - 12" [attr.y]="tick.y + 4" text-anchor="end" class="chart-tick-label">{{ format(tick.value, 2) }}</text>
+                </g>
+                <g *ngFor="let tick of overviewDashboard.scatterXTicks">
+                  <line [attr.x1]="tick.x" [attr.x2]="tick.x" [attr.y1]="overviewDashboard.scatterPlot.top" [attr.y2]="overviewDashboard.scatterPlot.bottom" class="chart-gridline"></line>
+                  <text [attr.x]="tick.x" [attr.y]="overviewDashboard.scatterPlot.bottom + 22" text-anchor="middle" class="chart-tick-label">{{ formatPct(tick.value) }}</text>
+                </g>
+                <line [attr.x1]="overviewDashboard.scatterPlot.left" [attr.x2]="overviewDashboard.scatterPlot.right" [attr.y1]="overviewDashboard.scatterPlot.bottom" [attr.y2]="overviewDashboard.scatterPlot.bottom" class="chart-axis"></line>
+                <circle *ngFor="let point of overviewDashboard.drawdownPoints" [attr.cx]="point.cx" [attr.cy]="point.cy" r="4.2" class="scatter-dot">
+                  <title>{{ point.name }} · Max DD {{ formatPct(point.drawdown) }} · Calmar {{ format(point.calmar, 3) }}</title>
+                </circle>
+                <text x="555" y="345" text-anchor="middle" class="chart-axis-label">Maximum drawdown (%)</text>
+                <text x="20" y="155" text-anchor="middle" transform="rotate(-90 20 155)" class="chart-axis-label">Calmar ratio</text>
+              </svg>
+            </div>
+            <p class="chart-footnote">{{ overviewDashboard?.drawdownPoints?.length || 0 }} funds have both maximum drawdown and Calmar values.</p>
+          </ng-container>
+          <ng-template #noRiskMap><p class="chart-empty">Maximum drawdown and Calmar data are not available together for this universe.</p></ng-template>
+        </article>
+      </div>
+
+      <article class="content-card dashboard-sector-card">
+        <div class="chart-heading sector-heading">
+          <div>
+            <h3>Sector Exposure — All Funds Ranked</h3>
+            <p class="muted">Each fund is represented by its largest disclosed sector allocation. “vs Cat Avg” is the percentage-point difference against the equal-weighted average for that same sector.</p>
+          </div>
+          <span class="sector-coverage">{{ overviewDashboard?.sectorCoverage || 0 }} funds with sector disclosures</span>
+        </div>
+        <ng-container *ngIf="overviewDashboard?.sectorExposureRows?.length; else noSectorExposure">
+          <div class="table-scroll">
+            <table class="wide-table sector-exposure-table">
+              <thead>
+                <tr>
+                  <th>Fund</th>
+                  <th>Manager</th>
+                  <th>Allocation %</th>
+                  <th>Bar</th>
+                  <th>vs Cat Avg</th>
+                  <th>1Y Return</th>
+                  <th>EDGE Score</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr *ngFor="let row of overviewDashboard.sectorExposureRows; let i = index">
+                  <td class="left sector-fund-cell">
+                    <span class="sector-rank">{{ i + 1 }}</span>
+                    <span><strong>{{ row.name }}</strong><small>{{ row.sector }}</small></span>
+                  </td>
+                  <td>{{ row.manager }}</td>
+                  <td>{{ formatPct(row.allocation) }}</td>
+                  <td>
+                    <div class="sector-bar-track"><i [style.width.%]="row.barWidth"></i></div>
+                  </td>
+                  <td [class.positive-value]="row.vsCategory > 0" [class.negative-value]="row.vsCategory < 0">{{ formatPercentagePoints(row.vsCategory) }}</td>
+                  <td>{{ formatPct(row.return1Y) }}</td>
+                  <td>{{ format(row.edgeScore, 3) }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </ng-container>
+        <ng-template #noSectorExposure><p class="chart-empty">No fund-level sector exposure records are available in this source report.</p></ng-template>
+      </article>
+      <p class="dashboard-source-note">Source: imported {{ report?.source_file }} · Returns and risk metrics retain the source report's point-to-point and calculation conventions. Coverage counts are shown wherever observations are missing.</p>
     </section>
 
     <section *ngIf="activeTab === 'scorecard'">

@@ -393,3 +393,68 @@ td.left,th:first-child { text-align:left; }
   .style-composition-row { grid-template-columns: 76px minmax(50px, 1fr) 54px; gap: 8px; }
   .dashboard-chart-card { padding: 14px 11px; }
 }
+
+
+.dashboard-controls {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  align-items: flex-end;
+  gap: 10px;
+}
+.dashboard-controls label {
+  display: grid;
+  gap: 5px;
+  min-width: 210px;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 700;
+}
+.dashboard-controls select {
+  width: 100%;
+  max-width: 330px;
+  min-height: 38px;
+  color: var(--ink);
+  font-size: 11px;
+}
+.dashboard-controls select:disabled {
+  opacity: .55;
+  cursor: not-allowed;
+}
+.fund-comparison-card {
+  margin: 0 0 12px;
+  min-width: 0;
+}
+.comparison-fund-name {
+  max-width: 260px;
+  color: var(--muted);
+  font-size: 10px;
+  text-align: right;
+}
+.fund-comparison-table {
+  min-width: 620px;
+}
+.fund-comparison-table th,.fund-comparison-table td {
+  padding: 10px 13px;
+}
+@media(max-width:800px) {
+  .dashboard-controls {
+    width: 100%;
+    justify-content: stretch;
+  }
+  .dashboard-controls label {
+    flex: 1 1 220px;
+  }
+  .comparison-fund-name {
+    max-width: none;
+    text-align: left;
+  }
+}
+@media(max-width:520px) {
+  .dashboard-controls label {
+    min-width: 100%;
+  }
+  .dashboard-controls select {
+    max-width: none;
+  }
+}

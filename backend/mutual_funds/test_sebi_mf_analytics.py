@@ -2,6 +2,8 @@ from datetime import date, timedelta
 
 from django.test import SimpleTestCase
 
+from mutual_funds.models import AMFIMasterScheme
+
 from mutual_funds.services.sebi_mf_analytics import (
     CATEGORY_TREE,
     _add_category_benchmarks,
@@ -100,6 +102,28 @@ class SEBITaxonomyTests(SimpleTestCase):
         self.assertEqual(len(records), 2)
         self.assertEqual(sum(row["is_direct_plan_growth"] for row in records), 1)
         self.assertEqual(sum(row["is_growth_plan"] for row in records), 2)
+
+
+    def test_eight_column_feed_preserves_long_amfi_option_labels(self):
+        long_option = "Monthly Payout of Income Distribution cum capital withdrawal option"
+        source = (
+            "Scheme Code;ISIN Div Payout/ ISIN Growth;ISIN Div Reinvestment;Scheme Name;Plan;Option;Net Asset Value;Date\\n"
+            "Open Ended Schemes (Debt Scheme - Banking and PSU Fund)\\n"
+            "Example AMC\\n"
+            f"100020;INF000000020;;Example Banking and PSU Fund;Direct Plan;{long_option};12.5;20-Nov-2026\\n"
+            "100021;INF000000021;;Example Banking and PSU Fund;Direct Plan;Growth Option;25.5;20-Nov-2026\\n"
+        )
+        records = {row["scheme_code"]: row for row in parse_amfi_navall_feed(source)}
+
+        self.assertEqual(records["100020"]["option"], long_option)
+        self.assertFalse(records["100020"]["is_growth_plan"])
+        self.assertEqual(records["100021"]["option"], "Growth")
+        self.assertTrue(records["100021"]["is_direct_plan_growth"])
+        self.assertGreater(len(long_option), 60)
+        self.assertGreaterEqual(
+            AMFIMasterScheme._meta.get_field("option").max_length,
+            len(long_option),
+        )
 
 
 class SEBIPerformanceTests(SimpleTestCase):

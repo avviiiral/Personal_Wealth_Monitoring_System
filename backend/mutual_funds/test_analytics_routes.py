@@ -7,6 +7,7 @@ class MutualFundAnalyticsRouteTests(SimpleTestCase):
         expected_routes = {
             "/api/mutual-fund-analytics/overview/": "mutual-fund-analytics-overview",
             "/api/mutual-fund-analytics/research-report/": "mutual-fund-research-report",
+            "/api/mutual-fund-analytics/research-universes/": "mutual-fund-research-universes",
             "/api/mutual-fund-analytics/india-market-feed/": "india-mutual-fund-market-feed",
             "/api/mutual-fund-analytics/api-usage/": "indianapi-usage-status",
             "/api/mutual-fund-analytics/refresh/": "mutual-fund-analytics-refresh",

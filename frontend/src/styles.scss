@@ -1979,3 +1979,59 @@ app-mutual-fund-analytics { display: block; }
   }
   
 }
+
+/* Multi Cap overview chart styling — intentionally scoped to the analytics page. */
+.mf-analytics-page .mf-chart-visual {
+  position: relative;
+  width: 100%;
+  min-width: 0;
+  height: 330px;
+}
+.mf-analytics-page .mf-chart-visual--returns { height: 300px; }
+.mf-analytics-page .mf-chart-visual--stacked { height: 400px; }
+.mf-analytics-page .mf-chart-visual--aum { height: 380px; }
+.mf-analytics-page .mf-chart-visual--scatter { height: 340px; }
+.mf-analytics-page .mf-chart-visual canvas {
+  display: block;
+  width: 100% !important;
+  max-width: 100%;
+  height: 100% !important;
+}
+.mf-analytics-page .mf-chart-card .inline-insight {
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px 15px;
+  border: 1px solid #ffe2cb;
+  border-radius: 3px;
+  background: #fffaf5;
+}
+.mf-analytics-page .mf-chart-card .inline-insight > span {
+  flex: 0 0 18px;
+  width: 18px;
+  height: 18px;
+  background: transparent;
+  color: #d28b35;
+  font-size: 15px;
+}
+.mf-analytics-page .mf-chart-card .inline-insight p {
+  color: #4a3728;
+  font-size: 11px;
+  line-height: 1.75;
+}
+.mf-analytics-page .mf-chart-card .inline-insight strong {
+  color: #051233;
+}
+@media (max-width: 800px) {
+  .mf-analytics-page .mf-chart-visual { height: 300px; }
+  .mf-analytics-page .mf-chart-visual--returns { height: 280px; }
+  .mf-analytics-page .mf-chart-visual--stacked { height: 360px; }
+  .mf-analytics-page .mf-chart-visual--aum { height: 360px; }
+  .mf-analytics-page .mf-chart-visual--scatter { height: 310px; }
+}
+@media (max-width: 520px) {
+  .mf-analytics-page .mf-chart-visual { height: 270px; }
+  .mf-analytics-page .mf-chart-visual--returns { height: 250px; }
+  .mf-analytics-page .mf-chart-visual--stacked { height: 330px; }
+  .mf-analytics-page .mf-chart-visual--aum { height: 330px; }
+  .mf-analytics-page .mf-chart-visual--scatter { height: 280px; }
+}

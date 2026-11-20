@@ -262,7 +262,7 @@ export class MutualFundAnalyticsComponent implements OnInit, OnDestroy {
     // AUM-weighted P/E across funds with both a valid P/E and positive AUM.
     const weightedPeRows = funds
       .map(fund => ({ pe: this.finiteNumber(fund?.pe), aum: this.finiteNumber(fund?.aum) }))
-      .filter(row => row.pe !== null && row.aum !== null && row.aum > 0);
+      .filter((row): row is { pe: number; aum: number } => row.pe !== null && row.aum !== null && row.aum > 0);
     const totalPeWeight = weightedPeRows.reduce((sum, row) => sum + (row.aum || 0), 0);
     const weightedPe = totalPeWeight > 0
       ? weightedPeRows.reduce((sum, row) => sum + (row.pe || 0) * (row.aum || 0), 0) / totalPeWeight
@@ -461,6 +461,7 @@ export class MutualFundAnalyticsComponent implements OnInit, OnDestroy {
       capCoverage: capRows.length,
       marketCapSplit,
       styleComposition,
+      hasStyleValues: styleComposition.some(item => item.value !== null),
       styleCoverage: funds.filter(fund =>
         ['cyclical', 'defensive', 'sensitive'].some(key => this.finiteNumber(fund?.[key]) !== null)
       ).length,

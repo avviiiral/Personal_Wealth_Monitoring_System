@@ -62,12 +62,12 @@ export class MutualFundAnalyticsComponent implements OnInit, OnDestroy {
     { id: 'overview', label: 'Overview' },
     { id: 'scorecard', label: 'Fund Scorecard' },
     { id: 'edge', label: 'EDGE Scores' },
-    { id: 'performance', label: 'Performance Overview' },
+    { id: 'performance', label: 'Returns' },
     { id: 'calendar', label: 'Calendar Year' },
-    { id: 'portfolio', label: 'Portfolio Composition' },
-    { id: 'positioning', label: 'Category Positioning' },
-    { id: 'universe', label: 'Universe Table' },
-    { id: 'attribution', label: 'Performance Attribution' },
+    { id: 'portfolio', label: 'Portfolio' },
+    { id: 'positioning', label: 'Positioning' },
+    { id: 'universe', label: 'Universe' },
+    { id: 'attribution', label: 'Attribution' },
     { id: 'my-portfolio', label: 'My Portfolio' },
     { id: 'india', label: 'India Universe' },
     { id: 'sebi-universe', label: 'SEBI Analytics' },
@@ -111,20 +111,55 @@ export class MutualFundAnalyticsComponent implements OnInit, OnDestroy {
       sebiRankings: this.analytics.getSebiUniverseRankings({ page_size: 100 }).pipe(catchError(() => of(null))),
     }).subscribe({
       next: value => {
-        this.researchUniverses = value.researchUniverses?.results || [];
-        let report = value.report;
-        if (!report.available && this.selectedUniverseId) {
-          this.selectedUniverseId = null;
-          this.analytics.getResearchReport().subscribe({
-            next: latest => this.finishLoad(value, latest),
+        // This page is the Nexedge Multi Cap dashboard. Keep non-Multi-Cap
+        // research snapshots out of its universe selector and all analysis.
+        this.researchUniverses = (value.researchUniverses?.results || [])
+          .filter(universe => this.isMultiCapUniverse(universe));
+
+        const selectedUniverse = this.researchUniverses.find(
+          universe => universe.id === this.selectedUniverseId,
+        ) || this.researchUniverses[0] || null;
+        const latestReport = value.report;
+
+        if (selectedUniverse) {
+          this.selectedUniverseId = selectedUniverse.id;
+          if (latestReport?.available && latestReport.id === selectedUniverse.id &&
+              this.isMultiCapResearchReport(latestReport)) {
+            this.finishLoad(value, latestReport);
+            return;
+          }
+
+          this.analytics.getResearchReport(selectedUniverse.id).subscribe({
+            next: report => {
+              if (!this.isMultiCapResearchReport(report)) {
+                this.error = report.available
+                  ? 'The selected research snapshot is not a Multi Cap report.'
+                  : report.message || 'Unable to load the selected Multi Cap research snapshot.';
+                this.loading = false;
+                return;
+              }
+              this.finishLoad(value, report);
+            },
             error: err => {
-              this.error = err?.error?.detail || 'Unable to load the latest mutual-fund universe.';
+              this.error = err?.error?.detail || 'Unable to load the selected Multi Cap research snapshot.';
               this.loading = false;
             },
           });
           return;
         }
-        this.finishLoad(value, report);
+
+        // If the universe-list endpoint is temporarily unavailable, retain a
+        // valid Multi Cap latest report rather than switching to another category.
+        if (this.isMultiCapResearchReport(latestReport)) {
+          this.finishLoad(value, latestReport);
+          return;
+        }
+
+        this.selectedUniverseId = null;
+        this.finishLoad(value, {
+          available: false,
+          message: 'No Multi Cap research snapshot is available. Import the Nexedge Multi Cap dashboard HTML to load this analysis.',
+        });
       },
       error: err => {
         this.error = err?.error?.detail || 'Unable to load mutual-fund research data.';
@@ -141,7 +176,7 @@ export class MutualFundAnalyticsComponent implements OnInit, OnDestroy {
     this.sebiSummary = value.sebiSummary;
     this.sebiRankings = value.sebiRankings;
     this.selectedUniverseId = report.id ?? null;
-    const reportFunds = report.payload?.RAW?.funds || [];
+    const reportFunds = this.funds;
     if (!reportFunds.some((fund: any) => fund.name === this.comparisonFundName)) {
       this.comparisonFundName = reportFunds[0]?.name || '';
     }
@@ -164,13 +199,16 @@ export class MutualFundAnalyticsComponent implements OnInit, OnDestroy {
 
   onUniverseChange(reportId: number | string): void {
     const id = Number(reportId);
-    if (!Number.isInteger(id) || id <= 0 || id === this.selectedUniverseId) return;
+    const option = this.researchUniverses.find(universe => universe.id === id);
+    if (!Number.isInteger(id) || id <= 0 || !option || id === this.selectedUniverseId) return;
     this.loading = true;
     this.error = '';
     this.analytics.getResearchReport(id).subscribe({
       next: report => {
-        if (!report.available) {
-          this.error = report.message || 'The selected research universe is unavailable.';
+        if (!this.isMultiCapResearchReport(report)) {
+          this.error = report.available
+            ? 'The selected research snapshot is not a Multi Cap report.'
+            : report.message || 'The selected Multi Cap research universe is unavailable.';
           this.loading = false;
           return;
         }
@@ -538,7 +576,11 @@ export class MutualFundAnalyticsComponent implements OnInit, OnDestroy {
   get raw(): any { return this.report?.payload?.RAW || null; }
   get p2p(): any { return this.report?.payload?.P2P || {}; }
   get attr(): any { return this.report?.payload?.ATTR || {}; }
-  get funds(): any[] { return this.raw?.funds || []; }
+  get funds(): any[] {
+    if (!this.isMultiCapReport) return [];
+    const rows = this.raw?.funds;
+    return Array.isArray(rows) ? rows : [];
+  }
   get category(): any { return this.raw?.cat || {}; }
   get selectedFund(): any {
     return this.funds.find(f => f.name === this.selectedFundName) || this.funds[0] || null;
@@ -846,17 +888,53 @@ export class MutualFundAnalyticsComponent implements OnInit, OnDestroy {
   }
 
 
+  get activeFundIndex(): number {
+    const index = this.funds.findIndex(fund => fund.name === this.selectedFundName);
+    return index >= 0 ? index : 0;
+  }
+
+  onActiveFundIndexChange(index: string | number): void {
+    const selectedIndex = Number(index);
+    if (!Number.isInteger(selectedIndex) || selectedIndex < 0) return;
+    const fund = this.funds[selectedIndex];
+    if (fund) this.onActiveFundChange(fund.name);
+  }
+
   onActiveFundChange(name: string): void {
     const next = this.funds.find(fund => fund.name === name);
     if (!next) return;
     this.selectedFundName = next.name;
     this.comparisonFundName = next.name;
+    // Rebuild selected-fund highlights and overview chart annotations together.
     this.overviewDashboard = this.buildOverviewDashboard();
   }
 
+  private isMultiCapLabel(value: unknown): boolean {
+    return String(value || '').toLowerCase().replace(/[^a-z]/g, '').includes('multicap');
+  }
+
+  private isMultiCapResearchReport(report: MutualFundResearchReportResponse | null | undefined): boolean {
+    if (!report?.available) return false;
+    const labels = [
+      report.payload?.RAW?.meta?.category,
+      report.report_key,
+      report.source_file,
+      report.report_cycle,
+    ];
+    return labels.some(label => this.isMultiCapLabel(label));
+  }
+
+  private isMultiCapUniverse(universe: MutualFundResearchUniverseOption): boolean {
+    return [
+      universe.category,
+      universe.report_key,
+      universe.source_file,
+      universe.report_cycle,
+    ].some(label => this.isMultiCapLabel(label));
+  }
+
   get isMultiCapReport(): boolean {
-    return String(this.raw?.meta?.category || this.report?.report_cycle || '')
-      .toLowerCase().includes('multi cap');
+    return this.isMultiCapResearchReport(this.report);
   }
 
   get researchCategoryLabel(): string {

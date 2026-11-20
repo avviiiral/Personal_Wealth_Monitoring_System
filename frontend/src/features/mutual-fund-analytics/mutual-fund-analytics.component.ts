@@ -214,7 +214,7 @@ export class MutualFundAnalyticsComponent implements OnInit, OnDestroy {
         }
         this.report = report;
         this.selectedUniverseId = report.id ?? id;
-        const reportFunds = report.payload?.RAW?.funds || [];
+        const reportFunds = this.funds;
         this.selectedFundName = reportFunds[0]?.name || '';
         this.comparisonFundName = this.selectedFundName;
         this.overviewDashboard = this.buildOverviewDashboard();

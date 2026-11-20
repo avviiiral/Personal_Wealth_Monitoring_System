@@ -8,6 +8,7 @@ import {
   PersonalMutualFundPortfolioResponse,
   MutualFundResearchReportResponse,
   MutualFundAnalyticsService,
+  SebiFundRankingRow,
   SebiUniverseRankingsResponse,
   SebiUniverseSummaryResponse,
 } from '../../core/services/mutual-fund-analytics.service';
@@ -137,7 +138,7 @@ export class MutualFundAnalyticsComponent implements OnInit, OnDestroy {
     });
   }
 
-  get sebiQ1Funds(): Array<Record<string, any>> {
+  get sebiQ1Funds(): SebiFundRankingRow[] {
     return this.sebiSummary?.top_q1_funds || [];
   }
 

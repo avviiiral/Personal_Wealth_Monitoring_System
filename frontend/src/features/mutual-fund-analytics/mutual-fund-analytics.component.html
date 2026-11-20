@@ -108,124 +108,296 @@
       <button *ngFor="let tab of tabs" type="button" [hidden]="(tab.id === 'india' && !indiaFeed?.available) || (!report?.available && tab.id !== 'sebi-universe')" [class.active]="activeTab === tab.id" (click)="activeTab = tab.id">{{ tab.label }}</button>
     </nav>
 
-    <section *ngIf="activeTab === 'sebi-universe'">
-      <div class="section-intro">
-        <h2>SEBI Universe & Fund Analytics</h2>
-        <p>AMFI scheme master · SEBI 3-level category tree · MFapi.in historical NAV · Direct Plan - Growth by default</p>
-      </div>
-      <div class="sebi-actions">
-        <a class="refresh-button" [href]="sebiWorkbookUrl">Download SEBI_Universe_MF_Analytics.xlsx</a>
-        <span class="muted" *ngIf="sebiSummary?.generated_at">Built {{ sebiSummary?.generated_at | date:'medium' }} · {{ (sebiSummary?.plans_processed || []).join(' / ') }}</span>
-      </div>
-
+    <section *ngIf="activeTab === 'sebi-universe'" class="sebi-dashboard">
       <ng-container *ngIf="sebiSummary?.available; else noSebiAnalytics">
-        <div class="metric-grid">
-          <article class="metric-card"><span>Current SEBI leaf categories</span><strong>{{ sebiSummary?.current_sebi_leaf_categories || 40 }}</strong><small>13 Equity · 17 Debt · 7 Hybrid · 1 Life Cycle · 2 Other</small></article>
-          <article class="metric-card"><span>Funds with NAV history</span><strong>{{ sebiSummary?.funds_with_history || 0 }}</strong><small>Of {{ sebiSummary?.schemes_requested || 0 }} selected schemes</small></article>
-          <article class="metric-card"><span>History unavailable</span><strong>{{ sebiSummary?.funds_without_history || 0 }}</strong><small>Not included in calculated peer averages</small></article>
-          <article class="metric-card"><span>MFapi cache hits</span><strong>{{ sebiSummary?.mfapi_cache_hits || 0 }}</strong><small>Cached JSON; no provider request on cache hits</small></article>
-          <article class="metric-card"><span>Risk-free rate</span><strong>{{ formatNumber(sebiSummary?.risk_free_rate_pct, 2) }}%</strong><small>Annualized Sharpe / Sortino baseline</small></article>
-          <article class="metric-card"><span>Portfolio overlap pairs</span><strong>{{ sebiSummary?.portfolio_overlap_pairs || 0 }}</strong><small>Latest uploaded disclosure per scheme</small></article>
+        <div class="sebi-dashboard-toolbar">
+          <div class="sebi-dashboard-title">
+            <span class="sebi-eyebrow">SEBI · AMFI · MFAPI HISTORICAL NAV</span>
+            <h2>Category Snapshot</h2>
+            <p>{{ selectedSebiCategory === 'All categories' ? 'All SEBI leaf categories' : selectedSebiCategory }} · {{ selectedSebiPlan || 'Growth plan' }} · Built {{ sebiSummary?.generated_at | date:'dd MMM yyyy' }}</p>
+          </div>
+          <div class="sebi-dashboard-controls">
+            <label>
+              <span>Plan</span>
+              <select [ngModel]="selectedSebiPlan" (ngModelChange)="onSebiPlanChange($event)">
+                <option *ngFor="let plan of sebiPlanOptions" [ngValue]="plan">{{ plan }}</option>
+              </select>
+            </label>
+            <label>
+              <span>Category</span>
+              <select [ngModel]="selectedSebiCategory" (ngModelChange)="onSebiCategoryChange($event)">
+                <option [ngValue]="'All categories'">All categories</option>
+                <option *ngFor="let category of sebiCategoryOptions" [ngValue]="category">{{ category }}</option>
+              </select>
+            </label>
+            <label>
+              <span>Active fund</span>
+              <select [ngModel]="selectedSebiFundName" (ngModelChange)="onSebiFundChange($event)" [disabled]="!sebiFundOptions.length">
+                <option *ngFor="let fund of sebiFundOptions" [ngValue]="fund.Scheme_Name">{{ fund.Scheme_Name }}</option>
+              </select>
+            </label>
+            <a class="sebi-export-link" [href]="sebiWorkbookUrl">Download workbook</a>
+          </div>
         </div>
 
-        <div class="two-col sebi-chart-grid">
-          <article class="content-card">
-            <h3>Category return vs risk</h3>
-            <img *ngIf="sebiCategoryRiskChartSrc as chartSrc" [src]="chartSrc" alt="SEBI category average 3-year CAGR versus annualized NAV volatility">
-            <p *ngIf="!sebiCategoryRiskChartSrc" class="muted">Category chart is not available yet. Build the SEBI analytics workbook to generate it.</p>
-            <p class="muted">Category average 3Y CAGR versus annualized daily NAV volatility.</p>
-          </article>
-          <article class="content-card">
-            <h3>Top Q1 funds vs category average</h3>
-            <img *ngIf="sebiTopQ1ChartSrc as chartSrc" [src]="chartSrc" alt="Top Q1 funds compared with their SEBI category average 3-year CAGR">
-            <p *ngIf="!sebiTopQ1ChartSrc" class="muted">Q1 chart is not available yet. Build the SEBI analytics workbook to generate it.</p>
-            <p class="muted">Each Q1 fund is compared with the average for its exact SEBI category and plan.</p>
-          </article>
-        </div>
+        <nav class="sebi-subnav" aria-label="SEBI analytics views">
+          <button type="button" [class.active]="activeSebiView === 'overview'" (click)="activeSebiView = 'overview'">Overview</button>
+          <button type="button" [class.active]="activeSebiView === 'scorecard'" (click)="activeSebiView = 'scorecard'">Fund Scorecard</button>
+          <button type="button" [class.active]="activeSebiView === 'benchmarks'" (click)="activeSebiView = 'benchmarks'">Category Benchmarks</button>
+          <button type="button" [class.active]="activeSebiView === 'q1'" (click)="activeSebiView = 'q1'">Top Q1 Funds</button>
+          <button type="button" [class.active]="activeSebiView === 'rankings'" (click)="activeSebiView = 'rankings'">Fund Rankings</button>
+        </nav>
 
-        <article class="content-card">
-          <h3>SEBI Tree Summary & Category Benchmarks</h3>
-          <p class="muted">Average and median statistics are grouped by Level 3 category and plan. Direct and Regular plans are never mixed.</p>
-          <div class="table-scroll">
-            <table class="wide-table">
+        <ng-container *ngIf="activeSebiView === 'overview'">
+          <section class="sebi-insight-banner">
+            <div class="sebi-insight-icon">▥</div>
+            <div class="sebi-insight-copy">
+              <span>SEBI CATEGORY SNAPSHOT · KEY TAKEAWAYS</span>
+              <p *ngIf="sebiDashboard?.strongestCategory">
+                <strong>{{ sebiDashboard.strongestCategory.Level_3_Category }}</strong> has the strongest category-average 3Y CAGR at
+                <strong>{{ formatPct(sebiDashboard.strongestCategory.cagr3Y) }}</strong>.
+                <ng-container *ngIf="sebiDashboard?.lowestRiskCategory">
+                  <strong>{{ sebiDashboard.lowestRiskCategory.Level_3_Category }}</strong> has the lowest reported annualized volatility at
+                  <strong>{{ formatPct(sebiDashboard.lowestRiskCategory.volatility) }}</strong>.
+                </ng-container>
+                Category averages remain separated by plan; categories without sufficient NAV history are not included in the calculated metrics.
+              </p>
+              <p *ngIf="!sebiDashboard?.strongestCategory">Category performance metrics are not available for the selected plan.</p>
+              <div class="sebi-insight-pills">
+                <span>{{ sebiSummary?.funds_with_history || 0 }} funds with NAV history</span>
+                <span>{{ sebiSummary?.current_sebi_leaf_categories || 40 }} current SEBI leaf categories</span>
+                <span>{{ sebiSummary?.portfolio_overlap_pairs || 0 }} portfolio overlap pairs</span>
+              </div>
+            </div>
+          </section>
+
+          <div class="metric-grid sebi-kpis">
+            <article class="metric-card">
+              <span>SEBI Categories</span>
+              <strong>{{ sebiDashboard?.categoryCount || 0 }}</strong>
+              <small>Level 3 categories in selected plan</small>
+            </article>
+            <article class="metric-card">
+              <span>Funds with NAV History</span>
+              <strong>{{ sebiSummary?.funds_with_history || 0 }}</strong>
+              <small>Of {{ sebiSummary?.schemes_requested || 0 }} selected schemes</small>
+            </article>
+            <article class="metric-card">
+              <span>Avg Category 3Y CAGR</span>
+              <strong>{{ formatPct(sebiDashboard?.average3Y) }}</strong>
+              <small>Mean of available category averages</small>
+            </article>
+            <article class="metric-card">
+              <span>Median Category 3Y CAGR</span>
+              <strong>{{ formatPct(sebiDashboard?.median3Y) }}</strong>
+              <small>Median across selected-plan categories</small>
+            </article>
+            <article class="metric-card">
+              <span>Avg Annualized Risk</span>
+              <strong>{{ formatPct(sebiDashboard?.averageVolatility) }}</strong>
+              <small>Daily NAV volatility, annualized</small>
+            </article>
+            <article class="metric-card">
+              <span>Avg Sharpe</span>
+              <strong>{{ formatNumber(sebiDashboard?.averageSharpe, 3) }}</strong>
+              <small>Risk-free rate {{ formatNumber(sebiSummary?.risk_free_rate_pct, 2) }}%</small>
+            </article>
+            <article class="metric-card">
+              <span>Avg Max Drawdown</span>
+              <strong>{{ formatPct(sebiDashboard?.averageMaxDrawdown) }}</strong>
+              <small>Mean peak-to-trough category drawdown</small>
+            </article>
+          </div>
+
+          <div class="sebi-chart-grid">
+            <article class="content-card sebi-chart-card">
+              <div class="chart-heading">
+                <div><h3>Category Return vs Risk</h3><p class="muted">Each point is one Level 3 category. Hover a point for its 3Y CAGR and annualized volatility.</p></div>
+                <span class="sebi-chart-count">{{ sebiDashboard?.riskReturnPoints?.length || 0 }} categories</span>
+              </div>
+              <ng-container *ngIf="sebiDashboard?.riskReturnPoints?.length; else noSebiScatter">
+                <div class="sebi-svg-wrap">
+                  <svg viewBox="0 0 900 320" role="img" aria-label="Scatter plot of SEBI category three-year CAGR against annualized volatility">
+                    <g *ngFor="let tick of sebiDashboard.scatterYTicks">
+                      <line [attr.x1]="sebiDashboard.scatterPlot.left" [attr.x2]="sebiDashboard.scatterPlot.right" [attr.y1]="tick.y" [attr.y2]="tick.y" class="sebi-grid-line"></line>
+                      <text [attr.x]="sebiDashboard.scatterPlot.left - 10" [attr.y]="tick.y + 4" text-anchor="end" class="sebi-axis-tick">{{ formatPct(tick.value) }}</text>
+                    </g>
+                    <g *ngFor="let tick of sebiDashboard.scatterXTicks">
+                      <line [attr.x1]="tick.x" [attr.x2]="tick.x" [attr.y1]="sebiDashboard.scatterPlot.top" [attr.y2]="sebiDashboard.scatterPlot.bottom" class="sebi-grid-line"></line>
+                      <text [attr.x]="tick.x" [attr.y]="sebiDashboard.scatterPlot.bottom + 20" text-anchor="middle" class="sebi-axis-tick">{{ formatNumber(tick.value, 1) }}%</text>
+                    </g>
+                    <line [attr.x1]="sebiDashboard.scatterPlot.left" [attr.x2]="sebiDashboard.scatterPlot.right" [attr.y1]="sebiDashboard.scatterPlot.bottom" [attr.y2]="sebiDashboard.scatterPlot.bottom" class="sebi-axis-line"></line>
+                    <circle *ngFor="let point of sebiDashboard.riskReturnPoints" [attr.cx]="point.cx" [attr.cy]="point.cy" r="5" class="sebi-scatter-point">
+                      <title>{{ point.name }} · 3Y CAGR {{ formatPct(point.cagr3Y) }} · Volatility {{ formatPct(point.volatility) }}</title>
+                    </circle>
+                    <text *ngFor="let point of sebiDashboard.riskReturnPoints" [attr.x]="point.cx + 7" [attr.y]="point.cy - 7" class="sebi-scatter-label">{{ point.label }}</text>
+                    <text x="470" y="312" text-anchor="middle" class="sebi-axis-title">Annualized volatility (%)</text>
+                    <text x="18" y="155" text-anchor="middle" transform="rotate(-90 18 155)" class="sebi-axis-title">Category average 3Y CAGR (%)</text>
+                  </svg>
+                </div>
+              </ng-container>
+              <ng-template #noSebiScatter><p class="chart-empty">There are not enough category-level return and risk observations to plot this view.</p></ng-template>
+            </article>
+
+            <article class="content-card sebi-chart-card">
+              <div class="chart-heading">
+                <div><h3>Top Q1 Funds vs Category Average</h3><p class="muted">3Y CAGR for each leading fund compared with its exact SEBI category and plan average.</p></div>
+                <span class="sebi-chart-count">Top {{ sebiDashboard?.q1ComparisonRows?.length || 0 }}</span>
+              </div>
+              <div *ngIf="sebiDashboard?.q1ComparisonRows?.length; else noSebiQ1Chart" class="sebi-horizontal-bars">
+                <div *ngFor="let row of sebiDashboard.q1ComparisonRows" class="sebi-double-bar-row">
+                  <div class="sebi-bar-title"><span>{{ row.label }}</span><b>{{ formatPct(row.cagr3Y) }}</b></div>
+                  <div class="sebi-double-bar-track"><i class="sebi-bar-fund" [style.width.%]="row.fundWidth"></i></div>
+                  <div class="sebi-double-bar-track average"><i class="sebi-bar-average" [style.width.%]="row.averageWidth"></i></div>
+                  <div class="sebi-bar-foot"><span>Fund CAGR</span><span>Category average {{ formatPct(row.categoryAverage) }}</span></div>
+                </div>
+              </div>
+              <ng-template #noSebiQ1Chart><p class="chart-empty">No Q1 fund observations are available for the selected plan and category.</p></ng-template>
+            </article>
+
+            <article class="content-card sebi-chart-card">
+              <div class="chart-heading">
+                <div><h3>Category Return Profile</h3><p class="muted">1Y, 3Y and 5Y category-average CAGR for the strongest categories in the selected plan.</p></div>
+              </div>
+              <div *ngIf="sebiDashboard?.returnComparisonRows?.length; else noSebiReturns" class="sebi-multi-bars">
+                <div *ngFor="let row of sebiDashboard.returnComparisonRows" class="sebi-multi-bar-row">
+                  <strong>{{ row.category }}</strong>
+                  <div class="sebi-mini-series"><span>1Y</span><div class="sebi-mini-track"><i class="series-one" [style.width.%]="row.width1Y"></i></div><b>{{ formatPct(row.cagr1Y) }}</b></div>
+                  <div class="sebi-mini-series"><span>3Y</span><div class="sebi-mini-track"><i class="series-two" [style.width.%]="row.width3Y"></i></div><b>{{ formatPct(row.cagr3Y) }}</b></div>
+                  <div class="sebi-mini-series"><span>5Y</span><div class="sebi-mini-track"><i class="series-three" [style.width.%]="row.width5Y"></i></div><b>{{ formatPct(row.cagr5Y) }}</b></div>
+                </div>
+              </div>
+              <ng-template #noSebiReturns><p class="chart-empty">Category CAGR observations are not available.</p></ng-template>
+            </article>
+
+            <article class="content-card sebi-chart-card">
+              <div class="chart-heading">
+                <div><h3>Fund Coverage by Category</h3><p class="muted">Number of schemes with usable NAV history represented in each category benchmark.</p></div>
+              </div>
+              <div *ngIf="sebiDashboard?.coverageRows?.length; else noSebiCoverage" class="sebi-horizontal-bars">
+                <div *ngFor="let row of sebiDashboard.coverageRows" class="sebi-single-bar-row">
+                  <div class="sebi-bar-title"><span>{{ row.category }}</span><b>{{ row.fundCount }}</b></div>
+                  <div class="sebi-single-track"><i class="series-two" [style.width.%]="row.width"></i></div>
+                </div>
+              </div>
+              <ng-template #noSebiCoverage><p class="chart-empty">Category fund counts are not available.</p></ng-template>
+            </article>
+
+            <article class="content-card sebi-chart-card">
+              <div class="chart-heading">
+                <div><h3>Risk Profile by Category</h3><p class="muted">Annualized volatility against maximum drawdown magnitude. Both are expressed as percentages.</p></div>
+              </div>
+              <div *ngIf="sebiDashboard?.riskRows?.length; else noSebiRisk" class="sebi-horizontal-bars">
+                <div *ngFor="let row of sebiDashboard.riskRows" class="sebi-double-bar-row compact">
+                  <div class="sebi-bar-title"><span>{{ row.category }}</span><b>{{ formatPct(row.volatility) }}</b></div>
+                  <div class="sebi-double-bar-track"><i class="sebi-bar-risk" [style.width.%]="row.volatilityWidth"></i></div>
+                  <div class="sebi-double-bar-track average"><i class="sebi-bar-drawdown" [style.width.%]="row.drawdownWidth"></i></div>
+                  <div class="sebi-bar-foot"><span>Volatility</span><span>Max DD {{ formatPct(row.maxDrawdown) }}</span></div>
+                </div>
+              </div>
+              <ng-template #noSebiRisk><p class="chart-empty">Volatility and drawdown coverage is not available.</p></ng-template>
+            </article>
+
+            <article class="content-card sebi-chart-card">
+              <div class="chart-heading">
+                <div><h3>Risk-adjusted Return · Sharpe Ratio</h3><p class="muted">Mean category Sharpe ratio calculated from historical NAV returns and the configured risk-free rate.</p></div>
+              </div>
+              <div *ngIf="sebiDashboard?.sharpeRows?.length; else noSebiSharpe" class="sebi-horizontal-bars">
+                <div *ngFor="let row of sebiDashboard.sharpeRows" class="sebi-single-bar-row">
+                  <div class="sebi-bar-title"><span>{{ row.category }}</span><b>{{ formatNumber(row.sharpe, 3) }}</b></div>
+                  <div class="sebi-single-track"><i class="series-three" [style.width.%]="row.width"></i></div>
+                </div>
+              </div>
+              <ng-template #noSebiSharpe><p class="chart-empty">Category Sharpe observations are not available.</p></ng-template>
+            </article>
+          </div>
+
+          <article class="content-card sebi-selected-fund-card" *ngIf="selectedSebiFund">
+            <div class="chart-heading">
+              <div><h3>Active Fund vs Category Average</h3><p class="muted">{{ selectedSebiFund.Scheme_Name }} · {{ selectedSebiFund.Level_3_Category }} · {{ selectedSebiFund.Plan }}</p></div>
+              <span class="sebi-peer-label">Exact category + plan benchmark</span>
+            </div>
+            <div class="table-scroll">
+              <table class="fund-comparison-table">
+                <thead><tr><th>Metric</th><th>Selected Fund</th><th>Category Average</th><th>Difference</th></tr></thead>
+                <tbody>
+                  <tr *ngFor="let row of sebiFundComparisonRows">
+                    <td class="left">{{ row.metric }}</td>
+                    <td>{{ row.kind === 'number' ? formatNumber(row.value, 3) : formatPct(row.value) }}</td>
+                    <td>{{ row.kind === 'number' ? formatNumber(row.average, 3) : formatPct(row.average) }}</td>
+                    <td [class.positive-value]="row.difference > 0" [class.negative-value]="row.difference < 0">
+                      {{ row.difference === null ? '—' : (row.kind === 'number' ? formatNumber(row.difference, 3) : formatPercentagePoints(row.difference)) }}
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </article>
+          <p class="dashboard-source-note">Source: {{ sebiSummary?.source }} · {{ (sebiSummary?.plans_processed || []).join(' / ') }} · MFapi cache hits {{ sebiSummary?.mfapi_cache_hits || 0 }}. This dashboard reads the stored SEBI analytics snapshot; it does not trigger IndianAPI requests.</p>
+        </ng-container>
+
+        <ng-container *ngIf="activeSebiView === 'scorecard'">
+          <div class="sebi-scorecard-heading" *ngIf="selectedSebiFund; else noSelectedSebiFund">
+            <div><span class="sebi-eyebrow">FUND SCORECARD</span><h3>{{ selectedSebiFund.Scheme_Name }}</h3><p>{{ selectedSebiFund.Level_3_Category }} · {{ selectedSebiFund.Plan }} · Quartile {{ selectedSebiFund.Quartile || '—' }}</p></div>
+            <div class="sebi-scorecard-badges"><span>Percentile {{ formatNumber(selectedSebiFund.Percentile_Rank_3Y, 1) }}</span><span>Alpha {{ formatNumber(selectedSebiFund.Outperformance_bps, 0) }} bps</span></div>
+          </div>
+          <ng-template #noSelectedSebiFund><p class="chart-empty">No fund-level ranking is available for the selected plan and category.</p></ng-template>
+          <div class="metric-grid sebi-scorecard-kpis" *ngIf="selectedSebiFund">
+            <article class="metric-card"><span>1Y CAGR</span><strong>{{ formatPct(selectedSebiFund.CAGR_1Y_pct) }}</strong><small>Annualized NAV return</small></article>
+            <article class="metric-card"><span>3Y CAGR</span><strong>{{ formatPct(selectedSebiFund.CAGR_3Y_pct) }}</strong><small>Primary peer-ranking period</small></article>
+            <article class="metric-card"><span>5Y CAGR</span><strong>{{ formatPct(selectedSebiFund.CAGR_5Y_pct) }}</strong><small>Long-term annualized return</small></article>
+            <article class="metric-card"><span>Sharpe Ratio</span><strong>{{ formatNumber(selectedSebiFund.Sharpe_Ratio, 3) }}</strong><small>Risk-adjusted performance</small></article>
+            <article class="metric-card"><span>Annualized Volatility</span><strong>{{ formatPct(selectedSebiFund.Annualized_Volatility_pct) }}</strong><small>Daily NAV volatility</small></article>
+            <article class="metric-card"><span>Maximum Drawdown</span><strong>{{ formatPct(selectedSebiFund.Max_Drawdown_pct) }}</strong><small>Peak-to-trough loss</small></article>
+          </div>
+          <article class="content-card" *ngIf="selectedSebiFund">
+            <h3>Selected fund vs exact category benchmark</h3>
+            <div class="table-scroll"><table class="fund-comparison-table"><thead><tr><th>Metric</th><th>Fund</th><th>Category Average</th><th>Difference</th></tr></thead>
+              <tbody><tr *ngFor="let row of sebiFundComparisonRows"><td class="left">{{ row.metric }}</td><td>{{ row.kind === 'number' ? formatNumber(row.value, 3) : formatPct(row.value) }}</td><td>{{ row.kind === 'number' ? formatNumber(row.average, 3) : formatPct(row.average) }}</td><td [class.positive-value]="row.difference > 0" [class.negative-value]="row.difference < 0">{{ row.difference === null ? '—' : (row.kind === 'number' ? formatNumber(row.difference, 3) : formatPercentagePoints(row.difference)) }}</td></tr></tbody>
+            </table></div>
+          </article>
+        </ng-container>
+
+        <ng-container *ngIf="activeSebiView === 'benchmarks'">
+          <div class="section-intro"><h3>SEBI Tree Summary & Category Benchmarks</h3><p>Level 3 category averages and medians stay separated by plan. Use the filters above to narrow the table.</p></div>
+          <article class="content-card">
+            <div class="table-scroll"><table class="wide-table sebi-benchmark-table">
               <thead><tr><th>Level 1 Branch</th><th>Level 2 Group</th><th>Level 3 Category</th><th>Plan</th><th>Funds</th><th>Avg 1Y CAGR</th><th>Avg 3Y CAGR</th><th>Median 3Y CAGR</th><th>Avg 5Y CAGR</th><th>Avg 3Y Rolling CAGR</th><th>Avg Volatility</th><th>Avg Sharpe</th><th>Avg Max DD</th></tr></thead>
-              <tbody>
-                <tr *ngFor="let row of sebiSummary?.tree_summary">
-                  <td class="left">{{ row.Level_1_Branch }}</td>
-                  <td class="left">{{ row.Level_2_Group }}</td>
-                  <td class="left">{{ row.Level_3_Category }}</td>
-                  <td>{{ row.Plan }}</td>
-                  <td>{{ row.Fund_Count }}</td>
-                  <td>{{ formatPct(row.Category_Avg_CAGR_1Y_pct) }}</td>
-                  <td>{{ formatPct(row.Category_Avg_CAGR_3Y_pct) }}</td>
-                  <td>{{ formatPct(row.Category_Median_CAGR_3Y_pct) }}</td>
-                  <td>{{ formatPct(row.Category_Avg_CAGR_5Y_pct) }}</td>
-                  <td>{{ formatPct(row.Category_Avg_Rolling_3Y_CAGR_Mean_pct) }}</td>
-                  <td>{{ formatPct(row.Category_Avg_Annualized_Volatility_pct) }}</td>
-                  <td>{{ formatNumber(row.Category_Avg_Sharpe_Ratio, 3) }}</td>
-                  <td>{{ formatPct(row.Category_Avg_Max_Drawdown_pct) }}</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        </article>
+              <tbody><tr *ngFor="let row of sebiVisibleTreeRows">
+                <td class="left">{{ row.Level_1_Branch }}</td><td class="left">{{ row.Level_2_Group }}</td><td class="left">{{ row.Level_3_Category }}</td><td>{{ row.Plan }}</td><td>{{ row.Fund_Count }}</td>
+                <td>{{ formatPct(row.Category_Avg_CAGR_1Y_pct) }}</td><td>{{ formatPct(row.Category_Avg_CAGR_3Y_pct) }}</td><td>{{ formatPct(row.Category_Median_CAGR_3Y_pct) }}</td><td>{{ formatPct(row.Category_Avg_CAGR_5Y_pct) }}</td><td>{{ formatPct(row.Category_Avg_Rolling_3Y_CAGR_Mean_pct) }}</td><td>{{ formatPct(row.Category_Avg_Annualized_Volatility_pct) }}</td><td>{{ formatNumber(row.Category_Avg_Sharpe_Ratio, 3) }}</td><td>{{ formatPct(row.Category_Avg_Max_Drawdown_pct) }}</td>
+              </tr></tbody>
+            </table></div>
+            <p *ngIf="!sebiVisibleTreeRows.length" class="chart-empty">No category benchmark rows match the selected filters.</p>
+          </article>
+        </ng-container>
 
-        <article class="content-card">
-          <h3>Top Q1 funds</h3>
-          <div class="table-scroll">
-            <table class="wide-table">
+        <ng-container *ngIf="activeSebiView === 'q1'">
+          <div class="section-intro"><h3>Top Quartile Funds</h3><p>Q1 performers compared with their exact Level 3 SEBI category and plan benchmark.</p></div>
+          <article class="content-card">
+            <div class="table-scroll"><table class="wide-table sebi-q1-table">
               <thead><tr><th>Fund</th><th>Category</th><th>Plan</th><th>1Y CAGR</th><th>3Y CAGR</th><th>5Y CAGR</th><th>3Y Rolling Mean</th><th>Volatility</th><th>Sharpe</th><th>Max Drawdown</th><th>Outperformance (bps)</th><th>Percentile</th><th>Quartile</th></tr></thead>
-              <tbody>
-                <tr *ngFor="let fund of sebiQ1Funds">
-                  <td class="left">{{ fund.Scheme_Name }}</td>
-                  <td>{{ fund.Level_3_Category }}</td>
-                  <td>{{ fund.Plan }}</td>
-                  <td>{{ formatPct(fund.CAGR_1Y_pct) }}</td>
-                  <td>{{ formatPct(fund.CAGR_3Y_pct) }}</td>
-                  <td>{{ formatPct(fund.CAGR_5Y_pct) }}</td>
-                  <td>{{ formatPct(fund.Rolling_3Y_CAGR_Mean_pct) }}</td>
-                  <td>{{ formatPct(fund.Annualized_Volatility_pct) }}</td>
-                  <td>{{ formatNumber(fund.Sharpe_Ratio, 3) }}</td>
-                  <td>{{ formatPct(fund.Max_Drawdown_pct) }}</td>
-                  <td>{{ formatNumber(fund.Outperformance_bps, 1) }}</td>
-                  <td>{{ formatNumber(fund.Percentile_Rank_3Y, 1) }}</td>
-                  <td>{{ fund.Quartile }}</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        </article>
+              <tbody><tr *ngFor="let fund of sebiVisibleQ1Funds">
+                <td class="left">{{ fund.Scheme_Name }}</td><td>{{ fund.Level_3_Category }}</td><td>{{ fund.Plan }}</td><td>{{ formatPct(fund.CAGR_1Y_pct) }}</td><td>{{ formatPct(fund.CAGR_3Y_pct) }}</td><td>{{ formatPct(fund.CAGR_5Y_pct) }}</td><td>{{ formatPct(fund.Rolling_3Y_CAGR_Mean_pct) }}</td><td>{{ formatPct(fund.Annualized_Volatility_pct) }}</td><td>{{ formatNumber(fund.Sharpe_Ratio, 3) }}</td><td>{{ formatPct(fund.Max_Drawdown_pct) }}</td><td>{{ formatNumber(fund.Outperformance_bps, 1) }}</td><td>{{ formatNumber(fund.Percentile_Rank_3Y, 1) }}</td><td>{{ fund.Quartile }}</td>
+              </tr></tbody>
+            </table></div>
+            <p *ngIf="!sebiVisibleQ1Funds.length" class="chart-empty">No Q1 funds match the selected filters.</p>
+          </article>
+        </ng-container>
 
-        <article class="content-card">
-          <h3>Fund vs Category Rankings (first {{ sebiRankings?.results?.length || 0 }} rows)</h3>
-          <div class="table-scroll">
-            <table class="wide-table">
+        <ng-container *ngIf="activeSebiView === 'rankings'">
+          <div class="section-intro"><h3>Fund vs Category Rankings</h3><p>{{ sebiVisibleRankings.length }} returned fund rows · first page from the stored analytics ranking endpoint.</p></div>
+          <article class="content-card">
+            <div class="table-scroll"><table class="wide-table sebi-ranking-table">
               <thead><tr><th>Fund</th><th>Category</th><th>Plan</th><th>3Y CAGR</th><th>Category Avg</th><th>Alpha (bps)</th><th>Percentile</th><th>Quartile</th><th>Beat Avg</th><th>Volatility</th><th>Sharpe</th><th>Sortino</th><th>Max DD</th><th>Recovery Days</th><th>Expense Ratio</th></tr></thead>
-              <tbody>
-                <tr *ngFor="let fund of sebiRankings?.results">
-                  <td class="left">{{ fund.Scheme_Name }}</td>
-                  <td>{{ fund.Level_3_Category }}</td>
-                  <td>{{ fund.Plan }}</td>
-                  <td>{{ formatPct(fund.CAGR_3Y_pct) }}</td>
-                  <td>{{ formatPct(fund.Category_Avg_CAGR_3Y_pct) }}</td>
-                  <td>{{ formatNumber(fund.Outperformance_bps, 1) }}</td>
-                  <td>{{ formatNumber(fund.Percentile_Rank_3Y, 1) }}</td>
-                  <td>{{ fund.Quartile }}</td>
-                  <td>{{ fund.Beat_Category_Avg === null ? '—' : (fund.Beat_Category_Avg ? 'Yes' : 'No') }}</td>
-                  <td>{{ formatPct(fund.Annualized_Volatility_pct) }}</td>
-                  <td>{{ formatNumber(fund.Sharpe_Ratio, 3) }}</td>
-                  <td>{{ formatNumber(fund.Sortino_Ratio, 3) }}</td>
-                  <td>{{ formatPct(fund.Max_Drawdown_pct) }}</td>
-                  <td>{{ fund.Max_Drawdown_Recovery_Days ?? '—' }}</td>
-                  <td>{{ fund.Expense_Ratio_pct === null ? '—' : formatPct(fund.Expense_Ratio_pct) }}</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-          <p class="muted">The downloadable workbook contains the complete selected universe; this page displays a bounded first page.</p>
-        </article>
-
-        <p class="muted">Source: {{ sebiSummary?.source }} · No IndianAPI calls are used by this pipeline. Unknown categories, unavailable NAV history and missing optional TER/AUM/flow observations are not fabricated.</p>
+              <tbody><tr *ngFor="let fund of sebiVisibleRankings">
+                <td class="left">{{ fund.Scheme_Name }}</td><td>{{ fund.Level_3_Category }}</td><td>{{ fund.Plan }}</td><td>{{ formatPct(fund.CAGR_3Y_pct) }}</td><td>{{ formatPct(fund.Category_Avg_CAGR_3Y_pct) }}</td><td>{{ formatNumber(fund.Outperformance_bps, 1) }}</td><td>{{ formatNumber(fund.Percentile_Rank_3Y, 1) }}</td><td>{{ fund.Quartile }}</td><td>{{ fund.Beat_Category_Avg === null ? '—' : (fund.Beat_Category_Avg ? 'Yes' : 'No') }}</td><td>{{ formatPct(fund.Annualized_Volatility_pct) }}</td><td>{{ formatNumber(fund.Sharpe_Ratio, 3) }}</td><td>{{ formatNumber(fund.Sortino_Ratio, 3) }}</td><td>{{ formatPct(fund.Max_Drawdown_pct) }}</td><td>{{ fund.Max_Drawdown_Recovery_Days ?? '—' }}</td><td>{{ fund.Expense_Ratio_pct === null ? '—' : formatPct(fund.Expense_Ratio_pct) }}</td>
+              </tr></tbody>
+            </table></div>
+            <p class="muted">The downloadable workbook contains the complete selected universe; this page displays the first page returned by the API.</p>
+            <p *ngIf="!sebiVisibleRankings.length" class="chart-empty">No fund ranking rows match the selected filters.</p>
+          </article>
+        </ng-container>
       </ng-container>
 
       <ng-template #noSebiAnalytics>

@@ -18,9 +18,16 @@
   </header>
 
   <div class="mf-report-fundbar" *ngIf="report?.available && funds.length">
-    <label>Active Fund</label>
-    <select class="mf-active-fund-select" [ngModel]="selectedFundName" (ngModelChange)="onActiveFundChange($event)">
-      <option *ngFor="let fund of funds; trackBy: trackByName" [ngValue]="fund.name">
+    <label for="mf-active-fund-select">Active Fund</label>
+    <select
+      id="mf-active-fund-select"
+      class="mf-active-fund-select"
+      [value]="activeFundIndex"
+      (change)="onActiveFundIndexChange($any($event.target).value)"
+      [disabled]="loading || !funds.length"
+      aria-label="Select an active fund from the Multi Cap universe"
+    >
+      <option *ngFor="let fund of funds; let fundIndex = index; trackBy: trackByName" [value]="fundIndex">
         {{ fund.short || fund.name }}
       </option>
     </select>
@@ -33,7 +40,7 @@
         </option>
       </select>
     </label>
-    <span class="mf-fundbar-meta">{{ funds.length }} funds · Returns as of {{ p2p?.asof || 'not supplied' }} · Holdings, EDGE and risk as of {{ report?.report_date | date:'dd MMM yyyy' }}</span>
+    <span class="mf-fundbar-meta">{{ funds.length }} Multi Cap funds · Returns as of {{ p2p?.asof || 'not supplied' }} · Holdings, EDGE and risk as of {{ report?.report_date | date:'dd MMM yyyy' }}</span>
     <button type="button" class="mf-refresh-button" (click)="refreshProviderData()" [disabled]="loading || refreshing">
       {{ refreshing ? 'Refreshing…' : 'Refresh market data' }}
     </button>

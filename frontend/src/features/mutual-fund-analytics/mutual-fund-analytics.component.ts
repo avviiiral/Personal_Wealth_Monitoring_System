@@ -160,7 +160,7 @@ export class MutualFundAnalyticsComponent implements OnInit, OnDestroy {
         title: items => {
           const item = items[0];
           if (item?.datasetIndex === 1) {
-            return this.overviewDashboard?.drawdownReferencePoint?.name || 'Category Average';
+            return this.overviewDashboard?.drawdownReferencePoint?.name || 'N500 TRI (proxy)';
           }
           return this.overviewDashboard?.drawdownPoints?.[item?.dataIndex ?? -1]?.name || 'Fund';
         },

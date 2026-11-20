@@ -1,6 +1,8 @@
 import { CommonModule } from '@angular/common';
 import { Component, OnDestroy, OnInit, inject } from '@angular/core';
 import { FormsModule } from '@angular/forms';
+import { ChartData, ChartOptions } from 'chart.js';
+import { BaseChartDirective, provideCharts, withDefaultRegisterables } from 'ng2-charts';
 import { catchError, forkJoin, of } from 'rxjs';
 import {
   IndiaMutualFundFeedResponse,
@@ -20,7 +22,8 @@ type Period = '1M' | '3M' | '6M' | '1Y' | '3Y' | '5Y' | 'YTD';
 @Component({
   selector: 'app-mutual-fund-analytics',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, BaseChartDirective],
+  providers: [provideCharts(withDefaultRegisterables())],
   templateUrl: './mutual-fund-analytics.component.html',
 })
 export class MutualFundAnalyticsComponent implements OnInit, OnDestroy {
@@ -46,6 +49,119 @@ export class MutualFundAnalyticsComponent implements OnInit, OnDestroy {
   sebiFundsError = '';
   private sebiFundsRequestId = 0;
   overviewDashboard: any = null;
+  returnDistributionChartData: ChartData<'bar'> = { labels: [], datasets: [] };
+  marketCapChartData: ChartData<'bar'> = { labels: [], datasets: [] };
+  styleCompositionChartData: ChartData<'bar'> = { labels: [], datasets: [] };
+  aumConcentrationChartData: ChartData<'bar'> = { labels: [], datasets: [] };
+  drawdownCalmarChartData: ChartData<'scatter'> = { datasets: [] };
+
+  readonly returnDistributionChartOptions: ChartOptions<'bar'> = {
+    responsive: true,
+    maintainAspectRatio: false,
+    animation: { duration: 250 },
+    interaction: { mode: 'index', intersect: false },
+    plugins: {
+      legend: { display: true, position: 'top', labels: { boxWidth: 30, padding: 16 } },
+      tooltip: { callbacks: {
+        label: context => `${context.dataset.label}: ${context.parsed.y} funds`,
+        title: items => items[0]?.label ? `${items[0].label}% return` : '',
+      } },
+    },
+    scales: {
+      x: { grid: { color: 'rgba(15, 23, 42, 0.08)' }, ticks: { maxRotation: 0, minRotation: 0 } },
+      y: {
+        beginAtZero: true,
+        title: { display: true, text: '# Funds' },
+        ticks: { precision: 0, stepSize: 2 },
+        grid: { color: 'rgba(15, 23, 42, 0.10)' },
+      },
+    },
+  };
+
+  readonly stackedPercentChartOptions: ChartOptions<'bar'> = {
+    responsive: true,
+    maintainAspectRatio: false,
+    animation: { duration: 250 },
+    interaction: { mode: 'index', intersect: false },
+    plugins: {
+      legend: { display: true, position: 'top', labels: { boxWidth: 28, padding: 14 } },
+      tooltip: { callbacks: {
+        label: context => `${context.dataset.label}: ${Number(context.parsed.y).toFixed(1)}%`,
+      } },
+    },
+    scales: {
+      x: {
+        stacked: true,
+        grid: { display: false },
+        ticks: { autoSkip: false, minRotation: 48, maxRotation: 58, font: { size: 9 } },
+      },
+      y: {
+        stacked: true,
+        min: 0,
+        max: 100,
+        title: { display: true, text: '% (rebased to 100)' },
+        ticks: { stepSize: 20, callback: value => `${value}%` },
+        grid: { color: 'rgba(15, 23, 42, 0.10)' },
+      },
+    },
+  };
+
+  readonly aumConcentrationChartOptions: ChartOptions<'bar'> = {
+    indexAxis: 'y',
+    responsive: true,
+    maintainAspectRatio: false,
+    animation: { duration: 250 },
+    plugins: {
+      legend: { display: false },
+      tooltip: { callbacks: {
+        label: context => `AUM: ₹${this.formatAum(context.parsed.x)} Cr`,
+      } },
+    },
+    scales: {
+      x: {
+        beginAtZero: true,
+        title: { display: true, text: 'AUM (₹ Cr)' },
+        ticks: { callback: value => {
+          const amount = Number(value);
+          return amount >= 1000 ? `${Math.round(amount / 1000)}K` : String(amount);
+        } },
+        grid: { color: 'rgba(15, 23, 42, 0.10)' },
+      },
+      y: { grid: { display: false }, ticks: { font: { size: 9 } } },
+    },
+  };
+
+  readonly drawdownCalmarChartOptions: ChartOptions<'scatter'> = {
+    responsive: true,
+    maintainAspectRatio: false,
+    animation: { duration: 250 },
+    plugins: {
+      legend: { display: true, position: 'top' },
+      tooltip: { callbacks: {
+        title: items => this.overviewDashboard?.drawdownPoints?.[items[0]?.dataIndex ?? -1]?.name || 'Fund',
+        label: context => {
+          const row = this.overviewDashboard?.drawdownPoints?.[context.dataIndex];
+          return row
+            ? `Max Drawdown: ${this.formatPct(row.drawdown)} · Calmar: ${this.format(row.calmar, 3)}`
+            : '';
+        },
+      } },
+    },
+    scales: {
+      x: {
+        type: 'linear',
+        title: { display: true, text: 'Max Drawdown (%)' },
+        ticks: { callback: value => `${value}%` },
+        grid: { color: 'rgba(15, 23, 42, 0.10)' },
+      },
+      y: {
+        type: 'linear',
+        title: { display: true, text: 'Calmar Ratio' },
+        grid: { color: 'rgba(15, 23, 42, 0.10)' },
+      },
+    },
+  };
+
   sebiCategoryRiskChartSrc: string | null = null;
   sebiTopQ1ChartSrc: string | null = null;
   loading = false;
@@ -888,6 +1004,107 @@ export class MutualFundAnalyticsComponent implements OnInit, OnDestroy {
       });
     }
 
+    // Prepare chart datasets from the imported RAW snapshot. Every percentage
+    // stack is rebased within its fund so each column represents exactly 100%.
+    const marketCapChartRows = funds.map(fund => {
+      const large = this.finiteNumber(fund?.large);
+      const mid = this.finiteNumber(fund?.mid);
+      const small = this.finiteNumber(fund?.small);
+      if (large === null || mid === null || small === null) return null;
+      const total = large + mid + small;
+      if (total <= 0) return null;
+      return {
+        name: fund?.short || fund?.name || 'Unnamed fund',
+        fullName: fund?.name || 'Unnamed fund',
+        selected: fund?.name === this.selectedFundName,
+        large: large / total * 100,
+        mid: mid / total * 100,
+        small: small / total * 100,
+      };
+    }).filter((row): row is NonNullable<typeof row> => row !== null)
+      .sort((a, b) => b.large - a.large);
+
+    const styleChartRows = funds.map(fund => {
+      const cyclical = this.finiteNumber(fund?.cyclical);
+      const defensive = this.finiteNumber(fund?.defensive);
+      const sensitive = this.finiteNumber(fund?.sensitive);
+      if (cyclical === null || defensive === null || sensitive === null) return null;
+      const total = cyclical + defensive + sensitive;
+      if (total <= 0) return null;
+      return {
+        name: fund?.short || fund?.name || 'Unnamed fund',
+        fullName: fund?.name || 'Unnamed fund',
+        selected: fund?.name === this.selectedFundName,
+        cyclical: cyclical / total * 100,
+        defensive: defensive / total * 100,
+        sensitive: sensitive / total * 100,
+      };
+    }).filter((row): row is NonNullable<typeof row> => row !== null)
+      .sort((a, b) => b.cyclical - a.cyclical);
+
+    const palette = [
+      '#FD7740', '#414B63', '#D1A65B', '#4F91E8', '#35AD70', '#E65A5A',
+      '#9365D8', '#36A8BA', '#E19A43', '#C94D83', '#6B8E23', '#7C83D1',
+    ];
+    this.returnDistributionChartData = {
+      labels: returnDistribution.map(bucket => bucket.label.replace(' to ', '–').replace('%', '')),
+      datasets: ([
+        { period: '3M', color: '#FD7740' },
+        { period: '6M', color: '#051233' },
+        { period: '1Y', color: '#CC9F53' },
+      ]).map(series => ({
+        label: `${series.period} Return`,
+        data: returnDistribution.map(bucket =>
+          bucket.bars.find((bar: any) => bar.period === series.period)?.count || 0),
+        backgroundColor: series.color,
+        borderColor: series.color,
+        borderWidth: 1,
+        borderRadius: 0,
+        categoryPercentage: 0.78,
+        barPercentage: 0.88,
+      })),
+    };
+    this.marketCapChartData = {
+      labels: marketCapChartRows.map(row => row.name),
+      datasets: [
+        { label: 'Large Cap', data: marketCapChartRows.map(row => row.large), backgroundColor: '#35AD70', borderWidth: 0, stack: 'cap' },
+        { label: 'Mid Cap', data: marketCapChartRows.map(row => row.mid), backgroundColor: '#FD7740', borderWidth: 0, stack: 'cap' },
+        { label: 'Small Cap', data: marketCapChartRows.map(row => row.small), backgroundColor: '#B7E0C6', borderWidth: 0, stack: 'cap' },
+      ],
+    };
+    this.styleCompositionChartData = {
+      labels: styleChartRows.map(row => row.name),
+      datasets: [
+        { label: 'Cyclical', data: styleChartRows.map(row => row.cyclical), backgroundColor: '#F45B5B', borderWidth: 0, stack: 'style' },
+        { label: 'Defensive', data: styleChartRows.map(row => row.defensive), backgroundColor: '#35C875', borderWidth: 0, stack: 'style' },
+        { label: 'Sensitive', data: styleChartRows.map(row => row.sensitive), backgroundColor: '#4F8FF7', borderWidth: 0, stack: 'style' },
+      ],
+    };
+    this.aumConcentrationChartData = {
+      labels: topAumFunds.map(row => row.name),
+      datasets: [{
+        label: 'AUM (₹ Cr)',
+        data: topAumFunds.map(row => row.aum || 0),
+        backgroundColor: topAumFunds.map((row, index) =>
+          row.fullName === this.selectedFundName ? '#FD7740' : palette[index % palette.length]),
+        borderWidth: 0,
+        borderRadius: 0,
+        barPercentage: 0.82,
+        categoryPercentage: 0.86,
+      }],
+    };
+    this.drawdownCalmarChartData = {
+      datasets: [{
+        label: 'Multi Cap Funds',
+        data: drawdownPoints.map(row => ({ x: row.drawdown as number, y: row.calmar as number })),
+        backgroundColor: drawdownPoints.map(row =>
+          row.selected ? '#FD7740' : 'rgba(5, 18, 51, 0.56)'),
+        borderColor: drawdownPoints.map(row => row.selected ? '#FD7740' : 'rgba(5, 18, 51, 0.56)'),
+        pointRadius: drawdownPoints.map(row => row.selected ? 8 : 5),
+        pointHoverRadius: 9,
+      }],
+    };
+
     const sectorFunds = funds.map(fund => {
       const entries = Object.entries(fund?.sectors || {})
         .map(([sector, rawValue]) => ({ sector, value: this.finiteNumber(rawValue) }))
@@ -1089,19 +1306,47 @@ export class MutualFundAnalyticsComponent implements OnInit, OnDestroy {
   }
 
   get overviewReturnInsight(): any {
-    const threeMonth = this.funds.map(fund => this.fundReturn(fund, '3M'))
+    // Match the return-distribution chart: both use RAW fund returns, not the
+    // separately covered P2P benchmark series.
+    const threeMonth = this.funds.map(fund => this.finiteNumber(fund?.r3m))
       .filter((value): value is number => value !== null);
-    const oneYear = this.funds.map(fund => this.fundReturn(fund, '1Y'))
+    const oneYear = this.funds.map(fund => this.finiteNumber(fund?.r1y))
       .filter((value): value is number => value !== null);
-    const benchmark3M = this.finiteNumber(this.benchmarkValue('3M'));
-    const benchmark1Y = this.finiteNumber(this.benchmarkValue('1Y'));
     return {
       positive3M: threeMonth.filter(value => value > 0).length,
       covered3M: threeMonth.length,
-      beatBenchmark3M: benchmark3M === null ? null : threeMonth.filter(value => value > benchmark3M).length,
-      beatBenchmark1Y: benchmark1Y === null ? null : oneYear.filter(value => value > benchmark1Y).length,
+      positive1Y: oneYear.filter(value => value > 0).length,
       covered1Y: oneYear.length,
-      benchmark3M, benchmark1Y,
+      average3M: this.finiteNumber(this.category?.r3m) ?? this.mean(threeMonth),
+      average1Y: this.finiteNumber(this.category?.r1y) ?? this.mean(oneYear),
+    };
+  }
+
+  get overviewMarketCapInsight(): any {
+    const rows = this.positioningLargeCapRows;
+    const smallCapTilt = [...rows].sort((a, b) => this.numeric(b.small) - this.numeric(a.small));
+    return {
+      largeCapTilt: [...rows].sort((a, b) => this.numeric(b.large) - this.numeric(a.large)).slice(0, 2),
+      smallCapTilt: smallCapTilt.slice(0, 2),
+      averageLarge: this.finiteNumber(this.category?.large),
+      averageMid: this.finiteNumber(this.category?.mid),
+      averageSmall: this.finiteNumber(this.category?.small),
+    };
+  }
+
+  get overviewStyleInsight(): any {
+    const rows = this.styleCompositionRankRows;
+    return {
+      cyclical: [...rows].sort((a, b) => this.numeric(b.cyclical) - this.numeric(a.cyclical)).slice(0, 2),
+      defensive: [...rows].sort((a, b) => this.numeric(b.defensive) - this.numeric(a.defensive)).slice(0, 2),
+    };
+  }
+
+  get overviewDrawdownInsight(): any {
+    const rows = this.overviewDashboard?.drawdownPoints || [];
+    return {
+      protection: [...rows].sort((a, b) => this.numeric(a.drawdown) - this.numeric(b.drawdown)).slice(0, 2),
+      calmar: [...rows].sort((a, b) => this.numeric(b.calmar) - this.numeric(a.calmar)).slice(0, 2),
     };
   }
 
@@ -1387,8 +1632,11 @@ export class MutualFundAnalyticsComponent implements OnInit, OnDestroy {
   }
 
   get styleCompositionRankRows(): any[] {
-    return [...this.funds].filter(fund => this.finiteNumber(fund.cyclical) !== null)
-      .sort((a, b) => this.numeric(b.cyclical) - this.numeric(a.cyclical));
+    return [...this.funds].filter(fund =>
+      this.finiteNumber(fund.cyclical) !== null &&
+      this.finiteNumber(fund.defensive) !== null &&
+      this.finiteNumber(fund.sensitive) !== null
+    ).sort((a, b) => this.numeric(b.cyclical) - this.numeric(a.cyclical));
   }
 
   get selectedCalendarAlphaRows(): any[] {
@@ -1490,8 +1738,11 @@ export class MutualFundAnalyticsComponent implements OnInit, OnDestroy {
   }
 
   get positioningLargeCapRows(): any[] {
-    return [...this.funds].filter(fund => this.finiteNumber(fund.large) !== null)
-      .sort((a, b) => this.numeric(b.large) - this.numeric(a.large));
+    return [...this.funds].filter(fund =>
+      this.finiteNumber(fund.large) !== null &&
+      this.finiteNumber(fund.mid) !== null &&
+      this.finiteNumber(fund.small) !== null
+    ).sort((a, b) => this.numeric(b.large) - this.numeric(a.large));
   }
 
   get attributionRankRows(): any[] {

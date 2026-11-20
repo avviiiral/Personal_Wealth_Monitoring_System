@@ -533,7 +533,7 @@ python manage.py build_sebi_mf_analytics</pre>
               </div>
               <span>{{ formatPct(category.cyclical,0) }} / {{ formatPct(category.defensive,0) }} / {{ formatPct(category.sensitive,0) }}</span>
             </div>
-            <div *ngFor="let fund of funds | slice:0:14" class="mf-stacked-row">
+            <div *ngFor="let fund of styleCompositionRankRows" class="mf-stacked-row">
               <strong [class.active]="fund.name === selectedFundName">{{ fund.short }}</strong>
               <div class="mf-stacked-track">
                 <i class="cyclical" [style.width.%]="fund.cyclical"></i><i class="defensive" [style.width.%]="fund.defensive"></i><i class="sensitive" [style.width.%]="fund.sensitive"></i>
@@ -806,7 +806,7 @@ python manage.py build_sebi_mf_analytics</pre>
         <article class="card mf-chart-card">
           <div class="card-title">1Y Return Ranking — All Funds</div>
           <div class="mf-ranking-bars">
-            <div *ngFor="let row of performanceRankingRows" class="mf-single-bar-row">
+            <div *ngFor="let row of oneYearRankingRows" class="mf-single-bar-row">
               <strong [class.active]="row.fund.name === selectedFundName">{{ row.fund.short }}</strong><div class="mf-single-track"><i [style.width.%]="barWidth(row.value, performanceRankingRows[0]?.value)"></i></div><b>{{ formatPct(row.value) }}</b>
             </div>
           </div>
@@ -856,8 +856,8 @@ python manage.py build_sebi_mf_analytics</pre>
         <article class="kpi"><div class="kpi-lbl">CYTD · Category</div><div class="kpi-val">{{ formatPct(category.cytd) }}</div><div class="kpi-sub">Category average</div></article>
         <article class="kpi"><div class="kpi-lbl">CYTD · NIFTY 500 TRI</div><div class="kpi-val">{{ formatPct(benchmarkCytd('NIFTY 500 - TRI')) }}</div><div class="kpi-sub">Source benchmark snapshot</div></article>
         <article class="kpi"><div class="kpi-lbl">CYTD · NIFTY 50 TRI</div><div class="kpi-val">{{ formatPct(raw?.benchmarks?.nifty50_ytd) }}</div><div class="kpi-sub">Source benchmark snapshot</div></article>
-        <article class="kpi"><div class="kpi-lbl">Best Calendar Year</div><div class="kpi-val">{{ formatPct(selectedCalendarAlphaRows | calendarBestReturn) }}</div><div class="kpi-sub">Not available when source is missing</div></article>
-        <article class="kpi"><div class="kpi-lbl">Years Available</div><div class="kpi-val">{{ selectedCalendarAlphaRows.filter(row => row.value !== null).length }}/5</div><div class="kpi-sub">2021–2025</div></article>
+        <article class="kpi"><div class="kpi-lbl">Best Calendar Year</div><div class="kpi-val">{{ formatPct(bestCalendarYearReturn?.value) }}</div><div class="kpi-sub">Not available when source is missing</div></article>
+        <article class="kpi"><div class="kpi-lbl">Years Available</div><div class="kpi-val">{{ selectedCalendarYearsAvailable }}/5</div><div class="kpi-sub">2021–2025</div></article>
       </div>
 
       <article class="card mf-chart-card">

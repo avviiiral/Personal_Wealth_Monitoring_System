@@ -83,13 +83,11 @@ export class MutualFundAnalyticsComponent implements OnInit, OnDestroy {
     this.error = '';
     forkJoin({
       report: this.analytics.getResearchReport(),
-      indiaFeed: this.analytics.getIndiaMarketFeed(),
+      indiaFeed: this.analytics.getIndiaMarketFeed().pipe(catchError(() => of(null))),
       apiUsage: this.analytics.getApiUsage().pipe(catchError(() => of(null))),
       personalPortfolio: this.analytics.getPersonalPortfolio().pipe(catchError(() => of(null))),
       sebiSummary: this.analytics.getSebiUniverseSummary().pipe(catchError(() => of(null))),
       sebiRankings: this.analytics.getSebiUniverseRankings({ page_size: 100 }).pipe(catchError(() => of(null))),
-      sebiCategoryRiskChart: this.analytics.getSebiCategoryRiskChart().pipe(catchError(() => of(null))),
-      sebiTopQ1Chart: this.analytics.getSebiTopQ1Chart().pipe(catchError(() => of(null))),
     }).subscribe({
       next: value => {
         this.report = value.report;
@@ -98,6 +96,20 @@ export class MutualFundAnalyticsComponent implements OnInit, OnDestroy {
         this.personalPortfolio = value.personalPortfolio;
         this.sebiSummary = value.sebiSummary;
         this.sebiRankings = value.sebiRankings;
+        if (value.sebiSummary?.available) {
+          // The chart files are created by the analytics build, not by GET requests.
+          forkJoin({
+            categoryRiskChart: this.analytics.getSebiCategoryRiskChart().pipe(catchError(() => of(null))),
+            topQ1Chart: this.analytics.getSebiTopQ1Chart().pipe(catchError(() => of(null))),
+          }).subscribe(charts => {
+            this.replaceChartObjectUrl('category', charts.categoryRiskChart);
+            this.replaceChartObjectUrl('q1', charts.topQ1Chart);
+          });
+        } else {
+          // Avoid expected 404 requests before the first successful analytics build.
+          this.replaceChartObjectUrl('category', null);
+          this.replaceChartObjectUrl('q1', null);
+        }
         this.replaceChartObjectUrl('category', value.sebiCategoryRiskChart);
         this.replaceChartObjectUrl('q1', value.sebiTopQ1Chart);
         if (value.report.available && !this.selectedFundName) {

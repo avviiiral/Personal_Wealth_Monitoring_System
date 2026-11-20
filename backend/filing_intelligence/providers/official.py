@@ -1,4 +1,5 @@
 import csv
+from dataclasses import replace
 import io
 import logging
 import os
@@ -259,11 +260,14 @@ class NSEFilingProvider:
                 continue
             # Preserve the actual NSE JSON fields and original announcement
             # evidence for downstream document parsing/identity review.
-            normalized.details = "\n".join(filter(None, [
-                details,
-                f"ISIN: {normalized_isin}" if normalized_isin else "",
-                f"Exchange symbol: {normalized_symbol}" if normalized_symbol else "",
-            ]))
+            normalized = replace(
+                normalized,
+                details="\n".join(filter(None, [
+                    details,
+                    f"ISIN: {normalized_isin}" if normalized_isin else "",
+                    f"Exchange symbol: {normalized_symbol}" if normalized_symbol else "",
+                ])),
+            )
             yield normalized
 
 

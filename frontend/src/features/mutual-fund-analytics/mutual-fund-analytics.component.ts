@@ -64,7 +64,7 @@ export class MutualFundAnalyticsComponent implements OnInit, OnDestroy {
       legend: {
         display: true,
         position: 'top',
-        labels: { boxWidth: 52, boxHeight: 14, padding: 16 },
+        labels: { boxWidth: 52, boxHeight: 14, padding: 16, font: { size: 10 } },
       },
       tooltip: { callbacks: {
         label: context => `${context.dataset.label}: ${context.parsed.y} funds`,
@@ -97,7 +97,7 @@ export class MutualFundAnalyticsComponent implements OnInit, OnDestroy {
     animation: { duration: 250 },
     interaction: { mode: 'index', intersect: false },
     plugins: {
-      legend: { display: true, position: 'top', labels: { boxWidth: 28, boxHeight: 14, padding: 14 } },
+      legend: { display: true, position: 'top', labels: { boxWidth: 42, boxHeight: 14, padding: 14, font: { size: 10 } } },
       tooltip: { callbacks: {
         label: context => `${context.dataset.label}: ${Number(context.parsed.y).toFixed(1)}%`,
       } },
@@ -106,7 +106,7 @@ export class MutualFundAnalyticsComponent implements OnInit, OnDestroy {
       x: {
         stacked: true,
         grid: { display: false },
-        ticks: { autoSkip: false, minRotation: 52, maxRotation: 56, font: { size: 9 } },
+        ticks: { autoSkip: false, minRotation: 50, maxRotation: 50, font: { size: 8 } },
       },
       y: {
         stacked: true,
@@ -931,7 +931,7 @@ export class MutualFundAnalyticsComponent implements OnInit, OnDestroy {
       '1Y': funds.map(fund => this.finiteNumber(fund?.r1y)).filter((value): value is number => value !== null),
     };
     const returnBins = [-15, -10, -5, -2, 0, 2, 5, 10, 15, 20, 25];
-    const formatBinEdge = (value: number): string => value < 0 ? `−${Math.abs(value)}` : String(value);
+    const formatBinEdge = (value: number): string => String(value);
     const returnLabels = returnBins.slice(0, -1).map((lower, index) =>
       `${formatBinEdge(lower)}–${formatBinEdge(returnBins[index + 1])}`);
     const returnCounts: Record<string, number[]> = {
@@ -981,9 +981,9 @@ export class MutualFundAnalyticsComponent implements OnInit, OnDestroy {
     // does not include NIFTY benchmark risk metrics. Use a clearly labelled
     // category-average reference point instead of inventing benchmark values.
     const drawdownReferencePoint = {
-      name: 'Multi Cap Category Avg',
-      drawdown: this.finiteNumber(this.category?.max_drawdown),
-      calmar: this.finiteNumber(this.category?.calmar),
+      name: 'N500 TRI (proxy)',
+      drawdown: this.finiteNumber(nse50Composition?.max_drawdown),
+      calmar: this.finiteNumber(nse50Composition?.calmar),
     };
     const scatterPlot = { left: 76, right: 1034, top: 22, bottom: 292 };
     let scatterXTicks: any[] = [];
@@ -1175,8 +1175,7 @@ export class MutualFundAnalyticsComponent implements OnInit, OnDestroy {
       datasets: [{
         label: 'AUM (₹ Cr)',
         data: topAumFunds.map(row => row.aum || 0),
-        backgroundColor: topAumFunds.map((row, index) =>
-          row.fullName === this.selectedFundName ? '#FD7740' : palette[index % palette.length]),
+        backgroundColor: topAumFunds.map((_row, index) => palette[index % palette.length]),
         borderWidth: 0,
         borderRadius: 0,
         barPercentage: 0.82,
@@ -1195,7 +1194,7 @@ export class MutualFundAnalyticsComponent implements OnInit, OnDestroy {
           pointHoverRadius: 9,
         },
         {
-          label: drawdownReferencePoint.name,
+          label: 'N500 TRI (proxy)',
           data: drawdownReferencePoint.drawdown !== null && drawdownReferencePoint.calmar !== null
             ? [{ x: drawdownReferencePoint.drawdown, y: drawdownReferencePoint.calmar }]
             : [],

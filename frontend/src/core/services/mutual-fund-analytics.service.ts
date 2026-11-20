@@ -19,6 +19,24 @@ export interface MutualFundResearchReportResponse {
   };
 }
 
+export interface MutualFundResearchUniverseOption {
+  id: number;
+  report_key: string;
+  report_date: string;
+  report_cycle: string;
+  source_file: string;
+  category: string;
+  fund_count: number;
+  imported_at: string;
+}
+
+export interface MutualFundResearchUniversesResponse {
+  available: boolean;
+  count: number;
+  results: MutualFundResearchUniverseOption[];
+  message?: string;
+}
+
 export interface IndiaMutualFundFeedRecord {
   fund_name: string;
   asset_class: string | null;
@@ -249,9 +267,20 @@ export class MutualFundAnalyticsService {
   private readonly http = inject(HttpClient);
   private readonly baseUrl = `${environment.apiUrl}/api/mutual-fund-analytics/`;
 
-  getResearchReport(): Observable<MutualFundResearchReportResponse> {
+  getResearchReport(reportId?: number): Observable<MutualFundResearchReportResponse> {
+    let params = new HttpParams();
+    if (reportId !== undefined && reportId !== null) {
+      params = params.set('id', String(reportId));
+    }
     return this.http.get<MutualFundResearchReportResponse>(
       `${this.baseUrl}research-report/`,
+      { params, withCredentials: true },
+    );
+  }
+
+  getResearchUniverses(): Observable<MutualFundResearchUniversesResponse> {
+    return this.http.get<MutualFundResearchUniversesResponse>(
+      `${this.baseUrl}research-universes/`,
       { withCredentials: true },
     );
   }

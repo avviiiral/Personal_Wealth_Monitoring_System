@@ -6,7 +6,10 @@ from watchlist.indianapi_reports import (
     indianapi_usage_status,
     refresh_india_mutual_fund_feed,
 )
-from watchlist.research_reports import latest_mutual_fund_research_report
+from watchlist.research_reports import (
+    latest_mutual_fund_research_report,
+    mutual_fund_research_universes,
+)
 from mutual_funds.sebi_views import (
     download_sebi_analytics_workbook,
     download_sebi_category_risk_chart,
@@ -19,6 +22,7 @@ from mutual_funds.sebi_views import (
 urlpatterns = [
     path("overview/", mutual_fund_analytics_overview, name="mutual-fund-analytics-overview"),
     path("research-report/", latest_mutual_fund_research_report, name="mutual-fund-research-report"),
+    path("research-universes/", mutual_fund_research_universes, name="mutual-fund-research-universes"),
     path("india-market-feed/", india_mutual_fund_feed, name="india-mutual-fund-market-feed"),
     path("api-usage/", indianapi_usage_status, name="indianapi-usage-status"),
     path("refresh/", refresh_india_mutual_fund_feed, name="mutual-fund-analytics-refresh"),

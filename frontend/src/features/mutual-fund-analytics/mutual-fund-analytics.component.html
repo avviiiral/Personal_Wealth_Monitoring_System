@@ -490,20 +490,22 @@ python manage.py build_sebi_mf_analytics</pre>
       <div class="two-col mf-reference-grid">
         <article class="card mf-chart-card">
           <div class="card-title">Category Returns Distribution — 3M / 6M / 1Y</div>
-          <div class="chart-legend">
-            <span><i class="leg-dot" style="background:#FD7740"></i>3M</span>
-            <span><i class="leg-dot" style="background:#051233"></i>6M</span>
-            <span><i class="leg-dot" style="background:#CC9F53"></i>1Y</span>
+          <div class="mf-chart-visual mf-chart-visual--returns">
+            <canvas
+              baseChart
+              [data]="returnDistributionChartData"
+              [options]="returnDistributionChartOptions"
+              [type]="'bar'"
+              aria-label="Grouped return distribution for 3 month, 6 month and 1 year fund returns"
+            ></canvas>
           </div>
-          <div class="mf-distribution-chart">
-            <div *ngFor="let bucket of overviewDashboard?.returnDistribution" class="mf-dist-column">
-              <div class="mf-dist-bars">
-                <i *ngFor="let bar of bucket.bars" [style.height.px]="bar.height" [style.background]="bar.color" [title]="bar.period + ' · ' + bucket.label + ' · ' + bar.count + ' funds'"></i>
-              </div>
-              <small>{{ bucket.label }}</small>
-            </div>
-          </div>
-          <div class="inline-insight"><span>i</span><p><strong>{{ overviewReturnInsight?.positive3M || 0 }} of {{ overviewReturnInsight?.covered3M || 0 }} funds</strong> were positive over 3M. <strong>{{ overviewReturnInsight?.beatBenchmark3M ?? '—' }}</strong> beat {{ benchmarkName }} ({{ benchmarkIsProxy ? 'proxy' : 'benchmark' }}) on 3M. On 1Y, {{ overviewReturnInsight?.beatBenchmark1Y ?? '—' }} of {{ overviewReturnInsight?.covered1Y || 0 }} funds beat the same benchmark.</p></div>
+          <div class="inline-insight"><span>💡</span><p>
+            <strong>{{ overviewReturnInsight?.positive3M || 0 }} of {{ overviewReturnInsight?.covered3M || 0 }} funds</strong> delivered positive 3M returns
+            versus <strong>{{ overviewReturnInsight?.positive1Y || 0 }} of {{ overviewReturnInsight?.covered1Y || 0 }}</strong> on 1Y.
+            3M breadth is {{ (overviewReturnInsight?.positive3M || 0) < (overviewReturnInsight?.positive1Y || 0) ? 'weaker' : 'stronger' }} than 1Y breadth.
+            Category average 3M: <strong>{{ formatPct(overviewReturnInsight?.average3M) }}</strong>,
+            1Y: <strong>{{ formatPct(overviewReturnInsight?.average1Y) }}</strong>.
+          </p></div>
         </article>
 
         <article class="card mf-chart-card">
@@ -522,73 +524,79 @@ python manage.py build_sebi_mf_analytics</pre>
       <div class="two-col mf-reference-grid">
         <article class="card mf-chart-card">
           <div class="card-title">Large / Mid / Small Cap Split — All Funds (rebased to 100)</div>
-          <div class="mf-ranking-bars">
-            <div class="mf-stacked-row mf-stacked-reference">
-              <strong>Category Avg</strong>
-              <div class="mf-stacked-track">
-                <i class="large" [style.width.%]="category.large"></i><i class="mid" [style.width.%]="category.mid"></i><i class="small" [style.width.%]="category.small"></i>
-              </div>
-              <span>{{ formatPct(category.large,0) }} / {{ formatPct(category.mid,0) }} / {{ formatPct(category.small,0) }}</span>
-            </div>
-            <div *ngFor="let fund of positioningLargeCapRows.slice(0,12)" class="mf-stacked-row">
-              <strong [class.active]="fund.name === selectedFundName">{{ fund.short }}</strong>
-              <div class="mf-stacked-track">
-                <i class="large" [style.width.%]="fund.large"></i><i class="mid" [style.width.%]="fund.mid"></i><i class="small" [style.width.%]="fund.small"></i>
-              </div>
-              <span>{{ formatPct(fund.large,0) }} / {{ formatPct(fund.mid,0) }} / {{ formatPct(fund.small,0) }}</span>
-            </div>
+          <div class="mf-chart-visual mf-chart-visual--stacked">
+            <canvas
+              baseChart
+              [data]="marketCapChartData"
+              [options]="stackedPercentChartOptions"
+              [type]="'bar'"
+              aria-label="Large, mid and small cap allocation for all Multi Cap funds"
+            ></canvas>
           </div>
-          <div class="legend"><span><i class="leg-dot" style="background:#051233"></i>Large</span><span><i class="leg-dot" style="background:#FD7740"></i>Mid</span><span><i class="leg-dot" style="background:#CC9F53"></i>Small</span></div>
+          <div class="inline-insight"><span>💡</span><p>
+            Most large-cap tilted:
+            <strong><span *ngFor="let fund of overviewMarketCapInsight.largeCapTilt; let last = last">{{ fund.short }}<span *ngIf="!last"> &amp; </span></span></strong>.
+            Most small-cap tilted:
+            <strong><span *ngFor="let fund of overviewMarketCapInsight.smallCapTilt; let last = last">{{ fund.short }}<span *ngIf="!last"> &amp; </span></span></strong>.
+            Category average split (rebased): <strong>Large {{ formatPct(overviewMarketCapInsight.averageLarge,0) }} /
+            Mid {{ formatPct(overviewMarketCapInsight.averageMid,0) }} /
+            Small {{ formatPct(overviewMarketCapInsight.averageSmall,0) }}</strong>.
+          </p></div>
         </article>
 
         <article class="card mf-chart-card">
           <div class="card-title">Cyclical · Defensive · Sensitive Composition</div>
-          <div class="mf-ranking-bars">
-            <div class="mf-stacked-row mf-stacked-reference">
-              <strong>Category Avg</strong>
-              <div class="mf-stacked-track">
-                <i class="cyclical" [style.width.%]="category.cyclical"></i><i class="defensive" [style.width.%]="category.defensive"></i><i class="sensitive" [style.width.%]="category.sensitive"></i>
-              </div>
-              <span>{{ formatPct(category.cyclical,0) }} / {{ formatPct(category.defensive,0) }} / {{ formatPct(category.sensitive,0) }}</span>
-            </div>
-            <div *ngFor="let fund of styleCompositionRankRows" class="mf-stacked-row">
-              <strong [class.active]="fund.name === selectedFundName">{{ fund.short }}</strong>
-              <div class="mf-stacked-track">
-                <i class="cyclical" [style.width.%]="fund.cyclical"></i><i class="defensive" [style.width.%]="fund.defensive"></i><i class="sensitive" [style.width.%]="fund.sensitive"></i>
-              </div>
-              <span>{{ formatPct(fund.cyclical,0) }} / {{ formatPct(fund.defensive,0) }} / {{ formatPct(fund.sensitive,0) }}</span>
-            </div>
+          <div class="mf-chart-visual mf-chart-visual--stacked">
+            <canvas
+              baseChart
+              [data]="styleCompositionChartData"
+              [options]="stackedPercentChartOptions"
+              [type]="'bar'"
+              aria-label="Cyclical, defensive and sensitive composition for all Multi Cap funds"
+            ></canvas>
           </div>
-          <div class="legend"><span><i class="leg-dot" style="background:#EF4444"></i>Cyclical</span><span><i class="leg-dot" style="background:#22C55E"></i>Defensive</span><span><i class="leg-dot" style="background:#3B82F6"></i>Sensitive</span></div>
+          <div class="inline-insight"><span>💡</span><p>
+            Most cyclically tilted:
+            <strong><span *ngFor="let fund of overviewStyleInsight.cyclical; let last = last">{{ fund.short }}<span *ngIf="!last"> &amp; </span></span></strong>.
+            Most defensively positioned:
+            <strong><span *ngFor="let fund of overviewStyleInsight.defensive; let last = last">{{ fund.short }}<span *ngIf="!last"> &amp; </span></span></strong>.
+            The mix shows each fund's relative cyclical, defensive and sensitive exposure, rebased to 100%.
+          </p></div>
         </article>
       </div>
 
       <div class="two-col mf-reference-grid">
         <article class="card mf-chart-card">
           <div class="card-title">AUM Concentration — Top 12 Funds (₹ Cr)</div>
-          <div class="mf-ranking-bars">
-            <div *ngFor="let fund of overviewDashboard?.topAumFunds" class="mf-single-bar-row">
-              <strong [class.active]="fund.fullName === selectedFundName">{{ fund.name }}</strong>
-              <div class="mf-single-track"><i [style.width.%]="barWidth(fund.aum, overviewDashboard?.topAumFunds?.[0]?.aum)"></i></div>
-              <b>{{ formatAum(fund.aum) }}</b>
-            </div>
+          <div class="mf-chart-visual mf-chart-visual--aum">
+            <canvas
+              baseChart
+              [data]="aumConcentrationChartData"
+              [options]="aumConcentrationChartOptions"
+              [type]="'bar'"
+              aria-label="Top 12 Multi Cap funds by assets under management"
+            ></canvas>
           </div>
         </article>
 
         <article class="card mf-chart-card">
           <div class="card-title">Max Drawdown vs Calmar Ratio — Category Map</div>
-          <div class="mf-scatter-wrap">
-            <svg viewBox="0 0 760 300" role="img" aria-label="Max drawdown versus Calmar ratio">
-              <line x1="48" y1="260" x2="730" y2="260" class="mf-axis-line"></line>
-              <line x1="48" y1="28" x2="48" y2="260" class="mf-axis-line"></line>
-              <circle *ngFor="let point of overviewDashboard?.drawdownPoints" [attr.cx]="point.cx * 0.68" [attr.cy]="point.cy" r="5" [attr.fill]="point.selected ? '#FD7740' : '#051233'" [attr.opacity]="point.selected ? 1 : .55">
-                <title>{{ point.name }} · Max DD {{ formatPct(point.drawdown) }} · Calmar {{ format(point.calmar,3) }}</title>
-              </circle>
-              <text x="380" y="292" text-anchor="middle" class="mf-axis-label">Maximum drawdown (%)</text>
-              <text x="12" y="145" transform="rotate(-90 12 145)" text-anchor="middle" class="mf-axis-label">Calmar ratio</text>
-            </svg>
+          <div class="mf-chart-visual mf-chart-visual--scatter">
+            <canvas
+              baseChart
+              [data]="drawdownCalmarChartData"
+              [options]="drawdownCalmarChartOptions"
+              [type]="'scatter'"
+              aria-label="Maximum drawdown versus Calmar ratio for Multi Cap funds"
+            ></canvas>
           </div>
-          <div class="inline-insight"><span>i</span><p>Orange identifies the active fund, <strong>{{ selectedFund?.short }}</strong>. A lower maximum drawdown with a higher Calmar ratio indicates a more favourable historical return-to-drawdown profile.</p></div>
+          <div class="inline-insight"><span>💡</span><p>
+            Best drawdown protection:
+            <strong><span *ngFor="let fund of overviewDrawdownInsight.protection; let last = last">{{ fund.name }}<span *ngIf="!last"> &amp; </span></span></strong>.
+            Best return per unit of drawdown (Calmar):
+            <strong><span *ngFor="let fund of overviewDrawdownInsight.calmar; let last = last">{{ fund.name }}<span *ngIf="!last"> &amp; </span></span></strong>.
+            The selected fund <strong>{{ selectedFund?.short }}</strong> is highlighted in orange. A lower drawdown and higher Calmar indicate a more favourable risk-adjusted profile.
+          </p></div>
         </article>
       </div>
     </section>

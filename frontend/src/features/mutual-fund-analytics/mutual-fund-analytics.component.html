@@ -588,25 +588,10 @@ python manage.py build_sebi_mf_analytics</pre>
             The orange point is the selected fund. Lower drawdown and higher Calmar indicate a more favourable historical return-to-risk profile.
           </p></div>
           <small class="mf-chart-footnote">
-            The green triangle represents {{ overviewDashboard?.drawdownReferencePoint?.name || 'the category average' }}. The source HTML does not provide NIFTY 50 drawdown and Calmar values, so no index point is fabricated.
+            N500 TRI (proxy) benchmark coordinates are not present in the imported October 2026 snapshot. The chart therefore plots the Multi Cap funds only; it does not add an estimated index point.
           </small>
         </article>
 
-        <article class="card mf-chart-card">
-          <div class="card-title">EDGE Score Distribution Across {{ funds.length }} Funds</div>
-          <div class="mf-histogram">
-            <div *ngFor="let bin of overviewEdgeDistribution" class="mf-hist-row">
-              <span>{{ bin.label }}</span>
-              <div class="mf-single-track"><i [style.width.%]="barWidth(bin.count, funds.length)"></i></div>
-              <b>{{ bin.count }}</b>
-            </div>
-          </div>
-          <div class="inline-insight"><span>i</span><p>
-            The selected fund <strong>{{ selectedFund?.short }}</strong> has an EDGE score of
-            <strong>{{ format(selectedFund?.edge_score,3) }}</strong> versus the category average of
-            <strong>{{ format(category.edge_score,3) }}</strong>. Scores are reproduced from the report; no score is recalculated in the UI.
-          </p></div>
-        </article>
       </div>
     </section>
 

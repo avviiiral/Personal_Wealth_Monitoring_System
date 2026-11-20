@@ -161,9 +161,20 @@
             </label>
             <label>
               <span>Active fund</span>
-              <select [ngModel]="selectedSebiFundName" (ngModelChange)="onSebiFundChange($event)" [disabled]="!sebiFundOptions.length">
+              <select
+                [ngModel]="selectedSebiFundName"
+                (ngModelChange)="onSebiFundChange($event)"
+                [disabled]="sebiFundsLoading || !sebiFundOptions.length"
+                [attr.aria-label]="selectedSebiCategory === 'All categories' ? 'Select a fund' : 'Select a fund in ' + selectedSebiCategory"
+              >
+                <option *ngIf="sebiFundsLoading" [ngValue]="''">Loading funds for selected category…</option>
+                <option *ngIf="!sebiFundsLoading && !sebiFundOptions.length" [ngValue]="''">No funds available</option>
                 <option *ngFor="let fund of sebiFundOptions" [ngValue]="fund.Scheme_Name">{{ fund.Scheme_Name }}</option>
               </select>
+              <small *ngIf="sebiFundsError" class="sebi-fund-error">{{ sebiFundsError }}</small>
+              <small *ngIf="selectedSebiCategory !== 'All categories' && !sebiFundsLoading && sebiFundOptions.length">
+                {{ sebiFundOptions.length }} funds in the selected category and plan
+              </small>
             </label>
             <a class="sebi-export-link" [href]="sebiWorkbookUrl">Download workbook</a>
           </div>

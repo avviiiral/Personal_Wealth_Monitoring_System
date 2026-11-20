@@ -472,6 +472,7 @@ export class MutualFundAnalyticsComponent implements OnInit, OnDestroy {
 
     this.sebiDashboard = {
       categoryRows, categoryCount: categoryRows.length,
+      fundCountTotal: categoryRows.reduce((sum, row) => sum + (row.fundCount || 0), 0),
       average3Y: avg('cagr3Y'), median3Y, average1Y: avg('cagr1Y'), average5Y: avg('cagr5Y'),
       averageVolatility: avg('volatility'), averageSharpe: avg('sharpe'),
       averageMaxDrawdown: avg('maxDrawdown'), strongestCategory, lowestRiskCategory,

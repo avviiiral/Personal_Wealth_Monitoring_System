@@ -435,405 +435,688 @@ python manage.py build_sebi_mf_analytics</pre>
       </ng-template>
     </section>
 
-    <section *ngIf="activeTab === 'overview'" class="mf-overview-dashboard">
-      <div class="section-intro dashboard-intro">
-        <div>
-          <h2>{{ raw.meta?.category || 'Selected Mutual Fund Universe' }} · Category Dashboard</h2>
-          <p>{{ raw.meta?.cycle }} · {{ raw.meta?.data_date || raw.meta?.date || report?.report_date }} · {{ funds.length }} funds in selected source universe</p>
-        </div>
-        <div class="dashboard-controls">
-          <label>
-            <span>Universe</span>
-            <select [ngModel]="selectedUniverseId" (ngModelChange)="onUniverseChange($event)" [disabled]="loading || researchUniverses.length === 0">
-              <option *ngFor="let universe of researchUniverses" [ngValue]="universe.id">
-                {{ universe.category }} · {{ universe.report_date | date:'dd MMM yyyy' }} · {{ universe.fund_count }} funds
-              </option>
-            </select>
-          </label>
-          <label>
-            <span>Compare fund</span>
-            <select [(ngModel)]="comparisonFundName" (ngModelChange)="onComparisonFundChange($event)" [disabled]="loading || funds.length === 0">
-              <option *ngFor="let fund of funds; trackBy: trackByName" [ngValue]="fund.name">
-                {{ fund.short || fund.name }}
-              </option>
-            </select>
-          </label>
-        </div>
-      </div>
-
-      <div class="metric-grid mf-overview-kpis">
-        <article class="metric-card kpi-card">
-          <span>Funds</span>
-          <strong>{{ overviewDashboard?.fundCount || 0 }}</strong>
-          <small>Number of funds in selected universe</small>
-        </article>
-        <article class="metric-card kpi-card">
-          <span>Cat Avg P/E</span>
-          <strong>{{ overviewDashboard?.weightedPe === null || overviewDashboard?.weightedPe === undefined ? '—' : format(overviewDashboard.weightedPe, 2) + 'x' }}</strong>
-          <small>AUM-weighted · {{ overviewDashboard?.weightedPeCoverage || 0 }} funds with P/E and AUM</small>
-        </article>
-        <article class="metric-card kpi-card">
-          <span>Avg Large Cap</span>
-          <strong>{{ formatPct(overviewDashboard?.largeCapRebased) }}</strong>
-          <small>Large / Mid / Small rebased to 100 · {{ overviewDashboard?.capCoverage || 0 }} funds</small>
-        </article>
-        <article class="metric-card kpi-card">
-          <span>Cat Avg 3M Ret</span>
-          <strong>{{ formatPct(overviewDashboard?.average3M) }}</strong>
-          <small>Point-to-point · {{ overviewDashboard?.returnCoverage?.['3M'] || 0 }} funds covered</small>
-        </article>
-        <article class="metric-card kpi-card">
-          <span>Cat Avg Sharpe</span>
-          <strong>{{ formatNumber(overviewDashboard?.averageSharpe, 3) }}</strong>
-          <small>Mean fund-level 3Y calculated Sharpe · {{ overviewDashboard?.sharpeCoverage || 0 }} funds</small>
-        </article>
-        <article class="metric-card kpi-card">
-          <span>Cat Avg Max DD</span>
-          <strong>{{ formatPct(overviewDashboard?.averageMaxDrawdown) }}</strong>
-          <small>Mean peak-to-trough drawdown · {{ overviewDashboard?.drawdownCoverage || 0 }} funds</small>
-        </article>
-      </div>
-
-      <article class="content-card fund-comparison-card" *ngIf="comparisonFund">
-        <div class="chart-heading">
-          <div>
-            <h3>Fund vs Selected Universe</h3>
-            <p class="muted">{{ comparisonFund.short || comparisonFund.name }} compared with the selected universe averages. Values are shown only where both sides have source coverage.</p>
+    <section *ngIf="activeTab === 'overview'" class="mf-report-tab">
+      <div class="sec-hdr"><h2>Category Snapshot</h2><span class="sub">{{ researchCycleLabel }} · {{ funds.length }} Funds</span></div>
+      <div class="summary-box">
+        <div class="sb-icon">▦</div>
+        <div class="sb-body">
+          <div class="sb-lbl">Category Snapshot — Key Takeaways</div>
+          <div class="sb-text">
+            {{ overviewInsight?.positive1Y || 0 }} of {{ overviewInsight?.total1Y || 0 }} funds delivered <strong>positive 1Y returns</strong>.
+            Category average Large/Mid/Small split is <strong>{{ formatPct(category.large) }} / {{ formatPct(category.mid) }} / {{ formatPct(category.small) }}</strong>.
+            The top EDGE names are
+            <strong><span *ngFor="let fund of overviewInsight?.edgeTop; let last = last">{{ fund.short }}<span *ngIf="!last">, </span></span></strong>.
+            Lowest reported drawdown is observed in
+            <strong><span *ngFor="let fund of overviewInsight?.lowDrawdown; let last = last">{{ fund.short }}<span *ngIf="!last"> &amp; </span></span></strong>.
           </div>
-          <span class="comparison-fund-name">{{ comparisonFund.manager || 'Manager not supplied' }}</span>
+          <div class="sb-pills">
+            <span class="sb-pill" [class.green]="(overviewInsight?.positive1Y || 0) > (overviewInsight?.total1Y || 0) / 2" [class.red]="(overviewInsight?.positive1Y || 0) <= (overviewInsight?.total1Y || 0) / 2">{{ overviewInsight?.positive1Y || 0 }}/{{ overviewInsight?.total1Y || 0 }} funds +ve 1Y</span>
+            <span class="sb-pill">Cat Avg P/E: {{ format(category.pe,1) }}x</span>
+            <span class="sb-pill orange">Cat Avg EDGE: {{ format(category.edge_score,3) }}</span>
+            <span class="sb-pill">Avg Max DD: {{ formatPct(category.max_drawdown) }}</span>
+            <span class="sb-pill">Cat Avg Sharpe: {{ format(category.sharpe_calc,3) }}</span>
+          </div>
         </div>
+      </div>
+
+      <div class="kpi-strip mf-reference-kpis">
+        <article class="kpi"><div class="kpi-lbl">Funds</div><div class="kpi-val">{{ funds.length }}</div><div class="kpi-sub">Multi Cap universe</div></article>
+        <article class="kpi"><div class="kpi-lbl">Cat Avg EDGE</div><div class="kpi-val">{{ format(category.edge_score,3) }}</div><div class="kpi-sub">Category average <b>{{ selectedFund?.short }}: {{ format(selectedFund?.edge_score,3) }}</b></div></article>
+        <article class="kpi"><div class="kpi-lbl">Cat Avg P/E</div><div class="kpi-val">{{ format(category.pe,1) }}x</div><div class="kpi-sub">Portfolio weighted <b>{{ selectedFund?.short }}: {{ format(selectedFund?.pe,1) }}x</b></div></article>
+        <article class="kpi"><div class="kpi-lbl">Avg Large Cap</div><div class="kpi-val">{{ formatPct(category.large,0) }}</div><div class="kpi-sub">Rebased to 100 · <b>{{ formatPct(selectedFund?.large,0) }}</b></div></article>
+        <article class="kpi"><div class="kpi-lbl">Cat Avg 3M Ret</div><div class="kpi-val">{{ formatPct(categoryPeriodReturn('3M')) }}</div><div class="kpi-sub">Point-to-point · <b>{{ formatPct(fundReturn(selectedFund,'3M')) }}</b></div></article>
+        <article class="kpi"><div class="kpi-lbl">Cat Avg Sharpe</div><div class="kpi-val">{{ format(category.sharpe_calc,3) }}</div><div class="kpi-sub">3Y calculated · <b>{{ format(selectedFund?.sharpe_calc,3) }}</b></div></article>
+        <article class="kpi"><div class="kpi-lbl">Cat Avg Max DD</div><div class="kpi-val">{{ formatPct(category.max_drawdown) }}</div><div class="kpi-sub">Peak-to-trough · <b>{{ formatPct(selectedFund?.max_drawdown) }}</b></div></article>
+      </div>
+
+      <div class="two-col mf-reference-grid">
+        <article class="card mf-chart-card">
+          <div class="card-title">Category Returns Distribution — 3M / 6M / 1Y</div>
+          <div class="chart-legend">
+            <span><i class="leg-dot" style="background:#FD7740"></i>3M</span>
+            <span><i class="leg-dot" style="background:#051233"></i>6M</span>
+            <span><i class="leg-dot" style="background:#CC9F53"></i>1Y</span>
+          </div>
+          <div class="mf-distribution-chart">
+            <div *ngFor="let bucket of overviewDashboard?.returnDistribution" class="mf-dist-column">
+              <div class="mf-dist-bars">
+                <i *ngFor="let bar of bucket.bars" [style.height.px]="bar.height" [style.background]="bar.color" [title]="bar.period + ' · ' + bucket.label + ' · ' + bar.count + ' funds'"></i>
+              </div>
+              <small>{{ bucket.label }}</small>
+            </div>
+          </div>
+          <div class="inline-insight"><span>i</span><p><strong>{{ overviewReturnInsight?.positive3M || 0 }} of {{ overviewReturnInsight?.covered3M || 0 }} funds</strong> were positive over 3M. <strong>{{ overviewReturnInsight?.beatBenchmark3M ?? '—' }}</strong> beat {{ benchmarkName }} ({{ benchmarkIsProxy ? 'proxy' : 'benchmark' }}) on 3M. On 1Y, {{ overviewReturnInsight?.beatBenchmark1Y ?? '—' }} of {{ overviewReturnInsight?.covered1Y || 0 }} funds beat the same benchmark.</p></div>
+        </article>
+
+        <article class="card mf-chart-card">
+          <div class="card-title">EDGE Score Distribution across {{ funds.length }} Funds</div>
+          <div class="mf-histogram">
+            <div *ngFor="let bin of overviewEdgeDistribution" class="mf-hist-row">
+              <span>{{ bin.label }}</span>
+              <div class="mf-single-track"><i [style.width.%]="barWidth(bin.count, funds.length)"></i></div>
+              <b>{{ bin.count }}</b>
+            </div>
+          </div>
+          <div class="inline-insight"><span>i</span><p>The selected fund <strong>{{ selectedFund?.short }}</strong> has an EDGE score of <strong>{{ format(selectedFund?.edge_score,3) }}</strong> versus the category average of <strong>{{ format(category.edge_score,3) }}</strong>. Scores are reproduced from the report; no score is recalculated in the UI.</p></div>
+        </article>
+      </div>
+
+      <div class="two-col mf-reference-grid">
+        <article class="card mf-chart-card">
+          <div class="card-title">Large / Mid / Small Cap Split — All Funds (rebased to 100)</div>
+          <div class="mf-ranking-bars">
+            <div class="mf-stacked-row mf-stacked-reference">
+              <strong>Category Avg</strong>
+              <div class="mf-stacked-track">
+                <i class="large" [style.width.%]="category.large"></i><i class="mid" [style.width.%]="category.mid"></i><i class="small" [style.width.%]="category.small"></i>
+              </div>
+              <span>{{ formatPct(category.large,0) }} / {{ formatPct(category.mid,0) }} / {{ formatPct(category.small,0) }}</span>
+            </div>
+            <div *ngFor="let fund of positioningLargeCapRows.slice(0,12)" class="mf-stacked-row">
+              <strong [class.active]="fund.name === selectedFundName">{{ fund.short }}</strong>
+              <div class="mf-stacked-track">
+                <i class="large" [style.width.%]="fund.large"></i><i class="mid" [style.width.%]="fund.mid"></i><i class="small" [style.width.%]="fund.small"></i>
+              </div>
+              <span>{{ formatPct(fund.large,0) }} / {{ formatPct(fund.mid,0) }} / {{ formatPct(fund.small,0) }}</span>
+            </div>
+          </div>
+          <div class="legend"><span><i class="leg-dot" style="background:#051233"></i>Large</span><span><i class="leg-dot" style="background:#FD7740"></i>Mid</span><span><i class="leg-dot" style="background:#CC9F53"></i>Small</span></div>
+        </article>
+
+        <article class="card mf-chart-card">
+          <div class="card-title">Cyclical · Defensive · Sensitive Composition</div>
+          <div class="mf-ranking-bars">
+            <div class="mf-stacked-row mf-stacked-reference">
+              <strong>Category Avg</strong>
+              <div class="mf-stacked-track">
+                <i class="cyclical" [style.width.%]="category.cyclical"></i><i class="defensive" [style.width.%]="category.defensive"></i><i class="sensitive" [style.width.%]="category.sensitive"></i>
+              </div>
+              <span>{{ formatPct(category.cyclical,0) }} / {{ formatPct(category.defensive,0) }} / {{ formatPct(category.sensitive,0) }}</span>
+            </div>
+            <div *ngFor="let fund of funds | slice:0:14" class="mf-stacked-row">
+              <strong [class.active]="fund.name === selectedFundName">{{ fund.short }}</strong>
+              <div class="mf-stacked-track">
+                <i class="cyclical" [style.width.%]="fund.cyclical"></i><i class="defensive" [style.width.%]="fund.defensive"></i><i class="sensitive" [style.width.%]="fund.sensitive"></i>
+              </div>
+              <span>{{ formatPct(fund.cyclical,0) }} / {{ formatPct(fund.defensive,0) }} / {{ formatPct(fund.sensitive,0) }}</span>
+            </div>
+          </div>
+          <div class="legend"><span><i class="leg-dot" style="background:#EF4444"></i>Cyclical</span><span><i class="leg-dot" style="background:#22C55E"></i>Defensive</span><span><i class="leg-dot" style="background:#3B82F6"></i>Sensitive</span></div>
+        </article>
+      </div>
+
+      <div class="two-col mf-reference-grid">
+        <article class="card mf-chart-card">
+          <div class="card-title">AUM Concentration — Top 12 Funds (₹ Cr)</div>
+          <div class="mf-ranking-bars">
+            <div *ngFor="let fund of overviewDashboard?.topAumFunds" class="mf-single-bar-row">
+              <strong [class.active]="fund.fullName === selectedFundName">{{ fund.name }}</strong>
+              <div class="mf-single-track"><i [style.width.%]="barWidth(fund.aum, overviewDashboard?.topAumFunds?.[0]?.aum)"></i></div>
+              <b>{{ formatAum(fund.aum) }}</b>
+            </div>
+          </div>
+        </article>
+
+        <article class="card mf-chart-card">
+          <div class="card-title">Max Drawdown vs Calmar Ratio — Category Map</div>
+          <div class="mf-scatter-wrap">
+            <svg viewBox="0 0 760 300" role="img" aria-label="Max drawdown versus Calmar ratio">
+              <line x1="48" y1="260" x2="730" y2="260" class="mf-axis-line"></line>
+              <line x1="48" y1="28" x2="48" y2="260" class="mf-axis-line"></line>
+              <circle *ngFor="let point of overviewDashboard?.drawdownPoints" [attr.cx]="point.cx * 0.68" [attr.cy]="point.cy" r="5" [attr.fill]="point.selected ? '#FD7740' : '#051233'" [attr.opacity]="point.selected ? 1 : .55">
+                <title>{{ point.name }} · Max DD {{ formatPct(point.drawdown) }} · Calmar {{ format(point.calmar,3) }}</title>
+              </circle>
+              <text x="380" y="292" text-anchor="middle" class="mf-axis-label">Maximum drawdown (%)</text>
+              <text x="12" y="145" transform="rotate(-90 12 145)" text-anchor="middle" class="mf-axis-label">Calmar ratio</text>
+            </svg>
+          </div>
+          <div class="inline-insight"><span>i</span><p>Orange identifies the active fund, <strong>{{ selectedFund?.short }}</strong>. A lower maximum drawdown with a higher Calmar ratio indicates a more favourable historical return-to-drawdown profile.</p></div>
+        </article>
+      </div>
+    </section>
+
+    <section *ngIf="activeTab === 'scorecard'" class="mf-report-tab">
+      <div class="sec-hdr"><h2>Fund Scorecard</h2><span class="sub">Selected Fund vs Category Average</span></div>
+      <div class="summary-box">
+        <div class="sb-icon">⌕</div>
+        <div class="sb-body">
+          <div class="sb-lbl">Fund Summary — Key Takeaways</div>
+          <div class="sb-text" *ngIf="selectedFundInsight as insight">
+            <strong>{{ selectedFund?.short }}</strong> has beta <strong>{{ format(insight.beta,3) }}</strong>;
+            its 3M return rank is <strong>{{ insight.rank3M ? '#' + insight.rank3M : 'not available' }}</strong>
+            and its 1Y return rank is <strong>{{ insight.rank1Y ? '#' + insight.rank1Y : 'not available' }}</strong>.
+            Maximum drawdown is <strong>{{ formatPct(insight.maxDrawdown) }}</strong> versus category {{ formatPct(insight.categoryMaxDrawdown) }};
+            Calmar is <strong>{{ format(insight.calmar,3) }}</strong> versus category {{ format(insight.categoryCalmar,3) }}.
+          </div>
+          <div class="sb-pills" *ngIf="selectedFundInsight as insight">
+            <span class="sb-pill">#{{ insight.rank3M || '—' }} on 3M Return</span>
+            <span class="sb-pill">#{{ insight.rank1Y || '—' }} on 1Y Return</span>
+            <span class="sb-pill orange">EDGE: {{ format(insight.edge,3) }}</span>
+            <span class="sb-pill">Beta: {{ format(insight.beta,3) }}</span>
+            <span class="sb-pill">Max DD: {{ formatPct(insight.maxDrawdown) }}</span>
+            <span class="sb-pill">Calmar: {{ format(insight.calmar,3) }}</span>
+          </div>
+        </div>
+      </div>
+
+      <article class="scorecard mf-full-scorecard">
+        <div class="sc-header">
+          <div>
+            <div class="sc-fund-name">{{ selectedFund?.short || 'Select a fund' }}</div>
+            <div class="sc-manager">{{ selectedFund?.manager || 'Manager not supplied' }} · {{ selectedFund?.name }}</div>
+          </div>
+          <div class="sc-meta">
+            <div class="sc-meta-item"><div class="ml">AUM (₹ Cr)</div><div class="mv">{{ formatAum(selectedFund?.aum) }}</div></div>
+            <div class="sc-meta-item"><div class="ml">Expense Ratio</div><div class="mv">{{ formatPct(selectedFund?.er) }}</div></div>
+            <div class="sc-meta-item"><div class="ml">Turnover</div><div class="mv">{{ formatPct(selectedFund?.turnover) }}</div></div>
+            <div class="sc-meta-item"><div class="ml">Exit Load</div><div class="mv">{{ formatPct(selectedFund?.exit_load) }}</div></div>
+          </div>
+          <div class="sc-edge"><div class="el">EDGE Score</div><div class="ev">{{ format(selectedFund?.edge_score,3) }}</div></div>
+        </div>
+        <div class="sc-metrics">
+          <div class="sc-m" *ngFor="let metric of selectedFundScorecardMetrics">
+            <div class="sc-ml">{{ metric.label }}</div>
+            <div class="sc-mv">{{ metric.kind === 'percent' ? formatPct(metric.value) : format(metric.value,3) }}</div>
+            <div class="sc-mc">Category {{ metric.kind === 'percent' ? formatPct(metric.average) : format(metric.average,3) }}</div>
+          </div>
+        </div>
+      </article>
+
+      <div class="three-col mf-reference-grid">
+        <article class="card mf-chart-card">
+          <div class="card-title">Market Cap Tilt — Rebased to 100</div>
+          <div class="mf-stacked-large">
+            <div *ngFor="let item of selectedFundMarketCapSplit" class="mf-stacked-segment" [class]="item.key" [style.width.%]="item.value">
+              <span>{{ formatPct(item.value,0) }}</span>
+            </div>
+          </div>
+          <div class="legend"><span><i class="leg-dot" style="background:#051233"></i>Large</span><span><i class="leg-dot" style="background:#FD7740"></i>Mid</span><span><i class="leg-dot" style="background:#CC9F53"></i>Small</span></div>
+        </article>
+        <article class="card mf-chart-card">
+          <div class="card-title">Cyclical / Defensive / Sensitive</div>
+          <div *ngFor="let item of selectedFundStyleSplit" class="mf-metric-bar-row">
+            <span>{{ item.label }}</span><div class="mf-single-track"><i [class]="item.key" [style.width.%]="item.width"></i></div><b>{{ formatPct(item.value) }}</b>
+          </div>
+        </article>
+        <article class="card mf-chart-card">
+          <div class="card-title">EDGE Score Components vs Category</div>
+          <div *ngFor="let item of selectedFundEdgeComponents" class="mf-compare-bar-row">
+            <strong>{{ item.label }}</strong>
+            <div class="mf-compare-lines">
+              <span>Fund</span><div class="mf-single-track"><i [style.width.%]="barWidth(item.value,5)"></i></div><b>{{ format(item.value,2) }}</b>
+              <span>Cat</span><div class="mf-single-track muted-track"><i [style.width.%]="barWidth(item.average,5)"></i></div><b>{{ format(item.average,2) }}</b>
+            </div>
+          </div>
+        </article>
+      </div>
+
+      <div class="two-col mf-reference-grid">
+        <article class="card mf-chart-card">
+          <div class="card-title">Top Sector Allocation vs Category</div>
+          <div class="mf-sector-compare-list">
+            <div *ngFor="let row of topFiveSectorRows" class="mf-sector-compare-row">
+              <strong>{{ row.sector }}</strong>
+              <div><span>Fund {{ formatPct(row.fundWeight) }}</span><span>Cat {{ formatPct(row.categoryAverage) }}</span></div>
+              <div class="mf-single-track"><i [style.width.%]="barWidth(row.fundWeight, fundSectorComparisonRows[0]?.fundWeight)"></i></div>
+              <small [class.positive-value]="row.difference > 0" [class.negative-value]="row.difference < 0">{{ formatPercentagePoints(row.difference) }} vs category</small>
+            </div>
+          </div>
+        </article>
+        <article class="card mf-chart-card">
+          <div class="card-title">Large / Mid / Small Trend — Available Monthly History</div>
+          <div class="mf-trend-table">
+            <div class="mf-trend-row mf-trend-head"><span>Month</span><span>Large</span><span>Mid</span><span>Small</span><span>Cash</span></div>
+            <div *ngFor="let trend of selectedFundTrend" class="mf-trend-row">
+              <span>{{ trend.month }}</span><span>{{ formatPct(trend.large) }}</span><span>{{ formatPct(trend.mid) }}</span><span>{{ formatPct(trend.small) }}</span><span>{{ formatPct(trend.cash) }}</span>
+            </div>
+          </div>
+          <p class="chart-note">{{ selectedFundTrend.length }} monthly observations are included in the source snapshot; missing observations are not extrapolated.</p>
+        </article>
+      </div>
+
+      <div class="two-col mf-reference-grid">
+        <article class="card mf-chart-card">
+          <div class="card-title">P/E Trend — 12M vs Category</div>
+          <div class="mf-trend-table">
+            <div class="mf-trend-row mf-trend-head"><span>Month</span><span>P/E</span></div>
+            <div *ngFor="let trend of selectedFundPeTrend" class="mf-trend-row"><span>{{ trend.month }}</span><span>{{ format(trend.value,2) }}x</span></div>
+          </div>
+        </article>
+        <article class="card mf-chart-card">
+          <div class="card-title">AUM Trend — Available History (₹ Cr)</div>
+          <div class="mf-ranking-bars">
+            <div *ngFor="let trend of selectedFundAumTrend" class="mf-single-bar-row">
+              <strong>{{ trend.month }}</strong><div class="mf-single-track"><i [style.width.%]="barWidth(trend.value, selectedFundAumTrend[0]?.value)"></i></div><b>{{ formatAum(trend.value) }}</b>
+            </div>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <section *ngIf="activeTab === 'edge'" class="mf-report-tab">
+      <div class="sec-hdr"><h2>EDGE Score Rankings</h2><span class="sub">All {{ funds.length }} Funds · {{ researchCycleLabel }}</span></div>
+      <div class="summary-box">
+        <div class="sb-icon">ϟ</div>
+        <div class="sb-body">
+          <div class="sb-lbl">EDGE Score — Key Takeaways</div>
+          <div class="sb-text" *ngIf="edgeScoreInsight as insight">
+            <strong>{{ selectedFund?.short }}</strong> ranks <strong>#{{ insight.rank }} of {{ insight.total }}</strong> on EDGE ({{ format(selectedFund?.edge_score,3) }} vs category {{ format(category.edge_score,3) }}).
+            Above-category components: <strong>{{ insight.strengths.length ? insight.strengths.join(', ') : 'none' }}</strong>.
+            Below-category: <strong>{{ insight.weaknesses.length ? insight.weaknesses.join(', ') : 'none' }}</strong>.
+            <strong>{{ insight.lowPegAboveGrowth.length }}</strong> funds combine above-average EPS growth with below-average forward PEG.
+          </div>
+          <div class="sb-pills" *ngIf="edgeScoreInsight as insight">
+            <span class="sb-pill orange">#{{ insight.rank }} EDGE Rank</span>
+            <span class="sb-pill">EPS CAGR: {{ formatPct(selectedFund?.eps_cagr) }}</span>
+            <span class="sb-pill">Quality: {{ format(selectedFund?.quality,3) }}</span>
+            <span class="sb-pill">Momentum: {{ format(selectedFund?.momentum,3) }}</span>
+            <span class="sb-pill">Forward PEG: {{ format(selectedFund?.fwd_peg,2) }}</span>
+          </div>
+        </div>
+      </div>
+
+      <article class="card mf-chart-card">
+        <div class="card-title">EDGE Score Components — Selected Fund vs Category Average</div>
+        <div class="mf-edge-component-grid">
+          <div *ngFor="let item of selectedFundEdgeComponents" class="mf-edge-component">
+            <strong>{{ item.label }}</strong><span>Fund {{ format(item.value,3) }}</span><span>Category {{ format(item.average,3) }}</span>
+            <div class="mf-single-track"><i [style.width.%]="barWidth(item.value,5)"></i></div>
+          </div>
+        </div>
+      </article>
+
+      <article class="card mf-chart-card">
+        <div class="card-title">Full EDGE Score Table — Ranked by EDGE Score</div>
         <div class="table-scroll">
-          <table class="fund-comparison-table">
-            <thead><tr><th>Metric</th><th>Selected Fund</th><th>Universe Average</th><th>Difference</th></tr></thead>
-            <tbody>
-              <tr *ngFor="let row of fundComparisonRows">
-                <td class="left">{{ row.metric }}</td>
-                <td>{{ row.kind === 'percent' ? formatPct(row.value) : formatNumber(row.value, 3) }}</td>
-                <td>{{ row.kind === 'percent' ? formatPct(row.average) : formatNumber(row.average, 3) }}</td>
-                <td [class.positive-value]="row.difference > 0" [class.negative-value]="row.difference < 0">
-                  {{ row.difference === null ? '—' : (row.kind === 'percent' ? formatPercentagePoints(row.difference) : formatNumber(row.difference, 3)) }}
-                </td>
-              </tr>
-            </tbody>
+          <table class="edge-table">
+            <thead><tr><th>#</th><th>Fund</th><th>Manager</th><th>EDGE</th><th>EPS CAGR</th><th>Forward PEG</th><th>Quality</th><th>Valuation</th><th>Momentum</th><th>1Y Return</th><th>Sharpe</th></tr></thead>
+            <tbody><tr *ngFor="let fund of edgeRanked; let i = index" [class.active-fund-row]="fund.name === selectedFundName">
+              <td><span class="rank-pill" [class.r1]="i < 8" [class.r2]="i >= 8 && i < 22" [class.r3]="i >= 22">{{ i + 1 }}</span></td>
+              <td>{{ fund.short || fund.name }}</td><td>{{ fund.manager || '—' }}</td><td class="etd-score">{{ format(fund.edge_score,3) }}</td>
+              <td>{{ formatPct(fund.eps_cagr) }}</td><td>{{ format(fund.fwd_peg,3) }}</td><td>{{ format(fund.quality,3) }}</td><td>{{ format(fund.valuation,3) }}</td><td>{{ format(fund.momentum,3) }}</td>
+              <td>{{ formatPct(fundReturn(fund,'1Y')) }}</td><td>{{ format(fund.sharpe_calc,3) }}</td>
+            </tr></tbody>
           </table>
         </div>
       </article>
 
-      <article class="content-card dashboard-chart-card">
-        <div class="chart-heading">
-          <div>
-            <h3>Category Returns Distribution — 3M / 6M / 1Y</h3>
-            <p class="muted">Number of funds by point-to-point return range. Each period uses its own available fund coverage.</p>
-          </div>
-          <div class="chart-legend">
-            <span><i class="legend-dot series-one"></i>3M</span>
-            <span><i class="legend-dot series-two"></i>6M</span>
-            <span><i class="legend-dot series-three"></i>1Y</span>
-          </div>
-        </div>
-        <ng-container *ngIf="overviewDashboard?.returnDistribution?.length; else noReturnDistribution">
-          <div class="svg-chart-wrap">
-            <svg class="distribution-chart" viewBox="0 0 1080 292" role="img" aria-label="Grouped bar chart showing number of funds across three-month, six-month and one-year return ranges">
-              <line x1="62" y1="238" x2="1044" y2="238" class="chart-axis"></line>
-              <g *ngFor="let bucket of overviewDashboard.returnDistribution">
-                <rect *ngFor="let bar of bucket.bars" [attr.x]="bar.x" [attr.y]="bar.y" [attr.width]="bar.width" [attr.height]="bar.height" [attr.fill]="bar.color" rx="2">
-                  <title>{{ bar.period }} · {{ bucket.label }} · {{ bar.count }} funds</title>
-                </rect>
-                <text [attr.x]="bucket.centerX" y="260" text-anchor="middle" class="chart-tick-label">{{ bucket.label }}</text>
-              </g>
-              <text x="553" y="286" text-anchor="middle" class="chart-axis-label">Point-to-point return range</text>
-              <text x="20" y="130" text-anchor="middle" transform="rotate(-90 20 130)" class="chart-axis-label">Number of funds</text>
+      <div class="two-col mf-reference-grid">
+        <article class="card mf-chart-card">
+          <div class="card-title">EPS CAGR vs Forward PEG (Bubble = EDGE Score)</div>
+          <div class="mf-scatter-wrap">
+            <svg viewBox="0 0 760 300" role="img" aria-label="EPS CAGR versus forward PEG scatter">
+              <line x1="48" y1="260" x2="730" y2="260" class="mf-axis-line"></line><line x1="48" y1="25" x2="48" y2="260" class="mf-axis-line"></line>
+              <circle *ngFor="let point of epsPegPoints" [attr.cx]="point.cx" [attr.cy]="point.cy" [attr.r]="point.radius" [attr.fill]="point.color" [attr.opacity]="point.selected ? 1 : .55"><title>{{ point.name }} · EPS {{ formatPct(point.x) }} · PEG {{ format(point.y,2) }} · EDGE {{ format(point.bubble,3) }}</title></circle>
+              <text x="380" y="292" text-anchor="middle" class="mf-axis-label">EPS CAGR (%)</text><text x="14" y="145" transform="rotate(-90 14 145)" text-anchor="middle" class="mf-axis-label">Forward PEG</text>
             </svg>
           </div>
-          <div class="chart-coverage">
-            <span>3M: {{ overviewDashboard?.returnCoverage?.['3M'] || 0 }} funds</span>
-            <span>6M: {{ overviewDashboard?.returnCoverage?.['6M'] || 0 }} funds</span>
-            <span>1Y: {{ overviewDashboard?.returnCoverage?.['1Y'] || 0 }} funds</span>
+          <div class="inline-insight"><span>i</span><p><strong>{{ edgeScoreInsight?.lowPegAboveGrowth?.length || 0 }} funds</strong> combine above-category EPS growth with below-category PEG. The selected fund is highlighted in orange.</p></div>
+        </article>
+        <article class="card mf-chart-card">
+          <div class="card-title">Quality Score vs Momentum Score</div>
+          <div class="mf-scatter-wrap">
+            <svg viewBox="0 0 760 300" role="img" aria-label="Quality versus momentum scatter">
+              <line x1="48" y1="260" x2="730" y2="260" class="mf-axis-line"></line><line x1="48" y1="25" x2="48" y2="260" class="mf-axis-line"></line>
+              <circle *ngFor="let point of qualityMomentumPoints" [attr.cx]="point.cx" [attr.cy]="point.cy" [attr.r]="point.radius" [attr.fill]="point.color" [attr.opacity]="point.selected ? 1 : .55"><title>{{ point.name }} · Quality {{ format(point.x,2) }} · Momentum {{ format(point.y,2) }}</title></circle>
+              <text x="380" y="292" text-anchor="middle" class="mf-axis-label">Quality score</text><text x="14" y="145" transform="rotate(-90 14 145)" text-anchor="middle" class="mf-axis-label">Momentum score</text>
+            </svg>
           </div>
-        </ng-container>
-        <ng-template #noReturnDistribution><p class="chart-empty">Point-to-point returns are not available in this report.</p></ng-template>
+          <div class="inline-insight"><span>i</span><p><strong>{{ edgeScoreInsight?.highBoth?.length || 0 }} funds</strong> are above category averages on both Quality and Momentum. Funds with high quality but lower momentum may warrant separate review.</p></div>
+        </article>
+      </div>
+    </section>
+
+    <section *ngIf="activeTab === 'performance'" class="mf-report-tab">
+      <div class="sec-hdr"><h2>Performance Overview</h2><span class="sub">Point-to-Point · 1M · 3M · 6M · 1Y · 3Y · 5Y · YTD</span></div>
+      <div class="mf-source-banner">
+        <strong>Point-to-point source:</strong> {{ p2p?.source || 'Not supplied' }} · As of {{ p2p?.asof || '—' }} · {{ p2p?.n_covered || 0 }} of {{ p2p?.n_total || funds.length }} funds covered.
+        Three- and five-year values are annualised CAGR; shorter periods and YTD are absolute returns.
+        <span *ngIf="p2p?.uncovered?.length"> Not covered: {{ p2p.uncovered.join(', ') }}.</span>
+      </div>
+      <div class="summary-box">
+        <div class="sb-icon">↗</div><div class="sb-body"><div class="sb-lbl">Performance Overview — Key Takeaways</div>
+          <div class="sb-text"><strong>{{ overviewReturnInsight?.positive3M || 0 }} of {{ overviewReturnInsight?.covered3M || 0 }} funds</strong> have positive 3M returns. The {{ benchmarkName }} {{ benchmarkIsProxy ? 'proxy' : 'benchmark' }} is {{ formatPct(benchmarkValue('1Y')) }} over 1Y. Active fund <strong>{{ selectedFund?.short }}</strong> is {{ formatPct(fundReturn(selectedFund,'1Y')) }} over 1Y and ranks <strong>#{{ selectedFundReturnRanks[2]?.rank || '—' }}</strong> in the universe.</div>
+          <div class="sb-pills"><span class="sb-pill">{{ p2p?.n_covered || 0 }}/{{ p2p?.n_total || funds.length }} P2P covered</span><span class="sb-pill">Benchmark: {{ benchmarkName }}</span><span class="sb-pill orange">Active: {{ selectedFund?.short }}</span></div>
+        </div>
+      </div>
+
+      <div class="kpi-strip mf-reference-kpis mf-six-kpis">
+        <article class="kpi" *ngFor="let row of p2pCoverageRows"><div class="kpi-lbl">{{ row.period }} Category Avg</div><div class="kpi-val">{{ formatPct(row.average) }}</div><div class="kpi-sub">{{ row.covered }} funds covered · Benchmark {{ formatPct(row.benchmark) }}</div></article>
+      </div>
+
+      <article class="card mf-chart-card">
+        <div class="card-title">Point-to-Point Returns — 1M / 3M / 6M / 1Y / 3Y / 5Y / YTD · Sorted by Period</div>
+        <div class="period-picker"><label>Ranking period <select [(ngModel)]="activePeriod"><option *ngFor="let period of periods" [ngValue]="period">{{ period }}</option></select></label></div>
+        <div class="table-scroll">
+          <table class="edge-table">
+            <thead><tr><th>#</th><th>Fund</th><th>1M</th><th>3M</th><th>6M</th><th>1Y</th><th>3Y CAGR</th><th>5Y CAGR</th><th>YTD</th><th>3M Q</th><th>6M Q</th><th>1Y Q</th></tr></thead>
+            <tbody><tr *ngFor="let row of performanceRankingRows; let i=index" [class.active-fund-row]="row.fund.name === selectedFundName">
+              <td>{{ i+1 }}</td><td>{{ row.fund.short || row.fund.name }}</td>
+              <td>{{ formatPct(fundReturn(row.fund,'1M')) }}</td><td>{{ formatPct(fundReturn(row.fund,'3M')) }}</td><td>{{ formatPct(fundReturn(row.fund,'6M')) }}</td>
+              <td>{{ formatPct(fundReturn(row.fund,'1Y')) }}</td><td>{{ formatPct(fundReturn(row.fund,'3Y')) }}</td><td>{{ formatPct(fundReturn(row.fund,'5Y')) }}</td><td>{{ formatPct(fundReturn(row.fund,'YTD')) }}</td>
+              <td><span class="rank-pill" [class.r1]="quartile(row.fund,'3M')==='Q1'" [class.r2]="quartile(row.fund,'3M')==='Q2'" [class.r3]="quartile(row.fund,'3M')==='Q3'">{{ quartile(row.fund,'3M') }}</span></td>
+              <td><span class="rank-pill" [class.r1]="quartile(row.fund,'6M')==='Q1'" [class.r2]="quartile(row.fund,'6M')==='Q2'" [class.r3]="quartile(row.fund,'6M')==='Q3'">{{ quartile(row.fund,'6M') }}</span></td>
+              <td><span class="rank-pill" [class.r1]="quartile(row.fund,'1Y')==='Q1'" [class.r2]="quartile(row.fund,'1Y')==='Q2'" [class.r3]="quartile(row.fund,'1Y')==='Q3'">{{ quartile(row.fund,'1Y') }}</span></td>
+            </tr></tbody>
+          </table>
+        </div>
       </article>
 
-      <div class="two-col dashboard-two-chart-grid">
-        <article class="content-card dashboard-chart-card">
-          <div class="chart-heading">
-            <div>
-              <h3>Large / Mid / Small Cap Split — All Funds</h3>
-              <p class="muted">Equal-weighted average fund allocation, rebased to 100. Cash is excluded from the rebasing denominator.</p>
+      <div class="two-col mf-reference-grid">
+        <article class="card mf-chart-card">
+          <div class="card-title">1Y Return Ranking — All Funds</div>
+          <div class="mf-ranking-bars">
+            <div *ngFor="let row of performanceRankingRows" class="mf-single-bar-row">
+              <strong [class.active]="row.fund.name === selectedFundName">{{ row.fund.short }}</strong><div class="mf-single-track"><i [style.width.%]="barWidth(row.value, performanceRankingRows[0]?.value)"></i></div><b>{{ formatPct(row.value) }}</b>
             </div>
           </div>
-          <ng-container *ngIf="overviewDashboard?.marketCapSplit?.length; else noMarketCapSplit">
-            <div class="svg-chart-wrap cap-split-wrap">
-              <svg viewBox="0 0 1050 170" role="img" aria-label="One hundred percent stacked bar showing average large, mid and small cap exposure">
-                <rect x="34" y="50" width="980" height="58" rx="8" class="chart-track"></rect>
-                <rect *ngFor="let segment of overviewDashboard.marketCapSplit" [attr.x]="segment.x" y="50" [attr.width]="segment.width" height="58" [attr.fill]="segment.color"></rect>
-                <text *ngFor="let segment of overviewDashboard.marketCapSplit" [attr.x]="segment.x + segment.width / 2" y="85" text-anchor="middle" class="stacked-label">{{ formatPct(segment.value) }}</text>
-              </svg>
-            </div>
-            <div class="chart-legend cap-legend">
-              <span *ngFor="let segment of overviewDashboard.marketCapSplit">
-                <i [style.background]="segment.color"></i>{{ segment.label }} <b>{{ formatPct(segment.value) }}</b>
-              </span>
-            </div>
-            <p class="chart-footnote">Based on {{ overviewDashboard?.capCoverage || 0 }} funds with all three market-cap fields available.</p>
-          </ng-container>
-          <ng-template #noMarketCapSplit><p class="chart-empty">Large, Mid and Small Cap fields are not available for this universe.</p></ng-template>
         </article>
-
-        <article class="content-card dashboard-chart-card">
-          <div class="chart-heading">
-            <div>
-              <h3>Cyclical · Defensive · Sensitive Composition</h3>
-              <p class="muted">Equal-weighted average allocation across reported fund records.</p>
+        <article class="card mf-chart-card">
+          <div class="card-title">Quartile Consistency Heatmap — 3M / 6M / 1Y</div>
+          <div class="mf-heat-table">
+            <div class="mf-heat-row mf-heat-head"><span>Fund</span><span>3M</span><span>6M</span><span>1Y</span></div>
+            <div *ngFor="let row of quartileConsistencyRows" class="mf-heat-row" [class.active-fund-row]="row.fund.name === selectedFundName">
+              <span>{{ row.fund.short }}</span><span class="q-cell" [class.q1]="row.q3M==='Q1'" [class.q2]="row.q3M==='Q2'" [class.q3]="row.q3M==='Q3'" [class.q4]="row.q3M==='Q4'">{{ row.q3M }}</span>
+              <span class="q-cell" [class.q1]="row.q6M==='Q1'" [class.q2]="row.q6M==='Q2'" [class.q3]="row.q6M==='Q3'" [class.q4]="row.q6M==='Q4'">{{ row.q6M }}</span>
+              <span class="q-cell" [class.q1]="row.q1Y==='Q1'" [class.q2]="row.q1Y==='Q2'" [class.q3]="row.q1Y==='Q3'" [class.q4]="row.q1Y==='Q4'">{{ row.q1Y }}</span>
             </div>
           </div>
-          <ng-container *ngIf="overviewDashboard?.hasStyleValues; else noStyleComposition">
-            <div class="style-composition-chart">
-              <div *ngFor="let item of overviewDashboard.styleComposition" class="style-composition-row">
-                <span>{{ item.label }}</span>
-                <div class="style-track"><i [style.width.%]="item.width" [style.background]="item.color"></i></div>
-                <b>{{ formatPct(item.value) }}</b>
-              </div>
-            </div>
-            <p class="chart-footnote">Coverage: {{ overviewDashboard?.styleCoverage || 0 }} of {{ overviewDashboard?.fundCount || 0 }} funds have at least one style-composition field.</p>
-          </ng-container>
-          <ng-template #noStyleComposition><p class="chart-empty">Cyclical, Defensive and Sensitive fields are not available for this universe.</p></ng-template>
         </article>
       </div>
 
-      <div class="two-col dashboard-two-chart-grid">
-        <article class="content-card dashboard-chart-card">
-          <div class="chart-heading">
-            <div>
-              <h3>AUM Concentration — Top 12 Funds</h3>
-              <p class="muted">Reported assets under management (₹ Cr), ranked highest to lowest.</p>
-            </div>
-          </div>
-          <ng-container *ngIf="overviewDashboard?.topAumFunds?.length; else noAumData">
-            <div class="svg-chart-wrap aum-chart-wrap">
-              <svg viewBox="0 0 1080 340" role="img" aria-label="Column chart of the twelve largest funds by assets under management">
-                <line x1="44" y1="235" x2="1040" y2="235" class="chart-axis"></line>
-                <g *ngFor="let fund of overviewDashboard.topAumFunds; let i = index">
-                  <rect [attr.x]="fund.x" [attr.y]="fund.y" [attr.width]="fund.width" [attr.height]="fund.height" rx="4" class="aum-column">
-                    <title>{{ fund.fullName }} · ₹{{ formatAum(fund.aum) }} Cr</title>
-                  </rect>
-                  <text [attr.x]="fund.centerX" [attr.y]="fund.y - 8" text-anchor="middle" class="chart-value-label">{{ formatAum(fund.aum) }}</text>
-                  <text [attr.x]="fund.centerX" y="254" [attr.transform]="'rotate(-42 ' + fund.centerX + ' 254)'" text-anchor="end" class="chart-tick-label">{{ fund.label }}</text>
-                </g>
-                <text x="540" y="334" text-anchor="middle" class="chart-axis-label">Fund · AUM in ₹ Cr</text>
-              </svg>
-            </div>
-          </ng-container>
-          <ng-template #noAumData><p class="chart-empty">AUM data is not available for these funds.</p></ng-template>
+      <div class="two-col mf-reference-grid">
+        <article class="card mf-chart-card">
+          <div class="card-title">3M vs 6M Return — Category Scatter</div>
+          <div class="mf-scatter-wrap"><svg viewBox="0 0 760 300" role="img" aria-label="Three month versus six month return scatter"><line x1="48" y1="260" x2="730" y2="260" class="mf-axis-line"></line><line x1="48" y1="25" x2="48" y2="260" class="mf-axis-line"></line>
+            <circle *ngFor="let point of performanceReturnPoints" [attr.cx]="point.cx" [attr.cy]="point.cy" r="5" [attr.fill]="point.color" [attr.opacity]="point.selected?1:.55"><title>{{ point.name }} · 3M {{ formatPct(point.x) }} · 6M {{ formatPct(point.y) }}</title></circle>
+            <text x="380" y="292" text-anchor="middle" class="mf-axis-label">3M Return (%)</text><text x="14" y="145" transform="rotate(-90 14 145)" text-anchor="middle" class="mf-axis-label">6M Return (%)</text>
+          </svg></div>
         </article>
-
-        <article class="content-card dashboard-chart-card">
-          <div class="chart-heading">
-            <div>
-              <h3>Max Drawdown vs Calmar Ratio — Category Map</h3>
-              <p class="muted">Each dot represents a fund. Hover over a dot to inspect its name and values.</p>
-            </div>
-          </div>
-          <ng-container *ngIf="overviewDashboard?.drawdownPoints?.length; else noRiskMap">
-            <div class="svg-chart-wrap scatter-chart-wrap">
-              <svg viewBox="0 0 1080 350" role="img" aria-label="Scatter plot of fund maximum drawdown against Calmar ratio">
-                <g *ngFor="let tick of overviewDashboard.scatterYTicks">
-                  <line [attr.x1]="overviewDashboard.scatterPlot.left" [attr.x2]="overviewDashboard.scatterPlot.right" [attr.y1]="tick.y" [attr.y2]="tick.y" class="chart-gridline"></line>
-                  <text [attr.x]="overviewDashboard.scatterPlot.left - 12" [attr.y]="tick.y + 4" text-anchor="end" class="chart-tick-label">{{ format(tick.value, 2) }}</text>
-                </g>
-                <g *ngFor="let tick of overviewDashboard.scatterXTicks">
-                  <line [attr.x1]="tick.x" [attr.x2]="tick.x" [attr.y1]="overviewDashboard.scatterPlot.top" [attr.y2]="overviewDashboard.scatterPlot.bottom" class="chart-gridline"></line>
-                  <text [attr.x]="tick.x" [attr.y]="overviewDashboard.scatterPlot.bottom + 22" text-anchor="middle" class="chart-tick-label">{{ formatPct(tick.value) }}</text>
-                </g>
-                <line [attr.x1]="overviewDashboard.scatterPlot.left" [attr.x2]="overviewDashboard.scatterPlot.right" [attr.y1]="overviewDashboard.scatterPlot.bottom" [attr.y2]="overviewDashboard.scatterPlot.bottom" class="chart-axis"></line>
-                <circle *ngFor="let point of overviewDashboard.drawdownPoints" [attr.cx]="point.cx" [attr.cy]="point.cy" r="4.2" class="scatter-dot">
-                  <title>{{ point.name }} · Max DD {{ formatPct(point.drawdown) }} · Calmar {{ format(point.calmar, 3) }}</title>
-                </circle>
-                <text x="555" y="345" text-anchor="middle" class="chart-axis-label">Maximum drawdown (%)</text>
-                <text x="20" y="155" text-anchor="middle" transform="rotate(-90 20 155)" class="chart-axis-label">Calmar ratio</text>
-              </svg>
-            </div>
-            <p class="chart-footnote">{{ overviewDashboard?.drawdownPoints?.length || 0 }} funds have both maximum drawdown and Calmar values.</p>
-          </ng-container>
-          <ng-template #noRiskMap><p class="chart-empty">Maximum drawdown and Calmar data are not available together for this universe.</p></ng-template>
+        <article class="card mf-chart-card">
+          <div class="card-title">3M Return vs Max Drawdown — Risk-Return View</div>
+          <div class="mf-scatter-wrap"><svg viewBox="0 0 760 300" role="img" aria-label="Three month return against maximum drawdown"><line x1="48" y1="260" x2="730" y2="260" class="mf-axis-line"></line><line x1="48" y1="25" x2="48" y2="260" class="mf-axis-line"></line>
+            <circle *ngFor="let point of performanceRiskPoints" [attr.cx]="point.cx" [attr.cy]="point.cy" r="5" [attr.fill]="point.color" [attr.opacity]="point.selected?1:.55"><title>{{ point.name }} · 3M {{ formatPct(point.x) }} · Max DD {{ formatPct(point.y) }}</title></circle>
+            <text x="380" y="292" text-anchor="middle" class="mf-axis-label">3M Return (%)</text><text x="14" y="145" transform="rotate(-90 14 145)" text-anchor="middle" class="mf-axis-label">Max Drawdown (%)</text>
+          </svg></div>
         </article>
       </div>
+    </section>
 
-      <article class="content-card dashboard-sector-card">
-        <div class="chart-heading sector-heading">
-          <div>
-            <h3>Sector Exposure — All Funds Ranked</h3>
-            <p class="muted">Select one sector to rank every fund with a disclosed allocation in that sector. “vs Cat Avg” compares the fund with the average allocation for this same sector.</p>
+    <section *ngIf="activeTab === 'calendar'" class="mf-report-tab">
+      <div class="sec-hdr"><h2>Calendar Year Returns</h2><span class="sub">2021 · 2022 · 2023 · 2024 · 2025 · CYTD 2026</span></div>
+      <div class="summary-box">
+        <div class="sb-icon">▦</div><div class="sb-body"><div class="sb-lbl">Calendar Year — Key Takeaways</div>
+          <div class="sb-text"><strong>{{ selectedFund?.short }}</strong> recorded calendar returns of {{ formatPct(selectedFund?.cy2021) }}, {{ formatPct(selectedFund?.cy2022) }}, {{ formatPct(selectedFund?.cy2023) }}, {{ formatPct(selectedFund?.cy2024) }} and {{ formatPct(selectedFund?.cy2025) }} from 2021–2025. Its 2025 return versus NIFTY 500 TRI is <strong>{{ formatPercentagePoints(selectedCalendarAlphaRows[4]?.alpha) }}</strong>.</div>
+          <div class="sb-pills"><span class="sb-pill orange">Active: {{ selectedFund?.short }}</span><span class="sb-pill">CYTD: {{ formatPct(selectedFund?.cytd) }}</span><span class="sb-pill">NIFTY 500 CYTD: {{ formatPct(benchmarkCytd('NIFTY 500 - TRI')) }}</span></div>
+        </div>
+      </div>
+
+      <div class="kpi-strip mf-reference-kpis mf-six-kpis">
+        <article class="kpi"><div class="kpi-lbl">CYTD 2026 · Selected Fund</div><div class="kpi-val">{{ formatPct(selectedFund?.cytd) }}</div><div class="kpi-sub">{{ selectedFund?.short }}</div></article>
+        <article class="kpi"><div class="kpi-lbl">CYTD · Category</div><div class="kpi-val">{{ formatPct(category.cytd) }}</div><div class="kpi-sub">Category average</div></article>
+        <article class="kpi"><div class="kpi-lbl">CYTD · NIFTY 500 TRI</div><div class="kpi-val">{{ formatPct(benchmarkCytd('NIFTY 500 - TRI')) }}</div><div class="kpi-sub">Source benchmark snapshot</div></article>
+        <article class="kpi"><div class="kpi-lbl">CYTD · NIFTY 50 TRI</div><div class="kpi-val">{{ formatPct(raw?.benchmarks?.nifty50_ytd) }}</div><div class="kpi-sub">Source benchmark snapshot</div></article>
+        <article class="kpi"><div class="kpi-lbl">Best Calendar Year</div><div class="kpi-val">{{ formatPct(selectedCalendarAlphaRows | calendarBestReturn) }}</div><div class="kpi-sub">Not available when source is missing</div></article>
+        <article class="kpi"><div class="kpi-lbl">Years Available</div><div class="kpi-val">{{ selectedCalendarAlphaRows.filter(row => row.value !== null).length }}/5</div><div class="kpi-sub">2021–2025</div></article>
+      </div>
+
+      <article class="card mf-chart-card">
+        <div class="card-title">CY Returns Table — Fund vs Category Avg vs NIFTY 500 vs NIFTY 50</div>
+        <div class="table-scroll">
+          <table class="edge-table">
+            <thead><tr><th>Fund / Benchmark</th><th>2021</th><th>2022</th><th>2023</th><th>2024</th><th>2025</th><th>CYTD</th></tr></thead>
+            <tbody><tr *ngFor="let row of calendarReturnRows" [class.active-fund-row]="row.fund?.name === selectedFundName">
+              <td>{{ row.name }}</td><td *ngFor="let value of row.values">{{ formatPct(value) }}</td><td>{{ formatPct(row.cytd) }}</td>
+            </tr></tbody>
+          </table>
+        </div>
+      </article>
+
+      <div class="two-col mf-reference-grid">
+        <article class="card mf-chart-card">
+          <div class="card-title">Year-by-Year Alpha vs NIFTY 500 — Selected Fund</div>
+          <div class="mf-ranking-bars">
+            <div *ngFor="let row of selectedCalendarAlphaRows" class="mf-compare-bar-row">
+              <strong>{{ row.year }}</strong><div class="mf-single-track"><i [class.negative-bar]="(row.alpha || 0) < 0" [style.width.%]="barWidth(row.alpha,25)"></i></div><b>{{ formatPercentagePoints(row.alpha) }}</b>
+            </div>
           </div>
-          <div class="sector-heading-controls">
-            <label>
-              <span>Sector</span>
-              <select [ngModel]="selectedSectorName" (ngModelChange)="onSectorChange($event)" [disabled]="!overviewDashboard?.sectorOptions?.length">
-                <option *ngFor="let sector of overviewDashboard?.sectorOptions" [ngValue]="sector">{{ sector }}</option>
-              </select>
-            </label>
-            <span class="sector-coverage">{{ overviewDashboard?.sectorCoverage || 0 }} funds · {{ overviewDashboard?.sectorUniverseCoverage || 0 }} with any sector data</span>
+        </article>
+        <article class="card mf-chart-card">
+          <div class="card-title">Top Quartile Funds by Year — Heat View</div>
+          <div class="mf-heat-table mf-year-heat">
+            <div class="mf-heat-row mf-heat-head"><span>Fund</span><span *ngFor="let year of calendarYears">{{ year }}</span></div>
+            <div *ngFor="let row of calendarHeatRows" class="mf-heat-row" [class.active-fund-row]="row.fund.name === selectedFundName">
+              <span>{{ row.name }}</span><span *ngFor="let cell of row.cells" class="q-cell" [class.q1]="cell.quartile==='Q1'" [class.q2]="cell.quartile==='Q2'" [class.q3]="cell.quartile==='Q3'" [class.q4]="cell.quartile==='Q4'">{{ cell.quartile }}</span>
+            </div>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <section *ngIf="activeTab === 'portfolio'" class="mf-report-tab">
+      <div class="sec-hdr"><h2>Portfolio Composition</h2><span class="sub">Holdings Analysis · {{ researchAsOfLabel }}</span></div>
+      <div class="summary-box">
+        <div class="sb-icon">▤</div><div class="sb-body"><div class="sb-lbl">Portfolio Composition — Key Takeaways</div>
+          <div class="sb-text" *ngIf="selectedPortfolioInsight as insight">
+            Cash is <strong>{{ formatPct(insight.cash) }}</strong> versus category {{ formatPct(insight.categoryCash) }}.
+            The largest overweight sectors are <strong><span *ngFor="let row of insight.overweights; let last = last">{{ row.sector }} ({{ formatPercentagePoints(row.difference) }})<span *ngIf="!last">, </span></span></strong>.
+            Underweights are <strong><span *ngFor="let row of insight.underweights; let last = last">{{ row.sector }} ({{ formatPercentagePoints(row.difference) }})<span *ngIf="!last">, </span></span></strong>.
+            Top-10 concentration is <strong>{{ formatPct(insight.top10) }}</strong>; {{ format(insight.stocks,0) }} holdings are reported.
+          </div>
+          <div class="sb-pills" *ngIf="selectedPortfolioInsight as insight">
+            <span class="sb-pill">{{ format(insight.stocks,0) }} Stocks</span><span class="sb-pill">Cash: {{ formatPct(insight.cash) }}</span><span class="sb-pill">Top-10: {{ formatPct(insight.top10) }}</span><span class="sb-pill">P/B: {{ format(selectedFund?.pbv,2) }}x</span><span class="sb-pill">Cyclical: {{ formatPct(selectedFund?.cyclical) }}</span>
           </div>
         </div>
-        <ng-container *ngIf="overviewDashboard?.sectorExposureRows?.length; else noSectorExposure">
-          <div class="table-scroll">
-            <table class="wide-table sector-exposure-table">
-              <thead>
-                <tr>
-                  <th>Fund</th>
-                  <th>Manager</th>
-                  <th>Allocation %</th>
-                  <th>Bar</th>
-                  <th>vs Cat Avg</th>
-                  <th>1Y Return</th>
-                  <th>EDGE Score</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr *ngFor="let row of overviewDashboard.sectorExposureRows; let i = index">
-                  <td class="left sector-fund-cell">
-                    <span class="sector-rank">{{ i + 1 }}</span>
-                    <span><strong>{{ row.name }}</strong><small>{{ row.sector }}</small></span>
-                  </td>
-                  <td>{{ row.manager }}</td>
-                  <td>{{ formatPct(row.allocation) }}</td>
-                  <td>
-                    <div class="sector-bar-track"><i [style.width.%]="row.barWidth"></i></div>
-                  </td>
-                  <td [class.positive-value]="row.vsCategory > 0" [class.negative-value]="row.vsCategory < 0">{{ formatPercentagePoints(row.vsCategory) }}</td>
-                  <td>{{ formatPct(row.return1Y) }}</td>
-                  <td>{{ format(row.edgeScore, 3) }}</td>
-                </tr>
-              </tbody>
-            </table>
+      </div>
+
+      <div class="kpi-strip mf-reference-kpis mf-six-kpis">
+        <article class="kpi" *ngFor="let row of portfolioFundMetricRows"><div class="kpi-lbl">{{ row.label }}</div><div class="kpi-val">{{ row.kind === 'percent' ? formatPct(row.value) : format(row.value,0) }}</div><div class="kpi-sub">Category {{ row.kind === 'percent' ? formatPct(row.average) : format(row.average,0) }}</div></article>
+        <article class="kpi"><div class="kpi-lbl">Expense Ratio</div><div class="kpi-val">{{ formatPct(selectedFund?.er) }}</div><div class="kpi-sub">Category {{ formatPct(category.er) }}</div></article>
+        <article class="kpi"><div class="kpi-lbl">AUM (₹ Cr)</div><div class="kpi-val">{{ formatAum(selectedFund?.aum) }}</div><div class="kpi-sub">Source report value</div></article>
+      </div>
+
+      <div class="two-col mf-reference-grid">
+        <article class="card mf-chart-card">
+          <div class="card-title">Sector Allocation — Fund vs Category Average</div>
+          <div class="mf-sector-compare-list">
+            <div *ngFor="let row of fundSectorComparisonRows.slice(0,16)" class="mf-sector-compare-row">
+              <strong>{{ row.sector }}</strong><div><span>Fund {{ formatPct(row.fundWeight) }}</span><span>Cat {{ formatPct(row.categoryAverage) }}</span></div>
+              <div class="mf-single-track"><i [style.width.%]="barWidth(row.fundWeight, fundSectorComparisonRows[0]?.fundWeight)"></i></div>
+              <small [class.positive-value]="row.difference > 0" [class.negative-value]="row.difference < 0">{{ formatPercentagePoints(row.difference) }} vs category</small>
+            </div>
           </div>
-        </ng-container>
-        <ng-template #noSectorExposure><p class="chart-empty">No fund-level sector exposure records are available in this source report.</p></ng-template>
-      </article>
-      <p class="dashboard-source-note">Source: imported {{ report?.source_file }} · Returns and risk metrics retain the source report's point-to-point and calculation conventions. Coverage counts are shown wherever observations are missing.</p>
-    </section>
-
-    <section *ngIf="activeTab === 'scorecard'">
-      <div class="section-intro"><h2>Fund Scorecard</h2><p>Selected fund versus the category-level reference values contained in the source.</p></div>
-      <div class="metric-grid">
-        <article class="metric-card"><span>Fund manager</span><strong class="small-value">{{ selectedFund?.manager || '—' }}</strong><small>{{ selectedFund?.short }}</small></article>
-        <article class="metric-card"><span>AUM</span><strong>₹{{ formatAum(selectedFund?.aum) }} Cr</strong><small>Expense ratio {{ formatPct(selectedFund?.er) }}</small></article>
-        <article class="metric-card"><span>EDGE</span><strong>{{ format(selectedFund?.edge_score,3) }}</strong><small>Category {{ format(category.edge_score,3) }}</small></article>
-        <article class="metric-card"><span>Risk</span><strong>{{ format(selectedFund?.beta,3) }} beta</strong><small>Max DD {{ formatPct(selectedFund?.max_drawdown) }} · Sharpe {{ format(selectedFund?.sharpe_calc,3) }}</small></article>
-      </div>
-      <div class="two-col">
-        <article class="content-card"><h3>Sector allocation — selected fund</h3>
-          <div *ngFor="let sector of sectorRows.slice(0,15)" class="bar-row"><span>{{ sector.name }}</span><div class="bar-track"><i [style.width.%]="barWidth(sector.value, sectorRows[0]?.value)"></i></div><b>{{ formatPct(sector.value) }}</b></div>
         </article>
-        <article class="content-card"><h3>Top holdings</h3>
-          <div *ngFor="let stock of selectedFund?.top_stocks || []; let i = index" class="holding-row"><span>{{ i + 1 }}. {{ stock.company }}</span><b>{{ formatPct(stock.pct) }}</b></div>
+        <article class="card mf-chart-card">
+          <div class="card-title">Cash Call Trend — Available Monthly History</div>
+          <div class="mf-ranking-bars">
+            <div *ngFor="let row of selectedFundCashTrend" class="mf-single-bar-row"><strong>{{ row.month }}</strong><div class="mf-single-track"><i [style.width.%]="barWidth(row.value,100)"></i></div><b>{{ formatPct(row.value) }}</b></div>
+          </div>
+          <div class="inline-insight"><span>i</span><p>Current cash is <strong>{{ formatPct(selectedFund?.cash) }}</strong> versus category {{ formatPct(category.cash) }}. Only the monthly observations embedded in the source report are shown.</p></div>
         </article>
       </div>
-      <article class="content-card"><h3>12-month trend series (source order)</h3>
-        <div class="table-scroll"><table><thead><tr><th>Month index</th><th>Large %</th><th>Mid %</th><th>Small %</th><th>Cash %</th><th>P/E</th><th>AUM (₹ Cr)</th></tr></thead>
-          <tbody><tr *ngFor="let trend of selectedFundTrend"><td>{{ trend.month }}</td><td>{{ format(trend.large) }}</td><td>{{ format(trend.mid) }}</td><td>{{ format(trend.small) }}</td><td>{{ format(trend.cash) }}</td><td>{{ format(trend.pe) }}</td><td>{{ formatAum(trend.aum) }}</td></tr></tbody></table></div>
-      </article>
-    </section>
 
-    <section *ngIf="activeTab === 'edge'">
-      <div class="section-intro"><h2>EDGE Score Rankings</h2><p>Fund scores and component metrics are reproduced from RAW; missing values remain unavailable.</p></div>
-      <div class="table-scroll"><table><thead><tr><th>Rank</th><th>Fund</th><th>EDGE</th><th>EPS CAGR</th><th>Forward PEG</th><th>Quality</th><th>Valuation</th><th>Momentum</th></tr></thead>
-        <tbody><tr *ngFor="let fund of edgeRanked; let i = index"><td>{{ i + 1 }}</td><td class="left">{{ fund.short || fund.name }}</td><td>{{ format(fund.edge_score,3) }}</td><td>{{ formatPct(fund.eps_cagr) }}</td><td>{{ format(fund.fwd_peg,3) }}</td><td>{{ format(fund.quality,3) }}</td><td>{{ format(fund.valuation,3) }}</td><td>{{ format(fund.momentum,3) }}</td></tr></tbody>
-      </table></div>
-      <div class="two-col">
-        <article class="content-card"><h3>EPS CAGR vs Forward PEG</h3><p class="muted">Selected fund: {{ selectedFund?.short }} · EPS CAGR {{ formatPct(selectedFund?.eps_cagr) }} · Forward PEG {{ format(selectedFund?.fwd_peg,3) }}</p>
-          <div *ngFor="let fund of edgeRanked.slice(0,12)" class="holding-row"><span>{{ fund.short }}</span><b>{{ formatPct(fund.eps_cagr) }} / {{ format(fund.fwd_peg,2) }}x</b></div>
-        </article>
-        <article class="content-card"><h3>Quality vs Momentum</h3>
-          <div *ngFor="let fund of edgeRanked.slice(0,12)" class="bar-row"><span>{{ fund.short }}</span><div class="bar-track"><i [style.width.%]="barWidth(fund.quality,5)"></i></div><b>{{ format(fund.quality,2) }} / {{ format(fund.momentum,2) }}</b></div>
-        </article>
-      </div>
-    </section>
-
-    <section *ngIf="activeTab === 'calendar'">
-      <div class="section-intro"><h2>Calendar Year Returns</h2><p>Fund returns from RAW; benchmark point-to-point data and coverage from P2P are displayed separately.</p></div>
-      <div class="table-scroll"><table><thead><tr><th>Fund</th><th>2021</th><th>2022</th><th>2023</th><th>2024</th><th>2025</th><th>CYTD 2026</th></tr></thead>
-        <tbody><tr><td class="left">Category Avg</td><td *ngFor="let year of ['cy2021','cy2022','cy2023','cy2024','cy2025','cytd']">{{ formatPct(category[year]) }}</td></tr>
-          <tr *ngFor="let benchmark of raw.benchmarks?.cy | keyvalue"><td class="left">{{ benchmark.key }} · TRI</td><td *ngFor="let year of ['2021','2022','2023','2024','2025']">{{ formatPct(benchmark.value[year]) }}</td><td>—</td></tr>
-          <tr><td class="left">NIFTY 500 TRI · CYTD</td><td colspan="5">—</td><td>{{ formatPct(benchmarkCytd('NIFTY 500 - TRI')) }}</td></tr>
-          <tr><td class="left">NIFTY 50 TRI · CYTD</td><td colspan="5">—</td><td>{{ formatPct(raw.benchmarks?.nifty50_ytd) }}</td></tr>
-          <tr *ngFor="let fund of funds"><td class="left">{{ fund.short || fund.name }}</td><td *ngFor="let year of ['cy2021','cy2022','cy2023','cy2024','cy2025','cytd']">{{ formatPct(fund[year]) }}</td></tr></tbody>
-      </table></div>
-      <article class="content-card"><h3>Point-to-point benchmark reference</h3><p>{{ p2p.bm?.label || 'Benchmark not supplied' }} {{ p2p.bm?.proxy ? '(proxy)' : '' }} · As of {{ p2p.asof || '—' }}</p>
-        <div class="metric-grid"><article class="metric-card" *ngFor="let p of periods"><span>{{ p }} benchmark</span><strong>{{ formatPct(p2p.bm?.vals?.[p.toLowerCase()] ?? p2p.bm?.[p.toLowerCase()]) }}</strong></article></div>
-      </article>
-    </section>
-
-    <section *ngIf="activeTab === 'performance'">
-      <div class="section-intro"><h2>Performance Overview</h2><p>Point-to-point returns, ranks and peer quartiles; use the period selector to change ranking order.</p></div>
-      <article class="content-card"><p>Point-to-point source: <strong>{{ p2p.source || '—' }}</strong> · As of {{ p2p.asof || '—' }} · {{ p2p.n_covered || 0 }} of {{ p2p.n_total || funds.length }} funds covered. 3Y and 5Y values are annualised CAGR; other periods are absolute returns.</p><p *ngIf="p2p.uncovered?.length" class="muted">Not covered by the reckoner: <span *ngFor="let name of p2p.uncovered; let last = last">{{ name }}<span *ngIf="!last">, </span></span></p></article>
-      <div class="period-picker"><label>Ranking period <select [(ngModel)]="activePeriod"><option *ngFor="let p of periods" [value]="p">{{ p }}</option></select></label></div>
-      <div class="table-scroll"><table><thead><tr><th>Rank</th><th>Fund</th><th>1M</th><th>3M</th><th>6M</th><th>1Y</th><th>3Y</th><th>5Y</th><th>Quartile (3M)</th><th>Quartile (6M)</th><th>Quartile (1Y)</th></tr></thead>
-        <tbody><tr *ngFor="let fund of rankedFunds; let i = index"><td>{{ i + 1 }}</td><td class="left">{{ fund.short || fund.name }}</td>
-          <td *ngFor="let p of periods">{{ formatPct(fundReturn(fund,p)) }}</td><td>{{ quartile(fund,'3M') }}</td><td>{{ quartile(fund,'6M') }}</td><td>{{ quartile(fund,'1Y') }}</td></tr></tbody>
-      </table></div>
-      <div class="metric-grid">
-        <article class="metric-card" *ngFor="let p of periods"><span>{{ p }} category average</span><strong>{{ formatPct(categoryPeriodReturn(p)) }}</strong><small>{{ p2p.n_covered || 0 }} funds have P2P coverage overall</small></article>
-      </div>
-    </section>
-
-    <section *ngIf="activeTab === 'portfolio'">
-      <div class="section-intro"><h2>Portfolio Composition</h2><p>Current holdings, sector weights, concentration and uniqueness are taken from the selected fund's RAW record.</p></div>
-      <div class="metric-grid">
-        <article class="metric-card"><span>Stock count</span><strong>{{ format(selectedFund?.stocks,0) }}</strong></article>
-        <article class="metric-card"><span>Top-10 concentration</span><strong>{{ formatPct(selectedFund?.top10) }}</strong></article>
-        <article class="metric-card"><span>Cash</span><strong>{{ formatPct(selectedFund?.cash) }}</strong></article>
-        <article class="metric-card"><span>Max drawdown</span><strong>{{ formatPct(selectedFund?.max_drawdown) }}</strong></article>
-      </div>
-      <div class="two-col">
-        <article class="content-card"><h3>Sector weights</h3><div *ngFor="let sector of sectorRows" class="bar-row"><span>{{ sector.name }}</span><div class="bar-track"><i [style.width.%]="barWidth(sector.value,sectorRows[0]?.value)"></i></div><b>{{ formatPct(sector.value) }}</b></div></article>
-        <article class="content-card"><h3>Top holdings</h3><div *ngFor="let stock of selectedFund?.top_stocks || []" class="holding-row"><span>{{ stock.company }}</span><b>{{ formatPct(stock.pct) }}</b></div></article>
-      </div>
-      <article class="content-card"><h3>Unique ideas</h3><p>{{ selectedFund?.unique_ideas?.count || 0 }} unique stocks · {{ formatPct(selectedFund?.unique_ideas?.unique_pct) }} portfolio weight · {{ formatPct(selectedFund?.unique_ideas?.unique_share) }} unique share</p>
-        <div class="table-scroll"><table><thead><tr><th>Company</th><th>Sector</th><th>Market cap</th><th>Holding</th></tr></thead><tbody><tr *ngFor="let stock of selectedFund?.unique_ideas?.stocks || []"><td class="left">{{ stock.company }}</td><td>{{ stock.sector }}</td><td>{{ stock.mcap }}</td><td>{{ formatPct(stock.pct) }}</td></tr><tr *ngIf="!selectedFund?.unique_ideas?.stocks?.length"><td colspan="4">No unique holdings recorded in source.</td></tr></tbody></table></div>
-      </article>
-    </section>
-
-    <section *ngIf="activeTab === 'positioning'">
-      <div class="section-intro"><h2>Category Positioning Map</h2><p>Change the axes to compare the metrics available in the source. Bubble size is shown as a separate value column.</p></div>
-      <div class="axis-panel">
-        <label>X Axis<select [(ngModel)]="xAxis"><option *ngFor="let o of axisOptions" [value]="o.key">{{ o.label }}</option></select></label>
-        <label>Y Axis<select [(ngModel)]="yAxis"><option *ngFor="let o of axisOptions" [value]="o.key">{{ o.label }}</option></select></label>
-        <label>Bubble size<select [(ngModel)]="bubbleAxis"><option *ngFor="let o of axisOptions" [value]="o.key">{{ o.label }}</option></select></label>
-      </div>
-      <div class="table-scroll"><table><thead><tr><th>Fund</th><th>{{ axisLabel(xAxis) }}</th><th>{{ axisLabel(yAxis) }}</th><th>{{ axisLabel(bubbleAxis) }}</th><th>EDGE</th></tr></thead>
-        <tbody><tr *ngFor="let fund of positioningFunds"><td class="left">{{ fund.short || fund.name }}</td><td>{{ format(axisValue(fund,xAxis)) }}</td><td>{{ format(axisValue(fund,yAxis)) }}</td><td>{{ format(axisValue(fund,bubbleAxis)) }}</td><td>{{ format(fund.edge_score,3) }}</td></tr></tbody>
-      </table></div>
-      <p class="muted">The original report's configurable positioning axes are preserved as data-driven comparisons. Values are not interpolated when absent.</p>
-    </section>
-
-    <section *ngIf="activeTab === 'universe'">
-      <div class="section-intro"><h2>Universe Table</h2><p>{{ funds.length }} source fund records · unavailable observations are displayed as em dashes.</p></div>
-      <div class="table-scroll"><table class="wide-table"><thead><tr><th>Fund</th><th>Manager</th><th>EDGE</th><th>1M</th><th>3M</th><th>6M</th><th>1Y</th><th>3Y</th><th>5Y</th><th>CYTD</th><th>Sharpe</th><th>Sortino</th><th>Max DD</th><th>Calmar</th><th>Beta</th><th>P/E</th><th>P/B</th><th>Large</th><th>Mid</th><th>Small</th><th>Cash</th><th>Stocks</th><th>Top-10</th><th>EPS CAGR</th><th>PEG</th><th>Quality</th><th>Momentum</th><th>AUM</th><th>ER</th><th>Turnover</th></tr></thead>
-        <tbody><tr><td class="left">Category Avg</td><td>—</td><td>{{ format(category.edge_score,3) }}</td><td>{{ formatPct(category.r1m) }}</td><td>{{ formatPct(category.r3m) }}</td><td>{{ formatPct(category.r6m) }}</td><td>{{ formatPct(category.r1y) }}</td><td>{{ formatPct(category.r3y) }}</td><td>{{ formatPct(category.r5y) }}</td><td>{{ formatPct(category.cytd) }}</td><td>{{ format(category.sharpe_calc,3) }}</td><td>{{ format(category.sortino,3) }}</td><td>{{ formatPct(category.max_drawdown) }}</td><td>{{ format(category.calmar,3) }}</td><td>{{ format(category.beta,3) }}</td><td>{{ format(category.pe) }}</td><td>{{ format(category.pbv) }}</td><td>{{ formatPct(category.large) }}</td><td>{{ formatPct(category.mid) }}</td><td>{{ formatPct(category.small) }}</td><td>{{ formatPct(category.cash) }}</td><td>{{ format(category.stocks,0) }}</td><td>{{ formatPct(category.top10) }}</td><td>{{ formatPct(category.eps_cagr) }}</td><td>{{ format(category.fwd_peg) }}</td><td>{{ format(category.quality) }}</td><td>{{ format(category.momentum) }}</td><td>{{ formatAum(category.aum) }}</td><td>{{ formatPct(category.er) }}</td><td>{{ formatPct(category.turnover) }}</td></tr>
-          <tr *ngFor="let f of funds"><td class="left">{{ f.short || f.name }}</td><td>{{ f.manager || '—' }}</td><td>{{ format(f.edge_score,3) }}</td><td>{{ formatPct(fundReturn(f,'1M')) }}</td><td>{{ formatPct(fundReturn(f,'3M')) }}</td><td>{{ formatPct(fundReturn(f,'6M')) }}</td><td>{{ formatPct(fundReturn(f,'1Y')) }}</td><td>{{ formatPct(fundReturn(f,'3Y')) }}</td><td>{{ formatPct(fundReturn(f,'5Y')) }}</td><td>{{ formatPct(f.cytd) }}</td><td>{{ format(f.sharpe_calc,3) }}</td><td>{{ format(f.sortino,3) }}</td><td>{{ formatPct(f.max_drawdown) }}</td><td>{{ format(f.calmar,3) }}</td><td>{{ format(f.beta,3) }}</td><td>{{ format(f.pe) }}</td><td>{{ format(f.pbv) }}</td><td>{{ formatPct(f.large) }}</td><td>{{ formatPct(f.mid) }}</td><td>{{ formatPct(f.small) }}</td><td>{{ formatPct(f.cash) }}</td><td>{{ format(f.stocks,0) }}</td><td>{{ formatPct(f.top10) }}</td><td>{{ formatPct(f.eps_cagr) }}</td><td>{{ format(f.fwd_peg) }}</td><td>{{ format(f.quality) }}</td><td>{{ format(f.momentum) }}</td><td>{{ formatAum(f.aum) }}</td><td>{{ formatPct(f.er) }}</td><td>{{ formatPct(f.turnover) }}</td></tr></tbody>
-      </table></div>
-    </section>
-
-    <section *ngIf="activeTab === 'attribution'">
-      <div class="section-intro"><h2>Performance Attribution</h2><p>Selected fund deep-dive · Stock contributions and drags from ATTR.per_fund.</p></div>
-      <div class="metric-grid">
-        <article class="metric-card"><span>Attribution stocks (contributors)</span><strong>{{ selectedAttribution?.top_contributors?.length || 0 }}</strong></article>
-        <article class="metric-card"><span>Attribution stocks (laggards)</span><strong>{{ selectedAttribution?.top_laggards?.length || 0 }}</strong></article>
-        <article class="metric-card"><span>Attribution sectors</span><strong>{{ selectedAttribution?.sector_attribution?.length || 0 }}</strong></article>
-        <article class="metric-card"><span>Category sectors</span><strong>{{ attr.category_sector?.length || 0 }}</strong></article>
-      </div>
-      <div class="two-col">
-        <article class="content-card"><h3>Top contributors</h3><div class="table-scroll"><table><thead><tr><th>Stock</th><th>Sector</th><th>Avg wt</th><th>Price return</th><th>Contribution</th><th>Action</th></tr></thead><tbody><tr *ngFor="let row of selectedAttribution?.top_contributors || []"><td class="left">{{ row.company }}</td><td>{{ row.sector }}</td><td>{{ formatPct(row.avg_wt) }}</td><td>{{ formatPct(row.price_return) }}</td><td>{{ formatPct(row.contribution) }}</td><td>{{ row.action }}</td></tr></tbody></table></div></article>
-        <article class="content-card"><h3>Top laggards</h3><div class="table-scroll"><table><thead><tr><th>Stock</th><th>Sector</th><th>Avg wt</th><th>Price return</th><th>Contribution</th><th>Action</th></tr></thead><tbody><tr *ngFor="let row of selectedAttribution?.top_laggards || []"><td class="left">{{ row.company }}</td><td>{{ row.sector }}</td><td>{{ formatPct(row.avg_wt) }}</td><td>{{ formatPct(row.price_return) }}</td><td>{{ formatPct(row.contribution) }}</td><td>{{ row.action }}</td></tr></tbody></table></div></article>
-      </div>
-      <article class="content-card"><h3>Selected fund sector attribution</h3><p class="muted">Net {{ formatPct(selectedAttribution?.summary?.net_attribution) }} · Positive {{ formatPct(selectedAttribution?.summary?.total_positive_contrib) }} · Negative {{ formatPct(selectedAttribution?.summary?.total_negative_contrib) }} · {{ selectedAttribution?.summary?.stocks_analysed || 0 }} stocks analysed</p><div class="table-scroll"><table><thead><tr><th>Sector</th><th>Contribution</th><th>Stocks</th><th>Fund count</th></tr></thead><tbody><tr *ngFor="let row of selectedAttribution?.sector_attribution || []"><td class="left">{{ row.sector }}</td><td>{{ formatPct(row.contrib) }}</td><td>{{ row.stocks }}</td><td>{{ row.fund_count }}</td></tr></tbody></table></div></article>
-      <article class="content-card"><h3>Category sector attribution</h3><div class="table-scroll"><table><thead><tr><th>Sector</th><th>Total contribution</th><th>Fund count</th><th>Stocks</th><th>Average price return</th></tr></thead><tbody><tr *ngFor="let row of topSectorRows"><td class="left">{{ row.sector }}</td><td>{{ formatPct(row.total_contrib) }}</td><td>{{ row.fund_count }}</td><td>{{ row.stocks }}</td><td>{{ formatPct(row.avg_pr) }}</td></tr></tbody></table></div></article>
-      <article class="content-card"><h3>Cross-fund contributors and laggards</h3>
-        <div class="two-col">
-          <div><h4>Cross-fund gainers</h4><div *ngFor="let row of attr.cross?.gainers || []" class="holding-row"><span>{{ row.company }} · {{ row.fund_count }} funds</span><b>{{ formatPct(row.avg_contribution) }}</b></div></div>
-          <div><h4>Cross-fund laggards</h4><div *ngFor="let row of attr.cross?.laggers || []" class="holding-row"><span>{{ row.company }} · {{ row.fund_count }} funds</span><b>{{ formatPct(row.avg_contribution) }}</b></div></div>
+      <article class="card mf-chart-card">
+        <div class="card-title">Top 5 Sectors — Fund vs Category Average</div>
+        <div class="mf-sector-top5">
+          <div *ngFor="let row of topFiveSectorRows" class="mf-sector-top5-row">
+            <strong>{{ row.sector }}</strong><div><span>Fund {{ formatPct(row.fundWeight) }}</span><span>Category {{ formatPct(row.categoryAverage) }}</span></div>
+            <div class="mf-dual-track"><i [style.width.%]="barWidth(row.fundWeight, fundSectorComparisonRows[0]?.fundWeight)"></i><i class="average" [style.width.%]="barWidth(row.categoryAverage, fundSectorComparisonRows[0]?.fundWeight)"></i></div>
+          </div>
         </div>
+      </article>
+
+      <article class="card mf-chart-card">
+        <div class="card-title">Top 10 Holdings — Current Portfolio</div>
+        <div class="table-scroll"><table class="edge-table"><thead><tr><th>#</th><th>Company</th><th>Weight</th></tr></thead>
+          <tbody><tr *ngFor="let stock of selectedFund?.top_stocks | slice:0:10; let i=index"><td>{{ i+1 }}</td><td>{{ stock.company }}</td><td>{{ formatPct(stock.pct) }}</td></tr></tbody>
+        </table></div>
+      </article>
+
+      <div class="two-col mf-reference-grid">
+        <article class="card mf-chart-card">
+          <div class="card-title">Stock Count vs Top-10 Concentration</div>
+          <div class="mf-scatter-wrap"><svg viewBox="0 0 760 300" role="img" aria-label="Stock count versus top ten concentration">
+            <line x1="48" y1="260" x2="730" y2="260" class="mf-axis-line"></line><line x1="48" y1="25" x2="48" y2="260" class="mf-axis-line"></line>
+            <circle *ngFor="let point of portfolioConcentrationPoints" [attr.cx]="point.cx" [attr.cy]="point.cy" r="5" [attr.fill]="point.color" [attr.opacity]="point.selected?1:.55"><title>{{ point.name }} · Stocks {{ format(point.x,0) }} · Top-10 {{ formatPct(point.y) }}</title></circle>
+            <text x="380" y="292" text-anchor="middle" class="mf-axis-label">Stock count</text><text x="14" y="145" transform="rotate(-90 14 145)" text-anchor="middle" class="mf-axis-label">Top-10 concentration (%)</text>
+          </svg></div>
+        </article>
+        <article class="card mf-chart-card">
+          <div class="card-title">Max Drawdown — Fund vs Category</div>
+          <div class="mf-ranking-bars">
+            <div class="mf-single-bar-row"><strong>Category Average</strong><div class="mf-single-track"><i class="negative-bar" [style.width.%]="barWidth(category.max_drawdown,30)"></i></div><b>{{ formatPct(category.max_drawdown) }}</b></div>
+            <div *ngFor="let fund of maxDrawdownRankRows" class="mf-single-bar-row"><strong [class.active]="fund.name===selectedFundName">{{ fund.short }}</strong><div class="mf-single-track"><i [class.negative-bar]="fund.max_drawdown > category.max_drawdown" [style.width.%]="barWidth(fund.max_drawdown,30)"></i></div><b>{{ formatPct(fund.max_drawdown) }}</b></div>
+          </div>
+        </article>
+      </div>
+
+      <article class="card mf-chart-card">
+        <div class="card-title">Unique Ideas — Stocks Held Exclusively by This Fund in the Category</div>
+        <p class="chart-note">{{ selectedFund?.unique_ideas?.count || 0 }} unique stocks · {{ formatPct(selectedFund?.unique_ideas?.unique_pct) }} of portfolio weight · {{ formatPct(selectedFund?.unique_ideas?.unique_share) }} unique share</p>
+        <div class="table-scroll"><table class="edge-table"><thead><tr><th>Company</th><th>Sector</th><th>Market Cap</th><th>Portfolio Weight</th></tr></thead>
+          <tbody><tr *ngFor="let stock of selectedFund?.unique_ideas?.stocks"><td>{{ stock.company }}</td><td>{{ stock.sector }}</td><td>{{ stock.mcap }}</td><td>{{ formatPct(stock.pct) }}</td></tr>
+          <tr *ngIf="!selectedFund?.unique_ideas?.stocks?.length"><td colspan="4">No unique ideas are recorded for this fund in the imported snapshot.</td></tr></tbody>
+        </table></div>
+      </article>
+    </section>
+
+    <section *ngIf="activeTab === 'positioning'" class="mf-report-tab">
+      <div class="sec-hdr"><h2>Category Positioning Map</h2><span class="sub">Multi-Axis Fund Comparison</span></div>
+      <div class="summary-box">
+        <div class="sb-icon">⌖</div><div class="sb-body"><div class="sb-lbl">Category Positioning — Key Takeaways</div>
+          <div class="sb-text">Use the axis selectors to plot any pair of source metrics. The active fund <strong>{{ selectedFund?.short }}</strong> is highlighted in orange; bubble size and colour encode additional selected dimensions. Highest EDGE: <strong>{{ edgeRanked[0]?.short }}</strong>. Best drawdown protection: <strong>{{ maxDrawdownRankRows[0]?.short }}</strong>.</div>
+          <div class="sb-pills"><span class="sb-pill orange">Selected: {{ selectedFund?.short }}</span><span class="sb-pill">Top EDGE: {{ edgeRanked[0]?.short }}</span><span class="sb-pill">Lowest DD: {{ maxDrawdownRankRows[0]?.short }}</span></div>
+        </div>
+      </div>
+
+      <article class="card mf-chart-card">
+        <div class="card-title">Axis Configuration</div>
+        <div class="axis-select-row">
+          <label>X Axis</label><select class="axis-sel" [(ngModel)]="xAxis"><option *ngFor="let option of axisOptions" [ngValue]="option.key">{{ option.label }}</option></select>
+          <label>Y Axis</label><select class="axis-sel" [(ngModel)]="yAxis"><option *ngFor="let option of axisOptions" [ngValue]="option.key">{{ option.label }}</option></select>
+          <label>Bubble Size</label><select class="axis-sel" [(ngModel)]="bubbleAxis"><option *ngFor="let option of axisOptions" [ngValue]="option.key">{{ option.label }}</option></select>
+          <label>Colour</label><select class="axis-sel" [(ngModel)]="colourAxis"><option *ngFor="let option of axisOptions" [ngValue]="option.key">{{ option.label }}</option></select>
+        </div>
+        <div class="mf-scatter-wrap mf-positioning-scatter">
+          <svg viewBox="0 0 760 300" role="img" aria-label="Configurable multi-axis mutual fund positioning scatter">
+            <g *ngFor="let tick of positioningPlot.yTicks"><line x1="65" x2="715" [attr.y1]="tick.y" [attr.y2]="tick.y" class="mf-grid-line"></line><text x="56" [attr.y]="tick.y+4" text-anchor="end" class="mf-axis-label">{{ format(tick.value,2) }}</text></g>
+            <g *ngFor="let tick of positioningPlot.xTicks"><line [attr.x1]="tick.x" [attr.x2]="tick.x" y1="40" y2="260" class="mf-grid-line"></line><text [attr.x]="tick.x" y="278" text-anchor="middle" class="mf-axis-label">{{ format(tick.value,2) }}</text></g>
+            <circle *ngFor="let point of positioningPlot.points" [attr.cx]="point.cx" [attr.cy]="point.cy" [attr.r]="point.radius" [attr.fill]="point.fill" [attr.opacity]="point.selected?1:.72"><title>{{ point.fund.short }} · {{ axisLabel(xAxis) }} {{ format(point.x,2) }} · {{ axisLabel(yAxis) }} {{ format(point.y,2) }} · {{ axisLabel(bubbleAxis) }} {{ format(point.bubble,2) }} · {{ axisLabel(colourAxis) }} {{ format(point.colour,2) }}</title></circle>
+            <text *ngFor="let point of positioningPlot.points" [attr.x]="point.cx+7" [attr.y]="point.cy-7" class="mf-axis-label">{{ point.label }}</text>
+          </svg>
+        </div>
+        <div class="legend"><span class="mf-selected-legend">Selected fund</span><span class="mf-peer-legend">Peer funds colour by selected colour metric</span></div>
+      </article>
+
+      <div class="two-col mf-reference-grid">
+        <article class="card mf-chart-card">
+          <div class="card-title">Large-Cap Tilt Ranking — All Funds</div>
+          <div class="mf-ranking-bars">
+            <div *ngFor="let fund of positioningLargeCapRows" class="mf-single-bar-row"><strong [class.active]="fund.name===selectedFundName">{{ fund.short }}</strong><div class="mf-single-track"><i [style.width.%]="barWidth(fund.large,100)"></i></div><b>{{ formatPct(fund.large) }}</b></div>
+          </div>
+        </article>
+        <article class="card mf-chart-card">
+          <div class="card-title">Risk-Adjusted Returns — Sharpe vs 1Y Return</div>
+          <div class="mf-scatter-wrap"><svg viewBox="0 0 760 300" role="img" aria-label="Sharpe ratio versus one year return">
+            <line x1="48" y1="260" x2="730" y2="260" class="mf-axis-line"></line><line x1="48" y1="25" x2="48" y2="260" class="mf-axis-line"></line>
+            <circle *ngFor="let point of sharpeReturnPoints" [attr.cx]="point.cx" [attr.cy]="point.cy" r="5" [attr.fill]="point.color" [attr.opacity]="point.selected?1:.55"><title>{{ point.name }} · Sharpe {{ format(point.x,3) }} · 1Y {{ formatPct(point.y) }}</title></circle>
+            <text x="380" y="292" text-anchor="middle" class="mf-axis-label">Sharpe Ratio</text><text x="14" y="145" transform="rotate(-90 14 145)" text-anchor="middle" class="mf-axis-label">1Y Return (%)</text>
+          </svg></div>
+        </article>
+      </div>
+    </section>
+
+    <section *ngIf="activeTab === 'universe'" class="mf-report-tab">
+      <div class="sec-hdr"><h2>Universe Table</h2><span class="sub">All {{ funds.length }} {{ researchCategoryLabel }} Funds · {{ researchCycleLabel }}</span></div>
+      <div class="summary-box"><div class="sb-icon">▤</div><div class="sb-body"><div class="sb-lbl">Universe Table — Reading Guide</div>
+        <div class="sb-text">The table is sorted by EDGE Score. It combines source fund data with P2P return coverage. Missing returns and unavailable source observations remain blank rather than being imputed. The highlighted row is the active fund.</div>
+        <div class="sb-pills"><span class="sb-pill orange">Active Fund: {{ selectedFund?.short }}</span><span class="sb-pill">{{ funds.length }} source funds</span><span class="sb-pill">{{ p2p?.n_covered || 0 }} P2P-covered funds</span></div>
+      </div></div>
+      <div class="card mf-chart-card">
+        <div class="table-scroll">
+          <table class="sum-tbl mf-universe-table">
+            <thead><tr><th>Fund</th><th>Manager</th><th>EDGE</th><th>1M</th><th>3M</th><th>6M</th><th>1Y</th><th>3Y</th><th>5Y</th><th>CYTD</th><th>Sharpe</th><th>Sortino</th><th>Max DD</th><th>Calmar</th><th>Beta</th><th>P/E</th><th>P/B</th><th>Large</th><th>Mid</th><th>Small</th><th>Cash</th><th>Stocks</th><th>Top-10</th><th>EPS CAGR</th><th>PEG</th><th>Quality</th><th>Valuation</th><th>Momentum</th><th>AUM</th><th>ER</th><th>Turnover</th></tr></thead>
+            <tbody>
+              <tr class="cat-row"><td>Category Avg</td><td>—</td><td>{{ format(category.edge_score,3) }}</td><td>{{ formatPct(category.r1m) }}</td><td>{{ formatPct(category.r3m) }}</td><td>{{ formatPct(category.r6m) }}</td><td>{{ formatPct(category.r1y) }}</td><td>{{ formatPct(category.r3y) }}</td><td>{{ formatPct(category.r5y) }}</td><td>{{ formatPct(category.cytd) }}</td><td>{{ format(category.sharpe_calc,3) }}</td><td>{{ format(category.sortino,3) }}</td><td>{{ formatPct(category.max_drawdown) }}</td><td>{{ format(category.calmar,3) }}</td><td>{{ format(category.beta,3) }}</td><td>{{ format(category.pe,2) }}</td><td>{{ format(category.pbv,2) }}</td><td>{{ formatPct(category.large) }}</td><td>{{ formatPct(category.mid) }}</td><td>{{ formatPct(category.small) }}</td><td>{{ formatPct(category.cash) }}</td><td>{{ format(category.stocks,0) }}</td><td>{{ formatPct(category.top10) }}</td><td>{{ formatPct(category.eps_cagr) }}</td><td>{{ format(category.fwd_peg,2) }}</td><td>{{ format(category.quality,3) }}</td><td>{{ format(category.valuation,3) }}</td><td>{{ format(category.momentum,3) }}</td><td>{{ formatAum(category.aum) }}</td><td>{{ formatPct(category.er) }}</td><td>{{ formatPct(category.turnover) }}</td></tr>
+              <tr *ngFor="let fund of edgeRanked" [class.active-fund-row]="fund.name===selectedFundName"><td>{{ fund.short || fund.name }}</td><td>{{ fund.manager || '—' }}</td><td>{{ format(fund.edge_score,3) }}</td><td>{{ formatPct(fundReturn(fund,'1M')) }}</td><td>{{ formatPct(fundReturn(fund,'3M')) }}</td><td>{{ formatPct(fundReturn(fund,'6M')) }}</td><td>{{ formatPct(fundReturn(fund,'1Y')) }}</td><td>{{ formatPct(fundReturn(fund,'3Y')) }}</td><td>{{ formatPct(fundReturn(fund,'5Y')) }}</td><td>{{ formatPct(fund.cytd) }}</td><td>{{ format(fund.sharpe_calc,3) }}</td><td>{{ format(fund.sortino,3) }}</td><td>{{ formatPct(fund.max_drawdown) }}</td><td>{{ format(fund.calmar,3) }}</td><td>{{ format(fund.beta,3) }}</td><td>{{ format(fund.pe,2) }}</td><td>{{ format(fund.pbv,2) }}</td><td>{{ formatPct(fund.large) }}</td><td>{{ formatPct(fund.mid) }}</td><td>{{ formatPct(fund.small) }}</td><td>{{ formatPct(fund.cash) }}</td><td>{{ format(fund.stocks,0) }}</td><td>{{ formatPct(fund.top10) }}</td><td>{{ formatPct(fund.eps_cagr) }}</td><td>{{ format(fund.fwd_peg,2) }}</td><td>{{ format(fund.quality,3) }}</td><td>{{ format(fund.valuation,3) }}</td><td>{{ format(fund.momentum,3) }}</td><td>{{ formatAum(fund.aum) }}</td><td>{{ formatPct(fund.er) }}</td><td>{{ formatPct(fund.turnover) }}</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <section *ngIf="activeTab === 'attribution'" class="mf-report-tab">
+      <div class="sec-hdr"><h2>Performance Attribution</h2><span class="sub">12M · Stock Selection · Price Return × Average Holding Weight</span></div>
+      <div class="mf-source-banner"><strong>Methodology:</strong> Contribution (pp) = Price Return (%) × Average Holding Weight (%) ÷ 100. Attribution is a weighted stock-contribution analysis, not the same as the fund's absolute return. Action labels are carried through from the imported research source.</div>
+      <div class="summary-box"><div class="sb-icon">◎</div><div class="sb-body"><div class="sb-lbl">Attribution — Key Takeaways</div>
+        <div class="sb-text"><strong>{{ attributionMetrics?.fund?.net_attribution > 0 ? '+' : '' }}{{ format(attributionMetrics?.fund?.net_attribution,3) }}pp</strong> net attribution for {{ selectedFund?.short }}. {{ attributionMetrics?.fundsPositive || 0 }} of {{ attributionMetrics?.fundsCovered || 0 }} funds have positive net weighted contribution. Best net attribution: <strong>{{ attributionMetrics?.best?.fund?.short }}</strong>; weakest: <strong>{{ attributionMetrics?.worst?.fund?.short }}</strong>.</div>
+        <div class="sb-pills"><span class="sb-pill orange">Active: {{ selectedFund?.short }}</span><span class="sb-pill">{{ attributionMetrics?.fundsPositive || 0 }}/{{ attributionMetrics?.fundsCovered || 0 }} funds net positive</span><span class="sb-pill">Stocks analysed: {{ attributionMetrics?.fund?.stocks_analysed || 0 }}</span></div>
+      </div></div>
+
+      <div class="kpi-strip mf-reference-kpis mf-six-kpis">
+        <article class="kpi"><div class="kpi-lbl">Fund Net Attribution</div><div class="kpi-val">{{ format(attributionMetrics?.fund?.net_attribution,3) }}pp</div><div class="kpi-sub">Positive {{ format(attributionMetrics?.fund?.total_positive_contrib,2) }}pp / Negative {{ format(attributionMetrics?.fund?.total_negative_contrib,2) }}pp</div></article>
+        <article class="kpi"><div class="kpi-lbl">Fund Stocks Analysed</div><div class="kpi-val">{{ attributionMetrics?.fund?.stocks_analysed || 0 }}</div><div class="kpi-sub">Equity holdings</div></article>
+        <article class="kpi"><div class="kpi-lbl">Funds Net Positive</div><div class="kpi-val">{{ attributionMetrics?.fundsPositive || 0 }}/{{ attributionMetrics?.fundsCovered || 0 }}</div><div class="kpi-sub">Weighted attribution above zero</div></article>
+        <article class="kpi"><div class="kpi-lbl">Best Fund Net</div><div class="kpi-val">{{ format(attributionMetrics?.best?.data?.summary?.net_attribution,2) }}pp</div><div class="kpi-sub">{{ attributionMetrics?.best?.fund?.short }}</div></article>
+        <article class="kpi"><div class="kpi-lbl">Worst Fund Net</div><div class="kpi-val">{{ format(attributionMetrics?.worst?.data?.summary?.net_attribution,2) }}pp</div><div class="kpi-sub">{{ attributionMetrics?.worst?.fund?.short }}</div></article>
+        <article class="kpi"><div class="kpi-lbl">Best Category Sector</div><div class="kpi-val">{{ attributionMetrics?.categorySector?.sector }}</div><div class="kpi-sub">{{ format(attributionMetrics?.categorySector?.total_contrib,2) }}pp aggregate</div></article>
+      </div>
+
+      <div class="two-col mf-reference-grid">
+        <article class="card mf-chart-card">
+          <div class="card-title">Category Sector Attribution — Aggregate across Funds</div>
+          <div class="mf-ranking-bars">
+            <div *ngFor="let row of topSectorRows" class="mf-single-bar-row"><strong>{{ row.sector }}</strong><div class="mf-single-track"><i [class.negative-bar]="row.total_contrib < 0" [style.width.%]="barWidth(row.total_contrib, topSectorRows[0]?.total_contrib)"></i></div><b>{{ format(row.total_contrib,2) }}pp</b></div>
+          </div>
+        </article>
+        <article class="card mf-chart-card">
+          <div class="card-title">Cross-Fund Top Gainers — Held by Multiple Funds</div>
+          <div class="table-scroll"><table class="edge-table"><thead><tr><th>Stock</th><th>Price Return</th><th># Funds</th><th>Average Contribution</th></tr></thead>
+            <tbody><tr *ngFor="let row of crossFundGainers"><td>{{ row.company }}</td><td>{{ formatPct(row.avg_price_return) }}</td><td>{{ row.fund_count }}</td><td>{{ format(row.avg_contribution,3) }}pp</td></tr></tbody>
+          </table></div>
+        </article>
+      </div>
+
+      <div class="two-col mf-reference-grid">
+        <article class="card mf-chart-card">
+          <div class="card-title">Net Attribution by Fund — Ranked</div>
+          <div class="mf-ranking-bars">
+            <div *ngFor="let row of attributionRankRows" class="mf-single-bar-row"><strong [class.active]="row.fund.name===selectedFundName">{{ row.fund.short }}</strong><div class="mf-single-track"><i [class.negative-bar]="row.data.summary.net_attribution < 0" [class.active-bar]="row.fund.name===selectedFundName" [style.width.%]="barWidth(row.data.summary.net_attribution, attributionRankRows[0]?.data?.summary?.net_attribution)"></i></div><b>{{ format(row.data.summary.net_attribution,3) }}pp</b></div>
+          </div>
+        </article>
+        <article class="card mf-chart-card">
+          <div class="card-title">Cross-Fund Laggards — Stocks that Dragged Multiple Funds</div>
+          <div class="table-scroll"><table class="edge-table"><thead><tr><th>Stock</th><th>Price Return</th><th># Funds</th><th>Average Contribution</th></tr></thead>
+            <tbody><tr *ngFor="let row of crossFundLaggers"><td>{{ row.company }}</td><td>{{ formatPct(row.avg_price_return) }}</td><td>{{ row.fund_count }}</td><td>{{ format(row.avg_contribution,3) }}pp</td></tr></tbody>
+          </table></div>
+        </article>
+      </div>
+
+      <article class="card mf-chart-card">
+        <div class="card-title">Fund Deep-Dive — Selected Fund Attribution</div>
+        <div class="mf-attr-summary">Active Fund: <strong>{{ selectedFund?.short }}</strong> · Net {{ format(attributionMetrics?.fund?.net_attribution,3) }}pp · Positive {{ format(attributionMetrics?.fund?.total_positive_contrib,2) }}pp · Negative {{ format(attributionMetrics?.fund?.total_negative_contrib,2) }}pp · {{ attributionMetrics?.fund?.stocks_analysed || 0 }} stocks</div>
+        <div class="three-col mf-reference-grid">
+          <div><h4 class="mf-positive-title">▲ Top 10 Contributors</h4><div *ngFor="let row of selectedAttribution?.top_contributors || []" class="mf-attr-row positive">
+            <strong>{{ row.company }}</strong><span>{{ row.sector }}</span><b>{{ format(row.contribution,3) }}pp</b><small>{{ formatPct(row.price_return) }} · Avg wt {{ formatPct(row.avg_wt) }} · {{ row.action }} · {{ row.months_held }}M</small>
+          </div></div>
+          <div><h4 class="mf-negative-title">▼ Top 10 Laggards</h4><div *ngFor="let row of selectedAttribution?.top_laggards || []" class="mf-attr-row negative">
+            <strong>{{ row.company }}</strong><span>{{ row.sector }}</span><b>{{ format(row.contribution,3) }}pp</b><small>{{ formatPct(row.price_return) }} · Avg wt {{ formatPct(row.avg_wt) }} · {{ row.action }} · {{ row.months_held }}M</small>
+          </div></div>
+          <div><h4>Sector Breakdown</h4><div *ngFor="let row of selectedAttributionSectors.slice(0,10)" class="mf-single-bar-row"><strong>{{ row.sector }}</strong><div class="mf-single-track"><i [class.negative-bar]="row.contrib<0" [style.width.%]="barWidth(row.contrib, selectedAttributionSectors[0]?.contrib)"></i></div><b>{{ format(row.contrib,3) }}pp</b></div></div>
+        </div>
+      </article>
+
+      <article class="card mf-chart-card">
+        <div class="card-title">All Funds — Attribution Summary · Sorted by Net Attribution</div>
+        <div class="table-scroll"><table class="edge-table">
+          <thead><tr><th>#</th><th>Fund</th><th>Net (pp)</th><th>Total +ve (pp)</th><th>Total -ve (pp)</th><th>Top Contributor</th><th>Contrib</th><th>Action</th><th>Top Laggard</th><th>Drag</th><th>Action</th><th>Best Sector</th><th>Worst Sector</th><th>Stocks</th></tr></thead>
+          <tbody><tr *ngFor="let row of attributionRankRows; let i=index" [class.active-fund-row]="row.fund.name===selectedFundName">
+            <td>{{ i+1 }}</td><td>{{ row.fund.short }}</td><td>{{ format(row.data.summary.net_attribution,3) }}</td><td>{{ format(row.data.summary.total_positive_contrib,3) }}</td><td>{{ format(row.data.summary.total_negative_contrib,3) }}</td>
+            <td>{{ row.data.top_contributors?.[0]?.company || '—' }}</td><td>{{ format(row.data.top_contributors?.[0]?.contribution,3) }}</td><td>{{ row.data.top_contributors?.[0]?.action || '—' }}</td>
+            <td>{{ row.data.top_laggards?.[0]?.company || '—' }}</td><td>{{ format(row.data.top_laggards?.[0]?.contribution,3) }}</td><td>{{ row.data.top_laggards?.[0]?.action || '—' }}</td>
+            <td>{{ row.data.sector_attribution?.[0]?.sector || '—' }}</td><td>{{ row.data.sector_attribution?.[row.data.sector_attribution.length-1]?.sector || '—' }}</td><td>{{ row.data.summary.stocks_analysed }}</td>
+          </tr></tbody>
+        </table></div>
       </article>
     </section>
 

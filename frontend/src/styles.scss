@@ -1981,6 +1981,17 @@ app-mutual-fund-analytics { display: block; }
 }
 
 /* Multi Cap overview chart styling — intentionally scoped to the analytics page. */
+.mf-analytics-page .mf-overview-chart-stack {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 14px;
+  min-width: 0;
+}
+.mf-analytics-page .mf-overview-chart-stack > .mf-chart-card {
+  min-width: 0;
+  width: 100%;
+  margin: 0;
+}
 .mf-analytics-page .mf-chart-visual {
   position: relative;
   width: 100%;
@@ -1988,8 +1999,8 @@ app-mutual-fund-analytics { display: block; }
   height: 330px;
 }
 .mf-analytics-page .mf-chart-visual--returns { height: 300px; }
-.mf-analytics-page .mf-chart-visual--stacked { height: 400px; }
-.mf-analytics-page .mf-chart-visual--aum { height: 380px; }
+.mf-analytics-page .mf-chart-visual--stacked { height: 420px; }
+.mf-analytics-page .mf-chart-visual--aum { height: 320px; }
 .mf-analytics-page .mf-chart-visual--scatter { height: 340px; }
 .mf-analytics-page .mf-chart-visual canvas {
   display: block;
@@ -2021,17 +2032,26 @@ app-mutual-fund-analytics { display: block; }
 .mf-analytics-page .mf-chart-card .inline-insight strong {
   color: #051233;
 }
+.mf-analytics-page .mf-chart-footnote {
+  display: block;
+  margin-top: 8px;
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.55;
+}
 @media (max-width: 800px) {
+  .mf-analytics-page .mf-overview-chart-stack { gap: 12px; }
   .mf-analytics-page .mf-chart-visual { height: 300px; }
   .mf-analytics-page .mf-chart-visual--returns { height: 280px; }
-  .mf-analytics-page .mf-chart-visual--stacked { height: 360px; }
-  .mf-analytics-page .mf-chart-visual--aum { height: 360px; }
+  .mf-analytics-page .mf-chart-visual--stacked { height: 380px; }
+  .mf-analytics-page .mf-chart-visual--aum { height: 300px; }
   .mf-analytics-page .mf-chart-visual--scatter { height: 310px; }
 }
 @media (max-width: 520px) {
   .mf-analytics-page .mf-chart-visual { height: 270px; }
   .mf-analytics-page .mf-chart-visual--returns { height: 250px; }
-  .mf-analytics-page .mf-chart-visual--stacked { height: 330px; }
-  .mf-analytics-page .mf-chart-visual--aum { height: 330px; }
+  .mf-analytics-page .mf-chart-visual--stacked { height: 350px; }
+  .mf-analytics-page .mf-chart-visual--aum { height: 280px; }
   .mf-analytics-page .mf-chart-visual--scatter { height: 280px; }
+  .mf-analytics-page .mf-chart-card .inline-insight { padding: 10px 11px; }
 }

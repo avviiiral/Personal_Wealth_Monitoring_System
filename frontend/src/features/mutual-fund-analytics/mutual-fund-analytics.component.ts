@@ -7,6 +7,7 @@ import {
   IndianApiUsageResponse,
   PersonalMutualFundPortfolioResponse,
   MutualFundResearchReportResponse,
+  MutualFundResearchUniverseOption,
   MutualFundAnalyticsService,
   SebiFundRankingRow,
   SebiUniverseRankingsResponse,
@@ -26,6 +27,9 @@ export class MutualFundAnalyticsComponent implements OnInit, OnDestroy {
   private readonly analytics = inject(MutualFundAnalyticsService);
 
   report: MutualFundResearchReportResponse | null = null;
+  researchUniverses: MutualFundResearchUniverseOption[] = [];
+  selectedUniverseId: number | null = null;
+  comparisonFundName = '';
   indiaFeed: IndiaMutualFundFeedResponse | null = null;
   apiUsage: IndianApiUsageResponse | null = null;
   personalPortfolio: PersonalMutualFundPortfolioResponse | null = null;
@@ -82,8 +86,15 @@ export class MutualFundAnalyticsComponent implements OnInit, OnDestroy {
   load(): void {
     this.loading = true;
     this.error = '';
+    const reportRequest = this.selectedUniverseId
+      ? this.analytics.getResearchReport(this.selectedUniverseId)
+      : this.analytics.getResearchReport();
+
     forkJoin({
-      report: this.analytics.getResearchReport(),
+      report: reportRequest,
+      researchUniverses: this.analytics.getResearchUniverses().pipe(
+        catchError(() => of({ available: false, count: 0, results: [], message: 'Unable to load research universes.' })),
+      ),
       indiaFeed: this.analytics.getIndiaMarketFeed().pipe(catchError(() => of(null))),
       apiUsage: this.analytics.getApiUsage().pipe(catchError(() => of(null))),
       personalPortfolio: this.analytics.getPersonalPortfolio().pipe(catchError(() => of(null))),
@@ -91,40 +102,126 @@ export class MutualFundAnalyticsComponent implements OnInit, OnDestroy {
       sebiRankings: this.analytics.getSebiUniverseRankings({ page_size: 100 }).pipe(catchError(() => of(null))),
     }).subscribe({
       next: value => {
-        this.report = value.report;
-        this.indiaFeed = value.indiaFeed;
-        this.apiUsage = value.apiUsage;
-        this.personalPortfolio = value.personalPortfolio;
-        this.sebiSummary = value.sebiSummary;
-        this.sebiRankings = value.sebiRankings;
-        this.overviewDashboard = value.report.available ? this.buildOverviewDashboard() : null;
-        if (value.sebiSummary?.available) {
-          // The chart files are created by the analytics build, not by GET requests.
-          forkJoin({
-            categoryRiskChart: this.analytics.getSebiCategoryRiskChart().pipe(catchError(() => of(null))),
-            topQ1Chart: this.analytics.getSebiTopQ1Chart().pipe(catchError(() => of(null))),
-          }).subscribe(charts => {
-            this.replaceChartObjectUrl('category', charts.categoryRiskChart);
-            this.replaceChartObjectUrl('q1', charts.topQ1Chart);
+        this.researchUniverses = value.researchUniverses?.results || [];
+        let report = value.report;
+        if (!report.available && this.selectedUniverseId) {
+          this.selectedUniverseId = null;
+          this.analytics.getResearchReport().subscribe({
+            next: latest => this.finishLoad(value, latest),
+            error: err => {
+              this.error = err?.error?.detail || 'Unable to load the latest mutual-fund universe.';
+              this.loading = false;
+            },
           });
-        } else {
-          // Avoid expected 404 requests before the first successful analytics build.
-          this.replaceChartObjectUrl('category', null);
-          this.replaceChartObjectUrl('q1', null);
+          return;
         }
-        if (value.report.available && !this.selectedFundName) {
-          this.selectedFundName = value.report.payload?.RAW?.funds?.[0]?.name || '';
-        }
-        if (!value.report.available && this.activeTab === 'overview') {
-          this.activeTab = 'sebi-universe';
-        }
-        this.loading = false;
+        this.finishLoad(value, report);
       },
       error: err => {
         this.error = err?.error?.detail || 'Unable to load mutual-fund research data.';
         this.loading = false;
       },
     });
+  }
+
+  private finishLoad(value: any, report: MutualFundResearchReportResponse): void {
+    const hadReport = Boolean(this.report?.available);
+    this.report = report;
+    this.indiaFeed = value.indiaFeed;
+    this.apiUsage = value.apiUsage;
+    this.personalPortfolio = value.personalPortfolio;
+    this.sebiSummary = value.sebiSummary;
+    this.sebiRankings = value.sebiRankings;
+    this.selectedUniverseId = report.id ?? null;
+    const reportFunds = report.payload?.RAW?.funds || [];
+    if (!reportFunds.some((fund: any) => fund.name === this.comparisonFundName)) {
+      this.comparisonFundName = reportFunds[0]?.name || '';
+    }
+    if (!reportFunds.some((fund: any) => fund.name === this.selectedFundName)) {
+      this.selectedFundName = reportFunds[0]?.name || '';
+    }
+    this.overviewDashboard = report.available ? this.buildOverviewDashboard() : null;
+
+    if (report.available && !hadReport && this.activeTab === 'sebi-universe') {
+      // The page previously fell back to the SEBI tab when no report existed.
+      // Move to Overview when a report becomes available so the category dashboard is visible.
+      this.activeTab = 'overview';
+    } else if (!report.available && this.activeTab === 'overview') {
+      this.activeTab = 'sebi-universe';
+    }
+
+    if (value.sebiSummary?.available) {
+      forkJoin({
+        categoryRiskChart: this.analytics.getSebiCategoryRiskChart().pipe(catchError(() => of(null))),
+        topQ1Chart: this.analytics.getSebiTopQ1Chart().pipe(catchError(() => of(null))),
+      }).subscribe(charts => {
+        this.replaceChartObjectUrl('category', charts.categoryRiskChart);
+        this.replaceChartObjectUrl('q1', charts.topQ1Chart);
+      });
+    } else {
+      this.replaceChartObjectUrl('category', null);
+      this.replaceChartObjectUrl('q1', null);
+    }
+    this.loading = false;
+  }
+
+  onUniverseChange(reportId: number | string): void {
+    const id = Number(reportId);
+    if (!Number.isInteger(id) || id <= 0 || id === this.selectedUniverseId) return;
+    this.loading = true;
+    this.error = '';
+    this.analytics.getResearchReport(id).subscribe({
+      next: report => {
+        if (!report.available) {
+          this.error = report.message || 'The selected research universe is unavailable.';
+          this.loading = false;
+          return;
+        }
+        this.report = report;
+        this.selectedUniverseId = report.id ?? id;
+        const reportFunds = report.payload?.RAW?.funds || [];
+        this.selectedFundName = reportFunds[0]?.name || '';
+        this.comparisonFundName = this.selectedFundName;
+        this.overviewDashboard = this.buildOverviewDashboard();
+        this.activeTab = 'overview';
+        this.loading = false;
+      },
+      error: err => {
+        this.error = err?.error?.detail || 'Unable to load the selected research universe.';
+        this.loading = false;
+      },
+    });
+  }
+
+  get comparisonFund(): any {
+    return this.funds.find(fund => fund.name === this.comparisonFundName) || null;
+  }
+
+  get fundComparisonRows(): any[] {
+    const fund = this.comparisonFund;
+    if (!fund || !this.overviewDashboard) return [];
+    const universeAverage = (key: string): number | null =>
+      this.mean(this.funds.map(row => this.finiteNumber(row?.[key])));
+    const fundLarge = this.finiteNumber(fund.large);
+    const universeLarge = universeAverage('large');
+    const fundCalmar = this.finiteNumber(fund.calmar);
+    const rows = [
+      { metric: 'P/E', value: this.finiteNumber(fund.pe), average: this.overviewDashboard.weightedPe, kind: 'number' },
+      { metric: 'Large-cap allocation', value: fundLarge, average: universeLarge, kind: 'percent' },
+      { metric: '3M return', value: this.fundReturn(fund, '3M'), average: this.overviewDashboard.average3M, kind: 'percent' },
+      { metric: '3Y Sharpe', value: this.finiteNumber(fund.sharpe_calc), average: this.overviewDashboard.averageSharpe, kind: 'number' },
+      { metric: 'Max drawdown', value: this.finiteNumber(fund.max_drawdown), average: this.overviewDashboard.averageMaxDrawdown, kind: 'percent' },
+      { metric: 'Calmar ratio', value: fundCalmar, average: universeAverage('calmar'), kind: 'number' },
+      { metric: 'EDGE score', value: this.finiteNumber(fund.edge_score), average: universeAverage('edge_score'), kind: 'number' },
+    ];
+    return rows.map(row => ({
+      ...row,
+      difference: row.value !== null && row.average !== null ? row.value - row.average : null,
+    }));
+  }
+
+  onComparisonFundChange(name: string): void {
+    this.comparisonFundName = name;
   }
 
   refreshProviderData(): void {

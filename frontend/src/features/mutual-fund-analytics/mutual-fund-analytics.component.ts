@@ -9,6 +9,7 @@ import {
   MutualFundResearchReportResponse,
   MutualFundResearchUniverseOption,
   MutualFundAnalyticsService,
+  SebiCategorySummaryRow,
   SebiFundRankingRow,
   SebiUniverseRankingsResponse,
   SebiUniverseSummaryResponse,

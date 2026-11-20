@@ -55,18 +55,20 @@ export class MutualFundAnalyticsComponent implements OnInit, OnDestroy {
   xAxis = 'large';
   yAxis = 'edge_score';
   bubbleAxis = 'aum';
+  colourAxis = 'edge_score';
+  readonly calendarYears = [2021, 2022, 2023, 2024, 2025];
 
   readonly tabs = [
-    { id: 'my-portfolio', label: 'My Portfolio' },
     { id: 'overview', label: 'Overview' },
     { id: 'scorecard', label: 'Fund Scorecard' },
     { id: 'edge', label: 'EDGE Scores' },
-    { id: 'calendar', label: 'Calendar Returns' },
-    { id: 'performance', label: 'Performance' },
-    { id: 'portfolio', label: 'Portfolio' },
-    { id: 'positioning', label: 'Positioning' },
-    { id: 'universe', label: 'Universe' },
-    { id: 'attribution', label: 'Attribution' },
+    { id: 'performance', label: 'Performance Overview' },
+    { id: 'calendar', label: 'Calendar Year' },
+    { id: 'portfolio', label: 'Portfolio Composition' },
+    { id: 'positioning', label: 'Category Positioning' },
+    { id: 'universe', label: 'Universe Table' },
+    { id: 'attribution', label: 'Performance Attribution' },
+    { id: 'my-portfolio', label: 'My Portfolio' },
     { id: 'india', label: 'India Universe' },
     { id: 'sebi-universe', label: 'SEBI Analytics' },
   ];
@@ -716,6 +718,7 @@ export class MutualFundAnalyticsComponent implements OnInit, OnDestroy {
 
     const drawdownPoints: any[] = funds.map(fund => ({
       name: fund?.short || fund?.name || 'Unnamed fund',
+      selected: fund?.name === this.selectedFundName,
       drawdown: this.finiteNumber(fund?.max_drawdown),
       calmar: this.finiteNumber(fund?.calmar),
     })).filter(row => row.drawdown !== null && row.calmar !== null);
@@ -838,6 +841,508 @@ export class MutualFundAnalyticsComponent implements OnInit, OnDestroy {
     const number = Number(value);
     if (!Number.isFinite(number)) return '—';
     return (number > 0 ? '+' : '') + number.toFixed(2) + ' pp';
+  }
+
+
+  onActiveFundChange(name: string): void {
+    const next = this.funds.find(fund => fund.name === name);
+    if (!next) return;
+    this.selectedFundName = next.name;
+    this.comparisonFundName = next.name;
+    this.overviewDashboard = this.buildOverviewDashboard();
+  }
+
+  get isMultiCapReport(): boolean {
+    return String(this.raw?.meta?.category || this.report?.report_cycle || '')
+      .toLowerCase().includes('multi cap');
+  }
+
+  get researchCategoryLabel(): string {
+    return this.raw?.meta?.category || this.report?.report_cycle || 'Mutual Fund';
+  }
+
+  get researchCycleLabel(): string {
+    return this.raw?.meta?.cycle || this.report?.report_cycle || 'Research snapshot';
+  }
+
+  get researchAsOfLabel(): string {
+    return this.raw?.meta?.data_date || this.raw?.meta?.date || this.report?.report_date || '';
+  }
+
+  get benchmarkName(): string {
+    return this.p2p?.bm?.label || 'Benchmark unavailable';
+  }
+
+  get benchmarkIsProxy(): boolean {
+    return this.p2p?.bm?.proxy === true;
+  }
+
+  get overviewInsight(): any {
+    const oneYear = this.funds.map(fund => this.fundReturn(fund, '1Y'))
+      .filter((value): value is number => value !== null);
+    const threeMonth = this.funds.map(fund => this.fundReturn(fund, '3M'))
+      .filter((value): value is number => value !== null);
+    const positive1Y = oneYear.filter(value => value > 0).length;
+    const positive3M = threeMonth.filter(value => value > 0).length;
+    const edgeTop = [...this.funds].filter(fund => this.finiteNumber(fund.edge_score) !== null)
+      .sort((a, b) => this.numeric(b.edge_score) - this.numeric(a.edge_score)).slice(0, 3);
+    const highBeta = [...this.funds].filter(fund => this.finiteNumber(fund.beta) !== null)
+      .sort((a, b) => this.numeric(b.beta) - this.numeric(a.beta)).slice(0, 2);
+    const lowDrawdown = [...this.funds].filter(fund => this.finiteNumber(fund.max_drawdown) !== null)
+      .sort((a, b) => this.numeric(a.max_drawdown) - this.numeric(b.max_drawdown)).slice(0, 2);
+    const highCyclical = [...this.funds].filter(fund => this.finiteNumber(fund.cyclical) !== null)
+      .sort((a, b) => this.numeric(b.cyclical) - this.numeric(a.cyclical)).slice(0, 2);
+    return {
+      positive1Y, total1Y: oneYear.length, positive3M, total3M: threeMonth.length,
+      edgeTop, highBeta, lowDrawdown, highCyclical,
+      categoryLarge: this.category?.large,
+      categoryMid: this.category?.mid,
+      categorySmall: this.category?.small,
+    };
+  }
+
+  get overviewEdgeDistribution(): any[] {
+    const bins = [2.0, 2.2, 2.4, 2.6, 2.8, 3.0, 3.2];
+    return bins.slice(0, -1).map((lower, index) => {
+      const upper = bins[index + 1];
+      const count = this.funds.filter(fund => {
+        const value = this.finiteNumber(fund.edge_score);
+        return value !== null && value >= lower &&
+          (index === bins.length - 2 ? value <= upper : value < upper);
+      }).length;
+      return { label: lower.toFixed(1) + '–' + upper.toFixed(1), count, width: count };
+    });
+  }
+
+  get overviewReturnInsight(): any {
+    const threeMonth = this.funds.map(fund => this.fundReturn(fund, '3M'))
+      .filter((value): value is number => value !== null);
+    const oneYear = this.funds.map(fund => this.fundReturn(fund, '1Y'))
+      .filter((value): value is number => value !== null);
+    const benchmark3M = this.finiteNumber(this.benchmarkValue('3M'));
+    const benchmark1Y = this.finiteNumber(this.benchmarkValue('1Y'));
+    return {
+      positive3M: threeMonth.filter(value => value > 0).length,
+      covered3M: threeMonth.length,
+      beatBenchmark3M: benchmark3M === null ? null : threeMonth.filter(value => value > benchmark3M).length,
+      beatBenchmark1Y: benchmark1Y === null ? null : oneYear.filter(value => value > benchmark1Y).length,
+      covered1Y: oneYear.length,
+      benchmark3M, benchmark1Y,
+    };
+  }
+
+  get selectedFundInsight(): any {
+    const fund = this.selectedFund;
+    if (!fund) return null;
+    const rankFor = (period: string): number | null => {
+      const value = this.fundReturn(fund, period);
+      if (value === null) return null;
+      const values = this.funds.map(row => this.fundReturn(row, period))
+        .filter((v): v is number => v !== null).sort((a, b) => b - a);
+      const index = values.indexOf(value);
+      return index >= 0 ? index + 1 : null;
+    };
+    const sortino = this.finiteNumber(fund.sortino);
+    const sharpe = this.finiteNumber(fund.sharpe_calc);
+    const ratio = sortino !== null && sharpe !== null && sharpe !== 0 ? sortino / sharpe : null;
+    return {
+      rank3M: rankFor('3M'),
+      rank1Y: rankFor('1Y'),
+      beta: this.finiteNumber(fund.beta),
+      sortinoSharpe: ratio,
+      maxDrawdown: this.finiteNumber(fund.max_drawdown),
+      categoryMaxDrawdown: this.finiteNumber(this.category.max_drawdown),
+      calmar: this.finiteNumber(fund.calmar),
+      categoryCalmar: this.finiteNumber(this.category.calmar),
+      edge: this.finiteNumber(fund.edge_score),
+      categoryEdge: this.finiteNumber(this.category.edge_score),
+    };
+  }
+
+  get selectedFundScorecardMetrics(): any[] {
+    const fund = this.selectedFund;
+    if (!fund) return [];
+    return [
+      { label: '1Y Return', value: this.fundReturn(fund, '1Y'), average: this.categoryPeriodReturn('1Y'), kind: 'percent' },
+      { label: '3Y CAGR', value: this.fundReturn(fund, '3Y'), average: this.categoryPeriodReturn('3Y'), kind: 'percent' },
+      { label: 'Sharpe (3Y)', value: this.finiteNumber(fund.sharpe_calc), average: this.finiteNumber(this.category.sharpe_calc), kind: 'number' },
+      { label: 'Sortino', value: this.finiteNumber(fund.sortino), average: this.finiteNumber(this.category.sortino), kind: 'number' },
+      { label: 'Beta', value: this.finiteNumber(fund.beta), average: this.finiteNumber(this.category.beta), kind: 'number' },
+      { label: 'Max Drawdown', value: this.finiteNumber(fund.max_drawdown), average: this.finiteNumber(this.category.max_drawdown), kind: 'percent', lowerIsBetter: true },
+    ].map(row => ({
+      ...row,
+      difference: row.value !== null && row.average !== null ? row.value - row.average : null,
+    }));
+  }
+
+  get selectedFundMarketCapSplit(): any[] {
+    const fund = this.selectedFund;
+    if (!fund) return [];
+    const values = [
+      { key: 'large', label: 'Large Cap', value: this.finiteNumber(fund.large) },
+      { key: 'mid', label: 'Mid Cap', value: this.finiteNumber(fund.mid) },
+      { key: 'small', label: 'Small Cap', value: this.finiteNumber(fund.small) },
+    ];
+    const total = values.reduce((sum, row) => sum + (row.value || 0), 0);
+    return total > 0 ? values.map(row => ({ ...row, value: (row.value || 0) / total * 100 })) : [];
+  }
+
+  get selectedFundStyleSplit(): any[] {
+    const fund = this.selectedFund;
+    if (!fund) return [];
+    return [
+      { key: 'cyclical', label: 'Cyclical', value: this.finiteNumber(fund.cyclical) },
+      { key: 'defensive', label: 'Defensive', value: this.finiteNumber(fund.defensive) },
+      { key: 'sensitive', label: 'Sensitive', value: this.finiteNumber(fund.sensitive) },
+    ].map(row => ({ ...row, width: Math.max(0, row.value || 0) }));
+  }
+
+  get selectedFundEdgeComponents(): any[] {
+    const fund = this.selectedFund;
+    if (!fund) return [];
+    return [
+      { label: 'Quality', key: 'quality' },
+      { label: 'Valuation', key: 'valuation' },
+      { label: 'Momentum', key: 'momentum' },
+      { label: 'EPS Growth', key: 'eps_cagr' },
+    ].map(row => ({
+      ...row,
+      value: this.finiteNumber(fund[row.key]),
+      average: this.finiteNumber(this.category[row.key]),
+    }));
+  }
+
+  get fundSectorComparisonRows(): any[] {
+    const fund = this.selectedFund;
+    if (!fund) return [];
+    const sectorNames = new Set<string>();
+    this.funds.forEach(row => Object.keys(row.sectors || {}).forEach(name => sectorNames.add(name)));
+    return [...sectorNames].map(sector => {
+      const average = this.funds.reduce((sum, row) =>
+        sum + (this.finiteNumber(row.sectors?.[sector]) || 0), 0) / Math.max(1, this.funds.length);
+      return {
+        sector,
+        fundWeight: this.finiteNumber(fund.sectors?.[sector]) || 0,
+        categoryAverage: average,
+        difference: (this.finiteNumber(fund.sectors?.[sector]) || 0) - average,
+      };
+    }).sort((a, b) => b.fundWeight - a.fundWeight);
+  }
+
+  get topFiveSectorRows(): any[] {
+    return this.fundSectorComparisonRows.slice(0, 5);
+  }
+
+  get sectorOverweights(): any[] {
+    return [...this.fundSectorComparisonRows].sort((a, b) => b.difference - a.difference).slice(0, 3);
+  }
+
+  get sectorUnderweights(): any[] {
+    return [...this.fundSectorComparisonRows].sort((a, b) => a.difference - b.difference).slice(0, 2);
+  }
+
+  get selectedFundPeTrend(): any[] {
+    const values = this.selectedFund?.pe_ts || [];
+    const monthCodes = [202609, 202608, 202607, 202606, 202605, 202604, 202603, 202602, 202601, 202512, 202511, 202510, 202509];
+    return values.map((value: any, index: number) => ({
+      month: this.monthCodeLabel(monthCodes[index]),
+      value: this.finiteNumber(value),
+    })).filter((row: any) => row.value !== null);
+  }
+
+  private monthCodeLabel(value: number | undefined): string {
+    if (!value) return '—';
+    const year = Math.floor(value / 100);
+    const month = value % 100;
+    const names = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    return (names[month - 1] || '') + '-' + String(year).slice(-2);
+  }
+
+  get selectedFundCashTrend(): any[] {
+    const fund = this.selectedFund;
+    return (fund?.ts_cash || []).map((value: any, index: number) => ({
+      month: this.raw?.months?.[index] || ('Period ' + (index + 1)),
+      value: this.finiteNumber(value),
+    }));
+  }
+
+  get selectedFundAumTrend(): any[] {
+    const fund = this.selectedFund;
+    return (fund?.aum_ts || []).map((value: any, index: number) => ({
+      month: this.raw?.months?.[index] || ('Period ' + (index + 1)),
+      value: this.finiteNumber(value),
+    }));
+  }
+
+  get edgeScoreInsight(): any {
+    const fund = this.selectedFund;
+    if (!fund) return null;
+    const ranked = [...this.funds].filter(row => this.finiteNumber(row.edge_score) !== null)
+      .sort((a, b) => this.numeric(b.edge_score) - this.numeric(a.edge_score));
+    const rank = ranked.findIndex(row => row.name === fund.name) + 1;
+    const components = ['quality', 'valuation', 'momentum', 'eps_cagr'];
+    const strengths = components.filter(key =>
+      this.finiteNumber(fund[key]) !== null && this.finiteNumber(this.category[key]) !== null &&
+      this.numeric(fund[key]) > this.numeric(this.category[key])
+    );
+    const weaknesses = components.filter(key =>
+      this.finiteNumber(fund[key]) !== null && this.finiteNumber(this.category[key]) !== null &&
+      this.numeric(fund[key]) < this.numeric(this.category[key])
+    );
+    const lowPegAboveGrowth = this.funds.filter(row =>
+      this.finiteNumber(row.fwd_peg) !== null && this.finiteNumber(row.eps_cagr) !== null &&
+      this.numeric(row.fwd_peg) < this.numeric(this.category.fwd_peg) &&
+      this.numeric(row.eps_cagr) > this.numeric(this.category.eps_cagr)
+    );
+    const highBoth = this.funds.filter(row =>
+      this.numeric(row.quality) > this.numeric(this.category.quality) &&
+      this.numeric(row.momentum) > this.numeric(this.category.momentum)
+    );
+    return { rank, total: ranked.length, strengths, weaknesses, lowPegAboveGrowth, highBoth };
+  }
+
+  private scatterPoints(xKey: string, yKey: string, bubbleKey?: string): any[] {
+    const rows = this.funds.map(fund => ({
+      name: fund.short || fund.name,
+      fullName: fund.name,
+      x: this.finiteNumber(fund[xKey]),
+      y: this.finiteNumber(fund[yKey]),
+      bubble: bubbleKey ? this.finiteNumber(fund[bubbleKey]) : null,
+      selected: fund.name === this.selectedFundName,
+    })).filter(row => row.x !== null && row.y !== null);
+    if (!rows.length) return [];
+    const xMin = Math.min(...rows.map(row => row.x as number));
+    const xMax = Math.max(...rows.map(row => row.x as number));
+    const yMin = Math.min(...rows.map(row => row.y as number));
+    const yMax = Math.max(...rows.map(row => row.y as number));
+    const xSpan = xMax === xMin ? 1 : xMax - xMin;
+    const ySpan = yMax === yMin ? 1 : yMax - yMin;
+    const bubbleValues = rows.map(row => row.bubble || 0);
+    const minBubble = Math.min(...bubbleValues);
+    const maxBubble = Math.max(...bubbleValues);
+    return rows.map(row => ({
+      ...row,
+      cx: 54 + ((row.x as number) - xMin) / xSpan * 650,
+      cy: 250 - ((row.y as number) - yMin) / ySpan * 210,
+      radius: row.bubble === null || maxBubble === minBubble
+        ? (row.selected ? 8 : 5)
+        : 4 + Math.sqrt(Math.max(0, (row.bubble || 0) - minBubble) / Math.max(0.0001, maxBubble - minBubble)) * 8,
+      color: row.selected ? '#FD7740' : 'rgba(5,18,51,.55)',
+    }));
+  }
+
+  get epsPegPoints(): any[] { return this.scatterPoints('eps_cagr', 'fwd_peg', 'edge_score'); }
+  get qualityMomentumPoints(): any[] { return this.scatterPoints('quality', 'momentum', 'edge_score'); }
+  get performanceReturnPoints(): any[] { return this.scatterPoints('r3m', 'r6m'); }
+  get performanceRiskPoints(): any[] { return this.scatterPoints('r3m', 'max_drawdown'); }
+  get portfolioConcentrationPoints(): any[] { return this.scatterPoints('stocks', 'top10'); }
+  get sharpeReturnPoints(): any[] { return this.scatterPoints('sharpe_calc', 'r1y'); }
+
+  get selectedFundReturnRanks(): any[] {
+    const fund = this.selectedFund;
+    if (!fund) return [];
+    return ['3M', '6M', '1Y'].map(period => {
+      const values = this.funds.map(row => this.fundReturn(row, period))
+        .filter((value): value is number => value !== null).sort((a, b) => b - a);
+      const value = this.fundReturn(fund, period);
+      const rank = value === null ? null : values.indexOf(value) + 1;
+      return { period, value, rank, total: values.length, quartile: this.quartile(fund, period) };
+    });
+  }
+
+  get performanceRankingRows(): any[] {
+    return [...this.funds].map(fund => ({
+      fund,
+      value: this.fundReturn(fund, this.activePeriod),
+    })).filter(row => row.value !== null)
+      .sort((a, b) => (b.value || 0) - (a.value || 0));
+  }
+
+  get quartileConsistencyRows(): any[] {
+    return [...this.funds].map(fund => ({
+      fund,
+      q3M: this.quartile(fund, '3M'),
+      q6M: this.quartile(fund, '6M'),
+      q1Y: this.quartile(fund, '1Y'),
+    })).sort((a, b) => this.numeric(this.fundReturn(b.fund, '1Y')) -
+      this.numeric(this.fundReturn(a.fund, '1Y')));
+  }
+
+  get p2pCoverageRows(): any[] {
+    return this.periods.map(period => ({
+      period,
+      covered: this.funds.filter(fund => this.fundReturn(fund, period) !== null).length,
+      average: this.categoryPeriodReturn(period),
+      benchmark: this.benchmarkValue(period),
+    }));
+  }
+
+  get calendarReturnRows(): any[] {
+    const years = this.calendarYears.map(year => 'cy' + year);
+    return [
+      { name: 'Category Average', isCategory: true, values: years.map(key => this.finiteNumber(this.category[key])), cytd: this.finiteNumber(this.category.cytd) },
+      ...Object.entries(this.raw?.benchmarks?.cy || {}).map(([name, values]: [string, any]) => ({
+        name, isBenchmark: true, values: years.map(year => this.finiteNumber(values?.[year.replace('cy', '')])), cytd: null,
+      })),
+      ...this.funds.map(fund => ({
+        name: fund.short || fund.name,
+        isFund: true,
+        fund,
+        values: years.map(key => this.finiteNumber(fund[key])),
+        cytd: this.finiteNumber(fund.cytd),
+      })),
+    ];
+  }
+
+  get selectedCalendarAlphaRows(): any[] {
+    const fund = this.selectedFund;
+    if (!fund) return [];
+    const benchmark = this.raw?.benchmarks?.cy?.['NIFTY 500 - TRI'] || {};
+    return this.calendarYears.map(year => {
+      const value = this.finiteNumber(fund['cy' + year]);
+      const average = this.finiteNumber(benchmark[String(year)]);
+      return { year, value, benchmark: average, alpha: value !== null && average !== null ? value - average : null };
+    });
+  }
+
+  get calendarHeatRows(): any[] {
+    return this.funds.map(fund => {
+      const cells = this.calendarYears.map(year => {
+        const value = this.finiteNumber(fund['cy' + year]);
+        const universe = this.funds.map(row => this.finiteNumber(row['cy' + year]))
+          .filter((v): v is number => v !== null);
+        const ordered = [...universe].sort((a, b) => b - a);
+        const rank = value === null ? null : ordered.indexOf(value) + 1;
+        const quartile = rank === null || !ordered.length ? '—' :
+          rank <= Math.ceil(ordered.length / 4) ? 'Q1' :
+          rank <= Math.ceil(ordered.length / 2) ? 'Q2' :
+          rank <= Math.ceil(ordered.length * 3 / 4) ? 'Q3' : 'Q4';
+        return { year, value, quartile };
+      });
+      return { name: fund.short || fund.name, fund, cells };
+    });
+  }
+
+  get selectedPortfolioInsight(): any {
+    const fund = this.selectedFund;
+    if (!fund) return null;
+    return {
+      cash: this.finiteNumber(fund.cash),
+      categoryCash: this.finiteNumber(this.category.cash),
+      top10: this.finiteNumber(fund.top10),
+      categoryTop10: this.finiteNumber(this.category.top10),
+      stocks: this.finiteNumber(fund.stocks),
+      categoryStocks: this.finiteNumber(this.category.stocks),
+      overweights: this.sectorOverweights,
+      underweights: this.sectorUnderweights,
+    };
+  }
+
+  get portfolioFundMetricRows(): any[] {
+    const fund = this.selectedFund;
+    if (!fund) return [];
+    return [
+      { label: 'Stock Count', value: this.finiteNumber(fund.stocks), average: this.finiteNumber(this.category.stocks), kind: 'number' },
+      { label: 'Top-10 Concentration', value: this.finiteNumber(fund.top10), average: this.finiteNumber(this.category.top10), kind: 'percent' },
+      { label: 'Cash', value: this.finiteNumber(fund.cash), average: this.finiteNumber(this.category.cash), kind: 'percent' },
+      { label: 'Max Drawdown', value: this.finiteNumber(fund.max_drawdown), average: this.finiteNumber(this.category.max_drawdown), kind: 'percent', lowerIsBetter: true },
+    ];
+  }
+
+  get maxDrawdownRankRows(): any[] {
+    return [...this.funds].filter(fund => this.finiteNumber(fund.max_drawdown) !== null)
+      .sort((a, b) => this.numeric(a.max_drawdown) - this.numeric(b.max_drawdown));
+  }
+
+  get positioningPlot(): any {
+    const rows = this.funds.map(fund => ({
+      fund,
+      x: this.axisValue(fund, this.xAxis),
+      y: this.axisValue(fund, this.yAxis),
+      bubble: this.axisValue(fund, this.bubbleAxis),
+      colour: this.axisValue(fund, this.colourAxis),
+    })).filter(row => row.x !== null && row.y !== null);
+    if (!rows.length) return { points: [], xTicks: [], yTicks: [] };
+    const xMin = Math.min(...rows.map(row => row.x as number));
+    const xMax = Math.max(...rows.map(row => row.x as number));
+    const yMin = Math.min(...rows.map(row => row.y as number));
+    const yMax = Math.max(...rows.map(row => row.y as number));
+    const xSpan = xMax === xMin ? 1 : xMax - xMin;
+    const ySpan = yMax === yMin ? 1 : yMax - yMin;
+    const colourValues = rows.map(row => row.colour).filter((value): value is number => value !== null).sort((a, b) => a - b);
+    const palette = ['#64748b', '#0891b2', '#16a34a', '#c99a3e', '#7c3aed'];
+    const bubbleValues = rows.map(row => row.bubble).filter((value): value is number => value !== null);
+    const bubbleMax = Math.max(1, ...bubbleValues);
+    const points = rows.map(row => {
+      const colourIndex = row.colour === null || !colourValues.length ? 0 :
+        Math.min(4, Math.floor(colourValues.indexOf(row.colour) / Math.max(1, colourValues.length) * 5));
+      const active = row.fund.name === this.selectedFundName;
+      return {
+        ...row,
+        selected: active,
+        cx: 65 + ((row.x as number) - xMin) / xSpan * 650,
+        cy: 260 - ((row.y as number) - yMin) / ySpan * 220,
+        radius: row.bubble === null ? 5 : 4 + Math.sqrt(Math.max(0, row.bubble) / bubbleMax) * 9,
+        fill: active ? '#FD7740' : palette[colourIndex],
+        label: active ? (row.fund.short || row.fund.name) : '',
+      };
+    });
+    const xTicks = Array.from({length:5}, (_row, i) => ({ value:xMin+xSpan*i/4, x:65+650*i/4 }));
+    const yTicks = Array.from({length:5}, (_row, i) => ({ value:yMin+ySpan*i/4, y:260-220*i/4 }));
+    return { points, xTicks, yTicks };
+  }
+
+  get positioningLargeCapRows(): any[] {
+    return [...this.funds].filter(fund => this.finiteNumber(fund.large) !== null)
+      .sort((a, b) => this.numeric(b.large) - this.numeric(a.large));
+  }
+
+  get attributionRankRows(): any[] {
+    return this.funds.map(fund => ({
+      fund,
+      data: this.attr?.per_fund?.[fund.name] || null,
+    })).filter(row => row.data?.summary)
+      .sort((a, b) => this.numeric(b.data.summary.net_attribution) - this.numeric(a.data.summary.net_attribution));
+  }
+
+  get attributionMetrics(): any {
+    const rows = this.attributionRankRows;
+    const net = rows.map(row => this.finiteNumber(row.data.summary.net_attribution))
+      .filter((value): value is number => value !== null);
+    const best = rows[0] || null;
+    const worst = rows[rows.length - 1] || null;
+    return {
+      fund: this.selectedAttribution?.summary || null,
+      fundsCovered: rows.length,
+      fundsPositive: net.filter(value => value > 0).length,
+      best,
+      worst,
+      categorySector: this.topSectorRows[0] || null,
+    };
+  }
+
+  get selectedAttributionSectors(): any[] {
+    return [...(this.selectedAttribution?.sector_attribution || [])]
+      .sort((a, b) => this.numeric(b.contrib) - this.numeric(a.contrib));
+  }
+
+  get crossFundGainers(): any[] {
+    return this.attr?.cross?.gainers || [];
+  }
+
+  get crossFundLaggers(): any[] {
+    return this.attr?.cross?.laggers || [];
+  }
+
+  quartileForValue(value: any, values: number[]): string {
+    const number = this.finiteNumber(value);
+    if (number === null || !values.length) return '—';
+    const ordered = [...values].sort((a, b) => b - a);
+    const rank = ordered.indexOf(number) + 1;
+    if (!rank) return '—';
+    return rank <= Math.ceil(ordered.length / 4) ? 'Q1' :
+      rank <= Math.ceil(ordered.length / 2) ? 'Q2' :
+      rank <= Math.ceil(ordered.length * 3 / 4) ? 'Q3' : 'Q4';
   }
 
   get selectedReturnRanks(): Record<string, number | null> {

@@ -41,6 +41,10 @@ export class MutualFundAnalyticsComponent implements OnInit, OnDestroy {
   selectedSebiPlan = '';
   selectedSebiCategory = 'All categories';
   selectedSebiFundName = '';
+  sebiCategoryFunds: SebiFundRankingRow[] | null = null;
+  sebiFundsLoading = false;
+  sebiFundsError = '';
+  private sebiFundsRequestId = 0;
   overviewDashboard: any = null;
   sebiCategoryRiskChartSrc: string | null = null;
   sebiTopQ1ChartSrc: string | null = null;
@@ -301,8 +305,11 @@ export class MutualFundAnalyticsComponent implements OnInit, OnDestroy {
   }
 
   get sebiFundOptions(): SebiFundRankingRow[] {
+    const sourceRows = this.selectedSebiCategory === 'All categories'
+      ? [...this.sebiQ1Funds, ...(this.sebiRankings?.results || [])]
+      : (this.sebiCategoryFunds || []);
     const byName = new Map<string, SebiFundRankingRow>();
-    [...this.sebiQ1Funds, ...(this.sebiRankings?.results || [])].forEach(row => {
+    sourceRows.forEach(row => {
       const name = String(row.Scheme_Name || '').trim();
       if (!name || (this.selectedSebiPlan && row.Plan !== this.selectedSebiPlan)) return;
       if (this.selectedSebiCategory !== 'All categories' &&
@@ -369,17 +376,90 @@ export class MutualFundAnalyticsComponent implements OnInit, OnDestroy {
   onSebiPlanChange(plan: string): void {
     this.selectedSebiPlan = plan;
     this.selectedSebiCategory = 'All categories';
-    this.syncSelectedSebiFund();
+    this.loadSebiCategoryFunds();
     this.buildSebiDashboard();
   }
 
   onSebiCategoryChange(category: string): void {
     this.selectedSebiCategory = category;
-    this.syncSelectedSebiFund();
+    this.loadSebiCategoryFunds();
     this.buildSebiDashboard();
   }
 
-  onSebiFundChange(name: string): void { this.selectedSebiFundName = name; }
+  onSebiFundChange(name: string): void {
+    this.selectedSebiFundName = this.sebiFundOptions
+      .find(row => row.Scheme_Name === name)?.Scheme_Name || '';
+  }
+
+  private loadSebiCategoryFunds(): void {
+    const category = this.selectedSebiCategory;
+    const plan = this.selectedSebiPlan;
+    const requestId = ++this.sebiFundsRequestId;
+    this.sebiFundsError = '';
+
+    if (!category || category === 'All categories') {
+      this.sebiCategoryFunds = null;
+      this.sebiFundsLoading = false;
+      this.syncSelectedSebiFund();
+      return;
+    }
+
+    // The existing rankings request only loads the first 100 rows overall.
+    // Fetch the selected category directly from the local generated ranking
+    // snapshot, following pagination when that category contains >500 funds.
+    // This endpoint reads cached JSON and does not call MFAPI or IndianAPI.
+    this.sebiCategoryFunds = [];
+    this.sebiFundsLoading = true;
+    this.selectedSebiFundName = '';
+    const pageSize = 500;
+
+    const loadPage = (page: number, accumulated: SebiFundRankingRow[]): void => {
+      this.analytics.getSebiUniverseRankings({
+        category, plan, page, page_size: pageSize,
+      }).subscribe({
+        next: response => {
+          if (requestId !== this.sebiFundsRequestId) return;
+          if (!response.available) {
+            this.sebiCategoryFunds = [];
+            this.sebiFundsLoading = false;
+            this.sebiFundsError = response.message || 'Funds are unavailable for this category.';
+            return;
+          }
+
+          const pageRows = (response.results || []).filter(row =>
+            row.Level_3_Category === category && (!plan || row.Plan === plan));
+          const allRows = [...accumulated, ...pageRows];
+          const totalCount = Number(response.count) || 0;
+
+          if (allRows.length < totalCount && pageRows.length > 0) {
+            loadPage(page + 1, allRows);
+            return;
+          }
+
+          const uniqueFunds = new Map<string, SebiFundRankingRow>();
+          allRows.forEach(row => {
+            const name = String(row.Scheme_Name || '').trim();
+            if (name && !uniqueFunds.has(name)) uniqueFunds.set(name, row);
+          });
+          this.sebiCategoryFunds = [...uniqueFunds.values()];
+          this.sebiFundsLoading = false;
+          this.syncSelectedSebiFund();
+          if (!this.sebiCategoryFunds.length) {
+            this.sebiFundsError = 'No funds were found for the selected category and plan.';
+          }
+        },
+        error: () => {
+          if (requestId !== this.sebiFundsRequestId) return;
+          this.sebiCategoryFunds = [];
+          this.sebiFundsLoading = false;
+          this.selectedSebiFundName = '';
+          this.sebiFundsError = 'Unable to load funds for the selected category. Please try selecting the category again.';
+        },
+      });
+    };
+
+    loadPage(1, []);
+  }
 
   private syncSelectedSebiFund(): void {
     if (!this.sebiFundOptions.some(row => row.Scheme_Name === this.selectedSebiFundName)) {
@@ -395,7 +475,7 @@ export class MutualFundAnalyticsComponent implements OnInit, OnDestroy {
     if (!this.sebiCategoryOptions.includes(this.selectedSebiCategory)) {
       this.selectedSebiCategory = 'All categories';
     }
-    this.syncSelectedSebiFund();
+    this.loadSebiCategoryFunds();
     this.buildSebiDashboard();
   }
 

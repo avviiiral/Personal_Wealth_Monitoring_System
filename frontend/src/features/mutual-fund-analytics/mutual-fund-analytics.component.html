@@ -487,7 +487,7 @@ python manage.py build_sebi_mf_analytics</pre>
         <article class="kpi"><div class="kpi-lbl">Cat Avg Max DD</div><div class="kpi-val">{{ formatPct(category.max_drawdown) }}</div><div class="kpi-sub">Peak-to-trough · <b>{{ formatPct(selectedFund?.max_drawdown) }}</b></div></article>
       </div>
 
-      <div class="two-col mf-reference-grid">
+      <div class="mf-overview-chart-stack">
         <article class="card mf-chart-card">
           <div class="card-title">Category Returns Distribution — 3M / 6M / 1Y</div>
           <div class="mf-chart-visual mf-chart-visual--returns">
@@ -501,27 +501,13 @@ python manage.py build_sebi_mf_analytics</pre>
           </div>
           <div class="inline-insight"><span>💡</span><p>
             <strong>{{ overviewReturnInsight?.positive3M || 0 }} of {{ overviewReturnInsight?.covered3M || 0 }} funds</strong> delivered positive 3M returns
-            versus <strong>{{ overviewReturnInsight?.positive1Y || 0 }} of {{ overviewReturnInsight?.covered1Y || 0 }}</strong> on 1Y.
+            versus <strong>{{ overviewReturnInsight?.positive1Y || 0 }} of {{ overviewReturnInsight?.covered1Y || 0 }}</strong> on 1Y —
             3M breadth is {{ (overviewReturnInsight?.positive3M || 0) < (overviewReturnInsight?.positive1Y || 0) ? 'weaker' : 'stronger' }} than 1Y breadth.
-            Category average 3M: <strong>{{ formatPct(overviewReturnInsight?.average3M) }}</strong>,
+            Category avg 3M: <strong>{{ formatPct(overviewReturnInsight?.average3M) }}</strong>,
             1Y: <strong>{{ formatPct(overviewReturnInsight?.average1Y) }}</strong>.
           </p></div>
         </article>
 
-        <article class="card mf-chart-card">
-          <div class="card-title">EDGE Score Distribution across {{ funds.length }} Funds</div>
-          <div class="mf-histogram">
-            <div *ngFor="let bin of overviewEdgeDistribution" class="mf-hist-row">
-              <span>{{ bin.label }}</span>
-              <div class="mf-single-track"><i [style.width.%]="barWidth(bin.count, funds.length)"></i></div>
-              <b>{{ bin.count }}</b>
-            </div>
-          </div>
-          <div class="inline-insight"><span>i</span><p>The selected fund <strong>{{ selectedFund?.short }}</strong> has an EDGE score of <strong>{{ format(selectedFund?.edge_score,3) }}</strong> versus the category average of <strong>{{ format(category.edge_score,3) }}</strong>. Scores are reproduced from the report; no score is recalculated in the UI.</p></div>
-        </article>
-      </div>
-
-      <div class="two-col mf-reference-grid">
         <article class="card mf-chart-card">
           <div class="card-title">Large / Mid / Small Cap Split — All Funds (rebased to 100)</div>
           <div class="mf-chart-visual mf-chart-visual--stacked">
@@ -530,18 +516,21 @@ python manage.py build_sebi_mf_analytics</pre>
               [data]="marketCapChartData"
               [options]="stackedPercentChartOptions"
               [type]="'bar'"
-              aria-label="Large, mid and small cap allocation for all Multi Cap funds"
+              aria-label="Large, mid and small cap allocation for the category reference and top Multi Cap funds"
             ></canvas>
           </div>
           <div class="inline-insight"><span>💡</span><p>
             Most large-cap tilted:
-            <strong><span *ngFor="let fund of overviewMarketCapInsight.largeCapTilt; let last = last">{{ fund.short }}<span *ngIf="!last"> &amp; </span></span></strong>.
+            <strong><span *ngFor="let fund of overviewMarketCapInsight.largeCapTilt; let last = last">{{ fund.short }}<span *ngIf="!last"> &amp; </span></span></strong> —
+            these portfolios are closer to large-cap indices.
             Most small-cap tilted:
             <strong><span *ngFor="let fund of overviewMarketCapInsight.smallCapTilt; let last = last">{{ fund.short }}<span *ngIf="!last"> &amp; </span></span></strong>.
-            Category average split (rebased): <strong>Large {{ formatPct(overviewMarketCapInsight.averageLarge,0) }} /
-            Mid {{ formatPct(overviewMarketCapInsight.averageMid,0) }} /
-            Small {{ formatPct(overviewMarketCapInsight.averageSmall,0) }}</strong>.
+            Category avg split (rebased): <strong>Large {{ formatPct(overviewMarketCapInsight.averageLarge,0) }} /
+            Mid {{ formatPct(overviewMarketCapInsight.averageMid,0) }} / Small {{ formatPct(overviewMarketCapInsight.averageSmall,0) }}</strong>.
           </p></div>
+          <small class="mf-chart-footnote" *ngIf="!overviewDashboard?.benchmarkCompositionAvailable">
+            The imported HTML does not contain NIFTY 50 TRI composition. The first green reference column is the Multi Cap category average, labelled {{ overviewDashboard?.capReferenceLabel || 'Category Avg' }}.
+          </small>
         </article>
 
         <article class="card mf-chart-card">
@@ -552,7 +541,7 @@ python manage.py build_sebi_mf_analytics</pre>
               [data]="styleCompositionChartData"
               [options]="stackedPercentChartOptions"
               [type]="'bar'"
-              aria-label="Cyclical, defensive and sensitive composition for all Multi Cap funds"
+              aria-label="Cyclical, defensive and sensitive allocation for the category reference and top Multi Cap funds"
             ></canvas>
           </div>
           <div class="inline-insight"><span>💡</span><p>
@@ -560,12 +549,13 @@ python manage.py build_sebi_mf_analytics</pre>
             <strong><span *ngFor="let fund of overviewStyleInsight.cyclical; let last = last">{{ fund.short }}<span *ngIf="!last"> &amp; </span></span></strong>.
             Most defensively positioned:
             <strong><span *ngFor="let fund of overviewStyleInsight.defensive; let last = last">{{ fund.short }}<span *ngIf="!last"> &amp; </span></span></strong>.
-            The mix shows each fund's relative cyclical, defensive and sensitive exposure, rebased to 100%.
+            In risk-off periods, defensive exposure can help moderate drawdowns; cyclical exposure generally carries greater economic sensitivity.
           </p></div>
+          <small class="mf-chart-footnote" *ngIf="!overviewDashboard?.benchmarkCompositionAvailable">
+            The imported HTML does not contain NIFTY 50 TRI style composition. The first green reference column is the Multi Cap category average, labelled {{ overviewDashboard?.styleReferenceLabel || 'Category Avg' }}.
+          </small>
         </article>
-      </div>
 
-      <div class="two-col mf-reference-grid">
         <article class="card mf-chart-card">
           <div class="card-title">AUM Concentration — Top 12 Funds (₹ Cr)</div>
           <div class="mf-chart-visual mf-chart-visual--aum">
@@ -587,7 +577,7 @@ python manage.py build_sebi_mf_analytics</pre>
               [data]="drawdownCalmarChartData"
               [options]="drawdownCalmarChartOptions"
               [type]="'scatter'"
-              aria-label="Maximum drawdown versus Calmar ratio for Multi Cap funds"
+              aria-label="Maximum drawdown versus Calmar ratio for Multi Cap funds and the category average"
             ></canvas>
           </div>
           <div class="inline-insight"><span>💡</span><p>
@@ -595,7 +585,26 @@ python manage.py build_sebi_mf_analytics</pre>
             <strong><span *ngFor="let fund of overviewDrawdownInsight.protection; let last = last">{{ fund.name }}<span *ngIf="!last"> &amp; </span></span></strong>.
             Best return per unit of drawdown (Calmar):
             <strong><span *ngFor="let fund of overviewDrawdownInsight.calmar; let last = last">{{ fund.name }}<span *ngIf="!last"> &amp; </span></span></strong>.
-            The selected fund <strong>{{ selectedFund?.short }}</strong> is highlighted in orange. A lower drawdown and higher Calmar indicate a more favourable risk-adjusted profile.
+            The orange point is the selected fund. Lower drawdown and higher Calmar indicate a more favourable historical return-to-risk profile.
+          </p></div>
+          <small class="mf-chart-footnote">
+            The green triangle represents {{ overviewDashboard?.drawdownReferencePoint?.name || 'the category average' }}. The source HTML does not provide NIFTY 50 drawdown and Calmar values, so no index point is fabricated.
+          </small>
+        </article>
+
+        <article class="card mf-chart-card">
+          <div class="card-title">EDGE Score Distribution Across {{ funds.length }} Funds</div>
+          <div class="mf-histogram">
+            <div *ngFor="let bin of overviewEdgeDistribution" class="mf-hist-row">
+              <span>{{ bin.label }}</span>
+              <div class="mf-single-track"><i [style.width.%]="barWidth(bin.count, funds.length)"></i></div>
+              <b>{{ bin.count }}</b>
+            </div>
+          </div>
+          <div class="inline-insight"><span>i</span><p>
+            The selected fund <strong>{{ selectedFund?.short }}</strong> has an EDGE score of
+            <strong>{{ format(selectedFund?.edge_score,3) }}</strong> versus the category average of
+            <strong>{{ format(category.edge_score,3) }}</strong>. Scores are reproduced from the report; no score is recalculated in the UI.
           </p></div>
         </article>
       </div>

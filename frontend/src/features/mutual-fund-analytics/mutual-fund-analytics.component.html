@@ -247,7 +247,24 @@ python manage.py build_sebi_mf_analytics</pre>
           <h2>{{ raw.meta?.category || 'Selected Mutual Fund Universe' }} · Category Dashboard</h2>
           <p>{{ raw.meta?.cycle }} · {{ raw.meta?.data_date || raw.meta?.date || report?.report_date }} · {{ funds.length }} funds in selected source universe</p>
         </div>
-        <span class="dashboard-asof">Point-to-point data {{ p2p.asof || '—' }}</span>
+        <div class="dashboard-controls">
+          <label>
+            <span>Universe</span>
+            <select [ngModel]="selectedUniverseId" (ngModelChange)="onUniverseChange($event)" [disabled]="loading || researchUniverses.length === 0">
+              <option *ngFor="let universe of researchUniverses" [ngValue]="universe.id">
+                {{ universe.category }} · {{ universe.report_date | date:'dd MMM yyyy' }} · {{ universe.fund_count }} funds
+              </option>
+            </select>
+          </label>
+          <label>
+            <span>Compare fund</span>
+            <select [(ngModel)]="comparisonFundName" (ngModelChange)="onComparisonFundChange($event)" [disabled]="loading || funds.length === 0">
+              <option *ngFor="let fund of funds; trackBy: trackByName" [ngValue]="fund.name">
+                {{ fund.short || fund.name }}
+              </option>
+            </select>
+          </label>
+        </div>
       </div>
 
       <div class="metric-grid mf-overview-kpis">
@@ -282,6 +299,31 @@ python manage.py build_sebi_mf_analytics</pre>
           <small>Mean peak-to-trough drawdown · {{ overviewDashboard?.drawdownCoverage || 0 }} funds</small>
         </article>
       </div>
+
+      <article class="content-card fund-comparison-card" *ngIf="comparisonFund">
+        <div class="chart-heading">
+          <div>
+            <h3>Fund vs Selected Universe</h3>
+            <p class="muted">{{ comparisonFund.short || comparisonFund.name }} compared with the selected universe averages. Values are shown only where both sides have source coverage.</p>
+          </div>
+          <span class="comparison-fund-name">{{ comparisonFund.manager || 'Manager not supplied' }}</span>
+        </div>
+        <div class="table-scroll">
+          <table class="fund-comparison-table">
+            <thead><tr><th>Metric</th><th>Selected Fund</th><th>Universe Average</th><th>Difference</th></tr></thead>
+            <tbody>
+              <tr *ngFor="let row of fundComparisonRows">
+                <td class="left">{{ row.metric }}</td>
+                <td>{{ row.kind === 'percent' ? formatPct(row.value) : formatNumber(row.value, 3) }}</td>
+                <td>{{ row.kind === 'percent' ? formatPct(row.average) : formatNumber(row.average, 3) }}</td>
+                <td [class.positive-value]="row.difference > 0" [class.negative-value]="row.difference < 0">
+                  {{ row.difference === null ? '—' : (row.kind === 'percent' ? formatPercentagePoints(row.difference) : formatNumber(row.difference, 3)) }}
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </article>
 
       <article class="content-card dashboard-chart-card">
         <div class="chart-heading">

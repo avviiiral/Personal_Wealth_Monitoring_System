@@ -1,3 +1,6 @@
+from datetime import timedelta
+from unittest.mock import Mock, patch
+
 from django.contrib.auth.models import User
 from django.test import TestCase
 from django.utils import timezone
@@ -8,6 +11,7 @@ from watchlist.models import InvestmentProduct, ProductType, WatchListEntry
 from .models import Filing, FilingSeverity
 from .providers.base import NormalizedFiling
 from .providers.mock import MockFilingProvider
+from .providers.official import NSEFilingProvider
 from .services.classifier import classify
 from .services.material_change import detect_material_change
 from .services.pipeline import ingest_exchange_filings
@@ -433,3 +437,40 @@ class FilingDiagnosticsCommandTests(TestCase):
         self.assertIn("no active STOCK/ETF identifier matched", text)
         self.assertIn("holding-user matches:    1", text)
         self.assertIn("No database records are modified", text)
+
+
+
+class NSEProviderNormalizationTests(TestCase):
+    @patch("filing_intelligence.providers.official.requests.Session")
+    def test_provider_adds_nse_identity_to_immutable_filing(self, mock_session_factory):
+        landing = Mock()
+        response = Mock()
+        response.headers = {"content-type": "application/json"}
+        row = {
+            "symbol": "ABC",
+            "sm_name": "ABC Limited",
+            "sm_isin": "INE123456789",
+            "desc": "Board meeting outcome",
+            "attchmntText": "Company announcement details",
+            "an_dt": timezone.now().strftime("%d-%b-%Y %H:%M:%S"),
+            "seq_id": "nse-123",
+        }
+        response.text = "[]"
+        response.json.return_value = [row]
+        session = Mock()
+        session.headers = {}
+        session.get.side_effect = [landing, response]
+        mock_session_factory.return_value = session
+
+        provider = NSEFilingProvider()
+        provider.override_url = ""
+        since = timezone.now() - timedelta(days=1)
+        filings = list(provider.fetch_filings(since, until=timezone.now()))
+
+        self.assertEqual(len(filings), 1)
+        self.assertEqual(
+            filings[0].details,
+            "Company announcement details\nISIN: INE123456789\nExchange symbol: ABC",
+        )
+        self.assertEqual(filings[0].symbol, "ABC")
+

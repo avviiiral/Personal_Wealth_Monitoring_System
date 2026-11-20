@@ -61,14 +61,27 @@ export class MutualFundAnalyticsComponent implements OnInit, OnDestroy {
     animation: { duration: 250 },
     interaction: { mode: 'index', intersect: false },
     plugins: {
-      legend: { display: true, position: 'top', labels: { boxWidth: 30, padding: 16 } },
+      legend: {
+        display: true,
+        position: 'top',
+        labels: { boxWidth: 52, boxHeight: 14, padding: 16 },
+      },
       tooltip: { callbacks: {
         label: context => `${context.dataset.label}: ${context.parsed.y} funds`,
         title: items => items[0]?.label ? `${items[0].label}% return` : '',
+        afterBody: items => {
+          const period = String(items[0]?.dataset?.label || '').split(' ')[0];
+          const key = ({ '3M': 'r3m', '6M': 'r6m', '1Y': 'r1y' } as Record<string, string>)[period];
+          const benchmark = key ? this.finiteNumber(this.p2p?.bm?.vals?.[key]) : null;
+          return benchmark === null ? [] : [`N500 ${period}: ${this.formatPct(benchmark)}`];
+        },
       } },
     },
     scales: {
-      x: { grid: { color: 'rgba(15, 23, 42, 0.08)' }, ticks: { maxRotation: 0, minRotation: 0 } },
+      x: {
+        grid: { color: 'rgba(15, 23, 42, 0.08)' },
+        ticks: { maxRotation: 0, minRotation: 0, font: { size: 10 } },
+      },
       y: {
         beginAtZero: true,
         title: { display: true, text: '# Funds' },
@@ -84,7 +97,7 @@ export class MutualFundAnalyticsComponent implements OnInit, OnDestroy {
     animation: { duration: 250 },
     interaction: { mode: 'index', intersect: false },
     plugins: {
-      legend: { display: true, position: 'top', labels: { boxWidth: 28, padding: 14 } },
+      legend: { display: true, position: 'top', labels: { boxWidth: 28, boxHeight: 14, padding: 14 } },
       tooltip: { callbacks: {
         label: context => `${context.dataset.label}: ${Number(context.parsed.y).toFixed(1)}%`,
       } },
@@ -93,7 +106,7 @@ export class MutualFundAnalyticsComponent implements OnInit, OnDestroy {
       x: {
         stacked: true,
         grid: { display: false },
-        ticks: { autoSkip: false, minRotation: 48, maxRotation: 58, font: { size: 9 } },
+        ticks: { autoSkip: false, minRotation: 52, maxRotation: 56, font: { size: 9 } },
       },
       y: {
         stacked: true,
@@ -120,11 +133,13 @@ export class MutualFundAnalyticsComponent implements OnInit, OnDestroy {
     scales: {
       x: {
         beginAtZero: true,
-        title: { display: true, text: 'AUM (₹ Cr)' },
-        ticks: { callback: value => {
-          const amount = Number(value);
-          return amount >= 1000 ? `${Math.round(amount / 1000)}K` : String(amount);
-        } },
+        ticks: {
+          font: { size: 9 },
+          callback: value => {
+            const amount = Number(value);
+            return amount >= 1000 ? `${Math.round(amount / 1000)}K` : String(amount);
+          },
+        },
         grid: { color: 'rgba(15, 23, 42, 0.10)' },
       },
       y: { grid: { display: false }, ticks: { font: { size: 9 } } },
@@ -136,10 +151,26 @@ export class MutualFundAnalyticsComponent implements OnInit, OnDestroy {
     maintainAspectRatio: false,
     animation: { duration: 250 },
     plugins: {
-      legend: { display: true, position: 'top' },
+      legend: {
+        display: true,
+        position: 'top',
+        labels: { boxWidth: 28, padding: 14, filter: item => item.text !== 'Multi Cap Funds' },
+      },
       tooltip: { callbacks: {
-        title: items => this.overviewDashboard?.drawdownPoints?.[items[0]?.dataIndex ?? -1]?.name || 'Fund',
+        title: items => {
+          const item = items[0];
+          if (item?.datasetIndex === 1) {
+            return this.overviewDashboard?.drawdownReferencePoint?.name || 'Category Average';
+          }
+          return this.overviewDashboard?.drawdownPoints?.[item?.dataIndex ?? -1]?.name || 'Fund';
+        },
         label: context => {
+          if (context.datasetIndex === 1) {
+            const row = this.overviewDashboard?.drawdownReferencePoint;
+            return row
+              ? `Max Drawdown: ${this.formatPct(row.drawdown)} · Calmar: ${this.format(row.calmar, 3)}`
+              : '';
+          }
           const row = this.overviewDashboard?.drawdownPoints?.[context.dataIndex];
           return row
             ? `Max Drawdown: ${this.formatPct(row.drawdown)} · Calmar: ${this.format(row.calmar, 3)}`
@@ -150,7 +181,7 @@ export class MutualFundAnalyticsComponent implements OnInit, OnDestroy {
     scales: {
       x: {
         type: 'linear',
-        title: { display: true, text: 'Max Drawdown (%)' },
+        title: { display: true, text: 'Max Drawdown %' },
         ticks: { callback: value => `${value}%` },
         grid: { color: 'rgba(15, 23, 42, 0.10)' },
       },
@@ -892,66 +923,36 @@ export class MutualFundAnalyticsComponent implements OnInit, OnDestroy {
     const styleMax = Math.max(0, ...styleComposition.map(item => item.value || 0));
     styleComposition.forEach(item => item.width = styleMax > 0 ? (item.value || 0) / styleMax * 100 : 0);
 
-    // The reference Overview uses the RAW category snapshot for its distribution.
-    // The P2P reckoner is a separate 30/33-covered return series used in Performance.
+    // Keep the report's exact return-distribution intervals. The RAW fund
+    // returns drive the histogram; NIFTY 500 TRI is shown only as a tooltip reference.
     const periodValues: Record<string, number[]> = {
       '3M': funds.map(fund => this.finiteNumber(fund?.r3m)).filter((value): value is number => value !== null),
       '6M': funds.map(fund => this.finiteNumber(fund?.r6m)).filter((value): value is number => value !== null),
       '1Y': funds.map(fund => this.finiteNumber(fund?.r1y)).filter((value): value is number => value !== null),
     };
-    const allReturns = Object.values(periodValues).flat();
-    let returnDistribution: any[] = [];
-    if (allReturns.length) {
-      const minimum = Math.min(...allReturns);
-      const maximum = Math.max(...allReturns);
-      const span = Math.max(10, maximum - minimum);
-      let step = span > 100 ? 20 : span > 55 ? 10 : 5;
-      while (Math.ceil(span / step) > 14) step *= 2;
-      const start = Math.floor(minimum / step) * step;
-      const end = Math.max(start + step, Math.ceil(maximum / step) * step);
-      const binCount = Math.max(1, Math.ceil((end - start) / step));
-      const labels = Array.from({ length: binCount }, (_item, index) => {
-        const lower = start + index * step;
-        const upper = lower + step;
-        return lower.toFixed(0) + ' to ' + upper.toFixed(0) + '%';
+    const returnBins = [-15, -10, -5, -2, 0, 2, 5, 10, 15, 20, 25];
+    const formatBinEdge = (value: number): string => value < 0 ? `−${Math.abs(value)}` : String(value);
+    const returnLabels = returnBins.slice(0, -1).map((lower, index) =>
+      `${formatBinEdge(lower)}–${formatBinEdge(returnBins[index + 1])}`);
+    const returnCounts: Record<string, number[]> = {
+      '3M': Array(returnBins.length - 1).fill(0),
+      '6M': Array(returnBins.length - 1).fill(0),
+      '1Y': Array(returnBins.length - 1).fill(0),
+    };
+    Object.entries(periodValues).forEach(([period, values]) => {
+      values.forEach(value => {
+        const index = returnBins.findIndex((lower, binIndex) =>
+          binIndex < returnBins.length - 1 && value >= lower && value < returnBins[binIndex + 1]);
+        if (index >= 0) returnCounts[period][index] += 1;
       });
-      const counts: Record<string, number[]> = {
-        '3M': Array(binCount).fill(0),
-        '6M': Array(binCount).fill(0),
-        '1Y': Array(binCount).fill(0),
-      };
-      Object.entries(periodValues).forEach(([period, values]) => {
-        values.forEach(value => {
-          const index = Math.max(0, Math.min(binCount - 1, Math.floor((value - start) / step)));
-          counts[period][index] += 1;
-        });
-      });
-      const maximumCount = Math.max(1, ...Object.values(counts).flat());
-      const plot = { left: 62, baseY: 238, height: 184, width: 982 };
-      const groupWidth = plot.width / binCount;
-      const barGap = 3;
-      const barWidth = Math.min(19, Math.max(7, (groupWidth - 18) / 3));
-      const barTotalWidth = barWidth * 3 + barGap * 2;
-      returnDistribution = labels.map((label, index) => {
-        const groupLeft = plot.left + index * groupWidth;
-        const firstX = groupLeft + (groupWidth - barTotalWidth) / 2;
-        const bars = (['3M', '6M', '1Y'] as const).map((period, seriesIndex) => {
-          const count = counts[period][index];
-          const height = count / maximumCount * plot.height;
-          return {
-            period,
-            count,
-            x: firstX + seriesIndex * (barWidth + barGap),
-            y: plot.baseY - height,
-            width: barWidth,
-            height,
-            color: seriesIndex === 0 ? 'var(--chart-series-1)' :
-              seriesIndex === 1 ? 'var(--chart-series-2)' : 'var(--chart-series-3)',
-          };
-        });
-        return { label, centerX: groupLeft + groupWidth / 2, bars };
-      });
-    }
+    });
+    const returnDistribution = returnLabels.map((label, index) => ({
+      label,
+      bars: (['3M', '6M', '1Y'] as const).map(period => ({
+        period,
+        count: returnCounts[period][index],
+      })),
+    }));
 
     const topAumFunds: any[] = funds
       .map(fund => ({ name: fund?.short || fund?.name || 'Unnamed fund', fullName: fund?.name || 'Unnamed fund', aum: this.finiteNumber(fund?.aum) }))
@@ -976,6 +977,14 @@ export class MutualFundAnalyticsComponent implements OnInit, OnDestroy {
       drawdown: this.finiteNumber(fund?.max_drawdown),
       calmar: this.finiteNumber(fund?.calmar),
     })).filter(row => row.drawdown !== null && row.calmar !== null);
+    // The source snapshot contains category average drawdown and Calmar, but
+    // does not include NIFTY benchmark risk metrics. Use a clearly labelled
+    // category-average reference point instead of inventing benchmark values.
+    const drawdownReferencePoint = {
+      name: 'Multi Cap Category Avg',
+      drawdown: this.finiteNumber(this.category?.max_drawdown),
+      calmar: this.finiteNumber(this.category?.calmar),
+    };
     const scatterPlot = { left: 76, right: 1034, top: 22, bottom: 292 };
     let scatterXTicks: any[] = [];
     let scatterYTicks: any[] = [];
@@ -1004,9 +1013,23 @@ export class MutualFundAnalyticsComponent implements OnInit, OnDestroy {
       });
     }
 
-    // Prepare chart datasets from the imported RAW snapshot. Every percentage
-    // stack is rebased within its fund so each column represents exactly 100%.
-    const marketCapChartRows = funds.map(fund => {
+    // Match the reference report: top 22 funds are ordered by Large Cap tilt
+    // and Cyclical exposure. The imported HTML does not include index allocation
+    // weights, so use the report's actual Multi Cap category average as the
+    // first green reference column unless benchmark composition is supplied.
+    const benchmarkComposition = this.raw?.benchmarks?.composition || {};
+    const nse50Composition = benchmarkComposition['NIFTY 50 - TRI'] || null;
+    const normalizeComposition = (source: any, keys: string[]): number[] | null => {
+      const values = keys.map(key => this.finiteNumber(source?.[key]));
+      if (values.some(value => value === null)) return null;
+      const total = values.reduce((sum, value) => sum + (value || 0), 0);
+      return total > 0 ? values.map(value => (value || 0) / total * 100) : null;
+    };
+    const capBenchmarkValues = normalizeComposition(nse50Composition || this.category, ['large', 'mid', 'small']);
+    const capReferenceIsBenchmark = Boolean(nse50Composition &&
+      normalizeComposition(nse50Composition, ['large', 'mid', 'small']));
+    const capReferenceLabel = capReferenceIsBenchmark ? 'NIFTY 50 TRI' : 'Category Avg';
+    const marketCapFundRows = funds.map(fund => {
       const large = this.finiteNumber(fund?.large);
       const mid = this.finiteNumber(fund?.mid);
       const small = this.finiteNumber(fund?.small);
@@ -1017,14 +1040,32 @@ export class MutualFundAnalyticsComponent implements OnInit, OnDestroy {
         name: fund?.short || fund?.name || 'Unnamed fund',
         fullName: fund?.name || 'Unnamed fund',
         selected: fund?.name === this.selectedFundName,
+        isReference: false,
         large: large / total * 100,
         mid: mid / total * 100,
         small: small / total * 100,
       };
     }).filter((row): row is NonNullable<typeof row> => row !== null)
-      .sort((a, b) => b.large - a.large);
+      .sort((a, b) => b.large - a.large).slice(0, 22);
+    const marketCapChartRows: any[] = [
+      ...(capBenchmarkValues ? [{
+        name: capReferenceLabel,
+        fullName: capReferenceLabel,
+        selected: false,
+        isReference: true,
+        large: capBenchmarkValues[0],
+        mid: capBenchmarkValues[1],
+        small: capBenchmarkValues[2],
+      }] : []),
+      ...marketCapFundRows,
+    ];
 
-    const styleChartRows = funds.map(fund => {
+    const styleBenchmarkValues = normalizeComposition(nse50Composition || this.category,
+      ['cyclical', 'defensive', 'sensitive']);
+    const styleReferenceIsBenchmark = Boolean(nse50Composition &&
+      normalizeComposition(nse50Composition, ['cyclical', 'defensive', 'sensitive']));
+    const styleReferenceLabel = styleReferenceIsBenchmark ? 'NIFTY 50 TRI' : 'Category Avg';
+    const styleFundRows = funds.map(fund => {
       const cyclical = this.finiteNumber(fund?.cyclical);
       const defensive = this.finiteNumber(fund?.defensive);
       const sensitive = this.finiteNumber(fund?.sensitive);
@@ -1035,29 +1076,44 @@ export class MutualFundAnalyticsComponent implements OnInit, OnDestroy {
         name: fund?.short || fund?.name || 'Unnamed fund',
         fullName: fund?.name || 'Unnamed fund',
         selected: fund?.name === this.selectedFundName,
+        isReference: false,
         cyclical: cyclical / total * 100,
         defensive: defensive / total * 100,
         sensitive: sensitive / total * 100,
       };
     }).filter((row): row is NonNullable<typeof row> => row !== null)
-      .sort((a, b) => b.cyclical - a.cyclical);
+      .sort((a, b) => b.cyclical - a.cyclical).slice(0, 22);
+    const styleChartRows: any[] = [
+      ...(styleBenchmarkValues ? [{
+        name: styleReferenceLabel,
+        fullName: styleReferenceLabel,
+        selected: false,
+        isReference: true,
+        cyclical: styleBenchmarkValues[0],
+        defensive: styleBenchmarkValues[1],
+        sensitive: styleBenchmarkValues[2],
+      }] : []),
+      ...styleFundRows,
+    ];
+    const benchmarkCompositionAvailable = capReferenceIsBenchmark && styleReferenceIsBenchmark;
 
     const palette = [
       '#FD7740', '#414B63', '#D1A65B', '#4F91E8', '#35AD70', '#E65A5A',
       '#9365D8', '#36A8BA', '#E19A43', '#C94D83', '#6B8E23', '#7C83D1',
     ];
     this.returnDistributionChartData = {
-      labels: returnDistribution.map(bucket => bucket.label.replace(' to ', '–').replace('%', '')),
+      labels: returnDistribution.map(bucket => bucket.label),
       datasets: ([
-        { period: '3M', color: '#FD7740' },
-        { period: '6M', color: '#051233' },
-        { period: '1Y', color: '#CC9F53' },
+        { period: '3M', color: 'rgba(253, 119, 64, 0.66)' },
+        { period: '6M', color: 'rgba(5, 18, 51, 0.66)' },
+        { period: '1Y', color: 'rgba(204, 159, 83, 0.66)' },
       ]).map(series => ({
         label: `${series.period} Return`,
         data: returnDistribution.map(bucket =>
           bucket.bars.find((bar: any) => bar.period === series.period)?.count || 0),
         backgroundColor: series.color,
-        borderColor: series.color,
+        borderColor: series.period === '3M' ? '#FD7740' :
+          series.period === '6M' ? '#051233' : '#CC9F53',
         borderWidth: 1,
         borderRadius: 0,
         categoryPercentage: 0.78,
@@ -1067,17 +1123,47 @@ export class MutualFundAnalyticsComponent implements OnInit, OnDestroy {
     this.marketCapChartData = {
       labels: marketCapChartRows.map(row => row.name),
       datasets: [
-        { label: 'Large Cap', data: marketCapChartRows.map(row => row.large), backgroundColor: '#35AD70', borderWidth: 0, stack: 'cap' },
-        { label: 'Mid Cap', data: marketCapChartRows.map(row => row.mid), backgroundColor: '#FD7740', borderWidth: 0, stack: 'cap' },
-        { label: 'Small Cap', data: marketCapChartRows.map(row => row.small), backgroundColor: '#B7E0C6', borderWidth: 0, stack: 'cap' },
+        {
+          label: 'Large Cap',
+          data: marketCapChartRows.map(row => row.large),
+          backgroundColor: marketCapChartRows.map(row => row.isReference ? '#35AD70' : '#051233'),
+          borderWidth: 0, stack: 'cap',
+        },
+        {
+          label: 'Mid Cap',
+          data: marketCapChartRows.map(row => row.mid),
+          backgroundColor: marketCapChartRows.map(row => row.isReference ? '#7BCB9B' : '#FD7740'),
+          borderWidth: 0, stack: 'cap',
+        },
+        {
+          label: 'Small Cap',
+          data: marketCapChartRows.map(row => row.small),
+          backgroundColor: marketCapChartRows.map(row => row.isReference ? '#B7E0C6' : '#CC9F53'),
+          borderWidth: 0, stack: 'cap',
+        },
       ],
     };
     this.styleCompositionChartData = {
       labels: styleChartRows.map(row => row.name),
       datasets: [
-        { label: 'Cyclical', data: styleChartRows.map(row => row.cyclical), backgroundColor: '#F45B5B', borderWidth: 0, stack: 'style' },
-        { label: 'Defensive', data: styleChartRows.map(row => row.defensive), backgroundColor: '#35C875', borderWidth: 0, stack: 'style' },
-        { label: 'Sensitive', data: styleChartRows.map(row => row.sensitive), backgroundColor: '#4F8FF7', borderWidth: 0, stack: 'style' },
+        {
+          label: 'Cyclical',
+          data: styleChartRows.map(row => row.cyclical),
+          backgroundColor: styleChartRows.map(row => row.isReference ? '#EF4444' : '#F45B5B'),
+          borderWidth: 0, stack: 'style',
+        },
+        {
+          label: 'Defensive',
+          data: styleChartRows.map(row => row.defensive),
+          backgroundColor: styleChartRows.map(row => row.isReference ? '#22C55E' : '#35C875'),
+          borderWidth: 0, stack: 'style',
+        },
+        {
+          label: 'Sensitive',
+          data: styleChartRows.map(row => row.sensitive),
+          backgroundColor: styleChartRows.map(row => row.isReference ? '#3B82F6' : '#4F8FF7'),
+          borderWidth: 0, stack: 'style',
+        },
       ],
     };
     this.aumConcentrationChartData = {
@@ -1094,15 +1180,28 @@ export class MutualFundAnalyticsComponent implements OnInit, OnDestroy {
       }],
     };
     this.drawdownCalmarChartData = {
-      datasets: [{
-        label: 'Multi Cap Funds',
-        data: drawdownPoints.map(row => ({ x: row.drawdown as number, y: row.calmar as number })),
-        backgroundColor: drawdownPoints.map(row =>
-          row.selected ? '#FD7740' : 'rgba(5, 18, 51, 0.56)'),
-        borderColor: drawdownPoints.map(row => row.selected ? '#FD7740' : 'rgba(5, 18, 51, 0.56)'),
-        pointRadius: drawdownPoints.map(row => row.selected ? 8 : 5),
-        pointHoverRadius: 9,
-      }],
+      datasets: [
+        {
+          label: 'Multi Cap Funds',
+          data: drawdownPoints.map(row => ({ x: row.drawdown as number, y: row.calmar as number })),
+          backgroundColor: drawdownPoints.map(row =>
+            row.selected ? '#FD7740' : 'rgba(5, 18, 51, 0.56)'),
+          borderColor: drawdownPoints.map(row => row.selected ? '#FD7740' : 'rgba(5, 18, 51, 0.56)'),
+          pointRadius: drawdownPoints.map(row => row.selected ? 8 : 5),
+          pointHoverRadius: 9,
+        },
+        {
+          label: drawdownReferencePoint.name,
+          data: drawdownReferencePoint.drawdown !== null && drawdownReferencePoint.calmar !== null
+            ? [{ x: drawdownReferencePoint.drawdown, y: drawdownReferencePoint.calmar }]
+            : [],
+          backgroundColor: '#16A34A',
+          borderColor: '#16A34A',
+          pointRadius: 9,
+          pointHoverRadius: 10,
+          pointStyle: 'triangle',
+        },
+      ],
     };
 
     const sectorFunds = funds.map(fund => {
@@ -1179,6 +1278,12 @@ export class MutualFundAnalyticsComponent implements OnInit, OnDestroy {
       drawdownCoverage: funds.filter(fund => this.finiteNumber(fund?.max_drawdown) !== null).length,
       topAumFunds,
       drawdownPoints,
+      drawdownReferencePoint,
+      marketCapChartRows,
+      styleChartRows,
+      capReferenceLabel,
+      styleReferenceLabel,
+      benchmarkCompositionAvailable,
       scatterPlot,
       scatterXTicks,
       scatterYTicks,

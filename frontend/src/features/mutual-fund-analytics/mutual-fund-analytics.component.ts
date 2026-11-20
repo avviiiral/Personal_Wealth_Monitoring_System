@@ -1020,14 +1020,17 @@ export class MutualFundAnalyticsComponent implements OnInit, OnDestroy {
     const benchmarkComposition = this.raw?.benchmarks?.composition || {};
     const nse50Composition = benchmarkComposition['NIFTY 50 - TRI'] || null;
     const normalizeComposition = (source: any, keys: string[]): number[] | null => {
+      if (!source) return null;
       const values = keys.map(key => this.finiteNumber(source?.[key]));
-      if (values.some(value => value === null)) return null;
-      const total = values.reduce((sum, value) => sum + (value || 0), 0);
-      return total > 0 ? values.map(value => (value || 0) / total * 100) : null;
+      const validValues = values.filter((value): value is number => value !== null);
+      if (validValues.length !== keys.length) return null;
+      const total = validValues.reduce((sum: number, value: number) => sum + value, 0);
+      return total > 0 ? validValues.map(value => value / total * 100) : null;
     };
-    const capBenchmarkValues = normalizeComposition(nse50Composition || this.category, ['large', 'mid', 'small']);
-    const capReferenceIsBenchmark = Boolean(nse50Composition &&
-      normalizeComposition(nse50Composition, ['large', 'mid', 'small']));
+    const capBenchmarkValues = normalizeComposition(nse50Composition, ['large', 'mid', 'small']) ||
+      normalizeComposition(this.category, ['large', 'mid', 'small']);
+    const capReferenceIsBenchmark = normalizeComposition(
+      nse50Composition, ['large', 'mid', 'small']) !== null;
     const capReferenceLabel = capReferenceIsBenchmark ? 'NIFTY 50 TRI' : 'Category Avg';
     const marketCapFundRows = funds.map(fund => {
       const large = this.finiteNumber(fund?.large);
@@ -1060,10 +1063,11 @@ export class MutualFundAnalyticsComponent implements OnInit, OnDestroy {
       ...marketCapFundRows,
     ];
 
-    const styleBenchmarkValues = normalizeComposition(nse50Composition || this.category,
-      ['cyclical', 'defensive', 'sensitive']);
-    const styleReferenceIsBenchmark = Boolean(nse50Composition &&
-      normalizeComposition(nse50Composition, ['cyclical', 'defensive', 'sensitive']));
+    const styleBenchmarkValues = normalizeComposition(nse50Composition,
+      ['cyclical', 'defensive', 'sensitive']) ||
+      normalizeComposition(this.category, ['cyclical', 'defensive', 'sensitive']);
+    const styleReferenceIsBenchmark = normalizeComposition(
+      nse50Composition, ['cyclical', 'defensive', 'sensitive']) !== null;
     const styleReferenceLabel = styleReferenceIsBenchmark ? 'NIFTY 50 TRI' : 'Category Avg';
     const styleFundRows = funds.map(fund => {
       const cyclical = this.finiteNumber(fund?.cyclical);

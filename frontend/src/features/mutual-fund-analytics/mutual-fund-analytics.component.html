@@ -164,7 +164,7 @@
               </p>
               <p *ngIf="!sebiDashboard?.strongestCategory">Category performance metrics are not available for the selected plan.</p>
               <div class="sebi-insight-pills">
-                <span>{{ sebiSummary?.funds_with_history || 0 }} funds with NAV history</span>
+                <span>{{ sebiDashboard?.fundCountTotal || 0 }} funds in selected plan</span>
                 <span>{{ sebiSummary?.current_sebi_leaf_categories || 40 }} current SEBI leaf categories</span>
                 <span>{{ sebiSummary?.portfolio_overlap_pairs || 0 }} portfolio overlap pairs</span>
               </div>
@@ -179,8 +179,8 @@
             </article>
             <article class="metric-card">
               <span>Funds with NAV History</span>
-              <strong>{{ sebiSummary?.funds_with_history || 0 }}</strong>
-              <small>Of {{ sebiSummary?.schemes_requested || 0 }} selected schemes</small>
+              <strong>{{ sebiDashboard?.fundCountTotal || 0 }}</strong>
+              <small>Included in selected-plan category groups</small>
             </article>
             <article class="metric-card">
               <span>Avg Category 3Y CAGR</span>

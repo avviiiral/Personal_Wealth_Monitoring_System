@@ -469,9 +469,17 @@ python manage.py build_sebi_mf_analytics</pre>
         <div class="chart-heading sector-heading">
           <div>
             <h3>Sector Exposure — All Funds Ranked</h3>
-            <p class="muted">Each fund is represented by its largest disclosed sector allocation. “vs Cat Avg” is the percentage-point difference against the equal-weighted average for that same sector.</p>
+            <p class="muted">Select one sector to rank every fund with a disclosed allocation in that sector. “vs Cat Avg” compares the fund with the average allocation for this same sector.</p>
           </div>
-          <span class="sector-coverage">{{ overviewDashboard?.sectorCoverage || 0 }} funds with sector disclosures</span>
+          <div class="sector-heading-controls">
+            <label>
+              <span>Sector</span>
+              <select [ngModel]="selectedSectorName" (ngModelChange)="onSectorChange($event)" [disabled]="!overviewDashboard?.sectorOptions?.length">
+                <option *ngFor="let sector of overviewDashboard?.sectorOptions" [ngValue]="sector">{{ sector }}</option>
+              </select>
+            </label>
+            <span class="sector-coverage">{{ overviewDashboard?.sectorCoverage || 0 }} funds · {{ overviewDashboard?.sectorUniverseCoverage || 0 }} with any sector data</span>
+          </div>
         </div>
         <ng-container *ngIf="overviewDashboard?.sectorExposureRows?.length; else noSectorExposure">
           <div class="table-scroll">

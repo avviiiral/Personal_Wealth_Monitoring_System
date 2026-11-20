@@ -1,0 +1,311 @@
+:host {
+  display: block;
+  color: #1a1a2e;
+}
+
+.fund-intelligence {
+  padding: 24px 32px 64px;
+  max-width: 1280px;
+  margin: 0 auto;
+}
+
+.fi-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  margin-bottom: 18px;
+
+  h1 {
+    font-family: Georgia, serif;
+    font-weight: 400;
+    font-size: 30px;
+    margin: 4px 0;
+    color: #051233;
+
+    span {
+      color: #fd7740;
+    }
+  }
+}
+
+.fi-eyebrow {
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #fd7740;
+  margin: 0;
+}
+
+.fi-sub,
+.fi-note {
+  font-size: 12px;
+  color: #6b7280;
+  margin: 4px 0 0;
+}
+
+.fi-refresh,
+.fi-select,
+.fi-table th button {
+  font: inherit;
+}
+
+.fi-refresh {
+  padding: 8px 14px;
+  border: 1px solid #051233;
+  background: #fff;
+  color: #051233;
+  cursor: pointer;
+  border-radius: 2px;
+
+  &:disabled {
+    opacity: 0.5;
+    cursor: default;
+  }
+}
+
+.fi-state {
+  padding: 24px;
+  text-align: center;
+  color: #6b7280;
+}
+
+.fi-error {
+  color: #dc2626;
+}
+
+.fi-live {
+  font-size: 12px;
+  padding: 10px 14px;
+  border-left: 3px solid #cbd5e1;
+  background: #f8fafb;
+  margin-bottom: 18px;
+
+  &--ok {
+    border-color: #16a34a;
+  }
+
+  &--error {
+    border-color: #dc2626;
+  }
+
+  &--not_configured,
+  &--disabled {
+    border-color: #d97706;
+  }
+}
+
+.fi-kpis {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 10px;
+  margin-bottom: 18px;
+}
+
+.fi-kpi {
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+
+  span {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: #6b7280;
+  }
+
+  strong {
+    font-family: Georgia, serif;
+    font-size: 20px;
+    color: #051233;
+  }
+
+  small {
+    font-size: 11px;
+    color: #6b7280;
+  }
+}
+
+.fi-card {
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  padding: 18px 20px;
+  margin-bottom: 18px;
+
+  h2 {
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    color: #fd7740;
+    margin: 0 0 12px;
+    font-weight: 600;
+  }
+
+  h3 {
+    font-size: 12px;
+    margin: 0 0 8px;
+    color: #051233;
+  }
+}
+
+.fi-table-wrap {
+  overflow-x: auto;
+}
+
+.fi-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+
+  th,
+  td {
+    padding: 8px 10px;
+    border-bottom: 1px solid #e2e8f0;
+    text-align: left;
+    white-space: nowrap;
+  }
+
+  th.num,
+  td.num {
+    text-align: right;
+  }
+
+  th button {
+    background: none;
+    border: none;
+    padding: 0;
+    cursor: pointer;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: #6b7280;
+  }
+
+  td.name small {
+    display: block;
+    font-size: 10px;
+    color: #6b7280;
+  }
+
+  tbody tr {
+    cursor: pointer;
+
+    &:hover td {
+      background: #fafbfc;
+    }
+
+    &.selected td {
+      background: #fff8f5;
+    }
+  }
+
+  td.up {
+    color: #16a34a;
+  }
+
+  td.down {
+    color: #dc2626;
+  }
+
+  td.neutral {
+    color: #6b7280;
+  }
+
+  .fi-empty {
+    text-align: center;
+    color: #6b7280;
+  }
+}
+
+.fi-score-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  margin-bottom: 14px;
+
+  h2 {
+    font-size: 18px;
+    text-transform: none;
+    letter-spacing: 0;
+    color: #051233;
+    font-family: Georgia, serif;
+    font-weight: 400;
+  }
+}
+
+.fi-select {
+  padding: 7px 10px;
+  border: 1px solid #e2e8f0;
+  min-width: 240px;
+}
+
+.fi-score-grid {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 10px;
+  margin-bottom: 16px;
+
+  div {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  span {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: #6b7280;
+  }
+
+  strong {
+    font-size: 15px;
+    color: #051233;
+  }
+
+  small {
+    font-size: 10px;
+    color: #6b7280;
+  }
+}
+
+.fi-chart {
+  position: relative;
+  height: 300px;
+}
+
+.fi-coverage {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 24px;
+
+  ul {
+    margin: 0;
+    padding-left: 18px;
+    font-size: 12px;
+    line-height: 1.6;
+    color: #3a3a4a;
+  }
+}
+
+@media (max-width: 900px) {
+  .fi-kpis {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .fi-score-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .fi-coverage {
+    grid-template-columns: 1fr;
+  }
+
+  .fund-intelligence {
+    padding: 16px;
+  }
+}

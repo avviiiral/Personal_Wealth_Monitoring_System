@@ -99,6 +99,11 @@ export const routes: Routes = [
         loadComponent: () =>
           import('../features/watch-list/watch-list.component').then((m) => m.WatchListComponent),
       },
+      {
+        path: 'fund-intelligence',
+        loadComponent: () =>
+          import('../features/fund-intelligence/fund-intelligence.component').then((m) => m.FundIntelligenceComponent),
+      },
     ],
   },
   {

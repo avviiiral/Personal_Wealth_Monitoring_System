@@ -79,6 +79,7 @@ INSTALLED_APPS = [
     'watchlist',
     'filing_intelligence',
     'corporate_actions',
+    'fund_intelligence',
 ]
 
 MIDDLEWARE = [
@@ -247,6 +248,12 @@ WEB_PUSH_VAPID_SUBJECT = os.environ.get("WEB_PUSH_VAPID_SUBJECT", "").strip()
 WEB_PUSH_ENABLED = bool(
     WEB_PUSH_VAPID_PUBLIC_KEY and WEB_PUSH_VAPID_PRIVATE_KEY
 )
+
+# Fund Intelligence live enrichment from indianapi.in (mutual fund endpoints only).
+# Optional: without INDIAN_API_KEY the page shows stored watch-list data only.
+INDIAN_API_KEY = os.environ.get("INDIAN_API_KEY", "").strip()
+INDIAN_API_BASE_URL = os.environ.get("INDIAN_API_BASE_URL", "https://stock.indianapi.in").strip()
+FUND_INTELLIGENCE_LIVE_TTL_SECONDS = _env_int("FUND_INTELLIGENCE_LIVE_TTL_SECONDS", 6 * 60 * 60)
 
 # Zero-cost corporate filing intelligence. NSE uses its public corporate-
 # announcement feed by default; BSE can be enabled when an authorized feed URL

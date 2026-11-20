@@ -1,0 +1,172 @@
+<section class="fund-intelligence">
+  <header class="fi-header">
+    <div>
+      <p class="fi-eyebrow">Fund Intelligence</p>
+      <h1>Multi Cap <span>Regular · Growth</span></h1>
+      @if (snapshot(); as data) {
+        <p class="fi-sub">
+          {{ data.meta.fund_count }} funds · stored returns as of {{ data.meta.stored_data_as_of ?? '—' }}
+          · generated {{ data.meta.generated_at | date: 'medium' }}
+        </p>
+      }
+    </div>
+    <button type="button" class="fi-refresh" (click)="load(true)" [disabled]="loading()">
+      Refresh
+    </button>
+  </header>
+
+  @if (loading()) {
+    <p class="fi-state">Loading fund data…</p>
+  } @else if (error()) {
+    <p class="fi-state fi-error">{{ error() }}</p>
+  } @else if (snapshot(); as data) {
+    <div class="fi-live fi-live--{{ data.live.status }}">
+      @switch (data.live.status) {
+        @case ('ok') {
+          Live values from indianapi.in: matched {{ data.live.matched }} of {{ data.meta.fund_count }} funds
+          @if (data.live.unmatched.length) {
+            · unmatched: {{ data.live.unmatched.join(', ') }}
+          }
+        }
+        @case ('not_configured') {
+          Live enrichment is off. Showing stored data only. Set INDIAN_API_KEY on the server to enable it.
+        }
+        @case ('error') {
+          Live enrichment failed: {{ data.live.message }} Showing stored data.
+        }
+        @default {
+          Showing stored data only.
+        }
+      }
+    </div>
+
+    @if (kpis(); as k) {
+      <div class="fi-kpis">
+        <div class="fi-kpi">
+          <span>Funds in universe</span>
+          <strong>{{ k.count }}</strong>
+        </div>
+        <div class="fi-kpi">
+          <span>Category avg 1Y</span>
+          <strong>{{ format(k.categoryAverage1y, '%') }}</strong>
+        </div>
+        <div class="fi-kpi">
+          <span>Best 1Y</span>
+          <strong>{{ k.best ? format(k.best.returns['1y'], '%') : '—' }}</strong>
+          <small>{{ k.best?.short_name }}</small>
+        </div>
+        <div class="fi-kpi">
+          <span>Lowest expense ratio</span>
+          <strong>{{ k.lowestEr ? format(k.lowestEr.expense_ratio, '%') : '—' }}</strong>
+          <small>{{ k.lowestEr?.short_name }}</small>
+        </div>
+        <div class="fi-kpi">
+          <span>Total AUM (stored)</span>
+          <strong>{{ formatAum(k.totalAum) }}</strong>
+        </div>
+      </div>
+    }
+
+    <div class="fi-card">
+      <h2>Universe & returns</h2>
+      <div class="fi-table-wrap">
+        <table class="fi-table">
+          <thead>
+            <tr>
+              <th><button type="button" (click)="sortBy('name')">Fund</button></th>
+              <th class="num"><button type="button" (click)="sortBy('aum')">AUM</button></th>
+              <th class="num"><button type="button" (click)="sortBy('expense_ratio')">Expense ratio</button></th>
+              @for (period of periods; track period.key) {
+                <th class="num"><button type="button" (click)="sortBy(period.key)">{{ period.label }}</button></th>
+              }
+              <th class="num"><button type="button" (click)="sortBy('cagr')">CAGR</button></th>
+              <th class="num">Live NAV</th>
+              <th class="num">Live 1Y</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (fund of sortedFunds(); track fund.product_id) {
+              <tr [class.selected]="fund.product_id === selectedFund()?.product_id" (click)="selectFund(fund.product_id)">
+                <td class="name">
+                  {{ fund.short_name }}
+                  <small>{{ fund.fund_manager ?? '' }}</small>
+                </td>
+                <td class="num">{{ formatAum(fund.aum) }}</td>
+                <td class="num">{{ format(fund.expense_ratio, '%') }}</td>
+                @for (period of periods; track period.key) {
+                  <td class="num" [ngClass]="relativeClass(fund.vs_category[period.key])">
+                    {{ format(fund.returns[period.key], '%') }}
+                  </td>
+                }
+                <td class="num">{{ format(fund.returns.cagr, '%') }}</td>
+                <td class="num">{{ format(fund.live?.latest_nav) }}</td>
+                <td class="num">{{ format(fund.live?.returns?.['1y'], '%') }}</td>
+              </tr>
+            } @empty {
+              <tr><td colspan="12" class="fi-empty">No funds match the Multi Cap · Regular · Growth universe.</td></tr>
+            }
+          </tbody>
+        </table>
+      </div>
+      <p class="fi-note">Green/red shading compares each return with the category average. Click a row to open its scorecard.</p>
+    </div>
+
+    @if (selectedFund(); as fund) {
+      <div class="fi-card">
+        <div class="fi-score-head">
+          <div>
+            <h2>{{ fund.name }}</h2>
+            <p class="fi-sub">{{ fund.provider }} · Manager: {{ fund.fund_manager ?? '—' }} · Benchmark: {{ fund.benchmark ?? '—' }}</p>
+          </div>
+          <select class="fi-select" aria-label="Select fund" (change)="selectFund($any($event.target).value)">
+            @for (option of funds(); track option.product_id) {
+              <option [value]="option.product_id" [selected]="option.product_id === fund.product_id">{{ option.short_name }}</option>
+            }
+          </select>
+        </div>
+
+        <div class="fi-score-grid">
+          <div><span>AUM (stored)</span><strong>{{ formatAum(fund.aum) }}</strong></div>
+          <div><span>Expense ratio</span><strong>{{ format(fund.expense_ratio, '%') }}</strong></div>
+          <div><span>Exit load</span><strong>{{ fund.exit_load ?? '—' }}</strong></div>
+          <div><span>Latest NAV</span><strong>{{ format(fund.latest_nav) }}</strong><small>{{ fund.latest_nav_date ?? '' }}</small></div>
+          <div><span>Risk level</span><strong>{{ fund.risk_level ?? '—' }}</strong></div>
+          <div><span>Min. investment</span><strong>{{ formatAum(fund.minimum_investment) }}</strong></div>
+        </div>
+
+        <div class="fi-chart"><canvas #returnsChart></canvas></div>
+
+        @if (fund.live; as live) {
+          <p class="fi-note">
+            indianapi.in: NAV {{ format(live.latest_nav) }} · AUM {{ formatAum(live.aum) }} · star rating {{ format(live.star_rating) }}
+            · match score {{ format(live.match_score) }}
+          </p>
+        }
+      </div>
+    }
+
+    @if (data.data_coverage; as coverage) {
+      <div class="fi-card">
+        <h2>Data coverage</h2>
+        <div class="fi-coverage">
+          <div>
+            <h3>Available now</h3>
+            <ul>
+              @for (item of coverage.available; track item) {
+                <li>{{ item }}</li>
+              }
+            </ul>
+          </div>
+          <div>
+            <h3>Not yet sourced</h3>
+            <ul>
+              @for (item of coverage.not_available; track item.item) {
+                <li><strong>{{ item.item }}</strong> — {{ item.reason }}</li>
+              }
+            </ul>
+          </div>
+        </div>
+      </div>
+    }
+  }
+</section>

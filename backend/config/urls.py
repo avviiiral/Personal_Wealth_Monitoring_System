@@ -68,6 +68,9 @@ urlpatterns = [
 
     path("api/filings/", include("filing_intelligence.urls")),
 
+    # Fund Intelligence (Multi Cap Regular Growth universe; indianapi.in live enrichment)
+    path("api/fund-intelligence/", include("fund_intelligence.urls")),
+
     # Corporate actions (split, bonus, dividends and related events)
     path("api/corporate-actions/", include("corporate_actions.urls")),
 ]

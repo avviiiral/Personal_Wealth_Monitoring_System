@@ -110,8 +110,6 @@ export class MutualFundAnalyticsComponent implements OnInit, OnDestroy {
           this.replaceChartObjectUrl('category', null);
           this.replaceChartObjectUrl('q1', null);
         }
-        this.replaceChartObjectUrl('category', value.sebiCategoryRiskChart);
-        this.replaceChartObjectUrl('q1', value.sebiTopQ1Chart);
         if (value.report.available && !this.selectedFundName) {
           this.selectedFundName = value.report.payload?.RAW?.funds?.[0]?.name || '';
         }

@@ -980,10 +980,11 @@ export class MutualFundAnalyticsComponent implements OnInit, OnDestroy {
     // The source snapshot contains category average drawdown and Calmar, but
     // does not include NIFTY benchmark risk metrics. Use a clearly labelled
     // category-average reference point instead of inventing benchmark values.
+    const drawdownBenchmarkComposition = this.raw?.benchmarks?.composition?.['NIFTY 50 - TRI'] || null;
     const drawdownReferencePoint = {
       name: 'N500 TRI (proxy)',
-      drawdown: this.finiteNumber(nse50Composition?.max_drawdown),
-      calmar: this.finiteNumber(nse50Composition?.calmar),
+      drawdown: this.finiteNumber(drawdownBenchmarkComposition?.max_drawdown),
+      calmar: this.finiteNumber(drawdownBenchmarkComposition?.calmar),
     };
     const scatterPlot = { left: 76, right: 1034, top: 22, bottom: 292 };
     let scatterXTicks: any[] = [];

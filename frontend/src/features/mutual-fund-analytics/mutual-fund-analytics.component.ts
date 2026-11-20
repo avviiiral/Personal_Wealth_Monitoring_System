@@ -55,18 +55,27 @@ export class MutualFundAnalyticsComponent implements OnInit, OnDestroy {
   aumConcentrationChartData: ChartData<'bar'> = { labels: [], datasets: [] };
   drawdownCalmarChartData: ChartData<'scatter'> = { datasets: [] };
 
+  oneYearRankingChartData: ChartData<'bar'> = { labels: [], datasets: [] };
+  sectorAllocationChartData: ChartData<'bar'> = { labels: [], datasets: [] };
+  topFiveSectorChartData: ChartData<'bar'> = { labels: [], datasets: [] };
+  categoryAttributionChartData: ChartData<'bar'> = { labels: [], datasets: [] };
+  fundAttributionChartData: ChartData<'bar'> = { labels: [], datasets: [] };
+  epsPegChartData: ChartData<'scatter'> = { datasets: [] };
+  qualityMomentumChartData: ChartData<'scatter'> = { datasets: [] };
+
   readonly returnDistributionChartOptions: ChartOptions<'bar'> = {
     responsive: true,
     maintainAspectRatio: false,
     animation: { duration: 250 },
     interaction: { mode: 'index', intersect: false },
+    onHover: (_event, elements, chart) => { chart.canvas.style.cursor = elements.length ? 'pointer' : 'default'; },
     plugins: {
       legend: {
         display: true,
         position: 'top',
         labels: { boxWidth: 52, boxHeight: 14, padding: 16, font: { size: 10 } },
       },
-      tooltip: { callbacks: {
+      tooltip: { backgroundColor: '#051233', titleColor: '#FD7740', bodyColor: '#FFFFFF', borderColor: '#FD7740', borderWidth: 1, padding: 12, cornerRadius: 4, callbacks: {
         label: context => `${context.dataset.label}: ${context.parsed.y} funds`,
         title: items => items[0]?.label ? `${items[0].label}% return` : '',
         afterBody: items => {
@@ -96,9 +105,10 @@ export class MutualFundAnalyticsComponent implements OnInit, OnDestroy {
     maintainAspectRatio: false,
     animation: { duration: 250 },
     interaction: { mode: 'index', intersect: false },
+    onHover: (_event, elements, chart) => { chart.canvas.style.cursor = elements.length ? 'pointer' : 'default'; },
     plugins: {
       legend: { display: true, position: 'top', labels: { boxWidth: 42, boxHeight: 14, padding: 14, font: { size: 10 } } },
-      tooltip: { callbacks: {
+      tooltip: { backgroundColor: '#051233', titleColor: '#FD7740', bodyColor: '#FFFFFF', borderColor: '#FD7740', borderWidth: 1, padding: 12, cornerRadius: 4, callbacks: {
         label: context => `${context.dataset.label}: ${Number(context.parsed.y).toFixed(1)}%`,
       } },
     },
@@ -126,7 +136,7 @@ export class MutualFundAnalyticsComponent implements OnInit, OnDestroy {
     animation: { duration: 250 },
     plugins: {
       legend: { display: false },
-      tooltip: { callbacks: {
+      tooltip: { backgroundColor: '#051233', titleColor: '#FD7740', bodyColor: '#FFFFFF', borderColor: '#FD7740', borderWidth: 1, padding: 12, cornerRadius: 4, callbacks: {
         label: context => `AUM: ₹${this.formatAum(context.parsed.x)} Cr`,
       } },
     },
@@ -156,7 +166,7 @@ export class MutualFundAnalyticsComponent implements OnInit, OnDestroy {
         position: 'top',
         labels: { boxWidth: 28, padding: 14, filter: item => item.text !== 'Multi Cap Funds' },
       },
-      tooltip: { callbacks: {
+      tooltip: { backgroundColor: '#051233', titleColor: '#FD7740', bodyColor: '#FFFFFF', borderColor: '#FD7740', borderWidth: 1, padding: 12, cornerRadius: 4, callbacks: {
         title: items => {
           const item = items[0];
           if (item?.datasetIndex === 1) {
@@ -192,6 +202,273 @@ export class MutualFundAnalyticsComponent implements OnInit, OnDestroy {
       },
     },
   };
+
+
+  readonly verticalRankingChartOptions: ChartOptions<'bar'> = {
+    responsive: true,
+    maintainAspectRatio: false,
+    animation: { duration: 350 },
+    interaction: { mode: 'nearest', intersect: true },
+    onHover: (_event, elements, chart) => {
+      chart.canvas.style.cursor = elements.length ? 'pointer' : 'default';
+    },
+    plugins: {
+      legend: { display: false },
+      tooltip: {
+        enabled: true,
+        backgroundColor: '#051233',
+        titleColor: '#FD7740',
+        bodyColor: '#FFFFFF',
+        borderColor: '#FD7740',
+        borderWidth: 1,
+        padding: 12,
+        cornerRadius: 4,
+        callbacks: {
+          title: items => this.oneYearRankingRows[items[0]?.dataIndex ?? -1]?.fund?.short || 'Fund',
+          label: context => '1Y Return: ' + this.formatPct(context.parsed.y),
+          afterBody: items => {
+            const index = items[0]?.dataIndex ?? -1;
+            const row = this.oneYearRankingRows[index];
+            if (!row) return [];
+            const average = this.finiteNumber(this.categoryPeriodReturn('1Y'));
+            const difference = average === null ? null : row.value - average;
+            return [
+              'Rank: #' + (index + 1) + ' of ' + this.oneYearRankingRows.length,
+              'Category average: ' + this.formatPct(average),
+              'Alpha vs category: ' + this.formatPercentagePoints(difference),
+              'Manager: ' + (row.fund.manager || '—'),
+              'EDGE: ' + this.format(row.fund.edge_score, 3) + ' · AUM: ₹' + this.formatAum(row.fund.aum) + ' Cr',
+            ];
+          },
+        },
+      },
+    },
+    scales: {
+      x: {
+        grid: { display: false },
+        ticks: { autoSkip: false, minRotation: 55, maxRotation: 70, font: { size: 8 } },
+      },
+      y: {
+        beginAtZero: true,
+        title: { display: true, text: '1Y Return (%)' },
+        ticks: { callback: value => Number(value).toFixed(0) + '%' },
+        grid: { color: 'rgba(15, 23, 42, 0.10)' },
+      },
+    },
+  };
+
+  readonly horizontalSectorChartOptions: ChartOptions<'bar'> = {
+    indexAxis: 'y',
+    responsive: true,
+    maintainAspectRatio: false,
+    animation: { duration: 300 },
+    interaction: { mode: 'nearest', intersect: true },
+    onHover: (_event, elements, chart) => {
+      chart.canvas.style.cursor = elements.length ? 'pointer' : 'default';
+    },
+    plugins: {
+      legend: { display: true, position: 'top', labels: { boxWidth: 14, padding: 14, font: { size: 10 } } },
+      tooltip: {
+        enabled: true,
+        backgroundColor: '#051233',
+        titleColor: '#FD7740',
+        bodyColor: '#FFFFFF',
+        borderColor: '#FD7740',
+        borderWidth: 1,
+        padding: 12,
+        cornerRadius: 4,
+        callbacks: {
+          title: items => this.fundSectorComparisonRows[items[0]?.dataIndex ?? -1]?.sector || 'Sector',
+          label: context => context.dataset.label + ': ' + this.formatPct(context.parsed.x),
+          afterBody: items => {
+            const row = this.fundSectorComparisonRows[items[0]?.dataIndex ?? -1];
+            return row ? ['Difference: ' + this.formatPercentagePoints(row.difference)] : [];
+          },
+        },
+      },
+    },
+    scales: {
+      x: {
+        beginAtZero: true,
+        title: { display: true, text: 'Portfolio allocation (%)' },
+        ticks: { callback: value => Number(value).toFixed(0) + '%' },
+        grid: { color: 'rgba(15, 23, 42, 0.10)' },
+      },
+      y: { grid: { display: false }, ticks: { font: { size: 9 } } },
+    },
+  };
+
+  readonly categoryAttributionChartOptions: ChartOptions<'bar'> = {
+    indexAxis: 'y',
+    responsive: true,
+    maintainAspectRatio: false,
+    animation: { duration: 300 },
+    interaction: { mode: 'nearest', intersect: true },
+    onHover: (_event, elements, chart) => {
+      chart.canvas.style.cursor = elements.length ? 'pointer' : 'default';
+    },
+    plugins: {
+      legend: { display: false },
+      tooltip: {
+        enabled: true,
+        backgroundColor: '#051233',
+        titleColor: '#FD7740',
+        bodyColor: '#FFFFFF',
+        borderColor: '#FD7740',
+        borderWidth: 1,
+        padding: 12,
+        cornerRadius: 4,
+        callbacks: {
+          title: items => this.topSectorRows[items[0]?.dataIndex ?? -1]?.sector || 'Sector',
+          label: context => 'Net contribution: ' + this.formatPercentagePoints(context.parsed.x),
+          afterBody: items => {
+            const row = this.topSectorRows[items[0]?.dataIndex ?? -1];
+            return row ? [
+              'Funds represented: ' + row.fund_count,
+              'Stocks analysed: ' + row.stocks,
+              'Average price return: ' + this.formatPct(row.avg_pr),
+            ] : [];
+          },
+        },
+      },
+    },
+    scales: {
+      x: {
+        title: { display: true, text: 'Net contribution (percentage points)' },
+        ticks: { callback: value => Number(value).toFixed(1) + ' pp' },
+        grid: { color: 'rgba(15, 23, 42, 0.10)' },
+      },
+      y: { grid: { display: false }, ticks: { font: { size: 9 } } },
+    },
+  };
+
+  readonly fundAttributionChartOptions: ChartOptions<'bar'> = {
+    responsive: true,
+    maintainAspectRatio: false,
+    animation: { duration: 350 },
+    interaction: { mode: 'nearest', intersect: true },
+    onHover: (_event, elements, chart) => {
+      chart.canvas.style.cursor = elements.length ? 'pointer' : 'default';
+    },
+    plugins: {
+      legend: { display: false },
+      tooltip: {
+        enabled: true,
+        backgroundColor: '#051233',
+        titleColor: '#FD7740',
+        bodyColor: '#FFFFFF',
+        borderColor: '#FD7740',
+        borderWidth: 1,
+        padding: 12,
+        cornerRadius: 4,
+        callbacks: {
+          title: items => this.attributionRankRows[items[0]?.dataIndex ?? -1]?.fund?.short || 'Fund',
+          label: context => 'Net attribution: ' + this.formatPercentagePoints(context.parsed.y),
+          afterBody: items => {
+            const row = this.attributionRankRows[items[0]?.dataIndex ?? -1];
+            return row ? [
+              'Positive contributions: ' + this.formatPercentagePoints(row.data.summary.total_positive_contrib),
+              'Negative contributions: ' + this.formatPercentagePoints(row.data.summary.total_negative_contrib),
+              'Stocks analysed: ' + row.data.summary.stocks_analysed,
+              'Manager: ' + (row.fund.manager || '—'),
+            ] : [];
+          },
+        },
+      },
+    },
+    scales: {
+      x: {
+        grid: { display: false },
+        ticks: { autoSkip: false, minRotation: 55, maxRotation: 70, font: { size: 8 } },
+      },
+      y: {
+        title: { display: true, text: 'Net attribution (percentage points)' },
+        ticks: { callback: value => Number(value).toFixed(1) + ' pp' },
+        grid: { color: 'rgba(15, 23, 42, 0.10)' },
+      },
+    },
+  };
+
+  readonly epsPegChartOptions: ChartOptions<'scatter'> = {
+    responsive: true,
+    maintainAspectRatio: false,
+    animation: { duration: 300 },
+    interaction: { mode: 'nearest', intersect: true },
+    onHover: (_event, elements, chart) => {
+      chart.canvas.style.cursor = elements.length ? 'pointer' : 'default';
+    },
+    plugins: {
+      legend: { display: false },
+      tooltip: {
+        enabled: true,
+        backgroundColor: '#051233',
+        titleColor: '#FD7740',
+        bodyColor: '#FFFFFF',
+        borderColor: '#FD7740',
+        borderWidth: 1,
+        padding: 12,
+        cornerRadius: 4,
+        callbacks: {
+          title: items => this.epsPegPoints[items[0]?.dataIndex ?? -1]?.name || 'Fund',
+          label: context => {
+            const point = this.epsPegPoints[context.dataIndex];
+            return point ? [
+              'EPS CAGR: ' + this.formatPct(point.x),
+              'Forward PEG: ' + this.format(point.y, 2),
+              'EDGE score: ' + this.format(point.bubble, 3),
+            ] : [];
+          },
+          afterBody: items => {
+            const point = this.epsPegPoints[items[0]?.dataIndex ?? -1];
+            return point ? ['Manager: ' + (this.funds.find(fund => fund.name === point.fullName)?.manager || '—')] : [];
+          },
+        },
+      },
+    },
+    scales: {
+      x: { type: 'linear', title: { display: true, text: 'EPS CAGR (%)' }, ticks: { callback: value => Number(value).toFixed(0) + '%' }, grid: { color: 'rgba(15, 23, 42, 0.10)' } },
+      y: { type: 'linear', title: { display: true, text: 'Forward PEG' }, beginAtZero: true, grid: { color: 'rgba(15, 23, 42, 0.10)' } },
+    },
+  };
+
+  readonly qualityMomentumChartOptions: ChartOptions<'scatter'> = {
+    responsive: true,
+    maintainAspectRatio: false,
+    animation: { duration: 300 },
+    interaction: { mode: 'nearest', intersect: true },
+    onHover: (_event, elements, chart) => {
+      chart.canvas.style.cursor = elements.length ? 'pointer' : 'default';
+    },
+    plugins: {
+      legend: { display: false },
+      tooltip: {
+        enabled: true,
+        backgroundColor: '#051233',
+        titleColor: '#FD7740',
+        bodyColor: '#FFFFFF',
+        borderColor: '#FD7740',
+        borderWidth: 1,
+        padding: 12,
+        cornerRadius: 4,
+        callbacks: {
+          title: items => this.qualityMomentumPoints[items[0]?.dataIndex ?? -1]?.name || 'Fund',
+          label: context => {
+            const point = this.qualityMomentumPoints[context.dataIndex];
+            return point ? [
+              'Quality score: ' + this.format(point.x, 3),
+              'Momentum score: ' + this.format(point.y, 3),
+              'EDGE score: ' + this.format(point.bubble, 3),
+            ] : [];
+          },
+        },
+      },
+    },
+    scales: {
+      x: { type: 'linear', title: { display: true, text: 'Quality score' }, grid: { color: 'rgba(15, 23, 42, 0.10)' } },
+      y: { type: 'linear', title: { display: true, text: 'Momentum score' }, grid: { color: 'rgba(15, 23, 42, 0.10)' } },
+    },
+  };
+
 
   sebiCategoryRiskChartSrc: string | null = null;
   sebiTopQ1ChartSrc: string | null = null;
@@ -334,6 +611,7 @@ export class MutualFundAnalyticsComponent implements OnInit, OnDestroy {
       this.selectedFundName = reportFunds[0]?.name || '';
     }
     this.overviewDashboard = report.available ? this.buildOverviewDashboard() : null;
+    this.refreshInteractiveCharts();
 
     if (report.available && this.activeTab === 'sebi-universe') {
       // The page previously fell back to the SEBI tab when no report existed.
@@ -368,6 +646,7 @@ export class MutualFundAnalyticsComponent implements OnInit, OnDestroy {
         this.selectedFundName = reportFunds[0]?.name || '';
         this.comparisonFundName = this.selectedFundName;
         this.overviewDashboard = this.buildOverviewDashboard();
+        this.refreshInteractiveCharts();
         this.activeTab = 'overview';
         this.loading = false;
       },
@@ -1300,6 +1579,114 @@ export class MutualFundAnalyticsComponent implements OnInit, OnDestroy {
     };
   }
 
+
+  private refreshInteractiveCharts(): void {
+    const oneYearRows = this.oneYearRankingRows;
+    this.oneYearRankingChartData = {
+      labels: oneYearRows.map(row => row.fund.short || row.fund.name),
+      datasets: [{
+        label: '1Y Return',
+        data: oneYearRows.map(row => row.value),
+        backgroundColor: oneYearRows.map(row => row.fund.name === this.selectedFundName
+          ? '#FD7740' : (row.value >= 0 ? 'rgba(22, 163, 74, 0.72)' : 'rgba(220, 38, 38, 0.72)')),
+        hoverBackgroundColor: oneYearRows.map(row => row.fund.name === this.selectedFundName
+          ? '#E96530' : (row.value >= 0 ? '#16A34A' : '#DC2626')),
+        borderColor: oneYearRows.map(row => row.fund.name === this.selectedFundName ? '#FD7740' : 'transparent'),
+        borderWidth: 1,
+        borderRadius: 4,
+        borderSkipped: false,
+        maxBarThickness: 24,
+      }],
+    };
+
+    const sectorRows = this.fundSectorComparisonRows.slice(0, 16);
+    const sectorDatasets = [
+      { label: 'Selected Fund', key: 'fundWeight', color: '#FD7740' },
+      { label: 'Category Average', key: 'categoryAverage', color: '#051233' },
+    ];
+    this.sectorAllocationChartData = {
+      labels: sectorRows.map(row => row.sector),
+      datasets: sectorDatasets.map(series => ({
+        label: series.label,
+        data: sectorRows.map(row => row[series.key]),
+        backgroundColor: series.color,
+        hoverBackgroundColor: series.color,
+        borderRadius: 3,
+        borderSkipped: false,
+        barThickness: 11,
+      })),
+    };
+    const topSectors = sectorRows.slice(0, 5);
+    this.topFiveSectorChartData = {
+      labels: topSectors.map(row => row.sector),
+      datasets: sectorDatasets.map(series => ({
+        label: series.label,
+        data: topSectors.map(row => row[series.key]),
+        backgroundColor: series.color,
+        hoverBackgroundColor: series.color,
+        borderRadius: 3,
+        borderSkipped: false,
+        barThickness: 13,
+      })),
+    };
+
+    const categorySectors = this.topSectorRows;
+    this.categoryAttributionChartData = {
+      labels: categorySectors.map(row => row.sector),
+      datasets: [{
+        label: 'Net sector attribution',
+        data: categorySectors.map(row => this.numeric(row.total_contrib)),
+        backgroundColor: categorySectors.map(row => this.numeric(row.total_contrib) >= 0 ? '#16A34A' : '#DC2626'),
+        hoverBackgroundColor: categorySectors.map(row => this.numeric(row.total_contrib) >= 0 ? '#15803D' : '#B91C1C'),
+        borderRadius: 3,
+        borderSkipped: false,
+        barThickness: 13,
+      }],
+    };
+
+    const fundAttributions = this.attributionRankRows;
+    this.fundAttributionChartData = {
+      labels: fundAttributions.map(row => row.fund.short || row.fund.name),
+      datasets: [{
+        label: 'Net attribution',
+        data: fundAttributions.map(row => this.numeric(row.data.summary.net_attribution)),
+        backgroundColor: fundAttributions.map(row => row.fund.name === this.selectedFundName
+          ? '#FD7740' : (this.numeric(row.data.summary.net_attribution) >= 0 ? 'rgba(22, 163, 74, 0.72)' : 'rgba(220, 38, 38, 0.72)')),
+        hoverBackgroundColor: fundAttributions.map(row => row.fund.name === this.selectedFundName
+          ? '#E96530' : (this.numeric(row.data.summary.net_attribution) >= 0 ? '#16A34A' : '#DC2626')),
+        borderRadius: 4,
+        borderSkipped: false,
+        maxBarThickness: 24,
+      }],
+    };
+
+    const epsRows = this.epsPegPoints;
+    this.epsPegChartData = {
+      datasets: [{
+        label: 'Multi Cap Funds',
+        data: epsRows.map(point => ({ x: Number(point.x), y: Number(point.y) })),
+        backgroundColor: epsRows.map(point => point.selected ? '#FD7740' : 'rgba(5, 18, 51, 0.58)'),
+        borderColor: epsRows.map(point => point.selected ? '#FD7740' : 'rgba(5, 18, 51, 0.58)'),
+        pointRadius: epsRows.map(point => point.radius),
+        pointHoverRadius: 10,
+        pointBorderWidth: epsRows.map(point => point.selected ? 2 : 0),
+      }],
+    };
+    const qualityRows = this.qualityMomentumPoints;
+    this.qualityMomentumChartData = {
+      datasets: [{
+        label: 'Multi Cap Funds',
+        data: qualityRows.map(point => ({ x: Number(point.x), y: Number(point.y) })),
+        backgroundColor: qualityRows.map(point => point.selected ? '#FD7740' : 'rgba(5, 18, 51, 0.58)'),
+        borderColor: qualityRows.map(point => point.selected ? '#FD7740' : 'rgba(5, 18, 51, 0.58)'),
+        pointRadius: qualityRows.map(point => point.radius),
+        pointHoverRadius: 10,
+        pointBorderWidth: qualityRows.map(point => point.selected ? 2 : 0),
+      }],
+    };
+  }
+
+
   formatPercentagePoints(value: any): string {
     if (value === null || value === undefined || value === '') return '—';
     const number = Number(value);
@@ -1327,6 +1714,7 @@ export class MutualFundAnalyticsComponent implements OnInit, OnDestroy {
     this.comparisonFundName = next.name;
     // Rebuild selected-fund highlights and overview chart annotations together.
     this.overviewDashboard = this.buildOverviewDashboard();
+    this.refreshInteractiveCharts();
   }
 
   private isMultiCapLabel(value: unknown): boolean {

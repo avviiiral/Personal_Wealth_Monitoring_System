@@ -673,13 +673,9 @@ python manage.py build_sebi_mf_analytics</pre>
       <div class="two-col mf-reference-grid">
         <article class="card mf-chart-card">
           <div class="card-title">Top Sector Allocation vs Category</div>
-          <div class="mf-sector-compare-list">
-            <div *ngFor="let row of topFiveSectorRows" class="mf-sector-compare-row">
-              <strong>{{ row.sector }}</strong>
-              <div><span>Fund {{ formatPct(row.fundWeight) }}</span><span>Cat {{ formatPct(row.categoryAverage) }}</span></div>
-              <div class="mf-single-track"><i [style.width.%]="barWidth(row.fundWeight, fundSectorComparisonRows[0]?.fundWeight)"></i></div>
-              <small [class.positive-value]="row.difference > 0" [class.negative-value]="row.difference < 0">{{ formatPercentagePoints(row.difference) }} vs category</small>
-            </div>
+          <div class="mf-chart-visual" style="height:260px;position:relative">
+            <canvas baseChart [data]="topFiveSectorChartData" [options]="horizontalSectorChartOptions" [type]="'bar'"
+              aria-label="Top five sector allocation comparison for selected fund versus category average"></canvas>
           </div>
         </article>
         <article class="card mf-chart-card">
@@ -763,23 +759,17 @@ python manage.py build_sebi_mf_analytics</pre>
       <div class="two-col mf-reference-grid">
         <article class="card mf-chart-card">
           <div class="card-title">EPS CAGR vs Forward PEG (Bubble = EDGE Score)</div>
-          <div class="mf-scatter-wrap">
-            <svg viewBox="0 0 760 300" role="img" aria-label="EPS CAGR versus forward PEG scatter">
-              <line x1="48" y1="260" x2="730" y2="260" class="mf-axis-line"></line><line x1="48" y1="25" x2="48" y2="260" class="mf-axis-line"></line>
-              <circle *ngFor="let point of epsPegPoints" [attr.cx]="point.cx" [attr.cy]="point.cy" [attr.r]="point.radius" [attr.fill]="point.color" [attr.opacity]="point.selected ? 1 : .55"><title>{{ point.name }} · EPS {{ formatPct(point.x) }} · PEG {{ format(point.y,2) }} · EDGE {{ format(point.bubble,3) }}</title></circle>
-              <text x="380" y="292" text-anchor="middle" class="mf-axis-label">EPS CAGR (%)</text><text x="14" y="145" transform="rotate(-90 14 145)" text-anchor="middle" class="mf-axis-label">Forward PEG</text>
-            </svg>
+          <div class="mf-chart-visual" style="height:300px;position:relative">
+            <canvas baseChart [data]="epsPegChartData" [options]="epsPegChartOptions" [type]="'scatter'"
+              aria-label="EPS CAGR versus forward PEG scatter with EDGE score sized bubbles and fund hover details"></canvas>
           </div>
           <div class="inline-insight"><span>i</span><p><strong>{{ edgeScoreInsight?.lowPegAboveGrowth?.length || 0 }} funds</strong> combine above-category EPS growth with below-category PEG. The selected fund is highlighted in orange.</p></div>
         </article>
         <article class="card mf-chart-card">
           <div class="card-title">Quality Score vs Momentum Score</div>
-          <div class="mf-scatter-wrap">
-            <svg viewBox="0 0 760 300" role="img" aria-label="Quality versus momentum scatter">
-              <line x1="48" y1="260" x2="730" y2="260" class="mf-axis-line"></line><line x1="48" y1="25" x2="48" y2="260" class="mf-axis-line"></line>
-              <circle *ngFor="let point of qualityMomentumPoints" [attr.cx]="point.cx" [attr.cy]="point.cy" [attr.r]="point.radius" [attr.fill]="point.color" [attr.opacity]="point.selected ? 1 : .55"><title>{{ point.name }} · Quality {{ format(point.x,2) }} · Momentum {{ format(point.y,2) }}</title></circle>
-              <text x="380" y="292" text-anchor="middle" class="mf-axis-label">Quality score</text><text x="14" y="145" transform="rotate(-90 14 145)" text-anchor="middle" class="mf-axis-label">Momentum score</text>
-            </svg>
+          <div class="mf-chart-visual" style="height:300px;position:relative">
+            <canvas baseChart [data]="qualityMomentumChartData" [options]="qualityMomentumChartOptions" [type]="'scatter'"
+              aria-label="Quality score versus momentum score scatter with EDGE score sized bubbles and fund hover details"></canvas>
           </div>
           <div class="inline-insight"><span>i</span><p><strong>{{ edgeScoreInsight?.highBoth?.length || 0 }} funds</strong> are above category averages on both Quality and Momentum. Funds with high quality but lower momentum may warrant separate review.</p></div>
         </article>
@@ -825,11 +815,11 @@ python manage.py build_sebi_mf_analytics</pre>
       <div class="two-col mf-reference-grid">
         <article class="card mf-chart-card">
           <div class="card-title">1Y Return Ranking — All Funds</div>
-          <div class="mf-ranking-bars">
-            <div *ngFor="let row of oneYearRankingRows" class="mf-single-bar-row">
-              <strong [class.active]="row.fund.name === selectedFundName">{{ row.fund.short }}</strong><div class="mf-single-track"><i [style.width.%]="barWidth(row.value, performanceRankingRows[0]?.value)"></i></div><b>{{ formatPct(row.value) }}</b>
-            </div>
+          <div class="mf-chart-visual" style="height:420px;position:relative">
+            <canvas baseChart [data]="oneYearRankingChartData" [options]="verticalRankingChartOptions" [type]="'bar'"
+              aria-label="Vertical one-year return ranking for all funds with selected fund highlighted and hover details"></canvas>
           </div>
+          <p class="mf-chart-footnote">The selected fund is highlighted in orange. Hover a bar for return, rank, category alpha, manager, EDGE score and AUM.</p>
         </article>
         <article class="card mf-chart-card">
           <div class="card-title">Quartile Consistency Heatmap — 3M / 6M / 1Y</div>
@@ -938,12 +928,9 @@ python manage.py build_sebi_mf_analytics</pre>
       <div class="two-col mf-reference-grid">
         <article class="card mf-chart-card">
           <div class="card-title">Sector Allocation — Fund vs Category Average</div>
-          <div class="mf-sector-compare-list">
-            <div *ngFor="let row of fundSectorComparisonRows.slice(0,16)" class="mf-sector-compare-row">
-              <strong>{{ row.sector }}</strong><div><span>Fund {{ formatPct(row.fundWeight) }}</span><span>Cat {{ formatPct(row.categoryAverage) }}</span></div>
-              <div class="mf-single-track"><i [style.width.%]="barWidth(row.fundWeight, fundSectorComparisonRows[0]?.fundWeight)"></i></div>
-              <small [class.positive-value]="row.difference > 0" [class.negative-value]="row.difference < 0">{{ formatPercentagePoints(row.difference) }} vs category</small>
-            </div>
+          <div class="mf-chart-visual" style="height:390px;position:relative">
+            <canvas baseChart [data]="sectorAllocationChartData" [options]="horizontalSectorChartOptions" [type]="'bar'"
+              aria-label="Horizontal chart comparing selected fund sector allocation with category average"></canvas>
           </div>
         </article>
         <article class="card mf-chart-card">
@@ -1085,8 +1072,9 @@ python manage.py build_sebi_mf_analytics</pre>
       <div class="two-col mf-reference-grid">
         <article class="card mf-chart-card">
           <div class="card-title">Category Sector Attribution — Aggregate across Funds</div>
-          <div class="mf-ranking-bars">
-            <div *ngFor="let row of topSectorRows" class="mf-single-bar-row"><strong>{{ row.sector }}</strong><div class="mf-single-track"><i [class.negative-bar]="row.total_contrib < 0" [style.width.%]="barWidth(row.total_contrib, topSectorRows[0]?.total_contrib)"></i></div><b>{{ format(row.total_contrib,2) }}pp</b></div>
+          <div class="mf-chart-visual" style="height:360px;position:relative">
+            <canvas baseChart [data]="categoryAttributionChartData" [options]="categoryAttributionChartOptions" [type]="'bar'"
+              aria-label="Horizontal category sector attribution chart with positive and negative contribution tooltips"></canvas>
           </div>
         </article>
         <article class="card mf-chart-card">
@@ -1100,9 +1088,11 @@ python manage.py build_sebi_mf_analytics</pre>
       <div class="two-col mf-reference-grid">
         <article class="card mf-chart-card">
           <div class="card-title">Net Attribution by Fund — Ranked</div>
-          <div class="mf-ranking-bars">
-            <div *ngFor="let row of attributionRankRows" class="mf-single-bar-row"><strong [class.active]="row.fund.name===selectedFundName">{{ row.fund.short }}</strong><div class="mf-single-track"><i [class.negative-bar]="row.data.summary.net_attribution < 0" [class.active-bar]="row.fund.name===selectedFundName" [style.width.%]="barWidth(row.data.summary.net_attribution, attributionRankRows[0]?.data?.summary?.net_attribution)"></i></div><b>{{ format(row.data.summary.net_attribution,3) }}pp</b></div>
+          <div class="mf-chart-visual" style="height:420px;position:relative">
+            <canvas baseChart [data]="fundAttributionChartData" [options]="fundAttributionChartOptions" [type]="'bar'"
+              aria-label="Vertical ranked net attribution by fund with selected fund highlighted and detailed hover values"></canvas>
           </div>
+          <p class="mf-chart-footnote">The active fund is highlighted in orange; green bars are net positive and red bars are net negative. Hover for gross positive and negative contribution totals.</p>
         </article>
         <article class="card mf-chart-card">
           <div class="card-title">Cross-Fund Laggards — Stocks that Dragged Multiple Funds</div>

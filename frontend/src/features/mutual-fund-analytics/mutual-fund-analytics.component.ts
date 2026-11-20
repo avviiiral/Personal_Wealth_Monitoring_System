@@ -640,10 +640,12 @@ export class MutualFundAnalyticsComponent implements OnInit, OnDestroy {
     const styleMax = Math.max(0, ...styleComposition.map(item => item.value || 0));
     styleComposition.forEach(item => item.width = styleMax > 0 ? (item.value || 0) / styleMax * 100 : 0);
 
+    // The reference Overview uses the RAW category snapshot for its distribution.
+    // The P2P reckoner is a separate 30/33-covered return series used in Performance.
     const periodValues: Record<string, number[]> = {
-      '3M': funds.map(fund => this.fundReturn(fund, '3M')).filter((value): value is number => value !== null),
-      '6M': funds.map(fund => this.fundReturn(fund, '6M')).filter((value): value is number => value !== null),
-      '1Y': funds.map(fund => this.fundReturn(fund, '1Y')).filter((value): value is number => value !== null),
+      '3M': funds.map(fund => this.finiteNumber(fund?.r3m)).filter((value): value is number => value !== null),
+      '6M': funds.map(fund => this.finiteNumber(fund?.r6m)).filter((value): value is number => value !== null),
+      '1Y': funds.map(fund => this.finiteNumber(fund?.r1y)).filter((value): value is number => value !== null),
     };
     const allReturns = Object.values(periodValues).flat();
     let returnDistribution: any[] = [];
@@ -1194,6 +1196,29 @@ export class MutualFundAnalyticsComponent implements OnInit, OnDestroy {
     ];
   }
 
+  get bestCalendarYearReturn(): any {
+    return [...this.selectedCalendarAlphaRows]
+      .filter(row => row.value !== null)
+      .sort((a, b) => (b.value || 0) - (a.value || 0))[0] || null;
+  }
+
+  get selectedCalendarYearsAvailable(): number {
+    return this.selectedCalendarAlphaRows.filter(row => row.value !== null).length;
+  }
+
+  get oneYearRankingRows(): any[] {
+    return [...this.funds].map(fund => ({
+      fund,
+      value: this.fundReturn(fund, '1Y'),
+    })).filter(row => row.value !== null)
+      .sort((a, b) => (b.value || 0) - (a.value || 0));
+  }
+
+  get styleCompositionRankRows(): any[] {
+    return [...this.funds].filter(fund => this.finiteNumber(fund.cyclical) !== null)
+      .sort((a, b) => this.numeric(b.cyclical) - this.numeric(a.cyclical));
+  }
+
   get selectedCalendarAlphaRows(): any[] {
     const fund = this.selectedFund;
     if (!fund) return [];
@@ -1393,10 +1418,10 @@ export class MutualFundAnalyticsComponent implements OnInit, OnDestroy {
     const n = Number(value);
     return Number.isFinite(n) ? n.toFixed(digits) : '—';
   }
-  formatPct(value: any): string {
+  formatPct(value: any, digits = 2): string {
     if (value === null || value === undefined || value === '') return '—';
     const n = Number(value);
-    return Number.isFinite(n) ? `${n > 0 ? '+' : ''}${n.toFixed(2)}%` : '—';
+    return Number.isFinite(n) ? `${n > 0 ? '+' : ''}${n.toFixed(digits)}%` : '—';
   }
   formatAum(value: any): string {
     if (value === null || value === undefined || value === '') return '—';

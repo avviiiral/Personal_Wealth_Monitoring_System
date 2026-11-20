@@ -1,5 +1,6 @@
 """Cached India mutual-fund feed, explicit refresh and quota status endpoints."""
 from datetime import timedelta
+import logging
 
 from django.conf import settings
 from django.db.models import OuterRef, Subquery
@@ -23,6 +24,7 @@ from watchlist.services.indianapi import (
 
 
 CACHE_TTL = timedelta(hours=24)
+logger = logging.getLogger(__name__)
 
 
 def _latest_indianapi_report():
@@ -182,27 +184,42 @@ def india_mutual_fund_feed(request):
     configured = bool(str(getattr(settings, "INDIANAPI_API_KEY", "") or "").strip())
     report = _latest_indianapi_report()
     if report:
-        payload = report.payload or {}
+        payload = report.payload if isinstance(report.payload, dict) else {}
         funds = payload.get("funds")
         if not isinstance(funds, list):
-            funds = normalize_mutual_fund_payload(payload.get("raw", {}))
-        funds = _overlay_amfi_nav(funds)
-        return Response({
-            "available": bool(funds),
-            "provider_configured": configured,
-            "source": "IndianAPI",
-            "source_label": "IndianAPI enrichment · AMFI identity and NAV where exact scheme mapping exists",
-            "report_date": report.report_date,
-            "imported_at": report.imported_at,
-            "count": len(funds),
-            "total_count": len(funds),
-            "message": (
-                "Showing the last stored IndianAPI enrichment snapshot with AMFI NAV values where exact scheme mapping exists."
-                if configured else
-                "Showing the last stored IndianAPI snapshot. Provider refresh is disabled until an API key is configured."
-            ),
-            "funds": funds,
-        })
+            try:
+                funds = normalize_mutual_fund_payload(payload.get("raw", {}))
+            except IndianAPIError as exc:
+                logger.warning(
+                    "Ignoring malformed cached IndianAPI mutual-fund snapshot; falling back to AMFI: %s",
+                    exc,
+                )
+                funds = []
+
+        # A malformed/empty legacy provider snapshot must not take down the
+        # keyless AMFI feed. The AMFI master is a read-only local fallback.
+        if funds:
+            funds = _overlay_amfi_nav(funds)
+            return Response({
+                "available": bool(funds),
+                "provider_configured": configured,
+                "source": "IndianAPI",
+                "source_label": "IndianAPI enrichment · AMFI identity and NAV where exact scheme mapping exists",
+                "report_date": report.report_date,
+                "imported_at": report.imported_at,
+                "count": len(funds),
+                "total_count": len(funds),
+                "message": (
+                    "Showing the last stored IndianAPI enrichment snapshot with AMFI NAV values where exact scheme mapping exists."
+                    if configured else
+                    "Showing the last stored IndianAPI snapshot. Provider refresh is disabled until an API key is configured."
+                ),
+                "funds": funds,
+            })
+        logger.warning(
+            "Cached IndianAPI mutual-fund snapshot for %s contains no usable fund rows; falling back to AMFI.",
+            report.report_date,
+        )
 
     search = str(request.query_params.get("search", "")).strip()
     try:

@@ -36,6 +36,11 @@ export class MutualFundAnalyticsComponent implements OnInit, OnDestroy {
   personalPortfolio: PersonalMutualFundPortfolioResponse | null = null;
   sebiSummary: SebiUniverseSummaryResponse | null = null;
   sebiRankings: SebiUniverseRankingsResponse | null = null;
+  sebiDashboard: any = null;
+  activeSebiView = 'overview';
+  selectedSebiPlan = '';
+  selectedSebiCategory = 'All categories';
+  selectedSebiFundName = '';
   overviewDashboard: any = null;
   sebiCategoryRiskChartSrc: string | null = null;
   sebiTopQ1ChartSrc: string | null = null;
@@ -150,18 +155,7 @@ export class MutualFundAnalyticsComponent implements OnInit, OnDestroy {
       this.activeTab = 'sebi-universe';
     }
 
-    if (value.sebiSummary?.available) {
-      forkJoin({
-        categoryRiskChart: this.analytics.getSebiCategoryRiskChart().pipe(catchError(() => of(null))),
-        topQ1Chart: this.analytics.getSebiTopQ1Chart().pipe(catchError(() => of(null))),
-      }).subscribe(charts => {
-        this.replaceChartObjectUrl('category', charts.categoryRiskChart);
-        this.replaceChartObjectUrl('q1', charts.topQ1Chart);
-      });
-    } else {
-      this.replaceChartObjectUrl('category', null);
-      this.replaceChartObjectUrl('q1', null);
-    }
+    this.initializeSebiDashboard();
     this.loading = false;
   }
 
@@ -250,6 +244,240 @@ export class MutualFundAnalyticsComponent implements OnInit, OnDestroy {
         });
       },
     });
+  }
+
+
+  get sebiPlanOptions(): string[] {
+    const plans = (this.sebiSummary?.tree_summary || [])
+      .map(row => String(row.Plan || '').trim()).filter(Boolean);
+    return [...new Set(plans)].sort((a, b) => a.localeCompare(b));
+  }
+
+  get sebiCategoryOptions(): string[] {
+    const names = (this.sebiSummary?.tree_summary || [])
+      .filter(row => !this.selectedSebiPlan || row.Plan === this.selectedSebiPlan)
+      .map(row => String(row.Level_3_Category || '').trim()).filter(Boolean);
+    return [...new Set(names)].sort((a, b) => a.localeCompare(b));
+  }
+
+  get sebiFundOptions(): SebiFundRankingRow[] {
+    const byName = new Map<string, SebiFundRankingRow>();
+    [...this.sebiQ1Funds, ...(this.sebiRankings?.results || [])].forEach(row => {
+      const name = String(row.Scheme_Name || '').trim();
+      if (!name || (this.selectedSebiPlan && row.Plan !== this.selectedSebiPlan)) return;
+      if (this.selectedSebiCategory !== 'All categories' &&
+          row.Level_3_Category !== this.selectedSebiCategory) return;
+      if (!byName.has(name)) byName.set(name, row);
+    });
+    return [...byName.values()];
+  }
+
+  get selectedSebiFund(): SebiFundRankingRow | null {
+    return this.sebiFundOptions.find(row => row.Scheme_Name === this.selectedSebiFundName) ||
+      this.sebiFundOptions[0] || null;
+  }
+
+  get selectedSebiBenchmark(): SebiCategorySummaryRow | null {
+    const fund = this.selectedSebiFund;
+    const category = fund?.Level_3_Category ||
+      (this.selectedSebiCategory !== 'All categories' ? this.selectedSebiCategory : '');
+    const plan = fund?.Plan || this.selectedSebiPlan;
+    return category ? (this.sebiSummary?.tree_summary || []).find(row =>
+      row.Level_3_Category === category && row.Plan === plan
+    ) || null : null;
+  }
+
+  get sebiFundComparisonRows(): any[] {
+    const fund = this.selectedSebiFund;
+    const benchmark = this.selectedSebiBenchmark;
+    if (!fund || !benchmark) return [];
+    const metrics: any[] = [
+      { metric: '1Y CAGR', value: fund.CAGR_1Y_pct, average: benchmark.Category_Avg_CAGR_1Y_pct },
+      { metric: '3Y CAGR', value: fund.CAGR_3Y_pct, average: benchmark.Category_Avg_CAGR_3Y_pct },
+      { metric: '5Y CAGR', value: fund.CAGR_5Y_pct, average: benchmark.Category_Avg_CAGR_5Y_pct },
+      { metric: '3Y rolling CAGR', value: fund.Rolling_3Y_CAGR_Mean_pct, average: benchmark.Category_Avg_Rolling_3Y_CAGR_Mean_pct },
+      { metric: 'Annualized volatility', value: fund.Annualized_Volatility_pct, average: benchmark.Category_Avg_Annualized_Volatility_pct },
+      { metric: 'Sharpe ratio', value: fund.Sharpe_Ratio, average: benchmark.Category_Avg_Sharpe_Ratio, kind: 'number' },
+      { metric: 'Maximum drawdown', value: fund.Max_Drawdown_pct, average: benchmark.Category_Avg_Max_Drawdown_pct },
+    ];
+    return metrics.map(row => {
+      const value = this.finiteNumber(row.value);
+      const average = this.finiteNumber(row.average);
+      return { ...row, kind: row.kind || 'percent',
+        difference: value !== null && average !== null ? value - average : null };
+    });
+  }
+
+  get sebiVisibleTreeRows(): SebiCategorySummaryRow[] {
+    return (this.sebiSummary?.tree_summary || []).filter(row =>
+      (!this.selectedSebiPlan || row.Plan === this.selectedSebiPlan) &&
+      (this.selectedSebiCategory === 'All categories' || row.Level_3_Category === this.selectedSebiCategory));
+  }
+
+  get sebiVisibleQ1Funds(): SebiFundRankingRow[] {
+    return this.sebiQ1Funds.filter(row =>
+      (!this.selectedSebiPlan || row.Plan === this.selectedSebiPlan) &&
+      (this.selectedSebiCategory === 'All categories' || row.Level_3_Category === this.selectedSebiCategory));
+  }
+
+  get sebiVisibleRankings(): SebiFundRankingRow[] {
+    return (this.sebiRankings?.results || []).filter(row =>
+      (!this.selectedSebiPlan || row.Plan === this.selectedSebiPlan) &&
+      (this.selectedSebiCategory === 'All categories' || row.Level_3_Category === this.selectedSebiCategory));
+  }
+
+  onSebiPlanChange(plan: string): void {
+    this.selectedSebiPlan = plan;
+    this.selectedSebiCategory = 'All categories';
+    this.syncSelectedSebiFund();
+    this.buildSebiDashboard();
+  }
+
+  onSebiCategoryChange(category: string): void {
+    this.selectedSebiCategory = category;
+    this.syncSelectedSebiFund();
+    this.buildSebiDashboard();
+  }
+
+  onSebiFundChange(name: string): void { this.selectedSebiFundName = name; }
+
+  private syncSelectedSebiFund(): void {
+    if (!this.sebiFundOptions.some(row => row.Scheme_Name === this.selectedSebiFundName)) {
+      this.selectedSebiFundName = this.sebiFundOptions[0]?.Scheme_Name || '';
+    }
+  }
+
+  private initializeSebiDashboard(): void {
+    const plans = this.sebiPlanOptions;
+    if (!plans.includes(this.selectedSebiPlan)) {
+      this.selectedSebiPlan = plans.find(plan => /direct/i.test(plan)) || plans[0] || '';
+    }
+    if (!this.sebiCategoryOptions.includes(this.selectedSebiCategory)) {
+      this.selectedSebiCategory = 'All categories';
+    }
+    this.syncSelectedSebiFund();
+    this.buildSebiDashboard();
+  }
+
+  private buildSebiDashboard(): void {
+    const categoryRows = (this.sebiSummary?.tree_summary || [])
+      .filter(row => !this.selectedSebiPlan || row.Plan === this.selectedSebiPlan)
+      .filter(row => String(row.Level_3_Category || '').trim())
+      .map(row => ({
+        ...row,
+        categoryName: String(row.Level_3_Category || ''),
+        fundCount: this.finiteNumber(row.Fund_Count),
+        cagr1Y: this.finiteNumber(row.Category_Avg_CAGR_1Y_pct),
+        cagr3Y: this.finiteNumber(row.Category_Avg_CAGR_3Y_pct),
+        cagr5Y: this.finiteNumber(row.Category_Avg_CAGR_5Y_pct),
+        volatility: this.finiteNumber(row.Category_Avg_Annualized_Volatility_pct),
+        sharpe: this.finiteNumber(row.Category_Avg_Sharpe_Ratio),
+        maxDrawdown: this.finiteNumber(row.Category_Avg_Max_Drawdown_pct),
+      }));
+    const avg = (key: string): number | null =>
+      this.mean(categoryRows.map(row => this.finiteNumber((row as any)[key])));
+    const valid3Y = categoryRows.map(row => row.cagr3Y)
+      .filter((value): value is number => value !== null).sort((a, b) => a - b);
+    const median3Y = valid3Y.length
+      ? (valid3Y.length % 2 ? valid3Y[Math.floor(valid3Y.length / 2)]
+        : (valid3Y[valid3Y.length / 2 - 1] + valid3Y[valid3Y.length / 2]) / 2)
+      : null;
+    const strongestCategory = [...categoryRows].filter(row => row.cagr3Y !== null)
+      .sort((a, b) => (b.cagr3Y || 0) - (a.cagr3Y || 0))[0] || null;
+    const lowestRiskCategory = [...categoryRows].filter(row => row.volatility !== null)
+      .sort((a, b) => (a.volatility || 0) - (b.volatility || 0))[0] || null;
+
+    const points = categoryRows.filter(row => row.cagr3Y !== null && row.volatility !== null);
+    const plot = { left: 70, right: 870, top: 24, bottom: 255 };
+    const riskReturnPoints: any[] = [];
+    let scatterXTicks: any[] = [];
+    let scatterYTicks: any[] = [];
+    if (points.length) {
+      const xMin = Math.min(...points.map(row => row.volatility as number));
+      const xMax = Math.max(...points.map(row => row.volatility as number));
+      const yMin = Math.min(...points.map(row => row.cagr3Y as number));
+      const yMax = Math.max(...points.map(row => row.cagr3Y as number));
+      const xSpan = xMax === xMin ? 1 : xMax - xMin;
+      const ySpan = yMax === yMin ? 1 : yMax - yMin;
+      const labelNames = new Set([...points].sort((a, b) => (b.cagr3Y || 0) - (a.cagr3Y || 0))
+        .slice(0, 8).map(row => row.categoryName));
+      points.forEach(row => {
+        const label = row.categoryName.length > 20 ? row.categoryName.slice(0, 18) + '…' : row.categoryName;
+        riskReturnPoints.push({
+          name: row.categoryName, label: labelNames.has(row.categoryName) ? label : '',
+          cx: plot.left + ((row.volatility as number) - xMin) / xSpan * (plot.right - plot.left),
+          cy: plot.bottom - ((row.cagr3Y as number) - yMin) / ySpan * (plot.bottom - plot.top),
+          cagr3Y: row.cagr3Y, volatility: row.volatility,
+        });
+      });
+      scatterXTicks = Array.from({ length: 5 }, (_item, i) => ({
+        value: xMin + xSpan * i / 4, x: plot.left + (plot.right - plot.left) * i / 4,
+      }));
+      scatterYTicks = Array.from({ length: 5 }, (_item, i) => ({
+        value: yMin + ySpan * i / 4, y: plot.bottom - (plot.bottom - plot.top) * i / 4,
+      }));
+    }
+
+    const returnSource = [...categoryRows].filter(row =>
+      row.cagr1Y !== null || row.cagr3Y !== null || row.cagr5Y !== null)
+      .sort((a, b) => (b.cagr3Y || -Infinity) - (a.cagr3Y || -Infinity)).slice(0, 7);
+    const maxReturn = Math.max(1, ...returnSource.flatMap(row =>
+      [row.cagr1Y, row.cagr3Y, row.cagr5Y].map(value => Math.max(0, value || 0))));
+    const returnComparisonRows = returnSource.map(row => ({
+      category: row.categoryName, cagr1Y: row.cagr1Y, cagr3Y: row.cagr3Y, cagr5Y: row.cagr5Y,
+      width1Y: Math.max(0, row.cagr1Y || 0) / maxReturn * 100,
+      width3Y: Math.max(0, row.cagr3Y || 0) / maxReturn * 100,
+      width5Y: Math.max(0, row.cagr5Y || 0) / maxReturn * 100,
+    }));
+
+    const q1Source = this.sebiVisibleQ1Funds.filter(row => this.finiteNumber(row.CAGR_3Y_pct) !== null)
+      .sort((a, b) => this.numeric(b.CAGR_3Y_pct) - this.numeric(a.CAGR_3Y_pct)).slice(0, 10);
+    const maxQ1 = Math.max(1, ...q1Source.flatMap(row => [
+      Math.max(0, this.numeric(row.CAGR_3Y_pct)), Math.max(0, this.numeric(row.Category_Avg_CAGR_3Y_pct))]));
+    const q1ComparisonRows = q1Source.map(row => ({
+      name: row.Scheme_Name || 'Unnamed scheme',
+      label: (row.Scheme_Name || 'Unnamed scheme').length > 30
+        ? (row.Scheme_Name || '').slice(0, 28) + '…' : row.Scheme_Name,
+      cagr3Y: this.finiteNumber(row.CAGR_3Y_pct),
+      categoryAverage: this.finiteNumber(row.Category_Avg_CAGR_3Y_pct),
+      fundWidth: Math.max(0, this.numeric(row.CAGR_3Y_pct)) / maxQ1 * 100,
+      averageWidth: Math.max(0, this.numeric(row.Category_Avg_CAGR_3Y_pct)) / maxQ1 * 100,
+    }));
+
+    const coverageSource = [...categoryRows].filter(row => row.fundCount !== null)
+      .sort((a, b) => (b.fundCount || 0) - (a.fundCount || 0)).slice(0, 10);
+    const maxCoverage = Math.max(1, ...coverageSource.map(row => row.fundCount || 0));
+    const coverageRows = coverageSource.map(row => ({
+      category: row.categoryName, fundCount: row.fundCount,
+      width: (row.fundCount || 0) / maxCoverage * 100,
+    }));
+
+    const riskSource = [...categoryRows].filter(row => row.volatility !== null || row.maxDrawdown !== null)
+      .sort((a, b) => Math.abs(b.volatility || 0) - Math.abs(a.volatility || 0)).slice(0, 10);
+    const maxRisk = Math.max(1, ...riskSource.flatMap(row =>
+      [Math.abs(row.volatility || 0), Math.abs(row.maxDrawdown || 0)]));
+    const riskRows = riskSource.map(row => ({
+      category: row.categoryName, volatility: row.volatility, maxDrawdown: row.maxDrawdown,
+      volatilityWidth: Math.abs(row.volatility || 0) / maxRisk * 100,
+      drawdownWidth: Math.abs(row.maxDrawdown || 0) / maxRisk * 100,
+    }));
+
+    const sharpeSource = [...categoryRows].filter(row => row.sharpe !== null)
+      .sort((a, b) => (b.sharpe || 0) - (a.sharpe || 0)).slice(0, 10);
+    const maxSharpe = Math.max(1, ...sharpeSource.map(row => Math.max(0, row.sharpe || 0)));
+    const sharpeRows = sharpeSource.map(row => ({
+      category: row.categoryName, sharpe: row.sharpe,
+      width: Math.max(0, row.sharpe || 0) / maxSharpe * 100,
+    }));
+
+    this.sebiDashboard = {
+      categoryRows, categoryCount: categoryRows.length,
+      average3Y: avg('cagr3Y'), median3Y, average1Y: avg('cagr1Y'), average5Y: avg('cagr5Y'),
+      averageVolatility: avg('volatility'), averageSharpe: avg('sharpe'),
+      averageMaxDrawdown: avg('maxDrawdown'), strongestCategory, lowestRiskCategory,
+      riskReturnPoints, scatterPlot: plot, scatterXTicks, scatterYTicks,
+      q1ComparisonRows, returnComparisonRows, coverageRows, riskRows, sharpeRows,
+    };
   }
 
   get sebiQ1Funds(): SebiFundRankingRow[] {

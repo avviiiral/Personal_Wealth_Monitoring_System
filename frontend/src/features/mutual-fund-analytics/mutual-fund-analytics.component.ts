@@ -316,7 +316,8 @@ export class MutualFundAnalyticsComponent implements OnInit, OnDestroy {
           row.Level_3_Category !== this.selectedSebiCategory) return;
       if (!byName.has(name)) byName.set(name, row);
     });
-    return [...byName.values()];
+    return [...byName.values()].sort((a, b) =>
+      String(a.Scheme_Name || '').localeCompare(String(b.Scheme_Name || '')));
   }
 
   get selectedSebiFund(): SebiFundRankingRow | null {
@@ -362,13 +363,19 @@ export class MutualFundAnalyticsComponent implements OnInit, OnDestroy {
   }
 
   get sebiVisibleQ1Funds(): SebiFundRankingRow[] {
-    return this.sebiQ1Funds.filter(row =>
+    const sourceRows = this.selectedSebiCategory === 'All categories'
+      ? this.sebiQ1Funds
+      : (this.sebiCategoryFunds || []).filter(row => String(row.Quartile || '').toUpperCase() === 'Q1');
+    return sourceRows.filter(row =>
       (!this.selectedSebiPlan || row.Plan === this.selectedSebiPlan) &&
       (this.selectedSebiCategory === 'All categories' || row.Level_3_Category === this.selectedSebiCategory));
   }
 
   get sebiVisibleRankings(): SebiFundRankingRow[] {
-    return (this.sebiRankings?.results || []).filter(row =>
+    const sourceRows = this.selectedSebiCategory === 'All categories'
+      ? (this.sebiRankings?.results || [])
+      : (this.sebiCategoryFunds || []);
+    return sourceRows.filter(row =>
       (!this.selectedSebiPlan || row.Plan === this.selectedSebiPlan) &&
       (this.selectedSebiCategory === 'All categories' || row.Level_3_Category === this.selectedSebiCategory));
   }

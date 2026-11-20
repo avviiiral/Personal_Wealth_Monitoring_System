@@ -107,11 +107,11 @@ class SEBITaxonomyTests(SimpleTestCase):
     def test_eight_column_feed_preserves_long_amfi_option_labels(self):
         long_option = "Monthly Payout of Income Distribution cum capital withdrawal option"
         source = (
-            "Scheme Code;ISIN Div Payout/ ISIN Growth;ISIN Div Reinvestment;Scheme Name;Plan;Option;Net Asset Value;Date\\n"
-            "Open Ended Schemes (Debt Scheme - Banking and PSU Fund)\\n"
-            "Example AMC\\n"
-            f"100020;INF000000020;;Example Banking and PSU Fund;Direct Plan;{long_option};12.5;20-Nov-2026\\n"
-            "100021;INF000000021;;Example Banking and PSU Fund;Direct Plan;Growth Option;25.5;20-Nov-2026\\n"
+            "Scheme Code;ISIN Div Payout/ ISIN Growth;ISIN Div Reinvestment;Scheme Name;Plan;Option;Net Asset Value;Date\n"
+            "Open Ended Schemes (Debt Scheme - Banking and PSU Fund)\n"
+            "Example AMC\n"
+            f"100020;INF000000020;;Example Banking and PSU Fund;Direct Plan;{long_option};12.5;20-Nov-2026\n"
+            "100021;INF000000021;;Example Banking and PSU Fund;Direct Plan;Growth Option;25.5;20-Nov-2026\n"
         )
         records = {row["scheme_code"]: row for row in parse_amfi_navall_feed(source)}
 

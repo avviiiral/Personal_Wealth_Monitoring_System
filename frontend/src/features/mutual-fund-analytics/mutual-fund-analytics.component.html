@@ -955,7 +955,7 @@ python manage.py build_sebi_mf_analytics</pre>
       <article class="card mf-chart-card">
         <div class="card-title">Top 10 Holdings — Current Portfolio</div>
         <div class="table-scroll"><table class="edge-table"><thead><tr><th>#</th><th>Company</th><th>Weight</th></tr></thead>
-          <tbody><tr *ngFor="let stock of selectedFund?.top_stocks | slice:0:10; let i=index"><td>{{ i+1 }}</td><td>{{ stock.company }}</td><td>{{ formatPct(stock.pct) }}</td></tr></tbody>
+          <tbody><tr *ngFor="let stock of selectedFundTopStocks; let i=index"><td>{{ i+1 }}</td><td>{{ stock.company }}</td><td>{{ formatPct(stock.pct) }}</td></tr></tbody>
         </table></div>
       </article>
 
@@ -981,8 +981,8 @@ python manage.py build_sebi_mf_analytics</pre>
         <div class="card-title">Unique Ideas — Stocks Held Exclusively by This Fund in the Category</div>
         <p class="chart-note">{{ selectedFund?.unique_ideas?.count || 0 }} unique stocks · {{ formatPct(selectedFund?.unique_ideas?.unique_pct) }} of portfolio weight · {{ formatPct(selectedFund?.unique_ideas?.unique_share) }} unique share</p>
         <div class="table-scroll"><table class="edge-table"><thead><tr><th>Company</th><th>Sector</th><th>Market Cap</th><th>Portfolio Weight</th></tr></thead>
-          <tbody><tr *ngFor="let stock of selectedFund?.unique_ideas?.stocks"><td>{{ stock.company }}</td><td>{{ stock.sector }}</td><td>{{ stock.mcap }}</td><td>{{ formatPct(stock.pct) }}</td></tr>
-          <tr *ngIf="!selectedFund?.unique_ideas?.stocks?.length"><td colspan="4">No unique ideas are recorded for this fund in the imported snapshot.</td></tr></tbody>
+          <tbody><tr *ngFor="let stock of selectedFundUniqueIdeaStocks"><td>{{ stock.company }}</td><td>{{ stock.sector }}</td><td>{{ stock.mcap }}</td><td>{{ formatPct(stock.pct) }}</td></tr>
+          <tr *ngIf="!selectedFundUniqueIdeaStocks.length"><td colspan="4">No unique ideas are recorded for this fund in the imported snapshot.</td></tr></tbody>
         </table></div>
       </article>
     </section>

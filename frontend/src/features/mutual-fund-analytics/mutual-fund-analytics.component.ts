@@ -81,8 +81,15 @@ export class MutualFundAnalyticsComponent implements OnInit, OnDestroy {
         afterBody: items => {
           const period = String(items[0]?.dataset?.label || '').split(' ')[0];
           const key = ({ '3M': 'r3m', '6M': 'r6m', '1Y': 'r1y' } as Record<string, string>)[period];
+          const covered = this.funds.filter(fund => this.fundReturn(fund, period) !== null).length;
+          const count = Number(items[0]?.parsed?.y || 0);
+          const share = covered > 0 ? (count / covered * 100).toFixed(1) + '%' : '—';
           const benchmark = key ? this.finiteNumber(this.p2p?.bm?.vals?.[key]) : null;
-          return benchmark === null ? [] : [`N500 ${period}: ${this.formatPct(benchmark)}`];
+          return [
+            'Share of covered funds: ' + share,
+            'Covered funds for ' + period + ': ' + covered,
+            ...(benchmark === null ? [] : ['N500 ' + period + ': ' + this.formatPct(benchmark)]),
+          ];
         },
       } },
     },
@@ -1202,29 +1209,44 @@ export class MutualFundAnalyticsComponent implements OnInit, OnDestroy {
     const styleMax = Math.max(0, ...styleComposition.map(item => item.value || 0));
     styleComposition.forEach(item => item.width = styleMax > 0 ? (item.value || 0) / styleMax * 100 : 0);
 
-    // Keep the report's exact return-distribution intervals. The RAW fund
-    // returns drive the histogram; NIFTY 500 TRI is shown only as a tooltip reference.
+    // Use the point-to-point return values from report.payload.P2P.funds,
+    // matching fundReturn() and the Performance Ranking table.
     const periodValues: Record<string, number[]> = {
-      '3M': funds.map(fund => this.finiteNumber(fund?.r3m)).filter((value): value is number => value !== null),
-      '6M': funds.map(fund => this.finiteNumber(fund?.r6m)).filter((value): value is number => value !== null),
-      '1Y': funds.map(fund => this.finiteNumber(fund?.r1y)).filter((value): value is number => value !== null),
+      '3M': funds.map(fund => this.fundReturn(fund, '3M')).filter((value): value is number => value !== null),
+      '6M': funds.map(fund => this.fundReturn(fund, '6M')).filter((value): value is number => value !== null),
+      '1Y': funds.map(fund => this.fundReturn(fund, '1Y')).filter((value): value is number => value !== null),
     };
     const returnBins = [-15, -10, -5, -2, 0, 2, 5, 10, 15, 20, 25];
-    const formatBinEdge = (value: number): string => String(value);
     const returnLabels = returnBins.slice(0, -1).map((lower, index) =>
-      `${formatBinEdge(lower)}–${formatBinEdge(returnBins[index + 1])}`);
+      String(lower) + '–' + String(returnBins[index + 1]));
     const returnCounts: Record<string, number[]> = {
       '3M': Array(returnBins.length - 1).fill(0),
       '6M': Array(returnBins.length - 1).fill(0),
       '1Y': Array(returnBins.length - 1).fill(0),
     };
+    const belowRange: Record<string, number> = { '3M': 0, '6M': 0, '1Y': 0 };
+    const aboveRange: Record<string, number> = { '3M': 0, '6M': 0, '1Y': 0 };
     Object.entries(periodValues).forEach(([period, values]) => {
       values.forEach(value => {
+        if (value < returnBins[0]) { belowRange[period] += 1; return; }
+        if (value > returnBins[returnBins.length - 1]) { aboveRange[period] += 1; return; }
         const index = returnBins.findIndex((lower, binIndex) =>
-          binIndex < returnBins.length - 1 && value >= lower && value < returnBins[binIndex + 1]);
+          binIndex < returnBins.length - 1 && value >= lower &&
+          (binIndex === returnBins.length - 2
+            ? value <= returnBins[binIndex + 1]
+            : value < returnBins[binIndex + 1]));
         if (index >= 0) returnCounts[period][index] += 1;
       });
     });
+    // Keep the ten reference buckets unless actual returns require overflow buckets.
+    if (Object.values(belowRange).some(count => count > 0)) {
+      returnLabels.unshift('< -15');
+      Object.keys(returnCounts).forEach(period => returnCounts[period].unshift(belowRange[period]));
+    }
+    if (Object.values(aboveRange).some(count => count > 0)) {
+      returnLabels.push('> 25');
+      Object.keys(returnCounts).forEach(period => returnCounts[period].push(aboveRange[period]));
+    }
     const returnDistribution = returnLabels.map((label, index) => ({
       label,
       bars: (['3M', '6M', '1Y'] as const).map(period => ({
@@ -1232,7 +1254,6 @@ export class MutualFundAnalyticsComponent implements OnInit, OnDestroy {
         count: returnCounts[period][index],
       })),
     }));
-
     const topAumFunds: any[] = funds
       .map(fund => ({ name: fund?.short || fund?.name || 'Unnamed fund', fullName: fund?.name || 'Unnamed fund', aum: this.finiteNumber(fund?.aum) }))
       .filter(row => row.aum !== null && row.aum >= 0)

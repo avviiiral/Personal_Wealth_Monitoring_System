@@ -350,7 +350,7 @@ class AMFIMasterScheme(models.Model):
     amc_name = models.CharField(max_length=200, blank=True, default="")
     raw_category_header = models.CharField(max_length=300, blank=True, default="")
     plan = models.CharField(max_length=40, blank=True, default="")
-    option = models.CharField(max_length=60, blank=True, default="")
+    option = models.CharField(max_length=160, blank=True, default="")
     level_1_branch = models.CharField(max_length=80, blank=True, default="")
     level_2_group = models.CharField(max_length=120, blank=True, default="")
     level_3_category = models.CharField(max_length=160, blank=True, default="")

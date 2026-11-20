@@ -585,6 +585,14 @@ export class MutualFundAnalyticsComponent implements OnInit, OnDestroy {
   get selectedFund(): any {
     return this.funds.find(f => f.name === this.selectedFundName) || this.funds[0] || null;
   }
+  get selectedFundTopStocks(): any[] {
+    const rows = this.selectedFund?.top_stocks;
+    return Array.isArray(rows) ? rows.slice(0, 10) : [];
+  }
+  get selectedFundUniqueIdeaStocks(): any[] {
+    const rows = this.selectedFund?.unique_ideas?.stocks;
+    return Array.isArray(rows) ? rows : [];
+  }
   get selectedAttribution(): any {
     return this.selectedFund ? this.attr?.per_fund?.[this.selectedFund.name] || null : null;
   }

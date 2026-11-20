@@ -172,6 +172,45 @@ export interface MutualFundAnalyticsFund {
   returns: Record<string, number | string | null>;
 }
 
+export interface SebiCategorySummaryRow {
+  Level_1_Branch?: string;
+  Level_2_Group?: string;
+  Level_3_Category?: string;
+  Plan?: string;
+  Fund_Count?: number | string;
+  Category_Avg_CAGR_1Y_pct?: number | string | null;
+  Category_Avg_CAGR_3Y_pct?: number | string | null;
+  Category_Median_CAGR_3Y_pct?: number | string | null;
+  Category_Avg_CAGR_5Y_pct?: number | string | null;
+  Category_Avg_Rolling_3Y_CAGR_Mean_pct?: number | string | null;
+  Category_Avg_Annualized_Volatility_pct?: number | string | null;
+  Category_Avg_Sharpe_Ratio?: number | string | null;
+  Category_Avg_Max_Drawdown_pct?: number | string | null;
+  [field: string]: unknown;
+}
+
+export interface SebiFundRankingRow {
+  Scheme_Name?: string;
+  Level_3_Category?: string;
+  Plan?: string;
+  CAGR_1Y_pct?: number | string | null;
+  CAGR_3Y_pct?: number | string | null;
+  CAGR_5Y_pct?: number | string | null;
+  Rolling_3Y_CAGR_Mean_pct?: number | string | null;
+  Annualized_Volatility_pct?: number | string | null;
+  Sharpe_Ratio?: number | string | null;
+  Sortino_Ratio?: number | string | null;
+  Max_Drawdown_pct?: number | string | null;
+  Max_Drawdown_Recovery_Days?: number | string | null;
+  Category_Avg_CAGR_3Y_pct?: number | string | null;
+  Outperformance_bps?: number | string | null;
+  Percentile_Rank_3Y?: number | string | null;
+  Quartile?: string | null;
+  Beat_Category_Avg?: boolean | null;
+  Expense_Ratio_pct?: number | string | null;
+  [field: string]: unknown;
+}
+
 export interface SebiUniverseSummaryResponse {
   available: boolean;
   message?: string;
@@ -187,8 +226,8 @@ export interface SebiUniverseSummaryResponse {
   category_tree_nodes?: number;
   current_sebi_leaf_categories?: number;
   portfolio_overlap_pairs?: number;
-  tree_summary?: Array<Record<string, any>>;
-  top_q1_funds?: Array<Record<string, any>>;
+  tree_summary?: SebiCategorySummaryRow[];
+  top_q1_funds?: SebiFundRankingRow[];
   download_url?: string;
   workbook_path?: string;
   category_risk_chart?: string;
@@ -202,7 +241,7 @@ export interface SebiUniverseRankingsResponse {
   count: number;
   page?: number;
   page_size?: number;
-  results: Array<Record<string, any>>;
+  results: SebiFundRankingRow[];
 }
 
 @Injectable({ providedIn: 'root' })

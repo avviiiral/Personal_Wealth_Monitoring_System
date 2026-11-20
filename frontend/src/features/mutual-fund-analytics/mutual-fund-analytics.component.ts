@@ -30,6 +30,7 @@ export class MutualFundAnalyticsComponent implements OnInit, OnDestroy {
   researchUniverses: MutualFundResearchUniverseOption[] = [];
   selectedUniverseId: number | null = null;
   comparisonFundName = '';
+  selectedSectorName = '';
   indiaFeed: IndiaMutualFundFeedResponse | null = null;
   apiUsage: IndianApiUsageResponse | null = null;
   personalPortfolio: PersonalMutualFundPortfolioResponse | null = null;
@@ -125,7 +126,6 @@ export class MutualFundAnalyticsComponent implements OnInit, OnDestroy {
   }
 
   private finishLoad(value: any, report: MutualFundResearchReportResponse): void {
-    const hadReport = Boolean(this.report?.available);
     this.report = report;
     this.indiaFeed = value.indiaFeed;
     this.apiUsage = value.apiUsage;
@@ -142,7 +142,7 @@ export class MutualFundAnalyticsComponent implements OnInit, OnDestroy {
     }
     this.overviewDashboard = report.available ? this.buildOverviewDashboard() : null;
 
-    if (report.available && !hadReport && this.activeTab === 'sebi-universe') {
+    if (report.available && this.activeTab === 'sebi-universe') {
       // The page previously fell back to the SEBI tab when no report existed.
       // Move to Overview when a report becomes available so the category dashboard is visible.
       this.activeTab = 'overview';
@@ -222,6 +222,11 @@ export class MutualFundAnalyticsComponent implements OnInit, OnDestroy {
 
   onComparisonFundChange(name: string): void {
     this.comparisonFundName = name;
+  }
+
+  onSectorChange(sector: string): void {
+    this.selectedSectorName = sector;
+    this.overviewDashboard = this.buildOverviewDashboard();
   }
 
   refreshProviderData(): void {
@@ -519,27 +524,38 @@ export class MutualFundAnalyticsComponent implements OnInit, OnDestroy {
       return { fund, entries };
     }).filter(row => row.entries.length > 0);
     const sectorTotals = new Map<string, number>();
+    const sectorCounts = new Map<string, number>();
     sectorFunds.forEach(row => row.entries.forEach(entry => {
       sectorTotals.set(entry.sector, (sectorTotals.get(entry.sector) || 0) + entry.value);
+      sectorCounts.set(entry.sector, (sectorCounts.get(entry.sector) || 0) + 1);
     }));
-    const sectorAverages = new Map<string, number>();
-    sectorTotals.forEach((total, sector) => {
-      sectorAverages.set(sector, total / sectorFunds.length);
-    });
-    const sectorExposureRows: any[] = sectorFunds.map(row => {
-      const topSector = [...row.entries].sort((a, b) => b.value - a.value)[0];
-      const categoryAverage = sectorAverages.get(topSector.sector) ?? null;
-      return {
-        name: row.fund?.short || row.fund?.name || 'Unnamed fund',
-        fullName: row.fund?.name || 'Unnamed fund',
-        manager: row.fund?.manager || '—',
-        sector: topSector.sector,
-        allocation: topSector.value,
-        vsCategory: categoryAverage === null ? null : topSector.value - categoryAverage,
-        return1Y: this.fundReturn(row.fund, '1Y'),
-        edgeScore: this.finiteNumber(row.fund?.edge_score),
-      };
-    }).sort((a, b) => b.allocation - a.allocation);
+    const sectorOptions = [...sectorTotals.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .map(([sector]) => sector);
+    if (!sectorOptions.includes(this.selectedSectorName)) {
+      this.selectedSectorName = sectorOptions[0] || '';
+    }
+    const selectedSector = this.selectedSectorName;
+    const sectorAverage = selectedSector && sectorCounts.get(selectedSector)
+      ? (sectorTotals.get(selectedSector) || 0) / (sectorCounts.get(selectedSector) || 1)
+      : null;
+    const sectorExposureRows: any[] = sectorFunds
+      .map(row => {
+        const exposure = row.entries.find(entry => entry.sector === selectedSector);
+        if (!exposure) return null;
+        return {
+          name: row.fund?.short || row.fund?.name || 'Unnamed fund',
+          fullName: row.fund?.name || 'Unnamed fund',
+          manager: row.fund?.manager || '—',
+          sector: selectedSector,
+          allocation: exposure.value,
+          vsCategory: sectorAverage === null ? null : exposure.value - sectorAverage,
+          return1Y: this.fundReturn(row.fund, '1Y'),
+          edgeScore: this.finiteNumber(row.fund?.edge_score),
+        };
+      })
+      .filter((row): row is NonNullable<typeof row> => row !== null)
+      .sort((a, b) => b.allocation - a.allocation);
     const maxSectorAllocation = Math.max(1, ...sectorExposureRows.map(row => row.allocation));
     sectorExposureRows.forEach(row => row.barWidth = row.allocation / maxSectorAllocation * 100);
 
@@ -579,7 +595,10 @@ export class MutualFundAnalyticsComponent implements OnInit, OnDestroy {
       scatterXTicks,
       scatterYTicks,
       sectorExposureRows,
-      sectorCoverage: sectorFunds.length,
+      sectorOptions,
+      selectedSector,
+      sectorCoverage: sectorExposureRows.length,
+      sectorUniverseCoverage: sectorFunds.length,
       sectorMaxAllocation: maxSectorAllocation,
     };
   }

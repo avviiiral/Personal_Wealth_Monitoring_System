@@ -1,21 +1,43 @@
 <section class="mf-analytics-page">
-  <header class="page-header">
-    <div>
-      <span class="eyebrow">INVESTMENT RESEARCH · SOURCE-DRIVEN ANALYTICS</span>
-      <h1>Mutual Fund Analytics</h1>
-      <p *ngIf="report?.available">{{ report?.report_cycle }} · Data as of {{ report?.report_date | date:'dd MMM yyyy' }} · {{ funds.length }} funds in source universe</p>
-      <p *ngIf="!report?.available && indiaFeed?.available">{{ indiaFeed?.source_label }} · {{ indiaFeed?.total_count }} schemes · Snapshot / NAV date {{ indiaFeed?.report_date | date:'dd MMM yyyy' }}</p>
-      <p *ngIf="!report?.available && !indiaFeed?.available">Load the keyless AMFI scheme/NAV master or enable optional IndianAPI enrichment.</p>
+  <header class="mf-report-hero">
+    <div class="mf-hero-top">
+      <div class="mf-brand">
+        <span class="mf-brand-mark">PW</span>
+        <span class="mf-brand-name">Personal Wealth Monitoring</span>
+      </div>
+      <div class="mf-hero-meta">
+        <span>INTERNAL RESEARCH</span>
+        <strong>{{ researchCycleLabel }}</strong>
+        <small>{{ researchCategoryLabel }} · {{ researchAsOfLabel }}</small>
+      </div>
     </div>
-    <div class="header-actions">
-      <label *ngIf="funds.length">Selected fund
-        <select [(ngModel)]="selectedFundName">
-          <option *ngFor="let fund of funds; trackBy: trackByName" [value]="fund.name">{{ fund.short || fund.name }}</option>
-        </select>
-      </label>
-      <button type="button" class="refresh-button" [hidden]="activeTab === 'sebi-universe'" (click)="refreshProviderData()" [disabled]="loading || refreshing">{{ refreshing ? 'Refreshing…' : 'Refresh market data' }}</button>
+    <div class="mf-hero-copy">
+      <h1>{{ researchCategoryLabel }} <span>Fund Intelligence</span></h1>
+      <p>{{ funds.length }}-fund universe · Holdings · EDGE Scores · Portfolio Quants · Sector Positioning · Peer Comparison</p>
     </div>
   </header>
+
+  <div class="mf-report-fundbar" *ngIf="report?.available && funds.length">
+    <label>Active Fund</label>
+    <select class="mf-active-fund-select" [ngModel]="selectedFundName" (ngModelChange)="onActiveFundChange($event)">
+      <option *ngFor="let fund of funds; trackBy: trackByName" [ngValue]="fund.name">
+        {{ fund.short || fund.name }}
+      </option>
+    </select>
+    <span class="mf-vs-badge">vs Category Avg</span>
+    <label class="mf-universe-select" *ngIf="researchUniverses.length > 1">
+      <span>Universe</span>
+      <select [ngModel]="selectedUniverseId" (ngModelChange)="onUniverseChange($event)" [disabled]="loading">
+        <option *ngFor="let universe of researchUniverses" [ngValue]="universe.id">
+          {{ universe.category }} · {{ universe.report_date | date:'dd MMM yyyy' }}
+        </option>
+      </select>
+    </label>
+    <span class="mf-fundbar-meta">{{ funds.length }} funds · Returns as of {{ p2p?.asof || 'not supplied' }} · Holdings, EDGE and risk as of {{ report?.report_date | date:'dd MMM yyyy' }}</span>
+    <button type="button" class="mf-refresh-button" (click)="refreshProviderData()" [disabled]="loading || refreshing">
+      {{ refreshing ? 'Refreshing…' : 'Refresh market data' }}
+    </button>
+  </div>
 
   <section class="api-budget-panel" *ngIf="apiUsage && activeTab !== 'sebi-universe'">
     <div class="api-budget-heading">
@@ -104,7 +126,7 @@
     </section>
 
   <ng-container *ngIf="!loading && ((report?.available && raw) || sebiSummary)">
-    <nav class="tab-nav" aria-label="Mutual fund analytics sections">
+    <nav class="tab-nav mf-reference-nav" aria-label="Mutual fund analytics sections">
       <button *ngFor="let tab of tabs" type="button" [hidden]="(tab.id === 'india' && !indiaFeed?.available) || (!report?.available && tab.id !== 'sebi-universe')" [class.active]="activeTab === tab.id" (click)="activeTab = tab.id">{{ tab.label }}</button>
     </nav>
 

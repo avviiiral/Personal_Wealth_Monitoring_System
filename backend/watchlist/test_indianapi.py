@@ -126,6 +126,36 @@ class IndianAPIFeedTests(TestCase):
         self.assertEqual(response.data["funds"][0]["latest_nav"], 123.4567)
 
     @override_settings(INDIANAPI_API_KEY="")
+    def test_malformed_cached_snapshot_falls_back_to_amfi_master(self):
+        scheme = AMFIMasterScheme.objects.create(
+            scheme_code="999002",
+            scheme_name="Fallback Fund",
+            isin_growth="INF000000002",
+            is_active=True,
+        )
+        AMFIMasterNAV.objects.create(
+            scheme=scheme,
+            date=date(2026, 11, 19),
+            nav=Decimal("123.456700"),
+            source="AMFI_NAVALL",
+        )
+        MutualFundResearchReport.objects.create(
+            report_key="indianapi-india",
+            report_date=date(2026, 11, 20),
+            report_cycle="Malformed legacy IndianAPI snapshot",
+            payload=["unexpected", "legacy", "shape"],
+        )
+
+        request = self.factory.get("/api/mutual-fund-analytics/india-market-feed/")
+        force_authenticate(request, user=self.user)
+        response = india_mutual_fund_feed(request)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["source"], "AMFI")
+        self.assertEqual(response.data["funds"][0]["fund_name"], "Fallback Fund")
+        self.assertEqual(response.data["funds"][0]["latest_nav"], 123.4567)
+
+    @override_settings(INDIANAPI_API_KEY="")
     def test_cached_indianapi_snapshot_remains_available_without_key(self):
         MutualFundResearchReport.objects.create(
             report_key="indianapi-india",

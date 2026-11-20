@@ -76,11 +76,11 @@ class SEBITaxonomyTests(SimpleTestCase):
 
     def test_legacy_navall_isin_columns_are_assigned_to_growth_or_idcw(self):
         source = (
-            "Scheme Code;ISIN Div Payout/ ISIN Growth;ISIN Div Reinvestment;Scheme Name;Net Asset Value;Date\\n"
-            "Open Ended Schemes (Equity Scheme - Large Cap Fund)\\n"
-            "Example AMC\\n"
-            "100010;INF-GROWTH;;Example Large Cap Fund - Direct Plan - Growth;25.5;19-Nov-2026\\n"
-            "100011;INF-PAYOUT;INF-REINVEST;Example Large Cap Fund - Direct Plan - IDCW Reinvestment;24.5;19-Nov-2026\\n"
+            "Scheme Code;ISIN Div Payout/ ISIN Growth;ISIN Div Reinvestment;Scheme Name;Net Asset Value;Date\n"
+            "Open Ended Schemes (Equity Scheme - Large Cap Fund)\n"
+            "Example AMC\n"
+            "100010;INF-GROWTH;;Example Large Cap Fund - Direct Plan - Growth;25.5;19-Nov-2026\n"
+            "100011;INF-PAYOUT;INF-REINVEST;Example Large Cap Fund - Direct Plan - IDCW Reinvestment;24.5;19-Nov-2026\n"
         )
         records = {row["scheme_code"]: row for row in parse_amfi_navall_feed(source)}
         self.assertEqual(records["100010"]["isin_growth"], "INF-GROWTH")

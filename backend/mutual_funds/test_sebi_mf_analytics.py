@@ -11,6 +11,7 @@ from mutual_funds.services.sebi_mf_analytics import (
     compute_fund_performance_metrics,
     map_sebi_hierarchy,
     parse_amfi_navall_feed,
+    _normalise_nav_series,
 )
 
 import pandas as pd
@@ -197,6 +198,44 @@ class SEBITaxonomyTests(SimpleTestCase):
         self.assertGreaterEqual(
             AMFIMasterScheme._meta.get_field("option").max_length,
             len(long_option),
+        )
+
+
+class SEBINAVHistoryTests(SimpleTestCase):
+    def test_short_history_does_not_report_full_period_cagr(self):
+        series = [
+            (date(2026, 11, 18), 100.0),
+            (date(2026, 11, 19), 101.0),
+            (date(2026, 11, 20), 102.0),
+        ]
+        metrics = compute_fund_performance_metrics(series)
+        self.assertIsNone(metrics["CAGR_1Y_pct"])
+        self.assertIsNone(metrics["CAGR_3Y_pct"])
+        self.assertIsNone(metrics["CAGR_5Y_pct"])
+        self.assertIsNone(metrics["CAGR_10Y_pct"])
+        self.assertEqual(metrics["NAV_Observations"], 3)
+
+    def test_cagr_requires_anniversary_history(self):
+        series = [
+            (date(2024, 11, 19), 100.0),
+            (date(2025, 11, 19), 110.0),
+            (date(2026, 11, 20), 121.0),
+        ]
+        metrics = compute_fund_performance_metrics(series)
+        self.assertIsNotNone(metrics["CAGR_1Y_pct"])
+        self.assertIsNone(metrics["CAGR_3Y_pct"])
+
+    def test_nav_series_deduplicates_observations_by_date(self):
+        payload = {
+            "data": [
+                {"date": "20-11-2026", "nav": "102.0"},
+                {"date": "19-11-2026", "nav": "101.0"},
+                {"date": "20-11-2026", "nav": "102.0"},
+            ]
+        }
+        self.assertEqual(
+            _normalise_nav_series(payload),
+            [(date(2026, 11, 19), 101.0), (date(2026, 11, 20), 102.0)],
         )
 
 

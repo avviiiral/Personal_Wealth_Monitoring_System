@@ -75,9 +75,9 @@
         <div class="chart-wrap large" *ngIf="returnDistribution?.bins?.length; else noReturnDistribution"><canvas id="category-return-distribution-chart"></canvas></div>
         <ng-template #noReturnDistribution><div class="empty-state chart-empty"><h3>No return distribution available</h3><p>{{ returnDistribution?.message || 'Insufficient locally cached NAV history to calculate category returns.' }}</p></div></ng-template>
         <p class="method-note" *ngIf="returnDistribution?.available">
-          Funds with usable history — 3M: {{ returnDistribution?.funds_counted?.['3M'] || 0 }},
-          6M: {{ returnDistribution?.funds_counted?.['6M'] || 0 }},
-          1Y: {{ returnDistribution?.funds_counted?.['1Y'] || 0 }}.
+          Funds with usable history — 3M: {{ getDistributionCount('3M') }},
+          6M: {{ getDistributionCount('6M') }},
+          1Y: {{ getDistributionCount('1Y') }}.
           As of {{ formatDate(returnDistribution?.as_of_date) }}. Each fund is counted once per period.
         </p>
       </article>

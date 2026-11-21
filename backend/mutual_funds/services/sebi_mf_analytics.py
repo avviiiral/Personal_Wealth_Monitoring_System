@@ -234,7 +234,10 @@ def analytics_export_dir() -> Path:
 
 
 def _normalise_text(value: Any) -> str:
-    return re.sub(r"\s+", " ", str(value or "").replace("\ufeff", "")).strip()
+    text = str(value or "").replace("\ufeff", "")
+    # Repair common UTF-8 apostrophe mojibake found in AMFI category labels.
+    text = text.replace("\u00e2\u0080\u0099", "'").replace("\u00e2\u20ac\u2122", "'")
+    return re.sub(r"\s+", " ", text).strip()
 
 
 def _normalise_key(value: Any) -> str:
@@ -327,7 +330,7 @@ def _category_from_raw_header(raw_header: str) -> str:
     # "Income/Debt Oriented Schemes", "Other Scheme", and repeated nested
     # wrappers before the actual SEBI leaf label.
     wrapper_patterns = (
-        r"^(?:Equity|Debt|Hybrid|Solution\s+Oriented|Other)\s+Schemes?\s*[-:]\s*",
+        r"^(?:Equity|Debt|Hybrid|Solution\s+Oriented|Other)\s+Schemes?\s*(?:\*{1,2}\s*)?[-:]\s*",
         r"^Income\s*/\s*Debt\s+Oriented\s+Schemes?\s*[-:]\s*",
         r"^Overseas\s+Fund\s+of\s+Funds\s*[-:]\s*",
         r"^Fund\s+of\s+Funds\s+Scheme\s*\((?:Domestic|Overseas)\)\s*[-:]\s*",

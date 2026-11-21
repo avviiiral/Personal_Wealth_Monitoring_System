@@ -4,7 +4,7 @@ import { Component, OnDestroy, OnInit, ChangeDetectorRef, inject } from '@angula
 import { FormsModule } from '@angular/forms';
 import { Chart, registerables } from 'chart.js';
 import { Subscription } from 'rxjs';
-import { environment } from '../../../environments/environment';
+import { environment } from '../../environments/environment';
 
 Chart.register(...registerables);
 

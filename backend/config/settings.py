@@ -240,6 +240,17 @@ SECURE_HSTS_PRELOAD = _env_bool('SECURE_HSTS_PRELOAD', False)
 SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
 
 
+# Optional IndianAPI enrichment for Indian mutual-fund research.
+# AMFI remains the keyless baseline; these settings are deliberately optional.
+INDIANAPI_API_KEY = os.environ.get("INDIANAPI_API_KEY", "").strip()
+INDIANAPI_BASE_URL = os.environ.get(
+    "INDIANAPI_BASE_URL", "https://stock.indianapi.in"
+).strip().rstrip("/")
+INDIANAPI_TIMEOUT_SECONDS = max(1, _env_int("INDIANAPI_TIMEOUT_SECONDS", 20))
+# PWMS hard cap: the request dispatcher also clamps this setting to 400.
+INDIANAPI_MONTHLY_REQUEST_BUDGET = min(400, max(1, _env_int("INDIANAPI_MONTHLY_REQUEST_BUDGET", 400)))
+
+
 # Browser Web Push (VAPID). Keep the private key server-side only.
 WEB_PUSH_VAPID_PUBLIC_KEY = os.environ.get("WEB_PUSH_VAPID_PUBLIC_KEY", "").strip()
 WEB_PUSH_VAPID_PRIVATE_KEY = os.environ.get("WEB_PUSH_VAPID_PRIVATE_KEY", "").strip()

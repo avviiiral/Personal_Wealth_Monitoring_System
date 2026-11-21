@@ -1,5 +1,6 @@
 from django.urls import path
 
+
 from watchlist.views import (
     watch_list_bulk_add,
     watch_list_bulk_remove,

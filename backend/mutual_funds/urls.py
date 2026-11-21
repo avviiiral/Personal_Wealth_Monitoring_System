@@ -1,5 +1,7 @@
 from django.urls import path
 
+from .analytics import personal_mutual_fund_portfolio_analytics
+
 from .views import (
     csrf_token,
     mutual_fund_summary,
@@ -18,6 +20,7 @@ from .underlying_views import mutual_fund_underlying
 
 
 urlpatterns = [
+    path("analytics/portfolio/", personal_mutual_fund_portfolio_analytics, name="mutual-fund-personal-portfolio-analytics"),
     path("summary/", mutual_fund_summary, name="mutual-fund-summary"),
     path("holdings/", mutual_fund_holdings, name="mutual-fund-holdings"),
     path("transactions/", mutual_fund_transactions, name="mutual-fund-transactions"),

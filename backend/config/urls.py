@@ -35,6 +35,12 @@ urlpatterns = [
         include("analytics.urls"),
     ),
 
+    # Mutual Fund Analytics API (separate from the Watch List API)
+    path(
+        "api/mutual-fund-analytics/",
+        include("mutual_funds.analytics_urls"),
+    ),
+
     # Mutual Funds API
     path(
         "api/mutual-funds/",

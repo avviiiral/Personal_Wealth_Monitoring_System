@@ -154,3 +154,10 @@ class DiscoveryRun(models.Model):
 
     class Meta:
         ordering = ["-started_at"]
+
+
+# Keep the report snapshot model registered with Django's model loader.
+from watchlist.research_models import (
+    IndianAPIRequestUsage,
+    MutualFundResearchReport,
+)

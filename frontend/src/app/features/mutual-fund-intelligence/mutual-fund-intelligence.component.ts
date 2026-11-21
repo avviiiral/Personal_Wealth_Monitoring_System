@@ -182,6 +182,11 @@ export class MutualFundIntelligenceComponent implements OnInit, OnDestroy {
     this.http.get<AnalyticsSummary>(`${this.endpoint}/summary/`, { withCredentials: true }).subscribe({
       next: response => {
         this.summary = response;
+        if (this.selectedCategory) {
+          this.categorySummary = this.summary?.tree_summary?.find(row =>
+            row['Level_3_Category'] === this.selectedCategory && row['Plan'] === this.selectedPlan,
+          ) ?? null;
+        }
         this.cdr.detectChanges();
       },
       error: error => console.error('Unable to load SEBI analytics summary:', error),
@@ -224,8 +229,7 @@ export class MutualFundIntelligenceComponent implements OnInit, OnDestroy {
     this.historySubscription?.unsubscribe();
     this.categorySubscription?.unsubscribe();
     this.rankingsSubscription?.unsubscribe();
-    this.categorySubscription?.unsubscribe();
-    this.rankingsSubscription?.unsubscribe();
+    this.loadingHistory = false;
 
     if (!category) {
       this.loadingRankings = false;
@@ -261,6 +265,7 @@ export class MutualFundIntelligenceComponent implements OnInit, OnDestroy {
     this.portfolio = null;
     this.historyMessage = '';
     this.historySubscription?.unsubscribe();
+    this.loadingHistory = false;
     this.applyPlanFilter();
     if (this.selectedCategory) this.loadRankings();
     this.refreshCharts();
@@ -359,9 +364,14 @@ export class MutualFundIntelligenceComponent implements OnInit, OnDestroy {
     this.categorySummary = null;
     this.history = [];
     this.metrics = {};
+    this.portfolio = null;
     this.historyMessage = '';
     this.errorMessage = '';
     this.historySubscription?.unsubscribe();
+    this.categorySubscription?.unsubscribe();
+    this.rankingsSubscription?.unsubscribe();
+    this.loadingHistory = false;
+    this.loadingRankings = false;
     this.refreshCharts();
   }
 

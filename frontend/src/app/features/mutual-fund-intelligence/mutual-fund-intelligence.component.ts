@@ -58,12 +58,26 @@ interface NavPoint {
   nav: number;
 }
 
+interface PortfolioHolding {
+  isin: string;
+  stock_name: string;
+  sector: string;
+  weight_pct: number;
+}
+
+interface PortfolioDisclosure {
+  portfolio_date: string;
+  source_file: string;
+  holdings: PortfolioHolding[];
+}
+
 interface FundHistoryResponse {
   available: boolean;
   scheme: FundOption;
   history: NavPoint[];
   history_count: number;
   metrics: Record<string, number | string | null>;
+  portfolio?: PortfolioDisclosure | null;
   message?: string | null;
 }
 
@@ -101,6 +115,7 @@ export class MutualFundIntelligenceComponent implements OnInit, OnDestroy {
   summary: AnalyticsSummary | null = null;
   history: NavPoint[] = [];
   metrics: Record<string, number | string | null> = {};
+  portfolio: PortfolioDisclosure | null = null;
   selectedCategory = '';
   selectedPlan = 'Direct Plan';
   selectedFundCode = '';
@@ -125,6 +140,7 @@ export class MutualFundIntelligenceComponent implements OnInit, OnDestroy {
 
   private rankingsSubscription?: Subscription;
   private historySubscription?: Subscription;
+  private categorySubscription?: Subscription;
   private charts: Chart[] = [];
 
   ngOnInit(): void {
@@ -136,6 +152,7 @@ export class MutualFundIntelligenceComponent implements OnInit, OnDestroy {
     this.destroyCharts();
     this.rankingsSubscription?.unsubscribe();
     this.historySubscription?.unsubscribe();
+    this.categorySubscription?.unsubscribe();
   }
 
   get selectedCategoryFunds(): number {
@@ -201,9 +218,14 @@ export class MutualFundIntelligenceComponent implements OnInit, OnDestroy {
     this.categorySummary = null;
     this.history = [];
     this.metrics = {};
+    this.portfolio = null;
     this.historyMessage = '';
     this.errorMessage = '';
     this.historySubscription?.unsubscribe();
+    this.categorySubscription?.unsubscribe();
+    this.rankingsSubscription?.unsubscribe();
+    this.categorySubscription?.unsubscribe();
+    this.rankingsSubscription?.unsubscribe();
 
     if (!category) {
       this.loadingRankings = false;
@@ -213,7 +235,7 @@ export class MutualFundIntelligenceComponent implements OnInit, OnDestroy {
 
     this.loadingRankings = true;
     const params = new HttpParams().set('category', category);
-    this.http.get<CategoryFundsResponse>(`${this.endpoint}/categories/`, {
+    this.categorySubscription = this.http.get<CategoryFundsResponse>(`${this.endpoint}/categories/`, {
       params, withCredentials: true,
     }).subscribe({
       next: response => {
@@ -236,6 +258,7 @@ export class MutualFundIntelligenceComponent implements OnInit, OnDestroy {
     this.selectedFund = null;
     this.history = [];
     this.metrics = {};
+    this.portfolio = null;
     this.historyMessage = '';
     this.historySubscription?.unsubscribe();
     this.applyPlanFilter();
@@ -253,6 +276,7 @@ export class MutualFundIntelligenceComponent implements OnInit, OnDestroy {
 
   private loadRankings(): void {
     this.rankingsSubscription?.unsubscribe();
+    this.loadingRankings = true;
     const params = new HttpParams()
       .set('category', this.selectedCategory)
       .set('plan', this.selectedPlan)
@@ -285,6 +309,7 @@ export class MutualFundIntelligenceComponent implements OnInit, OnDestroy {
     this.selectedFund = this.funds.find(fund => fund.scheme_code === schemeCode) ?? null;
     this.history = [];
     this.metrics = {};
+    this.portfolio = null;
     this.historyMessage = '';
     this.historySubscription?.unsubscribe();
 
@@ -301,6 +326,7 @@ export class MutualFundIntelligenceComponent implements OnInit, OnDestroy {
       next: response => {
         this.history = response.history ?? [];
         this.metrics = response.metrics ?? {};
+        this.portfolio = response.portfolio ?? null;
         this.historyMessage = response.message ?? '';
         this.loadingHistory = false;
         this.cdr.detectChanges();
@@ -388,6 +414,16 @@ export class MutualFundIntelligenceComponent implements OnInit, OnDestroy {
       else break;
     }
     return result;
+  }
+
+  getSectorAllocation(): Array<{ sector: string; weight: number }> {
+    const totals = new Map<string, number>();
+    for (const holding of this.portfolio?.holdings ?? []) {
+      const sector = holding.sector?.trim() || 'Unclassified';
+      totals.set(sector, (totals.get(sector) ?? 0) + Number(holding.weight_pct || 0));
+    }
+    return [...totals.entries()].map(([sector, weight]) => ({ sector, weight }))
+      .sort((a, b) => b.weight - a.weight);
   }
 
   getTopFunds(metric: keyof RankingRow, limit = 10): RankingRow[] {
@@ -583,8 +619,17 @@ export class MutualFundIntelligenceComponent implements OnInit, OnDestroy {
 
   private renderPortfolioChart(): void {
     const canvas = document.getElementById('portfolio-chart') as HTMLCanvasElement | null;
-    if (!canvas) return;
-    // Holdings disclosures are not currently exposed by the live analytics API.
+    const sectors = this.getSectorAllocation();
+    if (!canvas || !sectors.length) return;
+    const chart = new Chart(canvas, {
+      type: 'doughnut',
+      data: {
+        labels: sectors.map(row => row.sector),
+        datasets: [{ data: sectors.map(row => row.weight), backgroundColor: ['#FD7740', '#071735', '#CC9F53', '#3B82F6', '#16A36A', '#7C3AED', '#0891B2', '#D97706', '#DC2626'], borderWidth: 2, borderColor: document.documentElement.classList.contains('dark-theme') ? '#171c25' : '#ffffff' }],
+      },
+      options: { ...this.chartOptions(), cutout: '62%', plugins: { ...this.chartOptions().plugins, legend: { position: 'bottom' as const } } },
+    });
+    this.charts.push(chart);
   }
 
   private renderPositioningChart(): void {

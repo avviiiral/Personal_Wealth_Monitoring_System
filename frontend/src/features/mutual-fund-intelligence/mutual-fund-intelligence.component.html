@@ -70,6 +70,17 @@
         <article class="kpi-card"><span>Category average Sharpe</span><strong>{{ formatNumber(getCategoryMetric('Sharpe_Ratio'), 3) }}</strong><small>Risk-adjusted return</small></article>
         <article class="kpi-card"><span>Category average max drawdown</span><strong>{{ formatPct(getCategoryMetric('Max_Drawdown_pct')) }}</strong><small>Peak-to-trough decline</small></article>
       </div>
+      <article class="chart-card return-distribution-card">
+        <div class="chart-title"><div><span>01</span><h3>Number of funds by return range</h3></div><small>5 percentage-point bands · {{ selectedPlan }}</small></div>
+        <div class="chart-wrap large" *ngIf="returnDistribution?.bins?.length; else noReturnDistribution"><canvas id="category-return-distribution-chart"></canvas></div>
+        <ng-template #noReturnDistribution><div class="empty-state chart-empty"><h3>No return distribution available</h3><p>{{ returnDistribution?.message || 'Insufficient locally cached NAV history to calculate category returns.' }}</p></div></ng-template>
+        <p class="method-note" *ngIf="returnDistribution?.available">
+          Funds with usable history — 3M: {{ returnDistribution?.funds_counted?.['3M'] || 0 }},
+          6M: {{ returnDistribution?.funds_counted?.['6M'] || 0 }},
+          1Y: {{ returnDistribution?.funds_counted?.['1Y'] || 0 }}.
+          As of {{ formatDate(returnDistribution?.as_of_date) }}. Each fund is counted once per period.
+        </p>
+      </article>
       <div class="chart-grid">
         <article class="chart-card">
           <div class="chart-title"><div><span>01</span><h3>Top funds by 3Y CAGR</h3></div><small>Within selected category</small></div>

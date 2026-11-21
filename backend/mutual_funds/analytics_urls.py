@@ -16,6 +16,7 @@ from mutual_funds.sebi_views import (
     download_sebi_category_risk_chart,
     download_sebi_q1_chart,
     sebi_fund_nav_history,
+    sebi_category_return_distribution,
     sebi_universe_rankings,
     sebi_universe_summary,
 )
@@ -31,6 +32,7 @@ urlpatterns = [
     path("sebi/categories/", sebi_category_funds, name="sebi-mf-category-funds"),
     path("sebi/summary/", sebi_universe_summary, name="sebi-mf-universe-summary"),
     path("sebi/rankings/", sebi_universe_rankings, name="sebi-mf-universe-rankings"),
+    path("sebi/category-return-distribution/", sebi_category_return_distribution, name="sebi-mf-category-return-distribution"),
     path("sebi/funds/<str:scheme_code>/history/", sebi_fund_nav_history, name="sebi-mf-fund-nav-history"),
     path("sebi/export/", download_sebi_analytics_workbook, name="sebi-mf-analytics-export"),
     path("sebi/charts/category-risk/", download_sebi_category_risk_chart, name="sebi-mf-category-risk-chart"),

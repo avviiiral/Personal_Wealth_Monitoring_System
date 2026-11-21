@@ -788,6 +788,123 @@ def _normalise_nav_series(payload: dict[str, Any]) -> list[tuple[date, float]]:
     return sorted(by_date.items(), key=lambda item: item[0])
 
 
+def persist_cached_nav_histories(
+    schemes: list[dict[str, Any]] | None = None,
+    batch_size: int = 500,
+) -> dict[str, int]:
+    """Persist local MFapi cache observations without making network requests."""
+    if schemes is None:
+        schemes = load_growth_universe(plans="both")
+    schemes_by_code = {str(row["scheme_code"]): row for row in schemes}
+    scheme_ids = dict(
+        AMFIMasterScheme.objects.filter(
+            scheme_code__in=list(schemes_by_code)
+        ).values_list("scheme_code", "id")
+    )
+    pending: list[AMFIMasterNAV] = []
+    persisted = 0
+    skipped = 0
+    with_cache = 0
+    batch_size = max(1, int(batch_size))
+
+    def flush() -> int:
+        if not pending:
+            return 0
+        count = len(pending)
+        with transaction.atomic():
+            AMFIMasterNAV.objects.bulk_create(
+                pending,
+                batch_size=batch_size,
+                update_conflicts=True,
+                unique_fields=["scheme", "date", "source"],
+                update_fields=["nav"],
+            )
+        pending.clear()
+        return count
+
+    for code in schemes_by_code:
+        scheme_id = scheme_ids.get(code)
+        path = _nav_cache_path(code)
+        if scheme_id is None or not path.is_file():
+            skipped += 1
+            continue
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            logger.warning("Skipping unreadable MFapi cache for scheme=%s", code)
+            skipped += 1
+            continue
+        if not _valid_mfapi_payload(payload):
+            skipped += 1
+            continue
+        series = _normalise_nav_series(payload)
+        if not series:
+            skipped += 1
+            continue
+        with_cache += 1
+        for nav_date, nav_value in series:
+            pending.append(
+                AMFIMasterNAV(
+                    scheme_id=scheme_id,
+                    date=nav_date,
+                    nav=nav_value,
+                    source=MFAPI_SOURCE,
+                )
+            )
+            if len(pending) >= batch_size:
+                persisted += flush()
+
+    persisted += flush()
+    return {
+        "schemes_requested": len(schemes_by_code),
+        "schemes_with_cache": with_cache,
+        "schemes_skipped": skipped,
+        "nav_rows_upserted": persisted,
+    }
+
+
+def get_cached_nav_coverage(
+    schemes: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    """Return local MFapi cache coverage without making network requests."""
+    if schemes is None:
+        schemes = load_growth_universe(plans="both")
+    histories = []
+    missing = []
+    for scheme in schemes:
+        code = str(scheme["scheme_code"])
+        path = _nav_cache_path(code)
+        if not path.is_file():
+            missing.append(code)
+            continue
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            missing.append(code)
+            continue
+        series = _normalise_nav_series(payload) if _valid_mfapi_payload(payload) else []
+        if not series:
+            missing.append(code)
+            continue
+        histories.append({
+            "scheme_code": code,
+            "observations": len(series),
+            "first_date": series[0][0].isoformat(),
+            "last_date": series[-1][0].isoformat(),
+            "calendar_days": (series[-1][0] - series[0][0]).days,
+        })
+    requested = len(schemes)
+    available = len(histories)
+    return {
+        "schemes_requested": requested,
+        "schemes_with_history": available,
+        "schemes_without_history": requested - available,
+        "coverage_pct": round(available * 100.0 / requested, 2) if requested else 0.0,
+        "histories": histories,
+        "missing_scheme_codes": missing,
+    }
+
+
 def _anniversary(value: date, years: int) -> date:
     try:
         return value.replace(year=value.year - years)
@@ -827,7 +944,8 @@ def compute_fund_performance_metrics(
     for years in (1, 3, 5, 10):
         target_date = _anniversary(latest_date, years)
         index = bisect_right(dates, target_date) - 1
-        if index >= 0:
+        # Do not annualise a shorter history and label it as a full trailing period.
+        if index >= 0 and dates[index] <= target_date:
             metrics[f"CAGR_{years}Y_pct"] = _cagr(
                 navs[index], latest_nav, dates[index], latest_date
             )
@@ -838,7 +956,7 @@ def compute_fund_performance_metrics(
     for end_index, end_date in enumerate(dates):
         target_date = _anniversary(end_date, 3)
         start_index = bisect_right(dates, target_date, 0, end_index + 1) - 1
-        if start_index < 0 or start_index >= end_index:
+        if start_index < 0 or start_index >= end_index or dates[start_index] > target_date:
             continue
         result = _cagr(
             navs[start_index],
@@ -1441,8 +1559,9 @@ def build_sebi_universe_analytics(
     expense_ratio_file: str | Path | None = None,
     category_flow_file: str | Path | None = None,
     output_path: str | Path | None = None,
+    persist_nav_to_master: bool = True,
 ) -> dict[str, Any]:
-    """Fetch/cache NAV history, build fund and peer metrics, then export XLSX/plots."""
+    """Fetch/cache NAV history, persist observations, build metrics and export."""
     schemes = load_growth_universe(plans=plans, categories=categories, max_schemes=max_schemes)
     if not schemes:
         raise ValueError(
@@ -1456,6 +1575,17 @@ def build_sebi_universe_analytics(
         requests_per_second=requests_per_second,
         refresh_cache=refresh_cache,
         retries=retries,
+    )
+
+    persistence = (
+        persist_cached_nav_histories(schemes)
+        if persist_nav_to_master
+        else {
+            "schemes_requested": len(schemes),
+            "schemes_with_cache": 0,
+            "schemes_skipped": len(schemes),
+            "nav_rows_upserted": 0,
+        }
     )
 
     scheme_by_code = {str(row["scheme_code"]): row for row in schemes}
@@ -1526,6 +1656,8 @@ def build_sebi_universe_analytics(
         "funds_with_history": len(funds),
         "funds_without_history": len(errors),
         "mfapi_cache_hits": cache_hits,
+        "nav_persistence": persistence,
+        "history_coverage": get_cached_nav_coverage(schemes),
         "categories_count": int(funds["Level_3_Category"].nunique()),
         "category_tree_nodes": len(CATEGORY_TREE),
         "current_sebi_leaf_categories": sum(

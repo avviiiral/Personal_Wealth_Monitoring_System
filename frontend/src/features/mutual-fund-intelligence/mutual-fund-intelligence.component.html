@@ -81,6 +81,12 @@
           As of {{ formatDate(returnDistribution?.as_of_date) }}. Each fund is counted once per period.
         </p>
       </article>
+      <article class="chart-card aaum-card">
+        <div class="chart-title"><div><span>02</span><h3>AUM Concentration — Top 12 Funds (₹ Cr)</h3></div><small>{{ categoryAAUM?.quarter_label || 'Latest available AMFI quarter' }} · {{ selectedPlan }}</small></div>
+        <div class="chart-wrap extra-large" *ngIf="categoryAAUM?.rows?.length; else noCategoryAAUM"><canvas id="category-aaum-chart"></canvas></div>
+        <ng-template #noCategoryAAUM><div class="empty-state chart-empty"><h3>AUM data not available</h3><p>{{ categoryAAUM?.message || 'Import the latest AMFI scheme-wise AAUM report to populate this chart.' }}</p></div></ng-template>
+        <p class="method-note" *ngIf="categoryAAUM?.rows?.length">Source: AMFI scheme-wise quarterly Average AUM. Values converted from ₹ lakh to ₹ crore.</p>
+      </article>
       <div class="chart-grid">
         <article class="chart-card">
           <div class="chart-title"><div><span>01</span><h3>Top funds by 3Y CAGR</h3></div><small>Within selected category</small></div>

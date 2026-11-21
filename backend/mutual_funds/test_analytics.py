@@ -91,3 +91,25 @@ class LegacyMutualFundCashflowTests(SimpleTestCase):
             fees=Decimal("0.00"),
         )
         self.assertEqual(_legacy_transaction_cashflow(transaction), (None, None))
+
+
+class PositiveNAVQueryRegressionTests(SimpleTestCase):
+    def test_analytics_latest_nav_queries_require_positive_nav(self):
+        # Regression guard: analytics must use the latest positive NAV,
+        # rather than allowing a zero NAV to become the market valuation.
+        from pathlib import Path
+
+        analytics_source = (
+            Path(__file__).parent / "analytics.py"
+        ).read_text(encoding="utf-8")
+        nav_service_source = (
+            Path(__file__).parent / "services" / "nav_service.py"
+        ).read_text(encoding="utf-8")
+        amfi_source = (
+            Path(__file__).parent / "services" / "amfi.py"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("scheme_id=OuterRef(\"scheme_id\"),\n        nav__gt=0,", analytics_source)
+        self.assertIn("scheme_id=OuterRef(\"pk\"),\n            nav__gt=0,", analytics_source)
+        self.assertIn("date__lte=target_date, nav__gt=0", nav_service_source)
+        self.assertGreaterEqual(amfi_source.count("nav__gt=0"), 2)

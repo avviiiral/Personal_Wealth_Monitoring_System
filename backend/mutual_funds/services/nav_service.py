@@ -15,7 +15,7 @@ class MutualFundNAVService:
         """
         nav = (
             MutualFundNAV.objects
-            .filter(scheme=scheme, date__lte=target_date)
+            .filter(scheme=scheme, date__lte=target_date, nav__gt=0)
             .order_by("-date")
             .first()
         )
@@ -53,6 +53,7 @@ class MutualFundNAVService:
                     scheme__scheme_code=scheme.scheme_code,
                     date__lte=target_date,
                     source="AMFI",
+                    nav__gt=0,
                 )
                 .select_related("scheme")
                 .order_by("-date")

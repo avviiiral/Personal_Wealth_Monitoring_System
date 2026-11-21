@@ -1,0 +1,374 @@
+:host {
+  display: block;
+  color: var(--ink);
+}
+
+.intelligence-page {
+  width: min(100%, 1180px);
+  margin: 0 auto;
+}
+
+.page-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  margin-bottom: 28px;
+}
+
+.eyebrow {
+  margin: 0 0 9px;
+  color: var(--accent);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .13em;
+}
+
+h1 {
+  margin: 0;
+  color: var(--ink);
+  font-size: clamp(25px, 3vw, 32px);
+  font-weight: 750;
+  letter-spacing: -.04em;
+}
+
+.page-description {
+  margin: 9px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.heading-mark {
+  display: grid;
+  width: 54px;
+  height: 54px;
+  flex: 0 0 54px;
+  place-items: center;
+  border: 1px solid var(--surface-line);
+  border-radius: 15px;
+  background: var(--surface);
+  color: var(--accent);
+}
+
+.heading-mark svg,
+.empty-icon svg {
+  width: 25px;
+  height: 25px;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.selector-card,
+.selection-card,
+.empty-state {
+  border: 1px solid var(--surface-line);
+  border-radius: 16px;
+  background: var(--surface);
+  box-shadow: 0 5px 18px rgba(16, 24, 40, .035);
+}
+
+.selector-card {
+  padding: 24px;
+}
+
+.card-heading {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  padding-bottom: 22px;
+  border-bottom: 1px solid var(--surface-line);
+}
+
+.step-indicator {
+  display: grid;
+  width: 38px;
+  height: 38px;
+  flex: 0 0 38px;
+  place-items: center;
+  border-radius: 11px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.card-heading h2 {
+  margin: 0;
+  color: var(--ink);
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.card-heading p {
+  margin: 5px 0 0;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.selector-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 22px;
+  padding: 24px 0;
+}
+
+.field-group {
+  min-width: 0;
+}
+
+.field-group label {
+  display: block;
+  margin-bottom: 9px;
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.select-wrap {
+  position: relative;
+}
+
+select {
+  width: 100%;
+  height: 46px;
+  appearance: none;
+  box-sizing: border-box;
+  padding: 0 42px 0 13px;
+  border: 1px solid var(--surface-line);
+  border-radius: 9px;
+  outline: none;
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  transition: border-color 150ms ease, box-shadow 150ms ease;
+}
+
+select:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+select:disabled {
+  background: var(--canvas-from);
+  color: var(--muted);
+  cursor: not-allowed;
+  opacity: .8;
+}
+
+.select-chevron {
+  position: absolute;
+  top: 17px;
+  right: 15px;
+  width: 8px;
+  height: 8px;
+  border-right: 1.5px solid var(--muted);
+  border-bottom: 1.5px solid var(--muted);
+  transform: rotate(45deg);
+  pointer-events: none;
+}
+
+.field-hint {
+  display: block;
+  margin-top: 8px;
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.card-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--surface-line);
+}
+
+.source-note {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.status-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #16a36a;
+  box-shadow: 0 0 0 3px rgba(22, 163, 106, .11);
+}
+
+.clear-button {
+  padding: 7px 10px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.clear-button:hover:not(:disabled) {
+  background: var(--canvas-from);
+  color: var(--ink);
+}
+
+.clear-button:disabled {
+  opacity: .45;
+  cursor: not-allowed;
+}
+
+.error-message {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 16px;
+  padding: 12px 14px;
+  border: 1px solid rgba(217, 45, 32, .22);
+  border-radius: 9px;
+  background: rgba(217, 45, 32, .055);
+  color: #b42318;
+  font-size: 11px;
+}
+
+.error-message button {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.selection-card {
+  margin-top: 22px;
+  padding: 22px 24px;
+}
+
+.selection-topline {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.selection-label {
+  color: var(--accent);
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: .12em;
+}
+
+.selection-code {
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.selection-card h2 {
+  margin: 13px 0 5px;
+  color: var(--ink);
+  font-size: 17px;
+  line-height: 1.4;
+}
+
+.amc-name {
+  margin: 0;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.fund-meta {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+  margin-top: 20px;
+  padding-top: 17px;
+  border-top: 1px solid var(--surface-line);
+}
+
+.fund-meta div {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.fund-meta span {
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.fund-meta strong {
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 11px;
+  font-weight: 650;
+  text-overflow: ellipsis;
+}
+
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin-top: 22px;
+  padding: 38px 24px;
+  text-align: center;
+}
+
+.empty-icon {
+  display: grid;
+  width: 46px;
+  height: 46px;
+  place-items: center;
+  border-radius: 13px;
+  background: var(--canvas-from);
+  color: var(--muted);
+}
+
+.empty-state h2 {
+  margin: 15px 0 6px;
+  color: var(--ink);
+  font-size: 14px;
+}
+
+.empty-state p {
+  max-width: 430px;
+  margin: 0;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.6;
+}
+
+@media (max-width: 700px) {
+  .page-heading {
+    margin-bottom: 20px;
+  }
+
+  .selector-card {
+    padding: 18px;
+  }
+
+  .selector-grid {
+    grid-template-columns: 1fr;
+    gap: 18px;
+    padding: 20px 0;
+  }
+
+  .card-footer,
+  .selection-topline {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .fund-meta {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+}

@@ -7,9 +7,11 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
+from .models import AMFIMasterNAV, AMFIMasterScheme
 from .services.sebi_mf_analytics import (
     analytics_data_dir,
     analytics_export_dir,
+    compute_fund_performance_metrics,
     load_latest_sebi_summary,
 )
 
@@ -79,6 +81,59 @@ def sebi_universe_rankings(request):
         "page": page,
         "page_size": page_size,
         "results": rows[start:start + page_size],
+    })
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def sebi_fund_nav_history(request, scheme_code):
+    """Return locally persisted positive NAV observations and calculated metrics.
+
+    This endpoint is read-only and never contacts MFapi, IndianAPI, or an AMC.
+    The most recent 3,000 observations are returned to keep chart payloads bounded.
+    """
+    scheme = AMFIMasterScheme.objects.filter(
+        scheme_code=str(scheme_code),
+        is_active=True,
+        sebi_universe_active=True,
+        is_growth_plan=True,
+    ).values(
+        "scheme_code",
+        "scheme_name",
+        "amc_name",
+        "plan",
+        "option",
+        "level_1_branch",
+        "level_2_group",
+        "level_3_category",
+    ).first()
+    if scheme is None:
+        raise Http404("SEBI Growth scheme was not found.")
+
+    observations = list(
+        AMFIMasterNAV.objects.filter(
+            scheme__scheme_code=str(scheme_code),
+            nav__gt=0,
+        ).order_by("-date", "-id")[:3000]
+    )
+    observations.reverse()
+    history = [
+        {"date": row.date.isoformat(), "nav": float(row.nav)}
+        for row in observations
+    ]
+    series = [(row.date, float(row.nav)) for row in observations]
+    metrics = compute_fund_performance_metrics(series) if series else {}
+
+    return Response({
+        "available": bool(history),
+        "scheme": scheme,
+        "history": history,
+        "metrics": metrics,
+        "history_count": len(history),
+        "message": None if history else (
+            "No locally persisted NAV history is available for this scheme. "
+            "Run the SEBI NAV analytics build after the NAV cache is populated."
+        ),
     })
 
 

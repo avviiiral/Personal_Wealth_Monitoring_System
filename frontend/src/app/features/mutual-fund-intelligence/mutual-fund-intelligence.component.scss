@@ -121,7 +121,7 @@ tbody tr:hover td { background:rgba(253,119,64,.035); }
 :host-context(html.dark-theme) .tab-nav { background:#101a2c; }
 :host-context(html.dark-theme) .tab-nav button { color:#aeb8c8; }
 :host-context(html.dark-theme) .tab-nav button.active { color:#ff956d; }
-:host-context(html.dark-theme) .info-note,.:host-context(html.dark-theme) .error-message { background:#2b211d; border-color:#65402f; color:#f1b79d; }
+:host-context(html.dark-theme) :host-context(html.dark-theme) .info-note, :host-context(html.dark-theme) .error-message { background:#2b211d; border-color:#65402f; color:#f1b79d; }
 :host-context(html.dark-theme) .empty-state { background:#111720; }
 
 @media (max-width: 1000px) {

@@ -114,6 +114,8 @@ CATEGORY_ALIASES = {
     "ultra short term fund": "Ultra Short Term",
     "ultra short duration fund": "Ultra Short Term",
     "ultra short to short term fund": "Ultra Short to Short Term",
+    "ultra short to short term": "Ultra Short to Short Term",
+    "ultra short term": "Ultra Short Term",
     "low duration fund": "Short Term",
     "money market fund": "Money Market",
     "short term fund": "Short Term",
@@ -142,12 +144,20 @@ CATEGORY_ALIASES = {
     "balanced advantage fund": "Dynamic Asset Allocation",
     "multi asset allocation fund": "Multi Asset Allocation",
     "arbitrage fund": "Arbitrage",
-    "sectoral/thematic fund": "Sectoral",
+    # Combined Sectoral/Thematic feed labels are deliberately not mapped
+    # without scheme-specific authoritative metadata.
+    "sectoral/thematic fund": "Unclassified",
+    "sectoral/thematic": "Unclassified",
     "10-year constant maturity gilt": "10-year Constant Maturity Gilt",
     "10 year constant maturity gilt": "10-year Constant Maturity Gilt",
     "money market": "Money Market",
     "multi asset allocation": "Multi Asset Allocation",
     "fofs overseas/domestic": "Fund of Funds (Overseas/Domestic)",
+    "fof domestic": "Fund of Funds (Overseas/Domestic)",
+    "fund of funds scheme (domestic)": "Fund of Funds (Overseas/Domestic)",
+    "fof overseas": "Fund of Funds (Overseas/Domestic)",
+    "fund of funds investing overseas": "Fund of Funds (Overseas/Domestic)",
+    "overseas fund of funds": "Fund of Funds (Overseas/Domestic)",
     "equity savings fund": "Equity Savings",
     "life cycle fund": "Life Cycle Funds",
     "life cycle funds": "Life Cycle Funds",
@@ -158,6 +168,15 @@ CATEGORY_ALIASES = {
     "funds of funds": "Fund of Funds (Overseas/Domestic)",
     "retirement fund": "Retirement Fund",
     "children's fund": "Children's Fund",
+    "childrens fund": "Children's Fund",
+    "equity etf": "Index Funds/ETFs",
+    "debt etf": "Index Funds/ETFs",
+    "gold etf": "Index Funds/ETFs",
+    "silver etf": "Index Funds/ETFs",
+    "other etfs": "Index Funds/ETFs",
+    "fixed term plan": "Unclassified",
+    "other debt scheme": "Unclassified",
+    "dynamic bond": "Dynamic Term",
     "childrens fund": "Children's Fund",
 }
 
@@ -302,18 +321,24 @@ def _category_from_raw_header(raw_header: str) -> str:
     if category.startswith("(") and category.endswith(")"):
         category = category[1:-1].strip()
 
-    category = re.sub(
+    # Strip one or more AMFI taxonomy wrappers. Different feed vintages use
+    # "Income/Debt Oriented Schemes", "Other Scheme", and repeated nested
+    # wrappers before the actual SEBI leaf label.
+    wrapper_patterns = (
         r"^(?:Equity|Debt|Hybrid|Solution\s+Oriented|Other)\s+Schemes?\s*[-:]\s*",
-        "",
-        category,
-        flags=re.IGNORECASE,
+        r"^Income\s*/\s*Debt\s+Oriented\s+Schemes?\s*[-:]\s*",
+        r"^Overseas\s+Fund\s+of\s+Funds\s*[-:]\s*",
+        r"^Exchange\s+Traded\s+Funds?\s*\(ETFs?\)\s*[-:]\s*",
     )
-    category = re.sub(
-        r"^(?:Equity|Debt|Hybrid|Solution\s+Oriented|Other)\s+Scheme\s*[-:]\s*",
-        "",
-        category,
-        flags=re.IGNORECASE,
-    )
+    changed = True
+    while changed:
+        changed = False
+        for pattern in wrapper_patterns:
+            updated = re.sub(pattern, "", category, flags=re.IGNORECASE).strip()
+            if updated != category:
+                category = updated
+                changed = True
+
     return _normalise_text(category).strip(" -:")
 
 
@@ -327,8 +352,9 @@ def map_sebi_hierarchy(raw_header: str, scheme_name: str = "") -> dict[str, str]
     # The 2026 SEBI taxonomy separates the two; use the scheme's own category
     # label where it is explicit instead of classifying every row as Sectoral.
     if key in {"sectoral/thematic", "sectoral/thematic fund", "sectoral or thematic fund"}:
-        name_key = _normalise_key(scheme_name)
-        category = "Thematic" if "thematic" in name_key else "Sectoral"
+        # The scheme name alone is not reliable evidence of SEBI's formal
+        # Sectoral vs Thematic classification. Keep this explicitly reviewable.
+        category = "Unclassified"
 
     # SEBI uses the leaf label "Sectoral Fund" in both Equity and Debt.
     # Preserve the distinction using the branch in the original AMFI header.

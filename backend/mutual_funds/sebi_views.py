@@ -10,7 +10,7 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
-from .models import AMFIMasterNAV, AMFIMasterScheme
+from .models import AMFIMasterNAV, AMFIMasterScheme, AMFISchemeAAUM
 from .services.sebi_mf_analytics import (
     analytics_data_dir,
     analytics_export_dir,
@@ -149,6 +149,53 @@ def sebi_fund_nav_history(request, scheme_code):
             "No locally persisted NAV history is available for this scheme. "
             "Run the SEBI NAV analytics build after the NAV cache is populated."
         ),
+    })
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def sebi_category_top_aaum(request):
+    """Return top 12 scheme-wise AAUM values from the latest imported AMFI quarter."""
+    category = (request.query_params.get("category") or "").strip()
+    plan = (request.query_params.get("plan") or "").strip()
+    if not category or plan not in {"Direct Plan", "Regular Plan"}:
+        return Response({"detail": "category and a valid plan are required."}, status=400)
+
+    latest_quarter = AMFISchemeAAUM.objects.filter(
+        scheme__is_active=True,
+        scheme__sebi_universe_active=True,
+        scheme__is_growth_plan=True,
+        scheme__level_3_category=category,
+        scheme__plan=plan,
+    ).order_by("-quarter_start").values_list("quarter_start", flat=True).first()
+    if latest_quarter is None:
+        return Response({
+            "available": False, "category": category, "plan": plan, "rows": [],
+            "message": "No AMFI scheme-wise AAUM has been imported yet.",
+        })
+
+    snapshots = AMFISchemeAAUM.objects.filter(
+        quarter_start=latest_quarter,
+        scheme__is_active=True,
+        scheme__sebi_universe_active=True,
+        scheme__is_growth_plan=True,
+        scheme__level_3_category=category,
+        scheme__plan=plan,
+    ).select_related("scheme").order_by("-average_aum_cr", "scheme__scheme_name")[:12]
+
+    rows = [{
+        "scheme_code": item.scheme.scheme_code,
+        "scheme_name": item.scheme.scheme_name,
+        "amc_name": item.scheme.amc_name,
+        "plan": item.scheme.plan,
+        "average_aum_cr": float(item.average_aum_cr),
+    } for item in snapshots]
+    quarter_label = snapshots[0].quarter_label if snapshots else ""
+    return Response({
+        "available": bool(rows), "category": category, "plan": plan,
+        "quarter_start": latest_quarter.isoformat(), "quarter_label": quarter_label,
+        "rows": rows,
+        "message": None if rows else "No matched scheme AAUM records exist for this category and plan.",
     })
 
 

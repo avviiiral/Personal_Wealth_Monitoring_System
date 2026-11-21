@@ -1,10 +1,12 @@
 """Import official AMFI scheme-wise quarterly Average AUM (AAUM).
 
-Example:
-python manage.py import_amfi_scheme_aaum --quarter-start 2026-07-01 --quarter-label "July - September 2026" --url "https://portal.amfiindia.com/AUMReport_Rpt_Po.aspx?dtAUM=01-Jul-2026&mf=0&qt=July+-+September+2026&rpt=scwise"
+Examples:
+python manage.py import_amfi_scheme_aaum --quarter-start 2026-07-01 --quarter-label "July - September 2026" --file amfi_aaum_report.html
+python manage.py import_amfi_scheme_aaum --quarter-start 2026-07-01 --quarter-label "July - September 2026" --url "https://portal.amfiindia.com/AUMReport_Rpt_Po.aspx?dtAUM=01-Jul-2026&mf=0&qt=July+-+September+2026&rpt=scwise" --timeout 180
 """
 import re
 import urllib.request
+from pathlib import Path
 from decimal import Decimal, InvalidOperation
 
 import pandas as pd
@@ -38,10 +40,12 @@ class Command(BaseCommand):
     help = "Import official AMFI scheme-wise quarterly Average AUM (AAUM) into local storage."
 
     def add_arguments(self, parser):
-        parser.add_argument("--url", required=True, help="Official AMFI scheme-wise AAUM report URL.")
+        source = parser.add_mutually_exclusive_group(required=True)
+        source.add_argument("--url", help="Official AMFI scheme-wise AAUM report URL.")
+        source.add_argument("--file", help="Path to a previously downloaded AMFI HTML report.")
         parser.add_argument("--quarter-start", required=True, help="Quarter start date, YYYY-MM-DD.")
         parser.add_argument("--quarter-label", required=True, help='Display label, e.g. "July - September 2026".')
-        parser.add_argument("--timeout", type=int, default=45)
+        parser.add_argument("--timeout", type=int, default=180, help="HTTP timeout in seconds when using --url (default: 180).")
 
     def handle(self, *args, **options):
         try:
@@ -50,15 +54,25 @@ class Command(BaseCommand):
         except ValueError as exc:
             raise CommandError("--quarter-start must use YYYY-MM-DD.") from exc
 
-        request = urllib.request.Request(
-            options["url"],
-            headers={"User-Agent": "PWMS/1.0 (AMFI public disclosure importer)", "Accept": "text/html,*/*"},
-        )
-        try:
-            with urllib.request.urlopen(request, timeout=options["timeout"]) as response:
-                payload = response.read()
-        except Exception as exc:
-            raise CommandError(f"Unable to download the AMFI report: {exc}") from exc
+        if options["file"]:
+            report_path = Path(options["file"]).expanduser()
+            if not report_path.is_absolute():
+                report_path = Path.cwd() / report_path
+            try:
+                payload = report_path.read_bytes()
+            except OSError as exc:
+                raise CommandError(f"Unable to read AMFI report file '{report_path}': {exc}") from exc
+            self.stdout.write(f"Reading AMFI report from local file: {report_path}")
+        else:
+            request = urllib.request.Request(
+                options["url"],
+                headers={"User-Agent": "PWMS/1.0 (AMFI public disclosure importer)", "Accept": "text/html,*/*"},
+            )
+            try:
+                with urllib.request.urlopen(request, timeout=options["timeout"]) as response:
+                    payload = response.read()
+            except Exception as exc:
+                raise CommandError(f"Unable to download the AMFI report: {exc}") from exc
 
         try:
             tables = pd.read_html(payload)

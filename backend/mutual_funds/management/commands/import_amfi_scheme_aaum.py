@@ -149,6 +149,7 @@ class Command(BaseCommand):
         parser.add_argument("--quarter-start", required=True, help="Quarter start date, YYYY-MM-DD.")
         parser.add_argument("--quarter-label", required=True, help='Display label, e.g. "July - September 2026".')
         parser.add_argument("--timeout", type=int, default=180, help="HTTP timeout in seconds when using --url (default: 180).")
+        parser.add_argument("--dry-run", action="store_true", help="Parse and match the report without writing database records.")
 
     def handle(self, *args, **options):
         try:
@@ -205,6 +206,15 @@ class Command(BaseCommand):
                 f"Parsed {len(rows)} scheme rows, but no unambiguous names matched "
                 "the local SEBI universe. No records were written."
             )
+
+        if options["dry_run"]:
+            self.stdout.write(self.style.SUCCESS(
+                f"DRY RUN: parsed {len(rows)} scheme rows; matched {len(parsed)} records; "
+                f"unmatched or ambiguous rows: {unmatched}. No database records were written."
+            ))
+            for scheme, amount_cr, source_name in list(parsed.values())[:10]:
+                self.stdout.write(f"  {scheme.scheme_name}: ₹{amount_cr:,.2f} Cr")
+            return
 
         with transaction.atomic():
             for scheme, amount_cr, source_name in parsed.values():

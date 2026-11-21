@@ -24,6 +24,11 @@ class Command(BaseCommand):
             default=DEFAULT_REQUESTS_PER_SECOND,
         )
         parser.add_argument("--refresh-cache", action="store_true")
+        parser.add_argument(
+            "--no-persist-nav",
+            action="store_true",
+            help="Do not copy cached MFapi NAV observations into AMFIMasterNAV.",
+        )
         parser.add_argument("--retries", type=int, default=3)
         parser.add_argument(
             "--risk-free-rate",
@@ -49,6 +54,7 @@ class Command(BaseCommand):
                 expense_ratio_file=options["expense_ratio_file"],
                 category_flow_file=options["category_flow_file"],
                 output_path=options["output"],
+                persist_nav_to_master=not options["no_persist_nav"],
             )
         except Exception as exc:
             raise CommandError(f"SEBI mutual-fund analytics build failed: {exc}") from exc
@@ -67,6 +73,15 @@ class Command(BaseCommand):
         self.stdout.write(f"Workbook: {result['workbook_path']}")
         self.stdout.write(f"Category return/risk chart: {result['category_risk_chart']}")
         self.stdout.write(f"Top Q1 chart: {result['top_q1_chart']}")
+        persistence = result["nav_persistence"]
+        coverage = result["history_coverage"]
+        self.stdout.write(
+            f"NAV rows upserted to AMFIMasterNAV: {persistence['nav_rows_upserted']}"
+        )
+        self.stdout.write(
+            f"Cached history coverage: {coverage['schemes_with_history']}/"
+            f"{coverage['schemes_requested']} ({coverage['coverage_pct']}%)"
+        )
         self.stdout.write(
             "No IndianAPI request was made. MFapi JSON histories are cached locally; "
             "subsequent builds use cache unless --refresh-cache is passed."

@@ -239,12 +239,12 @@ export class MutualFundIntelligenceComponent implements OnInit, OnDestroy {
     this.historyMessage = '';
     this.historySubscription?.unsubscribe();
     this.applyPlanFilter();
+    if (this.selectedCategory) this.loadRankings();
     this.refreshCharts();
   }
 
   private applyPlanFilter(): void {
     this.funds = this.allFunds.filter(fund => fund.plan === this.selectedPlan);
-    this.rankings = this.rankings.filter(row => row.Plan === this.selectedPlan);
     this.categorySummary = this.summary?.tree_summary?.find(row =>
       row['Level_3_Category'] === this.selectedCategory && row['Plan'] === this.selectedPlan,
     ) ?? null;

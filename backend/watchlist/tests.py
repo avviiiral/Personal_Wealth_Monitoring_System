@@ -1331,7 +1331,13 @@ class BenchmarkPerformanceTests(TestCase):
         mocked_proxy.assert_called_once_with("BSE500IETF.NS", start)
         self.assertGreater(len(result), 200)
         self.assertEqual(result[0]["source"], "BSE500_TRI_PROXY")
-        self.assertEqual(result[-1]["date"], end.isoformat())
+        expected_last_trading_day = end
+        while expected_last_trading_day.weekday() >= 5:
+            expected_last_trading_day -= timedelta(days=1)
+        self.assertEqual(
+            result[-1]["date"],
+            expected_last_trading_day.isoformat(),
+        )
 
     def test_bse_proxy_observations_are_persisted_with_source_provenance(self):
         points = [

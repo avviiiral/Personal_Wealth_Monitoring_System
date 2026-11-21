@@ -319,6 +319,7 @@ export class MutualFundIntelligenceComponent implements OnInit, OnDestroy {
     this.historySubscription?.unsubscribe();
 
     if (!this.selectedFund) {
+      this.loadingHistory = false;
       this.refreshCharts();
       return;
     }

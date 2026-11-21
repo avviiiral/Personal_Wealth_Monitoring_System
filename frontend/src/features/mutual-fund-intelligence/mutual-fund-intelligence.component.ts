@@ -245,7 +245,9 @@ export class MutualFundIntelligenceComponent implements OnInit, OnDestroy {
     this.categorySubscription?.unsubscribe();
     this.rankingsSubscription?.unsubscribe();
     this.distributionSubscription?.unsubscribe();
+    this.aaumSubscription?.unsubscribe();
     this.returnDistribution = null;
+    this.categoryAAUM = null;
     this.loadingHistory = false;
 
     if (!category) {

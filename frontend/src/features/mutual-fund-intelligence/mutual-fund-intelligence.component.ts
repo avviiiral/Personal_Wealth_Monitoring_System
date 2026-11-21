@@ -395,6 +395,8 @@ export class MutualFundIntelligenceComponent implements OnInit, OnDestroy {
     this.historySubscription?.unsubscribe();
     this.categorySubscription?.unsubscribe();
     this.rankingsSubscription?.unsubscribe();
+    this.distributionSubscription?.unsubscribe();
+    this.returnDistribution = null;
     this.loadingHistory = false;
     this.loadingRankings = false;
     this.refreshCharts();
@@ -405,6 +407,10 @@ export class MutualFundIntelligenceComponent implements OnInit, OnDestroy {
     else if (this.selectedCategory) {
       this.onCategoryChange(this.selectedCategory);
     } else this.loadCategories();
+  }
+
+  getDistributionCount(period: '3M' | '6M' | '1Y'): number {
+    return this.returnDistribution?.funds_counted?.[period] ?? 0;
   }
 
   getMetric(row: RankingRow | null | undefined, key: keyof RankingRow): number | null {

@@ -110,13 +110,16 @@ def sebi_fund_nav_history(request, scheme_code):
     if scheme is None:
         raise Http404("SEBI Growth scheme was not found.")
 
-    observations = list(
-        AMFIMasterNAV.objects.filter(
-            scheme__scheme_code=str(scheme_code),
-            nav__gt=0,
-        ).order_by("-date", "-id")[:3000]
-    )
-    observations.reverse()
+    recent_rows = AMFIMasterNAV.objects.filter(
+        scheme__scheme_code=str(scheme_code),
+        nav__gt=0,
+    ).order_by("-date", "-id")[:6000]
+    # Multiple providers can store a NAV for the same date. Keep one positive
+    # observation per date so duplicate source rows do not distort returns.
+    by_date = {}
+    for row in recent_rows:
+        by_date.setdefault(row.date, row)
+    observations = sorted(by_date.values(), key=lambda row: row.date)[-3000:]
     history = [
         {"date": row.date.isoformat(), "nav": float(row.nav)}
         for row in observations

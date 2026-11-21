@@ -103,7 +103,8 @@ def personal_mutual_fund_portfolio_analytics(request):
     today = timezone.localdate()
 
     latest_nav = MutualFundNAV.objects.filter(
-        scheme_id=OuterRef("scheme_id")
+        scheme_id=OuterRef("scheme_id"),
+        nav__gt=0,
     ).order_by("-date", "-id")
     holdings = list(
         MutualFundHolding.objects.filter(
@@ -252,7 +253,8 @@ def personal_mutual_fund_portfolio_analytics(request):
         for isin in legacy_isins:
             isin_query |= Q(isin_growth__iexact=isin) | Q(isin_dividend__iexact=isin)
         master_nav = AMFIMasterNAV.objects.filter(
-            scheme_id=OuterRef("pk")
+            scheme_id=OuterRef("pk"),
+            nav__gt=0,
         ).order_by("-date", "-id")
         master_schemes = AMFIMasterScheme.objects.filter(
             is_active=True
@@ -289,7 +291,7 @@ def personal_mutual_fund_portfolio_analytics(request):
         scheme = holding.scheme
         units = _decimal(holding.units)
         invested = _decimal(holding.invested_value)
-        if holding.latest_nav_value is not None:
+        if holding.latest_nav_value is not None and _decimal(holding.latest_nav_value) > 0:
             nav = _decimal(holding.latest_nav_value)
             market_value = units * nav
             valuation_source = "AMFI NAV history"

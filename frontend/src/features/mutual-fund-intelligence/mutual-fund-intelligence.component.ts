@@ -81,6 +81,12 @@ interface FundHistoryResponse {
   message?: string | null;
 }
 
+interface CategoryReturnBin { label: string; start: number; '3M': number; '6M': number; '1Y': number; }
+interface CategoryReturnDistribution {
+  available: boolean; category: string; plan: string; bins: CategoryReturnBin[];
+  funds_counted: Record<string, number>; as_of_date?: string; message?: string;
+}
+
 interface AnalyticsSummary {
   available: boolean;
   generated_at?: string;
@@ -116,6 +122,7 @@ export class MutualFundIntelligenceComponent implements OnInit, OnDestroy {
   history: NavPoint[] = [];
   metrics: Record<string, number | string | null> = {};
   portfolio: PortfolioDisclosure | null = null;
+  returnDistribution: CategoryReturnDistribution | null = null;
   selectedCategory = '';
   selectedPlan = 'Direct Plan';
   selectedFundCode = '';
@@ -141,6 +148,7 @@ export class MutualFundIntelligenceComponent implements OnInit, OnDestroy {
   private rankingsSubscription?: Subscription;
   private historySubscription?: Subscription;
   private categorySubscription?: Subscription;
+  private distributionSubscription?: Subscription;
   private charts: Chart[] = [];
 
   ngOnInit(): void {
@@ -229,6 +237,8 @@ export class MutualFundIntelligenceComponent implements OnInit, OnDestroy {
     this.historySubscription?.unsubscribe();
     this.categorySubscription?.unsubscribe();
     this.rankingsSubscription?.unsubscribe();
+    this.distributionSubscription?.unsubscribe();
+    this.returnDistribution = null;
     this.loadingHistory = false;
 
     if (!category) {
@@ -246,6 +256,7 @@ export class MutualFundIntelligenceComponent implements OnInit, OnDestroy {
         this.allFunds = response.funds ?? [];
         this.applyPlanFilter();
         this.loadRankings();
+        this.loadReturnDistribution();
       },
       error: error => {
         console.error('Unable to load funds for category:', error);
@@ -267,8 +278,21 @@ export class MutualFundIntelligenceComponent implements OnInit, OnDestroy {
     this.historySubscription?.unsubscribe();
     this.loadingHistory = false;
     this.applyPlanFilter();
-    if (this.selectedCategory) this.loadRankings();
+    if (this.selectedCategory) { this.loadRankings(); this.loadReturnDistribution(); }
     this.refreshCharts();
+  }
+
+  private loadReturnDistribution(): void {
+    this.distributionSubscription?.unsubscribe();
+    this.returnDistribution = null;
+    if (!this.selectedCategory) return;
+    const params = new HttpParams().set('category', this.selectedCategory).set('plan', this.selectedPlan);
+    this.distributionSubscription = this.http.get<CategoryReturnDistribution>(
+      `${this.endpoint}/category-return-distribution/`, { params, withCredentials: true },
+    ).subscribe({
+      next: response => { this.returnDistribution = response; this.cdr.detectChanges(); this.refreshCharts(); },
+      error: error => { console.error('Unable to load category return distribution:', error); this.returnDistribution = null; this.cdr.detectChanges(); },
+    });
   }
 
   private applyPlanFilter(): void {
@@ -476,7 +500,7 @@ export class MutualFundIntelligenceComponent implements OnInit, OnDestroy {
   private refreshCharts(): void {
     this.destroyCharts();
     setTimeout(() => {
-      if (this.activeTab === 'overview') this.renderOverviewCharts();
+      if (this.activeTab === 'overview') { this.renderOverviewCharts(); this.renderReturnDistributionChart(); }
       if (this.activeTab === 'fund') this.renderNavChart('fund-nav-chart');
       if (this.activeTab === 'performance') this.renderPerformanceChart();
       if (this.activeTab === 'calendar') this.renderCalendarChart();
@@ -504,6 +528,29 @@ export class MutualFundIntelligenceComponent implements OnInit, OnDestroy {
         y: { grid: { color: dark ? '#303846' : '#e8edf2' }, ticks: { color: dark ? '#9aa5b5' : '#667085' } },
       },
     };
+  }
+
+  private renderReturnDistributionChart(): void {
+    const canvas = document.getElementById('category-return-distribution-chart') as HTMLCanvasElement | null;
+    const bins = this.returnDistribution?.bins ?? [];
+    if (!canvas || !bins.length) return;
+    const base = this.chartOptions();
+    const chart = new Chart(canvas, {
+      type: 'bar',
+      data: { labels: bins.map(bin => bin.label), datasets: [
+        { label: '3M Return', data: bins.map(bin => bin['3M']), backgroundColor: 'rgba(253,119,64,.62)', borderColor: '#FD7740', borderWidth: 1 },
+        { label: '6M Return', data: bins.map(bin => bin['6M']), backgroundColor: 'rgba(11,28,61,.68)', borderColor: '#0B1C3D', borderWidth: 1 },
+        { label: '1Y Return', data: bins.map(bin => bin['1Y']), backgroundColor: 'rgba(204,159,83,.58)', borderColor: '#CC9F53', borderWidth: 1 },
+      ] },
+      options: { ...base, interaction: { mode: 'index', intersect: false },
+        scales: {
+          ...base.scales,
+          x: { ...base.scales.x, title: { display: true, text: 'Return range (%)' }, ticks: { ...base.scales.x.ticks, maxRotation: 0, autoSkip: true, maxTicksLimit: 16 } },
+          y: { ...base.scales.y, beginAtZero: true, title: { display: true, text: 'Number of funds' }, ticks: { ...base.scales.y.ticks, precision: 0, stepSize: 1 } },
+        },
+      },
+    });
+    this.charts.push(chart);
   }
 
   private renderOverviewCharts(): void {

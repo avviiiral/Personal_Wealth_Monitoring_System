@@ -378,6 +378,25 @@ class AMFIMasterScheme(models.Model):
         return f"{self.scheme_code} - {self.scheme_name}"
 
 
+class AMFISchemeAAUM(models.Model):
+    """Official AMFI scheme-wise quarterly average AUM snapshot, in INR crore."""
+    scheme = models.ForeignKey(AMFIMasterScheme, on_delete=models.CASCADE, related_name="aaum_snapshots")
+    quarter_start = models.DateField()
+    quarter_label = models.CharField(max_length=40)
+    average_aum_cr = models.DecimalField(max_digits=22, decimal_places=4)
+    source = models.CharField(max_length=40, default="AMFI_SCHEME_AAUM")
+    source_scheme_name = models.CharField(max_length=300, blank=True, default="")
+    imported_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-quarter_start", "-average_aum_cr"]
+        constraints = [models.UniqueConstraint(fields=["scheme", "quarter_start", "source"], name="unique_amfi_scheme_aaum_quarter")]
+        indexes = [models.Index(fields=["quarter_start", "scheme"]), models.Index(fields=["scheme", "-quarter_start"])]
+
+    def __str__(self):
+        return f"{self.scheme.scheme_name} - {self.quarter_label} - ₹{self.average_aum_cr} Cr"
+
+
 class AMFIMasterNAV(models.Model):
     """Global AMFI NAV history shared by every PWMS user."""
 

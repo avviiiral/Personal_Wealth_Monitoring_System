@@ -1,0 +1,108 @@
+<section class="intelligence-page">
+  <header class="page-heading">
+    <div>
+      <p class="eyebrow">MUTUAL FUND RESEARCH</p>
+      <h1>Mutual Fund Intelligence</h1>
+      <p class="page-description">
+        Explore the SEBI mutual fund universe by category and select a fund to begin your analysis.
+      </p>
+    </div>
+    <div class="heading-mark" aria-hidden="true">
+      <svg viewBox="0 0 24 24" fill="none">
+        <path d="M4 19V5m0 14h16M7 15l4-4 3 2 5-6" />
+        <path d="M16 7h3v3" />
+      </svg>
+    </div>
+  </header>
+
+  <section class="selector-card" aria-labelledby="selector-title">
+    <div class="card-heading">
+      <div class="step-indicator">01</div>
+      <div>
+        <h2 id="selector-title">Choose your universe</h2>
+        <p>Start with a category, then choose an individual mutual fund.</p>
+      </div>
+    </div>
+
+    <div class="selector-grid">
+      <div class="field-group">
+        <label for="category-select">Fund category</label>
+        <div class="select-wrap">
+          <select
+            id="category-select"
+            [ngModel]="selectedCategory"
+            (ngModelChange)="onCategoryChange($event)"
+            [disabled]="loadingCategories || categories.length === 0"
+          >
+            <option value="">{{ loadingCategories ? 'Loading categories…' : 'Select a category' }}</option>
+            <option *ngFor="let category of categories" [value]="category">{{ category }}</option>
+          </select>
+          <span class="select-chevron" aria-hidden="true"></span>
+        </div>
+        <span class="field-hint">Choose a SEBI Level 3 category</span>
+      </div>
+
+      <div class="field-group">
+        <label for="fund-select">Mutual fund</label>
+        <div class="select-wrap">
+          <select
+            id="fund-select"
+            [ngModel]="selectedFundCode"
+            (ngModelChange)="onFundChange($event)"
+            [disabled]="!selectedCategory || loadingFunds || funds.length === 0"
+          >
+            <option value="">
+              {{ loadingFunds ? 'Loading funds…' : !selectedCategory ? 'Select a category first' : funds.length ? 'Select a fund' : 'No funds available' }}
+            </option>
+            <option *ngFor="let fund of funds" [value]="fund.scheme_code">
+              {{ fund.scheme_name }}
+            </option>
+          </select>
+          <span class="select-chevron" aria-hidden="true"></span>
+        </div>
+        <span class="field-hint">
+          {{ selectedCategory ? (loadingFunds ? 'Fetching funds for this category' : funds.length + ' funds available') : 'Funds will appear after selecting a category' }}
+        </span>
+      </div>
+    </div>
+
+    <div class="card-footer">
+      <span class="source-note">
+        <span class="status-dot"></span>
+        Data sourced from the locally stored SEBI / AMFI scheme universe
+      </span>
+      <button type="button" class="clear-button" (click)="clearSelection()" [disabled]="!selectedCategory && !selectedFundCode">
+        Clear selection
+      </button>
+    </div>
+  </section>
+
+  <div class="error-message" *ngIf="errorMessage" role="alert">
+    <span>{{ errorMessage }}</span>
+    <button type="button" (click)="selectedCategory ? onCategoryChange(selectedCategory) : loadCategories()">Retry</button>
+  </div>
+
+  <section class="selection-card" *ngIf="selectedFund as fund" aria-live="polite">
+    <div class="selection-topline">
+      <span class="selection-label">SELECTED FUND</span>
+      <span class="selection-code">Scheme code · {{ fund.scheme_code }}</span>
+    </div>
+    <h2>{{ fund.scheme_name }}</h2>
+    <p class="amc-name">{{ fund.amc_name || 'AMC not available' }}</p>
+    <div class="fund-meta">
+      <div><span>Category</span><strong>{{ fund.level_3_category }}</strong></div>
+      <div><span>Plan</span><strong>{{ fund.plan || '—' }}</strong></div>
+      <div><span>Option</span><strong>{{ fund.option || '—' }}</strong></div>
+    </div>
+  </section>
+
+  <section class="empty-state" *ngIf="!selectedFund">
+    <div class="empty-icon" aria-hidden="true">
+      <svg viewBox="0 0 24 24" fill="none">
+        <path d="M4 19V5m0 14h16M7 15l4-4 3 2 5-6" />
+      </svg>
+    </div>
+    <h2>Your fund analysis starts here</h2>
+    <p>Select a category and a fund above. The selected fund will be ready for the next analytics modules.</p>
+  </section>
+</section>

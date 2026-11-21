@@ -34,6 +34,14 @@ class SEBITaxonomyTests(SimpleTestCase):
         self.assertEqual(mapped["classification_status"], "DISCONTINUED")
 
 
+    def test_mojibake_children_fund_header_maps_to_discontinued_legacy_category(self):
+        mapped = map_sebi_hierarchy(
+            "Open Ended Schemes(Solution Oriented Scheme - Children\u00e2\u0080\u0099s Fund)",
+        )
+        self.assertEqual(mapped["level_1_branch"], "Solution Oriented (Discontinued)")
+        self.assertEqual(mapped["level_3_category"], "Children's Fund")
+        self.assertEqual(mapped["classification_status"], "DISCONTINUED")
+
     def test_income_debt_wrappers_map_to_current_debt_leaf_categories(self):
         cases = {
             "Open Ended Schemes(Income/Debt Oriented Schemes - Ultra Short to Short Term Fund)": "Ultra Short to Short Term",

@@ -59,6 +59,13 @@ export const routes: Routes = [
           ),
       },
       {
+        path: 'mutual-fund-intelligence',
+        loadComponent: () =>
+          import('../features/mutual-fund-intelligence/mutual-fund-intelligence.component').then(
+            (m) => m.MutualFundIntelligenceComponent,
+          ),
+      },
+      {
         path: 'analytics',
         loadComponent: () =>
           import('../features/analytics/analytics.component').then((m) => m.AnalyticsComponent),

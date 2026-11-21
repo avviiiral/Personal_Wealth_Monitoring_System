@@ -122,15 +122,25 @@ class SEBITaxonomyTests(SimpleTestCase):
 
     def test_sectoral_and_thematic_are_separate_current_leaf_categories(self):
         sectoral = map_sebi_hierarchy(
-            "Open Ended Schemes (Equity Scheme - Sectoral/Thematic Fund)",
-            "Example Sectoral Fund - Direct Plan - Growth",
+            "Open Ended Schemes (Equity Scheme - Sectoral Fund)",
         )
         thematic = map_sebi_hierarchy(
-            "Open Ended Schemes (Equity Scheme - Sectoral/Thematic Fund)",
-            "Example Thematic Fund - Direct Plan - Growth",
+            "Open Ended Schemes (Equity Scheme - Thematic Fund)",
         )
         self.assertEqual(sectoral["level_3_category"], "Sectoral")
         self.assertEqual(thematic["level_3_category"], "Thematic")
+
+    def test_combined_sectoral_thematic_header_is_not_inferred_from_scheme_name(self):
+        for scheme_name in (
+            "Example Sectoral Fund - Direct Plan - Growth",
+            "Example Thematic Fund - Direct Plan - Growth",
+        ):
+            with self.subTest(scheme_name=scheme_name):
+                mapped = map_sebi_hierarchy(
+                    "Open Ended Schemes (Equity Scheme - Sectoral/Thematic Fund)",
+                    scheme_name,
+                )
+                self.assertEqual(mapped["level_3_category"], "Unclassified")
 
     def test_legacy_navall_isin_columns_are_assigned_to_growth_or_idcw(self):
         source = (

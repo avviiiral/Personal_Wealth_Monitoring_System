@@ -87,6 +87,9 @@ interface CategoryReturnDistribution {
   funds_counted: Record<string, number>; as_of_date?: string; message?: string;
 }
 
+interface CategoryAAUMRow { scheme_code: string; scheme_name: string; amc_name: string; plan: string; average_aum_cr: number; }
+interface CategoryAAUMResponse { available: boolean; category: string; plan: string; quarter_label?: string; rows: CategoryAAUMRow[]; message?: string; }
+
 interface AnalyticsSummary {
   available: boolean;
   generated_at?: string;
@@ -123,6 +126,7 @@ export class MutualFundIntelligenceComponent implements OnInit, OnDestroy {
   metrics: Record<string, number | string | null> = {};
   portfolio: PortfolioDisclosure | null = null;
   returnDistribution: CategoryReturnDistribution | null = null;
+  categoryAAUM: CategoryAAUMResponse | null = null;
   selectedCategory = '';
   selectedPlan = 'Direct Plan';
   selectedFundCode = '';
@@ -149,6 +153,7 @@ export class MutualFundIntelligenceComponent implements OnInit, OnDestroy {
   private historySubscription?: Subscription;
   private categorySubscription?: Subscription;
   private distributionSubscription?: Subscription;
+  private aaumSubscription?: Subscription;
   private charts: Chart[] = [];
 
   ngOnInit(): void {
@@ -161,6 +166,8 @@ export class MutualFundIntelligenceComponent implements OnInit, OnDestroy {
     this.rankingsSubscription?.unsubscribe();
     this.historySubscription?.unsubscribe();
     this.categorySubscription?.unsubscribe();
+    this.distributionSubscription?.unsubscribe();
+    this.aaumSubscription?.unsubscribe();
   }
 
   get selectedCategoryFunds(): number {
@@ -257,6 +264,7 @@ export class MutualFundIntelligenceComponent implements OnInit, OnDestroy {
         this.applyPlanFilter();
         this.loadRankings();
         this.loadReturnDistribution();
+        this.loadCategoryAAUM();
       },
       error: error => {
         console.error('Unable to load funds for category:', error);
@@ -278,7 +286,7 @@ export class MutualFundIntelligenceComponent implements OnInit, OnDestroy {
     this.historySubscription?.unsubscribe();
     this.loadingHistory = false;
     this.applyPlanFilter();
-    if (this.selectedCategory) { this.loadRankings(); this.loadReturnDistribution(); }
+    if (this.selectedCategory) { this.loadRankings(); this.loadReturnDistribution(); this.loadCategoryAAUM(); }
     this.refreshCharts();
   }
 
@@ -292,6 +300,19 @@ export class MutualFundIntelligenceComponent implements OnInit, OnDestroy {
     ).subscribe({
       next: response => { this.returnDistribution = response; this.cdr.detectChanges(); this.refreshCharts(); },
       error: error => { console.error('Unable to load category return distribution:', error); this.returnDistribution = null; this.cdr.detectChanges(); },
+    });
+  }
+
+  private loadCategoryAAUM(): void {
+    this.aaumSubscription?.unsubscribe();
+    this.categoryAAUM = null;
+    if (!this.selectedCategory) return;
+    const params = new HttpParams().set('category', this.selectedCategory).set('plan', this.selectedPlan);
+    this.aaumSubscription = this.http.get<CategoryAAUMResponse>(
+      `${this.endpoint}/category-top-aaum/`, { params, withCredentials: true },
+    ).subscribe({
+      next: response => { this.categoryAAUM = response; this.cdr.detectChanges(); this.refreshCharts(); },
+      error: error => { console.error('Unable to load category AAUM:', error); this.categoryAAUM = null; this.cdr.detectChanges(); },
     });
   }
 
@@ -506,7 +527,7 @@ export class MutualFundIntelligenceComponent implements OnInit, OnDestroy {
   private refreshCharts(): void {
     this.destroyCharts();
     setTimeout(() => {
-      if (this.activeTab === 'overview') { this.renderOverviewCharts(); this.renderReturnDistributionChart(); }
+      if (this.activeTab === 'overview') { this.renderOverviewCharts(); this.renderReturnDistributionChart(); this.renderAAUMChart(); }
       if (this.activeTab === 'fund') this.renderNavChart('fund-nav-chart');
       if (this.activeTab === 'performance') this.renderPerformanceChart();
       if (this.activeTab === 'calendar') this.renderCalendarChart();
@@ -553,6 +574,30 @@ export class MutualFundIntelligenceComponent implements OnInit, OnDestroy {
           ...base.scales,
           x: { ...base.scales.x, title: { display: true, text: 'Return range (%)' }, ticks: { ...base.scales.x.ticks, maxRotation: 0, autoSkip: true, maxTicksLimit: 16 } },
           y: { ...base.scales.y, beginAtZero: true, title: { display: true, text: 'Number of funds' }, ticks: { ...base.scales.y.ticks, precision: 0, stepSize: 1 } },
+        },
+      },
+    });
+    this.charts.push(chart);
+  }
+
+  private renderAAUMChart(): void {
+    const canvas = document.getElementById('category-aaum-chart') as HTMLCanvasElement | null;
+    const rows = this.categoryAAUM?.rows ?? [];
+    if (!canvas || !rows.length) return;
+    const dark = document.documentElement.classList.contains('dark-theme');
+    const ordered = [...rows].reverse();
+    const base = this.chartOptions();
+    const chart = new Chart(canvas, {
+      type: 'bar',
+      data: {
+        labels: ordered.map(row => row.scheme_name.replace(/\s*-\s*(Direct|Regular) Plan\s*-\s*Growth$/i, '')),
+        datasets: [{ label: 'Quarterly Average AUM (₹ Cr)', data: ordered.map(row => row.average_aum_cr), backgroundColor: '#0B1C3D', borderColor: '#FD7740', borderWidth: 1, borderRadius: 3 }],
+      },
+      options: {
+        ...base, indexAxis: 'y', plugins: { ...base.plugins, legend: { display: false } },
+        scales: {
+          x: { grid: { color: dark ? '#303846' : '#e8edf2' }, ticks: { color: dark ? '#9aa5b5' : '#667085', callback: (value: string | number) => Number(value).toLocaleString('en-IN') }, title: { display: true, text: 'AUM (₹ Crore)' } },
+          y: { grid: { display: false }, ticks: { color: dark ? '#9aa5b5' : '#667085', autoSkip: false } },
         },
       },
     });

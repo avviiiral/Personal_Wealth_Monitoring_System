@@ -99,6 +99,8 @@ tbody tr:hover td { background:rgba(253,119,64,.035); }
 .disclosure-state { min-height:220px; }
 .start-state { margin-top:22px; }
 .data-footnote { margin:10px 0; color:var(--mf-muted); font-size:10px; }
+.disclosure-meta { margin:0 0 12px; color:var(--mf-muted); font-size:10px; }
+.disclosure-meta strong { color:var(--mf-navy); }
 .source-footer { display:flex; justify-content:space-between; gap:12px; margin-top:23px; padding-top:12px; border-top:1px solid var(--mf-line); color:var(--mf-muted); font-size:9px; }
 
 :host-context(html.dark-theme) {

@@ -159,6 +159,8 @@ CATEGORY_ALIASES = {
     "fund of funds investing overseas": "Fund of Funds (Overseas/Domestic)",
     "overseas fund of funds": "Fund of Funds (Overseas/Domestic)",
     "equity savings fund": "Equity Savings",
+    "equity savings": "Equity Savings",
+    "index funds": "Index Funds/ETFs",
     "life cycle fund": "Life Cycle Funds",
     "life cycle funds": "Life Cycle Funds",
     "index funds/etfs": "Index Funds/ETFs",
@@ -328,6 +330,7 @@ def _category_from_raw_header(raw_header: str) -> str:
         r"^(?:Equity|Debt|Hybrid|Solution\s+Oriented|Other)\s+Schemes?\s*[-:]\s*",
         r"^Income\s*/\s*Debt\s+Oriented\s+Schemes?\s*[-:]\s*",
         r"^Overseas\s+Fund\s+of\s+Funds\s*[-:]\s*",
+        r"^Fund\s+of\s+Funds\s+Scheme\s*\((?:Domestic|Overseas)\)\s*[-:]\s*",
         r"^Exchange\s+Traded\s+Funds?\s*\(ETFs?\)\s*[-:]\s*",
     )
     changed = True

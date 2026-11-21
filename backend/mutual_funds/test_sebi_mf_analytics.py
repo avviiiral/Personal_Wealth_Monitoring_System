@@ -33,6 +33,62 @@ class SEBITaxonomyTests(SimpleTestCase):
         self.assertEqual(mapped["level_1_branch"], "Solution Oriented (Discontinued)")
         self.assertEqual(mapped["classification_status"], "DISCONTINUED")
 
+
+    def test_income_debt_wrappers_map_to_current_debt_leaf_categories(self):
+        cases = {
+            "Open Ended Schemes(Income/Debt Oriented Schemes - Ultra Short to Short Term Fund)": "Ultra Short to Short Term",
+            "Open Ended Schemes(Income/Debt Oriented Schemes - Ultra Short Term Fund)": "Ultra Short Term",
+            "Open Ended Schemes(Income/Debt Oriented Schemes - Short Term Fund)": "Short Term",
+            "Open Ended Schemes(Income/Debt Oriented Schemes - Dynamic Term Fund)": "Dynamic Term",
+            "Open Ended Schemes(Income/Debt Oriented Schemes - Banking and PSU Debt Fund)": "Banking and PSU Debt",
+            "Open Ended Schemes(Income/Debt Oriented Schemes - Medium to Long Term Fund)": "Medium to Long Term",
+            "Open Ended Schemes(Income/Debt Oriented Schemes - Money Market Fund)": "Money Market",
+            "Open Ended Schemes(Income/Debt Oriented Schemes - Medium Term Fund)": "Medium Term",
+            "Open Ended Schemes(Income/Debt Oriented Schemes - Gilt Fund)": "Gilt",
+            "Open Ended Schemes(Income/Debt Oriented Schemes - Floating Interest Rates Fund)": "Floating Interest Rates",
+            "Open Ended Schemes(Income/Debt Oriented Schemes - Long Term Fund)": "Long Term",
+            "Open Ended Schemes(Income/Debt Oriented Schemes - 10-year Constant Maturity Gilt Fund)": "10-year Constant Maturity Gilt",
+        }
+        for header, expected in cases.items():
+            with self.subTest(header=header):
+                mapped = map_sebi_hierarchy(header)
+                self.assertEqual(mapped["level_3_category"], expected)
+                self.assertEqual(mapped["classification_status"], "MAPPED")
+
+    def test_other_scheme_and_nested_fund_of_funds_headers_map(self):
+        headers = [
+            "Open Ended Schemes(Other Scheme - FoF Domestic)",
+            "Open Ended Schemes(Fund of Funds Scheme (Domestic) - Fund of Funds Scheme (Domestic))",
+            "Open Ended Schemes(Other Scheme - FoF Overseas)",
+            "Open Ended Schemes(Overseas Fund of Funds - Fund of Funds investing overseas)",
+        ]
+        for header in headers:
+            with self.subTest(header=header):
+                mapped = map_sebi_hierarchy(header)
+                self.assertEqual(mapped["level_1_branch"], "Other Schemes")
+                self.assertEqual(mapped["level_3_category"], "Fund of Funds (Overseas/Domestic)")
+
+    def test_equity_savings_and_passive_etf_headers_map(self):
+        cases = {
+            "Open Ended Schemes(Hybrid Scheme - Equity Savings)": "Equity Savings",
+            "Open Ended Schemes(Other Scheme - Index Funds)": "Index Funds/ETFs",
+            "Open Ended Schemes(Exchange Traded Funds (ETFs) - Equity ETF)": "Index Funds/ETFs",
+            "Open Ended Schemes(Exchange Traded Funds (ETFs) - Gold ETF)": "Index Funds/ETFs",
+            "Open Ended Schemes(Exchange Traded Funds (ETFs) - Silver ETF)": "Index Funds/ETFs",
+            "Open Ended Schemes(Exchange Traded Funds (ETFs) - Debt ETF)": "Index Funds/ETFs",
+        }
+        for header, expected in cases.items():
+            with self.subTest(header=header):
+                self.assertEqual(map_sebi_hierarchy(header)["level_3_category"], expected)
+
+    def test_sectoral_thematic_combined_header_is_not_guessed_from_scheme_name(self):
+        mapped = map_sebi_hierarchy(
+            "Open Ended Schemes(Equity Scheme - Sectoral/ Thematic)",
+            "Example Thematic Opportunities Fund - Direct Plan - Growth",
+        )
+        self.assertEqual(mapped["level_3_category"], "Unclassified")
+        self.assertEqual(mapped["classification_status"], "UNMAPPED")
+
     def test_amfi_six_column_feed_preserves_amc_and_raw_header(self):
         source = (
             "Scheme Code;ISIN Div Payout/ ISIN Growth;ISIN Div Reinvestment;Scheme Name;Net Asset Value;Date\n"

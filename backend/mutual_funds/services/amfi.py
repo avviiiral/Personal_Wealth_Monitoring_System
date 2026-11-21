@@ -1486,7 +1486,7 @@ class AMFIService:
 
         latest_nav_id = (
             AMFIMasterNAV.objects
-            .filter(scheme_id=OuterRef("scheme_id"))
+            .filter(scheme_id=OuterRef("scheme_id"), nav__gt=0)
             .order_by("-date", "-id")
             .values("id")[:1]
         )
@@ -1589,7 +1589,7 @@ class AMFIService:
         master_ids = [master.id for master in master_by_isin.values()]
         latest_nav_id = (
             AMFIMasterNAV.objects
-            .filter(scheme_id=OuterRef("scheme_id"))
+            .filter(scheme_id=OuterRef("scheme_id"), nav__gt=0)
             .order_by("-date", "-id")
             .values("id")[:1]
         )

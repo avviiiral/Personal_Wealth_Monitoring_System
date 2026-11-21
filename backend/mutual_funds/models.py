@@ -391,7 +391,16 @@ class AMFISchemeAAUM(models.Model):
     class Meta:
         ordering = ["-quarter_start", "-average_aum_cr"]
         constraints = [models.UniqueConstraint(fields=["scheme", "quarter_start", "source"], name="unique_amfi_scheme_aaum_quarter")]
-        indexes = [models.Index(fields=["quarter_start", "scheme"]), models.Index(fields=["scheme", "-quarter_start"])]
+        indexes = [
+            models.Index(
+                fields=["quarter_start", "scheme"],
+                name="mf_aaum_qtr_scheme_idx",
+            ),
+            models.Index(
+                fields=["scheme", "-quarter_start"],
+                name="mf_aaum_scheme_qtr_idx",
+            ),
+        ]
 
     def __str__(self):
         return f"{self.scheme.scheme_name} - {self.quarter_label} - ₹{self.average_aum_cr} Cr"

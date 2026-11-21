@@ -13,6 +13,7 @@ class MutualFundAnalyticsRouteTests(SimpleTestCase):
             "/api/mutual-fund-analytics/refresh/": "mutual-fund-analytics-refresh",
             "/api/mutual-fund-analytics/sebi/summary/": "sebi-mf-universe-summary",
             "/api/mutual-fund-analytics/sebi/rankings/": "sebi-mf-universe-rankings",
+            "/api/mutual-fund-analytics/sebi/funds/100001/history/": "sebi-mf-fund-nav-history",
             "/api/mutual-fund-analytics/sebi/export/": "sebi-mf-analytics-export",
             "/api/mutual-fund-analytics/sebi/charts/category-risk/": "sebi-mf-category-risk-chart",
             "/api/mutual-fund-analytics/sebi/charts/top-q1/": "sebi-mf-top-q1-chart",

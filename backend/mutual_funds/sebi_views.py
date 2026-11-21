@@ -1,5 +1,8 @@
 import json
 from pathlib import Path
+from datetime import timedelta
+
+from django.utils import timezone
 
 from django.http import FileResponse, Http404
 from django.conf import settings
@@ -146,6 +149,68 @@ def sebi_fund_nav_history(request, scheme_code):
             "No locally persisted NAV history is available for this scheme. "
             "Run the SEBI NAV analytics build after the NAV cache is populated."
         ),
+    })
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def sebi_category_return_distribution(request):
+    """Count category funds in 5-point trailing-return bands using cached NAV only."""
+    category = (request.query_params.get("category") or "").strip()
+    plan = (request.query_params.get("plan") or "").strip()
+    if not category or plan not in {"Direct Plan", "Regular Plan"}:
+        return Response({"detail": "category and a valid plan are required."}, status=400)
+
+    today = timezone.localdate()
+    periods = {"3M": today - timedelta(days=91), "6M": today - timedelta(days=182), "1Y": today - timedelta(days=365)}
+    schemes = list(AMFIMasterScheme.objects.filter(
+        is_active=True, sebi_universe_active=True, is_growth_plan=True,
+        level_3_category=category, plan=plan,
+    ).values_list("id", flat=True))
+    if not schemes:
+        return Response({"available": False, "category": category, "plan": plan, "bins": [], "funds_counted": {key: 0 for key in periods}})
+
+    nav_rows = AMFIMasterNAV.objects.filter(
+        scheme_id__in=schemes, date__gte=min(periods.values()) - timedelta(days=10),
+        date__lte=today, nav__gt=0,
+    ).order_by("scheme_id", "date", "-id").values_list("scheme_id", "date", "nav")
+    by_scheme = {}
+    for scheme_id, nav_date, nav in nav_rows:
+        by_scheme.setdefault(scheme_id, []).append((nav_date, float(nav)))
+
+    returns = {key: [] for key in periods}
+    for observations in by_scheme.values():
+        if len(observations) < 2:
+            continue
+        latest_date, latest_nav = observations[-1]
+        if latest_nav <= 0:
+            continue
+        for period, target in periods.items():
+            baseline_pair = next(((nav_date, nav) for nav_date, nav in reversed(observations) if nav_date <= target), None)
+            if baseline_pair is None:
+                continue
+            baseline_date, baseline_nav = baseline_pair
+            if baseline_nav <= 0 or baseline_date < target - timedelta(days=10):
+                continue
+            returns[period].append((latest_nav / baseline_nav - 1) * 100)
+
+    values = [value for group in returns.values() for value in group]
+    if not values:
+        return Response({"available": False, "category": category, "plan": plan, "bins": [], "funds_counted": {key: 0 for key in periods}, "message": "Insufficient locally cached NAV history for this category."})
+
+    lower = int(min(values) // 5) * 5
+    upper = int(max(values) // 5) * 5
+    starts = range(lower, upper + 1, 5)
+    bins = []
+    for start in starts:
+        bins.append({
+            "label": f"{start} to {start + 5}", "start": start,
+            **{period: sum(start <= value < start + 5 for value in group) for period, group in returns.items()},
+        })
+    return Response({
+        "available": True, "category": category, "plan": plan, "bin_width_pct": 5,
+        "funds_counted": {key: len(group) for key, group in returns.items()},
+        "bins": bins, "as_of_date": today.isoformat(),
     })
 
 

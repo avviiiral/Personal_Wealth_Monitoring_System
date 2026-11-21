@@ -6,10 +6,10 @@ python manage.py import_amfi_scheme_aaum --quarter-start 2026-07-01 --quarter-la
 """
 import re
 import urllib.request
+from html.parser import HTMLParser
 from pathlib import Path
 from decimal import Decimal, InvalidOperation
 
-import pandas as pd
 from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
 
@@ -24,16 +24,119 @@ def normalise_scheme_name(value):
 
 
 def decimal_value(value):
-    if value is None or pd.isna(value):
+    if value is None:
         return None
     raw = str(value).replace(",", "").replace("₹", "").strip()
-    if raw in {"", "-", "N/A", "na"}:
+    if raw.casefold() in {"", "-", "n/a", "na", "nan"}:
         return None
     try:
         result = Decimal(raw)
     except InvalidOperation:
         return None
     return result if result.is_finite() and result >= 0 else None
+
+
+class _AMFITableParser(HTMLParser):
+    """Extract report rows without relying on pandas' inferred multi-row headers."""
+
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.rows = []
+        self._in_row = False
+        self._in_cell = False
+        self._cell_parts = []
+        self._row = []
+
+    def handle_starttag(self, tag, attrs):
+        if tag.lower() == "tr":
+            self._in_row = True
+            self._row = []
+        elif tag.lower() in {"td", "th"} and self._in_row:
+            self._in_cell = True
+            self._cell_parts = []
+
+    def handle_data(self, data):
+        if self._in_cell:
+            self._cell_parts.append(data)
+
+    def handle_endtag(self, tag):
+        tag = tag.lower()
+        if tag in {"td", "th"} and self._in_cell:
+            self._row.append(" ".join("".join(self._cell_parts).split()))
+            self._in_cell = False
+            self._cell_parts = []
+        elif tag == "tr" and self._in_row:
+            if self._row:
+                self.rows.append(self._row)
+            self._in_row = False
+            self._row = []
+
+
+def parse_amfi_scheme_rows(payload):
+    """Return (scheme name, AAUM in Rs lakh) rows from AMFI's scheme-wise HTML.
+
+    AMFI publishes two numeric columns: AAUM excluding domestic FoFs (but
+    including overseas FoFs), and AAUM for domestic FoFs. The report's
+    category heading determines which column applies to a scheme.
+    """
+    if isinstance(payload, bytes):
+        html = payload.decode("utf-8", errors="replace")
+    else:
+        html = str(payload)
+
+    parser = _AMFITableParser()
+    parser.feed(html)
+
+    parsed_rows = []
+    current_category = ""
+    for cells in parser.rows:
+        if not cells:
+            continue
+
+        # Category headings are single-cell rows spanning the report table.
+        if len(cells) == 1:
+            heading = cells[0].strip()
+            if heading and "scheme" in heading.casefold():
+                current_category = heading
+            elif heading and any(term in heading.casefold() for term in (
+                "equity", "debt", "hybrid", "fund of funds", "etf",
+                "income", "solution oriented", "other schemes", "index funds",
+            )):
+                current_category = heading
+            continue
+
+        # Scheme rows have a name followed by the two Rs-lakh AAUM values.
+        if len(cells) < 3:
+            continue
+        source_name = cells[0].strip()
+        if not source_name or source_name.casefold() in {
+            "scheme nav name", "mutual fund total", "grand total",
+        }:
+            continue
+
+        first_amount = decimal_value(cells[-2])
+        domestic_fof_amount = decimal_value(cells[-1])
+        if first_amount is None and domestic_fof_amount is None:
+            continue
+
+        is_domestic_fof = "fund of funds scheme (domestic)" in current_category.casefold()
+        amount_lakh = domestic_fof_amount if is_domestic_fof else first_amount
+
+        # Be defensive if an AMFI row is placed under an unexpected heading.
+        # The two columns are mutually exclusive for the scheme rows in the
+        # official report; use the populated column rather than importing zero.
+        if amount_lakh is None or (amount_lakh == 0 and (
+            (is_domestic_fof and first_amount and first_amount > 0)
+            or (not is_domestic_fof and domestic_fof_amount and domestic_fof_amount > 0)
+        )):
+            other_amount = first_amount if is_domestic_fof else domestic_fof_amount
+            if other_amount is not None:
+                amount_lakh = other_amount
+
+        if amount_lakh is not None:
+            parsed_rows.append((source_name, amount_lakh))
+
+    return parsed_rows
 
 
 class Command(BaseCommand):
@@ -74,12 +177,12 @@ class Command(BaseCommand):
             except Exception as exc:
                 raise CommandError(f"Unable to download the AMFI report: {exc}") from exc
 
-        try:
-            tables = pd.read_html(payload)
-        except Exception as exc:
-            raise CommandError(f"Unable to parse AMFI report tables: {exc}") from exc
-        if not tables:
-            raise CommandError("AMFI report did not contain any tabular data.")
+        rows = parse_amfi_scheme_rows(payload)
+        if not rows:
+            raise CommandError(
+                "No scheme-level AAUM rows were found in the AMFI report. "
+                "No records were written; verify that the input is the scheme-wise AAUM HTML report."
+            )
 
         masters = list(AMFIMasterScheme.objects.filter(is_active=True, sebi_universe_active=True))
         exact_map = {}
@@ -88,33 +191,19 @@ class Command(BaseCommand):
 
         parsed = {}
         unmatched = 0
-        for frame in tables:
-            frame.columns = [str(column).strip() for column in frame.columns]
-            name_col = next((column for column in frame.columns if "scheme" in column.casefold() and "name" in column.casefold()), None)
-            if name_col is None:
-                name_col = next((column for column in frame.columns if "scheme" in column.casefold() and "nav" in column.casefold()), None)
-            aum_col = next((column for column in frame.columns if "average aum" in column.casefold()), None)
-            if name_col is None or aum_col is None:
+        for source_name, amount_lakh in rows:
+            matches = exact_map.get(normalise_scheme_name(source_name), [])
+            if len(matches) != 1:
+                unmatched += 1
                 continue
-            for _, row in frame.iterrows():
-                source_name = str(row.get(name_col, "")).strip()
-                if not source_name or source_name.casefold() in {"nan", "mutual fund total"}:
-                    continue
-                amount_lakh = decimal_value(row.get(aum_col))
-                if amount_lakh is None:
-                    continue
-                matches = exact_map.get(normalise_scheme_name(source_name), [])
-                if len(matches) != 1:
-                    unmatched += 1
-                    continue
-                scheme = matches[0]
-                # AMFI publishes this report in Rs. Lakhs. Store crore (100 lakh = 1 crore).
-                parsed[scheme.pk] = (scheme, amount_lakh / Decimal("100"), source_name)
+            scheme = matches[0]
+            # AMFI publishes Rs. Lakhs. Store crore (100 lakh = 1 crore).
+            parsed[scheme.pk] = (scheme, amount_lakh / Decimal("100"), source_name)
 
         if not parsed:
             raise CommandError(
-                "No unambiguous scheme names matched the local SEBI universe. "
-                "No records were written; inspect the report columns and AMFI scheme-name variants."
+                f"Parsed {len(rows)} scheme rows, but no unambiguous names matched "
+                "the local SEBI universe. No records were written."
             )
 
         with transaction.atomic():
@@ -131,7 +220,7 @@ class Command(BaseCommand):
                 )
 
         self.stdout.write(self.style.SUCCESS(
-            f"Imported {len(parsed)} scheme AAUM records for {options['quarter_label']}. "
-            f"Unmatched or ambiguous rows: {unmatched}. "
-            f"Source: AMFI scheme-wise Average AUM. Values stored in ₹ crore."
+            f"Parsed {len(rows)} AMFI scheme rows; imported {len(parsed)} matched AAUM records "
+            f"for {options['quarter_label']}. Unmatched or ambiguous rows: {unmatched}. "
+            "Values stored in ₹ crore. No IndianAPI requests used."
         ))

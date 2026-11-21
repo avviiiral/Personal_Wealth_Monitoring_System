@@ -136,7 +136,16 @@
 
     <section class="tab-panel" *ngIf="activeTab === 'portfolio'">
       <div class="section-heading"><div><p class="eyebrow">HOLDINGS ANALYSIS</p><h2>Portfolio composition</h2></div><span class="section-meta">{{ selectedFund?.scheme_name || 'Fund-level disclosure' }}</span></div>
-      <div class="empty-state disclosure-state"><h3>Portfolio disclosure data is not yet connected to this dashboard</h3><p>The backend has a local holdings-import workflow, but no authenticated holdings endpoint is currently available to this page. Sector weights, market-cap allocation, cash and stock-level holdings are therefore not shown as if they were available.</p></div>
+      <ng-container *ngIf="selectedFund; else chooseFundPortfolio">
+        <ng-container *ngIf="portfolio as disclosure; else noDisclosure">
+          <div class="disclosure-meta">Disclosure date: <strong>{{ formatDate(disclosure.portfolio_date) }}</strong> · {{ disclosure.holdings.length }} disclosed securities · Source file: {{ disclosure.source_file }}</div>
+          <article class="chart-card"><div class="chart-title"><div><span>07</span><h3>Sector allocation</h3></div><small>Sum of disclosed security weights</small></div><div class="chart-wrap"><canvas id="portfolio-chart"></canvas></div></article>
+          <div class="table-wrap"><table><thead><tr><th>Security</th><th>Sector</th><th>ISIN</th><th>Portfolio weight</th></tr></thead><tbody><tr *ngFor="let holding of disclosure.holdings"><td class="fund-name">{{ holding.stock_name || 'Unclassified security' }}</td><td>{{ holding.sector || '—' }}</td><td>{{ holding.isin }}</td><td>{{ formatPct(holding.weight_pct) }}</td></tr></tbody></table></div>
+          <p class="method-note">Holdings and weights reflect the latest locally imported disclosure for this scheme. No market-cap buckets, cash positions or historical attribution are inferred from the holdings file.</p>
+        </ng-container>
+        <ng-template #noDisclosure><div class="empty-state disclosure-state"><h3>No local portfolio disclosure found for this fund</h3><p>Import the AMC monthly portfolio XLSX using the existing portfolio holdings workflow. The dashboard will display the latest imported disclosure.</p></div></ng-template>
+      </ng-container>
+      <ng-template #chooseFundPortfolio><div class="empty-state"><h3>Select a fund to view its portfolio composition</h3><p>Sector and security weights are read from the latest locally imported AMC disclosure.</p></div></ng-template>
     </section>
 
     <section class="tab-panel" *ngIf="activeTab === 'positioning'">

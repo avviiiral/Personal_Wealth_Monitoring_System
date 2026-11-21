@@ -1,0 +1,177 @@
+<section class="intelligence-page">
+  <header class="page-heading">
+    <div>
+      <p class="eyebrow">SEBI MUTUAL FUND RESEARCH</p>
+      <h1>Mutual Fund Intelligence</h1>
+      <p class="page-description">Category-level fund comparison, historical NAV performance and risk analytics using locally stored SEBI / AMFI data.</p>
+    </div>
+    <div class="data-stamp">
+      <span>ANALYTICS SNAPSHOT</span>
+      <strong>{{ formatGeneratedAt(summary?.generated_at) }}</strong>
+    </div>
+  </header>
+
+  <section class="selector-card" aria-label="Fund selection">
+    <div class="selector-heading">
+      <div>
+        <p class="step-label">01 / UNIVERSE</p>
+        <h2>Choose a category and fund</h2>
+      </div>
+      <button type="button" class="clear-button" (click)="clearSelection()" [disabled]="!selectedCategory && !selectedFundCode">Clear selection</button>
+    </div>
+    <div class="selector-grid">
+      <div class="field-group">
+        <label for="category-select">SEBI category</label>
+        <select id="category-select" [ngModel]="selectedCategory" (ngModelChange)="onCategoryChange($event)" [disabled]="loadingCategories || !categories.length">
+          <option value="">{{ loadingCategories ? 'Loading categories…' : 'Select a category' }}</option>
+          <option *ngFor="let category of categories" [value]="category">{{ category }}</option>
+        </select>
+      </div>
+      <div class="field-group">
+        <label for="plan-select">Plan</label>
+        <select id="plan-select" [ngModel]="selectedPlan" (ngModelChange)="onPlanChange($event)">
+          <option value="Direct Plan">Direct Plan</option>
+          <option value="Regular Plan">Regular Plan</option>
+        </select>
+      </div>
+      <div class="field-group fund-field">
+        <label for="fund-select">Mutual fund</label>
+        <select id="fund-select" [ngModel]="selectedFundCode" (ngModelChange)="onFundChange($event)" [disabled]="!selectedCategory || loadingRankings || !funds.length">
+          <option value="">{{ !selectedCategory ? 'Select a category first' : loadingRankings ? 'Loading fund universe…' : funds.length ? 'Select a fund' : 'No funds in this plan' }}</option>
+          <option *ngFor="let fund of funds" [value]="fund.scheme_code">{{ fund.scheme_name }}</option>
+        </select>
+      </div>
+    </div>
+    <div class="selector-footer">
+      <span><i class="status-dot"></i> Locally cached SEBI / AMFI universe · No provider call on selection</span>
+      <span *ngIf="selectedCategory">{{ selectedCategoryFunds }} funds · {{ selectedPlan }}</span>
+    </div>
+  </section>
+
+  <div class="error-message" *ngIf="errorMessage" role="alert">
+    <span>{{ errorMessage }}</span><button type="button" (click)="retry()">Retry</button>
+  </div>
+
+  <div class="tab-shell" *ngIf="selectedCategory">
+    <nav class="tab-nav" aria-label="Mutual fund analytics sections">
+      <button *ngFor="let tab of tabs" type="button" [class.active]="activeTab === tab.id" (click)="selectTab(tab.id)">{{ tab.label }}</button>
+    </nav>
+
+    <section class="tab-panel" *ngIf="activeTab === 'overview'">
+      <div class="section-heading">
+        <div><p class="eyebrow">CATEGORY SNAPSHOT</p><h2>{{ selectedCategory }}</h2></div>
+        <span class="section-meta">{{ selectedPlan }} · {{ selectedCategoryRankings.length }} ranked funds</span>
+      </div>
+      <div class="kpi-grid">
+        <article class="kpi-card"><span>Funds with NAV history</span><strong>{{ selectedCategoryRankings.length || '—' }}</strong><small>In selected category and plan</small></article>
+        <article class="kpi-card"><span>Category average 1Y CAGR</span><strong>{{ formatPct(getCategoryMetric('CAGR_1Y_pct')) }}</strong><small>Annualised return</small></article>
+        <article class="kpi-card"><span>Category average 3Y CAGR</span><strong>{{ formatPct(getCategoryMetric('CAGR_3Y_pct')) }}</strong><small>Annualised return</small></article>
+        <article class="kpi-card"><span>Category average volatility</span><strong>{{ formatPct(getCategoryMetric('Annualized_Volatility_pct'), 2) }}</strong><small>Annualised NAV volatility</small></article>
+        <article class="kpi-card"><span>Category average Sharpe</span><strong>{{ formatNumber(getCategoryMetric('Sharpe_Ratio'), 3) }}</strong><small>Risk-adjusted return</small></article>
+        <article class="kpi-card"><span>Category average max drawdown</span><strong>{{ formatPct(getCategoryMetric('Max_Drawdown_pct')) }}</strong><small>Peak-to-trough decline</small></article>
+      </div>
+      <div class="chart-grid">
+        <article class="chart-card">
+          <div class="chart-title"><div><span>01</span><h3>Top funds by 3Y CAGR</h3></div><small>Within selected category</small></div>
+          <div class="chart-wrap"><canvas id="overview-return-chart"></canvas></div>
+        </article>
+        <article class="chart-card">
+          <div class="chart-title"><div><span>02</span><h3>Return vs risk positioning</h3></div><small>3Y CAGR against annualised volatility</small></div>
+          <div class="chart-wrap"><canvas id="overview-risk-chart"></canvas></div>
+        </article>
+      </div>
+      <p class="method-note">Category averages and peer ranks are computed from the latest local SEBI NAV analytics snapshot. Metrics remain blank where history is insufficient; no missing values are estimated.</p>
+    </section>
+
+    <section class="tab-panel" *ngIf="activeTab === 'fund'">
+      <ng-container *ngIf="selectedFund; else chooseFund">
+        <div class="section-heading">
+          <div><p class="eyebrow">FUND SCORECARD</p><h2>{{ selectedFund.scheme_name }}</h2><p class="section-subtitle">{{ selectedFund.amc_name }} · Scheme code {{ selectedFund.scheme_code }}</p></div>
+          <span class="quartile" [ngClass]="getQuartileClass(getSelectedRanking()?.Quartile)">{{ getSelectedRanking()?.Quartile || 'Unranked' }}</span>
+        </div>
+        <div class="scorecard-grid">
+          <article class="score-metric"><span>1Y CAGR</span><strong>{{ formatPct(getMetric(getSelectedRanking(), 'CAGR_1Y_pct')) }}</strong><small>Category avg {{ formatPct(getCategoryMetric('CAGR_1Y_pct')) }}</small></article>
+          <article class="score-metric"><span>3Y CAGR</span><strong>{{ formatPct(getMetric(getSelectedRanking(), 'CAGR_3Y_pct')) }}</strong><small>Category avg {{ formatPct(getCategoryMetric('CAGR_3Y_pct')) }}</small></article>
+          <article class="score-metric"><span>5Y CAGR</span><strong>{{ formatPct(getMetric(getSelectedRanking(), 'CAGR_5Y_pct')) }}</strong><small>Category avg {{ formatPct(getCategoryMetric('CAGR_5Y_pct')) }}</small></article>
+          <article class="score-metric"><span>Volatility</span><strong>{{ formatPct(getMetric(getSelectedRanking(), 'Annualized_Volatility_pct')) }}</strong><small>3Y risk window where available</small></article>
+          <article class="score-metric"><span>Sharpe ratio</span><strong>{{ formatNumber(getMetric(getSelectedRanking(), 'Sharpe_Ratio'), 3) }}</strong><small>Risk-adjusted performance</small></article>
+          <article class="score-metric"><span>Maximum drawdown</span><strong>{{ formatPct(getMetric(getSelectedRanking(), 'Max_Drawdown_pct')) }}</strong><small>Observed NAV peak-to-trough</small></article>
+        </div>
+        <article class="chart-card nav-card">
+          <div class="chart-title"><div><span>03</span><h3>Historical NAV</h3></div><small>{{ history.length }} observations · {{ formatDate(history[0]?.date) }} to {{ formatDate(history[history.length - 1]?.date) }}</small></div>
+          <div class="chart-wrap large"><canvas id="fund-nav-chart"></canvas></div>
+          <p class="method-note" *ngIf="historyMessage">{{ historyMessage }}</p>
+          <p class="method-note" *ngIf="history.length">Latest NAV: ₹{{ formatNumber(latestNav, 4) }} · Change over displayed history: {{ formatPct(navChangePct) }}</p>
+        </article>
+        <div class="data-footnote" *ngIf="loadingHistory">Loading locally stored NAV observations…</div>
+      </ng-container>
+      <ng-template #chooseFund><div class="empty-state"><h3>Select a fund to view its scorecard</h3><p>Choose a category, plan and fund from the selectors above.</p></div></ng-template>
+    </section>
+
+    <section class="tab-panel" *ngIf="activeTab === 'rankings'">
+      <div class="section-heading"><div><p class="eyebrow">PEER COMPARISON</p><h2>Fund rankings</h2></div><span class="section-meta">Ranked within the same SEBI category and plan</span></div>
+      <div class="info-note">PWMS currently ranks funds using the available 3Y CAGR peer percentile and quartile. The reference HTML's proprietary EDGE score inputs are not present in the local data model, so no synthetic EDGE score is displayed.</div>
+      <div class="table-wrap">
+        <table><thead><tr><th>Rank</th><th>Fund</th><th>3Y CAGR</th><th>Category avg</th><th>Outperformance</th><th>Sharpe</th><th>Volatility</th><th>Quartile</th></tr></thead>
+          <tbody><tr *ngFor="let row of selectedCategoryRankings"><td>{{ row.Percentile_Rank_3Y ?? '—' }}</td><td class="fund-name">{{ row.Scheme_Name }}</td><td>{{ formatPct(getMetric(row, 'CAGR_3Y_pct')) }}</td><td>{{ formatPct(getMetric(row, 'Category_Avg_CAGR_3Y_pct')) }}</td><td>{{ formatNumber(getMetric(row, 'Outperformance_bps'), 0) }} bps</td><td>{{ formatNumber(getMetric(row, 'Sharpe_Ratio'), 3) }}</td><td>{{ formatPct(getMetric(row, 'Annualized_Volatility_pct')) }}</td><td><span class="quartile" [ngClass]="getQuartileClass(row.Quartile)">{{ row.Quartile || '—' }}</span></td></tr>
+          <tr *ngIf="!selectedCategoryRankings.length"><td colspan="8" class="empty-cell">No ranking snapshot is available for this category and plan.</td></tr></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="tab-panel" *ngIf="activeTab === 'performance'">
+      <div class="section-heading"><div><p class="eyebrow">RETURN ANALYSIS</p><h2>Performance overview</h2></div><span class="section-meta">NAV-derived annualised returns</span></div>
+      <article class="chart-card"><div class="chart-title"><div><span>04</span><h3>1Y / 3Y / 5Y CAGR comparison</h3></div><small>Funds in selected peer group</small></div><div class="chart-wrap large"><canvas id="performance-chart"></canvas></div></article>
+      <div class="table-wrap compact-table"><table><thead><tr><th>Fund</th><th>1Y CAGR</th><th>3Y CAGR</th><th>5Y CAGR</th><th>Rolling 3Y avg</th><th>Sortino</th><th>Max DD</th></tr></thead><tbody><tr *ngFor="let row of selectedCategoryRankings"><td class="fund-name">{{ row.Scheme_Name }}</td><td>{{ formatPct(getMetric(row, 'CAGR_1Y_pct')) }}</td><td>{{ formatPct(getMetric(row, 'CAGR_3Y_pct')) }}</td><td>{{ formatPct(getMetric(row, 'CAGR_5Y_pct')) }}</td><td>{{ formatPct(getMetric(row, 'Rolling_3Y_CAGR_Mean_pct')) }}</td><td>{{ formatNumber(getMetric(row, 'Sortino_Ratio'), 3) }}</td><td>{{ formatPct(getMetric(row, 'Max_Drawdown_pct')) }}</td></tr></tbody></table></div>
+    </section>
+
+    <section class="tab-panel" *ngIf="activeTab === 'calendar'">
+      <div class="section-heading"><div><p class="eyebrow">ANNUAL PERFORMANCE</p><h2>Calendar-year returns</h2></div><span class="section-meta">{{ selectedFund?.scheme_name || 'Select a fund to calculate calendar returns' }}</span></div>
+      <ng-container *ngIf="selectedFund; else chooseFundCalendar">
+        <article class="chart-card"><div class="chart-title"><div><span>05</span><h3>Calendar-year NAV returns</h3></div><small>Calculated from the first available NAV on or before year start and final NAV in year</small></div><div class="chart-wrap"><canvas id="calendar-chart"></canvas></div></article>
+        <div class="year-grid"><article *ngFor="let item of getCalendarReturns()" class="year-card"><span>{{ item.year }}</span><strong [class.negative]="(item.value ?? 0) < 0">{{ formatPct(item.value) }}</strong></article></div>
+      </ng-container>
+      <ng-template #chooseFundCalendar><div class="empty-state"><h3>Select a fund to view calendar-year returns</h3><p>Returns are calculated from locally persisted daily NAV history.</p></div></ng-template>
+    </section>
+
+    <section class="tab-panel" *ngIf="activeTab === 'portfolio'">
+      <div class="section-heading"><div><p class="eyebrow">HOLDINGS ANALYSIS</p><h2>Portfolio composition</h2></div><span class="section-meta">{{ selectedFund?.scheme_name || 'Fund-level disclosure' }}</span></div>
+      <ng-container *ngIf="selectedFund; else chooseFundPortfolio">
+        <ng-container *ngIf="portfolio as disclosure; else noDisclosure">
+          <div class="disclosure-meta">Disclosure date: <strong>{{ formatDate(disclosure.portfolio_date) }}</strong> · {{ disclosure.holdings.length }} disclosed securities · Source file: {{ disclosure.source_file }}</div>
+          <article class="chart-card"><div class="chart-title"><div><span>07</span><h3>Sector allocation</h3></div><small>Sum of disclosed security weights</small></div><div class="chart-wrap"><canvas id="portfolio-chart"></canvas></div></article>
+          <div class="table-wrap"><table><thead><tr><th>Security</th><th>Sector</th><th>ISIN</th><th>Portfolio weight</th></tr></thead><tbody><tr *ngFor="let holding of disclosure.holdings"><td class="fund-name">{{ holding.stock_name || 'Unclassified security' }}</td><td>{{ holding.sector || '—' }}</td><td>{{ holding.isin }}</td><td>{{ formatPct(holding.weight_pct) }}</td></tr></tbody></table></div>
+          <p class="method-note">Holdings and weights reflect the latest locally imported disclosure for this scheme. No market-cap buckets, cash positions or historical attribution are inferred from the holdings file.</p>
+        </ng-container>
+        <ng-template #noDisclosure><div class="empty-state disclosure-state"><h3>No local portfolio disclosure found for this fund</h3><p>Import the AMC monthly portfolio XLSX using the existing portfolio holdings workflow. The dashboard will display the latest imported disclosure.</p></div></ng-template>
+      </ng-container>
+      <ng-template #chooseFundPortfolio><div class="empty-state"><h3>Select a fund to view its portfolio composition</h3><p>Sector and security weights are read from the latest locally imported AMC disclosure.</p></div></ng-template>
+    </section>
+
+    <section class="tab-panel" *ngIf="activeTab === 'positioning'">
+      <div class="section-heading"><div><p class="eyebrow">CATEGORY POSITIONING</p><h2>Return vs risk map</h2></div><span class="section-meta">Orange identifies the selected fund</span></div>
+      <article class="chart-card"><div class="chart-title"><div><span>06</span><h3>Peer group positioning</h3></div><small>3Y CAGR vs annualised volatility</small></div><div class="chart-wrap extra-large"><canvas id="positioning-chart"></canvas></div></article>
+      <p class="method-note">Only funds with both 3Y CAGR and volatility observations are plotted. This is a two-dimensional peer map; additional portfolio metrics are not inferred.</p>
+    </section>
+
+    <section class="tab-panel" *ngIf="activeTab === 'universe'">
+      <div class="section-heading"><div><p class="eyebrow">CATEGORY UNIVERSE</p><h2>All funds in {{ selectedCategory }}</h2></div><span class="section-meta">{{ selectedCategoryRankings.length }} funds · {{ selectedPlan }}</span></div>
+      <div class="table-wrap"><table><thead><tr><th>Fund</th><th>AMC</th><th>1Y CAGR</th><th>3Y CAGR</th><th>5Y CAGR</th><th>Volatility</th><th>Sharpe</th><th>Max DD</th><th>Quartile</th></tr></thead><tbody><tr *ngFor="let row of selectedCategoryRankings"><td class="fund-name">{{ row.Scheme_Name }}</td><td>{{ row.AMC_Name || '—' }}</td><td>{{ formatPct(getMetric(row, 'CAGR_1Y_pct')) }}</td><td>{{ formatPct(getMetric(row, 'CAGR_3Y_pct')) }}</td><td>{{ formatPct(getMetric(row, 'CAGR_5Y_pct')) }}</td><td>{{ formatPct(getMetric(row, 'Annualized_Volatility_pct')) }}</td><td>{{ formatNumber(getMetric(row, 'Sharpe_Ratio'), 3) }}</td><td>{{ formatPct(getMetric(row, 'Max_Drawdown_pct')) }}</td><td><span class="quartile" [ngClass]="getQuartileClass(row.Quartile)">{{ row.Quartile || '—' }}</span></td></tr><tr *ngIf="!selectedCategoryRankings.length"><td colspan="9" class="empty-cell">No locally generated ranking rows are available.</td></tr></tbody></table></div>
+    </section>
+
+    <section class="tab-panel" *ngIf="activeTab === 'attribution'">
+      <div class="section-heading"><div><p class="eyebrow">PERFORMANCE ATTRIBUTION</p><h2>Contribution analysis</h2></div><span class="section-meta">{{ selectedFund?.scheme_name || selectedCategory }}</span></div>
+      <div class="empty-state disclosure-state"><h3>Stock-level attribution is not currently calculable</h3><p>Attribution requires historical security-level holdings weights and matching security price-return series over the same period. The current SEBI NAV analytics snapshot does not contain those inputs, so contribution and laggard figures are intentionally withheld.</p></div>
+    </section>
+  </div>
+
+  <section class="empty-state start-state" *ngIf="!selectedCategory && !loadingCategories">
+    <h2>Select a category to open the intelligence dashboard</h2>
+    <p>Choose a SEBI Level 3 category, then select Direct or Regular Plan and an individual fund.</p>
+  </section>
+
+  <footer class="source-footer">
+    <span>Source: locally persisted AMFI master and MFapi NAV history</span>
+    <span>Analytics snapshot: {{ formatGeneratedAt(summary?.generated_at) }}</span>
+  </footer>
+</section>

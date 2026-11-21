@@ -12,6 +12,7 @@ from .services.sebi_mf_analytics import (
     analytics_data_dir,
     analytics_export_dir,
     compute_fund_performance_metrics,
+    load_cached_portfolio_holdings,
     load_latest_sebi_summary,
 )
 
@@ -126,12 +127,20 @@ def sebi_fund_nav_history(request, scheme_code):
     ]
     series = [(row.date, float(row.nav)) for row in observations]
     metrics = compute_fund_performance_metrics(series) if series else {}
+    portfolio = next(
+        (
+            item for item in load_cached_portfolio_holdings()
+            if str(item.get("scheme_code")) == str(scheme_code)
+        ),
+        None,
+    )
 
     return Response({
         "available": bool(history),
         "scheme": scheme,
         "history": history,
         "metrics": metrics,
+        "portfolio": portfolio,
         "history_count": len(history),
         "message": None if history else (
             "No locally persisted NAV history is available for this scheme. "

@@ -11,7 +11,8 @@ from django.db.models import Max
 
 from mutual_funds.models import AMFIMasterNAV
 from mutual_funds.master_models import (
-    MFBenchmarkTRI, MFMarketCapClassification, MFMasterData, MFMasterHolding,
+    MFBenchmarkTRI, MFExternalPortfolioSnapshot, MFMarketCapClassification,
+    MFMasterData, MFMasterHolding,
 )
 from mutual_funds.services.masterdata import (
     calculate_benchmark_relative_metrics, normalize_key,
@@ -74,13 +75,22 @@ def _cap_split(holdings, equity_pct, as_of_date):
 
 
 def _holdings_metrics(scheme, as_of_date):
-    latest_date = (
-        MFMasterHolding.objects.filter(scheme=scheme, portfolio_date__lte=as_of_date)
-        .aggregate(value=Max("portfolio_date"))["value"]
-    )
+    eligible = MFMasterHolding.objects.filter(scheme=scheme, portfolio_date__lte=as_of_date)
+    date_basis = MFMasterHolding.DATE_BASIS_DISCLOSURE
+    latest_date = eligible.filter(portfolio_date_basis=date_basis).aggregate(
+        value=Max("portfolio_date")
+    )["value"]
+    if latest_date is None:
+        date_basis = MFMasterHolding.DATE_BASIS_FETCHED_AT
+        latest_date = eligible.filter(portfolio_date_basis=date_basis).aggregate(
+            value=Max("portfolio_date")
+        )["value"]
     if latest_date is None:
         return {}, ["PORTFOLIO_NOT_AVAILABLE"], ""
-    holdings = list(MFMasterHolding.objects.filter(scheme=scheme, portfolio_date=latest_date))
+
+    holdings = list(eligible.filter(
+        portfolio_date=latest_date, portfolio_date_basis=date_basis,
+    ))
     allocation = {key: Decimal("0") for key in ("equity_pct", "debt_pct", "cash_pct", "others_pct")}
     sectors = {}
     ratings = {}
@@ -100,6 +110,37 @@ def _holdings_metrics(scheme, as_of_date):
         if kind in {"BOND", "DEBT"} and row.ytm_pct is not None:
             ytm_total += weight * row.ytm_pct
             ytm_weight += weight
+
+    flags = []
+    provider_snapshot = None
+    if date_basis == MFMasterHolding.DATE_BASIS_FETCHED_AT:
+        flags.append("PORTFOLIO_DATE_IS_FETCH_DATE")
+        provider_snapshot = (
+            MFExternalPortfolioSnapshot.objects.filter(
+                scheme=scheme, provider=MFExternalPortfolioSnapshot.PROVIDER_MFFORECAST,
+                observed_at__date=latest_date,
+            ).order_by("-observed_at").first()
+        )
+        reported_allocation = provider_snapshot.asset_allocation if provider_snapshot else {}
+        reported = {}
+        if isinstance(reported_allocation, dict):
+            for field in ("equity_pct", "debt_pct", "cash_pct"):
+                try:
+                    value = Decimal(str(reported_allocation.get(field)))
+                except Exception:
+                    value = None
+                if value is not None and value.is_finite() and Decimal("0") <= value <= Decimal("100"):
+                    reported[field] = value
+        if len(reported) == 3:
+            for field, value in reported.items():
+                if abs(value - allocation[field]) > Decimal("1.0"):
+                    flags.append("MFFORECAST_ALLOCATION_MISMATCH")
+                allocation[field] = value
+            residual = Decimal("100") - sum(reported.values(), Decimal("0"))
+            if Decimal("0") <= residual <= Decimal("100"):
+                allocation["others_pct"] = residual
+            flags.append("MFFORECAST_ASSET_ALLOCATION_USED")
+
     equity = allocation["equity_pct"]
     values = {
         **{key: value.quantize(Decimal("0.0001")) for key, value in allocation.items()},
@@ -110,10 +151,11 @@ def _holdings_metrics(scheme, as_of_date):
         "ytm_pct": (ytm_total / ytm_weight).quantize(Decimal("0.0001")) if ytm_weight else None,
     }
     values.update(_cap_split(holdings, equity, as_of_date))
-    weights = sum(allocation.values(), Decimal("0"))
-    flags = ["PORTFOLIO_WEIGHT_NOT_100"] if weights and abs(weights - Decimal("100")) > Decimal("1.0") else []
+    weights = sum((row.pct_of_nav or Decimal("0")) for row in holdings)
+    if weights and abs(weights - Decimal("100")) > Decimal("1.0"):
+        flags.append("PORTFOLIO_WEIGHT_NOT_100")
     source_url = next((row.source_url for row in holdings if row.source_url), "")
-    return values, flags, source_url
+    return values, sorted(set(flags)), source_url
 
 
 def calculate_scheme_masterdata_metrics(

@@ -58,7 +58,7 @@ class Command(BaseCommand):
         # Pick the newest provider response for each AMFI scheme.
         latest = []
         seen_scheme_ids = set()
-        for snapshot in snapshots_qs.order_by("scheme_id", "-observed_at"):
+        for snapshot in snapshots_qs.order_by("-observed_at", "scheme_id"):
             if snapshot.scheme_id in seen_scheme_ids:
                 continue
             latest.append(snapshot)

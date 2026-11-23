@@ -142,6 +142,42 @@ class WatchListProductSerializer(serializers.ModelSerializer):
             "exit_load": value.exit_load,
             "latest_nav": value.latest_nav,
             "latest_nav_date": value.latest_nav_date,
+            "research_metrics": self._research_metrics(obj),
+        }
+
+    def _research_metrics(self, obj):
+        snapshot = self.context.get("masterdata_snapshots", {}).get(obj.id)
+        if snapshot is None:
+            return None
+
+        tracked_fields = (
+            "aum_cr", "ter_direct_pct", "ter_regular_pct", "std_dev_pct",
+            "sharpe", "sortino", "beta", "alpha_pct", "max_drawdown_pct",
+        )
+        field_sources = snapshot.field_sources or {}
+        return {
+            "as_of_date": snapshot.as_of_date,
+            "aum_cr": snapshot.aum_cr,
+            "aum_type": snapshot.aum_type,
+            "aum_as_of": snapshot.aum_as_of,
+            "aum_source": snapshot.aum_source,
+            "ter_direct_pct": snapshot.ter_direct_pct,
+            "ter_regular_pct": snapshot.ter_regular_pct,
+            "ter_as_of": snapshot.ter_as_of,
+            "std_dev_pct": snapshot.std_dev_pct,
+            "sharpe": snapshot.sharpe,
+            "sortino": snapshot.sortino,
+            "beta": snapshot.beta,
+            "alpha_pct": snapshot.alpha_pct,
+            "max_drawdown_pct": snapshot.max_drawdown_pct,
+            "risk_free_rate_used_pct": snapshot.risk_free_rate_used_pct,
+            "ratio_window_years": snapshot.ratio_window_years,
+            "data_quality_flags": snapshot.data_quality_flags or [],
+            "field_sources": {
+                field: field_sources[field]
+                for field in tracked_fields
+                if field in field_sources
+            },
         }
 
     def get_pms(self, obj):

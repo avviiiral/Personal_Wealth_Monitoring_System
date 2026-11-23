@@ -23,7 +23,11 @@ from mutual_funds.sebi_views import (
 )
 
 
+from .masterdata_api import mutual_fund_masterdata
+
+
 urlpatterns = [
+    path("masterdata/", mutual_fund_masterdata, name="mutual-fund-masterdata"),
     path("overview/", mutual_fund_analytics_overview, name="mutual-fund-analytics-overview"),
     path("research-report/", latest_mutual_fund_research_report, name="mutual-fund-research-report"),
     path("research-universes/", mutual_fund_research_universes, name="mutual-fund-research-universes"),

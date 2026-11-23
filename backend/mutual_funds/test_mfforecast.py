@@ -105,7 +105,7 @@ class MFForecastParserTests(TestCase):
             scheme_code="128629",
         )
         self.assertEqual(parsed["holdings_count"], 0)
-        self.assertIn("MFFORECAST_HOLDINGS_EMPTY", parsed["quality_flags"])
+        self.assertIn("MFFORECAST_NO_VALID_HOLDING_ROWS", parsed["quality_flags"])
 
     def test_skips_bad_holding_rows_and_flags_weight_coverage(self):
         payload = read_payload()
@@ -113,6 +113,20 @@ class MFForecastParserTests(TestCase):
         parsed = parse_mfforecast_holdings(payload, scheme_code="120503")
         self.assertEqual(parsed["holdings_count"], 1)
         self.assertEqual(parsed["invalid_rows"], 1)
+        self.assertIn("MFFORECAST_INVALID_HOLDING_ROWS_SKIPPED", parsed["quality_flags"])
+
+    def test_unknown_provider_holding_keys_are_not_misreported_as_empty_array(self):
+        parsed = parse_mfforecast_holdings(
+            {
+                "holdings": [
+                    {"name": "HDFC Bank Ltd.", "weight": "9.82", "symbol": "HDFCBANK"}
+                ]
+            },
+            scheme_code="128629",
+        )
+        self.assertEqual(parsed["holdings_count"], 0)
+        self.assertEqual(parsed["invalid_rows"], 1)
+        self.assertIn("MFFORECAST_NO_VALID_HOLDING_ROWS", parsed["quality_flags"])
         self.assertIn("MFFORECAST_INVALID_HOLDING_ROWS_SKIPPED", parsed["quality_flags"])
 
 
@@ -221,11 +235,11 @@ class MFForecastEmptyResponseCommandTests(TestCase):
         run = MFSourceRun.objects.get(source="MFFORECAST_API")
         snapshot = MFExternalPortfolioSnapshot.objects.get(scheme=self.scheme)
         self.assertEqual(run.status, MFSourceRun.Status.PARTIAL)
-        self.assertEqual(run.metadata["schemes_empty_holdings"], 1)
+        self.assertEqual(run.metadata["schemes_without_valid_holdings"], 1)
         self.assertEqual(snapshot.holdings_count, 0)
-        self.assertIn("MFFORECAST_HOLDINGS_EMPTY", snapshot.quality_flags)
+        self.assertIn("MFFORECAST_NO_VALID_HOLDING_ROWS", snapshot.quality_flags)
         self.assertFalse(MFMasterHolding.objects.filter(scheme=self.scheme).exists())
-        self.assertIn("empty holdings array", run.errors[0]["error"])
+        self.assertIn("no valid holding rows could be parsed", run.errors[0]["error"])
 
 
 class MFForecastPersistenceAndAnalyticsTests(TestCase):

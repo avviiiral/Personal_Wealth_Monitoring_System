@@ -41,7 +41,7 @@ For a cross-AMC pilot, first generate a candidate list from the local AMFI schem
 python manage.py plan_mfforecast_pilot
 ~~~
 
-By default, it checks HDFC, SBI, ICICI Prudential, Axis and Nippon India. To choose different AMCs, repeat `--amc`:
+HDFC has already been live-validated; by default, the next pilot checks three additional AMCs: SBI, ICICI Prudential and Axis. To choose different AMCs, repeat `--amc`:
 
 ~~~powershell
 python manage.py plan_mfforecast_pilot --amc "HDFC" --amc "SBI" --amc "Kotak"

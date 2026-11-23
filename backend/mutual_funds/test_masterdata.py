@@ -5,6 +5,7 @@ from pathlib import Path
 from django.test import TestCase
 
 from mutual_funds.models import AMFIMasterScheme, MFMasterData, MFMasterHolding
+from mutual_funds.services.sebi_mf_analytics import parse_amfi_navall_feed
 from mutual_funds.services.masterdata import (
     calculate_benchmark_relative_metrics,
     parse_portfolio_rows,
@@ -43,6 +44,32 @@ class MasterDataSchemeMatchingTests(TestCase):
         )
         self.assertEqual(matched.pk, self.scheme.pk)
         self.assertEqual(status, "isin")
+
+
+    def test_amfi_navall_sample_isins_resolve_for_four_amcs(self):
+        records = parse_amfi_navall_feed(
+            read_fixture("amfi_navall_4_growth_schemes_2026-11-20.tsv").decode("utf-8")
+        )
+        self.assertEqual(len(records), 4)
+        for record in records:
+            self.assertTrue(record["is_growth_plan"])
+            self.assertEqual(record["plan"], "Direct Plan")
+            self.assertIn("Growth", record["option"])
+            scheme = AMFIMasterScheme.objects.create(
+                scheme_code=record["scheme_code"],
+                scheme_name=record["scheme_name"],
+                isin_growth=record["isin_growth"],
+                plan=record["plan"],
+                option=record["option"],
+                is_growth_plan=record["is_growth_plan"],
+                is_active=True,
+            )
+            matched, status = resolve_master_scheme(
+                isin=record["isin_growth"],
+                scheme_name="Name variant must not override ISIN",
+            )
+            self.assertEqual(matched.pk, scheme.pk)
+            self.assertEqual(status, "isin")
 
     def test_unknown_isin_does_not_fall_back_to_name(self):
         matched, status = resolve_master_scheme(

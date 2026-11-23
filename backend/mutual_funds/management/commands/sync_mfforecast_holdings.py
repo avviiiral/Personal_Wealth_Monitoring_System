@@ -167,7 +167,10 @@ class Command(BaseCommand):
                             self.stdout.write(
                                 f"{scheme.scheme_code} | {scheme.scheme_name} | "
                                 f"provider_name={parsed['scheme_name'] or 'not supplied'} | "
-                                f"holdings={len(rows)} | weight_total={parsed['total_weight_pct']} | "
+                                f"provider_count={parsed['provider_holdings_count']} | "
+                                f"holdings={len(rows)} | invalid_rows={parsed['invalid_rows']} | "
+                                f"weight_total={parsed['total_weight_pct']} | "
+                                f"snapshot_keys={','.join(sorted(parsed['provider_snapshot'])) or 'not supplied'} | "
                                 f"quality_flags={parsed['quality_flags']} | "
                                 f"raw_cache={raw_path or 'not available'}"
                             )

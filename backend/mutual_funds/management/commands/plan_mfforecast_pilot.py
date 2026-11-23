@@ -9,12 +9,11 @@ from mutual_funds.models import AMFIMasterScheme
 from mutual_funds.master_models import MFExternalPortfolioSnapshot
 
 
+# HDFC has already been live-validated; this next pilot adds three other AMCs.
 DEFAULT_AMC_FILTERS = [
-    "HDFC",
     "SBI",
     "ICICI Prudential",
     "Axis",
-    "Nippon India",
 ]
 
 

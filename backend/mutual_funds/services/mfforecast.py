@@ -22,6 +22,7 @@ from mutual_funds.services.masterdata import (
     decimal_value,
     normalize_isin,
     normalize_text,
+    parse_date,
     source_raw_directory,
 )
 
@@ -76,14 +77,36 @@ def build_mfforecast_headers(*, base_url: str, api_key: str, api_key_header: str
     return {header_name: key} if key else {}
 
 
+def _mfforecast_instrument_type(raw_type: str, security_name: str) -> tuple[str, bool]:
+    """Correct obvious REIT labels on coupon/maturity-dated debt securities.
+
+    A plain REIT label remains REIT. The provider's live response has, however,
+    labelled coupon-bearing and maturity-dated debt instruments as REIT.
+    """
+    provider_type = normalize_text(raw_type).casefold()
+    has_coupon = bool(re.search(r"\b\d{1,2}(?:\.\d+)?\s*%", security_name))
+    has_maturity = bool(
+        re.search(r"\(\s*\d{1,2}[/-]\d{1,2}[/-]\d{4}\s*\)", security_name)
+    )
+    if provider_type in {"reit", "real estate investment trust"} and (has_coupon or has_maturity):
+        return "BOND", True
+    return _instrument_type(raw_type, security_name), False
+
+
 def parse_mfforecast_holdings(payload: dict, *, scheme_code: str) -> dict:
-    """Validate and normalize the documented MF Forecast JSON response."""
+    """Validate and normalize MF Forecast holdings and nested snapshot metadata."""
     if not isinstance(payload, dict):
         raise ValueError("MF Forecast response must be a JSON object.")
     if "holdings" not in payload or not isinstance(payload.get("holdings"), list):
         raise ValueError("MF Forecast response must include a holdings array.")
 
+    provider_snapshot = payload.get("snapshot")
+    if not isinstance(provider_snapshot, dict):
+        provider_snapshot = {}
+
     allocation_raw = payload.get("asset_allocation")
+    if not allocation_raw:
+        allocation_raw = provider_snapshot
     if allocation_raw is None:
         allocation_raw = {}
     if not isinstance(allocation_raw, dict):
@@ -95,14 +118,23 @@ def parse_mfforecast_holdings(payload: dict, *, scheme_code: str) -> dict:
         if value is not None and value >= 0:
             asset_allocation[field] = str(value)
 
+    provider_count_raw = payload.get("holdings_count")
+    try:
+        provider_holdings_count = int(provider_count_raw) if provider_count_raw is not None else 0
+    except (TypeError, ValueError, OverflowError):
+        provider_holdings_count = 0
+    if provider_holdings_count < 0:
+        provider_holdings_count = 0
+
     rows = []
     invalid_rows = 0
+    provider_asset_type_overrides = 0
     for item in payload["holdings"]:
         if not isinstance(item, dict):
             invalid_rows += 1
             continue
         # The live RapidAPI response uses "name"; the published example uses
-        # "stock_name". Accept both without changing weight units.
+        # "stock_name". Weight units are normalized only after completeness checks.
         security_name = normalize_text(item.get("name") or item.get("stock_name"))
         weight = decimal_value(item.get("weight_pct"), percent=True)
         if not security_name or weight is None or weight < 0:
@@ -110,16 +142,40 @@ def parse_mfforecast_holdings(payload: dict, *, scheme_code: str) -> dict:
             continue
 
         raw_type = normalize_text(item.get("asset_type"))
+        instrument_type, type_overridden = _mfforecast_instrument_type(raw_type, security_name)
+        provider_asset_type_overrides += int(type_overridden)
         rows.append({
             "security_name": security_name[:300],
             "ticker": normalize_text(item.get("ticker"))[:40],
             "isin": normalize_isin(item.get("isin")),
             "quantity": decimal_value(item.get("quantity")),
             "pct_of_nav": weight,
-            "instrument_type": _instrument_type(raw_type, security_name),
+            "instrument_type": instrument_type,
         })
 
+    raw_total_weight = sum((row["pct_of_nav"] for row in rows), Decimal("0"))
+    weight_scale_factor = Decimal("1")
+    # In the observed complete live response, 102/102 valid weights summed to
+    # 0.9555. This is consistent with fractional NAV weights (95.55%), not
+    # percentage-point weights. Infer that scale only when every provider row
+    # was parsed and the raw portfolio total is within a plausible 0..1 range.
+    if (
+        rows
+        and invalid_rows == 0
+        and provider_holdings_count == len(rows)
+        and Decimal("0") < raw_total_weight <= Decimal("1.05")
+    ):
+        weight_scale_factor = Decimal("100")
+        for row in rows:
+            row["pct_of_nav"] = (row["pct_of_nav"] * weight_scale_factor).quantize(Decimal("0.0001"))
+
     total_weight = sum((row["pct_of_nav"] for row in rows), Decimal("0"))
+    snapshot_date_raw = (
+        provider_snapshot.get("snapshot_date")
+        or payload.get("snapshot_date")
+        or payload.get("as_of_date")
+    )
+    provider_as_of_date = parse_date(snapshot_date_raw)
     quality_flags = []
     if not rows:
         quality_flags.append("MFFORECAST_NO_VALID_HOLDING_ROWS")
@@ -127,13 +183,27 @@ def parse_mfforecast_holdings(payload: dict, *, scheme_code: str) -> dict:
         quality_flags.append("MFFORECAST_INVALID_HOLDING_ROWS_SKIPPED")
     if not asset_allocation:
         quality_flags.append("MFFORECAST_ASSET_ALLOCATION_NOT_PROVIDED")
+    elif len(asset_allocation) < 3:
+        quality_flags.append("MFFORECAST_ASSET_ALLOCATION_INCOMPLETE")
+    if provider_asset_type_overrides:
+        quality_flags.append("MFFORECAST_PROVIDER_ASSET_TYPE_OVERRIDDEN")
+    if weight_scale_factor != Decimal("1"):
+        quality_flags.append("MFFORECAST_WEIGHT_SCALE_INFERRED_FRACTION_TO_PERCENT")
+    if snapshot_date_raw and provider_as_of_date is None:
+        quality_flags.append("MFFORECAST_SNAPSHOT_DATE_INVALID")
     if rows and abs(total_weight - Decimal("100")) > Decimal("1.0"):
         quality_flags.append("MFFORECAST_HOLDING_WEIGHTS_NOT_100")
 
-    aum_cr = decimal_value(payload.get("aum_cr"))
+    aum_raw = payload.get("aum_cr")
+    if aum_raw is None:
+        aum_raw = provider_snapshot.get("aum_crores")
+    aum_cr = decimal_value(aum_raw)
     if aum_cr is not None and aum_cr < 0:
         aum_cr = None
-    expense_ratio_pct = decimal_value(payload.get("expense_ratio"), percent=True)
+    expense_raw = payload.get("expense_ratio")
+    if expense_raw is None:
+        expense_raw = provider_snapshot.get("expense_ratio")
+    expense_ratio_pct = decimal_value(expense_raw, percent=True)
     if expense_ratio_pct is not None and expense_ratio_pct < 0:
         expense_ratio_pct = None
 
@@ -145,8 +215,9 @@ def parse_mfforecast_holdings(payload: dict, *, scheme_code: str) -> dict:
 
     return {
         "scheme_code": str(scheme_code),
-        "provider_holdings_count": int(payload.get("holdings_count") or 0),
-        "provider_snapshot": payload.get("snapshot") if isinstance(payload.get("snapshot"), dict) else {},
+        "provider_holdings_count": provider_holdings_count,
+        "provider_snapshot": provider_snapshot,
+        "provider_as_of_date": provider_as_of_date,
         "scheme_name": normalize_text(payload.get("scheme_name"))[:300],
         "fund_house": normalize_text(payload.get("fund_house"))[:200],
         "category": normalize_text(payload.get("category"))[:160],
@@ -156,10 +227,11 @@ def parse_mfforecast_holdings(payload: dict, *, scheme_code: str) -> dict:
         "holdings": rows,
         "holdings_count": len(rows),
         "total_weight_pct": total_weight.quantize(Decimal("0.0001")),
+        "weight_scale_factor": weight_scale_factor,
+        "provider_asset_type_overrides": provider_asset_type_overrides,
         "quality_flags": quality_flags,
         "invalid_rows": invalid_rows,
     }
-
 
 def _throttle(host: str) -> None:
     """Apply a conservative one-request-per-second process-level host throttle."""

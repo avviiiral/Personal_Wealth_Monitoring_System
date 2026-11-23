@@ -10,7 +10,7 @@ import { WatchListStateService } from '../../core/services/watch-list-state.serv
 type ProductTab = 'MUTUAL_FUND' | 'PMS';
 type StatusTab = 'ALL' | 'OWNED' | 'UNIVERSAL' | 'WATCHLIST';
 type PageItem = number | 'ellipsis';
-type WatchListSortColumn = 'product' | 'isin' | 'provider' | 'status' | 'ownership' | '1M' | '3M' | '6M' | '1Y' | '3Y' | '5Y' | 'CAGR' | 'AUM';
+type WatchListSortColumn = 'product' | 'isin' | 'provider' | 'status' | 'ownership' | '1M' | '3M' | '6M' | '1Y' | '3Y' | '5Y' | 'CAGR' | 'AUM' | 'TER' | 'STD_DEV' | 'SHARPE';
 type WatchListSortDirection = 'normal' | 'asc' | 'desc';
 type BenchmarkPeriod = '1M' | '3M' | '6M' | '1Y' | '3Y' | '5Y';
 interface WatchListSortState { column: WatchListSortColumn | null; direction: WatchListSortDirection; }
@@ -29,7 +29,7 @@ export class WatchListComponent implements OnInit, OnDestroy {
   // Bump the cache namespace whenever the product universe identity changes.
   // This prevents rows cached by an older database/universe from being clickable
   // after a refresh, which can otherwise produce benchmark 404s for stale IDs.
-  private readonly cachePrefix = 'pwms.watch-list.v2.';
+  private readonly cachePrefix = 'pwms.watch-list.v3.';
   private autoRefreshAttempted = false;
   private readonly searchInput$ = new Subject<string>();
   private readonly destroy$ = new Subject<void>();
@@ -458,7 +458,10 @@ export class WatchListComponent implements OnInit, OnDestroy {
       case '3Y':
       case '5Y':
       case 'CAGR': return this.metric(product, column);
-      case 'AUM': return product.mutual_fund?.aum ?? product.pms?.aum ?? null;
+      case 'AUM': return this.aumSortValue(product);
+      case 'TER': return this.terValue(product);
+      case 'STD_DEV': return product.mutual_fund?.research_metrics?.std_dev_pct ?? null;
+      case 'SHARPE': return product.mutual_fund?.research_metrics?.sharpe ?? null;
     }
   }
 
@@ -482,7 +485,7 @@ export class WatchListComponent implements OnInit, OnDestroy {
   }
 
   private isNumericSortColumn(column: WatchListSortColumn): boolean {
-    return ['1M', '3M', '6M', '1Y', '3Y', '5Y', 'CAGR', 'AUM'].includes(column);
+    return ['1M', '3M', '6M', '1Y', '3Y', '5Y', 'CAGR', 'AUM', 'TER', 'STD_DEV', 'SHARPE'].includes(column);
   }
 
   private toNullableNumber(value: unknown): number | null {
@@ -1133,6 +1136,8 @@ export class WatchListComponent implements OnInit, OnDestroy {
       { header: '6M', key: '6M', width: 12 }, { header: '1Y', key: '1Y', width: 12 },
       { header: '3Y', key: '3Y', width: 12 }, { header: '5Y', key: '5Y', width: 12 },
       { header: 'CAGR', key: 'CAGR', width: 12 }, { header: 'AUM', key: 'AUM', width: 18 },
+      { header: 'TER', key: 'TER', width: 12 }, { header: 'Std Dev', key: 'STD_DEV', width: 14 },
+      { header: 'Sharpe', key: 'SHARPE', width: 12 },
     ];
     columnDefinitions.forEach((column, index) => {
       const excelColumn = sheet.getColumn(index + 1);
@@ -1140,7 +1145,7 @@ export class WatchListComponent implements OnInit, OnDestroy {
       excelColumn.key = column.key;
     });
 
-    sheet.mergeCells('A1:O1');
+    sheet.mergeCells('A1:R1');
     const title = sheet.getCell('A1');
     title.value = 'Watch List Report';
     title.font = { name: 'Aptos Display', size: 18, bold: true, color: { argb: 'FFFFFFFF' } };
@@ -1148,14 +1153,14 @@ export class WatchListComponent implements OnInit, OnDestroy {
     title.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1F2937' } };
     sheet.getRow(1).height = 32;
 
-    sheet.mergeCells('A2:O2');
+    sheet.mergeCells('A2:R2');
     const subtitle = sheet.getCell('A2');
     subtitle.value = exportTypeLabel + ' • Watchlisted products • Generated ' + this.todayStamp();
     subtitle.font = { name: 'Aptos', size: 10, italic: true, color: { argb: 'FF6B7280' } };
     subtitle.alignment = { vertical: 'middle' };
     sheet.getRow(2).height = 22;
 
-    sheet.mergeCells('A3:O3');
+    sheet.mergeCells('A3:R3');
     const summary = sheet.getCell('A3');
     summary.value = 'Total watchlisted products: ' + products.length;
     summary.font = { name: 'Aptos', size: 10, bold: true, color: { argb: 'FF374151' } };
@@ -1166,7 +1171,7 @@ export class WatchListComponent implements OnInit, OnDestroy {
     // existing Watch List product table.
     const benchmarkSectionTitleRow = 4;
     const benchmarkHeaderRow = 5;
-    sheet.mergeCells('A' + benchmarkSectionTitleRow + ':O' + benchmarkSectionTitleRow);
+    sheet.mergeCells('A' + benchmarkSectionTitleRow + ':R' + benchmarkSectionTitleRow);
     const benchmarkTitle = sheet.getCell('A' + benchmarkSectionTitleRow);
     benchmarkTitle.value = 'Benchmark Performance';
     benchmarkTitle.font = { name: 'Aptos Display', size: 14, bold: true, color: { argb: 'FFFFFFFF' } };
@@ -1221,7 +1226,7 @@ export class WatchListComponent implements OnInit, OnDestroy {
 
     const noteCell = sheet.getCell('A' + noteRow);
     noteCell.value = 'Note: Product return columns are Watch List returns. Benchmark Performance shows the selected NSE and BSE TRI market benchmark returns as of the latest available benchmark date.';
-    sheet.mergeCells('A' + noteRow + ':O' + noteRow);
+    sheet.mergeCells('A' + noteRow + ':R' + noteRow);
     noteCell.font = { name: 'Aptos', size: 9, italic: true, color: { argb: 'FF6B7280' } };
     noteCell.alignment = { vertical: 'middle' };
     sheet.getRow(noteRow).height = 20;
@@ -1257,7 +1262,10 @@ export class WatchListComponent implements OnInit, OnDestroy {
         '3Y': this.metric(product, '3Y'),
         '5Y': this.metric(product, '5Y'),
         CAGR: this.metric(product, 'CAGR'),
-        AUM: product.mutual_fund?.aum ?? product.pms?.aum ?? null,
+        AUM: this.formatAum(product),
+        TER: this.terValue(product),
+        STD_DEV: product.mutual_fund?.research_metrics?.std_dev_pct ?? null,
+        SHARPE: product.mutual_fund?.research_metrics?.sharpe ?? null,
       });
 
       row.eachCell(cell => {
@@ -1272,7 +1280,7 @@ export class WatchListComponent implements OnInit, OnDestroy {
         });
       }
 
-      [8, 9, 10, 11, 12, 13, 14].forEach(column => {
+      [8, 9, 10, 11, 12, 13, 14, 16, 17].forEach(column => {
         const cell = row.getCell(column);
         if (typeof cell.value === 'number') {
           cell.numFmt = '0.00"%"';
@@ -1280,17 +1288,19 @@ export class WatchListComponent implements OnInit, OnDestroy {
         }
       });
 
-      const aum = row.getCell(15);
-      if (typeof aum.value === 'number') {
-        aum.numFmt = '#,##0.00';
-        aum.alignment = { vertical: 'middle', horizontal: 'right' };
-      }
+      [15, 18].forEach(column => {
+        const cell = row.getCell(column);
+        if (typeof cell.value === 'number') {
+          cell.numFmt = '#,##0.00';
+          cell.alignment = { vertical: 'middle', horizontal: 'right' };
+        }
+      });
       row.getCell(1).alignment = { vertical: 'middle', horizontal: 'center' };
       row.getCell(6).alignment = { vertical: 'middle', horizontal: 'center' };
       row.getCell(7).alignment = { vertical: 'middle', horizontal: 'center' };
     });
 
-    sheet.autoFilter = { from: 'A' + productHeaderRow, to: 'O' + productHeaderRow };
+    sheet.autoFilter = { from: 'A' + productHeaderRow, to: 'R' + productHeaderRow };
     sheet.getColumn(2).alignment = { vertical: 'middle', wrapText: true };
     sheet.getColumn(3).alignment = { vertical: 'middle', wrapText: true };
     sheet.getColumn(4).alignment = { vertical: 'middle', wrapText: true };
@@ -1392,6 +1402,49 @@ export class WatchListComponent implements OnInit, OnDestroy {
   }
 
   metric(product: WatchListProduct, key: string): number | null { return product.metrics?.[key] ?? null; }
+
+  terValue(product: WatchListProduct): number | null {
+    const research = product.mutual_fund?.research_metrics;
+    if (!research) return null;
+    const plan = String(product.mutual_fund?.plan || '').toLowerCase();
+    if (plan.includes('direct') && research.ter_direct_pct !== null && research.ter_direct_pct !== undefined) {
+      return Number(research.ter_direct_pct);
+    }
+    if (plan.includes('regular') && research.ter_regular_pct !== null && research.ter_regular_pct !== undefined) {
+      return Number(research.ter_regular_pct);
+    }
+    const fallback = research.ter_direct_pct ?? research.ter_regular_pct;
+    return fallback === null || fallback === undefined ? null : Number(fallback);
+  }
+
+  private aumSortValue(product: WatchListProduct): number | null {
+    const existing = product.mutual_fund?.aum ?? product.pms?.aum;
+    if (existing !== null && existing !== undefined) return Number(existing);
+    const aumCr = product.mutual_fund?.research_metrics?.aum_cr;
+    return aumCr === null || aumCr === undefined ? null : Number(aumCr) * 10000000;
+  }
+
+  formatAum(product: WatchListProduct): string {
+    const research = product.mutual_fund?.research_metrics;
+    if (research?.aum_cr !== null && research?.aum_cr !== undefined) {
+      return `${this.formatAmount(Number(research.aum_cr))} Cr`;
+    }
+    const existing = product.mutual_fund?.aum ?? product.pms?.aum;
+    return existing === null || existing === undefined ? '—' : this.formatAmount(Number(existing));
+  }
+
+  researchMetricTitle(product: WatchListProduct, field: string): string {
+    const research = product.mutual_fund?.research_metrics;
+    if (!research) return 'No global MF research snapshot is available for this scheme.';
+    const source = research.field_sources?.[field]?.source || 'Source not recorded';
+    const sourceDate = research.field_sources?.[field]?.as_of_date || research.as_of_date || 'Date unavailable';
+    return `Source: ${source} · As of: ${sourceDate}`;
+  }
+
+  formatRatio(value: number | null): string {
+    return value === null || value === undefined ? '—' : Number(value).toFixed(2);
+  }
+
   formatPercent(value: number | null): string { return value === null || value === undefined ? '—' : `${Number(value).toFixed(2)}%`; }
   formatAmount(value: number | null): string {
     if (value === null || value === undefined) return '—';

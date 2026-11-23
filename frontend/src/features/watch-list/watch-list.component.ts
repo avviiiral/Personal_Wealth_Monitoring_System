@@ -1403,6 +1403,12 @@ export class WatchListComponent implements OnInit, OnDestroy {
 
   metric(product: WatchListProduct, key: string): number | null { return product.metrics?.[key] ?? null; }
 
+  terSourceField(product: WatchListProduct): string {
+    return String(product.mutual_fund?.plan || '').toLowerCase().includes('regular')
+      ? 'ter_regular_pct'
+      : 'ter_direct_pct';
+  }
+
   terValue(product: WatchListProduct): number | null {
     const research = product.mutual_fund?.research_metrics;
     if (!research) return null;

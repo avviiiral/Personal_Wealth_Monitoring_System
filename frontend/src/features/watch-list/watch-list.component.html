@@ -128,7 +128,7 @@
           <td [class.positive-value]="metric(product, '5Y') !== null && metric(product, '5Y')! > 0" [class.negative-value]="metric(product, '5Y') !== null && metric(product, '5Y')! < 0">{{ formatPercent(metric(product, '5Y')) }}</td>
           <td [class.positive-value]="metric(product, 'CAGR') !== null && metric(product, 'CAGR')! > 0" [class.negative-value]="metric(product, 'CAGR') !== null && metric(product, 'CAGR')! < 0">{{ formatPercent(metric(product, 'CAGR')) }}</td>
           <td [title]="product.mutual_fund?.research_metrics?.aum_as_of ? ('AUM as of ' + product.mutual_fund.research_metrics.aum_as_of + ' · ' + (product.mutual_fund.research_metrics.aum_type || '')) : ''">{{ formatAum(product) }}</td>
-          <td *ngIf="productTab !== 'PMS'" [title]="researchMetricTitle(product, 'ter_direct_pct')">{{ formatPercent(terValue(product)) }}</td>
+          <td *ngIf="productTab !== 'PMS'" [title]="researchMetricTitle(product, terSourceField(product))">{{ formatPercent(terValue(product)) }}</td>
           <td *ngIf="productTab !== 'PMS'" [title]="researchMetricTitle(product, 'std_dev_pct')">{{ formatPercent(product.mutual_fund?.research_metrics?.std_dev_pct ?? null) }}</td>
           <td *ngIf="productTab !== 'PMS'" [title]="researchMetricTitle(product, 'sharpe')">{{ formatRatio(product.mutual_fund?.research_metrics?.sharpe ?? null) }}</td>
         </tr>

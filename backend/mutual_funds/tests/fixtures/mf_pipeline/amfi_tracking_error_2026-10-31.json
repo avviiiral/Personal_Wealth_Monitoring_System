@@ -1,0 +1,28 @@
+{
+ "data": [
+  {
+   "Scheme_Name": "SBI BSE 100 ETF",
+   "Benchmark": "BSE 100 TRI",
+   "RegularPercent": 0.02,
+   "DirectPercent": 0.02,
+   "mfId": "22",
+   "date": "31-oct-2026"
+  },
+  {
+   "Scheme_Name": "SBI BSE PSU Bank ETF",
+   "Benchmark": "BSE PSU BANK (TR)",
+   "RegularPercent": 0.09,
+   "DirectPercent": 0.09,
+   "mfId": "22",
+   "date": "31-oct-2026"
+  },
+  {
+   "Scheme_Name": "SBI BSE PSU Bank Index Fund",
+   "Benchmark": "BSE PSU BANK (TR)",
+   "RegularPercent": 0.12,
+   "DirectPercent": 0.12,
+   "mfId": "22",
+   "date": "31-oct-2026"
+  }
+ ]
+}

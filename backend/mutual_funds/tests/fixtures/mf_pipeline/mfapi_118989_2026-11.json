@@ -1,0 +1,38 @@
+{
+ "meta": {
+  "fund_house": "HDFC Mutual Fund",
+  "scheme_type": "Open Ended Schemes",
+  "scheme_category": "Equity Scheme - Mid Cap Fund",
+  "scheme_code": 118989,
+  "scheme_name": "HDFC Mid Cap Fund - Direct Plan - Growth Option",
+  "isin_growth": "INF179K01XQ0",
+  "isin_div_reinvestment": null
+ },
+ "data": [
+  {
+   "date": "20-11-2026",
+   "nav": "232.51700"
+  },
+  {
+   "date": "19-11-2026",
+   "nav": "230.39000"
+  },
+  {
+   "date": "18-11-2026",
+   "nav": "228.63100"
+  },
+  {
+   "date": "17-11-2026",
+   "nav": "230.55600"
+  },
+  {
+   "date": "16-11-2026",
+   "nav": "230.30400"
+  },
+  {
+   "date": "13-11-2026",
+   "nav": "229.69700"
+  }
+ ],
+ "status": "SUCCESS"
+}

@@ -1,0 +1,102 @@
+{
+ "type": "periods",
+ "data": {
+  "financial_year": "April 2026 - March 2027",
+  "periods": [
+   {
+    "id": 1,
+    "period": "July - September 2026"
+   },
+   {
+    "id": 2,
+    "period": "April - June 2026"
+   }
+  ]
+ },
+ "years": [
+  {
+   "id": 1,
+   "financial_year": "April 2026 - March 2027"
+  },
+  {
+   "id": 2,
+   "financial_year": "April 2025 - March 2026"
+  },
+  {
+   "id": 3,
+   "financial_year": "April 2024 - March 2025"
+  },
+  {
+   "id": 4,
+   "financial_year": "April 2023 - March 2024"
+  },
+  {
+   "id": 5,
+   "financial_year": "April 2022 - March 2023"
+  },
+  {
+   "id": 6,
+   "financial_year": "April 2021 - March 2022"
+  },
+  {
+   "id": 7,
+   "financial_year": "April 2020 - March 2021"
+  },
+  {
+   "id": 8,
+   "financial_year": "April 2019 - March 2020"
+  },
+  {
+   "id": 9,
+   "financial_year": "April 2018 - March 2019"
+  },
+  {
+   "id": 10,
+   "financial_year": "April 2017 - March 2018"
+  },
+  {
+   "id": 11,
+   "financial_year": "April 2016 - March 2017"
+  },
+  {
+   "id": 12,
+   "financial_year": "April 2015 - March 2016"
+  },
+  {
+   "id": 13,
+   "financial_year": "April 2014 - March 2015"
+  },
+  {
+   "id": 14,
+   "financial_year": "April 2013 - March 2014"
+  },
+  {
+   "id": 15,
+   "financial_year": "April 2012 - March 2013"
+  },
+  {
+   "id": 16,
+   "financial_year": "April 2011 - March 2012"
+  },
+  {
+   "id": 17,
+   "financial_year": "April 2010 - March 2011"
+  },
+  {
+   "id": 18,
+   "financial_year": "April 2009 - March 2010"
+  },
+  {
+   "id": 19,
+   "financial_year": "April 2008 - March 2009"
+  },
+  {
+   "id": 20,
+   "financial_year": "April 2007 - March 2008"
+  },
+  {
+   "id": 21,
+   "financial_year": "April 2006 - March 2007"
+  }
+ ]
+}

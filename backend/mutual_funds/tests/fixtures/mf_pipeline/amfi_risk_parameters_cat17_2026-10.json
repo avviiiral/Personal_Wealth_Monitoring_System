@@ -1,0 +1,110 @@
+[
+ {
+  "MF_Name": "Aditya Birla Sun Life Mutual Fund",
+  "SchemeID": 710,
+  "Cat_ID": 17,
+  "SchemeName": "ADITYA BIRLA SUN LIFE MIDCAP FUND",
+  "AUM": 6283.7,
+  "stressTest": {
+   "StressTest_portfolio_50": 3,
+   "StressTest_portfolio_25": 2
+  },
+  "concentration": {
+   "LiabilitySide": 4,
+   "AssetSide": {
+    "AssetSide_LargeCap": 7.68,
+    "AssetSide_MidCap": 61.74,
+    "AssetSide_SmallCap": 28.63,
+    "AssetSide_Cash": 1.96
+   }
+  },
+  "volatility": {
+   "Volatility_PortfolioASD": 18.45,
+   "Volatility_BenchmarkASD": 18.58,
+   "Volatility_PortfolioBeta": 0.96
+  },
+  "valuation": {
+   "Valuation_PortfolioTrailing12mPE": 32.68,
+   "BenchMark": {
+    "Valuation_BenchmarkTrailing12mPE": 26.27,
+    "Valuation_BenchmarkTrailing12mPE_1YA": 34.12,
+    "Valuation_BenchmarkTrailing12mPE_2YA": 42.98
+   },
+   "Valuation_PortfolioTurnoverRatio": 0.64
+  },
+  "MF_ID": "3",
+  "date": "01-Oct-2026"
+ },
+ {
+  "MF_Name": "Axis Mutual Fund",
+  "SchemeID": 5152,
+  "Cat_ID": 17,
+  "SchemeName": "Axis Midcap Fund",
+  "AUM": 32995.73,
+  "stressTest": {
+   "StressTest_portfolio_50": 9,
+   "StressTest_portfolio_25": 5
+  },
+  "concentration": {
+   "LiabilitySide": 0.73,
+   "AssetSide": {
+    "AssetSide_LargeCap": 17.04,
+    "AssetSide_MidCap": 67.31,
+    "AssetSide_SmallCap": 8,
+    "AssetSide_Cash": 7.65
+   }
+  },
+  "volatility": {
+   "Volatility_PortfolioASD": 16.52,
+   "Volatility_BenchmarkASD": 18.45,
+   "Volatility_PortfolioBeta": 0.85
+  },
+  "valuation": {
+   "Valuation_PortfolioTrailing12mPE": 40.7,
+   "BenchMark": {
+    "Valuation_BenchmarkTrailing12mPE": 28.31,
+    "Valuation_BenchmarkTrailing12mPE_1YA": 35.58,
+    "Valuation_BenchmarkTrailing12mPE_2YA": 37.71
+   },
+   "Valuation_PortfolioTurnoverRatio": 0.81
+  },
+  "MF_ID": "53",
+  "date": "01-Oct-2026"
+ },
+ {
+  "MF_Name": "HDFC Mutual Fund",
+  "SchemeID": 2526,
+  "Cat_ID": 17,
+  "SchemeName": "HDFC Mid Cap Fund",
+  "AUM": 100687.84,
+  "stressTest": {
+   "StressTest_portfolio_50": 43,
+   "StressTest_portfolio_25": 21
+  },
+  "concentration": {
+   "LiabilitySide": 1.16,
+   "AssetSide": {
+    "AssetSide_LargeCap": 10.97,
+    "AssetSide_MidCap": 65.45,
+    "AssetSide_SmallCap": 16.7,
+    "AssetSide_Cash": 6.88
+   }
+  },
+  "volatility": {
+   "Volatility_PortfolioASD": 16.08,
+   "Volatility_BenchmarkASD": 18.58,
+   "Volatility_PortfolioBeta": 0.8221
+  },
+  "valuation": {
+   "Valuation_PortfolioTrailing12mPE": 26.84,
+   "BenchMark": {
+    "Valuation_BenchmarkTrailing12mPE": 26.27,
+    "Valuation_BenchmarkTrailing12mPE_1YA": 34.12,
+    "Valuation_BenchmarkTrailing12mPE_2YA": 42.98
+   },
+   "Valuation_PortfolioTurnoverRatio": 0.0277
+  },
+  "MF_ID": "9",
+  "date": "01-Oct-2026"
+ }
+]

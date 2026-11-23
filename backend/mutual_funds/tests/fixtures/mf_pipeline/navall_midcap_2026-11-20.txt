@@ -1,0 +1,20 @@
+Scheme Code;ISIN Div Payout/ ISIN Growth;ISIN Div Reinvestment;Scheme Name;Plan;Option;Net Asset Value;Date
+ 
+Open Ended Schemes(Equity Scheme - Mid Cap Fund)
+ 
+Aditya Birla Sun Life Mutual Fund
+ 
+119620;INF209K01Q30;-;Aditya Birla Sun Life Midcap Fund;Direct Plan;GROWTH;950.27;20-Nov-2026
+101592;INF209K01363;-;Aditya Birla Sun Life Midcap Fund;Regular Plan;GROWTH;843.67;20-Nov-2026
+119619;INF209K01Q22;-;Aditya Birla Sun Life Midcap Fund;Direct Plan;IDCW;94.27;20-Nov-2026
+ 
+Axis Mutual Fund
+ 
+120505;INF846K01EH3;-;Axis Midcap Fund;Direct Plan;Growth Option;145.41;20-Nov-2026
+114564;INF846K01859;-;Axis Midcap Fund;Regular Plan;Growth Option;123.45;20-Nov-2026
+ 
+HDFC Mutual Fund
+ 
+118989;INF179K01XQ0;-;HDFC Mid Cap Fund;Direct Plan;Growth Option;232.517;20-Nov-2026
+105758;INF179K01CR2;-;HDFC Mid Cap Fund;Regular Plan;Growth Option;209.446;20-Nov-2026
+ 

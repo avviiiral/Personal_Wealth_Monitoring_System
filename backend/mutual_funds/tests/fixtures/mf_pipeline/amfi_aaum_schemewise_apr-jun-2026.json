@@ -1,0 +1,113 @@
+{
+ "data": [
+  {
+   "strMFId": "0",
+   "Mfname": "Aditya Birla Sun Life Mutual Fund",
+   "SchemeCat_Desc": "Other Scheme - FoF Domestic",
+   "schemes": [
+    {
+     "SchemeNAVName": "Aditya Birla Sun Life Aggressive Hybrid Omni FOF-  Regular -  IDCW",
+     "AMFI_Code": 132175,
+     "AverageAumForTheMonth": {
+      "ExcludingFundOfFundsDomesticButIncludingFundOfFundsOverseas": 0,
+      "FundOfFundsDomestic": 449.2
+     }
+    }
+   ],
+   "totalAUM": {
+    "ExcludingFundOfFundsDomesticButIncludingFundOfFundsOverseas": 0,
+    "FundOfFundsDomestic": 354236.12999999995
+   }
+  },
+  {
+   "strMFId": "0",
+   "Mfname": "Aditya Birla Sun Life Mutual Fund",
+   "SchemeCat_Desc": "Equity Scheme - Mid Cap Fund",
+   "schemes": [
+    {
+     "SchemeNAVName": "Aditya Birla Sun Life Midcap Fund - Growth - Direct Plan",
+     "AMFI_Code": 119620,
+     "AverageAumForTheMonth": {
+      "ExcludingFundOfFundsDomesticButIncludingFundOfFundsOverseas": 78648.32,
+      "FundOfFundsDomestic": 0
+     }
+    },
+    {
+     "SchemeNAVName": "Aditya Birla Sun Life Midcap Fund -DIRECT - IDCW",
+     "AMFI_Code": 119619,
+     "AverageAumForTheMonth": {
+      "ExcludingFundOfFundsDomesticButIncludingFundOfFundsOverseas": 1453.94,
+      "FundOfFundsDomestic": 0
+     }
+    },
+    {
+     "SchemeNAVName": "Aditya Birla Sun Life MIDCAP Fund-Growth",
+     "AMFI_Code": 101592,
+     "AverageAumForTheMonth": {
+      "ExcludingFundOfFundsDomesticButIncludingFundOfFundsOverseas": 532458.31,
+      "FundOfFundsDomestic": 0
+     }
+    }
+   ],
+   "totalAUM": {
+    "ExcludingFundOfFundsDomesticButIncludingFundOfFundsOverseas": 631632.5,
+    "FundOfFundsDomestic": 0
+   }
+  },
+  {
+   "strMFId": "0",
+   "Mfname": "Axis Mutual Fund",
+   "SchemeCat_Desc": "Equity Scheme - Mid Cap Fund",
+   "schemes": [
+    {
+     "SchemeNAVName": "Axis Midcap Fund - Direct Plan - Growth",
+     "AMFI_Code": 120505,
+     "AverageAumForTheMonth": {
+      "ExcludingFundOfFundsDomesticButIncludingFundOfFundsOverseas": 1124731.74,
+      "FundOfFundsDomestic": 0
+     }
+    },
+    {
+     "SchemeNAVName": "Axis Midcap Fund - Regular Plan - Growth",
+     "AMFI_Code": 114564,
+     "AverageAumForTheMonth": {
+      "ExcludingFundOfFundsDomesticButIncludingFundOfFundsOverseas": 2103629.74,
+      "FundOfFundsDomestic": 0
+     }
+    }
+   ],
+   "totalAUM": {
+    "ExcludingFundOfFundsDomesticButIncludingFundOfFundsOverseas": 3245411.7,
+    "FundOfFundsDomestic": 0
+   }
+  },
+  {
+   "strMFId": "0",
+   "Mfname": "HDFC Mutual Fund",
+   "SchemeCat_Desc": "Equity Scheme - Mid Cap Fund",
+   "schemes": [
+    {
+     "SchemeNAVName": "HDFC Mid Cap Fund - Growth Option - Direct Plan",
+     "AMFI_Code": 118989,
+     "AverageAumForTheMonth": {
+      "ExcludingFundOfFundsDomesticButIncludingFundOfFundsOverseas": 2684358.66,
+      "FundOfFundsDomestic": 0
+     }
+    },
+    {
+     "SchemeNAVName": "HDFC Mid Cap Fund - Growth Plan",
+     "AMFI_Code": 105758,
+     "AverageAumForTheMonth": {
+      "ExcludingFundOfFundsDomesticButIncludingFundOfFundsOverseas": 6803169.66,
+      "FundOfFundsDomestic": 0
+     }
+    }
+   ],
+   "totalAUM": {
+    "ExcludingFundOfFundsDomesticButIncludingFundOfFundsOverseas": 9603995.790000001,
+    "FundOfFundsDomestic": 0
+   }
+  }
+ ],
+ "selectedPeriod": "April - June 2026"
+}

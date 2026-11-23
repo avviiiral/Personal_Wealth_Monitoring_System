@@ -78,18 +78,32 @@ def build_mfforecast_headers(*, base_url: str, api_key: str, api_key_header: str
 
 
 def _mfforecast_instrument_type(raw_type: str, security_name: str) -> tuple[str, bool]:
-    """Correct obvious REIT labels on coupon/maturity-dated debt securities.
+    """Correct clear InvIT and debt labels supplied incorrectly as REIT.
 
-    A plain REIT label remains REIT. The provider's live response has, however,
-    labelled coupon-bearing and maturity-dated debt instruments as REIT.
+    A plain REIT label remains REIT. The provider's live response has,
+    however, labelled identifiable infrastructure trusts and coupon-bearing
+    or maturity-dated debt instruments as REIT.
     """
     provider_type = normalize_text(raw_type).casefold()
-    has_coupon = bool(re.search(r"\b\d{1,2}(?:\.\d+)?\s*%", security_name))
-    has_maturity = bool(
-        re.search(r"\(\s*\d{1,2}[/-]\d{1,2}[/-]\d{4}\s*\)", security_name)
-    )
-    if provider_type in {"reit", "real estate investment trust"} and (has_coupon or has_maturity):
-        return "BOND", True
+    if provider_type in {"reit", "real estate investment trust"}:
+        # The provider has returned "REIT" for Indus Infra Trust. Explicit
+        # infrastructure-trust names are InvIT units, not real-estate REITs.
+        has_invit_identity = bool(
+            re.search(
+                r"\b(?:invit|infra(?:structure)?\s+(?:investment\s+)?trust)\b",
+                normalize_text(security_name),
+                flags=re.IGNORECASE,
+            )
+        )
+        if has_invit_identity:
+            return "INVIT", True
+
+        has_coupon = bool(re.search(r"\b\d{1,2}(?:\.\d+)?\s*%", security_name))
+        has_maturity = bool(
+            re.search(r"\(\s*\d{1,2}[/-]\d{1,2}[/-]\d{4}\s*\)", security_name)
+        )
+        if has_coupon or has_maturity:
+            return "BOND", True
     return _instrument_type(raw_type, security_name), False
 
 

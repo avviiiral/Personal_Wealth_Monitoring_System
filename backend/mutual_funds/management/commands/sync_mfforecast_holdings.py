@@ -111,6 +111,8 @@ class Command(BaseCommand):
         counters = {
             "schemes_requested": len(schemes),
             "schemes_with_response": 0,
+            "schemes_with_holdings": 0,
+            "schemes_empty_holdings": 0,
             "schemes_not_found": 0,
             "holdings_parsed": 0,
             "holdings_inserted": 0,
@@ -145,15 +147,34 @@ class Command(BaseCommand):
                         rows = parsed["holdings"]
                         counters["schemes_with_response"] += 1
                         counters["holdings_parsed"] += len(rows)
+                        if rows:
+                            counters["schemes_with_holdings"] += 1
+                        else:
+                            counters["schemes_empty_holdings"] += 1
+                            detail = (
+                                "Provider returned a valid scheme response but an empty holdings array; "
+                                "this is not evidence that the scheme has no investments. "
+                                "No holding rows were imported. "
+                                f"Raw response cache: {raw_path or 'not available'}"
+                            )
+                            errors.append({
+                                "scheme_code": scheme.scheme_code,
+                                "error": detail,
+                            })
 
                         if dry_run:
                             self.stdout.write(
                                 f"{scheme.scheme_code} | {scheme.scheme_name} | "
                                 f"provider_name={parsed['scheme_name'] or 'not supplied'} | "
-                                f"holdings={len(rows)} | weight_total={parsed['total_weight_pct']}"
+                                f"holdings={len(rows)} | weight_total={parsed['total_weight_pct']} | "
+                                f"quality_flags={parsed['quality_flags']} | "
+                                f"raw_cache={raw_path or 'not available'}"
                             )
                             continue
 
+                        # Preserve response-level metadata for audit even when
+                        # holdings is empty; the source run will be PARTIAL and
+                        # analytics will not infer portfolio holdings from it.
                         with transaction.atomic():
                             MFExternalPortfolioSnapshot.objects.create(
                                 scheme=scheme,
@@ -206,7 +227,7 @@ class Command(BaseCommand):
                     MFSourceRun.Status.PARTIAL
                     if counters["snapshots_saved"] else MFSourceRun.Status.FAILED
                 )
-            elif errors or counters["schemes_not_found"]:
+            elif errors or counters["schemes_not_found"] or counters["schemes_empty_holdings"]:
                 status = MFSourceRun.Status.PARTIAL
             else:
                 status = MFSourceRun.Status.SUCCESS
@@ -232,6 +253,8 @@ class Command(BaseCommand):
         summary = (
             f"schemes={counters['schemes_requested']} "
             f"responses={counters['schemes_with_response']} "
+            f"with_holdings={counters['schemes_with_holdings']} "
+            f"empty_holdings={counters['schemes_empty_holdings']} "
             f"not_found={counters['schemes_not_found']} "
             f"holdings={counters['holdings_parsed']} "
             f"inserted={counters['holdings_inserted']} "

@@ -19,7 +19,7 @@ class MasterDataRatioEngineTests(TestCase):
         fund = [Decimal("100"), Decimal("110"), Decimal("132"), Decimal("118.8"), Decimal("124.74")]
         bench = [Decimal("100"), Decimal("105"), Decimal("115.5"), Decimal("109.725"), Decimal("112.468125")]
         for day, nav in zip(self.days, fund):
-            AMFIMasterNAV.objects.create(scheme=self.scheme, date=day, nav=nav, source="AMFI")
+            AMFIMasterNAV.objects.create(scheme=self.scheme, date=day, nav=nav, source="mfapi.in")
         for day, tri in zip(self.days, bench):
             MFBenchmarkTRI.objects.create(index_code="NIFTY_TEST_TRI", index_name="Nifty Test TRI", date=day, tri_value=tri, source="NSE_TEST")
         from mutual_funds.master_models import MFMasterData

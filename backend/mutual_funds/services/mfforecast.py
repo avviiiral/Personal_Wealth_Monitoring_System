@@ -10,7 +10,8 @@ import json
 import threading
 import time
 from decimal import Decimal
-from urllib.parse import quote, urlparse
+import re
+from urllib.parse import quote, urlparse, urlunparse
 
 import requests
 from django.utils import timezone
@@ -26,6 +27,53 @@ from mutual_funds.services.masterdata import (
 
 _HOST_LOCK = threading.Lock()
 _HOST_LAST_REQUEST: dict[str, float] = {}
+
+
+def normalize_mfforecast_base_url(base_url: str) -> str:
+    """Accept an API base URL or strip the documented scheme endpoint suffix."""
+    parsed = urlparse((base_url or "").strip())
+    if parsed.scheme != "https" or not parsed.netloc:
+        raise ValueError("MF Forecast API base URL must be an absolute HTTPS URL.")
+    path = parsed.path.rstrip("/")
+    if re.fullmatch(r"/funds/[^/]+/holdings", path, flags=re.IGNORECASE):
+        path = ""
+    return urlunparse((parsed.scheme, parsed.netloc, path, "", "", "")).rstrip("/")
+
+
+def build_mfforecast_headers(*, base_url: str, api_key: str, api_key_header: str = "") -> dict:
+    """Build safe request headers, including both mandatory RapidAPI headers."""
+    parsed = urlparse(base_url)
+    host = parsed.netloc.casefold()
+    key = (api_key or "").strip()
+    header_name = (api_key_header or "").strip()
+
+    if ":" in header_name or any(ch.isspace() for ch in header_name):
+        raise ValueError(
+            "MFFORECAST_API_KEY_HEADER must contain only a header name, not a full header line. "
+            "For RapidAPI set it to x-rapidapi-key; the X-RapidAPI-Host header is added automatically."
+        )
+
+    if host.endswith(".p.rapidapi.com"):
+        if not key:
+            raise ValueError("MFFORECAST_API_KEY is required when using a RapidAPI host.")
+        if header_name and header_name.casefold() != "x-rapidapi-key":
+            raise ValueError(
+                "RapidAPI requires MFFORECAST_API_KEY_HEADER=x-rapidapi-key. "
+                "X-RapidAPI-Host is generated from MFFORECAST_API_BASE_URL."
+            )
+        return {
+            "X-RapidAPI-Key": key,
+            "X-RapidAPI-Host": parsed.netloc,
+        }
+
+    if bool(key) != bool(header_name):
+        raise ValueError(
+            "Set both MFFORECAST_API_KEY and MFFORECAST_API_KEY_HEADER, "
+            "or leave both blank. The header name must come from provider documentation."
+        )
+    if header_name and not re.fullmatch(r"[!#$%&'*+.^_|~0-9A-Za-z-]+", header_name):
+        raise ValueError("MFFORECAST_API_KEY_HEADER is not a valid HTTP header name.")
+    return {header_name: key} if key else {}
 
 
 def parse_mfforecast_holdings(payload: dict, *, scheme_code: str) -> dict:

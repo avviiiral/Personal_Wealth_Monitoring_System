@@ -115,6 +115,33 @@ class MasterDataParsingTests(TestCase):
         self.assertEqual(rows[1]["plan"], "Regular Plan")
         self.assertEqual(rows[1]["ter_pct"], Decimal("1.8200"))
 
+    def test_total_ter_is_selected_over_base_expense_ratio(self):
+        payload = (
+            "Scheme Name\\tISIN\\tPlan\\tBase Expense Ratio (BER)\\t"
+            "Brokerage Cost\\tTransaction Cost\\tStatutory Levies\\tTotal Expense Ratio\\n"
+            "PWMS Large Cap Fund\\tINF000A01001\\tDirect Plan\\t0.55\\t"
+            "0.02\\t0.01\\t0.03\\t0.61\\n"
+        )
+        rows = parse_ter_rows(
+            payload.encode("utf-8"),
+            filename="ter_2026.tsv",
+            as_of_date=date(2026, 10, 31),
+        )
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["ter_pct"], Decimal("0.6100"))
+
+    def test_ber_only_file_is_not_misreported_as_total_ter(self):
+        payload = (
+            "Scheme Name\\tISIN\\tPlan\\tBase Expense Ratio (BER)\\n"
+            "PWMS Large Cap Fund\\tINF000A01001\\tDirect Plan\\t0.55\\n"
+        )
+        with self.assertRaisesRegex(ValueError, "BER alone is not Total TER"):
+            parse_ter_rows(
+                payload.encode("utf-8"),
+                filename="ber_only.tsv",
+                as_of_date=date(2026, 10, 31),
+            )
+
     def test_hdfc_equity_portfolio_adapter_preserves_isin_and_weight(self):
         rows = parse_portfolio_rows(
             read_fixture("hdfc_equity_portfolio.tsv"),

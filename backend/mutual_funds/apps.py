@@ -14,3 +14,10 @@ class MutualFundsConfig(AppConfig):
         from .services.underlying_scheduler import MutualFundUnderlyingScheduler
 
         MutualFundUnderlyingScheduler.start()
+
+        # Automated mf_masterdata ingestion: runs every job once at startup
+        # (subject to per-job cooldowns), then follows its IST timeline.
+        # Disable with PWMS_MF_PIPELINE_ENABLED=0.
+        from .services.mf_pipeline.scheduler import MFPipelineScheduler
+
+        MFPipelineScheduler.start()

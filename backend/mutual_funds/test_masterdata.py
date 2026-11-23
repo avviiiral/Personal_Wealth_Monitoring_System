@@ -135,7 +135,7 @@ class MasterDataParsingTests(TestCase):
             "Scheme Name\tISIN\tPlan\tBase Expense Ratio (BER)\n"
             "PWMS Large Cap Fund\tINF000A01001\tDirect Plan\t0.55\n"
         )
-        with self.assertRaisesRegex(ValueError, "BER alone is not Total TER"):
+        with self.assertRaisesRegex(ValueError, r"Base Expense Ratio \(BER\) alone is not Total TER"):
             parse_ter_rows(
                 payload.encode("utf-8"),
                 filename="ber_only.tsv",

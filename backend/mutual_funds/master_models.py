@@ -63,6 +63,10 @@ class MFMasterData(models.Model):
     return_5y_pct = models.DecimalField(max_digits=14, decimal_places=4, blank=True, null=True)
     return_10y_pct = models.DecimalField(max_digits=14, decimal_places=4, blank=True, null=True)
     since_inception_cagr_pct = models.DecimalField(max_digits=14, decimal_places=4, blank=True, null=True)
+    rolling_3y_cagr_mean_pct = models.DecimalField(max_digits=14, decimal_places=4, blank=True, null=True)
+    rolling_3y_cagr_min_pct = models.DecimalField(max_digits=14, decimal_places=4, blank=True, null=True)
+    rolling_3y_cagr_max_pct = models.DecimalField(max_digits=14, decimal_places=4, blank=True, null=True)
+    rolling_3y_cagr_observations = models.PositiveIntegerField(blank=True, null=True)
 
     std_dev_pct = models.DecimalField(max_digits=14, decimal_places=4, blank=True, null=True)
     sharpe = models.DecimalField(max_digits=14, decimal_places=4, blank=True, null=True)

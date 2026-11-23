@@ -9,6 +9,7 @@ from mutual_funds.services.masterdata import (
     calculate_benchmark_relative_metrics,
     parse_portfolio_rows,
     parse_ter_rows,
+    parse_scheme_info_rows,
     persist_portfolio_rows,
     resolve_master_scheme,
 )
@@ -215,3 +216,22 @@ class BenchmarkRatioTests(TestCase):
         metrics = calculate_benchmark_relative_metrics(nav, nav, risk_free_rate=0.065)
         self.assertIsNone(metrics["beta"])
         self.assertIn("INSUFFICIENT_BENCHMARK_HISTORY", metrics["data_quality_flags"])
+
+
+class MasterDataFactsheetParserTests(TestCase):
+    def test_official_factsheet_fixture_parses_scheme_attributes(self):
+        rows = parse_scheme_info_rows(
+            read_fixture("hdfc_factsheet_sample.tsv"),
+            filename="hdfc_factsheet_sample.tsv",
+            as_of_date=date(2026, 10, 31),
+        )
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["scheme_code"], "120503")
+        self.assertEqual(rows[0]["benchmark_name"], "NIFTY 100 TRI")
+        self.assertEqual(rows[0]["inception_date"], date(2010, 3, 15))
+        self.assertEqual(rows[0]["fund_managers"], ["John Doe", "Jane Smith"])
+        self.assertEqual(rows[0]["riskometer"], "Moderate")
+        self.assertEqual(rows[0]["exit_load_text"], "1% if redeemed within 1 year")
+        self.assertEqual(rows[0]["min_lumpsum"], Decimal("5000.0000"))
+        self.assertEqual(rows[0]["pe"], Decimal("24.3500"))
+        self.assertEqual(rows[0]["pb"], Decimal("3.2500"))

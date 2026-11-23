@@ -273,7 +273,19 @@ def parse_scheme_info_rows(payload, *, filename, as_of_date):
     return rows
 
 
-def parse_aum_rows(payload, *, filename, as_of_date):
+def resolve_source_url(*, from_file="", supplied_source_url="", downloaded_url=""):
+    """Require traceable official URL lineage for any locally supplied source file."""
+    candidate = (supplied_source_url or downloaded_url or "").strip()
+    if from_file and not candidate:
+        raise ValueError("--source-url is required with --from-file.")
+    if candidate:
+        parsed = urlparse(candidate)
+        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+            raise ValueError("--source-url must be an absolute HTTP(S) disclosure URL.")
+    return candidate
+
+
+def parse_aum_rows(payload, *, filename, as_of_date, amount_unit="AUTO"):
     frame = read_table(payload, filename)
     code = find_column(frame, ("scheme code", "amfi scheme code", "scheme_code"))
     isin = find_column(frame, ("isin", "isin growth"))
@@ -281,19 +293,42 @@ def parse_aum_rows(payload, *, filename, as_of_date):
     aum = find_column(frame, ("month end aum", "aum", "net assets", "average aum", "asset size", "aum cr", "aum crore"))
     if not aum or not (code or isin or name):
         raise ValueError("AUM file requires AUM and scheme code, ISIN or exact name.")
+
+    unit = str(amount_unit or "AUTO").strip().upper()
+    if unit == "AUTO":
+        header = normalize_key(aum)
+        if "lakh" in header or "lac" in header:
+            unit = "LAKH"
+        elif "crore" in header or " cr" in f" {header}":
+            unit = "CRORE"
+        elif any(token in header.split() for token in ("rupee", "rupees", "rs", "inr")):
+            unit = "RUPEES"
+        else:
+            raise ValueError(
+                "AUM column does not declare rupees/lakh/crore; no unit will be guessed. "
+                "Supply --amount-unit RUPEES, LAKH or CRORE."
+            )
+    if unit not in {"RUPEES", "LAKH", "CRORE"}:
+        raise ValueError("--amount-unit must be AUTO, RUPEES, LAKH or CRORE.")
+
     rows = []
     for _, source in frame.iterrows():
-        rupees = _scale_amount(decimal_value(source.get(aum)), aum)
-        if rupees is not None:
-            rows.append({
-                "scheme_code": normalize_text(source.get(code)) if code else "",
-                "isin": normalize_isin(source.get(isin)) if isin else "",
-                "scheme_name": normalize_text(source.get(name)) if name else "",
-                "aum_cr": (rupees / Decimal("10000000")).quantize(FOUR_DP),
-                "as_of_date": as_of_date,
-            })
+        raw = decimal_value(source.get(aum))
+        if raw is None:
+            continue
+        rupees = (
+            raw if unit == "RUPEES"
+            else raw * Decimal("100000") if unit == "LAKH"
+            else raw * Decimal("10000000")
+        )
+        rows.append({
+            "scheme_code": normalize_text(source.get(code)) if code else "",
+            "isin": normalize_isin(source.get(isin)) if isin else "",
+            "scheme_name": normalize_text(source.get(name)) if name else "",
+            "aum_cr": (rupees / Decimal("10000000")).quantize(FOUR_DP),
+            "as_of_date": as_of_date,
+        })
     return rows
-
 
 def parse_benchmark_tri_rows(payload, *, filename):
     frame = read_table(payload, filename)

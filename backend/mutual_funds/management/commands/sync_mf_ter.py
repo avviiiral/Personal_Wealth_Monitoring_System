@@ -3,22 +3,24 @@ from datetime import date
 from django.core.management.base import BaseCommand, CommandError
 from django.utils import timezone
 from mutual_funds.models import AMFIMasterScheme, MFSourceRun
-from mutual_funds.services.masterdata import finish_source_run, load_source_payload, parse_ter_rows, resolve_master_scheme, start_source_run, upsert_masterdata_snapshot
+from mutual_funds.services.masterdata import finish_source_run, load_source_payload, parse_ter_rows, resolve_master_scheme, resolve_source_url, start_source_run, upsert_masterdata_snapshot
 
 class Command(BaseCommand):
     help = "Import dated Direct and Regular TER values."
     def add_arguments(self, parser):
         source=parser.add_mutually_exclusive_group(); source.add_argument("--from-file"); source.add_argument("--url")
         parser.add_argument("--date", default=timezone.localdate().isoformat()); parser.add_argument("--amc", default="")
+        parser.add_argument("--source-url", default="", help="Official disclosure URL when --from-file is used.")
         parser.add_argument("--limit", type=int, default=0); parser.add_argument("--dry-run", action="store_true")
     def handle(self, *args, **options):
         try:
             as_of=date.fromisoformat(options["date"])
-            payload, filename, source_url=load_source_payload(source="ter",as_of_date=as_of,from_file=options["from_file"] or "",url=options["url"] or "")
+            payload, filename, downloaded_url=load_source_payload(source="ter",as_of_date=as_of,from_file=options["from_file"] or "",url=options["url"] or "")
+            source_url=resolve_source_url(from_file=options["from_file"] or "",supplied_source_url=options["source_url"],downloaded_url=downloaded_url)
             rows=parse_ter_rows(payload,filename=filename,as_of_date=as_of)
         except Exception as exc: raise CommandError(str(exc)) from exc
         if options["limit"]>0: rows=rows[:options["limit"]]
-        run=None if options["dry_run"] else start_source_run(source="AMFI_TER",command="sync_mf_ter",as_of_date=as_of,source_url=source_url,raw_file_path=filename if options["from_file"] else "")
+        run=None if options["dry_run"] else start_source_run(source="AMFI_TER",command="sync_mf_ter",as_of_date=as_of,source_url=source_url,raw_file_path=options["from_file"] or filename)
         inserted=updated=unmatched=skipped=0; errors=[]
         for row in rows:
             if row["scheme_code"]:

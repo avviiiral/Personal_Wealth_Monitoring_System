@@ -2,7 +2,7 @@
 from datetime import date
 from django.core.management.base import BaseCommand, CommandError
 from mutual_funds.models import AMFIMasterScheme, MFSourceRun
-from mutual_funds.services.masterdata import finish_source_run, load_source_payload, parse_portfolio_rows, persist_portfolio_rows, resolve_master_scheme, start_source_run
+from mutual_funds.services.masterdata import finish_source_run, load_source_payload, parse_portfolio_rows, persist_portfolio_rows, resolve_master_scheme, resolve_source_url, start_source_run
 
 AMC_ADAPTERS={
  "hdfc":{"canonical":"HDFC Mutual Fund","aliases":("hdfc mutual fund","hdfc asset management")},
@@ -24,22 +24,34 @@ class Command(BaseCommand):
   source=parser.add_mutually_exclusive_group(); source.add_argument("--from-file"); source.add_argument("--url")
   parser.add_argument("--date",required=True); parser.add_argument("--amc",required=True)
   parser.add_argument("--scheme-code",default=""); parser.add_argument("--limit",type=int,default=0); parser.add_argument("--dry-run",action="store_true")
+  parser.add_argument("--source-url",default="",help="Official disclosure URL when --from-file is used.")
  def handle(self,*args,**options):
   try:
    portfolio_date=date.fromisoformat(options["date"]); adapter,canonical=resolve_amc(options["amc"])
-   payload,filename,source_url=load_source_payload(source=f"portfolios/{adapter}",as_of_date=portfolio_date,from_file=options["from_file"] or "",url=options["url"] or "")
+   payload,filename,downloaded_url=load_source_payload(source=f"portfolios/{adapter}",as_of_date=portfolio_date,from_file=options["from_file"] or "",url=options["url"] or "")
+   source_url=resolve_source_url(from_file=options["from_file"] or "",supplied_source_url=options["source_url"],downloaded_url=downloaded_url)
    rows=parse_portfolio_rows(payload,filename=filename,amc=canonical,portfolio_date=portfolio_date)
   except Exception as exc: raise CommandError(str(exc)) from exc
   if options["limit"]>0: rows=rows[:options["limit"]]
   pinned=AMFIMasterScheme.objects.filter(scheme_code=options["scheme_code"],is_active=True).first() if options["scheme_code"] else None
   if options["scheme_code"] and not pinned: raise CommandError(f"Unknown active scheme code: {options['scheme_code']}")
-  run=None if options["dry_run"] else start_source_run(source=f"AMC_PORTFOLIO_{adapter.upper()}",command="sync_mf_portfolios",as_of_date=portfolio_date,source_url=source_url,raw_file_path=filename if options["from_file"] else "")
+  run=None if options["dry_run"] else start_source_run(source=f"AMC_PORTFOLIO_{adapter.upper()}",command="sync_mf_portfolios",as_of_date=portfolio_date,source_url=source_url,raw_file_path=options["from_file"] or filename)
   grouped={}; unmatched=skipped=inserted=updated=0; errors=[]
   for row in rows:
-   scheme,status=(pinned,"scheme_code") if pinned else resolve_master_scheme(isin=row.get("scheme_isin") or "",scheme_name=row.get("scheme_name") or "")
+   if pinned:
+    scheme,status=pinned,"scheme_code"
+   elif row.get("scheme_code"):
+    scheme=AMFIMasterScheme.objects.filter(scheme_code=row["scheme_code"],is_active=True).first()
+    status="scheme_code" if scheme else "unmatched"
+   else:
+    scheme,status=resolve_master_scheme(isin=row.get("scheme_isin") or "",scheme_name=row.get("scheme_name") or "")
    if not scheme:
     unmatched+=1
     if len(errors)<20: errors.append({"scheme":row.get("scheme_name",""),"status":status})
+    continue
+   if canonical.casefold() not in (scheme.amc_name or "").casefold():
+    skipped+=1
+    if len(errors)<20: errors.append({"scheme":scheme.scheme_name,"status":"amc_mismatch"})
     continue
    grouped.setdefault(scheme,[]).append(row)
   for scheme,holding_rows in grouped.items():

@@ -23,7 +23,9 @@ SYSTEM_FIELDS = {"id", "scheme", "as_of_date", "updated_at", "fetched_at"}
 NAV_FIELDS = {
     "return_1m_pct", "return_3m_pct", "return_6m_pct", "return_1y_pct",
     "return_3y_pct", "return_5y_pct", "return_10y_pct",
-    "since_inception_cagr_pct", "std_dev_pct", "sharpe", "sortino",
+    "since_inception_cagr_pct", "rolling_3y_cagr_mean_pct",
+    "rolling_3y_cagr_min_pct", "rolling_3y_cagr_max_pct",
+    "rolling_3y_cagr_observations", "std_dev_pct", "sharpe", "sortino",
     "max_drawdown_pct", "risk_free_rate_used_pct",
 }
 BENCHMARK_FIELDS = {

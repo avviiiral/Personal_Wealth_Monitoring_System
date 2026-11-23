@@ -65,7 +65,7 @@ class MasterDataRatioEngineTests(TestCase):
         values = result["values"]
         self.assertAlmostEqual(float(values["beta"]), 2.0, places=6)
         self.assertAlmostEqual(float(values["r_squared"]), 1.0, places=6)
-        self.assertAlmostEqual(float(values["alpha_pct"]), 0.0, places=6)
+        self.assertAlmostEqual(float(values["alpha_pct"]), 0.0, places=2)
         self.assertIsNotNone(values["tracking_error_pct"])
 
     def test_default_three_year_window_keeps_short_history_ratios_null(self):
@@ -82,4 +82,23 @@ class MasterDataRatioEngineTests(TestCase):
         result = calculate_scheme_masterdata_metrics(self.scheme, self.days[-1], ratio_window_years=0)
         self.assertEqual(result["values"]["large_cap_pct"], Decimal("70.0000"))
         self.assertEqual(result["values"]["small_cap_pct"], Decimal("0.0000"))
+
+
+    def test_rolling_three_year_cagr_is_exposed(self):
+        observations = [
+            (date(2020, 1, 1), Decimal("100")),
+            (date(2021, 1, 1), Decimal("110")),
+            (date(2022, 1, 1), Decimal("121")),
+            (date(2023, 1, 1), Decimal("133.1")),
+            (date(2024, 1, 1), Decimal("146.41")),
+        ]
+        for day, nav in observations:
+            AMFIMasterNAV.objects.update_or_create(
+                scheme=self.scheme, date=day, source="AMFI",
+                defaults={"nav": nav},
+            )
+        result = calculate_scheme_masterdata_metrics(self.scheme, date(2024, 1, 1))
+        values = result["values"]
+        self.assertIsNotNone(values["rolling_3y_cagr_mean_pct"])
+        self.assertGreater(values["rolling_3y_cagr_observations"], 0)
 

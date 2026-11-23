@@ -4,22 +4,24 @@ from django.core.management.base import BaseCommand, CommandError
 from django.utils import timezone
 from mutual_funds.master_models import MFBenchmarkTRI
 from mutual_funds.models import MFSourceRun
-from mutual_funds.services.masterdata import finish_source_run, load_source_payload, parse_benchmark_tri_rows, start_source_run
+from mutual_funds.services.masterdata import finish_source_run, load_source_payload, parse_benchmark_tri_rows, resolve_source_url, start_source_run
 
 class Command(BaseCommand):
  help="Import daily benchmark TRI history from an official or licensed data file."
  def add_arguments(self,parser):
   source=parser.add_mutually_exclusive_group(); source.add_argument("--from-file"); source.add_argument("--url")
   parser.add_argument("--date",default=timezone.localdate().isoformat()); parser.add_argument("--amc",default="")
+  parser.add_argument("--source-url",default="",help="Authorized TRI source URL when --from-file is used.")
   parser.add_argument("--limit",type=int,default=0); parser.add_argument("--dry-run",action="store_true")
   parser.add_argument("--source-name",default="NSE_INDICES_TRI")
  def handle(self,*args,**options):
   try:
-   run_date=date.fromisoformat(options["date"]); payload,filename,source_url=load_source_payload(source="benchmark-tri",as_of_date=run_date,from_file=options["from_file"] or "",url=options["url"] or "")
+   run_date=date.fromisoformat(options["date"]); payload,filename,downloaded_url=load_source_payload(source="benchmark-tri",as_of_date=run_date,from_file=options["from_file"] or "",url=options["url"] or "")
+   source_url=resolve_source_url(from_file=options["from_file"] or "",supplied_source_url=options["source_url"],downloaded_url=downloaded_url)
    rows=parse_benchmark_tri_rows(payload,filename=filename)
   except Exception as exc: raise CommandError(str(exc)) from exc
   if options["limit"]>0: rows=rows[:options["limit"]]
-  run=None if options["dry_run"] else start_source_run(source=options["source_name"],command="sync_benchmark_tri",as_of_date=run_date,source_url=source_url,raw_file_path=filename if options["from_file"] else "")
+  run=None if options["dry_run"] else start_source_run(source=options["source_name"],command="sync_benchmark_tri",as_of_date=run_date,source_url=source_url,raw_file_path=options["from_file"] or filename)
   inserted=updated=0
   for row in rows:
    if options["dry_run"]: self.stdout.write(f"{row['index_code']} | {row['date']} | {row['tri_value']}"); inserted+=1; continue

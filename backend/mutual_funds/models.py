@@ -434,3 +434,8 @@ class AMFIMasterNAV(models.Model):
 
     def __str__(self):
         return f"{self.scheme.scheme_name} - {self.date} - {self.nav}"
+
+
+# Global, market-wide masterdata tables are kept in a separate module to avoid
+# mixing them with family-scoped holdings and transactions above.
+from .master_models import MFMasterData, MFMasterHolding, MFSourceRun  # noqa: E402,F401

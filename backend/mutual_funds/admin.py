@@ -152,3 +152,30 @@ class SIPInstallmentAdmin(admin.ModelAdmin):
     )
 
     date_hierarchy = "scheduled_date"
+
+from .master_models import MFMasterData, MFMasterHolding, MFSourceRun
+
+
+@admin.register(MFMasterData)
+class MFMasterDataAdmin(admin.ModelAdmin):
+    list_display = ("scheme_code", "scheme_name", "amc", "as_of_date", "aum_type", "aum_cr")
+    list_filter = ("as_of_date", "aum_type", "sebi_category_level_1", "sebi_category_level_3", "amc")
+    search_fields = ("scheme_code", "scheme_name", "isin_growth", "isin_idcw", "amc")
+    date_hierarchy = "as_of_date"
+
+
+@admin.register(MFMasterHolding)
+class MFMasterHoldingAdmin(admin.ModelAdmin):
+    list_display = ("scheme", "portfolio_date", "security_name", "isin", "instrument_type", "pct_of_nav", "source")
+    list_filter = ("portfolio_date", "instrument_type", "source", "rating")
+    search_fields = ("scheme__scheme_code", "scheme__scheme_name", "security_name", "isin")
+    date_hierarchy = "portfolio_date"
+
+
+@admin.register(MFSourceRun)
+class MFSourceRunAdmin(admin.ModelAdmin):
+    list_display = ("source", "command", "as_of_date", "status", "rows_parsed", "rows_inserted", "rows_updated", "started_at")
+    list_filter = ("source", "status", "as_of_date")
+    search_fields = ("source", "command", "source_url", "raw_file_path")
+    date_hierarchy = "started_at"
+    readonly_fields = tuple(field.name for field in MFSourceRun._meta.fields)

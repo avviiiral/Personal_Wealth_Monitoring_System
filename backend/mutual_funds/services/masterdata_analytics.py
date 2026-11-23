@@ -46,8 +46,10 @@ def _cap_split(holdings, equity_pct, as_of_date):
     if not isin_values:
         result["other_cap_pct"] = equity_pct
         return result
+    expected_period = f"{as_of_date.year}-H{1 if as_of_date.month <= 6 else 2}"
     latest_period = (
-        MFMarketCapClassification.objects.order_by("-effective_period")
+        MFMarketCapClassification.objects.filter(effective_period__lte=expected_period)
+        .order_by("-effective_period")
         .values_list("effective_period", flat=True).first()
     )
     classifications = {
@@ -184,6 +186,7 @@ def calculate_scheme_masterdata_metrics(
         ratios = calculate_benchmark_relative_metrics(
             fund_window, [(d, float(value)) for d, value in benchmark_rows],
             risk_free_rate=risk_free_rate,
+            minimum_window_years=ratio_window_years,
         )
         for key in (
             "beta", "alpha_pct", "treynor", "r_squared", "tracking_error_pct",

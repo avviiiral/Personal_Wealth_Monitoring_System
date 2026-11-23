@@ -199,7 +199,7 @@ class BenchmarkRatioTests(TestCase):
             benchmark_nav.append((dates[index], benchmark_nav[-1][1] * Decimal(str(1 + benchmark_return))))
 
         metrics = calculate_benchmark_relative_metrics(
-            fund_nav, benchmark_nav, risk_free_rate=0.0,
+            fund_nav, benchmark_nav, risk_free_rate=0.0, minimum_window_years=0,
         )
         self.assertAlmostEqual(metrics["beta"], 2.0, places=8)
         self.assertAlmostEqual(metrics["r_squared"], 1.0, places=8)

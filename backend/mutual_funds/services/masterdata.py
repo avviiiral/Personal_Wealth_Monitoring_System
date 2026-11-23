@@ -397,51 +397,85 @@ def upsert_masterdata_snapshot(scheme, *, as_of_date, values, source, source_url
     return snapshot, created
 
 
-def calculate_benchmark_relative_metrics(fund_nav, benchmark_nav, *, risk_free_rate=0.065, periods_per_year=252):
-    """CAPM/active-risk ratios from same-date scheme NAV and benchmark TRI."""
+def calculate_benchmark_relative_metrics(
+    fund_nav, benchmark_nav, *, risk_free_rate=0.065, periods_per_year=252,
+    minimum_window_years=3.0,
+):
+    """CAPM/active-risk ratios from aligned daily NAV/TRI.
+
+    The default window is three years. At least 180 aligned observations per
+    requested year are required; otherwise ratios remain null with a quality
+    flag rather than annualizing a sparse or short series.
+    """
     fund = {d: float(v) for d, v in fund_nav if float(v) > 0}
     bench = {d: float(v) for d, v in benchmark_nav if float(v) > 0}
     common = sorted(set(fund) & set(bench))
-    if len(common) < 4:
-        return {
-            "beta": None, "alpha_pct": None, "treynor": None, "r_squared": None,
-            "tracking_error_pct": None, "information_ratio": None,
-            "upside_capture_pct": None, "downside_capture_pct": None,
-            "risk_free_rate_used_pct": risk_free_rate * 100, "ratio_window_years": None,
-            "data_quality_flags": ["INSUFFICIENT_BENCHMARK_HISTORY"],
-        }
-    fr = [fund[common[i]] / fund[common[i - 1]] - 1 for i in range(1, len(common))]
-    br = [bench[common[i]] / bench[common[i - 1]] - 1 for i in range(1, len(common))]
-    n = len(fr)
-    mf, mb = sum(fr) / n, sum(br) / n
-    vb = sum((x - mb) ** 2 for x in br) / (n - 1)
-    vf = sum((x - mf) ** 2 for x in fr) / (n - 1)
-    cov = sum((fr[i] - mf) * (br[i] - mb) for i in range(n)) / (n - 1)
-    beta = cov / vb if vb > 0 else None
-    corr = cov / math.sqrt(vf * vb) if vf > 0 and vb > 0 else None
-    rf_daily = (1 + risk_free_rate) ** (1 / periods_per_year) - 1
-    alpha_daily = (mf - rf_daily) - beta * (mb - rf_daily) if beta is not None else None
-    active = [fr[i] - br[i] for i in range(n)]
-    mean_active = sum(active) / n
-    va = sum((x - mean_active) ** 2 for x in active) / (n - 1)
-    def capture(positive):
-        selected = [(fr[i], br[i]) for i in range(n) if (br[i] > 0 if positive else br[i] < 0)]
+    years = (common[-1] - common[0]).days / 365.25 if len(common) >= 2 else 0.0
+    n = max(0, len(common) - 1)
+    empty = {
+        "beta": None, "alpha_pct": None, "treynor": None, "r_squared": None,
+        "tracking_error_pct": None, "information_ratio": None,
+        "upside_capture_pct": None, "downside_capture_pct": None,
+        "risk_free_rate_used_pct": risk_free_rate * 100,
+        "ratio_window_years": years if common else None,
+        "data_quality_flags": ["INSUFFICIENT_BENCHMARK_HISTORY"],
+    }
+    required_observations = max(4, int(max(0.0, minimum_window_years) * 180))
+    if years < minimum_window_years or n < required_observations:
+        return empty
+
+    fund_returns = [fund[common[i]] / fund[common[i - 1]] - 1.0 for i in range(1, len(common))]
+    benchmark_returns = [bench[common[i]] / bench[common[i - 1]] - 1.0 for i in range(1, len(common))]
+    mean_fund = sum(fund_returns) / n
+    mean_benchmark = sum(benchmark_returns) / n
+    variance_benchmark = sum((value - mean_benchmark) ** 2 for value in benchmark_returns) / (n - 1)
+    variance_fund = sum((value - mean_fund) ** 2 for value in fund_returns) / (n - 1)
+    covariance = sum(
+        (fund_returns[i] - mean_fund) * (benchmark_returns[i] - mean_benchmark)
+        for i in range(n)
+    ) / (n - 1)
+    beta = covariance / variance_benchmark if variance_benchmark > 0 else None
+    correlation = covariance / math.sqrt(variance_fund * variance_benchmark) if variance_fund > 0 and variance_benchmark > 0 else None
+    daily_risk_free = (1 + risk_free_rate) ** (1 / periods_per_year) - 1
+    alpha_daily = (
+        (mean_fund - daily_risk_free) - beta * (mean_benchmark - daily_risk_free)
+        if beta is not None else None
+    )
+    active_returns = [fund_returns[i] - benchmark_returns[i] for i in range(n)]
+    mean_active = sum(active_returns) / n
+    variance_active = sum((value - mean_active) ** 2 for value in active_returns) / (n - 1)
+
+    def capture(upside):
+        selected = [
+            (fund_returns[i], benchmark_returns[i])
+            for i in range(n)
+            if (benchmark_returns[i] > 0 if upside else benchmark_returns[i] < 0)
+        ]
         if not selected:
             return None
-        fmean = sum(x[0] for x in selected) / len(selected)
-        bmean = sum(x[1] for x in selected) / len(selected)
-        return fmean / bmean * 100 if bmean else None
-    years = (common[-1] - common[0]).days / 365.25
+        fund_total = math.prod(1 + pair[0] for pair in selected) - 1
+        benchmark_total = math.prod(1 + pair[1] for pair in selected) - 1
+        return fund_total / benchmark_total * 100 if benchmark_total else None
+
+    tracking_error = math.sqrt(variance_active) * math.sqrt(periods_per_year) * 100
     return {
         "beta": beta,
         "alpha_pct": alpha_daily * periods_per_year * 100 if alpha_daily is not None else None,
-        "treynor": (mf - rf_daily) * periods_per_year * 100 / beta if beta not in (None, 0) else None,
-        "r_squared": corr ** 2 if corr is not None else None,
-        "tracking_error_pct": math.sqrt(va) * math.sqrt(periods_per_year) * 100,
-        "information_ratio": mean_active / math.sqrt(va) * math.sqrt(periods_per_year) if va > 0 else None,
-        "upside_capture_pct": capture(True), "downside_capture_pct": capture(False),
-        "risk_free_rate_used_pct": risk_free_rate * 100, "ratio_window_years": years,
-        "data_quality_flags": ["SHORTER_THAN_DEFAULT_3Y_WINDOW"] if years < 3 else [],
+        "treynor": (
+            (mean_fund - daily_risk_free) * periods_per_year * 100 / beta
+            if beta not in (None, 0) else None
+        ),
+        "r_squared": correlation ** 2 if correlation is not None else None,
+        "tracking_error_pct": tracking_error,
+        "information_ratio": (
+            mean_active / math.sqrt(variance_active) * math.sqrt(periods_per_year)
+            if variance_active > 0 else None
+        ),
+        "upside_capture_pct": capture(True),
+        "downside_capture_pct": capture(False),
+        "risk_free_rate_used_pct": risk_free_rate * 100,
+        "ratio_window_years": years,
+        "data_quality_flags": [],
     }
 
 

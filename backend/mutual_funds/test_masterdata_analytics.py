@@ -47,7 +47,7 @@ class MasterDataRatioEngineTests(TestCase):
         )
 
     def test_holdings_allocation_sector_and_cap_split(self):
-        result = calculate_scheme_masterdata_metrics(self.scheme, self.days[-1])
+        result = calculate_scheme_masterdata_metrics(self.scheme, self.days[-1], ratio_window_years=0)
         values = result["values"]
         self.assertEqual(values["equity_pct"], Decimal("70.0000"))
         self.assertEqual(values["debt_pct"], Decimal("20.0000"))
@@ -65,3 +65,19 @@ class MasterDataRatioEngineTests(TestCase):
         self.assertAlmostEqual(float(values["r_squared"]), 1.0, places=6)
         self.assertAlmostEqual(float(values["alpha_pct"]), 0.0, places=6)
         self.assertIsNotNone(values["tracking_error_pct"])
+
+    def test_default_three_year_window_keeps_short_history_ratios_null(self):
+        result = calculate_scheme_masterdata_metrics(self.scheme, self.days[-1])
+        self.assertIsNone(result["values"].get("beta"))
+        self.assertIn("INSUFFICIENT_BENCHMARK_HISTORY", result["data_quality_flags"])
+
+
+    def test_market_cap_classification_is_selected_for_snapshot_half_year(self):
+        MFMarketCapClassification.objects.create(
+            isin="INE002A01018", company_name="Reliance Industries",
+            market_cap_class="SMALL_CAP", effective_period="2024-H2", source="AMFI_TEST",
+        )
+        result = calculate_scheme_masterdata_metrics(self.scheme, self.days[-1], ratio_window_years=0)
+        self.assertEqual(result["values"]["large_cap_pct"], Decimal("70.0000"))
+        self.assertEqual(result["values"]["small_cap_pct"], Decimal("0.0000"))
+

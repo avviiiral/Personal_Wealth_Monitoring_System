@@ -373,36 +373,34 @@ class MFForecastParserTests(TestCase):
 
 
 class MFForecastFetchTests(SimpleTestCase):
-    @patch("mutual_funds.services.mfforecast.settings.BASE_DIR")
-    def test_loads_latest_cached_response_for_scheme_and_date(self, base_dir):
+    def test_loads_latest_cached_response_for_scheme_and_date(self):
         with TemporaryDirectory() as temp_dir:
-            base_dir.__str__.return_value = temp_dir
-            cache_dir = Path(temp_dir) / "data" / "mf_raw" / "mfforecast_api" / "2026-11-23"
-            cache_dir.mkdir(parents=True)
-            (cache_dir / "scheme_120503_101000000000.json").write_text(
-                json.dumps({"holdings": [{"name": "older"}]}), encoding="utf-8",
-            )
-            (cache_dir / "scheme_120503_102000000000.json").write_text(
-                json.dumps({"holdings": [{"name": "latest"}]}), encoding="utf-8",
-            )
+            with patch("mutual_funds.services.mfforecast.settings.BASE_DIR", temp_dir):
+                cache_dir = Path(temp_dir) / "data" / "mf_raw" / "mfforecast_api" / "2026-11-23"
+                cache_dir.mkdir(parents=True)
+                (cache_dir / "scheme_120503_101000000000.json").write_text(
+                    json.dumps({"holdings": [{"name": "older"}]}), encoding="utf-8",
+                )
+                (cache_dir / "scheme_120503_102000000000.json").write_text(
+                    json.dumps({"holdings": [{"name": "latest"}]}), encoding="utf-8",
+                )
 
-            payload, raw_path = load_mfforecast_cached_payload(
-                scheme_code="120503",
-                cache_date=date(2026, 11, 23),
-            )
-
-            self.assertEqual(payload["holdings"][0]["name"], "latest")
-            self.assertTrue(raw_path.endswith("scheme_120503_102000000000.json"))
-
-    @patch("mutual_funds.services.mfforecast.settings.BASE_DIR")
-    def test_cached_payload_lookup_fails_when_scheme_cache_is_missing(self, base_dir):
-        with TemporaryDirectory() as temp_dir:
-            base_dir.__str__.return_value = temp_dir
-            with self.assertRaisesMessage(FileNotFoundError, "No cached MF Forecast response"):
-                load_mfforecast_cached_payload(
+                payload, raw_path = load_mfforecast_cached_payload(
                     scheme_code="120503",
                     cache_date=date(2026, 11, 23),
                 )
+
+                self.assertEqual(payload["holdings"][0]["name"], "latest")
+                self.assertTrue(raw_path.endswith("scheme_120503_102000000000.json"))
+
+    def test_cached_payload_lookup_fails_when_scheme_cache_is_missing(self):
+        with TemporaryDirectory() as temp_dir:
+            with patch("mutual_funds.services.mfforecast.settings.BASE_DIR", temp_dir):
+                with self.assertRaisesMessage(FileNotFoundError, "No cached MF Forecast response"):
+                    load_mfforecast_cached_payload(
+                        scheme_code="120503",
+                        cache_date=date(2026, 11, 23),
+                    )
 
     @patch("mutual_funds.services.mfforecast._throttle")
     def test_fetch_uses_documented_path_and_disables_redirects(self, throttle):

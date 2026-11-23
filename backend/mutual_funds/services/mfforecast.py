@@ -7,12 +7,12 @@ snapshots. Provider-specific units and classifications are quality-flagged.
 from __future__ import annotations
 
 import json
-import threading
-from datetime import date
-from pathlib import Path
-import time
-from decimal import Decimal
 import re
+import threading
+import time
+from datetime import date
+from decimal import Decimal
+from pathlib import Path
 from urllib.parse import quote, urlparse, urlunparse
 
 import requests

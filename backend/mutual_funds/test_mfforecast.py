@@ -99,6 +99,14 @@ class MFForecastParserTests(TestCase):
         with self.assertRaisesMessage(ValueError, "holdings array"):
             parse_mfforecast_holdings({"scheme_name": "Fund"}, scheme_code="120503")
 
+    def test_empty_holdings_array_is_flagged_as_incomplete_provider_data(self):
+        parsed = parse_mfforecast_holdings(
+            {"scheme_name": "Debt Fund", "holdings": []},
+            scheme_code="128629",
+        )
+        self.assertEqual(parsed["holdings_count"], 0)
+        self.assertIn("MFFORECAST_HOLDINGS_EMPTY", parsed["quality_flags"])
+
     def test_skips_bad_holding_rows_and_flags_weight_coverage(self):
         payload = read_payload()
         payload["holdings"].append({"stock_name": "", "weight_pct": "not-a-number"})

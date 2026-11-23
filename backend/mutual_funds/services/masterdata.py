@@ -70,7 +70,7 @@ def parse_date(value):
     normalized = normalize_text(value)
     # ISO dates are unambiguous; parse them directly instead of sending them
     # through pandas with dayfirst=True (which emits a warning).
-    if re.fullmatch(r"\\d{4}-\\d{2}-\\d{2}", normalized):
+    if re.fullmatch(r"\d{4}-\d{2}-\d{2}", normalized):
         try:
             return date.fromisoformat(normalized)
         except ValueError:

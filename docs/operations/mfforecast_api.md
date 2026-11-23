@@ -35,12 +35,34 @@ The provider also labelled multiple coupon-bearing or maturity-dated debt securi
 
 The command requires an explicit scheme or AMC selector and defaults to at most 50 scheme requests. It does not run a full-universe fan-out accidentally. For RapidAPI, it sends both `X-RapidAPI-Key` and `X-RapidAPI-Host` separately.
 
+For a cross-AMC pilot, first generate a candidate list from the local AMFI scheme master. This planner makes no network calls and writes no rows. It chooses one active Direct-Growth scheme per AMC, favors categories not already represented in the pilot, and excludes schemes already having an MF Forecast snapshot.
+
+~~~powershell
+python manage.py plan_mfforecast_pilot
+~~~
+
+By default, it checks HDFC, SBI, ICICI Prudential, Axis and Nippon India. To choose different AMCs, repeat `--amc`:
+
+~~~powershell
+python manage.py plan_mfforecast_pilot --amc "HDFC" --amc "SBI" --amc "Kotak"
+~~~
+
+The planner prints exact AMFI scheme codes and a single bounded dry-run command. Review each response's provider count, parsed count, invalid rows, weight total, provider date, overrides and quality flags. The dry-run makes live API requests but does not write database records. Only after reviewing every scheme should you run the printed command without `--dry-run`.
+
 ~~~powershell
 python manage.py sync_mfforecast_holdings --scheme-code 128629 --dry-run
 python manage.py sync_mfforecast_holdings --scheme-code 128629
 python manage.py sync_mfforecast_holdings --amc "HDFC" --limit 25 --dry-run
 python manage.py sync_mfforecast_holdings --amc "HDFC" --limit 25
 ~~~
+
+For example, the command accepts multiple explicit scheme selectors in one bounded pilot:
+
+~~~powershell
+python manage.py sync_mfforecast_holdings --scheme-code 100001 --scheme-code 100002 --scheme-code 100003 --dry-run
+~~~
+
+Replace those illustrative codes with the codes printed by `plan_mfforecast_pilot`.
 
 Requests are throttled to no more than one per second per host. Transient network/server errors and HTTP 429 are retried with bounded backoff. HTTP 404 is recorded as no provider record; HTTP 401/403 stops the run. Raw JSON is cached under `backend/data/mf_raw/mfforecast_api/<retrieval-date>/`, which is git-ignored.
 

@@ -235,6 +235,29 @@ class Command(BaseCommand):
         if dry_run:
             self.stdout.write(self.style.SUCCESS("DRY RUN: " + summary + ". No database records were written."))
         else:
-            self.stdout.write(self.style.SUCCESS("MF Forecast import completed: " + summary + "."))
+            self.stdout.write(
+                self.style.SUCCESS(
+                    "MF Forecast import finished: " + summary
+                    + f" status={run.status if run else 'DRY_RUN'}."
+                )
+            )
+
+        # Do not hide the underlying cause behind an errors=N counter. The
+        # exception messages contain HTTP/connection/JSON diagnostics, but no
+        # request headers or configured API key are ever included.
+        if errors:
+            self.stderr.write(self.style.ERROR("MF Forecast request diagnostics:"))
+            for item in errors[:20]:
+                code = item.get("scheme_code", "run")
+                detail = item.get("error", "Unknown error")
+                self.stderr.write(f"  {code}: {detail}")
+            if len(errors) > 20:
+                self.stderr.write(f"  ... {len(errors) - 20} additional errors omitted.")
+
         if fatal_error:
             raise CommandError(fatal_error)
+        if errors and counters["schemes_with_response"] == 0 and not dry_run:
+            raise CommandError(
+                "MF Forecast returned no successful scheme responses. "
+                "Review the request diagnostics above before retrying."
+            )

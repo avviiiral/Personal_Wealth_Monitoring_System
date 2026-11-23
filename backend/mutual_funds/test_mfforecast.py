@@ -188,6 +188,33 @@ class MFForecastParserTests(TestCase):
         self.assertIn("MFFORECAST_PROVIDER_ASSET_TYPE_OVERRIDDEN", parsed["quality_flags"])
         self.assertIn("MFFORECAST_HOLDING_WEIGHTS_NOT_100", parsed["quality_flags"])
 
+    def test_corrects_infrastructure_trust_mislabeled_as_reit_but_keeps_real_reit(self):
+        parsed = parse_mfforecast_holdings(
+            {
+                "holdings_count": 2,
+                "holdings": [
+                    {
+                        "name": "INDUS INFRA TRUST",
+                        "weight_pct": 0.0500,
+                        "asset_type": "REIT",
+                    },
+                    {
+                        "name": "Embassy Office Parks REIT",
+                        "weight_pct": 0.1000,
+                        "asset_type": "REIT",
+                    },
+                ],
+            },
+            scheme_code="120251",
+        )
+
+        self.assertEqual(
+            [row["instrument_type"] for row in parsed["holdings"]],
+            ["INVIT", "REIT"],
+        )
+        self.assertEqual(parsed["provider_asset_type_overrides"], 1)
+        self.assertIn("MFFORECAST_PROVIDER_ASSET_TYPE_OVERRIDDEN", parsed["quality_flags"])
+
     def test_rejects_response_for_different_amfi_scheme_code(self):
         payload = read_live_schema_payload()
         payload["amfi_code"] = "120503"

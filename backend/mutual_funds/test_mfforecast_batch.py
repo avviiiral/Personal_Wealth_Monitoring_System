@@ -17,7 +17,7 @@ class MFForecastBatchPlannerTests(TestCase):
         return AMFIMasterScheme.objects.create(
             scheme_code=str(code),
             scheme_name=f"{amc} Sample Fund {code}",
-            amc_name=f"{amc} Mutual Fund",
+            amc_name=f"{amc} Mutual Fund" if amc else "",
             level_3_category="Hybrid",
             is_active=active,
             is_direct_plan_growth=direct_growth,
@@ -114,6 +114,18 @@ class MFForecastBatchPlannerTests(TestCase):
         )
         self.assertIn("--scheme-code 7001", retry_output.getvalue())
         self.assertIn("--scheme-code 8001", retry_output.getvalue())
+
+    def test_unmapped_amc_scheme_is_excluded_and_reported(self):
+        self.create_scheme("8101", "")
+        mapped = self.create_scheme("8102", "HDFC")
+
+        output = StringIO()
+        call_command("plan_mfforecast_batch", "--amc", "HDFC", stdout=output)
+        rendered = output.getvalue()
+
+        self.assertIn("--scheme-code 8102", rendered)
+        self.assertNotIn("--scheme-code 8101", rendered)
+        self.assertIn("missing_amc=1", rendered)
 
     def test_limit_cannot_exceed_importer_maximum(self):
         with self.assertRaises(CommandError):

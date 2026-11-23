@@ -100,12 +100,20 @@ class Command(BaseCommand):
                 amc_filter |= Q(amc_name__icontains=value)
             candidates_qs = candidates_qs.filter(amc_filter)
 
-        candidates = list(
+        candidate_rows = list(
             candidates_qs.order_by("amc_name", "scheme_code")
         )
+        missing_amc_count = sum(
+            1 for scheme in candidate_rows if not (scheme.amc_name or "").strip()
+        )
+        candidates = [
+            scheme for scheme in candidate_rows
+            if (scheme.amc_name or "").strip()
+        ]
         if not candidates:
             self.stdout.write(self.style.WARNING(
-                "No active Direct-Growth schemes matched the requested universe/filter."
+                "No active Direct-Growth schemes with an AMC mapping matched the requested universe/filter. "
+                f"Unmapped AMC rows excluded={missing_amc_count}."
             ))
             return
 
@@ -122,6 +130,7 @@ class Command(BaseCommand):
             "incomplete": 0,
             "errors": 0,
             "legacy_snapshots": 0,
+            "missing_amc": missing_amc_count,
         }
         eligible = []
         include_previous = options["include_previously_synced"]
@@ -182,7 +191,8 @@ class Command(BaseCommand):
             f"not_found={excluded['not_found']} "
             f"incomplete={excluded['incomplete']} "
             f"errors={excluded['errors']} "
-            f"legacy_snapshots={excluded['legacy_snapshots']}"
+            f"legacy_snapshots={excluded['legacy_snapshots']} "
+            f"missing_amc={excluded['missing_amc']}"
         )
 
         if not selected:

@@ -358,28 +358,31 @@ class WatchListTests(TestCase):
         self.assertEqual(len(response.data["results"]), 2)
         self.assertEqual(response.data["count"], 3)
 
-    def test_api_hides_products_with_no_displayable_values(self):
-        visible = InvestmentProduct.objects.create(
+    def test_api_includes_nav_only_products_with_missing_return_metrics(self):
+        aum_fund = InvestmentProduct.objects.create(
             product_type=ProductType.MUTUAL_FUND,
-            name="Visible Fund",
-            identity_key="MUTUAL_FUND:SCHEME:VISIBLE",
+            name="AUM Fund",
+            identity_key="MUTUAL_FUND:SCHEME:AUM-FUND",
             source="AMFI",
         )
         MutualFundProduct.objects.create(
-            product=visible,
-            scheme_code="VISIBLE",
+            product=aum_fund,
+            scheme_code="AUM-FUND",
             aum=Decimal("100"),
         )
 
-        hidden = InvestmentProduct.objects.create(
+        nav_only_fund = InvestmentProduct.objects.create(
             product_type=ProductType.MUTUAL_FUND,
-            name="Empty Fund",
-            identity_key="MUTUAL_FUND:SCHEME:EMPTY",
+            name="NAV Only Fund",
+            identity_key="MUTUAL_FUND:SCHEME:NAV-ONLY",
             source="AMFI",
         )
-        MutualFundProduct.objects.create(product=hidden, scheme_code="EMPTY")
+        MutualFundProduct.objects.create(
+            product=nav_only_fund,
+            scheme_code="NAV-ONLY",
+        )
         PerformanceSnapshot.objects.create(
-            product=hidden,
+            product=nav_only_fund,
             date="2026-09-15",
             nav_or_value=Decimal("10"),
             source="AMFI",
@@ -390,8 +393,12 @@ class WatchListTests(TestCase):
         )
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.data["count"], 1)
-        self.assertEqual(response.data["results"][0]["name"], "Visible Fund")
+        self.assertEqual(response.data["count"], 2)
+        rows_by_name = {row["name"]: row for row in response.data["results"]}
+        self.assertEqual(set(rows_by_name), {"AUM Fund", "NAV Only Fund"})
+        self.assertIsNone(rows_by_name["NAV Only Fund"]["metrics"]["1M"])
+        self.assertIsNone(rows_by_name["NAV Only Fund"]["metrics"]["1Y"])
+        self.assertIsNone(rows_by_name["NAV Only Fund"]["metrics"]["CAGR"])
 
     def test_watch_list_uses_latest_snapshot_for_metrics_and_performance(self):
         product = InvestmentProduct.objects.create(product_type=ProductType.MUTUAL_FUND, name="Snapshot Fund", identity_key="MUTUAL_FUND:SCHEME:SNAPSHOT", source="AMFI")
@@ -444,8 +451,14 @@ class WatchListTests(TestCase):
             identity_key="MUTUAL_FUND:ISIN:INFWW002",
             source="AMFI",
         )
-        MutualFundProduct.objects.create(product=watchlisted, scheme_code="WW001", aum=Decimal("100"))
+        MutualFundProduct.objects.create(product=watchlisted, scheme_code="WW001")
         MutualFundProduct.objects.create(product=universal, scheme_code="WW002", aum=Decimal("200"))
+        PerformanceSnapshot.objects.create(
+            product=watchlisted,
+            date="2026-09-15",
+            nav_or_value=Decimal("10"),
+            source="AMFI",
+        )
         WatchListEntry.objects.create(user=self.user, product=watchlisted)
 
         response = self.client.get("/api/watch-list/products/?product_type=MUTUAL_FUND&status=WATCHLIST")
@@ -507,8 +520,14 @@ class WatchListTests(TestCase):
             identity_key="MUTUAL_FUND:ISIN:INFOWN001",
             source="AMFI",
         )
-        MutualFundProduct.objects.create(product=watchlisted, aum=Decimal("100"))
+        MutualFundProduct.objects.create(product=watchlisted)
         MutualFundProduct.objects.create(product=owned, aum=Decimal("100"))
+        PerformanceSnapshot.objects.create(
+            product=watchlisted,
+            date="2026-09-15",
+            nav_or_value=Decimal("10"),
+            source="AMFI",
+        )
         WatchListEntry.objects.create(user=self.user, product=watchlisted)
         asset = Asset.objects.create(
             owner=self.user, family=self.family, name="Owned Asset",

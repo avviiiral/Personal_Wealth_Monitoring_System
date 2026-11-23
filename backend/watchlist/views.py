@@ -56,49 +56,10 @@ def _watchlist_user_ids(request):
 def _filtered_products(request, product_type=None):
     queryset = InvestmentProduct.objects.filter(is_active=True).select_related("mutual_fund", "pms")
 
-    # Presentation filter: a product must have at least one value that
-    # can actually be displayed in the Watch List return/AUM columns.
-    # Latest NAV alone is not sufficient because it would produce a row
-    # where every visible metric is N/A.
-    displayable_snapshot = PerformanceSnapshot.objects.filter(
-        product_id=OuterRef("pk"),
-    ).filter(
-        Q(aum__isnull=False)
-        | Q(return_1d__isnull=False)
-        | Q(return_1w__isnull=False)
-        | Q(return_1m__isnull=False)
-        | Q(return_3m__isnull=False)
-        | Q(return_6m__isnull=False)
-        | Q(return_1y__isnull=False)
-        | Q(return_3y__isnull=False)
-        | Q(return_5y__isnull=False)
-        | Q(return_since_inception__isnull=False)
-        | Q(cagr__isnull=False)
-    )
-    # AUM belongs to the product-specific child models, not PerformanceSnapshot.
-    # Keep those checks on the outer InvestmentProduct queryset so products with
-    # only a current AUM value remain displayable without generating an invalid
-    # reverse lookup inside the snapshot subquery.
-    research_aum = MFMasterData.objects.filter(
-        as_of_date__lte=timezone.localdate(),
-        aum_cr__isnull=False,
-    ).filter(
-        Q(scheme__scheme_code=OuterRef("external_identifier"))
-        | Q(scheme__scheme_code=OuterRef("mutual_fund__scheme_code"))
-    )
-    displayable_product = (
-        Q(mutual_fund__aum__isnull=False)
-        | Q(pms__aum__isnull=False)
-        | Q(Exists(research_aum))
-    )
-    # OWNED is an ownership view, so an owned product remains visible even
-    # before its first performance snapshot has been imported.
-    status = request.query_params.get("status", "").upper()
-    if status != "OWNED":
-        queryset = queryset.filter(
-            Q(Exists(displayable_snapshot)) | displayable_product
-        )
-
+    # Keep the active research universe complete. A scheme may have a valid
+    # AMFI identity and NAV while historical returns or AUM disclosures are
+    # unavailable. The serializer preserves missing metrics as null so the
+    # frontend can render N/A without hiding the entire product.
     if product_type:
         queryset = queryset.filter(product_type=product_type)
     params = request.query_params

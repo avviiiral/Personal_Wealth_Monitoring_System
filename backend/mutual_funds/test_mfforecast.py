@@ -375,6 +375,10 @@ class MFForecastEmptyResponseCommandTests(TestCase):
             all(row.portfolio_date_basis == MFMasterHolding.DATE_BASIS_DISCLOSURE for row in holdings)
         )
         self.assertTrue(all(row.instrument_type == "BOND" for row in holdings))
+        _, flags, source_url = _holdings_metrics(self.scheme, date(2026, 9, 30))
+        self.assertIn("PORTFOLIO_DATE_FROM_PROVIDER_SNAPSHOT", flags)
+        self.assertNotIn("PORTFOLIO_DATE_IS_FETCH_DATE", flags)
+        self.assertEqual(source_url, "https://api.example.test/funds/128629/holdings")
 
 
 class MFForecastPersistenceAndAnalyticsTests(TestCase):

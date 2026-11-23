@@ -1,5 +1,7 @@
 # Mutual Fund Masterdata — Operations Runbook
 
+> The automated ingestion pipeline (startup run + IST schedule, `mf_*` commands) is documented in [../mf_masterdata.md](../mf_masterdata.md). The manual imports below still work and share the same tables.
+
 This runbook operates the global, market-wide scheme masterdata pipeline. It is keyed to **AMFIMasterScheme** and is separate from family-scoped investment holdings and transactions. It does not modify household units, cost basis, XIRR, ownership or existing Mutual Fund Intelligence dashboard values.
 
 ## Operating rules

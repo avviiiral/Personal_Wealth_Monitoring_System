@@ -150,19 +150,32 @@ def parse_mfforecast_holdings(payload: dict, *, scheme_code: str) -> dict:
     if provider_holdings_count < 0:
         provider_holdings_count = 0
 
+    raw_holdings = payload["holdings"]
     rows = []
     invalid_rows = 0
+    missing_weight_rows = 0
     provider_asset_type_overrides = 0
-    for item in payload["holdings"]:
+    for item in raw_holdings:
         if not isinstance(item, dict):
             invalid_rows += 1
             continue
+
         # The live RapidAPI response uses "name"; the published example uses
-        # "stock_name". Weight units are normalized only after completeness checks.
+        # "stock_name". Keep named rows with missing weights out of holdings,
+        # but track them separately so weight units can be inferred safely from
+        # the remaining complete security records.
         security_name = normalize_text(item.get("name") or item.get("stock_name"))
-        weight = decimal_value(item.get("weight_pct"), percent=True)
-        if not security_name or weight is None or weight < 0:
+        raw_weight = item.get("weight_pct")
+        weight = decimal_value(raw_weight, percent=True)
+        if not security_name:
             invalid_rows += 1
+            continue
+        if weight is None or weight < 0:
+            invalid_rows += 1
+            if raw_weight is None or (
+                isinstance(raw_weight, str) and not raw_weight.strip()
+            ):
+                missing_weight_rows += 1
             continue
 
         raw_type = normalize_text(item.get("asset_type"))
@@ -182,14 +195,25 @@ def parse_mfforecast_holdings(payload: dict, *, scheme_code: str) -> dict:
 
     raw_total_weight = sum((row["pct_of_nav"] for row in rows), Decimal("0"))
     weight_scale_factor = Decimal("1")
-    # In the observed complete live response, 102/102 valid weights summed to
-    # 0.9555. This is consistent with fractional NAV weights (95.55%), not
-    # percentage-point weights. Infer that scale only when every provider row
-    # was parsed and the raw portfolio total is within a plausible 0..1 range.
-    if (
-        rows
+    # Complete provider responses can be scaled as before. Also allow the same
+    # inference when the provider count matches the raw array and every skipped
+    # row is a named security with a genuinely missing weight. Other malformed
+    # rows, invalid names, negative weights, and incomplete raw arrays block
+    # inference. Missing weights are never synthesized or persisted.
+    complete_response = (
+        bool(rows)
         and invalid_rows == 0
         and provider_holdings_count == len(rows)
+    )
+    missing_weights_only_response = (
+        bool(rows)
+        and missing_weight_rows > 0
+        and missing_weight_rows == invalid_rows
+        and provider_holdings_count == len(raw_holdings)
+        and len(raw_holdings) == len(rows) + missing_weight_rows
+    )
+    if (
+        (complete_response or missing_weights_only_response)
         and Decimal("0") < raw_total_weight <= Decimal("1.05")
     ):
         weight_scale_factor = Decimal("100")
@@ -218,6 +242,8 @@ def parse_mfforecast_holdings(payload: dict, *, scheme_code: str) -> dict:
         quality_flags.append("MFFORECAST_PROVIDER_ASSET_TYPE_OVERRIDDEN")
     if weight_scale_factor != Decimal("1"):
         quality_flags.append("MFFORECAST_WEIGHT_SCALE_INFERRED_FRACTION_TO_PERCENT")
+        if missing_weight_rows:
+            quality_flags.append("MFFORECAST_WEIGHT_SCALE_INFERRED_WITH_MISSING_WEIGHT_ROWS")
     if snapshot_date_raw and provider_as_of_date is None:
         quality_flags.append("MFFORECAST_SNAPSHOT_DATE_INVALID")
     if rows and abs(total_weight - Decimal("100")) > Decimal("1.0"):
@@ -260,6 +286,7 @@ def parse_mfforecast_holdings(payload: dict, *, scheme_code: str) -> dict:
         "provider_asset_type_overrides": provider_asset_type_overrides,
         "quality_flags": quality_flags,
         "invalid_rows": invalid_rows,
+        "missing_weight_rows": missing_weight_rows,
     }
 
 def _throttle(host: str) -> None:

@@ -188,6 +188,78 @@ class MFForecastParserTests(TestCase):
         self.assertIn("MFFORECAST_PROVIDER_ASSET_TYPE_OVERRIDDEN", parsed["quality_flags"])
         self.assertIn("MFFORECAST_HOLDING_WEIGHTS_NOT_100", parsed["quality_flags"])
 
+    def test_infers_fractional_weights_when_only_named_rows_have_missing_weights(self):
+        parsed = parse_mfforecast_holdings(
+            {
+                "holdings_count": 4,
+                "holdings": [
+                    {
+                        "name": "Government of India Treasury Bill",
+                        "asset_type": "DEBT",
+                        "weight_pct": 0.5000,
+                    },
+                    {
+                        "name": "Power Finance Corporation Ltd.",
+                        "asset_type": "DEBT",
+                        "weight_pct": 0.3000,
+                    },
+                    {
+                        "name": "Cash and bank balance",
+                        "asset_type": "CASH",
+                        "weight_pct": 0.1993,
+                    },
+                    {
+                        "name": "6.67% ICICI Bank Limited (26/11/2028)",
+                        "isin": "INE090A08UF5",
+                        "asset_type": "REIT",
+                        "weight_pct": None,
+                        "quantity": 5.0,
+                    },
+                ],
+            },
+            scheme_code="120438",
+        )
+
+        self.assertEqual(parsed["provider_holdings_count"], 4)
+        self.assertEqual(parsed["holdings_count"], 3)
+        self.assertEqual(parsed["invalid_rows"], 1)
+        self.assertEqual(parsed["missing_weight_rows"], 1)
+        self.assertEqual(parsed["weight_scale_factor"], Decimal("100"))
+        self.assertEqual(parsed["total_weight_pct"], Decimal("99.9300"))
+        self.assertEqual(
+            [row["pct_of_nav"] for row in parsed["holdings"]],
+            [Decimal("50.0000"), Decimal("30.0000"), Decimal("19.9300")],
+        )
+        self.assertIn("MFFORECAST_INVALID_HOLDING_ROWS_SKIPPED", parsed["quality_flags"])
+        self.assertIn("MFFORECAST_PROVIDER_HOLDINGS_COUNT_MISMATCH", parsed["quality_flags"])
+        self.assertIn("MFFORECAST_WEIGHT_SCALE_INFERRED_FRACTION_TO_PERCENT", parsed["quality_flags"])
+        self.assertIn(
+            "MFFORECAST_WEIGHT_SCALE_INFERRED_WITH_MISSING_WEIGHT_ROWS",
+            parsed["quality_flags"],
+        )
+        self.assertNotIn("MFFORECAST_HOLDING_WEIGHTS_NOT_100", parsed["quality_flags"])
+
+    def test_does_not_infer_scale_when_rejected_row_has_malformed_weight(self):
+        parsed = parse_mfforecast_holdings(
+            {
+                "holdings_count": 2,
+                "holdings": [
+                    {"name": "Government security", "asset_type": "DEBT", "weight_pct": 0.75},
+                    {"name": "Another security", "asset_type": "DEBT", "weight_pct": "unknown"},
+                ],
+            },
+            scheme_code="120438",
+        )
+
+        self.assertEqual(parsed["holdings_count"], 1)
+        self.assertEqual(parsed["invalid_rows"], 1)
+        self.assertEqual(parsed["missing_weight_rows"], 0)
+        self.assertEqual(parsed["weight_scale_factor"], Decimal("1"))
+        self.assertNotIn(
+            "MFFORECAST_WEIGHT_SCALE_INFERRED_FRACTION_TO_PERCENT",
+            parsed["quality_flags"],
+        )
+
     def test_corrects_infrastructure_trust_mislabeled_as_reit_but_keeps_real_reit(self):
         parsed = parse_mfforecast_holdings(
             {

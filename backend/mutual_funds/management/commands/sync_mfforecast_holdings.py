@@ -117,6 +117,8 @@ class Command(BaseCommand):
             "schemes_with_holdings_count_mismatch": 0,
             "schemes_not_found": 0,
             "holdings_parsed": 0,
+            "holdings_invalid_rows": 0,
+            "holdings_missing_weight_rows": 0,
             "holdings_inserted": 0,
             "holdings_updated": 0,
             "holdings_skipped": 0,
@@ -177,6 +179,8 @@ class Command(BaseCommand):
                         structurally_complete = bool(rows) and not parsed["invalid_rows"] and not count_mismatch
                         counters["schemes_with_response"] += 1
                         counters["holdings_parsed"] += len(rows)
+                        counters["holdings_invalid_rows"] += parsed["invalid_rows"]
+                        counters["holdings_missing_weight_rows"] += parsed["missing_weight_rows"]
                         if rows:
                             counters["schemes_with_holdings"] += 1
                         else:
@@ -199,6 +203,7 @@ class Command(BaseCommand):
                                 f"provider_name={parsed['scheme_name'] or 'not supplied'} | "
                                 f"provider_count={parsed['provider_holdings_count']} | "
                                 f"holdings={len(rows)} | invalid_rows={parsed['invalid_rows']} | "
+                                f"missing_weight_rows={parsed['missing_weight_rows']} | "
                                 f"weight_total={parsed['total_weight_pct']} | "
                                 f"weight_scale_factor={parsed['weight_scale_factor']} | "
                                 f"provider_as_of_date={provider_as_of_date or 'not supplied'} | "
@@ -251,6 +256,7 @@ class Command(BaseCommand):
                             "provider_holdings_count": parsed["provider_holdings_count"],
                             "holdings_count": len(rows),
                             "invalid_rows": parsed["invalid_rows"],
+                            "missing_weight_rows": parsed["missing_weight_rows"],
                             "total_weight_pct": str(parsed["total_weight_pct"]),
                             "provider_as_of_date": (
                                 provider_as_of_date.isoformat() if provider_as_of_date else None
@@ -331,6 +337,8 @@ class Command(BaseCommand):
             f"count_mismatch={counters['schemes_with_holdings_count_mismatch']} "
             f"not_found={counters['schemes_not_found']} "
             f"holdings={counters['holdings_parsed']} "
+            f"invalid_rows={counters['holdings_invalid_rows']} "
+            f"missing_weight_rows={counters['holdings_missing_weight_rows']} "
             f"inserted={counters['holdings_inserted']} "
             f"updated={counters['holdings_updated']} "
             f"skipped={counters['holdings_skipped']} "

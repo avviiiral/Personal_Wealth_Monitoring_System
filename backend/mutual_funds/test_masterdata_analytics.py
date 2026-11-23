@@ -88,6 +88,42 @@ class MasterDataRatioEngineTests(TestCase):
         self.assertEqual(methodology["return_observations"], len(self.days) - 1)
         self.assertEqual(methodology["risk_free_rate_annual_pct"], 6.5)
 
+    def test_non_growth_distribution_option_skips_nav_only_risk_metrics(self):
+        distribution_scheme = AMFIMasterScheme.objects.create(
+            scheme_code="990099",
+            scheme_name="PWMS IDCW Test Fund",
+            isin_growth="",
+            isin_dividend="INF990A01999",
+            plan="Direct Plan",
+            option="Monthly Payout of Income Distribution cum capital withdrawal option",
+            is_growth_plan=False,
+            is_direct_plan_growth=False,
+            sebi_universe_active=False,
+        )
+        for day, nav in zip(self.days, (
+            Decimal("100"), Decimal("102"), Decimal("99"), Decimal("103"), Decimal("105"),
+        )):
+            AMFIMasterNAV.objects.create(
+                scheme=distribution_scheme,
+                date=day,
+                nav=nav,
+                source="mfapi.in",
+            )
+
+        result = calculate_scheme_masterdata_metrics(
+            distribution_scheme, self.days[-1], risk_free_rate=0.065,
+        )
+
+        self.assertIsNone(result["values"].get("return_1m_pct"))
+        self.assertIsNone(result["values"].get("std_dev_pct"))
+        self.assertIsNone(result["values"].get("sharpe"))
+        self.assertIsNone(result["values"].get("sortino"))
+        self.assertEqual(result["nav_observations"], 0)
+        self.assertIn(
+            "NAV_BASED_METRICS_SKIPPED_NON_GROWTH_OPTION",
+            result["data_quality_flags"],
+        )
+
     def test_default_three_year_window_keeps_short_history_ratios_null(self):
         result = calculate_scheme_masterdata_metrics(self.scheme, self.days[-1])
         self.assertIsNone(result["values"].get("beta"))

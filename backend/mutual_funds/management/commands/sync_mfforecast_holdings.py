@@ -1,7 +1,5 @@
 """Import one or more scheme holdings snapshots from MF Forecast."""
 import os
-from datetime import datetime
-from decimal import Decimal
 from urllib.parse import urlparse
 
 import requests
@@ -75,8 +73,10 @@ class Command(BaseCommand):
         scheme_codes = list(dict.fromkeys(str(code).strip() for code in options["scheme_codes"] if str(code).strip()))
         amc = options["amc"].strip()
         limit = options["limit"]
-        if limit <= 0:
-            raise CommandError("--limit must be a positive integer.")
+        if not 1 <= limit <= 50:
+            raise CommandError("--limit must be between 1 and 50 to keep provider usage bounded.")
+        if len(scheme_codes) > limit:
+            raise CommandError("The number of --scheme-code values cannot exceed --limit.")
         if not scheme_codes and not amc:
             raise CommandError("Specify at least one --scheme-code or an --amc filter; unbounded full-universe calls are disabled.")
 
@@ -195,7 +195,10 @@ class Command(BaseCommand):
 
         if run:
             if fatal_error:
-                status = MFSourceRun.Status.FAILED
+                status = (
+                    MFSourceRun.Status.PARTIAL
+                    if counters["snapshots_saved"] else MFSourceRun.Status.FAILED
+                )
             elif errors or counters["schemes_not_found"]:
                 status = MFSourceRun.Status.PARTIAL
             else:

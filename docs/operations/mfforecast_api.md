@@ -49,7 +49,7 @@ Requests are throttled to no more than one per second per host. Transient networ
 
 ## Empty holdings responses
 
-A successful HTTP response with an empty `holdings` array is not evidence that a scheme has no investments. PWMS retains the response metadata for audit, writes zero holding rows, adds the `MFFORECAST_HOLDINGS_EMPTY` quality flag, and marks the source run `PARTIAL`. Check the raw JSON file path printed by the command and compare the result against the AMC's dated portfolio disclosure. Do not interpret a zero-holdings response as a zero-weight portfolio.
+A successful HTTP response that produces zero valid holding rows is not evidence that a scheme has no investments. The provider array may be empty, or its field names/value formats may differ from the sample. PWMS retains the response metadata for audit, writes zero holding rows, adds the `MFFORECAST_NO_VALID_HOLDING_ROWS` quality flag, adds `MFFORECAST_INVALID_HOLDING_ROWS_SKIPPED` when individual items fail validation, and marks the source run `PARTIAL`. Check the raw JSON file path printed by the command and compare the result against the AMC's dated portfolio disclosure. Do not interpret a zero-holdings response as a zero-weight portfolio.
 
 ## Data rights and operating checks
 

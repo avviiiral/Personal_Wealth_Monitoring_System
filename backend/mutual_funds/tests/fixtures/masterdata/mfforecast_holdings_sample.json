@@ -1,0 +1,22 @@
+{
+  "scheme_name": "Axis Bluechip Fund - Growth",
+  "fund_house": "Axis Mutual Fund",
+  "category": "Large Cap",
+  "aum_cr": 34521.45,
+  "expense_ratio": 1.64,
+  "asset_allocation": {
+    "equity_pct": 97.2,
+    "debt_pct": 0.0,
+    "cash_pct": 2.8
+  },
+  "holdings": [
+    {
+      "stock_name": "HDFC Bank Ltd.",
+      "ticker": "HDFCBANK",
+      "isin": "INE040A01034",
+      "weight_pct": 9.82,
+      "quantity": 4250000,
+      "asset_type": "Equity"
+    }
+  ]
+}

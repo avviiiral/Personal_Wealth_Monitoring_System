@@ -10,7 +10,6 @@ import json
 import threading
 import time
 from decimal import Decimal
-from pathlib import Path
 from urllib.parse import quote, urlparse
 
 import requests
@@ -140,7 +139,10 @@ def fetch_mfforecast_payload(
     for attempt in range(3):
         _throttle(parsed.netloc.casefold())
         try:
-            response = session.get(endpoint, headers=request_headers, timeout=timeout)
+            response = session.get(
+                endpoint, headers=request_headers, timeout=timeout,
+                allow_redirects=False,
+            )
         except requests.RequestException as exc:
             last_error = exc
             if attempt < 2:
@@ -148,6 +150,11 @@ def fetch_mfforecast_payload(
                 continue
             raise RuntimeError(f"MF Forecast request failed for scheme {scheme_code}: {exc}") from exc
 
+        if response.is_redirect or response.is_permanent_redirect:
+            raise ValueError(
+                "MF Forecast endpoint redirected the request; configure the canonical HTTPS API URL. "
+                "Redirects are disabled to prevent custom API-key headers being forwarded to another host."
+            )
         if response.status_code == 404:
             return None, endpoint, ""
         if response.status_code in (401, 403):

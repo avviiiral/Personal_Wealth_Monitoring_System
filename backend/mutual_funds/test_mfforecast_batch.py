@@ -120,7 +120,7 @@ class MFForecastBatchPlannerTests(TestCase):
         mapped = self.create_scheme("8102", "HDFC")
 
         output = StringIO()
-        call_command("plan_mfforecast_batch", "--amc", "HDFC", stdout=output)
+        call_command("plan_mfforecast_batch", stdout=output)
         rendered = output.getvalue()
 
         self.assertIn("--scheme-code 8102", rendered)

@@ -78,6 +78,22 @@ python manage.py sync_mf_portfolios --from-file "D:\mf-data\hdfc-scheme-portfoli
 
 A multi-scheme file must include scheme code, scheme ISIN or exact scheme name. The scheme must belong to the selected AMC. Re-importing the same scheme/date/security is an idempotent update. Run a dry-run before importing a newly encountered AMC workbook layout.
 
+### Optional MF Forecast holdings API (supplementary source)
+
+MF Forecast documents a scheme endpoint, `GET /funds/{amfi_code}/holdings`, with AUM, expense ratio, allocation and security-level holding fields. It can supplement portfolio coverage where a supported AMC disclosure file is not available. The API base URL and authentication header must be copied from the provider's current documentation; do not guess either value.
+
+Configure the local `backend/.env` using the variables in `.env.example`, then begin with a small test:
+
+~~~powershell
+python manage.py sync_mfforecast_holdings --scheme-code 128629 --dry-run
+python manage.py sync_mfforecast_holdings --scheme-code 128629
+python manage.py sync_mfforecast_holdings --amc HDFC --limit 25 --dry-run
+~~~
+
+The command caps each run at 50 scheme requests, uses a one-request-per-second host throttle, caches raw JSON outside Git, and logs a source run. MF Forecast's example does not supply a portfolio disclosure date, so holdings are tagged `FETCHED_AT` rather than `DISCLOSURE`. Dated AMC disclosures always take precedence in consolidated portfolio analytics. The provider's AUM and expense ratio are retained in `MFExternalPortfolioSnapshot` but are not copied to canonical month-end AUM or Direct/Regular TER fields until their definitions and dates are verified.
+
+Before scheduling broader collection, confirm the provider's current API plan, rate limits, storage and downstream-use terms. See [MF Forecast API integration](mfforecast_api.md) for configuration and data-quality details.
+
 ## Scheme information, riskometer and factsheet attributes
 
 Use official AMC factsheets, SID/KIM, scheme summaries and addenda for primary benchmark, inception date, fund managers, scheme/benchmark riskometer, exit load, minimum lumpsum/SIP, P/E, P/B, dividend yield, turnover, YTM and debt duration/maturity facts.

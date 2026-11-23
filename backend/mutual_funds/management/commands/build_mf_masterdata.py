@@ -157,9 +157,15 @@ def _apply_fields(snapshot, values, *, fields, source, source_url, as_of_date, f
     lineage = dict(snapshot.field_sources or {})
     for field in fields:
         value = values.get(field)
-        if field in DECIMAL_FIELDS:
+        if field in {"credit_rating_split", "sector_allocation"}:
+            value = value or {}
+        elif field in DECIMAL_FIELDS:
             value = _decimal(value)
+
         setattr(snapshot, field, value)
+        if value is None or value == {} or value == [] or value == "":
+            lineage.pop(field, None)
+            continue
         lineage[field] = {
             "source": source,
             "source_url": source_url or "",

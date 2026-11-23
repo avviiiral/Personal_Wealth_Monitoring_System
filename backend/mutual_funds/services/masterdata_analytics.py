@@ -171,7 +171,10 @@ def calculate_scheme_masterdata_metrics(
         }
         if len(matching_codes) == 1:
             code = next(iter(matching_codes))
-            start_date = max(series[0][0], as_of_date - timedelta(days=round(ratio_window_years * 365.25)))
+            start_date = (
+                max(series[0][0], as_of_date - timedelta(days=round(ratio_window_years * 365.25)))
+                if ratio_window_years > 0 else series[0][0]
+            )
             benchmark_rows = list(
                 MFBenchmarkTRI.objects.filter(index_code=code, date__gte=start_date, date__lte=as_of_date)
                 .order_by("date").values_list("date", "tri_value")

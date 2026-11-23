@@ -13,6 +13,7 @@ from mutual_funds.models import AMFIMasterScheme
 from mutual_funds.master_models import (
     MFExternalPortfolioSnapshot,
     MFMasterHolding,
+    MFSourceRun,
 )
 from mutual_funds.services.masterdata import persist_portfolio_rows
 from mutual_funds.services.mfforecast import (

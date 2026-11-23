@@ -359,6 +359,11 @@ class AMFIMasterScheme(models.Model):
     sebi_universe_active = models.BooleanField(default=False)
     amfi_source_date = models.DateField(blank=True, null=True)
     universe_last_seen_at = models.DateTimeField(blank=True, null=True)
+    # Set by the masterdata pipeline when a scheme has been missing from
+    # NAVAll.txt for more than 7 days. Rows are never deleted, and the
+    # pre-existing is_active flag (used by other PWMS flows) is not changed.
+    navall_active = models.BooleanField(default=True)
+    navall_inactive_since = models.DateField(blank=True, null=True)
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -439,6 +444,7 @@ class AMFIMasterNAV(models.Model):
 # Global, market-wide masterdata tables are kept in a separate module to avoid
 # mixing them with family-scoped holdings and transactions above.
 from .master_models import (  # noqa: E402,F401
-    MFBenchmarkTRI, MFExternalPortfolioSnapshot, MFMarketCapClassification,
-    MFMasterData, MFMasterHolding, MFSourceRun,
+    MFAMFIRiskParameter, MFBenchmarkTRI, MFExternalPortfolioSnapshot,
+    MFMarketCapClassification, MFMasterData, MFMasterHolding, MFRiskFreeRate,
+    MFSchemeIdentityMap, MFSourceRun,
 )

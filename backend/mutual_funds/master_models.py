@@ -106,6 +106,51 @@ class MFMasterData(models.Model):
     cash_pct = models.DecimalField(max_digits=10, decimal_places=4, blank=True, null=True)
     others_pct = models.DecimalField(max_digits=10, decimal_places=4, blank=True, null=True)
 
+    # ---- Automated ingestion pipeline (mf_pipeline) -------------------------
+    # Latest official NAV carried on the snapshot (history stays in AMFIMasterNAV).
+    nav = models.DecimalField(max_digits=20, decimal_places=4, blank=True, null=True)
+    nav_as_of = models.DateField(blank=True, null=True)
+    nav_source = models.CharField(max_length=100, blank=True, default="")
+    ter_source = models.CharField(max_length=100, blank=True, default="")
+
+    # AMFI "Disclosure of Risk Parameters" (SEBI mid/small-cap disclosure).
+    # AMFI publishes portfolio/benchmark annualised SD and portfolio beta only;
+    # it does not publish a Sharpe ratio, so amfi_sharpe stays null until an
+    # official source exists.
+    amfi_std_dev_pct = models.DecimalField(max_digits=14, decimal_places=4, blank=True, null=True)
+    amfi_benchmark_std_dev_pct = models.DecimalField(max_digits=14, decimal_places=4, blank=True, null=True)
+    amfi_beta = models.DecimalField(max_digits=14, decimal_places=4, blank=True, null=True)
+    amfi_sharpe = models.DecimalField(max_digits=14, decimal_places=4, blank=True, null=True)
+    amfi_risk_as_of = models.DateField(blank=True, null=True)
+    amfi_risk_source = models.CharField(max_length=100, blank=True, default="")
+    amfi_tracking_error_regular_pct = models.DecimalField(max_digits=14, decimal_places=4, blank=True, null=True)
+    amfi_tracking_error_direct_pct = models.DecimalField(max_digits=14, decimal_places=4, blank=True, null=True)
+    amfi_tracking_error_as_of = models.DateField(blank=True, null=True)
+    amfi_tracking_error_source = models.CharField(max_length=100, blank=True, default="")
+
+    # PWMS-calculated ratios (services/mf_ratios.py): daily NAV returns,
+    # annualised, 1Y and 3Y trailing windows. The pre-existing std_dev_pct /
+    # sharpe / sortino / beta / alpha_pct columns are left untouched.
+    calc_std_dev_1y_pct = models.DecimalField(max_digits=14, decimal_places=4, blank=True, null=True)
+    calc_sharpe_1y = models.DecimalField(max_digits=14, decimal_places=4, blank=True, null=True)
+    calc_sortino_1y = models.DecimalField(max_digits=14, decimal_places=4, blank=True, null=True)
+    calc_beta_1y = models.DecimalField(max_digits=14, decimal_places=4, blank=True, null=True)
+    calc_alpha_1y_pct = models.DecimalField(max_digits=14, decimal_places=4, blank=True, null=True)
+    calc_std_dev_3y_pct = models.DecimalField(max_digits=14, decimal_places=4, blank=True, null=True)
+    calc_sharpe_3y = models.DecimalField(max_digits=14, decimal_places=4, blank=True, null=True)
+    calc_sortino_3y = models.DecimalField(max_digits=14, decimal_places=4, blank=True, null=True)
+    calc_beta_3y = models.DecimalField(max_digits=14, decimal_places=4, blank=True, null=True)
+    calc_alpha_3y_pct = models.DecimalField(max_digits=14, decimal_places=4, blank=True, null=True)
+    calc_risk_free_rate_pct = models.DecimalField(max_digits=10, decimal_places=4, blank=True, null=True)
+    calc_benchmark_index_code = models.CharField(max_length=100, blank=True, default="")
+    calc_ratios_as_of = models.DateField(blank=True, null=True)
+    calc_ratios_source = models.CharField(max_length=100, blank=True, default="")
+
+    # Holdings summary (detail rows live in mf_master_holdings).
+    top10_holdings = models.JSONField(default=list, blank=True)
+    holdings_as_of = models.DateField(blank=True, null=True)
+    holdings_source = models.CharField(max_length=100, blank=True, default="")
+
     # JSON mapping: field_name -> {source, source_url, as_of_date, fetched_at}.
     field_sources = models.JSONField(default=dict, blank=True)
     data_quality_flags = models.JSONField(default=list, blank=True)
@@ -233,8 +278,13 @@ class MFSourceRun(models.Model):
         PARTIAL = "PARTIAL", "Partial"
         FAILED = "FAILED", "Failed"
         DRY_RUN = "DRY_RUN", "Dry run"
+        # Pipeline job ran but had nothing to do: unchanged file hash, period
+        # already loaded, source not yet published or not configured. The
+        # reason is stored in metadata["skip_reason"].
+        SKIPPED = "SKIPPED", "Skipped"
 
     source = models.CharField(max_length=100, db_index=True)
+    # Pipeline jobs store their job name here (e.g. "mf_sync_nav").
     command = models.CharField(max_length=120, blank=True, default="")
     as_of_date = models.DateField(blank=True, null=True, db_index=True)
     source_url = models.URLField(max_length=1000, blank=True, default="")
@@ -246,6 +296,8 @@ class MFSourceRun(models.Model):
     rows_updated = models.PositiveIntegerField(default=0)
     rows_skipped = models.PositiveIntegerField(default=0)
     rows_unmatched = models.PositiveIntegerField(default=0)
+    rows_failed = models.PositiveIntegerField(default=0)
+    source_file_hash = models.CharField(max_length=64, blank=True, default="", db_index=True)
     errors = models.JSONField(default=list, blank=True)
     metadata = models.JSONField(default=dict, blank=True)
     raw_file_path = models.CharField(max_length=1000, blank=True, default="")
@@ -318,3 +370,113 @@ class MFMarketCapClassification(models.Model):
 
     def __str__(self):
         return f"{self.company_name or self.isin} - {self.market_cap_class} - {self.effective_period}"
+
+
+class MFRiskFreeRate(models.Model):
+    """Risk-free rate observations (default tenor: 91-day T-bill), annual %."""
+
+    TENOR_91D = "91D"
+    tenor = models.CharField(max_length=10, default=TENOR_91D)
+    date = models.DateField(db_index=True)
+    rate_pct = models.DecimalField(max_digits=10, decimal_places=4)
+    source = models.CharField(max_length=100)
+    source_url = models.URLField(max_length=1000, blank=True, default="")
+    fetched_at = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        db_table = "mf_risk_free_rate"
+        ordering = ["tenor", "-date"]
+        constraints = [
+            models.UniqueConstraint(fields=["tenor", "date"], name="unique_mf_risk_free_tenor_date"),
+        ]
+
+    def __str__(self):
+        return f"{self.tenor} {self.date}: {self.rate_pct}%"
+
+
+class MFSchemeIdentityMap(models.Model):
+    """Maps an external (non-ISIN) scheme identifier to AMFI scheme codes.
+
+    AMFI's TER, risk-parameter and tracking-error feeds identify the *parent*
+    scheme (NSDL scheme code / AMFI risk SchemeID / parent scheme name) rather
+    than a plan-level ISIN. Each confirmed row links that external identity to
+    one plan/option-level AMFIMasterScheme, so the feeds are joined by stored
+    IDs, never by re-matching names at load time.
+    """
+
+    SOURCE_TER_NSDL = "AMFI_TER_NSDL"
+    SOURCE_RISK_SCHEME_ID = "AMFI_RISK_SCHEME_ID"
+    SOURCE_TRACKING_NAME = "AMFI_TRACKING_PARENT"
+    SOURCE_CHOICES = (
+        (SOURCE_TER_NSDL, "AMFI TER NSDL scheme code"),
+        (SOURCE_RISK_SCHEME_ID, "AMFI risk-parameter SchemeID"),
+        (SOURCE_TRACKING_NAME, "AMFI tracking-error parent scheme"),
+    )
+    METHOD_PARENT_NAME_EXACT = "AMFI_PARENT_NAME_EXACT"
+    METHOD_MANUAL = "MANUAL"
+    STATUS_ACTIVE = "ACTIVE"
+    STATUS_REJECTED = "REJECTED"
+    STATUS_CHOICES = ((STATUS_ACTIVE, "Active"), (STATUS_REJECTED, "Rejected"))
+
+    source = models.CharField(max_length=40, choices=SOURCE_CHOICES, db_index=True)
+    external_id = models.CharField(max_length=120)
+    external_name = models.CharField(max_length=300, blank=True, default="")
+    scheme = models.ForeignKey(
+        "mutual_funds.AMFIMasterScheme",
+        on_delete=models.CASCADE,
+        related_name="identity_maps",
+    )
+    match_method = models.CharField(max_length=40, default=METHOD_PARENT_NAME_EXACT)
+    status = models.CharField(max_length=12, choices=STATUS_CHOICES, default=STATUS_ACTIVE)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "mf_scheme_identity_map"
+        ordering = ["source", "external_id"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["source", "external_id", "scheme"],
+                name="unique_mf_identity_source_ext_scheme",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["source", "external_id"], name="mf_identity_src_ext_idx"),
+        ]
+
+    def __str__(self):
+        return f"{self.source}:{self.external_id} -> {self.scheme_id}"
+
+
+class MFAMFIRiskParameter(models.Model):
+    """Raw AMFI risk-parameter disclosure row, one per AMFI SchemeID per month."""
+
+    risk_scheme_id = models.CharField(max_length=40)
+    report_month = models.DateField(help_text="First day of the reporting month, as AMFI labels it.")
+    category_id = models.CharField(max_length=10, blank=True, default="")
+    mf_id = models.CharField(max_length=20, blank=True, default="")
+    amc_name = models.CharField(max_length=200, blank=True, default="")
+    scheme_name = models.CharField(max_length=300, blank=True, default="")
+    aum_cr = models.DecimalField(max_digits=24, decimal_places=4, blank=True, null=True)
+    portfolio_std_dev_pct = models.DecimalField(max_digits=14, decimal_places=4, blank=True, null=True)
+    benchmark_std_dev_pct = models.DecimalField(max_digits=14, decimal_places=4, blank=True, null=True)
+    portfolio_beta = models.DecimalField(max_digits=14, decimal_places=4, blank=True, null=True)
+    portfolio_pe = models.DecimalField(max_digits=14, decimal_places=4, blank=True, null=True)
+    portfolio_turnover_ratio = models.DecimalField(max_digits=14, decimal_places=4, blank=True, null=True)
+    raw = models.JSONField(default=dict, blank=True)
+    source = models.CharField(max_length=100, default="AMFI_RISK_PARAMETERS")
+    source_url = models.URLField(max_length=1000, blank=True, default="")
+    fetched_at = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        db_table = "mf_amfi_risk_parameter"
+        ordering = ["-report_month", "scheme_name"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["risk_scheme_id", "report_month"],
+                name="unique_mf_amfi_risk_scheme_month",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.scheme_name} - {self.report_month}"

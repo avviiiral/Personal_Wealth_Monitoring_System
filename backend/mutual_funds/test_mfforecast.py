@@ -215,6 +215,26 @@ class MFForecastParserTests(TestCase):
         self.assertEqual(parsed["provider_asset_type_overrides"], 1)
         self.assertIn("MFFORECAST_PROVIDER_ASSET_TYPE_OVERRIDDEN", parsed["quality_flags"])
 
+    def test_corrects_known_bajaj_finance_ncd_by_isin_when_name_has_no_debt_marker(self):
+        parsed = parse_mfforecast_holdings(
+            {
+                "holdings_count": 1,
+                "holdings": [
+                    {
+                        "name": "Bajaj Finance Limited",
+                        "isin": "INE296A07TN6",
+                        "asset_type": "REIT",
+                        "weight_pct": 0.0032,
+                    }
+                ],
+            },
+            scheme_code="120438",
+        )
+
+        self.assertEqual(parsed["holdings"][0]["instrument_type"], "BOND")
+        self.assertEqual(parsed["provider_asset_type_overrides"], 1)
+        self.assertIn("MFFORECAST_PROVIDER_ASSET_TYPE_OVERRIDDEN", parsed["quality_flags"])
+
     def test_rejects_response_for_different_amfi_scheme_code(self):
         payload = read_live_schema_payload()
         payload["amfi_code"] = "120503"

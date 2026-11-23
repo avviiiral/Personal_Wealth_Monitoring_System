@@ -77,15 +77,25 @@ def build_mfforecast_headers(*, base_url: str, api_key: str, api_key_header: str
     return {header_name: key} if key else {}
 
 
-def _mfforecast_instrument_type(raw_type: str, security_name: str) -> tuple[str, bool]:
+# NSE corporate filing identifies this exact provider-mislabelled ISIN as an NCD.
+MFFORECAST_REIT_MISLABELLED_DEBT_ISINS = {"INE296A07TN6"}
+
+
+def _mfforecast_instrument_type(
+    raw_type: str,
+    security_name: str,
+    isin: str = "",
+) -> tuple[str, bool]:
     """Correct clear InvIT and debt labels supplied incorrectly as REIT.
 
-    A plain REIT label remains REIT. The provider's live response has,
-    however, labelled identifiable infrastructure trusts and coupon-bearing
-    or maturity-dated debt instruments as REIT.
+    A plain REIT label remains REIT. Known mislabelled debt ISINs take
+    precedence, followed by identifiable infrastructure trusts and
+    coupon-bearing or maturity-dated debt instruments.
     """
     provider_type = normalize_text(raw_type).casefold()
     if provider_type in {"reit", "real estate investment trust"}:
+        if normalize_isin(isin) in MFFORECAST_REIT_MISLABELLED_DEBT_ISINS:
+            return "BOND", True
         # The provider has returned "REIT" for Indus Infra Trust. Explicit
         # infrastructure-trust names are InvIT units, not real-estate REITs.
         has_invit_identity = bool(
@@ -156,12 +166,15 @@ def parse_mfforecast_holdings(payload: dict, *, scheme_code: str) -> dict:
             continue
 
         raw_type = normalize_text(item.get("asset_type"))
-        instrument_type, type_overridden = _mfforecast_instrument_type(raw_type, security_name)
+        isin = normalize_isin(item.get("isin"))
+        instrument_type, type_overridden = _mfforecast_instrument_type(
+            raw_type, security_name, isin,
+        )
         provider_asset_type_overrides += int(type_overridden)
         rows.append({
             "security_name": security_name[:300],
             "ticker": normalize_text(item.get("ticker"))[:40],
-            "isin": normalize_isin(item.get("isin")),
+            "isin": isin,
             "quantity": decimal_value(item.get("quantity")),
             "pct_of_nav": weight,
             "instrument_type": instrument_type,

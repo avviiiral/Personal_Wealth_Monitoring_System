@@ -77,7 +77,7 @@
           <th class="sortable-header" (click)="cycleSort('CAGR')">CAGR <span class="sort-indicator">{{ getSortIndicator('CAGR') }}</span></th>
           <th class="sortable-header" (click)="cycleSort('AUM')">AUM <span class="sort-indicator">{{ getSortIndicator('AUM') }}</span></th>
           <th *ngIf="productTab !== 'PMS'" class="sortable-header" (click)="cycleSort('TER')">TER <span class="sort-indicator">{{ getSortIndicator('TER') }}</span></th>
-          <th *ngIf="productTab !== 'PMS'" class="sortable-header" (click)="cycleSort('STD_DEV')">Std Dev <span class="sort-indicator">{{ getSortIndicator('STD_DEV') }}</span></th>
+          <th *ngIf="productTab !== 'PMS'" class="sortable-header" (click)="cycleSort('STD_DEV')">Std Dev (ann.) <span class="sort-indicator">{{ getSortIndicator('STD_DEV') }}</span></th>
           <th *ngIf="productTab !== 'PMS'" class="sortable-header" (click)="cycleSort('SHARPE')">Sharpe <span class="sort-indicator">{{ getSortIndicator('SHARPE') }}</span></th>
         </tr>
       </thead>

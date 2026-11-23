@@ -117,10 +117,10 @@ class MasterDataParsingTests(TestCase):
 
     def test_total_ter_is_selected_over_base_expense_ratio(self):
         payload = (
-            "Scheme Name\\tISIN\\tPlan\\tBase Expense Ratio (BER)\\t"
-            "Brokerage Cost\\tTransaction Cost\\tStatutory Levies\\tTotal Expense Ratio\\n"
-            "PWMS Large Cap Fund\\tINF000A01001\\tDirect Plan\\t0.55\\t"
-            "0.02\\t0.01\\t0.03\\t0.61\\n"
+            "Scheme Name\tISIN\tPlan\tBase Expense Ratio (BER)\t"
+            "Brokerage Cost\tTransaction Cost\tStatutory Levies\tTotal Expense Ratio\n"
+            "PWMS Large Cap Fund\tINF000A01001\tDirect Plan\t0.55\t"
+            "0.02\t0.01\t0.03\t0.61\n"
         )
         rows = parse_ter_rows(
             payload.encode("utf-8"),
@@ -132,8 +132,8 @@ class MasterDataParsingTests(TestCase):
 
     def test_ber_only_file_is_not_misreported_as_total_ter(self):
         payload = (
-            "Scheme Name\\tISIN\\tPlan\\tBase Expense Ratio (BER)\\n"
-            "PWMS Large Cap Fund\\tINF000A01001\\tDirect Plan\\t0.55\\n"
+            "Scheme Name\tISIN\tPlan\tBase Expense Ratio (BER)\n"
+            "PWMS Large Cap Fund\tINF000A01001\tDirect Plan\t0.55\n"
         )
         with self.assertRaisesRegex(ValueError, "BER alone is not Total TER"):
             parse_ter_rows(

@@ -172,6 +172,10 @@ def _instrument_type(raw_type, security_name):
         return "CASH"
     if any(x in value for x in ("equity", "shares", "stock", "listed equity")):
         return "EQUITY"
+    if any(x in value for x in ("reit", "real estate investment trust")):
+        return "REIT"
+    if any(x in value for x in ("invit", "infrastructure investment trust")):
+        return "INVIT"
     if any(x in value for x in ("government security", "g sec", "gsec", "bond", "debt", "fixed income", "debenture", "ncd", "certificate of deposit", "commercial paper", "treasury bill", "t bill", "state development loan")):
         return "BOND"
     if any(x in value for x in ("exchange traded fund", " etf", "mutual fund unit")):

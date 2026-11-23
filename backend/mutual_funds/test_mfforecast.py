@@ -15,7 +15,9 @@ from mutual_funds.master_models import (
 )
 from mutual_funds.services.masterdata import persist_portfolio_rows
 from mutual_funds.services.mfforecast import (
+    build_mfforecast_headers,
     fetch_mfforecast_payload,
+    normalize_mfforecast_base_url,
     parse_mfforecast_holdings,
 )
 from mutual_funds.services.masterdata_analytics import _holdings_metrics
@@ -26,6 +28,52 @@ FIXTURES = Path(__file__).resolve().parent / "tests" / "fixtures" / "masterdata"
 
 def read_payload():
     return json.loads((FIXTURES / "mfforecast_holdings_sample.json").read_text(encoding="utf-8"))
+
+
+class MFForecastRapidAPIConfigTests(SimpleTestCase):
+    def test_strips_full_scheme_endpoint_from_configured_api_base_url(self):
+        self.assertEqual(
+            normalize_mfforecast_base_url(
+                "https://indian-mutual-fund-portfolio-holding.p.rapidapi.com/funds/120503/holdings"
+            ),
+            "https://indian-mutual-fund-portfolio-holding.p.rapidapi.com",
+        )
+
+    def test_rapidapi_headers_include_host_and_key_separately(self):
+        headers = build_mfforecast_headers(
+            base_url="https://indian-mutual-fund-portfolio-holding.p.rapidapi.com",
+            api_key="secret-value",
+            api_key_header="x-rapidapi-key",
+        )
+        self.assertEqual(
+            headers,
+            {
+                "X-RapidAPI-Key": "secret-value",
+                "X-RapidAPI-Host": "indian-mutual-fund-portfolio-holding.p.rapidapi.com",
+            },
+        )
+
+    def test_rapidapi_key_header_defaults_when_not_configured(self):
+        headers = build_mfforecast_headers(
+            base_url="https://indian-mutual-fund-portfolio-holding.p.rapidapi.com",
+            api_key="secret-value",
+        )
+        self.assertEqual(headers["X-RapidAPI-Key"], "secret-value")
+        self.assertEqual(
+            headers["X-RapidAPI-Host"],
+            "indian-mutual-fund-portfolio-holding.p.rapidapi.com",
+        )
+
+    def test_rejects_full_header_line_in_key_header_setting(self):
+        with self.assertRaisesMessage(ValueError, "not a full header line"):
+            build_mfforecast_headers(
+                base_url="https://indian-mutual-fund-portfolio-holding.p.rapidapi.com",
+                api_key="secret-value",
+                api_key_header=(
+                    "x-rapidapi-host: "
+                    "indian-mutual-fund-portfolio-holding.p.rapidapi.com"
+                ),
+            )
 
 
 class MFForecastParserTests(TestCase):

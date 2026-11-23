@@ -1,8 +1,8 @@
 """MF Forecast holdings API adapter.
 
-The endpoint example documents scheme-level metadata and holdings, but no
-portfolio disclosure date. These observations are therefore timestamped as
-retrieval-date snapshots unless a dated disclosure field is later documented.
+Live responses may include a nested provider snapshot with an as-of date.
+That date is used when available; otherwise holdings remain retrieval-date
+snapshots. Provider-specific units and classifications are quality-flagged.
 """
 from __future__ import annotations
 

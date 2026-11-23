@@ -27,7 +27,7 @@ SOURCE = "MFFORECAST_API"
 class Command(BaseCommand):
     help = (
         "Import bounded scheme holdings snapshots from MF Forecast. "
-        "The documented response does not include a disclosure date."
+        "Uses the provider snapshot date when supplied, otherwise retrieval date."
     )
 
     def add_arguments(self, parser):
@@ -113,6 +113,7 @@ class Command(BaseCommand):
             "schemes_with_response": 0,
             "schemes_with_holdings": 0,
             "schemes_without_valid_holdings": 0,
+            "schemes_with_provider_as_of_date": 0,
             "schemes_not_found": 0,
             "holdings_parsed": 0,
             "holdings_inserted": 0,
@@ -143,8 +144,16 @@ class Command(BaseCommand):
                             payload, scheme_code=scheme.scheme_code,
                         )
                         observed_at = timezone.now()
-                        portfolio_date = timezone.localdate(observed_at)
+                        provider_as_of_date = parsed["provider_as_of_date"]
+                        portfolio_date = provider_as_of_date or timezone.localdate(observed_at)
+                        portfolio_date_basis = (
+                            MFMasterHolding.DATE_BASIS_DISCLOSURE
+                            if provider_as_of_date
+                            else MFMasterHolding.DATE_BASIS_FETCHED_AT
+                        )
                         rows = parsed["holdings"]
+                        if provider_as_of_date:
+                            counters["schemes_with_provider_as_of_date"] += 1
                         counters["schemes_with_response"] += 1
                         counters["holdings_parsed"] += len(rows)
                         if rows:
@@ -170,6 +179,9 @@ class Command(BaseCommand):
                                 f"provider_count={parsed['provider_holdings_count']} | "
                                 f"holdings={len(rows)} | invalid_rows={parsed['invalid_rows']} | "
                                 f"weight_total={parsed['total_weight_pct']} | "
+                                f"weight_scale_factor={parsed['weight_scale_factor']} | "
+                                f"provider_as_of_date={provider_as_of_date or 'not supplied'} | "
+                                f"asset_type_overrides={parsed['provider_asset_type_overrides']} | "
                                 f"snapshot_keys={','.join(sorted(parsed['provider_snapshot'])) or 'not supplied'} | "
                                 f"quality_flags={parsed['quality_flags']} | "
                                 f"raw_cache={raw_path or 'not available'}"
@@ -184,7 +196,7 @@ class Command(BaseCommand):
                                 scheme=scheme,
                                 provider=MFExternalPortfolioSnapshot.PROVIDER_MFFORECAST,
                                 observed_at=observed_at,
-                                provider_as_of_date=None,
+                                provider_as_of_date=provider_as_of_date,
                                 scheme_name=parsed["scheme_name"],
                                 fund_house=parsed["fund_house"],
                                 category=parsed["category"],
@@ -201,7 +213,7 @@ class Command(BaseCommand):
                                 scheme,
                                 rows,
                                 portfolio_date=portfolio_date,
-                                portfolio_date_basis=MFMasterHolding.DATE_BASIS_FETCHED_AT,
+                                portfolio_date_basis=portfolio_date_basis,
                                 source=SOURCE,
                                 source_url=endpoint,
                             )
@@ -250,7 +262,7 @@ class Command(BaseCommand):
                     "api_key_configured": bool(api_key),
                     "observation_started_at": observed_start.isoformat(),
                     "observation_completed_at": timezone.now().isoformat(),
-                    "portfolio_date_basis": "FETCHED_AT",
+                    "portfolio_date_basis": "PROVIDER_AS_OF_WHEN_SUPPLIED_ELSE_FETCHED_AT",
                 },
             )
 

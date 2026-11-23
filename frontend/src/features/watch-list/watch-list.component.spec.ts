@@ -31,6 +31,52 @@ describe('WatchListComponent', () => {
     ]);
   });
 
+  it('never substitutes a Direct TER for a Regular plan or vice versa', () => {
+    const direct = {
+      mutual_fund: {
+        plan: 'Direct Plan',
+        research_metrics: { ter_direct_pct: 0.55, ter_regular_pct: 1.75 },
+      },
+    } as any;
+    const regular = {
+      mutual_fund: {
+        plan: 'Regular Plan',
+        research_metrics: { ter_direct_pct: 0.55, ter_regular_pct: 1.75 },
+      },
+    } as any;
+    const regularWithoutDisclosure = {
+      mutual_fund: {
+        plan: 'Regular Plan',
+        research_metrics: { ter_direct_pct: 0.55, ter_regular_pct: null },
+      },
+    } as any;
+
+    expect(component.terValue(direct)).toBe(0.55);
+    expect(component.terValue(regular)).toBe(1.75);
+    expect(component.terValue(regularWithoutDisclosure)).toBeNull();
+  });
+
+  it('explains missing TER and risk values from the stored research quality flags', () => {
+    const product = {
+      mutual_fund: {
+        plan: 'Direct Plan',
+        research_metrics: {
+          ter_direct_pct: null,
+          ter_regular_pct: 1.75,
+          std_dev_pct: null,
+          sharpe: null,
+          data_quality_flags: ['NAV_HISTORY_NOT_AVAILABLE'],
+          field_sources: {},
+        },
+      },
+    } as any;
+
+    expect(component.researchMetricTitle(product, 'ter_direct_pct'))
+      .toContain('opposite plan\'s TER is not substituted');
+    expect(component.researchMetricTitle(product, 'std_dev_pct'))
+      .toContain('No usable historical NAV series');
+  });
+
   it('filters returned and cached rows according to the selected status tab', () => {
     const products = [
       { id: 1, status: 'WATCHLIST', is_watchlisted: true },

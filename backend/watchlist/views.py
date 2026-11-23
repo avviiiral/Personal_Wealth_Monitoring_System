@@ -79,9 +79,17 @@ def _filtered_products(request, product_type=None):
     # Keep those checks on the outer InvestmentProduct queryset so products with
     # only a current AUM value remain displayable without generating an invalid
     # reverse lookup inside the snapshot subquery.
+    research_aum = MFMasterData.objects.filter(
+        as_of_date__lte=timezone.localdate(),
+        aum_cr__isnull=False,
+    ).filter(
+        Q(scheme__scheme_code=OuterRef("external_identifier"))
+        | Q(scheme__scheme_code=OuterRef("mutual_fund__scheme_code"))
+    )
     displayable_product = (
         Q(mutual_fund__aum__isnull=False)
         | Q(pms__aum__isnull=False)
+        | Q(Exists(research_aum))
     )
     # OWNED is an ownership view, so an owned product remains visible even
     # before its first performance snapshot has been imported.

@@ -212,9 +212,14 @@ def parse_mfforecast_holdings(payload: dict, *, scheme_code: str) -> dict:
         and provider_holdings_count == len(raw_holdings)
         and len(raw_holdings) == len(rows) + missing_weight_rows
     )
+    scale_inference_eligible = complete_response or missing_weights_only_response
+    scale_inference_low_coverage = (
+        scale_inference_eligible
+        and Decimal("0") < raw_total_weight < Decimal("0.50")
+    )
     if (
-        (complete_response or missing_weights_only_response)
-        and Decimal("0") < raw_total_weight <= Decimal("1.05")
+        scale_inference_eligible
+        and Decimal("0.50") <= raw_total_weight <= Decimal("1.05")
     ):
         weight_scale_factor = Decimal("100")
         for row in rows:
@@ -244,6 +249,8 @@ def parse_mfforecast_holdings(payload: dict, *, scheme_code: str) -> dict:
         quality_flags.append("MFFORECAST_WEIGHT_SCALE_INFERRED_FRACTION_TO_PERCENT")
         if missing_weight_rows:
             quality_flags.append("MFFORECAST_WEIGHT_SCALE_INFERRED_WITH_MISSING_WEIGHT_ROWS")
+    if scale_inference_low_coverage:
+        quality_flags.append("MFFORECAST_WEIGHT_SCALE_NOT_INFERRED_LOW_RAW_TOTAL")
     if snapshot_date_raw and provider_as_of_date is None:
         quality_flags.append("MFFORECAST_SNAPSHOT_DATE_INVALID")
     if rows and abs(total_weight - Decimal("100")) > Decimal("1.0"):

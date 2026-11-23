@@ -260,6 +260,33 @@ class MFForecastParserTests(TestCase):
             parsed["quality_flags"],
         )
 
+    def test_does_not_infer_fractional_scale_from_a_very_low_raw_weight_total(self):
+        parsed = parse_mfforecast_holdings(
+            {
+                "holdings_count": 1,
+                "holdings": [
+                    {
+                        "name": "Security with a very low reported weight",
+                        "asset_type": "DEBT",
+                        "weight_pct": 0.0103,
+                    }
+                ],
+            },
+            scheme_code="122715",
+        )
+
+        self.assertEqual(parsed["holdings_count"], 1)
+        self.assertEqual(parsed["weight_scale_factor"], Decimal("1"))
+        self.assertEqual(parsed["total_weight_pct"], Decimal("0.0103"))
+        self.assertIn(
+            "MFFORECAST_WEIGHT_SCALE_NOT_INFERRED_LOW_RAW_TOTAL",
+            parsed["quality_flags"],
+        )
+        self.assertNotIn(
+            "MFFORECAST_WEIGHT_SCALE_INFERRED_FRACTION_TO_PERCENT",
+            parsed["quality_flags"],
+        )
+
     def test_corrects_infrastructure_trust_mislabeled_as_reit_but_keeps_real_reit(self):
         parsed = parse_mfforecast_holdings(
             {

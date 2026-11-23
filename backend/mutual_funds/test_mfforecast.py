@@ -6,6 +6,7 @@ from tempfile import TemporaryDirectory
 from unittest.mock import Mock, patch
 
 import requests
+from django.core.management import call_command
 from django.test import SimpleTestCase, TestCase
 
 from mutual_funds.models import AMFIMasterScheme
@@ -167,6 +168,56 @@ class MFForecastFetchTests(SimpleTestCase):
 
         session.get.assert_called_once()
         throttle.assert_called_once()
+
+class MFForecastEmptyResponseCommandTests(TestCase):
+    def setUp(self):
+        self.scheme = AMFIMasterScheme.objects.create(
+            scheme_code="128629",
+            scheme_name="HDFC Banking and PSU Debt Fund - Direct Plan - Growth",
+            amc_name="HDFC Mutual Fund",
+            isin_growth="INF179KA1IZ7",
+            plan="Direct Plan",
+            option="Growth",
+            is_growth_plan=True,
+            is_active=True,
+        )
+
+    @patch("mutual_funds.management.commands.sync_mfforecast_holdings.fetch_mfforecast_payload")
+    def test_empty_holdings_response_is_audited_as_partial_not_success(self, fetch):
+        fetch.return_value = (
+            {
+                "scheme_name": "HDFC Banking and PSU Debt Fund",
+                "fund_house": "HDFC Mutual Fund",
+                "category": "Banking and PSU",
+                "aum_cr": 5000,
+                "expense_ratio": 0.4,
+                "asset_allocation": {"equity_pct": 0, "debt_pct": 95, "cash_pct": 5},
+                "holdings": [],
+            },
+            "https://api.example.test/funds/128629/holdings",
+            "",
+        )
+
+        with patch.dict(
+            "os.environ",
+            {"MFFORECAST_API_KEY": "", "MFFORECAST_API_KEY_HEADER": ""},
+        ):
+            call_command(
+                "sync_mfforecast_holdings",
+                scheme_codes=["128629"],
+                base_url="https://api.example.test",
+                limit=1,
+            )
+
+        run = MFSourceRun.objects.get(source="MFFORECAST_API")
+        snapshot = MFExternalPortfolioSnapshot.objects.get(scheme=self.scheme)
+        self.assertEqual(run.status, MFSourceRun.Status.PARTIAL)
+        self.assertEqual(run.metadata["schemes_empty_holdings"], 1)
+        self.assertEqual(snapshot.holdings_count, 0)
+        self.assertIn("MFFORECAST_HOLDINGS_EMPTY", snapshot.quality_flags)
+        self.assertFalse(MFMasterHolding.objects.filter(scheme=self.scheme).exists())
+        self.assertIn("empty holdings array", run.errors[0]["error"])
+
 
 class MFForecastPersistenceAndAnalyticsTests(TestCase):
     def setUp(self):

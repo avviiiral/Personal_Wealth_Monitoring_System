@@ -219,6 +219,8 @@ def calculate_scheme_masterdata_metrics(
             "risk_free_rate_annual_pct": risk_free_rate * 100,
             "minimum_return_observations": 2,
         }
+        if (metrics.get("Risk_Return_Observations") or 0) < 2:
+            flags.append("INSUFFICIENT_NAV_OBSERVATIONS_FOR_RISK_METRICS")
         values.update({
             "return_1m_pct": _simple_return(series, as_of_date, 1),
             "return_3m_pct": _simple_return(series, as_of_date, 3),

@@ -76,6 +76,9 @@
           <th class="sortable-header" (click)="cycleSort('5Y')">5Y <span class="sort-indicator">{{ getSortIndicator('5Y') }}</span></th>
           <th class="sortable-header" (click)="cycleSort('CAGR')">CAGR <span class="sort-indicator">{{ getSortIndicator('CAGR') }}</span></th>
           <th class="sortable-header" (click)="cycleSort('AUM')">AUM <span class="sort-indicator">{{ getSortIndicator('AUM') }}</span></th>
+          <th *ngIf="productTab !== 'PMS'" class="sortable-header" (click)="cycleSort('TER')">TER <span class="sort-indicator">{{ getSortIndicator('TER') }}</span></th>
+          <th *ngIf="productTab !== 'PMS'" class="sortable-header" (click)="cycleSort('STD_DEV')">Std Dev <span class="sort-indicator">{{ getSortIndicator('STD_DEV') }}</span></th>
+          <th *ngIf="productTab !== 'PMS'" class="sortable-header" (click)="cycleSort('SHARPE')">Sharpe <span class="sort-indicator">{{ getSortIndicator('SHARPE') }}</span></th>
         </tr>
       </thead>
       <tbody>
@@ -124,9 +127,12 @@
           <td [class.positive-value]="metric(product, '3Y') !== null && metric(product, '3Y')! > 0" [class.negative-value]="metric(product, '3Y') !== null && metric(product, '3Y')! < 0">{{ formatPercent(metric(product, '3Y')) }}</td>
           <td [class.positive-value]="metric(product, '5Y') !== null && metric(product, '5Y')! > 0" [class.negative-value]="metric(product, '5Y') !== null && metric(product, '5Y')! < 0">{{ formatPercent(metric(product, '5Y')) }}</td>
           <td [class.positive-value]="metric(product, 'CAGR') !== null && metric(product, 'CAGR')! > 0" [class.negative-value]="metric(product, 'CAGR') !== null && metric(product, 'CAGR')! < 0">{{ formatPercent(metric(product, 'CAGR')) }}</td>
-          <td>{{ formatAmount(product.mutual_fund?.aum ?? product.pms?.aum ?? null) }}</td>
+          <td [title]="product.mutual_fund?.research_metrics?.aum_as_of ? ('AUM as of ' + product.mutual_fund.research_metrics.aum_as_of + ' · ' + (product.mutual_fund.research_metrics.aum_type || '')) : ''">{{ formatAum(product) }}</td>
+          <td *ngIf="productTab !== 'PMS'" [title]="researchMetricTitle(product, 'ter_direct_pct')">{{ formatPercent(terValue(product)) }}</td>
+          <td *ngIf="productTab !== 'PMS'" [title]="researchMetricTitle(product, 'std_dev_pct')">{{ formatPercent(product.mutual_fund?.research_metrics?.std_dev_pct ?? null) }}</td>
+          <td *ngIf="productTab !== 'PMS'" [title]="researchMetricTitle(product, 'sharpe')">{{ formatRatio(product.mutual_fund?.research_metrics?.sharpe ?? null) }}</td>
         </tr>
-        <tr *ngIf="products.length === 0"><td [attr.colspan]="status === 'WATCHLIST' ? (productTab === 'PMS' ? 18 : 19) : (productTab === 'PMS' ? 16 : 17)" class="empty">No products match the current filters.</td></tr>
+        <tr *ngIf="products.length === 0"><td [attr.colspan]="status === 'WATCHLIST' ? (productTab === 'PMS' ? 18 : 22) : (productTab === 'PMS' ? 16 : 20)" class="empty">No products match the current filters.</td></tr>
       </tbody>
     </table>
   </div>

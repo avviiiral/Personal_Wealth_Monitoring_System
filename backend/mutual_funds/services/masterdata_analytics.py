@@ -170,15 +170,43 @@ def calculate_scheme_masterdata_metrics(
     """Return calculated MFMasterData fields, quality flags and source URLs."""
     nav_rows = list(
         AMFIMasterNAV.objects.filter(scheme=scheme, date__lte=as_of_date)
-        .order_by("date").values_list("date", "nav")
+        .order_by("date", "source").values_list("date", "nav", "source")
     )
-    series = [(day, float(nav)) for day, nav in nav_rows if nav and float(nav) > 0]
+    # AMFI NAVAll contributes a fresh current NAV while MFapi.in supplies the
+    # longer history. A date must contribute only one observation to returns
+    # and risk calculations; prefer the official AMFI observation on collisions.
+    source_priority = {"AMFI_NAVALL": 3, "AMFI": 3, "mfapi.in": 2}
+    nav_by_date = {}
+    for nav_date, nav, source in nav_rows:
+        if nav is None or float(nav) <= 0:
+            continue
+        current = nav_by_date.get(nav_date)
+        if current is None or source_priority.get(source, 0) > source_priority.get(current[1], 0):
+            nav_by_date[nav_date] = (float(nav), source)
+    series = [(day, value[0]) for day, value in sorted(nav_by_date.items())]
+    used_nav_sources = {value[1] for value in nav_by_date.values()}
+    nav_source_urls = []
+    if "AMFI_NAVALL" in used_nav_sources or "AMFI" in used_nav_sources:
+        nav_source_urls.append("https://www.amfiindia.com/spages/NAVAll.txt")
+    if "mfapi.in" in used_nav_sources:
+        nav_source_urls.append(f"https://api.mfapi.in/mf/{scheme.scheme_code}")
+    nav_source_url = "; ".join(nav_source_urls)
     flags = []
     values = {}
-    nav_source_url = "https://portal.amfiindia.com/spages/NAVAll.txt"
+    risk_metric_metadata = {}
     if series:
         from mutual_funds.services.sebi_mf_analytics import compute_fund_performance_metrics
         metrics = compute_fund_performance_metrics(series, risk_free_rate=risk_free_rate)
+        risk_metric_metadata = {
+            "method": "DAILY_NAV_RETURNS",
+            "annualization_factor": 252,
+            "window_start_date": metrics.get("Risk_Window_Start_Date"),
+            "window_end_date": metrics.get("NAV_End_Date"),
+            "window_days": metrics.get("Risk_Window_Days"),
+            "return_observations": metrics.get("Risk_Return_Observations"),
+            "risk_free_rate_annual_pct": risk_free_rate * 100,
+            "minimum_return_observations": 2,
+        }
         values.update({
             "return_1m_pct": _simple_return(series, as_of_date, 1),
             "return_3m_pct": _simple_return(series, as_of_date, 3),
@@ -274,4 +302,5 @@ def calculate_scheme_masterdata_metrics(
         "data_quality_flags": sorted(set(flags)),
         "source_urls": source_urls,
         "nav_observations": len(series),
+        "risk_metric_metadata": risk_metric_metadata,
     }

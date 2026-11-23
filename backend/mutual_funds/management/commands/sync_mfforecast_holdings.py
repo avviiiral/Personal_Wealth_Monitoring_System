@@ -114,6 +114,7 @@ class Command(BaseCommand):
             "schemes_with_holdings": 0,
             "schemes_without_valid_holdings": 0,
             "schemes_with_provider_as_of_date": 0,
+            "schemes_with_holdings_count_mismatch": 0,
             "schemes_not_found": 0,
             "holdings_parsed": 0,
             "holdings_inserted": 0,
@@ -154,6 +155,11 @@ class Command(BaseCommand):
                         rows = parsed["holdings"]
                         if provider_as_of_date:
                             counters["schemes_with_provider_as_of_date"] += 1
+                        if (
+                            parsed["provider_holdings_count"]
+                            and parsed["provider_holdings_count"] != len(rows)
+                        ):
+                            counters["schemes_with_holdings_count_mismatch"] += 1
                         counters["schemes_with_response"] += 1
                         counters["holdings_parsed"] += len(rows)
                         if rows:
@@ -243,7 +249,12 @@ class Command(BaseCommand):
                     MFSourceRun.Status.PARTIAL
                     if counters["snapshots_saved"] else MFSourceRun.Status.FAILED
                 )
-            elif errors or counters["schemes_not_found"] or counters["schemes_without_valid_holdings"]:
+            elif (
+                errors
+                or counters["schemes_not_found"]
+                or counters["schemes_without_valid_holdings"]
+                or counters["schemes_with_holdings_count_mismatch"]
+            ):
                 status = MFSourceRun.Status.PARTIAL
             else:
                 status = MFSourceRun.Status.SUCCESS
@@ -271,6 +282,7 @@ class Command(BaseCommand):
             f"responses={counters['schemes_with_response']} "
             f"with_holdings={counters['schemes_with_holdings']} "
             f"without_valid_holdings={counters['schemes_without_valid_holdings']} "
+            f"count_mismatch={counters['schemes_with_holdings_count_mismatch']} "
             f"not_found={counters['schemes_not_found']} "
             f"holdings={counters['holdings_parsed']} "
             f"inserted={counters['holdings_inserted']} "

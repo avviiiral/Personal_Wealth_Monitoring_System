@@ -2,8 +2,11 @@ import json
 from datetime import date
 from decimal import Decimal
 from pathlib import Path
+from tempfile import TemporaryDirectory
+from unittest.mock import Mock, patch
 
-from django.test import TestCase
+import requests
+from django.test import SimpleTestCase, TestCase
 
 from mutual_funds.models import AMFIMasterScheme
 from mutual_funds.master_models import (
@@ -11,7 +14,10 @@ from mutual_funds.master_models import (
     MFMasterHolding,
 )
 from mutual_funds.services.masterdata import persist_portfolio_rows
-from mutual_funds.services.mfforecast import parse_mfforecast_holdings
+from mutual_funds.services.mfforecast import (
+    fetch_mfforecast_payload,
+    parse_mfforecast_holdings,
+)
 from mutual_funds.services.masterdata_analytics import _holdings_metrics
 
 
@@ -51,6 +57,68 @@ class MFForecastParserTests(TestCase):
         self.assertEqual(parsed["invalid_rows"], 1)
         self.assertIn("MFFORECAST_INVALID_HOLDING_ROWS_SKIPPED", parsed["quality_flags"])
 
+
+class MFForecastFetchTests(SimpleTestCase):
+    @patch("mutual_funds.services.mfforecast._throttle")
+    def test_fetch_uses_documented_path_and_disables_redirects(self, throttle):
+        response = requests.Response()
+        response.status_code = 200
+        response._content = b'{"holdings": []}'
+        session = Mock()
+        session.get.return_value = response
+        payload = {"holdings": []}
+
+        with TemporaryDirectory() as temp_dir:
+            with patch(
+                "mutual_funds.services.mfforecast.source_raw_directory",
+                return_value=Path(temp_dir),
+            ), patch.object(response, "json", return_value=payload):
+                result, endpoint, raw_path = fetch_mfforecast_payload(
+                    session=session,
+                    base_url="https://api.example.test/v1",
+                    scheme_code="120503",
+                )
+
+        self.assertEqual(result, payload)
+        self.assertEqual(endpoint, "https://api.example.test/v1/funds/120503/holdings")
+        self.assertTrue(Path(raw_path).is_file())
+        self.assertEqual(session.get.call_args.kwargs["allow_redirects"], False)
+        self.assertIn("Accept", session.get.call_args.kwargs["headers"])
+        throttle.assert_called_once()
+
+    @patch("mutual_funds.services.mfforecast._throttle")
+    def test_fetch_returns_none_on_404(self, throttle):
+        response = requests.Response()
+        response.status_code = 404
+        session = Mock()
+        session.get.return_value = response
+
+        payload, endpoint, raw_path = fetch_mfforecast_payload(
+            session=session, base_url="https://api.example.test", scheme_code="120503",
+        )
+
+        self.assertIsNone(payload)
+        self.assertEqual(endpoint, "https://api.example.test/funds/120503/holdings")
+        self.assertEqual(raw_path, "")
+
+    @patch("mutual_funds.services.mfforecast._throttle")
+    def test_fetch_rejects_redirect_before_forwarding_custom_headers(self, throttle):
+        response = requests.Response()
+        response.status_code = 302
+        response.headers["Location"] = "https://other.example.test/collect"
+        session = Mock()
+        session.get.return_value = response
+
+        with self.assertRaisesMessage(ValueError, "Redirects are disabled"):
+            fetch_mfforecast_payload(
+                session=session,
+                base_url="https://api.example.test",
+                scheme_code="120503",
+                headers={"x-api-key": "test-secret"},
+            )
+
+        session.get.assert_called_once()
+        throttle.assert_called_once()
 
 class MFForecastPersistenceAndAnalyticsTests(TestCase):
     def setUp(self):

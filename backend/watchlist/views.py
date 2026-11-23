@@ -287,15 +287,21 @@ def _latest_masterdata_snapshots(products):
     all_isins = set()
     for product in mutual_funds:
         mutual_fund = getattr(product, "mutual_fund", None)
-        code = str(
-            product.external_identifier
-            or getattr(mutual_fund, "scheme_code", "")
-            or ""
-        ).strip()
+        # The AMFI scheme code on the MF child row is authoritative. Older
+        # provider imports can leave a different external_identifier behind;
+        # keep that identifier only as a secondary scheme-code candidate.
+        codes = []
+        for candidate in (
+            getattr(mutual_fund, "scheme_code", ""),
+            product.external_identifier,
+        ):
+            code = str(candidate or "").strip()
+            if code and code not in codes:
+                codes.append(code)
+                all_codes.add(code)
+        if codes:
+            product_codes[product.id] = codes
         isin = str(product.isin or "").strip().upper()
-        if code:
-            product_codes[product.id] = code
-            all_codes.add(code)
         if isin:
             product_isins[product.id] = isin
             all_isins.add(isin)
@@ -325,7 +331,11 @@ def _latest_masterdata_snapshots(products):
 
     scheme_by_product = {}
     for product in mutual_funds:
-        scheme_id = schemes_by_code.get(product_codes.get(product.id, ""))
+        scheme_id = None
+        for code in product_codes.get(product.id, []):
+            scheme_id = schemes_by_code.get(code)
+            if scheme_id is not None:
+                break
         if scheme_id is None:
             isin = product_isins.get(product.id, "")
             if isin and isin not in ambiguous_isins:

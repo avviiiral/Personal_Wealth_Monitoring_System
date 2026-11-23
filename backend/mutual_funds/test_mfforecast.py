@@ -110,9 +110,18 @@ class MFForecastParserTests(TestCase):
         )
 
         self.assertEqual(parsed["scheme_code"], "128629")
-        self.assertEqual(parsed["provider_holdings_count"], 3)
+        # This fixture intentionally contains only the first three rows from
+        # a provider response declaring 102 total rows.
+        self.assertEqual(parsed["provider_holdings_count"], 102)
         self.assertEqual(parsed["holdings_count"], 3)
         self.assertEqual(parsed["invalid_rows"], 0)
+        self.assertEqual(parsed["provider_as_of_date"], date(2026, 9, 30))
+        self.assertEqual(parsed["aum_cr"], Decimal("5055.4600"))
+        self.assertIsNone(parsed["expense_ratio_pct"])
+        self.assertEqual(
+            parsed["asset_allocation"],
+            {"equity_pct": "32.9900", "debt_pct": "67.0100"},
+        )
         self.assertEqual(
             [row["security_name"] for row in parsed["holdings"]],
             [
@@ -123,7 +132,7 @@ class MFForecastParserTests(TestCase):
         )
         self.assertEqual(
             [row["instrument_type"] for row in parsed["holdings"]],
-            ["BOND", "REIT", "BOND"],
+            ["BOND", "BOND", "BOND"],
         )
         self.assertEqual(
             [row["pct_of_nav"] for row in parsed["holdings"]],
@@ -131,8 +140,53 @@ class MFForecastParserTests(TestCase):
         )
         self.assertEqual(parsed["holdings"][0]["isin"], "INE053F08387")
         self.assertIsNone(parsed["holdings"][0]["ticker"])
-        self.assertIn("MFFORECAST_ASSET_ALLOCATION_NOT_PROVIDED", parsed["quality_flags"])
+        # Do not infer a weight scale from this truncated three-row fixture.
+        self.assertEqual(parsed["weight_scale_factor"], Decimal("1"))
+        self.assertIn("MFFORECAST_ASSET_ALLOCATION_INCOMPLETE", parsed["quality_flags"])
+        self.assertIn("MFFORECAST_PROVIDER_ASSET_TYPE_OVERRIDDEN", parsed["quality_flags"])
+        self.assertIn("MFFORECAST_PROVIDER_HOLDINGS_COUNT_MISMATCH", parsed["quality_flags"])
+        self.assertNotIn("MFFORECAST_ASSET_ALLOCATION_NOT_PROVIDED", parsed["quality_flags"])
         self.assertNotIn("MFFORECAST_INVALID_HOLDING_ROWS_SKIPPED", parsed["quality_flags"])
+
+    def test_infers_fractional_weights_only_for_a_complete_response(self):
+        parsed = parse_mfforecast_holdings(
+            {
+                "holdings_count": 3,
+                "holdings": [
+                    {
+                        "name": "7.10% Government of India 2030",
+                        "weight_pct": 0.5000,
+                        "asset_type": "REIT",
+                    },
+                    {
+                        "name": "7.35% NABARD (31/03/2030)",
+                        "weight_pct": 0.3000,
+                        "asset_type": "REIT",
+                    },
+                    {
+                        "name": "Cash and bank balance",
+                        "weight_pct": 0.1555,
+                        "asset_type": "CASH",
+                    },
+                ],
+            },
+            scheme_code="128629",
+        )
+
+        self.assertEqual(parsed["weight_scale_factor"], Decimal("100"))
+        self.assertEqual(
+            [row["pct_of_nav"] for row in parsed["holdings"]],
+            [Decimal("50.0000"), Decimal("30.0000"), Decimal("15.5500")],
+        )
+        self.assertEqual(parsed["total_weight_pct"], Decimal("95.5500"))
+        self.assertEqual(
+            [row["instrument_type"] for row in parsed["holdings"]],
+            ["BOND", "BOND", "CASH"],
+        )
+        self.assertEqual(parsed["provider_asset_type_overrides"], 2)
+        self.assertIn("MFFORECAST_WEIGHT_SCALE_INFERRED_FRACTION_TO_PERCENT", parsed["quality_flags"])
+        self.assertIn("MFFORECAST_PROVIDER_ASSET_TYPE_OVERRIDDEN", parsed["quality_flags"])
+        self.assertIn("MFFORECAST_HOLDING_WEIGHTS_NOT_100", parsed["quality_flags"])
 
     def test_rejects_response_for_different_amfi_scheme_code(self):
         payload = read_live_schema_payload()
@@ -281,6 +335,46 @@ class MFForecastEmptyResponseCommandTests(TestCase):
         self.assertIn("MFFORECAST_NO_VALID_HOLDING_ROWS", snapshot.quality_flags)
         self.assertFalse(MFMasterHolding.objects.filter(scheme=self.scheme).exists())
         self.assertIn("no valid holding rows could be parsed", run.errors[0]["error"])
+
+
+    @patch("mutual_funds.management.commands.sync_mfforecast_holdings.fetch_mfforecast_payload")
+    def test_provider_snapshot_date_and_nested_metadata_are_persisted(self, fetch):
+        fetch.return_value = (
+            read_live_schema_payload(),
+            "https://api.example.test/funds/128629/holdings",
+            "cache/scheme_128629.json",
+        )
+
+        with patch.dict(
+            "os.environ",
+            {"MFFORECAST_API_KEY": "", "MFFORECAST_API_KEY_HEADER": ""},
+        ):
+            call_command(
+                "sync_mfforecast_holdings",
+                scheme_codes=["128629"],
+                base_url="https://api.example.test",
+                limit=1,
+            )
+
+        run = MFSourceRun.objects.get(source="MFFORECAST_API")
+        snapshot = MFExternalPortfolioSnapshot.objects.get(scheme=self.scheme)
+        self.assertEqual(run.status, MFSourceRun.Status.PARTIAL)
+        self.assertEqual(run.metadata["schemes_with_provider_as_of_date"], 1)
+        self.assertEqual(run.metadata["schemes_with_holdings_count_mismatch"], 1)
+        self.assertEqual(snapshot.provider_as_of_date, date(2026, 9, 30))
+        self.assertEqual(snapshot.aum_cr, Decimal("5055.4600"))
+        self.assertIsNone(snapshot.expense_ratio_pct)
+        self.assertEqual(
+            snapshot.asset_allocation,
+            {"equity_pct": "32.9900", "debt_pct": "67.0100"},
+        )
+        holdings = list(MFMasterHolding.objects.filter(scheme=self.scheme))
+        self.assertEqual(len(holdings), 3)
+        self.assertTrue(all(row.portfolio_date == date(2026, 9, 30) for row in holdings))
+        self.assertTrue(
+            all(row.portfolio_date_basis == MFMasterHolding.DATE_BASIS_DISCLOSURE for row in holdings)
+        )
+        self.assertTrue(all(row.instrument_type == "BOND" for row in holdings))
 
 
 class MFForecastPersistenceAndAnalyticsTests(TestCase):

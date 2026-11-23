@@ -1,6 +1,5 @@
 """Import one or more scheme holdings snapshots from MF Forecast."""
 import os
-from urllib.parse import urlparse
 
 import requests
 from django.core.management.base import BaseCommand, CommandError
@@ -62,8 +61,6 @@ class Command(BaseCommand):
                     "Using normalized MF Forecast API base URL: " + base_url
                 )
             )
-        parsed_base = urlparse(base_url)
-
         api_key = os.environ.get("MFFORECAST_API_KEY", "").strip()
         api_key_header = os.environ.get("MFFORECAST_API_KEY_HEADER", "").strip()
         try:

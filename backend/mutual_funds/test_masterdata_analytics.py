@@ -59,7 +59,9 @@ class MasterDataRatioEngineTests(TestCase):
         self.assertEqual(values["top10_concentration_pct"], Decimal("100.0000"))
 
     def test_benchmark_relative_metrics_are_populated_from_tri(self):
-        result = calculate_scheme_masterdata_metrics(self.scheme, self.days[-1])
+        result = calculate_scheme_masterdata_metrics(
+            self.scheme, self.days[-1], risk_free_rate=0.0, ratio_window_years=0,
+        )
         values = result["values"]
         self.assertAlmostEqual(float(values["beta"]), 2.0, places=6)
         self.assertAlmostEqual(float(values["r_squared"]), 1.0, places=6)

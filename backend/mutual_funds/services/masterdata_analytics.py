@@ -113,6 +113,8 @@ def _holdings_metrics(scheme, as_of_date):
 
     flags = []
     provider_snapshot = None
+    if any(row.source == "MFFORECAST_API" for row in holdings):
+        flags.append("PORTFOLIO_DATE_FROM_PROVIDER_SNAPSHOT")
     if date_basis == MFMasterHolding.DATE_BASIS_FETCHED_AT:
         flags.append("PORTFOLIO_DATE_IS_FETCH_DATE")
         provider_snapshot = (

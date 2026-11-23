@@ -49,6 +49,18 @@ python manage.py plan_mfforecast_pilot --amc "HDFC" --amc "SBI" --amc "Kotak"
 
 The planner prints exact AMFI scheme codes and a single bounded dry-run command. Review each response's provider count, parsed count, invalid rows, weight total, provider date, overrides and quality flags. The dry-run makes live API requests but does not write database records. Only after reviewing every scheme should you run the printed command without `--dry-run`.
 
+After importing the selected schemes, reconcile the persisted rows against the latest provider snapshots. This audit is read-only and makes no API requests:
+
+~~~powershell
+python manage.py audit_mfforecast_holdings --scheme-code 128629 --scheme-code 100001
+~~~
+
+Use the actual scheme codes selected by the planner. The audit reports per-scheme snapshot/stored row counts, total weights, instrument distribution and quality flags. `PASS` means row counts and stored weight match the saved snapshot with no quality flags; `WARN` means the data reconciles but has provider-quality flags; `FAIL` means stored counts or weights do not reconcile. It can also be scoped to one AMC:
+
+~~~powershell
+python manage.py audit_mfforecast_holdings --amc "SBI" --limit 25
+~~~
+
 ~~~powershell
 python manage.py sync_mfforecast_holdings --scheme-code 128629 --dry-run
 python manage.py sync_mfforecast_holdings --scheme-code 128629

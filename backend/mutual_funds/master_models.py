@@ -142,7 +142,18 @@ class MFMasterHolding(models.Model):
     portfolio_date = models.DateField()
     security_name = models.CharField(max_length=300)
     isin = models.CharField(max_length=20, blank=True, default="", db_index=True)
+    ticker = models.CharField(max_length=40, blank=True, default="")
     security_key = models.CharField(max_length=320)
+    DATE_BASIS_DISCLOSURE = "DISCLOSURE"
+    DATE_BASIS_FETCHED_AT = "FETCHED_AT"
+    PORTFOLIO_DATE_BASIS_CHOICES = (
+        (DATE_BASIS_DISCLOSURE, "Provider disclosure date"),
+        (DATE_BASIS_FETCHED_AT, "Provider retrieval date only"),
+    )
+    portfolio_date_basis = models.CharField(
+        max_length=16, choices=PORTFOLIO_DATE_BASIS_CHOICES,
+        default=DATE_BASIS_DISCLOSURE, db_index=True,
+    )
     instrument_type = models.CharField(max_length=60, blank=True, default="OTHER")
     sector = models.CharField(max_length=150, blank=True, default="")
     industry = models.CharField(max_length=150, blank=True, default="")
@@ -162,8 +173,8 @@ class MFMasterHolding(models.Model):
         ordering = ["-portfolio_date", "-pct_of_nav", "security_name"]
         constraints = [
             models.UniqueConstraint(
-                fields=["scheme", "portfolio_date", "security_key"],
-                name="unique_mf_master_holding_snapshot",
+                fields=["scheme", "portfolio_date", "portfolio_date_basis", "security_key"],
+                name="uq_mf_holding_date_basis",
             ),
         ]
         indexes = [
@@ -173,6 +184,44 @@ class MFMasterHolding(models.Model):
 
     def __str__(self):
         return f"{self.scheme.scheme_code} - {self.security_name} - {self.portfolio_date}"
+
+
+class MFExternalPortfolioSnapshot(models.Model):
+    """Provider response metadata kept separate from dated AMC disclosures."""
+
+    PROVIDER_MFFORECAST = "MFFORECAST"
+    PROVIDER_CHOICES = ((PROVIDER_MFFORECAST, "MF Forecast"),)
+
+    scheme = models.ForeignKey(
+        "mutual_funds.AMFIMasterScheme",
+        on_delete=models.CASCADE,
+        related_name="external_portfolio_snapshots",
+    )
+    provider = models.CharField(max_length=40, choices=PROVIDER_CHOICES, default=PROVIDER_MFFORECAST)
+    observed_at = models.DateTimeField(default=timezone.now, db_index=True)
+    provider_as_of_date = models.DateField(blank=True, null=True)
+    scheme_name = models.CharField(max_length=300, blank=True, default="")
+    fund_house = models.CharField(max_length=200, blank=True, default="")
+    category = models.CharField(max_length=160, blank=True, default="")
+    aum_cr = models.DecimalField(max_digits=24, decimal_places=4, blank=True, null=True)
+    expense_ratio_pct = models.DecimalField(max_digits=12, decimal_places=4, blank=True, null=True)
+    asset_allocation = models.JSONField(default=dict, blank=True)
+    holdings_count = models.PositiveIntegerField(default=0)
+    total_weight_pct = models.DecimalField(max_digits=12, decimal_places=4, blank=True, null=True)
+    quality_flags = models.JSONField(default=list, blank=True)
+    source_url = models.URLField(max_length=1000, blank=True, default="")
+    raw_file_path = models.CharField(max_length=1000, blank=True, default="")
+
+    class Meta:
+        db_table = "mf_external_portfolio_snapshots"
+        ordering = ["-observed_at"]
+        indexes = [
+            models.Index(fields=["scheme", "-observed_at"], name="mf_ext_port_scheme_obs_idx"),
+            models.Index(fields=["provider", "-observed_at"], name="mf_ext_port_prov_obs_idx"),
+        ]
+
+    def __str__(self):
+        return f"{self.provider} - {self.scheme.scheme_code} - {self.observed_at:%Y-%m-%d %H:%M}"
 
 
 class MFSourceRun(models.Model):

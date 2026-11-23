@@ -187,6 +187,10 @@ class Command(BaseCommand):
         parser.add_argument("--dry-run", action="store_true")
         parser.add_argument("--risk-free-rate", type=float, default=6.5)
         parser.add_argument("--ratio-window-years", type=int, default=3)
+        parser.add_argument(
+            "--scheme-code", action="append", default=[],
+            help="Optional AMFI scheme code filter (repeatable). Used by the mf_pipeline daily job to build in chunks.",
+        )
 
     def handle(self, *args, **options):
         try:
@@ -203,6 +207,8 @@ class Command(BaseCommand):
         schemes = AMFIMasterScheme.objects.filter(is_active=True).order_by("scheme_name")
         if options["amc"]:
             schemes = schemes.filter(amc_name__icontains=options["amc"])
+        if options.get("scheme_code"):
+            schemes = schemes.filter(scheme_code__in=list(options["scheme_code"]))
         if options["limit"]:
             schemes = schemes[:options["limit"]]
 

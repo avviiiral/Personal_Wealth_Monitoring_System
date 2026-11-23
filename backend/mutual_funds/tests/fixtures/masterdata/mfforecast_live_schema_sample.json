@@ -1,0 +1,33 @@
+{
+  "amfi_code": "128629",
+  "scheme_name": "HDFC Banking and PSU Debt Fund",
+  "fund_house": "HDFC Mutual Fund",
+  "category": "Banking and PSU Debt",
+  "holdings_count": 3,
+  "holdings": [
+    {
+      "isin": "INE053F08387",
+      "name": "Indian Railways Finance Corp. Ltd.^",
+      "ticker": null,
+      "weight_pct": 0.0541,
+      "quantity": 27500.0,
+      "asset_type": "DEBT"
+    },
+    {
+      "isin": "INE377Y07482",
+      "name": "8.10% Bajaj Housing Finance Limited (08/07/2027) **",
+      "ticker": null,
+      "weight_pct": 0.0297,
+      "quantity": 15000.0,
+      "asset_type": "REIT"
+    },
+    {
+      "isin": "INE053F08353",
+      "name": "7.57% Indian Railway Finance Corporation Limited",
+      "ticker": null,
+      "weight_pct": 0.0296,
+      "quantity": 15000.0,
+      "asset_type": "DEBT"
+    }
+  ]
+}

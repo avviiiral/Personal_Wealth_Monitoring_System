@@ -139,7 +139,7 @@ class MFForecastParserTests(TestCase):
             [Decimal("0.0541"), Decimal("0.0297"), Decimal("0.0296")],
         )
         self.assertEqual(parsed["holdings"][0]["isin"], "INE053F08387")
-        self.assertIsNone(parsed["holdings"][0]["ticker"])
+        self.assertEqual(parsed["holdings"][0]["ticker"], "")
         # Do not infer a weight scale from this truncated three-row fixture.
         self.assertEqual(parsed["weight_scale_factor"], Decimal("1"))
         self.assertIn("MFFORECAST_ASSET_ALLOCATION_INCOMPLETE", parsed["quality_flags"])
@@ -245,10 +245,11 @@ class MFForecastFetchTests(SimpleTestCase):
                     base_url="https://api.example.test/v1",
                     scheme_code="120503",
                 )
+                # Verify the cache while TemporaryDirectory is still alive.
+                self.assertTrue(Path(raw_path).is_file())
 
         self.assertEqual(result, payload)
         self.assertEqual(endpoint, "https://api.example.test/v1/funds/120503/holdings")
-        self.assertTrue(Path(raw_path).is_file())
         self.assertEqual(session.get.call_args.kwargs["allow_redirects"], False)
         self.assertIn("Accept", session.get.call_args.kwargs["headers"])
         throttle.assert_called_once()

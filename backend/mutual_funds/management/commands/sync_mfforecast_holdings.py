@@ -112,7 +112,7 @@ class Command(BaseCommand):
             "schemes_requested": len(schemes),
             "schemes_with_response": 0,
             "schemes_with_holdings": 0,
-            "schemes_empty_holdings": 0,
+            "schemes_without_valid_holdings": 0,
             "schemes_not_found": 0,
             "holdings_parsed": 0,
             "holdings_inserted": 0,
@@ -150,10 +150,11 @@ class Command(BaseCommand):
                         if rows:
                             counters["schemes_with_holdings"] += 1
                         else:
-                            counters["schemes_empty_holdings"] += 1
+                            counters["schemes_without_valid_holdings"] += 1
                             detail = (
-                                "Provider returned a valid scheme response but an empty holdings array; "
-                                "this is not evidence that the scheme has no investments. "
+                                "Provider returned a scheme response but no valid holding rows could be parsed. "
+                                "The holdings array may be empty or its field names/value formats may differ "
+                                "from the documented example; this is not evidence that the scheme has no investments. "
                                 "No holding rows were imported. "
                                 f"Raw response cache: {raw_path or 'not available'}"
                             )
@@ -227,7 +228,7 @@ class Command(BaseCommand):
                     MFSourceRun.Status.PARTIAL
                     if counters["snapshots_saved"] else MFSourceRun.Status.FAILED
                 )
-            elif errors or counters["schemes_not_found"] or counters["schemes_empty_holdings"]:
+            elif errors or counters["schemes_not_found"] or counters["schemes_without_valid_holdings"]:
                 status = MFSourceRun.Status.PARTIAL
             else:
                 status = MFSourceRun.Status.SUCCESS
@@ -254,7 +255,7 @@ class Command(BaseCommand):
             f"schemes={counters['schemes_requested']} "
             f"responses={counters['schemes_with_response']} "
             f"with_holdings={counters['schemes_with_holdings']} "
-            f"empty_holdings={counters['schemes_empty_holdings']} "
+            f"without_valid_holdings={counters['schemes_without_valid_holdings']} "
             f"not_found={counters['schemes_not_found']} "
             f"holdings={counters['holdings_parsed']} "
             f"inserted={counters['holdings_inserted']} "

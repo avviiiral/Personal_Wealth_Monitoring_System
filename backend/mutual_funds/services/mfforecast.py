@@ -120,7 +120,7 @@ def parse_mfforecast_holdings(payload: dict, *, scheme_code: str) -> dict:
     total_weight = sum((row["pct_of_nav"] for row in rows), Decimal("0"))
     quality_flags = []
     if not rows:
-        quality_flags.append("MFFORECAST_HOLDINGS_EMPTY")
+        quality_flags.append("MFFORECAST_NO_VALID_HOLDING_ROWS")
     if invalid_rows:
         quality_flags.append("MFFORECAST_INVALID_HOLDING_ROWS_SKIPPED")
     if not asset_allocation:

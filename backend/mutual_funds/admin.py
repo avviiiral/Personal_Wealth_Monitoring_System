@@ -153,7 +153,10 @@ class SIPInstallmentAdmin(admin.ModelAdmin):
 
     date_hierarchy = "scheduled_date"
 
-from .master_models import MFBenchmarkTRI, MFMarketCapClassification, MFMasterData, MFMasterHolding, MFSourceRun
+from .master_models import (
+    MFBenchmarkTRI, MFExternalPortfolioSnapshot, MFMarketCapClassification,
+    MFMasterData, MFMasterHolding, MFSourceRun,
+)
 
 
 @admin.register(MFMasterData)
@@ -166,9 +169,9 @@ class MFMasterDataAdmin(admin.ModelAdmin):
 
 @admin.register(MFMasterHolding)
 class MFMasterHoldingAdmin(admin.ModelAdmin):
-    list_display = ("scheme", "portfolio_date", "security_name", "isin", "instrument_type", "pct_of_nav", "source")
-    list_filter = ("portfolio_date", "instrument_type", "source", "rating")
-    search_fields = ("scheme__scheme_code", "scheme__scheme_name", "security_name", "isin")
+    list_display = ("scheme", "portfolio_date", "portfolio_date_basis", "security_name", "isin", "ticker", "instrument_type", "pct_of_nav", "source")
+    list_filter = ("portfolio_date", "portfolio_date_basis", "instrument_type", "source", "rating")
+    search_fields = ("scheme__scheme_code", "scheme__scheme_name", "security_name", "isin", "ticker")
     date_hierarchy = "portfolio_date"
 
 
@@ -194,3 +197,12 @@ class MFMarketCapClassificationAdmin(admin.ModelAdmin):
     list_display = ("isin", "company_name", "market_cap_class", "market_cap_rank", "effective_period")
     list_filter = ("effective_period", "market_cap_class")
     search_fields = ("isin", "company_name")
+
+
+@admin.register(MFExternalPortfolioSnapshot)
+class MFExternalPortfolioSnapshotAdmin(admin.ModelAdmin):
+    list_display = ("scheme", "provider", "observed_at", "provider_as_of_date", "aum_cr", "expense_ratio_pct", "holdings_count")
+    list_filter = ("provider", "observed_at", "category")
+    search_fields = ("scheme__scheme_code", "scheme__scheme_name", "fund_house", "scheme_name")
+    date_hierarchy = "observed_at"
+    readonly_fields = tuple(field.name for field in MFExternalPortfolioSnapshot._meta.fields)

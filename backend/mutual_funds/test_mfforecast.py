@@ -432,6 +432,7 @@ class MFForecastPersistenceAndAnalyticsTests(TestCase):
         self.assertEqual(values["debt_pct"], Decimal("0.0000"))
         self.assertEqual(values["cash_pct"], Decimal("2.8000"))
         self.assertIn("PORTFOLIO_DATE_IS_FETCH_DATE", flags)
+        self.assertNotIn("PORTFOLIO_DATE_FROM_PROVIDER_SNAPSHOT", flags)
         self.assertIn("MFFORECAST_ASSET_ALLOCATION_USED", flags)
         self.assertEqual(source_url, "https://mfforecast.com/funds/120503/holdings")
 

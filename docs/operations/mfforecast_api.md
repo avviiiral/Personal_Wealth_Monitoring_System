@@ -10,24 +10,24 @@ The supplied MF Forecast documentation screenshot shows:
 - Response fields: `scheme_name`, `fund_house`, `category`, `aum_cr`, `expense_ratio`, `asset_allocation`, and `holdings[]`.
 - Holding fields: `stock_name`, `ticker`, `isin`, `weight_pct`, `quantity`, and `asset_type`.
 
-The screenshot does not specify the API base URL, authentication header, rate limit, portfolio disclosure date, or reuse/licensing terms. Configure the exact base URL from the provider's current documentation. Authentication is optional in the adapter; when required, configure both the API key and its documented header name. Do not guess a key header.
+The supplied endpoint URL/configuration uses RapidAPI. RapidAPI's standard authentication requires two separate headers: `X-RapidAPI-Key` (your app key) and `X-RapidAPI-Host` (the API host). PWMS now constructs both automatically for `.p.rapidapi.com` hosts. See [RapidAPI authentication documentation](https://docs.rapidapi.com/docs/configuring-api-security). The screenshot itself still does not establish the portfolio disclosure date or reuse/licensing terms.
 
 ## Configuration
 
 Add these values to the local `backend/.env` (never commit the real key):
 
 ~~~dotenv
-MFFORECAST_API_BASE_URL=
-MFFORECAST_API_KEY=
-MFFORECAST_API_KEY_HEADER=
+MFFORECAST_API_BASE_URL=https://indian-mutual-fund-portfolio-holding.p.rapidapi.com
+MFFORECAST_API_KEY=your_rapidapi_app_key
+MFFORECAST_API_KEY_HEADER=x-rapidapi-key
 MFFORECAST_API_TIMEOUT_SECONDS=20
 ~~~
 
-The route is appended as `/funds/{amfi_code}/holdings`. For example, `--scheme-code 128629` requests the AMFI scheme code 128629. The base URL should be the API origin/base prefix confirmed by MF Forecast support/docs.
+The route is appended as `/funds/{amfi_code}/holdings`. For example, `--scheme-code 128629` requests the AMFI scheme code 128629. Configure only the API host as the base URL. If a full `/funds/<code>/holdings` URL is supplied accidentally, PWMS strips that suffix and constructs the requested scheme route. The API key is the RapidAPI app key; do not put the host value in `MFFORECAST_API_KEY_HEADER`.
 
 ## Run
 
-The command requires an explicit scheme or AMC selector and defaults to at most 50 scheme requests. It does not run a full-universe fan-out accidentally.
+The command requires an explicit scheme or AMC selector and defaults to at most 50 scheme requests. It does not run a full-universe fan-out accidentally. For RapidAPI, it sends both `X-RapidAPI-Key` and `X-RapidAPI-Host` separately.
 
 ~~~powershell
 python manage.py sync_mfforecast_holdings --scheme-code 128629 --dry-run

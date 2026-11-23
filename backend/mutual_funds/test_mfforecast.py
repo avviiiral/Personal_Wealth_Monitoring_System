@@ -32,6 +32,10 @@ def read_payload():
     return json.loads((FIXTURES / "mfforecast_holdings_sample.json").read_text(encoding="utf-8"))
 
 
+def read_live_schema_payload():
+    return json.loads((FIXTURES / "mfforecast_live_schema_sample.json").read_text(encoding="utf-8"))
+
+
 class MFForecastRapidAPIConfigTests(SimpleTestCase):
     def test_strips_full_scheme_endpoint_from_configured_api_base_url(self):
         self.assertEqual(
@@ -98,6 +102,43 @@ class MFForecastParserTests(TestCase):
     def test_rejects_missing_holdings_array(self):
         with self.assertRaisesMessage(ValueError, "holdings array"):
             parse_mfforecast_holdings({"scheme_name": "Fund"}, scheme_code="120503")
+
+    def test_parses_live_rapidapi_name_field_and_asset_types(self):
+        parsed = parse_mfforecast_holdings(
+            read_live_schema_payload(),
+            scheme_code="128629",
+        )
+
+        self.assertEqual(parsed["scheme_code"], "128629")
+        self.assertEqual(parsed["provider_holdings_count"], 3)
+        self.assertEqual(parsed["holdings_count"], 3)
+        self.assertEqual(parsed["invalid_rows"], 0)
+        self.assertEqual(
+            [row["security_name"] for row in parsed["holdings"]],
+            [
+                "Indian Railways Finance Corp. Ltd.^",
+                "8.10% Bajaj Housing Finance Limited (08/07/2027) **",
+                "7.57% Indian Railway Finance Corporation Limited",
+            ],
+        )
+        self.assertEqual(
+            [row["instrument_type"] for row in parsed["holdings"]],
+            ["BOND", "REIT", "BOND"],
+        )
+        self.assertEqual(
+            [row["pct_of_nav"] for row in parsed["holdings"]],
+            [Decimal("0.0541"), Decimal("0.0297"), Decimal("0.0296")],
+        )
+        self.assertEqual(parsed["holdings"][0]["isin"], "INE053F08387")
+        self.assertIsNone(parsed["holdings"][0]["ticker"])
+        self.assertIn("MFFORECAST_ASSET_ALLOCATION_NOT_PROVIDED", parsed["quality_flags"])
+        self.assertNotIn("MFFORECAST_INVALID_HOLDING_ROWS_SKIPPED", parsed["quality_flags"])
+
+    def test_rejects_response_for_different_amfi_scheme_code(self):
+        payload = read_live_schema_payload()
+        payload["amfi_code"] = "120503"
+        with self.assertRaisesMessage(ValueError, "does not match requested scheme code"):
+            parse_mfforecast_holdings(payload, scheme_code="128629")
 
     def test_empty_holdings_array_is_flagged_as_incomplete_provider_data(self):
         parsed = parse_mfforecast_holdings(

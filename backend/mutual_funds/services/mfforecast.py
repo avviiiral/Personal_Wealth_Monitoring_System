@@ -181,6 +181,8 @@ def parse_mfforecast_holdings(payload: dict, *, scheme_code: str) -> dict:
         quality_flags.append("MFFORECAST_NO_VALID_HOLDING_ROWS")
     if invalid_rows:
         quality_flags.append("MFFORECAST_INVALID_HOLDING_ROWS_SKIPPED")
+    if provider_holdings_count and provider_holdings_count != len(rows):
+        quality_flags.append("MFFORECAST_PROVIDER_HOLDINGS_COUNT_MISMATCH")
     if not asset_allocation:
         quality_flags.append("MFFORECAST_ASSET_ALLOCATION_NOT_PROVIDED")
     elif len(asset_allocation) < 3:

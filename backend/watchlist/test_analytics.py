@@ -108,11 +108,46 @@ class MutualFundAnalyticsApiTests(TestCase):
             },
         )
 
+        aum_only = InvestmentProduct.objects.create(
+            product_type=ProductType.MUTUAL_FUND,
+            name="Research AUM Only Fund",
+            provider="Example AMC",
+            category="Large Cap",
+            isin="ISIN-RESEARCH-ONLY",
+            external_identifier="RESEARCH-ONLY",
+            identity_key="MUTUAL_FUND:TEST:RESEARCH-ONLY",
+            source="TEST",
+        )
+        MutualFundProduct.objects.create(
+            product=aum_only, scheme_code="RESEARCH-ONLY", plan="Direct",
+            option="Growth",
+        )
+        aum_only_scheme = AMFIMasterScheme.objects.create(
+            scheme_code="RESEARCH-ONLY",
+            scheme_name="Research AUM Only Fund",
+            isin_growth=aum_only.isin,
+            amc_name="Example AMC",
+            plan="Direct Plan",
+            option="Growth",
+            is_active=True,
+        )
+        MFMasterData.objects.create(
+            scheme=aum_only_scheme,
+            as_of_date=date(2026, 10, 31),
+            scheme_code="RESEARCH-ONLY",
+            scheme_name="Research AUM Only Fund",
+            aum_cr=Decimal("75.0000"),
+            aum_type="MONTH_END",
+            aum_as_of=date(2026, 10, 31),
+            aum_source="AMC_MONTH_END_AUM",
+        )
+
         response = self.client.get("/api/watch-list/products/?product_type=MUTUAL_FUND")
 
         self.assertEqual(response.status_code, 200)
         row = next(item for item in response.data["results"] if item["id"] == product.id)
         metrics = row["mutual_fund"]["research_metrics"]
+        self.assertIn(aum_only.id, [item["id"] for item in response.data["results"]])
         self.assertEqual(Decimal(str(metrics["aum_cr"])), Decimal("1250.5000"))
         self.assertEqual(metrics["aum_type"], "MONTH_END")
         self.assertEqual(Decimal(str(metrics["ter_direct_pct"])), Decimal("0.5500"))

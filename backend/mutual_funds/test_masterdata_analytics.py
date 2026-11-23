@@ -68,6 +68,26 @@ class MasterDataRatioEngineTests(TestCase):
         self.assertAlmostEqual(float(values["alpha_pct"]), 0.0, places=2)
         self.assertIsNotNone(values["tracking_error_pct"])
 
+    def test_nav_sources_are_deduplicated_and_risk_methodology_is_returned(self):
+        duplicate_day = self.days[0]
+        AMFIMasterNAV.objects.create(
+            scheme=self.scheme, date=duplicate_day, nav=Decimal("101"),
+            source="AMFI_NAVALL",
+        )
+
+        result = calculate_scheme_masterdata_metrics(
+            self.scheme, self.days[-1], risk_free_rate=0.065, ratio_window_years=0,
+        )
+
+        self.assertEqual(result["nav_observations"], len(self.days))
+        self.assertIn("https://api.mfapi.in/mf/990001", result["source_urls"]["nav"])
+        self.assertIn("https://www.amfiindia.com/spages/NAVAll.txt", result["source_urls"]["nav"])
+        methodology = result["risk_metric_metadata"]
+        self.assertEqual(methodology["method"], "DAILY_NAV_RETURNS")
+        self.assertEqual(methodology["annualization_factor"], 252)
+        self.assertEqual(methodology["return_observations"], len(self.days) - 1)
+        self.assertEqual(methodology["risk_free_rate_annual_pct"], 6.5)
+
     def test_default_three_year_window_keeps_short_history_ratios_null(self):
         result = calculate_scheme_masterdata_metrics(self.scheme, self.days[-1])
         self.assertIsNone(result["values"].get("beta"))

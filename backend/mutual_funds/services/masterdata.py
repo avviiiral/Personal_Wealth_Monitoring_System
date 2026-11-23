@@ -151,15 +151,49 @@ def _scale_amount(value, column):
     return value
 
 
+def _find_total_ter_column(frame):
+    """Select Total TER, never BER, from current or legacy disclosure headers."""
+    columns = [(normalize_key(column), str(column)) for column in frame.columns]
+    base_columns = [
+        key for key, _original in columns
+        if key == "ber" or "base expense ratio" in key or "base ter" in key
+    ]
+
+    # Prefer explicit total TER labels when an official 2026-format file has
+    # both BER and Total TER columns.
+    for key, original in columns:
+        if (
+            key in {"total expense ratio", "total ter"}
+            or ("total" in key and "expense ratio" in key)
+        ):
+            return original
+
+    # Legacy AMFI disclosures commonly label the all-in value simply "TER".
+    for key, original in columns:
+        if key == "ter" or (key.startswith("ter ") and "base" not in key):
+            return original
+
+    # Accept the old generic header only when the file has no separate BER
+    # field; otherwise "Expense Ratio" is ambiguous and must not be guessed.
+    if not base_columns:
+        for key, original in columns:
+            if key == "expense ratio":
+                return original
+    return None
+
+
 def parse_ter_rows(payload, *, filename, as_of_date):
     frame = read_table(payload, filename)
     code = find_column(frame, ("scheme code", "amfi scheme code", "scheme_code"))
     isin = find_column(frame, ("isin", "isin code", "isin growth"))
     name = find_column(frame, ("scheme name", "scheme", "name of scheme", "scheme nav name"))
     plan = find_column(frame, ("plan", "plan type", "scheme plan"))
-    ter = find_column(frame, ("base expense ratio", "ter", "expense ratio", "total expense ratio"))
+    ter = _find_total_ter_column(frame)
     if not ter or not (code or isin or name):
-        raise ValueError("TER file requires a TER column and scheme code, ISIN or exact scheme name.")
+        raise ValueError(
+            "TER file requires a Total Expense Ratio / TER column and scheme code, "
+            "ISIN or exact scheme name. Base Expense Ratio (BER) alone is not Total TER."
+        )
     rows = []
     for _, source in frame.iterrows():
         value = decimal_value(source.get(ter), percent=True)

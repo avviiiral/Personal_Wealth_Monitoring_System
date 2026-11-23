@@ -173,6 +173,7 @@ class WatchListProductSerializer(serializers.ModelSerializer):
             "risk_free_rate_used_pct": snapshot.risk_free_rate_used_pct,
             "ratio_window_years": snapshot.ratio_window_years,
             "data_quality_flags": snapshot.data_quality_flags or [],
+            "risk_methodology": field_sources.get("std_dev_pct", {}).get("methodology", {}),
             "field_sources": {
                 field: field_sources[field]
                 for field in tracked_fields

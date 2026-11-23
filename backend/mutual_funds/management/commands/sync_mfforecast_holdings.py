@@ -15,7 +15,9 @@ from mutual_funds.services.masterdata import (
     start_source_run,
 )
 from mutual_funds.services.mfforecast import (
+    build_mfforecast_headers,
     fetch_mfforecast_payload,
+    normalize_mfforecast_base_url,
     parse_mfforecast_holdings,
 )
 
@@ -43,25 +45,33 @@ class Command(BaseCommand):
         parser.add_argument("--dry-run", action="store_true")
 
     def handle(self, *args, **options):
-        base_url = (
+        configured_base_url = (
             options["base_url"] or os.environ.get("MFFORECAST_API_BASE_URL", "")
-        ).strip().rstrip("/")
-        if not base_url:
+        ).strip()
+        if not configured_base_url:
             raise CommandError(
                 "Set MFFORECAST_API_BASE_URL to the API base URL specified by MF Forecast."
             )
+        try:
+            base_url = normalize_mfforecast_base_url(configured_base_url)
+        except ValueError as exc:
+            raise CommandError(str(exc)) from exc
+        if base_url != configured_base_url.rstrip("/"):
+            self.stdout.write(
+                self.style.WARNING(
+                    "Using normalized MF Forecast API base URL: " + base_url
+                )
+            )
         parsed_base = urlparse(base_url)
-        if parsed_base.scheme != "https" or not parsed_base.netloc:
-            raise CommandError("MFFORECAST_API_BASE_URL must be an absolute HTTPS URL.")
 
         api_key = os.environ.get("MFFORECAST_API_KEY", "").strip()
         api_key_header = os.environ.get("MFFORECAST_API_KEY_HEADER", "").strip()
-        if bool(api_key) != bool(api_key_header):
-            raise CommandError(
-                "Set both MFFORECAST_API_KEY and MFFORECAST_API_KEY_HEADER, "
-                "or leave both blank. The header name must come from provider documentation."
+        try:
+            headers = build_mfforecast_headers(
+                base_url=base_url, api_key=api_key, api_key_header=api_key_header,
             )
-        headers = {api_key_header: api_key} if api_key else {}
+        except ValueError as exc:
+            raise CommandError(str(exc)) from exc
 
         try:
             timeout = int(os.environ.get("MFFORECAST_API_TIMEOUT_SECONDS", "20"))

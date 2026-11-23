@@ -29,8 +29,9 @@ def sebi_universe_summary(request):
         return Response({
             "available": False,
             "message": (
-                "No SEBI universe analytics snapshot is available. Run "
-                "ingest_sebi_mf_universe followed by build_sebi_mf_analytics."
+                "No SEBI universe analytics snapshot is available. From backend/, run "
+                "'python manage.py build_sebi_mf_analytics --plans both'. "
+                "Run ingest_sebi_mf_universe first only when the SEBI category universe is empty."
             ),
             "download_url": None,
         })
@@ -45,7 +46,10 @@ def sebi_universe_rankings(request):
     if not path.is_file():
         return Response({
             "available": False,
-            "message": "No rankings snapshot is available. Run build_sebi_mf_analytics.",
+            "message": (
+                "No rankings snapshot is available. From backend/, run "
+                "'python manage.py build_sebi_mf_analytics --plans both'."
+            ),
             "count": 0,
             "results": [],
         })

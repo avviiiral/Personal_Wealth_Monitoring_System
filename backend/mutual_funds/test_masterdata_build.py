@@ -4,7 +4,7 @@ from decimal import Decimal
 from django.core.management import call_command
 from django.test import TestCase
 
-from mutual_funds.models import AMFIMasterScheme, AMFISchemeAAUM
+from mutual_funds.models import AMFIMasterNAV, AMFIMasterScheme, AMFISchemeAAUM
 from mutual_funds.master_models import MFMasterData, MFSourceRun
 
 
@@ -84,6 +84,30 @@ class BuildMFMasterDataCommandTests(TestCase):
         self.assertEqual(snapshot.aum_type, "MONTH_END")
         self.assertEqual(snapshot.aum_as_of, date(2026, 10, 31))
         self.assertEqual(snapshot.field_sources["aum_cr"]["source"], "AMC_MONTH_END_AUM")
+
+    def test_risk_metric_methodology_is_persisted_with_field_sources(self):
+        observations = [
+            (date(2026, 10, 26), Decimal("100.00")),
+            (date(2026, 10, 27), Decimal("101.00")),
+            (date(2026, 10, 28), Decimal("99.00")),
+            (date(2026, 10, 29), Decimal("102.00")),
+        ]
+        for day, nav in observations:
+            AMFIMasterNAV.objects.create(
+                scheme=self.scheme, date=day, nav=nav, source="mfapi.in",
+            )
+
+        call_command("build_mf_masterdata", as_of="2026-10-31")
+        snapshot = MFMasterData.objects.get(scheme=self.scheme, as_of_date=date(2026, 10, 31))
+
+        methodology = snapshot.field_sources["std_dev_pct"]["methodology"]
+        self.assertEqual(methodology["method"], "DAILY_NAV_RETURNS")
+        self.assertEqual(methodology["annualization_factor"], 252)
+        self.assertEqual(methodology["window_start_date"], "2026-10-26")
+        self.assertEqual(methodology["window_end_date"], "2026-10-29")
+        self.assertEqual(methodology["return_observations"], 3)
+        self.assertEqual(methodology["risk_free_rate_annual_pct"], 6.5)
+        self.assertIn("https://api.mfapi.in/mf/990201", snapshot.field_sources["std_dev_pct"]["source_url"])
 
     def test_dry_run_does_not_write_snapshot_or_source_run(self):
         call_command("build_mf_masterdata", as_of="2026-10-31", dry_run=True)

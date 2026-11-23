@@ -92,6 +92,29 @@ python manage.py sync_mfforecast_holdings --amc HDFC --limit 25 --dry-run
 
 The command caps each run at 50 scheme requests, uses a one-request-per-second host throttle, caches raw JSON outside Git, and logs a source run. MF Forecast's example does not supply a portfolio disclosure date, so holdings are tagged `FETCHED_AT` rather than `DISCLOSURE`. Dated AMC disclosures always take precedence in consolidated portfolio analytics. The provider's AUM and expense ratio are retained in `MFExternalPortfolioSnapshot` but are not copied to canonical month-end AUM or Direct/Regular TER fields until their definitions and dates are verified.
 
+### MF Forecast batch planning and resumable coverage
+
+For broad Direct-Growth coverage, plan a batch across all AMCs instead of issuing one command per scheme:
+
+~~~powershell
+python manage.py plan_mfforecast_batch --limit 50
+~~~
+
+The planner reads active Direct-Growth schemes from AMFIMasterScheme, selects schemes round-robin across AMCs, and caps a batch at the importer's 50-request limit. It makes no API requests and writes no database records. An optional repeated AMC filter narrows the batch, for example --amc HDFC --amc SBI.
+
+Review the generated dry-run command before running the live command. Live imports store one outcome per attempted scheme in MFSourceRun metadata: **IMPORTED**, **INCOMPLETE**, **NOT_FOUND** (HTTP 404), or **ERROR**. The next planner run skips already imported schemes and previously recorded not-found/incomplete/error outcomes, preventing repeated requests in ordinary batches. A dry-run does not record outcomes; only live runs advance coverage state.
+
+Retry only when there is a reason to recheck a provider outcome:
+
+~~~powershell
+python manage.py plan_mfforecast_batch --retry-not-found --limit 50
+python manage.py plan_mfforecast_batch --retry-incomplete --retry-errors --limit 50
+~~~
+
+Use --include-previously-synced only for an intentional refresh of schemes with prior MF Forecast outcomes or snapshots. The planner does not claim that a provider 404 means the mutual-fund scheme has no portfolio; it records only that the endpoint did not return a provider record at that time.
+
+IMPORTED means rows parsed and provider holding count reconciled (when the provider supplied a count). Weight gaps and classification overrides remain in the snapshot's quality flags and must still be reviewed; structural import success is not a claim that the provider portfolio totals 100%.
+
 Before scheduling broader collection, confirm the provider's current API plan, rate limits, storage and downstream-use terms. See [MF Forecast API integration](mfforecast_api.md) for configuration and data-quality details.
 
 ## Scheme information, riskometer and factsheet attributes

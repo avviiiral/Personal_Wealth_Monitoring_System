@@ -123,6 +123,7 @@ class Command(BaseCommand):
             "snapshots_saved": 0,
         }
         errors = []
+        scheme_outcomes = []
         fatal_error = ""
 
         try:
@@ -139,6 +140,18 @@ class Command(BaseCommand):
                         if payload is None:
                             counters["schemes_not_found"] += 1
                             counters["holdings_skipped"] += 1
+                            scheme_outcomes.append({
+                                "scheme_code": scheme.scheme_code,
+                                "scheme_name": scheme.scheme_name,
+                                "amc_name": scheme.amc_name,
+                                "status": "NOT_FOUND",
+                                "detail": "MF Forecast returned HTTP 404 for this AMFI scheme code.",
+                            })
+                            if dry_run:
+                                self.stdout.write(
+                                    f"NOT_FOUND | {scheme.scheme_code} | "
+                                    f"{scheme.amc_name} | {scheme.scheme_name}"
+                                )
                             continue
 
                         parsed = parse_mfforecast_holdings(
@@ -155,11 +168,13 @@ class Command(BaseCommand):
                         rows = parsed["holdings"]
                         if provider_as_of_date:
                             counters["schemes_with_provider_as_of_date"] += 1
-                        if (
+                        count_mismatch = bool(
                             parsed["provider_holdings_count"]
                             and parsed["provider_holdings_count"] != len(rows)
-                        ):
+                        )
+                        if count_mismatch:
                             counters["schemes_with_holdings_count_mismatch"] += 1
+                        structurally_complete = bool(rows) and not parsed["invalid_rows"] and not count_mismatch
                         counters["schemes_with_response"] += 1
                         counters["holdings_parsed"] += len(rows)
                         if rows:
@@ -187,6 +202,7 @@ class Command(BaseCommand):
                                 f"weight_total={parsed['total_weight_pct']} | "
                                 f"weight_scale_factor={parsed['weight_scale_factor']} | "
                                 f"provider_as_of_date={provider_as_of_date or 'not supplied'} | "
+                                f"candidate_status={'READY' if structurally_complete else 'INCOMPLETE'} | "
                                 f"asset_type_overrides={parsed['provider_asset_type_overrides']} | "
                                 f"snapshot_keys={','.join(sorted(parsed['provider_snapshot'])) or 'not supplied'} | "
                                 f"quality_flags={parsed['quality_flags']} | "
@@ -227,17 +243,46 @@ class Command(BaseCommand):
                             counters["holdings_updated"] += result["updated"]
                             counters["holdings_skipped"] += result["skipped"]
                             counters["snapshots_saved"] += 1
+                        scheme_outcomes.append({
+                            "scheme_code": scheme.scheme_code,
+                            "scheme_name": scheme.scheme_name,
+                            "amc_name": scheme.amc_name,
+                            "status": "IMPORTED" if structurally_complete else "INCOMPLETE",
+                            "provider_holdings_count": parsed["provider_holdings_count"],
+                            "holdings_count": len(rows),
+                            "invalid_rows": parsed["invalid_rows"],
+                            "total_weight_pct": str(parsed["total_weight_pct"]),
+                            "provider_as_of_date": (
+                                provider_as_of_date.isoformat() if provider_as_of_date else None
+                            ),
+                            "quality_flags": parsed["quality_flags"],
+                        })
 
                     except PermissionError as exc:
                         fatal_error = str(exc)
                         errors.append({"scheme_code": scheme.scheme_code, "error": fatal_error})
+                        scheme_outcomes.append({
+                            "scheme_code": scheme.scheme_code,
+                            "scheme_name": scheme.scheme_name,
+                            "amc_name": scheme.amc_name,
+                            "status": "ERROR",
+                            "detail": fatal_error[:1000],
+                        })
                         break
                     except Exception as exc:
+                        detail = str(exc)[:1000]
                         if len(errors) < 100:
                             errors.append({
                                 "scheme_code": scheme.scheme_code,
-                                "error": str(exc)[:1000],
+                                "error": detail,
                             })
+                        scheme_outcomes.append({
+                            "scheme_code": scheme.scheme_code,
+                            "scheme_name": scheme.scheme_name,
+                            "amc_name": scheme.amc_name,
+                            "status": "ERROR",
+                            "detail": detail,
+                        })
                         continue
         except requests.RequestException as exc:
             fatal_error = f"MF Forecast HTTP session failed: {exc}"
@@ -269,6 +314,7 @@ class Command(BaseCommand):
                 errors=errors,
                 metadata={
                     **counters,
+                    "scheme_outcomes": scheme_outcomes,
                     "api_base_url": base_url,
                     "api_key_configured": bool(api_key),
                     "observation_started_at": observed_start.isoformat(),

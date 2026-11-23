@@ -25,6 +25,8 @@ MFFORECAST_API_TIMEOUT_SECONDS=20
 
 The route is appended as `/funds/{amfi_code}/holdings`. For example, `--scheme-code 128629` requests the AMFI scheme code 128629. Configure only the API host as the base URL. If a full `/funds/<code>/holdings` URL is supplied accidentally, PWMS strips that suffix and constructs the requested scheme route. The API key is the RapidAPI app key; do not put the host value in `MFFORECAST_API_KEY_HEADER`.
 
+The live RapidAPI response observed for scheme 128629 uses `name` (not `stock_name`) for the security name, and includes top-level `amfi_code`, `holdings_count`, and a nested `snapshot` object. The parser now accepts both `name` and the sample's `stock_name`; it validates the response AMFI code against the requested code. `DEBT` is normalized to bond for analytics, while `REIT` and `INVIT` are preserved as distinct instrument types and remain in the other-allocation bucket. Numeric `weight_pct` values are retained as percentage points (for example, `0.0541` remains `0.0541%`).
+
 ## Run
 
 The command requires an explicit scheme or AMC selector and defaults to at most 50 scheme requests. It does not run a full-universe fan-out accidentally. For RapidAPI, it sends both `X-RapidAPI-Key` and `X-RapidAPI-Host` separately.

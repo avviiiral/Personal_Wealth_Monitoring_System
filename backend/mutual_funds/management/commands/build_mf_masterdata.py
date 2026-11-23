@@ -339,6 +339,16 @@ class Command(BaseCommand):
                         source_url=metrics["source_urls"].get("nav", ""),
                         as_of_date=as_of_date, fetched_at=now,
                     )
+                    risk_methodology = metrics.get("risk_metric_metadata") or {}
+                    if risk_methodology:
+                        lineage = dict(snapshot.field_sources or {})
+                        for field in ("std_dev_pct", "sharpe", "sortino"):
+                            if field in lineage:
+                                lineage[field] = {
+                                    **lineage[field],
+                                    "methodology": risk_methodology,
+                                }
+                        snapshot.field_sources = lineage
                     _apply_fields(
                         snapshot, values, fields=BENCHMARK_FIELDS,
                         source="PWMS_CALCULATED_BENCHMARK",

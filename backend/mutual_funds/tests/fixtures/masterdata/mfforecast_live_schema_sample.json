@@ -3,7 +3,15 @@
   "scheme_name": "HDFC Banking and PSU Debt Fund",
   "fund_house": "HDFC Mutual Fund",
   "category": "Banking and PSU Debt",
-  "holdings_count": 3,
+  "holdings_count": 102,
+  "snapshot": {
+    "aum_crores": 5055.46,
+    "expense_ratio": null,
+    "equity_pct": 32.99,
+    "debt_pct": 67.01,
+    "cash_pct": null,
+    "snapshot_date": "2026-09-30"
+  },
   "holdings": [
     {
       "isin": "INE053F08387",

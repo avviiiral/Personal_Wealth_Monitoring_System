@@ -438,4 +438,7 @@ class AMFIMasterNAV(models.Model):
 
 # Global, market-wide masterdata tables are kept in a separate module to avoid
 # mixing them with family-scoped holdings and transactions above.
-from .master_models import MFBenchmarkTRI, MFMarketCapClassification, MFMasterData, MFMasterHolding, MFSourceRun  # noqa: E402,F401
+from .master_models import (  # noqa: E402,F401
+    MFBenchmarkTRI, MFExternalPortfolioSnapshot, MFMarketCapClassification,
+    MFMasterData, MFMasterHolding, MFSourceRun,
+)

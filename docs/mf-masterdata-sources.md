@@ -73,3 +73,10 @@ This is a source inventory, not a claim that every field is present for every sc
 - BSE historical TRI access requires confirmation of the correct product/feed and a data-use agreement; the publicly accessible BSE page checked here is a market-data sales portal.
 - Free, machine-readable, bulk instrument-rating history was not identified. The initial credit-rating source should therefore be the rating printed in each AMC's official dated portfolio disclosure.
 - P/E, P/B, and dividend-yield fields are not uniformly present across all scheme factsheets. They remain null where the AMC does not disclose a scheme-level value; a licensed underlying-security fundamentals feed would require a separate decision.
+
+
+## Additional candidate source — MF Forecast holdings API
+
+The provider documentation screenshot supplied for this project describes `GET /funds/{amfi_code}/holdings` and a response containing scheme name, fund house, category, AUM in crore, expense ratio, equity/debt/cash allocation and per-security holdings (name, ticker, ISIN, weight, quantity and asset type). This is an optional, provider-attributed enrichment source, not a replacement for AMC portfolio disclosures.
+
+The screenshot does not establish the API base URL, auth header, portfolio as-of date, rate limit or redistribution rights. The adapter is configurable, bounded, throttled, and stores retrieval-date snapshots separately. Review [the MF Forecast operating note](operations/mfforecast_api.md) before scheduling calls.

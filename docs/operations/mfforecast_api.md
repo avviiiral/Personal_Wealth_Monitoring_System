@@ -47,6 +47,10 @@ Requests are throttled to no more than one per second per host. Transient networ
 - When the MF Forecast fallback is used, the quality flag `PORTFOLIO_DATE_IS_FETCH_DATE` is attached. The provider's asset-allocation percentages are used for allocation metrics when all three equity/debt/cash values are valid; a mismatch against row-derived buckets is flagged.
 - Provider AUM and expense ratio are retained in the provider snapshot table, but are not copied into canonical `MFMasterData.aum_cr` or Direct/Regular TER fields. The screenshot does not establish an AUM effective date/type or a TER effective date/plan-specific definition.
 
+## Empty holdings responses
+
+A successful HTTP response with an empty `holdings` array is not evidence that a scheme has no investments. PWMS retains the response metadata for audit, writes zero holding rows, adds the `MFFORECAST_HOLDINGS_EMPTY` quality flag, and marks the source run `PARTIAL`. Check the raw JSON file path printed by the command and compare the result against the AMC's dated portfolio disclosure. Do not interpret a zero-holdings response as a zero-weight portfolio.
+
 ## Data rights and operating checks
 
 Before scheduling repeated or bulk collection, confirm that MF Forecast's current terms/API plan permit the intended call volume, storage and downstream use. Public documentation alone does not establish redistribution rights. Start with a few schemes, compare their reported holdings and weights with the relevant AMC disclosure, and inspect the `MFExternalPortfolioSnapshot.quality_flags` and source-run record. Do not scale to all 14,000+ AMFI rows until provider limits and data rights are confirmed.

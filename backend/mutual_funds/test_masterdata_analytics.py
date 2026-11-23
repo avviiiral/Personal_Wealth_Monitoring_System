@@ -88,6 +88,42 @@ class MasterDataRatioEngineTests(TestCase):
         self.assertEqual(methodology["return_observations"], len(self.days) - 1)
         self.assertEqual(methodology["risk_free_rate_annual_pct"], 6.5)
 
+    def test_risk_metrics_flag_insufficient_daily_return_observations(self):
+        short_history_scheme = AMFIMasterScheme.objects.create(
+            scheme_code="990098",
+            scheme_name="PWMS Short History Fund",
+            isin_growth="INF990A01998",
+            plan="Direct Plan",
+            option="Growth",
+            is_growth_plan=True,
+            is_direct_plan_growth=True,
+            sebi_universe_active=True,
+        )
+        AMFIMasterNAV.objects.create(
+            scheme=short_history_scheme,
+            date=date(2026, 11, 19),
+            nav=Decimal("100.00"),
+            source="mfapi.in",
+        )
+        AMFIMasterNAV.objects.create(
+            scheme=short_history_scheme,
+            date=date(2026, 11, 20),
+            nav=Decimal("101.00"),
+            source="mfapi.in",
+        )
+
+        result = calculate_scheme_masterdata_metrics(
+            short_history_scheme, date(2026, 11, 20),
+        )
+
+        self.assertIsNone(result["values"].get("std_dev_pct"))
+        self.assertIsNone(result["values"].get("sharpe"))
+        self.assertEqual(result["risk_metric_metadata"]["return_observations"], 1)
+        self.assertIn(
+            "INSUFFICIENT_NAV_OBSERVATIONS_FOR_RISK_METRICS",
+            result["data_quality_flags"],
+        )
+
     def test_non_growth_distribution_option_skips_nav_only_risk_metrics(self):
         distribution_scheme = AMFIMasterScheme.objects.create(
             scheme_code="990099",

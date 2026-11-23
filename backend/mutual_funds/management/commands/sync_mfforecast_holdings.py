@@ -1,5 +1,6 @@
 """Import one or more scheme holdings snapshots from MF Forecast."""
 import os
+from datetime import date
 
 import requests
 from django.core.management.base import BaseCommand, CommandError
@@ -16,6 +17,7 @@ from mutual_funds.services.masterdata import (
 from mutual_funds.services.mfforecast import (
     build_mfforecast_headers,
     fetch_mfforecast_payload,
+    load_mfforecast_cached_payload,
     normalize_mfforecast_base_url,
     parse_mfforecast_holdings,
 )
@@ -41,51 +43,87 @@ class Command(BaseCommand):
             help="Maximum number of scheme requests (default: 50).",
         )
         parser.add_argument("--base-url", default="", help="Override MFFORECAST_API_BASE_URL.")
+        parser.add_argument(
+            "--from-cache", action="store_true",
+            help="Import the latest cached JSON responses for explicit scheme codes; no API requests.",
+        )
+        parser.add_argument(
+            "--cache-date", default="",
+            help="Local cache folder date (YYYY-MM-DD); defaults to today when --from-cache is used.",
+        )
         parser.add_argument("--dry-run", action="store_true")
 
     def handle(self, *args, **options):
-        configured_base_url = (
-            options["base_url"] or os.environ.get("MFFORECAST_API_BASE_URL", "")
-        ).strip()
-        if not configured_base_url:
-            raise CommandError(
-                "Set MFFORECAST_API_BASE_URL to the API base URL specified by MF Forecast."
-            )
-        try:
-            base_url = normalize_mfforecast_base_url(configured_base_url)
-        except ValueError as exc:
-            raise CommandError(str(exc)) from exc
-        if base_url != configured_base_url.rstrip("/"):
-            self.stdout.write(
-                self.style.WARNING(
-                    "Using normalized MF Forecast API base URL: " + base_url
-                )
-            )
-        api_key = os.environ.get("MFFORECAST_API_KEY", "").strip()
-        api_key_header = os.environ.get("MFFORECAST_API_KEY_HEADER", "").strip()
-        try:
-            headers = build_mfforecast_headers(
-                base_url=base_url, api_key=api_key, api_key_header=api_key_header,
-            )
-        except ValueError as exc:
-            raise CommandError(str(exc)) from exc
-
-        try:
-            timeout = int(os.environ.get("MFFORECAST_API_TIMEOUT_SECONDS", "20"))
-        except ValueError as exc:
-            raise CommandError("MFFORECAST_API_TIMEOUT_SECONDS must be an integer.") from exc
-        if not 1 <= timeout <= 120:
-            raise CommandError("MFFORECAST_API_TIMEOUT_SECONDS must be between 1 and 120.")
-
         scheme_codes = list(dict.fromkeys(str(code).strip() for code in options["scheme_codes"] if str(code).strip()))
         amc = options["amc"].strip()
         limit = options["limit"]
+        from_cache = bool(options["from_cache"])
         if not 1 <= limit <= 50:
             raise CommandError("--limit must be between 1 and 50 to keep provider usage bounded.")
         if len(scheme_codes) > limit:
             raise CommandError("The number of --scheme-code values cannot exceed --limit.")
         if not scheme_codes and not amc:
             raise CommandError("Specify at least one --scheme-code or an --amc filter; unbounded full-universe calls are disabled.")
+
+        if from_cache:
+            if not scheme_codes or amc:
+                raise CommandError("--from-cache requires explicit --scheme-code values and cannot be combined with --amc.")
+            if options["cache_date"]:
+                try:
+                    cache_date = date.fromisoformat(options["cache_date"].strip())
+                except ValueError as exc:
+                    raise CommandError("--cache-date must use YYYY-MM-DD format.") from exc
+            else:
+                cache_date = timezone.localdate()
+            if options["dry_run"]:
+                self.stdout.write(self.style.WARNING(
+                    "Reading cached JSON only; dry-run mode will not write database records."
+                ))
+        else:
+            if options["cache_date"]:
+                raise CommandError("--cache-date can only be used together with --from-cache.")
+            cache_date = None
+
+        configured_base_url = (
+            options["base_url"] or os.environ.get("MFFORECAST_API_BASE_URL", "")
+        ).strip()
+        if not configured_base_url and not from_cache:
+            raise CommandError(
+                "Set MFFORECAST_API_BASE_URL to the API base URL specified by MF Forecast."
+            )
+        if configured_base_url:
+            try:
+                base_url = normalize_mfforecast_base_url(configured_base_url)
+            except ValueError as exc:
+                raise CommandError(str(exc)) from exc
+            if base_url != configured_base_url.rstrip("/"):
+                self.stdout.write(
+                    self.style.WARNING(
+                        "Using normalized MF Forecast API base URL: " + base_url
+                    )
+                )
+        else:
+            base_url = ""
+
+        if from_cache:
+            headers = {}
+            timeout = 20
+        else:
+            api_key = os.environ.get("MFFORECAST_API_KEY", "").strip()
+            api_key_header = os.environ.get("MFFORECAST_API_KEY_HEADER", "").strip()
+            try:
+                headers = build_mfforecast_headers(
+                    base_url=base_url, api_key=api_key, api_key_header=api_key_header,
+                )
+            except ValueError as exc:
+                raise CommandError(str(exc)) from exc
+
+            try:
+                timeout = int(os.environ.get("MFFORECAST_API_TIMEOUT_SECONDS", "20"))
+            except ValueError as exc:
+                raise CommandError("MFFORECAST_API_TIMEOUT_SECONDS must be an integer.") from exc
+            if not 1 <= timeout <= 120:
+                raise CommandError("MFFORECAST_API_TIMEOUT_SECONDS must be between 1 and 120.")
 
         schemes_qs = AMFIMasterScheme.objects.filter(is_active=True)
         if scheme_codes:
@@ -132,13 +170,23 @@ class Command(BaseCommand):
             with requests.Session() as session:
                 for scheme in schemes:
                     try:
-                        payload, endpoint, raw_path = fetch_mfforecast_payload(
-                            session=session,
-                            base_url=base_url,
-                            scheme_code=scheme.scheme_code,
-                            headers=headers,
-                            timeout=timeout,
-                        )
+                        if from_cache:
+                            payload, raw_path = load_mfforecast_cached_payload(
+                                scheme_code=scheme.scheme_code,
+                                cache_date=cache_date,
+                            )
+                            endpoint = (
+                                f"{base_url}/funds/{scheme.scheme_code}/holdings"
+                                if base_url else ""
+                            )
+                        else:
+                            payload, endpoint, raw_path = fetch_mfforecast_payload(
+                                session=session,
+                                base_url=base_url,
+                                scheme_code=scheme.scheme_code,
+                                headers=headers,
+                                timeout=timeout,
+                            )
                         if payload is None:
                             counters["schemes_not_found"] += 1
                             counters["holdings_skipped"] += 1
@@ -322,7 +370,9 @@ class Command(BaseCommand):
                     **counters,
                     "scheme_outcomes": scheme_outcomes,
                     "api_base_url": base_url,
-                    "api_key_configured": bool(api_key),
+                    "api_key_configured": bool(os.environ.get("MFFORECAST_API_KEY", "").strip()) and not from_cache,
+                    "import_mode": "CACHE" if from_cache else "API",
+                    "cache_date": cache_date.isoformat() if cache_date else None,
                     "observation_started_at": observed_start.isoformat(),
                     "observation_completed_at": timezone.now().isoformat(),
                     "portfolio_date_basis": "PROVIDER_AS_OF_WHEN_SUPPLIED_ELSE_FETCHED_AT",
@@ -342,7 +392,7 @@ class Command(BaseCommand):
             f"inserted={counters['holdings_inserted']} "
             f"updated={counters['holdings_updated']} "
             f"skipped={counters['holdings_skipped']} "
-            f"errors={len(errors)} dry_run={dry_run}"
+            f"errors={len(errors)} dry_run={dry_run} from_cache={from_cache}"
         )
         if dry_run:
             self.stdout.write(self.style.SUCCESS("DRY RUN: " + summary + ". No database records were written."))

@@ -19,6 +19,7 @@ from mutual_funds.services.masterdata import persist_portfolio_rows
 from mutual_funds.services.mfforecast import (
     build_mfforecast_headers,
     fetch_mfforecast_payload,
+    load_mfforecast_cached_payload,
     normalize_mfforecast_base_url,
     parse_mfforecast_holdings,
 )
@@ -372,6 +373,37 @@ class MFForecastParserTests(TestCase):
 
 
 class MFForecastFetchTests(SimpleTestCase):
+    @patch("mutual_funds.services.mfforecast.settings.BASE_DIR")
+    def test_loads_latest_cached_response_for_scheme_and_date(self, base_dir):
+        with TemporaryDirectory() as temp_dir:
+            base_dir.__str__.return_value = temp_dir
+            cache_dir = Path(temp_dir) / "data" / "mf_raw" / "mfforecast_api" / "2026-11-23"
+            cache_dir.mkdir(parents=True)
+            (cache_dir / "scheme_120503_101000000000.json").write_text(
+                json.dumps({"holdings": [{"name": "older"}]}), encoding="utf-8",
+            )
+            (cache_dir / "scheme_120503_102000000000.json").write_text(
+                json.dumps({"holdings": [{"name": "latest"}]}), encoding="utf-8",
+            )
+
+            payload, raw_path = load_mfforecast_cached_payload(
+                scheme_code="120503",
+                cache_date=date(2026, 11, 23),
+            )
+
+            self.assertEqual(payload["holdings"][0]["name"], "latest")
+            self.assertTrue(raw_path.endswith("scheme_120503_102000000000.json"))
+
+    @patch("mutual_funds.services.mfforecast.settings.BASE_DIR")
+    def test_cached_payload_lookup_fails_when_scheme_cache_is_missing(self, base_dir):
+        with TemporaryDirectory() as temp_dir:
+            base_dir.__str__.return_value = temp_dir
+            with self.assertRaisesMessage(FileNotFoundError, "No cached MF Forecast response"):
+                load_mfforecast_cached_payload(
+                    scheme_code="120503",
+                    cache_date=date(2026, 11, 23),
+                )
+
     @patch("mutual_funds.services.mfforecast._throttle")
     def test_fetch_uses_documented_path_and_disables_redirects(self, throttle):
         response = requests.Response()
@@ -433,6 +465,56 @@ class MFForecastFetchTests(SimpleTestCase):
 
         session.get.assert_called_once()
         throttle.assert_called_once()
+
+class MFForecastCachedImportCommandTests(TestCase):
+    def setUp(self):
+        self.scheme = AMFIMasterScheme.objects.create(
+            scheme_code="128629",
+            scheme_name="HDFC Banking and PSU Debt Fund - Direct Plan - Growth",
+            amc_name="HDFC Mutual Fund",
+            isin_growth="INF179KA1IZ7",
+            plan="Direct Plan",
+            option="Growth",
+            is_growth_plan=True,
+            is_active=True,
+        )
+
+    @patch("mutual_funds.management.commands.sync_mfforecast_holdings.fetch_mfforecast_payload")
+    @patch("mutual_funds.management.commands.sync_mfforecast_holdings.load_mfforecast_cached_payload")
+    def test_imports_cached_payload_without_api_request_or_credentials(self, load_cache, fetch):
+        load_cache.return_value = (
+            read_live_schema_payload(),
+            "data/mf_raw/mfforecast_api/2026-11-23/scheme_128629_102000000000.json",
+        )
+        with patch.dict(
+            "os.environ",
+            {
+                "MFFORECAST_API_BASE_URL": "",
+                "MFFORECAST_API_KEY": "",
+                "MFFORECAST_API_KEY_HEADER": "",
+            },
+        ):
+            call_command(
+                "sync_mfforecast_holdings",
+                scheme_codes=["128629"],
+                from_cache=True,
+                cache_date="2026-11-23",
+                limit=1,
+            )
+
+        fetch.assert_not_called()
+        load_cache.assert_called_once_with(
+            scheme_code="128629",
+            cache_date=date(2026, 11, 23),
+        )
+        run = MFSourceRun.objects.get(source="MFFORECAST_API")
+        snapshot = MFExternalPortfolioSnapshot.objects.get(scheme=self.scheme)
+        self.assertEqual(run.metadata["import_mode"], "CACHE")
+        self.assertEqual(run.metadata["cache_date"], "2026-11-23")
+        self.assertEqual(run.status, MFSourceRun.Status.PARTIAL)
+        self.assertEqual(snapshot.raw_file_path, load_cache.return_value[1])
+        self.assertEqual(MFMasterHolding.objects.filter(scheme=self.scheme).count(), 3)
+
 
 class MFForecastEmptyResponseCommandTests(TestCase):
     def setUp(self):

@@ -8,12 +8,15 @@ from __future__ import annotations
 
 import json
 import threading
+from datetime import date
+from pathlib import Path
 import time
 from decimal import Decimal
 import re
 from urllib.parse import quote, urlparse, urlunparse
 
 import requests
+from django.conf import settings
 from django.utils import timezone
 
 from mutual_funds.services.masterdata import (
@@ -295,6 +298,44 @@ def parse_mfforecast_holdings(payload: dict, *, scheme_code: str) -> dict:
         "invalid_rows": invalid_rows,
         "missing_weight_rows": missing_weight_rows,
     }
+
+def load_mfforecast_cached_payload(*, scheme_code: str, cache_date: date) -> tuple[dict, str]:
+    """Load the latest cached provider response for one scheme and local cache date.
+
+    The cache import path is read-only: it never contacts MF Forecast and does
+    not create cache directories. The caller controls the date explicitly so
+    an older response cannot be selected silently.
+    """
+    code = str(scheme_code).strip()
+    if not re.fullmatch(r"\d{1,8}", code):
+        raise ValueError("MF Forecast cache lookup requires a numeric AMFI scheme code.")
+    if not isinstance(cache_date, date):
+        raise TypeError("cache_date must be a datetime.date value.")
+
+    raw_dir = (
+        Path(settings.BASE_DIR)
+        / "data"
+        / "mf_raw"
+        / "mfforecast_api"
+        / cache_date.isoformat()
+    )
+    paths = sorted(raw_dir.glob(f"scheme_{code}_*.json"))
+    if not paths:
+        raise FileNotFoundError(
+            f"No cached MF Forecast response found for scheme {code} on {cache_date.isoformat()}."
+        )
+
+    raw_path = paths[-1]
+    try:
+        payload = json.loads(raw_path.read_text(encoding="utf-8-sig"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise ValueError(
+            f"Unable to read cached MF Forecast JSON for scheme {code}: {raw_path.name}"
+        ) from exc
+    if not isinstance(payload, dict):
+        raise ValueError(f"Cached MF Forecast response for scheme {code} is not a JSON object.")
+    return payload, str(raw_path)
+
 
 def _throttle(host: str) -> None:
     """Apply a conservative one-request-per-second process-level host throttle."""

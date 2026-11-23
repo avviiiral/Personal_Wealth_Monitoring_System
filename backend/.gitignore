@@ -94,3 +94,5 @@ dmypy.json
 dist/
 build/
 .eggs/
+# Downloaded mutual-fund source disclosures
+/data/mf_raw/

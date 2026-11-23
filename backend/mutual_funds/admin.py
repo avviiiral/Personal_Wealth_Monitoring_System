@@ -153,7 +153,7 @@ class SIPInstallmentAdmin(admin.ModelAdmin):
 
     date_hierarchy = "scheduled_date"
 
-from .master_models import MFMasterData, MFMasterHolding, MFSourceRun
+from .master_models import MFBenchmarkTRI, MFMarketCapClassification, MFMasterData, MFMasterHolding, MFSourceRun
 
 
 @admin.register(MFMasterData)
@@ -179,3 +179,18 @@ class MFSourceRunAdmin(admin.ModelAdmin):
     search_fields = ("source", "command", "source_url", "raw_file_path")
     date_hierarchy = "started_at"
     readonly_fields = tuple(field.name for field in MFSourceRun._meta.fields)
+
+
+@admin.register(MFBenchmarkTRI)
+class MFBenchmarkTRIAdmin(admin.ModelAdmin):
+    list_display = ("index_code", "index_name", "date", "tri_value", "source", "fetched_at")
+    list_filter = ("index_code", "source", "date")
+    search_fields = ("index_code", "index_name")
+    date_hierarchy = "date"
+
+
+@admin.register(MFMarketCapClassification)
+class MFMarketCapClassificationAdmin(admin.ModelAdmin):
+    list_display = ("isin", "company_name", "market_cap_class", "market_cap_rank", "effective_period")
+    list_filter = ("effective_period", "market_cap_class")
+    search_fields = ("isin", "company_name")

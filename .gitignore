@@ -276,3 +276,5 @@ debug/
 # Graphify generated analysis
 graphify-out/
 .graphify_analysis.json
+# Downloaded mutual-fund source disclosures
+/backend/data/mf_raw/

@@ -95,6 +95,7 @@ class MFMasterData(models.Model):
     macaulay_duration = models.DecimalField(max_digits=14, decimal_places=4, blank=True, null=True)
     average_maturity = models.DecimalField(max_digits=14, decimal_places=4, blank=True, null=True)
     credit_rating_split = models.JSONField(default=dict, blank=True)
+    sector_allocation = models.JSONField(default=dict, blank=True)
 
     equity_pct = models.DecimalField(max_digits=10, decimal_places=4, blank=True, null=True)
     debt_pct = models.DecimalField(max_digits=10, decimal_places=4, blank=True, null=True)
@@ -206,3 +207,61 @@ class MFSourceRun(models.Model):
 
     def __str__(self):
         return f"{self.source} - {self.started_at:%Y-%m-%d %H:%M} - {self.status}"
+
+
+class MFBenchmarkTRI(models.Model):
+    """Daily official benchmark total-return-index observations."""
+    index_code = models.CharField(max_length=100, db_index=True)
+    index_name = models.CharField(max_length=300)
+    date = models.DateField(db_index=True)
+    tri_value = models.DecimalField(max_digits=24, decimal_places=4)
+    source = models.CharField(max_length=100)
+    source_url = models.URLField(max_length=1000, blank=True, default="")
+    fetched_at = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        db_table = "mf_benchmark_tri"
+        ordering = ["index_code", "date"]
+        constraints = [
+            models.UniqueConstraint(fields=["index_code", "date"], name="unique_mf_benchmark_tri_date"),
+        ]
+        indexes = [
+            models.Index(fields=["index_code", "-date"], name="mf_benchmark_tri_code_date_idx"),
+        ]
+
+    def __str__(self):
+        return f"{self.index_name} - {self.date} - {self.tri_value}"
+
+
+class MFMarketCapClassification(models.Model):
+    """ISIN-level AMFI large/mid/small-cap classification for an effective half-year."""
+    LARGE_CAP = "LARGE_CAP"
+    MID_CAP = "MID_CAP"
+    SMALL_CAP = "SMALL_CAP"
+    MARKET_CAP_CHOICES = (
+        (LARGE_CAP, "Large Cap"),
+        (MID_CAP, "Mid Cap"),
+        (SMALL_CAP, "Small Cap"),
+    )
+
+    isin = models.CharField(max_length=20, db_index=True)
+    company_name = models.CharField(max_length=300, blank=True, default="")
+    market_cap_rank = models.PositiveIntegerField(blank=True, null=True)
+    market_cap_class = models.CharField(max_length=20, choices=MARKET_CAP_CHOICES)
+    effective_period = models.CharField(max_length=20)
+    source = models.CharField(max_length=100, default="AMFI")
+    source_url = models.URLField(max_length=1000, blank=True, default="")
+    fetched_at = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        db_table = "mf_market_cap_classification"
+        ordering = ["effective_period", "market_cap_rank", "company_name"]
+        constraints = [
+            models.UniqueConstraint(fields=["isin", "effective_period"], name="unique_mf_market_cap_period_isin"),
+        ]
+        indexes = [
+            models.Index(fields=["effective_period", "market_cap_class"], name="mf_market_cap_period_idx"),
+        ]
+
+    def __str__(self):
+        return f"{self.company_name or self.isin} - {self.market_cap_class} - {self.effective_period}"

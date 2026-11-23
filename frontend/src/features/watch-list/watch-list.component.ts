@@ -1404,23 +1404,27 @@ export class WatchListComponent implements OnInit, OnDestroy {
   metric(product: WatchListProduct, key: string): number | null { return product.metrics?.[key] ?? null; }
 
   terSourceField(product: WatchListProduct): string {
-    return String(product.mutual_fund?.plan || '').toLowerCase().includes('regular')
-      ? 'ter_regular_pct'
-      : 'ter_direct_pct';
+    const plan = String(product.mutual_fund?.plan || '').toLowerCase();
+    if (plan.includes('regular')) return 'ter_regular_pct';
+    if (plan.includes('direct')) return 'ter_direct_pct';
+    return 'ter_plan_unknown';
   }
 
   terValue(product: WatchListProduct): number | null {
     const research = product.mutual_fund?.research_metrics;
     if (!research) return null;
     const plan = String(product.mutual_fund?.plan || '').toLowerCase();
-    if (plan.includes('direct') && research.ter_direct_pct !== null && research.ter_direct_pct !== undefined) {
-      return Number(research.ter_direct_pct);
+    // TER is plan-specific. Never show a Direct TER on a Regular plan (or
+    // vice versa) merely because the requested plan's disclosure is missing.
+    if (plan.includes('direct')) {
+      const value = research.ter_direct_pct;
+      return value === null || value === undefined ? null : Number(value);
     }
-    if (plan.includes('regular') && research.ter_regular_pct !== null && research.ter_regular_pct !== undefined) {
-      return Number(research.ter_regular_pct);
+    if (plan.includes('regular')) {
+      const value = research.ter_regular_pct;
+      return value === null || value === undefined ? null : Number(value);
     }
-    const fallback = research.ter_direct_pct ?? research.ter_regular_pct;
-    return fallback === null || fallback === undefined ? null : Number(fallback);
+    return null;
   }
 
   private aumSortValue(product: WatchListProduct): number | null {
@@ -1445,6 +1449,35 @@ export class WatchListComponent implements OnInit, OnDestroy {
     const source = research.field_sources?.[field]?.source || 'Source not recorded';
     const sourceDate = research.field_sources?.[field]?.as_of_date || research.as_of_date || 'Date unavailable';
     const methodology = research.risk_methodology || {};
+    const flags = new Set<string>(research.data_quality_flags || []);
+    const missingReason: string[] = [];
+
+    if (field === 'ter_direct_pct' || field === 'ter_regular_pct') {
+      const requestedPlan = field === 'ter_direct_pct' ? 'Direct Plan' : 'Regular Plan';
+      const otherValue = field === 'ter_direct_pct' ? research.ter_regular_pct : research.ter_direct_pct;
+      const requestedValue = field === 'ter_direct_pct' ? research.ter_direct_pct : research.ter_regular_pct;
+      if (requestedValue === null || requestedValue === undefined) {
+        missingReason.push(otherValue !== null && otherValue !== undefined
+          ? `${requestedPlan} TER is unavailable; the opposite plan's TER is not substituted.`
+          : `No dated ${requestedPlan} TER disclosure has been imported for this scheme.`);
+      }
+    } else if (field === 'ter_plan_unknown') {
+      missingReason.push('Plan identity is unavailable, so a plan-specific TER cannot be selected safely.');
+    } else if (['std_dev_pct', 'sharpe', 'sortino'].includes(field)) {
+      const value = (research as any)[field];
+      if (value === null || value === undefined) {
+        if (flags.has('NAV_BASED_METRICS_SKIPPED_NON_GROWTH_OPTION')) {
+          missingReason.push('NAV-only risk metrics are skipped for non-Growth / IDCW options.');
+        } else if (flags.has('NAV_HISTORY_NOT_AVAILABLE')) {
+          missingReason.push('No usable historical NAV series is stored for this scheme.');
+        } else if (flags.has('INSUFFICIENT_NAV_OBSERVATIONS_FOR_RISK_METRICS')) {
+          missingReason.push('At least two daily NAV return observations are required for risk metrics.');
+        } else {
+          missingReason.push('This risk metric is unavailable in the latest calculated snapshot.');
+        }
+      }
+    }
+
     const window = methodology.window_start_date && methodology.window_end_date
       ? `Window: ${methodology.window_start_date} to ${methodology.window_end_date} (${methodology.return_observations || 0} daily returns)`
       : '';
@@ -1454,7 +1487,8 @@ export class WatchListComponent implements OnInit, OnDestroy {
     const method = methodology.method === 'DAILY_NAV_RETURNS'
       ? 'Annualized from daily NAV returns (252-day convention)'
       : '';
-    return [`Source: ${source}`, `As of: ${sourceDate}`, method, window, riskFree].filter(Boolean).join(' · ');
+    return [...missingReason, `Source: ${source}`, `As of: ${sourceDate}`, method, window, riskFree]
+      .filter(Boolean).join(' · ');
   }
 
   formatRatio(value: number | null): string {

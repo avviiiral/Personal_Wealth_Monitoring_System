@@ -172,7 +172,7 @@ def _instrument_type(raw_type, security_name):
         return "CASH"
     if any(x in value for x in ("equity", "shares", "stock", "listed equity")):
         return "EQUITY"
-    if any(x in value for x in ("government security", "g sec", "gsec", "bond", "debenture", "ncd", "certificate of deposit", "commercial paper", "treasury bill", "t bill", "state development loan")):
+    if any(x in value for x in ("government security", "g sec", "gsec", "bond", "debt", "fixed income", "debenture", "ncd", "certificate of deposit", "commercial paper", "treasury bill", "t bill", "state development loan")):
         return "BOND"
     if any(x in value for x in ("exchange traded fund", " etf", "mutual fund unit")):
         return "FUND"
@@ -374,19 +374,29 @@ def parse_market_cap_rows(payload, *, filename, effective_period):
 
 
 @transaction.atomic
-def persist_portfolio_rows(scheme, rows, *, portfolio_date, source, source_url=""):
+def persist_portfolio_rows(
+    scheme, rows, *, portfolio_date, source, source_url="",
+    portfolio_date_basis=MFMasterHolding.DATE_BASIS_DISCLOSURE,
+):
     inserted = updated = skipped = 0
     for row in rows:
         name, isin = normalize_text(row.get("security_name")), normalize_isin(row.get("isin"))
+        ticker = normalize_text(row.get("ticker"))[:40]
         if not name:
             skipped += 1
             continue
-        key = (f"ISIN:{isin}" if isin else f"NAME:{normalize_key(name)}")[:320]
-        exists = MFMasterHolding.objects.filter(scheme=scheme, portfolio_date=portfolio_date, security_key=key).exists()
+        key = (f"ISIN:{isin}" if isin else f"TICKER:{ticker}" if ticker else f"NAME:{normalize_key(name)}")[:320]
+        exists = MFMasterHolding.objects.filter(
+            scheme=scheme, portfolio_date=portfolio_date,
+            portfolio_date_basis=portfolio_date_basis, security_key=key,
+        ).exists()
         MFMasterHolding.objects.update_or_create(
-            scheme=scheme, portfolio_date=portfolio_date, security_key=key,
+            scheme=scheme, portfolio_date=portfolio_date,
+            portfolio_date_basis=portfolio_date_basis, security_key=key,
             defaults={
-                "security_name": name[:300], "isin": isin, "instrument_type": row.get("instrument_type") or "OTHER",
+                "security_name": name[:300], "isin": isin, "ticker": ticker,
+                "portfolio_date_basis": portfolio_date_basis,
+                "instrument_type": row.get("instrument_type") or "OTHER",
                 "sector": row.get("sector") or "", "industry": row.get("industry") or "",
                 "rating": row.get("rating") or "", "rating_agency": row.get("rating_agency") or "",
                 "quantity": row.get("quantity"), "market_value": row.get("market_value"),

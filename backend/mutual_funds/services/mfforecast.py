@@ -101,7 +101,9 @@ def parse_mfforecast_holdings(payload: dict, *, scheme_code: str) -> dict:
         if not isinstance(item, dict):
             invalid_rows += 1
             continue
-        security_name = normalize_text(item.get("stock_name"))
+        # The live RapidAPI response uses "name"; the published example uses
+        # "stock_name". Accept both without changing weight units.
+        security_name = normalize_text(item.get("name") or item.get("stock_name"))
         weight = decimal_value(item.get("weight_pct"), percent=True)
         if not security_name or weight is None or weight < 0:
             invalid_rows += 1
@@ -135,8 +137,16 @@ def parse_mfforecast_holdings(payload: dict, *, scheme_code: str) -> dict:
     if expense_ratio_pct is not None and expense_ratio_pct < 0:
         expense_ratio_pct = None
 
+    response_scheme_code = normalize_text(payload.get("amfi_code"))
+    if response_scheme_code and response_scheme_code != str(scheme_code):
+        raise ValueError(
+            f"MF Forecast response AMFI code {response_scheme_code} does not match requested scheme code {scheme_code}."
+        )
+
     return {
         "scheme_code": str(scheme_code),
+        "provider_holdings_count": int(payload.get("holdings_count") or 0),
+        "provider_snapshot": payload.get("snapshot") if isinstance(payload.get("snapshot"), dict) else {},
         "scheme_name": normalize_text(payload.get("scheme_name"))[:300],
         "fund_house": normalize_text(payload.get("fund_house"))[:200],
         "category": normalize_text(payload.get("category"))[:160],

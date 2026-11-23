@@ -67,6 +67,14 @@ def parse_date(value):
         return value.date()
     if isinstance(value, date):
         return value
+    normalized = normalize_text(value)
+    # ISO dates are unambiguous; parse them directly instead of sending them
+    # through pandas with dayfirst=True (which emits a warning).
+    if re.fullmatch(r"\\d{4}-\\d{2}-\\d{2}", normalized):
+        try:
+            return date.fromisoformat(normalized)
+        except ValueError:
+            return None
     parsed = pd.to_datetime(value, dayfirst=True, errors="coerce")
     return None if pd.isna(parsed) else parsed.date()
 

@@ -183,8 +183,18 @@ def calculate_scheme_masterdata_metrics(
         current = nav_by_date.get(nav_date)
         if current is None or source_priority.get(source, 0) > source_priority.get(current[1], 0):
             nav_by_date[nav_date] = (float(nav), source)
-    series = [(day, value[0]) for day, value in sorted(nav_by_date.items())]
-    used_nav_sources = {value[1] for value in nav_by_date.values()}
+    # NAV-only total-return statistics are meaningful only for Growth options.
+    # IDCW/dividend NAV series omit cash distributions and would understate
+    # investor returns while distorting volatility and risk-adjusted ratios.
+    growth_option = bool(scheme.is_growth_plan)
+    series = (
+        [(day, value[0]) for day, value in sorted(nav_by_date.items())]
+        if growth_option else []
+    )
+    used_nav_sources = (
+        {value[1] for value in nav_by_date.values()}
+        if growth_option else set()
+    )
     nav_source_urls = []
     if "AMFI_NAVALL" in used_nav_sources or "AMFI" in used_nav_sources:
         nav_source_urls.append("https://www.amfiindia.com/spages/NAVAll.txt")
@@ -194,6 +204,8 @@ def calculate_scheme_masterdata_metrics(
     flags = []
     values = {}
     risk_metric_metadata = {}
+    if not growth_option:
+        flags.append("NAV_BASED_METRICS_SKIPPED_NON_GROWTH_OPTION")
     if series:
         from mutual_funds.services.sebi_mf_analytics import compute_fund_performance_metrics
         metrics = compute_fund_performance_metrics(series, risk_free_rate=risk_free_rate)

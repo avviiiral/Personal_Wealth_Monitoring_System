@@ -251,7 +251,7 @@ class AaumSyncTests(PipelineTestCase):
         rerun = jobs.sync_aum(aum_client=FakeAumClient())
         self.assertEqual(rerun.status, MFSourceRun.Status.SKIPPED)
         self.assertEqual(rerun.metadata["skip_reason"], "PERIOD_ALREADY_LOADED")
-        self.assertEqual(AMFISchemeAAUM.objects.count(), 6)
+        self.assertEqual(AMFISchemeAAUM.objects.count(), 7)  # 7 universe codes; FoF code unmatched
 
 
 class AmfiRiskSyncTests(PipelineTestCase):

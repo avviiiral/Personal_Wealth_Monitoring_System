@@ -2,7 +2,7 @@
 from datetime import datetime, timedelta
 from unittest import mock
 
-from django.test import SimpleTestCase
+from django.test import SimpleTestCase, TestCase
 
 from mutual_funds.services.mf_pipeline import scheduler
 from mutual_funds.services.mf_pipeline.scheduler import IST
@@ -92,3 +92,23 @@ class StartupTests(SimpleTestCase):
             self.assertFalse(scheduler.pipeline_enabled())
         with mock.patch.dict("os.environ", {}, clear=False):
             self.assertTrue(scheduler.pipeline_enabled())
+
+
+class InterruptedRunTests(TestCase):
+    def test_runs_left_running_by_previous_process_are_closed(self):
+        from django.utils import timezone
+
+        from mutual_funds.master_models import MFSourceRun
+
+        orphan = MFSourceRun.objects.create(source="X", command="mf_nav_gap_check", status=MFSourceRun.Status.RUNNING)
+        MFSourceRun.objects.filter(id=orphan.id).update(started_at=timezone.now() - timedelta(minutes=5))
+        other = MFSourceRun.objects.create(source="X", command="sync_mf_ter", status=MFSourceRun.Status.RUNNING)
+        MFSourceRun.objects.filter(id=other.id).update(started_at=timezone.now() - timedelta(minutes=5))
+
+        scheduler.MFPipelineScheduler._close_interrupted_runs(timezone.now() - timedelta(minutes=1))
+
+        orphan.refresh_from_db()
+        other.refresh_from_db()
+        self.assertEqual(orphan.status, MFSourceRun.Status.FAILED)
+        self.assertIn("Interrupted", orphan.errors[0]["error"])
+        self.assertEqual(other.status, MFSourceRun.Status.RUNNING)  # not a pipeline job

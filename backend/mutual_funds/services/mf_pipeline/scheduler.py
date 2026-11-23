@@ -192,10 +192,40 @@ class MFPipelineScheduler:
         logger.info("Mutual-fund masterdata pipeline scheduler started.")
 
     @classmethod
+    def _close_interrupted_runs(cls, process_started):
+        """Mark pipeline runs left RUNNING by a stopped backend as FAILED.
+
+        SQLite deployments run a single backend process, so anything older
+        than this process is orphaned. With PostgreSQL several workers may be
+        running jobs, so only runs older than 6 hours are closed.
+        """
+        from django.db import connection
+        from django.utils import timezone
+
+        from mutual_funds.master_models import MFSourceRun
+
+        cutoff = process_started if connection.vendor != "postgresql" else timezone.now() - timedelta(hours=6)
+        closed = MFSourceRun.objects.filter(
+            command__startswith="mf_", status=MFSourceRun.Status.RUNNING, started_at__lt=cutoff,
+        ).update(
+            status=MFSourceRun.Status.FAILED, completed_at=timezone.now(),
+            errors=[{"error": "Interrupted: the backend stopped before the job finished."}],
+        )
+        if closed:
+            logger.info("Closed %s interrupted masterdata run(s).", closed)
+
+    @classmethod
     def _run(cls):
+        from django.utils import timezone
+
         from .runlog import last_success_at
 
+        process_started = timezone.now()
         time.sleep(max(0, int(os.environ.get("PWMS_MF_PIPELINE_STARTUP_DELAY_SECONDS", "60"))))
+        try:
+            cls._close_interrupted_runs(process_started)
+        except Exception:
+            logger.exception("Could not close interrupted masterdata runs.")
         if _env_flag("PWMS_MF_PIPELINE_RUN_ON_STARTUP", True):
             try:
                 plan = startup_plan(now=datetime.now(IST), last_success=last_success_at)

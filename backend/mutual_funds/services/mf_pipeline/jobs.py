@@ -999,7 +999,7 @@ def _overlay(scheme, as_of, rf_pct, rf_default, benchmarks):
     return True
 
 
-def calc_ratios(as_of=None, scheme_codes=None, scope=None, chunk_size=250):
+def calc_ratios(as_of=None, scheme_codes=None, scope=None, chunk_size=100):
     """Rebuild today's snapshot (build_mf_masterdata) and add calc_*/NAV fields."""
 
     def job(run):

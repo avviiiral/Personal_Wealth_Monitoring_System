@@ -155,6 +155,41 @@ class MutualFundAnalyticsApiTests(TestCase):
         self.assertEqual(Decimal(str(metrics["sharpe"])), Decimal("1.2300"))
         self.assertEqual(metrics["field_sources"]["sharpe"]["source"], "PWMS_CALCULATED_NAV")
 
+    def test_masterdata_match_prefers_child_amfi_scheme_code_over_stale_external_identifier(self):
+        product = self._create_fund(
+            "Code Matched Large Cap Fund", "120999", "Large Cap", "12.50",
+        )
+        product.external_identifier = "OLD-PROVIDER-IDENTIFIER"
+        product.isin = ""
+        product.save(update_fields=["external_identifier", "isin"])
+        scheme = AMFIMasterScheme.objects.create(
+            scheme_code="120999",
+            scheme_name="Code Matched Large Cap Fund",
+            amc_name="Example AMC",
+            plan="Direct Plan",
+            option="Growth",
+            is_growth_plan=True,
+            is_active=True,
+        )
+        MFMasterData.objects.create(
+            scheme=scheme,
+            as_of_date=date(2026, 11, 20),
+            scheme_code="120999",
+            scheme_name=scheme.scheme_name,
+            aum_cr=Decimal("91.2500"),
+            std_dev_pct=Decimal("8.7500"),
+            sharpe=Decimal("0.7200"),
+        )
+
+        response = self.client.get("/api/watch-list/products/?product_type=MUTUAL_FUND")
+
+        self.assertEqual(response.status_code, 200)
+        row = next(item for item in response.data["results"] if item["id"] == product.id)
+        metrics = row["mutual_fund"]["research_metrics"]
+        self.assertEqual(Decimal(str(metrics["aum_cr"])), Decimal("91.2500"))
+        self.assertEqual(Decimal(str(metrics["std_dev_pct"])), Decimal("8.7500"))
+        self.assertEqual(Decimal(str(metrics["sharpe"])), Decimal("0.7200"))
+
     def test_overview_requires_authentication(self):
         self.client.force_authenticate(user=None)
         response = self.client.get("/api/mutual-fund-analytics/overview/")

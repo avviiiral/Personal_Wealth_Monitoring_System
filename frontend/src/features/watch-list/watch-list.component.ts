@@ -1438,7 +1438,17 @@ export class WatchListComponent implements OnInit, OnDestroy {
     if (!research) return 'No global MF research snapshot is available for this scheme.';
     const source = research.field_sources?.[field]?.source || 'Source not recorded';
     const sourceDate = research.field_sources?.[field]?.as_of_date || research.as_of_date || 'Date unavailable';
-    return `Source: ${source} · As of: ${sourceDate}`;
+    const methodology = research.risk_methodology || {};
+    const window = methodology.window_start_date && methodology.window_end_date
+      ? `Window: ${methodology.window_start_date} to ${methodology.window_end_date} (${methodology.return_observations || 0} daily returns)`
+      : '';
+    const riskFree = methodology.risk_free_rate_annual_pct !== null && methodology.risk_free_rate_annual_pct !== undefined
+      ? `Annual risk-free rate: ${Number(methodology.risk_free_rate_annual_pct).toFixed(2)}%`
+      : '';
+    const method = methodology.method === 'DAILY_NAV_RETURNS'
+      ? 'Annualized from daily NAV returns (252-day convention)'
+      : '';
+    return [`Source: ${source}`, `As of: ${sourceDate}`, method, window, riskFree].filter(Boolean).join(' · ');
   }
 
   formatRatio(value: number | null): string {

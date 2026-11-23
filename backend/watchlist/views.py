@@ -4,6 +4,10 @@ import threading
 import time
 from django.db.models import Exists, OuterRef, Q, Subquery
 from django.shortcuts import get_object_or_404
+from django.utils import timezone
+
+from mutual_funds.models import AMFIMasterScheme
+from mutual_funds.master_models import MFMasterData
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.pagination import PageNumberPagination
 from rest_framework.permissions import IsAuthenticated
@@ -258,6 +262,88 @@ def _latest_snapshots(products):
     return latest, metric_snapshot
 
 
+def _latest_masterdata_snapshots(products):
+    """Bulk-match Watchlist MF products to the latest global research snapshot.
+
+    AMFI scheme code is the primary identity. ISIN is a fallback only when it
+    identifies exactly one active AMFI master scheme, avoiding ambiguous joins.
+    This is a read-only enrichment; it never calls an external provider.
+    """
+    mutual_funds = [product for product in products if product.product_type == ProductType.MUTUAL_FUND]
+    if not mutual_funds:
+        return {}
+
+    product_codes = {}
+    product_isins = {}
+    all_codes = set()
+    all_isins = set()
+    for product in mutual_funds:
+        mutual_fund = getattr(product, "mutual_fund", None)
+        code = str(
+            product.external_identifier
+            or getattr(mutual_fund, "scheme_code", "")
+            or ""
+        ).strip()
+        isin = str(product.isin or "").strip().upper()
+        if code:
+            product_codes[product.id] = code
+            all_codes.add(code)
+        if isin:
+            product_isins[product.id] = isin
+            all_isins.add(isin)
+
+    if not all_codes and not all_isins:
+        return {}
+
+    scheme_rows = AMFIMasterScheme.objects.filter(is_active=True).filter(
+        Q(scheme_code__in=all_codes)
+        | Q(isin_growth__in=all_isins)
+        | Q(isin_dividend__in=all_isins)
+    ).values("id", "scheme_code", "isin_growth", "isin_dividend")
+
+    schemes_by_code = {}
+    schemes_by_isin = {}
+    ambiguous_isins = set()
+    for row in scheme_rows:
+        schemes_by_code[row["scheme_code"]] = row["id"]
+        for value in (row["isin_growth"], row["isin_dividend"]):
+            isin = str(value or "").strip().upper()
+            if not isin:
+                continue
+            if isin in schemes_by_isin and schemes_by_isin[isin] != row["id"]:
+                ambiguous_isins.add(isin)
+            else:
+                schemes_by_isin[isin] = row["id"]
+
+    scheme_by_product = {}
+    for product in mutual_funds:
+        scheme_id = schemes_by_code.get(product_codes.get(product.id, ""))
+        if scheme_id is None:
+            isin = product_isins.get(product.id, "")
+            if isin and isin not in ambiguous_isins:
+                scheme_id = schemes_by_isin.get(isin)
+        if scheme_id is not None:
+            scheme_by_product[product.id] = scheme_id
+
+    scheme_ids = set(scheme_by_product.values())
+    if not scheme_ids:
+        return {}
+
+    latest_by_scheme = {}
+    snapshots = MFMasterData.objects.filter(
+        scheme_id__in=scheme_ids,
+        as_of_date__lte=timezone.localdate(),
+    ).order_by("scheme_id", "-as_of_date", "-id")
+    for snapshot in snapshots:
+        latest_by_scheme.setdefault(snapshot.scheme_id, snapshot)
+
+    return {
+        product_id: latest_by_scheme[scheme_id]
+        for product_id, scheme_id in scheme_by_product.items()
+        if scheme_id in latest_by_scheme
+    }
+
+
 def _watchlisted_ids(products, request):
     product_ids = [product.id for product in products]
     if not product_ids or not request.user.is_authenticated:
@@ -347,6 +433,7 @@ def watch_list_products(request):
     page = paginator.paginate_queryset(queryset, request)
     page = list(page or [])
     latest_snapshots, metric_snapshots = _latest_snapshots(page)
+    masterdata_snapshots = _latest_masterdata_snapshots(page)
     ownership_cache = _ownership_cache(page, request)
     serializer = WatchListProductSerializer(
         page,
@@ -355,6 +442,7 @@ def watch_list_products(request):
             "request": request,
             "latest_snapshots": latest_snapshots,
             "metric_snapshots": metric_snapshots,
+            "masterdata_snapshots": masterdata_snapshots,
             "ownership_cache": ownership_cache,
             "watchlisted_ids": _watchlisted_ids(page, request),
         },
@@ -371,6 +459,7 @@ def watch_list_product_detail(request, product_id):
         is_active=True,
     )
     latest_snapshots, metric_snapshots = _latest_snapshots([product])
+    masterdata_snapshots = _latest_masterdata_snapshots([product])
     ownership_cache = OwnershipService.bulk_enrich([product], request.user)
     return Response(
         WatchListProductSerializer(
@@ -379,6 +468,7 @@ def watch_list_product_detail(request, product_id):
                 "request": request,
                 "latest_snapshots": latest_snapshots,
                 "metric_snapshots": metric_snapshots,
+                "masterdata_snapshots": masterdata_snapshots,
                 "ownership_cache": ownership_cache,
                 "watchlisted_ids": _watchlisted_ids([product], request),
             },

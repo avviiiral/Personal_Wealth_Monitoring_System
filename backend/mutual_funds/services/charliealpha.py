@@ -706,7 +706,7 @@ class CharlieAlphaService:
             scheme = self._resolve_scheme({"scheme_code": code})
             if not scheme:
                 continue
-            as_of = parse_date(_first(payload, "as_of", "as_of_date", "report_date")) or parse_date(report_date) or timezone.localdate()
+            as_of = parse_date(_first(payload, "as_of", "as_of_date", "report_date") or _find_nested(payload, ("as_of", "as_of_date", "report_date"))) or parse_date(report_date) or timezone.localdate()
             rows = _records(payload, ("holdings", "data", "results"))
             self.stats["fetched"] += len(rows)
             normalized = []
@@ -741,7 +741,7 @@ class CharlieAlphaService:
                 continue
             if self.dry_run:
                 continue
-            date_basis = MFMasterHolding.DATE_BASIS_DISCLOSURE if (_first(payload, "as_of", "as_of_date", "report_date") or report_date) else MFMasterHolding.DATE_BASIS_FETCHED_AT
+            date_basis = MFMasterHolding.DATE_BASIS_DISCLOSURE if (_first(payload, "as_of", "as_of_date", "report_date") or _find_nested(payload, ("as_of", "as_of_date", "report_date")) or report_date) else MFMasterHolding.DATE_BASIS_FETCHED_AT
             persisted = []
             with transaction.atomic():
                 for row in normalized:
@@ -1064,8 +1064,8 @@ class CharlieAlphaService:
             scheme = self._resolve_scheme(payload if isinstance(payload, dict) else {"scheme_code": code})
             if not scheme:
                 continue
-            day = parse_date(_first(payload, "date", "nav_date", "as_of"))
-            nav = decimal_value(_first(payload, "nav", "latest_nav", "value"))
+            day = parse_date(_first(payload, "date", "nav_date", "as_of") or _find_nested(payload, ("date", "nav_date", "as_of")))
+            nav = decimal_value(_first(payload, "nav", "latest_nav", "value") or _find_nested(payload, ("nav", "latest_nav", "value")))
             if day and nav is not None and nav > 0:
                 self._save_nav(scheme, day, nav, endpoint)
             metadata = {
@@ -1073,14 +1073,14 @@ class CharlieAlphaService:
                 "provider_scheme_code": code,
                 "nav_date": day.isoformat() if day else None,
                 "nav": nav,
-                "nav_change": decimal_value(_first(payload, "change", "nav_change", "change_value")),
-                "nav_change_pct": decimal_value(_first(payload, "change_pct", "nav_change_pct", "change_percent", "change_percentage")),
-                "amc": _first(payload, "amc", "amc_name", "fund_house"),
-                "category": _first(payload, "category", "scheme_category"),
-                "plan": _first(payload, "plan"),
-                "option": _first(payload, "option"),
-                "ter": decimal_value(_first(payload, "ter", "expense_ratio", "ter_pct")),
-                "aum_cr": decimal_value(_first(payload, "aum", "aum_cr", "average_aum")),
+                "nav_change": decimal_value(_first(payload, "change", "nav_change", "change_value") or _find_nested(payload, ("change", "nav_change", "change_value"))),
+                "nav_change_pct": decimal_value(_first(payload, "change_pct", "nav_change_pct", "change_percent", "change_percentage") or _find_nested(payload, ("change_pct", "nav_change_pct", "change_percent", "change_percentage"))),
+                "amc": _first(payload, "amc", "amc_name", "fund_house") or _find_nested(payload, ("amc", "amc_name", "fund_house")),
+                "category": _first(payload, "category", "scheme_category") or _find_nested(payload, ("category", "scheme_category")),
+                "plan": _first(payload, "plan") or _find_nested(payload, ("plan",)),
+                "option": _first(payload, "option") or _find_nested(payload, ("option",)),
+                "ter": decimal_value(_first(payload, "ter", "expense_ratio", "ter_pct") or _find_nested(payload, ("ter", "expense_ratio", "ter_pct"))),
+                "aum_cr": decimal_value(_first(payload, "aum", "aum_cr", "average_aum") or _find_nested(payload, ("aum", "aum_cr", "average_aum"))),
                 "source_endpoint": endpoint,
             }
             self._run("latest_nav_detail", as_of=day, metadata=metadata)

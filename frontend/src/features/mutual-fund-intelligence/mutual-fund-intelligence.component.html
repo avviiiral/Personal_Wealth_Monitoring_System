@@ -461,9 +461,103 @@
       </article>
     </section>
 
+
+    <section class="tab-panel provider-ecosystem-panel" *ngIf="activeTab === 'charliealpha-ecosystem'">
+      <div class="section-heading">
+        <div>
+          <p class="eyebrow">CHARLIEALPHA · EXTENDED API CATALOGUE</p>
+          <h2>NPS, SIF, GIFT City and instrument intelligence</h2>
+          <p class="section-subtitle">Separate provider product families, identifiers and raw responses. These records are not mapped to AMFI mutual-fund schemes or investor holdings.</p>
+        </div>
+        <span class="section-meta">Database-backed provider snapshots</span>
+      </div>
+
+      <div class="provider-kpis">
+        <article class="kpi-card"><span>NPS snapshots</span><strong>{{ charliealphaProviderFamilyCounts['NPS'] || 0 }}</strong><small>Directory, NAV and metrics</small></article>
+        <article class="kpi-card"><span>SIF snapshots</span><strong>{{ charliealphaProviderFamilyCounts['SIF'] || 0 }}</strong><small>Directory, search and NAV</small></article>
+        <article class="kpi-card"><span>GIFT City snapshots</span><strong>{{ charliealphaProviderFamilyCounts['GIFT'] || 0 }}</strong><small>Plans and NAV history</small></article>
+        <article class="kpi-card"><span>Instrument snapshots</span><strong>{{ charliealphaProviderFamilyCounts['INSTRUMENTS'] || 0 }}</strong><small>Search and ISIN detail</small></article>
+        <article class="kpi-card"><span>Corporate actions</span><strong>{{ charliealphaProviderFamilyCounts['CORPORATE_ACTIONS'] || 0 }}</strong><small>Splits and bonus events</small></article>
+      </div>
+
+      <article class="chart-card">
+        <div class="chart-title">
+          <div><span>11</span><h3>Provider family snapshots</h3></div>
+          <small>Latest 100 stored responses for the selected family</small>
+        </div>
+        <div class="provider-filters">
+          <label for="ca-resource-family">Endpoint family</label>
+          <select id="ca-resource-family" [ngModel]="charliealphaProviderFamily" (ngModelChange)="loadCharlieAlphaProviderResources($event)">
+            <option value="NPS">National Pension System (NPS)</option>
+            <option value="SIF">Specialized Investment Funds (SIF)</option>
+            <option value="GIFT">GIFT City / IFSC Funds</option>
+            <option value="INSTRUMENTS">Instrument search and detail</option>
+            <option value="CORPORATE_ACTIONS">Corporate actions</option>
+          </select>
+          <button type="button" class="provider-secondary" (click)="loadCharlieAlphaProviderResources()" [disabled]="charliealphaProviderResourcesLoading">
+            {{ charliealphaProviderResourcesLoading ? 'Loading…' : 'Refresh stored snapshots' }}
+          </button>
+        </div>
+        <div class="error-message" *ngIf="charliealphaProviderResourcesError">{{ charliealphaProviderResourcesError }}</div>
+        <div class="data-footnote" *ngIf="charliealphaProviderResourcesLoading">Reading stored provider payloads from the PWMS database…</div>
+        <div class="table-wrap" *ngIf="charliealphaProviderResources.length; else noExtendedProviderData">
+          <table class="provider-resource-table">
+            <thead><tr><th>Endpoint</th><th>Identifier</th><th>As-of</th><th>Records</th><th>Fetched</th><th>Status</th></tr></thead>
+            <tbody>
+              <tr *ngFor="let item of charliealphaProviderResources" [class.selected-row]="charliealphaSelectedProviderResource?.id === item.id">
+                <td><button type="button" class="fund-select-link" (click)="selectCharlieAlphaProviderResource(item)">{{ item.endpoint }}</button><small class="scheme-code">Snapshot #{{ item.id }}</small></td>
+                <td>{{ item.identifier || '—' }}</td>
+                <td>{{ formatDate(item.as_of_date) }}</td>
+                <td>{{ item.record_count }}</td>
+                <td>{{ formatGeneratedAt(item.fetched_at) }}</td>
+                <td><span class="quartile" [class.quartile-good]="item.success" [class.quartile-low]="!item.success">{{ item.success ? 'Success' : 'Failed' }}</span></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <ng-template #noExtendedProviderData>
+          <div class="empty-state chart-empty">
+            <h3>No {{ charliealphaProviderFamily }} snapshots stored</h3>
+            <p>Run the matching sync_charliealpha domain to fetch and persist this family. Snapshots remain separated from the AMFI scheme master.</p>
+          </div>
+        </ng-template>
+      </article>
+
+      <article class="chart-card" *ngIf="charliealphaSelectedProviderResource as resource">
+        <div class="chart-title">
+          <div><span>12</span><h3>{{ resource.endpoint }} · Snapshot #{{ resource.id }}</h3></div>
+          <small>{{ resource.family }} · {{ resource.success ? 'Successful response' : 'Provider error' }}</small>
+        </div>
+        <div class="provider-kpis detail-kpis">
+          <article class="kpi-card"><span>Identifier</span><strong>{{ resource.identifier || '—' }}</strong><small>Provider-native identity</small></article>
+          <article class="kpi-card"><span>Record count</span><strong>{{ resource.record_count }}</strong><small>Normalized rows</small></article>
+          <article class="kpi-card"><span>Data date</span><strong>{{ formatDate(resource.as_of_date) }}</strong><small>Provider as-of date where returned</small></article>
+          <article class="kpi-card"><span>Fetched</span><strong>{{ formatGeneratedAt(resource.fetched_at) }}</strong><small>PWMS retrieval time</small></article>
+        </div>
+        <p class="error-message" *ngIf="!resource.success">{{ resource.error }}</p>
+        <p class="method-note" *ngIf="resource.source_url">Source request: <code>{{ resource.source_url }}</code></p>
+        <div class="table-wrap" *ngIf="resource.records?.length && charliealphaProviderRecordColumns.length">
+          <table>
+            <thead><tr><th *ngFor="let column of charliealphaProviderRecordColumns">{{ sourceLabel(column) }}</th></tr></thead>
+            <tbody>
+              <tr *ngFor="let record of resource.records">
+                <td *ngFor="let column of charliealphaProviderRecordColumns">{{ formatCharlieAlphaProviderCell(record[column]) }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <details class="provider-raw-response">
+          <summary>Original provider response and request parameters</summary>
+          <p class="method-note">SHA-256: {{ resource.payload_sha256 }}</p>
+          <pre class="provider-result">{{ resource.payload | json }}</pre>
+          <pre class="provider-result">{{ resource.request_params | json }}</pre>
+        </details>
+      </article>
+    </section>
+
   </div>
 
-  <section class="empty-state start-state" *ngIf="!selectedCategory && !loadingCategories && activeTab !== 'charliealpha'">>
+  <section class="empty-state start-state" *ngIf="!selectedCategory && !loadingCategories && activeTab !== 'charliealpha' && activeTab !== 'charliealpha-ecosystem'">
     <h2>Select a category to open the intelligence dashboard</h2>
     <p>Choose a SEBI Level 3 category, then select Direct or Regular Plan and an individual fund.</p>
   </section>

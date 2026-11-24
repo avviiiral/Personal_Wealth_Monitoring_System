@@ -4,6 +4,7 @@ from django.core.management.base import BaseCommand, CommandError
 from mutual_funds.models import AMFIMasterScheme, MFSchemeIdentityMap
 from mutual_funds.master_models import MFSourceRun
 from mutual_funds.services.charliealpha import CharlieAlphaService, SOURCE
+from mutual_funds.services.charliealpha_extended import CharlieAlphaExtendedService
 
 
 class Command(BaseCommand):
@@ -15,7 +16,7 @@ class Command(BaseCommand):
     def add_arguments(self, parser):
         parser.add_argument(
             "--domain",
-            choices=("categories", "schemes", "search", "nav", "nav-detail", "nav-history", "metrics", "ter", "aum", "holdings", "holdings-periods", "holdings-history", "exposure", "benchmarks", "compare", "overlap", "all"),
+            choices=("categories", "schemes", "search", "nav", "nav-detail", "nav-history", "metrics", "ter", "aum", "holdings", "holdings-periods", "holdings-history", "exposure", "benchmarks", "compare", "overlap", "nps", "sif", "gift", "instrument-search", "instrument-detail", "corporate-actions", "provider-all", "all"),
             default="all",
             help="Data domain to synchronize (default: all).",
         )
@@ -51,6 +52,17 @@ class Command(BaseCommand):
             help="Do not request the provider's previous-period holdings change summary.",
         )
 
+        parser.add_argument("--nps-horizon", default="", help="Optional NPS metrics horizon supported by CharlieAlpha (for example 3y).")
+        parser.add_argument("--instrument-type", default="", help="Optional instrument type filter for instrument search.")
+        parser.add_argument("--corporate-code", default="", help="Optional AMFI code, ticker, BSE scrip code or ISIN for corporate actions.")
+        parser.add_argument("--corporate-status", choices=("all", "applied", "upcoming"), default="all", help="Corporate-action status filter.")
+        parser.add_argument("--action-type", choices=("ALL", "SPLIT", "BONUS"), default="ALL", help="Corporate-action type filter.")
+        parser.add_argument("--corporate-from", default="", help="Corporate-action start date (YYYY-MM-DD); requires --corporate-to.")
+        parser.add_argument("--corporate-to", default="", help="Corporate-action end date (YYYY-MM-DD); requires --corporate-from.")
+        parser.add_argument("--gift-plan", default="", help="Optional GIFT City NAV-history plan variant.")
+        parser.add_argument("--gift-from", default="", help="Optional GIFT City NAV-history start date (YYYY-MM-DD).")
+        parser.add_argument("--gift-to", default="", help="Optional GIFT City NAV-history end date (YYYY-MM-DD).")
+
     def handle(self, *args, **options):
         domain = options["domain"]
         codes = list(dict.fromkeys(str(v).strip() for v in options["scheme_codes"] if str(v).strip()))
@@ -62,11 +74,16 @@ class Command(BaseCommand):
             raise CommandError("--period-limit cannot be negative.")
         if bool(options["benchmark_from"]) != bool(options["benchmark_to"]):
             raise CommandError("--benchmark-from and --benchmark-to must be supplied together.")
+        if bool(options["corporate_from"]) != bool(options["corporate_to"]):
+            raise CommandError("--corporate-from and --corporate-to must be supplied together.")
+        if bool(options["gift_from"]) != bool(options["gift_to"]):
+            raise CommandError("--gift-from and --gift-to must be supplied together.")
         if codes and limit and len(codes) > limit:
             codes = codes[:limit]
 
         service = CharlieAlphaService(dry_run=options["dry_run"])
         result = {}
+        extended = CharlieAlphaExtendedService()
         directory_codes: list[str] = []
 
         if domain == "categories":
@@ -157,6 +174,71 @@ class Command(BaseCommand):
                 range_name=options["benchmark_range"],
                 from_date=options["benchmark_from"] or None,
                 to_date=options["benchmark_to"] or None,
+            )
+
+
+        if domain == "nps":
+            result["nps"] = extended.sync_nps(limit=limit, horizon=options["nps_horizon"])
+
+        if domain == "sif":
+            result["sif"] = extended.sync_sif(limit=limit, search_query=options["search_query"])
+
+        if domain == "gift":
+            result["gift"] = extended.sync_gift(
+                limit=limit,
+                search_query=options["search_query"],
+                plan=options["gift_plan"],
+                from_date=options["gift_from"],
+                to_date=options["gift_to"],
+            )
+
+        if domain == "instrument-search":
+            if not options["search_query"].strip():
+                raise CommandError("--domain instrument-search requires --search-query.")
+            result["instrument_search"] = extended.search_instruments(
+                options["search_query"],
+                instrument_type=options["instrument_type"],
+                limit=limit or 100,
+            )
+
+        if domain == "instrument-detail":
+            if not options["identifier"].strip():
+                raise CommandError("--domain instrument-detail requires --identifier with a 12-character ISIN.")
+            result["instrument_detail"] = extended.instrument_details(options["identifier"])
+
+        if domain == "corporate-actions":
+            result["corporate_actions"] = extended.corporate_actions(
+                code=options["corporate_code"],
+                status_filter=options["corporate_status"],
+                action_type=options["action_type"],
+                from_date=options["corporate_from"],
+                to_date=options["corporate_to"],
+                limit=limit or 50,
+            )
+
+        if domain == "provider-all":
+            result["nps"] = extended.sync_nps(limit=limit, horizon=options["nps_horizon"])
+            result["sif"] = extended.sync_sif(limit=limit, search_query=options["search_query"])
+            result["gift"] = extended.sync_gift(
+                limit=limit,
+                search_query=options["search_query"],
+                plan=options["gift_plan"],
+                from_date=options["gift_from"],
+                to_date=options["gift_to"],
+            )
+            if options["search_query"].strip():
+                result["instrument_search"] = extended.search_instruments(
+                    options["search_query"],
+                    instrument_type=options["instrument_type"],
+                    limit=limit or 100,
+                )
+            result["corporate_actions"] = extended.corporate_actions(
+                code=options["corporate_code"],
+                status_filter=options["corporate_status"],
+                action_type=options["action_type"],
+                from_date=options["corporate_from"],
+                to_date=options["corporate_to"],
+                limit=min(limit or 50, 200),
             )
 
         if domain in {"compare", "overlap"}:

@@ -3,7 +3,7 @@ from django.core.management.base import BaseCommand, CommandError
 
 from mutual_funds.models import AMFIMasterScheme, MFSchemeIdentityMap
 from mutual_funds.master_models import MFSourceRun
-from mutual_funds.services.charliealpha import CharlieAlphaService, SOURCE
+from mutual_funds.services.charliealpha import CharlieAlphaService, SOURCE, parse_date
 from mutual_funds.services.charliealpha_extended import CharlieAlphaExtendedService
 
 
@@ -76,6 +76,14 @@ class Command(BaseCommand):
             raise CommandError("--benchmark-from and --benchmark-to must be supplied together.")
         if bool(options["corporate_from"]) != bool(options["corporate_to"]):
             raise CommandError("--corporate-from and --corporate-to must be supplied together.")
+        for option_name in ("gift_from", "gift_to", "corporate_from", "corporate_to"):
+            value = options[option_name]
+            if value and parse_date(value) is None:
+                raise CommandError("--" + option_name.replace("_", "-") + " must use YYYY-MM-DD.")
+        if domain == "instrument-search" and limit > 100:
+            raise CommandError("--limit for instrument-search cannot exceed 100.")
+        if domain == "corporate-actions" and limit > 200:
+            raise CommandError("--limit for corporate-actions cannot exceed 200.")
         if codes and limit and len(codes) > limit:
             codes = codes[:limit]
 

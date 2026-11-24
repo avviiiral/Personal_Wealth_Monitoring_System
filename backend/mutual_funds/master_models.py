@@ -484,3 +484,72 @@ class MFAMFIRiskParameter(models.Model):
 
     def __str__(self):
         return f"{self.scheme_name} - {self.report_month}"
+
+
+class MFProviderBenchmark(models.Model):
+    """Provider benchmark identity kept distinct from official absolute TRI series."""
+
+    provider = models.CharField(max_length=40, default="CHARLIEALPHA")
+    slug = models.CharField(max_length=160)
+    name = models.CharField(max_length=300, blank=True, default="")
+    category = models.CharField(max_length=80, blank=True, default="")
+    source_url = models.URLField(max_length=1000, blank=True, default="")
+    fetched_at = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        db_table = "mf_provider_benchmarks"
+        ordering = ["provider", "category", "name"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["provider", "slug"],
+                name="uq_mf_provider_benchmark_slug",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["provider", "category"], name="mf_provider_bench_cat_idx"),
+        ]
+
+    def __str__(self):
+        return f"{self.provider}:{self.slug}"
+
+
+class MFProviderBenchmarkObservation(models.Model):
+    """A dated provider-normalized benchmark value with explicit rebasing provenance.
+
+    Values from provider endpoints that normalize a requested range to 100 are
+    never stored in MFBenchmarkTRI and cannot be mistaken for absolute TRI.
+    A different normalization base date creates a distinct observation series.
+    """
+
+    benchmark = models.ForeignKey(
+        "mutual_funds.MFProviderBenchmark",
+        on_delete=models.CASCADE,
+        related_name="observations",
+    )
+    observation_date = models.DateField(db_index=True)
+    normalized_value = models.DecimalField(max_digits=24, decimal_places=8)
+    normalization_method = models.CharField(max_length=30, default="REBASED_TO_100")
+    normalization_base_date = models.DateField()
+    normalization_base_value = models.DecimalField(max_digits=18, decimal_places=8, default=100)
+    source = models.CharField(max_length=100, default="CHARLIEALPHA_API")
+    source_url = models.URLField(max_length=1000, blank=True, default="")
+    fetched_at = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        db_table = "mf_provider_benchmark_observations"
+        ordering = ["benchmark", "normalization_base_date", "observation_date"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["benchmark", "observation_date", "normalization_base_date"],
+                name="uq_mf_prov_bench_obs_base",
+            ),
+        ]
+        indexes = [
+            models.Index(
+                fields=["benchmark", "normalization_base_date", "observation_date"],
+                name="mf_prov_bench_obs_date_idx",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.benchmark.slug} {self.observation_date} ({self.normalization_base_date} base)"

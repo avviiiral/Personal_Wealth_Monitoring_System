@@ -28,6 +28,7 @@ export interface MutualFundDetailResponse {
   ter_history: Array<{ date: string; direct_pct: number | null; regular_pct: number | null }>;
   holdings: Array<Record<string, any>>;
   holdings_report_date: string | null;
+  nav_detail: Record<string, any> | null;
   provider_metrics: Record<string, any> | null;
   holdings_changes: any;
   data_availability: Record<string, boolean | string | null>;

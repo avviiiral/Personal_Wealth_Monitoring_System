@@ -1,12 +1,10 @@
 from config.postgres_advisory_lock import with_postgres_advisory_lock
 from django.contrib.auth.models import User
 from django.core.management.base import BaseCommand
-from django.db.models import Q
-
-from investments.models import Asset
 from market_data.services.market_data_manager import (
     MarketDataManager,
 )
+from market_data.services.market_price_scope import market_price_assets
 from market_data.services.security_resolver import (
     SecurityResolver,
 )
@@ -97,19 +95,11 @@ class Command(BaseCommand):
 
         user_id = options.get("user_id")
 
-        # Keep the scheduler data-driven: exchange-traded assets use the
-        # Security Master/ISIN resolver, while SGBs are routed by their
-        # security name and ISIN. No individual security names or symbols
-        # are embedded here.
-        assets = Asset.objects.filter(
-            Q(category__in=[
-                "STOCK",
-                "ETF",
-                "BOND",
-            ])
-            | Q(name__icontains="SOVEREIGN GOLD BOND")
-            | Q(name__icontains=" ETF")
-        ).distinct()
+        # Keep refresh scope data-driven: exchange-traded assets use the
+        # Security Master/ISIN resolver; legacy Direct Equity records are
+        # included from transaction metadata even if Asset.category is OTHER.
+        # No individual security names or symbols are embedded here.
+        assets = market_price_assets(include_mutual_funds=False)
 
         if user_id:
 

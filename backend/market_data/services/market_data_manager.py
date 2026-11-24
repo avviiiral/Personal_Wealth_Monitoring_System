@@ -4,6 +4,7 @@ from django.utils import timezone
 
 from investments.models import Asset, Holding, Transaction
 from market_data.models import MarketPrice, DataSource
+from market_data.services.market_price_scope import is_legacy_direct_equity_asset
 from market_data.services.security_resolver import (
     SecurityResolver,
 )
@@ -868,10 +869,15 @@ class MarketDataManager:
             or " ETF" in f" {(asset.name or '').upper()}"
         )
 
+        # Older transaction imports can leave listed Direct Equity assets
+        # categorized as OTHER. Their transaction hierarchy is the source of
+        # truth for pricing; unrelated OTHER assets remain excluded.
+        is_legacy_direct_equity = is_legacy_direct_equity_asset(asset)
+
         if asset.category not in [
             "STOCK",
             "ETF",
-        ] and not is_etf:
+        ] and not is_etf and not is_legacy_direct_equity:
 
             return {
                 "success": False,

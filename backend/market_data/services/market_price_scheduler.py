@@ -4,10 +4,8 @@ import threading
 import time
 
 from django.db import close_old_connections
-from django.db.models import Q
-
-from investments.models import Asset
 from market_data.services.market_data_manager import MarketDataManager
+from market_data.services.market_price_scope import market_price_assets
 
 
 logger = logging.getLogger(__name__)
@@ -54,22 +52,17 @@ class MarketPriceScheduler:
     @classmethod
     @with_postgres_advisory_lock("pwms_refresh_pipeline")
     def update_prices(cls):
-        # Include legacy ETF imports even when their category was stored as
-        # OTHER. The market data manager already routes these assets through
-        # the ETF quote flow based on their name. Keep other OTHER assets out
-        # of the scheduler so private/unpriced assets are not sent to providers.
-        assets = (
-            Asset.objects
-            .filter(
-                Q(category__in=["STOCK", "ETF", "MUTUAL_FUND", "BOND"])
-                | Q(name__icontains=" ETF")
-            )
-            .distinct()
-            .select_related("owner")
-        )
+        # Keep the periodic scheduler aligned with the management command.
+        # This includes legacy ETFs, SGBs, and Direct Equity assets whose
+        # transaction metadata proves they are listed securities, while other
+        # OTHER assets remain outside the provider refresh universe.
+        assets = market_price_assets(include_mutual_funds=True).select_related("owner")
 
         total_assets = assets.count()
-        logger.info("Found %s supported market-priced assets (including legacy ETFs).", total_assets)
+        logger.info(
+            "Found %s supported market-priced assets (including legacy ETFs and legacy Direct Equity).",
+            total_assets,
+        )
 
         updated = 0
         skipped = 0

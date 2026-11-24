@@ -127,9 +127,10 @@ class CharlieAlphaExtendedPersistenceTests(TestCase):
         )
 
         self.assertEqual(
-            client.get.call_args_list[0],
-            (( "instruments/search", {"q": "Example", "limit": 25, "type": "EQUITY"}),),
+            client.get.call_args_list[0].args,
+            ("instruments/search", {"q": "Example", "limit": 25, "type": "EQUITY"}),
         )
+        self.assertEqual(client.get.call_args_list[0].kwargs, {})
         self.assertEqual(client.get.call_args_list[1].args[0], "instruments/INE002A01018")
         self.assertEqual(
             client.get.call_args_list[2].args,

@@ -81,10 +81,9 @@ def mutual_fund_underlying(request, scheme_id):
             "results": results,
         })
 
-    local_queryset = MutualFundUnderlying.objects.filter(pk__in=[item.pk for item in local_rows])
     return Response({
         "scheme_id": scheme.id,
         "scheme_name": scheme.scheme_name,
         "portfolio_date": local_date,
-        "results": MutualFundUnderlyingSerializer(local_queryset, many=True).data,
+        "results": MutualFundUnderlyingSerializer(local_rows, many=True).data,
     })

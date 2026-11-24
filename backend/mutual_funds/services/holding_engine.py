@@ -6,8 +6,8 @@ from django.db import transaction
 from django.utils import timezone
 
 from mf_intelligence.models import MFScheme
-
 from mutual_funds.models import (
+    AMFIMasterNAV,
     MutualFundHolding,
     MutualFundNAV,
     MutualFundScheme,
@@ -143,16 +143,28 @@ class MutualFundHoldingEngine:
     @staticmethod
     def get_latest_nav(scheme):
         """Return the freshest family NAV, using recent MF Intelligence as fallback."""
+        today = timezone.localdate()
         family_nav = (
             MutualFundNAV.objects
-            .filter(scheme=scheme)
+            .filter(scheme=scheme, date__lte=today, nav__gt=0)
             .only("nav", "date")
-            .order_by("-date")
+            .order_by("-date", "-id")
             .first()
         )
-        today = timezone.localdate()
+        master_nav = None
         intelligence_nav = None
         if scheme.scheme_code:
+            master_nav = (
+                AMFIMasterNAV.objects.filter(
+                    scheme__scheme_code=scheme.scheme_code,
+                    source="AMFI",
+                    date__lte=today,
+                    nav__gt=0,
+                )
+                .only("nav", "date")
+                .order_by("-date", "-id")
+                .first()
+            )
             intelligence_nav = (
                 MFScheme.objects.filter(
                     amfi_code=scheme.scheme_code,
@@ -163,15 +175,33 @@ class MutualFundHoldingEngine:
                 .only("latest_nav", "latest_nav_date")
                 .first()
             )
-        if intelligence_nav and (
-            family_nav is None or intelligence_nav.latest_nav_date > family_nav.date
-        ):
+
+        candidates = []
+        if family_nav is not None:
+            candidates.append((family_nav.date, 0, "family", family_nav))
+        if master_nav is not None:
+            candidates.append((master_nav.date, 2, "amfi", master_nav))
+        if intelligence_nav is not None:
+            candidates.append((
+                intelligence_nav.latest_nav_date,
+                1,
+                "intelligence",
+                intelligence_nav,
+            ))
+        if not candidates:
+            return None
+
+        _as_of, _priority, source, selected = max(
+            candidates,
+            key=lambda item: (item[0], item[1]),
+        )
+        if source == "intelligence":
             return SimpleNamespace(
-                nav=intelligence_nav.latest_nav,
-                date=intelligence_nav.latest_nav_date,
+                nav=selected.latest_nav,
+                date=selected.latest_nav_date,
                 source="MF_INTELLIGENCE",
             )
-        return family_nav
+        return selected
 
     @staticmethod
     @transaction.atomic

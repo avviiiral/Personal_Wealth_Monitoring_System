@@ -63,11 +63,13 @@ PWMS features where the matching identity and data granularity are suitable:
   scheme code. It uses stored 1W–5Y and since-inception returns when its local
   performance snapshot is missing a value, and exposes the synced category,
   TER, AUM, NAV, calendar returns and risk metrics in the scheme payload.
-- Family mutual-fund valuation can use a recent synced latest NAV when the
-  family NAV / AMFI master has no usable value. Matching is by exact AMFI code
-  (or exact ISIN for the shared portfolio NAV service), only NAVs dated no more
-  than seven days old are eligible, and a NAV dated after the transaction date
-  is never used for transaction/SIP execution.
+- Family mutual-fund valuation compares the family NAV, the global AMFI master
+  and a recent synced latest NAV, selecting the newest eligible observation.
+  AMFI master wins ties; MF Intelligence can replace an older family copy.
+  Matching is by exact AMFI code (or exact ISIN for the shared portfolio NAV
+  service), only intelligence NAVs dated no more than seven days old are
+  eligible, and a NAV dated after the transaction date is never used for
+  transaction/SIP execution.
 - Mutual-fund look-through can use the latest `MFHoldingSnapshot` when it is
   newer than the family's stored disclosure. On the same disclosure date, the
   local disclosure is preferred because it may have additional source fields.

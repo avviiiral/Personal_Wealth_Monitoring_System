@@ -18,15 +18,91 @@ class MutualFundNAVService:
         remains as a compatibility/materialization layer for existing
         portfolio relationships.
         """
-        nav = (
+        today = timezone.localdate()
+        family_nav = (
             MutualFundNAV.objects
-            .filter(scheme=scheme, date__lte=target_date)
-            .order_by("-date")
+            .filter(scheme=scheme, date__lte=target_date, nav__gt=0)
+            .order_by("-date", "-id")
+            .first()
+        )
+        master_scheme = (
+            AMFIMasterNAV.objects
+            .filter(
+                scheme__scheme_code=scheme.scheme_code,
+                date__lte=target_date,
+                source="AMFI",
+                nav__gt=0,
+            )
+            .select_related("scheme")
+            .order_by("-date", "-id")
             .first()
         )
 
-        if nav and nav.nav > 0:
+        intelligence_scheme = None
+        if (
+            scheme.scheme_code
+            and target_date <= today
+            and target_date >= today - timedelta(days=7)
+        ):
+            intelligence_scheme = (
+                MFScheme.objects.filter(
+                    amfi_code=scheme.scheme_code,
+                    latest_nav__gt=0,
+                    latest_nav_date__lte=target_date,
+                    latest_nav_date__gte=today - timedelta(days=7),
+                )
+                .order_by("-latest_nav_date")
+                .first()
+            )
+
+        # Pick the newest dated observation available. AMFI master wins ties;
+        # MF Intelligence fills gaps and can supersede an older family copy.
+        candidates = []
+        if family_nav is not None:
+            candidates.append((family_nav.date, 0, "family", family_nav))
+        if master_scheme is not None:
+            candidates.append((master_scheme.date, 2, "amfi", master_scheme))
+        if intelligence_scheme is not None:
+            candidates.append((
+                intelligence_scheme.latest_nav_date,
+                1,
+                "intelligence",
+                intelligence_scheme,
+            ))
+
+        if candidates:
+            _as_of, _priority, source, selected = max(
+                candidates,
+                key=lambda item: (item[0], item[1]),
+            )
+            if source == "family":
+                return selected
+            if source == "amfi":
+                nav, _ = MutualFundNAV.objects.update_or_create(
+                    scheme=scheme,
+                    date=selected.date,
+                    source="AMFI",
+                    defaults={"nav": selected.nav},
+                )
+                return nav
+            nav, _ = MutualFundNAV.objects.update_or_create(
+                scheme=scheme,
+                date=selected.latest_nav_date,
+                source="MF_INTELLIGENCE",
+                defaults={"nav": selected.latest_nav},
+            )
             return nav
+
+        try:
+            AMFIService.import_historical_master_navs(
+                target_date,
+                target_date,
+            )
+        except Exception as exc:
+            raise ValueError(
+                f"Unable to fetch historical NAV for "
+                f"{scheme.scheme_name} on {target_date}: {exc}"
+            )
 
         master_scheme = (
             AMFIMasterNAV.objects
@@ -34,66 +110,16 @@ class MutualFundNAVService:
                 scheme__scheme_code=scheme.scheme_code,
                 date__lte=target_date,
                 source="AMFI",
+                nav__gt=0,
             )
             .select_related("scheme")
-            .order_by("-date")
+            .order_by("-date", "-id")
             .first()
         )
-
-        if master_scheme is None:
-            today = timezone.localdate()
-            if target_date <= today and target_date >= today - timedelta(days=7):
-                intelligence_scheme = (
-                    MFScheme.objects.filter(
-                        amfi_code=scheme.scheme_code,
-                        latest_nav__gt=0,
-                        latest_nav_date__lte=target_date,
-                        latest_nav_date__gte=today - timedelta(days=7),
-                    )
-                    .order_by("-latest_nav_date")
-                    .first()
-                )
-                if intelligence_scheme is not None:
-                    nav, _ = MutualFundNAV.objects.update_or_create(
-                        scheme=scheme,
-                        date=intelligence_scheme.latest_nav_date,
-                        source="MF_INTELLIGENCE",
-                        defaults={"nav": intelligence_scheme.latest_nav},
-                    )
-                    return nav
-            try:
-                AMFIService.import_historical_master_navs(
-                    target_date,
-                    target_date,
-                )
-            except Exception as exc:
-                raise ValueError(
-                    f"Unable to fetch historical NAV for "
-                    f"{scheme.scheme_name} on {target_date}: {exc}"
-                )
-
-            master_scheme = (
-                AMFIMasterNAV.objects
-                .filter(
-                    scheme__scheme_code=scheme.scheme_code,
-                    date__lte=target_date,
-                    source="AMFI",
-                )
-                .select_related("scheme")
-                .order_by("-date")
-                .first()
-            )
-
         if master_scheme is None:
             raise ValueError(
                 f"No NAV available for {scheme.scheme_name} "
                 f"on or before {target_date}."
-            )
-
-        if master_scheme.nav <= 0:
-            raise ValueError(
-                f"Invalid NAV {master_scheme.nav} "
-                f"for {scheme.scheme_name} on {master_scheme.date}."
             )
 
         nav, _ = MutualFundNAV.objects.update_or_create(

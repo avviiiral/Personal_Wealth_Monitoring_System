@@ -42,6 +42,36 @@ class MFIntelligenceConsumerIntegrationTests(TestCase):
         self.assertEqual(nav.source, "MF_INTELLIGENCE")
         import_history.assert_not_called()
 
+    def test_sip_nav_service_does_not_keep_an_older_family_copy_over_newer_synced_nav(self):
+        scheme = MutualFundScheme.objects.create(
+            scheme_name="Updated Synced Equity Fund",
+            scheme_code="123460",
+        )
+        older_date = self.today - timedelta(days=3)
+        newer_date = self.today - timedelta(days=1)
+        MutualFundNAV.objects.create(
+            scheme=scheme,
+            date=older_date,
+            nav=Decimal("40.000000"),
+            source="AMFI",
+        )
+        MFScheme.objects.create(
+            amfi_code="123460",
+            name="Updated Synced Equity Fund - Direct Plan - Growth",
+            latest_nav=Decimal("43.500000"),
+            latest_nav_date=newer_date,
+        )
+
+        with patch(
+            "mutual_funds.services.nav_service.AMFIService.import_historical_master_navs"
+        ) as import_history:
+            nav = MutualFundNAVService.get_nav_for_date(scheme, self.today)
+
+        self.assertEqual(nav.nav, Decimal("43.500000"))
+        self.assertEqual(nav.date, newer_date)
+        self.assertEqual(nav.source, "MF_INTELLIGENCE")
+        import_history.assert_not_called()
+
     def test_holding_valuation_prefers_newer_recent_synced_nav(self):
         scheme = MutualFundScheme.objects.create(
             scheme_name="Valuation Equity Fund",

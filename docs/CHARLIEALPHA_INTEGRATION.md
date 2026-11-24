@@ -1,6 +1,6 @@
 # CharlieAlpha Mutual Fund & ETF endpoint integration
 
-This is an opt-in data-source integration for the PWMS Mutual Fund Intelligence page. It covers the provider's **Mutual Funds & ETFs** endpoint family, not the provider's separate NPS, SIF, GIFT City, Instruments, or Corporate Actions families. Those families have different identities, data models, and analysis requirements and must not be inserted into mutual-fund scheme tables.
+This is an opt-in data-source integration for the PWMS Mutual Fund Intelligence area. It covers all endpoint families listed by the provider's public catalogue: Mutual Funds & ETFs, NPS, SIF, GIFT City (IFSC) funds, Instruments, Corporate Actions, and Benchmarks. The non-MF families have different identifiers and data contracts; their payloads are stored in a separate provider-resource snapshot model and are never inserted into AMFI mutual-fund scheme tables or investor-owned holdings.
 
 Provider API catalogue: https://api.charliealpha.in/
 Methodology: https://api.charliealpha.in/methodology
@@ -30,6 +30,23 @@ The public catalogue describes an unauthenticated, GET-only API limited to 50 re
 | 16 | `GET /mf/fund-exposure/{identifier}?min_pct={value}` | Funds holding a stock; identifier may be stock ISIN, NSE symbol or BSE scrip code; optional minimum portfolio percentage | `sync_fund_exposure()` stores the provider's compact columns/data payload and normalized threshold in the database; read API matches thresholds numerically |
 | 17 | `GET /benchmark/list` | Canonical benchmark names, slugs and asset categories | `sync_benchmarks()` reads the benchmark catalogue and fetches each selected series |
 | 18 | `GET /benchmark/hnav/{slug}?range={window}` | Daily benchmark series rebased to 100 at the first observation; ranges ALL, 1M, 6M, 1Y, 3Y, 5Y, 10Y, 15Y, 20Y, 25Y or exact `from`/`to` dates | `sync_benchmarks(range_name=...)` or exact `from_date`/`to_date` stores the provider-normalized series in provider-specific benchmark tables with its base date, range and source URL |
+| 19 | `GET /nps/schemes` | Active NPS scheme directory with scheme code, name and PFM | `sync_nps()` stores the directory response and normalized rows as an NPS resource snapshot |
+| 20 | `GET /nps/lnav/{code}` | Latest NPS NAV, change, date, PFM, tier and asset class; accepts an NPS scheme code | `sync_nps()` stores each scheme response separately by NPS code |
+| 21 | `GET /nps/hnav/{code}` | Daily NPS NAV history plus inception, latest NAV, tier and PFM | `sync_nps()` stores the original payload and parsed date/NAV rows |
+| 22 | `GET /nps/metrics/{code}?horizon={period}` | Trailing/rolling performance and risk; optional horizon from 3M through 15Y | `sync_nps(horizon=...)` stores the raw metrics object and any returned structured records |
+| 23 | `GET /sif/schemes` | Active SIF directory with AMC, category, plan, option, ISIN, average AUM and 3M–10Y return metrics | `sync_sif()` stores the full SIF directory snapshot |
+| 24 | `GET /sif/lnavall` | Compact bulk latest NAV for active SIF schemes | `sync_sif()` stores the bulk NAV table as normalized rows |
+| 25 | `GET /sif/search` | Real-time SIF scheme search by name, code, ISIN, AMC or category | `sync_sif(search_query=...)` stores the returned search snapshot |
+| 26 | `GET /sif/lnav/{code}` | Latest NAV and movement; accepts SIF ID or ISIN | `sync_sif()` stores per-scheme latest-NAV responses using the SIF identifier |
+| 27 | `GET /sif/hnav/{code}` | Daily SIF NAV history and scheme metadata; accepts SIF ID or ISIN | `sync_sif()` stores paired NAV history rows without linking the identifier to AMFI |
+| 28 | `GET /gift/schemes?compact=false` | GIFT City fund directory, legal entity, AMC brand, asset class, investor tier, flow direction, minimum investment, currency and share classes; compact labels by default | `sync_gift()` requests expanded JSON and stores the GIFT directory snapshot |
+| 29 | `GET /gift/search?q={query}&compact=false` | Search GIFT funds by fund/AMC/legal entity, asset class, ISIN or numeric ID | `sync_gift(search_query=...)` stores the search response with its request parameters |
+| 30 | `GET /gift/lnavall` | Compact bulk latest NAV across active GIFT City funds and plan variants | `sync_gift()` stores the bulk NAV rows without creating AMFI schemes |
+| 31 | `GET /gift/lnav/{code}` | Latest NAV, previous NAV and movement across plan variants; numeric fund ID or ISIN | `sync_gift()` stores the fund-level response with its GIFT identifier |
+| 32 | `GET /gift/hnav/{code}?plan={plan}&start_date={date}&end_date={date}` | Daily NAV series across plan variants by default; optional plan and independent date boundaries | `sync_gift(plan=..., from_date=..., to_date=...)` stores each plan-keyed series as rows preserving the plan label |
+| 33 | `GET /instruments/search?q={query}&type={type}&limit={n}` | Search Indian equities, bonds, ETFs, G-secs and other instruments; type filter and limit 1–100 | `search_instruments()` stores normalized result rows and the raw response |
+| 34 | `GET /instruments/{isin}` | Instrument details by 12-character ISIN, including issuer, exchange identifiers, instrument type and available security terms | `instrument_details()` stores the instrument response under the INSTRUMENTS family |
+| 35 | `GET /instruments/corp-act?code=...&status=...&action_type=...&from_date=...&to_date=...&limit=...` | Stock/ETF splits, face-value consolidations and bonus issues; status all/applied/upcoming, action ALL/SPLIT/BONUS, optional dates and limit 1–200 | `corporate_actions()` stores the response as a CORPORATE_ACTIONS snapshot with the exact filter parameters |
 
 ### Important response-shape rules
 
@@ -54,6 +71,8 @@ Persistence is deliberately source-aware:
 - Provider portfolio report metadata: `MFExternalPortfolioSnapshot`.
 - Provider benchmarks: `MFProviderBenchmark` and `MFProviderBenchmarkObservation`, never `MFBenchmarkTRI`.
 - Provider request/result distributions, searches, comparisons, categories and operational errors: `MFSourceRun.metadata` JSON fields in the configured database.
+- NPS, SIF, GIFT City, instrument search/detail and corporate-action responses: versioned `MFProviderResourceSnapshot` rows in `mf_provider_resource_snapshots`. Each record includes provider family, endpoint, provider-native identifier, request parameters, original JSON payload, normalized tabular rows, record count, as-of date (when supplied), source URL, SHA-256 payload hash, fetch timestamp and success/error state.
+- Extended-family ingestion runs are also written to `MFSourceRun`; the read endpoint exposes the saved snapshots without invoking CharlieAlpha from the browser.
 
 ## Management command
 
@@ -101,11 +120,32 @@ python manage.py sync_charliealpha --domain all --include-nav-history --limit 10
 
 # Validate a bounded provider pull without writing scheme data
 python manage.py sync_charliealpha --domain all --limit 10 --dry-run
+
+# NPS: scheme directory, latest NAV, NAV history and metrics (scheme IDs are NPS-native)
+python manage.py sync_charliealpha --domain nps --limit 10
+python manage.py sync_charliealpha --domain nps --limit 10 --nps-horizon 3y
+
+# SIF: directory, bulk NAV, optional search and per-scheme NAV/history
+python manage.py sync_charliealpha --domain sif --limit 10
+python manage.py sync_charliealpha --domain sif --limit 10 --search-query "long short"
+
+# GIFT City: expanded directory, optional search, bulk and per-fund/plan NAV
+python manage.py sync_charliealpha --domain gift --limit 10
+python manage.py sync_charliealpha --domain gift --limit 10 --search-query "global equity" --gift-plan Direct --gift-from 2024-01-01 --gift-to 2026-11-24
+
+# Instruments and corporate actions (ISINs and exchange identifiers remain provider-native)
+python manage.py sync_charliealpha --domain instrument-search --search-query "Reliance Industries" --instrument-type EQUITY --limit 50
+python manage.py sync_charliealpha --domain instrument-detail --identifier INE002A01018
+python manage.py sync_charliealpha --domain corporate-actions --corporate-code RELIANCE --corporate-status upcoming --action-type SPLIT --limit 50
+
+# Optional bulk run across non-MF provider families; always start with a conservative limit
+python manage.py sync_charliealpha --domain provider-all --limit 10
+python manage.py sync_charliealpha --domain provider-all --limit 10 --dry-run
 ```
 
-`--scheme-code` accepts a six-digit AMFI code or a 12-character mutual-fund ISIN and is repeatable. `--category` is the provider category slug. `--horizon` applies to category metrics and accepts 1y, 3y, 5y or 10y. `--benchmark-from` and `--benchmark-to` must be supplied together. `--period-limit 0` requests every disclosure date returned for each scheme and can generate many calls. The default pairwise setting is left to the provider; pass `--include-pairwise` to request pairwise output explicitly.
+`--scheme-code` accepts a six-digit AMFI code or a 12-character mutual-fund ISIN and is repeatable. `--category` is the provider category slug. `--horizon` applies to category metrics and accepts 1y, 3y, 5y or 10y. `--benchmark-from` and `--benchmark-to` must be supplied together. `--period-limit 0` requests every disclosure date returned for each scheme and can generate many calls. The default pairwise setting is left to the provider; pass `--include-pairwise` to request pairwise output explicitly. For the extended families, `--nps-horizon` is passed to NPS metrics (the provider documents periods from 3M to 15Y); SIF and NPS identifiers are not treated as AMFI codes. GIFT `--gift-from` and `--gift-to` are independent optional history bounds, while a supplied `--gift-plan` selects a plan series. Corporate-action date filters must be supplied as a pair. `--domain provider-all` fetches NPS/SIF/GIFT directories and selected scheme detail, optionally searches instruments when `--search-query` is present, and requests corporate actions; use `--limit` to bound per-fund calls. Instrument details require a 12-character ISIN via `--identifier`.
 
-The `all` domain stores categories/scheme mapping, bulk NAV, category metrics, latest NAV details for explicitly supplied codes, linked-scheme TER/AUM/holdings, global holdings-period coverage, and benchmark history. Daily NAV history and full holdings-history backfills remain opt-in because they can make a large number of serial provider calls.
+The `all` domain stores categories/scheme mapping, bulk NAV, category metrics, latest NAV details for explicitly supplied codes, linked-scheme TER/AUM/holdings, global holdings-period coverage, and benchmark history. Daily NAV history and full holdings-history backfills remain opt-in because they can make a large number of serial provider calls. The separate `provider-all` domain covers the non-MF families; it is deliberately separate from `all` so an existing MF refresh does not unexpectedly expand into NPS/SIF/GIFT/instrument calls.
 
 ## Authenticated PWMS read APIs
 
@@ -119,6 +159,7 @@ All routes are below `/api/mutual-fund-analytics/charliealpha/` and require the 
 - `GET exposure/{identifier}/?min_pct=...` — previously ingested stock exposure.
 - `GET benchmarks/?slug=...` — latest stored normalized benchmark window with base-date provenance.
 - `POST compare/` — read a previously ingested 2–20 fund compare/overlap response. The browser never triggers a live provider request.
+- `GET provider-data/?family=NPS|SIF|GIFT|INSTRUMENTS|CORPORATE_ACTIONS&limit=...` — read saved non-MF resource snapshots, their normalized rows, request metadata, original payload, provenance, and ingestion status.
 
 ## Data quality, limitations and licensing
 
@@ -128,6 +169,6 @@ All routes are below `/api/mutual-fund-analytics/charliealpha/` and require the 
 - Bond/fixed-income holding fields such as rating, rating agency, maturity date and yield-to-maturity are retained where supplied. Asset/sector allocations are only populated from classified rows with a supplied weight.
 - Rolling return/XIRR distributions and percentiles remain provider payloads; scalar fields are populated only when a matching PWMS field and metric definition exist.
 - Benchmark observations remain separate from official benchmark TRI. Never compare a normalized provider value directly with an absolute TRI level.
-- The root catalogue also exposes NPS, SIF, GIFT City, Instruments and corporate-action endpoints. They are **not** part of this mutual-fund branch because their identifiers and data contracts require separate models and UI.
+- NPS, SIF and GIFT City IDs, performance/NAV values and instrument ISINs remain in provider-family snapshots. They are not linked to `AMFIMasterScheme`, and no personal portfolio position is created from them.
 - The public site states that the API is for education/research and disclaims responsibility for investment losses or data inaccuracy. The reviewed public pages do not establish explicit permanent-retention or redistribution rights. Obtain written provider terms before production retention or redistribution. This implementation does not imply a licence grant.
 

@@ -341,7 +341,7 @@ class CharlieAlphaService:
                 "sebi_category_level_3": scheme.level_3_category or "",
             },
         )
-        self.stats["inserted" if created else "updated"] += int(created)
+        self.stats["inserted" if created else "updated"] += 1
         return snapshot
 
     def _mark_source(self, snapshot: MFMasterData, field: str, endpoint: str, as_of: date):
@@ -567,7 +567,13 @@ class CharlieAlphaService:
     def sync_metrics(self, scheme_codes: list[str] | None = None, category_slugs: list[str] | None = None) -> dict:
         if scheme_codes:
             for code in scheme_codes:
-                payload = self.client.get("mf/metrics/" + quote(code, safe=""))
+                try:
+                    payload = self.client.get("mf/metrics/" + quote(code, safe=""))
+                except Exception as exc:
+                    self.stats["failed"] += 1
+                    if len(self.errors) < 100:
+                        self.errors.append({"kind": "metrics_fetch", "code": code, "error": str(exc)[:250]})
+                    continue
                 self.stats["fetched"] += 1
                 self._save_metric_record(payload if isinstance(payload, dict) else {}, "mf/metrics/" + code)
         else:
@@ -579,7 +585,13 @@ class CharlieAlphaService:
                 ]
                 categories = [slug for slug in categories if slug]
             for slug in categories:
-                payload = self.client.get("mf/metrics-by-cat/" + quote(slug, safe=""))
+                try:
+                    payload = self.client.get("mf/metrics-by-cat/" + quote(slug, safe=""))
+                except Exception as exc:
+                    self.stats["failed"] += 1
+                    if len(self.errors) < 100:
+                        self.errors.append({"kind": "category_metrics_fetch", "slug": slug, "error": str(exc)[:250]})
+                    continue
                 rows = _records(payload, ("schemes", "funds", "results", "data"))
                 self.stats["fetched"] += len(rows)
                 for row in rows:
@@ -793,7 +805,13 @@ class CharlieAlphaService:
                 self.stats["skipped"] += 1
                 continue
             endpoint = "benchmark/hnav/" + quote(slug, safe="")
-            history = self.client.get(endpoint)
+            try:
+                history = self.client.get(endpoint)
+            except Exception as exc:
+                self.stats["failed"] += 1
+                if len(self.errors) < 100:
+                    self.errors.append({"kind": "benchmark_history_fetch", "slug": slug, "error": str(exc)[:250]})
+                continue
             dates = history.get("dates", []) if isinstance(history, dict) else []
             values = history.get("nav", []) if isinstance(history, dict) else []
             if not isinstance(dates, list) or not isinstance(values, list):
@@ -914,7 +932,13 @@ class CharlieAlphaService:
 
         results = []
         for code in scheme_codes:
-            payload = self.client.get("mf/holdings-periods/" + quote(code, safe=""))
+            try:
+                payload = self.client.get("mf/holdings-periods/" + quote(code, safe=""))
+            except Exception as exc:
+                self.stats["failed"] += 1
+                if len(self.errors) < 100:
+                    self.errors.append({"kind": "holdings_periods_fetch", "code": code, "error": str(exc)[:250]})
+                continue
             periods = payload.get("periods", []) if isinstance(payload, dict) else []
             if not isinstance(periods, list):
                 periods = []
@@ -941,7 +965,13 @@ class CharlieAlphaService:
         snapshots_requested = 0
         period_registry = []
         for code in scheme_codes:
-            periods_payload = self.client.get("mf/holdings-periods/" + quote(code, safe=""))
+            try:
+                periods_payload = self.client.get("mf/holdings-periods/" + quote(code, safe=""))
+            except Exception as exc:
+                self.stats["failed"] += 1
+                if len(self.errors) < 100:
+                    self.errors.append({"kind": "holdings_history_periods_fetch", "code": code, "error": str(exc)[:250]})
+                continue
             periods = periods_payload.get("periods", []) if isinstance(periods_payload, dict) else []
             if not isinstance(periods, list):
                 periods = []

@@ -56,10 +56,14 @@ export class MutualFundIntelligenceApiService {
     return this.http.get<MutualFundDetailResponse>(this.baseUrl + '/funds/' + encodeURIComponent(schemeCode) + '/', { params, withCredentials: true });
   }
 
-  getBenchmarks(slug = ''): Observable<{ count: number; results: any[] }> {
+  getBenchmarks(slug = '', range = ''): Observable<{ count: number; requested_window?: Record<string, string> | null; results: any[] }> {
     let params = new HttpParams();
     if (slug) params = params.set('slug', slug);
-    return this.http.get<{ count: number; results: any[] }>(this.baseUrl + '/benchmarks/', { params, withCredentials: true });
+    if (range) params = params.set('range', range);
+    return this.http.get<{ count: number; requested_window?: Record<string, string> | null; results: any[] }>(
+      this.baseUrl + '/benchmarks/',
+      { params, withCredentials: true },
+    );
   }
 
   getHoldingsPeriods(schemeCode = ''): Observable<any> {

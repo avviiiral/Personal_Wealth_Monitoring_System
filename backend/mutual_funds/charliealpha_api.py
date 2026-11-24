@@ -1,5 +1,6 @@
 """Authenticated, database-backed APIs for the Mutual Fund Intelligence page."""
 import re
+from urllib.parse import urlencode
 
 from django.db.models import F, OuterRef, Q, Subquery
 from django.http import Http404
@@ -345,22 +346,48 @@ def charliealpha_fund_detail(request, scheme_code: str):
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def charliealpha_benchmarks(request):
-    """Serve the latest provider-normalized series from relational observations."""
+    """Read a selected stored provider-normalized benchmark window."""
     slug = (request.query_params.get("slug") or "").strip()
+    range_name = (request.query_params.get("range") or "").strip().upper()
+    raw_from, raw_to = (request.query_params.get("from") or "").strip(), (request.query_params.get("to") or "").strip()
+    allowed_ranges = {"ALL", "1M", "6M", "1Y", "3Y", "5Y", "10Y", "15Y", "20Y", "25Y"}
+    if bool(raw_from) != bool(raw_to):
+        return Response({"detail": "Both from and to dates are required for a custom benchmark window."}, status=status.HTTP_400_BAD_REQUEST)
+    if raw_from:
+        from_date, to_date = parse_date(raw_from), parse_date(raw_to)
+        if not from_date or not to_date:
+            return Response({"detail": "from and to must use YYYY-MM-DD."}, status=status.HTTP_400_BAD_REQUEST)
+        if from_date > to_date:
+            return Response({"detail": "from cannot be later than to."}, status=status.HTTP_400_BAD_REQUEST)
+        window_params = {"from": from_date.isoformat(), "to": to_date.isoformat()}
+    elif range_name:
+        if range_name not in allowed_ranges:
+            return Response({"detail": "range must be ALL, 1M, 6M, 1Y, 3Y, 5Y, 10Y, 15Y, 20Y or 25Y."}, status=status.HTTP_400_BAD_REQUEST)
+        window_params = {"range": range_name}
+    else:
+        window_params = {}
+
     benchmarks = MFProviderBenchmark.objects.filter(provider="CHARLIEALPHA").order_by("category", "name")
     if slug:
         benchmarks = benchmarks.filter(slug=slug)
     results = []
     for benchmark in benchmarks[:100]:
         observations = MFProviderBenchmarkObservation.objects.filter(benchmark=benchmark)
+        if window_params:
+            window_marker = "/benchmark/hnav/" + quote(benchmark.slug, safe="") + "?" + urlencode(window_params)
+            observations = observations.filter(source_url__contains=window_marker)
+        if not observations.exists():
+            continue
         base_date = observations.order_by("-fetched_at").values_list("normalization_base_date", flat=True).first()
         if base_date is None:
             continue
+        window_observations = observations.filter(normalization_base_date=base_date)
         series = list(
-            observations.filter(normalization_base_date=base_date)
-            .order_by("observation_date")
+            window_observations.order_by("observation_date")
             .values("observation_date", "normalized_value")
         )
+        fetched_at = window_observations.order_by("-fetched_at").values_list("fetched_at", flat=True).first()
+        source_url = window_observations.order_by("-fetched_at").values_list("source_url", flat=True).first()
         results.append({
             "slug": benchmark.slug,
             "name": benchmark.name,
@@ -370,15 +397,17 @@ def charliealpha_benchmarks(request):
                 "method": "REBASED_TO_100",
                 "base_value": "100",
                 "base_date": base_date,
+                "requested_window": window_params or None,
                 "warning": "Provider history is rebased to 100 at the start of the returned range; it is not an absolute official TRI series.",
             },
+            "source_url": source_url,
             "series": [
                 {"date": item["observation_date"], "normalized_value": item["normalized_value"]}
                 for item in series
             ],
-            "fetched_at": benchmark.fetched_at,
+            "fetched_at": fetched_at or benchmark.fetched_at,
         })
-    return Response({"count": len(results), "results": results})
+    return Response({"count": len(results), "requested_window": window_params or None, "results": results})
 
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])

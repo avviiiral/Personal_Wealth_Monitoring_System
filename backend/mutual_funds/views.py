@@ -193,35 +193,32 @@ def sip_create(request):
 @permission_classes([IsAuthenticated])
 def mutual_fund_summary(request):
 
-    holdings = (
+    holdings = list(
         MutualFundHolding.objects
         .filter(
             family_id=require_active_family(request.user).id,
             scheme__is_active=True,
         )
+        .select_related("scheme")
     )
+    valuation_cache = {
+        holding.pk: MutualFundHoldingEngine.get_valuation(holding)
+        for holding in holdings
+    }
 
-    totals = holdings.aggregate(
-        invested=Sum("invested_value"),
-        current=Sum("current_value"),
-        pnl=Sum("unrealized_pnl"),
-        number_of_holdings=Count("id"),
+    invested = sum(
+        (holding.invested_value or Decimal("0") for holding in holdings),
+        Decimal("0"),
     )
-
-    invested = (
-        totals["invested"]
-        or Decimal("0")
+    current = sum(
+        (valuation_cache[holding.pk]["current_value"] for holding in holdings),
+        Decimal("0"),
     )
-
-    current = (
-        totals["current"]
-        or Decimal("0")
+    pnl = sum(
+        (valuation_cache[holding.pk]["unrealized_pnl"] for holding in holdings),
+        Decimal("0"),
     )
-
-    pnl = (
-        totals["pnl"]
-        or Decimal("0")
-    )
+    number_of_holdings = len(holdings)
 
     pnl_percentage = (
         (pnl / invested) * Decimal("100")
@@ -237,7 +234,7 @@ def mutual_fund_summary(request):
             float(pnl_percentage),
             4,
         ),
-        "number_of_holdings": totals["number_of_holdings"],
+        "number_of_holdings": number_of_holdings,
     })
 
 
@@ -249,19 +246,27 @@ def mutual_fund_summary(request):
 @permission_classes([IsAuthenticated])
 def mutual_fund_holdings(request):
 
-    holdings = (
+    holdings = list(
         MutualFundHolding.objects
         .filter(
             family_id=require_active_family(request.user).id,
             scheme__is_active=True,
         )
         .select_related("scheme")
-        .order_by("-current_value")
+    )
+    valuation_cache = {
+        holding.pk: MutualFundHoldingEngine.get_valuation(holding)
+        for holding in holdings
+    }
+    holdings.sort(
+        key=lambda holding: valuation_cache[holding.pk]["current_value"],
+        reverse=True,
     )
 
     serializer = MutualFundHoldingSerializer(
         holdings,
         many=True,
+        context={"valuation_cache": valuation_cache},
     )
 
     data = serializer.data

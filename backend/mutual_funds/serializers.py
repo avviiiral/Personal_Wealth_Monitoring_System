@@ -30,6 +30,9 @@ class MutualFundHoldingSerializer(
         read_only=True,
     )
 
+    current_nav = serializers.SerializerMethodField()
+    current_value = serializers.SerializerMethodField()
+    unrealized_pnl = serializers.SerializerMethodField()
     pnl_percentage = serializers.SerializerMethodField()
 
     class Meta:
@@ -53,18 +56,29 @@ class MutualFundHoldingSerializer(
             "updated_at",
         ]
 
-    def get_pnl_percentage(self, obj):
+    def _valuation(self, obj):
+        cache = self.context.get("valuation_cache", {})
+        return cache.get(obj.pk) or {
+            "current_nav": obj.current_nav,
+            "current_value": obj.current_value,
+            "unrealized_pnl": obj.unrealized_pnl,
+        }
 
+    def get_current_nav(self, obj):
+        return self._valuation(obj)["current_nav"]
+
+    def get_current_value(self, obj):
+        return self._valuation(obj)["current_value"]
+
+    def get_unrealized_pnl(self, obj):
+        return self._valuation(obj)["unrealized_pnl"]
+
+    def get_pnl_percentage(self, obj):
+        valuation = self._valuation(obj)
         if not obj.invested_value:
             return 0
-
         return round(
-            float(
-                (
-                    obj.unrealized_pnl
-                    / obj.invested_value
-                ) * 100
-            ),
+            float((valuation["unrealized_pnl"] / obj.invested_value) * 100),
             2,
         )
 

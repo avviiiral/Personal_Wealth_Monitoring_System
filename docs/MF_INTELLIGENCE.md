@@ -69,7 +69,9 @@ PWMS features where the matching identity and data granularity are suitable:
   Matching is by exact AMFI code (or exact ISIN for the shared portfolio NAV
   service), only intelligence NAVs dated no more than seven days old are
   eligible, and a NAV dated after the transaction date is never used for
-  transaction/SIP execution.
+  transaction/SIP execution. The Mutual Funds summary and holdings APIs also
+  calculate their returned market values from that same read-through NAV, so
+  these screens do not wait for a family-holding rebuild to reflect the sync.
 - Mutual-fund look-through can use the latest `MFHoldingSnapshot` when it is
   newer than the family's stored disclosure. On the same disclosure date, the
   local disclosure is preferred because it may have additional source fields.

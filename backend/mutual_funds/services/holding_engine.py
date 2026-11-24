@@ -1,5 +1,5 @@
 from datetime import timedelta
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 from types import SimpleNamespace
 
 from django.db import transaction
@@ -202,6 +202,34 @@ class MutualFundHoldingEngine:
                 source="MF_INTELLIGENCE",
             )
         return selected
+
+    @staticmethod
+    def get_valuation(holding):
+        """Calculate response-time holding values from the freshest eligible NAV.
+
+        This is read-through only: it does not write family-owned holding or NAV
+        records. When no usable NAV is available, retain the stored valuation.
+        """
+        nav_record = MutualFundHoldingEngine.get_latest_nav(holding.scheme)
+        current_nav = (
+            nav_record.nav
+            if nav_record is not None and nav_record.nav > 0
+            else holding.current_nav
+        )
+        if current_nav is not None and current_nav > 0:
+            current_value = (
+                (holding.units or MutualFundHoldingEngine.ZERO) * current_nav
+            ).quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP)
+        else:
+            current_value = holding.current_value or MutualFundHoldingEngine.ZERO
+        unrealized_pnl = (
+            current_value - (holding.invested_value or MutualFundHoldingEngine.ZERO)
+        ).quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP)
+        return {
+            "current_nav": current_nav or MutualFundHoldingEngine.ZERO,
+            "current_value": current_value,
+            "unrealized_pnl": unrealized_pnl,
+        }
 
     @staticmethod
     @transaction.atomic

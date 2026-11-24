@@ -17,7 +17,7 @@ from mf_intelligence.models import (
 from market_data.services.mutual_fund_nav_service import (
     MutualFundNAVService as SharedPortfolioNAVService,
 )
-from mutual_funds.models import MutualFundNAV, MutualFundScheme
+from mutual_funds.models import MutualFundHolding, MutualFundNAV, MutualFundScheme
 from mutual_funds.services.holding_engine import MutualFundHoldingEngine
 from mutual_funds.services.nav_service import MutualFundNAVService
 from users.models import FamilyGroup
@@ -225,6 +225,52 @@ class MFIntelligenceConsumerIntegrationTests(TestCase):
         self.assertEqual(row["metrics"]["1Y"], Decimal("9.7500"))
         self.assertEqual(row["mutual_fund"]["scheme_code"], "123462")
         self.assertEqual(row["mutual_fund"]["latest_nav"], Decimal("25.500000"))
+
+    def test_mf_summary_and_holdings_use_read_through_synced_nav(self):
+        user = User.objects.create_user(username="mfi-live-valuation-user", password="pw")
+        family = FamilyGroup.objects.create(name="MFI Live Valuation Family")
+        user.profile.family_groups.add(family)
+        scheme = MutualFundScheme.objects.create(
+            owner=user,
+            family=family,
+            scheme_name="Live Valuation Fund",
+            scheme_code="123463",
+        )
+        holding = MutualFundHolding.objects.create(
+            owner=user,
+            family=family,
+            scheme=scheme,
+            units=Decimal("10.000000"),
+            invested_value=Decimal("100.0000"),
+            average_nav=Decimal("10.000000"),
+            current_nav=Decimal("9.000000"),
+            current_value=Decimal("90.0000"),
+            unrealized_pnl=Decimal("-10.0000"),
+        )
+        MFScheme.objects.create(
+            amfi_code="123463",
+            name="Live Valuation Fund - Direct Plan - Growth",
+            latest_nav=Decimal("11.000000"),
+            latest_nav_date=self.today - timedelta(days=1),
+        )
+
+        client = APIClient()
+        client.force_authenticate(user)
+        summary = client.get("/api/mutual-funds/summary/")
+        holdings = client.get("/api/mutual-funds/holdings/")
+
+        self.assertEqual(summary.status_code, 200)
+        self.assertEqual(summary.data["total_current_value"], Decimal("110.0000"))
+        self.assertEqual(summary.data["total_unrealized_pnl"], Decimal("10.0000"))
+        self.assertEqual(summary.data["pnl_percentage"], 10.0)
+        self.assertEqual(summary.data["number_of_holdings"], 1)
+        self.assertEqual(holdings.status_code, 200)
+        row = holdings.data["results"][0]
+        self.assertEqual(row["id"], holding.id)
+        self.assertEqual(row["current_nav"], Decimal("11.000000"))
+        self.assertEqual(row["current_value"], Decimal("110.0000"))
+        self.assertEqual(row["unrealized_pnl"], Decimal("10.0000"))
+        self.assertEqual(row["pnl_percentage"], 10.0)
 
     def test_underlying_api_uses_newer_synced_disclosure(self):
         user = User.objects.create_user(username="mfi-underlying-user", password="pw")

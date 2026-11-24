@@ -1,4 +1,4 @@
-# CharlieAlpha Mutual Fund & ETF endpoint integration
+# CharlieAlpha API endpoint integration
 
 This is an opt-in data-source integration for the PWMS Mutual Fund Intelligence area. It covers all endpoint families listed by the provider's public catalogue: Mutual Funds & ETFs, NPS, SIF, GIFT City (IFSC) funds, Instruments, Corporate Actions, and Benchmarks. The non-MF families have different identifiers and data contracts; their payloads are stored in a separate provider-resource snapshot model and are never inserted into AMFI mutual-fund scheme tables or investor-owned holdings.
 
@@ -9,6 +9,8 @@ Base URL: `https://api.charliealpha.in/v1`
 The public catalogue describes an unauthenticated, GET-only API limited to 50 requests per 10 seconds. The adapter sends `Accept: application/json`, serializes requests with a 0.205-second minimum interval, applies finite connect/read timeouts, and retries HTTP 429 and transient 5xx/network failures. The integration never requests the provider from Django startup and never calls CharlieAlpha directly from the browser.
 
 ## Endpoint-by-endpoint coverage
+
+The public catalogue currently lists **35 GET endpoints** across the seven families below. The implementation keeps the MF/ETF and benchmark tables described in the existing sections, and stores the remaining families in provider-native snapshots.
 
 | # | Provider endpoint | Documented behavior and parameters | PWMS implementation |
 | ---: | --- | --- | --- |
@@ -40,11 +42,11 @@ The public catalogue describes an unauthenticated, GET-only API limited to 50 re
 | 26 | `GET /sif/lnav/{code}` | Latest NAV and movement; accepts SIF ID or ISIN | `sync_sif()` stores per-scheme latest-NAV responses using the SIF identifier |
 | 27 | `GET /sif/hnav/{code}` | Daily SIF NAV history and scheme metadata; accepts SIF ID or ISIN | `sync_sif()` stores paired NAV history rows without linking the identifier to AMFI |
 | 28 | `GET /gift/schemes?compact=false` | GIFT City fund directory, legal entity, AMC brand, asset class, investor tier, flow direction, minimum investment, currency and share classes; compact labels by default | `sync_gift()` requests expanded JSON and stores the GIFT directory snapshot |
-| 29 | `GET /gift/search?q={query}&compact=false` | Search GIFT funds by fund/AMC/legal entity, asset class, ISIN or numeric ID | `sync_gift(search_query=...)` stores the search response with its request parameters |
+| 29 | `GET /gift/search` | Search GIFT funds by fund/AMC/legal entity, asset class, ISIN or numeric ID; supports `compact=false` for expanded objects | `sync_gift(search_query=...)` stores the search response with its request parameters |
 | 30 | `GET /gift/lnavall` | Compact bulk latest NAV across active GIFT City funds and plan variants | `sync_gift()` stores the bulk NAV rows without creating AMFI schemes |
 | 31 | `GET /gift/lnav/{code}` | Latest NAV, previous NAV and movement across plan variants; numeric fund ID or ISIN | `sync_gift()` stores the fund-level response with its GIFT identifier |
 | 32 | `GET /gift/hnav/{code}?plan={plan}&start_date={date}&end_date={date}` | Daily NAV series across plan variants by default; optional plan and independent date boundaries | `sync_gift(plan=..., from_date=..., to_date=...)` stores each plan-keyed series as rows preserving the plan label |
-| 33 | `GET /instruments/search?q={query}&type={type}&limit={n}` | Search Indian equities, bonds, ETFs, G-secs and other instruments; type filter and limit 1–100 | `search_instruments()` stores normalized result rows and the raw response |
+| 33 | `GET /instruments/search` | Search Indian equities, bonds, ETFs, G-secs and other instruments; optional text query, `type` filter and `limit` 1–100 | `search_instruments()` stores normalized result rows and the raw response |
 | 34 | `GET /instruments/{isin}` | Instrument details by 12-character ISIN, including issuer, exchange identifiers, instrument type and available security terms | `instrument_details()` stores the instrument response under the INSTRUMENTS family |
 | 35 | `GET /instruments/corp-act?code=...&status=...&action_type=...&from_date=...&to_date=...&limit=...` | Stock/ETF splits, face-value consolidations and bonus issues; status all/applied/upcoming, action ALL/SPLIT/BONUS, optional dates and limit 1–200 | `corporate_actions()` stores the response as a CORPORATE_ACTIONS snapshot with the exact filter parameters |
 

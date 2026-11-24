@@ -170,3 +170,48 @@ class LegacyDirectEquityPriceRoutingTests(TestCase):
         self.assertEqual(resolved, "DIFFERENT.NS")
         self.asset.refresh_from_db()
         self.assertEqual(self.asset.symbol, "CUSTOM.NS")
+    def test_resolver_persists_only_when_asset_symbol_is_blank(self):
+        from market_data.services.security_resolver import SecurityResolver
+
+        with patch.object(
+            SecurityResolver,
+            "resolve_yahoo_symbol",
+            return_value="ITCHOTELS.NS",
+        ):
+            resolved = MarketDataManager.resolve_asset_symbol(self.asset)
+
+        self.assertEqual(resolved, "ITCHOTELS.NS")
+        self.asset.refresh_from_db()
+        self.assertEqual(self.asset.symbol, "ITCHOTELS.NS")
+
+        self.asset.symbol = "EXPLICIT.NS"
+        self.asset.save(update_fields=["symbol"])
+        with patch.object(
+            SecurityResolver,
+            "resolve_yahoo_symbol",
+            return_value="OTHER.NS",
+        ):
+            resolved = MarketDataManager.resolve_asset_symbol(self.asset)
+
+        self.assertEqual(resolved, "OTHER.NS")
+        self.asset.refresh_from_db()
+        self.assertEqual(self.asset.symbol, "EXPLICIT.NS")
+
+    def test_decorated_entrypoint_reports_lock_contention(self):
+        from config.postgres_advisory_lock import with_postgres_advisory_lock
+
+        @with_postgres_advisory_lock("test_refresh")
+        def run_refresh():
+            return {"success": True}
+
+        with patch(
+            "config.postgres_advisory_lock.postgres_advisory_lock"
+        ) as lock_context:
+            lock_context.return_value.__enter__.return_value = False
+            lock_context.return_value.__exit__.return_value = False
+            result = run_refresh()
+
+        self.assertFalse(result["success"])
+        self.assertTrue(result["skipped"])
+        self.assertFalse(result["lock_acquired"])
+        self.assertIn("already held", result["reason"])

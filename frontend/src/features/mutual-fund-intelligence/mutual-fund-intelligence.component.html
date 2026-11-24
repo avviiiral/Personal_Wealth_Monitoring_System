@@ -281,7 +281,7 @@
         <div class="error-message" *ngIf="charliealphaDetailError">{{ charliealphaDetailError }}</div>
         <div class="data-footnote" *ngIf="charliealphaDetailLoading">Loading scheme detail from stored PWMS records…</div>
         <div class="provider-kpis detail-kpis" *ngIf="charliealphaDetail?.snapshot as snap">
-          <article class="kpi-card"><span>Latest NAV</span><strong>{{ formatNumber(snap.nav, 4) }}</strong><small>{{ formatDate(snap.nav_as_of) }}</small></article>
+          <article class="kpi-card"><span>Latest NAV</span><strong>{{ formatNumber(snap.nav, 4) }}</strong><small>{{ formatDate(snap.nav_as_of) }} · Change {{ formatNumber(charliealphaDetail?.nav_detail?.nav_change) }} ({{ formatPct(charliealphaDetail?.nav_detail?.nav_change_pct) }})</small></article>
           <article class="kpi-card"><span>1Y / 3Y / 5Y / 10Y CAGR</span><strong>{{ formatPct(snap.return_1y_pct) }}</strong><small>{{ formatPct(snap.return_3y_pct) }} / {{ formatPct(snap.return_5y_pct) }} / {{ formatPct(snap.return_10y_pct) }}</small></article>
           <article class="kpi-card"><span>Volatility / Sharpe / Sortino</span><strong>{{ formatPct(snap.std_dev_pct) }}</strong><small>{{ formatNumber(snap.sharpe, 3) }} / {{ formatNumber(snap.sortino, 3) }}</small></article>
           <article class="kpi-card"><span>Beta / Alpha</span><strong>{{ formatNumber(snap.beta, 3) }}</strong><small>Alpha {{ formatPct(snap.alpha_pct) }}</small></article>
@@ -295,6 +295,18 @@
             <div class="availability-grid"><span *ngFor="let entry of (charliealphaDetail?.data_availability | keyvalue)"><b>{{ sourceLabel(entry.key) }}</b><em [class.available]="entry.value">{{ entry.value ? 'Available' : 'Not available' }}</em></span></div>
             <p class="method-note">Horizon distributions and percentiles are stored in source-run metadata when returned by the provider. Missing metrics are not displayed as zero.</p>
           </div>
+        </div>
+
+
+        <div class="provider-horizon-card" *ngIf="charliealphaDetail?.provider_metrics?.horizons">
+          <div class="chart-title"><div><span>10</span><h3>Provider rolling-return distributions by horizon</h3></div><small>Rolling CAGR / XIRR and percentiles returned by CharlieAlpha</small></div>
+          <div class="horizon-grid">
+            <article *ngFor="let item of (charliealphaDetail?.provider_metrics?.horizons | keyvalue)">
+              <h4>{{ item.key | uppercase }}</h4>
+              <pre>{{ item.value | json }}</pre>
+            </article>
+          </div>
+          <p class="method-note" *ngIf="charliealphaDetail?.provider_metrics?.category_medians">Category medians and sample counts: {{ charliealphaDetail?.provider_metrics?.category_medians | json }}</p>
         </div>
 
         <div class="provider-history-grid">

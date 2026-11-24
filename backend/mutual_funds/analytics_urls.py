@@ -29,7 +29,9 @@ from .charliealpha_api import (
     charliealpha_category_metrics,
     charliealpha_compare,
     charliealpha_fund_detail,
+    charliealpha_holdings_periods,
     charliealpha_overview,
+    charliealpha_security_exposure,
 )
 
 
@@ -39,6 +41,9 @@ urlpatterns = [
     path("charliealpha/funds/<str:scheme_code>/", charliealpha_fund_detail, name="charliealpha-mf-fund-detail"),
     path("charliealpha/categories/<str:slug>/", charliealpha_category_metrics, name="charliealpha-mf-category-metrics"),
     path("charliealpha/benchmarks/", charliealpha_benchmarks, name="charliealpha-mf-benchmarks"),
+    path("charliealpha/holdings-periods/", charliealpha_holdings_periods, name="charliealpha-mf-holdings-periods"),
+    path("charliealpha/funds/<str:scheme_code>/holdings-periods/", charliealpha_holdings_periods, name="charliealpha-mf-fund-holdings-periods"),
+    path("charliealpha/exposure/<str:identifier>/", charliealpha_security_exposure, name="charliealpha-mf-security-exposure"),
     path("charliealpha/compare/", charliealpha_compare, name="charliealpha-mf-compare"),
     path("overview/", mutual_fund_analytics_overview, name="mutual-fund-analytics-overview"),
     path("research-report/", latest_mutual_fund_research_report, name="mutual-fund-research-report"),

@@ -1,4 +1,6 @@
 """Authenticated, database-backed APIs for the Mutual Fund Intelligence page."""
+import re
+
 from django.db.models import F, OuterRef, Q, Subquery
 from django.http import Http404
 from rest_framework import serializers
@@ -64,7 +66,7 @@ _SNAPSHOT_GROUP_FIELDS = {
         "rolling_3y_cagr_min_pct", "rolling_3y_cagr_max_pct",
         "rolling_3y_cagr_observations", "std_dev_pct", "sharpe", "sortino",
         "beta", "alpha_pct", "information_ratio", "max_drawdown_pct",
-        "risk_free_rate_used_pct", "ratio_window_years",
+        "risk_free_rate_used_pct", "ratio_window_years", "fund_age_years",
         "upside_capture_pct", "downside_capture_pct", "tracking_error_pct",
     ),
     "ter": ("ter_direct_pct", "ter_regular_pct", "ter_as_of", "ter_source"),
@@ -399,14 +401,20 @@ def charliealpha_category_metrics(request, slug: str):
     horizon = (request.query_params.get("horizon") or "").strip().lower()
     if horizon and horizon not in {"1y", "3y", "5y", "10y"}:
         return Response({"detail": "horizon must be one of 1y, 3y, 5y or 10y."}, status=status.HTTP_400_BAD_REQUEST)
-    runs = MFSourceRun.objects.filter(
+    runs = list(MFSourceRun.objects.filter(
         source=SOURCE, command="category_metrics", metadata__category_slug=slug
-    ).order_by("-started_at")
-    run = runs.filter(metadata__horizon=horizon).first() if horizon else runs.first()
+    ).order_by("-started_at")[:100])
+    run = next((
+        candidate for candidate in runs
+        if (candidate.metadata or {}).get("horizon") == horizon
+    ), None) if horizon else (runs[0] if runs else None)
     # A no-horizon ingestion stores all available horizons in one response.
     # Reuse it when a caller asks for one horizon but no horizon-filtered run exists.
     if run is None and horizon:
-        run = runs.filter(metadata__horizon__isnull=True).first()
+        run = next((
+            candidate for candidate in runs
+            if (candidate.metadata or {}).get("horizon") is None
+        ), None)
     if not run:
         return Response({"detail": "Category metrics have not been ingested for this category and horizon.", "slug": slug, "horizon": horizon or None}, status=status.HTTP_404_NOT_FOUND)
     metadata = run.metadata or {}
@@ -425,12 +433,15 @@ def charliealpha_category_metrics(request, slug: str):
 def charliealpha_compare(request):
     """Read a previously ingested provider comparison; never call the provider from the UI."""
     codes = request.data.get("scheme_codes", [])
+    if not isinstance(request.data, dict):
+        return Response({"detail": "The request body must be a JSON object."}, status=status.HTTP_400_BAD_REQUEST)
     if not isinstance(codes, list):
         return Response({"detail": "scheme_codes must be an array."}, status=status.HTTP_400_BAD_REQUEST)
     normalized = list(dict.fromkeys(str(code).strip().upper() for code in codes if str(code).strip()))
     if not 2 <= len(normalized) <= 20:
         return Response({"detail": "Select between 2 and 20 funds."}, status=status.HTTP_400_BAD_REQUEST)
-    invalid = [code for code in normalized if not (code.isdigit() and len(code) == 6) and len(code) != 12]
+    isin_pattern = re.compile(r"^[A-Z]{2}[A-Z0-9]{9}[0-9]$")
+    invalid = [code for code in normalized if not (code.isdigit() and len(code) == 6) and not isin_pattern.fullmatch(code)]
     if invalid:
         return Response({"detail": "Each scheme identifier must be a six-digit AMFI code or a 12-character ISIN.", "invalid_identifiers": invalid}, status=status.HTTP_400_BAD_REQUEST)
 

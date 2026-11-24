@@ -64,16 +64,11 @@ def with_postgres_advisory_lock(name):
         def wrapped(*args, **kwargs):
             with postgres_advisory_lock(name) as acquired:
                 if not acquired:
-                    logger.warning(
-                        "Refresh entry point %s was not run because advisory "
-                        "lock '%s' is already held by another process.",
-                        func.__qualname__,
-                        name,
-                    )
                     message = (
                         f"Refresh not started: advisory lock '{name}' "
                         "is held by another process."
                     )
+                    logger.warning("%s (%s)", message, func.__qualname__)
                     command = args[0] if args else None
                     command_stdout = getattr(command, "stdout", None)
                     command_stderr = getattr(command, "stderr", None)
@@ -87,6 +82,7 @@ def with_postgres_advisory_lock(name):
                         "reason": message,
                         "lock_acquired": False,
                     }
+
                 result = func(*args, **kwargs)
                 if isinstance(result, dict):
                     result.setdefault("lock_acquired", True)

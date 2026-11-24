@@ -1,6 +1,6 @@
 """Authenticated, database-backed APIs for the Mutual Fund Intelligence page."""
 import re
-from urllib.parse import urlencode
+from urllib.parse import parse_qs, quote, urlencode, urlsplit
 
 from django.db.models import F, OuterRef, Q, Subquery
 from django.http import Http404
@@ -378,6 +378,17 @@ def charliealpha_benchmarks(request):
             observations = observations.filter(source_url__contains=window_marker)
         if not observations.exists():
             continue
+        available_windows = []
+        for source in observations.values_list("source_url", flat=True).distinct():
+            query = parse_qs(urlsplit(source).query)
+            if query.get("range"):
+                candidate = {"range": query["range"][0]}
+            elif query.get("from") and query.get("to"):
+                candidate = {"from": query["from"][0], "to": query["to"][0]}
+            else:
+                continue
+            if candidate not in available_windows:
+                available_windows.append(candidate)
         base_date = observations.order_by("-fetched_at").values_list("normalization_base_date", flat=True).first()
         if base_date is None:
             continue
@@ -401,6 +412,7 @@ def charliealpha_benchmarks(request):
                 "warning": "Provider history is rebased to 100 at the start of the returned range; it is not an absolute official TRI series.",
             },
             "source_url": source_url,
+            "available_windows": available_windows,
             "series": [
                 {"date": item["observation_date"], "normalized_value": item["normalized_value"]}
                 for item in series

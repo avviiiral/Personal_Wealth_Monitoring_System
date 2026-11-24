@@ -410,7 +410,9 @@ class CharlieAlphaService:
         if code:
             existing_mappings = list(
                 MFSchemeIdentityMap.objects.filter(
-                    source="CHARLIEALPHA", external_id=code
+                    source="CHARLIEALPHA",
+                    external_id=code,
+                    status=MFSchemeIdentityMap.STATUS_ACTIVE,
                 ).select_related("scheme")[:10]
             )
             conflicting_scheme_ids = sorted({
@@ -538,6 +540,7 @@ class CharlieAlphaService:
             if changed:
                 scheme.save(update_fields=changed + ["updated_at"])
                 self.stats["updated"] += 1
+        mapped_scheme_codes = list(dict.fromkeys(mapped_scheme_codes))
         run = self._run(
             "schemes",
             metadata={

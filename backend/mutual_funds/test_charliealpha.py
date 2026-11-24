@@ -268,3 +268,18 @@ class CharlieAlphaPersistenceTests(TestCase):
                 metadata__scope="scheme",
             ).exists()
         )
+
+
+    def test_ter_history_respects_direct_plan_label(self):
+        client = Mock()
+        client.get.return_value = {
+            "dates": ["2026-10-31"],
+            "ter": ["0.75"],
+        }
+        result = CharlieAlphaService(client=client).sync_ter([self.scheme.scheme_code])
+
+        self.assertEqual(result["fetched"], 1)
+        snapshot = MFMasterData.objects.get(scheme=self.scheme, as_of_date=date(2026, 10, 31))
+        self.assertEqual(snapshot.ter_direct_pct, Decimal("0.75"))
+        self.assertIsNone(snapshot.ter_regular_pct)
+        self.assertEqual(snapshot.ter_source, SOURCE)

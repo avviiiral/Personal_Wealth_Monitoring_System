@@ -1093,10 +1093,20 @@ class MarketDataManager:
                             start=earliest_transaction_date,
                             end=earliest_yahoo_date + timedelta(days=1),
                         )
-                    except Exception:
-                        # Continue with the normal incremental refresh. Existing
-                        # history is still valid even if the backfill is down.
-                        pass
+                    except Exception as exc:
+                        # Do not hide a failed opening-period backfill. The
+                        # incremental refresh can still succeed, but the caller
+                        # and logs must be able to see that history is incomplete.
+                        import logging
+                        logging.getLogger(__name__).warning(
+                            "Unable to backfill Yahoo history for %s (%s) "
+                            "from %s through %s: %s",
+                            asset.name,
+                            yahoo_symbol,
+                            earliest_transaction_date,
+                            earliest_yahoo_date,
+                            exc,
+                        )
 
                 start_date = (
                     latest_date

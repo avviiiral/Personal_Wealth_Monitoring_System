@@ -92,33 +92,40 @@ class CharlieAlphaExtendedPersistenceTests(TestCase):
         sif_client.get.side_effect = [
             {"fields": ["scheme_id", "scheme_name"], "data": [[7, "SIF Example"]]},
             {"fields": ["scheme_code", "nav"], "data": [[7, "100"]]},
+            {"fields": ["code", "name", "category"], "data": [["7", "SIF Example", "Equity"]]},
             {"nav": "100", "date": "2026-11-21"},
             {"dates": ["2026-11-20"], "nav": ["99.5"]},
         ]
-        sif_result = CharlieAlphaExtendedService(client=sif_client).sync_sif(limit=1)
+        sif_result = CharlieAlphaExtendedService(client=sif_client).sync_sif(limit=1, search_query="long short")
         self.assertEqual(sif_result["schemes_requested"], 1)
-        self.assertEqual(sif_client.get.call_args_list[2].args[0], "sif/lnav/7")
-        self.assertEqual(sif_client.get.call_args_list[3].args[0], "sif/hnav/7")
-        self.assertEqual(MFProviderResourceSnapshot.objects.filter(family="SIF").count(), 4)
+        self.assertEqual(sif_client.get.call_args_list[2].args, ("sif/search", {"q": "long short"}))
+        self.assertEqual(sif_client.get.call_args_list[3].args[0], "sif/lnav/7")
+        self.assertEqual(sif_client.get.call_args_list[4].args[0], "sif/hnav/7")
+        self.assertEqual(MFProviderResourceSnapshot.objects.filter(family="SIF").count(), 5)
 
         gift_client = Mock()
         gift_client.get.side_effect = [
             {"labels": ["fund_id", "fund_name", "isin"], "data": [[3, "GIFT Example", "INIFC2603016"]]},
             {"fields": ["fund_id", "nav"], "data": [[3, "10"]]},
+            {"results": [{"fund_id": 3, "fund_name": "GIFT Example"}]},
             {"fund_id": 3, "nav": "10.1", "date": "2026-11-21"},
             {"Direct": {"dates": ["2026-11-20"], "nav": ["10"]}},
         ]
         gift_result = CharlieAlphaExtendedService(client=gift_client).sync_gift(
-            limit=1, plan="Direct", from_date="2026-11-01", to_date="2026-11-21",
+            limit=1, search_query="global equity", plan="Direct", from_date="2026-11-01", to_date="2026-11-21",
         )
         self.assertEqual(gift_result["schemes_requested"], 1)
         self.assertEqual(gift_client.get.call_args_list[0].args[0], "gift/schemes")
         self.assertEqual(gift_client.get.call_args_list[0].args[1], {"compact": "false"})
         self.assertEqual(
-            gift_client.get.call_args_list[3].args[1],
+            gift_client.get.call_args_list[2].args,
+            ("gift/search", {"q": "global equity", "compact": "false"}),
+        )
+        self.assertEqual(
+            gift_client.get.call_args_list[4].args[1],
             {"plan": "Direct", "start_date": "2026-11-01", "end_date": "2026-11-21"},
         )
-        self.assertEqual(MFProviderResourceSnapshot.objects.filter(family="GIFT").count(), 4)
+        self.assertEqual(MFProviderResourceSnapshot.objects.filter(family="GIFT").count(), 5)
 
     def test_gift_history_accepts_one_sided_optional_date_boundaries(self):
         client = Mock()

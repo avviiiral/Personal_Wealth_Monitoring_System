@@ -103,7 +103,7 @@ interface AnalyticsSummary {
   message?: string;
 }
 
-type DashboardTab = 'overview' | 'fund' | 'rankings' | 'performance' | 'calendar' | 'portfolio' | 'positioning' | 'universe' | 'attribution' | 'charliealpha';
+type DashboardTab = 'overview' | 'fund' | 'rankings' | 'performance' | 'calendar' | 'portfolio' | 'positioning' | 'universe' | 'attribution' | 'charliealpha' | 'charliealpha-ecosystem';
 
 @Component({
   selector: 'app-mutual-fund-intelligence',
@@ -149,7 +149,8 @@ export class MutualFundIntelligenceComponent implements OnInit, OnDestroy {
     { id: 'positioning', label: 'Category Positioning' },
     { id: 'universe', label: 'Universe Table' },
     { id: 'attribution', label: 'Attribution' },
-    { id: 'charliealpha', label: 'CharlieAlpha Intelligence' },
+    { id: 'charliealpha', label: 'CharlieAlpha MF Intelligence' },
+    { id: 'charliealpha-ecosystem', label: 'CharlieAlpha NPS / SIF / GIFT' },
   ];
 
   private rankingsSubscription?: Subscription;
@@ -162,6 +163,7 @@ export class MutualFundIntelligenceComponent implements OnInit, OnDestroy {
   private charliealphaFundSubscription?: Subscription;
   private charliealphaCompareSubscription?: Subscription;
   private charliealphaCategoryMetricsSubscription?: Subscription;
+  private charliealphaProviderDataSubscription?: Subscription;
   private charliealphaCategoryCatalogLoaded = false;
   charliealphaProviderCategories: Array<{ slug: string; name?: string; asset_class?: string }> = [];
   charliealphaMetricCategorySlug = '';
@@ -210,6 +212,12 @@ export class MutualFundIntelligenceComponent implements OnInit, OnDestroy {
   charliealphaExposureResult: any = null;
   charliealphaExposureLoading = false;
   charliealphaExposureError = '';
+  charliealphaProviderFamily: 'NPS' | 'SIF' | 'GIFT' | 'INSTRUMENTS' | 'CORPORATE_ACTIONS' = 'NPS';
+  charliealphaProviderResources: any[] = [];
+  charliealphaProviderFamilyCounts: Record<string, number> = {};
+  charliealphaSelectedProviderResource: any = null;
+  charliealphaProviderResourcesLoading = false;
+  charliealphaProviderResourcesError = '';
 
   ngOnInit(): void {
     this.loadSummary();
@@ -227,6 +235,7 @@ export class MutualFundIntelligenceComponent implements OnInit, OnDestroy {
     this.charliealphaFundSubscription?.unsubscribe();
     this.charliealphaCompareSubscription?.unsubscribe();
     this.charliealphaCategoryMetricsSubscription?.unsubscribe();
+    this.charliealphaProviderDataSubscription?.unsubscribe();
   }
 
   get selectedCategoryFunds(): number {
@@ -462,6 +471,7 @@ export class MutualFundIntelligenceComponent implements OnInit, OnDestroy {
       this.loadCharlieAlphaOverview();
       this.loadCharlieAlphaBenchmarks();
     }
+    if (tab === 'charliealpha-ecosystem') this.loadCharlieAlphaProviderResources();
     this.refreshCharts();
   }
 
@@ -1109,6 +1119,56 @@ export class MutualFundIntelligenceComponent implements OnInit, OnDestroy {
         this.cdr.detectChanges();
       },
     });
+  }
+
+
+  loadCharlieAlphaProviderResources(family: string = this.charliealphaProviderFamily): void {
+    const allowed = ['NPS', 'SIF', 'GIFT', 'INSTRUMENTS', 'CORPORATE_ACTIONS'];
+    if (!allowed.includes(family)) return;
+    this.charliealphaProviderFamily = family as typeof this.charliealphaProviderFamily;
+    this.charliealphaProviderResourcesLoading = true;
+    this.charliealphaProviderResourcesError = '';
+    this.charliealphaProviderDataSubscription?.unsubscribe();
+    this.charliealphaProviderDataSubscription = this.charliealphaApi.getProviderResources(family, 100).subscribe({
+      next: response => {
+        this.charliealphaProviderResources = response?.results ?? [];
+        this.charliealphaProviderFamilyCounts = response?.family_counts ?? {};
+        if (this.charliealphaSelectedProviderResource) {
+          this.charliealphaSelectedProviderResource = this.charliealphaProviderResources.find(
+            item => item.id === this.charliealphaSelectedProviderResource.id,
+          ) ?? this.charliealphaProviderResources[0] ?? null;
+        } else {
+          this.charliealphaSelectedProviderResource = this.charliealphaProviderResources[0] ?? null;
+        }
+        this.charliealphaProviderResourcesLoading = false;
+        this.cdr.detectChanges();
+      },
+      error: error => {
+        this.charliealphaProviderResources = [];
+        this.charliealphaSelectedProviderResource = null;
+        this.charliealphaProviderResourcesLoading = false;
+        this.charliealphaProviderResourcesError = error?.error?.detail
+          ?? 'Unable to read the stored CharlieAlpha provider snapshots.';
+        this.cdr.detectChanges();
+      },
+    });
+  }
+
+  selectCharlieAlphaProviderResource(resource: any): void {
+    this.charliealphaSelectedProviderResource = resource;
+    this.cdr.detectChanges();
+  }
+
+  get charliealphaProviderRecordColumns(): string[] {
+    const records = this.charliealphaSelectedProviderResource?.records;
+    if (!Array.isArray(records) || !records.length || !records[0] || typeof records[0] !== 'object') return [];
+    return Object.keys(records[0]);
+  }
+
+  formatCharlieAlphaProviderCell(value: any): string {
+    if (value === null || value === undefined || value === '') return '—';
+    if (typeof value === 'object') return JSON.stringify(value);
+    return String(value);
   }
 
   private renderCharlieAlphaCharts(): void {

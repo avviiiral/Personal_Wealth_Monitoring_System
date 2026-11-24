@@ -73,8 +73,17 @@ export class MutualFundIntelligenceApiService {
     return this.http.get(this.baseUrl + '/exposure/' + encodeURIComponent(identifier) + '/', { params, withCredentials: true });
   }
 
-  getCategoryMetrics(slug: string): Observable<any> {
-    return this.http.get(this.baseUrl + '/categories/' + encodeURIComponent(slug) + '/', { withCredentials: true });
+  getCategories(): Observable<{ count: number; asset_classes: string[]; results: any[]; category_slugs: string[]; fetched_at: string }> {
+    return this.http.get<{ count: number; asset_classes: string[]; results: any[]; category_slugs: string[]; fetched_at: string }>(
+      this.baseUrl + '/categories/',
+      { withCredentials: true },
+    );
+  }
+
+  getCategoryMetrics(slug: string, horizon = ''): Observable<any> {
+    let params = new HttpParams();
+    if (horizon) params = params.set('horizon', horizon);
+    return this.http.get(this.baseUrl + '/categories/' + encodeURIComponent(slug) + '/', { params, withCredentials: true });
   }
 
   compare(schemeCodes: string[], overlapOnly = false): Observable<any> {

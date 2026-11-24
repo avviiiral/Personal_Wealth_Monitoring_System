@@ -170,6 +170,7 @@ class LegacyDirectEquityPriceRoutingTests(TestCase):
         self.assertEqual(resolved, "DIFFERENT.NS")
         self.asset.refresh_from_db()
         self.assertEqual(self.asset.symbol, "CUSTOM.NS")
+
     def test_resolver_persists_only_when_asset_symbol_is_blank(self):
         from market_data.services.security_resolver import SecurityResolver
 

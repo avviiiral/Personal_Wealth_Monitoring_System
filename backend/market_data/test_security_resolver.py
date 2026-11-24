@@ -182,15 +182,18 @@ class SecurityResolverHardeningTests(SimpleTestCase):
                 isin="INE000000001", symbol="SAMPLE",
             )
 
-    def test_isin_and_exchange_conflict_is_rejected(self):
+    def test_security_master_isin_mapping_overrides_stale_asset_symbol(self):
         SecurityResolver._security_master_isin = {
-            "INE000000001": "SAMPLE.NS",
+            "INE000000001": "MASTER-SYMBOL.NS",
         }
 
-        with self.assertRaisesRegex(ValueError, "supplied symbol/exchange"):
+        self.assertEqual(
             SecurityResolver.resolve_yahoo_symbol(
-                isin="INE000000001", symbol="SAMPLE", exchange="BSE",
-            )
+                isin="INE000000001", symbol="STALE", exchange="BSE",
+                name="Different imported name",
+            ),
+            "MASTER-SYMBOL.NS",
+        )
 
 
     def test_name_without_ltd_matches_security_master_canonical_name(self):

@@ -260,3 +260,27 @@ tbody tr:hover td { background:rgba(253,119,64,.035); }
 .provider-holdings-chart .chart-title { grid-column:1/-1; margin-bottom:-8px; }
 .provider-holdings-chart .chart-wrap { min-height:260px; }
 @media (max-width:680px) { .provider-pagination { align-items:flex-start; flex-direction:column; } .provider-holdings-chart { grid-template-columns:1fr; } }
+
+/* Extended CharlieAlpha API families */
+.provider-family-filter { grid-template-columns:minmax(190px,1fr) auto; }
+.provider-family-filter select {
+  width:100%; min-width:0; height:36px; padding:0 10px;
+  border:1px solid var(--mf-line); background:var(--mf-surface);
+  color:var(--ink,#172033); font:inherit; font-size:10px;
+}
+.provider-resource-table { min-width:900px; }
+.provider-resource-table .selected-row,
+.provider-resource-table tr.selected-row { background:color-mix(in srgb,var(--mf-orange) 10%,transparent); }
+.provider-ecosystem-panel .provider-kpis { grid-template-columns:repeat(5,minmax(0,1fr)); }
+.provider-raw-response { margin-top:14px; padding:10px 12px; border:1px solid var(--mf-line); background:var(--mf-surface); }
+.provider-raw-response summary { cursor:pointer; color:var(--mf-navy); font-size:10px; font-weight:800; }
+:host-context(html.dark-theme) .provider-raw-response summary { color:#e5eaf2; }
+@media (max-width:1050px) {
+  .provider-ecosystem-panel .provider-kpis { grid-template-columns:repeat(3,minmax(0,1fr)); }
+}
+@media (max-width:680px) {
+  .provider-family-filter { grid-template-columns:1fr; }
+  .provider-family-filter label { grid-column:1/-1; }
+  .provider-ecosystem-panel .provider-kpis { grid-template-columns:repeat(2,minmax(0,1fr)); }
+}
+

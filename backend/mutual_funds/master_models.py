@@ -148,7 +148,6 @@ class MFMasterData(models.Model):
 
     # Holdings summary (detail rows live in mf_master_holdings).
     top10_holdings = models.JSONField(default=list, blank=True)
-    sector_allocation = models.JSONField(default=dict, blank=True)
     holdings_as_of = models.DateField(blank=True, null=True)
     holdings_source = models.CharField(max_length=100, blank=True, default="")
 

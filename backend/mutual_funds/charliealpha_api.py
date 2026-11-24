@@ -118,6 +118,13 @@ def _serialize_current_snapshots(snapshots):
     return [serialized[row.scheme_id] for row in snapshot_rows]
 
 
+def _strict_iso_date(value):
+    raw = str(value or "").strip()
+    if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", raw):
+        return None
+    return parse_date(raw)
+
+
 def _source_status():
     latest = {}
     for run in MFSourceRun.objects.filter(source=SOURCE).order_by("-started_at")[:200]:
@@ -234,8 +241,8 @@ def charliealpha_fund_detail(request, scheme_code: str):
     nav_queryset = AMFIMasterNAV.objects.filter(scheme=scheme, source=NAV_SOURCE)
     raw_from_date = request.query_params.get("from_date")
     raw_to_date = request.query_params.get("to_date")
-    from_date = parse_date(raw_from_date) if raw_from_date else None
-    to_date = parse_date(raw_to_date) if raw_to_date else None
+    from_date = _strict_iso_date(raw_from_date) if raw_from_date else None
+    to_date = _strict_iso_date(raw_to_date) if raw_to_date else None
     if raw_from_date and from_date is None:
         return Response({"detail": "from_date must use YYYY-MM-DD."}, status=status.HTTP_400_BAD_REQUEST)
     if raw_to_date and to_date is None:
@@ -249,7 +256,7 @@ def charliealpha_fund_detail(request, scheme_code: str):
     nav_rows = list(nav_queryset.order_by("-date")[:nav_limit])
     holdings_queryset = MFMasterHolding.objects.filter(scheme=scheme, source=SOURCE)
     raw_holding_date = (request.query_params.get("holdings_as_of") or "").strip()
-    requested_holding_date = parse_date(raw_holding_date) if raw_holding_date else None
+    requested_holding_date = _strict_iso_date(raw_holding_date) if raw_holding_date else None
     if raw_holding_date and requested_holding_date is None:
         return Response({"detail": "holdings_as_of must use YYYY-MM-DD."}, status=status.HTTP_400_BAD_REQUEST)
     if requested_holding_date:
@@ -354,8 +361,10 @@ def charliealpha_benchmarks(request):
     allowed_ranges = {"ALL", "1M", "6M", "1Y", "3Y", "5Y", "10Y", "15Y", "20Y", "25Y"}
     if bool(raw_from) != bool(raw_to):
         return Response({"detail": "Both from and to dates are required for a custom benchmark window."}, status=status.HTTP_400_BAD_REQUEST)
+    if raw_from and range_name:
+        return Response({"detail": "Choose either range or the from/to date pair, not both."}, status=status.HTTP_400_BAD_REQUEST)
     if raw_from:
-        from_date, to_date = parse_date(raw_from), parse_date(raw_to)
+        from_date, to_date = _strict_iso_date(raw_from), _strict_iso_date(raw_to)
         if not from_date or not to_date:
             return Response({"detail": "from and to must use YYYY-MM-DD."}, status=status.HTTP_400_BAD_REQUEST)
         if from_date > to_date:

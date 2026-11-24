@@ -248,7 +248,11 @@ class CharlieAlphaService:
             command=command[:120],
             as_of_date=as_of or timezone.localdate(),
             source_url=BASE_URL + "/",
-            status=status or (MFSourceRun.Status.DRY_RUN if self.dry_run else MFSourceRun.Status.SUCCESS),
+            status=status or (
+                MFSourceRun.Status.DRY_RUN if self.dry_run
+                else MFSourceRun.Status.PARTIAL if self.stats["failed"] or self.stats["unmatched"]
+                else MFSourceRun.Status.SUCCESS
+            ),
             completed_at=timezone.now(),
             rows_parsed=self.stats["fetched"],
             rows_inserted=0 if self.dry_run else self.stats["inserted"],

@@ -145,16 +145,16 @@ def charliealpha_fund_detail(request, scheme_code: str):
     if to_date:
         nav_queryset = nav_queryset.filter(date__lte=to_date)
     nav_rows = list(nav_queryset.order_by("-date")[:nav_limit])
-    holding_date = (
-        MFMasterHolding.objects.filter(scheme=scheme, source=SOURCE)
-        .order_by("-portfolio_date").values_list("portfolio_date", flat=True).first()
-    )
+    holdings_queryset = MFMasterHolding.objects.filter(scheme=scheme, source=SOURCE)
+    requested_holding_date = (request.query_params.get("holdings_as_of") or "").strip()
+    if requested_holding_date:
+        holdings_queryset = holdings_queryset.filter(portfolio_date=requested_holding_date)
+    holding_date = holdings_queryset.order_by("-portfolio_date").values_list("portfolio_date", flat=True).first()
     holdings = []
     if holding_date:
         holdings = list(
-            MFMasterHolding.objects.filter(
-                scheme=scheme, source=SOURCE, portfolio_date=holding_date
-            ).order_by("-pct_of_nav", "security_name")[:250]
+            holdings_queryset.filter(portfolio_date=holding_date)
+            .order_by("-pct_of_nav", "security_name")[:250]
         )
     master_history = MFMasterData.objects.filter(scheme=scheme).order_by("as_of_date")
     aum_history = [
@@ -169,6 +169,12 @@ def charliealpha_fund_detail(request, scheme_code: str):
         }
         for item in master_history if item.ter_source == SOURCE and item.ter_as_of
     ]
+    period_record = None
+    for period_run in MFSourceRun.objects.filter(source=SOURCE, command="holdings_periods").order_by("-started_at")[:100]:
+        if (period_run.metadata or {}).get("scope") == "scheme":
+            period_record = next((row for row in (period_run.metadata or {}).get("schemes", []) if str(row.get("scheme_code")) == str(scheme.scheme_code)), None)
+            if period_record:
+                break
     metrics_run = (
         MFSourceRun.objects.filter(
             source=SOURCE, command="metrics", metadata__scheme_code=scheme.scheme_code
@@ -211,6 +217,7 @@ def charliealpha_fund_detail(request, scheme_code: str):
             for item in holdings
         ],
         "holdings_report_date": holding_date,
+        "holdings_periods": (period_record or {}).get("periods", []),
         "provider_metrics": metrics_run.metadata if metrics_run else None,
         "holdings_changes": holdings_run.metadata.get("provider_changes") if holdings_run else None,
         "data_availability": {
@@ -277,3 +284,59 @@ def charliealpha_compare(request):
     except (ValueError, RuntimeError) as exc:
         return Response({"detail": str(exc)}, status=status.HTTP_502_BAD_GATEWAY)
     return Response(result)
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def charliealpha_holdings_periods(request, scheme_code: str | None = None):
+    """Read previously ingested global or scheme-specific disclosure periods."""
+    if scheme_code:
+        for run in MFSourceRun.objects.filter(
+            source=SOURCE, command="holdings_periods"
+        ).order_by("-started_at")[:100]:
+            metadata = run.metadata or {}
+            if metadata.get("scope") != "scheme":
+                continue
+            row = next(
+                (item for item in metadata.get("schemes", []) if str(item.get("scheme_code")) == str(scheme_code)),
+                None,
+            )
+            if row:
+                return Response(row)
+        return Response(
+            {"detail": "Holdings disclosure periods have not been ingested for this scheme.", "scheme_code": scheme_code},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+
+    run = MFSourceRun.objects.filter(
+        source=SOURCE, command="holdings_periods", metadata__scope="global"
+    ).order_by("-started_at").first()
+    if not run:
+        return Response({"detail": "Global holdings disclosure periods have not been ingested."}, status=status.HTTP_404_NOT_FOUND)
+    return Response(run.metadata)
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def charliealpha_security_exposure(request, identifier: str):
+    """Read the most recently persisted security-to-fund exposure response."""
+    runs = MFSourceRun.objects.filter(
+        source=SOURCE,
+        command="fund_exposure",
+        metadata__identifier=identifier,
+    )
+    min_pct = (request.query_params.get("min_pct") or "").strip()
+    if min_pct:
+        runs = runs.filter(metadata__min_pct=min_pct)
+    run = runs.order_by("-started_at").first()
+    if not run:
+        return Response(
+            {"detail": "No stored exposure result for this security. Run the exposure synchronization command first."},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+    return Response({
+        "identifier": identifier,
+        "min_pct": (run.metadata or {}).get("min_pct"),
+        "result": (run.metadata or {}).get("provider_result"),
+        "fetched_at": run.completed_at or run.started_at,
+    })

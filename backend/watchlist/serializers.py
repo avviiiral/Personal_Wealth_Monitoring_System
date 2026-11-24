@@ -161,6 +161,17 @@ class WatchListProductSerializer(serializers.ModelSerializer):
                 if intelligence is not None and intelligence_field
                 else None
             )
+            if key == "CAGR" and intelligence is not None:
+                # Watch List CAGR is the longest available annual horizon,
+                # matching the AMFI performance refresh convention.
+                intelligence_value = next(
+                    (
+                        getattr(intelligence, field)
+                        for field in ("return_5y", "return_3y", "return_1y")
+                        if getattr(intelligence, field) is not None
+                    ),
+                    None,
+                )
             # The newest dated observation wins. Existing Watch List values
             # remain preferred when both sources describe the same date.
             if (

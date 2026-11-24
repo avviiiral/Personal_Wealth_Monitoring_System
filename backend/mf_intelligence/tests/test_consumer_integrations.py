@@ -185,7 +185,7 @@ class MFIntelligenceConsumerIntegrationTests(TestCase):
         self.assertEqual(len(rows), 1)
         self.assertEqual(rows[0]["metrics"]["1Y"], Decimal("12.0000"))
         self.assertEqual(rows[0]["metrics"]["3Y"], Decimal("14.0000"))
-        self.assertEqual(rows[0]["metrics"]["CAGR"], None)
+        self.assertEqual(rows[0]["metrics"]["CAGR"], Decimal("13.0000"))
         self.assertEqual(rows[0]["mutual_fund"]["latest_nav"], Decimal("55.250000"))
         self.assertEqual(rows[0]["mutual_fund"]["aum"], Decimal("1250.0000"))
         self.assertEqual(rows[0]["mutual_fund"]["expense_ratio"], Decimal("0.4500"))

@@ -118,7 +118,10 @@ def fetch_scheme_data_text() -> str:
     text = response.content.decode("utf-8", errors="replace")
     if "scheme name" not in text[:300].casefold():
         raise RuntimeError("AMFI scheme data response is not the expected CSV.")
-    cached.write_text(text, encoding="utf-8")
+    try:
+        cached.write_text(text, encoding="utf-8")
+    except OSError:
+        logger.warning("Could not cache AMFI scheme data at %s.", cached)
     return text
 
 
@@ -636,7 +639,12 @@ def _collect_sources(job_name, inbox_dir, urls, fetch_bytes):
     items = []
     for path in _inbox_files(inbox_dir):
         found += 1
-        payload = path.read_bytes()
+        try:
+            payload = path.read_bytes()
+        except OSError as exc:
+            logger.warning("Skipping unreadable inbox file %s: %s", path, exc)
+            skipped += 1
+            continue
         digest = sha256_bytes(payload)
         if hash_already_processed(job_name, digest):
             skipped += 1

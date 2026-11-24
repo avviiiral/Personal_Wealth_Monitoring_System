@@ -1,4 +1,4 @@
-# Proprietary Software License
+Proprietary Software License
 Copyright (c) 2026 Aviral
 All Rights Reserved.
 

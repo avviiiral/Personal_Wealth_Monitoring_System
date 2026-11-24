@@ -220,7 +220,12 @@
           <p class="method-note">Returns are provider-supplied and shown only when the corresponding horizon is available.</p>
         </article>
         <article class="chart-card">
-          <div class="chart-title"><div><span>02</span><h3>Data ingestion status</h3></div><small>Latest audit record per domain</small></div>
+          <div class="chart-title"><div><span>02</span><h3>Risk versus return positioning</h3></div><small>3Y trailing CAGR against annualized volatility</small></div>
+          <div class="chart-wrap"><canvas id="charliealpha-risk-chart"></canvas></div>
+          <p class="method-note">Only funds with both 3Y CAGR and volatility observations are plotted. Lower volatility is not by itself a recommendation.</p>
+        </article>
+        <article class="chart-card">
+          <div class="chart-title"><div><span>03</span><h3>Data ingestion status</h3></div><small>Latest audit record per domain</small></div>
           <div class="table-wrap compact-provider-table">
             <table><thead><tr><th>Domain</th><th>Status</th><th>Fetched</th><th>Failed</th><th>Updated</th></tr></thead>
               <tbody>
@@ -237,7 +242,7 @@
       </div>
 
       <article class="chart-card provider-universe">
-        <div class="chart-title"><div><span>03</span><h3>Fund universe — performance, risk, expense and AUM</h3></div><small>{{ charliealphaFunds.length }} rows on this page · database-backed</small></div>
+        <div class="chart-title"><div><span>04</span><h3>Fund universe — performance, risk, expense and AUM</h3></div><small>{{ charliealphaFunds.length }} rows on this page · database-backed</small></div>
         <div class="table-wrap">
           <table class="provider-universe-table">
             <thead><tr>
@@ -336,8 +341,14 @@
           <div><h3>TER history</h3><div class="table-wrap"><table><thead><tr><th>Date</th><th>Direct TER</th><th>Regular TER</th></tr></thead><tbody><tr *ngFor="let item of charliealphaDetail?.ter_history"><td>{{ formatDate(item.date) }}</td><td>{{ formatPct(item.direct_pct) }}</td><td>{{ formatPct(item.regular_pct) }}</td></tr><tr *ngIf="!charliealphaDetail?.ter_history?.length"><td colspan="3" class="empty-cell">No TER history stored.</td></tr></tbody></table></div></div>
           <div><h3>AUM history (₹ Cr)</h3><div class="table-wrap"><table><thead><tr><th>Report date</th><th>AUM</th><th>Basis</th></tr></thead><tbody><tr *ngFor="let item of charliealphaDetail?.aum_history"><td>{{ formatDate(item.date) }}</td><td>{{ formatNumber(item.aum_cr) }}</td><td>{{ item.type || '—' }}</td></tr><tr *ngIf="!charliealphaDetail?.aum_history?.length"><td colspan="3" class="empty-cell">No AUM history stored.</td></tr></tbody></table></div></div>
         </div>
+<div class="provider-holdings-chart">
+  <div class="chart-title"><div><span>08</span><h3>Top holdings by portfolio weight</h3></div><small>Selected disclosure snapshot</small></div>
+  <div class="chart-wrap"><canvas id="charliealpha-holdings-chart"></canvas></div>
+  <div class="chart-title"><div><span>09</span><h3>Sector allocation</h3></div><small>Only where provider supplies classification</small></div>
+  <div class="chart-wrap"><canvas id="charliealpha-sector-chart"></canvas></div>
+</div>
         <div class="provider-holdings">
-          <div class="chart-title"><div><span>07</span><h3>Latest disclosed holdings</h3></div><small>{{ charliealphaDetail?.holdings?.length || 0 }} securities</small></div>
+          <div class="chart-title"><div><span>10</span><h3>Latest disclosed holdings</h3></div><small>{{ charliealphaDetail?.holdings?.length || 0 }} securities</small></div>
           <div class="table-wrap"><table><thead><tr><th>Security</th><th>ISIN</th><th>Sector</th><th>Industry</th><th>Instrument</th><th>Weight</th><th>Quantity</th><th>Market value</th></tr></thead><tbody>
             <tr *ngFor="let holding of charliealphaDetail?.holdings"><td class="fund-name">{{ holding.name }}</td><td>{{ holding.isin || '—' }}</td><td>{{ holding.sector || '—' }}</td><td>{{ holding.industry || '—' }}</td><td>{{ holding.instrument_type || '—' }}</td><td>{{ formatPct(holding.weight_pct) }}</td><td>{{ formatNumber(holding.quantity, 4) }}</td><td>{{ formatNumber(holding.market_value, 2) }}</td></tr>
             <tr *ngIf="!charliealphaDetail?.holdings?.length"><td colspan="8" class="empty-cell">Holdings are not available for this scheme. Missing holdings are not treated as a zero allocation.</td></tr>

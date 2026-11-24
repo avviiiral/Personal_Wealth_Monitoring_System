@@ -74,8 +74,9 @@ def with_postgres_advisory_lock(name):
                         f"Refresh not started: advisory lock '{name}' "
                         "is held by another process."
                     )
-                    command_stdout = getattr(args[0], "stdout", None) if args else None
-                    command_stderr = getattr(args[0], "stderr", None) if args else None
+                    command = args[0] if args else None
+                    command_stdout = getattr(command, "stdout", None)
+                    command_stderr = getattr(command, "stderr", None)
                     if command_stderr is not None:
                         command_stderr.write(message)
                     elif command_stdout is not None:

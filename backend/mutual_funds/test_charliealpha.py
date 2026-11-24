@@ -12,6 +12,7 @@ from mutual_funds.master_models import (
     MFMasterHolding,
     MFProviderBenchmark,
     MFProviderBenchmarkObservation,
+    MFSchemeIdentityMap,
     MFSourceRun,
 )
 from mutual_funds.services.charliealpha import (
@@ -322,6 +323,66 @@ class CharlieAlphaPersistenceTests(TestCase):
         self.assertEqual(snapshot.ter_direct_pct, Decimal("0.75"))
         self.assertIsNone(snapshot.ter_regular_pct)
         self.assertEqual(snapshot.ter_source, SOURCE)
+
+    def test_provider_identifier_conflict_is_rejected_even_in_dry_run(self):
+        other_scheme = AMFIMasterScheme.objects.create(
+            scheme_code="990502",
+            scheme_name="PWMS Other CharlieAlpha Test Fund",
+            isin_growth="INF990A01502",
+            amc_name="PWMS Test AMC",
+        )
+        MFSchemeIdentityMap.objects.create(
+            source="CHARLIEALPHA",
+            external_id="provider-internal-42",
+            scheme=self.scheme,
+            external_name=self.scheme.scheme_name,
+            match_method="ISIN_EXACT",
+            status=MFSchemeIdentityMap.STATUS_ACTIVE,
+        )
+        service = CharlieAlphaService(client=Mock(), dry_run=True)
+
+        resolved = service._resolve_scheme({
+            "scheme_code": "provider-internal-42",
+            "isin": other_scheme.isin_growth,
+            "scheme_name": other_scheme.scheme_name,
+        })
+
+        self.assertIsNone(resolved)
+        self.assertEqual(service.stats["unmatched"], 1)
+        self.assertEqual(
+            service.errors[0]["kind"],
+            "provider_identifier_scheme_conflict",
+        )
+
+    def test_scheme_metrics_request_isin_is_used_when_provider_response_has_internal_code(self):
+        client = Mock()
+        client.get.return_value = {
+            "scheme_code": "provider-internal-77",
+            "metrics": {
+                "3y": {
+                    "trailing_cagr": "15.75",
+                    "volatility": "11.2",
+                }
+            },
+        }
+
+        CharlieAlphaService(client=client).sync_metrics(
+            scheme_codes=[self.scheme.isin_growth],
+        )
+
+        client.get.assert_called_once_with(
+            "mf/metrics/" + self.scheme.isin_growth,
+        )
+        snapshot = MFMasterData.objects.get(scheme=self.scheme)
+        self.assertEqual(snapshot.return_3y_pct, Decimal("15.75"))
+        self.assertTrue(
+            MFSchemeIdentityMap.objects.filter(
+                source="CHARLIEALPHA",
+                external_id="provider-internal-77",
+                scheme=self.scheme,
+                status=MFSchemeIdentityMap.STATUS_ACTIVE,
+            ).exists()
+        )
 
     def test_category_scheme_discovery_returns_exact_amfi_linked_codes(self):
         client = Mock()

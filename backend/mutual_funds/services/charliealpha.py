@@ -14,7 +14,7 @@ import re
 import threading
 import time
 from typing import Any
-from urllib.parse import quote
+from urllib.parse import quote, urlencode
 
 import requests
 from django.db import IntegrityError, transaction
@@ -198,6 +198,76 @@ def _source_date(payload: Any) -> date:
     return parse_date(raw) or timezone.localdate()
 
 
+def _identifier_record(identifier: Any) -> dict:
+    """Build the identity shape expected by the strict AMFI/ISIN resolver."""
+    value = text_value(identifier)
+    if len(value) == 12 and not value.isdigit():
+        return {"isin": value.upper()}
+    return {"scheme_code": value}
+
+
+def _category_records(payload: Any) -> list[dict]:
+    """Flatten the provider's asset-class grouped category response without losing its raw shape."""
+    rows: list[dict] = []
+    seen: set[str] = set()
+    wrappers = {"data", "categories", "results", "items", "groups"}
+
+    def visit(node: Any, asset_class: str = "") -> None:
+        if isinstance(node, list):
+            for item in node:
+                if isinstance(item, str):
+                    slug = text_value(item)
+                    if slug and slug.casefold() not in seen:
+                        seen.add(slug.casefold())
+                        rows.append({"slug": slug, "name": slug, "asset_class": asset_class})
+                else:
+                    visit(item, asset_class)
+            return
+        if not isinstance(node, dict):
+            return
+
+        slug = text_value(_first(node, "slug", "category_slug"))
+        if slug:
+            normalized = slug.casefold()
+            if normalized not in seen:
+                seen.add(normalized)
+                record = dict(node)
+                record.setdefault("asset_class", text_value(_first(node, "asset_class", "group", "type")) or asset_class)
+                rows.append(record)
+
+        explicit_group = text_value(_first(node, "asset_class", "group", "asset_type"))
+        for name, value in node.items():
+            if isinstance(value, (list, dict)):
+                child_group = explicit_group or (asset_class if name.casefold() in wrappers else text_value(name))
+                visit(value, child_group)
+
+    visit(payload)
+    return rows
+
+
+def _benchmark_window_params(
+    range_name: str = "ALL",
+    from_date: str | date | None = None,
+    to_date: str | date | None = None,
+) -> dict:
+    """Validate the mutually exclusive relative-range or exact-date benchmark window."""
+    allowed = {"ALL", "1M", "6M", "1Y", "3Y", "5Y", "10Y", "15Y", "20Y", "25Y"}
+    has_from, has_to = from_date not in (None, ""), to_date not in (None, "")
+    if has_from or has_to:
+        if not (has_from and has_to):
+            raise ValueError("Both benchmark from_date and to_date are required for a custom range.")
+        start, end = parse_date(from_date), parse_date(to_date)
+        if not start or not end:
+            raise ValueError("Benchmark dates must use YYYY-MM-DD.")
+        if start > end:
+            raise ValueError("Benchmark from_date cannot be later than to_date.")
+        return {"from": start.isoformat(), "to": end.isoformat()}
+    normalized = text_value(range_name or "ALL").upper()
+    if normalized not in allowed:
+        raise ValueError("Unsupported benchmark range. Use ALL, 1M, 6M, 1Y, 3Y, 5Y, 10Y, 15Y, 20Y or 25Y.")
+    return {"range": normalized}
+
+
 class CharlieAlphaClient:
     """Polite, retrying HTTP client for CharlieAlpha's public GET-only API."""
 
@@ -337,6 +407,10 @@ class CharlieAlphaService:
                 self.stats["skipped"] += 1
         return scheme
 
+    def _resolve_identifier(self, identifier: str):
+        """Resolve either a six-digit AMFI code, ISIN, or previously confirmed provider ID."""
+        return self._resolve_scheme(_identifier_record(identifier))
+
     def _snapshot(self, scheme: AMFIMasterScheme, as_of: date) -> MFMasterData | None:
         if self.dry_run:
             return None
@@ -369,9 +443,27 @@ class CharlieAlphaService:
         }
         snapshot.field_sources = sources
 
+    def sync_categories(self) -> dict:
+        """Persist the complete grouped category catalogue and canonical slugs."""
+        payload = self.client.get("mf/categories")
+        categories = _category_records(payload)
+        slugs = [text_value(_first(row, "slug", "category_slug")) for row in categories]
+        self.stats["fetched"] += len(categories)
+        run = self._run("categories", metadata={
+            "category_count": len(categories),
+            "category_slugs": list(dict.fromkeys(slug for slug in slugs if slug)),
+            "category_rows": categories,
+            "categories_payload": payload,
+            "asset_classes": list(dict.fromkeys(
+                text_value(_first(row, "asset_class", "group", "type"))
+                for row in categories
+                if text_value(_first(row, "asset_class", "group", "type"))
+            )),
+        })
+        return {"run_id": run.id, "categories": len(categories), "slugs": len(set(slugs))}
+
     def sync_schemes(self, category: str = "") -> dict:
-        cats_payload = self.client.get("mf/categories")
-        cats = _records(cats_payload, ("categories", "data"))
+        categories_result = self.sync_categories()
         scheme_params = {"cat": category} if category else None
         schemes_payload = self.client.get("mf/schemes", scheme_params)
         schemes = _records(schemes_payload, ("schemes", "data", "results"))
@@ -406,8 +498,8 @@ class CharlieAlphaService:
         run = self._run(
             "schemes",
             metadata={
-                "category_count": len(cats),
-                "categories": cats,
+                "categories_run_id": categories_result["run_id"],
+                "category_count": categories_result["categories"],
                 "schemes_fetched": len(schemes),
                 "schemes_mapped_to_amfi": mapped,
                 "unmatched_schemes": unmatched[:500],
@@ -487,8 +579,11 @@ class CharlieAlphaService:
         run = self._run("nav_history", metadata={"schemes_requested": scheme_codes, "source": "daily NAV history"})
         return {"run_id": run.id, **self.stats}
 
-    def _save_metric_record(self, row: dict, endpoint: str):
-        scheme = self._resolve_scheme(row)
+    def _save_metric_record(self, row: dict, endpoint: str, identifier: str | None = None):
+        identity_row = row if isinstance(row, dict) else {}
+        if identifier and not (_scheme_identifier(identity_row) or _isin(identity_row) or _scheme_name(identity_row)):
+            identity_row = {**identity_row, **_identifier_record(identifier)}
+        scheme = self._resolve_scheme(identity_row)
         if not scheme:
             return
         as_of = _source_date(row)
@@ -579,52 +674,71 @@ class CharlieAlphaService:
             },
         )
 
-    def sync_metrics(self, scheme_codes: list[str] | None = None, category_slugs: list[str] | None = None) -> dict:
+    def sync_metrics(
+        self,
+        scheme_codes: list[str] | None = None,
+        category_slugs: list[str] | None = None,
+        *,
+        horizon: str | None = None,
+    ) -> dict:
+        normalized_horizon = text_value(horizon).lower() if horizon else ""
+        if normalized_horizon and normalized_horizon not in {"1y", "3y", "5y", "10y"}:
+            raise ValueError("Category metrics horizon must be one of 1y, 3y, 5y or 10y.")
+
         if scheme_codes:
-            for code in scheme_codes:
+            for identifier in scheme_codes:
+                endpoint = "mf/metrics/" + quote(identifier, safe="")
                 try:
-                    payload = self.client.get("mf/metrics/" + quote(code, safe=""))
+                    payload = self.client.get(endpoint)
                 except Exception as exc:
                     self.stats["failed"] += 1
                     if len(self.errors) < 100:
-                        self.errors.append({"kind": "metrics_fetch", "code": code, "error": str(exc)[:250]})
+                        self.errors.append({"kind": "metrics_fetch", "identifier": identifier, "error": str(exc)[:250]})
                     continue
                 self.stats["fetched"] += 1
-                self._save_metric_record(payload if isinstance(payload, dict) else {}, "mf/metrics/" + code)
+                self._save_metric_record(
+                    payload if isinstance(payload, dict) else {},
+                    endpoint,
+                    identifier=identifier,
+                )
         else:
             categories = category_slugs
             if categories is None:
-                category_payload = self.client.get("mf/categories")
-                category_rows = _records(category_payload, ("categories", "data"))
-                categories = [
-                    text_value(_first(row, "slug", "category_slug", "id"))
-                    for row in category_rows
-                ]
-                if not categories:
-                    values = category_payload if isinstance(category_payload, list) else (
-                        category_payload.get("categories", category_payload.get("data", []))
-                        if isinstance(category_payload, dict) else []
-                    )
-                    categories = [
-                        text_value(value if isinstance(value, str) else _first(value, "slug", "category_slug", "id"))
-                        for value in values if isinstance(value, (str, dict))
-                    ]
-                categories = list(dict.fromkeys(slug for slug in categories if slug))
-            for slug in categories:
+                category_run = MFSourceRun.objects.filter(
+                    source=SOURCE, command="categories"
+                ).order_by("-started_at").first()
+                slugs = (category_run.metadata or {}).get("category_slugs", []) if category_run else []
+                if not slugs:
+                    self.sync_categories()
+                    category_run = MFSourceRun.objects.filter(
+                        source=SOURCE, command="categories"
+                    ).order_by("-started_at").first()
+                    slugs = (category_run.metadata or {}).get("category_slugs", []) if category_run else []
+                categories = list(dict.fromkeys(text_value(slug) for slug in slugs if text_value(slug)))
+
+            for slug in categories or []:
+                endpoint = "mf/metrics-by-cat/" + quote(slug, safe="")
+                params = {"horizon": normalized_horizon} if normalized_horizon else None
+                source_endpoint = endpoint + (("?" + urlencode(params)) if params else "")
                 try:
-                    payload = self.client.get("mf/metrics-by-cat/" + quote(slug, safe=""))
+                    payload = self.client.get(endpoint, params)
                 except Exception as exc:
                     self.stats["failed"] += 1
                     if len(self.errors) < 100:
-                        self.errors.append({"kind": "category_metrics_fetch", "slug": slug, "error": str(exc)[:250]})
+                        self.errors.append({"kind": "category_metrics_fetch", "slug": slug, "horizon": normalized_horizon or None, "error": str(exc)[:250]})
                     continue
                 rows = _records(payload, ("schemes", "funds", "results", "data"))
                 self.stats["fetched"] += len(rows)
                 for row in rows:
-                    self._save_metric_record(row, "mf/metrics-by-cat/" + slug)
+                    self._save_metric_record(row, source_endpoint)
                 medians = payload.get("category_medians") if isinstance(payload, dict) else None
-                if medians:
-                    self._run("category_metrics", metadata={"category_slug": slug, "category_medians": medians})
+                self._run("category_metrics", metadata={
+                    "category_slug": slug,
+                    "horizon": normalized_horizon or None,
+                    "category_medians": medians,
+                    "metrics_count": len(rows),
+                    "provider_response_status": "AVAILABLE" if rows or medians else "EMPTY",
+                })
         return dict(self.stats)
 
     def _sync_series(self, domain: str, scheme_codes: list[str], limit: int | None = None) -> dict:

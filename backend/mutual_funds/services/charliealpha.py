@@ -943,7 +943,7 @@ class CharlieAlphaService:
                             "quantity": row["quantity"],
                             "market_value": row["market_value"],
                             "pct_of_nav": row["weight_pct"],
-                                    "source": SOURCE,
+                                            "source": SOURCE,
                             "source_url": source_endpoint,
                             "fetched_at": timezone.now(),
                         },
@@ -977,7 +977,7 @@ class CharlieAlphaService:
                     snapshot.others_pct = asset_weights.get("others")
                     snapshot.holdings_as_of = as_of
                     snapshot.holdings_source = SOURCE
-                    self._mark_source(snapshot, "holdings", endpoint, as_of)
+                    self._mark_source(snapshot, "holdings", source_endpoint, as_of)
                     snapshot.save()
                 total_weight = sum((item["weight_pct"] or Decimal("0") for item in normalized), Decimal("0"))
                 ext = MFExternalPortfolioSnapshot.objects.filter(
@@ -1131,7 +1131,10 @@ class CharlieAlphaService:
         overlap_only: bool = False,
         include_pairwise: bool | None = None,
     ) -> dict:
-        normalized_codes = list(dict.fromkeys(text_value(code) for code in scheme_codes if text_value(code)))
+        normalized_codes = list(dict.fromkeys(
+            (text_value(code).upper() if len(text_value(code)) == 12 else text_value(code))
+            for code in scheme_codes if text_value(code)
+        ))
         if not 2 <= len(normalized_codes) <= 20:
             raise ValueError("Select between 2 and 20 mutual-fund scheme codes or ISINs.")
         endpoint = "mf/overlap" if overlap_only else "mf/compare"

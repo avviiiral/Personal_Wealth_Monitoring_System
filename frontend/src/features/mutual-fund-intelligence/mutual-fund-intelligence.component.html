@@ -330,7 +330,7 @@
           <div class="chart-title"><div><span>10</span><h3>Provider rolling-return distributions by horizon</h3></div><small>Rolling CAGR / XIRR and percentiles returned by CharlieAlpha</small></div>
           <div class="horizon-grid">
             <article *ngFor="let item of (charliealphaDetail?.provider_metrics?.horizons | keyvalue)">
-              <h4>{{ item.key | uppercase }}</h4>
+              <h4>{{ item.key.toString() | uppercase }}</h4>
               <pre>{{ item.value | json }}</pre>
             </article>
           </div>

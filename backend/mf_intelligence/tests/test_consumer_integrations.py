@@ -7,7 +7,16 @@ from django.test import TestCase
 from django.utils import timezone
 from rest_framework.test import APIClient
 
-from mf_intelligence.models import MFCategory, MFHolding, MFHoldingSnapshot, MFScheme
+from mf_intelligence.models import (
+    MFCategory,
+    MFHolding,
+    MFHoldingSnapshot,
+    MFScheme,
+    MFSchemeMetric,
+)
+from market_data.services.mutual_fund_nav_service import (
+    MutualFundNAVService as SharedPortfolioNAVService,
+)
 from mutual_funds.models import MutualFundNAV, MutualFundScheme
 from mutual_funds.services.holding_engine import MutualFundHoldingEngine
 from mutual_funds.services.nav_service import MutualFundNAVService
@@ -71,6 +80,24 @@ class MFIntelligenceConsumerIntegrationTests(TestCase):
         self.assertEqual(nav.date, newer_date)
         self.assertEqual(nav.source, "MF_INTELLIGENCE")
         import_history.assert_not_called()
+
+    @patch.object(SharedPortfolioNAVService, "_load_nav_data", return_value={})
+    def test_shared_portfolio_nav_service_uses_synced_isin_when_live_feed_has_no_match(self, _load):
+        nav_date = self.today - timedelta(days=1)
+        MFScheme.objects.create(
+            amfi_code="123461",
+            isin="INF000A01001",
+            name="Portfolio Nav Fallback Fund",
+            latest_nav=Decimal("18.750000"),
+            latest_nav_date=nav_date,
+        )
+
+        record = SharedPortfolioNAVService.get_latest_nav("inf000a01001")
+
+        self.assertEqual(record["scheme_code"], "123461")
+        self.assertEqual(record["nav"], Decimal("18.750000"))
+        self.assertEqual(record["date"], nav_date)
+        self.assertEqual(record["source"], "MF_INTELLIGENCE")
 
     def test_holding_valuation_prefers_newer_recent_synced_nav(self):
         scheme = MutualFundScheme.objects.create(
@@ -142,6 +169,13 @@ class MFIntelligenceConsumerIntegrationTests(TestCase):
             option="Growth",
         )
 
+        MFSchemeMetric.objects.create(
+            scheme=scheme,
+            horizon="3Y",
+            trailing_cagr=Decimal("14.5000"),
+            sharpe_ratio=Decimal("1.2500"),
+        )
+
         client = APIClient()
         client.force_authenticate(user)
         response = client.get("/api/watch-list/products/?product_type=MUTUAL_FUND")
@@ -156,6 +190,10 @@ class MFIntelligenceConsumerIntegrationTests(TestCase):
         self.assertEqual(rows[0]["mutual_fund"]["aum"], Decimal("1250.0000"))
         self.assertEqual(rows[0]["mutual_fund"]["expense_ratio"], Decimal("0.4500"))
         self.assertEqual(rows[0]["mutual_fund"]["intelligence"]["category"], "Integration Equity")
+        self.assertEqual(
+            rows[0]["mutual_fund"]["intelligence"]["risk_metrics"]["3Y"]["sharpe_ratio"],
+            Decimal("1.2500"),
+        )
 
     def test_underlying_api_uses_newer_synced_disclosure(self):
         user = User.objects.create_user(username="mfi-underlying-user", password="pw")

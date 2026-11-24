@@ -1,4 +1,5 @@
 from datetime import timedelta
+from types import SimpleNamespace
 
 from django.utils import timezone
 
@@ -85,13 +86,11 @@ class MutualFundNAVService:
                     defaults={"nav": selected.nav},
                 )
                 return nav
-            nav, _ = MutualFundNAV.objects.update_or_create(
-                scheme=scheme,
+            return SimpleNamespace(
+                nav=selected.latest_nav,
                 date=selected.latest_nav_date,
                 source="MF_INTELLIGENCE",
-                defaults={"nav": selected.latest_nav},
             )
-            return nav
 
         try:
             AMFIService.import_historical_master_navs(

@@ -151,36 +151,23 @@ class Command(BaseCommand):
                 )
             )
 
-            if result.get("success"):
-
-                updated += 1
-
-                records = result.get(
-                    "records",
-                    0,
+            if result.get("skipped"):
+                skipped += 1
+                self.stdout.write(
+                    self.style.WARNING(
+                        f"  Skipped: {result.get('reason')}"
+                    )
                 )
 
+            elif result.get("success"):
+                updated += 1
+                records = result.get("records", 0) or 0
                 total_records += records
-
-                if result.get("skipped"):
-
-                    skipped += 1
-
-                    self.stdout.write(
-                        self.style.WARNING(
-                            f"  Skipped: "
-                            f"{result.get('reason')}"
-                        )
+                self.stdout.write(
+                    self.style.SUCCESS(
+                        f"  Updated {records} price records."
                     )
-
-                else:
-
-                    self.stdout.write(
-                        self.style.SUCCESS(
-                            f"  Updated "
-                            f"{records} price records."
-                        )
-                    )
+                )
 
             else:
 

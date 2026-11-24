@@ -244,3 +244,10 @@ tbody tr:hover td { background:rgba(253,119,64,.035); }
 .exposure-search input { flex:1 1 240px; }
 .provider-exposure-card { margin:14px 0; }
 @media (max-width:680px) { .holding-period-picker,.holding-period-picker select { width:100%; } .exposure-search { align-items:stretch; flex-direction:column; } }
+
+.provider-horizon-card { margin:14px 0; padding:12px; border:1px solid var(--mf-line); }
+.horizon-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:9px; }
+.horizon-grid article { min-width:0; padding:10px; border:1px solid var(--mf-line); background:var(--mf-surface); }
+.horizon-grid h4 { margin:0 0 6px; color:var(--mf-orange); font-size:10px; text-transform:uppercase; }
+.horizon-grid pre { max-height:220px; overflow:auto; margin:0; font-size:8px; white-space:pre-wrap; overflow-wrap:anywhere; }
+@media (max-width:680px) { .horizon-grid { grid-template-columns:1fr; } }

@@ -436,9 +436,27 @@
 
       <article class="chart-card benchmark-card">
         <div class="chart-title"><div><span>08</span><h3>Benchmark intelligence</h3></div><small>CharlieAlpha benchmark index history</small></div>
-        <div class="benchmark-selector"><label for="ca-benchmark">Benchmark</label><select id="ca-benchmark" [(ngModel)]="charliealphaBenchmarkSlug" (ngModelChange)="selectCharlieAlphaBenchmark($event)"><option *ngFor="let item of charliealphaBenchmarks" [value]="item.slug">{{ item.name || item.slug }}</option></select></div>
+        <div class="benchmark-selector">
+          <label for="ca-benchmark">Benchmark</label>
+          <select id="ca-benchmark" [(ngModel)]="charliealphaBenchmarkSlug" (ngModelChange)="selectCharlieAlphaBenchmark($event)">
+            <option *ngFor="let item of charliealphaBenchmarks" [value]="item.slug">{{ item.name || item.slug }}</option>
+          </select>
+          <label for="ca-benchmark-range">History window</label>
+          <select id="ca-benchmark-range" [ngModel]="charliealphaBenchmarkRange" (ngModelChange)="selectCharlieAlphaBenchmarkRange($event)">
+            <option value="ALL">All available</option>
+            <option value="1M">1 month</option>
+            <option value="6M">6 months</option>
+            <option value="1Y">1 year</option>
+            <option value="3Y">3 years</option>
+            <option value="5Y">5 years</option>
+            <option value="10Y">10 years</option>
+            <option value="15Y">15 years</option>
+            <option value="20Y">20 years</option>
+            <option value="25Y">25 years</option>
+          </select>
+        </div>
         <div class="chart-wrap large" *ngIf="charliealphaBenchmark?.series?.length; else noCharlieAlphaBenchmark"><canvas id="charliealpha-benchmark-chart"></canvas></div>
-        <ng-template #noCharlieAlphaBenchmark><div class="empty-state chart-empty"><h3>Benchmark history not ingested</h3><p>Run the benchmark synchronization command to load available index history.</p></div></ng-template>
+        <ng-template #noCharlieAlphaBenchmark><div class="empty-state chart-empty"><h3>Selected benchmark window not ingested</h3><p>Run <code>python manage.py sync_charliealpha --domain benchmarks --benchmark-range {{ charliealphaBenchmarkRange }}</code> to store this window for the selected index.</p></div></ng-template>
         <p class="normalization-warning"><strong>Normalization warning:</strong> CharlieAlpha benchmark history is rebased to 100 at the start of the returned range. It is not an absolute official TRI value and is not used as the PWMS benchmark TRI source. Do not compare it to raw TRI level values.</p>
       </article>
     </section>

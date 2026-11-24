@@ -90,6 +90,12 @@ export class MutualFundIntelligenceApiService {
     return this.http.get(this.baseUrl + '/categories/' + encodeURIComponent(slug) + '/', { params, withCredentials: true });
   }
 
+
+  getProviderResources(family: string, limit = 50): Observable<any> {
+    const params = new HttpParams().set('family', family).set('limit', String(limit));
+    return this.http.get(this.baseUrl + '/provider-data/', { params, withCredentials: true });
+  }
+
   compare(schemeCodes: string[], overlapOnly = false): Observable<any> {
     return this.http.post(this.baseUrl + '/compare/', { scheme_codes: schemeCodes, overlap_only: overlapOnly }, { withCredentials: true });
   }

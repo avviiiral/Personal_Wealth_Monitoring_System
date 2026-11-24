@@ -188,6 +188,7 @@ export class MutualFundIntelligenceComponent implements OnInit, OnDestroy {
   charliealphaFromDate = '';
   charliealphaToDate = '';
   charliealphaPage = 1;
+  charliealphaTotalCount = 0;
   readonly charliealphaPageSize = 100;
   charliealphaNext: string | null = null;
   charliealphaPrevious: string | null = null;
@@ -820,6 +821,7 @@ export class MutualFundIntelligenceComponent implements OnInit, OnDestroy {
       next: response => {
         this.charliealphaOverview = response.results ?? null;
         this.charliealphaFunds = response.results?.results ?? [];
+        this.charliealphaTotalCount = response.count ?? this.charliealphaFunds.length;
         this.charliealphaNext = response.next;
         this.charliealphaPrevious = response.previous;
         this.charliealphaAmcs = response.results?.filters?.amcs ?? [];
@@ -943,8 +945,13 @@ export class MutualFundIntelligenceComponent implements OnInit, OnDestroy {
     }
   }
 
+  applyCharlieAlphaFilters(): void {
+    this.charliealphaPage = 1;
+    this.loadCharlieAlphaOverview();
+  }
+
   goToCharlieAlphaPage(page: number): void {
-    const lastPage = Math.max(1, Math.ceil(this.totalCharlieAlphaFunds / this.charliealphaPageSize));
+    const lastPage = Math.max(1, Math.ceil(this.charliealphaTotalCount / this.charliealphaPageSize));
     this.charliealphaPage = Math.min(lastPage, Math.max(1, page));
     this.loadCharlieAlphaOverview();
   }

@@ -205,12 +205,12 @@
       </div>
 
       <div class="provider-filters">
-        <div class="field-group"><label for="ca-search">Scheme search</label><input id="ca-search" type="search" [(ngModel)]="charliealphaSearch" (keyup.enter)="loadCharlieAlphaOverview()" placeholder="Scheme name, code, AMC, ISIN"></div>
+        <div class="field-group"><label for="ca-search">Scheme search</label><input id="ca-search" type="search" [(ngModel)]="charliealphaSearch" (keyup.enter)="applyCharlieAlphaFilters()" placeholder="Scheme name, code, AMC, ISIN"></div>
         <div class="field-group"><label for="ca-amc">AMC</label><select id="ca-amc" [(ngModel)]="charliealphaAmc"><option value="">All AMCs</option><option *ngFor="let item of charliealphaAmcs" [value]="item">{{ item }}</option></select></div>
         <div class="field-group"><label for="ca-category">Category</label><select id="ca-category" [(ngModel)]="charliealphaCategory"><option value="">All categories</option><option *ngFor="let item of charliealphaCategories" [value]="item">{{ item }}</option></select></div>
         <div class="field-group"><label for="ca-plan">Plan</label><select id="ca-plan" [(ngModel)]="charliealphaPlan"><option value="">All plans</option><option *ngFor="let item of charliealphaPlans" [value]="item">{{ item }}</option></select></div>
         <div class="field-group"><label for="ca-option">Option</label><select id="ca-option" [(ngModel)]="charliealphaOption"><option value="">All options</option><option *ngFor="let item of charliealphaOptions" [value]="item">{{ item }}</option></select></div>
-        <button type="button" class="provider-apply" (click)="loadCharlieAlphaOverview()" [disabled]="charliealphaLoading">Apply filters</button>
+        <button type="button" class="provider-apply" (click)="applyCharlieAlphaFilters()" [disabled]="charliealphaLoading">Apply filters</button>
       </div>
 
       <div class="provider-main-grid">
@@ -240,9 +240,24 @@
         <div class="chart-title"><div><span>03</span><h3>Fund universe — performance, risk, expense and AUM</h3></div><small>{{ charliealphaFunds.length }} rows on this page · database-backed</small></div>
         <div class="table-wrap">
           <table class="provider-universe-table">
-            <thead><tr><th>Compare</th><th>Scheme</th><th>AMC / category</th><th>Plan / option</th><th>1Y CAGR</th><th>3Y CAGR</th><th>5Y CAGR</th><th>10Y CAGR</th><th>Volatility</th><th>Sharpe</th><th>Sortino</th><th>Max drawdown</th><th>TER</th><th>AUM (₹ Cr)</th></tr></thead>
+            <thead><tr>
+<th>Compare</th>
+<th><button type="button" class="sort-header" (click)="sortCharlieAlphaBy('scheme_name')">Scheme ↕</button></th>
+<th><button type="button" class="sort-header" (click)="sortCharlieAlphaBy('amc')">AMC / category ↕</button></th>
+<th><button type="button" class="sort-header" (click)="sortCharlieAlphaBy('plan')">Plan / option ↕</button></th>
+<th><button type="button" class="sort-header" title="Provider trailing compounded annual growth rate" (click)="sortCharlieAlphaBy('return_1y_pct')">1Y CAGR ↕</button></th>
+<th><button type="button" class="sort-header" (click)="sortCharlieAlphaBy('return_3y_pct')">3Y CAGR ↕</button></th>
+<th><button type="button" class="sort-header" (click)="sortCharlieAlphaBy('return_5y_pct')">5Y CAGR ↕</button></th>
+<th><button type="button" class="sort-header" (click)="sortCharlieAlphaBy('return_10y_pct')">10Y CAGR ↕</button></th>
+<th><button type="button" class="sort-header" title="Annualized standard deviation reported by provider" (click)="sortCharlieAlphaBy('std_dev_pct')">Volatility ↕</button></th>
+<th><button type="button" class="sort-header" title="Return per unit of total risk" (click)="sortCharlieAlphaBy('sharpe')">Sharpe ↕</button></th>
+<th><button type="button" class="sort-header" title="Return per unit of downside risk" (click)="sortCharlieAlphaBy('sortino')">Sortino ↕</button></th>
+<th><button type="button" class="sort-header" (click)="sortCharlieAlphaBy('max_drawdown_pct')">Max drawdown ↕</button></th>
+<th><button type="button" class="sort-header" (click)="sortCharlieAlphaBy('ter_pct')">TER ↕</button></th>
+<th><button type="button" class="sort-header" (click)="sortCharlieAlphaBy('aum_cr')">AUM (₹ Cr) ↕</button></th>
+</tr></thead>
             <tbody>
-              <tr *ngFor="let row of charliealphaFunds">
+              <tr *ngFor="let row of sortedCharlieAlphaFunds">
                 <td><input type="checkbox" [checked]="isCharlieAlphaCompared(row.scheme_code)" (change)="toggleCharlieAlphaCompare(row.scheme_code)" [attr.aria-label]="'Compare ' + row.scheme_name"></td>
                 <td><button type="button" class="fund-select-link" (click)="loadCharlieAlphaFund(row.scheme_code)">{{ row.scheme_name || row.scheme_code }}</button><small class="scheme-code">{{ row.scheme_code }}</small></td>
                 <td>{{ row.amc || '—' }}<small class="scheme-code">{{ row.sebi_category_level_3 || 'Category unavailable' }}</small></td>
@@ -255,7 +270,15 @@
             </tbody>
           </table>
         </div>
-        <p class="method-note">Missing or unsupported fields display as em dashes, not zero. Direct/Regular and Growth/IDCW distinctions remain separate. The universe is paginated by the backend; this view currently requests the first 100 matches.</p>
+        <p class="method-note">Missing or unsupported fields display as em dashes, not zero. Direct/Regular and Growth/IDCW distinctions remain separate. Select a column header to sort the current page; backend pagination limits each page to 100 matches.</p>
+<div class="provider-pagination">
+  <span>Showing {{ (charliealphaPage - 1) * charliealphaPageSize + (charliealphaFunds.length ? 1 : 0) }}–{{ (charliealphaPage - 1) * charliealphaPageSize + charliealphaFunds.length }} of {{ charliealphaTotalCount }} matched schemes</span>
+  <div>
+    <button type="button" class="provider-secondary" [disabled]="!charliealphaPrevious || charliealphaLoading" (click)="goToCharlieAlphaPage(charliealphaPage - 1)">Previous</button>
+    <span>Page {{ charliealphaPage }} of {{ maxCharlieAlphaPage }}</span>
+    <button type="button" class="provider-secondary" [disabled]="!charliealphaNext || charliealphaLoading" (click)="goToCharlieAlphaPage(charliealphaPage + 1)">Next</button>
+  </div>
+</div>
       </article>
 
       <div class="provider-compare-bar">

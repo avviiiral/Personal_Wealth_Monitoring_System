@@ -1003,7 +1003,7 @@ class CharlieAlphaService:
                     "holdings_count": len(normalized),
                     "total_weight_pct": total_weight,
                     "quality_flags": ["WEIGHT_COVERAGE_INCOMPLETE"] if any(item["weight_pct"] is None for item in normalized) else [],
-                    "asset_allocation": {name: value for name, value in asset_weights.items()},
+                    "asset_allocation": {name: str(value) for name, value in asset_weights.items()},
                     "source_url": source_endpoint,
                 }
                 if ext:

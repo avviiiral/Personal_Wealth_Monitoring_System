@@ -594,11 +594,22 @@ class CharlieAlphaService:
         else:
             categories = category_slugs
             if categories is None:
+                category_payload = self.client.get("mf/categories")
+                category_rows = _records(category_payload, ("categories", "data"))
                 categories = [
                     text_value(_first(row, "slug", "category_slug", "id"))
-                    for row in _records(self.client.get("mf/categories"), ("categories", "data"))
+                    for row in category_rows
                 ]
-                categories = [slug for slug in categories if slug]
+                if not categories:
+                    values = category_payload if isinstance(category_payload, list) else (
+                        category_payload.get("categories", category_payload.get("data", []))
+                        if isinstance(category_payload, dict) else []
+                    )
+                    categories = [
+                        text_value(value if isinstance(value, str) else _first(value, "slug", "category_slug", "id"))
+                        for value in values if isinstance(value, (str, dict))
+                    ]
+                categories = list(dict.fromkeys(slug for slug in categories if slug))
             for slug in categories:
                 try:
                     payload = self.client.get("mf/metrics-by-cat/" + quote(slug, safe=""))

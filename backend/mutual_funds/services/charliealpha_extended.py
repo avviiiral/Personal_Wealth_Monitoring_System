@@ -96,10 +96,16 @@ class CharlieAlphaExtendedService:
         safe_payload = _json_safe(payload if payload is not None else {})
         records = _resource_records(safe_payload) if not error else []
         record_count = len(records)
-        if not record_count and isinstance(safe_payload, (dict, list)):
-            # A successful metrics/detail object is still one returned resource,
-            # while an empty list remains a legitimate zero-row response.
-            record_count = 1 if isinstance(safe_payload, dict) and bool(safe_payload) else 0
+        if not record_count and isinstance(safe_payload, dict):
+            row_arrays = (
+                "data", "schemes", "funds", "results", "records", "rows",
+                "items", "holdings", "periods", "benchmarks", "categories",
+                "dates", "nav",
+            )
+            declares_rows = any(isinstance(safe_payload.get(name), list) for name in row_arrays)
+            # Metrics/detail objects count as one resource; explicitly empty
+            # tables and histories remain zero rows rather than fake records.
+            record_count = 1 if safe_payload and not declares_rows else 0
         raw_date = _find_nested(
             safe_payload,
             ("as_of", "as_of_date", "date", "nav_date", "latest_as_of", "generated_at", "report_date", "ex_date"),

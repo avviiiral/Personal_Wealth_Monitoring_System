@@ -168,7 +168,7 @@ export class MutualFundIntelligenceComponent implements OnInit, OnDestroy {
   charliealphaDetailError = '';
   charliealphaCompareError = '';
   charliealphaOverview: MutualFundIntelligenceResponse['results'] | null = null;
-  charliealphaFunds: Array<Record<string, any>> = [];
+  charliealphaFunds: any[] = [];
   charliealphaAmcs: string[] = [];
   charliealphaCategories: string[] = [];
   charliealphaPlans: string[] = [];

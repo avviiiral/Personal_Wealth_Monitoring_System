@@ -1,4 +1,6 @@
-"""Synchronize selected CharlieAlpha mutual-fund data domains into PWMS."""
+"""Synchronize selected CharlieAlpha endpoint families into PWMS."""
+import re
+
 from django.core.management.base import BaseCommand, CommandError
 
 from mutual_funds.models import AMFIMasterScheme, MFSchemeIdentityMap
@@ -78,7 +80,10 @@ class Command(BaseCommand):
             raise CommandError("--corporate-from and --corporate-to must be supplied together.")
         for option_name in ("gift_from", "gift_to", "corporate_from", "corporate_to"):
             value = options[option_name]
-            if value and parse_date(value) is None:
+            if value and (
+                not re.fullmatch(r"\d{4}-\d{2}-\d{2}", value)
+                or parse_date(value) is None
+            ):
                 raise CommandError("--" + option_name.replace("_", "-") + " must use YYYY-MM-DD.")
         if domain == "instrument-search" and limit > 100:
             raise CommandError("--limit for instrument-search cannot exceed 100.")
@@ -208,9 +213,10 @@ class Command(BaseCommand):
             )
 
         if domain == "instrument-detail":
-            if not options["identifier"].strip():
-                raise CommandError("--domain instrument-detail requires --identifier with a 12-character ISIN.")
-            result["instrument_detail"] = extended.instrument_details(options["identifier"])
+            isin = options["identifier"].strip().upper()
+            if not re.fullmatch(r"[A-Z]{2}[A-Z0-9]{9}[0-9]", isin):
+                raise CommandError("--domain instrument-detail requires a valid 12-character ISIN.")
+            result["instrument_detail"] = extended.instrument_details(isin)
 
         if domain == "corporate-actions":
             result["corporate_actions"] = extended.corporate_actions(

@@ -29,6 +29,41 @@ class CharlieAlphaExtendedParserTests(SimpleTestCase):
             [{"date": "2026-11-20", "nav": "101.25"}],
         )
 
+    def test_gift_latest_nav_plans_array_flattens_rows_and_retains_fund_identity(self):
+        payload = {
+            "isin": "INIFC2603016",
+            "fund_id": 180,
+            "fund_name": "Quant Algorithmic Strategies Fund",
+            "amc_name": "Altus Fund Management IFSC Private Limited",
+            "currency": "USD",
+            "plans": [
+                {
+                    "nav": 111.37,
+                    "date": "2026-09-30",
+                    "change": 0.445,
+                    "plan_type": "Units",
+                    "change_pct": 0.4,
+                    "previous_nav": 110.925,
+                    "previous_date": "2026-07-31",
+                },
+                {
+                    "nav": 110.80,
+                    "date": "2026-09-29",
+                    "plan_type": "Class A1",
+                },
+            ],
+        }
+
+        rows = _resource_records(payload)
+
+        self.assertEqual(len(rows), 2)
+        self.assertEqual(rows[0]["fund_id"], 180)
+        self.assertEqual(rows[0]["isin"], "INIFC2603016")
+        self.assertEqual(rows[0]["fund_name"], "Quant Algorithmic Strategies Fund")
+        self.assertEqual(rows[0]["plan_type"], "Units")
+        self.assertEqual(rows[0]["nav"], 111.37)
+        self.assertEqual(rows[1]["plan_type"], "Class A1")
+
     def test_gift_plan_keyed_series_preserve_plan_identity(self):
         payload = {
             "Direct": {"dates": ["2026-11-20"], "nav": ["101.25"]},

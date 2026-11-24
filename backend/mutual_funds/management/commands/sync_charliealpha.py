@@ -14,7 +14,7 @@ class Command(BaseCommand):
     def add_arguments(self, parser):
         parser.add_argument(
             "--domain",
-            choices=("schemes", "nav", "nav-history", "metrics", "ter", "aum", "holdings", "benchmarks", "compare", "overlap", "all"),
+            choices=("schemes", "search", "nav", "nav-history", "metrics", "ter", "aum", "holdings", "holdings-periods", "holdings-history", "exposure", "benchmarks", "compare", "overlap", "all"),
             default="all",
             help="Data domain to synchronize (default: all).",
         )
@@ -34,6 +34,11 @@ class Command(BaseCommand):
             "--limit", type=int, default=0,
             help="Optional upper bound for per-scheme calls; 0 means no artificial cap.",
         )
+        parser.add_argument("--search-query", default="", help="Free-text CharlieAlpha scheme discovery query.")
+        parser.add_argument("--identifier", default="", help="Stock ISIN, NSE symbol or BSE scrip code for fund exposure.")
+        parser.add_argument("--min-pct", default="", help="Optional minimum portfolio percentage for stock exposure.")
+        parser.add_argument("--period-limit", type=int, default=4, help="Maximum historical holdings periods per scheme; 0 means all available.")
+        parser.add_argument("--include-nav-history", action="store_true", help="Also fetch historical NAV for the selected/limited scheme universe during --domain all.")
         parser.add_argument("--dry-run", action="store_true", help="Validate and fetch without changing scheme data.")
         parser.add_argument(
             "--skip-holdings-changes", action="store_true",
@@ -47,6 +52,8 @@ class Command(BaseCommand):
         limit = options["limit"]
         if limit < 0:
             raise CommandError("--limit cannot be negative.")
+        if options["period_limit"] < 0:
+            raise CommandError("--period-limit cannot be negative.")
         if codes and limit and len(codes) > limit:
             codes = codes[:limit]
 
@@ -56,13 +63,21 @@ class Command(BaseCommand):
         if domain in {"schemes", "all"}:
             result["schemes"] = service.sync_schemes(category=category)
 
+        if domain == "search":
+            if not options["search_query"].strip():
+                raise CommandError("--domain search requires --search-query.")
+            result["search"] = service.search_schemes(options["search_query"])
+
         if domain in {"nav", "all"}:
             result["nav"] = service.sync_navall()
 
-        if domain == "nav-history":
-            if not codes:
-                raise CommandError("--domain nav-history requires at least one --scheme-code.")
-            result["nav_history"] = service.sync_nav_history(codes)
+        if domain == "nav-history" or (domain == "all" and options["include_nav_history"]):
+            history_codes = codes or self._linked_scheme_codes(category)
+            if limit:
+                history_codes = history_codes[:limit]
+            if not history_codes:
+                raise CommandError("No CharlieAlpha-linked schemes available for NAV history. Run --domain schemes first.")
+            result["nav_history"] = service.sync_nav_history(history_codes)
 
         if domain == "metrics":
             result["metrics"] = service.sync_metrics(
@@ -94,6 +109,26 @@ class Command(BaseCommand):
                     include_changes=not options["skip_holdings_changes"],
                     limit=limit or None,
                 )
+
+        if domain in {"holdings-periods", "all"}:
+            result["holdings_periods"] = service.sync_holdings_periods(codes or None)
+
+        if domain == "holdings-history":
+            history_codes = codes or self._linked_scheme_codes(category)
+            if limit:
+                history_codes = history_codes[:limit]
+            if not history_codes:
+                raise CommandError("No CharlieAlpha-linked schemes available for holdings history. Run --domain schemes first.")
+            result["holdings_history"] = service.sync_holdings_history(
+                history_codes, period_limit=options["period_limit"],
+            )
+
+        if domain == "exposure":
+            if not options["identifier"].strip():
+                raise CommandError("--domain exposure requires --identifier.")
+            result["exposure"] = service.sync_fund_exposure(
+                options["identifier"], options["min_pct"] or None,
+            )
 
         if domain in {"benchmarks", "all"}:
             result["benchmarks"] = service.sync_benchmarks(limit=limit or None)

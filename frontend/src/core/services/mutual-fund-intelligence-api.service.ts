@@ -21,11 +21,7 @@ export interface MutualFundIntelligenceResponse {
 }
 
 export interface MutualFundDetailResponse {
-  scheme: {
-    id: number; scheme_code: string; scheme_name: string; amc: string;
-    isin_growth: string | null; isin_idcw: string | null;
-    category: string; plan: string; option: string;
-  };
+  scheme: { id: number; scheme_code: string; scheme_name: string; amc: string; isin_growth: string | null; isin_idcw: string | null; category: string; plan: string; option: string };
   snapshot: Record<string, any> | null;
   nav_history: Array<{ date: string; nav: number }>;
   aum_history: Array<{ date: string; aum_cr: number; type: string }>;
@@ -40,38 +36,34 @@ export interface MutualFundDetailResponse {
 @Injectable({ providedIn: 'root' })
 export class MutualFundIntelligenceApiService {
   private readonly http = inject(HttpClient);
-  private readonly baseUrl = ${environment.apiUrl}/api/mutual-fund-analytics/charliealpha;
+  private readonly baseUrl = environment.apiUrl + '/api/mutual-fund-analytics/charliealpha';
 
   getOverview(filters: Record<string, string | number | undefined> = {}): Observable<MutualFundIntelligenceResponse> {
     let params = new HttpParams();
     Object.entries(filters).forEach(([name, value]) => {
       if (value !== undefined && value !== null && value !== '') params = params.set(name, String(value));
     });
-    return this.http.get<MutualFundIntelligenceResponse>(${this.baseUrl}/overview/, { params, withCredentials: true });
+    return this.http.get<MutualFundIntelligenceResponse>(this.baseUrl + '/overview/', { params, withCredentials: true });
   }
 
-  getFund(schemeCode: string, navLimit = 1000): Observable<MutualFundDetailResponse> {
-    const params = new HttpParams().set('nav_limit', String(navLimit));
-    return this.http.get<MutualFundDetailResponse>(${this.baseUrl}/funds/${encodeURIComponent(schemeCode)}/, {
-      params, withCredentials: true,
-    });
+  getFund(schemeCode: string, options: { navLimit?: number; fromDate?: string; toDate?: string } = {}): Observable<MutualFundDetailResponse> {
+    let params = new HttpParams().set('nav_limit', String(options.navLimit ?? 1000));
+    if (options.fromDate) params = params.set('from_date', options.fromDate);
+    if (options.toDate) params = params.set('to_date', options.toDate);
+    return this.http.get<MutualFundDetailResponse>(this.baseUrl + '/funds/' + encodeURIComponent(schemeCode) + '/', { params, withCredentials: true });
   }
 
   getBenchmarks(slug = ''): Observable<{ count: number; results: any[] }> {
     let params = new HttpParams();
     if (slug) params = params.set('slug', slug);
-    return this.http.get<{ count: number; results: any[] }>(${this.baseUrl}/benchmarks/, {
-      params, withCredentials: true,
-    });
+    return this.http.get<{ count: number; results: any[] }>(this.baseUrl + '/benchmarks/', { params, withCredentials: true });
   }
 
   getCategoryMetrics(slug: string): Observable<any> {
-    return this.http.get(${this.baseUrl}/categories/${encodeURIComponent(slug)}/, { withCredentials: true });
+    return this.http.get(this.baseUrl + '/categories/' + encodeURIComponent(slug) + '/', { withCredentials: true });
   }
 
   compare(schemeCodes: string[], overlapOnly = false): Observable<any> {
-    return this.http.post(${this.baseUrl}/compare/, {
-      scheme_codes: schemeCodes, overlap_only: overlapOnly,
-    }, { withCredentials: true });
+    return this.http.post(this.baseUrl + '/compare/', { scheme_codes: schemeCodes, overlap_only: overlapOnly }, { withCredentials: true });
   }
 }

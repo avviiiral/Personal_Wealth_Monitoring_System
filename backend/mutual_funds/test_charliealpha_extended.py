@@ -75,6 +75,7 @@ class CharlieAlphaExtendedPersistenceTests(TestCase):
                 "nps/metrics/SM001001",
             ],
         )
+        self.assertEqual(client.get.call_args_list[3].args[1], {"horizon": "3y"})
         snapshots = list(MFProviderResourceSnapshot.objects.filter(family="NPS").order_by("endpoint"))
         self.assertEqual(len(snapshots), 4)
         history = MFProviderResourceSnapshot.objects.get(endpoint="nps/hnav/SM001001")
@@ -118,6 +119,24 @@ class CharlieAlphaExtendedPersistenceTests(TestCase):
             {"plan": "Direct", "start_date": "2026-11-01", "end_date": "2026-11-21"},
         )
         self.assertEqual(MFProviderResourceSnapshot.objects.filter(family="GIFT").count(), 4)
+
+    def test_gift_history_accepts_one_sided_optional_date_boundaries(self):
+        client = Mock()
+        client.get.side_effect = [
+            {"labels": ["fund_id", "fund_name"], "data": [[3, "GIFT Example"]]},
+            {"fields": ["fund_id", "nav"], "data": [[3, "10"]]},
+            {"fund_id": 3, "nav": "10.1", "date": "2026-11-21"},
+            {"Direct": {"dates": ["2026-11-20"], "nav": ["10"]}},
+        ]
+
+        CharlieAlphaExtendedService(client=client).sync_gift(
+            limit=1, from_date="2026-11-01",
+        )
+
+        self.assertEqual(
+            client.get.call_args_list[3].args[1],
+            {"start_date": "2026-11-01"},
+        )
 
     def test_instrument_search_details_and_corporate_actions_are_persisted(self):
         client = Mock()

@@ -256,7 +256,10 @@ def _benchmark_window_params(
     if has_from or has_to:
         if not (has_from and has_to):
             raise ValueError("Both benchmark from_date and to_date are required for a custom range.")
-        start, end = parse_date(from_date), parse_date(to_date)
+        raw_start, raw_end = text_value(from_date), text_value(to_date)
+        if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", raw_start) or not re.fullmatch(r"\d{4}-\d{2}-\d{2}", raw_end):
+            raise ValueError("Benchmark dates must use YYYY-MM-DD.")
+        start, end = parse_date(raw_start), parse_date(raw_end)
         if not start or not end:
             raise ValueError("Benchmark dates must use YYYY-MM-DD.")
         if start > end:

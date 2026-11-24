@@ -236,3 +236,11 @@ tbody tr:hover td { background:rgba(253,119,64,.035); }
   .provider-date-filter input { width:100%; }
   .benchmark-selector { align-items:flex-start; flex-direction:column; }
 }
+
+.holding-period-picker { display:flex; flex-direction:column; gap:4px; color:var(--mf-muted); font-size:9px; font-weight:700; }
+.holding-period-picker select,.exposure-search input { min-width:180px; height:36px; padding:0 9px; border:1px solid var(--mf-line); background:var(--mf-surface); color:var(--ink,#172033); font:inherit; font-size:10px; }
+.exposure-search { display:flex; align-items:end; gap:9px; flex-wrap:wrap; }
+.exposure-search label { color:var(--mf-muted); font-size:9px; font-weight:800; text-transform:uppercase; }
+.exposure-search input { flex:1 1 240px; }
+.provider-exposure-card { margin:14px 0; }
+@media (max-width:680px) { .holding-period-picker,.holding-period-picker select { width:100%; } .exposure-search { align-items:stretch; flex-direction:column; } }

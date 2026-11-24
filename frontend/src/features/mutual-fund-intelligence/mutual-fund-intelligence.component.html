@@ -44,7 +44,7 @@
     </div>
     <div class="selector-footer">
       <span><i class="status-dot"></i> Locally cached SEBI / AMFI universe · No provider call on selection</span>
-      <span *ngIf="selectedCategory">{{ selectedCategoryFunds }} funds · {{ selectedPlan }}</span>
+      <span *ngIf="selectedCategory || activeTab === 'charliealpha'">{{ selectedCategoryFunds }} funds · {{ selectedPlan }}</span>
     </div>
   </section>
 
@@ -180,9 +180,148 @@
       <div class="section-heading"><div><p class="eyebrow">PERFORMANCE ATTRIBUTION</p><h2>Contribution analysis</h2></div><span class="section-meta">{{ selectedFund?.scheme_name || selectedCategory }}</span></div>
       <div class="empty-state disclosure-state"><h3>Stock-level attribution is not currently calculable</h3><p>Attribution requires historical security-level holdings weights and matching security price-return series over the same period. The current SEBI NAV analytics snapshot does not contain those inputs, so contribution and laggard figures are intentionally withheld.</p></div>
     </section>
+
+    <section class="tab-panel charliealpha-panel" *ngIf="activeTab === 'charliealpha'">
+      <div class="section-heading">
+        <div>
+          <p class="eyebrow">PROVIDER DATA · STORED IN PWMS DATABASE</p>
+          <h2>CharlieAlpha Mutual Fund Intelligence</h2>
+          <p class="section-subtitle">Performance, risk, portfolio, expense and benchmark analytics from persisted provider observations.</p>
+        </div>
+        <button type="button" class="provider-refresh" (click)="loadCharlieAlphaOverview()" [disabled]="charliealphaLoading">{{ charliealphaLoading ? 'Refreshing…' : 'Refresh data' }}</button>
+      </div>
+
+      <div class="error-message" *ngIf="charliealphaError" role="alert">
+        <span>{{ charliealphaError }}</span><button type="button" (click)="loadCharlieAlphaOverview()">Retry</button>
+      </div>
+
+      <div class="provider-kpis">
+        <article class="kpi-card"><span>AMFI active schemes</span><strong>{{ charliealphaOverview?.summary?.active_amfi_schemes ?? '—' }}</strong><small>Master universe</small></article>
+        <article class="kpi-card"><span>CharlieAlpha master coverage</span><strong>{{ charliealphaOverview?.summary?.schemes_with_masterdata ?? '—' }}</strong><small>Latest stored fund snapshots</small></article>
+        <article class="kpi-card"><span>AMC coverage</span><strong>{{ charliealphaOverview?.summary?.amc_coverage ?? '—' }}</strong><small>Distinct AMCs</small></article>
+        <article class="kpi-card"><span>Category coverage</span><strong>{{ charliealphaOverview?.summary?.category_coverage ?? '—' }}</strong><small>Distinct SEBI categories</small></article>
+        <article class="kpi-card"><span>NAV coverage</span><strong>{{ charliealphaOverview?.summary?.nav_coverage ?? '—' }}</strong><small>CharlieAlpha NAV histories</small></article>
+        <article class="kpi-card"><span>Holdings coverage</span><strong>{{ charliealphaOverview?.summary?.holdings_coverage ?? '—' }}</strong><small>Provider holdings records</small></article>
+      </div>
+
+      <div class="provider-filters">
+        <div class="field-group"><label for="ca-search">Scheme search</label><input id="ca-search" type="search" [(ngModel)]="charliealphaSearch" (keyup.enter)="loadCharlieAlphaOverview()" placeholder="Scheme name, code, AMC, ISIN"></div>
+        <div class="field-group"><label for="ca-amc">AMC</label><select id="ca-amc" [(ngModel)]="charliealphaAmc"><option value="">All AMCs</option><option *ngFor="let item of charliealphaAmcs" [value]="item">{{ item }}</option></select></div>
+        <div class="field-group"><label for="ca-category">Category</label><select id="ca-category" [(ngModel)]="charliealphaCategory"><option value="">All categories</option><option *ngFor="let item of charliealphaCategories" [value]="item">{{ item }}</option></select></div>
+        <div class="field-group"><label for="ca-plan">Plan</label><select id="ca-plan" [(ngModel)]="charliealphaPlan"><option value="">All plans</option><option *ngFor="let item of charliealphaPlans" [value]="item">{{ item }}</option></select></div>
+        <div class="field-group"><label for="ca-option">Option</label><select id="ca-option" [(ngModel)]="charliealphaOption"><option value="">All options</option><option *ngFor="let item of charliealphaOptions" [value]="item">{{ item }}</option></select></div>
+        <button type="button" class="provider-apply" (click)="loadCharlieAlphaOverview()" [disabled]="charliealphaLoading">Apply filters</button>
+      </div>
+
+      <div class="provider-main-grid">
+        <article class="chart-card">
+          <div class="chart-title"><div><span>01</span><h3>1Y trailing return leaders</h3></div><small>Stored provider metrics · top 15</small></div>
+          <div class="chart-wrap"><canvas id="charliealpha-returns-chart"></canvas></div>
+          <p class="method-note">Returns are provider-supplied and shown only when the corresponding horizon is available.</p>
+        </article>
+        <article class="chart-card">
+          <div class="chart-title"><div><span>02</span><h3>Data ingestion status</h3></div><small>Latest audit record per domain</small></div>
+          <div class="table-wrap compact-provider-table">
+            <table><thead><tr><th>Domain</th><th>Status</th><th>Fetched</th><th>Failed</th><th>Updated</th></tr></thead>
+              <tbody>
+                <tr *ngFor="let source of charliealphaOverview?.data_sources">
+                  <td class="fund-name">{{ sourceLabel(source.domain) }}</td>
+                  <td><span class="source-status" [ngClass]="'status-' + (source.status || '').toLowerCase()">{{ source.status }}</span></td>
+                  <td>{{ source.records_fetched }}</td><td>{{ source.failed }}</td><td>{{ formatGeneratedAt(source.completed_at) }}</td>
+                </tr>
+                <tr *ngIf="!charliealphaOverview?.data_sources?.length"><td colspan="5" class="empty-cell">No CharlieAlpha sync has been recorded yet.</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </article>
+      </div>
+
+      <article class="chart-card provider-universe">
+        <div class="chart-title"><div><span>03</span><h3>Fund universe — performance, risk, expense and AUM</h3></div><small>{{ charliealphaFunds.length }} rows on this page · database-backed</small></div>
+        <div class="table-wrap">
+          <table class="provider-universe-table">
+            <thead><tr><th>Compare</th><th>Scheme</th><th>AMC / category</th><th>Plan / option</th><th>1Y CAGR</th><th>3Y CAGR</th><th>5Y CAGR</th><th>10Y CAGR</th><th>Volatility</th><th>Sharpe</th><th>Sortino</th><th>Max drawdown</th><th>TER</th><th>AUM (₹ Cr)</th></tr></thead>
+            <tbody>
+              <tr *ngFor="let row of charliealphaFunds">
+                <td><input type="checkbox" [checked]="isCharlieAlphaCompared(row.scheme_code)" (change)="toggleCharlieAlphaCompare(row.scheme_code)" [attr.aria-label]="'Compare ' + row.scheme_name"></td>
+                <td><button type="button" class="fund-select-link" (click)="loadCharlieAlphaFund(row.scheme_code)">{{ row.scheme_name || row.scheme_code }}</button><small class="scheme-code">{{ row.scheme_code }}</small></td>
+                <td>{{ row.amc || '—' }}<small class="scheme-code">{{ row.sebi_category_level_3 || 'Category unavailable' }}</small></td>
+                <td>{{ row.plan || '—' }}<small class="scheme-code">{{ row.option || '—' }}</small></td>
+                <td>{{ formatPct(row.return_1y_pct) }}</td><td>{{ formatPct(row.return_3y_pct) }}</td><td>{{ formatPct(row.return_5y_pct) }}</td><td>{{ formatPct(row.return_10y_pct) }}</td>
+                <td>{{ formatPct(row.std_dev_pct) }}</td><td>{{ formatNumber(row.sharpe, 3) }}</td><td>{{ formatNumber(row.sortino, 3) }}</td><td>{{ formatPct(row.max_drawdown_pct) }}</td>
+                <td>{{ formatPct(row.ter_direct_pct ?? row.ter_regular_pct) }}</td><td>{{ formatNumber(row.aum_cr, 2) }}</td>
+              </tr>
+              <tr *ngIf="!charliealphaLoading && !charliealphaFunds.length"><td colspan="14" class="empty-cell">No matching CharlieAlpha data has been stored. Run the CharlieAlpha synchronization command or broaden the filters.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="method-note">Missing or unsupported fields display as em dashes, not zero. Direct/Regular and Growth/IDCW distinctions remain separate. The universe is paginated by the backend; this view currently requests the first 100 matches.</p>
+      </article>
+
+      <div class="provider-compare-bar">
+        <div><strong>Fund comparison</strong><span>{{ charliealphaCompareCodes.length }} schemes selected (2–20)</span></div>
+        <button type="button" class="provider-apply" (click)="runCharlieAlphaCompare(false)" [disabled]="charliealphaCompareLoading || charliealphaCompareCodes.length < 2">{{ charliealphaCompareLoading ? 'Comparing…' : 'Compare returns & risk' }}</button>
+        <button type="button" class="provider-secondary" (click)="runCharlieAlphaCompare(true)" [disabled]="charliealphaCompareLoading || charliealphaCompareCodes.length < 2">Holdings overlap</button>
+        <button type="button" class="provider-secondary" (click)="charliealphaCompareCodes = []; charliealphaCompareResult = null" [disabled]="!charliealphaCompareCodes.length">Clear selection</button>
+      </div>
+      <div class="error-message" *ngIf="charliealphaCompareError">{{ charliealphaCompareError }}</div>
+      <article class="chart-card" *ngIf="charliealphaCompareResult">
+        <div class="chart-title"><div><span>04</span><h3>Provider comparison result</h3></div><small>Provider response stored in the ingestion audit database</small></div>
+        <pre class="provider-result">{{ charliealphaCompareResult | json }}</pre>
+      </article>
+
+      <article class="chart-card selected-provider-fund" *ngIf="charliealphaSelectedCode">
+        <div class="section-heading"><div><p class="eyebrow">SELECTED SCHEME</p><h2>{{ charliealphaDetail?.scheme?.scheme_name || charliealphaSelectedCode }}</h2></div><span class="section-meta">{{ charliealphaDetail?.scheme?.amc || 'AMC unavailable' }} · {{ charliealphaDetail?.scheme?.category || 'Category unavailable' }}</span></div>
+        <div class="provider-date-filter">
+          <label>From <input type="date" [(ngModel)]="charliealphaFromDate"></label><label>To <input type="date" [(ngModel)]="charliealphaToDate"></label>
+          <button type="button" class="provider-secondary" (click)="applyCharlieAlphaDateRange()">Apply NAV dates</button>
+          <span *ngIf="charliealphaDetail?.holdings_report_date">Holdings report: {{ formatDate(charliealphaDetail?.holdings_report_date || undefined) }}</span>
+        </div>
+        <div class="error-message" *ngIf="charliealphaDetailError">{{ charliealphaDetailError }}</div>
+        <div class="data-footnote" *ngIf="charliealphaDetailLoading">Loading scheme detail from stored PWMS records…</div>
+        <div class="provider-kpis detail-kpis" *ngIf="charliealphaDetail?.snapshot as snap">
+          <article class="kpi-card"><span>Latest NAV</span><strong>{{ formatNumber(snap.nav, 4) }}</strong><small>{{ formatDate(snap.nav_as_of) }}</small></article>
+          <article class="kpi-card"><span>1Y / 3Y / 5Y / 10Y CAGR</span><strong>{{ formatPct(snap.return_1y_pct) }}</strong><small>{{ formatPct(snap.return_3y_pct) }} / {{ formatPct(snap.return_5y_pct) }} / {{ formatPct(snap.return_10y_pct) }}</small></article>
+          <article class="kpi-card"><span>Volatility / Sharpe / Sortino</span><strong>{{ formatPct(snap.std_dev_pct) }}</strong><small>{{ formatNumber(snap.sharpe, 3) }} / {{ formatNumber(snap.sortino, 3) }}</small></article>
+          <article class="kpi-card"><span>Beta / Alpha</span><strong>{{ formatNumber(snap.beta, 3) }}</strong><small>Alpha {{ formatPct(snap.alpha_pct) }}</small></article>
+          <article class="kpi-card"><span>Max drawdown</span><strong>{{ formatPct(snap.max_drawdown_pct) }}</strong><small>Provider-reported</small></article>
+          <article class="kpi-card"><span>AUM / TER</span><strong>{{ formatNumber(snap.aum_cr, 2) }} Cr</strong><small>TER {{ formatPct(snap.ter_direct_pct ?? snap.ter_regular_pct) }}</small></article>
+        </div>
+        <div class="chart-grid provider-detail-charts">
+          <div><div class="chart-title"><div><span>05</span><h3>Historical NAV</h3></div><small>{{ charliealphaDetail?.nav_history?.length || 0 }} observations</small></div><div class="chart-wrap large"><canvas id="charliealpha-nav-chart"></canvas></div></div>
+          <div>
+            <div class="chart-title"><div><span>06</span><h3>Metric data availability</h3></div><small>Provider horizon payload</small></div>
+            <div class="availability-grid"><span *ngFor="let entry of (charliealphaDetail?.data_availability | keyvalue)"><b>{{ sourceLabel(entry.key) }}</b><em [class.available]="entry.value">{{ entry.value ? 'Available' : 'Not available' }}</em></span></div>
+            <p class="method-note">Horizon distributions and percentiles are stored in source-run metadata when returned by the provider. Missing metrics are not displayed as zero.</p>
+          </div>
+        </div>
+
+        <div class="provider-history-grid">
+          <div><h3>TER history</h3><div class="table-wrap"><table><thead><tr><th>Date</th><th>Direct TER</th><th>Regular TER</th></tr></thead><tbody><tr *ngFor="let item of charliealphaDetail?.ter_history"><td>{{ formatDate(item.date) }}</td><td>{{ formatPct(item.direct_pct) }}</td><td>{{ formatPct(item.regular_pct) }}</td></tr><tr *ngIf="!charliealphaDetail?.ter_history?.length"><td colspan="3" class="empty-cell">No TER history stored.</td></tr></tbody></table></div></div>
+          <div><h3>AUM history (₹ Cr)</h3><div class="table-wrap"><table><thead><tr><th>Report date</th><th>AUM</th><th>Basis</th></tr></thead><tbody><tr *ngFor="let item of charliealphaDetail?.aum_history"><td>{{ formatDate(item.date) }}</td><td>{{ formatNumber(item.aum_cr) }}</td><td>{{ item.type || '—' }}</td></tr><tr *ngIf="!charliealphaDetail?.aum_history?.length"><td colspan="3" class="empty-cell">No AUM history stored.</td></tr></tbody></table></div></div>
+        </div>
+        <div class="provider-holdings">
+          <div class="chart-title"><div><span>07</span><h3>Latest disclosed holdings</h3></div><small>{{ charliealphaDetail?.holdings?.length || 0 }} securities</small></div>
+          <div class="table-wrap"><table><thead><tr><th>Security</th><th>ISIN</th><th>Sector</th><th>Industry</th><th>Instrument</th><th>Weight</th><th>Quantity</th><th>Market value</th></tr></thead><tbody>
+            <tr *ngFor="let holding of charliealphaDetail?.holdings"><td class="fund-name">{{ holding.name }}</td><td>{{ holding.isin || '—' }}</td><td>{{ holding.sector || '—' }}</td><td>{{ holding.industry || '—' }}</td><td>{{ holding.instrument_type || '—' }}</td><td>{{ formatPct(holding.weight_pct) }}</td><td>{{ formatNumber(holding.quantity, 4) }}</td><td>{{ formatNumber(holding.market_value, 2) }}</td></tr>
+            <tr *ngIf="!charliealphaDetail?.holdings?.length"><td colspan="8" class="empty-cell">Holdings are not available for this scheme. Missing holdings are not treated as a zero allocation.</td></tr>
+          </tbody></table></div>
+          <p class="method-note" *ngIf="charliealphaDetail?.holdings_changes">Provider holdings-change summary: {{ charliealphaDetail?.holdings_changes | json }}</p>
+        </div>
+      </article>
+
+      <article class="chart-card benchmark-card">
+        <div class="chart-title"><div><span>08</span><h3>Benchmark intelligence</h3></div><small>CharlieAlpha benchmark index history</small></div>
+        <div class="benchmark-selector"><label for="ca-benchmark">Benchmark</label><select id="ca-benchmark" [(ngModel)]="charliealphaBenchmarkSlug" (ngModelChange)="selectCharlieAlphaBenchmark($event)"><option *ngFor="let item of charliealphaBenchmarks" [value]="item.slug">{{ item.name || item.slug }}</option></select></div>
+        <div class="chart-wrap large" *ngIf="charliealphaBenchmark?.series?.length; else noCharlieAlphaBenchmark"><canvas id="charliealpha-benchmark-chart"></canvas></div>
+        <ng-template #noCharlieAlphaBenchmark><div class="empty-state chart-empty"><h3>Benchmark history not ingested</h3><p>Run the benchmark synchronization command to load available index history.</p></div></ng-template>
+        <p class="normalization-warning"><strong>Normalization warning:</strong> CharlieAlpha benchmark history is rebased to 100 at the start of the returned range. It is not an absolute official TRI value and is not used as the PWMS benchmark TRI source. Do not compare it to raw TRI level values.</p>
+      </article>
+    </section>
+
   </div>
 
-  <section class="empty-state start-state" *ngIf="!selectedCategory && !loadingCategories">
+  <section class="empty-state start-state" *ngIf="!selectedCategory && !loadingCategories && activeTab !== 'charliealpha'">>
     <h2>Select a category to open the intelligence dashboard</h2>
     <p>Choose a SEBI Level 3 category, then select Direct or Regular Plan and an individual fund.</p>
   </section>

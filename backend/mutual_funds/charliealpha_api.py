@@ -206,20 +206,44 @@ def charliealpha_overview(request):
 @permission_classes([IsAuthenticated])
 def charliealpha_fund_detail(request, scheme_code: str):
     scheme = AMFIMasterScheme.objects.filter(scheme_code=scheme_code, is_active=True).first()
+    if scheme is None and len(scheme_code) == 12:
+        scheme = AMFIMasterScheme.objects.filter(
+            Q(isin_growth__iexact=scheme_code) | Q(isin_dividend__iexact=scheme_code),
+            is_active=True,
+        ).first()
     if scheme is None:
-        raise Http404("Mutual-fund scheme was not found in the AMFI master.")
-    snapshot = _latest_snapshots().filter(scheme=scheme).first()
-    nav_limit = min(5000, max(30, int(request.query_params.get("nav_limit", 1000))))
+        raise Http404("Mutual-fund scheme or ISIN was not found in the AMFI master.")
+
+    snapshot_row = _latest_snapshots().filter(scheme=scheme).first()
+    snapshot_payload = _serialize_current_snapshots([snapshot_row])[0] if snapshot_row else None
+    try:
+        nav_limit = int(request.query_params.get("nav_limit", 1000))
+    except (TypeError, ValueError):
+        return Response({"detail": "nav_limit must be an integer between 1 and 5000."}, status=status.HTTP_400_BAD_REQUEST)
+    if nav_limit < 1 or nav_limit > 5000:
+        return Response({"detail": "nav_limit must be between 1 and 5000."}, status=status.HTTP_400_BAD_REQUEST)
+
     nav_queryset = AMFIMasterNAV.objects.filter(scheme=scheme, source=NAV_SOURCE)
-    from_date = request.query_params.get("from_date")
-    to_date = request.query_params.get("to_date")
+    raw_from_date = request.query_params.get("from_date")
+    raw_to_date = request.query_params.get("to_date")
+    from_date = parse_date(raw_from_date) if raw_from_date else None
+    to_date = parse_date(raw_to_date) if raw_to_date else None
+    if raw_from_date and from_date is None:
+        return Response({"detail": "from_date must use YYYY-MM-DD."}, status=status.HTTP_400_BAD_REQUEST)
+    if raw_to_date and to_date is None:
+        return Response({"detail": "to_date must use YYYY-MM-DD."}, status=status.HTTP_400_BAD_REQUEST)
+    if from_date and to_date and from_date > to_date:
+        return Response({"detail": "from_date cannot be later than to_date."}, status=status.HTTP_400_BAD_REQUEST)
     if from_date:
         nav_queryset = nav_queryset.filter(date__gte=from_date)
     if to_date:
         nav_queryset = nav_queryset.filter(date__lte=to_date)
     nav_rows = list(nav_queryset.order_by("-date")[:nav_limit])
     holdings_queryset = MFMasterHolding.objects.filter(scheme=scheme, source=SOURCE)
-    requested_holding_date = (request.query_params.get("holdings_as_of") or "").strip()
+    raw_holding_date = (request.query_params.get("holdings_as_of") or "").strip()
+    requested_holding_date = parse_date(raw_holding_date) if raw_holding_date else None
+    if raw_holding_date and requested_holding_date is None:
+        return Response({"detail": "holdings_as_of must use YYYY-MM-DD."}, status=status.HTTP_400_BAD_REQUEST)
     if requested_holding_date:
         holdings_queryset = holdings_queryset.filter(portfolio_date=requested_holding_date)
     holding_date = holdings_queryset.order_by("-portfolio_date").values_list("portfolio_date", flat=True).first()
@@ -273,7 +297,7 @@ def charliealpha_fund_detail(request, scheme_code: str):
             "plan": scheme.plan,
             "option": scheme.option,
         },
-        "snapshot": IntelligenceSnapshotSerializer(snapshot).data if snapshot else None,
+        "snapshot": snapshot_payload,
         "nav_history": [{"date": item.date, "nav": item.nav} for item in reversed(nav_rows)],
         "aum_history": aum_history,
         "ter_history": ter_history,
@@ -348,15 +372,49 @@ def charliealpha_benchmarks(request):
 
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
+def charliealpha_category_catalog(request):
+    """Return the stored provider category tree and canonical category slugs."""
+    run = MFSourceRun.objects.filter(
+        source=SOURCE, command="categories"
+    ).order_by("-started_at").first()
+    if run is None:
+        return Response(
+            {"detail": "CharlieAlpha categories have not been ingested yet."},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+    metadata = run.metadata or {}
+    return Response({
+        "count": metadata.get("category_count", 0),
+        "asset_classes": metadata.get("asset_classes", []),
+        "results": metadata.get("category_rows", []),
+        "category_slugs": metadata.get("category_slugs", []),
+        "fetched_at": run.completed_at or run.started_at,
+    })
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
 def charliealpha_category_metrics(request, slug: str):
-    run = (
-        MFSourceRun.objects.filter(
-            source=SOURCE, command="category_metrics", metadata__category_slug=slug
-        ).order_by("-started_at").first()
-    )
+    horizon = (request.query_params.get("horizon") or "").strip().lower()
+    if horizon and horizon not in {"1y", "3y", "5y", "10y"}:
+        return Response({"detail": "horizon must be one of 1y, 3y, 5y or 10y."}, status=status.HTTP_400_BAD_REQUEST)
+    runs = MFSourceRun.objects.filter(
+        source=SOURCE, command="category_metrics", metadata__category_slug=slug
+    ).order_by("-started_at")
+    if horizon:
+        runs = runs.filter(metadata__horizon=horizon)
+    run = runs.first()
     if not run:
-        return Response({"detail": "Category metrics have not been ingested yet.", "slug": slug}, status=status.HTTP_404_NOT_FOUND)
-    return Response({"slug": slug, "category_medians": run.metadata.get("category_medians"), "fetched_at": run.completed_at})
+        return Response({"detail": "Category metrics have not been ingested for this category and horizon.", "slug": slug, "horizon": horizon or None}, status=status.HTTP_404_NOT_FOUND)
+    metadata = run.metadata or {}
+    return Response({
+        "slug": slug,
+        "horizon": metadata.get("horizon"),
+        "category_medians": metadata.get("category_medians"),
+        "metrics_count": metadata.get("metrics_count", 0),
+        "fetched_at": run.completed_at or run.started_at,
+        "status": run.status,
+    })
 
 
 @api_view(["POST"])
@@ -366,11 +424,16 @@ def charliealpha_compare(request):
     codes = request.data.get("scheme_codes", [])
     if not isinstance(codes, list):
         return Response({"detail": "scheme_codes must be an array."}, status=status.HTTP_400_BAD_REQUEST)
-    normalized = list(dict.fromkeys(str(code).strip() for code in codes if str(code).strip()))
+    normalized = list(dict.fromkeys(str(code).strip().upper() for code in codes if str(code).strip()))
     if not 2 <= len(normalized) <= 20:
         return Response({"detail": "Select between 2 and 20 funds."}, status=status.HTTP_400_BAD_REQUEST)
+    invalid = [code for code in normalized if not (code.isdigit() and len(code) == 6) and len(code) != 12]
+    if invalid:
+        return Response({"detail": "Each scheme identifier must be a six-digit AMFI code or a 12-character ISIN.", "invalid_identifiers": invalid}, status=status.HTTP_400_BAD_REQUEST)
 
-    overlap_only = bool(request.data.get("overlap_only", False))
+    overlap_only = request.data.get("overlap_only", False)
+    if not isinstance(overlap_only, bool):
+        return Response({"detail": "overlap_only must be a boolean."}, status=status.HTTP_400_BAD_REQUEST)
     command = "overlap" if overlap_only else "compare"
     run = next((
         candidate for candidate in MFSourceRun.objects.filter(
@@ -444,12 +507,16 @@ def charliealpha_security_exposure(request, identifier: str):
         command="fund_exposure",
     ).order_by("-started_at")[:500]
     selected = None
-    requested_min_pct = (request.query_params.get("min_pct") or "").strip()
+    raw_min_pct = (request.query_params.get("min_pct") or "").strip()
+    requested_min_pct = decimal_value(raw_min_pct) if raw_min_pct else None
+    if raw_min_pct and (requested_min_pct is None or requested_min_pct < 0):
+        return Response({"detail": "min_pct must be a non-negative number."}, status=status.HTTP_400_BAD_REQUEST)
     for run in runs:
         metadata = run.metadata or {}
         if str(metadata.get("identifier", "")).casefold() != identifier.casefold():
             continue
-        if requested_min_pct and str(metadata.get("min_pct") or "") != requested_min_pct:
+        stored_min_pct = decimal_value(metadata.get("min_pct")) if metadata.get("min_pct") not in (None, "") else None
+        if raw_min_pct and stored_min_pct != requested_min_pct:
             continue
         selected = run
         break

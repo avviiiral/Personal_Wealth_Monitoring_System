@@ -309,7 +309,7 @@
         <div class="error-message" *ngIf="charliealphaDetailError">{{ charliealphaDetailError }}</div>
         <div class="data-footnote" *ngIf="charliealphaDetailLoading">Loading scheme detail from stored PWMS records…</div>
         <div class="provider-kpis detail-kpis" *ngIf="charliealphaDetail?.snapshot as snap">
-          <article class="kpi-card"><span>Latest NAV</span><strong>{{ formatNumber(snap.nav, 4) }}</strong><small>{{ formatDate(snap.nav_as_of) }} · Change {{ formatNumber(charliealphaDetail?.nav_detail?.['nav_change']) }} ({{ formatPct(charliealphaDetail?.nav_detail?.['nav_change']_pct) }})</small></article>
+          <article class="kpi-card"><span>Latest NAV</span><strong>{{ formatNumber(snap.nav, 4) }}</strong><small>{{ formatDate(snap.nav_as_of) }} · Change {{ formatNumber(charliealphaDetail?.nav_detail?.['nav_change']) }} ({{ formatPct(charliealphaDetail?.nav_detail?.['nav_change_pct']) }})</small></article>
           <article class="kpi-card"><span>1Y / 3Y / 5Y / 10Y CAGR</span><strong>{{ formatPct(snap.return_1y_pct) }}</strong><small>{{ formatPct(snap.return_3y_pct) }} / {{ formatPct(snap.return_5y_pct) }} / {{ formatPct(snap.return_10y_pct) }}</small></article>
           <article class="kpi-card"><span>Volatility / Sharpe / Sortino</span><strong>{{ formatPct(snap.std_dev_pct) }}</strong><small>{{ formatNumber(snap.sharpe, 3) }} / {{ formatNumber(snap.sortino, 3) }}</small></article>
           <article class="kpi-card"><span>Beta / Alpha</span><strong>{{ formatNumber(snap.beta, 3) }}</strong><small>Alpha {{ formatPct(snap.alpha_pct) }}</small></article>

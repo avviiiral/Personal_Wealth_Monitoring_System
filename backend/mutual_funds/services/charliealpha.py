@@ -393,7 +393,7 @@ class CharlieAlphaService:
         )
         return {"run_id": run.id, **self.stats, "schemes": len(schemes), "mapped": mapped, "unmatched": len(unmatched)}
 
-    def _save_nav(self, scheme: AMFIMasterScheme, day: date, nav: Decimal, endpoint: str):
+    def _save_nav(self, scheme: AMFIMasterScheme, day: date, nav: Decimal, endpoint: str, *, update_snapshot: bool = True):
         if nav <= 0:
             self.stats["skipped"] += 1
             return
@@ -403,13 +403,14 @@ class CharlieAlphaService:
             scheme=scheme, date=day, source=NAV_SOURCE, defaults={"nav": nav}
         )
         self.stats["inserted" if created else "updated"] += 1
-        snapshot = self._snapshot(scheme, day)
-        if snapshot is not None:
-            snapshot.nav = nav
-            snapshot.nav_as_of = day
-            snapshot.nav_source = SOURCE
-            self._mark_source(snapshot, "nav", endpoint, day)
-            snapshot.save(update_fields=["nav", "nav_as_of", "nav_source", "field_sources", "updated_at"])
+        if update_snapshot:
+            snapshot = self._snapshot(scheme, day)
+            if snapshot is not None:
+                snapshot.nav = nav
+                snapshot.nav_as_of = day
+                snapshot.nav_source = SOURCE
+                self._mark_source(snapshot, "nav", endpoint, day)
+                snapshot.save(update_fields=["nav", "nav_as_of", "nav_source", "field_sources", "updated_at"])
 
     def sync_navall(self) -> dict:
         payload = self.client.get("mf/lnavall")
@@ -450,7 +451,7 @@ class CharlieAlphaService:
                 self.stats["fetched"] += 1
                 try:
                     with transaction.atomic():
-                        self._save_nav(scheme, day, nav, "mf/hnav/" + code)
+                        self._save_nav(scheme, day, nav, "mf/hnav/" + code, update_snapshot=False)
                 except Exception as exc:
                     self.stats["failed"] += 1
                     self.errors.append({"kind": "nav_history", "code": code, "date": str(day), "error": str(exc)[:250]})

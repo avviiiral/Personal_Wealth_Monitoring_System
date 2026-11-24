@@ -36,6 +36,19 @@ def _resource_records(payload: Any) -> list[dict]:
     if rows:
         return _json_safe(rows)
     if isinstance(payload, dict):
+        # GIFT latest-NAV responses group scalar NAV values under a top-level
+        # "plans" array. Copy parent fund identity/metadata onto each plan row
+        # so normalized records remain independently identifiable.
+        plans = payload.get("plans")
+        if isinstance(plans, list):
+            parent = {key: value for key, value in payload.items() if key != "plans"}
+            plan_rows = []
+            for plan in plans:
+                if isinstance(plan, dict):
+                    plan_rows.append({**parent, **plan})
+            if plan_rows:
+                return _json_safe(plan_rows)
+
         dates = payload.get("dates")
         values = payload.get("nav")
         if isinstance(dates, list) and isinstance(values, list):
@@ -100,7 +113,7 @@ class CharlieAlphaExtendedService:
             row_arrays = (
                 "data", "schemes", "funds", "results", "records", "rows",
                 "items", "holdings", "periods", "benchmarks", "categories",
-                "dates", "nav",
+                "plans", "dates", "nav",
             )
             declares_rows = any(isinstance(safe_payload.get(name), list) for name in row_arrays)
             # Metrics/detail objects count as one resource; explicitly empty

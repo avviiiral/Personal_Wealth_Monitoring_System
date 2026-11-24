@@ -1286,7 +1286,7 @@ class CharlieAlphaService:
             raise ValueError("Select between 2 and 20 mutual-fund scheme codes or ISINs.")
         invalid_codes = [
             code for code in normalized_codes
-            if not (re.fullmatch(r"\\d{6}", code) or re.fullmatch(r"[A-Z]{2}[A-Z0-9]{9}\\d", code))
+            if not (re.fullmatch(r"\d{6}", code) or re.fullmatch(r"[A-Z]{2}[A-Z0-9]{9}\d", code))
         ]
         if invalid_codes:
             raise ValueError("Each comparison identifier must be a six-digit AMFI code or a 12-character ISIN: " + ", ".join(invalid_codes))

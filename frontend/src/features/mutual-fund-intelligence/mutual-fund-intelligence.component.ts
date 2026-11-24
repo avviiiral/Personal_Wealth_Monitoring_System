@@ -981,7 +981,7 @@ export class MutualFundIntelligenceComponent implements OnInit, OnDestroy {
       },
       error: error => {
         this.charliealphaCompareLoading = false;
-        this.charliealphaCompareError = error?.error?.detail ?? 'The provider comparison request failed. Check scheme mappings and provider availability.';
+        this.charliealphaCompareError = error?.error?.detail ?? 'No stored comparison result is available for this fund selection yet. Run the matching sync_charliealpha compare/overlap command first.';
         this.cdr.detectChanges();
       },
     });

@@ -9,7 +9,7 @@ export interface MutualFundIntelligenceResponse {
   next: string | null;
   previous: string | null;
   results: {
-    summary: Record<string, number | string | null>;
+    summary: any;
     filters: { amcs: string[]; categories: string[]; plans: string[]; options: string[] };
     data_sources: Array<{
       domain: string; status: string; completed_at: string | null;
@@ -22,14 +22,14 @@ export interface MutualFundIntelligenceResponse {
 
 export interface MutualFundDetailResponse {
   scheme: { id: number; scheme_code: string; scheme_name: string; amc: string; isin_growth: string | null; isin_idcw: string | null; category: string; plan: string; option: string };
-  snapshot: Record<string, any> | null;
+  snapshot: any | null;
   nav_history: Array<{ date: string; nav: number }>;
   aum_history: Array<{ date: string; aum_cr: number; type: string }>;
   ter_history: Array<{ date: string; direct_pct: number | null; regular_pct: number | null }>;
-  holdings: Array<Record<string, any>>;
+  holdings: any[];
   holdings_report_date: string | null;
   nav_detail: Record<string, any> | null;
-  provider_metrics: Record<string, any> | null;
+  provider_metrics: any;
   holdings_changes: any;
   data_availability: Record<string, boolean | string | null>;
   holdings_periods: any[];

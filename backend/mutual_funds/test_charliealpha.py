@@ -205,3 +205,66 @@ class CharlieAlphaPersistenceTests(TestCase):
         self.assertEqual(observations.count(), 2)
         self.assertEqual(observations.first().normalized_value, Decimal("100"))
         self.assertEqual(observations.first().normalization_base_date, date(2025, 10, 1))
+
+
+    def test_nav_history_persists_daily_rows_without_daily_master_snapshots(self):
+        client = Mock()
+        client.get.return_value = {
+            "dates": ["2026-10-27", "2026-10-28"],
+            "nav": [Decimal("124.5"), Decimal("125.0")],
+        }
+        result = CharlieAlphaService(client=client).sync_nav_history([self.scheme.scheme_code])
+
+        self.assertEqual(result["fetched"], 2)
+        self.assertEqual(
+            AMFIMasterNAV.objects.filter(scheme=self.scheme, source=NAV_SOURCE).count(),
+            2,
+        )
+        self.assertFalse(MFMasterData.objects.filter(scheme=self.scheme).exists())
+
+    def test_historical_holdings_snapshots_preserve_each_provider_report_date(self):
+        client = Mock()
+        client.get.side_effect = [
+            {
+                "periods": [
+                    {"as_of": "2026-09-30", "holdings_count": 1},
+                    {"as_of": "2026-08-31", "holdings_count": 1},
+                ],
+                "scheme_name": self.scheme.scheme_name,
+                "latest_as_of": "2026-09-30",
+            },
+            {
+                "as_of": "2026-09-30",
+                "holdings": [{
+                    "name": "Test Bank Ltd.",
+                    "isin": "INE000T01010",
+                    "weight_pct": "5.25",
+                    "sector": "Banks",
+                }],
+            },
+            {
+                "as_of": "2026-08-31",
+                "holdings": [{
+                    "name": "Test Bank Ltd.",
+                    "isin": "INE000T01010",
+                    "weight_pct": "4.75",
+                    "sector": "Banks",
+                }],
+            },
+        ]
+        service = CharlieAlphaService(client=client)
+        result = service.sync_holdings_history([self.scheme.scheme_code], period_limit=0)
+
+        dates = set(
+            MFMasterHolding.objects.filter(scheme=self.scheme, source=SOURCE)
+            .values_list("portfolio_date", flat=True)
+        )
+        self.assertEqual(result["historical_snapshots_requested"], 2)
+        self.assertEqual(dates, {date(2026, 9, 30), date(2026, 8, 31)})
+        self.assertTrue(
+            MFSourceRun.objects.filter(
+                source=SOURCE,
+                command="holdings_periods",
+                metadata__scope="scheme",
+            ).exists()
+        )

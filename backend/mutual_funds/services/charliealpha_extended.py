@@ -32,7 +32,7 @@ from mutual_funds.services.charliealpha import (
 
 def _resource_records(payload: Any) -> list[dict]:
     """Normalize documented object arrays and compact fields/labels + data tables."""
-    rows = _records(payload, ("schemes", "funds", "results", "records", "rows", "items", "data"))
+    rows = _records(payload, ("sifs", "schemes", "funds", "results", "records", "rows", "items", "data"))
     if rows:
         return _json_safe(rows)
     if isinstance(payload, dict):

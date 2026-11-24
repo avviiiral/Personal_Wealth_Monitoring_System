@@ -411,10 +411,12 @@ class MFSchemeIdentityMap(models.Model):
     SOURCE_TER_NSDL = "AMFI_TER_NSDL"
     SOURCE_RISK_SCHEME_ID = "AMFI_RISK_SCHEME_ID"
     SOURCE_TRACKING_NAME = "AMFI_TRACKING_PARENT"
+    SOURCE_CHARLIEALPHA = "CHARLIEALPHA"
     SOURCE_CHOICES = (
         (SOURCE_TER_NSDL, "AMFI TER NSDL scheme code"),
         (SOURCE_RISK_SCHEME_ID, "AMFI risk-parameter SchemeID"),
         (SOURCE_TRACKING_NAME, "AMFI tracking-error parent scheme"),
+        (SOURCE_CHARLIEALPHA, "CharlieAlpha API scheme identifier"),
     )
     METHOD_PARENT_NAME_EXACT = "AMFI_PARENT_NAME_EXACT"
     METHOD_MANUAL = "MANUAL"

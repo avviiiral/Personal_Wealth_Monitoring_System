@@ -376,11 +376,25 @@ class CharlieAlphaService:
                 self.errors.append({"kind": "ambiguous_isin", "code": code, "isin": isin})
                 return None
         if scheme is None and code:
-            mapped = MFSchemeIdentityMap.objects.filter(
-                source="CHARLIEALPHA", external_id=code, status=MFSchemeIdentityMap.STATUS_ACTIVE
-            ).select_related("scheme").first()
-            if mapped:
-                scheme = mapped.scheme
+            mapped_rows = list(
+                MFSchemeIdentityMap.objects.filter(
+                    source="CHARLIEALPHA",
+                    external_id=code,
+                    status=MFSchemeIdentityMap.STATUS_ACTIVE,
+                ).select_related("scheme")[:2]
+            )
+            mapped_scheme_ids = {row.scheme_id for row in mapped_rows}
+            if len(mapped_scheme_ids) > 1:
+                self.stats["unmatched"] += 1
+                if len(self.errors) < 100:
+                    self.errors.append({
+                        "kind": "ambiguous_provider_identifier",
+                        "code": code,
+                        "mapped_scheme_ids": sorted(mapped_scheme_ids),
+                    })
+                return None
+            if mapped_rows:
+                scheme = mapped_rows[0].scheme
         if scheme is None and name:
             matches = list(AMFIMasterScheme.objects.filter(scheme_name__iexact=name)[:2])
             scheme = matches[0] if len(matches) == 1 else None
@@ -394,6 +408,24 @@ class CharlieAlphaService:
                 self.errors.append({"kind": "unmatched_scheme", "code": code, "isin": isin, "name": name})
             return None
         if code and not self.dry_run:
+            existing_mappings = list(
+                MFSchemeIdentityMap.objects.filter(
+                    source="CHARLIEALPHA", external_id=code
+                ).select_related("scheme")[:10]
+            )
+            conflicting_scheme_ids = sorted({
+                row.scheme_id for row in existing_mappings if row.scheme_id != scheme.id
+            })
+            if conflicting_scheme_ids:
+                self.stats["unmatched"] += 1
+                if len(self.errors) < 100:
+                    self.errors.append({
+                        "kind": "provider_identifier_scheme_conflict",
+                        "code": code,
+                        "resolved_scheme_code": scheme.scheme_code,
+                        "existing_scheme_ids": conflicting_scheme_ids,
+                    })
+                return None
             try:
                 MFSchemeIdentityMap.objects.get_or_create(
                     source="CHARLIEALPHA", external_id=code, scheme=scheme,

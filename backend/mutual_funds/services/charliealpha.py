@@ -550,7 +550,7 @@ class CharlieAlphaService:
 
     def sync_nav_history(self, scheme_codes: list[str]) -> dict:
         for code in scheme_codes:
-            scheme = self._resolve_scheme({"scheme_code": code})
+            scheme = self._resolve_identifier(code)
             if not scheme:
                 continue
             try:
@@ -756,21 +756,35 @@ class CharlieAlphaService:
             dates = payload.get("dates", []) if isinstance(payload, dict) else []
             values = payload.get(domain, []) if isinstance(payload, dict) else []
             if not isinstance(values, list):
-                values = payload.get("values", []) if isinstance(payload, dict) else []
+                aliases = ("values", "ter", "ter_pct") if domain == "ter" else ("values", "aum_cr", "average_aum")
+                values = next((payload.get(alias) for alias in aliases if isinstance(payload.get(alias), list)), []) if isinstance(payload, dict) else []
             rows = _records(payload, ("history", "records", "data"))
             if dates and values:
+                if len(dates) != len(values):
+                    self.stats["failed"] += 1
+                    if len(self.errors) < 100:
+                        self.errors.append({
+                            "kind": domain + "_array_length_mismatch",
+                            "identifier": code,
+                            "dates": len(dates),
+                            "values": len(values),
+                        })
                 observations = list(zip(dates, values))
             else:
+                value_aliases = (domain, "value", "ter", "ter_pct", "aum", "aum_cr", "average_aum")
                 observations = [
-                    (_first(row, "date", "as_of", "as_of_date", "period"), _first(row, domain, "value", "ter", "aum"))
+                    (
+                        _first(row, "date", "as_of", "as_of_date", "period"),
+                        _first(row, *value_aliases),
+                    )
                     for row in rows
                 ]
-            scheme = self._resolve_scheme({"scheme_code": code})
+            scheme = self._resolve_identifier(code)
             if not scheme:
                 continue
             for raw_day, raw_value in observations:
                 day, value = parse_date(raw_day), decimal_value(raw_value)
-                if not day or value is None:
+                if not day or value is None or value < 0:
                     self.stats["skipped"] += 1
                     continue
                 self.stats["fetched"] += 1
@@ -804,7 +818,12 @@ class CharlieAlphaService:
                     snapshot.aum_source = SOURCE
                     self._mark_source(snapshot, "aum", endpoint, day)
                 snapshot.save()
-        run = self._run(domain + "_history", metadata={"schemes_requested": scheme_codes, "history_kind": "dated observations", "source": SOURCE})
+        run = self._run(domain + "_history", metadata={
+            "schemes_requested": scheme_codes,
+            "history_kind": "dated observations",
+            "source": SOURCE,
+            "endpoint_pattern": "mf/" + domain + "/{code}",
+        })
         return {"run_id": run.id, **self.stats}
 
     def sync_ter(self, scheme_codes: list[str], limit: int | None = None) -> dict:
@@ -828,7 +847,7 @@ class CharlieAlphaService:
                 if len(self.errors) < 100:
                     self.errors.append({"kind": "holdings_fetch", "code": code, "report_date": report_date, "error": str(exc)[:250]})
                 continue
-            scheme = self._resolve_scheme({"scheme_code": code})
+            scheme = self._resolve_identifier(code)
             if not scheme:
                 continue
             as_of = parse_date(_first(payload, "as_of", "as_of_date", "report_date") or _find_nested(payload, ("as_of", "as_of_date", "report_date"))) or parse_date(report_date) or timezone.localdate()
@@ -840,13 +859,16 @@ class CharlieAlphaService:
                 name = text_value(_first(row, "security_name", "name", "stock_name", "company", "instrument"))
                 isin = _isin(row)
                 weight = decimal_value(_first(row, "weight_pct", "pct_of_nav", "percentage_of_nav", "weight", "allocation_pct", "percentage"))
+                ticker = text_value(_first(row, "ticker", "symbol", "nse_symbol"))
+                if not name:
+                    name = isin or ticker
                 if not name:
                     self.stats["skipped"] += 1
                     continue
                 normalized.append({
                     "name": name,
                     "isin": isin,
-                    "ticker": text_value(_first(row, "ticker", "symbol", "nse_symbol")),
+                    "ticker": ticker,
                     "weight_pct": weight,
                     "quantity": decimal_value(_first(row, "quantity", "units")),
                     "market_value": decimal_value(_first(row, "market_value", "value")),
@@ -856,6 +878,7 @@ class CharlieAlphaService:
                 })
             if not normalized:
                 self.stats["skipped"] += 1
+                self.stats["failed"] += 1
                 self._run("holdings_unavailable", as_of=as_of, metadata={
                     "scheme_code": scheme.scheme_code,
                     "provider_scheme_code": code,
@@ -870,7 +893,7 @@ class CharlieAlphaService:
             persisted = []
             with transaction.atomic():
                 for row in normalized:
-                    identity = row["isin"] or re.sub(r"[^a-z0-9]", "", row["name"].casefold())
+                    identity = row["isin"] or row["ticker"] or re.sub(r"[^a-z0-9]", "", row["name"].casefold())
                     security_key = "CHARLIEALPHA:" + identity
                     holding, created = MFMasterHolding.objects.update_or_create(
                         scheme=scheme,

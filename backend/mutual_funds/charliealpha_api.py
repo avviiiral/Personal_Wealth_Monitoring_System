@@ -9,7 +9,13 @@ from rest_framework.response import Response
 from rest_framework import status
 
 from mutual_funds.models import AMFIMasterNAV, AMFIMasterScheme
-from mutual_funds.master_models import MFMasterData, MFMasterHolding, MFSourceRun
+from mutual_funds.master_models import (
+    MFMasterData,
+    MFMasterHolding,
+    MFProviderBenchmark,
+    MFProviderBenchmarkObservation,
+    MFSourceRun,
+)
 from mutual_funds.services.charliealpha import CharlieAlphaService, NAV_SOURCE, SOURCE
 
 
@@ -238,28 +244,40 @@ def charliealpha_fund_detail(request, scheme_code: str):
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def charliealpha_benchmarks(request):
+    """Serve the latest provider-normalized series from relational observations."""
     slug = (request.query_params.get("slug") or "").strip()
-    runs = MFSourceRun.objects.filter(source=SOURCE, command="benchmark_history").order_by("-started_at")
+    benchmarks = MFProviderBenchmark.objects.filter(provider="CHARLIEALPHA").order_by("category", "name")
     if slug:
-        runs = runs.filter(metadata__slug=slug)
+        benchmarks = benchmarks.filter(slug=slug)
     results = []
-    seen = set()
-    for run in runs[:100]:
-        row = run.metadata or {}
-        row_slug = row.get("slug")
-        if not row_slug or row_slug in seen:
+    for benchmark in benchmarks[:100]:
+        observations = MFProviderBenchmarkObservation.objects.filter(benchmark=benchmark)
+        base_date = observations.order_by("-fetched_at").values_list("normalization_base_date", flat=True).first()
+        if base_date is None:
             continue
-        seen.add(row_slug)
+        series = list(
+            observations.filter(normalization_base_date=base_date)
+            .order_by("observation_date")
+            .values("observation_date", "normalized_value")
+        )
         results.append({
-            "slug": row_slug,
-            "name": row.get("name"),
-            "category": row.get("category"),
-            "normalization": row.get("normalization"),
-            "series": row.get("series", []),
-            "fetched_at": run.completed_at or run.started_at,
+            "slug": benchmark.slug,
+            "name": benchmark.name,
+            "category": benchmark.category,
+            "normalization": {
+                "is_normalized": True,
+                "method": "REBASED_TO_100",
+                "base_value": "100",
+                "base_date": base_date,
+                "warning": "Provider history is rebased to 100 at the start of the returned range; it is not an absolute official TRI series.",
+            },
+            "series": [
+                {"date": item["observation_date"], "normalized_value": item["normalized_value"]}
+                for item in series
+            ],
+            "fetched_at": benchmark.fetched_at,
         })
     return Response({"count": len(results), "results": results})
-
 
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])

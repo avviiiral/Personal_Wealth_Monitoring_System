@@ -116,6 +116,8 @@ export class MfIntelligenceComponent implements OnInit, OnDestroy {
   private detailRequest?: Subscription;
   private syncPollTimer: ReturnType<typeof setTimeout> | null = null;
   private chartTimer: ReturnType<typeof setTimeout> | null = null;
+  private themeObserver: MutationObserver | null = null;
+  private lastChartThemeIsDark = false;
 
   readonly tabs: Array<{ id: MfTab; label: string }> = [
     { id: 'overview', label: 'Overview' },
@@ -187,11 +189,24 @@ export class MfIntelligenceComponent implements OnInit, OnDestroy {
   syncMessage = '';
 
   ngOnInit(): void {
+    this.lastChartThemeIsDark = this.isDark();
+    if (this.isBrowser && typeof MutationObserver !== 'undefined') {
+      this.themeObserver = new MutationObserver(() => {
+        const isDark = this.isDark();
+        if (isDark === this.lastChartThemeIsDark) return;
+        this.lastChartThemeIsDark = isDark;
+        this.scheduleCharts();
+      });
+      this.themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
+    }
+
     this.loadCategories(true);
     this.refreshSyncStatus(false);
   }
 
   ngOnDestroy(): void {
+    this.themeObserver?.disconnect();
+    this.themeObserver = null;
     this.dashboardRequest?.unsubscribe();
     this.detailRequest?.unsubscribe();
     if (this.syncPollTimer) clearTimeout(this.syncPollTimer);

@@ -486,12 +486,20 @@ class CharlieAlphaService:
             changed = []
             amc = text_value(_first(row, "amc", "amc_name", "fund_house", "fundhouse"))
             category_name = text_value(_first(row, "category", "scheme_category"))
+            plan_name = text_value(_first(row, "plan", "plan_name"))
+            option_name = text_value(_first(row, "option", "option_name"))
             if amc and not scheme.amc_name:
                 scheme.amc_name = amc[:200]
                 changed.append("amc_name")
             if category_name and not scheme.level_3_category:
                 scheme.level_3_category = category_name[:160]
                 changed.append("level_3_category")
+            if plan_name and not scheme.plan:
+                scheme.plan = plan_name[:40]
+                changed.append("plan")
+            if option_name and not scheme.option:
+                scheme.option = option_name[:160]
+                changed.append("option")
             if changed:
                 scheme.save(update_fields=changed + ["updated_at"])
                 self.stats["updated"] += 1
@@ -564,6 +572,15 @@ class CharlieAlphaService:
             navs = payload.get("nav", []) if isinstance(payload, dict) else []
             if not isinstance(dates, list) or not isinstance(navs, list):
                 dates, navs = [], []
+            if len(dates) != len(navs):
+                self.stats["failed"] += 1
+                if len(self.errors) < 100:
+                    self.errors.append({
+                        "kind": "nav_history_array_length_mismatch",
+                        "identifier": code,
+                        "dates": len(dates),
+                        "nav_values": len(navs),
+                    })
             for raw_day, raw_nav in zip(dates, navs):
                 day, nav = parse_date(raw_day), decimal_value(raw_nav)
                 if not day or nav is None:
@@ -627,11 +644,17 @@ class CharlieAlphaService:
         risk_fields = {
             "volatility": "std_dev_pct",
             "standard_deviation": "std_dev_pct",
+            "annualized_volatility": "std_dev_pct",
+            "annualised_volatility": "std_dev_pct",
             "sharpe": "sharpe",
+            "sharpe_ratio": "sharpe",
             "sortino": "sortino",
+            "sortino_ratio": "sortino",
             "beta": "beta",
             "alpha": "alpha_pct",
             "alpha_pct": "alpha_pct",
+            "jensen_alpha": "alpha_pct",
+            "jensen_alpha_pct": "alpha_pct",
             "information_ratio": "information_ratio",
             "max_drawdown": "max_drawdown_pct",
             "max_drawdown_pct": "max_drawdown_pct",
@@ -840,6 +863,7 @@ class CharlieAlphaService:
             params = {"change": "yes"} if include_changes else {}
             if report_date:
                 params["as_of"] = report_date
+            source_endpoint = endpoint + (("?" + urlencode(params)) if params else "")
             try:
                 payload = self.client.get(endpoint, params or None)
             except Exception as exc:
@@ -855,6 +879,7 @@ class CharlieAlphaService:
             self.stats["fetched"] += len(rows)
             normalized = []
             sectors: dict[str, Decimal] = {}
+            asset_weights: dict[str, Decimal] = {}
             for row in rows:
                 name = text_value(_first(row, "security_name", "name", "stock_name", "company", "instrument"))
                 isin = _isin(row)
@@ -875,6 +900,10 @@ class CharlieAlphaService:
                     "asset_type": text_value(_first(row, "asset_type", "instrument_type", "security_type")),
                     "sector": text_value(_first(row, "sector")),
                     "industry": text_value(_first(row, "industry")),
+                    "rating": text_value(_first(row, "rating", "credit_rating", "credit_quality")),
+                    "rating_agency": text_value(_first(row, "rating_agency", "agency")),
+                    "maturity_date": parse_date(_first(row, "maturity_date", "maturity")),
+                    "ytm_pct": decimal_value(_first(row, "ytm_pct", "yield_to_maturity", "ytm")),
                 })
             if not normalized:
                 self.stats["skipped"] += 1
@@ -907,11 +936,15 @@ class CharlieAlphaService:
                             "instrument_type": row["asset_type"][:60] or "OTHER",
                             "sector": row["sector"][:150],
                             "industry": row["industry"][:150],
+                            "rating": row["rating"][:80],
+                            "rating_agency": row["rating_agency"][:80],
+                            "maturity_date": row["maturity_date"],
+                            "ytm_pct": row["ytm_pct"],
                             "quantity": row["quantity"],
                             "market_value": row["market_value"],
                             "pct_of_nav": row["weight_pct"],
-                            "source": SOURCE,
-                            "source_url": BASE_URL + "/" + endpoint,
+                                    "source": SOURCE,
+                            "source_url": source_endpoint,
                             "fetched_at": timezone.now(),
                         },
                     )
@@ -919,6 +952,17 @@ class CharlieAlphaService:
                     persisted.append(holding)
                     if row["sector"] and row["weight_pct"] is not None:
                         sectors[row["sector"]] = sectors.get(row["sector"], Decimal("0")) + row["weight_pct"]
+                    if row["asset_type"] and row["weight_pct"] is not None:
+                        asset_type = row["asset_type"].casefold()
+                        if "equity" in asset_type or "stock" in asset_type:
+                            bucket = "equity"
+                        elif any(token in asset_type for token in ("debt", "bond", "gsec", "treasury")):
+                            bucket = "debt"
+                        elif any(token in asset_type for token in ("cash", "liquid", "money market")):
+                            bucket = "cash"
+                        else:
+                            bucket = "others"
+                        asset_weights[bucket] = asset_weights.get(bucket, Decimal("0")) + row["weight_pct"]
                 snapshot = self._snapshot(scheme, as_of)
                 if snapshot is not None:
                     top = sorted(normalized, key=lambda item: item["weight_pct"] or Decimal("-1"), reverse=True)[:10]
@@ -927,6 +971,10 @@ class CharlieAlphaService:
                         for item in top
                     ]
                     snapshot.sector_allocation = {name: str(value) for name, value in sectors.items()}
+                    snapshot.equity_pct = asset_weights.get("equity")
+                    snapshot.debt_pct = asset_weights.get("debt")
+                    snapshot.cash_pct = asset_weights.get("cash")
+                    snapshot.others_pct = asset_weights.get("others")
                     snapshot.holdings_as_of = as_of
                     snapshot.holdings_source = SOURCE
                     self._mark_source(snapshot, "holdings", endpoint, as_of)
@@ -944,7 +992,8 @@ class CharlieAlphaService:
                     "holdings_count": len(normalized),
                     "total_weight_pct": total_weight,
                     "quality_flags": ["WEIGHT_COVERAGE_INCOMPLETE"] if any(item["weight_pct"] is None for item in normalized) else [],
-                    "source_url": BASE_URL + "/" + endpoint,
+                    "asset_allocation": {name: value for name, value in asset_weights.items()},
+                    "source_url": source_endpoint,
                 }
                 if ext:
                     for field, value in values.items():
@@ -961,6 +1010,9 @@ class CharlieAlphaService:
                 "report_date": as_of.isoformat(),
                 "holdings_count": len(normalized),
                 "provider_changes": change_data,
+                "source_endpoint": source_endpoint,
+                "asset_allocation": {name: str(value) for name, value in asset_weights.items()},
+                "weight_coverage_pct": str(sum((item["weight_pct"] or Decimal("0") for item in normalized), Decimal("0"))),
             })
         return dict(self.stats)
 

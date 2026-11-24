@@ -275,7 +275,8 @@
         <div class="provider-date-filter">
           <label>From <input type="date" [(ngModel)]="charliealphaFromDate"></label><label>To <input type="date" [(ngModel)]="charliealphaToDate"></label>
           <button type="button" class="provider-secondary" (click)="applyCharlieAlphaDateRange()">Apply NAV dates</button>
-          <span *ngIf="charliealphaDetail?.holdings_report_date">Holdings report: {{ formatDate(charliealphaDetail?.holdings_report_date || undefined) }}</span>
+          <label class="holding-period-picker" *ngIf="charliealphaDetail?.holdings_periods?.length">Holdings report <select [ngModel]="charliealphaHoldingDate || charliealphaDetail?.holdings_report_date" (ngModelChange)="selectCharlieAlphaHoldingDate($event)"><option *ngFor="let period of charliealphaDetail?.holdings_periods" [value]="getCharlieAlphaPeriodDate(period)">{{ formatDate(getCharlieAlphaPeriodDate(period)) }} <ng-container *ngIf="period?.holdings_count">({{ period.holdings_count }} holdings)</ng-container></option></select></label>
+          <span *ngIf="!charliealphaDetail?.holdings_periods?.length && charliealphaDetail?.holdings_report_date">Holdings report: {{ formatDate(charliealphaDetail?.holdings_report_date || undefined) }}</span>
         </div>
         <div class="error-message" *ngIf="charliealphaDetailError">{{ charliealphaDetailError }}</div>
         <div class="data-footnote" *ngIf="charliealphaDetailLoading">Loading scheme detail from stored PWMS records…</div>
@@ -308,6 +309,19 @@
           </tbody></table></div>
           <p class="method-note" *ngIf="charliealphaDetail?.holdings_changes">Provider holdings-change summary: {{ charliealphaDetail?.holdings_changes | json }}</p>
         </div>
+      </article>
+
+
+      <article class="chart-card provider-exposure-card">
+        <div class="chart-title"><div><span>09</span><h3>Stock exposure across funds</h3></div><small>Latest stored holdings disclosures</small></div>
+        <div class="exposure-search">
+          <label for="ca-exposure-identifier">Security identifier</label>
+          <input id="ca-exposure-identifier" type="text" [(ngModel)]="charliealphaExposureIdentifier" (keyup.enter)="loadCharlieAlphaExposure()" placeholder="Stock ISIN, NSE symbol or BSE scrip code">
+          <button type="button" class="provider-apply" (click)="loadCharlieAlphaExposure()" [disabled]="charliealphaExposureLoading">{{ charliealphaExposureLoading ? 'Loading…' : 'Find fund exposure' }}</button>
+        </div>
+        <div class="error-message" *ngIf="charliealphaExposureError">{{ charliealphaExposureError }}</div>
+        <pre class="provider-result" *ngIf="charliealphaExposureResult">{{ charliealphaExposureResult | json }}</pre>
+        <p class="method-note">Exposure results are read from the database-backed CharlieAlpha ingestion audit. Run <code>sync_charliealpha --domain exposure --identifier SYMBOL</code> to refresh a security before querying it here.</p>
       </article>
 
       <article class="chart-card benchmark-card">

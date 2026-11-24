@@ -64,6 +64,7 @@ _SNAPSHOT_GROUP_FIELDS = {
         "rolling_3y_cagr_min_pct", "rolling_3y_cagr_max_pct",
         "rolling_3y_cagr_observations", "std_dev_pct", "sharpe", "sortino",
         "beta", "alpha_pct", "information_ratio", "max_drawdown_pct",
+        "risk_free_rate_used_pct", "ratio_window_years",
         "upside_capture_pct", "downside_capture_pct", "tracking_error_pct",
     ),
     "ter": ("ter_direct_pct", "ter_regular_pct", "ter_as_of", "ter_source"),
@@ -401,9 +402,11 @@ def charliealpha_category_metrics(request, slug: str):
     runs = MFSourceRun.objects.filter(
         source=SOURCE, command="category_metrics", metadata__category_slug=slug
     ).order_by("-started_at")
-    if horizon:
-        runs = runs.filter(metadata__horizon=horizon)
-    run = runs.first()
+    run = runs.filter(metadata__horizon=horizon).first() if horizon else runs.first()
+    # A no-horizon ingestion stores all available horizons in one response.
+    # Reuse it when a caller asks for one horizon but no horizon-filtered run exists.
+    if run is None and horizon:
+        run = runs.filter(metadata__horizon__isnull=True).first()
     if not run:
         return Response({"detail": "Category metrics have not been ingested for this category and horizon.", "slug": slug, "horizon": horizon or None}, status=status.HTTP_404_NOT_FOUND)
     metadata = run.metadata or {}
@@ -464,6 +467,16 @@ def charliealpha_compare(request):
 def charliealpha_holdings_periods(request, scheme_code: str | None = None):
     """Read global or scheme-level disclosure periods persisted during ingestion."""
     if scheme_code:
+        requested_identifier = str(scheme_code).strip()
+        resolved_scheme = AMFIMasterScheme.objects.filter(
+            scheme_code=requested_identifier
+        ).first()
+        if resolved_scheme is None and len(requested_identifier) == 12:
+            resolved_scheme = AMFIMasterScheme.objects.filter(
+                Q(isin_growth__iexact=requested_identifier)
+                | Q(isin_dividend__iexact=requested_identifier)
+            ).first()
+        canonical_code = resolved_scheme.scheme_code if resolved_scheme else requested_identifier
         runs = MFSourceRun.objects.filter(
             source=SOURCE, command="holdings_periods"
         ).order_by("-started_at")[:100]
@@ -473,7 +486,8 @@ def charliealpha_holdings_periods(request, scheme_code: str | None = None):
                 continue
             match = next((
                 row for row in metadata.get("schemes", [])
-                if str(row.get("scheme_code")) == str(scheme_code)
+                if str(row.get("scheme_code")) == canonical_code
+                or str(row.get("provider_identifier", "")).casefold() == requested_identifier.casefold()
             ), None)
             if match is not None:
                 return Response(match)
@@ -513,6 +527,10 @@ def charliealpha_security_exposure(request, identifier: str):
         return Response({"detail": "min_pct must be a non-negative number."}, status=status.HTTP_400_BAD_REQUEST)
     for run in runs:
         metadata = run.metadata or {}
+        if run.status not in (MFSourceRun.Status.SUCCESS, MFSourceRun.Status.PARTIAL):
+            continue
+        if "provider_result" not in metadata:
+            continue
         if str(metadata.get("identifier", "")).casefold() != identifier.casefold():
             continue
         stored_min_pct = decimal_value(metadata.get("min_pct")) if metadata.get("min_pct") not in (None, "") else None

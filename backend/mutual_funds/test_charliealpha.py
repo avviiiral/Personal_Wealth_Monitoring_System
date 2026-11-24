@@ -354,6 +354,59 @@ class CharlieAlphaPersistenceTests(TestCase):
             "provider_identifier_scheme_conflict",
         )
 
+    def test_supported_valuation_duration_and_credit_metrics_map_without_correlation_to_r_squared(self):
+        client = Mock()
+        client.get.return_value = {
+            "scheme_code": self.scheme.scheme_code,
+            "inception_date": "2018-04-12",
+            "metrics": {
+                "3y": {
+                    "trailing_cagr": "14.5",
+                    "treynor_ratio": "0.92",
+                    "risk_free_rate": "6.75",
+                    "ratio_window_years": "3",
+                    "pe": "25.4",
+                    "pb": "3.2",
+                    "dividend_yield": "1.15",
+                    "turnover_ratio": "0.38",
+                    "large_cap_pct": "72.5",
+                    "mid_cap_pct": "18.5",
+                    "small_cap_pct": "9.0",
+                    "ytm": "7.1",
+                    "modified_duration": "4.25",
+                    "macaulay_duration": "4.5",
+                    "average_maturity": "5.2",
+                    "credit_rating_split": {"AAA": "62.5", "AA": "37.5"},
+                    "correlation": "0.87",
+                }
+            },
+        }
+
+        CharlieAlphaService(client=client).sync_metrics([self.scheme.scheme_code])
+
+        snapshot = MFMasterData.objects.get(scheme=self.scheme)
+        self.assertEqual(snapshot.treynor, Decimal("0.92"))
+        self.assertEqual(snapshot.risk_free_rate_used_pct, Decimal("6.75"))
+        self.assertEqual(snapshot.ratio_window_years, Decimal("3"))
+        self.assertEqual(snapshot.pe, Decimal("25.4"))
+        self.assertEqual(snapshot.pb, Decimal("3.2"))
+        self.assertEqual(snapshot.dividend_yield_pct, Decimal("1.15"))
+        self.assertEqual(snapshot.turnover_ratio, Decimal("0.38"))
+        self.assertEqual(snapshot.large_cap_pct, Decimal("72.5"))
+        self.assertEqual(snapshot.modified_duration, Decimal("4.25"))
+        self.assertEqual(snapshot.macaulay_duration, Decimal("4.5"))
+        self.assertEqual(snapshot.average_maturity, Decimal("5.2"))
+        self.assertEqual(snapshot.credit_rating_split["AAA"], "62.5")
+        self.assertEqual(snapshot.inception_date, date(2018, 4, 12))
+        self.assertIsNone(snapshot.r_squared)
+
+        run = MFSourceRun.objects.get(
+            source=SOURCE,
+            command="metrics",
+            metadata__scheme_code=self.scheme.scheme_code,
+        )
+        self.assertEqual(run.metadata["provider_response"]["metrics"]["3y"]["correlation"], "0.87")
+
     def test_scheme_metrics_request_isin_is_used_when_provider_response_has_internal_code(self):
         client = Mock()
         client.get.return_value = {

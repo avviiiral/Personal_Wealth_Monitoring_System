@@ -338,3 +338,77 @@ def charliealpha_compare(request):
         "report_date_warning": metadata.get("report_date_warning"),
         "fetched_at": run.completed_at or run.started_at,
     })
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def charliealpha_holdings_periods(request, scheme_code: str | None = None):
+    """Read global or scheme-level disclosure periods persisted during ingestion."""
+    if scheme_code:
+        runs = MFSourceRun.objects.filter(
+            source=SOURCE, command="holdings_periods"
+        ).order_by("-started_at")[:100]
+        for run in runs:
+            metadata = run.metadata or {}
+            if metadata.get("scope") != "scheme":
+                continue
+            match = next((
+                row for row in metadata.get("schemes", [])
+                if str(row.get("scheme_code")) == str(scheme_code)
+            ), None)
+            if match is not None:
+                return Response(match)
+        return Response(
+            {
+                "detail": "Holdings disclosure periods have not been ingested for this scheme.",
+                "scheme_code": scheme_code,
+            },
+            status=status.HTTP_404_NOT_FOUND,
+        )
+
+    run = MFSourceRun.objects.filter(
+        source=SOURCE,
+        command="holdings_periods",
+        metadata__scope="global",
+    ).order_by("-started_at").first()
+    if run is None:
+        return Response(
+            {"detail": "Global holdings disclosure periods have not been ingested."},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+    return Response(run.metadata or {})
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def charliealpha_security_exposure(request, identifier: str):
+    """Read the most recently ingested provider exposure response for a security."""
+    runs = MFSourceRun.objects.filter(
+        source=SOURCE,
+        command="fund_exposure",
+    ).order_by("-started_at")[:500]
+    selected = None
+    requested_min_pct = (request.query_params.get("min_pct") or "").strip()
+    for run in runs:
+        metadata = run.metadata or {}
+        if str(metadata.get("identifier", "")).casefold() != identifier.casefold():
+            continue
+        if requested_min_pct and str(metadata.get("min_pct") or "") != requested_min_pct:
+            continue
+        selected = run
+        break
+    if selected is None:
+        return Response(
+            {
+                "detail": "No stored exposure result for this security. "
+                          "Run the exposure synchronization command first."
+            },
+            status=status.HTTP_404_NOT_FOUND,
+        )
+    metadata = selected.metadata or {}
+    return Response({
+        "identifier": identifier,
+        "min_pct": metadata.get("min_pct"),
+        "result": metadata.get("provider_result"),
+        "fetched_at": selected.completed_at or selected.started_at,
+    })

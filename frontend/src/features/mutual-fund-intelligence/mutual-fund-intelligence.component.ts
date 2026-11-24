@@ -5,6 +5,7 @@ import { FormsModule } from '@angular/forms';
 import { Chart, registerables } from 'chart.js';
 import { Subscription } from 'rxjs';
 import { environment } from '../../environments/environment';
+import { MutualFundDetailResponse, MutualFundIntelligenceApiService, MutualFundIntelligenceResponse } from '../../core/services/mutual-fund-intelligence-api.service';
 
 Chart.register(...registerables);
 
@@ -102,7 +103,7 @@ interface AnalyticsSummary {
   message?: string;
 }
 
-type DashboardTab = 'overview' | 'fund' | 'rankings' | 'performance' | 'calendar' | 'portfolio' | 'positioning' | 'universe' | 'attribution';
+type DashboardTab = 'overview' | 'fund' | 'rankings' | 'performance' | 'calendar' | 'portfolio' | 'positioning' | 'universe' | 'attribution' | 'charliealpha';
 
 @Component({
   selector: 'app-mutual-fund-intelligence',
@@ -115,6 +116,7 @@ export class MutualFundIntelligenceComponent implements OnInit, OnDestroy {
   private readonly http = inject(HttpClient);
   private readonly cdr = inject(ChangeDetectorRef);
   private readonly endpoint = `${environment.apiUrl}/api/mutual-fund-analytics/sebi`;
+  private readonly charliealphaApi = inject(MutualFundIntelligenceApiService);
 
   categories: string[] = [];
   allFunds: FundOption[] = [];
@@ -147,6 +149,7 @@ export class MutualFundIntelligenceComponent implements OnInit, OnDestroy {
     { id: 'positioning', label: 'Category Positioning' },
     { id: 'universe', label: 'Universe Table' },
     { id: 'attribution', label: 'Attribution' },
+    { id: 'charliealpha', label: 'CharlieAlpha Intelligence' },
   ];
 
   private rankingsSubscription?: Subscription;
@@ -155,6 +158,35 @@ export class MutualFundIntelligenceComponent implements OnInit, OnDestroy {
   private distributionSubscription?: Subscription;
   private aaumSubscription?: Subscription;
   private charts: Chart[] = [];
+  private charliealphaOverviewSubscription?: Subscription;
+  private charliealphaFundSubscription?: Subscription;
+  private charliealphaCompareSubscription?: Subscription;
+  charliealphaLoading = false;
+  charliealphaDetailLoading = false;
+  charliealphaCompareLoading = false;
+  charliealphaError = '';
+  charliealphaDetailError = '';
+  charliealphaCompareError = '';
+  charliealphaOverview: MutualFundIntelligenceResponse['results'] | null = null;
+  charliealphaFunds: Array<Record<string, any>> = [];
+  charliealphaAmcs: string[] = [];
+  charliealphaCategories: string[] = [];
+  charliealphaPlans: string[] = [];
+  charliealphaOptions: string[] = [];
+  charliealphaSearch = '';
+  charliealphaAmc = '';
+  charliealphaCategory = '';
+  charliealphaPlan = '';
+  charliealphaOption = '';
+  charliealphaSelectedCode = '';
+  charliealphaDetail: MutualFundDetailResponse | null = null;
+  charliealphaCompareCodes: string[] = [];
+  charliealphaCompareResult: any = null;
+  charliealphaBenchmarks: any[] = [];
+  charliealphaBenchmarkSlug = '';
+  charliealphaBenchmark: any = null;
+  charliealphaFromDate = '';
+  charliealphaToDate = '';
 
   ngOnInit(): void {
     this.loadSummary();
@@ -168,6 +200,9 @@ export class MutualFundIntelligenceComponent implements OnInit, OnDestroy {
     this.categorySubscription?.unsubscribe();
     this.distributionSubscription?.unsubscribe();
     this.aaumSubscription?.unsubscribe();
+    this.charliealphaOverviewSubscription?.unsubscribe();
+    this.charliealphaFundSubscription?.unsubscribe();
+    this.charliealphaCompareSubscription?.unsubscribe();
   }
 
   get selectedCategoryFunds(): number {
@@ -399,6 +434,10 @@ export class MutualFundIntelligenceComponent implements OnInit, OnDestroy {
   selectTab(tab: DashboardTab): void {
     this.activeTab = tab;
     this.cdr.detectChanges();
+    if (tab === 'charliealpha') {
+      this.loadCharlieAlphaOverview();
+      this.loadCharlieAlphaBenchmarks();
+    }
     this.refreshCharts();
   }
 
@@ -535,6 +574,7 @@ export class MutualFundIntelligenceComponent implements OnInit, OnDestroy {
       if (this.activeTab === 'calendar') this.renderCalendarChart();
       if (this.activeTab === 'portfolio') this.renderPortfolioChart();
       if (this.activeTab === 'positioning') this.renderPositioningChart();
+      if (this.activeTab === 'charliealpha') this.renderCharlieAlphaCharts();
     }, 0);
   }
 
@@ -747,4 +787,195 @@ export class MutualFundIntelligenceComponent implements OnInit, OnDestroy {
     const canvas = document.getElementById('positioning-chart') as HTMLCanvasElement | null;
     if (canvas) this.renderScatter(canvas);
   }
+
+  loadCharlieAlphaOverview(): void {
+    this.charliealphaLoading = true;
+    this.charliealphaError = '';
+    const filters = {
+      q: this.charliealphaSearch.trim(),
+      amc: this.charliealphaAmc,
+      category: this.charliealphaCategory,
+      plan: this.charliealphaPlan,
+      option: this.charliealphaOption,
+      page_size: 100,
+    };
+    this.charliealphaOverviewSubscription?.unsubscribe();
+    this.charliealphaOverviewSubscription = this.charliealphaApi.getOverview(filters).subscribe({
+      next: response => {
+        this.charliealphaOverview = response.results ?? null;
+        this.charliealphaFunds = response.results?.results ?? [];
+        this.charliealphaAmcs = response.results?.filters?.amcs ?? [];
+        this.charliealphaCategories = response.results?.filters?.categories ?? [];
+        this.charliealphaPlans = response.results?.filters?.plans ?? [];
+        this.charliealphaOptions = response.results?.filters?.options ?? [];
+        if (this.charliealphaSelectedCode && !this.charliealphaFunds.some(row => row.scheme_code === this.charliealphaSelectedCode)) {
+          this.charliealphaSelectedCode = '';
+          this.charliealphaDetail = null;
+        }
+        if (!this.charliealphaSelectedCode && this.charliealphaFunds.length) {
+          this.charliealphaSelectedCode = String(this.charliealphaFunds[0].scheme_code ?? '');
+        }
+        this.charliealphaLoading = false;
+        this.cdr.detectChanges();
+        if (this.charliealphaSelectedCode) this.loadCharlieAlphaFund(this.charliealphaSelectedCode);
+        this.refreshCharts();
+      },
+      error: error => {
+        this.charliealphaLoading = false;
+        this.charliealphaError = error?.status === 401
+          ? 'Sign in again to access stored CharlieAlpha intelligence.'
+          : 'CharlieAlpha data is not available from the PWMS database yet. Run the synchronization command, then retry.';
+        this.cdr.detectChanges();
+      },
+    });
+  }
+
+  loadCharlieAlphaFund(code: string): void {
+    if (!code) return;
+    this.charliealphaSelectedCode = code;
+    this.charliealphaDetailLoading = true;
+    this.charliealphaDetailError = '';
+    this.charliealphaFundSubscription?.unsubscribe();
+    this.charliealphaFundSubscription = this.charliealphaApi.getFund(code, {
+      navLimit: 3000,
+      fromDate: this.charliealphaFromDate || undefined,
+      toDate: this.charliealphaToDate || undefined,
+    }).subscribe({
+      next: detail => {
+        this.charliealphaDetail = detail;
+        this.charliealphaDetailLoading = false;
+        this.cdr.detectChanges();
+        this.refreshCharts();
+      },
+      error: error => {
+        this.charliealphaDetail = null;
+        this.charliealphaDetailLoading = false;
+        this.charliealphaDetailError = error?.status === 404
+          ? 'No CharlieAlpha-linked scheme detail was found for this scheme code.'
+          : 'Unable to load the selected scheme from stored CharlieAlpha data.';
+        this.cdr.detectChanges();
+      },
+    });
+  }
+
+  loadCharlieAlphaBenchmarks(): void {
+    this.charliealphaApi.getBenchmarks().subscribe({
+      next: response => {
+        this.charliealphaBenchmarks = response.results ?? [];
+        if (!this.charliealphaBenchmarkSlug && this.charliealphaBenchmarks.length) {
+          this.charliealphaBenchmarkSlug = String(this.charliealphaBenchmarks[0].slug ?? '');
+        }
+        if (this.charliealphaBenchmarkSlug) this.selectCharlieAlphaBenchmark(this.charliealphaBenchmarkSlug);
+      },
+      error: () => {
+        this.charliealphaBenchmarks = [];
+      },
+    });
+  }
+
+  selectCharlieAlphaBenchmark(slug: string): void {
+    if (!slug) return;
+    this.charliealphaBenchmarkSlug = slug;
+    this.charliealphaApi.getBenchmarks(slug).subscribe({
+      next: response => {
+        this.charliealphaBenchmark = response.results?.[0] ?? null;
+        this.cdr.detectChanges();
+        this.refreshCharts();
+      },
+      error: () => {
+        this.charliealphaBenchmark = null;
+        this.cdr.detectChanges();
+      },
+    });
+  }
+
+  toggleCharlieAlphaCompare(code: string): void {
+    if (this.charliealphaCompareCodes.includes(code)) {
+      this.charliealphaCompareCodes = this.charliealphaCompareCodes.filter(item => item !== code);
+    } else if (this.charliealphaCompareCodes.length < 20) {
+      this.charliealphaCompareCodes = [...this.charliealphaCompareCodes, code];
+    } else {
+      this.charliealphaCompareError = 'The provider accepts a maximum of 20 schemes per comparison.';
+    }
+    this.charliealphaCompareResult = null;
+  }
+
+  isCharlieAlphaCompared(code: string): boolean {
+    return this.charliealphaCompareCodes.includes(code);
+  }
+
+  runCharlieAlphaCompare(overlapOnly = false): void {
+    if (this.charliealphaCompareCodes.length < 2) {
+      this.charliealphaCompareError = 'Select at least two funds in the universe table.';
+      return;
+    }
+    this.charliealphaCompareLoading = true;
+    this.charliealphaCompareError = '';
+    this.charliealphaCompareResult = null;
+    this.charliealphaCompareSubscription?.unsubscribe();
+    this.charliealphaCompareSubscription = this.charliealphaApi.compare(this.charliealphaCompareCodes, overlapOnly).subscribe({
+      next: response => {
+        this.charliealphaCompareResult = response.result ?? response;
+        this.charliealphaCompareLoading = false;
+        this.cdr.detectChanges();
+      },
+      error: error => {
+        this.charliealphaCompareLoading = false;
+        this.charliealphaCompareError = error?.error?.detail ?? 'The provider comparison request failed. Check scheme mappings and provider availability.';
+        this.cdr.detectChanges();
+      },
+    });
+  }
+
+  applyCharlieAlphaDateRange(): void {
+    if (this.charliealphaSelectedCode) this.loadCharlieAlphaFund(this.charliealphaSelectedCode);
+  }
+
+  private renderCharlieAlphaCharts(): void {
+    const returnsCanvas = document.getElementById('charliealpha-returns-chart') as HTMLCanvasElement | null;
+    const returnRows = this.charliealphaFunds
+      .filter(row => row.return_1y_pct !== null && row.return_1y_pct !== undefined)
+      .sort((a, b) => Number(b.return_1y_pct) - Number(a.return_1y_pct))
+      .slice(0, 15);
+    if (returnsCanvas && returnRows.length) {
+      const chart = new Chart(returnsCanvas, {
+        type: 'bar',
+        data: {
+          labels: returnRows.map(row => row.scheme_name ?? row.scheme_code),
+          datasets: [{ label: '1Y trailing CAGR (%)', data: returnRows.map(row => Number(row.return_1y_pct)), backgroundColor: '#FD7740' }],
+        },
+        options: { ...this.chartOptions(), indexAxis: 'y' },
+      });
+      this.charts.push(chart);
+    }
+
+    const navCanvas = document.getElementById('charliealpha-nav-chart') as HTMLCanvasElement | null;
+    const navRows = this.charliealphaDetail?.nav_history ?? [];
+    if (navCanvas && navRows.length) {
+      const chart = new Chart(navCanvas, {
+        type: 'line',
+        data: {
+          labels: navRows.map(row => row.date),
+          datasets: [{ label: 'CharlieAlpha NAV (₹)', data: navRows.map(row => Number(row.nav)), borderColor: '#315b83', pointRadius: 0, fill: false, tension: 0.15 }],
+        },
+        options: { ...this.chartOptions(), scales: { ...this.chartOptions().scales, y: { ...this.chartOptions().scales.y, title: { display: true, text: 'NAV (₹)' } } } },
+      });
+      this.charts.push(chart);
+    }
+
+    const benchmarkCanvas = document.getElementById('charliealpha-benchmark-chart') as HTMLCanvasElement | null;
+    const benchmarkSeries = this.charliealphaBenchmark?.series ?? [];
+    if (benchmarkCanvas && benchmarkSeries.length) {
+      const chart = new Chart(benchmarkCanvas, {
+        type: 'line',
+        data: {
+          labels: benchmarkSeries.map((row: any) => row.date),
+          datasets: [{ label: (this.charliealphaBenchmark.name ?? this.charliealphaBenchmark.slug) + ' — provider normalized', data: benchmarkSeries.map((row: any) => Number(row.normalized_value)), borderColor: '#CC9F53', pointRadius: 0, tension: 0.15 }],
+        },
+        options: { ...this.chartOptions(), scales: { ...this.chartOptions().scales, y: { ...this.chartOptions().scales.y, title: { display: true, text: 'Normalized provider value (base 100)' } } } },
+      });
+      this.charts.push(chart);
+    }
+  }
+
 }

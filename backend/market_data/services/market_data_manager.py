@@ -1,3 +1,4 @@
+import logging
 from datetime import timedelta
 
 from django.utils import timezone
@@ -36,6 +37,9 @@ from mutual_funds.models import (
     MutualFundScheme,
 )
 from mutual_funds.services.amfi import AMFIService
+
+logger = logging.getLogger(__name__)
+
 
 class MarketDataManager:
     """
@@ -127,6 +131,25 @@ class MarketDataManager:
         # precedence in SecurityResolver and may be user-maintained.
         cleaned_symbol = SecurityResolver.clean_symbol(yahoo_symbol)
         existing_symbol = SecurityResolver.clean_symbol(asset.symbol)
+
+        # Persist the resolved ISIN -> Yahoo symbol mapping for subsequent
+        # refreshes. A workbook failure must not interrupt price retrieval.
+        if cleaned_symbol and asset.isin:
+            try:
+                from market_data.services.security_master_generator import (
+                    SecurityMasterGenerator,
+                )
+                SecurityMasterGenerator.persist_resolved_symbol(
+                    isin=asset.isin,
+                    security_name=asset.name,
+                    yahoo_symbol=cleaned_symbol,
+                )
+            except Exception:
+                logger.exception(
+                    "Unable to persist Yahoo symbol %s for %s (ISIN %s) "
+                    "to Security Master.",
+                    cleaned_symbol, asset.name, asset.isin,
+                )
         if cleaned_symbol and not existing_symbol:
             Asset.objects.filter(
                 pk=asset.pk,

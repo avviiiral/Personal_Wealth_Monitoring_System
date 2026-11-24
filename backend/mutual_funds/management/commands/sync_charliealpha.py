@@ -14,7 +14,7 @@ class Command(BaseCommand):
     def add_arguments(self, parser):
         parser.add_argument(
             "--domain",
-            choices=("schemes", "search", "nav", "nav-history", "metrics", "ter", "aum", "holdings", "holdings-periods", "holdings-history", "exposure", "benchmarks", "compare", "overlap", "all"),
+            choices=("schemes", "search", "nav", "nav-detail", "nav-history", "metrics", "ter", "aum", "holdings", "holdings-periods", "holdings-history", "exposure", "benchmarks", "compare", "overlap", "all"),
             default="all",
             help="Data domain to synchronize (default: all).",
         )
@@ -70,6 +70,12 @@ class Command(BaseCommand):
 
         if domain in {"nav", "all"}:
             result["nav"] = service.sync_navall()
+
+        if domain == "nav-detail" or (domain == "all" and codes):
+            detail_codes = codes or self._linked_scheme_codes(category)
+            if limit:
+                detail_codes = detail_codes[:limit]
+            result["nav_detail"] = service.sync_latest_nav_details(detail_codes)
 
         if domain == "nav-history" or (domain == "all" and options["include_nav_history"]):
             history_codes = codes or self._linked_scheme_codes(category)

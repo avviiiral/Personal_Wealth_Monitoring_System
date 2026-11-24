@@ -2,7 +2,8 @@
 from django.core.management.base import BaseCommand, CommandError
 
 from mutual_funds.models import AMFIMasterScheme, MFSchemeIdentityMap
-from mutual_funds.services.charliealpha import CharlieAlphaService
+from mutual_funds.master_models import MFSourceRun
+from mutual_funds.services.charliealpha import CharlieAlphaService, SOURCE
 
 
 class Command(BaseCommand):
@@ -66,12 +67,14 @@ class Command(BaseCommand):
 
         service = CharlieAlphaService(dry_run=options["dry_run"])
         result = {}
+        directory_codes: list[str] = []
 
         if domain == "categories":
             result["categories"] = service.sync_categories()
 
         if domain in {"schemes", "all"}:
             result["schemes"] = service.sync_schemes(category=category)
+            directory_codes = result["schemes"].get("linked_scheme_codes", [])
 
         if domain == "search":
             if not options["search_query"].strip():
@@ -82,13 +85,13 @@ class Command(BaseCommand):
             result["nav"] = service.sync_navall()
 
         if domain == "nav-detail" or (domain == "all" and codes):
-            detail_codes = codes or self._linked_scheme_codes(category)
+            detail_codes = codes or directory_codes or self._linked_scheme_codes(category)
             if limit:
                 detail_codes = detail_codes[:limit]
             result["nav_detail"] = service.sync_latest_nav_details(detail_codes)
 
         if domain == "nav-history" or (domain == "all" and options["include_nav_history"]):
-            history_codes = codes or self._linked_scheme_codes(category)
+            history_codes = codes or directory_codes or self._linked_scheme_codes(category)
             if limit:
                 history_codes = history_codes[:limit]
             if not history_codes:
@@ -109,7 +112,7 @@ class Command(BaseCommand):
             )
 
         if domain in {"ter", "aum", "holdings", "all"}:
-            selected_codes = codes or self._linked_scheme_codes(category)
+            selected_codes = codes or directory_codes or self._linked_scheme_codes(category)
             if limit:
                 selected_codes = selected_codes[:limit]
             if not selected_codes:
@@ -186,11 +189,27 @@ class Command(BaseCommand):
 
     @staticmethod
     def _linked_scheme_codes(category: str = "") -> list[str]:
+        if category:
+            runs = MFSourceRun.objects.filter(
+                source=SOURCE,
+                command="schemes",
+                status__in=(MFSourceRun.Status.SUCCESS, MFSourceRun.Status.PARTIAL),
+            ).order_by("-started_at")[:100]
+            for run in runs:
+                metadata = run.metadata or {}
+                if metadata.get("category_slug") == category:
+                    codes = metadata.get("linked_scheme_codes", [])
+                    return list(
+                        AMFIMasterScheme.objects.filter(
+                            is_active=True,
+                            scheme_code__in=codes,
+                        ).order_by("scheme_code").values_list("scheme_code", flat=True)
+                    )
+            return []
+
         queryset = AMFIMasterScheme.objects.filter(
             is_active=True,
             identity_maps__source="CHARLIEALPHA",
             identity_maps__status=MFSchemeIdentityMap.STATUS_ACTIVE,
         )
-        if category:
-            queryset = queryset.filter(level_3_category__icontains=category)
         return list(queryset.order_by("scheme_code").values_list("scheme_code", flat=True).distinct())

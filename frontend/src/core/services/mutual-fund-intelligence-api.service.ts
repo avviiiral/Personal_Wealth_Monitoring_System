@@ -31,6 +31,7 @@ export interface MutualFundDetailResponse {
   provider_metrics: Record<string, any> | null;
   holdings_changes: any;
   data_availability: Record<string, boolean | string | null>;
+  holdings_periods: Array<string | { date?: string; as_of?: string; report_date?: string; holdings_count?: number }>;
 }
 
 @Injectable({ providedIn: 'root' })
@@ -46,10 +47,11 @@ export class MutualFundIntelligenceApiService {
     return this.http.get<MutualFundIntelligenceResponse>(this.baseUrl + '/overview/', { params, withCredentials: true });
   }
 
-  getFund(schemeCode: string, options: { navLimit?: number; fromDate?: string; toDate?: string } = {}): Observable<MutualFundDetailResponse> {
+  getFund(schemeCode: string, options: { navLimit?: number; fromDate?: string; toDate?: string; holdingsAsOf?: string } = {}): Observable<MutualFundDetailResponse> {
     let params = new HttpParams().set('nav_limit', String(options.navLimit ?? 1000));
     if (options.fromDate) params = params.set('from_date', options.fromDate);
     if (options.toDate) params = params.set('to_date', options.toDate);
+    if (options.holdingsAsOf) params = params.set('holdings_as_of', options.holdingsAsOf);
     return this.http.get<MutualFundDetailResponse>(this.baseUrl + '/funds/' + encodeURIComponent(schemeCode) + '/', { params, withCredentials: true });
   }
 
@@ -57,6 +59,17 @@ export class MutualFundIntelligenceApiService {
     let params = new HttpParams();
     if (slug) params = params.set('slug', slug);
     return this.http.get<{ count: number; results: any[] }>(this.baseUrl + '/benchmarks/', { params, withCredentials: true });
+  }
+
+  getHoldingsPeriods(schemeCode = ''): Observable<any> {
+    const path = schemeCode ? '/funds/' + encodeURIComponent(schemeCode) + '/holdings-periods/' : '/holdings-periods/';
+    return this.http.get(this.baseUrl + path, { withCredentials: true });
+  }
+
+  getExposure(identifier: string, minPct = ''): Observable<any> {
+    let params = new HttpParams();
+    if (minPct) params = params.set('min_pct', minPct);
+    return this.http.get(this.baseUrl + '/exposure/' + encodeURIComponent(identifier) + '/', { params, withCredentials: true });
   }
 
   getCategoryMetrics(slug: string): Observable<any> {

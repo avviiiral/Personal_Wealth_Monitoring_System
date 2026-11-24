@@ -1042,6 +1042,49 @@ export class MutualFundIntelligenceComponent implements OnInit, OnDestroy {
       this.charts.push(chart);
     }
 
+    const riskCanvas = document.getElementById('charliealpha-risk-chart') as HTMLCanvasElement | null;
+    const riskRows = this.charliealphaFunds.filter(row =>
+      row.std_dev_pct !== null && row.std_dev_pct !== undefined &&
+      row.return_3y_pct !== null && row.return_3y_pct !== undefined
+    );
+    if (riskCanvas && riskRows.length) {
+      const chart = new Chart(riskCanvas, {
+        type: 'scatter',
+        data: {
+          datasets: [{
+            label: 'Mutual funds',
+            data: riskRows.map(row => ({
+              x: Number(row.std_dev_pct),
+              y: Number(row.return_3y_pct),
+              fund: String(row.scheme_name ?? row.scheme_code),
+            })),
+            backgroundColor: '#315b83',
+            pointRadius: 5,
+          }],
+        },
+        options: {
+          ...this.chartOptions(),
+          plugins: {
+            ...this.chartOptions().plugins,
+            tooltip: {
+              callbacks: {
+                label: (context: any) => {
+                  const point = context.raw;
+                  return String(point.fund) + ': volatility ' + Number(point.x).toFixed(2) +
+                    '%, 3Y CAGR ' + Number(point.y).toFixed(2) + '%';
+                },
+              },
+            },
+          },
+          scales: {
+            x: { title: { display: true, text: 'Annualized volatility (%)' } },
+            y: { title: { display: true, text: '3Y trailing CAGR (%)' } },
+          },
+        },
+      } as any);
+      this.charts.push(chart);
+    }
+
     const navCanvas = document.getElementById('charliealpha-nav-chart') as HTMLCanvasElement | null;
     const navRows = this.charliealphaDetail?.nav_history ?? [];
     if (navCanvas && navRows.length) {
@@ -1053,6 +1096,41 @@ export class MutualFundIntelligenceComponent implements OnInit, OnDestroy {
         },
         options: { ...this.chartOptions(), scales: { ...this.chartOptions().scales, y: { ...this.chartOptions().scales.y, title: { display: true, text: 'NAV (₹)' } } } },
       });
+      this.charts.push(chart);
+    }
+
+    const holdingsCanvas = document.getElementById('charliealpha-holdings-chart') as HTMLCanvasElement | null;
+    const holdings = (this.charliealphaDetail?.holdings ?? [])
+      .filter(row => row.weight_pct !== null && row.weight_pct !== undefined)
+      .sort((a, b) => Number(b.weight_pct) - Number(a.weight_pct))
+      .slice(0, 12);
+    if (holdingsCanvas && holdings.length) {
+      const chart = new Chart(holdingsCanvas, {
+        type: 'bar',
+        data: {
+          labels: holdings.map(row => row.name),
+          datasets: [{ label: 'Portfolio weight (%)', data: holdings.map(row => Number(row.weight_pct)), backgroundColor: '#CC9F53' }],
+        },
+        options: { ...this.chartOptions(), indexAxis: 'y' },
+      } as any);
+      this.charts.push(chart);
+    }
+
+    const sectorCanvas = document.getElementById('charliealpha-sector-chart') as HTMLCanvasElement | null;
+    const sectors = Object.entries(this.charliealphaDetail?.snapshot?.sector_allocation ?? {})
+      .map(([name, value]) => ({ name, value: Number(value) }))
+      .filter(row => Number.isFinite(row.value) && row.value > 0)
+      .sort((a, b) => b.value - a.value)
+      .slice(0, 12);
+    if (sectorCanvas && sectors.length) {
+      const chart = new Chart(sectorCanvas, {
+        type: 'bar',
+        data: {
+          labels: sectors.map(row => row.name),
+          datasets: [{ label: 'Sector weight (%)', data: sectors.map(row => row.value), backgroundColor: '#315b83' }],
+        },
+        options: { ...this.chartOptions(), indexAxis: 'y' },
+      } as any);
       this.charts.push(chart);
     }
 

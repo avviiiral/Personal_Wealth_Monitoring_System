@@ -251,3 +251,12 @@ tbody tr:hover td { background:rgba(253,119,64,.035); }
 .horizon-grid h4 { margin:0 0 6px; color:var(--mf-orange); font-size:10px; text-transform:uppercase; }
 .horizon-grid pre { max-height:220px; overflow:auto; margin:0; font-size:8px; white-space:pre-wrap; overflow-wrap:anywhere; }
 @media (max-width:680px) { .horizon-grid { grid-template-columns:1fr; } }
+
+.sort-header { display:inline-flex; align-items:center; padding:0; border:0; background:transparent; color:inherit; font:inherit; font-weight:800; cursor:pointer; white-space:nowrap; }
+.sort-header:hover { color:var(--mf-orange); }
+.provider-pagination { display:flex; align-items:center; justify-content:space-between; gap:10px; padding:10px 2px; color:var(--mf-muted); font-size:9px; }
+.provider-pagination > div { display:flex; align-items:center; gap:8px; }
+.provider-holdings-chart { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin:14px 0; }
+.provider-holdings-chart .chart-title { grid-column:1/-1; margin-bottom:-8px; }
+.provider-holdings-chart .chart-wrap { min-height:260px; }
+@media (max-width:680px) { .provider-pagination { align-items:flex-start; flex-direction:column; } .provider-holdings-chart { grid-template-columns:1fr; } }

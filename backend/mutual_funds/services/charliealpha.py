@@ -760,6 +760,45 @@ class CharlieAlphaService:
             value = _first(risk, alias, alias + "_pct")
             if value is not None:
                 assign(field, value)
+
+        # Map only provider fields with a direct semantic equivalent in PWMS.
+        # Pearson correlation is intentionally retained in the provider payload
+        # and is never written to r_squared.
+        scalar_fields = {
+            "return_1m_pct": ("return_1m_pct", "return_1m"),
+            "return_3m_pct": ("return_3m_pct", "return_3m"),
+            "return_6m_pct": ("return_6m_pct", "return_6m"),
+            "since_inception_cagr_pct": ("since_inception_cagr_pct", "inception_cagr"),
+            "treynor": ("treynor", "treynor_ratio"),
+            "risk_free_rate_used_pct": ("risk_free_rate_used_pct", "risk_free_rate_pct", "risk_free_rate"),
+            "ratio_window_years": ("ratio_window_years", "window_years"),
+            "pe": ("pe", "portfolio_pe", "price_to_earnings"),
+            "pb": ("pb", "portfolio_pb", "price_to_book"),
+            "dividend_yield_pct": ("dividend_yield_pct", "dividend_yield"),
+            "turnover_ratio": ("turnover_ratio", "portfolio_turnover_ratio"),
+            "large_cap_pct": ("large_cap_pct", "large_cap"),
+            "mid_cap_pct": ("mid_cap_pct", "mid_cap"),
+            "small_cap_pct": ("small_cap_pct", "small_cap"),
+            "other_cap_pct": ("other_cap_pct", "other_cap"),
+            "number_of_holdings": ("number_of_holdings", "holdings_count"),
+            "top10_concentration_pct": ("top10_concentration_pct", "top_10_concentration_pct"),
+            "ytm_pct": ("ytm_pct", "yield_to_maturity", "ytm"),
+            "modified_duration": ("modified_duration",),
+            "macaulay_duration": ("macaulay_duration",),
+            "average_maturity": ("average_maturity",),
+        }
+        for field, aliases in scalar_fields.items():
+            value = _find_nested(raw_metrics, aliases)
+            if value is not None:
+                assign(field, value)
+
+        inception_date = parse_date(_find_nested(row, ("inception_date", "launch_date")))
+        if inception_date is not None:
+            snapshot.inception_date = inception_date
+        credit_rating_split = _find_nested(raw_metrics, ("credit_rating_split", "rating_split", "credit_quality_split"))
+        if isinstance(credit_rating_split, dict):
+            snapshot.credit_rating_split = credit_rating_split
+
         rolling = _find_nested(three, ("rolling_cagr", "rolling_cagr_distribution", "rolling_returns"))
         if isinstance(rolling, dict):
             assign("rolling_3y_cagr_mean_pct", _first(rolling, "average", "avg", "mean"))

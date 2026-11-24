@@ -71,7 +71,10 @@ _SNAPSHOT_GROUP_FIELDS = {
     ),
     "ter": ("ter_direct_pct", "ter_regular_pct", "ter_as_of", "ter_source"),
     "aum": ("aum_cr", "aum_type", "aum_as_of", "aum_source"),
-    "holdings": ("top10_holdings", "sector_allocation", "holdings_as_of", "holdings_source"),
+    "holdings": (
+        "top10_holdings", "sector_allocation", "equity_pct", "debt_pct",
+        "cash_pct", "others_pct", "holdings_as_of", "holdings_source",
+    ),
 }
 
 
@@ -315,6 +318,10 @@ def charliealpha_fund_detail(request, scheme_code: str):
                 "sector": item.sector,
                 "industry": item.industry,
                 "instrument_type": item.instrument_type,
+                "rating": item.rating,
+                "rating_agency": item.rating_agency,
+                "maturity_date": item.maturity_date,
+                "ytm_pct": item.ytm_pct,
                 "report_date": item.portfolio_date,
             }
             for item in holdings
@@ -402,7 +409,10 @@ def charliealpha_category_metrics(request, slug: str):
     if horizon and horizon not in {"1y", "3y", "5y", "10y"}:
         return Response({"detail": "horizon must be one of 1y, 3y, 5y or 10y."}, status=status.HTTP_400_BAD_REQUEST)
     runs = list(MFSourceRun.objects.filter(
-        source=SOURCE, command="category_metrics", metadata__category_slug=slug
+        source=SOURCE,
+        command="category_metrics",
+        metadata__category_slug=slug,
+        status__in=(MFSourceRun.Status.SUCCESS, MFSourceRun.Status.PARTIAL),
     ).order_by("-started_at")[:100])
     run = next((
         candidate for candidate in runs

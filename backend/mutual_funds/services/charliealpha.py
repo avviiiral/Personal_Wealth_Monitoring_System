@@ -964,8 +964,16 @@ class CharlieAlphaService:
             })
         return dict(self.stats)
 
-    def sync_benchmarks(self, *, limit: int | None = None) -> dict:
-        """Store normalized benchmark observations separately from official TRI levels."""
+    def sync_benchmarks(
+        self,
+        *,
+        limit: int | None = None,
+        range_name: str = "ALL",
+        from_date: str | date | None = None,
+        to_date: str | date | None = None,
+    ) -> dict:
+        """Store a provider-normalized benchmark window separately from official TRI levels."""
+        window_params = _benchmark_window_params(range_name, from_date, to_date)
         payload = self.client.get("benchmark/list")
         benchmarks = _records(payload, ("benchmarks", "data", "results"))
         self.stats["fetched"] += len(benchmarks)
@@ -979,7 +987,7 @@ class CharlieAlphaService:
                 continue
             endpoint = "benchmark/hnav/" + quote(slug, safe="")
             try:
-                history = self.client.get(endpoint)
+                history = self.client.get(endpoint, window_params)
             except Exception as exc:
                 self.stats["failed"] += 1
                 if len(self.errors) < 100:
@@ -989,6 +997,15 @@ class CharlieAlphaService:
             values = history.get("nav", []) if isinstance(history, dict) else []
             if not isinstance(dates, list) or not isinstance(values, list):
                 dates, values = [], []
+            if len(dates) != len(values):
+                self.stats["failed"] += 1
+                if len(self.errors) < 100:
+                    self.errors.append({
+                        "kind": "benchmark_array_length_mismatch",
+                        "slug": slug,
+                        "dates": len(dates),
+                        "values": len(values),
+                    })
             observations = []
             for raw_day, raw_value in zip(dates, values):
                 day, value = parse_date(raw_day), decimal_value(raw_value)
@@ -1001,7 +1018,7 @@ class CharlieAlphaService:
             name = text_value(_first(benchmark, "name", "index_name", "benchmark_name"))
             category = text_value(_first(benchmark, "category", "asset_class"))
             base_date = observations[0][0] if observations else None
-            source_url = BASE_URL + "/" + endpoint
+            source_url = BASE_URL + "/" + endpoint + "?" + urlencode(window_params)
             if not self.dry_run:
                 provider_benchmark, _ = MFProviderBenchmark.objects.update_or_create(
                     provider="CHARLIEALPHA",
@@ -1044,24 +1061,52 @@ class CharlieAlphaService:
                     "warning": "Provider history is rebased to 100 at the start of the returned range; it is not an absolute official TRI series.",
                 },
                 "source_endpoint": endpoint,
+                "requested_window": window_params,
                 "provider_benchmark_id": provider_benchmark.id if not self.dry_run else None,
             })
         run = self._run("benchmarks", metadata={
             "benchmarks_listed": len(benchmarks),
             "observations_persisted": persisted,
             "normalization_policy": "Provider-normalized observations are stored separately and never inserted into MFBenchmarkTRI.",
+            "requested_window": window_params,
         })
         return {"run_id": run.id, **self.stats, "benchmarks": len(benchmarks), "observations_persisted": persisted}
 
-    def compare(self, scheme_codes: list[str], *, overlap_only: bool = False) -> dict:
-        if not 2 <= len(scheme_codes) <= 20:
-            raise ValueError("Select between 2 and 20 mutual-fund scheme codes.")
+    def compare(
+        self,
+        scheme_codes: list[str],
+        *,
+        overlap_only: bool = False,
+        include_pairwise: bool | None = None,
+    ) -> dict:
+        normalized_codes = list(dict.fromkeys(text_value(code) for code in scheme_codes if text_value(code)))
+        if not 2 <= len(normalized_codes) <= 20:
+            raise ValueError("Select between 2 and 20 mutual-fund scheme codes or ISINs.")
         endpoint = "mf/overlap" if overlap_only else "mf/compare"
-        payload = self.client.get(endpoint, {"codes": ",".join(scheme_codes), "include_pairwise": "true"})
+        params = {"codes": ",".join(normalized_codes)}
+        # Let CharlieAlpha apply its documented endpoint defaults unless the operator opts in.
+        if include_pairwise is not None:
+            params["include_pairwise"] = "true" if include_pairwise else "false"
+        try:
+            payload = self.client.get(endpoint, params)
+        except Exception as exc:
+            self.stats["failed"] += 1
+            if len(self.errors) < 100:
+                self.errors.append({"kind": "compare_fetch", "endpoint": endpoint, "codes": normalized_codes, "error": str(exc)[:300]})
+            run = self._run("overlap" if overlap_only else "compare", metadata={
+                "scheme_codes": normalized_codes,
+                "endpoint": endpoint,
+                "request_params": params,
+                "error": str(exc)[:300],
+            })
+            return {"run_id": run.id, "result": None, "error": str(exc)[:300]}
+
         run = self._run("overlap" if overlap_only else "compare", metadata={
-            "scheme_codes": scheme_codes,
+            "scheme_codes": normalized_codes,
+            "endpoint": endpoint,
+            "request_params": params,
             "provider_result": payload,
-            "provider_partial_result": bool(_first(payload, "partial", "is_partial")),
+            "provider_partial_result": bool(_first(payload, "partial", "is_partial")) or bool(_find_nested(payload, ("excluded_schemes",))),
             "report_date_warning": _first(payload, "warning", "report_date_warning"),
         })
         return {"run_id": run.id, "result": payload}
@@ -1071,7 +1116,14 @@ class CharlieAlphaService:
         query = text_value(query)
         if not query:
             raise ValueError("A non-empty scheme search query is required.")
-        payload = self.client.get("mf/search", {"q": query})
+        try:
+            payload = self.client.get("mf/search", {"q": query})
+        except Exception as exc:
+            self.stats["failed"] += 1
+            if len(self.errors) < 100:
+                self.errors.append({"kind": "search_fetch", "query": query, "error": str(exc)[:300]})
+            run = self._run("search", metadata={"query": query, "error": str(exc)[:300]})
+            return {"run_id": run.id, "count": 0, "results": [], "error": str(exc)[:300]}
         rows = _records(payload, ("results", "data", "schemes"))
         if not rows and isinstance(payload, dict) and isinstance(payload.get("data"), list):
             fields = payload.get("fields") or []
@@ -1186,13 +1238,28 @@ class CharlieAlphaService:
             if threshold is None or threshold < 0:
                 raise ValueError("min_pct must be a non-negative number.")
             params["min_pct"] = str(threshold)
-        payload = self.client.get("mf/fund-exposure/" + quote(identifier, safe=""), params or None)
+        endpoint = "mf/fund-exposure/" + quote(identifier, safe="")
+        try:
+            payload = self.client.get(endpoint, params or None)
+        except Exception as exc:
+            self.stats["failed"] += 1
+            if len(self.errors) < 100:
+                self.errors.append({"kind": "fund_exposure_fetch", "identifier": identifier, "min_pct": params.get("min_pct"), "error": str(exc)[:300]})
+            run = self._run("fund_exposure", metadata={
+                "identifier": identifier,
+                "min_pct": params.get("min_pct"),
+                "source_endpoint": endpoint,
+                "error": str(exc)[:300],
+            })
+            return {"run_id": run.id, "result": None, "error": str(exc)[:300]}
+
         run = self._run("fund_exposure", metadata={
             "identifier": identifier,
             "min_pct": params.get("min_pct"),
             "provider_result": payload,
             "report_date": _find_nested(payload, ("as_of", "report_date", "date")),
             "result_count": _find_nested(payload, ("count", "result_count")),
+            "source_endpoint": endpoint,
         })
         return {"run_id": run.id, "result": payload}
 
@@ -1209,7 +1276,7 @@ class CharlieAlphaService:
                     self.errors.append({"kind": "latest_nav_detail_fetch", "code": code, "error": str(exc)[:250]})
                 continue
             self.stats["fetched"] += 1
-            scheme = self._resolve_scheme(payload if isinstance(payload, dict) else {"scheme_code": code})
+            scheme = self._resolve_scheme(payload if isinstance(payload, dict) else {}) or self._resolve_identifier(code)
             if not scheme:
                 continue
             day = parse_date(_first(payload, "date", "nav_date", "as_of") or _find_nested(payload, ("date", "nav_date", "as_of")))

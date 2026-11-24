@@ -214,4 +214,4 @@ class LegacyDirectEquityPriceRoutingTests(TestCase):
         self.assertFalse(result["success"])
         self.assertTrue(result["skipped"])
         self.assertFalse(result["lock_acquired"])
-        self.assertIn("already held", result["reason"])
+        self.assertIn("held by another process", result["reason"])

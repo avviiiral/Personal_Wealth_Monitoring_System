@@ -921,12 +921,16 @@ export class MutualFundIntelligenceComponent implements OnInit, OnDestroy {
     this.charliealphaCompareResult = null;
   }
 
+  get maxCharlieAlphaPage(): number {
+    return Math.max(1, Math.ceil(this.charliealphaTotalCount / this.charliealphaPageSize));
+  }
+
   get sortedCharlieAlphaFunds(): Array<Record<string, any>> {
     const field = this.charliealphaSortField;
     const direction = this.charliealphaSortDirection === "asc" ? 1 : -1;
     return [...this.charliealphaFunds].sort((left, right) => {
-      const a = left?.[field];
-      const b = right?.[field];
+      const a = field === "ter_pct" ? (left?.ter_direct_pct ?? left?.ter_regular_pct) : left?.[field];
+      const b = field === "ter_pct" ? (right?.ter_direct_pct ?? right?.ter_regular_pct) : right?.[field];
       if (a === null || a === undefined || a === "") return 1;
       if (b === null || b === undefined || b === "") return -1;
       if (typeof a === "number" || typeof b === "number") {

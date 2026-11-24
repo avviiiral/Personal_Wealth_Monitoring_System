@@ -596,8 +596,8 @@ class MFProviderResourceSnapshot(models.Model):
         db_table = "mf_provider_resource_snapshots"
         ordering = ["-fetched_at", "-id"]
         indexes = [
-            models.Index(fields=["family", "endpoint", "-fetched_at"], name="mf_provider_resource_family_idx"),
-            models.Index(fields=["family", "identifier", "-fetched_at"], name="mf_provider_resource_ident_idx"),
+            models.Index(fields=["family", "endpoint", "-fetched_at"], name="mf_pr_resource_fam_idx"),
+            models.Index(fields=["family", "identifier", "-fetched_at"], name="mf_pr_resource_ident_idx"),
         ]
 
     def __str__(self):

@@ -111,10 +111,15 @@ class WatchListProductSerializer(serializers.ModelSerializer):
 
     def get_metrics_as_of(self, obj):
         metric_snapshot = self._metric_snapshot(obj)
-        if metric_snapshot is not None:
-            return metric_snapshot.date
         intelligence = self._mf_intelligence_scheme(obj)
-        return intelligence.latest_nav_date if intelligence else None
+        dates = []
+        if metric_snapshot is not None:
+            dates.append(metric_snapshot.date)
+        if intelligence is not None:
+            intelligence_date = intelligence.data_as_of or intelligence.latest_nav_date
+            if intelligence_date is not None:
+                dates.append(intelligence_date)
+        return max(dates) if dates else None
 
     def get_metrics(self, obj):
         latest = self._latest_snapshot(obj)

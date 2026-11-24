@@ -86,8 +86,7 @@ def _filtered_products(request, product_type=None):
         Q(amfi_code=OuterRef("mutual_fund__scheme_code"))
         | Q(amfi_code=OuterRef("external_identifier"))
     ).filter(
-        Q(latest_nav__isnull=False)
-        | Q(avg_aum_crore__isnull=False)
+        Q(avg_aum_crore__isnull=False)
         | Q(return_1w__isnull=False)
         | Q(return_1m__isnull=False)
         | Q(return_3m__isnull=False)

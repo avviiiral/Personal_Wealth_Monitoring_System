@@ -25,6 +25,8 @@ from mutual_funds.models import AMFIMasterNAV, AMFIMasterScheme, MFSchemeIdentit
 from mutual_funds.master_models import (
     MFExternalPortfolioSnapshot,
     MFMasterData,
+    MFProviderBenchmark,
+    MFProviderBenchmarkObservation,
     MFMasterHolding,
     MFSourceRun,
 )
@@ -507,7 +509,6 @@ class CharlieAlphaService:
             "downside_capture": "downside_capture_pct",
             "downside_capture_ratio": "downside_capture_pct",
             "tracking_error": "tracking_error_pct",
-            "correlation": "r_squared",
         }
         for alias, field in risk_fields.items():
             value = _first(risk, alias, alias + "_pct")
@@ -736,42 +737,87 @@ class CharlieAlphaService:
         return dict(self.stats)
 
     def sync_benchmarks(self, *, limit: int | None = None) -> dict:
+        """Store normalized benchmark observations separately from official TRI levels."""
         payload = self.client.get("benchmark/list")
         benchmarks = _records(payload, ("benchmarks", "data", "results"))
         self.stats["fetched"] += len(benchmarks)
         if limit:
             benchmarks = benchmarks[:limit]
+        persisted = 0
         for benchmark in benchmarks:
             slug = text_value(_first(benchmark, "slug", "benchmark_slug", "code"))
             if not slug:
                 self.stats["skipped"] += 1
                 continue
-            history = self.client.get("benchmark/hnav/" + quote(slug, safe=""))
+            endpoint = "benchmark/hnav/" + quote(slug, safe="")
+            history = self.client.get(endpoint)
             dates = history.get("dates", []) if isinstance(history, dict) else []
             values = history.get("nav", []) if isinstance(history, dict) else []
             if not isinstance(dates, list) or not isinstance(values, list):
                 dates, values = [], []
-            series = [
-                {"date": parse_date(day).isoformat(), "normalized_value": str(decimal_value(value))}
-                for day, value in zip(dates, values)
-                if parse_date(day) is not None and decimal_value(value) is not None
-            ]
-            self.stats["fetched"] += len(series)
+            observations = []
+            for raw_day, raw_value in zip(dates, values):
+                day, value = parse_date(raw_day), decimal_value(raw_value)
+                if day is None or value is None:
+                    self.stats["skipped"] += 1
+                    continue
+                observations.append((day, value))
+            observations.sort(key=lambda item: item[0])
+            self.stats["fetched"] += len(observations)
+            name = text_value(_first(benchmark, "name", "index_name", "benchmark_name"))
+            category = text_value(_first(benchmark, "category", "asset_class"))
+            base_date = observations[0][0] if observations else None
+            source_url = BASE_URL + "/" + endpoint
             if not self.dry_run:
-                self._run("benchmark_history", metadata={
-                    "slug": slug,
-                    "name": text_value(_first(benchmark, "name", "index_name", "benchmark_name")),
-                    "category": text_value(_first(benchmark, "category", "asset_class")),
-                    "normalization": {
-                        "is_normalized": True,
-                        "base_value": 100.0,
-                        "base_date": series[0]["date"] if series else None,
-                        "warning": "Provider history is rebased to 100 at the start of each requested window; it is not an absolute official TRI series.",
+                provider_benchmark, _ = MFProviderBenchmark.objects.update_or_create(
+                    provider="CHARLIEALPHA",
+                    slug=slug,
+                    defaults={
+                        "name": name,
+                        "category": category,
+                        "source_url": BASE_URL + "/benchmark/list",
+                        "fetched_at": timezone.now(),
                     },
-                    "series": series,
-                })
-        run = self._run("benchmarks", metadata={"benchmarks_listed": len(benchmarks), "normalization_policy": "Normalized values are not inserted into MFBenchmarkTRI."})
-        return {"run_id": run.id, **self.stats, "benchmarks": len(benchmarks)}
+                )
+                for day, value in observations:
+                    _, created = MFProviderBenchmarkObservation.objects.update_or_create(
+                        benchmark=provider_benchmark,
+                        observation_date=day,
+                        normalization_base_date=base_date,
+                        defaults={
+                            "normalized_value": value,
+                            "normalization_method": "REBASED_TO_100",
+                            "normalization_base_value": Decimal("100"),
+                            "source": SOURCE,
+                            "source_url": source_url,
+                            "fetched_at": timezone.now(),
+                        },
+                    )
+                    self.stats["inserted" if created else "updated"] += 1
+                    persisted += 1
+            self._run("benchmark_history", metadata={
+                "slug": slug,
+                "name": name,
+                "category": category,
+                "observation_count": len(observations),
+                "start_date": observations[0][0].isoformat() if observations else None,
+                "end_date": observations[-1][0].isoformat() if observations else None,
+                "normalization": {
+                    "is_normalized": True,
+                    "method": "REBASED_TO_100",
+                    "base_value": "100",
+                    "base_date": base_date.isoformat() if base_date else None,
+                    "warning": "Provider history is rebased to 100 at the start of the returned range; it is not an absolute official TRI series.",
+                },
+                "source_endpoint": endpoint,
+                "provider_benchmark_id": provider_benchmark.id if not self.dry_run else None,
+            })
+        run = self._run("benchmarks", metadata={
+            "benchmarks_listed": len(benchmarks),
+            "observations_persisted": persisted,
+            "normalization_policy": "Provider-normalized observations are stored separately and never inserted into MFBenchmarkTRI.",
+        })
+        return {"run_id": run.id, **self.stats, "benchmarks": len(benchmarks), "observations_persisted": persisted}
 
     def compare(self, scheme_codes: list[str], *, overlap_only: bool = False) -> dict:
         if not 2 <= len(scheme_codes) <= 20:

@@ -280,6 +280,20 @@ class CharlieAlphaService:
         scheme = None
         if code:
             scheme = AMFIMasterScheme.objects.filter(scheme_code=code).first()
+        if scheme is not None and isin:
+            known_isins = {
+                value.upper() for value in (scheme.isin_growth, scheme.isin_dividend) if value
+            }
+            if known_isins and isin not in known_isins:
+                self.stats["unmatched"] += 1
+                self.errors.append({
+                    "kind": "scheme_code_isin_conflict",
+                    "code": code,
+                    "isin": isin,
+                    "amfi_scheme_code": scheme.scheme_code,
+                    "known_isins": sorted(known_isins),
+                })
+                return None
         if scheme is None and isin:
             candidates = AMFIMasterScheme.objects.filter(
                 Q(isin_growth__iexact=isin) | Q(isin_dividend__iexact=isin)

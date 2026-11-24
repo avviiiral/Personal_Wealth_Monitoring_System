@@ -1,112 +1,133 @@
-# CharlieAlpha mutual-fund integration
+# CharlieAlpha Mutual Fund & ETF endpoint integration
 
-This integration is an opt-in extension to the existing PWMS global AMFI / mutual-fund master-data pipeline. It does not replace user-owned investor schemes, transactions, or portfolio data. CharlieAlpha observations are linked to the existing global AMFIMasterScheme universe.
+This is an opt-in data-source integration for the PWMS Mutual Fund Intelligence page. It covers the provider's **Mutual Funds & ETFs** endpoint family, not the provider's separate NPS, SIF, GIFT City, Instruments, or Corporate Actions families. Those families have different identities, data models, and analysis requirements and must not be inserted into mutual-fund scheme tables.
 
-## Data sources and storage
+Provider API catalogue: https://api.charliealpha.in/
+Methodology: https://api.charliealpha.in/methodology
+Base URL: `https://api.charliealpha.in/v1`
 
-Provider base URL: https://api.charliealpha.in/v1
+The public catalogue describes an unauthenticated, GET-only API limited to 50 requests per 10 seconds. The adapter sends `Accept: application/json`, serializes requests with a 0.205-second minimum interval, applies finite connect/read timeouts, and retries HTTP 429 and transient 5xx/network failures. The integration never requests the provider from Django startup and never calls CharlieAlpha directly from the browser.
 
-The public API documentation describes unauthenticated GET endpoints and a request limit of 50 requests per 10 seconds. The adapter serializes calls with a conservative 0.205-second minimum interval, uses connect/read timeouts, retries transient failures and HTTP 429 responses, and does not call the provider at Django startup.
+## Endpoint-by-endpoint coverage
 
-| Data domain | CharlieAlpha endpoint | PWMS persistence |
-| --- | --- | --- |
-| Discovery | /mf/categories, /mf/schemes, /mf/search | MFSchemeIdentityMap for confirmed AMFI identity links; unmatched/search details in MFSourceRun.metadata |
-| Latest NAV | /mf/lnavall, /mf/lnav/{code} | AMFIMasterNAV (source=CHARLIEALPHA) and current MFMasterData snapshot; per-scheme NAV change metadata in MFSourceRun |
-| NAV history | /mf/hnav/{code} | AMFIMasterNAV (source=CHARLIEALPHA); daily rows do not create daily MFMasterData snapshots |
-| Performance/risk | /mf/metrics/{code}, /mf/metrics-by-cat/{slug} | Scalar fields supported by MFMasterData; full rolling CAGR/XIRR horizon distributions, category medians and sample metadata in MFSourceRun.metadata |
-| TER/AUM | /mf/ter/{code}, /mf/aum/{code} | Dated MFMasterData snapshots; Direct/Regular TER remains plan-specific |
-| Holdings | /mf/holdings/{code} | MFMasterHolding, MFExternalPortfolioSnapshot, and MFMasterData holdings summary; security keys are prefixed CHARLIEALPHA: |
-| Holdings history | /mf/holdings-periods, /mf/holdings-periods/{code}, /mf/holdings/{code}?as_of=... | Dated MFMasterHolding disclosure snapshots and MFSourceRun disclosure-period metadata |
-| Security exposure | /mf/fund-exposure/{identifier} | Provider response retained in database-backed MFSourceRun.metadata |
-| Compare/overlap | /mf/compare, /mf/overlap | Provider comparison response retained in database-backed MFSourceRun.metadata |
-| Benchmarks | /benchmark/list, /benchmark/hnav/{slug} | MFProviderBenchmark and MFProviderBenchmarkObservation, including normalization base date and method |
+| # | Provider endpoint | Documented behavior and parameters | PWMS implementation |
+| ---: | --- | --- | --- |
+| 1 | `GET /mf/categories` | Category tree grouped by Equity, Debt, Hybrid, ETF, Solution Oriented and Other; returns canonical slugs | `sync_categories()` stores the full response, flattened category records, asset-class labels and slugs in `MFSourceRun.metadata`; authenticated read endpoint exposes the stored catalogue |
+| 2 | `GET /mf/schemes?cat={slug}` | Active mutual-fund and ETF directory; optional category slug filter | `sync_schemes()` resolves exact identities against AMFI; fills only missing AMC/category/plan/option fields, never overwrites known AMFI identity values |
+| 3 | `GET /mf/search?q={query}` | Search by scheme name, code, ISIN, AMC or category; compact `fields` plus 2D `data` rows | `search_schemes()` decodes compact rows and persists query/results in the database audit record; management command only |
+| 4 | `GET /mf/lnavall` | Bulk latest NAV for active schemes; compact `fields` plus 2D `data` rows | `sync_navall()` upserts provider-specific `AMFIMasterNAV` rows and latest `MFMasterData` NAV fields; it does not replace AMFI NAV rows |
+| 5 | `GET /mf/lnav/{code}` | Per-scheme NAV, previous-day movement, date, AMC, category, plan, option, latest TER and quarterly-average AUM; AMFI code or ISIN | `sync_latest_nav_details()` persists NAV where available and keeps movement/extra metadata in `MFSourceRun.metadata`; dedicated TER/AUM endpoints remain the dated history source |
+| 6 | `GET /mf/hnav/{code}` | Daily NAV `dates` and `nav` arrays plus scheme metadata; AMFI code or ISIN | `sync_nav_history()` validates paired arrays and upserts daily provider rows into `AMFIMasterNAV`; daily rows do not create daily master snapshots |
+| 7 | `GET /mf/metrics/{code}` | 1Y/3Y/5Y/10Y trailing CAGR, rolling CAGR/XIRR distributions, risk metrics, correlation and fund age; AMFI code or ISIN | `sync_metrics(scheme_codes=[...])` maps supported scalar fields to `MFMasterData`; full horizons, percentiles, medians and sample counts remain in `MFSourceRun.metadata` |
+| 8 | `GET /mf/metrics-by-cat/{slug}?horizon={1y|3y|5y|10y}` | Category-wide performance/risk metrics and category medians; optional horizon filter | `sync_metrics(category_slugs=[...], horizon=...)` stores scheme snapshots and a separate category-median run; no-horizon mode retains the complete multi-horizon provider payload |
+| 9 | `GET /mf/ter/{code}` | Dated TER revisions as `dates` and `ter`, filtered to the scheme's Direct or Regular plan; AMFI code or ISIN | `sync_ter()` persists dated TER snapshots; classification is based on the resolved AMFI scheme plan and ambiguous plans are skipped rather than guessed |
+| 10 | `GET /mf/aum/{code}` | Quarterly-average AUM history in ₹ crore; AMFI code or ISIN | `sync_aum()` stores dated values with `AUM_QUARTERLY_AVG` basis; values are not relabelled month-end AUM |
+| 11 | `GET /mf/compare?codes=...` | 2–20 comma-separated AMFI codes/ISINs; summary holdings overlap is returned by default; `include_pairwise=true` adds return-correlation and holdings-overlap matrices | `compare()` stores the provider response and exact request parameters; pairwise data is requested only when explicitly enabled |
+| 12 | `GET /mf/overlap?codes=...` | ISIN-matched holdings overlap for 2–20 funds; may return partial results/excluded schemes and mixed-report-month warnings; provider default controls pairwise output | `compare(overlap_only=True)` stores the response, partial-result indicator and report-date warning; provider HTTP errors are audited |
+| 13 | `GET /mf/holdings/{code}?as_of={date}&change=yes` | Latest or selected-date holdings; optional previous-report changes and exited holdings; AMFI code or ISIN | `sync_holdings()` persists dated holdings, security metadata, provider changes and quality flags; empty or invalid holdings are marked unavailable/partial, never interpreted as a zero portfolio |
+| 14 | `GET /mf/holdings-periods` | Global disclosure coverage, report dates, counts and latest report date | `sync_holdings_periods()` stores the provider coverage response as a global audit record |
+| 15 | `GET /mf/holdings-periods/{code}` | Scheme-specific disclosure dates and holdings counts; AMFI code or ISIN | `sync_holdings_periods(codes)` and `sync_holdings_history()` store provider identifiers, canonical AMFI code, report periods and historical dated holdings |
+| 16 | `GET /mf/fund-exposure/{identifier}?min_pct={value}` | Funds holding a stock; identifier may be stock ISIN, NSE symbol or BSE scrip code; optional minimum portfolio percentage | `sync_fund_exposure()` stores the provider's compact columns/data payload and normalized threshold in the database; read API matches thresholds numerically |
+| 17 | `GET /benchmark/list` | Canonical benchmark names, slugs and asset categories | `sync_benchmarks()` reads the benchmark catalogue and fetches each selected series |
+| 18 | `GET /benchmark/hnav/{slug}?range={window}` | Daily benchmark series rebased to 100 at the first observation; ranges ALL, 1M, 6M, 1Y, 3Y, 5Y, 10Y, 15Y, 20Y, 25Y or exact `from`/`to` dates | `sync_benchmarks(range_name=...)` or exact `from_date`/`to_date` stores the provider-normalized series in provider-specific benchmark tables with its base date, range and source URL |
 
-CharlieAlpha benchmark history is described as normalized to 100 at the beginning of the returned period. These observations are deliberately stored separately from MFBenchmarkTRI; they must not be treated as absolute official TRI levels or used as such in existing PWMS benchmark-relative return calculations.
+### Important response-shape rules
 
-## Scheme matching
+- The provider uses both object arrays and columnar responses with root-level `fields` and 2D `data`. The adapter decodes both forms.
+- NAV, TER and AUM history endpoints use paired date/value arrays. PWMS records unequal array lengths as an ingestion issue and does not silently imply complete coverage.
+- Benchmark values already arrive normalized to 100 for the requested time window. PWMS **does not rebase them a second time**. Each returned window is stored separately by its normalization base date.
+- Compare and overlap are distinct endpoints. The API's documented defaults are preserved unless `--include-pairwise` is explicitly supplied.
+- Provider-returned Pearson correlation is not mapped to R-squared. Metrics that have no semantically equivalent PWMS scalar field remain in the raw structured horizon metadata.
+- The UI's overview merges the most recent non-null NAV, performance/risk, TER, AUM and holdings values per domain. It does not assume those domains were all reported on the same date.
 
-The adapter maps provider scheme identifiers to existing AMFIMasterScheme rows by:
-1. Exact AMFI scheme code.
-2. Exact ISIN match.
-3. Unique exact scheme-name match.
+## Database and identity model
 
-Ambiguous or unmatched records are logged to the synchronization run and are not fuzzy-matched or inserted as unverified scheme masters. A provider scheme ID that differs from the AMFI code is retained in MFSchemeIdentityMap.
+CharlieAlpha rows link to the existing global `AMFIMasterScheme` universe. Identity resolution uses exact AMFI code, exact ISIN, an existing confirmed CharlieAlpha identity map, or a unique exact scheme name. Ambiguous identities and code/ISIN conflicts are rejected and recorded; no fuzzy match creates a scheme link.
+
+Investor-owned schemes, transactions, SIPs and portfolio holdings remain separate from the global fund research universe.
+
+Persistence is deliberately source-aware:
+
+- NAV history: `AMFIMasterNAV`, source `CHARLIEALPHA`.
+- Dated scalar metrics, TER, AUM, and holdings summary: `MFMasterData`, with field-level source/date provenance.
+- Security disclosures: `MFMasterHolding`, with `CHARLIEALPHA:`-prefixed security keys.
+- Provider portfolio report metadata: `MFExternalPortfolioSnapshot`.
+- Provider benchmarks: `MFProviderBenchmark` and `MFProviderBenchmarkObservation`, never `MFBenchmarkTRI`.
+- Provider request/result distributions, searches, comparisons, categories and operational errors: `MFSourceRun.metadata` JSON fields in the configured database.
 
 ## Management command
 
-Run from backend/ with the project virtual environment active.
+Run from `backend/` with the project virtual environment active.
 
-~~~~powershell
-# Discover / map schemes and categories
+```powershell
+# Store the category catalogue and discover/map the active AMFI-linked universe
+python manage.py sync_charliealpha --domain categories
 python manage.py sync_charliealpha --domain schemes
 
-# Bulk latest NAV
+# Search and bulk/per-scheme NAV
+python manage.py sync_charliealpha --domain search --search-query "large cap"
 python manage.py sync_charliealpha --domain nav
-
-# Per-scheme latest NAV movement and accompanying metadata
 python manage.py sync_charliealpha --domain nav-detail --scheme-code 120137
-
-# Historical NAV for one scheme
 python manage.py sync_charliealpha --domain nav-history --scheme-code 120137
 
-# Category metrics (all four horizons when supplied by the provider)
-python manage.py sync_charliealpha --domain metrics --category equity-multi-cap
+# All horizons, or one category horizon
+python manage.py sync_charliealpha --domain metrics --category equity-large-cap
+python manage.py sync_charliealpha --domain metrics --category equity-large-cap --horizon 3y
+python manage.py sync_charliealpha --domain metrics --scheme-code INF769K01BI1
 
-# TER, AUM and latest holdings for one or more schemes
+# Dated TER, quarterly-average AUM and latest/historical holdings
 python manage.py sync_charliealpha --domain ter --scheme-code 120137
-python manage.py sync_charliealpha --domain aum --scheme-code 120137
+python manage.py sync_charliealpha --domain aum --scheme-code INF769K01BI1
 python manage.py sync_charliealpha --domain holdings --scheme-code 120137
-
-# Historical holdings: latest four provider disclosure periods by default
+python manage.py sync_charliealpha --domain holdings --scheme-code 120137 --skip-holdings-changes
 python manage.py sync_charliealpha --domain holdings-history --scheme-code 120137 --period-limit 4
 
-# Stock exposure, comparison, overlap and benchmarks
-python manage.py sync_charliealpha --domain exposure --identifier HDFCBANK
+# Stock exposure and fund compare/overlap
+python manage.py sync_charliealpha --domain exposure --identifier HDFCBANK --min-pct 2.5
 python manage.py sync_charliealpha --domain compare --compare-code 120137 --compare-code 118834
+python manage.py sync_charliealpha --domain compare --compare-code 120137 --compare-code 118834 --include-pairwise
 python manage.py sync_charliealpha --domain overlap --compare-code 120137 --compare-code 118834
-python manage.py sync_charliealpha --domain benchmarks
 
-# Full current-data synchronization; --limit caps per-scheme calls
+# Benchmark series for a relative range or exact dates
+python manage.py sync_charliealpha --domain benchmarks --benchmark-range 5Y
+python manage.py sync_charliealpha --domain benchmarks --benchmark-from 2021-01-01 --benchmark-to 2025-12-31
+
+# Full current-data synchronization; --limit caps per-scheme/benchmark calls
 python manage.py sync_charliealpha --domain all --limit 10
-
-# Full current-data synchronization for the linked universe
 python manage.py sync_charliealpha --domain all
 
-# Optional additional daily NAV history for the selected/limited universe
+# Optional daily NAV-history backfill for a limited universe
 python manage.py sync_charliealpha --domain all --include-nav-history --limit 10
 
-# Dry-run provider/response validation
+# Validate a bounded provider pull without writing scheme data
 python manage.py sync_charliealpha --domain all --limit 10 --dry-run
-~~~~
+```
 
---category takes a CharlieAlpha category slug when used for provider scheme/metrics filtering. --scheme-code is repeatable. --limit 0 means no artificial per-scheme cap. --period-limit 0 requests all disclosure dates returned for each scheme; use with care because it can generate a large number of provider calls.
+`--scheme-code` accepts a six-digit AMFI code or a 12-character mutual-fund ISIN and is repeatable. `--category` is the provider category slug. `--horizon` applies to category metrics and accepts 1y, 3y, 5y or 10y. `--benchmark-from` and `--benchmark-to` must be supplied together. `--period-limit 0` requests every disclosure date returned for each scheme and can generate many calls. The default pairwise setting is left to the provider; pass `--include-pairwise` to request pairwise output explicitly.
 
-The all workflow synchronizes scheme discovery/mapping, bulk latest NAV, category metrics, TER/AUM/latest holdings for linked schemes, global holdings-period coverage, and benchmark history. For a full historical holdings backfill, run --domain holdings-history; for daily historical NAV, use --include-nav-history. These are separate because they can generate many serial provider requests.
+The `all` domain stores categories/scheme mapping, bulk NAV, category metrics, latest NAV details for explicitly supplied codes, linked-scheme TER/AUM/holdings, global holdings-period coverage, and benchmark history. Daily NAV history and full holdings-history backfills remain opt-in because they can make a large number of serial provider calls.
 
-All runs write status/counters to MFSourceRun. The command reports fetch/insert/update/skip/failure/unmatched totals. Repeated runs use database upserts and the same source/scheme/date keys.
+## Authenticated PWMS read APIs
 
-## Authenticated read APIs
+All routes are below `/api/mutual-fund-analytics/charliealpha/` and require the normal PWMS authenticated session:
 
-All endpoints below require the normal PWMS authenticated session and are nested below /api/mutual-fund-analytics/charliealpha/.
+- `GET overview/` — paginated scheme universe, search/AMC/category/plan/option filters, coverage and ingestion status.
+- `GET categories/` — stored category tree, canonical slugs and asset-class grouping.
+- `GET categories/{slug}/?horizon=3y` — stored category medians and sample metrics for a horizon; falls back to an all-horizons ingestion when present.
+- `GET funds/{scheme_code_or_isin}/` — fund metadata, latest values by data domain, date-filtered NAV, TER/AUM history, selected holdings, provider metrics and availability.
+- `GET funds/{scheme_code}/holdings-periods/` and `GET holdings-periods/` — stored scheme/global report coverage.
+- `GET exposure/{identifier}/?min_pct=...` — previously ingested stock exposure.
+- `GET benchmarks/?slug=...` — latest stored normalized benchmark window with base-date provenance.
+- `POST compare/` — read a previously ingested 2–20 fund compare/overlap response. The browser never triggers a live provider request.
 
-- GET overview/ — paginated scheme snapshots plus search, AMC, category, plan and option filters, data coverage and latest ingestion status.
-- GET funds/{scheme_code}/ — fund snapshot, filtered NAV history, TER/AUM history, a selected holdings report, provider metrics and data availability.
-- GET funds/{scheme_code}/holdings-periods/ — persisted disclosure dates for the scheme.
-- GET holdings-periods/ — latest persisted global disclosure coverage.
-- GET exposure/{identifier}/ — previously ingested security exposure.
-- GET benchmarks/ — provider-normalized benchmark observations with base-date provenance.
-- GET categories/{slug}/ — persisted provider category medians.
-- POST compare/ — explicitly requested two-to-twenty-fund provider comparison/overlap.
+## Data quality, limitations and licensing
 
-The frontend reads these PWMS endpoints only. It does not call CharlieAlpha from the browser.
+- Missing fields remain null/absent; the UI does not convert unavailable data to zero.
+- Invalid or empty holdings are marked unavailable/partial and do not replace a valid historical disclosure with an empty portfolio.
+- Holdings remain dated provider disclosures, not daily portfolio states. Historical report periods are persisted.
+- Bond/fixed-income holding fields such as rating, rating agency, maturity date and yield-to-maturity are retained where supplied. Asset/sector allocations are only populated from classified rows with a supplied weight.
+- Rolling return/XIRR distributions and percentiles remain provider payloads; scalar fields are populated only when a matching PWMS field and metric definition exist.
+- Benchmark observations remain separate from official benchmark TRI. Never compare a normalized provider value directly with an absolute TRI level.
+- The root catalogue also exposes NPS, SIF, GIFT City, Instruments and corporate-action endpoints. They are **not** part of this mutual-fund branch because their identifiers and data contracts require separate models and UI.
+- The public site states that the API is for education/research and disclaims responsibility for investment losses or data inaccuracy. The reviewed public pages do not establish explicit permanent-retention or redistribution rights. Obtain written provider terms before production retention or redistribution. This implementation does not imply a licence grant.
 
-## Data quality and limitations
-
-- Missing fields remain null / absent; the frontend displays an em dash instead of a fabricated zero.
-- A failed holdings call or an empty/invalid holdings payload is reported as unavailable, not as an empty or zero-weight portfolio.
-- Holdings snapshots are dated disclosures, not daily portfolio states.
-- The scalar risk fields in MFMasterData are provider supplied; the complete horizon-specific payload remains available in the provider run metadata. Pearson correlation is not mislabeled as R-squared.
-- Provider benchmark values are normalized observations, not absolute benchmark TRI levels.
-- CharlieAlpha public docs describe educational/research use and include a data-accuracy disclaimer. I did not find explicit retention, redistribution, or permanent-storage licence terms in the public API/methodology pages reviewed. Obtain and document the provider's written storage/retention rights before treating the data as permanently reusable in a production service. This integration persists the structured observations required for PWMS operation, but does not imply a licence grant.
-- Manager name, exit load, riskometer, minimum investment and other scheme-document fields are not invented when absent from CharlieAlpha responses. Extend ingestion from an authoritative AMFI/AMC/SEBI source if those fields are required.
-~~~~

@@ -469,6 +469,7 @@ class CharlieAlphaService:
         schemes = _records(schemes_payload, ("schemes", "data", "results"))
         self.stats["fetched"] += len(schemes)
         mapped = 0
+        mapped_scheme_codes: list[str] = []
         unmatched = []
         for row in schemes:
             scheme = self._resolve_scheme(row)
@@ -481,6 +482,7 @@ class CharlieAlphaService:
                 })
                 continue
             mapped += 1
+            mapped_scheme_codes.append(scheme.scheme_code)
             if self.dry_run:
                 continue
             changed = []
@@ -507,14 +509,23 @@ class CharlieAlphaService:
             "schemes",
             metadata={
                 "categories_run_id": categories_result["run_id"],
+                "category_slug": category or None,
                 "category_count": categories_result["categories"],
                 "schemes_fetched": len(schemes),
                 "schemes_mapped_to_amfi": mapped,
+                "linked_scheme_codes": mapped_scheme_codes,
                 "unmatched_schemes": unmatched[:500],
                 "coverage_note": "CharlieAlpha scheme rows are linked only by exact AMFI code, exact ISIN or unique exact name.",
             },
         )
-        return {"run_id": run.id, **self.stats, "schemes": len(schemes), "mapped": mapped, "unmatched": len(unmatched)}
+        return {
+            "run_id": run.id,
+            **self.stats,
+            "schemes": len(schemes),
+            "mapped": mapped,
+            "linked_scheme_codes": mapped_scheme_codes,
+            "unmatched": len(unmatched),
+        }
 
     def _save_nav(self, scheme: AMFIMasterScheme, day: date, nav: Decimal, endpoint: str, *, update_snapshot: bool = True):
         if nav <= 0:

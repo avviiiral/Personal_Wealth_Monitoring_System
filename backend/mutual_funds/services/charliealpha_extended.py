@@ -80,6 +80,7 @@ class CharlieAlphaExtendedService:
     def __init__(self, *, client: CharlieAlphaClient | None = None, dry_run: bool = False):
         self.client = client or CharlieAlphaClient()
         self.dry_run = dry_run
+        self.stats = {"requests": 0, "snapshots_saved": 0, "records_normalized": 0, "failed": 0}
 
     def _store(
         self,
@@ -99,14 +100,27 @@ class CharlieAlphaExtendedService:
             # A successful metrics/detail object is still one returned resource,
             # while an empty list remains a legitimate zero-row response.
             record_count = 1 if isinstance(safe_payload, dict) and bool(safe_payload) else 0
-        data_date = parse_date(_find_nested(
+        raw_date = _find_nested(
             safe_payload,
             ("as_of", "as_of_date", "date", "nav_date", "latest_as_of", "generated_at", "report_date", "ex_date"),
-        ))
+        )
+        if raw_date is None and isinstance(safe_payload, dict):
+            date_series = safe_payload.get("dates")
+            if isinstance(date_series, list) and date_series:
+                raw_date = date_series[-1]
+            else:
+                for plan_data in safe_payload.values():
+                    if isinstance(plan_data, dict) and isinstance(plan_data.get("dates"), list) and plan_data["dates"]:
+                        raw_date = plan_data["dates"][-1]
+                        break
+        data_date = parse_date(raw_date)
         query = urlencode({key: value for key, value in params.items() if value not in (None, "")}, doseq=True)
         source_url = BASE_URL + "/" + endpoint.lstrip("/") + (("?" + query) if query else "")
         canonical = json.dumps(safe_payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
         digest = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+        self.stats["records_normalized"] += len(records)
+        if error:
+            self.stats["failed"] += 1
         if self.dry_run:
             return SimpleNamespace(pk=None, records=records, record_count=record_count, success=not bool(error))
         snapshot = MFProviderResourceSnapshot.objects.create(
@@ -123,6 +137,7 @@ class CharlieAlphaExtendedService:
             success=not bool(error),
             error=error[:2000],
         )
+        self.stats["snapshots_saved"] += 1
         command = ("provider_" + family.lower() + "_" + endpoint.replace("/", "_").strip("_"))[:120]
         MFSourceRun.objects.create(
             source=SOURCE,
@@ -156,6 +171,7 @@ class CharlieAlphaExtendedService:
         identifier: str = "",
         params: dict | None = None,
     ) -> MFProviderResourceSnapshot:
+        self.stats["requests"] += 1
         try:
             payload = self.client.get(endpoint, params or None)
         except Exception as exc:

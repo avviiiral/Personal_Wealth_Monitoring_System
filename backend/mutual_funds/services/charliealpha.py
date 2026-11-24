@@ -785,3 +785,112 @@ class CharlieAlphaService:
             "report_date_warning": _first(payload, "warning", "report_date_warning"),
         })
         return {"run_id": run.id, "result": payload}
+
+
+    def search_schemes(self, query: str) -> dict:
+        query = text_value(query)
+        if not query:
+            raise ValueError("A non-empty scheme search query is required.")
+        payload = self.client.get("mf/search", {"q": query})
+        rows = _records(payload, ("results", "data", "schemes"))
+        if not rows and isinstance(payload, dict) and isinstance(payload.get("data"), list):
+            fields = payload.get("fields") or []
+            rows = [
+                {str(fields[i]): value for i, value in enumerate(row) if i < len(fields)}
+                for row in payload["data"] if isinstance(row, (list, tuple))
+            ]
+        self.stats["fetched"] += len(rows)
+        run = self._run("search", metadata={
+            "query": query,
+            "provider_fields": payload.get("fields", []) if isinstance(payload, dict) else [],
+            "results": rows,
+        })
+        return {"run_id": run.id, "count": len(rows), "results": rows}
+
+    def sync_holdings_periods(self, scheme_codes: list[str] | None = None) -> dict:
+        """Persist available global or scheme-specific monthly disclosure periods."""
+        if not scheme_codes:
+            payload = self.client.get("mf/holdings-periods")
+            periods = payload.get("periods", []) if isinstance(payload, dict) else []
+            if not isinstance(periods, list):
+                periods = []
+            self.stats["fetched"] += len(periods)
+            run = self._run("holdings_periods", metadata={
+                "scope": "global",
+                "generated_at": _find_nested(payload, ("generated_at",)),
+                "latest_as_of": _find_nested(payload, ("latest_as_of",)),
+                "periods": periods,
+            })
+            return {"run_id": run.id, "periods": len(periods), **self.stats}
+
+        results = []
+        for code in scheme_codes:
+            payload = self.client.get("mf/holdings-periods/" + quote(code, safe=""))
+            periods = payload.get("periods", []) if isinstance(payload, dict) else []
+            if not isinstance(periods, list):
+                periods = []
+            self.stats["fetched"] += len(periods)
+            results.append({
+                "scheme_code": code,
+                "scheme_name": _find_nested(payload, ("scheme_name", "name")),
+                "latest_as_of": _find_nested(payload, ("latest_as_of",)),
+                "periods": periods,
+            })
+        run = self._run("holdings_periods", metadata={"scope": "scheme", "schemes": results})
+        return {"run_id": run.id, "schemes": len(results), **self.stats}
+
+    def sync_holdings_history(
+        self,
+        scheme_codes: list[str],
+        *,
+        period_limit: int = 4,
+    ) -> dict:
+        """Import dated disclosure snapshots; a limit protects against bulk overuse."""
+        if period_limit < 0:
+            raise ValueError("period_limit cannot be negative.")
+        schemes_processed = 0
+        snapshots_requested = 0
+        for code in scheme_codes:
+            periods_payload = self.client.get("mf/holdings-periods/" + quote(code, safe=""))
+            periods = periods_payload.get("periods", []) if isinstance(periods_payload, dict) else []
+            if not isinstance(periods, list):
+                periods = []
+            report_dates = []
+            for item in periods:
+                raw = item if isinstance(item, str) else _first(item, "as_of", "report_date", "date")
+                parsed = parse_date(raw)
+                if parsed and parsed not in report_dates:
+                    report_dates.append(parsed)
+            report_dates.sort(reverse=True)
+            if period_limit:
+                report_dates = report_dates[:period_limit]
+            schemes_processed += 1
+            for as_of in report_dates:
+                snapshots_requested += 1
+                self.sync_holdings([code], include_changes=False, report_date=as_of.isoformat())
+        return {
+            "schemes_processed": schemes_processed,
+            "historical_snapshots_requested": snapshots_requested,
+            **self.stats,
+        }
+
+    def sync_fund_exposure(self, identifier: str, min_pct: Decimal | str | None = None) -> dict:
+        """Persist stock exposure results for an ISIN, NSE symbol or BSE code."""
+        identifier = text_value(identifier)
+        if not identifier:
+            raise ValueError("A security ISIN, NSE symbol or BSE scrip code is required.")
+        params = {}
+        if min_pct not in (None, ""):
+            threshold = decimal_value(min_pct)
+            if threshold is None or threshold < 0:
+                raise ValueError("min_pct must be a non-negative number.")
+            params["min_pct"] = str(threshold)
+        payload = self.client.get("mf/fund-exposure/" + quote(identifier, safe=""), params or None)
+        run = self._run("fund_exposure", metadata={
+            "identifier": identifier,
+            "min_pct": params.get("min_pct"),
+            "provider_result": payload,
+            "report_date": _find_nested(payload, ("as_of", "report_date", "date")),
+            "result_count": _find_nested(payload, ("count", "result_count")),
+        })
+        return {"run_id": run.id, "result": payload}

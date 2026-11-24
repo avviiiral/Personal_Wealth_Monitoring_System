@@ -262,6 +262,11 @@ class Command(BaseCommand):
             "Totals: fetched={fetched} inserted={inserted} updated={updated} skipped={skipped} "
             "failed={failed} unmatched={unmatched}".format(**service.stats)
         )
+        if extended.stats["requests"]:
+            self.stdout.write(
+                "Extended provider totals: requests={requests} snapshots_saved={snapshots_saved} "
+                "records_normalized={records_normalized} failed={failed}".format(**extended.stats)
+            )
         if service.errors:
             self.stdout.write(self.style.WARNING("Reported issues (first 100):"))
             for error in service.errors[:100]:

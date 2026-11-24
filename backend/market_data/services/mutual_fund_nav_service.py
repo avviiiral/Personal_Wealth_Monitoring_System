@@ -204,9 +204,6 @@ class MutualFundNAVService:
             request_error = exc
 
         record = nav_data.get(cleaned_isin)
-        if record is not None:
-            return {"isin": cleaned_isin, **record}
-
         today = timezone.localdate()
         intelligence_scheme = (
             MFScheme.objects.filter(
@@ -218,7 +215,19 @@ class MutualFundNAVService:
             .order_by("-latest_nav_date", "-updated_at")
             .first()
         )
-        if intelligence_scheme is not None:
+
+        # Use the newest eligible observation. The live AMFI feed remains
+        # authoritative when both sources report the same NAV date.
+        if intelligence_scheme is not None and (
+            record is None
+            or (
+                intelligence_scheme.latest_nav_date is not None
+                and (
+                    record.get("date") is None
+                    or intelligence_scheme.latest_nav_date > record["date"]
+                )
+            )
+        ):
             return {
                 "isin": cleaned_isin,
                 "scheme_code": intelligence_scheme.amfi_code,
@@ -227,6 +236,8 @@ class MutualFundNAVService:
                 "date": intelligence_scheme.latest_nav_date,
                 "source": "MF_INTELLIGENCE",
             }
+        if record is not None:
+            return {"isin": cleaned_isin, **record}
         if request_error is not None:
             raise request_error
         return None

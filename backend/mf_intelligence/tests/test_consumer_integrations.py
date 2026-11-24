@@ -99,6 +99,32 @@ class MFIntelligenceConsumerIntegrationTests(TestCase):
         self.assertEqual(record["date"], nav_date)
         self.assertEqual(record["source"], "MF_INTELLIGENCE")
 
+    @patch.object(SharedPortfolioNAVService, "_load_nav_data")
+    def test_shared_portfolio_nav_prefers_newer_synced_observation_over_older_live_row(self, load):
+        live_date = self.today - timedelta(days=2)
+        synced_date = self.today - timedelta(days=1)
+        load.return_value = {
+            "INF000A01002": {
+                "scheme_code": "123464",
+                "scheme_name": "Fresh Portfolio Nav Fund",
+                "nav": Decimal("20.000000"),
+                "date": live_date,
+            }
+        }
+        MFScheme.objects.create(
+            amfi_code="123464",
+            isin="INF000A01002",
+            name="Fresh Portfolio Nav Fund - Direct Plan - Growth",
+            latest_nav=Decimal("21.000000"),
+            latest_nav_date=synced_date,
+        )
+
+        record = SharedPortfolioNAVService.get_latest_nav("INF000A01002")
+
+        self.assertEqual(record["nav"], Decimal("21.000000"))
+        self.assertEqual(record["date"], synced_date)
+        self.assertEqual(record["source"], "MF_INTELLIGENCE")
+
     def test_holding_valuation_prefers_newer_recent_synced_nav(self):
         scheme = MutualFundScheme.objects.create(
             scheme_name="Valuation Equity Fund",

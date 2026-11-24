@@ -79,10 +79,8 @@ class CharlieAlphaParserTests(SimpleTestCase):
         session.headers = {}
         session.get.side_effect = [limited, ok]
 
-        # Make the global inter-request throttle deterministic for this test.
-        # The second request occurs one second after the first, so the only
-        # expected sleep is the provider Retry-After value of zero seconds.
-        with patch("mutual_funds.services.charliealpha.time.monotonic", side_effect=[10.0, 11.0]), patch(
+        # Disable only the inter-request throttle; this test targets 429 retry handling.
+        with patch("mutual_funds.services.charliealpha.MIN_REQUEST_INTERVAL", 0.0), patch(
             "mutual_funds.services.charliealpha._LAST_REQUEST_AT", 0.0
         ):
             payload = CharlieAlphaClient(session=session).get("mf/categories")

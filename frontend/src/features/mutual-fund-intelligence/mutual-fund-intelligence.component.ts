@@ -161,6 +161,16 @@ export class MutualFundIntelligenceComponent implements OnInit, OnDestroy {
   private charliealphaOverviewSubscription?: Subscription;
   private charliealphaFundSubscription?: Subscription;
   private charliealphaCompareSubscription?: Subscription;
+  private charliealphaCategoryMetricsSubscription?: Subscription;
+  private charliealphaCategoryCatalogLoaded = false;
+  charliealphaProviderCategories: Array<{ slug: string; name?: string; asset_class?: string }> = [];
+  charliealphaMetricCategorySlug = '';
+  charliealphaMetricHorizon: '1y' | '3y' | '5y' | '10y' = '3y';
+  charliealphaCategoryMetrics: any = null;
+  charliealphaCategoryCatalogLoading = false;
+  charliealphaCategoryMetricsLoading = false;
+  charliealphaCategoryCatalogError = '';
+  charliealphaCategoryMetricsError = '';
   charliealphaLoading = false;
   charliealphaDetailLoading = false;
   charliealphaCompareLoading = false;
@@ -215,6 +225,7 @@ export class MutualFundIntelligenceComponent implements OnInit, OnDestroy {
     this.charliealphaOverviewSubscription?.unsubscribe();
     this.charliealphaFundSubscription?.unsubscribe();
     this.charliealphaCompareSubscription?.unsubscribe();
+    this.charliealphaCategoryMetricsSubscription?.unsubscribe();
   }
 
   get selectedCategoryFunds(): number {
@@ -805,6 +816,11 @@ export class MutualFundIntelligenceComponent implements OnInit, OnDestroy {
   }
 
   loadCharlieAlphaOverview(): void {
+    this.loadCharlieAlphaCategoryCatalog();
+    this.loadCharlieAlphaOverviewData();
+  }
+
+  private loadCharlieAlphaOverviewData(): void {
     this.charliealphaLoading = true;
     this.charliealphaError = '';
     const filters = {
@@ -845,6 +861,67 @@ export class MutualFundIntelligenceComponent implements OnInit, OnDestroy {
         this.charliealphaError = error?.status === 401
           ? 'Sign in again to access stored CharlieAlpha intelligence.'
           : 'CharlieAlpha data is not available from the PWMS database yet. Run the synchronization command, then retry.';
+        this.cdr.detectChanges();
+      },
+    });
+  }
+
+  loadCharlieAlphaCategoryCatalog(): void {
+    if (this.charliealphaCategoryCatalogLoading || this.charliealphaCategoryCatalogLoaded) return;
+    this.charliealphaCategoryCatalogLoading = true;
+    this.charliealphaCategoryCatalogError = '';
+    this.charliealphaApi.getCategories().subscribe({
+      next: response => {
+        this.charliealphaProviderCategories = (response.results ?? [])
+          .filter(row => typeof row?.slug === 'string' && row.slug.trim())
+          .map(row => ({
+            slug: String(row.slug),
+            name: String(row.name ?? row.label ?? row.slug),
+            asset_class: String(row.asset_class ?? row.group ?? ''),
+          }));
+        this.charliealphaCategoryCatalogLoaded = true;
+        if (!this.charliealphaMetricCategorySlug && this.charliealphaProviderCategories.length) {
+          this.charliealphaMetricCategorySlug = this.charliealphaProviderCategories[0].slug;
+        }
+        this.charliealphaCategoryCatalogLoading = false;
+        this.cdr.detectChanges();
+        if (this.charliealphaMetricCategorySlug) {
+          this.loadCharlieAlphaCategoryMetrics(this.charliealphaMetricCategorySlug);
+        }
+      },
+      error: error => {
+        this.charliealphaCategoryCatalogLoading = false;
+        this.charliealphaCategoryCatalogError = error?.status === 404
+          ? 'Run sync_charliealpha --domain categories to store the provider category catalogue.'
+          : 'Unable to load the stored CharlieAlpha category catalogue.';
+        this.cdr.detectChanges();
+      },
+    });
+  }
+
+  loadCharlieAlphaCategoryMetrics(slug: string, horizon: string = this.charliealphaMetricHorizon): void {
+    if (!slug) {
+      this.charliealphaCategoryMetrics = null;
+      this.charliealphaCategoryMetricsError = '';
+      return;
+    }
+    this.charliealphaMetricCategorySlug = slug;
+    this.charliealphaMetricHorizon = horizon as '1y' | '3y' | '5y' | '10y';
+    this.charliealphaCategoryMetricsLoading = true;
+    this.charliealphaCategoryMetricsError = '';
+    this.charliealphaCategoryMetricsSubscription?.unsubscribe();
+    this.charliealphaCategoryMetricsSubscription = this.charliealphaApi.getCategoryMetrics(slug, horizon).subscribe({
+      next: response => {
+        this.charliealphaCategoryMetrics = response;
+        this.charliealphaCategoryMetricsLoading = false;
+        this.cdr.detectChanges();
+      },
+      error: error => {
+        this.charliealphaCategoryMetrics = null;
+        this.charliealphaCategoryMetricsLoading = false;
+        this.charliealphaCategoryMetricsError = error?.status === 404
+          ? 'Metrics for this category and horizon have not been ingested. Run sync_charliealpha --domain metrics --category ' + slug + ' --horizon ' + horizon + '.'
+          : 'Unable to load stored metrics for this category and horizon.';
         this.cdr.detectChanges();
       },
     });

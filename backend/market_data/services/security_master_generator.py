@@ -757,6 +757,100 @@ class SecurityMasterGenerator:
         }
 
     @classmethod
+    def persist_resolved_symbol(cls, *, isin, security_name, yahoo_symbol):
+        """Persist a resolver-confirmed Yahoo symbol against its ISIN."""
+        cleaned_isin = cls._normalize_isin(isin)
+        cleaned_symbol = SecurityResolver.clean_symbol(yahoo_symbol)
+        if not cleaned_isin or not cleaned_symbol:
+            return False
+
+        import openpyxl
+
+        output_path = cls._output_file()
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        temp_path = output_path.with_name(f".{output_path.stem}.resolved.tmp.xlsx")
+
+        if output_path.exists():
+            workbook = openpyxl.load_workbook(output_path)
+            worksheet = workbook["Security Master"] if "Security Master" in workbook.sheetnames else workbook.active
+            headers = [cell.value for cell in worksheet[1]]
+            header_indexes = {
+                str(value).strip().upper(): index + 1
+                for index, value in enumerate(headers) if value is not None
+            }
+            isin_column = header_indexes.get("ISIN")
+            symbol_column = header_indexes.get("YAHOO SYMBOL")
+            if isin_column is None or symbol_column is None:
+                workbook.close()
+                raise ValueError("Security Master must contain ISIN and Yahoo Symbol columns.")
+
+            matches = [
+                row_number for row_number in range(2, worksheet.max_row + 1)
+                if cls._normalize_isin(worksheet.cell(row=row_number, column=isin_column).value) == cleaned_isin
+            ]
+            if len(matches) > 1:
+                workbook.close()
+                raise ValueError(f"Multiple Security Master rows found for ISIN {cleaned_isin}.")
+
+            row_number = matches[0] if matches else worksheet.max_row + 1
+            if not matches:
+                worksheet.cell(row=row_number, column=isin_column).value = cleaned_isin
+                name_column = header_indexes.get("SECURITY NAME")
+                if name_column:
+                    worksheet.cell(row=row_number, column=name_column).value = cls._clean(security_name)
+
+            existing_symbol = SecurityResolver.clean_symbol(worksheet.cell(row=row_number, column=symbol_column).value)
+            if existing_symbol and existing_symbol != cleaned_symbol:
+                workbook.close()
+                raise ValueError(
+                    f"Security Master already maps ISIN {cleaned_isin} to {existing_symbol}; "
+                    f"refusing to replace it with {cleaned_symbol}."
+                )
+
+            worksheet.cell(row=row_number, column=symbol_column).value = cleaned_symbol
+            for header, value in (
+                ("RESOLUTION STATUS", "RESOLVED"),
+                ("PRICE SOURCE", "YAHOO_FINANCE"),
+                ("ACTIVE", True),
+            ):
+                column = header_indexes.get(header)
+                if column and worksheet.cell(row=row_number, column=column).value in (None, ""):
+                    worksheet.cell(row=row_number, column=column).value = value
+        else:
+            workbook = openpyxl.Workbook()
+            worksheet = workbook.active
+            worksheet.title = "Security Master"
+            worksheet.append(cls.OUTPUT_COLUMNS)
+            record = {column: None for column in cls.OUTPUT_COLUMNS}
+            record.update({
+                "ISIN": cleaned_isin,
+                "Security Name": cls._clean(security_name),
+                "Yahoo Symbol": cleaned_symbol,
+                "Active": True,
+                "Resolution Status": "RESOLVED",
+                "Price Source": "YAHOO_FINANCE",
+            })
+            worksheet.append([record[column] for column in cls.OUTPUT_COLUMNS])
+            worksheet.freeze_panes = "A2"
+            worksheet.auto_filter.ref = worksheet.dimensions
+
+        try:
+            workbook.save(temp_path)
+            workbook.close()
+            os.replace(temp_path, output_path)
+        except Exception:
+            try:
+                workbook.close()
+            except Exception:
+                pass
+            if temp_path.exists():
+                temp_path.unlink()
+            raise
+
+        SecurityResolver.reload_security_master()
+        return True
+
+    @classmethod
     def _merge_existing_records(cls, records):
         """
         Merge freshly resolved records with the current workbook.

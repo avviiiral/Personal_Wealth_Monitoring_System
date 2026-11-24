@@ -66,7 +66,7 @@ _SNAPSHOT_GROUP_FIELDS = {
         "rolling_3y_cagr_min_pct", "rolling_3y_cagr_max_pct",
         "rolling_3y_cagr_observations", "std_dev_pct", "sharpe", "sortino",
         "beta", "alpha_pct", "information_ratio", "max_drawdown_pct",
-        "risk_free_rate_used_pct", "ratio_window_years", "fund_age_years",
+        "risk_free_rate_used_pct", "ratio_window_years",
         "upside_capture_pct", "downside_capture_pct", "tracking_error_pct",
     ),
     "ter": ("ter_direct_pct", "ter_regular_pct", "ter_as_of", "ter_source"),
@@ -432,9 +432,9 @@ def charliealpha_category_metrics(request, slug: str):
 @permission_classes([IsAuthenticated])
 def charliealpha_compare(request):
     """Read a previously ingested provider comparison; never call the provider from the UI."""
-    codes = request.data.get("scheme_codes", [])
     if not isinstance(request.data, dict):
         return Response({"detail": "The request body must be a JSON object."}, status=status.HTTP_400_BAD_REQUEST)
+    codes = request.data.get("scheme_codes", [])
     if not isinstance(codes, list):
         return Response({"detail": "scheme_codes must be an array."}, status=status.HTTP_400_BAD_REQUEST)
     normalized = list(dict.fromkeys(str(code).strip().upper() for code in codes if str(code).strip()))
@@ -451,9 +451,11 @@ def charliealpha_compare(request):
     command = "overlap" if overlap_only else "compare"
     run = next((
         candidate for candidate in MFSourceRun.objects.filter(
-            source=SOURCE, command=command
+            source=SOURCE, command=command,
+            status__in=(MFSourceRun.Status.SUCCESS, MFSourceRun.Status.PARTIAL),
         ).order_by("-started_at")[:500]
         if (candidate.metadata or {}).get("scheme_codes") == normalized
+        and "provider_result" in (candidate.metadata or {})
     ), None)
     if run is None:
         return Response({

@@ -87,6 +87,42 @@ class CharlieAlphaExtendedPersistenceTests(TestCase):
             status=MFSourceRun.Status.SUCCESS,
         ).exists())
 
+    def test_sif_directory_sifs_envelope_is_normalized_and_identifiers_are_discovered(self):
+        client = Mock()
+        client.get.side_effect = [
+            {
+                "sifs": [
+                    {"scheme_code": "SIF-1", "scheme_name": "Example SIF Growth"},
+                    {"scheme_code": "SIF-2", "scheme_name": "Example SIF IDCW"},
+                ]
+            },
+            {"fields": ["scheme_code", "nav"], "data": [["SIF-1", "11.42"]]},
+            {"nav": "11.42", "date": "2026-11-23"},
+            {"dates": ["2026-11-22", "2026-11-23"], "nav": ["11.30", "11.42"]},
+        ]
+
+        result = CharlieAlphaExtendedService(client=client).sync_sif(limit=1)
+
+        self.assertEqual(result["schemes_discovered"], 2)
+        self.assertEqual(result["schemes_requested"], 1)
+        directory = MFProviderResourceSnapshot.objects.get(
+            family="SIF", endpoint="sif/schemes",
+        )
+        self.assertEqual(directory.record_count, 2)
+        self.assertEqual(
+            [row["scheme_code"] for row in directory.records],
+            ["SIF-1", "SIF-2"],
+        )
+        self.assertEqual(
+            [call.args[0] for call in client.get.call_args_list],
+            [
+                "sif/schemes",
+                "sif/lnavall",
+                "sif/lnav/SIF-1",
+                "sif/hnav/SIF-1",
+            ],
+        )
+
     def test_sif_and_gift_keep_their_own_identifiers_and_request_contracts(self):
         sif_client = Mock()
         sif_client.get.side_effect = [

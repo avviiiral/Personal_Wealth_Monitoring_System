@@ -485,7 +485,7 @@
           <div><span>11</span><h3>Provider family snapshots</h3></div>
           <small>Latest 100 stored responses for the selected family</small>
         </div>
-        <div class="provider-filters">
+        <div class="provider-filters provider-family-filter">
           <label for="ca-resource-family">Endpoint family</label>
           <select id="ca-resource-family" [ngModel]="charliealphaProviderFamily" (ngModelChange)="loadCharlieAlphaProviderResources($event)">
             <option value="NPS">National Pension System (NPS)</option>
@@ -510,7 +510,7 @@
                 <td>{{ formatDate(item.as_of_date) }}</td>
                 <td>{{ item.record_count }}</td>
                 <td>{{ formatGeneratedAt(item.fetched_at) }}</td>
-                <td><span class="quartile" [class.quartile-good]="item.success" [class.quartile-low]="!item.success">{{ item.success ? 'Success' : 'Failed' }}</span></td>
+                <td><span class="source-status" [class.status-success]="item.success" [class.status-failed]="!item.success">{{ item.success ? 'Success' : 'Failed' }}</span></td>
               </tr>
             </tbody>
           </table>

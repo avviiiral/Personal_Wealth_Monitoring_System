@@ -640,10 +640,20 @@ class CharlieAlphaService:
                 if snapshot is None:
                     continue
                 if domain == "ter":
-                    if (scheme.plan or "").casefold() == "direct":
+                    plan_name = (scheme.plan or "").casefold()
+                    if plan_name.startswith("direct") or " direct" in plan_name:
                         snapshot.ter_direct_pct = value
-                    else:
+                    elif plan_name.startswith("regular") or " regular" in plan_name:
                         snapshot.ter_regular_pct = value
+                    else:
+                        self.stats["skipped"] += 1
+                        self.errors.append({
+                            "kind": "ter_plan_unclassified",
+                            "scheme_code": scheme.scheme_code,
+                            "plan": scheme.plan,
+                            "date": day.isoformat(),
+                        })
+                        continue
                     snapshot.ter_as_of = day
                     snapshot.ter_source = SOURCE
                     self._mark_source(snapshot, "ter", endpoint, day)

@@ -31,7 +31,7 @@ export interface MutualFundDetailResponse {
   provider_metrics: Record<string, any> | null;
   holdings_changes: any;
   data_availability: Record<string, boolean | string | null>;
-  holdings_periods: Array<string | { date?: string; as_of?: string; report_date?: string; holdings_count?: number }>;
+  holdings_periods: any[];
 }
 
 @Injectable({ providedIn: 'root' })

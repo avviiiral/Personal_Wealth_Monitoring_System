@@ -814,7 +814,9 @@ class SecurityMasterGenerator:
                 ("ACTIVE", True),
             ):
                 column = header_indexes.get(header)
-                if column and worksheet.cell(row=row_number, column=column).value in (None, ""):
+                if column:
+                    # The persisted symbol has been validated for this ISIN;
+                    # status/source must reflect the current successful mapping.
                     worksheet.cell(row=row_number, column=column).value = value
         else:
             workbook = openpyxl.Workbook()

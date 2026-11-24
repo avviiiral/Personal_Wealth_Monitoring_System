@@ -9,8 +9,8 @@ from mutual_funds.services.charliealpha_extended import CharlieAlphaExtendedServ
 
 class Command(BaseCommand):
     help = (
-        "Ingest CharlieAlpha scheme master, NAV, metrics, TER, AUM, holdings and "
-        "normalized benchmark history into the configured PWMS database."
+        "Ingest CharlieAlpha MF/ETF, NPS, SIF, GIFT City, instrument, corporate-action "
+        "and benchmark endpoints into the configured PWMS database."
     )
 
     def add_arguments(self, parser):
@@ -36,8 +36,8 @@ class Command(BaseCommand):
             "--limit", type=int, default=0,
             help="Optional upper bound for per-scheme calls; 0 means no artificial cap.",
         )
-        parser.add_argument("--search-query", default="", help="Free-text CharlieAlpha scheme discovery query.")
-        parser.add_argument("--identifier", default="", help="Stock ISIN, NSE symbol or BSE scrip code for fund exposure.")
+        parser.add_argument("--search-query", default="", help="Free-text search for MF, SIF, GIFT City or instrument records.")
+        parser.add_argument("--identifier", default="", help="Stock/security identifier for fund exposure, or 12-character ISIN for instrument-detail.")
         parser.add_argument("--min-pct", default="", help="Optional minimum portfolio percentage for stock exposure.")
         parser.add_argument("--period-limit", type=int, default=4, help="Maximum historical holdings periods per scheme; 0 means all available.")
         parser.add_argument("--include-nav-history", action="store_true", help="Also fetch historical NAV for the selected/limited scheme universe during --domain all.")

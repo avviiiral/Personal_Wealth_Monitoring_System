@@ -322,28 +322,46 @@ class CharlieAlphaService:
         self.dry_run = dry_run
         self.stats = {"fetched": 0, "inserted": 0, "updated": 0, "skipped": 0, "failed": 0, "unmatched": 0}
         self.errors: list[dict] = []
+        self._last_run_stats = dict(self.stats)
+        self._last_run_error_count = 0
 
     def _run(self, command: str, *, as_of: date | None = None, metadata: dict | None = None, status: str | None = None):
+        # MFSourceRun rows are domain/operation audit records. Store per-run
+        # deltas, not the cumulative counters for every preceding API call.
+        run_stats = {
+            key_name: self.stats[key_name] - self._last_run_stats.get(key_name, 0)
+            for key_name in self.stats
+        }
+        run_errors = self.errors[self._last_run_error_count:]
+        if status is None:
+            if self.dry_run:
+                run_status = MFSourceRun.Status.DRY_RUN
+            elif run_stats["failed"] or run_stats["unmatched"] or run_stats["skipped"]:
+                run_status = MFSourceRun.Status.PARTIAL
+            else:
+                run_status = MFSourceRun.Status.SUCCESS
+        else:
+            run_status = status
+        run_metadata = dict(metadata or {})
+        run_metadata["ingestion_stats"] = run_stats
         run = MFSourceRun.objects.create(
             source=SOURCE,
             command=command[:120],
             as_of_date=as_of or timezone.localdate(),
             source_url=BASE_URL + "/",
-            status=status or (
-                MFSourceRun.Status.DRY_RUN if self.dry_run
-                else MFSourceRun.Status.PARTIAL if self.stats["failed"] or self.stats["unmatched"]
-                else MFSourceRun.Status.SUCCESS
-            ),
+            status=run_status,
             completed_at=timezone.now(),
-            rows_parsed=self.stats["fetched"],
-            rows_inserted=0 if self.dry_run else self.stats["inserted"],
-            rows_updated=0 if self.dry_run else self.stats["updated"],
-            rows_skipped=self.stats["skipped"],
-            rows_unmatched=self.stats["unmatched"],
-            rows_failed=self.stats["failed"],
-            errors=self.errors[:100],
-            metadata=_json_safe(metadata or {}),
+            rows_parsed=run_stats["fetched"],
+            rows_inserted=0 if self.dry_run else run_stats["inserted"],
+            rows_updated=0 if self.dry_run else run_stats["updated"],
+            rows_skipped=run_stats["skipped"],
+            rows_unmatched=run_stats["unmatched"],
+            rows_failed=run_stats["failed"],
+            errors=run_errors[:100],
+            metadata=_json_safe(run_metadata),
         )
+        self._last_run_stats = dict(self.stats)
+        self._last_run_error_count = len(self.errors)
         return run
 
     def _resolve_scheme(self, row: dict):

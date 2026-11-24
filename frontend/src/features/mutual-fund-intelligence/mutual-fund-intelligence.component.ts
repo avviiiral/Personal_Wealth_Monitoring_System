@@ -554,10 +554,14 @@ export class MutualFundIntelligenceComponent implements OnInit, OnDestroy {
     return Number.isNaN(date.getTime()) ? value : date.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
   }
 
-  formatGeneratedAt(value: string | undefined): string {
+  formatGeneratedAt(value: string | null | undefined): string {
     if (!value) return 'Not generated';
     const date = new Date(value);
     return Number.isNaN(date.getTime()) ? value : date.toLocaleString('en-IN');
+  }
+
+  sourceLabel(value: string): string {
+    return String(value || '').replaceAll('_', ' ').replace(/\\b\\w/g, letter => letter.toUpperCase());
   }
 
   getCategorySummaryValue(key: string): string {

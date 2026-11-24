@@ -241,6 +241,69 @@
         </article>
       </div>
 
+      <article class="chart-card provider-category-analytics">
+        <div class="chart-title">
+          <div><span>03A</span><h3>Category-level performance and risk</h3></div>
+          <small>{{ charliealphaProviderCategories.length }} provider categories · stored metrics</small>
+        </div>
+        <div class="provider-filters category-metric-filters">
+          <div class="field-group">
+            <label for="ca-metric-category">Provider category</label>
+            <select id="ca-metric-category"
+              [ngModel]="charliealphaMetricCategorySlug"
+              (ngModelChange)="loadCharlieAlphaCategoryMetrics($event)">
+              <option value="">Select a category</option>
+              <option *ngFor="let item of charliealphaProviderCategories" [value]="item.slug">
+                {{ item.name || item.slug }}{{ item.asset_class ? ' · ' + item.asset_class : '' }}
+              </option>
+            </select>
+          </div>
+          <div class="field-group">
+            <label for="ca-metric-horizon">Analytics horizon</label>
+            <select id="ca-metric-horizon"
+              [ngModel]="charliealphaMetricHorizon"
+              (ngModelChange)="loadCharlieAlphaCategoryMetrics(charliealphaMetricCategorySlug, $event)">
+              <option value="1y">1 year</option>
+              <option value="3y">3 years</option>
+              <option value="5y">5 years</option>
+              <option value="10y">10 years</option>
+            </select>
+          </div>
+          <button type="button" class="provider-secondary"
+            (click)="loadCharlieAlphaCategoryCatalog()"
+            [disabled]="charliealphaCategoryCatalogLoading">
+            {{ charliealphaCategoryCatalogLoading ? 'Loading categories…' : 'Reload category list' }}
+          </button>
+        </div>
+        <div class="error-message" *ngIf="charliealphaCategoryCatalogError" role="alert">{{ charliealphaCategoryCatalogError }}</div>
+        <div class="error-message" *ngIf="charliealphaCategoryMetricsError" role="alert">{{ charliealphaCategoryMetricsError }}</div>
+        <p class="data-footnote" *ngIf="charliealphaCategoryMetricsLoading">Loading stored provider metrics for the selected category and horizon…</p>
+        <ng-container *ngIf="charliealphaCategoryMetrics as categoryMetrics">
+          <div class="provider-kpis category-metric-kpis">
+            <article class="kpi-card">
+              <span>Matched category funds</span>
+              <strong>{{ categoryMetrics.metrics_count ?? '—' }}</strong>
+              <small>{{ categoryMetrics.horizon || charliealphaMetricHorizon | uppercase }} horizon</small>
+            </article>
+            <article class="kpi-card">
+              <span>Provider metric status</span>
+              <strong>{{ categoryMetrics.status || 'Stored' }}</strong>
+              <small>{{ formatGeneratedAt(categoryMetrics.fetched_at) }}</small>
+            </article>
+          </div>
+          <div *ngIf="categoryMetrics.category_medians" class="provider-result">
+            <strong>Category medians and sample counts</strong>
+            <pre>{{ categoryMetrics.category_medians | json }}</pre>
+          </div>
+          <p class="method-note" *ngIf="!categoryMetrics.category_medians">
+            No category median block was returned for this stored request. Missing metrics are not inferred from peer funds.
+          </p>
+        </ng-container>
+        <p class="method-note" *ngIf="!charliealphaProviderCategories.length && !charliealphaCategoryCatalogLoading && !charliealphaCategoryCatalogError">
+          Store the provider's complete category tree with <code>python manage.py sync_charliealpha --domain categories</code>.
+        </p>
+      </article>
+
       <article class="chart-card provider-universe">
         <div class="chart-title"><div><span>04</span><h3>Fund universe — performance, risk, expense and AUM</h3></div><small>{{ charliealphaFunds.length }} rows on this page · database-backed</small></div>
         <div class="table-wrap">

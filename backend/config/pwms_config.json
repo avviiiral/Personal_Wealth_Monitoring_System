@@ -444,5 +444,22 @@
     "nse_history_days": 365,
     "daily_scheduler_enabled": true,
     "daily_run_time": "06:00"
+  },
+  "mf_intelligence": {
+    "base_url": "https://api.charliealpha.in/v1",
+    "user_agent": "PWMS-MFIntelligence/1.0",
+    "timeout_seconds": 45,
+    "max_retries": 3,
+    "max_requests_per_window": 40,
+    "rate_window_seconds": 10,
+    "fetch_workers": 4,
+    "holdings_refresh_days": 7,
+    "aum_refresh_days": 30,
+    "stale_run_hours": 6,
+    "amfi_cap_list_url_template": "https://portal.amfiindia.com/spages/AverageMarketCapitalization{day}{month}{year}.xlsx",
+    "auto_sync_enabled": false,
+    "auto_sync_time": "05:30",
+    "auto_sync_plans": ["Regular"],
+    "auto_sync_categories": []
   }
 }

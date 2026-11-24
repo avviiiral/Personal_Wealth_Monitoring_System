@@ -79,6 +79,7 @@ INSTALLED_APPS = [
     'watchlist',
     'filing_intelligence',
     'corporate_actions',
+    'mf_intelligence',
 ]
 
 MIDDLEWARE = [

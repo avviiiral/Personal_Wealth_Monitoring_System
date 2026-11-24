@@ -99,6 +99,13 @@ export const routes: Routes = [
         loadComponent: () =>
           import('../features/watch-list/watch-list.component').then((m) => m.WatchListComponent),
       },
+      {
+        path: 'mf-intelligence',
+        loadComponent: () =>
+          import('../features/mf-intelligence/mf-intelligence.component').then(
+            (m) => m.MfIntelligenceComponent,
+          ),
+      },
     ],
   },
   {

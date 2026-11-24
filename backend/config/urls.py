@@ -70,4 +70,7 @@ urlpatterns = [
 
     # Corporate actions (split, bonus, dividends and related events)
     path("api/corporate-actions/", include("corporate_actions.urls")),
+
+    # Mutual Fund Intelligence (category analytics from CharlieAlpha data)
+    path("api/mf-intelligence/", include("mf_intelligence.urls")),
 ]

@@ -1,0 +1,647 @@
+<section class="mfi">
+  <header class="mfi-hero">
+    <div class="hero-text">
+      <span class="eyebrow">Research · CharlieAlpha &amp; AMFI data</span>
+      <h1>Mutual Fund <span>Intelligence</span></h1>
+      <p>
+        @if (dashboard) {
+          {{ dashboard.category.name }} · {{ funds.length }} funds{{ dashboard.plan ? ' · ' + dashboard.plan + ' plans' : '' }}
+          · returns as of {{ dashboard.as_of.nav ? (dashboard.as_of.nav | date: 'd MMM y') : '—' }}
+          · risk metrics as of {{ dashboard.as_of.metrics ? (dashboard.as_of.metrics | date: 'd MMM y') : '—' }}
+          · holdings as of {{ dashboard.as_of.holdings ? (dashboard.as_of.holdings | date: 'd MMM y') : '—' }}
+        } @else {
+          Category analytics for every SEBI mutual fund category, stored in your PWMS database.
+        }
+      </p>
+    </div>
+    <div class="hero-actions">
+      @if (lastSync) {
+        <div class="sync-meta" [class.running]="syncRunning">
+          <span class="dot"></span>
+          @if (syncRunning) {
+            Syncing · {{ lastSync.current_step }}
+          } @else {
+            Last sync {{ lastSync.status }} · {{ lastSync.finished_at || lastSync.started_at | date: 'd MMM, HH:mm' }}
+          }
+        </div>
+      }
+      @if (canSync) {
+        <button type="button" class="btn-primary" (click)="toggleSyncPanel()" [disabled]="syncRunning">
+          {{ syncRunning ? 'Sync running…' : 'Sync data' }}
+        </button>
+      }
+    </div>
+  </header>
+
+  @if (syncPanelOpen) {
+    <div class="sync-panel">
+      <div class="sync-field">
+        <label>Scope</label>
+        <select [(ngModel)]="syncScope" aria-label="Sync scope">
+          <option value="category" [disabled]="!categorySlug">This category</option>
+          <option value="all">All 64 categories</option>
+        </select>
+      </div>
+      <div class="sync-field">
+        <label>Plans</label>
+        <select [(ngModel)]="syncPlan" aria-label="Plans to sync">
+          <option value="Regular">Regular</option>
+          <option value="Direct">Direct</option>
+          <option value="Both">Both</option>
+        </select>
+      </div>
+      <label class="sync-check"><input type="checkbox" [(ngModel)]="syncForce" /> Refetch data that is still fresh</label>
+      <p class="sync-note">
+        Category metrics refresh on every sync; NAV refreshes daily, holdings weekly and AUM history monthly.
+        A full sync of all categories takes roughly 25–30 minutes.
+      </p>
+      <button type="button" class="btn-primary" (click)="startSync()">Start sync</button>
+    </div>
+  }
+  @if (syncMessage) {
+    <div class="notice">{{ syncMessage }}</div>
+  }
+
+  <div class="toolbar">
+    <div class="field wide">
+      <label for="mfi-category">Category</label>
+      <select id="mfi-category" [ngModel]="categorySlug" (ngModelChange)="selectCategory($event)" [disabled]="categoriesLoading">
+        @for (group of groups; track group.asset_class) {
+          <optgroup [label]="group.asset_class">
+            @for (category of group.categories; track category.slug) {
+              <option [value]="category.slug">{{ category.name }}{{ category.has_data ? '' : ' (not synced)' }}</option>
+            }
+          </optgroup>
+        }
+      </select>
+    </div>
+    @if (dashboard?.plans?.length) {
+      <div class="field">
+        <label>Plan</label>
+        <div class="segmented">
+          @for (option of dashboard!.plans; track option) {
+            <button type="button" [class.active]="plan === option" (click)="onPlanChange(option)">{{ option }}</button>
+          }
+        </div>
+      </div>
+    }
+    <div class="field">
+      <label for="mfi-horizon">Risk horizon</label>
+      <select id="mfi-horizon" [(ngModel)]="horizon" (ngModelChange)="onHorizonChange()">
+        @for (option of dashboard?.horizons ?? ['1Y', '3Y', '5Y', '10Y']; track option) {
+          <option [value]="option">{{ option }}</option>
+        }
+      </select>
+    </div>
+    <div class="field">
+      <label for="mfi-benchmark">Benchmark</label>
+      <select id="mfi-benchmark" [(ngModel)]="benchmarkSlug" (ngModelChange)="onBenchmarkChange()">
+        @for (item of dashboard?.benchmarks ?? []; track item.slug) {
+          <option [value]="item.slug">{{ item.name }}</option>
+        }
+      </select>
+    </div>
+    <div class="field wide">
+      <label for="mfi-fund">Active fund</label>
+      <select id="mfi-fund" [(ngModel)]="activeCode" (ngModelChange)="onFundChange()" [disabled]="!funds.length">
+        @for (item of funds; track item.code) {
+          <option [value]="item.code">{{ item.short_name }}</option>
+        }
+      </select>
+    </div>
+  </div>
+
+  <nav class="tabs" aria-label="Mutual Fund Intelligence sections">
+    @for (item of tabs; track item.id) {
+      <button type="button" [class.active]="tab === item.id" (click)="setTab(item.id)">{{ item.label }}</button>
+    }
+  </nav>
+
+  @if (categoriesError || error) {
+    <div class="error">{{ categoriesError || error }}</div>
+  }
+  @if (loading || categoriesLoading) {
+    <div class="state">Loading analytics…</div>
+  } @else if (!groups.length) {
+    <div class="empty-card">
+      <h3>No mutual fund data yet</h3>
+      <p>Run the first sync to download categories, metrics, NAV history, holdings and benchmarks into your database.</p>
+      <code>python manage.py sync_mf_intelligence</code>
+      @if (canSync) { <button type="button" class="btn-primary" (click)="toggleSyncPanel()">Sync data</button> }
+    </div>
+  } @else if (dashboard && !funds.length) {
+    <div class="empty-card">
+      <h3>{{ dashboard.category.name }} has not been synced yet</h3>
+      <p>Sync this category to store its funds, risk metrics, returns and holdings.</p>
+      <code>python manage.py sync_mf_intelligence --category {{ dashboard.category.slug }}{{ plan === 'Direct' ? ' --plan Direct' : '' }}</code>
+    </div>
+  } @else if (dashboard) {
+    @if (!dashboard.flags.has_returns) {
+      <div class="notice warn">
+        NAV-based returns for {{ dashboard.plan || 'these' }} plans are not synced yet. Risk metrics below come from the API.
+        Run <code>sync_mf_intelligence --category {{ dashboard.category.slug }} --plan {{ dashboard.plan || 'Regular' }}</code>.
+      </div>
+    }
+    @if (summaries[tab]; as summary) {
+      <div class="summary">
+        <div class="summary-label">{{ tab === 'universe' ? 'Reading guide' : 'Key takeaways' }}</div>
+        <div class="summary-text" [innerHTML]="summary.html"></div>
+        @if (summary.pills.length) {
+          <div class="pills">
+            @for (pill of summary.pills; track pill.label) {
+              <span class="pill" [ngClass]="pill.tone || ''">{{ pill.label }}</span>
+            }
+          </div>
+        }
+      </div>
+    }
+
+    <!-- ═══ OVERVIEW ═══ -->
+    @if (tab === 'overview') {
+      <div class="kpis">
+        <div class="kpi"><span>Funds</span><strong>{{ funds.length }}</strong><small>{{ dashboard.category.peer_count_all_plans ?? '—' }} schemes incl. all plans</small></div>
+        <div class="kpi"><span>Cat avg 1Y</span><strong [ngClass]="tone(categoryReturn('1y'))">{{ signedPct(categoryReturn('1y')) }}</strong><small>{{ benchmarkName }}: {{ signedPct(benchmarkReturn('1y')) }}</small></div>
+        <div class="kpi"><span>Cat avg 3Y CAGR</span><strong>{{ pct(categoryReturn('3y')) }}</strong><small>Benchmark {{ pct(benchmarkReturn('3y')) }}</small></div>
+        <div class="kpi"><span>Cat avg {{ horizon }} Sharpe</span><strong>{{ fmt(categoryMetric('sharpe_ratio')) }}</strong><small>Median (all plans) {{ fmt(categoryMedianMetric('sharpe_ratio')) }}</small></div>
+        <div class="kpi"><span>Cat avg {{ horizon }} Max DD</span><strong>{{ pct(categoryMetric('trailing_max_drawdown'), 1) }}</strong><small>Peak to trough</small></div>
+        <div class="kpi"><span>Cat avg TER</span><strong>{{ pct(dashboard.category_average.ter) }}</strong><small>Expense ratio</small></div>
+        <div class="kpi"><span>Cat avg Quant Score</span><strong>{{ fmt(dashboard.category_average.score.total, 1) }}</strong><small>Percentile composite</small></div>
+      </div>
+      <div class="grid two">
+        <div class="card"><h4>Return distribution · 3M / 6M / 1Y</h4><div class="chart"><canvas data-chart="ov-returns"></canvas></div></div>
+        <div class="card"><h4>Quant Score distribution</h4><div class="chart"><canvas data-chart="ov-score"></canvas></div></div>
+      </div>
+      <div class="grid two">
+        <div class="card">
+          <h4>{{ isEquity ? 'Large / Mid / Small cap split (% of equity)' : 'Asset allocation by fund' }}</h4>
+          <div class="chart lg"><canvas data-chart="ov-mix"></canvas></div>
+          @if (isEquity && dashboard.cap_classification.method === 'INDEX_PROXY') {
+            <p class="foot">Market-cap buckets use NIFTY 100 / Midcap 150 index membership as a proxy because the AMFI list could not be downloaded.</p>
+          } @else if (isEquity && dashboard.cap_classification.amfi_period_end) {
+            <p class="foot">AMFI classification for the half-year ended {{ dashboard.cap_classification.amfi_period_end | date: 'd MMM y' }}.</p>
+          }
+        </div>
+        <div class="card">
+          <h4>{{ isEquity ? 'Cyclical · Defensive · Sensitive (% of equity)' : 'Sovereign · corporate · cash-like paper' }}</h4>
+          @if (isEquity || hasFixedIncome) {
+            <div class="chart lg"><canvas data-chart="ov-style"></canvas></div>
+          } @else {
+            <div class="state">No equity or fixed-income holdings in this category.</div>
+          }
+        </div>
+      </div>
+      <div class="grid two">
+        <div class="card"><h4>Average AUM · top 12 (₹ Cr)</h4><div class="chart"><canvas data-chart="ov-aum"></canvas></div></div>
+        <div class="card"><h4>{{ horizon }} max drawdown vs Calmar ratio</h4><div class="chart"><canvas data-chart="ov-mdd-calmar"></canvas></div><p class="foot">Further right means a shallower drawdown; higher means more return per unit of drawdown.</p></div>
+      </div>
+    }
+
+    <!-- ═══ FUND SCORECARD ═══ -->
+    @if (tab === 'scorecard' && fund) {
+      <div class="scorecard">
+        <div class="sc-head">
+          <div>
+            <div class="sc-name">{{ fund.short_name }}</div>
+            <div class="sc-sub">{{ fund.amc }} · {{ fund.age_label || '—' }} old · NAV ₹{{ fmt(fund.nav, 2) }} ({{ fund.nav_date | date: 'd MMM y' }})</div>
+          </div>
+          <div class="sc-meta">
+            <div><span>AAUM</span><strong>{{ crore(fund.aum) }}</strong></div>
+            <div><span>TER</span><strong>{{ pct(fund.ter) }}</strong></div>
+            <div><span>All-time max DD</span><strong>{{ pct(fund.all_time_mdd, 1) }}</strong></div>
+            <div class="sc-score"><span>Quant Score</span><strong>{{ fmt(fund.score.total, 1) }}</strong></div>
+          </div>
+        </div>
+        <div class="sc-metrics">
+          @for (period of ['3m', '1y', '3y', '5y']; track period) {
+            <div>
+              <span>{{ period.toUpperCase() }} return</span>
+              <strong [ngClass]="tone(fundReturn(fund, period))">{{ pct(fundReturn(fund, period)) }}</strong>
+              <small>Cat {{ pct(categoryReturn(period)) }} @if (returnQuartile(fund, period); as q) { <em class="q" [ngClass]="q">{{ q }}</em> }</small>
+            </div>
+          }
+          <div><span>{{ horizon }} Sharpe</span><strong>{{ fmt(fundMetric(fund, 'sharpe_ratio')) }}</strong><small>Cat {{ fmt(categoryMetric('sharpe_ratio')) }}</small></div>
+          <div><span>{{ horizon }} Max DD</span><strong>{{ pct(fundMetric(fund, 'trailing_max_drawdown'), 1) }}</strong><small>Cat {{ pct(categoryMetric('trailing_max_drawdown'), 1) }}</small></div>
+          <div><span>Calmar</span><strong>{{ fmt(calmar(fund)) }}</strong><small>Cat {{ fmt(dashboard.category_average.calmar[horizon]) }}</small></div>
+          <div><span>Up / Down capture</span><strong>{{ fmt(fundMetric(fund, 'upside_capture'), 0) }} / {{ fmt(fundMetric(fund, 'downside_capture'), 0) }}</strong><small>Cat {{ fmt(categoryMetric('upside_capture'), 0) }} / {{ fmt(categoryMetric('downside_capture'), 0) }}</small></div>
+        </div>
+      </div>
+      <div class="grid three">
+        <div class="card"><h4>{{ isEquity ? 'Market-cap tilt vs category' : 'Asset allocation vs category' }}</h4><div class="chart sm"><canvas data-chart="sc-cap"></canvas></div></div>
+        <div class="card">
+          <h4>Style split vs category</h4>
+          @if (isEquity) { <div class="chart sm"><canvas data-chart="sc-style"></canvas></div> } @else { <div class="state">Applies to equity holdings only.</div> }
+        </div>
+        <div class="card"><h4>Quant Score components vs category</h4><div class="chart sm"><canvas data-chart="sc-score"></canvas></div></div>
+      </div>
+      <div class="card">
+        <div class="card-head">
+          <h4>Growth of ₹100 vs {{ detail?.growth?.benchmark_name || benchmarkName }}</h4>
+          <div class="segmented small">
+            @for (window of growthWindows; track window) {
+              <button type="button" [class.active]="growthWindow === window" (click)="setGrowthWindow(window)">{{ window }}</button>
+            }
+          </div>
+        </div>
+        @if (detailLoading) { <div class="state">Loading fund detail…</div> }
+        @else if (detail?.growth) { <div class="chart lg"><canvas data-chart="sc-growth"></canvas></div> }
+        @else { <div class="state">NAV history has not been synced for this plan.</div> }
+        @if (insights['detail']) { <p class="foot" [innerHTML]="insights['detail']"></p> }
+      </div>
+      <div class="grid two">
+        <div class="card">
+          <h4>Top sectors vs category average</h4>
+          @if (topSectors(fund).length) {
+            <div class="legend">@for (style of styleKeys; track style) { <span><i [style.background]="styleColor(style)"></i>{{ style }}</span> }</div>
+            @for (sector of topSectors(fund); track sector.name) {
+              <div class="bar-row">
+                <i class="dot" [style.background]="styleColor(sector.style)"></i>
+                <span class="bar-label" [title]="sector.name">{{ sector.name }}</span>
+                <div class="bar-track"><div class="bar-fill" [style.width.%]="barWidth(sector.value, 30)" [style.background]="styleColor(sector.style)"></div></div>
+                <span class="bar-value">{{ fmt(sector.value, 1) }}%</span>
+                <span class="tag" [ngClass]="tone(sector.value, sector.cat)">{{ signedPct(diff(sector.value, sector.cat), 1) }}</span>
+              </div>
+            }
+          } @else { <div class="state">No equity sector data.</div> }
+        </div>
+        <div class="card">
+          <h4>Quarterly average AUM (₹ Cr)</h4>
+          @if (detail?.aum_history?.length) { <div class="chart"><canvas data-chart="sc-aum"></canvas></div> }
+          @else { <div class="state">AUM history not synced yet.</div> }
+        </div>
+      </div>
+    }
+
+    <!-- ═══ QUANT SCORE ═══ -->
+    @if (tab === 'score') {
+      <div class="grid two">
+        <div class="card"><h4>Score components · selected fund vs category</h4><div class="chart lg"><canvas data-chart="qs-radar"></canvas></div></div>
+        <div class="card method">
+          <h4>Methodology</h4>
+          <p>The Quant Score is computed in PWMS from stored CharlieAlpha metrics, not supplied by the API. Each component is the fund's percentile rank (0–100) among the {{ funds.length }} funds shown, for the {{ horizon }} horizon:</p>
+          <ul>
+            @for (item of dashboard.score_methodology; track item.key) {
+              <li><strong>{{ scoreLabels[item.key] }}</strong> · weight {{ item.weight }}%</li>
+            }
+          </ul>
+          <p>Downside protection averages the percentiles of downside capture (lower is better) and maximum drawdown. Weights re-normalise when a component is missing; at least three components are required.</p>
+        </div>
+      </div>
+      <div class="card">
+        <h4>Ranked by Quant Score</h4>
+        <div class="table-wrap">
+          <table class="tbl">
+            <thead><tr><th>#</th><th class="left">Fund</th><th>Score</th>@for (item of dashboard.score_methodology; track item.key) { <th>{{ scoreLabels[item.key] }}</th> }<th>{{ horizon }} CAGR</th><th>Sortino</th><th>TER</th><th>AAUM ₹Cr</th></tr></thead>
+            <tbody>
+              @for (row of scoreRows; track row.code; let i = $index) {
+                <tr [class.active]="row.code === activeCode" (click)="selectFund(row.code)">
+                  <td><span class="rank" [ngClass]="i < scoreRows.length / 4 ? 'r1' : i < scoreRows.length / 2 ? 'r2' : 'r3'">{{ row.score.rank ?? '—' }}</span></td>
+                  <td class="left name">{{ row.short_name }}</td>
+                  <td class="strong">{{ fmt(row.score.total, 1) }}</td>
+                  @for (item of dashboard.score_methodology; track item.key) {
+                    <td><div class="mini"><div [style.width.%]="row.score.components[item.key] ?? 0"></div></div>{{ fmt(row.score.components[item.key], 0) }}</td>
+                  }
+                  <td>{{ pct(fundMetric(row, 'trailing_cagr')) }}</td><td>{{ fmt(fundMetric(row, 'sortino_ratio')) }}</td><td>{{ pct(row.ter) }}</td><td>{{ fmt(row.aum, 0) }}</td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div class="grid two">
+        <div class="card"><h4>Returns vs risk-adjusted percentile</h4><div class="chart lg"><canvas data-chart="qs-return-risk"></canvas></div></div>
+        <div class="card"><h4>Consistency vs downside protection percentile</h4><div class="chart lg"><canvas data-chart="qs-consistency-downside"></canvas></div></div>
+      </div>
+    }
+
+    <!-- ═══ PERFORMANCE ═══ -->
+    @if (tab === 'performance') {
+      <p class="banner">Point-to-point returns from stored NAV history as of {{ dashboard.as_of.nav | date: 'd MMM y' }}. Up to 6M and YTD are absolute; 1Y and longer are annualised (CAGR over 365-day years). Benchmark: <strong>{{ benchmarkName }}</strong>.</p>
+      <div class="card">
+        <h4>Point-to-point returns · sorted by 1Y</h4>
+        <div class="table-wrap">
+          <table class="tbl">
+            <thead>
+              <tr><th>#</th><th class="left">Fund</th>@for (period of returnPeriods; track period.key) { <th>{{ period.label }}</th> }<th>SI</th><th>1Y Q</th><th>vs B'mark 1Y</th><th>vs B'mark 3Y</th></tr>
+            </thead>
+            <tbody>
+              <tr class="ref"><td>—</td><td class="left">Category average</td>@for (period of returnPeriods; track period.key) { <td>{{ fmt(categoryReturn(period.key)) }}</td> }<td>{{ fmt(categoryReturn('si')) }}</td><td>—</td><td>—</td><td>—</td></tr>
+              @if (dashboard.benchmark) {
+                <tr class="ref"><td>—</td><td class="left">{{ benchmarkName }}</td>@for (period of returnPeriods; track period.key) { <td>{{ fmt(benchmarkReturn(period.key)) }}</td> }<td>—</td><td>—</td><td>—</td><td>—</td></tr>
+              }
+              @for (row of performanceRows; track row.code; let i = $index) {
+                <tr [class.active]="row.code === activeCode" (click)="selectFund(row.code)">
+                  <td>{{ i + 1 }}</td>
+                  <td class="left name">{{ row.short_name }}</td>
+                  @for (period of returnPeriods; track period.key) {
+                    <td [ngClass]="tone(fundReturn(row, period.key))" [title]="'#' + (returnRank(row, period.key) ?? '—') + ' of ' + countWith(period.key)">{{ fmt(fundReturn(row, period.key)) }}</td>
+                  }
+                  <td>{{ fmt(fundReturn(row, 'si')) }}</td>
+                  <td>@if (returnQuartile(row, '1y'); as q) { <em class="q" [ngClass]="q">{{ q }}</em> } @else { — }</td>
+                  <td [ngClass]="tone(diff(fundReturn(row, '1y'), benchmarkReturn('1y')))">{{ signedPct(diff(fundReturn(row, '1y'), benchmarkReturn('1y'))) }}</td>
+                  <td [ngClass]="tone(diff(fundReturn(row, '3y'), benchmarkReturn('3y')))">{{ signedPct(diff(fundReturn(row, '3y'), benchmarkReturn('3y'))) }}</td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div class="grid two">
+        <div class="card"><h4>1Y return ranking</h4><div class="chart xl"><canvas data-chart="pf-rank"></canvas></div></div>
+        <div class="card">
+          <h4>Quartile consistency · 3M / 6M / 1Y</h4>
+          <div class="table-wrap tall">
+            <table class="tbl heat">
+              <thead><tr><th class="left">Fund</th><th>3M</th><th>6M</th><th>1Y</th><th>Trend</th></tr></thead>
+              <tbody>
+                @for (row of heatRows; track row.code) {
+                  <tr [class.active]="row.code === activeCode">
+                    <td class="left name">{{ row.short_name }}</td>
+                    @for (period of ['3m', '6m', '1y']; track period) {
+                      @if (returnQuartile(row, period); as q) { <td class="qcell" [ngClass]="q">{{ q }}</td> } @else { <td>—</td> }
+                    }
+                    <td [ngClass]="heatTrend(row).tone">{{ heatTrend(row).label }}</td>
+                  </tr>
+                }
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+      <div class="grid two">
+        <div class="card"><h4>3M vs 6M return</h4><div class="chart lg"><canvas data-chart="pf-3m-6m"></canvas></div></div>
+        <div class="card"><h4>1Y return vs {{ horizon }} max drawdown</h4><div class="chart lg"><canvas data-chart="pf-1y-mdd"></canvas></div></div>
+      </div>
+    }
+
+    <!-- ═══ CALENDAR YEAR ═══ -->
+    @if (tab === 'calendar' && fund) {
+      <div class="kpis">
+        @for (year of dashboard.calendar_years; track year) {
+          <div class="kpi">
+            <span>CY{{ year }}</span><strong [ngClass]="tone(calendarReturn(fund, year))">{{ signedPct(calendarReturn(fund, year), 1) }}</strong>
+            <small>B'mark {{ signedPct(benchmarkCalendarReturn(year), 1) }} · <b [ngClass]="tone(diff(calendarReturn(fund, year), benchmarkCalendarReturn(year)))">{{ signedPct(diff(calendarReturn(fund, year), benchmarkCalendarReturn(year)), 1) }}</b></small>
+          </div>
+        }
+        <div class="kpi accent"><span>YTD</span><strong [ngClass]="tone(fundReturn(fund, 'ytd'))">{{ signedPct(fundReturn(fund, 'ytd'), 1) }}</strong><small>B'mark {{ signedPct(benchmarkReturn('ytd'), 1) }}</small></div>
+      </div>
+      <div class="grid two">
+        <div class="card"><h4>Calendar-year returns · fund vs category vs {{ benchmarkName }}</h4><div class="chart lg"><canvas data-chart="cy-grouped"></canvas></div></div>
+        <div class="card"><h4>Excess return vs benchmark by year</h4><div class="chart lg"><canvas data-chart="cy-alpha"></canvas></div></div>
+      </div>
+      <div class="card">
+        <h4>Calendar-year table · sorted by latest year</h4>
+        <div class="table-wrap">
+          <table class="tbl">
+            <thead><tr><th>#</th><th class="left">Fund</th>@for (year of dashboard.calendar_years; track year) { <th>CY{{ year }}</th><th>α</th> }<th>YTD</th><th>+ve α yrs</th></tr></thead>
+            <tbody>
+              <tr class="ref"><td>—</td><td class="left">Category average</td>@for (year of dashboard.calendar_years; track year) { <td>{{ fmt(categoryCalendarReturn(year), 1) }}</td><td>{{ signedPct(diff(categoryCalendarReturn(year), benchmarkCalendarReturn(year)), 1) }}</td> }<td>{{ fmt(categoryReturn('ytd'), 1) }}</td><td>—</td></tr>
+              @if (dashboard.benchmark) {
+                <tr class="ref"><td>—</td><td class="left">{{ benchmarkName }}</td>@for (year of dashboard.calendar_years; track year) { <td>{{ fmt(benchmarkCalendarReturn(year), 1) }}</td><td>—</td> }<td>{{ fmt(benchmarkReturn('ytd'), 1) }}</td><td>—</td></tr>
+              }
+              @for (row of calendarRows; track row.code; let i = $index) {
+                <tr [class.active]="row.code === activeCode" (click)="selectFund(row.code)">
+                  <td>{{ i + 1 }}</td><td class="left name">{{ row.short_name }}</td>
+                  @for (year of dashboard.calendar_years; track year) {
+                    @if (cyQuartile(row, year); as q) { <td class="qcell" [ngClass]="q">{{ fmt(calendarReturn(row, year), 1) }}</td> } @else { <td>—</td> }
+                    <td [ngClass]="tone(diff(calendarReturn(row, year), benchmarkCalendarReturn(year)))">{{ signedPct(diff(calendarReturn(row, year), benchmarkCalendarReturn(year)), 1) }}</td>
+                  }
+                  <td [ngClass]="tone(fundReturn(row, 'ytd'))">{{ fmt(fundReturn(row, 'ytd'), 1) }}</td>
+                  <td>{{ positiveAlphaYears(row).positive }}/{{ positiveAlphaYears(row).total }}</td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+        <p class="foot">Cells are shaded by quartile within the year (Q1 best). Only complete calendar years are shown; funds launched mid-year start the following year.</p>
+      </div>
+    }
+
+    <!-- ═══ RISK & ROLLING ═══ -->
+    @if (tab === 'risk' && fund) {
+      <div class="grid two">
+        <div class="card">
+          <h4>Risk profile · {{ horizon }} · {{ fund.short_name }}</h4>
+          <div class="table-wrap">
+            <table class="tbl">
+              <thead><tr><th class="left">Metric</th><th>Fund</th><th>Category avg</th><th>Median (all plans)</th><th>Rank</th></tr></thead>
+              <tbody>
+                @for (key of riskKeys; track key) {
+                  <tr>
+                    <td class="left">{{ metricLabels[key] || key }}</td>
+                    <td class="strong" [ngClass]="metricTone(key, fundMetric(fund, key), categoryMetric(key))">{{ fmt(fundMetric(fund, key)) }}</td>
+                    <td>{{ fmt(categoryMetric(key)) }}</td>
+                    <td>{{ fmt(categoryMedianMetric(key)) }}</td>
+                    <td>{{ metricRank(fund, key) ?? '—' }}</td>
+                  </tr>
+                }
+              </tbody>
+            </table>
+          </div>
+          <p class="foot">Volatility, beta, alpha and capture ratios are measured against the category benchmark CharlieAlpha uses. Ratios use the {{ horizon }} window; funds younger than that show "—".</p>
+        </div>
+        <div class="card"><h4>Rolling {{ horizon }} return distribution</h4><div class="chart lg"><canvas data-chart="rk-rolling"></canvas></div></div>
+      </div>
+      <div class="grid two">
+        <div class="card"><h4>{{ horizon }} volatility vs CAGR</h4><div class="chart lg"><canvas data-chart="rk-vol-return"></canvas></div></div>
+        <div class="card"><h4>Upside vs downside capture</h4><div class="chart lg"><canvas data-chart="rk-capture"></canvas></div><p class="foot">Top-left is the most efficient corner: more of the up-moves, less of the down-moves.</p></div>
+      </div>
+    }
+
+    <!-- ═══ PORTFOLIO ═══ -->
+    @if (tab === 'portfolio' && fund) {
+      @if (fund.holdings; as holdings) {
+        @if (fund.holdings_from_code) {
+          <p class="banner">Holdings come from the fund's other plan (code {{ fund.holdings_from_code }}); a portfolio disclosure covers every plan of a fund.</p>
+        }
+        <div class="kpis">
+          <div class="kpi"><span>Holdings</span><strong>{{ holdings.total }}</strong><small>Cat {{ fmt(categoryHolding('total'), 0) }}</small></div>
+          <div class="kpi"><span>Stocks</span><strong>{{ holdings.stocks }}</strong><small>Cat {{ fmt(categoryHolding('stocks'), 0) }}</small></div>
+          <div class="kpi"><span>Equity</span><strong>{{ pct(holdings.equity_pct, 1) }}</strong><small>Cat {{ pct(categoryHolding('equity_pct'), 1) }}</small></div>
+          <div class="kpi"><span>Debt</span><strong>{{ pct(holdings.debt_pct, 1) }}</strong><small>Cat {{ pct(categoryHolding('debt_pct'), 1) }}</small></div>
+          <div class="kpi"><span>Cash</span><strong>{{ pct(holdings.cash_pct, 1) }}</strong><small>Cat {{ pct(categoryHolding('cash_pct'), 1) }}</small></div>
+          <div class="kpi"><span>Top-10 weight</span><strong>{{ pct(holdings.top10_pct, 1) }}</strong><small>Cat {{ pct(categoryHolding('top10_pct'), 1) }}</small></div>
+        </div>
+        <div class="grid two">
+          <div class="card">
+            <h4>{{ isEquity ? 'Sector allocation vs category average' : 'Asset allocation vs category' }}</h4>
+            @if (isEquity && topSectors(fund, 40).length) {
+              <div class="scroll">
+                @for (sector of topSectors(fund, 40); track sector.name) {
+                  <div class="bar-row">
+                    <i class="dot" [style.background]="styleColor(sector.style)"></i>
+                    <span class="bar-label" [title]="sector.name">{{ sector.name }}</span>
+                    <div class="bar-track"><div class="bar-fill" [style.width.%]="barWidth(sector.value, 30)" [style.background]="styleColor(sector.style)"></div><div class="bar-ref" [style.left.%]="barWidth(sector.cat, 30)"></div></div>
+                    <span class="bar-value">{{ fmt(sector.value, 1) }}%</span>
+                    <span class="tag" [ngClass]="tone(sector.value, sector.cat)">{{ signedPct(diff(sector.value, sector.cat), 1) }}</span>
+                  </div>
+                }
+              </div>
+              <p class="foot">The thin marker on each bar is the category average weight.</p>
+            } @else {
+              <div class="chart"><canvas data-chart="pt-alloc"></canvas></div>
+            }
+          </div>
+          <div class="card">
+            <h4>Top 10 holdings · {{ holdings.as_of | date: 'd MMM y' }}</h4>
+            @if (detailLoading) { <div class="state">Loading holdings…</div> }
+            @for (row of holdingRows(10); track row.name + row.isin; let i = $index) {
+              <div class="holding">
+                <span class="idx">{{ i + 1 }}</span>
+                <span class="h-name" [title]="row.name">{{ row.name }}<small>{{ row.industry || row.issuer_type || row.type }}{{ row.cap ? ' · ' + row.cap : '' }}</small></span>
+                <span class="h-status" [ngClass]="row.status">{{ row.status || '' }}</span>
+                <span class="h-pct">{{ fmt(row.pct) }}%</span>
+              </div>
+            }
+          </div>
+        </div>
+        @if (holdings.fixed_income; as fi) {
+          <div class="grid two">
+            <div class="card">
+              <h4>Fixed-income profile</h4>
+              <div class="kpis compact">
+                <div class="kpi"><span>Fixed income</span><strong>{{ pct(fi.weight_pct, 1) }}</strong></div>
+                <div class="kpi"><span>Sovereign</span><strong>{{ pct(fi.sovereign_pct, 1) }}</strong><small>Cat {{ pct(dashboard.category_average.holdings?.fixed_income?.['sovereign_pct'], 1) }}</small></div>
+                <div class="kpi"><span>Corporate / PSU</span><strong>{{ pct(fi.corporate_pct, 1) }}</strong></div>
+                <div class="kpi"><span>Cash-like</span><strong>{{ pct(fi.cash_equivalent_pct, 1) }}</strong><small>TREPS, repo, call</small></div>
+                <div class="kpi"><span>Money market</span><strong>{{ pct(fi.money_market_pct, 1) }}</strong></div>
+                <div class="kpi"><span>Avg maturity</span><strong>{{ fmt(fi.avg_maturity_years, 2) }}y</strong><small>{{ pct(fi.maturity_coverage_pct, 0) }} of paper dated</small></div>
+              </div>
+              <p class="foot">Maturity is read from the dates printed in disclosure names (paper without a printed date is left out of the average); issuer type comes from the ISIN (IN + digit = government, SDL or T-bill). Credit ratings are not published by the API.</p>
+            </div>
+            <div class="card"><h4>Residual maturity profile</h4><div class="chart"><canvas data-chart="pt-maturity"></canvas></div></div>
+          </div>
+        }
+        <div class="grid two">
+          <div class="card"><h4>Holdings count vs top-10 concentration</h4><div class="chart lg"><canvas data-chart="pt-concentration"></canvas></div></div>
+          @if (isEquity) {
+          <div class="card">
+            <h4>Unique ideas · stocks no other {{ dashboard.plan ?? '' }} peer holds</h4>
+            <div class="kpis compact">
+              <div class="kpi"><span>Unique stocks</span><strong>{{ fund.unique.count }}</strong><small>of {{ holdings.stocks }}</small></div>
+              <div class="kpi"><span>Weight</span><strong>{{ pct(fund.unique.weight_pct, 1) }}</strong></div>
+              <div class="kpi"><span>Share of equity</span><strong>{{ pct(fund.unique.share_of_equity_pct, 1) }}</strong></div>
+            </div>
+            @for (row of detail?.unique_stocks ?? []; track row.isin) {
+              <div class="holding"><span class="h-name">{{ row.name }}<small>{{ row.industry }} · {{ row.cap }}</small></span><span class="h-pct">{{ fmt(row.pct) }}%</span></div>
+            } @empty {
+              <p class="foot">Every stock in this portfolio is also held by at least one peer; differentiation comes from position sizing.</p>
+            }
+          </div>
+          }
+        </div>
+      } @else {
+        <div class="empty-card"><h3>No portfolio disclosure synced</h3><p>Holdings for this fund have not been downloaded yet.</p></div>
+      }
+    }
+
+    <!-- ═══ POSITIONING ═══ -->
+    @if (tab === 'positioning') {
+      <div class="card">
+        <div class="axis-row">
+          <label>X axis <select [(ngModel)]="xAxis" (ngModelChange)="onAxisChange()">@for (o of axisOptions; track o.key) { <option [value]="o.key">{{ o.label }}</option> }</select></label>
+          <label>Y axis <select [(ngModel)]="yAxis" (ngModelChange)="onAxisChange()">@for (o of axisOptions; track o.key) { <option [value]="o.key">{{ o.label }}</option> }</select></label>
+          <label>Bubble size <select [(ngModel)]="sizeAxis" (ngModelChange)="onAxisChange()">@for (o of axisOptions; track o.key) { <option [value]="o.key">{{ o.label }}</option> }</select></label>
+          <label>Colour <select [(ngModel)]="colorAxis" (ngModelChange)="onAxisChange()">@for (o of axisOptions; track o.key) { <option [value]="o.key">{{ o.label }}</option> }</select></label>
+        </div>
+        <p class="foot">Orange = selected fund · bubble size = {{ axis(sizeAxis)?.label }} · colour from navy (low) to gold (high) = {{ axis(colorAxis)?.label }}.</p>
+        <div class="chart xxl"><canvas data-chart="ps-bubble"></canvas></div>
+      </div>
+      <div class="grid two">
+        <div class="card"><h4>Ranking · {{ axis(xAxis)?.label }}</h4><div class="chart xl"><canvas data-chart="ps-rank"></canvas></div></div>
+        <div class="card"><h4>{{ horizon }} Sharpe vs 1Y return</h4><div class="chart xl"><canvas data-chart="ps-sharpe-1y"></canvas></div></div>
+      </div>
+    }
+
+    <!-- ═══ UNIVERSE ═══ -->
+    @if (tab === 'universe') {
+      <div class="card">
+        <div class="table-wrap">
+          <table class="tbl universe">
+            <thead>
+              <tr>
+                <th class="left sticky">Fund</th>
+                @for (column of universeColumns; track column.key) {
+                  <th class="sortable" (click)="sortUniverse(column.key)">{{ column.label }}{{ universeSortKey === column.key ? (universeSortDesc ? ' ▼' : ' ▲') : '' }}</th>
+                }
+              </tr>
+            </thead>
+            <tbody>
+              <tr class="ref"><td class="left sticky">Category average</td>@for (column of universeColumns; track column.key) { <td>{{ fmt(universeCatValue(column), column.digits) }}</td> }</tr>
+              @for (row of universeRows; track row.code) {
+                <tr [class.active]="row.code === activeCode" (click)="selectFund(row.code)">
+                  <td class="left sticky name" [title]="row.name">{{ row.short_name }}</td>
+                  @for (column of universeColumns; track column.key) {
+                    <td [ngClass]="cellTone(column, row)">{{ fmt(column.get(row), column.digits) }}</td>
+                  }
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+      </div>
+    }
+
+    <!-- ═══ MANAGER ACTIVITY ═══ -->
+    @if (tab === 'activity') {
+      @if (dashboard.flags.has_holdings) {
+        <p class="banner">Changes between each fund's last two portfolio disclosures. "Buyers" counts funds that added or increased a stock; weight changes include market drift, so small changes are not necessarily trades.</p>
+        <div class="grid two">
+          <div class="card">
+            <h4>Most widely bought</h4>
+            <table class="tbl compact"><thead><tr><th class="left">Stock</th><th>Buyers</th><th>Sellers</th><th>Holders</th><th>Σ wt chg</th></tr></thead>
+              <tbody>@for (item of dashboard.activity.net_buys; track item.isin) { <tr><td class="left name" [title]="item.industry">{{ item.name }}</td><td class="good">{{ item.buyers }}</td><td>{{ item.sellers }}</td><td>{{ item.holders }}</td><td>{{ signedPct(item.total_change_pct) }}</td></tr> } @empty { <tr><td colspan="5">No stock was bought by two or more funds.</td></tr> }</tbody>
+            </table>
+          </div>
+          <div class="card">
+            <h4>Most widely sold</h4>
+            <table class="tbl compact"><thead><tr><th class="left">Stock</th><th>Sellers</th><th>Buyers</th><th>Holders</th><th>Σ wt chg</th></tr></thead>
+              <tbody>@for (item of dashboard.activity.net_sells; track item.isin) { <tr><td class="left name" [title]="item.industry">{{ item.name }}</td><td class="bad">{{ item.sellers }}</td><td>{{ item.buyers }}</td><td>{{ item.holders }}</td><td>{{ signedPct(item.total_change_pct) }}</td></tr> } @empty { <tr><td colspan="5">No stock was sold by two or more funds.</td></tr> }</tbody>
+            </table>
+          </div>
+        </div>
+        <div class="grid two">
+          <div class="card">
+            <h4>New entries in 2+ funds</h4>
+            <table class="tbl compact"><thead><tr><th class="left">Stock</th><th>Funds</th><th class="left">Added by</th></tr></thead>
+              <tbody>@for (item of dashboard.activity.new_entries; track item.isin) { <tr><td class="left name">{{ item.name }}</td><td>{{ item.new.length }}</td><td class="left muted">{{ flowFunds(item, 'new') }}</td></tr> } @empty { <tr><td colspan="3">None.</td></tr> }</tbody>
+            </table>
+          </div>
+          <div class="card">
+            <h4>Complete exits in 2+ funds</h4>
+            <table class="tbl compact"><thead><tr><th class="left">Stock</th><th>Funds</th><th class="left">Exited by</th></tr></thead>
+              <tbody>@for (item of dashboard.activity.full_exits; track item.isin) { <tr><td class="left name">{{ item.name }}</td><td>{{ item.exited.length }}</td><td class="left muted">{{ flowFunds(item, 'exited') }}</td></tr> } @empty { <tr><td colspan="3">None.</td></tr> }</tbody>
+            </table>
+          </div>
+        </div>
+        <div class="grid two">
+          <div class="card"><h4>Net weight change by sector (all funds)</h4><div class="chart lg"><canvas data-chart="ac-sectors"></canvas></div></div>
+          <div class="card">
+            <h4>{{ fund?.short_name }} · changes since {{ detail?.holdings?.prev_as_of | date: 'd MMM y' }}</h4>
+            @if (detailLoading) { <div class="state">Loading…</div> }
+            <div class="activity-cols">
+              <div>
+                <h5 class="good">New additions</h5>
+                @for (row of fundActivity('NEW'); track row.name + row.isin) { <div class="holding"><span class="h-name">{{ row.name }}</span><span class="h-pct">{{ fmt(row.pct) }}%</span></div> } @empty { <p class="foot">None</p> }
+                <h5 class="good">Largest increases</h5>
+                @for (row of fundActivity('INCREASED'); track row.name + row.isin) { <div class="holding"><span class="h-name">{{ row.name }}</span><span class="h-pct good">{{ signedPct(row.change_pct) }}</span></div> } @empty { <p class="foot">None</p> }
+              </div>
+              <div>
+                <h5 class="bad">Complete exits</h5>
+                @for (row of detail?.holdings?.exits ?? []; track row.name + row.isin) { <div class="holding"><span class="h-name">{{ row.name }}</span><span class="h-pct">{{ fmt(row.prev_pct) }}%</span></div> } @empty { <p class="foot">None</p> }
+                <h5 class="bad">Largest decreases</h5>
+                @for (row of fundActivity('DECREASED'); track row.name + row.isin) { <div class="holding"><span class="h-name">{{ row.name }}</span><span class="h-pct bad">{{ signedPct(row.change_pct) }}</span></div> } @empty { <p class="foot">None</p> }
+              </div>
+            </div>
+          </div>
+        </div>
+      } @else {
+        <div class="empty-card"><h3>No holdings synced</h3><p>Manager activity needs at least one synced portfolio disclosure.</p></div>
+      }
+    }
+
+    <p class="source">
+      Data: CharlieAlpha public API (metrics, NAV, holdings, AUM, benchmarks) and AMFI (market-cap classification), stored in your PWMS database.
+      Quant Score, calendar-year and point-to-point returns, sector, style and market-cap splits are computed in PWMS. Not investment advice.
+    </p>
+  }
+</section>

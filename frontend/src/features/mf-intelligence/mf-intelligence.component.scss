@@ -4,11 +4,12 @@
   --mfi-navy: var(--nx-navy, #051233);
   --mfi-orange: var(--nx-orange, #fd7740);
   --mfi-gold: var(--nx-gold, #cc9f53);
-  --mfi-good: #16a34a;
-  --mfi-bad: #dc2626;
+  --mfi-good: #15803d;
+  --mfi-bad: #b91c1c;
   --mfi-accent-text: #b84a1c;
   padding: 24px 28px 60px;
   color: var(--ink);
+  color-scheme: light;
   font-size: 13px;
 }
 
@@ -196,7 +197,7 @@ td.qcell { font-size: 11px; border-radius: 0; }
 }
 .rank {
   display: inline-block; min-width: 22px; padding: 2px 6px; border-radius: 10px; text-align: center; font-size: 9px; font-weight: 700;
-  &.r1 { background: #fef3ee; color: var(--mfi-orange); }
+  &.r1 { background: #fef3ee; color: var(--mfi-accent-text); }
   &.r2 { background: #eff6ff; color: #1d4ed8; }
   &.r3 { background: #f0fdf4; color: var(--mfi-good); }
 }

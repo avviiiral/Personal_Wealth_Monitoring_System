@@ -108,10 +108,10 @@ def _serialize_current_snapshots(snapshots):
                 found.add(marker)
             field_sources = dict(target.get("field_sources") or {})
             source_info = (row.field_sources or {}).get(domain)
-            if source_info and domain not in field_sources:
+            if source_info:
                 field_sources[domain] = source_info
                 target["field_sources"] = field_sources
-            target.setdefault(domain + "_snapshot_as_of", row.as_of_date)
+                target[domain + "_snapshot_as_of"] = row.as_of_date
 
     return [serialized[row.scheme_id] for row in snapshot_rows]
 

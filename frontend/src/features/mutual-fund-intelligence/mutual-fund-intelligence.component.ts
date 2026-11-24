@@ -1125,7 +1125,7 @@ export class MutualFundIntelligenceComponent implements OnInit, OnDestroy {
   loadCharlieAlphaProviderResources(family: string = this.charliealphaProviderFamily): void {
     const allowed = ['NPS', 'SIF', 'GIFT', 'INSTRUMENTS', 'CORPORATE_ACTIONS'];
     if (!allowed.includes(family)) return;
-    this.charliealphaProviderFamily = family as typeof this.charliealphaProviderFamily;
+    this.charliealphaProviderFamily = family as 'NPS' | 'SIF' | 'GIFT' | 'INSTRUMENTS' | 'CORPORATE_ACTIONS';
     this.charliealphaProviderResourcesLoading = true;
     this.charliealphaProviderResourcesError = '';
     this.charliealphaProviderDataSubscription?.unsubscribe();

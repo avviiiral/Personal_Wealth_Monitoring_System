@@ -263,13 +263,13 @@
 </tr></thead>
             <tbody>
               <tr *ngFor="let row of sortedCharlieAlphaFunds">
-                <td><input type="checkbox" [checked]="isCharlieAlphaCompared(row.scheme_code)" (change)="toggleCharlieAlphaCompare(row.scheme_code)" [attr.aria-label]="'Compare ' + row.scheme_name"></td>
-                <td><button type="button" class="fund-select-link" (click)="loadCharlieAlphaFund(row.scheme_code)">{{ row.scheme_name || row.scheme_code }}</button><small class="scheme-code">{{ row.scheme_code }}</small></td>
-                <td>{{ row.amc || '—' }}<small class="scheme-code">{{ row.sebi_category_level_3 || 'Category unavailable' }}</small></td>
-                <td>{{ row.plan || '—' }}<small class="scheme-code">{{ row.option || '—' }}</small></td>
-                <td>{{ formatPct(row.return_1y_pct) }}</td><td>{{ formatPct(row.return_3y_pct) }}</td><td>{{ formatPct(row.return_5y_pct) }}</td><td>{{ formatPct(row.return_10y_pct) }}</td>
-                <td>{{ formatPct(row.std_dev_pct) }}</td><td>{{ formatNumber(row.sharpe, 3) }}</td><td>{{ formatNumber(row.sortino, 3) }}</td><td>{{ formatPct(row.max_drawdown_pct) }}</td>
-                <td>{{ formatPct(row.ter_direct_pct ?? row.ter_regular_pct) }}</td><td>{{ formatNumber(row.aum_cr, 2) }}</td>
+                <td><input type="checkbox" [checked]="isCharlieAlphaCompared(row['scheme_code'])" (change)="toggleCharlieAlphaCompare(row['scheme_code'])" [attr.aria-label]="'Compare ' + row['scheme_name']"></td>
+                <td><button type="button" class="fund-select-link" (click)="loadCharlieAlphaFund(row['scheme_code'])">{{ row['scheme_name'] || row['scheme_code'] }}</button><small class="scheme-code">{{ row['scheme_code'] }}</small></td>
+                <td>{{ row['amc'] || '—' }}<small class="scheme-code">{{ row['sebi_category_level_3'] || 'Category unavailable' }}</small></td>
+                <td>{{ row['plan'] || '—' }}<small class="scheme-code">{{ row['option'] || '—' }}</small></td>
+                <td>{{ formatPct(row['return_1y_pct']) }}</td><td>{{ formatPct(row['return_3y_pct']) }}</td><td>{{ formatPct(row['return_5y_pct']) }}</td><td>{{ formatPct(row['return_10y_pct']) }}</td>
+                <td>{{ formatPct(row['std_dev_pct']) }}</td><td>{{ formatNumber(row['sharpe'], 3) }}</td><td>{{ formatNumber(row['sortino'], 3) }}</td><td>{{ formatPct(row['max_drawdown_pct']) }}</td>
+                <td>{{ formatPct(row['ter_direct_pct'] ?? row['ter_regular_pct']) }}</td><td>{{ formatNumber(row['aum_cr'], 2) }}</td>
               </tr>
               <tr *ngIf="!charliealphaLoading && !charliealphaFunds.length"><td colspan="14" class="empty-cell">No matching CharlieAlpha data has been stored. Run the CharlieAlpha synchronization command or broaden the filters.</td></tr>
             </tbody>
@@ -309,7 +309,7 @@
         <div class="error-message" *ngIf="charliealphaDetailError">{{ charliealphaDetailError }}</div>
         <div class="data-footnote" *ngIf="charliealphaDetailLoading">Loading scheme detail from stored PWMS records…</div>
         <div class="provider-kpis detail-kpis" *ngIf="charliealphaDetail?.snapshot as snap">
-          <article class="kpi-card"><span>Latest NAV</span><strong>{{ formatNumber(snap.nav, 4) }}</strong><small>{{ formatDate(snap.nav_as_of) }} · Change {{ formatNumber(charliealphaDetail?.nav_detail?.nav_change) }} ({{ formatPct(charliealphaDetail?.nav_detail?.nav_change_pct) }})</small></article>
+          <article class="kpi-card"><span>Latest NAV</span><strong>{{ formatNumber(snap.nav, 4) }}</strong><small>{{ formatDate(snap.nav_as_of) }} · Change {{ formatNumber(charliealphaDetail?.nav_detail?.['nav_change']) }} ({{ formatPct(charliealphaDetail?.nav_detail?.['nav_change']_pct) }})</small></article>
           <article class="kpi-card"><span>1Y / 3Y / 5Y / 10Y CAGR</span><strong>{{ formatPct(snap.return_1y_pct) }}</strong><small>{{ formatPct(snap.return_3y_pct) }} / {{ formatPct(snap.return_5y_pct) }} / {{ formatPct(snap.return_10y_pct) }}</small></article>
           <article class="kpi-card"><span>Volatility / Sharpe / Sortino</span><strong>{{ formatPct(snap.std_dev_pct) }}</strong><small>{{ formatNumber(snap.sharpe, 3) }} / {{ formatNumber(snap.sortino, 3) }}</small></article>
           <article class="kpi-card"><span>Beta / Alpha</span><strong>{{ formatNumber(snap.beta, 3) }}</strong><small>Alpha {{ formatPct(snap.alpha_pct) }}</small></article>

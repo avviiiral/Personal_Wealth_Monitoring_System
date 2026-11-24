@@ -140,18 +140,42 @@ class WatchListProductSerializer(serializers.ModelSerializer):
             ("CAGR", "cagr", None),
         )
         result = {}
+        intelligence_as_of = (
+            (intelligence.data_as_of or intelligence.latest_nav_date)
+            if intelligence is not None
+            else None
+        )
         for key, snapshot_field, intelligence_field in fields:
-            value = next(
-                (
-                    getattr(snapshot, snapshot_field)
-                    for snapshot in (latest, metric_snapshot)
-                    if snapshot is not None and getattr(snapshot, snapshot_field, None) is not None
-                ),
-                None,
+            local_value = None
+            local_as_of = None
+            for snapshot in (latest, metric_snapshot):
+                if snapshot is not None:
+                    candidate = getattr(snapshot, snapshot_field, None)
+                    if candidate is not None:
+                        local_value = candidate
+                        local_as_of = snapshot.date
+                        break
+
+            intelligence_value = (
+                getattr(intelligence, intelligence_field, None)
+                if intelligence is not None and intelligence_field
+                else None
             )
-            if value is None and intelligence is not None and intelligence_field:
-                value = getattr(intelligence, intelligence_field, None)
-            result[key] = value
+            # The newest dated observation wins. Existing Watch List values
+            # remain preferred when both sources describe the same date.
+            if (
+                intelligence_value is not None
+                and (
+                    local_value is None
+                    or (
+                        intelligence_as_of is not None
+                        and (local_as_of is None or intelligence_as_of > local_as_of)
+                    )
+                )
+            ):
+                result[key] = intelligence_value
+            else:
+                result[key] = local_value
         return result
 
     def get_mutual_fund(self, obj):
@@ -171,13 +195,11 @@ class WatchListProductSerializer(serializers.ModelSerializer):
         risk_metrics = {}
         if intelligence is not None:
             metric_fields = (
-                "trailing_cagr", "avg_rolling_return", "rolling_return_p10",
-                "rolling_return_p25", "rolling_return_p50", "rolling_return_p75",
-                "rolling_return_p90", "rolling_return_sd", "trailing_xirr",
-                "amfi_volatility", "beta", "correlation", "alpha", "upside_capture",
-                "downside_capture", "sharpe_ratio", "sortino_ratio", "information_ratio",
-                "trailing_max_drawdown",
+                field.name
+                for field in intelligence.metrics.model._meta.concrete_fields
+                if field.name not in {"id", "scheme", "updated_at"}
             )
+            metric_fields = tuple(metric_fields)
             risk_metrics = {
                 metric.horizon: {field: getattr(metric, field) for field in metric_fields}
                 for metric in intelligence.metrics.all()

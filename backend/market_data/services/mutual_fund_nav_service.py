@@ -32,7 +32,9 @@ class MutualFundNAVService:
     avoid silently failing to parse every row when the
     feed's column count changes.
 
-    PWMS uses ISIN as the primary identifier.
+    PWMS uses ISIN as the primary identifier. If the live file does not
+    contain a requested ISIN (or is temporarily unreachable), a recent
+    MF Intelligence NAV may be used as a seven-day, read-through fallback.
     """
 
     CONFIG = get_pwms_config("providers", "amfi_nav", {})

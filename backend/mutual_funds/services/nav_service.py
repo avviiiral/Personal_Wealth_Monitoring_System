@@ -15,9 +15,9 @@ class MutualFundNAVService:
         """
         Return the latest NAV on or before target_date.
 
-        The global AMFI master is authoritative. Family-scoped MutualFundNAV
-        remains as a compatibility/materialization layer for existing
-        portfolio relationships.
+        Use the newest eligible observation from family history, the global
+        AMFI master and a recent MF Intelligence NAV. AMFI wins same-date ties;
+        synced NAVs are read-through only and are not copied into family history.
         """
         today = timezone.localdate()
         family_nav = (

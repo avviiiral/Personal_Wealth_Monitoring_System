@@ -187,6 +187,12 @@ export class MutualFundIntelligenceComponent implements OnInit, OnDestroy {
   charliealphaBenchmark: any = null;
   charliealphaFromDate = '';
   charliealphaToDate = '';
+  charliealphaPage = 1;
+  readonly charliealphaPageSize = 100;
+  charliealphaNext: string | null = null;
+  charliealphaPrevious: string | null = null;
+  charliealphaSortField = 'scheme_name';
+  charliealphaSortDirection: 'asc' | 'desc' = 'asc';
   charliealphaHoldingDate = '';
   charliealphaExposureIdentifier = '';
   charliealphaExposureResult: any = null;
@@ -806,13 +812,16 @@ export class MutualFundIntelligenceComponent implements OnInit, OnDestroy {
       category: this.charliealphaCategory,
       plan: this.charliealphaPlan,
       option: this.charliealphaOption,
-      page_size: 100,
+      page: this.charliealphaPage,
+      page_size: this.charliealphaPageSize,
     };
     this.charliealphaOverviewSubscription?.unsubscribe();
     this.charliealphaOverviewSubscription = this.charliealphaApi.getOverview(filters).subscribe({
       next: response => {
         this.charliealphaOverview = response.results ?? null;
         this.charliealphaFunds = response.results?.results ?? [];
+        this.charliealphaNext = response.next;
+        this.charliealphaPrevious = response.previous;
         this.charliealphaAmcs = response.results?.filters?.amcs ?? [];
         this.charliealphaCategories = response.results?.filters?.categories ?? [];
         this.charliealphaPlans = response.results?.filters?.plans ?? [];
@@ -908,6 +917,36 @@ export class MutualFundIntelligenceComponent implements OnInit, OnDestroy {
       this.charliealphaCompareError = 'The provider accepts a maximum of 20 schemes per comparison.';
     }
     this.charliealphaCompareResult = null;
+  }
+
+  get sortedCharlieAlphaFunds(): Array<Record<string, any>> {
+    const field = this.charliealphaSortField;
+    const direction = this.charliealphaSortDirection === "asc" ? 1 : -1;
+    return [...this.charliealphaFunds].sort((left, right) => {
+      const a = left?.[field];
+      const b = right?.[field];
+      if (a === null || a === undefined || a === "") return 1;
+      if (b === null || b === undefined || b === "") return -1;
+      if (typeof a === "number" || typeof b === "number") {
+        return (Number(a) - Number(b)) * direction;
+      }
+      return String(a).localeCompare(String(b), undefined, { sensitivity: "base" }) * direction;
+    });
+  }
+
+  sortCharlieAlphaBy(field: string): void {
+    if (this.charliealphaSortField === field) {
+      this.charliealphaSortDirection = this.charliealphaSortDirection === "asc" ? "desc" : "asc";
+    } else {
+      this.charliealphaSortField = field;
+      this.charliealphaSortDirection = "desc";
+    }
+  }
+
+  goToCharlieAlphaPage(page: number): void {
+    const lastPage = Math.max(1, Math.ceil(this.totalCharlieAlphaFunds / this.charliealphaPageSize));
+    this.charliealphaPage = Math.min(lastPage, Math.max(1, page));
+    this.loadCharlieAlphaOverview();
   }
 
   isCharlieAlphaCompared(code: string): boolean {

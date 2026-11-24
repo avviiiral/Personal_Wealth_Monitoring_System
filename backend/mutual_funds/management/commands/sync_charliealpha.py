@@ -242,7 +242,7 @@ class Command(BaseCommand):
                 result["instrument_search"] = extended.search_instruments(
                     options["search_query"],
                     instrument_type=options["instrument_type"],
-                    limit=limit or 100,
+                    limit=min(limit or 100, 100),
                 )
             result["corporate_actions"] = extended.corporate_actions(
                 code=options["corporate_code"],

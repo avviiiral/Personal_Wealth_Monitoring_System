@@ -32,6 +32,7 @@ import {
   histogram,
   isNum,
   joinNames,
+  legendWithDefaults,
   niceEdges,
   pct,
   quartileOf,
@@ -1013,7 +1014,7 @@ export class MfIntelligenceComponent implements OnInit, OnDestroy {
       ...options,
       plugins: {
         ...(options['plugins'] ?? {}),
-        legend: { labels: { color: this.textColor(), font: { size: 10 }, boxWidth: 12 }, ...(options['plugins']?.legend ?? {}) },
+        legend: legendWithDefaults(options['plugins']?.legend, { color: this.textColor(), font: { size: 10 }, boxWidth: 12 }),
       },
     } as any;
     this.charts.set(key, new Chart(element, config));
@@ -1135,7 +1136,9 @@ export class MfIntelligenceComponent implements OnInit, OnDestroy {
         datasets: periods.map((period, index) => ({
           label: `${period.label} return`,
           data: histogram(this.funds.map((fund) => this.fundReturn(fund, period.key)), edges),
-          backgroundColor: PALETTE[index] + 'B0',
+          // PALETTE[1] is the brand navy, which vanishes on dark cards; use the
+          // theme-aware navy (same 0xB0 alpha) like the other navy series.
+          backgroundColor: index === 1 ? this.navy(0.69) : PALETTE[index] + 'B0',
         })),
       },
       options: { scales: { x: this.axisStyle('Return %'), y: this.axisStyle('# funds') } },

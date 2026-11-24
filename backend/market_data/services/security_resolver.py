@@ -133,7 +133,7 @@ class SecurityResolver:
         return None
 
     @classmethod
-    def _load_security_master(cls):
+    def _load_security_master(cls, *, generate_if_missing=True):
         """
         Load Security Master Excel once per process.
 
@@ -143,6 +143,10 @@ class SecurityResolver:
         The workbook remains optional: if generation or loading
         fails, the resolver continues using its existing hard-coded
         mappings.
+
+        Read-only callers (diagnostics) pass generate_if_missing=False:
+        a missing workbook is then treated exactly like a failed
+        generation, and nothing is written to disk.
         """
 
         if cls._security_master_loaded:
@@ -152,7 +156,7 @@ class SecurityResolver:
 
         path = cls._security_master_path()
 
-        if path is None:
+        if path is None and generate_if_missing:
             path = cls._generate_security_master()
 
         if path is None:
@@ -373,12 +377,13 @@ class SecurityResolver:
             return None
 
     @classmethod
-    def reload_security_master(cls):
+    def reload_security_master(cls, *, generate_if_missing=True):
         """
         Force the Security Master to be loaded again.
 
         Useful after security_master.xlsx has been edited while
-        the Django process is still running.
+        the Django process is still running. See
+        _load_security_master() for generate_if_missing.
         """
 
         cls._security_master_loaded = False
@@ -391,7 +396,7 @@ class SecurityResolver:
         cls._security_master_ambiguous_name_to_isin = set()
         cls._security_master_ambiguous_isin_to_name = set()
 
-        cls._load_security_master()
+        cls._load_security_master(generate_if_missing=generate_if_missing)
 
     @classmethod
     def known_isins(cls):

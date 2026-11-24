@@ -1168,9 +1168,11 @@ class CharlieAlphaService:
             if not isinstance(periods, list):
                 periods = []
             self.stats["fetched"] += len(periods)
+            scheme = self._resolve_identifier(code)
             results.append({
-                "scheme_code": code,
-                "scheme_name": _find_nested(payload, ("scheme_name", "name")),
+                "scheme_code": scheme.scheme_code if scheme else code,
+                "provider_identifier": code,
+                "scheme_name": _find_nested(payload, ("scheme_name", "name")) or (scheme.scheme_name if scheme else ""),
                 "latest_as_of": _find_nested(payload, ("latest_as_of",)),
                 "periods": periods,
             })
@@ -1206,9 +1208,11 @@ class CharlieAlphaService:
                 parsed = parse_date(raw)
                 if parsed and parsed not in report_dates:
                     report_dates.append(parsed)
+            scheme = self._resolve_identifier(code)
             period_registry.append({
-                "scheme_code": code,
-                "scheme_name": _find_nested(periods_payload, ("scheme_name", "name")),
+                "scheme_code": scheme.scheme_code if scheme else code,
+                "provider_identifier": code,
+                "scheme_name": _find_nested(periods_payload, ("scheme_name", "name")) or (scheme.scheme_name if scheme else ""),
                 "latest_as_of": _find_nested(periods_payload, ("latest_as_of",)),
                 "periods": periods,
             })
@@ -1237,7 +1241,7 @@ class CharlieAlphaService:
             threshold = decimal_value(min_pct)
             if threshold is None or threshold < 0:
                 raise ValueError("min_pct must be a non-negative number.")
-            params["min_pct"] = str(threshold)
+            params["min_pct"] = format(threshold.normalize(), "f") if threshold else "0"
         endpoint = "mf/fund-exposure/" + quote(identifier, safe="")
         try:
             payload = self.client.get(endpoint, params or None)

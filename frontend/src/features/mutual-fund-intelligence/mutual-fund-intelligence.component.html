@@ -283,7 +283,7 @@
             <article class="kpi-card">
               <span>Matched category funds</span>
               <strong>{{ categoryMetrics.metrics_count ?? '—' }}</strong>
-              <small>{{ categoryMetrics.horizon || charliealphaMetricHorizon | uppercase }} horizon</small>
+              <small>{{ (categoryMetrics.horizon || charliealphaMetricHorizon) | uppercase }} horizon</small>
             </article>
             <article class="kpi-card">
               <span>Provider metric status</span>
@@ -378,6 +378,7 @@
           <article class="kpi-card"><span>Beta / Alpha</span><strong>{{ formatNumber(snap.beta, 3) }}</strong><small>Alpha {{ formatPct(snap.alpha_pct) }}</small></article>
           <article class="kpi-card"><span>Max drawdown</span><strong>{{ formatPct(snap.max_drawdown_pct) }}</strong><small>Provider-reported</small></article>
           <article class="kpi-card"><span>AUM / TER</span><strong>{{ formatNumber(snap.aum_cr, 2) }} Cr</strong><small>TER {{ formatPct(snap.ter_direct_pct ?? snap.ter_regular_pct) }}</small></article>
+          <article class="kpi-card"><span>Equity / Debt / Cash / Other</span><strong>{{ formatPct(snap.equity_pct) }} / {{ formatPct(snap.debt_pct) }}</strong><small>{{ formatPct(snap.cash_pct) }} / {{ formatPct(snap.others_pct) }} · classified holdings only</small></article>
         </div>
         <div class="chart-grid provider-detail-charts">
           <div><div class="chart-title"><div><span>05</span><h3>Historical NAV</h3></div><small>{{ charliealphaDetail?.nav_history?.length || 0 }} observations</small></div><div class="chart-wrap large"><canvas id="charliealpha-nav-chart"></canvas></div></div>
@@ -412,9 +413,9 @@
 </div>
         <div class="provider-holdings">
           <div class="chart-title"><div><span>10</span><h3>Latest disclosed holdings</h3></div><small>{{ charliealphaDetail?.holdings?.length || 0 }} securities</small></div>
-          <div class="table-wrap"><table><thead><tr><th>Security</th><th>ISIN</th><th>Sector</th><th>Industry</th><th>Instrument</th><th>Weight</th><th>Quantity</th><th>Market value</th></tr></thead><tbody>
-            <tr *ngFor="let holding of charliealphaDetail?.holdings"><td class="fund-name">{{ holding.name }}</td><td>{{ holding.isin || '—' }}</td><td>{{ holding.sector || '—' }}</td><td>{{ holding.industry || '—' }}</td><td>{{ holding.instrument_type || '—' }}</td><td>{{ formatPct(holding.weight_pct) }}</td><td>{{ formatNumber(holding.quantity, 4) }}</td><td>{{ formatNumber(holding.market_value, 2) }}</td></tr>
-            <tr *ngIf="!charliealphaDetail?.holdings?.length"><td colspan="8" class="empty-cell">Holdings are not available for this scheme. Missing holdings are not treated as a zero allocation.</td></tr>
+          <div class="table-wrap"><table><thead><tr><th>Security</th><th>ISIN</th><th>Sector</th><th>Industry</th><th>Instrument</th><th>Weight</th><th>Quantity</th><th>Market value</th><th>Rating</th><th>Rating agency</th><th>Maturity</th><th>YTM</th></tr></thead><tbody>
+            <tr *ngFor="let holding of charliealphaDetail?.holdings"><td class="fund-name">{{ holding.name }}</td><td>{{ holding.isin || '—' }}</td><td>{{ holding.sector || '—' }}</td><td>{{ holding.industry || '—' }}</td><td>{{ holding.instrument_type || '—' }}</td><td>{{ formatPct(holding.weight_pct) }}</td><td>{{ formatNumber(holding.quantity, 4) }}</td><td>{{ formatNumber(holding.market_value, 2) }}</td><td>{{ holding.rating || '—' }}</td><td>{{ holding.rating_agency || '—' }}</td><td>{{ formatDate(holding.maturity_date) }}</td><td>{{ formatPct(holding.ytm_pct) }}</td></tr>
+            <tr *ngIf="!charliealphaDetail?.holdings?.length"><td colspan="12" class="empty-cell">Holdings are not available for this scheme. Missing holdings are not treated as a zero allocation.</td></tr>
           </tbody></table></div>
           <p class="method-note" *ngIf="charliealphaDetail?.holdings_changes">Provider holdings-change summary: {{ charliealphaDetail?.holdings_changes | json }}</p>
         </div>

@@ -10,6 +10,7 @@ import hashlib
 import json
 import re
 from typing import Any
+from types import SimpleNamespace
 from urllib.parse import quote, urlencode
 
 from django.utils import timezone
@@ -68,8 +69,9 @@ def _identifier(row: dict, family: str) -> str:
 class CharlieAlphaExtendedService:
     """Endpoint-specific sync for CharlieAlpha non-mutual-fund product families."""
 
-    def __init__(self, *, client: CharlieAlphaClient | None = None):
+    def __init__(self, *, client: CharlieAlphaClient | None = None, dry_run: bool = False):
         self.client = client or CharlieAlphaClient()
+        self.dry_run = dry_run
 
     def _store(
         self,
@@ -97,6 +99,8 @@ class CharlieAlphaExtendedService:
         source_url = BASE_URL + "/" + endpoint.lstrip("/") + (("?" + query) if query else "")
         canonical = json.dumps(safe_payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
         digest = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+        if self.dry_run:
+            return SimpleNamespace(pk=None, records=records, record_count=record_count, success=not bool(error))
         snapshot = MFProviderResourceSnapshot.objects.create(
             family=family,
             endpoint=endpoint,

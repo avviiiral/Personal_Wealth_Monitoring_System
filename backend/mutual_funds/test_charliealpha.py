@@ -79,7 +79,13 @@ class CharlieAlphaParserTests(SimpleTestCase):
         session.headers = {}
         session.get.side_effect = [limited, ok]
 
-        payload = CharlieAlphaClient(session=session).get("mf/categories")
+        # Make the global inter-request throttle deterministic for this test.
+        # The second request occurs one second after the first, so the only
+        # expected sleep is the provider Retry-After value of zero seconds.
+        with patch("mutual_funds.services.charliealpha.time.monotonic", side_effect=[10.0, 11.0]), patch(
+            "mutual_funds.services.charliealpha._LAST_REQUEST_AT", 0.0
+        ):
+            payload = CharlieAlphaClient(session=session).get("mf/categories")
 
         self.assertEqual(payload, {"ok": True})
         self.assertEqual(session.get.call_count, 2)
@@ -197,7 +203,8 @@ class CharlieAlphaPersistenceTests(TestCase):
         self.assertFalse(MFBenchmarkTRI.objects.exists())
         run = MFSourceRun.objects.get(source=SOURCE, command="benchmark_history")
         self.assertTrue(run.metadata["normalization"]["is_normalized"])
-        self.assertEqual(run.metadata["normalization"]["base_value"], 100.0)
+        # MFSourceRun.metadata is JSON-safe; Decimal base values are strings.
+        self.assertEqual(run.metadata["normalization"]["base_value"], "100")
         self.assertEqual(run.metadata["observation_count"], 2)
         self.assertIn("not an absolute official", run.metadata["normalization"]["warning"])
         provider_benchmark = MFProviderBenchmark.objects.get(provider="CHARLIEALPHA", slug="nifty-500")

@@ -861,6 +861,7 @@ class CharlieAlphaService:
     def _sync_series(self, domain: str, scheme_codes: list[str], limit: int | None = None) -> dict:
         if limit:
             scheme_codes = scheme_codes[:limit]
+        scheme_responses = []
         for code in scheme_codes:
             endpoint = "mf/" + domain + "/" + quote(code, safe="")
             try:
@@ -899,6 +900,12 @@ class CharlieAlphaService:
             scheme = self._resolve_identifier(code)
             if not scheme:
                 continue
+            scheme_responses.append({
+                "scheme_code": scheme.scheme_code,
+                "provider_identifier": code,
+                "observation_count": len(observations),
+                "provider_response": payload,
+            })
             for raw_day, raw_value in observations:
                 day, value = parse_date(raw_day), decimal_value(raw_value)
                 if not day or value is None or value < 0:
@@ -937,6 +944,7 @@ class CharlieAlphaService:
                 snapshot.save()
         run = self._run(domain + "_history", metadata={
             "schemes_requested": scheme_codes,
+            "schemes": scheme_responses,
             "history_kind": "dated observations",
             "source": SOURCE,
             "endpoint_pattern": "mf/" + domain + "/{code}",
@@ -1007,7 +1015,9 @@ class CharlieAlphaService:
                     "provider_scheme_code": code,
                     "data_status": "NOT_RETURNED_OR_NO_VALID_HOLDINGS",
                     "holdings_count_returned": len(rows),
+                    "provider_response": payload,
                     "report_date": report_date,
+                    "source_endpoint": source_endpoint,
                 })
                 continue
             if self.dry_run:
@@ -1104,6 +1114,8 @@ class CharlieAlphaService:
                 "report_date": as_of.isoformat(),
                 "holdings_count": len(normalized),
                 "provider_changes": change_data,
+                "provider_response": payload,
+                "normalized_holdings": normalized,
                 "source_endpoint": source_endpoint,
                 "asset_allocation": {name: str(value) for name, value in asset_weights.items()},
                 "weight_coverage_pct": str(sum((item["weight_pct"] or Decimal("0") for item in normalized), Decimal("0"))),
@@ -1199,6 +1211,7 @@ class CharlieAlphaService:
                 "observation_count": len(observations),
                 "start_date": observations[0][0].isoformat() if observations else None,
                 "end_date": observations[-1][0].isoformat() if observations else None,
+                "provider_response": history,
                 "normalization": {
                     "is_normalized": True,
                     "method": "REBASED_TO_100",
@@ -1215,6 +1228,7 @@ class CharlieAlphaService:
             "observations_persisted": persisted,
             "normalization_policy": "Provider-normalized observations are stored separately and never inserted into MFBenchmarkTRI.",
             "requested_window": window_params,
+            "provider_response": payload,
         })
         return {"run_id": run.id, **self.stats, "benchmarks": len(benchmarks), "observations_persisted": persisted}
 
@@ -1301,6 +1315,7 @@ class CharlieAlphaService:
                 "generated_at": _find_nested(payload, ("generated_at",)),
                 "latest_as_of": _find_nested(payload, ("latest_as_of",)),
                 "periods": periods,
+                "provider_response": payload,
             })
             return {"run_id": run.id, "periods": len(periods), **self.stats}
 
@@ -1324,6 +1339,7 @@ class CharlieAlphaService:
                 "scheme_name": _find_nested(payload, ("scheme_name", "name")) or (scheme.scheme_name if scheme else ""),
                 "latest_as_of": _find_nested(payload, ("latest_as_of",)),
                 "periods": periods,
+                "provider_response": payload,
             })
         run = self._run("holdings_periods", metadata={"scope": "scheme", "schemes": results})
         return {"run_id": run.id, "schemes": len(results), **self.stats}

@@ -17,6 +17,7 @@ from mutual_funds.master_models import (
     MFMasterHolding,
     MFProviderBenchmark,
     MFProviderBenchmarkObservation,
+    MFProviderResourceSnapshot,
     MFSourceRun,
 )
 from mutual_funds.services.charliealpha import CharlieAlphaService, NAV_SOURCE, SOURCE, decimal_value, parse_date
@@ -617,3 +618,65 @@ def charliealpha_security_exposure(request, identifier: str):
         "result": metadata.get("provider_result"),
         "fetched_at": selected.completed_at or selected.started_at,
     })
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def charliealpha_provider_resources(request):
+    """Expose database snapshots for NPS, SIF, GIFT, instruments and corporate actions."""
+    allowed = {value for value, _label in MFProviderResourceSnapshot.FAMILY_CHOICES}
+    raw_family = (request.query_params.get("family") or "").strip()
+    family = raw_family.upper()
+    if family and family not in allowed:
+        return Response(
+            {"detail": "family must be one of: " + ", ".join(sorted(allowed))},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    try:
+        limit = int(request.query_params.get("limit", 25))
+    except (TypeError, ValueError):
+        return Response({"detail": "limit must be an integer between 1 and 100."}, status=status.HTTP_400_BAD_REQUEST)
+    if not 1 <= limit <= 100:
+        return Response({"detail": "limit must be between 1 and 100."}, status=status.HTTP_400_BAD_REQUEST)
+
+    queryset = MFProviderResourceSnapshot.objects.all()
+    if family:
+        queryset = queryset.filter(family=family)
+    endpoint = (request.query_params.get("endpoint") or "").strip()
+    identifier = (request.query_params.get("identifier") or "").strip()
+    if endpoint:
+        queryset = queryset.filter(endpoint__icontains=endpoint)
+    if identifier:
+        queryset = queryset.filter(identifier__iexact=identifier)
+
+    total = queryset.count()
+    records = list(queryset.order_by("-fetched_at", "-id")[:limit])
+    counts = {
+        value: MFProviderResourceSnapshot.objects.filter(family=value).count()
+        for value in sorted(allowed)
+    }
+    return Response({
+        "family": family or None,
+        "count": total,
+        "limit": limit,
+        "family_counts": counts,
+        "results": [
+            {
+                "id": item.id,
+                "family": item.family,
+                "endpoint": item.endpoint,
+                "identifier": item.identifier,
+                "request_params": item.request_params,
+                "as_of_date": item.as_of_date,
+                "record_count": item.record_count,
+                "source_url": item.source_url,
+                "payload_sha256": item.payload_sha256,
+                "success": item.success,
+                "error": item.error,
+                "fetched_at": item.fetched_at,
+                "records": item.records,
+                "payload": item.payload,
+            }
+            for item in records
+        ],
+    })
+

@@ -1,17 +1,16 @@
 """Small deployment-safe PostgreSQL advisory-lock helper.
 
-The lock is intentionally database-backed so multiple Django worker processes
-do not run the same background refresh at the same time. No schema changes are
-required. On SQLite/development, the helper is a no-op so existing local
-behaviour is preserved.
+The lock is database-backed so multiple Django worker processes do not run
+same background refresh concurrently. On SQLite/development it is a no-op.
 """
-
 from contextlib import contextmanager
 from functools import wraps
 import hashlib
+import logging
 
 from django.db import connection
 
+logger = logging.getLogger(__name__)
 
 _LOCK_NAMESPACE = "pwms"
 
@@ -26,7 +25,6 @@ def _lock_key(name):
 @contextmanager
 def postgres_advisory_lock(name):
     """Yield True when the current process acquired the shared lock."""
-
     if connection.vendor != "postgresql":
         yield True
         return
@@ -36,10 +34,7 @@ def postgres_advisory_lock(name):
 
     try:
         with connection.cursor() as cursor:
-            cursor.execute(
-                "SELECT pg_try_advisory_lock(%s)",
-                [key],
-            )
+            cursor.execute("SELECT pg_try_advisory_lock(%s)", [key])
             acquired = bool(cursor.fetchone()[0])
 
         if not acquired:
@@ -47,33 +42,53 @@ def postgres_advisory_lock(name):
             return
 
         yield True
-
     finally:
         if acquired:
             try:
                 with connection.cursor() as cursor:
-                    cursor.execute(
-                        "SELECT pg_advisory_unlock(%s)",
-                        [key],
-                    )
+                    cursor.execute("SELECT pg_advisory_unlock(%s)", [key])
             except Exception:
-                # The database connection may already have been closed or
-                # invalidated. PostgreSQL releases session locks automatically
-                # when that happens, so do not mask the refresh result.
-                pass
+                # PostgreSQL releases session locks when the connection closes.
+                # Do not mask a completed refresh if that connection is invalid.
+                logger.exception(
+                    "Unable to explicitly release PostgreSQL advisory lock %s; "
+                    "the database will release it when the session closes.",
+                    name,
+                )
 
 
 def with_postgres_advisory_lock(name):
-    """Decorator for long-running refresh entry points."""
-
+    """Decorator for refresh entry points with explicit contention reporting."""
     def decorator(func):
         @wraps(func)
         def wrapped(*args, **kwargs):
             with postgres_advisory_lock(name) as acquired:
                 if not acquired:
-                    return None
-                return func(*args, **kwargs)
-
+                    logger.warning(
+                        "Refresh entry point %s was not run because advisory "
+                        "lock '%s' is already held by another process.",
+                        func.__qualname__,
+                        name,
+                    )
+                    message = (
+                        f"Refresh not started: advisory lock '{name}' "
+                        "is held by another process."
+                    )
+                    command_stdout = getattr(args[0], "stdout", None) if args else None
+                    command_stderr = getattr(args[0], "stderr", None) if args else None
+                    if command_stderr is not None:
+                        command_stderr.write(message)
+                    elif command_stdout is not None:
+                        command_stdout.write(message)
+                    return {
+                        "success": False,
+                        "skipped": True,
+                        "reason": message,
+                        "lock_acquired": False,
+                    }
+                result = func(*args, **kwargs)
+                if isinstance(result, dict):
+                    result.setdefault("lock_acquired", True)
+                return result
         return wrapped
-
     return decorator

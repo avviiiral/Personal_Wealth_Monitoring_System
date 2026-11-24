@@ -76,8 +76,6 @@ class Command(BaseCommand):
             raise CommandError("--benchmark-from and --benchmark-to must be supplied together.")
         if bool(options["corporate_from"]) != bool(options["corporate_to"]):
             raise CommandError("--corporate-from and --corporate-to must be supplied together.")
-        if bool(options["gift_from"]) != bool(options["gift_to"]):
-            raise CommandError("--gift-from and --gift-to must be supplied together.")
         if codes and limit and len(codes) > limit:
             codes = codes[:limit]
 

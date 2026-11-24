@@ -588,8 +588,8 @@ def charliealpha_security_exposure(request, identifier: str):
     selected = None
     raw_min_pct = (request.query_params.get("min_pct") or "").strip()
     requested_min_pct = decimal_value(raw_min_pct) if raw_min_pct else None
-    if raw_min_pct and (requested_min_pct is None or requested_min_pct < 0):
-        return Response({"detail": "min_pct must be a non-negative number."}, status=status.HTTP_400_BAD_REQUEST)
+    if raw_min_pct and (requested_min_pct is None or requested_min_pct < 0 or requested_min_pct > 100):
+        return Response({"detail": "min_pct must be between 0 and 100."}, status=status.HTTP_400_BAD_REQUEST)
     for run in runs:
         metadata = run.metadata or {}
         if run.status not in (MFSourceRun.Status.SUCCESS, MFSourceRun.Status.PARTIAL):
@@ -600,6 +600,8 @@ def charliealpha_security_exposure(request, identifier: str):
             continue
         stored_min_pct = decimal_value(metadata.get("min_pct")) if metadata.get("min_pct") not in (None, "") else None
         if raw_min_pct and stored_min_pct != requested_min_pct:
+            continue
+        if not raw_min_pct and stored_min_pct is not None:
             continue
         selected = run
         break

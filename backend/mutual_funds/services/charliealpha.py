@@ -1284,6 +1284,12 @@ class CharlieAlphaService:
         ))
         if not 2 <= len(normalized_codes) <= 20:
             raise ValueError("Select between 2 and 20 mutual-fund scheme codes or ISINs.")
+        invalid_codes = [
+            code for code in normalized_codes
+            if not (re.fullmatch(r"\\d{6}", code) or re.fullmatch(r"[A-Z]{2}[A-Z0-9]{9}\\d", code))
+        ]
+        if invalid_codes:
+            raise ValueError("Each comparison identifier must be a six-digit AMFI code or a 12-character ISIN: " + ", ".join(invalid_codes))
         endpoint = "mf/overlap" if overlap_only else "mf/compare"
         params = {"codes": ",".join(normalized_codes)}
         # Let CharlieAlpha apply its documented endpoint defaults unless the operator opts in.
@@ -1419,6 +1425,7 @@ class CharlieAlphaService:
                 "scheme_name": _find_nested(periods_payload, ("scheme_name", "name")) or (scheme.scheme_name if scheme else ""),
                 "latest_as_of": _find_nested(periods_payload, ("latest_as_of",)),
                 "periods": periods,
+                "provider_response": periods_payload,
             })
             report_dates.sort(reverse=True)
             if period_limit:
@@ -1443,8 +1450,8 @@ class CharlieAlphaService:
         params = {}
         if min_pct not in (None, ""):
             threshold = decimal_value(min_pct)
-            if threshold is None or threshold < 0:
-                raise ValueError("min_pct must be a non-negative number.")
+            if threshold is None or threshold < 0 or threshold > 100:
+                raise ValueError("min_pct must be between 0 and 100.")
             params["min_pct"] = format(threshold.normalize(), "f") if threshold else "0"
         endpoint = "mf/fund-exposure/" + quote(identifier, safe="")
         try:
@@ -1505,6 +1512,7 @@ class CharlieAlphaService:
                 "ter": decimal_value(_first(payload, "ter", "expense_ratio", "ter_pct") or _find_nested(payload, ("ter", "expense_ratio", "ter_pct"))),
                 "aum_cr": decimal_value(_first(payload, "aum", "aum_cr", "average_aum") or _find_nested(payload, ("aum", "aum_cr", "average_aum"))),
                 "source_endpoint": endpoint,
+                "provider_response": payload,
             }
             self._run("latest_nav_detail", as_of=day, metadata=metadata)
         return dict(self.stats)

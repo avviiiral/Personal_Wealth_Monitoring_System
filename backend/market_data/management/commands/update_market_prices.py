@@ -141,7 +141,7 @@ class Command(BaseCommand):
 
             self.stdout.write(
                 f"Updating: {asset.name} "
-                f"({asset.symbol})"
+                f"({asset.symbol or 'symbol resolved at runtime'})"
             )
 
             result = (

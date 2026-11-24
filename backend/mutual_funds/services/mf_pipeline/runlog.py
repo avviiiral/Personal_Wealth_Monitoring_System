@@ -14,7 +14,6 @@ from dataclasses import dataclass, field
 from datetime import date
 from typing import Callable
 
-from django.db import close_old_connections
 from django.utils import timezone
 
 from mutual_funds.master_models import MFSourceRun
@@ -106,8 +105,12 @@ def _finish(run: MFSourceRun, result: JobResult) -> MFSourceRun:
 
 
 def run_job(job_name: str, source: str, func: Callable[[MFSourceRun], JobResult], *, as_of_date=None) -> MFSourceRun:
-    """Execute ``func`` and record the outcome. Never raises; failures are logged."""
-    close_old_connections()
+    """Execute ``func`` and record the outcome. Never raises; failures are logged.
+
+    Connection hygiene (close_old_connections) is done by the scheduler around
+    each job, not here: closing inside a transaction would break callers such
+    as Django TestCase on PostgreSQL.
+    """
     run = MFSourceRun.objects.create(
         source=source, command=job_name, as_of_date=as_of_date, status=Status.RUNNING,
     )

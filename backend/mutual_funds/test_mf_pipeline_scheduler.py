@@ -96,14 +96,16 @@ class StartupTests(SimpleTestCase):
 
 class InterruptedRunTests(TestCase):
     def test_runs_left_running_by_previous_process_are_closed(self):
+        # 7h old: closed on SQLite (older than this process) and on
+        # PostgreSQL (older than the 6h multi-worker safety cutoff).
         from django.utils import timezone
 
         from mutual_funds.master_models import MFSourceRun
 
         orphan = MFSourceRun.objects.create(source="X", command="mf_nav_gap_check", status=MFSourceRun.Status.RUNNING)
-        MFSourceRun.objects.filter(id=orphan.id).update(started_at=timezone.now() - timedelta(minutes=5))
+        MFSourceRun.objects.filter(id=orphan.id).update(started_at=timezone.now() - timedelta(hours=7))
         other = MFSourceRun.objects.create(source="X", command="sync_mf_ter", status=MFSourceRun.Status.RUNNING)
-        MFSourceRun.objects.filter(id=other.id).update(started_at=timezone.now() - timedelta(minutes=5))
+        MFSourceRun.objects.filter(id=other.id).update(started_at=timezone.now() - timedelta(hours=7))
 
         scheduler.MFPipelineScheduler._close_interrupted_runs(timezone.now() - timedelta(minutes=1))
 

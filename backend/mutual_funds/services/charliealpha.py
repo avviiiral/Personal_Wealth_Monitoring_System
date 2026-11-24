@@ -635,7 +635,7 @@ class CharlieAlphaService:
             scheme = self._resolve_scheme({"scheme_code": code})
             if not scheme:
                 continue
-            as_of = parse_date(_first(payload, "as_of", "as_of_date", "report_date")) or timezone.localdate()
+            as_of = parse_date(_first(payload, "as_of", "as_of_date", "report_date")) or parse_date(report_date) or timezone.localdate()
             rows = _records(payload, ("holdings", "data", "results"))
             self.stats["fetched"] += len(rows)
             normalized = []
@@ -660,7 +660,7 @@ class CharlieAlphaService:
                 })
             if self.dry_run:
                 continue
-            date_basis = MFMasterHolding.DATE_BASIS_DISCLOSURE if _first(payload, "as_of", "as_of_date", "report_date") else MFMasterHolding.DATE_BASIS_FETCHED_AT
+            date_basis = MFMasterHolding.DATE_BASIS_DISCLOSURE if (_first(payload, "as_of", "as_of_date", "report_date") or report_date) else MFMasterHolding.DATE_BASIS_FETCHED_AT
             persisted = []
             with transaction.atomic():
                 for row in normalized:
@@ -850,6 +850,7 @@ class CharlieAlphaService:
             raise ValueError("period_limit cannot be negative.")
         schemes_processed = 0
         snapshots_requested = 0
+        period_registry = []
         for code in scheme_codes:
             periods_payload = self.client.get("mf/holdings-periods/" + quote(code, safe=""))
             periods = periods_payload.get("periods", []) if isinstance(periods_payload, dict) else []
@@ -861,6 +862,12 @@ class CharlieAlphaService:
                 parsed = parse_date(raw)
                 if parsed and parsed not in report_dates:
                     report_dates.append(parsed)
+            period_registry.append({
+                "scheme_code": code,
+                "scheme_name": _find_nested(periods_payload, ("scheme_name", "name")),
+                "latest_as_of": _find_nested(periods_payload, ("latest_as_of",)),
+                "periods": periods,
+            })
             report_dates.sort(reverse=True)
             if period_limit:
                 report_dates = report_dates[:period_limit]
@@ -868,6 +875,8 @@ class CharlieAlphaService:
             for as_of in report_dates:
                 snapshots_requested += 1
                 self.sync_holdings([code], include_changes=False, report_date=as_of.isoformat())
+        if period_registry:
+            self._run("holdings_periods", metadata={"scope": "scheme", "schemes": period_registry})
         return {
             "schemes_processed": schemes_processed,
             "historical_snapshots_requested": snapshots_requested,
@@ -894,3 +903,35 @@ class CharlieAlphaService:
             "result_count": _find_nested(payload, ("count", "result_count")),
         })
         return {"run_id": run.id, "result": payload}
+
+
+    def sync_latest_nav_details(self, scheme_codes: list[str]) -> dict:
+        """Capture per-scheme NAV movement and metadata absent from the compact bulk feed."""
+        for code in scheme_codes:
+            endpoint = "mf/lnav/" + quote(code, safe="")
+            payload = self.client.get(endpoint)
+            self.stats["fetched"] += 1
+            scheme = self._resolve_scheme(payload if isinstance(payload, dict) else {"scheme_code": code})
+            if not scheme:
+                continue
+            day = parse_date(_first(payload, "date", "nav_date", "as_of"))
+            nav = decimal_value(_first(payload, "nav", "latest_nav", "value"))
+            if day and nav is not None and nav > 0:
+                self._save_nav(scheme, day, nav, endpoint)
+            metadata = {
+                "scheme_code": scheme.scheme_code,
+                "provider_scheme_code": code,
+                "nav_date": day.isoformat() if day else None,
+                "nav": nav,
+                "nav_change": decimal_value(_first(payload, "change", "nav_change", "change_value")),
+                "nav_change_pct": decimal_value(_first(payload, "change_pct", "nav_change_pct", "change_percent", "change_percentage")),
+                "amc": _first(payload, "amc", "amc_name", "fund_house"),
+                "category": _first(payload, "category", "scheme_category"),
+                "plan": _first(payload, "plan"),
+                "option": _first(payload, "option"),
+                "ter": decimal_value(_first(payload, "ter", "expense_ratio", "ter_pct")),
+                "aum_cr": decimal_value(_first(payload, "aum", "aum_cr", "average_aum")),
+                "source_endpoint": endpoint,
+            }
+            self._run("latest_nav_detail", as_of=day, metadata=metadata)
+        return dict(self.stats)

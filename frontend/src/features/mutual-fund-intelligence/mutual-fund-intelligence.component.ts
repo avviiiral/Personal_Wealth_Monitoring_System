@@ -561,7 +561,7 @@ export class MutualFundIntelligenceComponent implements OnInit, OnDestroy {
   }
 
   sourceLabel(value: string): string {
-    return String(value || '').replaceAll('_', ' ').replace(/\\b\\w/g, letter => letter.toUpperCase());
+    return String(value || '').replaceAll('_', ' ').replace(/\b\w/g, letter => letter.toUpperCase());
   }
 
   getCategorySummaryValue(key: string): string {

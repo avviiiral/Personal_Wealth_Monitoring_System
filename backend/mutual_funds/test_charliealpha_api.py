@@ -6,6 +6,7 @@ from django.test import TestCase
 from rest_framework.test import APIRequestFactory, force_authenticate
 
 from mutual_funds.charliealpha_api import (
+    charliealpha_benchmarks,
     charliealpha_category_catalog,
     charliealpha_category_metrics,
     charliealpha_compare,
@@ -13,7 +14,12 @@ from mutual_funds.charliealpha_api import (
     charliealpha_holdings_periods,
     charliealpha_security_exposure,
 )
-from mutual_funds.master_models import MFMasterData, MFSourceRun
+from mutual_funds.master_models import (
+    MFMasterData,
+    MFProviderBenchmark,
+    MFProviderBenchmarkObservation,
+    MFSourceRun,
+)
 from mutual_funds.models import AMFIMasterScheme
 from mutual_funds.services.charliealpha import SOURCE
 
@@ -40,6 +46,58 @@ class CharlieAlphaReadAPITests(TestCase):
         request = self.factory.get(path)
         force_authenticate(request, user=self.user)
         return view(request, *args, **kwargs)
+
+    def test_benchmark_api_returns_requested_stored_normalized_window(self):
+        benchmark = MFProviderBenchmark.objects.create(
+            provider="CHARLIEALPHA",
+            slug="nifty-500",
+            name="Nifty 500 TRI",
+            category="Equity",
+            source_url="https://api.charliealpha.in/v1/benchmark/list",
+        )
+        source_url = "https://api.charliealpha.in/v1/benchmark/hnav/nifty-500?range=5Y"
+        MFProviderBenchmarkObservation.objects.bulk_create([
+            MFProviderBenchmarkObservation(
+                benchmark=benchmark,
+                observation_date=date(2021, 1, 1),
+                normalized_value=Decimal("100"),
+                normalization_method="REBASED_TO_100",
+                normalization_base_date=date(2021, 1, 1),
+                source="CHARLIEALPHA_API",
+                source_url=source_url,
+            ),
+            MFProviderBenchmarkObservation(
+                benchmark=benchmark,
+                observation_date=date(2026, 1, 1),
+                normalized_value=Decimal("151.25"),
+                normalization_method="REBASED_TO_100",
+                normalization_base_date=date(2021, 1, 1),
+                source="CHARLIEALPHA_API",
+                source_url=source_url,
+            ),
+        ])
+
+        request = self.factory.get(
+            "/api/mutual-fund-analytics/charliealpha/benchmarks/?slug=nifty-500&range=5Y"
+        )
+        force_authenticate(request, user=self.user)
+        response = charliealpha_benchmarks(request)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["requested_window"], {"range": "5Y"})
+        self.assertEqual(response.data["results"][0]["normalization"]["base_date"], date(2021, 1, 1))
+        self.assertEqual(response.data["results"][0]["available_windows"], [{"range": "5Y"}])
+        self.assertEqual(
+            response.data["results"][0]["series"][1]["normalized_value"],
+            Decimal("151.25000000"),
+        )
+
+    def test_benchmark_api_rejects_invalid_window_or_partial_custom_dates(self):
+        for query in ("?range=2Y", "?from=2025-01-01", "?from=2025-12-31&to=2025-01-01"):
+            request = self.factory.get("/api/mutual-fund-analytics/charliealpha/benchmarks/" + query)
+            force_authenticate(request, user=self.user)
+            response = charliealpha_benchmarks(request)
+            self.assertEqual(response.status_code, 400)
 
     def test_category_catalog_returns_stored_asset_class_groups(self):
         MFSourceRun.objects.create(

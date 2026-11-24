@@ -54,6 +54,30 @@ Admins (and above) can also start a sync from the page; Viewers can only read.
 Holdings are a fund-level disclosure, so a Direct plan without its own
 disclosure reuses its Regular sibling's holdings.
 
+## Shared application consumers
+
+The synced tables are shared market reference data and are reused by existing
+PWMS features where the matching identity and data granularity are suitable:
+
+- The Watch List joins each mutual-fund product to `MFScheme` by exact AMFI
+  scheme code. It uses stored 1W–5Y and since-inception returns when its local
+  performance snapshot is missing a value, and exposes the synced category,
+  TER, AUM, NAV, calendar returns and risk metrics in the scheme payload.
+- Family mutual-fund valuation can use a recent synced latest NAV when the
+  family NAV / AMFI master has no usable value. Matching is by exact AMFI code
+  (or exact ISIN for the shared portfolio NAV service), only NAVs dated no more
+  than seven days old are eligible, and a NAV dated after the transaction date
+  is never used for transaction/SIP execution.
+- Mutual-fund look-through can use the latest `MFHoldingSnapshot` when it is
+  newer than the family's stored disclosure. On the same disclosure date, the
+  local disclosure is preferred because it may have additional source fields.
+- Existing daily `AMFIMasterNAV` history remains the source for historical
+  reports and date-specific calculations. `MFNavMonthly` is month-end data and
+  is deliberately not substituted for daily NAV observations.
+
+The integration is read-through / fallback only: it does not rewrite family
+transactions, portfolio ownership, or user-entered holdings.
+
 An optional daily sync is off by default. Enable it in
 `backend/config/pwms_config.json` (or `PWMS_CONFIG_OVERRIDES`):
 

@@ -1,6 +1,11 @@
+from datetime import timedelta
 from decimal import Decimal
+from types import SimpleNamespace
 
 from django.db import transaction
+from django.utils import timezone
+
+from mf_intelligence.models import MFScheme
 
 from mutual_funds.models import (
     MutualFundHolding,
@@ -137,19 +142,36 @@ class MutualFundHoldingEngine:
 
     @staticmethod
     def get_latest_nav(scheme):
-        """
-        Get the latest NAV available for the scheme.
-        """
-
-        return (
+        """Return the freshest family NAV, using recent MF Intelligence as fallback."""
+        family_nav = (
             MutualFundNAV.objects
-            .filter(
-                scheme=scheme,
-            )
+            .filter(scheme=scheme)
             .only("nav", "date")
             .order_by("-date")
             .first()
         )
+        today = timezone.localdate()
+        intelligence_nav = None
+        if scheme.scheme_code:
+            intelligence_nav = (
+                MFScheme.objects.filter(
+                    amfi_code=scheme.scheme_code,
+                    latest_nav__gt=0,
+                    latest_nav_date__lte=today,
+                    latest_nav_date__gte=today - timedelta(days=7),
+                )
+                .only("latest_nav", "latest_nav_date")
+                .first()
+            )
+        if intelligence_nav and (
+            family_nav is None or intelligence_nav.latest_nav_date > family_nav.date
+        ):
+            return SimpleNamespace(
+                nav=intelligence_nav.latest_nav,
+                date=intelligence_nav.latest_nav_date,
+                source="MF_INTELLIGENCE",
+            )
+        return family_nav
 
     @staticmethod
     @transaction.atomic

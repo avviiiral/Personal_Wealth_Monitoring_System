@@ -11,6 +11,7 @@ from rest_framework.response import Response
 
 from config.database_scheduler_lock import DATABASE_SCHEDULER_LOCK
 
+from mf_intelligence.models import MFScheme
 from investments.models import PortfolioPosition, Transaction
 from users.permissions import CanWriteFinancialData, get_active_family_group_id, get_visible_owner_ids
 from watchlist.models import InvestmentProduct, PerformanceSnapshot, ProductType, WatchListEntry
@@ -79,12 +80,29 @@ def _filtered_products(request, product_type=None):
         Q(mutual_fund__aum__isnull=False)
         | Q(pms__aum__isnull=False)
     )
+    # MF Intelligence is the persisted market-wide fallback. Join by the exact
+    # AMFI scheme code only; never infer a plan from a fund name or ISIN.
+    intelligence_scheme = MFScheme.objects.filter(
+        Q(amfi_code=OuterRef("mutual_fund__scheme_code"))
+        | Q(amfi_code=OuterRef("external_identifier"))
+    ).filter(
+        Q(latest_nav__isnull=False)
+        | Q(avg_aum_crore__isnull=False)
+        | Q(return_1w__isnull=False)
+        | Q(return_1m__isnull=False)
+        | Q(return_3m__isnull=False)
+        | Q(return_6m__isnull=False)
+        | Q(return_1y__isnull=False)
+        | Q(return_3y__isnull=False)
+        | Q(return_5y__isnull=False)
+    )
+    displayable_intelligence = Q(product_type=ProductType.MUTUAL_FUND) & Q(Exists(intelligence_scheme))
     # OWNED is an ownership view, so an owned product remains visible even
     # before its first performance snapshot has been imported.
     status = request.query_params.get("status", "").upper()
     if status != "OWNED":
         queryset = queryset.filter(
-            Q(Exists(displayable_snapshot)) | displayable_product
+            Q(Exists(displayable_snapshot)) | displayable_product | displayable_intelligence
         )
 
     if product_type:
@@ -258,6 +276,28 @@ def _latest_snapshots(products):
     return latest, metric_snapshot
 
 
+def _mf_intelligence_scheme_cache(products):
+    """Bulk-load exact AMFI-code matches for the displayed MF products."""
+    codes = set()
+    for product in products:
+        if product.product_type != ProductType.MUTUAL_FUND:
+            continue
+        scheme_code = None
+        if hasattr(product, "mutual_fund"):
+            scheme_code = product.mutual_fund.scheme_code
+        scheme_code = str(scheme_code or product.external_identifier or "").strip()
+        if scheme_code:
+            codes.add(scheme_code)
+    if not codes:
+        return {}
+    return {
+        scheme.amfi_code: scheme
+        for scheme in MFScheme.objects.filter(amfi_code__in=codes)
+        .select_related("category")
+        .prefetch_related("metrics")
+    }
+
+
 def _watchlisted_ids(products, request):
     product_ids = [product.id for product in products]
     if not product_ids or not request.user.is_authenticated:
@@ -347,6 +387,7 @@ def watch_list_products(request):
     page = paginator.paginate_queryset(queryset, request)
     page = list(page or [])
     latest_snapshots, metric_snapshots = _latest_snapshots(page)
+    intelligence_schemes = _mf_intelligence_scheme_cache(page)
     ownership_cache = _ownership_cache(page, request)
     serializer = WatchListProductSerializer(
         page,
@@ -355,6 +396,7 @@ def watch_list_products(request):
             "request": request,
             "latest_snapshots": latest_snapshots,
             "metric_snapshots": metric_snapshots,
+            "mf_intelligence_schemes": intelligence_schemes,
             "ownership_cache": ownership_cache,
             "watchlisted_ids": _watchlisted_ids(page, request),
         },
@@ -371,6 +413,7 @@ def watch_list_product_detail(request, product_id):
         is_active=True,
     )
     latest_snapshots, metric_snapshots = _latest_snapshots([product])
+    intelligence_schemes = _mf_intelligence_scheme_cache([product])
     ownership_cache = OwnershipService.bulk_enrich([product], request.user)
     return Response(
         WatchListProductSerializer(
@@ -379,6 +422,7 @@ def watch_list_product_detail(request, product_id):
                 "request": request,
                 "latest_snapshots": latest_snapshots,
                 "metric_snapshots": metric_snapshots,
+                "mf_intelligence_schemes": intelligence_schemes,
                 "ownership_cache": ownership_cache,
                 "watchlisted_ids": _watchlisted_ids([product], request),
             },

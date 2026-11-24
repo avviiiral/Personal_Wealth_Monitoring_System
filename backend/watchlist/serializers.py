@@ -1,5 +1,6 @@
 from rest_framework import serializers
 
+from mf_intelligence.models import MFScheme
 from watchlist.models import InvestmentProduct, PerformanceSnapshot, ProductType
 from watchlist.services.ownership import OwnershipService
 
@@ -72,6 +73,25 @@ class WatchListProductSerializer(serializers.ModelSerializer):
         metric_snapshots = self.context.get("metric_snapshots", {})
         return metric_snapshots.get(obj.id) or self._latest_snapshot(obj)
 
+    def _mf_intelligence_scheme(self, obj):
+        if obj.product_type != ProductType.MUTUAL_FUND:
+            return None
+        scheme_code = None
+        if hasattr(obj, "mutual_fund"):
+            scheme_code = obj.mutual_fund.scheme_code
+        scheme_code = str(scheme_code or obj.external_identifier or "").strip()
+        if not scheme_code:
+            return None
+        cached = self.context.get("mf_intelligence_schemes")
+        if cached is not None:
+            return cached.get(scheme_code)
+        return (
+            MFScheme.objects.filter(amfi_code=scheme_code)
+            .select_related("category")
+            .prefetch_related("metrics")
+            .first()
+        )
+
     def get_status(self, obj):
         if self.get_is_watchlisted(obj):
             return "WATCHLIST"
@@ -91,57 +111,109 @@ class WatchListProductSerializer(serializers.ModelSerializer):
 
     def get_metrics_as_of(self, obj):
         metric_snapshot = self._metric_snapshot(obj)
-        return metric_snapshot.date if metric_snapshot else None
+        if metric_snapshot is not None:
+            return metric_snapshot.date
+        intelligence = self._mf_intelligence_scheme(obj)
+        return intelligence.latest_nav_date if intelligence else None
 
     def get_metrics(self, obj):
         latest = self._latest_snapshot(obj)
         metric_snapshot = self._metric_snapshot(obj)
-        if not latest and not metric_snapshot:
+        intelligence = self._mf_intelligence_scheme(obj)
+        if not latest and not metric_snapshot and not intelligence:
             return {}
         fields = (
-            ("1D", "return_1d"),
-            ("1W", "return_1w"),
-            ("1M", "return_1m"),
-            ("3M", "return_3m"),
-            ("6M", "return_6m"),
-            ("1Y", "return_1y"),
-            ("3Y", "return_3y"),
-            ("5Y", "return_5y"),
-            ("Since Inception", "return_since_inception"),
-            ("CAGR", "cagr"),
+            ("1D", "return_1d", None),
+            ("1W", "return_1w", "return_1w"),
+            ("1M", "return_1m", "return_1m"),
+            ("3M", "return_3m", "return_3m"),
+            ("6M", "return_6m", "return_6m"),
+            ("1Y", "return_1y", "return_1y"),
+            ("3Y", "return_3y", "return_3y"),
+            ("5Y", "return_5y", "return_5y"),
+            ("Since Inception", "return_since_inception", "return_since_inception"),
+            ("CAGR", "cagr", None),
         )
-        return {
-            key: next(
+        result = {}
+        for key, snapshot_field, intelligence_field in fields:
+            value = next(
                 (
-                    getattr(snapshot, field)
+                    getattr(snapshot, snapshot_field)
                     for snapshot in (latest, metric_snapshot)
-                    if snapshot is not None and getattr(snapshot, field, None) is not None
+                    if snapshot is not None and getattr(snapshot, snapshot_field, None) is not None
                 ),
                 None,
             )
-            for key, field in fields
-        }
+            if value is None and intelligence is not None and intelligence_field:
+                value = getattr(intelligence, intelligence_field, None)
+            result[key] = value
+        return result
 
     def get_mutual_fund(self, obj):
         if obj.product_type != ProductType.MUTUAL_FUND or not hasattr(obj, "mutual_fund"):
             return None
         value = obj.mutual_fund
+        intelligence = self._mf_intelligence_scheme(obj)
+        intelligence_is_newer = bool(
+            intelligence
+            and intelligence.latest_nav_date
+            and (value.latest_nav_date is None or intelligence.latest_nav_date > value.latest_nav_date)
+        )
+        risk_metrics = {}
+        if intelligence is not None:
+            metric_fields = (
+                "trailing_cagr", "avg_rolling_return", "rolling_return_p10",
+                "rolling_return_p25", "rolling_return_p50", "rolling_return_p75",
+                "rolling_return_p90", "rolling_return_sd", "trailing_xirr",
+                "amfi_volatility", "beta", "correlation", "alpha", "upside_capture",
+                "downside_capture", "sharpe_ratio", "sortino_ratio", "information_ratio",
+                "trailing_max_drawdown",
+            )
+            risk_metrics = {
+                metric.horizon: {field: getattr(metric, field) for field in metric_fields}
+                for metric in intelligence.metrics.all()
+            }
         return {
-            "scheme_code": value.scheme_code,
-            "fund_type": value.fund_type,
-            "plan": value.plan,
-            "option": value.option,
-            "inception_date": value.inception_date,
-            "aum": value.aum,
-            "expense_ratio": value.expense_ratio,
+            "scheme_code": value.scheme_code or (intelligence.amfi_code if intelligence else None),
+            "fund_type": value.fund_type or (intelligence.category.name if intelligence and intelligence.category else None),
+            "plan": value.plan or (intelligence.plan if intelligence else None),
+            "option": value.option or (intelligence.option if intelligence else None),
+            "inception_date": value.inception_date or (intelligence.first_nav_date if intelligence else None),
+            "aum": value.aum if value.aum is not None else (intelligence.avg_aum_crore if intelligence else None),
+            "aum_period": intelligence.aum_period if intelligence else None,
+            "expense_ratio": value.expense_ratio if value.expense_ratio is not None else (intelligence.ter if intelligence else None),
             "benchmark": value.benchmark,
             "fund_manager": value.fund_manager,
             "fund_manager_website": value.fund_manager_website,
             "risk_level": value.risk_level,
             "minimum_investment": value.minimum_investment,
             "exit_load": value.exit_load,
-            "latest_nav": value.latest_nav,
-            "latest_nav_date": value.latest_nav_date,
+            "latest_nav": intelligence.latest_nav if intelligence_is_newer else (value.latest_nav if value.latest_nav is not None else (intelligence.latest_nav if intelligence else None)),
+            "latest_nav_date": intelligence.latest_nav_date if intelligence_is_newer else (value.latest_nav_date or (intelligence.latest_nav_date if intelligence else None)),
+            "intelligence": {
+                "category": intelligence.category.name if intelligence and intelligence.category else None,
+                "asset_class": intelligence.category.asset_class if intelligence and intelligence.category else None,
+                "data_as_of": intelligence.data_as_of if intelligence else None,
+                "metrics_synced_at": intelligence.metrics_synced_at if intelligence else None,
+                "aum_crore": intelligence.avg_aum_crore if intelligence else None,
+                "ter": intelligence.ter if intelligence else None,
+                "all_time_max_drawdown": intelligence.all_time_max_drawdown if intelligence else None,
+                "returns": {
+                    "1W": intelligence.return_1w,
+                    "1M": intelligence.return_1m,
+                    "3M": intelligence.return_3m,
+                    "6M": intelligence.return_6m,
+                    "YTD": intelligence.return_ytd,
+                    "1Y": intelligence.return_1y,
+                    "2Y": intelligence.return_2y,
+                    "3Y": intelligence.return_3y,
+                    "5Y": intelligence.return_5y,
+                    "10Y": intelligence.return_10y,
+                    "Since Inception": intelligence.return_since_inception,
+                } if intelligence else {},
+                "calendar_returns": intelligence.calendar_returns if intelligence else {},
+                "risk_metrics": risk_metrics,
+            },
         }
 
     def get_pms(self, obj):

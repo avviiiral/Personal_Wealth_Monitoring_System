@@ -1,9 +1,11 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 from decimal import Decimal, InvalidOperation
 
 import requests
+from django.utils import timezone
 
 from config.pwms_config import get as get_pwms_config
+from mf_intelligence.models import MFScheme
 
 
 class MutualFundNAVService:
@@ -190,19 +192,42 @@ class MutualFundNAVService:
         if not cleaned_isin:
             return None
 
-        nav_data = cls._load_nav_data()
+        request_error = None
+        try:
+            nav_data = cls._load_nav_data()
+        except requests.RequestException as exc:
+            # A recent synced NAV can keep portfolio valuation available when
+            # AMFI's live daily file is temporarily unreachable.
+            nav_data = {}
+            request_error = exc
 
-        record = nav_data.get(
-            cleaned_isin
+        record = nav_data.get(cleaned_isin)
+        if record is not None:
+            return {"isin": cleaned_isin, **record}
+
+        today = timezone.localdate()
+        intelligence_scheme = (
+            MFScheme.objects.filter(
+                isin__iexact=cleaned_isin,
+                latest_nav__gt=0,
+                latest_nav_date__lte=today,
+                latest_nav_date__gte=today - timedelta(days=7),
+            )
+            .order_by("-latest_nav_date", "-updated_at")
+            .first()
         )
-
-        if record is None:
-            return None
-
-        return {
-            "isin": cleaned_isin,
-            **record,
-        }
+        if intelligence_scheme is not None:
+            return {
+                "isin": cleaned_isin,
+                "scheme_code": intelligence_scheme.amfi_code,
+                "scheme_name": intelligence_scheme.name,
+                "nav": intelligence_scheme.latest_nav,
+                "date": intelligence_scheme.latest_nav_date,
+                "source": "MF_INTELLIGENCE",
+            }
+        if request_error is not None:
+            raise request_error
+        return None
 
     @classmethod
     def get_price(cls, isin):

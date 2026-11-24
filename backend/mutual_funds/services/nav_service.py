@@ -1,3 +1,8 @@
+from datetime import timedelta
+
+from django.utils import timezone
+
+from mf_intelligence.models import MFScheme
 from mutual_funds.models import AMFIMasterNAV, MutualFundNAV
 from mutual_funds.services.amfi import AMFIService
 
@@ -36,6 +41,26 @@ class MutualFundNAVService:
         )
 
         if master_scheme is None:
+            today = timezone.localdate()
+            if target_date <= today and target_date >= today - timedelta(days=7):
+                intelligence_scheme = (
+                    MFScheme.objects.filter(
+                        amfi_code=scheme.scheme_code,
+                        latest_nav__gt=0,
+                        latest_nav_date__lte=target_date,
+                        latest_nav_date__gte=today - timedelta(days=7),
+                    )
+                    .order_by("-latest_nav_date")
+                    .first()
+                )
+                if intelligence_scheme is not None:
+                    nav, _ = MutualFundNAV.objects.update_or_create(
+                        scheme=scheme,
+                        date=intelligence_scheme.latest_nav_date,
+                        source="MF_INTELLIGENCE",
+                        defaults={"nav": intelligence_scheme.latest_nav},
+                    )
+                    return nav
             try:
                 AMFIService.import_historical_master_navs(
                     target_date,

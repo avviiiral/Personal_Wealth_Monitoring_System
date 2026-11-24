@@ -52,7 +52,7 @@
     <span>{{ errorMessage }}</span><button type="button" (click)="retry()">Check again</button>
   </div>
 
-  <div class="tab-shell" *ngIf="selectedCategory">
+  <div class="tab-shell">
     <nav class="tab-nav" aria-label="Mutual fund analytics sections">
       <button *ngFor="let tab of tabs" type="button" [class.active]="activeTab === tab.id" (click)="selectTab(tab.id)">{{ tab.label }}</button>
     </nav>

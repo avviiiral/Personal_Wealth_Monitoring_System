@@ -9,14 +9,14 @@ import hashlib
 import logging
 import threading
 
+from django.core.management.base import BaseCommand
 from django.db import connection
 
 logger = logging.getLogger(__name__)
 
 _LOCK_NAMESPACE = "pwms"
-# PostgreSQL advisory locks are session-scoped and re-entrant. Track nesting
-# within this Python thread so nested decorated commands share one acquisition
-# and only the outermost context releases it.
+# Nested command invocations in the same execution thread share the outer
+# PostgreSQL session lock. Only the outermost context acquires/releases it.
 _held_locks = threading.local()
 
 
@@ -98,14 +98,13 @@ def with_postgres_advisory_lock(name):
                     stdout = getattr(caller, "stdout", None)
                     if stderr is not None:
                         stderr.write(message)
-                        # Django BaseCommand.handle() must return text or None.
-                        # Preserve a structured result for non-command callers.
-                        if caller.__class__.__module__.startswith(
-                            "django.core.management"
-                        ):
-                            return None
                     elif stdout is not None:
                         stdout.write(message)
+
+                    # BaseCommand.execute() expects handle() to return a
+                    # string or None, not a structured dict.
+                    if isinstance(caller, BaseCommand):
+                        return None
 
                     return {
                         "success": False,

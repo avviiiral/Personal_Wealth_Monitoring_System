@@ -163,9 +163,9 @@ code { font-size: 11px; }
 
 .q, .qcell { font-style: normal; font-size: 9px; font-weight: 700; padding: 2px 6px; border-radius: 3px; }
 .Q1 { background: #fef3ee; color: #c04a1a; }
-.Q2 { background: #f0fdf4; color: #16a34a; }
+.Q2 { background: #f0fdf4; color: var(--mfi-good); }
 .Q3 { background: #f0f0f0; color: #555; }
-.Q4 { background: #fef2f2; color: #dc2626; }
+.Q4 { background: #fef2f2; color: var(--mfi-bad); }
 td.qcell { font-size: 11px; border-radius: 0; }
 
 .good { color: var(--mfi-good); }

@@ -1,7 +1,11 @@
 from unittest.mock import Mock
 
+from django.contrib.auth.models import User
 from django.test import SimpleTestCase, TestCase
+from django.urls import resolve
+from rest_framework.test import APIRequestFactory, force_authenticate
 
+from mutual_funds.charliealpha_api import charliealpha_provider_resources
 from mutual_funds.master_models import MFProviderResourceSnapshot, MFSourceRun
 from mutual_funds.services.charliealpha_extended import (
     CharlieAlphaExtendedService,
@@ -37,6 +41,15 @@ class CharlieAlphaExtendedParserTests(SimpleTestCase):
                 {"plan": "Class I", "date": "2026-11-20", "nav": "99.75"},
             ],
         )
+
+    def test_gift_latest_nav_keyed_by_plan_preserves_scalar_plan_rows(self):
+        payload = {
+            "Direct": {"nav": "10.25", "previous_nav": "10.10", "date": "2026-11-21"},
+            "Class I": {"nav": "10.50", "previous_nav": "10.30", "date": "2026-11-21"},
+        }
+        rows = _resource_records(payload)
+        self.assertEqual([row["plan"] for row in rows], ["Direct", "Class I"])
+        self.assertEqual([row["nav"] for row in rows], ["10.25", "10.50"])
 
 
 class CharlieAlphaExtendedPersistenceTests(TestCase):
@@ -169,3 +182,41 @@ class CharlieAlphaExtendedPersistenceTests(TestCase):
         self.assertEqual(result["schemes_discovered"], 1)
         self.assertFalse(MFProviderResourceSnapshot.objects.exists())
         self.assertFalse(MFSourceRun.objects.filter(source="CHARLIEALPHA_API").exists())
+
+    def test_provider_resource_api_is_authenticated_and_returns_family_snapshots(self):
+        user = User.objects.create_user(username="charliealpha-provider-test", password="test-password")
+        snapshot = MFProviderResourceSnapshot.objects.create(
+            family="NPS",
+            endpoint="nps/hnav/SM001001",
+            identifier="SM001001",
+            request_params={"from": "2026-01-01"},
+            payload={"dates": ["2026-11-20"], "nav": ["42.5"]},
+            records=[{"date": "2026-11-20", "nav": "42.5"}],
+            record_count=1,
+            success=True,
+        )
+        self.assertEqual(
+            resolve("/api/mutual-fund-analytics/charliealpha/provider-data/").url_name,
+            "charliealpha-provider-resources",
+        )
+
+        request = APIRequestFactory().get(
+            "/api/mutual-fund-analytics/charliealpha/provider-data/?family=NPS&limit=5"
+        )
+        force_authenticate(request, user=user)
+        response = charliealpha_provider_resources(request)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["count"], 1)
+        self.assertEqual(response.data["family_counts"]["NPS"], 1)
+        self.assertEqual(response.data["results"][0]["id"], snapshot.id)
+        self.assertEqual(response.data["results"][0]["records"][0]["nav"], "42.5")
+
+    def test_provider_resource_api_rejects_unknown_family(self):
+        user = User.objects.create_user(username="charliealpha-provider-invalid", password="test-password")
+        request = APIRequestFactory().get(
+            "/api/mutual-fund-analytics/charliealpha/provider-data/?family=UNSUPPORTED"
+        )
+        force_authenticate(request, user=user)
+        response = charliealpha_provider_resources(request)
+        self.assertEqual(response.status_code, 400)

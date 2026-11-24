@@ -102,6 +102,11 @@ def _records(payload: Any, preferred: tuple[str, ...] = ()) -> list[dict]:
     fields = payload.get("fields") or payload.get("columns") or payload.get("labels")
     for name in preferred + ("schemes", "funds", "results", "records", "rows", "items", "holdings", "periods", "benchmarks", "categories", "data"):
         value = payload.get(name)
+        if isinstance(value, dict):
+            nested = _records(value, preferred)
+            if nested:
+                return nested
+            continue
         if not isinstance(value, list):
             continue
         if value and isinstance(value[0], dict):
@@ -173,15 +178,18 @@ def _horizon_payload(payload: Any, horizon: str) -> dict:
 
 
 def _scheme_identifier(row: dict) -> str:
-    return text_value(_first(row, "scheme_code", "amfi_code", "amfi_scheme_code", "code", "schemeId", "scheme_id", "schemeCode"))
+    aliases = ("scheme_code", "amfi_code", "amfi_scheme_code", "code", "schemeId", "scheme_id", "schemeCode")
+    return text_value(_first(row, *aliases) or _find_nested(row, aliases))
 
 
 def _isin(row: dict) -> str:
-    return text_value(_first(row, "isin", "isin_growth", "isin_code", "ISIN")).upper()
+    aliases = ("isin", "isin_growth", "isin_code", "ISIN")
+    return text_value(_first(row, *aliases) or _find_nested(row, aliases)).upper()
 
 
 def _scheme_name(row: dict) -> str:
-    return text_value(_first(row, "scheme_name", "name", "scheme", "fund_name", "fund"))
+    aliases = ("scheme_name", "name", "scheme", "fund_name", "fund")
+    return text_value(_first(row, *aliases) or _find_nested(row, aliases))
 
 
 def _source_date(payload: Any) -> date:
@@ -438,7 +446,13 @@ class CharlieAlphaService:
             scheme = self._resolve_scheme({"scheme_code": code})
             if not scheme:
                 continue
-            payload = self.client.get("mf/hnav/" + quote(code, safe=""))
+            try:
+                payload = self.client.get("mf/hnav/" + quote(code, safe=""))
+            except Exception as exc:
+                self.stats["failed"] += 1
+                if len(self.errors) < 100:
+                    self.errors.append({"kind": "nav_history_fetch", "code": code, "error": str(exc)[:250]})
+                continue
             dates = payload.get("dates", []) if isinstance(payload, dict) else []
             navs = payload.get("nav", []) if isinstance(payload, dict) else []
             if not isinstance(dates, list) or not isinstance(navs, list):
@@ -463,8 +477,14 @@ class CharlieAlphaService:
         if not scheme:
             return
         as_of = _source_date(row)
-        raw_metrics = row.get("metrics", row)
+        raw_metrics = row.get("metrics") if isinstance(row, dict) else None
+        if not isinstance(raw_metrics, dict):
+            raw_metrics = _find_nested(row, ("metrics",))
+        if not isinstance(raw_metrics, dict):
+            raw_metrics = row
         category_medians = row.get("category_medians") if isinstance(row, dict) else None
+        if category_medians is None:
+            category_medians = _find_nested(row, ("category_medians",))
         horizons = {}
         for horizon in ("1y", "3y", "5y", "10y"):
             value = _horizon_payload(raw_metrics, horizon)
@@ -574,7 +594,13 @@ class CharlieAlphaService:
             scheme_codes = scheme_codes[:limit]
         for code in scheme_codes:
             endpoint = "mf/" + domain + "/" + quote(code, safe="")
-            payload = self.client.get(endpoint)
+            try:
+                payload = self.client.get(endpoint)
+            except Exception as exc:
+                self.stats["failed"] += 1
+                if len(self.errors) < 100:
+                    self.errors.append({"kind": domain + "_fetch", "code": code, "error": str(exc)[:250]})
+                continue
             dates = payload.get("dates", []) if isinstance(payload, dict) else []
             values = payload.get(domain, []) if isinstance(payload, dict) else []
             if not isinstance(values, list):
@@ -633,7 +659,13 @@ class CharlieAlphaService:
             params = {"change": "yes"} if include_changes else {}
             if report_date:
                 params["as_of"] = report_date
-            payload = self.client.get(endpoint, params or None)
+            try:
+                payload = self.client.get(endpoint, params or None)
+            except Exception as exc:
+                self.stats["failed"] += 1
+                if len(self.errors) < 100:
+                    self.errors.append({"kind": "holdings_fetch", "code": code, "report_date": report_date, "error": str(exc)[:250]})
+                continue
             scheme = self._resolve_scheme({"scheme_code": code})
             if not scheme:
                 continue
@@ -660,6 +692,16 @@ class CharlieAlphaService:
                     "sector": text_value(_first(row, "sector")),
                     "industry": text_value(_first(row, "industry")),
                 })
+            if not normalized:
+                self.stats["skipped"] += 1
+                self._run("holdings_unavailable", as_of=as_of, metadata={
+                    "scheme_code": scheme.scheme_code,
+                    "provider_scheme_code": code,
+                    "data_status": "NOT_RETURNED_OR_NO_VALID_HOLDINGS",
+                    "holdings_count_returned": len(rows),
+                    "report_date": report_date,
+                })
+                continue
             if self.dry_run:
                 continue
             date_basis = MFMasterHolding.DATE_BASIS_DISCLOSURE if (_first(payload, "as_of", "as_of_date", "report_date") or report_date) else MFMasterHolding.DATE_BASIS_FETCHED_AT
@@ -956,7 +998,13 @@ class CharlieAlphaService:
         """Capture per-scheme NAV movement and metadata absent from the compact bulk feed."""
         for code in scheme_codes:
             endpoint = "mf/lnav/" + quote(code, safe="")
-            payload = self.client.get(endpoint)
+            try:
+                payload = self.client.get(endpoint)
+            except Exception as exc:
+                self.stats["failed"] += 1
+                if len(self.errors) < 100:
+                    self.errors.append({"kind": "latest_nav_detail_fetch", "code": code, "error": str(exc)[:250]})
+                continue
             self.stats["fetched"] += 1
             scheme = self._resolve_scheme(payload if isinstance(payload, dict) else {"scheme_code": code})
             if not scheme:

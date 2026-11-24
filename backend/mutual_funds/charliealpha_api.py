@@ -316,11 +316,12 @@ def charliealpha_compare(request):
 
     overlap_only = bool(request.data.get("overlap_only", False))
     command = "overlap" if overlap_only else "compare"
-    run = MFSourceRun.objects.filter(
-        source=SOURCE,
-        command=command,
-        metadata__scheme_codes=normalized,
-    ).order_by("-started_at").first()
+    run = next((
+        candidate for candidate in MFSourceRun.objects.filter(
+            source=SOURCE, command=command
+        ).order_by("-started_at")[:500]
+        if (candidate.metadata or {}).get("scheme_codes") == normalized
+    ), None)
     if run is None:
         return Response({
             "detail": "No stored comparison exists for this exact fund selection. "

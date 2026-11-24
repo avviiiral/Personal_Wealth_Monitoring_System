@@ -143,3 +143,30 @@ class LegacyDirectEquityPriceRoutingTests(TestCase):
         self.assertFalse(result["success"])
         self.assertTrue(result["skipped"])
         resolve_symbol.assert_not_called()
+
+    def test_resolved_symbol_is_persisted_without_overwriting_existing_symbol(self):
+        from market_data.services.security_resolver import SecurityResolver
+
+        with patch.object(
+            SecurityResolver,
+            "resolve_yahoo_symbol",
+            return_value="ITCHOTELS.NS",
+        ):
+            resolved = MarketDataManager.resolve_asset_symbol(self.asset)
+
+        self.assertEqual(resolved, "ITCHOTELS.NS")
+        self.asset.refresh_from_db()
+        self.assertEqual(self.asset.symbol, "ITCHOTELS.NS")
+
+        # An explicit non-empty symbol is never overwritten by later mapping.
+        self.asset.symbol = "CUSTOM.NS"
+        self.asset.save(update_fields=["symbol"])
+        with patch.object(
+            SecurityResolver,
+            "resolve_yahoo_symbol",
+            return_value="DIFFERENT.NS",
+        ):
+            resolved = MarketDataManager.resolve_asset_symbol(self.asset)
+        self.assertEqual(resolved, "DIFFERENT.NS")
+        self.asset.refresh_from_db()
+        self.assertEqual(self.asset.symbol, "CUSTOM.NS")

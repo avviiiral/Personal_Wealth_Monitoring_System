@@ -10,6 +10,8 @@ from mutual_funds.master_models import (
     MFExternalPortfolioSnapshot,
     MFMasterData,
     MFMasterHolding,
+    MFProviderBenchmark,
+    MFProviderBenchmarkObservation,
     MFSourceRun,
 )
 from mutual_funds.services.charliealpha import (
@@ -196,5 +198,10 @@ class CharlieAlphaPersistenceTests(TestCase):
         run = MFSourceRun.objects.get(source=SOURCE, command="benchmark_history")
         self.assertTrue(run.metadata["normalization"]["is_normalized"])
         self.assertEqual(run.metadata["normalization"]["base_value"], 100.0)
-        self.assertEqual(run.metadata["series"][0]["normalized_value"], "100")
+        self.assertEqual(run.metadata["observation_count"], 2)
         self.assertIn("not an absolute official", run.metadata["normalization"]["warning"])
+        provider_benchmark = MFProviderBenchmark.objects.get(provider="CHARLIEALPHA", slug="nifty-500")
+        observations = MFProviderBenchmarkObservation.objects.filter(benchmark=provider_benchmark).order_by("observation_date")
+        self.assertEqual(observations.count(), 2)
+        self.assertEqual(observations.first().normalized_value, Decimal("100"))
+        self.assertEqual(observations.first().normalization_base_date, date(2025, 10, 1))

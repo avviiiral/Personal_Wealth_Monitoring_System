@@ -68,6 +68,7 @@ def charliealpha_overview(request):
     amc = (request.query_params.get("amc") or "").strip()
     category = (request.query_params.get("category") or "").strip()
     plan = (request.query_params.get("plan") or "").strip()
+    option = (request.query_params.get("option") or "").strip()
 
     if search:
         queryset = queryset.filter(
@@ -87,6 +88,8 @@ def charliealpha_overview(request):
         )
     if plan:
         queryset = queryset.filter(plan__iexact=plan)
+    if option:
+        queryset = queryset.filter(option__iexact=option)
 
     pagination = IntelligencePagination()
     page = pagination.paginate_queryset(queryset, request)
@@ -134,10 +137,14 @@ def charliealpha_fund_detail(request, scheme_code: str):
         raise Http404("Mutual-fund scheme was not found in the AMFI master.")
     snapshot = MFMasterData.objects.filter(scheme=scheme).order_by("-as_of_date").first()
     nav_limit = min(5000, max(30, int(request.query_params.get("nav_limit", 1000))))
-    nav_rows = list(
-        AMFIMasterNAV.objects.filter(scheme=scheme, source=NAV_SOURCE)
-        .order_by("-date")[:nav_limit]
-    )
+    nav_queryset = AMFIMasterNAV.objects.filter(scheme=scheme, source=NAV_SOURCE)
+    from_date = request.query_params.get("from_date")
+    to_date = request.query_params.get("to_date")
+    if from_date:
+        nav_queryset = nav_queryset.filter(date__gte=from_date)
+    if to_date:
+        nav_queryset = nav_queryset.filter(date__lte=to_date)
+    nav_rows = list(nav_queryset.order_by("-date")[:nav_limit])
     holding_date = (
         MFMasterHolding.objects.filter(scheme=scheme, source=SOURCE)
         .order_by("-portfolio_date").values_list("portfolio_date", flat=True).first()

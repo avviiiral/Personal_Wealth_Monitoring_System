@@ -1,5 +1,5 @@
 """Authenticated, database-backed APIs for the Mutual Fund Intelligence page."""
-from django.db.models import Count, F, OuterRef, Q, Subquery
+from django.db.models import F, OuterRef, Q, Subquery
 from django.http import Http404
 from rest_framework import serializers
 from rest_framework.decorators import api_view, permission_classes
@@ -16,7 +16,7 @@ from mutual_funds.master_models import (
     MFProviderBenchmarkObservation,
     MFSourceRun,
 )
-from mutual_funds.services.charliealpha import CharlieAlphaService, NAV_SOURCE, SOURCE
+from mutual_funds.services.charliealpha import CharlieAlphaService, NAV_SOURCE, SOURCE, decimal_value, parse_date
 
 
 class IntelligenceSnapshotSerializer(serializers.ModelSerializer):
@@ -54,6 +54,60 @@ def _latest_snapshots():
         .filter(as_of_date=F("_latest_snapshot_date"))
         .select_related("scheme")
     )
+
+
+_SNAPSHOT_GROUP_FIELDS = {
+    "nav": ("nav", "nav_as_of", "nav_source"),
+    "performance_and_risk": (
+        "return_1y_pct", "return_3y_pct", "return_5y_pct", "return_10y_pct",
+        "since_inception_cagr_pct", "rolling_3y_cagr_mean_pct",
+        "rolling_3y_cagr_min_pct", "rolling_3y_cagr_max_pct",
+        "rolling_3y_cagr_observations", "std_dev_pct", "sharpe", "sortino",
+        "beta", "alpha_pct", "information_ratio", "max_drawdown_pct",
+        "upside_capture_pct", "downside_capture_pct", "tracking_error_pct",
+    ),
+    "ter": ("ter_direct_pct", "ter_regular_pct", "ter_as_of", "ter_source"),
+    "aum": ("aum_cr", "aum_type", "aum_as_of", "aum_source"),
+    "holdings": ("top10_holdings", "sector_allocation", "holdings_as_of", "holdings_source"),
+}
+
+
+def _serialize_current_snapshots(snapshots):
+    """Combine each provider domain's latest non-null values without changing dated history rows."""
+    snapshot_rows = list(snapshots)
+    if not snapshot_rows:
+        return []
+    serialized = {
+        row.scheme_id: dict(IntelligenceSnapshotSerializer(row).data)
+        for row in snapshot_rows
+    }
+    found: set[tuple[int, str]] = set()
+
+    for domain, fields in _SNAPSHOT_GROUP_FIELDS.items():
+        lookup = {f"field_sources__{domain}__source": SOURCE}
+        rows = MFMasterData.objects.filter(
+            scheme_id__in=serialized.keys(),
+            **lookup,
+        ).order_by("scheme_id", "-as_of_date", "-id")
+        for row in rows:
+            target = serialized[row.scheme_id]
+            for field in fields:
+                marker = (row.scheme_id, field)
+                if marker in found:
+                    continue
+                value = getattr(row, field)
+                if value is None or value == [] or value == {} or value == "":
+                    continue
+                target[field] = value
+                found.add(marker)
+            field_sources = dict(target.get("field_sources") or {})
+            source_info = (row.field_sources or {}).get(domain)
+            if source_info and domain not in field_sources:
+                field_sources[domain] = source_info
+                target["field_sources"] = field_sources
+            target.setdefault(domain + "_snapshot_as_of", row.as_of_date)
+
+    return [serialized[row.scheme_id] for row in snapshot_rows]
 
 
 def _source_status():
@@ -110,7 +164,7 @@ def charliealpha_overview(request):
 
     pagination = IntelligencePagination()
     page = pagination.paginate_queryset(queryset, request)
-    results = IntelligenceSnapshotSerializer(page, many=True).data
+    results = _serialize_current_snapshots(page)
 
     latest = _latest_snapshots()
     latest_date = latest.order_by("-as_of_date").values_list("as_of_date", flat=True).first()
@@ -120,11 +174,13 @@ def charliealpha_overview(request):
         MFSourceRun.objects.filter(source=SOURCE, command="metrics", status__in=("SUCCESS", "PARTIAL"))
         .values("metadata__scheme_code").distinct().count()
     )
+    latest_scheme_ids = latest.values("scheme_id").distinct()
+    linked_schemes = AMFIMasterScheme.objects.filter(id__in=Subquery(latest_scheme_ids))
     summary = {
         "active_amfi_schemes": AMFIMasterScheme.objects.filter(is_active=True).count(),
-        "schemes_with_masterdata": latest.count(),
-        "amc_coverage": latest.exclude(amc="").values("amc").distinct().count(),
-        "category_coverage": latest.exclude(sebi_category_level_3="").values("sebi_category_level_3").distinct().count(),
+        "schemes_with_masterdata": linked_schemes.count(),
+        "amc_coverage": linked_schemes.exclude(amc_name="").values("amc_name").distinct().count(),
+        "category_coverage": linked_schemes.exclude(level_3_category="").values("level_3_category").distinct().count(),
         "nav_coverage": nav_coverage,
         "metrics_coverage": metric_coverage,
         "holdings_coverage": holdings_coverage,
@@ -132,10 +188,10 @@ def charliealpha_overview(request):
         "provider": SOURCE,
     }
     filters = {
-        "amcs": list(latest.exclude(amc="").values_list("amc", flat=True).distinct().order_by("amc")),
-        "categories": list(latest.exclude(sebi_category_level_3="").values_list("sebi_category_level_3", flat=True).distinct().order_by("sebi_category_level_3")),
-        "plans": list(latest.exclude(plan="").values_list("plan", flat=True).distinct().order_by("plan")),
-        "options": list(latest.exclude(option="").values_list("option", flat=True).distinct().order_by("option")),
+        "amcs": list(linked_schemes.exclude(amc_name="").values_list("amc_name", flat=True).distinct().order_by("amc_name")),
+        "categories": list(linked_schemes.exclude(level_3_category="").values_list("level_3_category", flat=True).distinct().order_by("level_3_category")),
+        "plans": list(linked_schemes.exclude(plan="").values_list("plan", flat=True).distinct().order_by("plan")),
+        "options": list(linked_schemes.exclude(option="").values_list("option", flat=True).distinct().order_by("option")),
     }
     payload = {
         "summary": summary,

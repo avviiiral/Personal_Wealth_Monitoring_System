@@ -83,7 +83,7 @@ class Command(BaseCommand):
 
         service = CharlieAlphaService(dry_run=options["dry_run"])
         result = {}
-        extended = CharlieAlphaExtendedService()
+        extended = CharlieAlphaExtendedService(dry_run=options["dry_run"])
         directory_codes: list[str] = []
 
         if domain == "categories":

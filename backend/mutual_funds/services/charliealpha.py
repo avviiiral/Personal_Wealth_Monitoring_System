@@ -523,6 +523,7 @@ class CharlieAlphaService:
         self.stats["fetched"] += len(schemes)
         mapped = 0
         mapped_scheme_codes: list[str] = []
+        linked_provider_rows: list[dict] = []
         unmatched = []
         for row in schemes:
             scheme = self._resolve_scheme(row)
@@ -536,6 +537,12 @@ class CharlieAlphaService:
                 continue
             mapped += 1
             mapped_scheme_codes.append(scheme.scheme_code)
+            linked_provider_rows.append({
+                "scheme_code": scheme.scheme_code,
+                "provider_identifier": _scheme_identifier(row),
+                "provider_isin": _isin(row),
+                "provider_response": row,
+            })
             if self.dry_run:
                 continue
             changed = []
@@ -568,7 +575,9 @@ class CharlieAlphaService:
                 "schemes_fetched": len(schemes),
                 "schemes_mapped_to_amfi": mapped,
                 "linked_scheme_codes": mapped_scheme_codes,
+                "linked_provider_rows": linked_provider_rows,
                 "unmatched_schemes": unmatched[:500],
+                "provider_fields": schemes_payload.get("fields", []) if isinstance(schemes_payload, dict) else [],
                 "coverage_note": "CharlieAlpha scheme rows are linked only by exact AMFI code, exact ISIN or unique exact name.",
             },
         )
@@ -618,10 +627,15 @@ class CharlieAlphaService:
                 self.stats["failed"] += 1
                 if len(self.errors) < 100:
                     self.errors.append({"kind": "nav_persist", "scheme_code": scheme.scheme_code, "error": str(exc)[:300]})
-        run = self._run("navall", as_of=timezone.localdate(), metadata={"records": len(rows), "source": "compact lnavall; original AMFI NAV rows are not modified"})
+        run = self._run("navall", as_of=timezone.localdate(), metadata={
+            "records": len(rows),
+            "provider_fields": payload.get("fields", []) if isinstance(payload, dict) else [],
+            "source": "compact lnavall; original AMFI NAV rows are not modified",
+        })
         return {"run_id": run.id, **self.stats}
 
     def sync_nav_history(self, scheme_codes: list[str]) -> dict:
+        scheme_responses = []
         for code in scheme_codes:
             scheme = self._resolve_identifier(code)
             if not scheme:
@@ -637,6 +651,13 @@ class CharlieAlphaService:
             navs = payload.get("nav", []) if isinstance(payload, dict) else []
             if not isinstance(dates, list) or not isinstance(navs, list):
                 dates, navs = [], []
+            scheme_responses.append({
+                "scheme_code": scheme.scheme_code,
+                "provider_identifier": code,
+                "provider_response": payload,
+                "date_count": len(dates),
+                "nav_count": len(navs),
+            })
             if len(dates) != len(navs):
                 self.stats["failed"] += 1
                 if len(self.errors) < 100:
@@ -658,7 +679,11 @@ class CharlieAlphaService:
                 except Exception as exc:
                     self.stats["failed"] += 1
                     self.errors.append({"kind": "nav_history", "code": code, "date": str(day), "error": str(exc)[:250]})
-        run = self._run("nav_history", metadata={"schemes_requested": scheme_codes, "source": "daily NAV history"})
+        run = self._run("nav_history", metadata={
+            "schemes_requested": scheme_codes,
+            "schemes": scheme_responses,
+            "source": "daily NAV history",
+        })
         return {"run_id": run.id, **self.stats}
 
     def _save_metric_record(self, row: dict, endpoint: str, identifier: str | None = None):
@@ -758,6 +783,7 @@ class CharlieAlphaService:
                 "scheme_name": scheme.scheme_name,
                 "horizons": horizons,
                 "category_medians": category_medians,
+                "provider_response": row,
                 "metrics_source": endpoint,
                 "risk_metric_horizon_used_for_scalar_columns": "3y, falling back to 1y / 5y / 10y",
                 "scalar_metric_mapping": risk_fields,
@@ -824,6 +850,7 @@ class CharlieAlphaService:
                 medians = payload.get("category_medians") if isinstance(payload, dict) else None
                 self._run("category_metrics", metadata={
                     "category_slug": slug,
+                    "provider_response": payload,
                     "horizon": normalized_horizon or None,
                     "category_medians": medians,
                     "metrics_count": len(rows),

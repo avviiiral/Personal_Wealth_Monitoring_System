@@ -1,7 +1,7 @@
 """Small deployment-safe PostgreSQL advisory-lock helper.
 
 The lock is database-backed so multiple Django worker processes do not run
-same background refresh concurrently. On SQLite/development it is a no-op.
+the same background refresh concurrently. On SQLite/development it is a no-op.
 """
 from contextlib import contextmanager
 from functools import wraps
@@ -49,16 +49,15 @@ def postgres_advisory_lock(name):
                     cursor.execute("SELECT pg_advisory_unlock(%s)", [key])
             except Exception:
                 # PostgreSQL releases session locks when the connection closes.
-                # Do not mask a completed refresh if that connection is invalid.
                 logger.exception(
-                    "Unable to explicitly release PostgreSQL advisory lock %s; "
+                    "Unable to explicitly release advisory lock '%s'; "
                     "the database will release it when the session closes.",
                     name,
                 )
 
 
 def with_postgres_advisory_lock(name):
-    """Decorator for refresh entry points with explicit contention reporting."""
+    """Decorate a command or service entry point with a shared advisory lock."""
     def decorator(func):
         @wraps(func)
         def wrapped(*args, **kwargs):
@@ -69,13 +68,17 @@ def with_postgres_advisory_lock(name):
                         "is held by another process."
                     )
                     logger.warning("%s (%s)", message, func.__qualname__)
-                    command = args[0] if args else None
-                    command_stdout = getattr(command, "stdout", None)
-                    command_stderr = getattr(command, "stderr", None)
-                    if command_stderr is not None:
-                        command_stderr.write(message)
-                    elif command_stdout is not None:
-                        command_stdout.write(message)
+
+                    # Django management commands expose stderr/stdout. Service
+                    # methods simply receive the structured return value.
+                    caller = args[0] if args else None
+                    stderr = getattr(caller, "stderr", None)
+                    stdout = getattr(caller, "stdout", None)
+                    if stderr is not None:
+                        stderr.write(message)
+                    elif stdout is not None:
+                        stdout.write(message)
+
                     return {
                         "success": False,
                         "skipped": True,
@@ -87,5 +90,6 @@ def with_postgres_advisory_lock(name):
                 if isinstance(result, dict):
                     result.setdefault("lock_acquired", True)
                 return result
+
         return wrapped
     return decorator

@@ -14,13 +14,13 @@ class Command(BaseCommand):
     def add_arguments(self, parser):
         parser.add_argument(
             "--domain",
-            choices=("schemes", "search", "nav", "nav-detail", "nav-history", "metrics", "ter", "aum", "holdings", "holdings-periods", "holdings-history", "exposure", "benchmarks", "compare", "overlap", "all"),
+            choices=("categories", "schemes", "search", "nav", "nav-detail", "nav-history", "metrics", "ter", "aum", "holdings", "holdings-periods", "holdings-history", "exposure", "benchmarks", "compare", "overlap", "all"),
             default="all",
             help="Data domain to synchronize (default: all).",
         )
         parser.add_argument(
             "--scheme-code", action="append", dest="scheme_codes", default=[],
-            help="AMFI scheme code; repeat to select multiple schemes.",
+            help="Six-digit AMFI scheme code or 12-character ISIN; repeat to select multiple schemes.",
         )
         parser.add_argument(
             "--category", default="",
@@ -39,6 +39,11 @@ class Command(BaseCommand):
         parser.add_argument("--min-pct", default="", help="Optional minimum portfolio percentage for stock exposure.")
         parser.add_argument("--period-limit", type=int, default=4, help="Maximum historical holdings periods per scheme; 0 means all available.")
         parser.add_argument("--include-nav-history", action="store_true", help="Also fetch historical NAV for the selected/limited scheme universe during --domain all.")
+        parser.add_argument("--horizon", choices=("1y", "3y", "5y", "10y"), default=None, help="Optional category-metrics horizon filter.")
+        parser.add_argument("--benchmark-range", choices=("ALL", "1M", "6M", "1Y", "3Y", "5Y", "10Y", "15Y", "20Y", "25Y"), default="ALL", help="Relative benchmark history window.")
+        parser.add_argument("--benchmark-from", default="", help="Custom benchmark start date (YYYY-MM-DD); requires --benchmark-to.")
+        parser.add_argument("--benchmark-to", default="", help="Custom benchmark end date (YYYY-MM-DD); requires --benchmark-from.")
+        parser.add_argument("--include-pairwise", action="store_true", help="Request optional pairwise correlation and holdings matrices.")
         parser.add_argument("--dry-run", action="store_true", help="Validate and fetch without changing scheme data.")
         parser.add_argument(
             "--skip-holdings-changes", action="store_true",
@@ -54,11 +59,16 @@ class Command(BaseCommand):
             raise CommandError("--limit cannot be negative.")
         if options["period_limit"] < 0:
             raise CommandError("--period-limit cannot be negative.")
+        if bool(options["benchmark_from"]) != bool(options["benchmark_to"]):
+            raise CommandError("--benchmark-from and --benchmark-to must be supplied together.")
         if codes and limit and len(codes) > limit:
             codes = codes[:limit]
 
         service = CharlieAlphaService(dry_run=options["dry_run"])
         result = {}
+
+        if domain == "categories":
+            result["categories"] = service.sync_categories()
 
         if domain in {"schemes", "all"}:
             result["schemes"] = service.sync_schemes(category=category)
@@ -89,11 +99,13 @@ class Command(BaseCommand):
             result["metrics"] = service.sync_metrics(
                 scheme_codes=codes or None,
                 category_slugs=[category] if category else None,
+                horizon=options["horizon"],
             )
 
         if domain == "all":
             result["metrics"] = service.sync_metrics(
                 category_slugs=[category] if category else None,
+                horizon=options["horizon"],
             )
 
         if domain in {"ter", "aum", "holdings", "all"}:
@@ -137,7 +149,12 @@ class Command(BaseCommand):
             )
 
         if domain in {"benchmarks", "all"}:
-            result["benchmarks"] = service.sync_benchmarks(limit=limit or None)
+            result["benchmarks"] = service.sync_benchmarks(
+                limit=limit or None,
+                range_name=options["benchmark_range"],
+                from_date=options["benchmark_from"] or None,
+                to_date=options["benchmark_to"] or None,
+            )
 
         if domain in {"compare", "overlap"}:
             compare_codes = list(dict.fromkeys(
@@ -148,7 +165,11 @@ class Command(BaseCommand):
                     "--domain compare/overlap requires 2 to 20 codes via --compare-code "
                     "(or repeat --scheme-code)."
                 )
-            result[domain] = service.compare(compare_codes, overlap_only=(domain == "overlap"))
+            result[domain] = service.compare(
+                compare_codes,
+                overlap_only=(domain == "overlap"),
+                include_pairwise=True if options["include_pairwise"] else None,
+            )
 
         self.stdout.write(self.style.SUCCESS("CharlieAlpha sync finished."))
         self.stdout.write("Domain: " + domain)

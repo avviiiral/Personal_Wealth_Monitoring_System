@@ -432,6 +432,9 @@ class CharlieAlphaService:
 
     def sync_nav_history(self, scheme_codes: list[str]) -> dict:
         for code in scheme_codes:
+            scheme = self._resolve_scheme({"scheme_code": code})
+            if not scheme:
+                continue
             payload = self.client.get("mf/hnav/" + quote(code, safe=""))
             dates = payload.get("dates", []) if isinstance(payload, dict) else []
             navs = payload.get("nav", []) if isinstance(payload, dict) else []
@@ -442,9 +445,6 @@ class CharlieAlphaService:
                 if not day or nav is None:
                     self.stats["skipped"] += 1
                     continue
-                scheme = self._resolve_scheme({"scheme_code": code})
-                if not scheme:
-                    break
                 self.stats["fetched"] += 1
                 try:
                     with transaction.atomic():
@@ -623,12 +623,15 @@ class CharlieAlphaService:
     def sync_aum(self, scheme_codes: list[str], limit: int | None = None) -> dict:
         return self._sync_series("aum", scheme_codes, limit)
 
-    def sync_holdings(self, scheme_codes: list[str], *, include_changes: bool = True, limit: int | None = None) -> dict:
+    def sync_holdings(self, scheme_codes: list[str], *, include_changes: bool = True, limit: int | None = None, report_date: str | None = None) -> dict:
         if limit:
             scheme_codes = scheme_codes[:limit]
         for code in scheme_codes:
             endpoint = "mf/holdings/" + quote(code, safe="")
-            payload = self.client.get(endpoint, {"change": "yes"} if include_changes else None)
+            params = {"change": "yes"} if include_changes else {}
+            if report_date:
+                params["as_of"] = report_date
+            payload = self.client.get(endpoint, params or None)
             scheme = self._resolve_scheme({"scheme_code": code})
             if not scheme:
                 continue
@@ -723,7 +726,7 @@ class CharlieAlphaService:
                     MFExternalPortfolioSnapshot.objects.create(scheme=scheme, **values)
             # Store provider-reported changes in the run audit table, separate from the latest holdings.
             change_data = _first(payload, "changes", "holding_changes", "change_summary")
-            self._run("holdings_changes", as_of=as_of, metadata={
+            self._run("holdings_changes" if include_changes else "holdings", as_of=as_of, metadata={
                 "scheme_code": scheme.scheme_code,
                 "provider_scheme_code": code,
                 "report_date": as_of.isoformat(),

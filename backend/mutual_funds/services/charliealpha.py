@@ -407,7 +407,7 @@ class CharlieAlphaService:
             if len(self.errors) < 100:
                 self.errors.append({"kind": "unmatched_scheme", "code": code, "isin": isin, "name": name})
             return None
-        if code and not self.dry_run:
+        if code:
             existing_mappings = list(
                 MFSchemeIdentityMap.objects.filter(
                     source="CHARLIEALPHA", external_id=code
@@ -426,17 +426,18 @@ class CharlieAlphaService:
                         "existing_scheme_ids": conflicting_scheme_ids,
                     })
                 return None
-            try:
-                MFSchemeIdentityMap.objects.get_or_create(
-                    source="CHARLIEALPHA", external_id=code, scheme=scheme,
-                    defaults={
-                        "external_name": name[:300],
-                        "match_method": "ISIN_EXACT" if isin else "AMFI_CODE_OR_NAME_EXACT",
-                        "status": MFSchemeIdentityMap.STATUS_ACTIVE,
-                    },
-                )
-            except IntegrityError:
-                self.stats["skipped"] += 1
+            if not self.dry_run:
+                try:
+                    MFSchemeIdentityMap.objects.get_or_create(
+                        source="CHARLIEALPHA", external_id=code, scheme=scheme,
+                        defaults={
+                            "external_name": name[:300],
+                            "match_method": "ISIN_EXACT" if isin else "AMFI_CODE_OR_NAME_EXACT",
+                            "status": MFSchemeIdentityMap.STATUS_ACTIVE,
+                        },
+                    )
+                except IntegrityError:
+                    self.stats["skipped"] += 1
         return scheme
 
     def _resolve_identifier(self, identifier: str):
@@ -641,8 +642,10 @@ class CharlieAlphaService:
 
     def _save_metric_record(self, row: dict, endpoint: str, identifier: str | None = None):
         identity_row = row if isinstance(row, dict) else {}
-        if identifier and not (_scheme_identifier(identity_row) or _isin(identity_row) or _scheme_name(identity_row)):
-            identity_row = {**identity_row, **_identifier_record(identifier)}
+        if identifier:
+            # Keep the request identifier as an additional exact identity signal
+            # even when the provider response returns its own code/name fields.
+            identity_row = {**_identifier_record(identifier), **identity_row}
         scheme = self._resolve_scheme(identity_row)
         if not scheme:
             return
@@ -986,7 +989,7 @@ class CharlieAlphaService:
                             "quantity": row["quantity"],
                             "market_value": row["market_value"],
                             "pct_of_nav": row["weight_pct"],
-                                            "source": SOURCE,
+                            "source": SOURCE,
                             "source_url": source_endpoint,
                             "fetched_at": timezone.now(),
                         },

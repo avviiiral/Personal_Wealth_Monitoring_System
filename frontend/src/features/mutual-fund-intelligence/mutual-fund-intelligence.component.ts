@@ -194,6 +194,7 @@ export class MutualFundIntelligenceComponent implements OnInit, OnDestroy {
   charliealphaCompareResult: any = null;
   charliealphaBenchmarks: any[] = [];
   charliealphaBenchmarkSlug = '';
+  charliealphaBenchmarkRange = 'ALL';
   charliealphaBenchmark: any = null;
   charliealphaFromDate = '';
   charliealphaToDate = '';
@@ -957,7 +958,7 @@ export class MutualFundIntelligenceComponent implements OnInit, OnDestroy {
   }
 
   loadCharlieAlphaBenchmarks(): void {
-    this.charliealphaApi.getBenchmarks().subscribe({
+    this.charliealphaApi.getBenchmarks('', this.charliealphaBenchmarkRange).subscribe({
       next: response => {
         this.charliealphaBenchmarks = response.results ?? [];
         if (!this.charliealphaBenchmarkSlug && this.charliealphaBenchmarks.length) {
@@ -974,7 +975,7 @@ export class MutualFundIntelligenceComponent implements OnInit, OnDestroy {
   selectCharlieAlphaBenchmark(slug: string): void {
     if (!slug) return;
     this.charliealphaBenchmarkSlug = slug;
-    this.charliealphaApi.getBenchmarks(slug).subscribe({
+    this.charliealphaApi.getBenchmarks(slug, this.charliealphaBenchmarkRange).subscribe({
       next: response => {
         this.charliealphaBenchmark = response.results?.[0] ?? null;
         this.cdr.detectChanges();
@@ -985,6 +986,15 @@ export class MutualFundIntelligenceComponent implements OnInit, OnDestroy {
         this.cdr.detectChanges();
       },
     });
+  }
+
+  selectCharlieAlphaBenchmarkRange(range: string): void {
+    this.charliealphaBenchmarkRange = range;
+    if (this.charliealphaBenchmarkSlug) {
+      this.selectCharlieAlphaBenchmark(this.charliealphaBenchmarkSlug);
+    } else {
+      this.loadCharlieAlphaBenchmarks();
+    }
   }
 
   toggleCharlieAlphaCompare(code: string): void {

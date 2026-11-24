@@ -648,7 +648,7 @@ export class MutualFundIntelligenceComponent implements OnInit, OnDestroy {
     const chart = new Chart(canvas, {
       type: 'bar',
       data: {
-        labels: ordered.map(row => row.scheme_name.replace(/\s*-\s*(Direct|Regular) Plan\s*-\s*Growth$/i, '')),
+        labels: ordered.map(row => row["scheme_name"].replace(/\s*-\s*(Direct|Regular) Plan\s*-\s*Growth$/i, '')),
         datasets: [{ label: 'Quarterly Average AUM (₹ Cr)', data: ordered.map(row => row.average_aum_cr), backgroundColor: '#0B1C3D', borderColor: '#FD7740', borderWidth: 1, borderRadius: 3 }],
       },
       options: {
@@ -828,7 +828,7 @@ export class MutualFundIntelligenceComponent implements OnInit, OnDestroy {
         this.charliealphaCategories = response.results?.filters?.categories ?? [];
         this.charliealphaPlans = response.results?.filters?.plans ?? [];
         this.charliealphaOptions = response.results?.filters?.options ?? [];
-        if (this.charliealphaSelectedCode && !this.charliealphaFunds.some(row => row.scheme_code === this.charliealphaSelectedCode)) {
+        if (this.charliealphaSelectedCode && !this.charliealphaFunds.some(row => row["scheme_code"] === this.charliealphaSelectedCode)) {
           this.charliealphaSelectedCode = '';
           this.charliealphaDetail = null;
         }
@@ -929,8 +929,8 @@ export class MutualFundIntelligenceComponent implements OnInit, OnDestroy {
     const field = this.charliealphaSortField;
     const direction = this.charliealphaSortDirection === "asc" ? 1 : -1;
     return [...this.charliealphaFunds].sort((left, right) => {
-      const a = field === "ter_pct" ? (left?.ter_direct_pct ?? left?.ter_regular_pct) : left?.[field];
-      const b = field === "ter_pct" ? (right?.ter_direct_pct ?? right?.ter_regular_pct) : right?.[field];
+      const a = field === "ter_pct" ? (left?.["ter_direct_pct"] ?? left?.["ter_regular_pct"]) : left?.[field];
+      const b = field === "ter_pct" ? (right?.["ter_direct_pct"] ?? right?.["ter_regular_pct"]) : right?.[field];
       if (a === null || a === undefined || a === "") return 1;
       if (b === null || b === undefined || b === "") return -1;
       if (typeof a === "number" || typeof b === "number") {
@@ -1027,15 +1027,15 @@ export class MutualFundIntelligenceComponent implements OnInit, OnDestroy {
   private renderCharlieAlphaCharts(): void {
     const returnsCanvas = document.getElementById('charliealpha-returns-chart') as HTMLCanvasElement | null;
     const returnRows = this.charliealphaFunds
-      .filter(row => row.return_1y_pct !== null && row.return_1y_pct !== undefined)
-      .sort((a, b) => Number(b.return_1y_pct) - Number(a.return_1y_pct))
+      .filter(row => row["return_1y_pct"] !== null && row["return_1y_pct"] !== undefined)
+      .sort((a, b) => Number(b["return_1y_pct"]) - Number(a["return_1y_pct"]))
       .slice(0, 15);
     if (returnsCanvas && returnRows.length) {
       const chart = new Chart(returnsCanvas, {
         type: 'bar',
         data: {
-          labels: returnRows.map(row => row.scheme_name ?? row.scheme_code),
-          datasets: [{ label: '1Y trailing CAGR (%)', data: returnRows.map(row => Number(row.return_1y_pct)), backgroundColor: '#FD7740' }],
+          labels: returnRows.map(row => row["scheme_name"] ?? row["scheme_code"]),
+          datasets: [{ label: '1Y trailing CAGR (%)', data: returnRows.map(row => Number(row["return_1y_pct"])), backgroundColor: '#FD7740' }],
         },
         options: { ...this.chartOptions(), indexAxis: 'y' },
       });
@@ -1044,8 +1044,8 @@ export class MutualFundIntelligenceComponent implements OnInit, OnDestroy {
 
     const riskCanvas = document.getElementById('charliealpha-risk-chart') as HTMLCanvasElement | null;
     const riskRows = this.charliealphaFunds.filter(row =>
-      row.std_dev_pct !== null && row.std_dev_pct !== undefined &&
-      row.return_3y_pct !== null && row.return_3y_pct !== undefined
+      row["std_dev_pct"] !== null && row["std_dev_pct"] !== undefined &&
+      row["return_3y_pct"] !== null && row["return_3y_pct"] !== undefined
     );
     if (riskCanvas && riskRows.length) {
       const chart = new Chart(riskCanvas, {
@@ -1054,9 +1054,9 @@ export class MutualFundIntelligenceComponent implements OnInit, OnDestroy {
           datasets: [{
             label: 'Mutual funds',
             data: riskRows.map(row => ({
-              x: Number(row.std_dev_pct),
-              y: Number(row.return_3y_pct),
-              fund: String(row.scheme_name ?? row.scheme_code),
+              x: Number(row["std_dev_pct"]),
+              y: Number(row["return_3y_pct"]),
+              fund: String(row["scheme_name"] ?? row["scheme_code"]),
             })),
             backgroundColor: '#315b83',
             pointRadius: 5,
@@ -1101,15 +1101,15 @@ export class MutualFundIntelligenceComponent implements OnInit, OnDestroy {
 
     const holdingsCanvas = document.getElementById('charliealpha-holdings-chart') as HTMLCanvasElement | null;
     const holdings = (this.charliealphaDetail?.holdings ?? [])
-      .filter(row => row.weight_pct !== null && row.weight_pct !== undefined)
+      .filter(row => row["weight_pct"] !== null && row["weight_pct"] !== undefined)
       .sort((a, b) => Number(b.weight_pct) - Number(a.weight_pct))
       .slice(0, 12);
     if (holdingsCanvas && holdings.length) {
       const chart = new Chart(holdingsCanvas, {
         type: 'bar',
         data: {
-          labels: holdings.map(row => row.name),
-          datasets: [{ label: 'Portfolio weight (%)', data: holdings.map(row => Number(row.weight_pct)), backgroundColor: '#CC9F53' }],
+          labels: holdings.map(row => row["name"]),
+          datasets: [{ label: 'Portfolio weight (%)', data: holdings.map(row => Number(row["weight_pct"])), backgroundColor: '#CC9F53' }],
         },
         options: { ...this.chartOptions(), indexAxis: 'y' },
       } as any);
@@ -1117,7 +1117,7 @@ export class MutualFundIntelligenceComponent implements OnInit, OnDestroy {
     }
 
     const sectorCanvas = document.getElementById('charliealpha-sector-chart') as HTMLCanvasElement | null;
-    const sectors = Object.entries(this.charliealphaDetail?.snapshot?.sector_allocation ?? {})
+    const sectors = Object.entries(this.charliealphaDetail?.snapshot?.["sector_allocation"] ?? {})
       .map(([name, value]) => ({ name, value: Number(value) }))
       .filter(row => Number.isFinite(row.value) && row.value > 0)
       .sort((a, b) => b.value - a.value)
@@ -1126,7 +1126,7 @@ export class MutualFundIntelligenceComponent implements OnInit, OnDestroy {
       const chart = new Chart(sectorCanvas, {
         type: 'bar',
         data: {
-          labels: sectors.map(row => row.name),
+          labels: sectors.map(row => row["name"]),
           datasets: [{ label: 'Sector weight (%)', data: sectors.map(row => row.value), backgroundColor: '#315b83' }],
         },
         options: { ...this.chartOptions(), indexAxis: 'y' },

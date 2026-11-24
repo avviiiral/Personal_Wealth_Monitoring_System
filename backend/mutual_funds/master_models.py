@@ -555,3 +555,51 @@ class MFProviderBenchmarkObservation(models.Model):
 
     def __str__(self):
         return f"{self.benchmark.slug} {self.observation_date} ({self.normalization_base_date} base)"
+
+class MFProviderResourceSnapshot(models.Model):
+    """Versioned database snapshot for CharlieAlpha families outside MF schemes.
+
+    NPS, SIF and GIFT City products do not share AMFI scheme identities.
+    Instrument and corporate-action records likewise remain outside the
+    AMFI mutual-fund master. The provider response and normalized tabular rows
+    are retained as JSON in the configured database, with request provenance.
+    """
+
+    FAMILY_NPS = "NPS"
+    FAMILY_SIF = "SIF"
+    FAMILY_GIFT = "GIFT"
+    FAMILY_INSTRUMENTS = "INSTRUMENTS"
+    FAMILY_CORPORATE_ACTIONS = "CORPORATE_ACTIONS"
+    FAMILY_CHOICES = (
+        (FAMILY_NPS, "National Pension System"),
+        (FAMILY_SIF, "Specialized Investment Funds"),
+        (FAMILY_GIFT, "GIFT City / IFSC Funds"),
+        (FAMILY_INSTRUMENTS, "Instruments"),
+        (FAMILY_CORPORATE_ACTIONS, "Corporate Actions"),
+    )
+
+    family = models.CharField(max_length=24, choices=FAMILY_CHOICES, db_index=True)
+    endpoint = models.CharField(max_length=160)
+    identifier = models.CharField(max_length=200, blank=True, default="")
+    request_params = models.JSONField(default=dict, blank=True)
+    payload = models.JSONField(default=dict, blank=True)
+    records = models.JSONField(default=list, blank=True)
+    record_count = models.PositiveIntegerField(default=0)
+    as_of_date = models.DateField(blank=True, null=True)
+    source_url = models.URLField(max_length=1000, blank=True, default="")
+    payload_sha256 = models.CharField(max_length=64, blank=True, default="", db_index=True)
+    success = models.BooleanField(default=True)
+    error = models.TextField(blank=True, default="")
+    fetched_at = models.DateTimeField(default=timezone.now, db_index=True)
+
+    class Meta:
+        db_table = "mf_provider_resource_snapshots"
+        ordering = ["-fetched_at", "-id"]
+        indexes = [
+            models.Index(fields=["family", "endpoint", "-fetched_at"], name="mf_provider_resource_family_idx"),
+            models.Index(fields=["family", "identifier", "-fetched_at"], name="mf_provider_resource_ident_idx"),
+        ]
+
+    def __str__(self):
+        return f"CHARLIEALPHA {self.family} {self.endpoint} {self.identifier}".strip()
+

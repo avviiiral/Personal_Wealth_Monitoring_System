@@ -170,28 +170,12 @@ class Command(BaseCommand):
                 )
 
             else:
-
-                if result.get("skipped"):
-
-                    skipped += 1
-
-                    self.stdout.write(
-                        self.style.WARNING(
-                            f"  Skipped: "
-                            f"{result.get('reason')}"
-                        )
+                failed += 1
+                self.stdout.write(
+                    self.style.ERROR(
+                        f"  Failed: {result.get('error') or result.get('reason')}"
                     )
-
-                else:
-
-                    failed += 1
-
-                    self.stdout.write(
-                        self.style.ERROR(
-                            f"  Failed: "
-                            f"{result.get('error')}"
-                        )
-                    )
+                )
 
         self.stdout.write("")
 

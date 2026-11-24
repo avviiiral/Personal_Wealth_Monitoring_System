@@ -32,6 +32,7 @@ from .charliealpha_api import (
     charliealpha_fund_detail,
     charliealpha_holdings_periods,
     charliealpha_overview,
+    charliealpha_provider_resources,
     charliealpha_security_exposure,
 )
 
@@ -39,6 +40,7 @@ from .charliealpha_api import (
 urlpatterns = [
     path("masterdata/", mutual_fund_masterdata, name="mutual-fund-masterdata"),
     path("charliealpha/overview/", charliealpha_overview, name="charliealpha-mf-overview"),
+    path("charliealpha/provider-data/", charliealpha_provider_resources, name="charliealpha-provider-resources"),
     path("charliealpha/funds/<str:scheme_code>/", charliealpha_fund_detail, name="charliealpha-mf-fund-detail"),
     path("charliealpha/categories/", charliealpha_category_catalog, name="charliealpha-mf-category-catalog"),
     path("charliealpha/categories/<str:slug>/", charliealpha_category_metrics, name="charliealpha-mf-category-metrics"),

@@ -21,8 +21,9 @@ from django.db import IntegrityError, transaction
 from django.db.models import Q
 from django.utils import timezone
 
-from mutual_funds.models import AMFIMasterNAV, AMFIMasterScheme, MFSchemeIdentityMap
+from mutual_funds.models import AMFIMasterNAV, AMFIMasterScheme
 from mutual_funds.master_models import (
+    MFSchemeIdentityMap,
     MFExternalPortfolioSnapshot,
     MFMasterData,
     MFProviderBenchmark,

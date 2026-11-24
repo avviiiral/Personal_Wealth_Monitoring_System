@@ -24,10 +24,22 @@ from mutual_funds.sebi_views import (
 
 
 from .masterdata_api import mutual_fund_masterdata
+from .charliealpha_api import (
+    charliealpha_benchmarks,
+    charliealpha_category_metrics,
+    charliealpha_compare,
+    charliealpha_fund_detail,
+    charliealpha_overview,
+)
 
 
 urlpatterns = [
     path("masterdata/", mutual_fund_masterdata, name="mutual-fund-masterdata"),
+    path("charliealpha/overview/", charliealpha_overview, name="charliealpha-mf-overview"),
+    path("charliealpha/funds/<str:scheme_code>/", charliealpha_fund_detail, name="charliealpha-mf-fund-detail"),
+    path("charliealpha/categories/<str:slug>/", charliealpha_category_metrics, name="charliealpha-mf-category-metrics"),
+    path("charliealpha/benchmarks/", charliealpha_benchmarks, name="charliealpha-mf-benchmarks"),
+    path("charliealpha/compare/", charliealpha_compare, name="charliealpha-mf-compare"),
     path("overview/", mutual_fund_analytics_overview, name="mutual-fund-analytics-overview"),
     path("research-report/", latest_mutual_fund_research_report, name="mutual-fund-research-report"),
     path("research-universes/", mutual_fund_research_universes, name="mutual-fund-research-universes"),

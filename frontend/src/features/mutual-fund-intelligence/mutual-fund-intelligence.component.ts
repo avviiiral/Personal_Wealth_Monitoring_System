@@ -187,6 +187,11 @@ export class MutualFundIntelligenceComponent implements OnInit, OnDestroy {
   charliealphaBenchmark: any = null;
   charliealphaFromDate = '';
   charliealphaToDate = '';
+  charliealphaHoldingDate = '';
+  charliealphaExposureIdentifier = '';
+  charliealphaExposureResult: any = null;
+  charliealphaExposureLoading = false;
+  charliealphaExposureError = '';
 
   ngOnInit(): void {
     this.loadSummary();
@@ -844,6 +849,7 @@ export class MutualFundIntelligenceComponent implements OnInit, OnDestroy {
       navLimit: 3000,
       fromDate: this.charliealphaFromDate || undefined,
       toDate: this.charliealphaToDate || undefined,
+      holdingsAsOf: this.charliealphaHoldingDate || undefined,
     }).subscribe({
       next: detail => {
         this.charliealphaDetail = detail;
@@ -933,6 +939,39 @@ export class MutualFundIntelligenceComponent implements OnInit, OnDestroy {
 
   applyCharlieAlphaDateRange(): void {
     if (this.charliealphaSelectedCode) this.loadCharlieAlphaFund(this.charliealphaSelectedCode);
+  }
+
+  getCharlieAlphaPeriodDate(period: any): string {
+    if (typeof period === 'string') return period;
+    return String(period?.as_of ?? period?.report_date ?? period?.date ?? '');
+  }
+
+  selectCharlieAlphaHoldingDate(value: string): void {
+    this.charliealphaHoldingDate = value;
+    if (this.charliealphaSelectedCode) this.loadCharlieAlphaFund(this.charliealphaSelectedCode);
+  }
+
+  loadCharlieAlphaExposure(): void {
+    const identifier = this.charliealphaExposureIdentifier.trim();
+    if (!identifier) {
+      this.charliealphaExposureError = 'Enter a stock ISIN, NSE symbol or BSE scrip code.';
+      return;
+    }
+    this.charliealphaExposureLoading = true;
+    this.charliealphaExposureError = '';
+    this.charliealphaExposureResult = null;
+    this.charliealphaApi.getExposure(identifier).subscribe({
+      next: result => {
+        this.charliealphaExposureResult = result?.result ?? result;
+        this.charliealphaExposureLoading = false;
+        this.cdr.detectChanges();
+      },
+      error: error => {
+        this.charliealphaExposureError = error?.error?.detail ?? 'No stored exposure data found. Run the exposure ingestion command first.';
+        this.charliealphaExposureLoading = false;
+        this.cdr.detectChanges();
+      },
+    });
   }
 
   private renderCharlieAlphaCharts(): void {

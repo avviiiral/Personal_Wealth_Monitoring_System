@@ -306,70 +306,34 @@ def charliealpha_category_metrics(request, slug: str):
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def charliealpha_compare(request):
+    """Read a previously ingested provider comparison; never call the provider from the UI."""
     codes = request.data.get("scheme_codes", [])
     if not isinstance(codes, list):
         return Response({"detail": "scheme_codes must be an array."}, status=status.HTTP_400_BAD_REQUEST)
     normalized = list(dict.fromkeys(str(code).strip() for code in codes if str(code).strip()))
     if not 2 <= len(normalized) <= 20:
         return Response({"detail": "Select between 2 and 20 funds."}, status=status.HTTP_400_BAD_REQUEST)
-    try:
-        result = CharlieAlphaService().compare(normalized, overlap_only=bool(request.data.get("overlap_only", False)))
-    except (ValueError, RuntimeError) as exc:
-        return Response({"detail": str(exc)}, status=status.HTTP_502_BAD_GATEWAY)
-    return Response(result)
 
-
-@api_view(["GET"])
-@permission_classes([IsAuthenticated])
-def charliealpha_holdings_periods(request, scheme_code: str | None = None):
-    """Read previously ingested global or scheme-specific disclosure periods."""
-    if scheme_code:
-        for run in MFSourceRun.objects.filter(
-            source=SOURCE, command="holdings_periods"
-        ).order_by("-started_at")[:100]:
-            metadata = run.metadata or {}
-            if metadata.get("scope") != "scheme":
-                continue
-            row = next(
-                (item for item in metadata.get("schemes", []) if str(item.get("scheme_code")) == str(scheme_code)),
-                None,
-            )
-            if row:
-                return Response(row)
-        return Response(
-            {"detail": "Holdings disclosure periods have not been ingested for this scheme.", "scheme_code": scheme_code},
-            status=status.HTTP_404_NOT_FOUND,
-        )
-
+    overlap_only = bool(request.data.get("overlap_only", False))
+    command = "overlap" if overlap_only else "compare"
     run = MFSourceRun.objects.filter(
-        source=SOURCE, command="holdings_periods", metadata__scope="global"
-    ).order_by("-started_at").first()
-    if not run:
-        return Response({"detail": "Global holdings disclosure periods have not been ingested."}, status=status.HTTP_404_NOT_FOUND)
-    return Response(run.metadata)
-
-
-@api_view(["GET"])
-@permission_classes([IsAuthenticated])
-def charliealpha_security_exposure(request, identifier: str):
-    """Read the most recently persisted security-to-fund exposure response."""
-    runs = MFSourceRun.objects.filter(
         source=SOURCE,
-        command="fund_exposure",
-        metadata__identifier=identifier,
-    )
-    min_pct = (request.query_params.get("min_pct") or "").strip()
-    if min_pct:
-        runs = runs.filter(metadata__min_pct=min_pct)
-    run = runs.order_by("-started_at").first()
-    if not run:
-        return Response(
-            {"detail": "No stored exposure result for this security. Run the exposure synchronization command first."},
-            status=status.HTTP_404_NOT_FOUND,
-        )
+        command=command,
+        metadata__scheme_codes=normalized,
+    ).order_by("-started_at").first()
+    if run is None:
+        return Response({
+            "detail": "No stored comparison exists for this exact fund selection. "
+                      "Run sync_charliealpha --domain " + command + " with these scheme codes first.",
+            "scheme_codes": normalized,
+        }, status=status.HTTP_404_NOT_FOUND)
+    metadata = run.metadata or {}
     return Response({
-        "identifier": identifier,
-        "min_pct": (run.metadata or {}).get("min_pct"),
-        "result": (run.metadata or {}).get("provider_result"),
+        "run_id": run.id,
+        "scheme_codes": normalized,
+        "overlap_only": overlap_only,
+        "result": metadata.get("provider_result"),
+        "partial_result": metadata.get("provider_partial_result", False),
+        "report_date_warning": metadata.get("report_date_warning"),
         "fetched_at": run.completed_at or run.started_at,
     })

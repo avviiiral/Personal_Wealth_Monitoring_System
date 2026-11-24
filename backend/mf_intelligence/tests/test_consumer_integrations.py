@@ -195,6 +195,37 @@ class MFIntelligenceConsumerIntegrationTests(TestCase):
             Decimal("1.2500"),
         )
 
+    def test_watch_list_can_render_synced_fund_without_legacy_child_row(self):
+        user = User.objects.create_user(username="mfi-watchlist-no-child", password="pw")
+        family = FamilyGroup.objects.create(name="MFI Watch List No Child")
+        user.profile.family_groups.add(family)
+        MFScheme.objects.create(
+            amfi_code="123462",
+            name="Standalone Intelligence Fund - Direct Plan - Growth",
+            plan="Direct",
+            option="Growth",
+            return_1y=Decimal("9.7500"),
+            latest_nav=Decimal("25.500000"),
+            latest_nav_date=self.today - timedelta(days=1),
+        )
+        InvestmentProduct.objects.create(
+            product_type=ProductType.MUTUAL_FUND,
+            name="Standalone Intelligence Fund - Direct Plan - Growth",
+            external_identifier="123462",
+            source="MF_INTELLIGENCE",
+            identity_key="MUTUAL_FUND:SCHEME:123462",
+        )
+
+        client = APIClient()
+        client.force_authenticate(user)
+        response = client.get("/api/watch-list/products/?product_type=MUTUAL_FUND")
+
+        self.assertEqual(response.status_code, 200)
+        row = response.data["results"][0]
+        self.assertEqual(row["metrics"]["1Y"], Decimal("9.7500"))
+        self.assertEqual(row["mutual_fund"]["scheme_code"], "123462")
+        self.assertEqual(row["mutual_fund"]["latest_nav"], Decimal("25.500000"))
+
     def test_underlying_api_uses_newer_synced_disclosure(self):
         user = User.objects.create_user(username="mfi-underlying-user", password="pw")
         family = FamilyGroup.objects.create(name="MFI Underlying Family")

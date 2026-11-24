@@ -155,14 +155,18 @@ class WatchListProductSerializer(serializers.ModelSerializer):
         return result
 
     def get_mutual_fund(self, obj):
-        if obj.product_type != ProductType.MUTUAL_FUND or not hasattr(obj, "mutual_fund"):
+        if obj.product_type != ProductType.MUTUAL_FUND:
             return None
-        value = obj.mutual_fund
+        value = obj.mutual_fund if hasattr(obj, "mutual_fund") else None
         intelligence = self._mf_intelligence_scheme(obj)
+        if value is None and intelligence is None:
+            return None
+
+        child_nav_date = value.latest_nav_date if value else None
         intelligence_is_newer = bool(
             intelligence
             and intelligence.latest_nav_date
-            and (value.latest_nav_date is None or intelligence.latest_nav_date > value.latest_nav_date)
+            and (child_nav_date is None or intelligence.latest_nav_date > child_nav_date)
         )
         risk_metrics = {}
         if intelligence is not None:
@@ -178,23 +182,34 @@ class WatchListProductSerializer(serializers.ModelSerializer):
                 metric.horizon: {field: getattr(metric, field) for field in metric_fields}
                 for metric in intelligence.metrics.all()
             }
+        child_nav = value.latest_nav if value else None
+        child_aum = value.aum if value else None
+        child_ter = value.expense_ratio if value else None
         return {
-            "scheme_code": value.scheme_code or (intelligence.amfi_code if intelligence else None),
-            "fund_type": value.fund_type or (intelligence.category.name if intelligence and intelligence.category else None),
-            "plan": value.plan or (intelligence.plan if intelligence else None),
-            "option": value.option or (intelligence.option if intelligence else None),
-            "inception_date": value.inception_date or (intelligence.first_nav_date if intelligence else None),
-            "aum": value.aum if value.aum is not None else (intelligence.avg_aum_crore if intelligence else None),
+            "scheme_code": (value.scheme_code if value else None) or (intelligence.amfi_code if intelligence else None),
+            "fund_type": (value.fund_type if value else None) or (intelligence.category.name if intelligence and intelligence.category else None),
+            "plan": (value.plan if value else None) or (intelligence.plan if intelligence else None),
+            "option": (value.option if value else None) or (intelligence.option if intelligence else None),
+            "inception_date": (value.inception_date if value else None) or (intelligence.first_nav_date if intelligence else None),
+            "aum": child_aum if child_aum is not None else (intelligence.avg_aum_crore if intelligence else None),
             "aum_period": intelligence.aum_period if intelligence else None,
-            "expense_ratio": value.expense_ratio if value.expense_ratio is not None else (intelligence.ter if intelligence else None),
-            "benchmark": value.benchmark,
-            "fund_manager": value.fund_manager,
-            "fund_manager_website": value.fund_manager_website,
-            "risk_level": value.risk_level,
-            "minimum_investment": value.minimum_investment,
-            "exit_load": value.exit_load,
-            "latest_nav": intelligence.latest_nav if intelligence_is_newer else (value.latest_nav if value.latest_nav is not None else (intelligence.latest_nav if intelligence else None)),
-            "latest_nav_date": intelligence.latest_nav_date if intelligence_is_newer else (value.latest_nav_date or (intelligence.latest_nav_date if intelligence else None)),
+            "expense_ratio": child_ter if child_ter is not None else (intelligence.ter if intelligence else None),
+            "benchmark": value.benchmark if value else None,
+            "fund_manager": value.fund_manager if value else None,
+            "fund_manager_website": value.fund_manager_website if value else None,
+            "risk_level": value.risk_level if value else None,
+            "minimum_investment": value.minimum_investment if value else None,
+            "exit_load": value.exit_load if value else None,
+            "latest_nav": (
+                intelligence.latest_nav
+                if intelligence_is_newer
+                else (child_nav if child_nav is not None else (intelligence.latest_nav if intelligence else None))
+            ),
+            "latest_nav_date": (
+                intelligence.latest_nav_date
+                if intelligence_is_newer
+                else (child_nav_date or (intelligence.latest_nav_date if intelligence else None))
+            ),
             "intelligence": {
                 "category": intelligence.category.name if intelligence and intelligence.category else None,
                 "asset_class": intelligence.category.asset_class if intelligence and intelligence.category else None,

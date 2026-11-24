@@ -501,7 +501,14 @@ class CharlieAlphaService:
 
     def sync_categories(self) -> dict:
         """Persist the complete grouped category catalogue and canonical slugs."""
-        payload = self.client.get("mf/categories")
+        try:
+            payload = self.client.get("mf/categories")
+        except Exception as exc:
+            self.stats["failed"] += 1
+            error = {"kind": "categories_fetch", "endpoint": "mf/categories", "error": str(exc)[:300]}
+            self.errors.append(error)
+            run = self._run("categories", metadata={"error": str(exc)[:300], "source_endpoint": "mf/categories"})
+            return {"run_id": run.id, "categories": 0, "slugs": 0, "failed": 1}
         categories = _category_records(payload)
         slugs = [text_value(_first(row, "slug", "category_slug")) for row in categories]
         self.stats["fetched"] += len(categories)
@@ -521,7 +528,26 @@ class CharlieAlphaService:
     def sync_schemes(self, category: str = "") -> dict:
         categories_result = self.sync_categories()
         scheme_params = {"cat": category} if category else None
-        schemes_payload = self.client.get("mf/schemes", scheme_params)
+        try:
+            schemes_payload = self.client.get("mf/schemes", scheme_params)
+        except Exception as exc:
+            self.stats["failed"] += 1
+            error = {"kind": "schemes_fetch", "category": category or None, "error": str(exc)[:300]}
+            self.errors.append(error)
+            run = self._run("schemes", metadata={
+                "category_slug": category or None,
+                "categories_run_id": categories_result.get("run_id"),
+                "request_params": scheme_params or {},
+                "error": str(exc)[:300],
+            })
+            return {
+                "run_id": run.id,
+                "schemes": 0,
+                "mapped": 0,
+                "linked_scheme_codes": [],
+                "unmatched": 0,
+                "failed": 1,
+            }
         schemes = _records(schemes_payload, ("schemes", "data", "results"))
         self.stats["fetched"] += len(schemes)
         mapped = 0
@@ -613,7 +639,13 @@ class CharlieAlphaService:
                 snapshot.save(update_fields=["nav", "nav_as_of", "nav_source", "field_sources", "updated_at"])
 
     def sync_navall(self) -> dict:
-        payload = self.client.get("mf/lnavall")
+        try:
+            payload = self.client.get("mf/lnavall")
+        except Exception as exc:
+            self.stats["failed"] += 1
+            self.errors.append({"kind": "navall_fetch", "endpoint": "mf/lnavall", "error": str(exc)[:300]})
+            run = self._run("navall", metadata={"error": str(exc)[:300], "source_endpoint": "mf/lnavall"})
+            return {"run_id": run.id, **self.stats}
         rows = _records(payload, ("data", "rows", "results"))
         self.stats["fetched"] += len(rows)
         for row in rows:
@@ -1174,7 +1206,17 @@ class CharlieAlphaService:
     ) -> dict:
         """Store a provider-normalized benchmark window separately from official TRI levels."""
         window_params = _benchmark_window_params(range_name, from_date, to_date)
-        payload = self.client.get("benchmark/list")
+        try:
+            payload = self.client.get("benchmark/list")
+        except Exception as exc:
+            self.stats["failed"] += 1
+            self.errors.append({"kind": "benchmark_list_fetch", "endpoint": "benchmark/list", "error": str(exc)[:300]})
+            run = self._run("benchmarks", metadata={
+                "requested_window": window_params,
+                "error": str(exc)[:300],
+                "source_endpoint": "benchmark/list",
+            })
+            return {"run_id": run.id, **self.stats, "benchmarks": 0, "observations_persisted": 0}
         benchmarks = _records(payload, ("benchmarks", "data", "results"))
         self.stats["fetched"] += len(benchmarks)
         if limit:
@@ -1353,7 +1395,13 @@ class CharlieAlphaService:
     def sync_holdings_periods(self, scheme_codes: list[str] | None = None) -> dict:
         """Persist available global or scheme-specific monthly disclosure periods."""
         if not scheme_codes:
-            payload = self.client.get("mf/holdings-periods")
+            try:
+                payload = self.client.get("mf/holdings-periods")
+            except Exception as exc:
+                self.stats["failed"] += 1
+                self.errors.append({"kind": "holdings_periods_global_fetch", "endpoint": "mf/holdings-periods", "error": str(exc)[:300]})
+                run = self._run("holdings_periods", metadata={"scope": "global", "error": str(exc)[:300]})
+                return {"run_id": run.id, "periods": 0, **self.stats}
             periods = payload.get("periods", []) if isinstance(payload, dict) else []
             if not isinstance(periods, list):
                 periods = []

@@ -175,6 +175,9 @@ def charliealpha_fund_detail(request, scheme_code: str):
             period_record = next((row for row in (period_run.metadata or {}).get("schemes", []) if str(row.get("scheme_code")) == str(scheme.scheme_code)), None)
             if period_record:
                 break
+    nav_detail_run = MFSourceRun.objects.filter(
+        source=SOURCE, command="latest_nav_detail", metadata__scheme_code=scheme.scheme_code
+    ).order_by("-started_at").first()
     metrics_run = (
         MFSourceRun.objects.filter(
             source=SOURCE, command="metrics", metadata__scheme_code=scheme.scheme_code
@@ -218,6 +221,7 @@ def charliealpha_fund_detail(request, scheme_code: str):
         ],
         "holdings_report_date": holding_date,
         "holdings_periods": (period_record or {}).get("periods", []),
+        "nav_detail": nav_detail_run.metadata if nav_detail_run else None,
         "provider_metrics": metrics_run.metadata if metrics_run else None,
         "holdings_changes": holdings_run.metadata.get("provider_changes") if holdings_run else None,
         "data_availability": {

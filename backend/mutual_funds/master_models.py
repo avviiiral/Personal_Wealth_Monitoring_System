@@ -235,7 +235,11 @@ class MFExternalPortfolioSnapshot(models.Model):
     """Provider response metadata kept separate from dated AMC disclosures."""
 
     PROVIDER_MFFORECAST = "MFFORECAST"
-    PROVIDER_CHOICES = ((PROVIDER_MFFORECAST, "MF Forecast"),)
+    PROVIDER_CHARLIEALPHA = "CHARLIEALPHA"
+    PROVIDER_CHOICES = (
+        (PROVIDER_MFFORECAST, "MF Forecast"),
+        (PROVIDER_CHARLIEALPHA, "CharlieAlpha"),
+    )
 
     scheme = models.ForeignKey(
         "mutual_funds.AMFIMasterScheme",

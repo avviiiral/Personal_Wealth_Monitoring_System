@@ -32,14 +32,25 @@ class IntelligencePagination(PageNumberPagination):
     max_page_size = 200
 
 
+def _charliealpha_snapshot_filter():
+    return (
+        Q(field_sources__nav__source=SOURCE)
+        | Q(field_sources__performance_and_risk__source=SOURCE)
+        | Q(field_sources__ter__source=SOURCE)
+        | Q(field_sources__aum__source=SOURCE)
+        | Q(field_sources__holdings__source=SOURCE)
+    )
+
+
 def _latest_snapshots():
+    provider_rows = MFMasterData.objects.filter(_charliealpha_snapshot_filter())
     latest_date = (
-        MFMasterData.objects.filter(scheme_id=OuterRef("scheme_id"))
+        provider_rows.filter(scheme_id=OuterRef("scheme_id"))
         .order_by("-as_of_date")
         .values("as_of_date")[:1]
     )
     return (
-        MFMasterData.objects.annotate(_latest_snapshot_date=Subquery(latest_date))
+        provider_rows.annotate(_latest_snapshot_date=Subquery(latest_date))
         .filter(as_of_date=F("_latest_snapshot_date"))
         .select_related("scheme")
     )
@@ -141,7 +152,7 @@ def charliealpha_fund_detail(request, scheme_code: str):
     scheme = AMFIMasterScheme.objects.filter(scheme_code=scheme_code, is_active=True).first()
     if scheme is None:
         raise Http404("Mutual-fund scheme was not found in the AMFI master.")
-    snapshot = MFMasterData.objects.filter(scheme=scheme).order_by("-as_of_date").first()
+    snapshot = _latest_snapshots().filter(scheme=scheme).first()
     nav_limit = min(5000, max(30, int(request.query_params.get("nav_limit", 1000))))
     nav_queryset = AMFIMasterNAV.objects.filter(scheme=scheme, source=NAV_SOURCE)
     from_date = request.query_params.get("from_date")

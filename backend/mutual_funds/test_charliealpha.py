@@ -323,6 +323,33 @@ class CharlieAlphaPersistenceTests(TestCase):
         self.assertIsNone(snapshot.ter_regular_pct)
         self.assertEqual(snapshot.ter_source, SOURCE)
 
+    def test_category_scheme_discovery_returns_exact_amfi_linked_codes(self):
+        client = Mock()
+        client.get.side_effect = [
+            {"categories": {"Equity": [{"slug": "equity-large-cap", "name": "Large Cap"}]}},
+            {"schemes": [{
+                "scheme_code": self.scheme.scheme_code,
+                "isin": self.scheme.isin_growth,
+                "scheme_name": self.scheme.scheme_name,
+                "amc": "Provider AMC Name",
+                "category": "Large Cap",
+                "plan": "Regular Plan",
+                "option": "IDCW",
+            }]},
+        ]
+
+        result = CharlieAlphaService(client=client).sync_schemes(category="equity-large-cap")
+        run = MFSourceRun.objects.get(source=SOURCE, command="schemes")
+
+        self.assertEqual(result["linked_scheme_codes"], [self.scheme.scheme_code])
+        self.assertEqual(run.metadata["category_slug"], "equity-large-cap")
+        self.assertEqual(run.metadata["linked_scheme_codes"], [self.scheme.scheme_code])
+        # Existing AMFI identity metadata is not overwritten by provider labels.
+        self.scheme.refresh_from_db()
+        self.assertEqual(self.scheme.amc_name, "PWMS Test AMC")
+        self.assertEqual(self.scheme.plan, "Direct Plan")
+        self.assertEqual(self.scheme.option, "Growth")
+
     def test_category_catalog_is_persisted_with_asset_class_slugs(self):
         client = Mock()
         client.get.return_value = {

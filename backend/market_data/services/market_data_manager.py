@@ -115,11 +115,32 @@ class MarketDataManager:
         This is used only for STOCK and ETF assets.
         """
 
-        return SecurityResolver.resolve_yahoo_symbol(
+        yahoo_symbol = SecurityResolver.resolve_yahoo_symbol(
             symbol=asset.symbol,
             isin=asset.isin,
             name=asset.name,
         )
+
+        # Store a resolver-confirmed symbol so downstream consumers that read
+        # Asset.symbol directly do not repeatedly encounter an empty field.
+        # Never replace an existing value: explicit asset-level symbols have
+        # precedence in SecurityResolver and may be user-maintained.
+        cleaned_symbol = SecurityResolver.clean_symbol(yahoo_symbol)
+        existing_symbol = SecurityResolver.clean_symbol(asset.symbol)
+        if cleaned_symbol and not existing_symbol:
+            Asset.objects.filter(
+                pk=asset.pk,
+                symbol__isnull=True,
+            ).update(symbol=cleaned_symbol)
+            asset.symbol = cleaned_symbol
+        elif cleaned_symbol and not (asset.symbol or "").strip():
+            Asset.objects.filter(
+                pk=asset.pk,
+                symbol="",
+            ).update(symbol=cleaned_symbol)
+            asset.symbol = cleaned_symbol
+
+        return cleaned_symbol
 
     @staticmethod
     def get_earliest_transaction_date(asset):

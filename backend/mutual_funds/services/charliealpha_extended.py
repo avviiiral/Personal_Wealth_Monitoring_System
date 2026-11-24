@@ -43,26 +43,34 @@ def _resource_records(payload: Any) -> list[dict]:
                 {"date": day, "nav": value}
                 for day, value in zip(dates, values)
             ]
-        # Some GIFT NAV-history responses are keyed by plan variant.
+        # GIFT NAV-history responses are keyed by plan variant. Latest-NAV
+        # can also return one scalar NAV object per plan, so preserve both forms.
+        plan_rows = []
         for plan, series in payload.items():
-            if isinstance(series, dict):
-                dates = series.get("dates")
-                values = series.get("nav")
-                if isinstance(dates, list) and isinstance(values, list):
-                    return [
-                        {"plan": str(plan), "date": day, "nav": value}
-                        for day, value in zip(dates, values)
-                    ]
+            if not isinstance(series, dict):
+                continue
+            dates = series.get("dates")
+            values = series.get("nav")
+            if isinstance(dates, list) and isinstance(values, list):
+                plan_rows.extend(
+                    {"plan": str(plan), "date": day, "nav": value}
+                    for day, value in zip(dates, values)
+                )
+                continue
+            if _first(series, "nav", "latest_nav", "value") is not None:
+                plan_rows.append({"plan": str(plan), **series})
+        if plan_rows:
+            return _json_safe(plan_rows)
     return []
 
 
 def _identifier(row: dict, family: str) -> str:
     if family == "NPS":
-        value = _first(row, "scheme_code", "code", "scheme_id", "schemeId", "id")
+        value = _first(row, "scheme_code", "nps_scheme_code", "code", "scheme_id", "schemeId", "id")
     elif family == "SIF":
-        value = _first(row, "scheme_code", "scheme_id", "sif_id", "code", "id", "isin")
+        value = _first(row, "scheme_code", "sif_scheme_code", "scheme_id", "sif_id", "code", "id", "isin")
     else:
-        value = _first(row, "fund_id", "scheme_id", "code", "id", "isin")
+        value = _first(row, "fund_id", "gift_fund_id", "fund_code", "scheme_id", "code", "id", "isin")
     return text_value(value)
 
 

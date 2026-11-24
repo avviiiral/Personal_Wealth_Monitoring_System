@@ -159,6 +159,17 @@ class CharlieAlphaExtendedPersistenceTests(TestCase):
         self.assertEqual(MFProviderResourceSnapshot.objects.filter(family="INSTRUMENTS").count(), 2)
         self.assertEqual(MFProviderResourceSnapshot.objects.filter(family="CORPORATE_ACTIONS").count(), 1)
 
+    def test_empty_search_result_is_not_counted_as_a_record(self):
+        client = Mock()
+        client.get.return_value = {"query": "no matches", "count": 0, "data": []}
+
+        CharlieAlphaExtendedService(client=client).search_instruments("no matches")
+
+        snapshot = MFProviderResourceSnapshot.objects.get(family="INSTRUMENTS")
+        self.assertEqual(snapshot.record_count, 0)
+        self.assertEqual(snapshot.records, [])
+        self.assertEqual(snapshot.payload["count"], 0)
+
     def test_failures_are_audited_without_fabricating_empty_success_data(self):
         client = Mock()
         client.get.side_effect = RuntimeError("provider unavailable")

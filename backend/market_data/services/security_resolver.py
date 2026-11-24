@@ -552,12 +552,6 @@ class SecurityResolver:
                 f"Cannot resolve ISIN {cleaned_isin}: conflicting Security Master mappings."
             )
 
-        # An unambiguous ISIN mapping in the workbook is authoritative.
-        # Asset.symbol may be stale or populated from an older import; it
-        # must not override the user's requested ISIN-first master lookup.
-        if cleaned_isin and cleaned_isin in cls._security_master_isin:
-            return yahoo_from_isin
-
         if yahoo_from_isin:
             explicit_symbol = cleaned_symbol
             if explicit_symbol and not explicit_symbol.endswith(

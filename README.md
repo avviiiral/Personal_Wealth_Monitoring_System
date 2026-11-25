@@ -52,6 +52,7 @@ All financial calculations run on the backend. The frontend formats and displays
 | Corporate Actions | NSE corporate-action monitoring, exposure matching, and user review that creates bonus, split or dividend transactions | `/corporate-actions` |
 | Portfolio News | Google News RSS monitoring and NSE/BSE filing ingestion, matched to holdings, scored by rules, with optional Web Push | `/portfolio-news` |
 | Watch List | Mutual fund (AMFI) and PMS (APMI) research universe, returns, benchmark comparison, personal watch list | `/watch-list` |
+| MF Intelligence | Category-level mutual-fund analytics, risk/return metrics, NAV history, holdings disclosures, AUM, benchmarks and stock classifications from database-backed reference data | `/mf-intelligence` |
 | AI Portfolio Chat | Optional Google Gemini chat over the user's own portfolio context | header panel, `/ai-chat` |
 | Settings | Account, password, tax settings, logs and audit history, user management, family management, manual prices | `/settings` |
 
@@ -157,6 +158,8 @@ Personal_Wealth_Monitoring_System/
 │   ├── filing_intelligence/      NSE/BSE filing ingestion and rule-based classification
 │   ├── portfolio_news/           News retrieval, matching, scoring, alerts, Web Push
 │   ├── watchlist/                MF/PMS research universe, performance, benchmarks
+│   ├── mf_intelligence/          Shared MF category/scheme master, metrics, NAV, holdings,
+│   │                             AUM, benchmarks, classifications and sync audit records
 │   └── ai/                       Gemini portfolio chat and token-usage log
 ├── frontend/
 │   ├── angular.json, package.json, proxy.conf.json
@@ -197,6 +200,7 @@ Routes are mounted in `backend/config/urls.py`.
 | `watchlist` | `/api/watch-list/` | Products, filters, performance, benchmarks, watch list membership, refresh |
 | `filing_intelligence` | `/api/filings/` | Filing detail |
 | `corporate_actions` | `/api/corporate-actions/` | Actions, candidates, notifications, reconciliation decisions |
+| `mf_intelligence` | `/api/mf-intelligence/` | Shared category dashboards, scheme detail, sync trigger and sync status |
 
 Django admin is available at `/admin/` for registered models.
 
@@ -725,6 +729,16 @@ All endpoints need an authenticated session unless marked "public". Methods list
 | POST | `products/<id>/toggle/`, `bulk-add/`, `bulk-remove/` | Any authenticated user (own list) |
 | POST | `refresh/` | Admin or above |
 
+**MF Intelligence (`/api/mf-intelligence/`)**
+
+| Method | Endpoint | Notes |
+| --- | --- | --- |
+| GET | `categories/` | Authenticated users; category catalogue and sync metadata |
+| GET | `categories/<slug>/dashboard/` | Authenticated users; accepts plan, horizon and optional benchmark query parameters |
+| GET | `schemes/<code>/` | Authenticated users; scheme detail by exact AMFI scheme code |
+| POST | `sync/` | Requires `CanWriteFinancialData`; starts a background sync and returns HTTP 202 |
+| GET | `sync/status/` | Authenticated users; latest sync status |
+
 **Corporate actions, filings and market data**
 
 | Method | Endpoint | Notes |
@@ -944,7 +958,7 @@ python manage.py generate_web_push_keys
 
 ### In-process schedulers
 
-Schedulers start from `AppConfig.ready()`. `config/scheduler_guard.py` starts them under `manage.py runserver` (only in the autoreloader's worker process) and under any WSGI/ASGI server, and never for other management commands or tests. Two schedulers apply a narrower rule.
+Schedulers start from `AppConfig.ready()`. `config/scheduler_guard.py` starts them under `manage.py runserver` (only in the autoreloader's worker process) and under WSGI/ASGI servers, and never for other management commands or tests. Some schedulers add narrower startup conditions; MF Intelligence, for example, starts its daily thread only when explicitly enabled in configuration.
 
 | Scheduler | Cadence | Work | Starts under |
 | --- | --- | --- | --- |
@@ -956,10 +970,11 @@ Schedulers start from `AppConfig.ready()`. `config/scheduler_guard.py` starts th
 | `SecurityMasterScheduler` | At start, then every 24 hours | ISIN security master refresh | runserver, WSGI/ASGI |
 | `MutualFundUnderlyingScheduler` | At start, then daily at 06:00 IST | Official MF portfolio disclosures | runserver, WSGI/ASGI |
 | `PortfolioNewsScheduler` | 10 seconds after start, then every `NEWS_MONITOR_INTERVAL` (180 seconds by default) | News monitor, then exchange filing ingestion | runserver, WSGI/ASGI |
+| `MFIntelligenceScheduler` | Daily at configured `auto_sync_time` (default 05:30 IST) | Optional MF Intelligence database sync; disabled unless `mf_intelligence.auto_sync_enabled=true` | runserver, WSGI/ASGI when enabled |
 | Watch List refresh (`watchlist/apps.py`) | At start (benchmark history), then daily at 06:00 IST | Benchmark master and Watch List universe | runserver only (`RUN_MAIN=true`) |
 | Corporate-action daily scan (`corporate_actions/automation.py`) | Daily at `daily_run_time` (06:00), with catch-up if started later | `monitor_corporate_actions --source nse` | runserver only |
 
-`run_scheduled_refresh` runs `update_market_prices` and `refresh_mis_reference_prices`, then `sync_sip_installments` and `execute_sips` for each active user, then `refresh_security_master --apply`, `monitor_portfolio_news` and `monitor_corporate_actions`. A failing step does not stop the rest. Pass `--skip <command>` to omit a step.
+`run_scheduled_refresh` runs `update_market_prices` and `refresh_mis_reference_prices`; synchronizes owned AMFI NAVs from the shared master for active users; runs `sync_sip_installments` and `execute_sips` per active user; refreshes the Watch List universe and performance; then runs `refresh_security_master --apply`, `monitor_portfolio_news` and `monitor_corporate_actions`. A failing step does not stop later steps. Repeat `--skip <command>` to omit a named step. This pipeline does **not** run `sync_mf_intelligence`; MF Intelligence has a separate optional daily scheduler.
 
 On PostgreSQL, `update_market_prices`, `run_scheduled_refresh` and the market-price scheduler share an advisory lock (`pwms_refresh_pipeline`) so that several processes do not run the same refresh at once. On SQLite the lock does nothing, and background writers share a process-level `RLock`.
 
@@ -978,7 +993,7 @@ See [scripts/windows/README.md](./scripts/windows/README.md).
 
 ### Management commands
 
-Run from `backend/` with the virtual environment active. Use `python manage.py <command> --help` for options.
+Run from `backend/` with the virtual environment active. Use `python manage.py <command> --help` for options. The full catalogue of all 41 project-defined management commands, their options, side effects and examples is in [commands.md](./commands.md).
 
 | App | Command | Purpose |
 | --- | --- | --- |
@@ -1003,6 +1018,7 @@ Run from `backend/` with the virtual environment active. Use `python manage.py <
 | `portfolio_news` | `monitor_portfolio_news` | One news pass (`--loop` to repeat) |
 | `portfolio_news` | `generate_web_push_keys` | Generate a VAPID key pair |
 | `watchlist` | `refresh_watchlist`, `prepare_watchlist_benchmark_chart` | Watch List universe and benchmark data |
+| `mf_intelligence` | `sync_mf_intelligence`, `import_mf_cap_classification` | Database-backed MF category/scheme analytics sync and AMFI cap classification |
 | `ai` | `gemini_usage` | Gemini token usage summary |
 | `users` | `flush`, `safe_flush1`, `safe_flush2` | Destructive database reset tools; review dry-run output first ([database reset runbook](./docs/operations/database-reset-commands.md)) |
 ### Database reset commands

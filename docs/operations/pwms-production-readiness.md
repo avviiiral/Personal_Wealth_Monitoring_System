@@ -78,6 +78,8 @@ Do not start an additional scheduler manually on the production host while the e
 
 A successful HTTP response is not proof that the displayed value is fresh. Verify both persisted observations and the scheduled job logs.
 
+Before investigating missing Yahoo-routed prices, run `python manage.py diagnose_security_resolver --only-issues`. This read-only command reports symbol-resolution gaps, ambiguous Security Master rows and conflicting identifiers without generating or modifying the workbook, writing `Asset.symbol`, or contacting Yahoo Finance/NSE. Resolve authoritative identity conflicts before interpreting a provider failure as a pricing outage. See [Security Resolver Diagnostics](./security-resolver-diagnostics.md).
+
 For market prices, run this read-only Django query in the deployed backend environment:
 
 ```powershell

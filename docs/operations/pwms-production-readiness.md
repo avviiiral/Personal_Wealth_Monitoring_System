@@ -90,7 +90,21 @@ For mutual-fund NAVs, use the AMFI refresh summary and the relevant persisted NA
 
 This repository change does not add a new dashboard/alerting surface for freshness. A follow-up observability change should expose last successful refresh, latest observation date, source, and failure category in a safe operational view.
 
-## 7. Release record
+## 7. Database reset controls
+
+PWMS custom reset commands are destructive operational tools and must not be treated as routine maintenance:
+
+- `flush` deletes all physical application-table rows, including account and reference data.
+- `safe_flush1` preserves account/authentication, profile, family, preference and user-audit data while deleting other application data.
+- `safe_flush2` deletes the investment and mutual-fund transaction ledgers; it does not directly clear derived holdings/positions or SIP instructions.
+
+Before any execution, identify the intended database alias and database name, run the corresponding `--dry-run`, review every selected table/count, and verify a current backup plus a tested restore procedure. Do not automate destructive execution with `--noinput` without a separately approved change and target-database guard. The commands preserve schema and `django_migrations`, support PostgreSQL/SQLite, and deliberately avoid `TRUNCATE CASCADE`.
+
+After `safe_flush2`, assess whether holdings and portfolio positions are stale and perform only the separately approved rebuild/reconciliation process. After `safe_flush1`, users must authenticate again because Django sessions are cleared.
+
+See [Database Reset Commands](./database-reset-commands.md) for the authoritative command scope and runbook. CI passing and dry-run output are not evidence of a successful reset against the production database.
+
+## 8. Release record
 
 For each release, record:
 

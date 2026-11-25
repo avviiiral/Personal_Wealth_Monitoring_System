@@ -1147,6 +1147,15 @@ python manage.py rebuild_holdings --user-id <id>
 <details>
 <summary><b>A price is missing or stale</b></summary>
 
+1. Run the read-only symbol diagnostic: `python manage.py diagnose_security_resolver --only-issues`.
+2. Review `AMBIGUOUS` and `CONFLICT` results before refreshing prices; do not guess a symbol from a similar company name.
+3. Watch `backend/logs/price_updates.log` (and `backend/logs/pwms.log`) for provider or resolution errors.
+4. After correcting the authoritative Security Master/ISIN data, run `python manage.py update_market_prices`.
+5. Yahoo Finance is an unofficial, rate-limited source and may temporarily fail or not recognise a symbol — set a **manual price** in **Settings → Manual Prices** as a stop-gap.
+
+The diagnostic does not write to the database/workbook and does not contact Yahoo Finance or NSE. See [Security Resolver Diagnostics](docs/operations/security-resolver-diagnostics.md).
+
+
 1. Watch `backend/logs/pwms.log` for provider errors.
 2. Force a refresh: `python manage.py update_market_prices`.
 3. Yahoo Finance is an unofficial, rate-limited source and may temporarily fail or not recognise a symbol — set a **manual price** in **Settings → Manual Prices** as a stop-gap.

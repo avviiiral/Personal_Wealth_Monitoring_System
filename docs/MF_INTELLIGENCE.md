@@ -1,8 +1,9 @@
 # Mutual Fund Intelligence
 
-Category-level analytics for every SEBI mutual fund category, modelled on the
-Nexedge "Multi Cap Intelligence" report but generated for all 64 categories
-from data stored in the PWMS database.
+Category-level analytics for the SEBI mutual-fund categories returned by the
+CharlieAlpha category catalogue, modelled on the Nexedge "Multi Cap Intelligence"
+report and served from reference data persisted in the PWMS database. The number
+and names of categories are refreshed from the provider rather than hard-coded.
 
 Page: **Portfolio → MF Intelligence** (`/mf-intelligence`).
 Backend app: `backend/mf_intelligence`. API prefix: `/api/mf-intelligence/`.
@@ -32,27 +33,42 @@ equities as Small Cap). The page says when this proxy is in use.
 All tables are market-wide reference data (no owner or family columns):
 `MFCategory`, `MFScheme` (scheme facts + computed returns), `MFSchemeMetric`
 (30 metrics × 4 horizons), `MFCategoryMedian`, `MFNavMonthly`,
-`MFHoldingSnapshot` + `MFHolding` (every disclosure kept, so trends build up),
+`MFHoldingSnapshot` + `MFHolding` (disclosures are retained as dated snapshots),
 `MFAumHistory`, `MFBenchmark` + `MFBenchmarkMonthly`, `MFStockClassification`
-and `MFSyncRun` (audit of every sync). Daily NAV is fetched on each sync but only
-month-end values are stored; computed values use four decimal places and the
-page shows two.
+and `MFSyncRun` (audit of each sync run, including scope, progress, statistics
+and captured errors). Daily NAV history is fetched from the provider, but the
+persistent MF Intelligence NAV series is stored as month-end observations;
+computed percentage/ratio values use four decimal places and the page rounds
+them for display.
 
 ## Running a sync
 
 ```bash
 cd backend
 python manage.py migrate
-python manage.py sync_mf_intelligence --category multi-cap      # one category, about 1 minute
-python manage.py sync_mf_intelligence                           # all categories, Regular plans, ~25-30 minutes
-python manage.py sync_mf_intelligence --plan Both               # Regular and Direct NAV
-python manage.py sync_mf_intelligence --force                   # ignore freshness rules
+python manage.py sync_mf_intelligence --category multi-cap --limit 20
+python manage.py sync_mf_intelligence                           # all provider categories, Regular plan targets
+python manage.py sync_mf_intelligence --plan Both               # Regular and Direct plan targets
+python manage.py sync_mf_intelligence --force                   # bypass per-fund freshness checks
+python manage.py sync_mf_intelligence --skip-nav --skip-holdings
+python manage.py import_mf_cap_classification                   # download latest available AMFI workbook
 python manage.py import_mf_cap_classification --file AverageMarketCapitalization30Jun2026.xlsx
 ```
 
-Admins (and above) can also start a sync from the page; Viewers can only read.
-Holdings are a fund-level disclosure, so a Direct plan without its own
-disclosure reuses its Regular sibling's holdings.
+Admins (and other roles allowed by `CanWriteFinancialData`) can start a sync
+from the page; read-only users can inspect the stored analytics and sync status.
+The sync API starts work in a background thread and returns HTTP 202; the page
+polls the sync-status endpoint. The management command runs synchronously in the
+calling process. A Direct plan without its own disclosure can reuse its Regular
+sibling's holdings because the portfolio disclosure is fund-level.
+
+`sync_mf_intelligence` accepts repeatable `--category` filters, `--plan
+Regular|Direct|Both`, `--force`, `--limit`, `--workers` and independent
+`--skip-nav`, `--skip-holdings`, `--skip-aum`, `--skip-benchmarks` and
+`--skip-cap-list` switches. Category catalogue, scheme master and category
+metrics are still refreshed during a run; the skip switches control the named
+fund/benchmark/classification stages. `--limit` is intended for bounded test
+runs. See the [complete PWMS command reference](../commands.md).
 
 ## Shared application consumers
 
@@ -82,12 +98,50 @@ PWMS features where the matching identity and data granularity are suitable:
 The integration is read-through / fallback only: it does not rewrite family
 transactions, portfolio ownership, or user-entered holdings.
 
-An optional daily sync is off by default. Enable it in
+The optional `MFIntelligenceScheduler` is separate from the `run_scheduled_refresh`
+pipeline and is off by default. When enabled, it runs once per day using the
+configured market timezone (default `Asia/Kolkata`). Configure it in
 `backend/config/pwms_config.json` (or `PWMS_CONFIG_OVERRIDES`):
 
 ```json
-"mf_intelligence": { "auto_sync_enabled": true, "auto_sync_time": "05:30", "auto_sync_plans": ["Regular"] }
+"mf_intelligence": {
+  "auto_sync_enabled": true,
+  "auto_sync_time": "05:30",
+  "auto_sync_plans": ["Regular"],
+  "auto_sync_categories": null
+}
 ```
+
+## API surface
+
+The Django URL configuration mounts the feature at `/api/mf-intelligence/`:
+
+| Method | Endpoint | Purpose |
+| --- | --- | --- |
+| GET | `categories/` | Category catalogue and stored sync metadata |
+| GET | `categories/<slug>/dashboard/` | Category dashboard; supports `plan`, `horizon` and optional `benchmark` query parameters |
+| GET | `schemes/<code>/` | Scheme detail by exact AMFI scheme code; optional benchmark selection |
+| POST | `sync/` | Starts a sync in a background thread; requires authentication and `CanWriteFinancialData` |
+| GET | `sync/status/` | Reports whether a sync is running and returns the latest run record |
+
+Category, dashboard, scheme and sync-status reads require authentication. The sync
+mutation is separately protected by `CanWriteFinancialData`; frontend visibility
+of the sync controls is not the security boundary.
+
+## Persistence and concurrency
+
+`MFIntelligenceSync` performs external HTTP reads through `CharlieAlphaClient`.
+The client uses per-worker HTTP sessions, a shared sliding-window rate limiter
+(default 40 requests per 10 seconds, below the provider's documented 50/10s
+limit), bounded retries for network/429/5xx responses, and request accounting.
+Fetch work can run concurrently, but database writes are performed on the
+calling thread inside short transactions protected by `DATABASE_SCHEDULER_LOCK`.
+This is deliberate: it serializes SQLite writers and avoids holding a database
+write lock while waiting for network responses. A process-local `SYNC_LOCK`
+prevents overlapping syncs initiated by the page, scheduler or management
+command within the same process. `MFSyncRun` stores status, trigger, scope,
+progress, statistics and errors; stale `running` records are closed as failed
+when a later sync starts.
 
 ## Frontend behavior and access
 

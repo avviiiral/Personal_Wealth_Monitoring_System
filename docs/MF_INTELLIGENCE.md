@@ -89,6 +89,22 @@ An optional daily sync is off by default. Enable it in
 "mf_intelligence": { "auto_sync_enabled": true, "auto_sync_time": "05:30", "auto_sync_plans": ["Regular"] }
 ```
 
+## Frontend behavior and access
+
+The page is a standalone Angular feature at `/mf-intelligence`. It loads category groups, category dashboards and scheme detail from the MF Intelligence API. The page exposes the Overview, Fund Scorecard, Quant Score, Performance, Calendar Year, Risk & Rolling, Portfolio, Positioning, Universe Table and Manager Activity views.
+
+The frontend observes the document root's theme class. When the application switches between light and dark mode, existing Chart.js instances are rebuilt so chart axes, labels, legends and other theme-dependent elements remain legible. Semantic status badges use theme-aware contrast rather than relying on a single light-theme palette.
+
+The sync controls are hidden from Viewer users; the backend remains the authority for sync permissions. A page-level control is not a substitute for API authorization.
+
+## Operational checks
+
+- Check the last sync status on the page before initiating another full sync.
+- Use `python manage.py sync_mf_intelligence --help` to review category, plan, worker, limit and skip-step options.
+- Use `--limit` for a bounded test run and `--skip-*` options to isolate a sync stage when diagnosing provider or persistence issues.
+- Confirm that refreshed records are present in the database; the feature is designed around database-backed master/reference tables, not a frontend cache or a local data folder.
+- The optional daily sync remains disabled unless explicitly enabled in `pwms_config.json` or `PWMS_CONFIG_OVERRIDES`.
+
 ## Calculation notes
 
 - Returns: up to 6M and YTD are absolute; 1Y and longer cover N × 365 days and are

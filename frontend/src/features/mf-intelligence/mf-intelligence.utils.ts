@@ -137,6 +137,19 @@ export function rebase(values: Record<string, number | null | undefined>): Recor
   return result;
 }
 
+/**
+ * Merge a chart's own legend options over the page defaults. Label options are
+ * merged key by key, so a chart that only adds e.g. a label filter still keeps
+ * the theme-aware text colour.
+ */
+export function legendWithDefaults(
+  legend: Record<string, any> | undefined,
+  labelDefaults: Record<string, unknown>,
+): Record<string, any> {
+  const own = legend ?? {};
+  return { ...own, labels: { ...labelDefaults, ...(own['labels'] ?? {}) } };
+}
+
 export const SCORE_LABELS: Record<string, string> = {
   returns: 'Returns',
   risk_adjusted: 'Risk-adjusted (Sortino)',

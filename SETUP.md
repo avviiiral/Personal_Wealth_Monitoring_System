@@ -1147,6 +1147,15 @@ python manage.py rebuild_holdings --user-id <id>
 <details>
 <summary><b>A price is missing or stale</b></summary>
 
+1. Run the read-only symbol diagnostic: `python manage.py diagnose_security_resolver --only-issues`.
+2. Review `AMBIGUOUS` and `CONFLICT` results before refreshing prices; do not guess a symbol from a similar company name.
+3. Watch `backend/logs/price_updates.log` (and `backend/logs/pwms.log`) for provider or resolution errors.
+4. After correcting the authoritative Security Master/ISIN data, run `python manage.py update_market_prices`.
+5. Yahoo Finance is an unofficial, rate-limited source and may temporarily fail or not recognise a symbol — set a **manual price** in **Settings → Manual Prices** as a stop-gap.
+
+The diagnostic does not write to the database/workbook and does not contact Yahoo Finance or NSE. See [Security Resolver Diagnostics](docs/operations/security-resolver-diagnostics.md).
+
+
 1. Watch `backend/logs/pwms.log` for provider errors.
 2. Force a refresh: `python manage.py update_market_prices`.
 3. Yahoo Finance is an unofficial, rate-limited source and may temporarily fail or not recognise a symbol — set a **manual price** in **Settings → Manual Prices** as a stop-gap.
@@ -1337,14 +1346,41 @@ Open **http://localhost:4200/login** and sign in with the account you just creat
 
 ## 17 · Reset or uninstall
 
-**Fresh start, keep the code** — delete the database and rebuild it (this **erases all data**):
+PWMS includes custom database reset commands for different deletion scopes. **These commands permanently delete data.** Before any reset, verify the active database and alias, review the complete dry-run output, and ensure a backup/restore point exists if the data matters.
 
-```bash
+Run the commands from `backend/` with the virtual environment active:
+
+```powershell
 cd backend
-# delete db.sqlite3, then:
+python manage.py check
+python manage.py flush --dry-run
+python manage.py safe_flush1 --dry-run
+python manage.py safe_flush2 --dry-run
+```
+
+Choose the command only after reviewing its dry-run output:
+
+| Command | Scope |
+| --- | --- |
+| `python manage.py flush` | Deletes all application data, including users, families, transactions, portfolio data, market data and MF reference data. Preserves the schema and `django_migrations`. |
+| `python manage.py safe_flush1` | Deletes application/financial data while preserving user accounts, roles/auth metadata, profiles, family groups/memberships, preferences and user audit logs. Sessions are deleted, so users must log in again. |
+| `python manage.py safe_flush2` | Deletes investment and mutual-fund transaction ledger rows only. Transaction edit history is cascaded; SIP installment transaction links are set to NULL. Assets, holdings, positions, SIP instructions/installments and reference data are not directly deleted. |
+
+Each command prompts for confirmation. Do not use `--noinput` unless the target database and deletion scope have already been checked. `flush` and `safe_flush1` also support `--database <alias>`, `--reset-sequences`, and `--dry-run`; `flush` supports `--inhibit-post-migrate`. `safe_flush2` supports `--database <alias>` and `--dry-run`.
+
+The commands support PostgreSQL and SQLite. They preserve the database schema and migration history and do not use `TRUNCATE CASCADE`. A failed transaction is rolled back, but rollback is not a substitute for a backup. Passing CI or a dry run does not prove that a destructive reset has been executed successfully against your actual database.
+
+For the complete command semantics, options, examples and operational cautions, see [PWMS Database Reset Commands](docs/operations/database-reset-commands.md).
+
+**Fresh local installation** — if you intentionally want a new empty local SQLite database, stop the application, remove the local `backend/db.sqlite3` file, then recreate the schema:
+
+```powershell
+cd backend
 python manage.py migrate
 python manage.py createsuperuser
 ```
+
+Do not use the file-deletion approach for PostgreSQL or a database shared with other environments.
 
 **Remove local installs** (safe; they are recreated by the setup steps):
 

@@ -486,6 +486,13 @@ flowchart TD
 
 ETFs stay on market-price routing even when their ISIN also appears in the AMFI master.
 
+### Yahoo symbol resolution and diagnostics
+
+Automated Yahoo pricing uses `SecurityResolver` and the optional `backend/data/security_master.xlsx` workbook. Resolution is ISIN-first; configured mappings, explicit symbols and conservative exact normalized-name fallbacks are used only according to the resolver's documented priority. Ambiguous workbook mappings and conflicting identifiers fail closed rather than selecting a ticker by row order or fuzzy matching.
+
+Run `python manage.py diagnose_security_resolver --only-issues` before changing unresolved or incorrectly priced securities. This diagnostic is read-only: it does not generate or write the workbook, modify `Asset.symbol`, or contact Yahoo Finance/NSE. See [Security Resolver Diagnostics](./docs/operations/security-resolver-diagnostics.md) for filters, status meanings and the safe repair workflow. The normal `update_market_prices` command can refresh the Security Master when held STOCK/ETF ISINs are missing from it, then persist validated resolved symbols through the normal refresh path.
+
+
 ### Corporate action review
 
 ```mermaid
@@ -979,6 +986,7 @@ Run from `backend/` with the virtual environment active. Use `python manage.py <
 | `market_data` | `update_market_prices` | Listed-asset price refresh (`--user-id` optional) |
 | `market_data` | `refresh_mis_reference_prices` | MIS Notes reference prices |
 | `market_data` | `refresh_security_metrics` | Yahoo Finance valuation metrics |
+| `market_data` | `diagnose_security_resolver` | Read-only report of Yahoo symbol resolution, Security Master gaps and identity conflicts (`--only-issues`, `--asset-id`, `--isin`, `--user-id`, `--format json`) |
 | `market_data` | `fetch_market_data`, `refresh_market_data` | Yahoo Finance history and refresh helpers |
 | `investments` | `import_transactions` | Import a workbook (`--file`, plus `--username`, `--user-id` or `--all-users`) |
 | `investments` | `refresh_security_master`, `link_security_master`, `load_security_master_data` | Security Master maintenance; report only unless `--apply` |
@@ -996,6 +1004,11 @@ Run from `backend/` with the virtual environment active. Use `python manage.py <
 | `portfolio_news` | `generate_web_push_keys` | Generate a VAPID key pair |
 | `watchlist` | `refresh_watchlist`, `prepare_watchlist_benchmark_chart` | Watch List universe and benchmark data |
 | `ai` | `gemini_usage` | Gemini token usage summary |
+| `users` | `flush`, `safe_flush1`, `safe_flush2` | Destructive database reset tools; review dry-run output first ([database reset runbook](./docs/operations/database-reset-commands.md)) |
+### Database reset commands
+
+PWMS provides three explicit database reset commands: `flush` (all application data), `safe_flush1` (preserve account/authentication data), and `safe_flush2` (transaction ledgers only). These commands preserve the schema and Django migration history. **They are destructive:** always run and review the relevant `--dry-run` first. See the [database reset runbook](./docs/operations/database-reset-commands.md) for exact deletion scopes, options and safety requirements.
+
 
 ---
 

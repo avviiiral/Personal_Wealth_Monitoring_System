@@ -6,6 +6,7 @@ import {
   fmt,
   histogram,
   joinNames,
+  legendWithDefaults,
   niceEdges,
   pct,
   quartileOf,
@@ -100,5 +101,22 @@ describe('mf-intelligence utils', () => {
   it('rebases values to 100', () => {
     expect(rebase({ a: 1, b: 3 })).toEqual({ a: 25, b: 75 });
     expect(rebase({ a: 0, b: null })).toEqual({ a: 0, b: 0 });
+  });
+
+  it('keeps themed legend label defaults when a chart customises its labels', () => {
+    const defaults = { color: '#cbd5e1', font: { size: 10 }, boxWidth: 12 };
+    const filter = () => true;
+
+    const merged = legendWithDefaults({ display: true, labels: { filter } }, defaults);
+    expect(merged['display']).toBe(true);
+    expect(merged['labels']).toEqual({ ...defaults, filter });
+
+    expect(legendWithDefaults(undefined, defaults)).toEqual({ labels: defaults });
+    expect(legendWithDefaults({ display: false }, defaults)).toEqual({
+      display: false,
+      labels: defaults,
+    });
+    const override = legendWithDefaults({ labels: { color: '#000' } }, defaults);
+    expect(override['labels']['color']).toBe('#000');
   });
 });

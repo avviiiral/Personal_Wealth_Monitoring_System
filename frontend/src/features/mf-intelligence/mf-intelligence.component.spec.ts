@@ -178,6 +178,27 @@ describe('MfIntelligenceComponent', () => {
     expect(component.syncMessage).toContain('Admin or above');
   });
 
+  it('draws the 6M return series with the theme-aware navy in both themes', () => {
+    const configs = new Map<string, any>();
+    (component as any).chart = (key: string, config: any) => configs.set(key, config);
+    component.applyDashboard(dashboard([fund('1', 'Alpha', 10, 40), fund('2', 'Beta', 20, 90)]));
+    const sixMonth = () =>
+      configs.get('ov-returns').data.datasets.find((item: any) => item.label === '6M return');
+    const root = document.documentElement;
+    const wasDark = root.classList.contains('dark-theme');
+    try {
+      root.classList.remove('dark-theme');
+      (component as any).renderOverview();
+      expect(sixMonth().backgroundColor).toBe('rgba(5,18,51,0.69)');
+
+      root.classList.add('dark-theme');
+      (component as any).renderOverview();
+      expect(sixMonth().backgroundColor).toBe('rgba(148,163,184,0.69)');
+    } finally {
+      root.classList.toggle('dark-theme', wasDark);
+    }
+  });
+
   it('reports a dashboard load failure', () => {
     api['getDashboard'].mockReturnValue(throwError(() => new Error('down')));
     component.categorySlug = 'multi-cap';

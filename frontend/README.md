@@ -1,59 +1,58 @@
-# Frontend
+# PWMS Frontend
 
-This project was generated using [Angular CLI](https://github.com/angular/angular-cli) version 21.2.10.
+The PWMS frontend is an Angular 21 standalone-component single-page application. It provides the authenticated user interface for portfolio management, analytics, mutual-fund intelligence, reports, watchlists, corporate actions, news and settings.
 
-## Development server
+## Prerequisites
 
-To start a local development server, run:
+- Node.js supported by the Angular CLI version declared in `package.json` (Node 22 LTS is used in CI).
+- npm version declared by the repository's `packageManager` field.
+- The Django backend running on port 8000 for API requests.
 
-```bash
-ng serve
+## Install and run
+
+From `frontend/`:
+
+```powershell
+npm ci
+npm start
 ```
 
-Once the server is running, open your browser and navigate to `http://localhost:4200/`. The application will automatically reload whenever you modify any of the source files.
+The development server runs at `http://localhost:4200/`. The committed development proxy forwards `/api` requests to Django. Start the backend separately from `backend/`:
 
-## Code scaffolding
-
-Angular CLI includes powerful code scaffolding tools. To generate a new component, run:
-
-```bash
-ng generate component component-name
+```powershell
+python manage.py runserver
 ```
 
-For a complete list of available schematics (such as `components`, `directives`, or `pipes`), run:
+The frontend uses relative `/api` URLs and session-cookie authentication. Backend write requests use Django's CSRF protection; the frontend services obtain the CSRF cookie from the health endpoint before sending mutations.
 
-```bash
-ng generate --help
+## Build and tests
+
+```powershell
+npm run build
+npm run test -- --watch=false
 ```
 
-## Building
+The production build output is under `dist/frontend/browser/`. Unit tests run with Vitest through Angular's unit-test builder. CI runs a clean dependency install, production build and frontend unit tests.
 
-To build the project run:
+## Application structure
 
-```bash
-ng build
-```
+- `src/app/`: root application configuration, route definitions, shell/layout and app-level features/services.
+- `src/core/`: authentication, RBAC and shared API/state services.
+- `src/features/`: screen-level standalone features such as Dashboard, Portfolio, Reports, Analytics, Watch List and MF Intelligence.
+- `src/shared/`: reusable UI components.
+- `src/environments/`: environment-specific API configuration.
+- `public/push-sw.js`: browser push service worker.
 
-This will compile your project and store the build artifacts in the `dist/` directory. By default, the production build optimizes your application for performance and speed.
+Routes other than `/login` are protected by the authentication guard. The backend remains authoritative for role and family authorization; hiding a control in the frontend is not an access-control boundary.
 
-## Running unit tests
+## MF Intelligence theme behavior
 
-To execute unit tests with the [Vitest](https://vitest.dev/) test runner, use the following command:
+The MF Intelligence feature uses Chart.js and observes the root document theme class. When the application changes between light and dark mode, its charts are refreshed so axes, labels, legends and chart surfaces use the active theme. Theme-specific badge and chart colors are maintained in the feature's component styles and chart configuration.
 
-```bash
-ng test
-```
+See [the MF Intelligence implementation notes](../docs/MF_INTELLIGENCE.md) for data sources, sync commands, shared consumers and calculation rules.
 
-## Running end-to-end tests
+## Further documentation
 
-For end-to-end (e2e) testing, run:
-
-```bash
-ng e2e
-```
-
-Angular CLI does not come with an end-to-end testing framework by default. You can choose one that suits your needs.
-
-## Additional Resources
-
-For more information on using the Angular CLI, including detailed command references, visit the [Angular CLI Overview and Command Reference](https://angular.dev/tools/cli) page.
+- [Repository overview](../README.md)
+- [Full setup guide](../SETUP.md)
+- [Contributing and test expectations](../CONTRIBUTING.md)

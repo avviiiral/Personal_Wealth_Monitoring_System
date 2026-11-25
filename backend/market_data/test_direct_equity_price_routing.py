@@ -1,10 +1,12 @@
+import tempfile
 from datetime import date
 from decimal import Decimal
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
 from django.contrib.auth.models import User
-from django.test import TestCase
+from django.test import TestCase, override_settings
 
 from investments.models import Asset, AssetCategory, Transaction
 from market_data.models import DataSource, MarketPrice
@@ -18,6 +20,27 @@ from users.models import FamilyGroup
 
 class LegacyDirectEquityPriceRoutingTests(TestCase):
     def setUp(self):
+        # resolve_asset_symbol() writes back to the Security Master workbook.
+        # Keep that inside a temporary BASE_DIR so the suite never touches the
+        # real backend/data/security_master.xlsx, and restore the resolver's
+        # process-wide cache so temporary mappings do not leak.
+        from market_data.services.security_resolver import SecurityResolver
+
+        resolver_state = {
+            name: value for name, value in vars(SecurityResolver).items()
+            if name.startswith("_security_master_")
+        }
+        self.addCleanup(
+            lambda: [setattr(SecurityResolver, name, value) for name, value in resolver_state.items()]
+        )
+        workbook_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(workbook_dir.cleanup)
+        base_dir = Path(workbook_dir.name) / "backend"
+        (base_dir / "data").mkdir(parents=True)
+        isolated_settings = override_settings(BASE_DIR=base_dir)
+        isolated_settings.enable()
+        self.addCleanup(isolated_settings.disable)
+
         self.user = User.objects.create_user(
             username="legacy_equity_price_owner",
             password="test-password",

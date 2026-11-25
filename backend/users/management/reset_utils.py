@@ -7,7 +7,6 @@ foreign-key dependency.
 from __future__ import annotations
 
 from django.apps import apps
-from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.core.management.base import CommandError
 from django.db import connections
@@ -25,7 +24,7 @@ def get_physical_tables(alias: str) -> list[str]:
     connection = connections[alias]
     with connection.cursor() as cursor:
         names = connection.introspection.table_names(cursor)
-    migration_table = MigrationRecorder(connection).Migration._meta.db_table
+    migration_table = MigrationRecorder.Migration._meta.db_table
     return sorted(
         name for name in names
         if name not in INTERNAL_TABLES and name != migration_table
@@ -36,7 +35,7 @@ def get_account_preservation_tables(alias: str) -> set[str]:
     """Return account/authentication tables, not personal-finance tables."""
     preserved = {get_user_model()._meta.db_table}
 
-    # These are account identity, access-control, family and preference data.
+    # Preserve account identity, access-control, family and preference data.
     for model_name in (
         "UserProfile",
         "FamilyGroup",
@@ -51,7 +50,7 @@ def get_account_preservation_tables(alias: str) -> set[str]:
         if model._meta.managed:
             preserved.add(model._meta.db_table)
 
-    # Preserve Django's authorization metadata and its user/group join tables.
+    # Preserve Django authorization metadata.
     for label in ("auth.Group", "auth.Permission", "contenttypes.ContentType"):
         try:
             model = apps.get_model(label)
@@ -60,22 +59,15 @@ def get_account_preservation_tables(alias: str) -> set[str]:
         if model._meta.managed:
             preserved.add(model._meta.db_table)
 
-    user_model = get_user_model()
-    for field in user_model._meta.get_fields():
-        if getattr(field, "many_to_many", False) and getattr(field, "auto_created", False):
-            through = field.remote_field.through
-            if through._meta.managed:
-                preserved.add(through._meta.db_table)
-
-    try:
-        group_model = apps.get_model("auth", "Group")
-        for field in group_model._meta.get_fields():
-            if getattr(field, "many_to_many", False) and getattr(field, "auto_created", False):
+    # Preserve all M2M through tables for users and groups. The through model
+    # is auto-created, while the ManyToManyField itself is not; checking the
+    # field's auto_created flag would silently miss auth_user_groups.
+    for model in (get_user_model(), apps.get_model("auth", "Group")):
+        for field in model._meta.get_fields():
+            if getattr(field, "many_to_many", False):
                 through = field.remote_field.through
                 if through._meta.managed:
                     preserved.add(through._meta.db_table)
-    except LookupError:
-        pass
 
     return preserved
 
@@ -105,9 +97,9 @@ def truncate_tables(alias: str, tables: list[str]) -> None:
         return
 
     connection = connections[alias]
-    quoted = [connection.ops.quote_name(name) for name in tables]
 
     if connection.vendor == "postgresql":
+        quoted = [connection.ops.quote_name(name) for name in tables]
         sql = "TRUNCATE TABLE " + ", ".join(quoted) + " RESTART IDENTITY"
         with connection.cursor() as cursor:
             cursor.execute(sql)
@@ -115,7 +107,7 @@ def truncate_tables(alias: str, tables: list[str]) -> None:
 
     if connection.vendor == "sqlite":
         with connection.cursor() as cursor:
-            # Defers FK validation to transaction commit while every table in
+            # Defer FK validation to transaction commit while every table in
             # the reset set is cleared. Preserved parents remain untouched.
             cursor.execute("PRAGMA defer_foreign_keys = ON")
             for table in tables:

@@ -11,6 +11,7 @@ https://docs.djangoproject.com/en/5.2/ref/settings/
 """
 
 import os
+import sys
 from pathlib import Path
 
 from django.core.management.utils import get_random_secret_key
@@ -258,8 +259,29 @@ NEWS_BSE_FILINGS_ENABLED = _env_bool("NEWS_BSE_FILINGS_ENABLED", True)
 NEWS_EVENT_CLUSTER_WINDOW = _env_int("NEWS_EVENT_CLUSTER_WINDOW", 3)
 NEWS_NOTIFICATION_COOLDOWN = _env_int("NEWS_NOTIFICATION_COOLDOWN", 86400)
 
-LOGS_DIR = BASE_DIR / 'logs'
-LOGS_DIR.mkdir(exist_ok=True)
+# Under `manage.py test` or pytest nothing may touch the real runtime files:
+# log handlers become no-ops and runtime data (security_master.xlsx,
+# scheduler_state.json, reports) goes to a throwaway temporary directory.
+RUNNING_TESTS = (
+    (len(sys.argv) > 1 and sys.argv[1] == "test")
+    or "pytest" in sys.modules
+    or bool(os.environ.get("PYTEST_CURRENT_TEST"))
+)
+
+# Runtime data directory (security_master.xlsx, scheduler_state.json,
+# reports/). Defaults to backend/data; override with PWMS_DATA_DIR.
+PWMS_DATA_DIR = os.environ.get("PWMS_DATA_DIR", "").strip() or None
+if RUNNING_TESTS:
+    import atexit
+    import shutil
+    import tempfile
+
+    PWMS_DATA_DIR = tempfile.mkdtemp(prefix="pwms-test-data-")
+    atexit.register(shutil.rmtree, PWMS_DATA_DIR, ignore_errors=True)
+
+LOGS_DIR = Path(os.environ.get('PWMS_LOGS_DIR', '').strip() or BASE_DIR / 'logs')
+if not RUNNING_TESTS:
+    LOGS_DIR.mkdir(exist_ok=True)
 
 # Logs are separated by application area so production troubleshooting does not
 # require searching through one large application log.  Each file rotates at
@@ -270,6 +292,9 @@ LOG_BACKUP_COUNT = get_pwms_config('logging', 'backup_count', 5)
 
 
 def _rotating_log_handler(filename, level='INFO'):
+    if RUNNING_TESTS:
+        # Tests must never write into the real logs/ files.
+        return {'class': 'logging.NullHandler', 'level': level}
     return {
         'class': 'logging.handlers.RotatingFileHandler',
         'filename': str(LOGS_DIR / filename),
@@ -303,12 +328,19 @@ LOGGING = {
         'filings_file': _rotating_log_handler('filings.log'),
         'authentication_file': _rotating_log_handler('authentication.log'),
         'imports_file': _rotating_log_handler('imports.log'),
+        'jobs_file': _rotating_log_handler('jobs.log'),
     },
     'root': {
         'handlers': ['console', 'application_file', 'errors_file'],
         'level': 'INFO',
     },
     'loggers': {
+        # One start line and one end line per background job run.
+        'config.scheduling': {
+            'handlers': ['console', 'jobs_file', 'errors_file'],
+            'level': 'INFO',
+            'propagate': False,
+        },
         # market_data owns scheduled/market price and NAV refresh logging.
         'market_data': {
             'handlers': ['console', 'price_updates_file', 'errors_file'],

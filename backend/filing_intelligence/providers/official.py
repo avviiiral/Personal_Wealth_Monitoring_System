@@ -1,6 +1,7 @@
 import csv
 import io
 import logging
+import dataclasses
 import os
 from datetime import datetime
 
@@ -259,12 +260,12 @@ class NSEFilingProvider:
                 continue
             # Preserve the actual NSE JSON fields and original announcement
             # evidence for downstream document parsing/identity review.
-            normalized.details = "\n".join(filter(None, [
+            # NormalizedFiling is frozen: build a copy with the extra evidence.
+            yield dataclasses.replace(normalized, details="\n".join(filter(None, [
                 details,
                 f"ISIN: {normalized_isin}" if normalized_isin else "",
                 f"Exchange symbol: {normalized_symbol}" if normalized_symbol else "",
-            ]))
-            yield normalized
+            ])))
 
 
 class BSEFilingProvider(ConfiguredExchangeFilingProvider):

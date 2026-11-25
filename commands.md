@@ -10,7 +10,7 @@ cd D:\PWMS\Personal_Wealth_Monitoring_System\backend
 python manage.py <command> --help
 ```
 
-The command inventory below covers the **41 PWMS-defined management commands**. Django and Django REST Framework also provide built-in commands; these are listed separately and are not counted as project-defined commands.
+The command inventory below covers the **46 PWMS-defined management commands**. Django and Django REST Framework also provide built-in commands; these are listed separately and are not counted as project-defined commands.
 
 ## Safety classifications
 
@@ -50,8 +50,7 @@ python manage.py import_mf_cap_classification --file .\data\AverageMarketCapital
 - `--force` bypasses freshness checks for per-scheme NAV, holdings and AUM data and forces benchmark/cap-list refresh work.
 - The command's category catalogue and category metrics are refreshed as part of the run even when individual fund-data steps are skipped.
 - A sync is protected by a process-local `SYNC_LOCK`; another MF Intelligence sync in the same process is rejected. The database scheduler lock serializes writes, including on SQLite.
-- The optional daily MF Intelligence scheduler is independent of `run_scheduled_refresh`. It is disabled unless `mf_intelligence.auto_sync_enabled` is enabled in `backend/config/pwms_config.json` or `PWMS_CONFIG_OVERRIDES`.
-- The daily scheduler uses the configured market timezone (default `Asia/Kolkata`), `auto_sync_time` (default `05:30`), `auto_sync_plans` and optional `auto_sync_categories`.
+- The nightly `mf_intelligence` background job runs this sync at `mf_intelligence.auto_sync_time` (default `01:00`, Asia/Kolkata) when `auto_sync_enabled` is true (now the default), with `auto_sync_plans` and optional `auto_sync_categories`. At startup it syncs only if no complete sync finished after the latest 01:00 slot. It never starts while a sync started from the UI is running. Run it by hand with `python manage.py run_scheduled_job mf_intelligence`.
 
 See [MF Intelligence implementation notes](./docs/MF_INTELLIGENCE.md).
 
@@ -59,7 +58,8 @@ See [MF Intelligence implementation notes](./docs/MF_INTELLIGENCE.md).
 
 | Command | What it does | Options / behavior |
 | --- | --- | --- |
-| `update_market_prices` | Refreshes prices for the market-price asset scope (STOCK, ETF and bond/SGB assets, plus eligible legacy Direct Equity records). It can refresh the Security Master workbook when held STOCK/ETF ISINs are missing from its mapping, then resolves symbols and saves price history. | Optional `--user-id ID` limits assets to one owner. Uses the PostgreSQL advisory lock `pwms_refresh_pipeline`. |
+| `update_market_prices` | Refreshes prices for the market-price asset scope (STOCK, ETF and bond/SGB assets, plus eligible legacy Direct Equity records). Mutual funds are excluded, including funds an older import stored as BOND/STOCK. It can refresh the Security Master workbook when held STOCK/ETF ISINs are missing from its mapping, then resolves symbols and saves price history. | Optional `--user-id ID` limits assets to one owner. Uses the PostgreSQL advisory lock `pwms_refresh_pipeline`. |
+| `refetch_recent_prices` | **One-off repair.** Re-downloads the last N days of Yahoo prices for every stock/ETF in the price loop and overwrites those rows, replacing intraday values stored before the freshness fix with official closes. SGBs and bonds are not touched. | `--days N` (default 30); `--dry-run` lists assets only. Uses `pwms_refresh_pipeline`. Review a dry run first. |
 | `diagnose_security_resolver` | Read-only diagnostic of how eligible assets resolve to Yahoo symbols through the SecurityResolver and Security Master. Does not write Asset/MarketPrice/workbook data and makes no Yahoo/NSE network calls. | Repeatable `--asset-id ID`; repeatable `--isin ISIN`; `--user-id ID`; `--only-issues`; `--format table\|json`. Explicit IDs/ISINs bypass the default diagnostic scope. |
 | `refresh_security_metrics` | Refreshes stock/ETF P/E, P/B, PEG, sector and market-cap metrics from Yahoo Finance using the market-data service. | No command-line options. |
 | `refresh_security_master` | Fetches Yahoo Finance sector, P/E, P/B, PEG and ROE for resolvable SecurityMaster rows. It is **dry-run by default**; `--apply` saves changes. | `--apply`; `--limit N`. The command overwrites these live-tracked fields on successful apply; it does not update AMC, credit rating, YTM, duration, average maturity or cap type. |
@@ -180,9 +180,22 @@ The corporate-action `--report-json` option is intentionally restricted to dry-r
 
 ## 7. Scheduled refresh orchestration
 
+### `run_scheduled_job`
+
+Runs one background job on demand (the same code the in-process scheduler runs) and records the result in `backend/data/scheduler_state.json`.
+
+```powershell
+python manage.py run_scheduled_job --list                    # every job, schedule, last success / status
+python manage.py run_scheduled_job mf_nav                    # run now, even if current
+python manage.py run_scheduled_job security_master --check   # report current/due and why; run nothing
+python manage.py run_scheduled_job market_prices --if-due    # run only if not current
+```
+
+Job names: `market_prices`, `mf_nav`, `sip`, `mf_intelligence`, `watchlist`, `security_master`, `security_metrics`, `mf_underlying`, `corporate_actions`. Schedule and rules: [BACKGROUND_JOBS.md](./docs/operations/BACKGROUND_JOBS.md).
+
 ### `run_scheduled_refresh`
 
-Runs the project's daily operational refresh pipeline. It is guarded by the PostgreSQL advisory lock `pwms_refresh_pipeline` and continues to later steps when an individual step fails, reporting failures at the end.
+Runs the project's end-to-end operational refresh pipeline for a manual run. It is no longer started automatically (the background jobs above replace the old daily refresh thread). It is guarded by the PostgreSQL advisory lock `pwms_refresh_pipeline` and continues to later steps when an individual step fails, reporting failures at the end.
 
 The current sequence includes:
 
@@ -201,11 +214,19 @@ Option: repeat `--skip COMMAND_NAME` to omit an individual named step. For examp
 python manage.py run_scheduled_refresh --skip monitor_portfolio_news --skip monitor_corporate_actions
 ```
 
-The current implementation does **not** invoke `sync_mf_intelligence`. MF Intelligence has its own optional daily scheduler controlled by the `mf_intelligence` configuration section. Do not assume that running `run_scheduled_refresh` refreshes the MF Intelligence tables.
+The current implementation does **not** invoke `sync_mf_intelligence`; use `run_scheduled_job mf_intelligence` for that.
 
-### Other background schedulers
+### Background jobs
 
-Several app schedulers start with the Django application process, subject to `config.scheduler_guard` and each scheduler's own conditions. The MF Intelligence scheduler is disabled by default and starts only when `mf_intelligence.auto_sync_enabled` is true. The Watch List and corporate-action automation have their own runserver-specific startup behavior. Review [README background jobs](./README.md#background-jobs-and-management-commands) and [Windows scheduler instructions](./scripts/windows/README.md) before configuring an additional external schedule.
+All background data jobs run in one framework started by the Django process (`config/scheduling/`), subject to `config.scheduler_guard`: `runserver` (worker process), `waitress` and `uvicorn` start them; `runserver --noreload` does not unless `PWMS_START_SCHEDULERS=true`. See [BACKGROUND_JOBS.md](./docs/operations/BACKGROUND_JOBS.md) and [Windows scheduler instructions](./scripts/windows/README.md) before configuring an additional external schedule.
+
+### Read-only reports added with the background jobs
+
+| Command | What it does |
+| --- | --- |
+| `report_fund_categories` | Lists mutual funds stored as BOND/STOCK/CASH that migration `investments.0111` would change to MUTUAL_FUND, and the ones it would leave alone (possible ETFs, duplicate ISINs). `--csv` also writes `data/reports/fund_category_repair.csv`. After 0111 has run, `--already-applied` lists the assets it most likely changed (inferred from the old importer rule and the asset creation date; 0111 kept no record); with `--csv` it writes `data/reports/fund_category_repair_applied.csv`. Changes nothing. |
+| `check_schema_drift` | Compares the database with this branch's models: extra columns (flags NOT NULL columns without a default that break inserts), missing columns, applied migrations not on this branch, unused tables. `--app <label>` limits it. Writes `data/reports/schema_drift.csv`. Read-only unless `--apply-safe-defaults` (PostgreSQL), which only sets column defaults (`''`, `false`, `0`); see [BACKGROUND_JOBS.md](./docs/operations/BACKGROUND_JOBS.md#database-columns-left-by-another-branch). |
+| `audit_corporate_action_matching` | Fetches NSE corporate actions for held stocks (like the scan) and reports how many match holdings now, why the rest do not, and how many would match with `corporate_actions.nse_identity_matching=true`. Writes `data/reports/corporate_action_matching.csv`; changes no database row. Needs access to nseindia.com. |
 
 ## 8. Database reset commands — destructive
 

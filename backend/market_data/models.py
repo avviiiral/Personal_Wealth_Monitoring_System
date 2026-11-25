@@ -92,6 +92,13 @@ class MarketPrice(models.Model):
         auto_now_add=True,
     )
 
+    # When the provider value in this row was last downloaded. Internal
+    # bookkeeping for the price freshness checks; never serialized.
+    fetched_at = models.DateTimeField(
+        null=True,
+        blank=True,
+    )
+
     class Meta:
         ordering = ["-date"]
 

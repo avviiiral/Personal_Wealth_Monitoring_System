@@ -37,12 +37,22 @@ def parse_nse_date(value):
 
 
 def normalize_nse_action(row, requested_symbol):
+    from corporate_actions.identity import nse_identity_matching_enabled
+
+    provider_isin = str(row.get("isin") or "").strip().upper()
     symbol = str(row.get("symbol") or requested_symbol).strip().upper()
     purpose = str(row.get("subject") or row.get("purpose") or "").strip()
     return {
         "exchange": "NSE",
         "symbol": symbol,
         "company_name": str(row.get("comp") or row.get("companyName") or "").strip(),
+        # NSE returns the event's ISIN. The scan uses ``isin`` for exact-ISIN
+        # reconciliation; it is filled only when
+        # corporate_actions.nse_identity_matching is enabled (until then the
+        # previous behaviour, where it was always empty, is kept).
+        # ``provider_isin`` always holds it for the read-only audit.
+        "provider_isin": provider_isin,
+        "isin": provider_isin if nse_identity_matching_enabled() else "",
         "series": str(row.get("series") or "").strip(),
         "purpose": purpose,
         "face_value": row.get("faceVal"),

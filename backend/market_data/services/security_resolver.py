@@ -93,229 +93,247 @@ class SecurityResolver:
     def normalize_security_name(name):
         """Normalize conservative legal-name variants for exact name lookup.
 
-        This intentionally removes only a leading legal/article prefix and
-        standardizes LTD/LIMITED. It does not use substring or fuzzy matching;
-        collisions are quarantined by the Security Master loader.
+        Equivalences: ``&`` = ``AND``, ``LTD`` = ``LIMITED``, ``(I)`` = ``INDIA``;
+        punctuation, spacing and case are ignored, and a leading ``THE`` and a
+        trailing ``LIMITED`` are optional. This is normalization, not fuzzy
+        matching: collisions are quarantined by the Security Master loader.
         """
-        tokens = re.findall(r"[A-Z0-9]+", str(name or "").upper())
+        text = str(name or "").upper().replace("&", " AND ")
+        text = re.sub(r"\(\s*I\s*\)", " INDIA ", text)
+        tokens = re.findall(r"[A-Z0-9]+", text)
         if tokens and tokens[0] == "THE":
             tokens = tokens[1:]
         tokens = ["LIMITED" if token == "LTD" else token for token in tokens]
-        # Treat a terminal Ltd/Limited as an optional legal suffix. Keep all
-        # other tokens exact; this is normalization, not fuzzy matching.
         if tokens and tokens[-1] == "LIMITED":
             tokens.pop()
         return " ".join(tokens)
 
+    # ------------------------------------------------------------------
+    # Workbook loading: once per process, again only when the file's
+    # modification time changes. Every read and write of the workbook holds
+    # WORKBOOK_LOCK (see security_master_generator).
+    # ------------------------------------------------------------------
+
+    _loaded_path = None
+    _loaded_mtime = None
+    _load_conflicts = []
+    _pending_writes = {}
+    _pending_retry_at = 0.0
+    _write_warned = False
+    _read_warned = False
+    _unresolved = {}
+    _nse_cache = None
+    _nse_cache_expires = 0.0
+    # Names already warned about as ambiguous; each is warned once per process
+    # (the full list is in reports/security_master_report.csv).
+    _ambiguous_name_warned = set()
+
     @classmethod
     def _security_master_path(cls):
+        """Locate security_master.xlsx (backend/data by default).
+
+        ``settings.PWMS_DATA_DIR`` replaces backend/data when set. The
+        repository-root ``data/`` folder is still accepted as a legacy
+        location when no data directory is configured.
         """
-        Locate security_master.xlsx.
+        from config.scheduling.files import data_dir
 
-        Preferred location:
-            backend/data/security_master.xlsx
-
-        settings.BASE_DIR points to the backend directory in the
-        current Django project.
-        """
-
-        base_dir = Path(settings.BASE_DIR)
-
-        candidates = [
-            base_dir / "data" / cls.SECURITY_MASTER_FILENAME,
-            base_dir.parent / "data" / cls.SECURITY_MASTER_FILENAME,
-        ]
-
+        candidates = [data_dir() / cls.SECURITY_MASTER_FILENAME]
+        if not getattr(settings, "PWMS_DATA_DIR", None):
+            candidates.append(Path(settings.BASE_DIR).parent / "data" / cls.SECURITY_MASTER_FILENAME)
         for path in candidates:
             if path.exists():
                 return path
-
         return None
 
     @classmethod
-    def _load_security_master(cls, *, generate_if_missing=True):
-        """
-        Load Security Master Excel once per process.
+    def _empty_maps(cls):
+        cls._security_master_isin = {}
+        cls._security_master_name = {}
+        cls._security_master_name_to_isin = {}
+        cls._security_master_isin_to_name = {}
+        cls._security_master_ambiguous_isin = set()
+        cls._security_master_ambiguous_name = set()
+        cls._security_master_ambiguous_name_to_isin = set()
+        cls._security_master_ambiguous_isin_to_name = set()
 
-        If the workbook does not exist yet, it is generated
-        automatically from transactions.xlsx before loading.
+    @classmethod
+    def reset_cache(cls):
+        """Forget everything loaded or pending (tests and diagnostics)."""
+        cls._empty_maps()
+        cls._security_master_loaded = False
+        cls._loaded_path = None
+        cls._loaded_mtime = None
+        cls._load_conflicts = []
+        cls._pending_writes = {}
+        cls._pending_retry_at = 0.0
+        cls._write_warned = False
+        cls._read_warned = False
+        cls._ambiguous_name_warned = set()
+        cls._unresolved = {}
+        cls._nse_cache = None
+        cls._nse_cache_expires = 0.0
 
-        The workbook remains optional: if generation or loading
-        fails, the resolver continues using its existing hard-coded
-        mappings.
-
-        Read-only callers (diagnostics) pass generate_if_missing=False:
-        a missing workbook is then treated exactly like a failed
-        generation, and nothing is written to disk.
-        """
-
-        if cls._security_master_loaded:
-            return
-
-        cls._security_master_loaded = True
-
-        path = cls._security_master_path()
-
-        if path is None and generate_if_missing:
-            path = cls._generate_security_master()
-
-        if path is None:
-            return
-
+    @staticmethod
+    def _mtime(path):
         try:
-            import openpyxl
+            return path.stat().st_mtime_ns if path is not None else None
+        except OSError:
+            return None
 
-            workbook = openpyxl.load_workbook(
-                path,
-                read_only=True,
-                data_only=True,
-            )
+    @classmethod
+    def _read_workbook(cls, path):
+        """Return [(isin, yahoo_symbol, security_name), ...] from the workbook."""
+        import openpyxl
 
-            worksheet = workbook.active
+        from market_data.services.security_master_generator import WORKBOOK_LOCK
 
-            if worksheet is None:
+        with WORKBOOK_LOCK:
+            workbook = openpyxl.load_workbook(path, read_only=True, data_only=True)
+            try:
+                worksheet = (
+                    workbook["Security Master"] if "Security Master" in workbook.sheetnames else workbook.active
+                )
+                if worksheet is None:
+                    return []
+                rows = worksheet.iter_rows(values_only=True)
+                headers = next(rows, ())
+                indexes = {str(header).strip().upper(): index for index, header in enumerate(headers) if header is not None}
+                isin_index = indexes.get("ISIN")
+                yahoo_index = indexes.get("YAHOO SYMBOL")
+                name_index = indexes.get("SECURITY NAME")
+                if isin_index is None:
+                    return []
+
+                def cell(row, index):
+                    return row[index] if index is not None and index < len(row) else None
+
+                return [
+                    (cell(row, isin_index), cell(row, yahoo_index), cell(row, name_index))
+                    for row in rows if row
+                ]
+            finally:
                 workbook.close()
-                return
 
-            headers = next(
-                worksheet.iter_rows(
-                    min_row=1,
-                    max_row=1,
-                    values_only=True,
-                ),
-                (),
+    _MAP_NAMES = (
+        "_security_master_isin", "_security_master_name", "_security_master_name_to_isin",
+        "_security_master_isin_to_name",
+    )
+    _SET_NAMES = (
+        "_security_master_ambiguous_isin", "_security_master_ambiguous_name",
+        "_security_master_ambiguous_name_to_isin", "_security_master_ambiguous_isin_to_name",
+    )
+
+    @classmethod
+    def _index_rows(cls, rows):
+        """Build the lookup maps aside, then swap them in.
+
+        Another thread (the price worker, a nightly job) may be reading the
+        maps during a reload; it sees either the old or the new mappings,
+        never a half-built set.
+        """
+        fresh = {name: {} for name in cls._MAP_NAMES}
+        fresh.update({name: set() for name in cls._SET_NAMES})
+        cls._load_conflicts = []
+        for isin_value, yahoo_value, name_value in rows:
+            cls._index_mapping(isin_value, yahoo_value, name_value, target=fresh)
+        for name, value in fresh.items():
+            setattr(cls, name, value)
+
+    @classmethod
+    def _index_mapping(cls, isin_value, yahoo_value, name_value, *, target=None):
+        maps = target if target is not None else {
+            name: getattr(cls, name) for name in cls._MAP_NAMES + cls._SET_NAMES
+        }
+        cleaned_isin = cls.clean_isin(isin_value)
+        cleaned_yahoo = cls.clean_symbol(yahoo_value)
+        normalized_name = cls.normalize_security_name(cls.clean_name(name_value))
+        if cleaned_isin and cleaned_yahoo:
+            cls._record_master_mapping(
+                mapping=maps["_security_master_isin"], ambiguous=maps["_security_master_ambiguous_isin"],
+                key=cleaned_isin, value=cleaned_yahoo, identifier_type="ISIN",
+            )
+        if normalized_name and cleaned_isin:
+            cls._record_master_mapping(
+                mapping=maps["_security_master_name_to_isin"],
+                ambiguous=maps["_security_master_ambiguous_name_to_isin"],
+                key=normalized_name, value=cleaned_isin, identifier_type="security name to ISIN",
+            )
+            cls._record_master_mapping(
+                mapping=maps["_security_master_isin_to_name"],
+                ambiguous=maps["_security_master_ambiguous_isin_to_name"],
+                key=cleaned_isin, value=str(name_value).strip(), identifier_type="ISIN to canonical security name",
+            )
+        if normalized_name and cleaned_yahoo:
+            cls._record_master_mapping(
+                mapping=maps["_security_master_name"], ambiguous=maps["_security_master_ambiguous_name"],
+                key=normalized_name, value=cleaned_yahoo, identifier_type="security name",
             )
 
-            normalized_headers = {}
+    @classmethod
+    def _load_security_master(cls, *, generate_if_missing=False, write_report=True):
+        """Load the workbook once; reload only if its modification time changed.
 
-            for index, header in enumerate(headers):
-                if header is None:
-                    continue
+        A missing workbook is no longer generated here (that blocked price
+        lookups on NSE/Yahoo downloads): the nightly ``security_master`` job
+        builds it, and resolve-and-save adds rows as symbols are resolved.
+        ``generate_if_missing=True`` keeps the old behaviour for explicit
+        callers.
+        """
+        path = cls._security_master_path()
+        if path is None and generate_if_missing and not cls._security_master_loaded:
+            path = cls._generate_security_master()
+        mtime = cls._mtime(path)
+        if cls._security_master_loaded and path == cls._loaded_path and mtime == cls._loaded_mtime:
+            return
+        first_load = not cls._security_master_loaded
+        cls._security_master_loaded = True
+        cls._loaded_path = path
+        cls._loaded_mtime = mtime
+        if path is None:
+            cls._empty_maps()
+            cls._apply_pending_to_memory()
+            return
+        try:
+            rows = cls._read_workbook(path)
+        except Exception as exc:  # noqa: BLE001 - never break price resolution
+            # Keep the previous mappings (if any); a file open in Excel or
+            # mid-save is retried when its modification time changes again.
+            if first_load:
+                cls._empty_maps()
+            if not cls._read_warned:
+                logger.warning("Could not read %s (%s); keeping the mappings already loaded.", path, exc)
+                cls._read_warned = True
+            cls._apply_pending_to_memory()
+            return
+        cls._read_warned = False
+        cls._index_rows(rows)
+        cls._apply_pending_to_memory()
+        cls._log_load_summary(path, write_report=write_report)
 
-                normalized_headers[
-                    str(header).strip().upper()
-                ] = index
-
-            isin_index = normalized_headers.get("ISIN")
-            yahoo_index = normalized_headers.get("YAHOO SYMBOL")
-            name_index = normalized_headers.get("SECURITY NAME")
-
-            if isin_index is None:
-                workbook.close()
-                return
-
-            cls._security_master_isin = {}
-            cls._security_master_name = {}
-            cls._security_master_name_to_isin = {}
-            cls._security_master_isin_to_name = {}
-            cls._security_master_ambiguous_isin = set()
-            cls._security_master_ambiguous_name = set()
-            cls._security_master_ambiguous_name_to_isin = set()
-            cls._security_master_ambiguous_isin_to_name = set()
-
-            for row in worksheet.iter_rows(
-                min_row=2,
-                values_only=True,
-            ):
-                if not row:
-                    continue
-
-                isin_value = (
-                    row[isin_index]
-                    if isin_index < len(row)
-                    else None
-                )
-
-                yahoo_value = (
-                    row[yahoo_index]
-                    if yahoo_index is not None
-                    and yahoo_index < len(row)
-                    else None
-                )
-
-                name_value = (
-                    row[name_index]
-                    if name_index is not None
-                    and name_index < len(row)
-                    else None
-                )
-
-                cleaned_isin = cls.clean_isin(isin_value)
-                cleaned_yahoo = cls.clean_symbol(yahoo_value)
-                cleaned_name = cls.clean_name(name_value)
-                normalized_name = cls.normalize_security_name(cleaned_name)
-
-                if (
-                    cleaned_isin
-                    and cleaned_yahoo
-                ):
-                    cls._record_master_mapping(
-                        mapping=cls._security_master_isin,
-                        ambiguous=cls._security_master_ambiguous_isin,
-                        key=cleaned_isin,
-                        value=cleaned_yahoo,
-                        identifier_type="ISIN",
-                    )
-
-                if normalized_name and cleaned_isin:
-                    cls._record_master_mapping(
-                        mapping=cls._security_master_name_to_isin,
-                        ambiguous=cls._security_master_ambiguous_name_to_isin,
-                        key=normalized_name,
-                        value=cleaned_isin,
-                        identifier_type="security name to ISIN",
-                    )
-
-                if normalized_name and cleaned_isin:
-                    cls._record_master_mapping(
-                        mapping=cls._security_master_isin_to_name,
-                        ambiguous=cls._security_master_ambiguous_isin_to_name,
-                        key=cleaned_isin,
-                        value=str(name_value).strip(),
-                        identifier_type="ISIN to canonical security name",
-                    )
-
-                if (
-                    normalized_name
-                    and cleaned_yahoo
-                ):
-                    cls._record_master_mapping(
-                        mapping=cls._security_master_name,
-                        ambiguous=cls._security_master_ambiguous_name,
-                        key=normalized_name,
-                        value=cleaned_yahoo,
-                        identifier_type="security name",
-                    )
-
-            workbook.close()
-
-            logger.info(
-                "Loaded %s ISIN mappings and %s name mappings "
-                "from %s",
-                len(cls._security_master_isin),
-                len(cls._security_master_name),
-                path,
+    @classmethod
+    def _log_load_summary(cls, path, *, write_report=True):
+        sample_size = int(cls.CONFIG.get("conflict_log_sample_size", 10))
+        conflicts = cls._load_conflicts
+        message = (
+            f"Security Master loaded from {path}: {len(cls._security_master_isin)} ISIN and "
+            f"{len(cls._security_master_name)} name mappings"
+        )
+        if conflicts:
+            keys = []
+            for _, key in conflicts:
+                if key not in keys:
+                    keys.append(key)
+            isin_keys = {key for kind, key in conflicts if kind == "ISIN"}
+            sample = ", ".join(keys[:sample_size])
+            message += (
+                f"; conflicting rows quarantined for {len(isin_keys)} ISIN(s) and "
+                f"{len(keys) - len(isin_keys)} name(s) (first {min(sample_size, len(keys))}: {sample}); "
+                "full list in reports/security_master_report.csv"
             )
-
-        except Exception as exc:
-            # Security Master must not break the existing price
-            # resolution system if the Excel file is unavailable,
-            # malformed, or openpyxl is not installed.
-            logger.warning(
-                "Failed to load %s: %s. Falling back to built-in "
-                "mappings.",
-                path,
-                exc,
-            )
-
-            cls._security_master_isin = {}
-            cls._security_master_name = {}
-            cls._security_master_name_to_isin = {}
-            cls._security_master_isin_to_name = {}
-            cls._security_master_ambiguous_isin = set()
-            cls._security_master_ambiguous_name = set()
-            cls._security_master_ambiguous_name_to_isin = set()
-            cls._security_master_ambiguous_isin_to_name = set()
+        logger.info(message)
+        if write_report:
+            cls._write_report()
 
     @classmethod
     def _record_master_mapping(cls, *, mapping, ambiguous, key, value, identifier_type):
@@ -328,20 +346,55 @@ class SecurityResolver:
         elif existing != value:
             mapping.pop(key, None)
             ambiguous.add(key)
-            logger.error(
-                "Conflicting Security Master %s mapping for %s; mappings quarantined.",
-                identifier_type, key,
+            conflicts = cls.__dict__.get("_load_conflicts")
+            if conflicts is None:
+                cls._load_conflicts = conflicts = []
+            conflicts.append((identifier_type, key))
+            logger.debug(
+                "Conflicting Security Master %s mapping for %s (%s vs %s); mappings quarantined.",
+                identifier_type, key, existing, value,
             )
+
+    @classmethod
+    def _write_report(cls):
+        """Write data/reports/security_master_report.csv (conflicts + needs ISIN)."""
+        import csv
+        import io
+
+        from config.scheduling.files import atomic_write_text, reports_dir
+
+        buffer = io.StringIO()
+        writer = csv.DictWriter(buffer, fieldnames=["type", "identifier", "key", "name", "isin", "reason"])
+        writer.writeheader()
+        seen = set()
+        for identifier_type, key in cls._load_conflicts:
+            if (identifier_type, key) in seen:
+                continue
+            seen.add((identifier_type, key))
+            writer.writerow({
+                "type": "conflict", "identifier": identifier_type.split(" ")[0] if identifier_type == "ISIN" else identifier_type,
+                "key": key, "name": "", "isin": "", "reason": "rows disagree; mapping ignored until the workbook is fixed",
+            })
+        for name, item in sorted(cls._unresolved.items()):
+            writer.writerow({
+                "type": item["type"], "identifier": "", "key": "", "name": name, "isin": item["isin"],
+                "reason": item["reason"],
+            })
+        if not seen and not cls._unresolved:
+            return
+        try:
+            atomic_write_text(reports_dir() / "security_master_report.csv", buffer.getvalue())
+        except OSError as exc:
+            logger.debug("Could not write the Security Master report: %s", exc)
 
     @classmethod
     def _generate_security_master(cls):
         """
-        Auto-generate security_master.xlsx from transactions.xlsx
-        when it is missing on disk.
+        Generate security_master.xlsx from the database when it is missing.
 
-        Returns the generated file's path, or None if generation
-        was not possible (e.g. transactions.xlsx is also missing,
-        or a network call to NSE/Yahoo Finance failed).
+        Only used when a caller explicitly asks for it
+        (generate_if_missing=True); the nightly security_master job is the
+        normal way the workbook is built.
         """
 
         try:
@@ -349,54 +402,252 @@ class SecurityResolver:
                 SecurityMasterGenerator,
             )
 
-            logger.info(
-                "security_master.xlsx not found. Generating it "
-                "from transactions.xlsx..."
-            )
-
+            logger.info("security_master.xlsx not found. Generating it from the database...")
             result = SecurityMasterGenerator.generate()
-
             logger.info(
-                "Generated %s securities (resolved=%s, "
-                "unresolved=%s, non_yahoo=%s).",
-                result['total'],
-                result['resolved'],
-                result['unresolved'],
-                result['non_yahoo'],
+                "Generated %s securities (resolved=%s, unresolved=%s, non_yahoo=%s).",
+                result["total"], result["resolved"], result["unresolved"], result["non_yahoo"],
             )
-
             return cls._security_master_path()
 
         except Exception as exc:
-            logger.warning(
-                "Auto-generation failed: %s. Falling back to "
-                "built-in mappings.",
-                exc,
-            )
-
+            logger.warning("Auto-generation failed: %s. Falling back to built-in mappings.", exc)
             return None
 
     @classmethod
-    def reload_security_master(cls, *, generate_if_missing=True):
-        """
-        Force the Security Master to be loaded again.
+    def reload_security_master(cls, *, generate_if_missing=False, write_report=True):
+        """Force the Security Master to be loaded again.
 
-        Useful after security_master.xlsx has been edited while
-        the Django process is still running. See
-        _load_security_master() for generate_if_missing.
+        Read-only callers (diagnostics) pass write_report=False so nothing
+        is written to data/reports.
         """
-
         cls._security_master_loaded = False
-        cls._security_master_isin = {}
-        cls._security_master_name = {}
-        cls._security_master_name_to_isin = {}
-        cls._security_master_isin_to_name = {}
-        cls._security_master_ambiguous_isin = set()
-        cls._security_master_ambiguous_name = set()
-        cls._security_master_ambiguous_name_to_isin = set()
-        cls._security_master_ambiguous_isin_to_name = set()
+        cls._loaded_mtime = None
+        cls._empty_maps()
+        cls._load_security_master(generate_if_missing=generate_if_missing, write_report=write_report)
 
-        cls._load_security_master(generate_if_missing=generate_if_missing)
+    @classmethod
+    def reload_if_changed(cls):
+        """Reload the workbook only if it changed on disk since the last load."""
+        cls._load_security_master()
+
+    # ------------------------------------------------------------------
+    # Excel-first lookup and resolve-and-save
+    # ------------------------------------------------------------------
+
+    @classmethod
+    def lookup_workbook(cls, *, isin=None, name=None):
+        """Yahoo symbol from the workbook: by ISIN, then by exact normalized name.
+
+        A name hit counts only when that workbook row has no ISIN or the
+        same ISIN as the asset. Returns None on a miss; raises ValueError if
+        the ISIN has conflicting rows.
+        """
+        cls._load_security_master()
+        cleaned_isin = cls.clean_isin(isin)
+        if cleaned_isin:
+            if cleaned_isin in cls._security_master_ambiguous_isin:
+                raise ValueError(f"Cannot resolve ISIN {cleaned_isin}: conflicting Security Master mappings.")
+            symbol = cls._security_master_isin.get(cleaned_isin)
+            if symbol:
+                return symbol
+        normalized_name = cls.normalize_security_name(cls.clean_name(name))
+        if normalized_name and normalized_name not in cls._security_master_ambiguous_name:
+            symbol = cls._security_master_name.get(normalized_name)
+            row_isin = cls._security_master_name_to_isin.get(normalized_name, "")
+            if symbol and (not cleaned_isin or not row_isin or row_isin == cleaned_isin):
+                return symbol
+        return None
+
+    @classmethod
+    def nse_equity_list(cls):
+        """ISIN -> {symbol, name} from NSE EQUITY_L.csv / ETF list, cached.
+
+        Successful downloads are cached for 24 hours, failures for 1 hour, so
+        a blocked NSE site costs one timeout per hour, not one per asset.
+        """
+        import time as _time
+
+        if cls._nse_cache is not None and _time.monotonic() < cls._nse_cache_expires:
+            return cls._nse_cache
+        from market_data.services.security_master_generator import SecurityMasterGenerator
+
+        try:
+            data = SecurityMasterGenerator._load_nse_master()
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("NSE equity list download failed: %s", exc)
+            data = {}
+        cls._nse_cache = data
+        cls._nse_cache_expires = _time.monotonic() + (86400 if data else 3600)
+        return data
+
+    @classmethod
+    def _search_yahoo(cls, name):
+        """Raw Yahoo Finance search quotes for ``name``."""
+        import yfinance as yf
+
+        return list(getattr(yf.Search(name, max_results=10), "quotes", []) or [])
+
+    @classmethod
+    def search_yahoo_exact_name(cls, name):
+        """Accept a Yahoo search result only when its normalized name equals ``name``."""
+        target = cls.normalize_security_name(name)
+        if not target:
+            return None
+        try:
+            quotes = cls._search_yahoo(name)
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("Yahoo search failed for %s: %s", name, exc)
+            return None
+        matches = []
+        for quote in quotes:
+            symbol = cls.clean_symbol(quote.get("symbol"))
+            if not symbol.endswith((cls.NSE_SUFFIX, cls.BSE_SUFFIX)):
+                continue
+            quote_names = {quote.get("longname"), quote.get("shortname"), quote.get("name")}
+            if any(cls.normalize_security_name(value) == target for value in quote_names if value):
+                matches.append(symbol)
+        # Prefer NSE over BSE; never pick between two different NSE symbols.
+        nse = sorted({symbol for symbol in matches if symbol.endswith(cls.NSE_SUFFIX)})
+        if len(nse) == 1:
+            return nse[0]
+        bse = sorted({symbol for symbol in matches if symbol.endswith(cls.BSE_SUFFIX)})
+        if not nse and len(bse) == 1:
+            return bse[0]
+        return None
+
+    @classmethod
+    def resolve_for_asset(cls, *, symbol=None, isin=None, name=None):
+        """Return ``(yahoo_symbol, from_workbook)``.
+
+        1. security_master.xlsx (ISIN, then exact normalized name) - a hit is
+           used as is and nothing is written.
+        2. Otherwise: hard-coded maps / explicit symbol, then the NSE symbol
+           for the ISIN (or exact company name) from EQUITY_L.csv, then a
+           Yahoo search accepted only on an exact normalized name match.
+        Raises ValueError when nothing resolves; the asset is then listed in
+        the report as "needs ISIN" (no ISIN) or "unresolved". Never guesses.
+        """
+        workbook_symbol = cls.lookup_workbook(isin=isin, name=name)
+        if workbook_symbol:
+            # Same consistency checks as before (explicit symbol vs ISIN).
+            return cls.resolve_yahoo_symbol(symbol=symbol, isin=isin, name=name), True
+
+        try:
+            return cls.resolve_yahoo_symbol(symbol=symbol, isin=isin, name=name), False
+        except ValueError as exc:
+            if "conflict" in str(exc).lower():
+                raise
+
+        cleaned_isin = cls.clean_isin(isin)
+        nse = cls.nse_equity_list()
+        if cleaned_isin and nse.get(cleaned_isin, {}).get("symbol"):
+            return f"{nse[cleaned_isin]['symbol']}{cls.NSE_SUFFIX}", False
+        if not cleaned_isin and name:
+            target = cls.normalize_security_name(name)
+            by_name = {
+                record.get("symbol") for record in nse.values()
+                if record.get("symbol") and cls.normalize_security_name(record.get("name")) == target
+            }
+            if len(by_name) == 1:
+                return f"{next(iter(by_name))}{cls.NSE_SUFFIX}", False
+
+        searched = cls.search_yahoo_exact_name(name)
+        if searched:
+            return searched, False
+
+        cls.record_unresolved(name=name, isin=cleaned_isin)
+        raise ValueError(
+            f"Unable to resolve a Yahoo Finance symbol for {name or symbol or cleaned_isin}"
+            + ("" if cleaned_isin else " (no ISIN; add it to the asset or the Security Master)")
+        )
+
+    @classmethod
+    def record_unresolved(cls, *, name, isin):
+        key = str(name or isin or "").strip()
+        if not key or key in cls._unresolved:
+            return
+        cls._unresolved[key] = {
+            "type": "unresolved" if isin else "needs_isin",
+            "isin": isin or "",
+            "reason": "no exact ISIN/name match in the Security Master, NSE list or Yahoo search",
+        }
+        cls._write_report()
+
+    @classmethod
+    def remember(cls, *, isin, name, symbol):
+        """Save a newly resolved mapping: memory now, workbook now or later.
+
+        The in-memory cache is updated directly (no reload). If the workbook
+        is locked (open in Excel), the write is queued and retried; one
+        warning is logged, not one per asset.
+        """
+        cleaned_symbol = cls.clean_symbol(symbol)
+        if not cleaned_symbol:
+            return False
+        cls._load_security_master()
+        key = cls.clean_isin(isin) or f"NAME:{cls.normalize_security_name(name)}"
+        cls._pending_writes[key] = (cls.clean_isin(isin), str(name or "").strip(), cleaned_symbol)
+        cls._apply_pending_to_memory()
+        cls._unresolved.pop(str(name or "").strip(), None)
+        return cls.flush_pending_writes(force=True) > 0
+
+    @classmethod
+    def _apply_pending_to_memory(cls):
+        for isin, name, symbol in list(cls._pending_writes.values()):
+            normalized = cls.normalize_security_name(name)
+            if isin and isin not in cls._security_master_ambiguous_isin:
+                cls._security_master_isin.setdefault(isin, symbol)
+                if normalized:
+                    cls._security_master_isin_to_name.setdefault(isin, name)
+                    cls._security_master_name_to_isin.setdefault(normalized, isin)
+            if normalized and normalized not in cls._security_master_ambiguous_name:
+                cls._security_master_name.setdefault(normalized, symbol)
+
+    @classmethod
+    def pending_write_count(cls):
+        return len(cls._pending_writes)
+
+    @classmethod
+    def flush_pending_writes(cls, *, force=False):
+        """Write queued mappings to the workbook. Returns how many were written."""
+        import time as _time
+
+        from market_data.services.security_master_generator import SecurityMasterGenerator
+
+        if not cls._pending_writes:
+            return 0
+        if not force and _time.monotonic() < cls._pending_retry_at:
+            return 0
+        written = 0
+        for key, (isin, name, symbol) in list(cls._pending_writes.items()):
+            try:
+                SecurityMasterGenerator.persist_resolved_symbol(isin=isin, security_name=name, yahoo_symbol=symbol)
+            except OSError as exc:
+                cls._pending_retry_at = _time.monotonic() + int(cls.CONFIG.get("queued_write_retry_seconds", 300))
+                if not cls._write_warned:
+                    logger.warning(
+                        "security_master.xlsx is locked (%s); %s new mapping(s) kept in memory and queued. "
+                        "They are written automatically once the file is closed.",
+                        exc, len(cls._pending_writes),
+                    )
+                    cls._write_warned = True
+                break
+            except ValueError as exc:
+                # The workbook already holds a different mapping: the
+                # workbook wins; drop the queued value.
+                logger.warning("Not saving %s for %s: %s", symbol, name or isin, exc)
+                cls._pending_writes.pop(key, None)
+                continue
+            cls._pending_writes.pop(key, None)
+            written += 1
+        if not cls._pending_writes:
+            cls._write_warned = False
+        # Our own write changed the file: record its new mtime so it is not
+        # re-read.
+        cls._loaded_path = cls._security_master_path()
+        cls._loaded_mtime = cls._mtime(cls._loaded_path)
+        return written
 
     @classmethod
     def known_isins(cls):
@@ -511,7 +762,15 @@ class SecurityResolver:
         cls._load_security_master()
 
         if normalized_name in cls._security_master_ambiguous_name:
-            logger.warning("Ignoring ambiguous Security Master name mapping for %s.", cleaned_name)
+            if normalized_name in cls._ambiguous_name_warned:
+                logger.debug("Ignoring ambiguous Security Master name mapping for %s.", cleaned_name)
+            else:
+                cls._ambiguous_name_warned.add(normalized_name)
+                logger.warning(
+                    "Ignoring ambiguous Security Master name mapping for %s (several rows, different symbols); "
+                    "set the asset's ISIN or fix the rows in security_master.xlsx. Not repeated this run.",
+                    cleaned_name,
+                )
             return None
 
         yahoo_from_master = cls._security_master_name.get(

@@ -5,7 +5,12 @@ from django.utils import timezone
 
 from investments.models import Asset, Holding, Transaction
 from market_data.models import MarketPrice, DataSource
-from market_data.services.market_price_scope import is_legacy_direct_equity_asset
+from config.scheduling import clock
+from market_data.services.market_price_scope import (
+    is_legacy_direct_equity_asset,
+    is_mutual_fund_asset,
+)
+from market_data.services.price_freshness import PriceFreshness
 from market_data.services.security_resolver import (
     SecurityResolver,
 )
@@ -20,6 +25,7 @@ from market_data.services.mutual_fund_history_backfill import (
 )
 from market_data.services.bond_price_service import (
     BondPriceService,
+    BondProviderUnavailable,
 )
 from portfolio.services.holding_engine import (
     HoldingCalculationEngine,
@@ -29,7 +35,6 @@ from market_data.services.sgb_price_service import (
     SGBPriceService,
 )
 
-from mutual_funds.services.amfi_asset_resolver import AMFIAssetResolver
 from mutual_funds.models import (
     AMFIMasterNAV,
     AMFIMasterScheme,
@@ -39,6 +44,11 @@ from mutual_funds.models import (
 from mutual_funds.services.amfi import AMFIService
 
 logger = logging.getLogger(__name__)
+
+
+def price_now():
+    """Current scheduler-local time (patched in tests)."""
+    return clock.now()
 
 
 class MarketDataManager:
@@ -116,10 +126,14 @@ class MarketDataManager:
         """
         Resolve Yahoo Finance symbol for an asset.
 
-        This is used only for STOCK and ETF assets.
+        This is used only for STOCK and ETF assets. security_master.xlsx is
+        consulted first; a hit is used as is and nothing is written. A
+        symbol resolved any other way is saved to the workbook only after
+        the first successful price download for it (see
+        _remember_resolved_symbol), which is what validates it.
         """
 
-        yahoo_symbol = SecurityResolver.resolve_yahoo_symbol(
+        yahoo_symbol, from_workbook = SecurityResolver.resolve_for_asset(
             symbol=asset.symbol,
             isin=asset.isin,
             name=asset.name,
@@ -132,24 +146,10 @@ class MarketDataManager:
         cleaned_symbol = SecurityResolver.clean_symbol(yahoo_symbol)
         existing_symbol = SecurityResolver.clean_symbol(asset.symbol)
 
-        # Persist the resolved ISIN -> Yahoo symbol mapping for subsequent
-        # refreshes. A workbook failure must not interrupt price retrieval.
-        if cleaned_symbol and asset.isin:
-            try:
-                from market_data.services.security_master_generator import (
-                    SecurityMasterGenerator,
-                )
-                SecurityMasterGenerator.persist_resolved_symbol(
-                    isin=asset.isin,
-                    security_name=asset.name,
-                    yahoo_symbol=cleaned_symbol,
-                )
-            except Exception:
-                logger.exception(
-                    "Unable to persist Yahoo symbol %s for %s (ISIN %s) "
-                    "to Security Master.",
-                    cleaned_symbol, asset.name, asset.isin,
-                )
+        asset._security_master_pending = (
+            None if from_workbook or not cleaned_symbol
+            else (asset.isin, asset.name, cleaned_symbol)
+        )
         if cleaned_symbol and not existing_symbol:
             Asset.objects.filter(
                 pk=asset.pk,
@@ -164,6 +164,20 @@ class MarketDataManager:
             asset.symbol = cleaned_symbol
 
         return cleaned_symbol
+
+    @staticmethod
+    def _remember_resolved_symbol(asset):
+        """Save a newly resolved symbol to security_master.xlsx after it returned prices."""
+        pending = getattr(asset, "_security_master_pending", None)
+        if not pending:
+            return
+        asset._security_master_pending = None
+        isin, name, symbol = pending
+        try:
+            SecurityResolver.remember(isin=isin, name=name, symbol=symbol)
+        except Exception:
+            # A workbook problem must not interrupt price retrieval.
+            logger.exception("Unable to save Yahoo symbol %s for %s to the Security Master.", symbol, name)
 
     @staticmethod
     def get_earliest_transaction_date(asset):
@@ -201,6 +215,13 @@ class MarketDataManager:
             Holding.objects
             .filter(asset=asset)
             .first()
+        )
+
+    @staticmethod
+    def _mark_checked(asset, source, price_date):
+        """Record that the provider confirmed the stored row is still the latest."""
+        MarketPrice.objects.filter(asset=asset, source=source, date=price_date).update(
+            fetched_at=timezone.now()
         )
 
     @classmethod
@@ -491,6 +512,7 @@ class MarketDataManager:
                 "close_price": nav,
                 "adjusted_close": nav,
                 "volume": None,
+                "fetched_at": timezone.now(),
             },
         )
 
@@ -557,6 +579,16 @@ class MarketDataManager:
                 )
             )
 
+        except BondProviderUnavailable as exc:
+
+            return {
+                "success": False,
+                "skipped": True,
+                "source": "NSE_CBRICS",
+                "provider_unavailable": True,
+                "reason": str(exc),
+            }
+
         except Exception as exc:
 
             return {
@@ -580,6 +612,8 @@ class MarketDataManager:
             )
 
             if latest_date is not None:
+
+                cls._mark_checked(asset, DataSource.OTHER, latest_date)
 
                 holding = (
                     cls._holding_for_current_data(
@@ -646,6 +680,8 @@ class MarketDataManager:
             and trade_date <= latest_date
         ):
 
+            cls._mark_checked(asset, DataSource.OTHER, latest_date)
+
             holding = (
                 cls._holding_for_current_data(
                     asset
@@ -697,6 +733,7 @@ class MarketDataManager:
                 "close_price": price,
                 "adjusted_close": price,
                 "volume": None,
+                "fetched_at": timezone.now(),
             },
         )
 
@@ -804,6 +841,7 @@ class MarketDataManager:
                 "close_price": price,
                 "adjusted_close": price,
                 "volume": None,
+                "fetched_at": timezone.now(),
             },
         )
 
@@ -880,14 +918,23 @@ class MarketDataManager:
         # Do not route every AMFI-listed ISIN through NAV: listed ETFs can
         # also appear in the AMFI feed, but their portfolio valuation must
         # come from exchange market prices.
-        is_mutual_fund = (
-            asset.category == "MUTUAL_FUND"
-            or Transaction.objects.filter(
-                asset=asset,
-                sub_class__icontains="mutual fund",
-            ).exists()
-        )
-        if is_mutual_fund and AMFIAssetResolver.is_amfi_backed(asset):
+        # A fund is identified by category, by a "Mutual Fund" sub-class on
+        # any of its transactions, or by an INF ISIN that is not an ETF (see
+        # market_price_scope). Funds are priced from AMFI by ISIN and are
+        # never sent to the Yahoo or NSE CBRICS (bond) providers, even when
+        # an older import labelled them BOND or STOCK.
+        if is_mutual_fund_asset(asset):
+            if not asset.isin:
+                return {
+                    "success": False,
+                    "skipped": True,
+                    "source": "AMFI",
+                    "reason": (
+                        "Mutual fund has no ISIN; AMFI NAVs are matched by "
+                        "ISIN, so it is not priced automatically. Add the "
+                        "ISIN to the asset to enable NAV updates."
+                    ),
+                }
             return cls._fetch_amfi_nav(asset)
 
         # ======================================================
@@ -1028,12 +1075,14 @@ class MarketDataManager:
         # LATEST STORED MARKET DATE
         # ======================================================
 
-        latest_date = (
-            cls.get_latest_market_date(
-                asset,
-                source=DataSource.YAHOO_FINANCE,
-            )
+        latest_row = (
+            MarketPrice.objects
+            .filter(asset=asset, source=DataSource.YAHOO_FINANCE)
+            .order_by("-date", "-id")
+            .values_list("date", "fetched_at")
+            .first()
         )
+        latest_date, latest_fetched_at = latest_row if latest_row else (None, None)
 
         earliest_transaction_date = cls.get_earliest_transaction_date(asset)
         earliest_yahoo_date = (
@@ -1093,6 +1142,7 @@ class MarketDataManager:
                     )
 
                 fetch_type = "initial"
+                cls._remember_resolved_symbol(asset)
 
             # ==================================================
             # INCREMENTAL FETCH
@@ -1131,16 +1181,18 @@ class MarketDataManager:
                             exc,
                         )
 
-                start_date = (
-                    latest_date
-                    + timedelta(days=1)
+                # Re-fetch from the latest stored day INCLUSIVE: during
+                # market hours that keeps today's row moving, and after the
+                # close it replaces an intraday value with the final close.
+                # See PriceFreshness for when the fetch is skipped.
+                now = price_now()
+                needs_fetch, freshness_reason = PriceFreshness().needs_fetch(
+                    latest_date, latest_fetched_at, now,
                 )
+                start_date = latest_date
+                today = now.date()
 
-                today = (
-                    timezone.localdate()
-                )
-
-                if start_date > today:
+                if not needs_fetch:
 
                     holding = (
                         cls._holding_for_current_data(
@@ -1153,7 +1205,7 @@ class MarketDataManager:
                         "skipped": True,
                         "reason": (
                             "Market data is already "
-                            "up to date."
+                            f"up to date ({freshness_reason})."
                         ),
                         "symbol": yahoo_symbol,
                         "records": 0,
@@ -1192,6 +1244,7 @@ class MarketDataManager:
                 )
 
                 fetch_type = "incremental"
+                cls._remember_resolved_symbol(asset)
 
             # ==================================================
             # REBUILD HOLDING

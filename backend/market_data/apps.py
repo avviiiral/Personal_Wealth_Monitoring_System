@@ -13,45 +13,18 @@ class MarketDataConfig(AppConfig):
 
         # See config/scheduler_guard.py for exactly why this isn't
         # just an "if RUN_MAIN" check - that alone would mean these
-        # schedulers never start under a production WSGI/ASGI
-        # server (waitress/uvicorn/daphne), which don't set
-        # RUN_MAIN at all since they have no autoreloader.
+        # jobs never start under a production WSGI/ASGI server
+        # (waitress/uvicorn/daphne), which don't set RUN_MAIN at all
+        # since they have no autoreloader.
 
         if not should_start_background_schedulers():
             return
 
-        from market_data.services.market_price_scheduler import (
-            MarketPriceScheduler,
-        )
+        # One framework runs every background data job (prices, NAVs, SIPs,
+        # MF Intelligence, Watch List, Security Master, security metrics,
+        # MF underlying, corporate actions). Jobs from other apps are
+        # registered in config/scheduling/registry.py. The portfolio news
+        # loop keeps its own thread (portfolio_news/apps.py).
+        from config.scheduling.framework import start_background_jobs
 
-        MarketPriceScheduler.start()
-
-        from market_data.services.daily_refresh_scheduler import (
-            DailyRefreshScheduler,
-        )
-
-        DailyRefreshScheduler.start()
-
-        from market_data.services.investment_amfi_scheduler import (
-            InvestmentAMFIScheduler,
-        )
-
-        InvestmentAMFIScheduler.start()
-
-        from market_data.services.security_metrics_scheduler import (
-            SecurityMetricsScheduler,
-        )
-
-        SecurityMetricsScheduler.start()
-
-        from market_data.services.security_master_scheduler import (
-            SecurityMasterScheduler,
-        )
-
-        SecurityMasterScheduler.start()
-
-        from market_data.services.mis_reference_price_scheduler import (
-            MISReferencePriceScheduler,
-        )
-
-        MISReferencePriceScheduler.start()
+        start_background_jobs()

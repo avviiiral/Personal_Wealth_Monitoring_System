@@ -6,6 +6,7 @@ import yfinance as yf
 from curl_cffi import requests
 
 from django.db import transaction
+from django.utils import timezone
 
 from market_data.models import MarketPrice, DataSource
 from config.pwms_config import get as get_pwms_config
@@ -147,6 +148,7 @@ class YahooFinanceService:
 
         records = []
         missing_close_dates = []
+        fetched_at = timezone.now()
 
         for index, row in data.iterrows():
             market_date = pd.Timestamp(str(index)).date()
@@ -190,6 +192,7 @@ class YahooFinanceService:
                         row.get("Adj Close")
                     ),
                     volume=volume,
+                    fetched_at=fetched_at,
                 )
             )
 
@@ -222,6 +225,7 @@ class YahooFinanceService:
                 "close_price",
                 "adjusted_close",
                 "volume",
+                "fetched_at",
             ],
             unique_fields=[
                 "asset",

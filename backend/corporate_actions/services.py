@@ -137,7 +137,8 @@ def _existing_corporate_action_transaction(
     return None
 
 
-def _create_reconciliation(action, user, status_value, transaction_ids=None, suggested_quantity=None, notes=""):
+def _create_reconciliation(action, user, status_value, transaction_ids=None, suggested_quantity=None, notes="",
+                           identity_match_method=""):
     family_id = _user_family_id(user)
     reconciliation, _ = CorporateActionReconciliation.objects.get_or_create(
         action=action,
@@ -149,8 +150,12 @@ def _create_reconciliation(action, user, status_value, transaction_ids=None, sug
             "suggested_quantity": suggested_quantity,
             "notes": notes,
             "idempotency_key": _idempotency_key(action.id, user.id),
+            "identity_match_method": identity_match_method,
         },
     )
+    if identity_match_method and not reconciliation.identity_match_method:
+        reconciliation.identity_match_method = identity_match_method
+        reconciliation.save(update_fields=["identity_match_method", "updated_at"])
     if status_value in {
         CorporateActionReconciliationStatus.PENDING,
         CorporateActionReconciliationStatus.PENDING_USER_APPROVAL,
@@ -177,7 +182,9 @@ def discover_symbol_name_candidates(*, action, user):
     else:
         assets = assets.filter(owner=user)
     if action.symbol:
-        symbol_matches = list(assets.filter(symbol__iexact=action.symbol.strip()).order_by("name", "id"))
+        from corporate_actions.identity import symbol_q
+
+        symbol_matches = list(assets.filter(symbol_q(action.symbol)).order_by("name", "id"))
         if symbol_matches:
             return symbol_matches, "SYMBOL"
     if action.security_name:
@@ -224,7 +231,9 @@ def discover_exposures_and_reconcile(action):
         candidate_query = Asset.objects.filter(is_active=True, category="STOCK")
         identity_query = Q()
         if action.symbol:
-            identity_query |= Q(symbol__iexact=action.symbol.strip())
+            from corporate_actions.identity import symbol_q
+
+            identity_query |= symbol_q(action.symbol)
         if action.security_name:
             identity_query |= Q(name__iexact=action.security_name.strip())
         candidate_query = candidate_query.filter(identity_query)
@@ -275,6 +284,9 @@ def discover_exposures_and_reconcile(action):
         return {"direct": direct_count, "mutual_fund": 0, "pms": 0, "notifications": notification_count}
 
     direct_count = mf_count = pms_count = notification_count = 0
+    # Set by the NSE scan when nse_identity_matching is on (SOURCE_ISIN,
+    # SYMBOL_SECURITY_MASTER, SYMBOL_EQUITY_L); empty otherwise.
+    isin_match_method = str((action.metadata or {}).get("identity_match_method") or "")[:24]
     for asset in _direct_exposures(action).iterator():
         if asset.family_id:
             member_ids = FamilyMembership.objects.filter(
@@ -346,6 +358,7 @@ def discover_exposures_and_reconcile(action):
                 _create_reconciliation(
                     action, user, CorporateActionReconciliationStatus.ALREADY_RECORDED,
                     [item.id for item in existing[:50]],
+                    identity_match_method=isin_match_method,
                 )
             else:
                 # Only create an actionable record where dated acquisition history exists.
@@ -358,6 +371,7 @@ def discover_exposures_and_reconcile(action):
                         action, user, CorporateActionReconciliationStatus.PENDING,
                         suggested_quantity=eligible_quantity,
                         notes="Positive direct holding calculated immediately before the ex-date. Verify the official entitlement before confirming the event.",
+                        identity_match_method=isin_match_method,
                     )
                     notification_count += 1
                 else:
@@ -365,6 +379,7 @@ def discover_exposures_and_reconcile(action):
                         action, user, CorporateActionReconciliationStatus.MANUAL_REVIEW,
                         suggested_quantity=eligible_quantity,
                         notes="No positive eligible direct holding was established immediately before the ex-date. No automatic position adjustment will be applied for this investor.",
+                        identity_match_method=isin_match_method,
                     )
             direct_count += 1
 

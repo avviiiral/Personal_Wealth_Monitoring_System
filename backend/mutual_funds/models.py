@@ -345,6 +345,8 @@ class AMFIMasterScheme(models.Model):
 
     scheme_code = models.CharField(max_length=50, unique=True)
     scheme_name = models.CharField(max_length=300)
+    # Fund house, from the AMC heading line above the scheme in NAVAll.txt.
+    amc_name = models.CharField(max_length=300, blank=True, default="")
     isin_growth = models.CharField(max_length=30, blank=True, null=True)
     isin_dividend = models.CharField(max_length=30, blank=True, null=True)
     is_active = models.BooleanField(default=True)

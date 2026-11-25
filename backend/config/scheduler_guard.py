@@ -47,6 +47,12 @@ def should_start_background_schedulers():
 
     argv = sys.argv
 
+    # PWMS_START_SCHEDULERS=false turns every background job off in a serving
+    # process; =true is needed only for `runserver --noreload` (see below).
+    override = os.environ.get("PWMS_START_SCHEDULERS", "").strip().lower()
+    forced_off = override in ("0", "false", "no", "off")
+    forced_on = override in ("1", "true", "yes", "on")
+
     is_manage_py = bool(argv) and argv[0].endswith("manage.py")
 
     if is_manage_py:
@@ -59,6 +65,15 @@ def should_start_background_schedulers():
             # background scheduler for a one-off command.
             return False
 
+        if forced_off:
+            return False
+
+        # `runserver --noreload` has no autoreloader, so RUN_MAIN is never
+        # set and nothing starts by default. Set PWMS_START_SCHEDULERS=true
+        # to run the jobs in that single process.
+        if "--noreload" in argv:
+            return forced_on
+
         # manage.py runserver specifically - only the real worker
         # process (not the autoreloader's watcher process) should
         # start it.
@@ -67,4 +82,4 @@ def should_start_background_schedulers():
     # Not manage.py at all - a WSGI/ASGI server (waitress, uvicorn,
     # daphne, gunicorn) loading config.wsgi/config.asgi directly.
     # No autoreloader in play, so no double-start risk; start.
-    return True
+    return not forced_off

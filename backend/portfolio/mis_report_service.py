@@ -1299,12 +1299,21 @@ class MISReportService:
         return references
 
     @classmethod
-    def refresh_reference_prices(cls, lookback_days=7, custom_only=False):
-        """Refresh shared MIS reference history, including user-registered tickers."""
+    def refresh_reference_prices(cls, lookback_days=7, custom_only=False, exclude_symbols=None):
+        """Refresh shared MIS reference history, including user-registered tickers.
+
+        ``exclude_symbols`` (upper-case Yahoo symbols) skips a reference whose
+        every candidate is excluded; it is counted as ``deferred``, not failed.
+        The scheduled price job uses it to retry a reference that keeps
+        failing on a slower schedule. Failures are logged as one summary line.
+        """
         today = date.today()
         refreshed = 0
         failed = 0
+        deferred = 0
         records = 0
+        failures = []
+        excluded = {str(symbol).strip().upper() for symbol in (exclude_symbols or ())}
 
         static_symbols = set()
         for symbols in cls.REFERENCE_SYMBOLS.values():
@@ -1324,7 +1333,11 @@ class MISReportService:
                 references.append((name, (symbol,), True))
 
         for name, candidates, is_custom in references:
+            if excluded and all(str(symbol).strip().upper() in excluded for symbol in candidates):
+                deferred += 1
+                continue
             success = False
+            last_error = ""
             for symbol in candidates:
                 try:
                     asset = (
@@ -1394,22 +1407,39 @@ class MISReportService:
                     success = True
                     break
                 except Exception as exc:
-                    logger.warning(
+                    logger.debug(
                         "MIS reference history refresh failed for %s (%s): %s",
                         name,
                         symbol,
                         exc,
                     )
+                    last_error = f"{type(exc).__name__}: {exc}"
                     continue
 
             if not success:
                 failed += 1
+                failures.append({"name": name, "symbols": list(candidates), "error": last_error})
+
+        if failures:
+            shown = "; ".join(
+                f"{item['name']} ({'/'.join(item['symbols'])}): {item['error']}" for item in failures[:5]
+            )
+            extra = len(failures) - 5
+            logger.warning(
+                "MIS reference refresh: %s of %s reference(s) failed: %s%s",
+                len(failures),
+                len(references) - deferred,
+                shown,
+                f" (+{extra} more)" if extra > 0 else "",
+            )
 
         return {
             "references": len(references),
             "refreshed": refreshed,
             "failed": failed,
+            "deferred": deferred,
             "records": records,
+            "failures": failures,
         }
 
     @classmethod

@@ -37,7 +37,7 @@ class LegacyDirectEquityPriceRoutingTests(TestCase):
         self.addCleanup(workbook_dir.cleanup)
         base_dir = Path(workbook_dir.name) / "backend"
         (base_dir / "data").mkdir(parents=True)
-        isolated_settings = override_settings(BASE_DIR=base_dir)
+        isolated_settings = override_settings(BASE_DIR=base_dir, PWMS_DATA_DIR=str(base_dir / "data"))
         isolated_settings.enable()
         self.addCleanup(isolated_settings.disable)
 

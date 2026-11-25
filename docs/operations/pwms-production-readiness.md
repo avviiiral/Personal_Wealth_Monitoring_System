@@ -62,14 +62,14 @@ These tests are a baseline, not proof of parity across every dashboard/report. B
 
 ## 5. Scheduler ownership and duplicate-run prevention
 
-The market-price refresh uses a PostgreSQL advisory lock. The investment-linked AMFI refresh now uses its own PostgreSQL advisory lock around the entire refresh and per-user NAV sync, preventing overlapping refreshes across processes sharing the same PostgreSQL database. SQLite keeps the helper's existing no-op behavior for local development.
+All background data jobs run in one framework (see [BACKGROUND_JOBS.md](./BACKGROUND_JOBS.md)). On PostgreSQL every job takes its own advisory lock (`pwms_job_<name>`) and the price job also takes `pwms_refresh_pipeline` (shared with `update_market_prices` and `run_scheduled_refresh`), preventing overlapping runs across processes sharing the same database. SQLite keeps the helper's existing no-op behavior for local development, so run exactly one server process there. The old 30-minute investment-AMFI thread is replaced by the nightly `mf_nav` job.
 
 Still verify the production topology:
 
 - Record the exact Waitress/WSGI process count and number of application instances.
 - Confirm where scheduler startup is invoked and that only one intended job owner is expected, or that every multi-process job has a database-backed lock.
 - Confirm that PostgreSQL is the active production database before relying on advisory-lock coordination.
-- After restart, inspect the market-data logs for scheduler start/completion messages and AMFI summary fields (`requested_isins`, `matched_isins`, `nav_records`, `unmatched`, `history`).
+- After restart, inspect `backend/logs/jobs.log`: one `Background jobs started` line, then one `current, not run` or start/end line per job (`mf_nav` end lines include `amfi_requested`, `amfi_matched`, `amfi_unmatched`). `python manage.py run_scheduled_job --list` shows each job's last success.
 - Confirm failures are visible and that an interrupted refresh can be safely retried.
 
 Do not start an additional scheduler manually on the production host while the existing application process may already own one.

@@ -27,6 +27,7 @@ def refresh_security_metrics():
         refreshed = 0
         failed = 0
         skipped = 0
+        failures = []
 
         for asset in assets.iterator():
             try:
@@ -58,14 +59,24 @@ def refresh_security_metrics():
                     refreshed += 1
                 else:
                     skipped += 1
-            except Exception:
+            except Exception as exc:
                 failed += 1
-                logger.exception(
+                failures.append(f"{asset.name}: {exc}")
+                logger.debug(
                     "[SECURITY METRICS REFRESH] Failed for asset %s (%s)",
                     asset.id,
                     asset.name,
+                    exc_info=True,
                 )
 
+        if failures:
+            # One summary line instead of a traceback per asset.
+            logger.warning(
+                "[SECURITY METRICS REFRESH] %s asset(s) failed: %s%s",
+                len(failures),
+                "; ".join(failures[:5]),
+                f" (+{len(failures) - 5} more)" if len(failures) > 5 else "",
+            )
         logger.info(
             "[SECURITY METRICS REFRESH] completed: refreshed=%s skipped=%s failed=%s",
             refreshed,

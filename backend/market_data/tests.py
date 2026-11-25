@@ -4,55 +4,40 @@ from unittest.mock import patch
 from django.test import SimpleTestCase
 
 from market_data.management.commands.refresh_mis_reference_prices import Command
-from market_data.services.mis_reference_price_scheduler import (
-    MISReferencePriceScheduler,
-)
 
 
-class MISReferencePriceSchedulerTests(SimpleTestCase):
-    def setUp(self):
-        # Never start a real worker or contact external price providers in tests.
-        self.started_before = MISReferencePriceScheduler._started
-        MISReferencePriceScheduler._started = False
+class MISReferenceStepTests(SimpleTestCase):
+    """The MIS reference refresh moved into the 15-minute market_prices job
+    (it replaces the removed MISReferencePriceScheduler)."""
 
-    def tearDown(self):
-        MISReferencePriceScheduler._started = self.started_before
+    def _job(self):
+        from market_data.jobs import MarketPricesJob
 
-    @patch("market_data.services.mis_reference_price_scheduler.threading.Thread")
-    def test_start_launches_scheduler_thread_once(self, thread_cls):
-        thread = thread_cls.return_value
+        return MarketPricesJob(deadline_seconds=5, mis_reference=True)
 
-        MISReferencePriceScheduler.start()
-        MISReferencePriceScheduler.start()
+    def test_refreshes_when_reference_prices_are_stale(self):
+        from datetime import datetime
+        from zoneinfo import ZoneInfo
 
-        thread_cls.assert_called_once()
-        thread.start.assert_called_once()
-        self.assertEqual(
-            thread_cls.call_args.kwargs["name"],
-            "mis-reference-price-scheduler",
-        )
-        self.assertTrue(thread_cls.call_args.kwargs["daemon"])
-        
-    @patch("market_data.services.mis_reference_price_scheduler.time.sleep")
-    @patch("market_data.services.mis_reference_price_scheduler.close_old_connections")
-    @patch("market_data.services.mis_reference_price_scheduler.MISReportService.refresh_reference_prices")
-    def test_run_refreshes_prices_and_closes_connections(
-        self, refresh, close_connections, sleep
-    ):
-        # Execute one cycle and break the loop deterministically.
-        sleep.side_effect = [None, KeyboardInterrupt]
-        refresh.return_value = {
-            "references": 3,
-            "refreshed": 3,
-            "failed": 0,
-            "records": 90,
-        }
-
-        with self.assertRaises(KeyboardInterrupt):
-            MISReferencePriceScheduler._run()
-
+        job = self._job()
+        refresh_result = {"references": 3, "refreshed": 3, "failed": 0, "records": 90}
+        with patch.object(job, "_mis_references_stale", return_value=True), \
+                patch("portfolio.mis_report_service.MISReportService.refresh_reference_prices",
+                      return_value=refresh_result) as refresh:
+            counts = job._run_mis_references(datetime(2026, 11, 25, 11, 0, tzinfo=ZoneInfo("Asia/Kolkata")))
         refresh.assert_called_once_with()
-        self.assertGreaterEqual(close_connections.call_count, 2)
+        self.assertEqual(counts["mis_refreshed"], 3)
+
+    def test_skips_when_reference_prices_are_current(self):
+        from datetime import datetime
+        from zoneinfo import ZoneInfo
+
+        job = self._job()
+        with patch.object(job, "_mis_references_stale", return_value=False), \
+                patch("portfolio.mis_report_service.MISReportService.refresh_reference_prices") as refresh:
+            counts = job._run_mis_references(datetime(2026, 11, 25, 20, 0, tzinfo=ZoneInfo("Asia/Kolkata")))
+        refresh.assert_not_called()
+        self.assertEqual(counts, {"mis_current": 1})
 
 
 class RefreshMISReferencePricesCommandTests(SimpleTestCase):

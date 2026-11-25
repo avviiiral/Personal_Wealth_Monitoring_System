@@ -16,6 +16,11 @@ class PerformanceSnapshotSerializer(serializers.ModelSerializer):
 
 
 class WatchListProductSerializer(serializers.ModelSerializer):
+    # Same names and types as the model fields; a blank value is filled from
+    # MF Intelligence (exact AMFI code match). A Watch List value is never
+    # overridden.
+    provider = serializers.SerializerMethodField()
+    category = serializers.SerializerMethodField()
     status = serializers.SerializerMethodField()
     ownership = serializers.SerializerMethodField()
     performance = serializers.SerializerMethodField()
@@ -35,6 +40,20 @@ class WatchListProductSerializer(serializers.ModelSerializer):
             "official_website", "benchmark", "comparison_benchmark", "status", "ownership",
             "performance", "metrics", "metrics_as_of", "mutual_fund", "pms", "is_watchlisted",
         ]
+
+    def get_provider(self, obj):
+        if obj.provider:
+            return obj.provider
+        intelligence = self._mf_intelligence_scheme(obj)
+        return (intelligence.amc or None) if intelligence is not None else obj.provider
+
+    def get_category(self, obj):
+        if obj.category:
+            return obj.category
+        intelligence = self._mf_intelligence_scheme(obj)
+        if intelligence is not None and intelligence.category is not None:
+            return intelligence.category.name or obj.category
+        return obj.category
 
     def get_benchmark(self, obj):
         if obj.product_type == ProductType.MUTUAL_FUND and hasattr(obj, "mutual_fund"):

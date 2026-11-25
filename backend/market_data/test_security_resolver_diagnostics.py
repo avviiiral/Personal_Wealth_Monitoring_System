@@ -69,7 +69,7 @@ class SecurityResolverDiagnosticsTests(TestCase):
         self.base_dir = Path(self._tmp.name) / "backend"
         (self.base_dir / "data").mkdir(parents=True)
         self.workbook = self.base_dir / "data" / "security_master.xlsx"
-        settings_override = override_settings(BASE_DIR=self.base_dir)
+        settings_override = override_settings(BASE_DIR=self.base_dir, PWMS_DATA_DIR=str(self.base_dir / "data"))
         settings_override.enable()
         self.addCleanup(settings_override.disable)
 
@@ -284,16 +284,26 @@ class SecurityResolverDiagnosticsTests(TestCase):
 
 
 class SecurityMasterLoadGenerationFlagTests(TestCase):
-    """The new opt-out must not change default auto-generation behaviour."""
+    """A lookup never builds the workbook; the nightly security_master job does.
+
+    (Previously a missing workbook was generated inline on the first price
+    lookup, which blocked the price loop on NSE/Yahoo downloads.)
+    """
 
     def setUp(self):
         state = {name: getattr(SecurityResolver, name) for name in _RESOLVER_STATE}
         self.addCleanup(lambda: [setattr(SecurityResolver, k, v) for k, v in state.items()])
 
-    def test_default_load_still_generates_missing_workbook(self):
+    def test_default_load_does_not_generate_missing_workbook(self):
         with patch.object(SecurityResolver, "_security_master_path", return_value=None), \
                 patch.object(SecurityResolver, "_generate_security_master", return_value=None) as generate:
             SecurityResolver.reload_security_master()
+        generate.assert_not_called()
+
+    def test_explicit_opt_in_still_generates_missing_workbook(self):
+        with patch.object(SecurityResolver, "_security_master_path", return_value=None), \
+                patch.object(SecurityResolver, "_generate_security_master", return_value=None) as generate:
+            SecurityResolver.reload_security_master(generate_if_missing=True)
         generate.assert_called_once_with()
 
     def test_read_only_load_skips_generation(self):

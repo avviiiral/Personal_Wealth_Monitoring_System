@@ -2,7 +2,9 @@
   "market": {
     "timezone": "Asia/Kolkata",
     "open": "09:15",
-    "close": "15:30"
+    "close": "15:30",
+    "close_buffer_minutes": 15,
+    "holidays": []
   },
   "news": {
     "event_query_suffixes": [
@@ -299,7 +301,11 @@
       "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36",
       "accept": "application/json, text/javascript, */*; q=0.01",
       "origin": "https://bricsonline.nseindia.com",
-      "referer": "https://bricsonline.nseindia.com/bondsnew/rest/public?r=sebiannexure1"
+      "referer": "https://bricsonline.nseindia.com/bondsnew/rest/public?r=sebiannexure1",
+      "enabled": true,
+      "connect_timeout_seconds": 10,
+      "response_cache_minutes": 10,
+      "rejected_cooldown_hours": 24
     },
     "sgb": {
       "nse_home_url": "https://www.nseindia.com/",
@@ -319,7 +325,58 @@
   },
   "scheduler": {
     "news_interval_seconds": 180,
-    "startup_delay_seconds": 10
+    "startup_delay_seconds": 10,
+    "failure_retry_minutes": 60,
+    "max_attempts_per_slot": 3,
+    "jobs": {
+      "market_prices": {
+        "enabled": true,
+        "interval_minutes": 15,
+        "per_asset_deadline_seconds": 45,
+        "max_hung_provider_calls": 3,
+        "unresolved_retry_hours": 24,
+        "failures_before_backoff": 3,
+        "failed_retry_hours": 6,
+        "include_mis_reference_prices": true,
+        "excluded_sub_class_keywords": [
+          "AIF",
+          "ALTERNATIVE INVESTMENT",
+          "UNLISTED",
+          "PRIVATE EQUITY",
+          "PRE-IPO",
+          "PRE IPO"
+        ]
+      },
+      "mf_nav": {
+        "enabled": true,
+        "time": "00:00",
+        "publish_cutoff": "23:00"
+      },
+      "sip": {
+        "enabled": true
+      },
+      "watchlist": {
+        "enabled": true
+      },
+      "security_master": {
+        "enabled": true,
+        "time": "02:00",
+        "max_age_hours": 24,
+        "min_gap_hours": 12
+      },
+      "security_metrics": {
+        "enabled": true,
+        "time": "02:30",
+        "max_age_hours": 24,
+        "min_gap_hours": 12
+      },
+      "mf_underlying": {
+        "enabled": true,
+        "time": "03:00",
+        "max_age_hours": 24,
+        "min_gap_hours": 12
+      }
+    }
   },
   "web_push": {
     "ttl_seconds": 86400,
@@ -414,7 +471,9 @@
       "TATA MOTORS": "TATAMOTORS.NS"
     },
     "nse_suffix": ".NS",
-    "bse_suffix": ".BO"
+    "bse_suffix": ".BO",
+    "queued_write_retry_seconds": 300,
+    "conflict_log_sample_size": 10
   },
   "market_data": {
     "equity_market_cap": {
@@ -443,7 +502,7 @@
     "nse_request_delay_seconds": 0.25,
     "nse_history_days": 365,
     "daily_scheduler_enabled": true,
-    "daily_run_time": "06:00"
+    "daily_run_time": "03:30"
   },
   "mf_intelligence": {
     "base_url": "https://api.charliealpha.in/v1",
@@ -457,9 +516,11 @@
     "aum_refresh_days": 30,
     "stale_run_hours": 6,
     "amfi_cap_list_url_template": "https://portal.amfiindia.com/spages/AverageMarketCapitalization{day}{month}{year}.xlsx",
-    "auto_sync_enabled": false,
-    "auto_sync_time": "05:30",
-    "auto_sync_plans": ["Regular"],
+    "auto_sync_enabled": true,
+    "auto_sync_time": "01:00",
+    "auto_sync_plans": [
+      "Regular"
+    ],
     "auto_sync_categories": []
   }
 }

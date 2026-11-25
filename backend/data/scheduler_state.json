@@ -1,0 +1,155 @@
+{
+  "jobs": {
+    "corporate_actions": {
+      "last_attempt": "2026-11-25T16:42:34.571861+05:30",
+      "last_counts": {
+        "created": 0,
+        "exposures": 27,
+        "feed_scanned": 0,
+        "filings_scanned": 0,
+        "nse_fetch_errors": 0,
+        "nse_scanned": 119,
+        "nse_symbols": 97,
+        "scanned": 119,
+        "skipped": 6,
+        "updated": 28
+      },
+      "last_duration_seconds": 23.297,
+      "last_error": "",
+      "last_finished": "2026-11-25T16:42:57.868861+05:30",
+      "last_reason": "startup",
+      "last_status": "success",
+      "last_success": "2026-11-25T16:42:34.571861+05:30",
+      "slot": "2026-11-25T03:30:00+05:30",
+      "slot_attempts": 1
+    },
+    "market_prices": {
+      "last_attempt": "2026-11-25T17:48:09.228439+05:30",
+      "last_counts": {
+        "assets": 156,
+        "current": 142,
+        "failed": 4,
+        "failing_deferred": 0,
+        "fetched": 5,
+        "mis_deferred": 0,
+        "mis_failed": 1,
+        "mis_references": 12,
+        "mis_refreshed": 11,
+        "records": 0,
+        "skipped": 1,
+        "timed_out": 0,
+        "unresolved_deferred": 9,
+        "updated": 0
+      },
+      "last_duration_seconds": 6.063,
+      "last_error": "",
+      "last_finished": "2026-11-25T17:48:15.291439+05:30",
+      "last_reason": "interval",
+      "last_status": "success",
+      "last_success": "2026-11-25T17:48:09.228439+05:30",
+      "slot_attempts": 12
+    },
+    "mf_nav": {
+      "last_attempt": "2026-11-25T17:24:00.819816+05:30",
+      "last_counts": {
+        "amfi_matched": 5,
+        "amfi_requested": 5,
+        "amfi_unmatched": 0,
+        "failed": 0,
+        "funds": 5,
+        "no_isin": 0,
+        "skipped": 0,
+        "updated": 5,
+        "user_sync_failed": 0,
+        "users": 1
+      },
+      "last_duration_seconds": 14.188,
+      "last_error": "",
+      "last_finished": "2026-11-25T17:24:15.007816+05:30",
+      "last_reason": "startup",
+      "last_status": "success",
+      "last_success": "2026-11-25T17:24:00.819816+05:30",
+      "slot": "2026-11-25T00:00:00+05:30",
+      "slot_attempts": 1
+    },
+    "mf_underlying": {
+      "last_attempt": "2026-11-25T16:42:34.486407+05:30",
+      "last_counts": {
+        "result": "\u001b[32;1m{'schemes': 0, 'imported': 0, 'already_imported': 0, 'failed': 0, 'errors': []}\u001b[0m"
+      },
+      "last_duration_seconds": 0.078,
+      "last_error": "",
+      "last_finished": "2026-11-25T16:42:34.564407+05:30",
+      "last_reason": "startup",
+      "last_status": "success",
+      "last_success": "2026-11-25T16:42:34.486407+05:30",
+      "slot": "2026-11-25T03:00:00+05:30",
+      "slot_attempts": 1
+    },
+    "security_master": {
+      "last_attempt": "2026-11-25T17:09:21.531008+05:30",
+      "last_counts": {
+        "non_yahoo": 6,
+        "resolved": 121,
+        "total": 129,
+        "unresolved": 2
+      },
+      "last_duration_seconds": 59.984,
+      "last_error": "",
+      "last_finished": "2026-11-25T17:10:21.515008+05:30",
+      "last_reason": "retry",
+      "last_status": "success",
+      "last_success": "2026-11-25T17:09:21.531008+05:30",
+      "slot": "2026-11-25T02:00:00+05:30",
+      "slot_attempts": 2
+    },
+    "security_metrics": {
+      "last_attempt": "2026-11-25T16:41:35.364843+05:30",
+      "last_counts": {
+        "failed": 7,
+        "refreshed": 135,
+        "skipped": 4
+      },
+      "last_duration_seconds": 59.094,
+      "last_error": "",
+      "last_finished": "2026-11-25T16:42:34.458843+05:30",
+      "last_reason": "startup",
+      "last_status": "success",
+      "last_success": "2026-11-25T16:41:35.364843+05:30",
+      "slot": "2026-11-25T02:30:00+05:30",
+      "slot_attempts": 1
+    },
+    "sip": {
+      "last_attempt": "2026-11-25T17:24:15.255587+05:30",
+      "last_counts": {
+        "failed_users": 0,
+        "users": 1
+      },
+      "last_duration_seconds": 0.094,
+      "last_error": "",
+      "last_finished": "2026-11-25T17:24:15.349587+05:30",
+      "last_reason": "startup",
+      "last_status": "success",
+      "last_success": "2026-11-25T17:24:15.255587+05:30",
+      "slot": "2026-11-25T00:00:00+05:30",
+      "slot_attempts": 1
+    },
+    "watchlist": {
+      "last_attempt": "2026-11-25T16:09:21.837949+05:30",
+      "last_counts": {
+        "failed_steps": 0,
+        "performance_updated": 2573,
+        "universe_discovered": 14476
+      },
+      "last_duration_seconds": 1870.968,
+      "last_error": "",
+      "last_finished": "2026-11-25T16:40:32.805949+05:30",
+      "last_reason": "startup",
+      "last_status": "success",
+      "last_success": "2026-11-25T16:09:21.837949+05:30",
+      "slot": "2026-11-25T01:00:00+05:30",
+      "slot_attempts": 1
+    }
+  },
+  "version": 1
+}

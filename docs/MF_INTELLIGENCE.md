@@ -98,19 +98,24 @@ PWMS features where the matching identity and data granularity are suitable:
 The integration is read-through / fallback only: it does not rewrite family
 transactions, portfolio ownership, or user-entered holdings.
 
-The optional `MFIntelligenceScheduler` is separate from the `run_scheduled_refresh`
-pipeline and is off by default. When enabled, it runs once per day using the
-configured market timezone (default `Asia/Kolkata`). Configure it in
-`backend/config/pwms_config.json` (or `PWMS_CONFIG_OVERRIDES`):
+The nightly `mf_intelligence` background job (see
+[BACKGROUND_JOBS.md](./operations/BACKGROUND_JOBS.md)) runs the sync at 01:00
+(`Asia/Kolkata`) and is on by default. At startup it syncs only if no
+`success`/`partial` `MFSyncRun` covering the scheduled scope finished after
+the latest 01:00 slot, and it never starts while a sync started from the UI is
+running (it shares `SYNC_LOCK`). The Watch List refresh runs right after it.
+Configure it in `backend/config/pwms_config.json` (or `PWMS_CONFIG_OVERRIDES`):
 
 ```json
 "mf_intelligence": {
   "auto_sync_enabled": true,
-  "auto_sync_time": "05:30",
+  "auto_sync_time": "01:00",
   "auto_sync_plans": ["Regular"],
-  "auto_sync_categories": null
+  "auto_sync_categories": []
 }
 ```
+
+Run it by hand with `python manage.py run_scheduled_job mf_intelligence`.
 
 ## API surface
 

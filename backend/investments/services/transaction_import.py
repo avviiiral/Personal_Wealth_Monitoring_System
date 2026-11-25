@@ -665,6 +665,61 @@ class TransactionImporter:
             ._clean_string(asset_name)
         )
 
+    _CATEGORY_OVERRIDES = {
+        "MUTUAL_FUND": AssetCategory.MUTUAL_FUND,
+        "ETF": AssetCategory.ETF,
+        "GOLD": AssetCategory.GOLD,
+        "REAL ESTATE": AssetCategory.REAL_ESTATE,
+        "CRYPTO": AssetCategory.CRYPTO,
+    }
+
+    @staticmethod
+    def _is_mutual_fund_sub_class(sub_class_normalized):
+        return "MUTUAL FUND" in sub_class_normalized.replace("_", " ")
+
+    @staticmethod
+    def _internal_category(asset_class, sub_class):
+        """Technical AssetCategory used for market-data routing.
+
+        Explicit technical asset classes (Mutual_Fund, ETF, Gold, Real
+        Estate, Crypto) win first. A sub-class containing "Mutual Fund" then
+        wins over the broad Debt/Bond/Equity/Stock/Cash asset classes, so a
+        debt fund is never priced as a bond.
+        """
+        asset_class_normalized = TransactionImporter._normalize(asset_class)
+        sub_class_normalized = TransactionImporter._normalize(sub_class)
+        overrides = TransactionImporter._CATEGORY_OVERRIDES
+        if asset_class_normalized in overrides:
+            return overrides[asset_class_normalized]
+        if TransactionImporter._is_mutual_fund_sub_class(sub_class_normalized):
+            return AssetCategory.MUTUAL_FUND
+        return TransactionImporter._broad_category(asset_class_normalized)
+
+    @staticmethod
+    def _broad_category(asset_class_normalized):
+        if asset_class_normalized in {"DEBT", "BOND"}:
+            return AssetCategory.BOND
+        if asset_class_normalized == "CASH":
+            return AssetCategory.CASH
+        if asset_class_normalized in {"EQUITY", "STOCK"}:
+            return AssetCategory.STOCK
+        return AssetCategory.OTHER
+
+    @staticmethod
+    def _legacy_internal_category(asset_class, sub_class):
+        """Category the pre-fix importer assigned (asset class won first)."""
+        asset_class_normalized = TransactionImporter._normalize(asset_class)
+        sub_class_normalized = TransactionImporter._normalize(sub_class)
+        overrides = TransactionImporter._CATEGORY_OVERRIDES
+        if asset_class_normalized in overrides:
+            return overrides[asset_class_normalized]
+        broad = TransactionImporter._broad_category(asset_class_normalized)
+        if broad != AssetCategory.OTHER:
+            return broad
+        if sub_class_normalized in {"MUTUAL FUND", "MUTUAL_FUND"}:
+            return AssetCategory.MUTUAL_FUND
+        return AssetCategory.OTHER
+
     @staticmethod
     def _get_or_create_asset(
         owner,
@@ -680,29 +735,14 @@ class TransactionImporter:
         # Keep the user-provided Asset Class and Sub Class as data.
         # Internal market-data routing uses the technical AssetCategory,
         # which is intentionally independent from uploaded classifications.
-        category = AssetCategory.OTHER
-
-        asset_class_normalized = TransactionImporter._normalize(asset_class)
-        sub_class_normalized = TransactionImporter._normalize(sub_class)
-
-        internal_category_overrides = {
-            "MUTUAL_FUND": AssetCategory.MUTUAL_FUND,
-            "ETF": AssetCategory.ETF,
-            "GOLD": AssetCategory.GOLD,
-            "REAL ESTATE": AssetCategory.REAL_ESTATE,
-            "CRYPTO": AssetCategory.CRYPTO,
-        }
-
-        if asset_class_normalized in internal_category_overrides:
-            category = internal_category_overrides[asset_class_normalized]
-        elif asset_class_normalized in {"DEBT", "BOND"}:
-            category = AssetCategory.BOND
-        elif asset_class_normalized == "CASH":
-            category = AssetCategory.CASH
-        elif asset_class_normalized in {"EQUITY", "STOCK"}:
-            category = AssetCategory.STOCK
-        elif sub_class_normalized in {"MUTUAL FUND", "MUTUAL_FUND"}:
-            category = AssetCategory.MUTUAL_FUND
+        category = TransactionImporter._internal_category(asset_class, sub_class)
+        # Older imports put "Debt/Equity + Mutual Fund" rows in BOND/STOCK.
+        # Match those legacy assets too, so a re-import corrects the category
+        # of the existing asset instead of creating a duplicate.
+        lookup_categories = {category}
+        legacy_category = TransactionImporter._legacy_internal_category(asset_class, sub_class)
+        if legacy_category != category:
+            lookup_categories.add(legacy_category)
 
         asset = None
 
@@ -712,7 +752,7 @@ class TransactionImporter:
                 .filter(
                     family=family,
                     isin=normalized_isin,
-                    category=category,
+                    category__in=lookup_categories,
                 )
                 .first()
             )
@@ -722,7 +762,7 @@ class TransactionImporter:
                 Asset.objects.filter(
                     family=family,
                     name=asset_name,
-                    category=category,
+                    category__in=lookup_categories,
                 ).order_by("id")
             )
             if normalized_isin:

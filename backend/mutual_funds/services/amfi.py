@@ -975,10 +975,18 @@ class AMFIService:
             else None
         )
         historical_positions = None
+        current_amc = ""
 
         for raw_line in text.splitlines():
             line = raw_line.strip().replace("\ufeff", "")
-            if not line or ";" not in line:
+            if not line:
+                continue
+            if ";" not in line:
+                # NAVAll.txt groups schemes under heading lines: a category
+                # ("Open Ended Schemes(Debt Scheme - ...)") then the fund
+                # house ("Bandhan Mutual Fund"). Keep the latest AMC heading.
+                if not AMFIService._is_category_heading(line):
+                    current_amc = line[:300]
                 continue
 
             parts = [part.strip() for part in line.split(";")]
@@ -1022,9 +1030,18 @@ class AMFIService:
                 else AMFIService._parse_latest_record(parts)
             )
             if record:
+                record["amc_name"] = current_amc
                 records.append(record)
 
         return records
+
+    @staticmethod
+    def _is_category_heading(line):
+        lowered = line.lower()
+        return (
+            "schemes(" in lowered.replace(" (", "(")
+            or lowered.startswith(("open ended", "close ended", "closed ended", "interval fund"))
+        )
 
     # Each batch commits as its own short transaction rather than
     # one giant transaction spanning the entire import (which can
@@ -1334,6 +1351,8 @@ class AMFIService:
                     existing["isin_growth"] = record["isin_growth"]
                 if record.get("isin_dividend"):
                     existing["isin_dividend"] = record["isin_dividend"]
+                if record.get("amc_name"):
+                    existing["amc_name"] = record["amc_name"]
                 existing["scheme_name"] = record["scheme_name"]
 
             if record["date"] is not None:
@@ -1342,30 +1361,32 @@ class AMFIService:
         scheme_records = list(schemes_by_code.values())
         nav_records = list(nav_records_by_key.values())
 
-        schemes = [
-            AMFIMasterScheme(
-                scheme_code=record["scheme_code"],
-                scheme_name=record["scheme_name"],
-                isin_growth=record["isin_growth"],
-                isin_dividend=record["isin_dividend"],
-                is_active=True,
+        # amc_name is always sent (never NULL); it is only overwritten when
+        # this download carried an AMC heading, so an API/historical record
+        # without one never erases a stored name.
+        base_update_fields = ["scheme_name", "isin_growth", "isin_dividend", "is_active", "updated_at"]
+        for with_amc in (True, False):
+            schemes = [
+                AMFIMasterScheme(
+                    scheme_code=record["scheme_code"],
+                    scheme_name=record["scheme_name"],
+                    amc_name=record.get("amc_name") or "",
+                    isin_growth=record["isin_growth"],
+                    isin_dividend=record["isin_dividend"],
+                    is_active=True,
+                )
+                for record in scheme_records
+                if bool(record.get("amc_name")) == with_amc
+            ]
+            if not schemes:
+                continue
+            AMFIMasterScheme.objects.bulk_create(
+                schemes,
+                batch_size=AMFIService.MASTER_SCHEME_BATCH_SIZE,
+                update_conflicts=True,
+                unique_fields=["scheme_code"],
+                update_fields=base_update_fields + (["amc_name"] if with_amc else []),
             )
-            for record in scheme_records
-        ]
-
-        AMFIMasterScheme.objects.bulk_create(
-            schemes,
-            batch_size=AMFIService.MASTER_SCHEME_BATCH_SIZE,
-            update_conflicts=True,
-            unique_fields=["scheme_code"],
-            update_fields=[
-                "scheme_name",
-                "isin_growth",
-                "isin_dividend",
-                "is_active",
-                "updated_at",
-            ],
-        )
 
         scheme_ids = dict(
             AMFIMasterScheme.objects

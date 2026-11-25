@@ -436,21 +436,36 @@ If Yahoo Finance or AMFI has no quote for an asset, use **Settings → Manual Pr
 | Login at `http://localhost:4200/login` | Lands on the Dashboard                                         |
 | **Settings → Account**                 | Role shows **System Owner**                                    |
 | After import: **Portfolio** tree       | Your holdings, with quantity, invested value and current value |
-| `backend/logs/pwms.log`                | Scheduler start-up lines and price refreshes                   |
+| `backend/logs/jobs.log`                | One `Background jobs started` line, then one line per job      |
 
 ---
 
 ## 8 · Background jobs
 
-**Nothing to configure.** Four jobs start automatically inside the Django process when you run `runserver` (or the WSGI / ASGI commands in [section 11](#11--production-style-deployment)). None of them needs Task Scheduler, cron or a `.bat` file, and they stop the moment the server stops.
+**Nothing to configure.** The background jobs start automatically inside the Django process when you run `runserver` (or the WSGI / ASGI commands in [section 11](#11--production-style-deployment)). None of them needs Task Scheduler, cron or a `.bat` file, and they stop the moment the server stops.
 
-| Job                                                                  | Cadence                                    | Needs Gemini key? |
-| -------------------------------------------------------------------- | ------------------------------------------ | :---------------: |
-| Market price refresh (Yahoo Finance + AMFI)                          | every 15 minutes while Django runs       |        No         |
-| Daily refresh (AMFI NAV, security-master ratios, SIP sync / execute) | once per calendar day of uptime            |        No         |
-| Post-import refresh                                                  | right after an import commits              |        No         |
-| MIS historical prefetch                                               | after imports and during daily refresh     |        No         |
-| Portfolio News monitor                                               | every 30 minutes (`NEWS_MONITOR_INTERVAL`) |      **Yes**      |
+At startup every job first checks whether its data is already current; if it is, it does nothing. A nightly slot missed because the PC was off is caught up at the next startup, and restarting never re-runs a job that is current. Times are Asia/Kolkata.
+
+| Job | At startup | Then | Needs Gemini key? |
+| --- | --- | --- | :---: |
+| Stock / ETF / SGB / listed-bond prices + MIS reference tickers | Fetches only assets that aren't current | Every 15 minutes | No |
+| Mutual fund NAVs (owned funds, AMFI) | Skipped if the latest published NAV is stored | Nightly 00:00 | No |
+| SIP installment sync + execution | After the NAV job | Right after the 00:00 NAV job | No |
+| MF Intelligence (CharlieAlpha) | Synced if not current | Nightly 01:00 | No |
+| Watch List refresh | If not current | Right after MF Intelligence | No |
+| Security Master workbook refresh | If last success > 24 h old | Nightly 02:00 | No |
+| Security metrics (P/E, P/B, ROE...) | If last success > 24 h old | Nightly 02:30 | No |
+| MF underlying holdings | If last success > 24 h old | Nightly 03:00 | No |
+| Corporate actions scan (NSE) | If today's scan hasn't run | Nightly 03:30 | No |
+| Post-import refresh | — | Right after an import commits | No |
+| Portfolio News monitor + exchange filings | — | Every 180 seconds (`NEWS_MONITOR_INTERVAL`) | **Yes** |
+
+During NSE market hours (09:15–15:30 plus 15 minutes) today's price is re-fetched on every 15-minute cycle; after the close each price is fetched once more to store the official close, then left alone until the next session. Mutual funds are priced only by the NAV job.
+
+> [!IMPORTANT]
+> **`runserver --noreload` starts no background jobs** (there is no autoreloader, so the guard never sees `RUN_MAIN=true`). Use plain `runserver`, `waitress` or `uvicorn` (section 11.2), or set `PWMS_START_SCHEDULERS=true` for `--noreload`. `PWMS_START_SCHEDULERS=false` turns every background job off.
+
+Each job writes one start line and one end line (duration and counts) to `backend/logs/jobs.log`, and its last success to `backend/data/scheduler_state.json`. Schedule, rules and every config key: [BACKGROUND_JOBS.md](docs/operations/BACKGROUND_JOBS.md).
 
 **Watch them work** — the log file is created automatically:
 
@@ -467,8 +482,11 @@ tail -f logs/pwms.log
 **Run a job once, right now:**
 
 ```bash
-python manage.py update_market_prices        # prices and NAVs
-python manage.py monitor_portfolio_news      # one full news pass
+python manage.py run_scheduled_job --list           # every job, last success, last status
+python manage.py run_scheduled_job market_prices    # stock/ETF/SGB/bond prices now
+python manage.py run_scheduled_job mf_nav           # mutual-fund NAVs now
+python manage.py run_scheduled_job security_master --check   # is it current? why?
+python manage.py monitor_portfolio_news             # one full news pass
 ```
 
 Read the printed statistics (`Holdings processed`, `Articles retrieved`, `Alerts created`, …). `Alerts created: 0` is often perfectly normal on a fresh portfolio with no recent matching news.
@@ -763,7 +781,7 @@ GEMINI_API_KEY=your-key
 
 ### 11.2 Run the backend with a real server
 
-Both options are already in `requirements.txt` and serve the same app on the same port as `runserver`. Both start all four background jobs exactly once — check `logs/pwms.log` to confirm.
+Both options are already in `requirements.txt` and serve the same app on the same port as `runserver`. Both start the background jobs exactly once — check `logs/jobs.log` for the `Background jobs started` line.
 
 **WSGI — waitress**
 
@@ -778,7 +796,7 @@ python -m uvicorn config.asgi:application --host 127.0.0.1 --port 8000
 ```
 
 > [!CAUTION]
-> **Run exactly one server process.** The background schedulers assume a single process. Multiple worker _processes_ (for example `uvicorn --workers 4` or a multi-worker gunicorn) would each start their own copy of every scheduler. Threads inside one process are fine.
+> **Run exactly one server process.** The background jobs assume a single process. Multiple worker _processes_ (for example `uvicorn --workers 4` or a multi-worker gunicorn) would each start their own copy of every job; on PostgreSQL a per-job advisory lock stops duplicates, on SQLite nothing does. Threads inside one process are fine.
 
 ### 11.3 Build the frontend
 
@@ -1152,10 +1170,12 @@ python manage.py rebuild_holdings --user-id <id>
 1. Run the read-only symbol diagnostic: `python manage.py diagnose_security_resolver --only-issues`.
 2. Review `AMBIGUOUS` and `CONFLICT` results before refreshing prices; do not guess a symbol from a similar company name.
 3. Watch `backend/logs/price_updates.log` (and `backend/logs/pwms.log`) for provider or resolution errors.
-4. After correcting the authoritative Security Master/ISIN data, run `python manage.py update_market_prices`.
+4. After correcting the authoritative Security Master/ISIN data (see *Correct a wrong Security Master mapping* below), run `python manage.py run_scheduled_job market_prices`.
 5. Yahoo Finance is an unofficial, rate-limited source and may temporarily fail or not recognise a symbol — set a **manual price** in **Settings → Manual Prices** as a stop-gap.
 
 The diagnostic does not write to the database/workbook and does not contact Yahoo Finance or NSE. See [Security Resolver Diagnostics](docs/operations/security-resolver-diagnostics.md).
+
+**Correct a wrong Security Master mapping.** Prices for stocks and ETFs look up `backend/data/security_master.xlsx` first (by ISIN, then by exact normalized name) and use a match as is. A symbol PWMS had to resolve itself is added to the workbook after its first successful price download; existing rows are never overwritten. To fix a row, open the workbook in Excel, correct the `Yahoo Symbol` (or delete one of two conflicting rows), save and close Excel. PWMS notices the new modification time and reloads on the next lookup; no restart is needed. While the file is open in Excel, newly resolved mappings stay in memory and are written once it is closed (one warning in the log). Conflicting rows and securities that still need an ISIN are listed in `backend/data/reports/security_master_report.csv`.
 
 
 1. Watch `backend/logs/pwms.log` for provider errors.
@@ -1180,7 +1200,7 @@ If the chart remains sparse after a backend restart, inspect `backend/logs/pwms.
 python manage.py fetch_amfi_nav
 ```
 
-Confirm the machine can reach the AMFI website, then check the log for errors. The daily refresh updates the shared AMFI master and also prefetches missing historical AMFI coverage required by MIS. For a one-off historical backfill, use the dated command shown in section 8.3.
+Confirm the machine can reach the AMFI website, then check the log for errors. The nightly `mf_nav` job (00:00, or at startup when not current) updates the shared AMFI master and also prefetches missing historical AMFI coverage required by MIS. Run it now with `python manage.py run_scheduled_job mf_nav`. For a one-off historical backfill, use the dated command shown in section 8.3.
 
 </details>
 

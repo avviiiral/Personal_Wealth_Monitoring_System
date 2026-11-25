@@ -1,5 +1,6 @@
 from io import StringIO
-import os
+import logging
+import threading
 from pathlib import Path
 
 import pandas as pd
@@ -7,8 +8,28 @@ from typing import Any
 import requests
 from django.conf import settings
 
+from config.scheduling.files import data_dir, replace_with_retry
 from market_data.services.security_resolver import SecurityResolver
 from market_data.services.yahoo_finance import YahooFinanceService
+
+logger = logging.getLogger(__name__)
+
+# One process-wide lock for every read and write of security_master.xlsx, so a
+# reader never sees a half-written file and two writers never interleave.
+WORKBOOK_LOCK = threading.RLock()
+WORKBOOK_REPLACE_RETRIES = 3
+WORKBOOK_REPLACE_DELAY_SECONDS = 0.3
+
+
+def is_blank_value(value):
+    if value is None:
+        return True
+    try:
+        if pd.isna(value):
+            return True
+    except (TypeError, ValueError):
+        pass
+    return isinstance(value, str) and not value.strip()
 
 
 class SecurityMasterGenerator:
@@ -72,7 +93,7 @@ class SecurityMasterGenerator:
 
     @classmethod
     def _data_dir(cls):
-        return cls._backend_dir() / "data"
+        return data_dir()
 
     @classmethod
     def _transaction_file(cls):
@@ -579,46 +600,17 @@ class SecurityMasterGenerator:
         cls,
         security_name,
     ):
+        """Yahoo search, accepted only on an exact normalized name match.
+
+        Same rule as the price resolver: "&" = "AND", "LTD" = "LIMITED",
+        "(I)" = "INDIA", punctuation/spacing/case ignored. A different
+        company with a similar name is never picked.
+        """
         if not security_name:
             return None
-
-        try:
-            import yfinance as yf
-
-            search = yf.Search(
-                security_name,
-                max_results=10,
-            )
-
-            quotes = getattr(
-                search,
-                "quotes",
-                [],
-            )
-
-            candidates = []
-
-            for quote in quotes:
-                symbol = cls._clean(
-                    quote.get("symbol")
-                ).upper()
-
-                if not symbol:
-                    continue
-
-                if symbol.endswith(".NS"):
-                    candidates.append(symbol)
-
-                elif symbol.endswith(".BO"):
-                    candidates.append(symbol)
-
-            for symbol in candidates:
-                if cls._validate_yahoo_symbol(symbol):
-                    return symbol
-
-        except Exception:
-            pass
-
+        symbol = SecurityResolver.search_yahoo_exact_name(security_name)
+        if symbol and cls._validate_yahoo_symbol(symbol):
+            return symbol
         return None
 
     @classmethod
@@ -758,10 +750,19 @@ class SecurityMasterGenerator:
 
     @classmethod
     def persist_resolved_symbol(cls, *, isin, security_name, yahoo_symbol):
-        """Persist a resolver-confirmed Yahoo symbol against its ISIN."""
+        """Add or update one row for a newly resolved symbol.
+
+        Rows are matched by ISIN; a name-only security (blank ISIN) is
+        matched by exact normalized name among rows without an ISIN. An
+        existing different symbol is never replaced (ValueError). A locked
+        workbook raises OSError so the caller can queue the write. The
+        resolver cache is updated by the caller; the workbook is not
+        re-read.
+        """
         cleaned_isin = cls._normalize_isin(isin)
         cleaned_symbol = SecurityResolver.clean_symbol(yahoo_symbol)
-        if not cleaned_isin or not cleaned_symbol:
+        cleaned_name = cls._clean(security_name)
+        if not cleaned_symbol or not (cleaned_isin or cleaned_name):
             return False
 
         import openpyxl
@@ -770,86 +771,105 @@ class SecurityMasterGenerator:
         output_path.parent.mkdir(parents=True, exist_ok=True)
         temp_path = output_path.with_name(f".{output_path.stem}.resolved.tmp.xlsx")
 
-        if output_path.exists():
-            workbook = openpyxl.load_workbook(output_path)
-            worksheet = workbook["Security Master"] if "Security Master" in workbook.sheetnames else workbook.active
-            headers = [cell.value for cell in worksheet[1]]
-            header_indexes = {
-                str(value).strip().upper(): index + 1
-                for index, value in enumerate(headers) if value is not None
-            }
-            isin_column = header_indexes.get("ISIN")
-            symbol_column = header_indexes.get("YAHOO SYMBOL")
-            if isin_column is None or symbol_column is None:
-                workbook.close()
-                raise ValueError("Security Master must contain ISIN and Yahoo Symbol columns.")
-
-            matches = [
-                row_number for row_number in range(2, worksheet.max_row + 1)
-                if cls._normalize_isin(worksheet.cell(row=row_number, column=isin_column).value) == cleaned_isin
-            ]
-            if len(matches) > 1:
-                workbook.close()
-                raise ValueError(f"Multiple Security Master rows found for ISIN {cleaned_isin}.")
-
-            row_number = matches[0] if matches else worksheet.max_row + 1
-            if not matches:
-                worksheet.cell(row=row_number, column=isin_column).value = cleaned_isin
+        with WORKBOOK_LOCK:
+            if output_path.exists():
+                workbook = openpyxl.load_workbook(output_path)
+                worksheet = workbook["Security Master"] if "Security Master" in workbook.sheetnames else workbook.active
+                headers = [cell.value for cell in worksheet[1]]
+                header_indexes = {
+                    str(value).strip().upper(): index + 1
+                    for index, value in enumerate(headers) if value is not None
+                }
+                isin_column = header_indexes.get("ISIN")
+                symbol_column = header_indexes.get("YAHOO SYMBOL")
                 name_column = header_indexes.get("SECURITY NAME")
-                if name_column:
-                    worksheet.cell(row=row_number, column=name_column).value = cls._clean(security_name)
+                if isin_column is None or symbol_column is None:
+                    workbook.close()
+                    raise ValueError("Security Master must contain ISIN and Yahoo Symbol columns.")
 
-            existing_symbol = SecurityResolver.clean_symbol(worksheet.cell(row=row_number, column=symbol_column).value)
-            if existing_symbol and existing_symbol != cleaned_symbol:
-                workbook.close()
-                raise ValueError(
-                    f"Security Master already maps ISIN {cleaned_isin} to {existing_symbol}; "
-                    f"refusing to replace it with {cleaned_symbol}."
-                )
+                if cleaned_isin:
+                    matches = [
+                        row_number for row_number in range(2, worksheet.max_row + 1)
+                        if cls._normalize_isin(worksheet.cell(row=row_number, column=isin_column).value) == cleaned_isin
+                    ]
+                else:
+                    target = SecurityResolver.normalize_security_name(cleaned_name)
+                    matches = [
+                        row_number for row_number in range(2, worksheet.max_row + 1)
+                        if not cls._normalize_isin(worksheet.cell(row=row_number, column=isin_column).value)
+                        and name_column
+                        and SecurityResolver.normalize_security_name(
+                            worksheet.cell(row=row_number, column=name_column).value
+                        ) == target
+                    ]
+                if len(matches) > 1:
+                    workbook.close()
+                    raise ValueError(f"Multiple Security Master rows found for {cleaned_isin or cleaned_name}.")
 
-            worksheet.cell(row=row_number, column=symbol_column).value = cleaned_symbol
-            for header, value in (
-                ("RESOLUTION STATUS", "RESOLVED"),
-                ("PRICE SOURCE", "YAHOO_FINANCE"),
-                ("ACTIVE", True),
-            ):
-                column = header_indexes.get(header)
-                if column:
-                    # The persisted symbol has been validated for this ISIN;
-                    # status/source must reflect the current successful mapping.
-                    worksheet.cell(row=row_number, column=column).value = value
-        else:
-            workbook = openpyxl.Workbook()
-            worksheet = workbook.active
-            worksheet.title = "Security Master"
-            worksheet.append(cls.OUTPUT_COLUMNS)
-            record = {column: None for column in cls.OUTPUT_COLUMNS}
-            record.update({
-                "ISIN": cleaned_isin,
-                "Security Name": cls._clean(security_name),
-                "Yahoo Symbol": cleaned_symbol,
-                "Active": True,
-                "Resolution Status": "RESOLVED",
-                "Price Source": "YAHOO_FINANCE",
-            })
-            worksheet.append([record[column] for column in cls.OUTPUT_COLUMNS])
-            worksheet.freeze_panes = "A2"
-            worksheet.auto_filter.ref = worksheet.dimensions
+                row_number = matches[0] if matches else worksheet.max_row + 1
+                if not matches:
+                    worksheet.cell(row=row_number, column=isin_column).value = cleaned_isin or None
+                    if name_column:
+                        worksheet.cell(row=row_number, column=name_column).value = cleaned_name
 
-        try:
-            workbook.save(temp_path)
-            workbook.close()
-            os.replace(temp_path, output_path)
-        except Exception:
+                existing_symbol = SecurityResolver.clean_symbol(worksheet.cell(row=row_number, column=symbol_column).value)
+                if existing_symbol and existing_symbol != cleaned_symbol:
+                    workbook.close()
+                    raise ValueError(
+                        f"Security Master already maps {cleaned_isin or cleaned_name} to {existing_symbol}; "
+                        f"refusing to replace it with {cleaned_symbol}."
+                    )
+                if existing_symbol == cleaned_symbol:
+                    workbook.close()
+                    return False
+
+                worksheet.cell(row=row_number, column=symbol_column).value = cleaned_symbol
+                for header, value in (
+                    ("RESOLUTION STATUS", "RESOLVED"),
+                    ("PRICE SOURCE", "YAHOO_FINANCE"),
+                    ("ACTIVE", True),
+                ):
+                    column = header_indexes.get(header)
+                    if column:
+                        # The persisted symbol returned price data for this
+                        # security; status/source reflect that mapping.
+                        worksheet.cell(row=row_number, column=column).value = value
+            else:
+                workbook = openpyxl.Workbook()
+                worksheet = workbook.active
+                worksheet.title = "Security Master"
+                worksheet.append(cls.OUTPUT_COLUMNS)
+                record = {column: None for column in cls.OUTPUT_COLUMNS}
+                record.update({
+                    "ISIN": cleaned_isin or None,
+                    "Security Name": cleaned_name,
+                    "Yahoo Symbol": cleaned_symbol,
+                    "Active": True,
+                    "Resolution Status": "RESOLVED",
+                    "Price Source": "YAHOO_FINANCE",
+                })
+                worksheet.append([record[column] for column in cls.OUTPUT_COLUMNS])
+                worksheet.freeze_panes = "A2"
+                worksheet.auto_filter.ref = worksheet.dimensions
+
             try:
+                workbook.save(temp_path)
                 workbook.close()
+                replace_with_retry(
+                    temp_path, output_path,
+                    retries=WORKBOOK_REPLACE_RETRIES, retry_delay=WORKBOOK_REPLACE_DELAY_SECONDS,
+                )
             except Exception:
-                pass
-            if temp_path.exists():
-                temp_path.unlink()
-            raise
-
-        SecurityResolver.reload_security_master()
+                try:
+                    workbook.close()
+                except Exception:
+                    pass
+                if temp_path.exists():
+                    try:
+                        temp_path.unlink()
+                    except OSError:
+                        pass
+                raise
         return True
 
     @classmethod
@@ -865,6 +885,7 @@ class SecurityMasterGenerator:
         if not existing_path.exists():
             return records
 
+        name_only_rows = []
         try:
             import openpyxl
 
@@ -889,6 +910,15 @@ class SecurityMasterGenerator:
                     continue
                 isin = cls._normalize_isin(row[isin_index])
                 if not isin:
+                    # Name-only rows (added by resolve-and-save for assets
+                    # without an ISIN) are kept as they are.
+                    values = {
+                        column: row[indexes[column]]
+                        for column in cls.OUTPUT_COLUMNS
+                        if column in indexes and indexes[column] < len(row)
+                    }
+                    if not is_blank_value(values.get("Yahoo Symbol")) or not is_blank_value(values.get("Security Name")):
+                        name_only_rows.append(values)
                     continue
                 existing_by_isin[isin] = {
                     column: row[indexes[column]]
@@ -904,15 +934,7 @@ class SecurityMasterGenerator:
                 f"Unable to safely merge existing security master: {existing_path}"
             )
 
-        def is_blank(value):
-            if value is None:
-                return True
-            try:
-                if pd.isna(value):
-                    return True
-            except (TypeError, ValueError):
-                pass
-            return isinstance(value, str) and not value.strip()
+        is_blank = is_blank_value
 
         merged_records = []
         seen_isins = set()
@@ -953,6 +975,8 @@ class SecurityMasterGenerator:
             if isin not in seen_isins:
                 preserved = {column: previous.get(column) for column in cls.OUTPUT_COLUMNS}
                 merged_records.append(preserved)
+        for previous in name_only_rows:
+            merged_records.append({column: previous.get(column) for column in cls.OUTPUT_COLUMNS})
 
         return merged_records
 
@@ -968,6 +992,11 @@ class SecurityMasterGenerator:
             exist_ok=True,
         )
 
+        with WORKBOOK_LOCK:
+            return cls._write_excel_locked(records, output_path, temp_path)
+
+    @classmethod
+    def _write_excel_locked(cls, records, output_path, temp_path):
         records = cls._merge_existing_records(records)
 
         dataframe = pd.DataFrame(
@@ -1098,8 +1127,17 @@ class SecurityMasterGenerator:
                 )
 
         # Replace the active workbook only after the candidate was written
-        # successfully. This prevents a partial write from corrupting it.
-        os.replace(temp_path, output_path)
+        # successfully. This prevents a partial write from corrupting it;
+        # retries cover a brief Windows sharing violation. A workbook open in
+        # Excel makes this raise, so the nightly job fails and retries later.
+        try:
+            replace_with_retry(temp_path, output_path)
+        except OSError:
+            try:
+                temp_path.unlink()
+            except OSError:
+                pass
+            raise
 
         return output_path
 

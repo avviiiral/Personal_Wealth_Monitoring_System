@@ -40,7 +40,9 @@ A missing or unreadable workbook is reported. The resolver then uses configured 
 5. Existing configured name mapping.
 6. Generic symbol plus configured exchange suffix.
 
-Name normalization is conservative: it standardizes whitespace and legal-name variants such as a leading `THE` and terminal `LTD/LIMITED`. It is not fuzzy or substring matching.
+The diagnostic reports this `resolve_yahoo_symbol()` order. The price refresh (`MarketDataManager.resolve_asset_symbol`) wraps it Excel-first: a workbook hit (ISIN, then exact normalized name) is used without writing anything; on a miss the order above runs, then NSE `EQUITY_L.csv` and an exact-name Yahoo search, and the new mapping is saved to the workbook after its first successful price download. See [BACKGROUND_JOBS.md](./BACKGROUND_JOBS.md#security-master-backenddatasecurity_masterxlsx).
+
+Name normalization is conservative: it standardizes whitespace, punctuation and case, `&`/`AND`, `(I)`/`INDIA`, and legal-name variants such as a leading `THE` and terminal `LTD/LIMITED`. It is not fuzzy or substring matching.
 
 Conflicting duplicate mappings are quarantined rather than allowing workbook row order to decide the result. A supplied ISIN and a name that resolves to a different ISIN are treated as a conflict. Ambiguous/conflicting identities fail closed rather than silently selecting a ticker.
 

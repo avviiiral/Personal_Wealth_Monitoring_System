@@ -83,7 +83,7 @@ Versions are taken from `backend/requirements.txt`, `frontend/package.json` and 
 | Frontend tests | Vitest via `@angular/build:unit-test`, jsdom | ^4.0.8, ^28.0.0 |
 | AI (optional) | Google Gemini REST API (`generativelanguage.googleapis.com`) | model from `GEMINI_MODEL`, default `gemini-3.6-flash` |
 
-There is no Dockerfile, Celery, Redis or other task queue in the repository. Background work runs in daemon threads inside the Django process, plus an optional Windows Task Scheduler script.
+There is no Dockerfile, Celery, Redis or other task queue in the repository. Background work runs in two job threads (plus the news thread) inside the Django process; see [Background jobs](#background-jobs). An optional Windows Task Scheduler script also exists.
 
 ---
 
@@ -384,7 +384,7 @@ The `/downloads` page generates Excel workbooks in the browser with ExcelJS from
 - **Approval.** Approving an identity creates a `BONUS`, `SPLIT` or `DIVIDEND` transaction for each eligible portfolio hierarchy bucket. Bonus entitlement uses holdings on the record date; split and dividend use holdings before the ex-date. Other action types are recorded for review but not converted into transactions.
 - **Idempotency.** Reconciliations carry an idempotency key, and an existing same-day action transaction for the same hierarchy is reused instead of duplicated. Approvals run inside `select_for_update` transactions.
 - **Valuation effect.** Confirmed split and bonus ratios are applied to quantity (not cost basis) when positions are calculated (`corporate_actions/position_adjustment.py`).
-- **Automation.** A completed import starts a background NSE scan. A daily scan at `daily_run_time` (06:00) runs only under `manage.py runserver`.
+- **Automation.** A completed import starts a background NSE scan. The nightly `corporate_actions` job scans at `daily_run_time` (03:30) under any serving process. The scan never creates transactions. `python manage.py audit_corporate_action_matching` reports, read-only, how NSE events match holdings; `corporate_actions.nse_identity_matching` (off by default) enables matching by NSE's ISIN or an unambiguous symbol-to-ISIN mapping (see [BACKGROUND_JOBS.md](./docs/operations/BACKGROUND_JOBS.md#corporate-actions)).
 
 ### Portfolio News and filing intelligence
 
@@ -421,7 +421,7 @@ The `/downloads` page generates Excel workbooks in the browser with ExcelJS from
 
 These are implemented and routed but have no screen in the current frontend:
 
-- `/api/mutual-funds/*`: mutual-fund schemes, transactions, holdings, SIP creation, due SIPs and SIP or installment execution. SIP installments are also synced and executed by the daily refresh.
+- `/api/mutual-funds/*`: mutual-fund schemes, transactions, holdings, SIP creation, due SIPs and SIP or installment execution. SIP installments are also synced and executed by the nightly `sip` job, right after the 00:00 NAV job.
 - `/api/investments/security-master/`, `security-aliases/`, `underlyings/`, `security-identity-resolution-history/` (the last is used by Settings).
 - `/api/market-data/stocks/search/`: Yahoo Finance search.
 - Legacy `/api/analytics/summary|allocation|performance|historical/`.
@@ -492,9 +492,9 @@ ETFs stay on market-price routing even when their ISIN also appears in the AMFI 
 
 ### Yahoo symbol resolution and diagnostics
 
-Automated Yahoo pricing uses `SecurityResolver` and the optional `backend/data/security_master.xlsx` workbook. Resolution is ISIN-first; configured mappings, explicit symbols and conservative exact normalized-name fallbacks are used only according to the resolver's documented priority. Ambiguous workbook mappings and conflicting identifiers fail closed rather than selecting a ticker by row order or fuzzy matching.
+Automated Yahoo pricing uses `SecurityResolver` and the `backend/data/security_master.xlsx` workbook. The workbook is consulted first (ISIN, then exact normalized name); a hit is used and nothing is written. On a miss the symbol is resolved (hard-coded maps, explicit symbol, NSE `EQUITY_L.csv`, then an exact-name Yahoo search) and saved to the workbook after its first successful price download. Ambiguous workbook mappings and conflicting identifiers fail closed rather than selecting a ticker by row order or fuzzy matching; they are listed in `backend/data/reports/security_master_report.csv`. See [Security Master](./docs/operations/BACKGROUND_JOBS.md#security-master-backenddatasecurity_masterxlsx), including how to correct a wrong mapping in Excel.
 
-Run `python manage.py diagnose_security_resolver --only-issues` before changing unresolved or incorrectly priced securities. This diagnostic is read-only: it does not generate or write the workbook, modify `Asset.symbol`, or contact Yahoo Finance/NSE. See [Security Resolver Diagnostics](./docs/operations/security-resolver-diagnostics.md) for filters, status meanings and the safe repair workflow. The normal `update_market_prices` command can refresh the Security Master when held STOCK/ETF ISINs are missing from it, then persist validated resolved symbols through the normal refresh path.
+Run `python manage.py diagnose_security_resolver --only-issues` before changing unresolved or incorrectly priced securities. This diagnostic is read-only: it does not generate or write the workbook, modify `Asset.symbol`, or contact Yahoo Finance/NSE. See [Security Resolver Diagnostics](./docs/operations/security-resolver-diagnostics.md) for filters, status meanings and the safe repair workflow. The manual `update_market_prices` command can still refresh the Security Master when held STOCK/ETF ISINs are missing from it; the price job itself only adds rows for newly resolved symbols.
 
 
 ### Corporate action review
@@ -956,27 +956,30 @@ python manage.py generate_web_push_keys
 
 ## Background jobs and management commands
 
-### In-process schedulers
+### Background jobs
 
-Schedulers start from `AppConfig.ready()`. `config/scheduler_guard.py` starts them under `manage.py runserver` (only in the autoreloader's worker process) and under WSGI/ASGI servers, and never for other management commands or tests. Some schedulers add narrower startup conditions; MF Intelligence, for example, starts its daily thread only when explicitly enabled in configuration.
+One framework (`backend/config/scheduling/`) runs every background data job inside the Django process. At startup each job first checks whether its data is already current and does nothing if it is; then it runs on its schedule. Full details, config keys and troubleshooting: [docs/operations/BACKGROUND_JOBS.md](./docs/operations/BACKGROUND_JOBS.md).
 
-| Scheduler | Cadence | Work | Starts under |
-| --- | --- | --- | --- |
-| `MarketPriceScheduler` | Every 15 minutes | Prices for STOCK, ETF, MUTUAL_FUND and BOND assets and names containing " ETF" | runserver, WSGI/ASGI |
-| `DailyRefreshScheduler` | Checks every 30 minutes; runs once per calendar day (marker `backend/data/.last_scheduled_refresh_date`) | `run_scheduled_refresh` | runserver, WSGI/ASGI |
-| `InvestmentAMFIScheduler` | Every 30 minutes | Latest AMFI NAVs for held ISINs and missing MIS history | runserver, WSGI/ASGI |
-| `MISReferencePriceScheduler` | 20 seconds after start, then every 30 minutes | MIS Notes reference prices | runserver, WSGI/ASGI |
-| `SecurityMetricsScheduler` | At start, then every 24 hours | P/E, P/B, PEG, sector and market cap from Yahoo Finance | runserver, WSGI/ASGI |
-| `SecurityMasterScheduler` | At start, then every 24 hours | ISIN security master refresh | runserver, WSGI/ASGI |
-| `MutualFundUnderlyingScheduler` | At start, then daily at 06:00 IST | Official MF portfolio disclosures | runserver, WSGI/ASGI |
-| `PortfolioNewsScheduler` | 10 seconds after start, then every `NEWS_MONITOR_INTERVAL` (180 seconds by default) | News monitor, then exchange filing ingestion | runserver, WSGI/ASGI |
-| `MFIntelligenceScheduler` | Daily at configured `auto_sync_time` (default 05:30 IST) | Optional MF Intelligence database sync; disabled unless `mf_intelligence.auto_sync_enabled=true` | runserver, WSGI/ASGI when enabled |
-| Watch List refresh (`watchlist/apps.py`) | At start (benchmark history), then daily at 06:00 IST | Benchmark master and Watch List universe | runserver only (`RUN_MAIN=true`) |
-| Corporate-action daily scan (`corporate_actions/automation.py`) | Daily at `daily_run_time` (06:00), with catch-up if started later | `monitor_corporate_actions --source nse` | runserver only |
+| Job | At startup | Then |
+| --- | --- | --- |
+| `market_prices` (stocks, ETFs, SGBs, listed bonds, MIS reference tickers) | Fetches only assets that aren't current | Every 15 minutes |
+| `mf_nav` (owned mutual-fund NAVs) | Skipped if the latest published NAV is stored | Nightly 00:00 |
+| `sip` (installment sync + execution) | After `mf_nav` | Right after a successful `mf_nav` |
+| `mf_intelligence` (CharlieAlpha) | Synced if no complete sync since 01:00 | Nightly 01:00 |
+| `watchlist` | After `mf_intelligence` | Right after `mf_intelligence` |
+| `security_master` (workbook refresh) | If last success > 24 h old | Nightly 02:00 |
+| `security_metrics` (P/E, P/B, ROE...) | If last success > 24 h old | Nightly 02:30 |
+| `mf_underlying` | If last success > 24 h old | Nightly 03:00 |
+| `corporate_actions` (NSE scan) | If today's scan hasn't run | Nightly 03:30 |
+| Portfolio news + exchange filings | Unchanged | Every 180 seconds (own thread) |
 
-`run_scheduled_refresh` runs `update_market_prices` and `refresh_mis_reference_prices`; synchronizes owned AMFI NAVs from the shared master for active users; runs `sync_sip_installments` and `execute_sips` per active user; refreshes the Watch List universe and performance; then runs `refresh_security_master --apply`, `monitor_portfolio_news` and `monitor_corporate_actions`. A failing step does not stop later steps. Repeat `--skip <command>` to omit a named step. This pipeline does **not** run `sync_mf_intelligence`; MF Intelligence has a separate optional daily scheduler.
+Missed nightly slots are caught up at the next startup; a restart never re-runs a job that is current. Last runs are kept in `backend/data/scheduler_state.json`; `backend/logs/jobs.log` has one start and one end line per run. Run any job by hand with `python manage.py run_scheduled_job <name>` (`--list`, `--check`, `--if-due`).
 
-On PostgreSQL, `update_market_prices`, `run_scheduled_refresh` and the market-price scheduler share an advisory lock (`pwms_refresh_pipeline`) so that several processes do not run the same refresh at once. On SQLite the lock does nothing, and background writers share a process-level `RLock`.
+Jobs start under `manage.py runserver` (worker process only), `waitress-serve ... config.wsgi:application` and `uvicorn config.asgi:application`. They do **not** start under `runserver --noreload` unless `PWMS_START_SCHEDULERS=true`; `PWMS_START_SCHEDULERS=false` disables them anywhere. Run a single server process.
+
+`run_scheduled_refresh` still works for a manual end-to-end refresh, but is no longer started automatically: it runs `update_market_prices` and `refresh_mis_reference_prices`; synchronizes owned AMFI NAVs from the shared master for active users; runs `sync_sip_installments` and `execute_sips` per active user; refreshes the Watch List universe and performance; then runs `refresh_security_master --apply`, `monitor_portfolio_news` and `monitor_corporate_actions`. A failing step does not stop later steps. Repeat `--skip <command>` to omit a named step.
+
+On PostgreSQL, `update_market_prices`, `run_scheduled_refresh` and the `market_prices` job share an advisory lock (`pwms_refresh_pipeline`), and every job also takes its own lock (`pwms_job_<name>`), so several processes never run the same refresh at once. On SQLite these locks do nothing.
 
 ### Windows Task Scheduler (optional)
 
@@ -993,11 +996,12 @@ See [scripts/windows/README.md](./scripts/windows/README.md).
 
 ### Management commands
 
-Run from `backend/` with the virtual environment active. Use `python manage.py <command> --help` for options. The full catalogue of all 41 project-defined management commands, their options, side effects and examples is in [commands.md](./commands.md).
+Run from `backend/` with the virtual environment active. Use `python manage.py <command> --help` for options. The full catalogue of all 45 project-defined management commands, their options, side effects and examples is in [commands.md](./commands.md).
 
 | App | Command | Purpose |
 | --- | --- | --- |
-| `market_data` | `run_scheduled_refresh` | Daily refresh pipeline (see above) |
+| `market_data` | `run_scheduled_job` | Run one background job now, or `--list` / `--check` them |
+| `market_data` | `run_scheduled_refresh` | Manual end-to-end refresh pipeline (see above) |
 | `market_data` | `update_market_prices` | Listed-asset price refresh (`--user-id` optional) |
 | `market_data` | `refresh_mis_reference_prices` | MIS Notes reference prices |
 | `market_data` | `refresh_security_metrics` | Yahoo Finance valuation metrics |

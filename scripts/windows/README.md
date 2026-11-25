@@ -8,6 +8,8 @@ The scheduled task runs `python manage.py update_market_prices` once every hour.
 
 It deliberately does **not** run the full `run_scheduled_refresh` pipeline every hour, because that pipeline also performs news, filings, SIP and other external-data work.
 
+> This task is optional. While the backend runs, the in-process `market_prices` job already refreshes these prices every 15 minutes (see [BACKGROUND_JOBS.md](../../docs/operations/BACKGROUND_JOBS.md)). Use the task only if you want prices refreshed while the backend is not running; both share the `pwms_refresh_pipeline` lock on PostgreSQL.
+
 ## Setup
 
 From the repository root in PowerShell:

@@ -11,7 +11,7 @@
 
 ## Automatic update flow
 
-1. `run_scheduled_refresh` calls `BenchmarkDataRefreshService.refresh_bse500()`.
+1. The nightly `watchlist` background job (right after the 01:00 MF Intelligence sync, and at startup when it has not run since then) calls `BenchmarkPerformanceService.ensure_benchmark_master_history()`.
 2. The service reads the existing cache and fetches only the missing tail, with a 7-day overlap.
 3. BSE historical requests use `ProduceCSVForDate/w` with `strIndex=BSE500`.
 4. Responses are validated for date/value integrity and BSE500 identity before being cached.

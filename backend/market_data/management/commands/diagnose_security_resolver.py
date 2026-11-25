@@ -55,7 +55,7 @@ class Command(BaseCommand):
     def handle(self, *args, **options):
         # Load the workbook fresh, but never generate it: a missing workbook
         # is reported as such instead of being created by the diagnostic.
-        SecurityResolver.reload_security_master(generate_if_missing=False)
+        SecurityResolver.reload_security_master(generate_if_missing=False, write_report=False)
         workbook_path = SecurityResolver._security_master_path()
 
         # Defence in depth: the diagnostic only reads, and any accidental

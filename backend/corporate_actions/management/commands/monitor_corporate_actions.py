@@ -15,6 +15,12 @@ from config.pwms_config import section
 from corporate_actions.models import CorporateAction, CorporateActionStatus, CorporateActionType
 from corporate_actions.services import reconcile_action_for_all_users
 from corporate_actions.audit import build_event_audit, mark_duplicate_events
+from corporate_actions.identity import (
+    SOURCE_ISIN,
+    nse_identity_matching_enabled,
+    resolve_nse_symbol_isin,
+    symbol_q,
+)
 from corporate_actions.providers.exchange import ConfiguredCorporateActionsProvider
 from corporate_actions.providers.nse import NseCorporateActionsProvider, normalize_nse_symbol
 from filing_intelligence.models import Filing
@@ -255,12 +261,20 @@ class Command(BaseCommand):
                     "No transaction or portfolio position is changed before approval."
                     if not isin else
                     "Imported from exchange corporate-actions data. Review purpose and entitlement details before confirmation."
+                    + (
+                        f" ISIN {isin} was derived from the NSE symbol ({event.get('identity_match_method')}, exact and unambiguous)."
+                        if event.get("identity_match_method") not in (None, "", SOURCE_ISIN) else ""
+                    )
                 ),
                 "metadata": {
                     **(metadata or {}),
-                    "source_isin": isin or None,
+                    "source_isin": (
+                        (str(event.get("source_isin") or "").strip().upper() or None)
+                        if "source_isin" in event else (isin or None)
+                    ),
                     "resolved_isin": str(event.get("resolved_isin") or "").strip().upper() or None,
                     "identity_match_required": not bool(isin),
+                    **({"identity_match_method": event["identity_match_method"]} if event.get("identity_match_method") else {}),
                 },
             }
             if options["dry_run"]:
@@ -271,7 +285,7 @@ class Command(BaseCommand):
                     candidates = Asset.objects.filter(
                         is_active=True, category=AssetCategory.STOCK
                     ).filter(
-                        Q(symbol__iexact=event.get("symbol") or "")
+                        symbol_q(event.get("symbol") or "")
                         | Q(name__iexact=defaults["security_name"])
                     ).distinct()
                     matched += candidates.count()
@@ -289,11 +303,10 @@ class Command(BaseCommand):
                 owners = set(direct_owner_ids) | set(mf_owner_ids) | set(member_ids)
             else:
                 # Derive only owners with exact symbol or exact name stock candidates.
-                from django.db.models import Q
                 candidate_assets = Asset.objects.filter(
                     is_active=True, category=AssetCategory.STOCK
                 ).filter(
-                    Q(symbol__iexact=event.get("symbol") or "") |
+                    symbol_q(event.get("symbol") or "") |
                     Q(name__iexact=defaults["security_name"])
                 )
                 owners = set(candidate_assets.exclude(owner__isnull=True).values_list("owner_id", flat=True))
@@ -322,19 +335,28 @@ class Command(BaseCommand):
                     stats = reconcile_action_for_all_users(action)
                     matched += sum(stats.get(key, 0) for key in ("direct", "mutual_fund", "pms"))
 
+        identity_matching = nse_identity_matching_enabled()
+        missing_isin_symbols = []
         for record in nse_records:
             action_type = classify_exchange_action(record.get("purpose"))
+            # normalize_nse_action fills "isin" only with nse_identity_matching
+            # on, so with the flag off behaviour is unchanged.
             source_isin = str(record.get("isin") or "").strip().upper()
             resolved_isin = str(symbol_isin_map.get(record.get("symbol", "").upper()) or "").strip().upper()
-            if not source_isin:
-                logger.warning(
-                    "NSE corporate action for %s has no source ISIN; symbol-derived portfolio ISIN will not be used for reconciliation or import.",
-                    record.get("symbol"),
-                )
+            match_method = SOURCE_ISIN if source_isin else ""
+            derived_isin = ""
+            if identity_matching and not source_isin:
+                derived_isin, outcome = resolve_nse_symbol_isin(record.get("symbol"))
+                derived_isin = derived_isin or ""
+                if derived_isin:
+                    match_method = outcome
+            if not source_isin and not derived_isin:
+                missing_isin_symbols.append(record.get("symbol") or "?")
             event = {
-                **record, "isin": source_isin, "source_isin": source_isin,
-                "resolved_isin": resolved_isin, "source_isin_required": True,
-                "action_type": action_type,
+                **record, "isin": source_isin or derived_isin, "source_isin": source_isin,
+                "resolved_isin": derived_isin or resolved_isin,
+                "source_isin_required": not bool(derived_isin),
+                "action_type": action_type, "identity_match_method": match_method,
             }
             persist_event(
                 event, "NSE_CORPORATE_ACTIONS", record.get("source_url", ""),
@@ -343,6 +365,16 @@ class Command(BaseCommand):
                  "book_closure_start": record.get("book_closure_start").isoformat() if record.get("book_closure_start") else None,
                  "book_closure_end": record.get("book_closure_end").isoformat() if record.get("book_closure_end") else None,
                  "raw": record.get("raw", {}), "event_dates_verified": bool(record.get("ex_date"))},
+            )
+
+        if missing_isin_symbols:
+            unique_symbols = sorted(set(missing_isin_symbols))
+            logger.warning(
+                "%s NSE corporate action(s) for %s symbol(s) have no usable ISIN%s; they reconcile only through "
+                "explicit symbol/name approval (first symbols: %s).",
+                len(missing_isin_symbols), len(unique_symbols),
+                "" if identity_matching else " (corporate_actions.nse_identity_matching is off)",
+                ", ".join(unique_symbols[:10]),
             )
 
         for record in source_records:

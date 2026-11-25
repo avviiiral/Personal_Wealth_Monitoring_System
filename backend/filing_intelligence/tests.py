@@ -433,3 +433,41 @@ class FilingDiagnosticsCommandTests(TestCase):
         self.assertIn("no active STOCK/ETF identifier matched", text)
         self.assertIn("holding-user matches:    1", text)
         self.assertIn("No database records are modified", text)
+
+
+class NSEFilingProviderFeedTests(TestCase):
+    """The NSE feed rows are turned into filings carrying the ISIN and symbol."""
+
+    ROWS = [
+        {"symbol": "HDFCBANK", "sm_name": "HDFC Bank Limited", "sm_isin": "INE040A01034",
+         "desc": "Outcome of Board Meeting", "attchmntText": "Board approved the results.",
+         "an_dt": "25-Nov-2026 10:15:00", "seq_id": "A1", "attchmntFile": "https://nsearchives.example/a1.pdf"},
+        {"symbol": "ABCD", "sm_name": "No Isin Limited", "desc": "Trading window",
+         "an_dt": "25-Nov-2026 11:00:00", "seq_id": "A2"},
+    ]
+
+    def _fetch(self, **kwargs):
+        from unittest.mock import MagicMock, patch
+
+        from .providers.official import NSEFilingProvider
+
+        response = MagicMock(status_code=200)
+        response.json.return_value = self.ROWS
+        response.raise_for_status.return_value = None
+        session = MagicMock()
+        session.get.return_value = response
+        with patch("filing_intelligence.providers.official.requests.Session", return_value=session):
+            return list(NSEFilingProvider().fetch_filings(timezone.now() - timezone.timedelta(days=1), **kwargs))
+
+    def test_rows_become_filings_with_isin_and_symbol_in_the_details(self):
+        filings = self._fetch()
+        self.assertEqual([filing.external_filing_id for filing in filings], ["A1", "A2"])
+        self.assertEqual(
+            filings[0].details,
+            "Board approved the results.\nISIN: INE040A01034\nExchange symbol: HDFCBANK",
+        )
+        self.assertEqual(filings[1].details, "Exchange symbol: ABCD")  # no ISIN line when the feed has none
+
+    def test_symbol_filter_still_applies(self):
+        filings = self._fetch(symbols=["HDFCBANK"])
+        self.assertEqual([filing.symbol for filing in filings], ["HDFCBANK"])

@@ -2,7 +2,8 @@ from django.db import close_old_connections
 import logging
 import threading
 import time
-from django.db.models import Exists, OuterRef, Q, Subquery
+from django.db.models import Case, DecimalField, Exists, F, OuterRef, Q, Subquery, Value, When
+from django.db.models.functions import Coalesce, NullIf
 from django.shortcuts import get_object_or_404
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.pagination import PageNumberPagination
@@ -155,7 +156,7 @@ def _filtered_products(request, product_type=None):
 
     ordering_fields = {
         "name": "name",
-        "aum": "mutual_fund__aum",
+        "aum": "display_aum",
         "1M": "latest_return_1m",
         "3M": "latest_return_3m",
         "6M": "latest_return_6m",
@@ -177,7 +178,33 @@ def _filtered_products(request, product_type=None):
             **{ordering_field: Subquery(latest_snapshot.values(metric_field)[:1])}
         )
 
-    queryset = queryset.order_by(prefix + ordering_field, "id")
+    if ordering_field == "display_aum":
+        # Sort by the AUM the serializer displays: the Watch List value, else
+        # MF Intelligence's average AUM matched on the exact AMFI code (same
+        # rule as WatchListProductSerializer), else the PMS AUM. Missing
+        # values go last in both directions, like the frontend's own sort.
+        intelligence_aum = MFScheme.objects.filter(
+            amfi_code=Coalesce(
+                NullIf(OuterRef("mutual_fund__scheme_code"), Value("")),
+                OuterRef("external_identifier"),
+            )
+        ).values("avg_aum_crore")[:1]
+        queryset = queryset.annotate(
+            display_aum=Coalesce(
+                "mutual_fund__aum",
+                Case(
+                    When(product_type=ProductType.MUTUAL_FUND, then=Subquery(intelligence_aum)),
+                    default=None,
+                    output_field=DecimalField(max_digits=24, decimal_places=4),
+                ),
+                "pms__aum",
+                output_field=DecimalField(max_digits=24, decimal_places=4),
+            )
+        )
+        direction = F("display_aum").desc(nulls_last=True) if prefix else F("display_aum").asc(nulls_last=True)
+        queryset = queryset.order_by(direction, "id")
+    else:
+        queryset = queryset.order_by(prefix + ordering_field, "id")
 
     status = params.get("status", "").upper()
     if status == "WATCHLIST":

@@ -93,8 +93,8 @@ def find_truncate_blockers(alias: str, reset_tables: set[str]) -> list[tuple[str
     return blockers
 
 
-def truncate_tables(alias: str, tables: list[str]) -> None:
-    """Delete rows and reset identities without using TRUNCATE CASCADE."""
+def truncate_tables(alias: str, tables: list[str], *, reset_sequences: bool = False) -> None:
+    """Delete rows without using TRUNCATE CASCADE."""
     if not tables:
         return
 
@@ -102,7 +102,8 @@ def truncate_tables(alias: str, tables: list[str]) -> None:
 
     if connection.vendor == "postgresql":
         quoted = [connection.ops.quote_name(name) for name in tables]
-        sql = "TRUNCATE TABLE " + ", ".join(quoted) + " RESTART IDENTITY"
+        identity_mode = "RESTART IDENTITY" if reset_sequences else "CONTINUE IDENTITY"
+        sql = "TRUNCATE TABLE " + ", ".join(quoted) + f" {identity_mode}"
         with connection.cursor() as cursor:
             cursor.execute(sql)
         return
@@ -115,16 +116,17 @@ def truncate_tables(alias: str, tables: list[str]) -> None:
             for table in tables:
                 cursor.execute(f"DELETE FROM {connection.ops.quote_name(table)}")
 
-            cursor.execute(
-                "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = %s",
-                ["sqlite_sequence"],
-            )
-            if cursor.fetchone():
-                placeholders = ", ".join(["%s"] * len(tables))
+            if reset_sequences:
                 cursor.execute(
-                    f"DELETE FROM sqlite_sequence WHERE name IN ({placeholders})",
-                    tables,
+                    "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = %s",
+                    ["sqlite_sequence"],
                 )
+                if cursor.fetchone():
+                    placeholders = ", ".join(["%s"] * len(tables))
+                    cursor.execute(
+                        f"DELETE FROM sqlite_sequence WHERE name IN ({placeholders})",
+                        tables,
+                    )
         return
 
     raise CommandError(

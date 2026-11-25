@@ -2,7 +2,7 @@
 
 This catalogue describes the project-defined Django management commands and the standard development, database, and frontend commands used by PWMS. It is based on the command implementations on `feat/mf-intelligence-db-integration`.
 
-**Execution context:** Unless stated otherwise, run Django commands from `backend/\` with the project's virtual environment active:
+**Execution context:** Unless stated otherwise, run Django commands from `backend/` with the project's virtual environment active:
 
 ```powershell
 cd D:\PWMS\Personal_Wealth_Monitoring_System\backend
@@ -162,6 +162,7 @@ python manage.py prepare_watchlist_benchmark_chart --product-id 123 --period 5Y
 | `diagnose_corporate_filings` | Read-only diagnostics of stored filings against active STOCK/ETF assets, holdings, Watch List entries and existing Portfolio News alerts. | `--hours N` (default `24`); repeatable `--exchange nse\|bse`; `--limit N` (default `10`, unmatched examples). |
 | `monitor_portfolio_news` | Runs one news-monitor pass for active users' holdings, applies the configured rule-based relevance/impact pipeline and creates portfolio-weighted alerts. | `--loop` runs continuously at `NEWS_MONITOR_INTERVAL` cadence until stopped. |
 | `generate_web_push_keys` | Generates a VAPID key pair for browser Web Push. Store the private key securely in backend configuration; do not commit it. | No command-line options. |
+| `gemini_usage` | Summarizes Gemini API call counts and prompt/output/cached/total token usage, grouped by endpoint, over the requested lookback window. | `--days N` (default `30`). |
 
 Examples:
 

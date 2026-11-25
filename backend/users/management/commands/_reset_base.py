@@ -23,17 +23,36 @@ class PhysicalTableResetCommand(BaseCommand):
     recreate_post_migrate_data = False
 
     def add_arguments(self, parser):
+        # Match Django's built-in flush options so test runners and existing
+        # call_command("flush", ...) invocations remain compatible.
+        parser.add_argument(
+            "--noinput",
+            "--no-input",
+            action="store_false",
+            dest="interactive",
+            default=True,
+            help="Run without asking for confirmation.",
+        )
         parser.add_argument(
             "--database",
             default="default",
             help="Database alias to reset (default: default).",
         )
         parser.add_argument(
-            "--noinput",
-            "--no-input",
+            "--reset-sequences",
             action="store_true",
-            dest="noinput",
-            help="Run without asking for confirmation.",
+            help="Reset auto-increment sequences after clearing data.",
+        )
+        parser.add_argument(
+            "--allow-cascade",
+            action="store_true",
+            help="Not supported: PWMS reset commands never use TRUNCATE CASCADE.",
+        )
+        parser.add_argument(
+            "--inhibit-post-migrate",
+            action="store_true",
+            dest="inhibit_post_migrate",
+            help="Do not emit post_migrate signals after the reset.",
         )
         parser.add_argument(
             "--dry-run",
@@ -58,7 +77,14 @@ class PhysicalTableResetCommand(BaseCommand):
         if alias not in connections:
             raise CommandError(f"Unknown database alias: {alias}")
 
-        self.noinput = options["noinput"]
+        self.noinput = not options["interactive"]
+        if options["allow_cascade"]:
+            raise CommandError(
+                "--allow-cascade is deliberately unsupported. "
+                "PWMS reset commands enumerate dependent tables and never "
+                "truncate with CASCADE."
+            )
+
         connection = connections[alias]
         if connection.vendor not in {"postgresql", "sqlite"}:
             raise CommandError(
@@ -97,14 +123,18 @@ class PhysicalTableResetCommand(BaseCommand):
 
         try:
             with transaction.atomic(using=alias):
-                truncate_tables(alias, tables)
+                truncate_tables(
+                    alias,
+                    tables,
+                    reset_sequences=options["reset_sequences"],
+                )
         except Exception as exc:
             raise CommandError(
                 "Reset failed and the database transaction was rolled back. "
                 f"Original error: {exc}"
             ) from exc
 
-        if self.recreate_post_migrate_data:
+        if self.recreate_post_migrate_data and not options["inhibit_post_migrate"]:
             emit_post_migrate_signal(
                 verbosity=options["verbosity"],
                 interactive=not self.noinput,

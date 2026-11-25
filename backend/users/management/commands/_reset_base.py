@@ -2,8 +2,8 @@
 from __future__ import annotations
 
 from django.core.management.base import BaseCommand, CommandError
-from django.db import connections, transaction
 from django.core.management.sql import emit_post_migrate_signal
+from django.db import connections, transaction
 
 from users.management.reset_utils import (
     get_account_preservation_tables,
@@ -48,8 +48,6 @@ class PhysicalTableResetCommand(BaseCommand):
 
         if self.scope == "account":
             preserved = get_account_preservation_tables(alias)
-            missing = sorted(preserved - set(tables))
-            # A missing preserved table may simply not exist in this deployment.
             reset_tables = sorted(set(tables) - preserved)
             return reset_tables, set(reset_tables)
 

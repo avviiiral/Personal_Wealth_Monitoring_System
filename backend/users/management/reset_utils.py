@@ -59,12 +59,14 @@ def get_account_preservation_tables(alias: str) -> set[str]:
         if model._meta.managed:
             preserved.add(model._meta.db_table)
 
-    # Preserve all M2M through tables for users and groups. The through model
-    # is auto-created, while the ManyToManyField itself is not; checking the
-    # field's auto_created flag would silently miss auth_user_groups.
+    # Preserve M2M through tables for users and groups. Forward M2M fields
+    # are not auto-created; their implicit through models are.
     for model in (get_user_model(), apps.get_model("auth", "Group")):
         for field in model._meta.get_fields():
-            if getattr(field, "many_to_many", False):
+            if (
+                getattr(field, "many_to_many", False)
+                and not getattr(field, "auto_created", False)
+            ):
                 through = field.remote_field.through
                 if through._meta.managed:
                     preserved.add(through._meta.db_table)

@@ -16,6 +16,8 @@ This guide takes you from nothing installed to a working PWMS instance (backend 
 
 Commands are shown for **Windows (PowerShell)** first, with the **macOS / Linux** equivalent wherever it differs.
 
+For a source-verified catalogue of the project's Django management commands, options, side effects and examples, see [PWMS Command Reference](./commands.md).
+
 ## 📑 Contents
 
 |                                                                           |                                                                      |

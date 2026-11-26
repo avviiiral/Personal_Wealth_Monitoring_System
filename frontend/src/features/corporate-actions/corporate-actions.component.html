@@ -1,12 +1,12 @@
 <section class="corporate-actions-page">
   <header class="page-header"><div><p class="eyebrow">PORTFOLIO INTELLIGENCE</p><h1>Corporate Actions</h1>
-    <p class="subtitle">Monitor exchange announcements and reconcile actions against your portfolio.</p></div>
+    <p class="subtitle">Monitor exchange announcements and reconcile actions against your portfolio. Nothing is booked until you accept.</p></div>
     <button class="refresh-button" type="button" (click)="load()" [disabled]="loading">↻ Refresh</button>
   </header>
   <div class="summary-grid">
     <article class="summary-card"><span>Total notifications</span><strong>{{total}}</strong><small>Across your portfolio exposures</small></article>
-    <article class="summary-card"><span>Pending in this view</span><strong>{{pendingCount}}</strong><small>Require investor review</small></article>
-    <article class="summary-card"><span>Direct exposure</span><strong>{{directCount}}</strong><small>Potential investor-level action</small></article>
+    <article class="summary-card"><span>Needing a decision</span><strong>{{pendingCount}}</strong><small>Pending, identity or manual review</small></article>
+    <article class="summary-card"><span>Direct exposure</span><strong>{{directCount}}</strong><small>Positions in your own ledger</small></article>
     <article class="summary-card"><span>Indirect exposure</span><strong>{{indirectCount}}</strong><small>Mutual-fund / PMS holdings</small></article>
   </div>
   <nav class="filter-bar" aria-label="Filter corporate actions">
@@ -14,17 +14,19 @@
       (click)="selectFilter(filter.value)">{{filter.label}}</button>
   </nav>
   <div class="state-panel" *ngIf="loading">Loading corporate action notifications…</div>
-  <div class="error-panel" *ngIf="error">{{error}}</div>
+  <div class="error-panel" *ngIf="error" role="alert">{{error}}</div>
+  <div class="success-panel" *ngIf="message&&!error" role="status">{{message}}</div>
   <div class="state-panel" *ngIf="!loading&&!error&&items.length===0">
     <strong>No corporate action notifications</strong>
-    <p>Matched exchange announcements appear here after the monitoring run.</p>
+    <p>Matched exchange announcements appear here after the monitoring run or <code>reconcile_uploaded_corporate_actions</code>.</p>
   </div>
   <div class="action-list" *ngIf="!loading&&items.length">
     <article class="action-card" *ngFor="let item of items;trackBy:trackById">
       <div class="action-topline"><div><div class="action-tags">
-        <span class="type-tag">{{item.action.action_type.replace('_',' ')}}</span>
-        <span class="status-tag" [attr.data-status]="item.reconciliation.status">{{item.reconciliation.status.replace('_',' ')}}</span>
+        <span class="type-tag">{{item.action.action_type_display||item.action.action_type.replace('_',' ')}}</span>
+        <span class="status-tag" [attr.data-status]="item.reconciliation.status">{{statusLabels[item.reconciliation.status]||item.reconciliation.status}}</span>
         <span class="exposure-tag">{{item.direct_exposure?'Direct exposure':'Indirect exposure'}}</span>
+        <span class="verify-tag" [attr.data-status]="item.action.status">Event {{item.action.status==='CONFIRMED'?'verified':item.action.status==='REJECTED'?'cancelled':'unverified'}}</span>
       </div><h2>{{item.action.security_name}}</h2>
       <p class="security-meta">{{item.action.symbol||'—'}} <span *ngIf="item.action.isin">· {{item.action.isin}}</span>
         <span *ngIf="!item.action.isin">· Source ISIN unavailable</span> <span *ngIf="item.action.exchange">· {{item.action.exchange}}</span></p></div>
@@ -33,10 +35,15 @@
         <div><span>Ex-date</span><strong>{{item.action.ex_date|date:'dd MMM yyyy'}}</strong></div>
         <div><span>Record date</span><strong>{{item.action.record_date?(item.action.record_date|date:'dd MMM yyyy'):'Not available'}}</strong></div>
         <div><span>Payment date</span><strong>{{item.action.payment_date?(item.action.payment_date|date:'dd MMM yyyy'):'Not applicable / unavailable'}}</strong></div>
-        <div><span>Ratio / amount</span><strong>{{item.action.old_units&&item.action.new_units?(item.action.old_units+':'+item.action.new_units):(item.action.cash_per_unit?('₹'+item.action.cash_per_unit):'Verify source')}}</strong></div>
+        <div><span>Terms</span><strong>{{describeTerms(item.action)}}</strong></div>
+        <div><span>Official source</span><strong>{{item.action.source||'—'}}</strong></div>
+        <div *ngIf="isRestructuring(item.action.action_type)"><span>Resulting security</span><strong>{{resultingSecurityLabel(item.action)}}</strong></div>
+        <div *ngIf="isRestructuring(item.action.action_type)"><span>Cost allocation</span><strong>{{costAllocationLabel(item.action)}}</strong></div>
+        <div *ngIf="item.action.action_type==='MERGER'&&item.action.cash_per_unit"><span>Cash component</span><strong>{{formatAmount(item.action.cash_per_unit)}} per share</strong></div>
       </div>
+
       <section class="identity-review" *ngIf="item.reconciliation.status==='PENDING_USER_APPROVAL'">
-        <div><strong>Confirm security identity</strong><p>The provider did not supply an ISIN. PWMS found exact {{item.reconciliation.identity_match_method|lowercase}} candidate matches. No transaction will be created unless you approve a specific holding.</p></div>
+        <div><strong>Confirm security identity</strong><p>The provider did not supply a verified ISIN. PWMS found exact {{item.reconciliation.identity_match_method|lowercase}} candidate matches. Approving a holding books the entitlement for it; nothing is created otherwise.</p></div>
         <div class="candidate-list" *ngIf="item.reconciliation.candidate_assets.length;else noCandidates">
           <label *ngFor="let candidate of item.reconciliation.candidate_assets" class="candidate-option">
             <input type="radio" [name]="'candidate-'+item.id" [value]="candidate.id"
@@ -52,28 +59,149 @@
           <button type="button" class="quiet-danger" (click)="decideIdentity(item,'REJECT')" [disabled]="busyId===item.id">Reject match</button>
         </div>
       </section>
-      <div class="exposure-list" *ngIf="item.exposures.length"><span class="section-label">Affected investments</span>
+
+      <ng-container *ngIf="item.reconciliation.summary as summary">
+        <div class="impact-grid" *ngIf="eligiblePositions(item.reconciliation.positions).length">
+          <div><span>Affected portfolios</span><strong>{{summary.affected_portfolio_count}}</strong></div>
+          <div><span>Family members</span><strong>{{summary.affected_family_members.join(', ')||'—'}}</strong></div>
+          <div><span>Asset names / classes</span><strong>{{summary.affected_asset_names.join(', ')||'—'}}<small *ngIf="summary.affected_asset_classes.length"> · {{summary.affected_asset_classes.join(', ')}}</small></strong></div>
+          <div><span>Original quantity</span><strong>{{formatQuantity(summary.original_quantity)}}</strong></div>
+          <div><span>Proposed adjustment</span><strong>{{item.action.action_type==='CASH_DIVIDEND'?formatAmount(summary.cash_amount):formatQuantity(summary.proposed_adjustment,true)}}</strong></div>
+          <div><span>New quantity</span><strong>{{formatQuantity(summary.resulting_quantity)}}</strong></div>
+          <div><span>Already uploaded</span><strong>{{summary.already_recorded}}</strong></div>
+          <div><span>Manual review</span><strong>{{summary.manual_review}}</strong></div>
+        </div>
+      </ng-container>
+
+      <div class="position-table-wrap" *ngIf="eligiblePositions(item.reconciliation.positions).length">
+        <table class="position-table">
+          <thead><tr>
+            <th>Family member</th><th>Portfolio · asset name</th><th>Class · subclass</th><th>Underlying</th>
+            <th class="num">Eligible qty</th><th class="num">Adjustment</th><th class="num">New qty</th>
+            <th class="num">Cost basis</th><th>Status</th>
+          </tr></thead>
+          <tbody>
+            <ng-container *ngFor="let position of eligiblePositions(item.reconciliation.positions);trackBy:trackPosition">
+              <tr>
+                <td data-label="Family member">{{position.family_name||'—'}}</td>
+                <td data-label="Portfolio · asset name">{{position.portfolio||'—'}}<small> · {{position.asset_name}}</small></td>
+                <td data-label="Class · subclass">{{position.asset_class||'—'}}<small> · {{position.sub_class||'—'}}</small></td>
+                <td data-label="Underlying">{{position.underlying}}</td>
+                <td data-label="Eligible qty" class="num">{{formatQuantity(position.eligible_quantity)}}</td>
+                <td data-label="Adjustment" class="num">{{item.action.action_type==='CASH_DIVIDEND'?formatAmount(position.cash_amount):formatQuantity(position.quantity_delta,true)}}</td>
+                <td data-label="New qty" class="num">{{formatQuantity(position.resulting_quantity)}}<small *ngIf="position.new_security_quantity"> + {{formatQuantity(position.new_security_quantity)}} new</small></td>
+                <td data-label="Cost basis" class="num">{{formatAmount(position.cost_basis)}}</td>
+                <td data-label="Status"><span class="position-status" [attr.data-status]="position.status">{{positionLabels[position.status]||position.status}}</span></td>
+              </tr>
+              <tr class="detail-row"><td colspan="9">
+                <p *ngIf="position.explanation&&position.status!=='ALREADY_RECORDED'">{{position.explanation}}</p>
+                <p *ngIf="position.reason" class="reason">{{position.reason}}</p>
+                <p *ngIf="position.eligibility_rule" class="rule">{{position.eligibility_rule}}</p>
+                <ul *ngIf="position.matched_transactions.length" class="matched-list">
+                  <li *ngFor="let tx of position.matched_transactions">Existing #{{tx.id}} · {{tx.transaction_type}} · {{tx.transaction_date|date:'dd MMM yyyy'}} · qty {{formatQuantity(tx.quantity)}} · {{formatAmount(tx.amount)}} · {{tx.source}}<span *ngIf="tx.portfolio"> · {{tx.portfolio}}</span></li>
+                </ul>
+                <table class="entries-table" *ngIf="position.planned_entries.length&&(isRestructuring(item.action.action_type)||position.planned_entries.length>1||position.status==='APPLIED')">
+                  <thead><tr><th>Security</th><th>Entry</th><th>Date</th><th class="num">Quantity</th><th class="num">Amount</th></tr></thead>
+                  <tbody><tr *ngFor="let entry of position.planned_entries">
+                    <td>{{entry.role==='RESULT'?entry.underlying:position.underlying}}<small *ngIf="entry.role==='RESULT'"> (resulting)</small></td>
+                    <td>{{entry.transaction_type}} · {{entry.label}}</td>
+                    <td>{{entry.transaction_date|date:'dd MMM yyyy'}}</td>
+                    <td class="num">{{formatQuantity(entry.quantity,true)}}</td>
+                    <td class="num">{{formatAmount(entry.amount)}}</td>
+                  </tr></tbody>
+                </table>
+                <p *ngIf="position.created_transaction_ids.length" class="rule">Booked as transaction(s) #{{position.created_transaction_ids.join(', #')}}.</p>
+              </td></tr>
+            </ng-container>
+          </tbody>
+        </table>
+      </div>
+      <p class="muted-note" *ngIf="ineligiblePositions(item.reconciliation.positions).length">
+        <button type="button" class="link-button" (click)="showIneligible[item.id]=!showIneligible[item.id]">
+          {{showIneligible[item.id]?'Hide':'Show'}} {{ineligiblePositions(item.reconciliation.positions).length}} position(s) with no holding before the ex-date
+        </button>
+      </p>
+      <ul class="matched-list" *ngIf="showIneligible[item.id]">
+        <li *ngFor="let position of ineligiblePositions(item.reconciliation.positions)">{{position.family_name}} · {{position.portfolio}} · {{position.asset_name}} — {{position.reason}}</li>
+      </ul>
+
+      <div class="exposure-list" *ngIf="item.exposures.length&&!item.direct_exposure"><span class="section-label">Affected investments</span>
         <div class="exposure-row" *ngFor="let exposure of item.exposures">
           <span><b>{{exposure.investment_name}}</b><small>{{exposure.type==='DIRECT'?'Direct security holding':exposure.type+' underlying exposure'}}</small></span>
-          <span *ngIf="exposure.holding_weight">{{exposure.holding_weight}}% of fund NAV</span>
+          <span *ngIf="exposure.holding_weight">{{exposure.holding_weight}}% of holding</span>
         </div>
       </div>
       <p class="safety-note" *ngIf="!item.direct_exposure&&item.exposures.length">
-        This is indirect exposure through an investment product. Do not create a direct stock transaction for this exposure.
+        This is indirect exposure through an investment product. No direct stock transaction will be created for it.
       </p>
-      <p class="safety-note" *ngIf="item.direct_exposure&&item.reconciliation.status==='PENDING'">
-        Eligible quantity is estimated from dated transaction history before the ex-date. Verify the official entitlement before applying the action.
+      <p class="safety-note" *ngIf="hasCashInLieu(item)">
+        Part of the entitlement is fractional and is settled by the company in cash (cash in lieu). It is not booked here; record the proceeds when you receive them.
       </p>
       <p class="safety-note" *ngIf="item.reconciliation.notes">{{item.reconciliation.notes}}</p>
+      <p class="audit-note" *ngIf="item.reconciliation.reviewed_by&&item.reconciliation.reviewed_at">
+        Decision by {{item.reconciliation.reviewed_by}} on {{item.reconciliation.reviewed_at|date:'dd MMM yyyy, HH:mm'}}.
+      </p>
+
+      <section class="decision-panel" *ngIf="acceptingId===item.id">
+        <strong>Accept and book this corporate action?</strong>
+        <p>{{plannedEntryCount(item.reconciliation.positions)}} ledger transaction(s) will be created for
+          {{item.reconciliation.summary?.status_counts?.['PENDING']||0}} position(s), dated as shown above, and the affected holdings and portfolio positions will be rebuilt.
+          Positions already uploaded or needing manual review are not changed. Existing transactions are never modified.</p>
+        <div class="identity-actions">
+          <button type="button" class="primary" (click)="confirmAccept(item)" [disabled]="busyId===item.id">Confirm and book</button>
+          <button type="button" (click)="acceptingId=null" [disabled]="busyId===item.id">Cancel</button>
+        </div>
+      </section>
+      <section class="decision-panel" *ngIf="rejectingId===item.id">
+        <label for="reject-{{item.id}}"><strong>Reason for rejecting</strong></label>
+        <textarea id="reject-{{item.id}}" rows="2" [(ngModel)]="rejectReason" maxlength="1000"
+          placeholder="e.g. Shares were sold before the record date"></textarea>
+        <p>Rejecting changes no transaction or holding, and later scans will not reopen it.</p>
+        <div class="identity-actions">
+          <button type="button" class="quiet-danger" (click)="confirmReject(item)" [disabled]="busyId===item.id">Reject action</button>
+          <button type="button" (click)="rejectingId=null" [disabled]="busyId===item.id">Cancel</button>
+        </div>
+      </section>
+      <section class="decision-panel terms-panel" *ngIf="termsId===item.id">
+        <strong>Complete or correct the official event terms</strong>
+        <p>Enter values only from the company's or exchange's official notice. Saving recalculates the proposal; nothing is booked until you accept.</p>
+        <div class="terms-grid">
+          <label>Old units<input type="text" inputmode="decimal" [(ngModel)]="termsForm['old_units']"></label>
+          <label>New units<input type="text" inputmode="decimal" [(ngModel)]="termsForm['new_units']"></label>
+          <label>Cash / dividend per share<input type="text" inputmode="decimal" [(ngModel)]="termsForm['cash_per_unit']"></label>
+          <label>Record date<input type="date" [(ngModel)]="termsForm['record_date']"></label>
+          <label>Payment date<input type="date" [(ngModel)]="termsForm['payment_date']"></label>
+          <label>Cash-in-lieu price<input type="text" inputmode="decimal" [(ngModel)]="termsForm['cash_in_lieu_price']"></label>
+          <ng-container *ngIf="isRestructuring(item.action.action_type)">
+            <label>Resulting ISIN<input type="text" maxlength="20" [(ngModel)]="termsForm['resulting_isin']"></label>
+            <label>Resulting symbol<input type="text" maxlength="50" [(ngModel)]="termsForm['resulting_symbol']"></label>
+            <label>Resulting company<input type="text" maxlength="255" [(ngModel)]="termsForm['resulting_security_name']"></label>
+            <label>Cost allocation ratio (0–1)<input type="text" inputmode="decimal" [(ngModel)]="termsForm['cost_allocation_ratio']"></label>
+          </ng-container>
+        </div>
+        <div class="identity-actions">
+          <button type="button" class="primary" (click)="saveTerms(item)" [disabled]="busyId===item.id">Save terms</button>
+          <button type="button" (click)="termsId=null" [disabled]="busyId===item.id">Cancel</button>
+        </div>
+      </section>
+
       <footer class="action-footer">
+        <button type="button" class="primary" (click)="openAccept(item)" *ngIf="item.reconciliation.can_accept"
+          [disabled]="busyId===item.id">Accept…</button>
+        <button type="button" class="quiet-danger" (click)="openReject(item)"
+          *ngIf="item.reconciliation.can_reject&&item.reconciliation.status!=='PENDING_USER_APPROVAL'"
+          [disabled]="busyId===item.id">Reject…</button>
+        <button type="button" class="secondary" (click)="refreshCalculation(item)" *ngIf="item.direct_exposure&&isOpenStatus(item)"
+          [disabled]="busyId===item.id">Recalculate</button>
+        <button type="button" class="secondary" (click)="openTerms(item)" *ngIf="canEditTerms(item)"
+          [disabled]="busyId===item.id">Complete event terms</button>
+        <button type="button" class="secondary" (click)="verifyEvent(item)" *ngIf="item.action.status==='PENDING'&&isOpenStatus(item)"
+          [disabled]="busyId===item.id">Mark terms verified</button>
         <button type="button" class="secondary" (click)="markReviewed(item)" [disabled]="busyId===item.id||item.reviewed">{{item.reviewed?'Reviewed':'Mark reviewed'}}</button>
-        <button type="button" class="secondary" (click)="confirmAction(item)"
-          *ngIf="item.direct_exposure&&item.action.status==='PENDING'&&item.reconciliation.status==='PENDING'"
-          [disabled]="busyId===item.id">Verify and apply action</button>
         <button type="button" class="secondary" (click)="markAlreadyRecorded(item)"
-          *ngIf="item.direct_exposure&&item.reconciliation.status==='PENDING'" [disabled]="busyId===item.id">Already recorded</button>
+          *ngIf="item.direct_exposure&&item.reconciliation.status==='MANUAL_REVIEW'" [disabled]="busyId===item.id">Recorded elsewhere</button>
         <button type="button" class="quiet-danger" (click)="dismiss(item)"
-          *ngIf="item.reconciliation.status!=='PENDING_USER_APPROVAL'" [disabled]="busyId===item.id">Dismiss</button>
+          *ngIf="!['PENDING_USER_APPROVAL','COMPLETED','APPROVED','REJECTED','DISMISSED'].includes(item.reconciliation.status)" [disabled]="busyId===item.id">Dismiss</button>
       </footer>
     </article>
   </div>

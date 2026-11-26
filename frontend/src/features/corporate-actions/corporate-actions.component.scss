@@ -163,3 +163,109 @@ html.dark-theme .action-footer .quiet-danger {
   opacity: .5;
   cursor: not-allowed;
 }
+
+/* Reconciliation detail: impact summary, per-position calculation and decisions. */
+.success-panel {
+  background: var(--accent-soft, #e6f4ef);
+  border: 1px solid var(--accent, #0f7a5c);
+  color: var(--accent, #0f7a5c);
+  border-radius: 12px;
+  padding: 12px 16px;
+  margin-bottom: 12px;
+  font-size: 13px;
+}
+.action-tags .verify-tag[data-status="CONFIRMED"] { background: #e8f6ef; color: #176b43; }
+.action-tags .verify-tag[data-status="REJECTED"] { background: #fdecec; color: #a23f3f; }
+.action-tags .status-tag[data-status="MANUAL_REVIEW"],
+.action-tags .status-tag[data-status="PENDING_USER_APPROVAL"] { background: #fff4dc; color: #8d5c00; }
+.action-tags .status-tag[data-status="APPROVED"],
+.action-tags .status-tag[data-status="ALREADY_RECORDED"] { background: #e8f6ef; color: #176b43; }
+.action-tags .status-tag[data-status="REJECTED"],
+.action-tags .status-tag[data-status="DISMISSED"] { background: #fdecec; color: #a23f3f; }
+
+.impact-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin: 0 0 14px;
+}
+.impact-grid div { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.impact-grid span { font-size: 11px; color: var(--muted, #677386); }
+.impact-grid strong { font-size: 13px; font-weight: 600; color: var(--ink, #172033); overflow-wrap: anywhere; }
+.impact-grid small { font-weight: 400; color: var(--muted, #828c9d); }
+
+.position-table-wrap { overflow-x: auto; margin-bottom: 8px; }
+.position-table, .entries-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.position-table th, .entries-table th {
+  text-align: left; font-size: 10px; letter-spacing: .06em; text-transform: uppercase;
+  color: var(--muted, #828c9d); font-weight: 700; padding: 6px 8px;
+  border-bottom: 1px solid var(--surface-line, #e2e7ef); white-space: nowrap;
+}
+.position-table td, .entries-table td { padding: 7px 8px; vertical-align: top; color: var(--ink, #172033); }
+.position-table td small, .entries-table td small { color: var(--muted, #828c9d); }
+.position-table .num, .entries-table .num { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.position-table .detail-row td { padding-top: 0; border-bottom: 1px solid var(--surface-line, #e2e7ef); }
+.detail-row p { margin: 0 0 6px; color: var(--muted, #657084); line-height: 1.5; }
+.detail-row .reason { color: #8d5c00; }
+.detail-row .rule { font-size: 11px; }
+.entries-table { margin: 4px 0 8px; background: var(--surface-hover, #f6f8fa); border-radius: 8px; }
+.position-status {
+  font-size: 10px; text-transform: uppercase; letter-spacing: .04em; padding: 3px 6px;
+  border-radius: 5px; background: var(--accent-soft, #e6f4ef); color: var(--muted, #657084); white-space: nowrap;
+}
+.position-status[data-status="PENDING"], .position-status[data-status="MANUAL_REVIEW"] { background: #fff4dc; color: #8d5c00; }
+.position-status[data-status="ALREADY_RECORDED"], .position-status[data-status="APPLIED"] { background: #e8f6ef; color: #176b43; }
+.position-status[data-status="REJECTED"] { background: #fdecec; color: #a23f3f; }
+.matched-list { margin: 0 0 6px; padding-left: 18px; font-size: 11px; color: var(--muted, #657084); }
+.muted-note, .audit-note { font-size: 12px; color: var(--muted, #657084); margin: 8px 0 0; }
+.link-button {
+  border: 0; background: transparent; padding: 0; color: var(--accent, #0f7a5c);
+  font: inherit; cursor: pointer; text-decoration: underline;
+}
+
+.decision-panel {
+  border: 1px solid var(--surface-line, #e2e7ef);
+  border-radius: 10px;
+  padding: 14px;
+  margin-top: 14px;
+  background: var(--surface-hover, #f6f8fa);
+  font-size: 13px;
+}
+.decision-panel p { margin: 6px 0 0; color: var(--muted, #657084); line-height: 1.5; }
+.decision-panel textarea, .terms-grid input {
+  width: 100%; box-sizing: border-box; margin-top: 6px;
+  border: 1px solid var(--surface-line, #e2e7ef); border-radius: 8px; padding: 8px 10px;
+  background: var(--surface, #fff); color: var(--ink, #172033); font: inherit;
+}
+.terms-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin-top: 10px; }
+.terms-grid label { display: flex; flex-direction: column; font-size: 11px; color: var(--muted, #677386); }
+
+.action-footer .primary { background: var(--accent, #0f7a5c); border-color: var(--accent, #0f7a5c); color: #fff; }
+
+html.dark-theme .success-panel { background: #123329; color: #78d9b2; border-color: #1f5c47; }
+html.dark-theme .entries-table, html.dark-theme .decision-panel { background: #202631; }
+html.dark-theme .position-status[data-status="PENDING"],
+html.dark-theme .position-status[data-status="MANUAL_REVIEW"],
+html.dark-theme .action-tags .status-tag[data-status="MANUAL_REVIEW"] { background: #3a2c14; color: #f3c477; }
+html.dark-theme .position-status[data-status="ALREADY_RECORDED"],
+html.dark-theme .position-status[data-status="APPLIED"],
+html.dark-theme .action-tags .verify-tag[data-status="CONFIRMED"],
+html.dark-theme .action-tags .status-tag[data-status="ALREADY_RECORDED"],
+html.dark-theme .action-tags .status-tag[data-status="APPROVED"] { background: #123329; color: #78d9b2; }
+html.dark-theme .detail-row .reason { color: #f3c477; }
+html.dark-theme .decision-panel textarea, html.dark-theme .terms-grid input { background: var(--surface, #161b22); }
+
+@media (max-width: 900px) {
+  .impact-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .terms-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 600px) {
+  .position-table thead { display: none; }
+  .position-table tr { display: block; }
+  .position-table td { display: flex; justify-content: space-between; gap: 12px; padding: 4px 0; }
+  .position-table td::before { content: attr(data-label); color: var(--muted, #828c9d); font-size: 11px; }
+  .position-table .detail-row td { display: block; }
+  .position-table .detail-row td::before { content: none; }
+  .position-table .num { text-align: right; }
+  .terms-grid { grid-template-columns: minmax(0, 1fr); }
+}

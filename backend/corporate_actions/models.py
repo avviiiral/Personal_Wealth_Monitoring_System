@@ -63,6 +63,13 @@ class CorporateAction(models.Model):
     cash_per_unit = models.DecimalField(max_digits=20, decimal_places=8, null=True, blank=True)
     resulting_isin = models.CharField(max_length=20, blank=True, default="")
     resulting_symbol = models.CharField(max_length=50, blank=True, default="")
+    resulting_security_name = models.CharField(max_length=255, blank=True, default="")
+    # Official fraction of the pre-event cost basis that moves to the resulting
+    # security (demerger), or that is carried to the successor shares when a
+    # merger also pays cash. Never inferred.
+    cost_allocation_ratio = models.DecimalField(max_digits=12, decimal_places=8, null=True, blank=True)
+    # Official price paid per share for fractional entitlements (cash in lieu).
+    cash_in_lieu_price = models.DecimalField(max_digits=20, decimal_places=8, null=True, blank=True)
     source = models.CharField(max_length=40, blank=True, default="MANUAL")
     source_reference = models.URLField(max_length=1000, blank=True, default="")
     status = models.CharField(
@@ -99,17 +106,35 @@ class CorporateAction(models.Model):
                 raise ValidationError("Ratio units must be greater than zero.")
         if self.cash_per_unit is not None and self.cash_per_unit < 0:
             raise ValidationError("cash_per_unit cannot be negative.")
+        if self.cost_allocation_ratio is not None and not (0 < self.cost_allocation_ratio <= 1):
+            raise ValidationError("cost_allocation_ratio must be greater than 0 and at most 1.")
+        if self.cash_in_lieu_price is not None and self.cash_in_lieu_price < 0:
+            raise ValidationError("cash_in_lieu_price cannot be negative.")
         if self.record_date and self.payment_date and self.payment_date < self.record_date:
             raise ValidationError("payment_date cannot precede record_date.")
 
     @property
     def quantity_factor(self):
-        """Multiplier for eligible pre-event units; only valid for confirmed ratio actions."""
+        """Total-holding multiplier of a confirmed ratio action (informational only).
+
+        BONUS / STOCK_DIVIDEND issue ``new_units`` extra shares per ``old_units``
+        held, so the holding grows by (old + new) / old; splits convert
+        ``old_units`` into ``new_units``. Holdings change only through accepted
+        ledger transactions, never through this value.
+        """
         if self.status != CorporateActionStatus.CONFIRMED or self.action_type not in RATIO_ACTIONS:
             return None
         if not self.old_units or not self.new_units:
             return None
+        if self.action_type in {CorporateActionType.BONUS, CorporateActionType.STOCK_DIVIDEND}:
+            return (self.old_units + self.new_units) / self.old_units
         return self.new_units / self.old_units
+
+    @property
+    def event_identity(self):
+        """Owner-independent identity of the underlying event."""
+        identity = (self.isin or "").strip().upper() or f"SYMBOL:{(self.symbol or '').strip().upper()}"
+        return f"{identity}|{self.action_type}|{self.ex_date.isoformat() if self.ex_date else ''}"
 
     def __str__(self):
         return f"{self.security_name} — {self.get_action_type_display()} ({self.ex_date})"
@@ -168,12 +193,100 @@ class CorporateActionReconciliation(models.Model):
     reviewed_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="reviewed_corporate_action_reconciliations")
     notes = models.TextField(blank=True, default="")
     idempotency_key = models.CharField(max_length=64, unique=True)
+    # Hash of the proposal last shown to the user; acceptance re-calculates
+    # under lock and refuses to book a proposal that changed in between.
+    proposal_fingerprint = models.CharField(max_length=64, blank=True, default="")
+    last_reconciled_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
         constraints = [models.UniqueConstraint(fields=["action", "owner"], name="uniq_corp_action_reconciliation")]
         indexes = [models.Index(fields=["owner", "status", "-updated_at"], name="corp_recon_owner_status_idx")]
+
+
+TERMINAL_RECONCILIATION_STATUSES = {
+    CorporateActionReconciliationStatus.COMPLETED,
+    CorporateActionReconciliationStatus.APPROVED,
+    CorporateActionReconciliationStatus.REJECTED,
+    CorporateActionReconciliationStatus.DISMISSED,
+}
+
+
+class CorporateActionPositionStatus(models.TextChoices):
+    PENDING = "PENDING", "Pending review"
+    ALREADY_RECORDED = "ALREADY_RECORDED", "Already recorded"
+    MANUAL_REVIEW = "MANUAL_REVIEW", "Manual review"
+    NOT_ELIGIBLE = "NOT_ELIGIBLE", "Not eligible"
+    APPLIED = "APPLIED", "Applied"
+    REJECTED = "REJECTED", "Rejected"
+
+
+class CorporateActionPosition(models.Model):
+    """One eligible ledger position (family member + portfolio hierarchy) of a reconciliation.
+
+    This is the proposal shown to the user and its audit trail; the accounting
+    itself lives only in ``investments.Transaction``.
+    """
+
+    reconciliation = models.ForeignKey(CorporateActionReconciliation, on_delete=models.CASCADE, related_name="positions")
+    family = models.ForeignKey("users.FamilyGroup", on_delete=models.PROTECT, null=True, blank=True, related_name="corporate_action_positions")
+    position_key = models.CharField(max_length=64)
+    status = models.CharField(max_length=20, choices=CorporateActionPositionStatus.choices, default=CorporateActionPositionStatus.PENDING)
+    family_name = models.CharField(max_length=255, blank=True, default="")
+    portfolio = models.CharField(max_length=255, blank=True, default="")
+    asset_class = models.CharField(max_length=255, blank=True, default="")
+    sub_class = models.CharField(max_length=255, blank=True, default="")
+    asset_name = models.CharField(max_length=255, blank=True, default="")
+    underlying = models.CharField(max_length=255, blank=True, default="")
+    advisors = models.CharField(max_length=255, blank=True, default="")
+    asset = models.ForeignKey("investments.Asset", on_delete=models.SET_NULL, null=True, blank=True, related_name="corporate_action_positions")
+    asset_ids = models.JSONField(default=list, blank=True)
+    eligibility_cutoff = models.DateField(null=True, blank=True)
+    eligible_quantity = models.DecimalField(max_digits=24, decimal_places=8, null=True, blank=True)
+    quantity_delta = models.DecimalField(max_digits=24, decimal_places=8, null=True, blank=True)
+    resulting_quantity = models.DecimalField(max_digits=24, decimal_places=8, null=True, blank=True)
+    new_security_quantity = models.DecimalField(max_digits=24, decimal_places=8, null=True, blank=True)
+    fractional_entitlement = models.DecimalField(max_digits=24, decimal_places=8, null=True, blank=True)
+    cost_basis = models.DecimalField(max_digits=24, decimal_places=4, null=True, blank=True)
+    resulting_cost_basis = models.DecimalField(max_digits=24, decimal_places=4, null=True, blank=True)
+    allocated_cost = models.DecimalField(max_digits=24, decimal_places=4, null=True, blank=True)
+    cash_amount = models.DecimalField(max_digits=24, decimal_places=4, null=True, blank=True)
+    matched_transaction_ids = models.JSONField(default=list, blank=True)
+    created_transaction_ids = models.JSONField(default=list, blank=True)
+    planned_entries = models.JSONField(default=list, blank=True)
+    calculation = models.JSONField(default=dict, blank=True)
+    reason = models.TextField(blank=True, default="")
+    applied_at = models.DateTimeField(null=True, blank=True)
+    applied_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="applied_corporate_action_positions")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["family_name", "portfolio", "asset_class", "sub_class", "asset_name", "id"]
+        constraints = [
+            models.UniqueConstraint(fields=["reconciliation", "position_key"], name="uniq_corp_action_position"),
+        ]
+        indexes = [models.Index(fields=["reconciliation", "status"], name="corp_position_status_idx")]
+
+    def __str__(self):
+        return f"{self.family_name} / {self.asset_name} / {self.underlying} ({self.status})"
+
+
+class CorporateActionLedgerEntry(models.Model):
+    """Audit link between an accepted position and the ledger row it created."""
+
+    position = models.ForeignKey(CorporateActionPosition, on_delete=models.CASCADE, related_name="ledger_entries")
+    transaction = models.OneToOneField("investments.Transaction", on_delete=models.CASCADE, related_name="corporate_action_entry")
+    role = models.CharField(max_length=20)
+    description = models.CharField(max_length=500)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["position_id", "id"]
+
+    def __str__(self):
+        return self.description
 
 
 class CorporateActionNotification(models.Model):

@@ -6,10 +6,7 @@ from decimal import Decimal
 from django.db.models import OuterRef, QuerySet, Subquery, Q
 
 from investments.models import Asset, AssetUnderlyingHolding, SecurityAlias, SecurityMaster, Transaction, TransactionType
-from corporate_actions.position_adjustment import (
-    calculate_position_with_actions,
-    confirmed_ratio_actions,
-)
+from corporate_actions.position_adjustment import ledger_sort_key
 from investments.services.security_master import SecurityMasterService
 from analytics.services.cash_flows import build_cash_flows, xirr_percent
 from market_data.models import DataSource, ManualAssetPrice, MarketPrice
@@ -58,6 +55,7 @@ class PortfolioTreeService:
                 "asset_class", "sub_class", "asset_name", "underlying",
                 "advisors", "transaction_date", "transaction_type",
                 "quantity", "price_per_unit", "amount", "fees", "notes", "id",
+                "created_at",
                 "asset__owner_id", "asset__family_id", "asset__name",
                 "asset__category", "asset__isin", "asset__symbol",
                 "asset__security_master__id",
@@ -92,16 +90,17 @@ class PortfolioTreeService:
         return True
 
     @staticmethod
-    def _calculate_position(transactions, corporate_actions=None):
-        """Calculate a dated position, sharing ratio-action replay when applicable."""
-        if corporate_actions:
-            return calculate_position_with_actions(transactions, corporate_actions)
+    def _calculate_position(transactions):
+        """Calculate a position from the ledger rows only.
 
+        Corporate actions are reflected through accepted BONUS / SPLIT / SELL /
+        BUY rows; persisted CorporateAction events are never overlaid.
+        """
         # Preserve historical Portfolio Tree inventory reconciliation for legacy
         # imports, including SELL rows parsed before their BUY rows.
         quantity = Decimal("0")
         invested_value = Decimal("0")
-        for tx in transactions:
+        for tx in sorted(transactions, key=ledger_sort_key):
             tx_quantity = tx.quantity or Decimal("0")
             tx_amount = tx.amount or Decimal("0")
             transaction_type = str(tx.transaction_type).strip().upper()
@@ -118,13 +117,21 @@ class PortfolioTreeService:
                 if quantity <= 0:
                     quantity = Decimal("0")
                     invested_value = Decimal("0")
-            elif transaction_type in ("BONUS", "SPLIT"):
+            elif transaction_type == "BONUS":
                 quantity += max(tx_quantity, Decimal("0"))
+            elif transaction_type == "SPLIT":
+                # Signed change: negative for a reverse split, never below zero.
+                quantity += tx_quantity
+                if quantity <= 0:
+                    quantity = Decimal("0")
+                    invested_value = Decimal("0")
 
         net_quantity = sum(
             (
                 (tx.quantity or Decimal("0"))
-                if str(tx.transaction_type).strip().upper() in ("BUY", "SIP", "BONUS", "SPLIT")
+                if str(tx.transaction_type).strip().upper() in ("BUY", "SIP", "SPLIT")
+                else max(tx.quantity or Decimal("0"), Decimal("0"))
+                if str(tx.transaction_type).strip().upper() == "BONUS"
                 else -(tx.quantity or Decimal("0"))
                 if str(tx.transaction_type).strip().upper() == "SELL"
                 else Decimal("0")
@@ -432,13 +439,10 @@ class PortfolioTreeService:
         return price_cache
 
     @classmethod
-    def _build_asset(cls, transactions, xirr_transactions, asset_name_xirr, sub_class_xirr, price_cache, security_master_cache=None, corporate_actions=None):
+    def _build_asset(cls, transactions, xirr_transactions, asset_name_xirr, sub_class_xirr, price_cache, security_master_cache=None):
         first = transactions[0]
         asset = first.asset
-        position = cls._calculate_position(
-            transactions,
-            corporate_actions=corporate_actions,
-        )
+        position = cls._calculate_position(transactions)
         quantity = position["quantity"]
         invested_value = position["invested_value"]
         average_cost = position["average_cost"]
@@ -833,15 +837,7 @@ class PortfolioTreeService:
             asset_name = cls._clean(first.asset_name)
             asset_name_key = (family, portfolio, asset_class, sub_class, asset_name)
             sub_class_key = (family, portfolio, asset_class, sub_class)
-            first_asset = asset_transactions[0].asset
-            actions = confirmed_ratio_actions(
-                asset=first_asset,
-                owner=first_asset.owner,
-            )
-            position = cls._calculate_position(
-                asset_transactions,
-                corporate_actions=actions,
-            )
+            position = cls._calculate_position(asset_transactions)
             quantity = position["quantity"]
             asset_name_quantities[asset_name_key] = asset_name_quantities.get(asset_name_key, Decimal("0")) + quantity
             sub_class_quantities[sub_class_key] = sub_class_quantities.get(sub_class_key, Decimal("0")) + quantity
@@ -941,12 +937,7 @@ class PortfolioTreeService:
                         *matched_duplicates,
                     ]
                 }.values(),
-                key=lambda tx: (tx.transaction_date, tx.id),
-            )
-            position_asset = position_transactions[0].asset
-            position_actions = confirmed_ratio_actions(
-                asset=position_asset,
-                owner=position_asset.owner,
+                key=ledger_sort_key,
             )
             asset_data = cls._build_asset(
                 transactions=position_transactions,
@@ -957,7 +948,6 @@ class PortfolioTreeService:
                 sub_class_xirr=sub_class_xirr_values.get(sub_class_key),
                 price_cache=price_cache,
                 security_master_cache=security_master_cache,
-                corporate_actions=position_actions,
             )
             if asset_data["quantity"] <= 0:
                 continue

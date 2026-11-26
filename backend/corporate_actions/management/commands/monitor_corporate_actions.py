@@ -12,8 +12,8 @@ from django.db.models import Q
 from django.utils import timezone
 
 from config.pwms_config import section
-from corporate_actions.models import CorporateAction, CorporateActionStatus, CorporateActionType
-from corporate_actions.services import reconcile_action_for_all_users
+from corporate_actions.models import CorporateActionStatus, CorporateActionType
+from corporate_actions.services import reconcile_action_for_all_users, upsert_corporate_action
 from corporate_actions.audit import build_event_audit, mark_duplicate_events
 from corporate_actions.identity import (
     SOURCE_ISIN,
@@ -325,8 +325,10 @@ class Command(BaseCommand):
                         "owner": owner, "isin": "", "symbol": identity,
                         "action_type": event["action_type"], "ex_date": ex_date,
                     }
-                    action, was_created = CorporateAction.objects.update_or_create(
-                        **lookup, defaults=defaults
+                    # Never reset the user's verification status or overwrite
+                    # stored terms on a rescan (see upsert_corporate_action).
+                    action, was_created = upsert_corporate_action(
+                        owner=owner, lookup=lookup, defaults=defaults,
                     )
                     if was_created:
                         created += 1

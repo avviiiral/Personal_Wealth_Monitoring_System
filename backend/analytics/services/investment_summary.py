@@ -217,7 +217,15 @@ class InvestmentSummaryService:
             quantity = quantity or Decimal("0")
             if transaction_type == TransactionType.SELL:
                 net_quantity[key] -= quantity
-            else:
+            elif transaction_type in (
+                TransactionType.BUY,
+                TransactionType.SIP,
+                TransactionType.BONUS,
+                TransactionType.SPLIT,
+            ):
+                # SPLIT carries a signed change (negative for a reverse split).
+                # DIVIDEND / INTEREST / OTHER rows record entitled shares or
+                # cash, not holdings, so they never add to the quantity.
                 net_quantity[key] += quantity
 
         totals_by_asset = {}

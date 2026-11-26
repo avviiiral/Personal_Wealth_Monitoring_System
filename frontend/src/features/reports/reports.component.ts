@@ -1023,6 +1023,7 @@ This will recalculate the affected holding and cannot be undone.`,
         quantity: this.toNumber(tx.quantity),
         price_per_unit: this.toNumber(tx.price_per_unit),
         amount: this.toNumber(tx.amount),
+        description: tx.corporate_action_description || '',
       }));
 
     await this.exportWorkbook({
@@ -1040,6 +1041,7 @@ This will recalculate the affected holding and cannot be undone.`,
         { header: 'Quantity', key: 'quantity', width: 14, numFmt: '#,##,##0.00' },
         { header: 'Price', key: 'price_per_unit', width: 16, numFmt: '"₹"#,##,##0.00' },
         { header: 'Amount', key: 'amount', width: 18, numFmt: '"₹"#,##,##0' },
+        { header: 'Description', key: 'description', width: 48 },
       ],
       rows,
       filename: `${this.slugify(assetGroup.asset_name)}_transactions_${this.todayStamp()}.xlsx`,
@@ -1179,6 +1181,7 @@ This will recalculate the affected holding and cannot be undone.`,
         { header: 'Quantity', key: 'quantity', width: 14, numFmt: '#,##,##0.00' },
         { header: 'Price', key: 'price_per_unit', width: 16, numFmt: '"₹"#,##,##0.00' },
         { header: 'Amount', key: 'amount', width: 18, numFmt: '"₹"#,##,##0' },
+        { header: 'Description', key: 'description', width: 48 },
       ],
       rows,
       filename: `portfolio_detailed${familySlug}_${this.detailedRangeFrom || 'start'}_to_${this.detailedRangeTo || 'end'}.xlsx`,
@@ -1256,6 +1259,7 @@ This will recalculate the affected holding and cannot be undone.`,
       quantity: this.toNumber(tx.quantity),
       price_per_unit: this.toNumber(tx.price_per_unit),
       amount: this.toNumber(tx.amount),
+      description: tx.corporate_action_description || '',
     }));
   }
 

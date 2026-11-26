@@ -764,17 +764,29 @@ class PortfolioTreeServiceTests(TestCase):
         self.assertEqual(node["current_price"], 125.5)
         self.assertEqual(node["current_value"], 1255.0)
 
-    def test_split_adjusts_existing_units_before_a_post_split_sale(self):
-        CorporateAction.objects.create(
+    def _accepted_split_row(self, ex_date, additional_quantity):
+        """The ledger row an accepted 1:2 split books (signed SPLIT quantity change)."""
+        return Transaction.objects.create(
             owner=self.user,
-            action_type=CorporateActionType.STOCK_SPLIT,
-            security_name="Test Equity",
-            isin=self.asset.isin,
-            ex_date=date(2026, 3, 1),
-            old_units=Decimal("1"),
-            new_units=Decimal("2"),
-            status=CorporateActionStatus.CONFIRMED,
+            family=self.family,
+            asset=self.asset,
+            family_name="Family A",
+            portfolio="Portfolio A",
+            asset_class="Equity",
+            sub_class="Large Cap",
+            asset_name="Test Equity",
+            transaction_date=ex_date,
+            transaction_type="SPLIT",
+            quantity=additional_quantity,
+            price_per_unit=Decimal("0"),
+            amount=Decimal("0"),
+            fees=Decimal("0"),
+            source="OTHER",
         )
+
+    def test_split_adjusts_existing_units_before_a_post_split_sale(self):
+        # Corporate actions reach the tree only as accepted ledger rows.
+        self._accepted_split_row(date(2026, 3, 1), Decimal("10"))
         Transaction.objects.create(
             owner=self.user,
             family=self.family,
@@ -800,7 +812,9 @@ class PortfolioTreeServiceTests(TestCase):
         self.assertEqual(node["invested_value"], 750.0)
         self.assertEqual(node["average_cost"], 50.0)
 
-    def test_confirmed_split_adjusts_tree_quantity_without_changing_cost_basis(self):
+    def test_confirmed_split_event_alone_does_not_change_tree_quantity(self):
+        # Verifying an event (CorporateAction.status=CONFIRMED) is not the
+        # user's acceptance; without the accepted ledger row nothing changes.
         CorporateAction.objects.create(
             owner=self.user,
             action_type=CorporateActionType.STOCK_SPLIT,
@@ -811,6 +825,15 @@ class PortfolioTreeServiceTests(TestCase):
             new_units=Decimal("2"),
             status=CorporateActionStatus.CONFIRMED,
         )
+        result = PortfolioTreeService.build(owner=self.user, family_id=self.family.id)
+        node = self._find_asset_node(result, self.asset.isin)
+
+        self.assertIsNotNone(node)
+        self.assertEqual(node["quantity"], 10.0)
+        self.assertEqual(node["invested_value"], 1000.0)
+
+    def test_accepted_split_adjusts_tree_quantity_without_changing_cost_basis(self):
+        self._accepted_split_row(date(2026, 5, 1), Decimal("10"))
         result = PortfolioTreeService.build(owner=self.user, family_id=self.family.id)
         node = self._find_asset_node(result, self.asset.isin)
 

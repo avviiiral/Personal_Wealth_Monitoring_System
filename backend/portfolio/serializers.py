@@ -1,3 +1,4 @@
+from django.core.exceptions import ObjectDoesNotExist
 from rest_framework import serializers
 
 from investments.models import (
@@ -178,6 +179,15 @@ class TransactionSerializer(
     )
 
     isin = serializers.SerializerMethodField()
+    corporate_action_description = serializers.SerializerMethodField()
+
+    def get_corporate_action_description(self, obj):
+        """Description of an accepted corporate-action ledger row, else ''."""
+        try:
+            entry = obj.corporate_action_entry
+        except ObjectDoesNotExist:
+            return ""
+        return entry.description if entry is not None else ""
 
     def get_isin(self, obj):
         key = " ".join((obj.underlying or obj.asset_name or "").casefold().split())
@@ -221,6 +231,7 @@ class TransactionSerializer(
             "source",
             "source_key",
             "created_at",
+            "corporate_action_description",
         )
 
         read_only_fields = (
@@ -229,6 +240,7 @@ class TransactionSerializer(
             "family",
             "created_at",
             "updated_at",
+            "corporate_action_description",
         )
 
     def validate_asset(self, asset):

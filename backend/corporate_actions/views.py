@@ -1,43 +1,127 @@
 from django.core.exceptions import ValidationError
-from django.db import IntegrityError
-from django.db.models import Q
+from django.db import IntegrityError, transaction as db_transaction
+from django.db.models import Prefetch, Q
 from django.utils import timezone
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
-from users.permissions import CanWriteFinancialData, require_active_family
+from users.permissions import CanWriteFinancialData, is_admin_or_above
 from users.models import FamilyMembership
 from investments.models import Asset
-from portfolio.services.holding_engine import HoldingCalculationEngine
-from portfolio.services.portfolio_position_engine import PortfolioPositionEngine
 
 from .models import (
     CorporateAction,
     CorporateActionStatus,
-    CorporateActionType,
-    CorporateActionExposure,
     CorporateActionNotification,
+    CorporateActionPosition,
     CorporateActionReconciliation,
     CorporateActionReconciliationStatus,
 )
+from .reconciliation import (
+    ReconciliationError,
+    StaleProposalError,
+    accept_reconciliation,
+    is_terminal,
+    refresh_reconciliation,
+    reject_reconciliation,
+)
 from .services import resolve_corporate_action_candidates, update_notification_state, decide_missing_isin_reconciliation
+
+ReconStatus = CorporateActionReconciliationStatus
+
+EDITABLE_FIELDS = {
+    "action_type", "security_name", "isin", "symbol", "exchange", "ex_date",
+    "record_date", "payment_date", "old_units", "new_units", "cash_per_unit",
+    "resulting_isin", "resulting_symbol", "resulting_security_name",
+    "cost_allocation_ratio", "cash_in_lieu_price", "source", "source_reference",
+    "status", "notes", "metadata",
+}
+# Changing these after a booking would make the ledger disagree with the event.
+FINANCIAL_TERM_FIELDS = EDITABLE_FIELDS - {"status", "notes", "metadata", "source_reference"}
+BOOKED_STATUSES = {ReconStatus.COMPLETED, ReconStatus.APPROVED}
 
 
 def _serialize(action):
     return {
         "id": action.id, "action_type": action.action_type,
+        "action_type_display": action.get_action_type_display(),
         "security_name": action.security_name, "isin": action.isin,
         "symbol": action.symbol, "exchange": action.exchange,
         "ex_date": action.ex_date, "record_date": action.record_date,
         "payment_date": action.payment_date, "old_units": action.old_units,
         "new_units": action.new_units, "cash_per_unit": action.cash_per_unit,
         "resulting_isin": action.resulting_isin, "resulting_symbol": action.resulting_symbol,
+        "resulting_security_name": action.resulting_security_name,
+        "cost_allocation_ratio": action.cost_allocation_ratio,
+        "cash_in_lieu_price": action.cash_in_lieu_price,
         "source": action.source, "source_reference": action.source_reference,
         "status": action.status, "notes": action.notes, "metadata": action.metadata,
         "created_at": action.created_at, "updated_at": action.updated_at,
         "quantity_factor": action.quantity_factor,
+    }
+
+
+def _serialize_position(position):
+    calculation = position.calculation or {}
+    return {
+        "id": position.id,
+        "status": position.status,
+        "family_id": position.family_id,
+        "family_name": position.family_name,
+        "portfolio": position.portfolio,
+        "asset_class": position.asset_class,
+        "sub_class": position.sub_class,
+        "asset_name": position.asset_name,
+        "underlying": position.underlying,
+        "advisors": position.advisors,
+        "asset_ids": position.asset_ids,
+        "eligibility_cutoff": position.eligibility_cutoff,
+        "eligible_quantity": position.eligible_quantity,
+        "quantity_delta": position.quantity_delta,
+        "resulting_quantity": position.resulting_quantity,
+        "new_security_quantity": position.new_security_quantity,
+        "fractional_entitlement": position.fractional_entitlement,
+        "cost_basis": position.cost_basis,
+        "resulting_cost_basis": position.resulting_cost_basis,
+        "allocated_cost": position.allocated_cost,
+        "cash_amount": position.cash_amount,
+        "matched_transaction_ids": position.matched_transaction_ids,
+        "matched_transactions": calculation.get("matched_transactions", []),
+        "created_transaction_ids": position.created_transaction_ids,
+        "planned_entries": position.planned_entries,
+        "explanation": calculation.get("explanation", ""),
+        "eligibility_rule": calculation.get("eligibility_rule", ""),
+        "cash_in_lieu_pending": bool(calculation.get("cash_in_lieu_pending")),
+        "reason": position.reason,
+        "applied_at": position.applied_at,
+    }
+
+
+def _position_summary(positions):
+    counts = {}
+    for position in positions:
+        counts[position["status"]] = counts.get(position["status"], 0) + 1
+    actionable = [p for p in positions if p["status"] in ("PENDING", "APPLIED")]
+    eligible = [p for p in positions if p["status"] != "NOT_ELIGIBLE"]
+
+    def total(field, rows):
+        values = [p[field] for p in rows if p[field] is not None]
+        return sum(values) if values else None
+
+    return {
+        "status_counts": counts,
+        "affected_portfolio_count": len({(p["family_id"], p["family_name"], p["portfolio"]) for p in eligible}),
+        "affected_family_members": sorted({p["family_name"] for p in eligible if p["family_name"]}),
+        "affected_asset_names": sorted({p["asset_name"] for p in eligible if p["asset_name"]}),
+        "affected_asset_classes": sorted({p["asset_class"] for p in eligible if p["asset_class"]}),
+        "original_quantity": total("eligible_quantity", actionable),
+        "proposed_adjustment": total("quantity_delta", actionable),
+        "resulting_quantity": total("resulting_quantity", actionable),
+        "cash_amount": total("cash_amount", actionable),
+        "already_recorded": counts.get("ALREADY_RECORDED", 0),
+        "manual_review": counts.get("MANUAL_REVIEW", 0),
     }
 
 
@@ -57,13 +141,7 @@ def corporate_action_list(request):
             queryset = queryset.filter(symbol__iexact=symbol)
         return Response({"count": queryset.count(), "results": [_serialize(a) for a in queryset]})
 
-    allowed = {
-        "action_type", "security_name", "isin", "symbol", "exchange", "ex_date",
-        "record_date", "payment_date", "old_units", "new_units", "cash_per_unit",
-        "resulting_isin", "resulting_symbol", "source", "source_reference",
-        "status", "notes", "metadata",
-    }
-    payload = {key: value for key, value in request.data.items() if key in allowed}
+    payload = {key: value for key, value in request.data.items() if key in EDITABLE_FIELDS}
     action = CorporateAction(owner=request.user, **payload)
     try:
         action.full_clean()
@@ -83,43 +161,37 @@ def corporate_action_detail(request, action_id):
         return Response({"detail": "Corporate action not found."}, status=404)
     if request.method == "GET":
         return Response(_serialize(action))
+    booked = action.reconciliations.filter(status__in=BOOKED_STATUSES).exists()
     if request.method == "DELETE":
+        if booked:
+            return Response({"detail": "This corporate action is booked in the ledger and cannot be deleted."}, status=409)
         action.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
 
-    allowed = {
-        "action_type", "security_name", "isin", "symbol", "exchange", "ex_date",
-        "record_date", "payment_date", "old_units", "new_units", "cash_per_unit",
-        "resulting_isin", "resulting_symbol", "source", "source_reference",
-        "status", "notes", "metadata",
-    }
-    previous_status = action.status
-    for key, value in request.data.items():
-        if key in allowed:
-            setattr(action, key, value)
+    changes = {key: value for key, value in request.data.items() if key in EDITABLE_FIELDS}
+    if booked and FINANCIAL_TERM_FIELDS & set(changes):
+        return Response({
+            "detail": "This corporate action is already booked in the ledger; its financial terms can no longer be changed.",
+        }, status=409)
+    for key, value in changes.items():
+        setattr(action, key, value)
     try:
-        action.full_clean()
-        action.save()
-        if previous_status != action.status and action.status in {
-            CorporateActionStatus.CONFIRMED, CorporateActionStatus.REJECTED
-        }:
-            # Refresh persisted positions from the corporate-action overlay.
-            # The original transaction ledger is deliberately left unchanged.
-            family = require_active_family(request.user)
-            assets = Asset.objects.filter(family=family, is_active=True)
-            if action.isin:
-                assets = assets.filter(isin__iexact=action.isin.strip())
-            elif action.symbol:
-                assets = assets.filter(symbol__iexact=action.symbol.strip())
-            else:
-                assets = assets.none()
-            for asset in assets.select_related("family", "owner"):
-                HoldingCalculationEngine.rebuild_holding(asset)
-            PortfolioPositionEngine.rebuild_all_for_family(family)
+        with db_transaction.atomic():
+            action.full_clean()
+            if FINANCIAL_TERM_FIELDS & set(changes) and isinstance(action.metadata, dict):
+                # The user has reviewed and corrected the terms.
+                action.metadata = {k: v for k, v in action.metadata.items() if k != "term_conflicts"}
+            action.save()
+            # Verifying (or editing) an event never changes holdings by itself.
+            # Only the owner's own, not yet decided, proposal is refreshed.
+            for reconciliation in action.reconciliations.filter(owner=request.user):
+                if not is_terminal(reconciliation):
+                    refresh_reconciliation(reconciliation)
     except ValidationError as exc:
         return Response({"detail": exc.message_dict if hasattr(exc, "message_dict") else exc.messages}, status=400)
     except IntegrityError:
         return Response({"detail": "An action with this security, type and ex-date already exists."}, status=409)
+    action.refresh_from_db()
     return Response(_serialize(action))
 
 
@@ -144,60 +216,81 @@ def corporate_action_candidates(request):
     })
 
 
-@api_view(["GET"])
-@permission_classes([IsAuthenticated])
-def corporate_action_notifications(request):
-    queryset = CorporateActionNotification.objects.filter(owner=request.user).exclude(
-        action__action_type=CorporateActionType.CASH_DIVIDEND
-    ).select_related(
-        "action", "reconciliation"
-    ).prefetch_related("action__exposures")
+def _notification_queryset(request):
+    # Each user reviews their own copy of an event; copies owned by other
+    # users (created by earlier versions of the scan) are not shown twice.
+    queryset = CorporateActionNotification.objects.filter(
+        owner=request.user, action__owner=request.user,
+    ).select_related("action", "reconciliation", "reconciliation__reviewed_by").prefetch_related(
+        "action__exposures",
+        Prefetch("reconciliation__positions", queryset=CorporateActionPosition.objects.order_by(
+            "family_name", "portfolio", "asset_class", "sub_class", "asset_name", "id")),
+    )
     status_filter = request.query_params.get("status", "").upper()
     if status_filter == "NEW":
         queryset = queryset.filter(reviewed=False, dismissed=False)
     elif status_filter == "PENDING":
-        queryset = queryset.filter(reconciliation__status=CorporateActionReconciliationStatus.PENDING, dismissed=False)
+        queryset = queryset.filter(reconciliation__status=ReconStatus.PENDING, dismissed=False)
     elif status_filter == "IDENTITY":
-        queryset = queryset.filter(
-            reconciliation__status=CorporateActionReconciliationStatus.PENDING_USER_APPROVAL,
-            dismissed=False,
-        )
+        queryset = queryset.filter(reconciliation__status=ReconStatus.PENDING_USER_APPROVAL, dismissed=False)
     elif status_filter == "RECORDED":
-        queryset = queryset.filter(reconciliation__status=CorporateActionReconciliationStatus.ALREADY_RECORDED)
+        queryset = queryset.filter(reconciliation__status=ReconStatus.ALREADY_RECORDED)
+    elif status_filter == "MANUAL":
+        queryset = queryset.filter(reconciliation__status=ReconStatus.MANUAL_REVIEW)
     elif status_filter == "COMPLETED":
-        queryset = queryset.filter(reconciliation__status=CorporateActionReconciliationStatus.COMPLETED)
+        queryset = queryset.filter(reconciliation__status__in=(ReconStatus.COMPLETED, ReconStatus.APPROVED))
+    elif status_filter == "REJECTED":
+        queryset = queryset.filter(reconciliation__status__in=(ReconStatus.REJECTED, ReconStatus.DISMISSED))
     elif status_filter == "CANCELLED":
         queryset = queryset.filter(action__status=CorporateActionStatus.REJECTED)
+    return queryset.order_by("-action__ex_date", "-id")
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def corporate_action_notifications(request):
+    queryset = _notification_queryset(request)
     try:
         page = max(1, int(request.query_params.get("page", 1) or 1))
         page_size = min(100, max(1, int(request.query_params.get("page_size", 25) or 25)))
     except (TypeError, ValueError):
         return Response({"detail": "page and page_size must be integers."}, status=400)
     total = queryset.count()
-    rows = queryset[(page - 1) * page_size:page * page_size]
+    rows = list(queryset[(page - 1) * page_size:page * page_size])
     visible_family_ids = FamilyMembership.objects.filter(
         profile__user=request.user
     ).values_list("family_group_id", flat=True)
     visible_candidate_scope = Q(owner=request.user) | Q(family_id__in=visible_family_ids)
+    can_write = is_admin_or_above(request.user)
     results = []
     for row in rows:
         action = row.action
+        reconciliation = row.reconciliation
         exposures = [{
             "type": exposure.exposure_type,
             "investment_name": exposure.investment_name,
             "investment_id": exposure.investment_id,
+            "quantity": exposure.quantity,
             "holding_weight": exposure.holding_weight,
             "snapshot_date": exposure.snapshot_date,
-        } for exposure in action.exposures.filter(owner=request.user)]
+        } for exposure in action.exposures.all() if exposure.owner_id == request.user.id]
+        positions = [_serialize_position(position) for position in reconciliation.positions.all()]
+        direct = any(item["type"] == "DIRECT" for item in exposures) or bool(positions)
+        can_accept = (
+            can_write and direct and reconciliation.status == ReconStatus.PENDING
+            and action.status != CorporateActionStatus.REJECTED
+            and any(p["status"] == "PENDING" for p in positions)
+        )
         results.append({
             "id": row.id,
             "action": _serialize(action),
             "reconciliation": {
-                "id": row.reconciliation_id,
-                "status": row.reconciliation.status,
-                "matched_transaction_ids": row.reconciliation.matched_transaction_ids,
-                "suggested_quantity": row.reconciliation.suggested_quantity,
-                "identity_match_method": row.reconciliation.identity_match_method,
+                "id": reconciliation.id,
+                "status": reconciliation.status,
+                "status_display": reconciliation.get_status_display(),
+                "matched_transaction_ids": reconciliation.matched_transaction_ids,
+                "suggested_quantity": reconciliation.suggested_quantity,
+                "identity_match_method": reconciliation.identity_match_method,
                 "candidate_assets": [
                     {
                         "id": asset.id,
@@ -207,18 +300,28 @@ def corporate_action_notifications(request):
                         "exchange": getattr(asset, "exchange", "") or "",
                     }
                     for asset in Asset.objects.filter(
-                        id__in=row.reconciliation.candidate_asset_ids,
+                        id__in=reconciliation.candidate_asset_ids,
                         is_active=True,
                     ).filter(visible_candidate_scope).order_by("name", "id")
-                ],
-                "candidate_asset_ids": row.reconciliation.candidate_asset_ids,
-                "selected_asset_id": row.reconciliation.selected_asset_id,
-                "notes": row.reconciliation.notes,
+                ] if reconciliation.candidate_asset_ids else [],
+                "candidate_asset_ids": reconciliation.candidate_asset_ids,
+                "selected_asset_id": reconciliation.selected_asset_id,
+                "notes": reconciliation.notes,
+                "proposal_fingerprint": reconciliation.proposal_fingerprint,
+                "last_reconciled_at": reconciliation.last_reconciled_at,
+                "reviewed_at": reconciliation.reviewed_at,
+                "reviewed_by": reconciliation.reviewed_by.get_username() if reconciliation.reviewed_by else None,
+                "positions": positions,
+                "summary": _position_summary(positions),
+                "can_accept": can_accept,
+                "can_reject": can_write and reconciliation.status not in (
+                    ReconStatus.COMPLETED, ReconStatus.APPROVED, ReconStatus.REJECTED,
+                ),
             },
             "exposures": exposures,
             "reviewed": row.reviewed,
             "dismissed": row.dismissed,
-            "direct_exposure": any(item["type"] == "DIRECT" for item in exposures),
+            "direct_exposure": direct,
         })
     return Response({"count": total, "page": page, "page_size": page_size, "results": results})
 
@@ -253,6 +356,8 @@ def corporate_action_reconciliation_update(request, reconciliation_id):
     decision = str(request.data.get("decision", "")).upper()
     if decision not in {"ALREADY_RECORDED", "DISMISSED"}:
         return Response({"detail": "Supported decisions: ALREADY_RECORDED, DISMISSED."}, status=400)
+    if reconciliation.status in BOOKED_STATUSES or reconciliation.status == ReconStatus.REJECTED:
+        return Response({"detail": "This corporate action has already been decided."}, status=409)
     reconciliation.status = decision
     reconciliation.notes = str(request.data.get("notes", reconciliation.notes))[:5000]
     reconciliation.reviewed_at = timezone.now()
@@ -264,6 +369,78 @@ def corporate_action_reconciliation_update(request, reconciliation_id):
     return Response({"id": reconciliation.id, "status": reconciliation.status})
 
 
+def _reconciliation_response(reconciliation, counters=None):
+    payload = {
+        "id": reconciliation.id,
+        "status": reconciliation.status,
+        "notes": reconciliation.notes,
+        "matched_transaction_ids": reconciliation.matched_transaction_ids,
+        "proposal_fingerprint": reconciliation.proposal_fingerprint,
+        "reviewed_at": reconciliation.reviewed_at,
+        "reviewed_by": reconciliation.reviewed_by.get_username() if reconciliation.reviewed_by else None,
+    }
+    if counters is not None:
+        payload["created_transaction_ids"] = counters["created"]
+        payload["reused_transaction_ids"] = counters["reused"]
+        payload["already_recorded_transaction_ids"] = counters["recorded"]
+    return payload
+
+
+def _error(exc, code=400):
+    return Response({"detail": exc.message_dict if hasattr(exc, "message_dict") else " ".join(exc.messages)}, status=code)
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated, CanWriteFinancialData])
+def corporate_action_accept(request, reconciliation_id):
+    """Accept a proposal: book the missing ledger rows and rebuild positions."""
+    if request.data.get("confirm") is not True:
+        return Response({"detail": "Set confirm=true to accept and book this corporate action."}, status=400)
+    try:
+        reconciliation, counters = accept_reconciliation(
+            owner=request.user,
+            reconciliation_id=reconciliation_id,
+            fingerprint=str(request.data.get("proposal_fingerprint") or "") or None,
+            notes=str(request.data.get("notes", "")),
+        )
+    except LookupError:
+        return Response({"detail": "Reconciliation not found."}, status=404)
+    except StaleProposalError as exc:
+        return _error(exc, 409)
+    except ReconciliationError as exc:
+        return _error(exc, 400)
+    return Response(_reconciliation_response(reconciliation, counters))
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated, CanWriteFinancialData])
+def corporate_action_reject(request, reconciliation_id):
+    """Reject a proposal with a reason. Never changes the ledger."""
+    try:
+        reconciliation = reject_reconciliation(
+            owner=request.user, reconciliation_id=reconciliation_id,
+            reason=str(request.data.get("reason", "")),
+        )
+    except LookupError:
+        return Response({"detail": "Reconciliation not found."}, status=404)
+    except ReconciliationError as exc:
+        return _error(exc, 409)
+    return Response(_reconciliation_response(reconciliation))
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def corporate_action_refresh(request, reconciliation_id):
+    """Re-calculate the proposal against the current ledger. Never books anything."""
+    reconciliation = CorporateActionReconciliation.objects.filter(
+        owner=request.user, id=reconciliation_id
+    ).select_related("action", "owner").first()
+    if reconciliation is None:
+        return Response({"detail": "Reconciliation not found."}, status=404)
+    with db_transaction.atomic():
+        refresh_reconciliation(reconciliation)
+    reconciliation.refresh_from_db()
+    return Response(_reconciliation_response(reconciliation))
 
 
 @api_view(["POST"])

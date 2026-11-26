@@ -99,7 +99,7 @@ def portfolio_transactions(request):
     if request.method == "GET":
         transactions = list(
             family_scope(Transaction.objects, request.user)
-            .select_related("asset")
+            .select_related("asset", "corporate_action_entry")
             .order_by("-transaction_date", "-created_at")
         )
 

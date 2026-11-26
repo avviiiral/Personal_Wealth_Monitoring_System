@@ -4,8 +4,8 @@ from django.db import transaction
 from django.db.models import Sum
 
 from corporate_actions.position_adjustment import (
-    calculate_position_with_actions,
-    confirmed_ratio_actions,
+    order_ledger,
+    replay_ledger,
 )
 
 from investments.models import (
@@ -45,16 +45,13 @@ class HoldingCalculationEngine:
     @staticmethod
     def get_transactions(asset):
 
-        return (
+        # Ledger order: date, then corporate-action quantity rows (BONUS /
+        # SPLIT) before other same-day rows, then creation order.
+        return order_ledger(
             Transaction.objects
             .filter(
                 asset=asset,
                 family=asset.family,
-            )
-            .order_by(
-                "transaction_date",
-                "created_at",
-                "id",
             )
         )
 
@@ -65,28 +62,19 @@ class HoldingCalculationEngine:
     @staticmethod
     def calculate_position(asset):
 
-        quantity = (
-            HoldingCalculationEngine.ZERO
-        )
-
-        invested_value = (
-            HoldingCalculationEngine.ZERO
-        )
-
         transactions = (
             HoldingCalculationEngine
             .get_transactions(asset)
         )
 
-        actions = confirmed_ratio_actions(asset=asset, owner=asset.owner)
-        if actions:
-            return calculate_position_with_actions(transactions, actions)
+        # Corporate actions affect a holding only through accepted ledger
+        # rows (BONUS / SPLIT / SELL / BUY); persisted CorporateAction events
+        # are never overlaid here, so every engine agrees on the quantity.
 
         # The common transaction types used for position math can be
         # reduced directly in SQL. This removes the Python row-by-row
         # loop for the normal BUY/SIP-only path while preserving the
-        # existing sell/bonus/split logic when those transaction types
-        # are present.
+        # sell/bonus/split logic when those transaction types are present.
         has_adjustments = transactions.exclude(
             transaction_type__in=(
                 TransactionType.BUY,
@@ -112,119 +100,10 @@ class HoldingCalculationEngine:
                 "average_cost": average_cost,
             }
 
-        for tx in transactions:
-
-            tx_type = (
-                tx.transaction_type
-            )
-
-            tx_quantity = (
-                tx.quantity
-                or HoldingCalculationEngine.ZERO
-            )
-
-            tx_amount = (
-                tx.amount
-                or HoldingCalculationEngine.ZERO
-            )
-
-            # --------------------------------------------------
-            # BUY / SIP
-            # --------------------------------------------------
-
-            if tx_type in (
-                TransactionType.BUY,
-                TransactionType.SIP,
-            ):
-
-                if tx_quantity > 0:
-                    quantity += tx_quantity
-
-                if tx_amount > 0:
-                    invested_value += tx_amount
-
-            # --------------------------------------------------
-            # SELL
-            # --------------------------------------------------
-
-            elif tx_type == TransactionType.SELL:
-
-                if tx_quantity <= 0:
-                    continue
-
-                if quantity <= 0:
-                    continue
-
-                average_cost = (
-                    invested_value / quantity
-                    if quantity > 0
-                    else HoldingCalculationEngine.ZERO
-                )
-
-                sell_quantity = min(
-                    tx_quantity,
-                    quantity,
-                )
-
-                quantity -= sell_quantity
-
-                invested_value -= (
-                    average_cost
-                    * sell_quantity
-                )
-
-                if quantity <= 0:
-
-                    quantity = (
-                        HoldingCalculationEngine.ZERO
-                    )
-
-                    invested_value = (
-                        HoldingCalculationEngine.ZERO
-                    )
-
-            # --------------------------------------------------
-            # BONUS
-            # --------------------------------------------------
-
-            elif tx_type == TransactionType.BONUS:
-
-                if tx_quantity > 0:
-                    quantity += tx_quantity
-
-            # --------------------------------------------------
-            # SPLIT
-            # --------------------------------------------------
-
-            elif tx_type == TransactionType.SPLIT:
-
-                if tx_quantity > 0:
-                    quantity += tx_quantity
-
-            # --------------------------------------------------
-            # OTHER
-            # --------------------------------------------------
-
-            elif tx_type in (
-                TransactionType.DIVIDEND,
-                TransactionType.INTEREST,
-                TransactionType.DEPOSIT,
-                TransactionType.WITHDRAWAL,
-                TransactionType.OTHER,
-            ):
-                continue
-
-        average_cost = (
-            invested_value / quantity
-            if quantity > 0
-            else HoldingCalculationEngine.ZERO
-        )
-
-        return {
-            "quantity": quantity,
-            "invested_value": invested_value,
-            "average_cost": average_cost,
-        }
+        # BUY/SIP add cost, SELL releases average cost, BONUS adds zero-cost
+        # shares, SPLIT carries the signed quantity change (negative for a
+        # reverse split, never below zero); other types do not move quantity.
+        return replay_ledger(list(transactions))
 
     # ==========================================================
     # LATEST AUTOMATIC PRICE

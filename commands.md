@@ -10,7 +10,7 @@ cd D:\PWMS\Personal_Wealth_Monitoring_System\backend
 python manage.py <command> --help
 ```
 
-The command inventory below covers the **47 PWMS-defined management commands**. Django and Django REST Framework also provide built-in commands; these are listed separately and are not counted as project-defined commands.
+The command inventory below covers the **48 PWMS-defined management commands**. Django and Django REST Framework also provide built-in commands; these are listed separately and are not counted as project-defined commands.
 
 ## Safety classifications
 
@@ -158,6 +158,7 @@ python manage.py prepare_watchlist_benchmark_chart --product-id 123 --period 5Y
 | Command | What it does | Options / behavior |
 | --- | --- | --- |
 | `monitor_corporate_actions` | Ingests structured corporate-action events and matches them to portfolio exposures. Sources can be NSE, a configured feed, stored exchange filings or both feed and filings. | `--source nse\|feed\|filings\|both` (default `nse`); `--hours N`; or `--since YYYY-MM-DD` and `--until YYYY-MM-DD`; `--dry-run`; `--report-json PATH` (only with `--dry-run`). Date range and `--hours` are mutually exclusive. |
+| `reconcile_uploaded_corporate_actions` | Discovery and reconciliation only. Reads every security in the already-uploaded transaction ledger (including securities no longer held), looks up corporate-action history for them (stored events, NSE, the configured feed and stored filings), reconstructs each family member's holding per portfolio hierarchy at the event date, detects actions already present in the uploaded transactions, and creates pending reconciliations and notifications on the Corporate Actions page. **Never creates an adjustment transaction**; the user accepts or rejects each proposal. Repeatable; rejected and completed reconciliations are not reopened. | `--since YYYY-MM-DD` (default: first transaction date); `--until YYYY-MM-DD` (default: today); repeatable `--owner-id N`, `--family-id N`, `--asset-id N`; `--source db\|nse\|feed\|filings\|all` (default `all`); `--dry-run` (read-only, rolled back); `--report-json PATH`. |
 | `ingest_exchange_filings` | Ingests NSE/BSE exchange filings and generates portfolio/watchlist alerts. | Repeatable `--exchange nse\|bse`; `--hours N` (default `24`); `--dry-run`. |
 | `diagnose_corporate_filings` | Read-only diagnostics of stored filings against active STOCK/ETF assets, holdings, Watch List entries and existing Portfolio News alerts. | `--hours N` (default `24`); repeatable `--exchange nse\|bse`; `--limit N` (default `10`, unmatched examples). |
 | `monitor_portfolio_news` | Runs one news-monitor pass for active users' holdings, applies the configured rule-based relevance/impact pipeline and creates portfolio-weighted alerts. | `--loop` runs continuously at `NEWS_MONITOR_INTERVAL` cadence until stopped. |
@@ -171,12 +172,15 @@ python manage.py diagnose_corporate_filings --hours 48 --exchange nse
 python manage.py ingest_exchange_filings --exchange nse --hours 24 --dry-run
 python manage.py monitor_corporate_actions --source nse --dry-run
 python manage.py monitor_corporate_actions --source filings --since 2026-11-01 --until 2026-11-25
+python manage.py reconcile_uploaded_corporate_actions --dry-run
+python manage.py reconcile_uploaded_corporate_actions --since 2023-01-01 --until 2026-11-26 --dry-run --report-json .\ca_report.json
+python manage.py reconcile_uploaded_corporate_actions --since 2023-01-01 --until 2026-11-26
 python manage.py monitor_portfolio_news
 python manage.py gemini_usage --days 30
 python manage.py generate_web_push_keys
 ```
 
-The corporate-action `--report-json` option is intentionally restricted to dry-run so that audit generation is read-only. Feed-based ingestion requires an authorised feed URL in configuration.
+The corporate-action `--report-json` option is intentionally restricted to dry-run so that audit generation is read-only. Detection never changes holdings: a corporate action is booked only when the user accepts it on the Corporate Actions page, which creates the BONUS / SPLIT / DIVIDEND / SELL / BUY rows in the normal transaction ledger. An NSE event's ISIN is treated as verified by `reconcile_uploaded_corporate_actions` only when it equals the ISIN of the held asset whose symbol was queried; otherwise the event needs explicit identity approval. Feed-based ingestion requires an authorised feed URL in configuration.
 
 ## 7. Scheduled refresh orchestration
 

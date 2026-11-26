@@ -3,6 +3,7 @@ from decimal import Decimal
 
 from django.db.models import Count, Sum, Q
 
+from corporate_actions.position_adjustment import ledger_priority_expression
 from investments.models import (
     Asset,
     Holding,
@@ -196,6 +197,18 @@ class PortfolioAnalytics:
                     position["quantity"] = PortfolioAnalytics.ZERO
                     position["invested_value"] = PortfolioAnalytics.ZERO
 
+            elif tx.transaction_type == TransactionType.BONUS:
+                # Bonus shares: extra quantity at zero cost.
+                if quantity > 0:
+                    position["quantity"] += quantity
+
+            elif tx.transaction_type == TransactionType.SPLIT:
+                # Signed change (negative for a reverse split); cost unchanged.
+                position["quantity"] += quantity
+                if position["quantity"] <= 0:
+                    position["quantity"] = PortfolioAnalytics.ZERO
+                    position["invested_value"] = PortfolioAnalytics.ZERO
+
         return realized_pnl
 
     @staticmethod
@@ -203,9 +216,11 @@ class PortfolioAnalytics:
         transactions = (
             Transaction.objects
             .filter(PortfolioAnalytics._scope_q(user))
+            .annotate(_ledger_same_day_priority=ledger_priority_expression())
             .order_by(
                 "asset_id",
                 "transaction_date",
+                "_ledger_same_day_priority",
                 "created_at",
                 "id",
             )
@@ -233,9 +248,11 @@ class PortfolioAnalytics:
         transactions = list(
             Transaction.objects
             .filter(PortfolioAnalytics._scope_q(user))
+            .annotate(_ledger_same_day_priority=ledger_priority_expression())
             .order_by(
                 "asset_id",
                 "transaction_date",
+                "_ledger_same_day_priority",
                 "created_at",
                 "id",
             )
@@ -374,8 +391,10 @@ class PortfolioAnalytics:
                 family=asset.family,
                 transaction_date__lte=target_date,
             )
+            .annotate(_ledger_same_day_priority=ledger_priority_expression())
             .order_by(
                 "transaction_date",
+                "_ledger_same_day_priority",
                 "created_at",
                 "id",
             )
@@ -423,6 +442,16 @@ class PortfolioAnalytics:
                     average_cost * tx_quantity
                 )
 
+                if quantity <= 0:
+                    quantity = PortfolioAnalytics.ZERO
+                    invested_value = PortfolioAnalytics.ZERO
+
+            elif tx.transaction_type == TransactionType.BONUS:
+                if tx_quantity > 0:
+                    quantity += tx_quantity
+
+            elif tx.transaction_type == TransactionType.SPLIT:
+                quantity += tx_quantity
                 if quantity <= 0:
                     quantity = PortfolioAnalytics.ZERO
                     invested_value = PortfolioAnalytics.ZERO
@@ -483,9 +512,11 @@ class PortfolioAnalytics:
                 asset_id__in=asset_ids,
                 transaction_date__lte=end_date,
             )
+            .annotate(_ledger_same_day_priority=ledger_priority_expression())
             .order_by(
                 "asset_id",
                 "transaction_date",
+                "_ledger_same_day_priority",
                 "created_at",
                 "id",
             )
@@ -578,6 +609,16 @@ class PortfolioAnalytics:
                                 position["quantity"] = PortfolioAnalytics.ZERO
                                 position["invested_value"] = PortfolioAnalytics.ZERO
 
+                    elif tx.transaction_type == TransactionType.BONUS:
+                        if quantity > 0:
+                            position["quantity"] += quantity
+
+                    elif tx.transaction_type == TransactionType.SPLIT:
+                        position["quantity"] += quantity
+                        if position["quantity"] <= 0:
+                            position["quantity"] = PortfolioAnalytics.ZERO
+                            position["invested_value"] = PortfolioAnalytics.ZERO
+
                     tx_index += 1
 
                 transaction_indexes[asset_id] = tx_index
@@ -652,9 +693,11 @@ class PortfolioAnalytics:
                 asset_id__in=asset_ids,
                 transaction_date__lte=target_date,
             )
+            .annotate(_ledger_same_day_priority=ledger_priority_expression())
             .order_by(
                 "asset_id",
                 "transaction_date",
+                "_ledger_same_day_priority",
                 "created_at",
                 "id",
             )
@@ -729,6 +772,16 @@ class PortfolioAnalytics:
                         average_cost * tx_quantity
                     )
 
+                    if quantity <= 0:
+                        quantity = PortfolioAnalytics.ZERO
+                        invested_value = PortfolioAnalytics.ZERO
+
+                elif tx.transaction_type == TransactionType.BONUS:
+                    if tx_quantity > 0:
+                        quantity += tx_quantity
+
+                elif tx.transaction_type == TransactionType.SPLIT:
+                    quantity += tx_quantity
                     if quantity <= 0:
                         quantity = PortfolioAnalytics.ZERO
                         invested_value = PortfolioAnalytics.ZERO

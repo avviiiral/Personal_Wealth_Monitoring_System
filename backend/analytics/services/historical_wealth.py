@@ -3,6 +3,7 @@ from collections import defaultdict
 from datetime import date, timedelta
 from decimal import Decimal
 
+from corporate_actions.position_adjustment import order_ledger
 from investments.models import (
     Asset,
     Transaction,
@@ -116,15 +117,20 @@ class HistoricalWealthAnalytics:
             # number purely from a fee-accounting difference.
             position["invested_value"] += amount
 
-        elif transaction.transaction_type in (
-            TransactionType.BONUS,
-            TransactionType.SPLIT,
-        ):
+        elif transaction.transaction_type == TransactionType.BONUS:
             # Matches HoldingCalculationEngine: extra shares, no extra cost.
             # Without this the history understates value after a corporate
             # action and its last point disagrees with today's holdings.
             if quantity > 0:
                 position["quantity"] += quantity
+
+        elif transaction.transaction_type == TransactionType.SPLIT:
+            # Signed change: negative for a reverse split, never below zero;
+            # the cost basis is unchanged.
+            position["quantity"] += quantity
+            if position["quantity"] <= 0:
+                position["quantity"] = HistoricalWealthAnalytics.ZERO
+                position["invested_value"] = HistoricalWealthAnalytics.ZERO
 
         elif transaction.transaction_type == TransactionType.SELL:
             if (
@@ -814,17 +820,12 @@ class HistoricalWealthAnalytics:
         Kept for compatibility with existing callers/tests.
         """
 
-        transactions = (
+        transactions = order_ledger(
             Transaction.objects
             .filter(
                 family=asset.family,
                 asset=asset,
                 transaction_date__lte=target_date,
-            )
-            .order_by(
-                "transaction_date",
-                "created_at",
-                "id",
             )
         )
 
@@ -1321,12 +1322,7 @@ class HistoricalWealthAnalytics:
             )
 
         equity_transactions = (
-            equity_transactions_qs
-            .order_by(
-                "transaction_date",
-                "created_at",
-                "id",
-            )
+            order_ledger(equity_transactions_qs)
         )
 
         equity_transactions_by_date = (

@@ -23,6 +23,7 @@ from mutual_funds.models import (
     MutualFundScheme,
 )
 from portfolio.services.portfolio_tree_service import PortfolioTreeService
+from corporate_actions.position_adjustment import ledger_sort_key
 from market_data.services.yahoo_finance import YahooFinanceService
 from market_data.services.market_data_manager import MarketDataManager
 from users.models import TaxRateSetting
@@ -80,7 +81,7 @@ class MISReportService:
         invested = cls.ZERO
         for tx in sorted(
             (tx for tx in transactions if tx.transaction_date <= as_of),
-            key=lambda item: (item.transaction_date, item.created_at, item.id),
+            key=ledger_sort_key,
         ):
             tx_qty = Decimal(str(getattr(tx, "quantity", getattr(tx, "units", 0)) or 0))
             tx_amount = Decimal(str(tx.amount or 0))
@@ -100,8 +101,14 @@ class MISReportService:
                 avg_cost = invested / quantity if quantity > 0 else cls.ZERO
                 quantity -= sell_qty
                 invested -= avg_cost * sell_qty
-            elif kind == "asset" and tx.transaction_type in (TransactionType.BONUS, TransactionType.SPLIT):
+            elif kind == "asset" and tx.transaction_type == TransactionType.BONUS:
+                quantity += max(tx_qty, cls.ZERO)
+            elif kind == "asset" and tx.transaction_type == TransactionType.SPLIT:
+                # Signed change: negative for a reverse split, never below zero.
                 quantity += tx_qty
+                if quantity <= 0:
+                    quantity = cls.ZERO
+                    invested = cls.ZERO
 
         if quantity < 0:
             quantity = cls.ZERO
@@ -1000,7 +1007,7 @@ class MISReportService:
 
         ordered = sorted(
             (tx for tx in transactions if tx.transaction_date <= as_of),
-            key=lambda item: (item.transaction_date, item.created_at, item.id),
+            key=ledger_sort_key,
         )
 
         def position_key(tx):
@@ -1051,11 +1058,11 @@ class MISReportService:
                 })
                 continue
 
-            if kind == "asset" and tx.transaction_type == TransactionType.SPLIT and qty > 0:
-                # Imported SPLIT quantity means the additional shares received.
-                # Reallocate existing open lots proportionally so total cost
-                # basis and acquisition dates survive the split. No new
-                # zero-cost tax lot is created.
+            if kind == "asset" and tx.transaction_type == TransactionType.SPLIT and qty != 0:
+                # SPLIT quantity is the change in shares: positive for a split,
+                # negative for a reverse split. Reallocate existing open lots
+                # proportionally so total cost basis and acquisition dates
+                # survive the event. No new zero-cost tax lot is created.
                 open_lots = [
                     lot for lot in lots
                     if lot["inventory_key"] == inventory and lot["remaining_qty"] > 0
@@ -1063,9 +1070,13 @@ class MISReportService:
                 existing_qty = sum((lot["remaining_qty"] for lot in open_lots), cls.ZERO)
                 if existing_qty > 0:
                     split_factor = (existing_qty + qty) / existing_qty
-                    for lot in open_lots:
-                        lot["remaining_qty"] *= split_factor
-                        lot["unit_cost"] /= split_factor
+                    if split_factor > 0:
+                        for lot in open_lots:
+                            lot["remaining_qty"] *= split_factor
+                            lot["unit_cost"] /= split_factor
+                    else:
+                        for lot in open_lots:
+                            lot["remaining_qty"] = cls.ZERO
                 continue
 
             if kind == "asset" and tx.transaction_type == TransactionType.BONUS and qty > 0:

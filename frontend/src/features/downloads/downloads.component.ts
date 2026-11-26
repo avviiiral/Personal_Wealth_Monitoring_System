@@ -344,11 +344,12 @@ export class DownloadsComponent implements OnInit {
         quantity: Number(tx.quantity || 0),
         price: Number(tx.price_per_unit || 0),
         amount: Number(tx.amount || 0),
+        description: tx.corporate_action_description || '',
       }));
     await this.exportWorkbook('Detailed', 'Portfolio Detailed', [
       ['Family', 'family_name'], ['Sub Class', 'sub_class'], ['Asset Name', 'asset_name'], ['Underlying', 'underlying'], ['ISIN', 'isin'],
       ['Transaction Date', 'transaction_date'], ['Transaction Type', 'transaction_type'], ['Quantity', 'quantity'],
-      ['Price', 'price'], ['Amount', 'amount'],
+      ['Price', 'price'], ['Amount', 'amount'], ['Description', 'description'],
     ], rows, 'portfolio_detailed');
   }
 
@@ -545,8 +546,13 @@ export class DownloadsComponent implements OnInit {
       unit_cost: number;
     };
 
+    // Ledger order: on the same date, corporate-action quantity rows (BONUS /
+    // SPLIT) apply before trades, matching the backend position engines.
+    const sameDayPriority = (tx: Transaction) =>
+      ['BONUS', 'SPLIT'].includes((tx.transaction_type || '').toUpperCase()) ? 0 : 1;
     const transactions = [...this.transactions].sort((a, b) =>
       a.transaction_date.localeCompare(b.transaction_date)
+      || sameDayPriority(a) - sameDayPriority(b)
       || (a.created_at || '').localeCompare(b.created_at || '')
       || a.id - b.id,
     );
@@ -603,18 +609,24 @@ export class DownloadsComponent implements OnInit {
       }
 
       if (type === 'SPLIT') {
-        // Imported SPLIT quantity means additional shares received. Increase
-        // each open FIFO lot proportionally; preserve its acquisition date and
-        // total cost basis instead of creating a zero-cost acquisition lot.
+        // SPLIT quantity is the change in shares: positive for a split,
+        // negative for a reverse split. Rescale each open FIFO lot
+        // proportionally; preserve its acquisition date and total cost basis
+        // instead of creating a zero-cost acquisition lot.
+        const signedQuantity = Number(tx.quantity || 0);
         const existingQuantity = inventory.reduce(
           (total, lot) => total + Math.max(0, lot.remaining_quantity),
           0,
         );
         if (existingQuantity > 0) {
-          const splitFactor = (existingQuantity + quantity) / existingQuantity;
+          const splitFactor = (existingQuantity + signedQuantity) / existingQuantity;
           for (const lot of inventory) {
-            lot.remaining_quantity *= splitFactor;
-            lot.unit_cost /= splitFactor;
+            if (splitFactor > 0) {
+              lot.remaining_quantity *= splitFactor;
+              lot.unit_cost /= splitFactor;
+            } else {
+              lot.remaining_quantity = 0;
+            }
           }
         }
         continue;

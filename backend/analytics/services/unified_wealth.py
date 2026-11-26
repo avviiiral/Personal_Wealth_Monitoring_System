@@ -4,6 +4,7 @@ from decimal import Decimal
 
 from django.db.models import Count, Sum, Q
 
+from corporate_actions.position_adjustment import ledger_priority_expression
 from investments.models import (
     Holding,
     Transaction,
@@ -135,9 +136,11 @@ class UnifiedWealthAnalytics:
 
         transactions = (
             transactions_qs
+            .annotate(_ledger_same_day_priority=ledger_priority_expression())
             .order_by(
                 "asset_id",
                 "transaction_date",
+                "_ledger_same_day_priority",
                 "created_at",
                 "id",
             )
@@ -222,6 +225,18 @@ class UnifiedWealthAnalytics:
                     position["invested_value"] = (
                         UnifiedWealthAnalytics.ZERO
                     )
+
+            elif transaction.transaction_type == TransactionType.BONUS:
+                # Bonus shares: extra quantity at zero cost.
+                if quantity > 0:
+                    position["quantity"] += quantity
+
+            elif transaction.transaction_type == TransactionType.SPLIT:
+                # Signed change (negative for a reverse split); cost unchanged.
+                position["quantity"] += quantity
+                if position["quantity"] <= 0:
+                    position["quantity"] = UnifiedWealthAnalytics.ZERO
+                    position["invested_value"] = UnifiedWealthAnalytics.ZERO
 
         return realized_pnl
 
@@ -433,9 +448,11 @@ class UnifiedWealthAnalytics:
                 UnifiedWealthAnalytics._scope_q(user),
                 family_name=family_name,
             )
+            .annotate(_ledger_same_day_priority=ledger_priority_expression())
             .order_by(
                 "asset_id",
                 "transaction_date",
+                "_ledger_same_day_priority",
                 "created_at",
                 "id",
             )
@@ -624,6 +641,14 @@ class UnifiedWealthAnalytics:
                 position["quantity"] -= quantity
                 position["invested_value"] -= cost_of_sale
 
+                if position["quantity"] <= 0:
+                    position["quantity"] = UnifiedWealthAnalytics.ZERO
+                    position["invested_value"] = UnifiedWealthAnalytics.ZERO
+            elif transaction.transaction_type == TransactionType.BONUS:
+                if quantity > 0:
+                    position["quantity"] += quantity
+            elif transaction.transaction_type == TransactionType.SPLIT:
+                position["quantity"] += quantity
                 if position["quantity"] <= 0:
                     position["quantity"] = UnifiedWealthAnalytics.ZERO
                     position["invested_value"] = UnifiedWealthAnalytics.ZERO
@@ -822,9 +847,11 @@ class UnifiedWealthAnalytics:
             )
 
         equity_transactions = list(
-            equity_transactions_qs.order_by(
+            equity_transactions_qs.annotate(_ledger_same_day_priority=ledger_priority_expression())
+            .order_by(
                 "asset_id",
                 "transaction_date",
+                "_ledger_same_day_priority",
                 "created_at",
                 "id",
             )

@@ -4,8 +4,8 @@ from django.db import transaction
 from django.db.models import Sum
 
 from corporate_actions.position_adjustment import (
-    calculate_position_with_actions,
-    confirmed_ratio_actions,
+    order_ledger,
+    replay_ledger,
 )
 
 from investments.models import (
@@ -37,14 +37,8 @@ class PortfolioPositionEngine:
         )
         if as_of_date is not None:
             queryset = queryset.filter(transaction_date__lte=as_of_date)
-        return (
-            queryset
-            .order_by(
-                "transaction_date",
-                "created_at",
-                "id",
-            )
-        )
+        # Ledger order: date, corporate-action quantity rows first, creation.
+        return order_ledger(queryset)
 
     @classmethod
     def calculate_position(
@@ -55,9 +49,6 @@ class PortfolioPositionEngine:
         asset,
         as_of_date=None,
     ):
-        quantity = cls.ZERO
-        invested_value = cls.ZERO
-
         transactions = cls.get_transactions(
             family=family,
             family_name=family_name,
@@ -66,14 +57,8 @@ class PortfolioPositionEngine:
             as_of_date=as_of_date,
         )
 
-        actions = confirmed_ratio_actions(
-            asset=asset,
-            owner=asset.owner,
-            as_of_date=as_of_date,
-        )
-        if actions:
-            return calculate_position_with_actions(transactions, actions)
-
+        # Corporate actions change a position only through accepted ledger
+        # rows; persisted CorporateAction events are never overlaid.
         # Optimize the common BUY/SIP-only case with a single SQL
         # aggregation. Positions containing SELL/BONUS/SPLIT still use
         # the existing ordered transaction logic unchanged.
@@ -122,35 +107,10 @@ class PortfolioPositionEngine:
                 "average_cost": average_cost,
             }
 
-        for tx in transactions:
-            tx_quantity = tx.quantity or cls.ZERO
-            tx_amount = tx.amount or cls.ZERO
-
-            if tx.transaction_type in (TransactionType.BUY, TransactionType.SIP):
-                if tx_quantity > 0:
-                    quantity += tx_quantity
-                if tx_amount > 0:
-                    invested_value += tx_amount
-            elif tx.transaction_type == TransactionType.SELL:
-                if tx_quantity <= 0 or quantity <= 0:
-                    continue
-                average_cost = invested_value / quantity if quantity > 0 else cls.ZERO
-                sell_quantity = min(tx_quantity, quantity)
-                quantity -= sell_quantity
-                invested_value -= average_cost * sell_quantity
-                if quantity <= 0:
-                    quantity = cls.ZERO
-                    invested_value = cls.ZERO
-            elif tx.transaction_type in (TransactionType.BONUS, TransactionType.SPLIT):
-                if tx_quantity > 0:
-                    quantity += tx_quantity
-
-        average_cost = invested_value / quantity if quantity > 0 else cls.ZERO
-        return {
-            "quantity": quantity,
-            "invested_value": invested_value,
-            "average_cost": average_cost,
-        }
+        # Shared ledger replay: SPLIT carries the signed quantity change
+        # (negative for a reverse split) and same-day BONUS/SPLIT rows are
+        # applied before trades dated on the ex-date.
+        return replay_ledger(transactions)
 
     @staticmethod
     def get_latest_price(asset):

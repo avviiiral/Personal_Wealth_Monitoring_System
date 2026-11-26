@@ -79,15 +79,17 @@ class SecurityResolverHardeningTests(SimpleTestCase):
                 isin="INE000000001", symbol="SAMPLE",
             )
 
-    def test_isin_and_explicit_symbol_conflict_is_rejected(self):
+    def test_security_master_isin_symbol_wins_over_explicit_symbol(self):
         SecurityResolver._security_master_isin = {
             "INE000000001": "FIRST.NS",
         }
 
-        with self.assertRaisesRegex(ValueError, "Conflicting security identifiers"):
+        self.assertEqual(
             SecurityResolver.resolve_yahoo_symbol(
                 isin="INE000000001", symbol="SECOND",
-            )
+            ),
+            "FIRST.NS",
+        )
 
     def test_matching_isin_and_symbol_resolve(self):
         SecurityResolver._security_master_isin = {
@@ -182,16 +184,18 @@ class SecurityResolverHardeningTests(SimpleTestCase):
                 isin="INE000000001", symbol="SAMPLE",
             )
 
-    def test_security_master_isin_mapping_rejects_conflicting_asset_symbol(self):
+    def test_security_master_isin_mapping_overrides_stale_asset_symbol(self):
         SecurityResolver._security_master_isin = {
             "INE000000001": "MASTER-SYMBOL.NS",
         }
 
-        with self.assertRaisesRegex(ValueError, "Conflicting security identifiers"):
+        self.assertEqual(
             SecurityResolver.resolve_yahoo_symbol(
                 isin="INE000000001", symbol="STALE", exchange="NSE",
                 name="Different imported name",
-            )
+            ),
+            "MASTER-SYMBOL.NS",
+        )
 
     def test_name_without_ltd_matches_security_master_canonical_name(self):
         canonical_name = "Ellenbarrie Industrial Gases Ltd"

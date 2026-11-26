@@ -33,28 +33,27 @@ A missing or unreadable workbook is reported. The resolver then uses configured 
 
 ## Resolution priority and conflict handling
 
-1. Security Master Excel ISIN mapping.
+1. Security Master Excel symbol: by ISIN, else by exact normalized name (only for a row whose ISIN is blank or equals the asset's). **It always wins**: a different `Asset.symbol`, exchange, configured mapping or name mapping is ignored (logged once per process), not reported as a conflict.
 2. Existing configured ISIN mapping.
 3. Explicit Yahoo/exchange symbol.
-4. Security Master Excel exact normalized-name mapping.
-5. Existing configured name mapping.
-6. Generic symbol plus configured exchange suffix.
+4. Existing configured name mapping.
+5. Generic symbol plus configured exchange suffix.
 
-The diagnostic reports this `resolve_yahoo_symbol()` order. The price refresh (`MarketDataManager.resolve_asset_symbol`) wraps it Excel-first: a workbook hit (ISIN, then exact normalized name) is used without writing anything; on a miss the order above runs, then NSE `EQUITY_L.csv` and an exact-name Yahoo search, and the new mapping is saved to the workbook after its first successful price download. See [BACKGROUND_JOBS.md](./BACKGROUND_JOBS.md#security-master-backenddatasecurity_masterxlsx).
+The diagnostic reports this `resolve_yahoo_symbol()` order. The price refresh (`MarketDataManager.resolve_asset_symbol`) wraps it Excel-first: a workbook hit (ISIN, then exact normalized name) is used without writing the workbook, and a blank or stale `Asset.symbol` (for example `IIFLSEC.NS` after NSE renamed the company's symbol to `IIFLCAPS`) is replaced by the workbook symbol; on a miss the order above runs, then NSE `EQUITY_L.csv` and an exact-name Yahoo search, and the new mapping is saved to the workbook after its first successful price download. See [BACKGROUND_JOBS.md](./BACKGROUND_JOBS.md#security-master-backenddatasecurity_masterxlsx).
 
 Name normalization is conservative: it standardizes whitespace, punctuation and case, `&`/`AND`, `(I)`/`INDIA`, and legal-name variants such as a leading `THE` and terminal `LTD/LIMITED`. It is not fuzzy or substring matching.
 
-Conflicting duplicate mappings are quarantined rather than allowing workbook row order to decide the result. A supplied ISIN and a name that resolves to a different ISIN are treated as a conflict. Ambiguous/conflicting identities fail closed rather than silently selecting a ticker.
+Conflicting duplicate mappings are quarantined rather than allowing workbook row order to decide the result; an ISIN with two different workbook symbols fails closed (`AMBIGUOUS`). When the workbook has no row for the security, a configured ISIN mapping that disagrees with the explicit symbol or name mapping is still a conflict and fails closed rather than silently selecting a ticker.
 
 ## Status interpretation
 
 | Status | Meaning | Suggested investigation |
 | --- | --- | --- |
-| `MATCHED` | Resolver returned a symbol consistent with the Security Master ISIN mapping | No action unless the row includes a note |
+| `MATCHED` | Resolver returned the Security Master ISIN symbol. A note "overrides Asset.symbol …" means the database symbol is stale; the next price refresh replaces it | No action unless the row includes a note |
 | `NOT_IN_MASTER` | ISIN is absent from the workbook or its row has no Yahoo symbol; a fallback resolved the asset | Review Security Master refresh/write-back |
 | `MISSING_ISIN` | A symbol was resolved without an ISIN | Verify the authoritative ISIN |
 | `AMBIGUOUS` | Conflicting Security Master mappings exist | Correct duplicate/conflicting workbook rows |
-| `CONFLICT` | Explicit identity information disagrees, or the workbook changed during inspection | Verify asset ISIN, name, explicit symbol and workbook mapping |
+| `CONFLICT` | No workbook row, and a configured ISIN mapping disagrees with the explicit symbol or name; or the workbook changed during inspection | Verify asset ISIN, name, explicit symbol and configured mapping, or add the security to the workbook |
 | `UNRESOLVED` | No safe Yahoo symbol could be resolved | Check ISIN, name, symbol and supported exchange mapping |
 | `ERROR` | An unexpected per-asset diagnostic error occurred | Inspect the reason and backend logs |
 

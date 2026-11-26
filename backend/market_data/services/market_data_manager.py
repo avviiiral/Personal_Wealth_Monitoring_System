@@ -127,10 +127,11 @@ class MarketDataManager:
         Resolve Yahoo Finance symbol for an asset.
 
         This is used only for STOCK and ETF assets. security_master.xlsx is
-        consulted first; a hit is used as is and nothing is written. A
-        symbol resolved any other way is saved to the workbook only after
-        the first successful price download for it (see
-        _remember_resolved_symbol), which is what validates it.
+        consulted first; a hit is used as is (even when Asset.symbol says
+        otherwise) and the workbook is not written. A symbol resolved any
+        other way is saved to the workbook only after the first successful
+        price download for it (see _remember_resolved_symbol), which is what
+        validates it.
         """
 
         yahoo_symbol, from_workbook = SecurityResolver.resolve_for_asset(
@@ -140,9 +141,8 @@ class MarketDataManager:
         )
 
         # Store a resolver-confirmed symbol so downstream consumers that read
-        # Asset.symbol directly do not repeatedly encounter an empty field.
-        # Never replace an existing value: explicit asset-level symbols have
-        # precedence in SecurityResolver and may be user-maintained.
+        # Asset.symbol directly (quant enrichment, corporate actions) use the
+        # same ticker as the price refresh.
         cleaned_symbol = SecurityResolver.clean_symbol(yahoo_symbol)
         existing_symbol = SecurityResolver.clean_symbol(asset.symbol)
 
@@ -150,7 +150,20 @@ class MarketDataManager:
             None if from_workbook or not cleaned_symbol
             else (asset.isin, asset.name, cleaned_symbol)
         )
-        if cleaned_symbol and not existing_symbol:
+        if from_workbook and cleaned_symbol and existing_symbol != cleaned_symbol:
+            # security_master.xlsx is authoritative: a blank or stale value
+            # (e.g. IIFLSEC.NS kept after NSE renamed it IIFLCAPS) is
+            # replaced by the workbook symbol.
+            Asset.objects.filter(pk=asset.pk).update(symbol=cleaned_symbol)
+            if existing_symbol:
+                logger.info(
+                    "Asset %s (%s): symbol %s replaced by Security Master symbol %s.",
+                    asset.pk, asset.name, asset.symbol, cleaned_symbol,
+                )
+            asset.symbol = cleaned_symbol
+        # A symbol that did not come from the workbook never replaces an
+        # existing value: it may be user-maintained.
+        elif cleaned_symbol and not existing_symbol:
             Asset.objects.filter(
                 pk=asset.pk,
                 symbol__isnull=True,

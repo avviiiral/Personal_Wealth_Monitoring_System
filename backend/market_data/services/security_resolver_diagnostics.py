@@ -66,8 +66,9 @@ class ResolverDiagnosticRow:
 def read_security_master_isin_symbols(path):
     """Return {ISIN: [Yahoo Symbol of every row]} from the workbook.
 
-    Reads the active sheet, as SecurityResolver does, so duplicate and
-    conflicting rows can be reported. The file is opened read-only.
+    Reads the same sheet as SecurityResolver ("Security Master", else the
+    active sheet), so duplicate and conflicting rows can be reported. The
+    file is opened read-only.
     """
     if path is None:
         return {}
@@ -76,7 +77,9 @@ def read_security_master_isin_symbols(path):
 
     workbook = openpyxl.load_workbook(path, read_only=True, data_only=True)
     try:
-        worksheet = workbook.active
+        worksheet = (
+            workbook["Security Master"] if "Security Master" in workbook.sheetnames else workbook.active
+        )
         if worksheet is None:
             return {}
         headers = next(
@@ -138,11 +141,24 @@ def diagnostic_assets(*, user_id=None, asset_ids=None, isins=None):
     return queryset.order_by("id")
 
 
+SECURITY_MASTER_NAME_SOURCE = "Security Master exact-name row"
+
+
+def _from_security_master(asset, resolved_symbol):
+    """True when the workbook (ISIN or exact-name row) supplied the symbol."""
+    try:
+        return SecurityResolver.lookup_workbook(isin=asset.isin, name=asset.name) == resolved_symbol
+    except ValueError:
+        return False
+
+
 def _fallback_source(asset, resolved_symbol):
-    """Describe which non-Security-Master rule produced the symbol."""
+    """Describe which rule produced the symbol when the ISIN has no workbook row."""
     isin = SecurityResolver.clean_isin(asset.isin)
     explicit = SecurityResolver.clean_symbol(asset.symbol)
 
+    if _from_security_master(asset, resolved_symbol):
+        return SECURITY_MASTER_NAME_SOURCE
     if isin and SecurityResolver.ISIN_TO_YAHOO.get(isin) == resolved_symbol:
         return "built-in ISIN mapping"
     if explicit == resolved_symbol and explicit.endswith(
@@ -200,9 +216,17 @@ def diagnose_asset(asset, master_symbols_by_isin):
         return row(STATUS_ERROR, "", f"{type(exc).__name__}: {exc}")
 
     resolved = SecurityResolver.clean_symbol(resolved)
+    from_master = _from_security_master(asset, resolved)
     notes = []
     if not database_symbol:
         notes.append(f"Asset.symbol is blank; a refresh would set it to {resolved}.")
+    elif from_master and SecurityResolver.with_exchange_suffix(database_symbol) != resolved:
+        # The workbook always wins; a different Asset.symbol is stale, not a
+        # conflict. MarketDataManager.resolve_asset_symbol() corrects it.
+        notes.append(
+            f"Security Master symbol {resolved} overrides Asset.symbol {database_symbol}; "
+            f"a refresh would update Asset.symbol to {resolved}."
+        )
 
     if not isin:
         source = _fallback_source(asset, resolved)
@@ -220,11 +244,12 @@ def diagnose_asset(asset, master_symbols_by_isin):
             if master_symbols
             else "ISIN not in Security Master"
         )
-        notes.insert(
-            0,
-            f"{detail}; resolved via {source}. A refresh would add "
-            "this ISIN mapping to the Security Master.",
+        outcome = (
+            "It is used as is; nothing is written to the Security Master."
+            if source == SECURITY_MASTER_NAME_SOURCE
+            else "A refresh would add this ISIN mapping to the Security Master."
         )
+        notes.insert(0, f"{detail}; resolved via {source}. {outcome}")
         return row(STATUS_NOT_IN_MASTER, resolved, " ".join(notes))
 
     if distinct_master != [resolved]:

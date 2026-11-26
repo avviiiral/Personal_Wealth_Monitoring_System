@@ -14,15 +14,20 @@ class SecurityResolver:
     Resolve Indian securities to Yahoo Finance symbols.
 
     Resolution priority:
-        1. Security Master Excel ISIN mapping
+        1. Security Master Excel symbol - by ISIN, else by exact normalized
+           name (only for a row whose ISIN is blank or equals the asset's).
+           It always wins: a different Asset.symbol, exchange, hard-coded
+           mapping or name mapping is ignored (and logged once), never
+           treated as a conflict.
         2. Existing hard-coded ISIN mapping
         3. Explicit Yahoo/exchange symbol
-        4. Security Master Excel name mapping
-        5. Existing hard-coded name mapping
-        6. Generic symbol + exchange suffix
+        4. Existing hard-coded name mapping
+        5. Generic symbol + exchange suffix
 
-    The Security Master is optional. If it is unavailable, the existing
-    resolver behaviour remains available as a fallback.
+    Only a Security Master that disagrees with itself (two rows with
+    different symbols for one ISIN) fails closed. The Security Master is
+    optional. If it is unavailable, the existing resolver behaviour remains
+    available as a fallback.
     """
 
     CONFIG = get_pwms_config("security_resolver")
@@ -43,6 +48,9 @@ class SecurityResolver:
     _security_master_ambiguous_name = set()
     _security_master_ambiguous_name_to_isin = set()
     _security_master_ambiguous_isin_to_name = set()
+    # (security key, ignored symbol, Security Master symbol) already logged;
+    # each override is logged once per process, not on every price refresh.
+    _security_master_override_logged = set()
 
     @staticmethod
     def clean_symbol(symbol):
@@ -170,6 +178,7 @@ class SecurityResolver:
         cls._write_warned = False
         cls._read_warned = False
         cls._ambiguous_name_warned = set()
+        cls._security_master_override_logged = set()
         cls._unresolved = {}
         cls._nse_cache = None
         cls._nse_cache_expires = 0.0
@@ -452,12 +461,53 @@ class SecurityResolver:
             if symbol:
                 return symbol
         normalized_name = cls.normalize_security_name(cls.clean_name(name))
+        if cleaned_isin and normalized_name in cls._security_master_ambiguous_name_to_isin:
+            # The name is on rows with several different ISINs (e.g. old and
+            # new ISIN after a split) and none is this asset's: the name does
+            # not identify this security.
+            return None
         if normalized_name and normalized_name not in cls._security_master_ambiguous_name:
             symbol = cls._security_master_name.get(normalized_name)
             row_isin = cls._security_master_name_to_isin.get(normalized_name, "")
             if symbol and (not cleaned_isin or not row_isin or row_isin == cleaned_isin):
                 return symbol
         return None
+
+    @classmethod
+    def with_exchange_suffix(cls, symbol, exchange="NSE"):
+        """Cleaned symbol with the Yahoo exchange suffix added when missing."""
+        cleaned = cls.clean_symbol(symbol)
+        if not cleaned or cleaned.endswith((cls.NSE_SUFFIX, cls.BSE_SUFFIX)):
+            return cleaned
+        suffix = cls.BSE_SUFFIX if (exchange or "NSE").strip().upper() == "BSE" else cls.NSE_SUFFIX
+        return f"{cleaned}{suffix}"
+
+    @classmethod
+    def master_symbol(cls, *, symbol=None, exchange="NSE", isin=None, name=None):
+        """The Security Master symbol for this security, or None.
+
+        security_master.xlsx is authoritative: when it maps the security
+        (lookup_workbook: ISIN, then exact normalized name), that symbol is
+        returned even if ``symbol``/``exchange`` (usually Asset.symbol) say
+        otherwise - for example a stale ticker kept after a company renamed
+        and NSE changed its symbol. The ignored symbol is logged once per
+        process. Raises ValueError only when the workbook itself has
+        conflicting rows for the ISIN.
+        """
+        master = cls.lookup_workbook(isin=isin, name=name)
+        if not master:
+            return None
+        explicit = cls.with_exchange_suffix(symbol, exchange)
+        if explicit and explicit != master:
+            security = cls.clean_isin(isin) or cls.normalize_security_name(cls.clean_name(name))
+            key = (security, explicit, master)
+            if key not in cls._security_master_override_logged:
+                cls._security_master_override_logged.add(key)
+                logger.info(
+                    "Security Master symbol %s for %s (%s) overrides Asset.symbol %s.",
+                    master, cls.clean_isin(isin) or "no ISIN", cls.clean_name(name) or "-", explicit,
+                )
+        return master
 
     @classmethod
     def nse_equity_list(cls):
@@ -521,17 +571,17 @@ class SecurityResolver:
         """Return ``(yahoo_symbol, from_workbook)``.
 
         1. security_master.xlsx (ISIN, then exact normalized name) - a hit is
-           used as is and nothing is written.
+           used as is, even when ``symbol`` (Asset.symbol) differs, and
+           nothing is written to the workbook.
         2. Otherwise: hard-coded maps / explicit symbol, then the NSE symbol
            for the ISIN (or exact company name) from EQUITY_L.csv, then a
            Yahoo search accepted only on an exact normalized name match.
         Raises ValueError when nothing resolves; the asset is then listed in
         the report as "needs ISIN" (no ISIN) or "unresolved". Never guesses.
         """
-        workbook_symbol = cls.lookup_workbook(isin=isin, name=name)
+        workbook_symbol = cls.master_symbol(symbol=symbol, isin=isin, name=name)
         if workbook_symbol:
-            # Same consistency checks as before (explicit symbol vs ISIN).
-            return cls.resolve_yahoo_symbol(symbol=symbol, isin=isin, name=name), True
+            return workbook_symbol, True
 
         try:
             return cls.resolve_yahoo_symbol(symbol=symbol, isin=isin, name=name), False
@@ -798,32 +848,31 @@ class SecurityResolver:
 
         Priority:
 
-            1. ISIN through Security Master
+            1. Security Master symbol (ISIN, then exact normalized name);
+               always wins over the other identifiers, see master_symbol()
             2. Existing ISIN mapping
             3. Explicit symbol
-            4. Security Master name mapping
-            5. Existing name mapping
-            6. Generic symbol + exchange suffix
+            4. Existing name mapping
+            5. Generic symbol + exchange suffix
         """
 
         cleaned_isin = cls.clean_isin(isin)
         cleaned_symbol = cls.clean_symbol(symbol)
         cleaned_name = cls.clean_name(name)
 
+        # Raises for a Security Master with conflicting rows (fail closed).
+        yahoo_from_master = cls.master_symbol(
+            symbol=cleaned_symbol, exchange=exchange, isin=cleaned_isin, name=cleaned_name,
+        )
+        if yahoo_from_master:
+            return yahoo_from_master
+
+        # Not in the Security Master: only the hard-coded ISIN map is left.
+        # Disagreeing non-workbook identifiers are still rejected.
         yahoo_from_isin = cls.resolve_from_isin(cleaned_isin)
-        if cleaned_isin in cls._security_master_ambiguous_isin:
-            raise ValueError(
-                f"Cannot resolve ISIN {cleaned_isin}: conflicting Security Master mappings."
-            )
 
         if yahoo_from_isin:
-            explicit_symbol = cleaned_symbol
-            if explicit_symbol and not explicit_symbol.endswith(
-                (cls.NSE_SUFFIX, cls.BSE_SUFFIX)
-            ):
-                requested_exchange = (exchange or "NSE").strip().upper()
-                suffix = cls.BSE_SUFFIX if requested_exchange == "BSE" else cls.NSE_SUFFIX
-                explicit_symbol = f"{explicit_symbol}{suffix}"
+            explicit_symbol = cls.with_exchange_suffix(cleaned_symbol, exchange)
             if explicit_symbol and explicit_symbol != yahoo_from_isin:
                 raise ValueError(
                     f"Conflicting security identifiers: ISIN {cleaned_isin} "
@@ -890,7 +939,7 @@ class SecurityResolver:
         """
         Return possible Yahoo symbols.
 
-        Security Master and ISIN mappings are preferred.
+        The Security Master symbol comes first, then ISIN mappings.
         """
 
         candidates = []
@@ -903,7 +952,11 @@ class SecurityResolver:
                 "conflicting Security Master mappings."
             )
 
-        if yahoo_from_isin:
+        yahoo_from_master = cls.lookup_workbook(isin=cleaned_isin, name=name)
+        if yahoo_from_master:
+            candidates.append(yahoo_from_master)
+
+        if yahoo_from_isin and yahoo_from_isin not in candidates:
             candidates.append(
                 yahoo_from_isin
             )

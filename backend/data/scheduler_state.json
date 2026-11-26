@@ -24,33 +24,49 @@
       "slot_attempts": 1
     },
     "market_prices": {
-      "last_attempt": "2026-11-25T17:48:09.228439+05:30",
+      "last_attempt": "2026-11-26T09:51:53.579169+05:30",
       "last_counts": {
         "assets": 156,
-        "current": 142,
+        "current": 0,
         "failed": 4,
         "failing_deferred": 0,
-        "fetched": 5,
+        "fetched": 147,
         "mis_deferred": 0,
         "mis_failed": 1,
         "mis_references": 12,
         "mis_refreshed": 11,
-        "records": 0,
+        "records": 142,
         "skipped": 1,
         "timed_out": 0,
         "unresolved_deferred": 9,
-        "updated": 0
+        "updated": 142
       },
-      "last_duration_seconds": 6.063,
+      "last_duration_seconds": 66.109,
       "last_error": "",
-      "last_finished": "2026-11-25T17:48:15.291439+05:30",
+      "last_finished": "2026-11-26T09:52:59.688169+05:30",
       "last_reason": "interval",
       "last_status": "success",
-      "last_success": "2026-11-25T17:48:09.228439+05:30",
-      "slot_attempts": 12
+      "last_success": "2026-11-26T09:51:53.579169+05:30",
+      "slot_attempts": 14
+    },
+    "mf_intelligence": {
+      "last_attempt": "2026-11-26T09:38:06.744666+05:30",
+      "last_counts": {
+        "errors": 0,
+        "requests": 2278,
+        "status": "success"
+      },
+      "last_duration_seconds": 1029.5,
+      "last_error": "",
+      "last_finished": "2026-11-26T09:55:16.244666+05:30",
+      "last_reason": "startup",
+      "last_status": "success",
+      "last_success": "2026-11-26T09:38:06.744666+05:30",
+      "slot": "2026-11-26T01:00:00+05:30",
+      "slot_attempts": 1
     },
     "mf_nav": {
-      "last_attempt": "2026-11-25T17:24:00.819816+05:30",
+      "last_attempt": "2026-11-26T09:36:53.544869+05:30",
       "last_counts": {
         "amfi_matched": 5,
         "amfi_requested": 5,
@@ -63,13 +79,13 @@
         "user_sync_failed": 0,
         "users": 1
       },
-      "last_duration_seconds": 14.188,
+      "last_duration_seconds": 72.547,
       "last_error": "",
-      "last_finished": "2026-11-25T17:24:15.007816+05:30",
+      "last_finished": "2026-11-26T09:38:06.091869+05:30",
       "last_reason": "startup",
       "last_status": "success",
-      "last_success": "2026-11-25T17:24:00.819816+05:30",
-      "slot": "2026-11-25T00:00:00+05:30",
+      "last_success": "2026-11-26T09:36:53.544869+05:30",
+      "slot": "2026-11-26T00:00:00+05:30",
       "slot_attempts": 1
     },
     "mf_underlying": {
@@ -120,18 +136,18 @@
       "slot_attempts": 1
     },
     "sip": {
-      "last_attempt": "2026-11-25T17:24:15.255587+05:30",
+      "last_attempt": "2026-11-26T09:38:06.464002+05:30",
       "last_counts": {
         "failed_users": 0,
         "users": 1
       },
-      "last_duration_seconds": 0.094,
+      "last_duration_seconds": 0.265,
       "last_error": "",
-      "last_finished": "2026-11-25T17:24:15.349587+05:30",
+      "last_finished": "2026-11-26T09:38:06.729002+05:30",
       "last_reason": "startup",
       "last_status": "success",
-      "last_success": "2026-11-25T17:24:15.255587+05:30",
-      "slot": "2026-11-25T00:00:00+05:30",
+      "last_success": "2026-11-26T09:38:06.464002+05:30",
+      "slot": "2026-11-26T00:00:00+05:30",
       "slot_attempts": 1
     },
     "watchlist": {

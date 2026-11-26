@@ -203,7 +203,11 @@ For a stock or ETF price:
 
 1. The workbook is consulted first: by ISIN, then by exact normalized name
    (`&` = `AND`, `LTD` = `LIMITED`, `(I)` = `INDIA`; punctuation, spacing and
-   case ignored). A hit is used as is and **nothing is written**.
+   case ignored). A hit is used as is and **nothing is written** to the
+   workbook. The workbook symbol always wins over `Asset.symbol`: a blank or
+   stale database symbol (for example `IIFLSEC.NS` after NSE renamed it to
+   `IIFLCAPS`) is replaced by the workbook symbol instead of being reported
+   as a conflict.
 2. On a miss the existing order applies: hard-coded maps, explicit symbol, NSE
    symbol from `EQUITY_L.csv` (by ISIN, or exact company name for an asset
    without ISIN), then a Yahoo search accepted only when the result's

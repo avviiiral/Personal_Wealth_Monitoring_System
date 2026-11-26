@@ -20,7 +20,6 @@ from market_data.services.security_master_generator import SecurityMasterGenerat
 from market_data.services.security_resolver import SecurityResolver
 from market_data.services.security_resolver_diagnostics import (
     STATUS_AMBIGUOUS,
-    STATUS_CONFLICT,
     STATUS_MATCHED,
     STATUS_MISSING_ISIN,
     STATUS_NOT_IN_MASTER,
@@ -150,12 +149,15 @@ class SecurityResolverDiagnosticsTests(TestCase):
         self.assertEqual(ambiguous.security_master_symbol, "DIAGAMB1.NS | DIAGAMB2.NS")
         self.assertIn("conflicting Security Master mappings", ambiguous.reason)
 
-        conflict = rows[assets["conflict"].pk]
-        self.assertEqual(conflict.status, STATUS_CONFLICT)
-        self.assertEqual(conflict.resolved_symbol, "")
-        self.assertIn("Conflicting security identifiers", conflict.reason)
-        self.assertIn("DIAGMASTER.NS", conflict.reason)
-        self.assertIn("DIAGSTALE.NS", conflict.reason)
+        # A stale Asset.symbol no longer blocks resolution: the Security
+        # Master symbol wins and the row is MATCHED with a note.
+        overridden = rows[assets["conflict"].pk]
+        self.assertEqual(overridden.status, STATUS_MATCHED)
+        self.assertEqual(overridden.database_symbol, "DIAGSTALE")
+        self.assertEqual(overridden.security_master_symbol, "DIAGMASTER.NS")
+        self.assertEqual(overridden.resolved_symbol, "DIAGMASTER.NS")
+        self.assertIn("overrides Asset.symbol DIAGSTALE", overridden.reason)
+        self.assertIn("update Asset.symbol to DIAGMASTER.NS", overridden.reason)
 
         not_in_master = rows[assets["not_in_master"].pk]
         self.assertEqual(not_in_master.status, STATUS_NOT_IN_MASTER)
@@ -222,9 +224,9 @@ class SecurityResolverDiagnosticsTests(TestCase):
         text = output.getvalue()
         self.assertIn(f"Security Master: {self.workbook}", text)
         self.assertIn("Assets checked: 8", text)
-        self.assertIn("MATCHED=3", text)
+        self.assertIn("MATCHED=4", text)
         self.assertIn("AMBIGUOUS=1", text)
-        self.assertIn("CONFLICT=1", text)
+        self.assertIn("CONFLICT=0", text)
 
     def test_missing_workbook_is_reported_not_generated(self):
         self._asset("Diag No Workbook Ltd", isin=NEW_ISIN, symbol="DIAGNEW")
@@ -274,6 +276,7 @@ class SecurityResolverDiagnosticsTests(TestCase):
         ids = {row["asset_id"] for row in payload["rows"]}
         self.assertNotIn(assets["matched"].pk, ids)  # clean MATCHED row hidden
         self.assertIn(assets["duplicate"].pk, ids)  # MATCHED with a note kept
+        self.assertIn(assets["conflict"].pk, ids)  # Security Master override note kept
         self.assertEqual(
             set(payload["rows"][0]),
             {

@@ -21,6 +21,7 @@ from investments.models import (
     TransactionType,
 )
 
+from investments.services import restructuring
 from investments.services.security_master import (
     SecurityMasterService,
 )
@@ -1267,6 +1268,7 @@ class TransactionImporter:
         total_rows = len(dataframe.index)
         rows = []
         failures = []
+        held_restructurings = []
 
         def record_failure(row_number, message, row):
             row_data = {}
@@ -1327,9 +1329,22 @@ class TransactionImporter:
                     upload_token = upload_batch.id if upload_batch is not None else timezone.now().isoformat()
                     unique_material = f"{parsed['source_key']}|upload:{upload_token}|row:{row_number}"
                     parsed["source_key"] = hashlib.sha256(unique_material.encode("utf-8")).hexdigest()
+                if restructuring.kind_of(parsed["transaction_type"]):
+                    # Mergers/demergers are corporate actions: hold them for
+                    # review. Nothing is imported or created from these rows.
+                    held_restructurings.append((row_number, parsed))
+                    record_failure(
+                        row_number,
+                        restructuring.HELD_MESSAGE.format(type=parsed["transaction_type"]),
+                        row,
+                    )
+                    continue
                 rows.append((row_number, parsed, row))
             except TransactionImportError as exc:
                 record_failure(row_number, exc, row)
+
+        if held_restructurings:
+            restructuring.hold_rows(held_restructurings, family=family, owner=owner, upload=upload_batch)
 
         imported_investments = 0
         imported_mutual_funds = 0

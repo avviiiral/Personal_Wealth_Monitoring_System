@@ -1,5 +1,6 @@
 import re
 
+from django.core.exceptions import ValidationError
 from django.db import models
 from django.contrib.auth.models import User
 from django.utils import timezone
@@ -518,3 +519,44 @@ class SecurityIdentityDiscoveryCheckpoint(models.Model):
             models.UniqueConstraint(fields=["provider", "scope"], name="sec_ident_checkpoint_uniq"),
         ]
 
+class PendingRestructuring(models.Model):
+    """A merger or demerger found in an upload, held until the user approves it.
+
+    The upload rows (*Merger/*Merged, *DeMerger/*DeMerger (New)) are corporate
+    actions, not transactions. They are kept here, untouched, and nothing is
+    created from them until ``review_restructurings --approve`` is run.
+    """
+
+    KIND_CHOICES = [("MERGER", "Merger"), ("DEMERGER", "Demerger")]
+    STATUS_CHOICES = [("PENDING", "Pending review"), ("APPLIED", "Applied"), ("REJECTED", "Rejected")]
+
+    family = models.ForeignKey(FamilyGroup, on_delete=models.PROTECT, related_name="pending_restructurings")
+    owner = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name="pending_restructurings")
+    upload = models.ForeignKey(TransactionUpload, on_delete=models.SET_NULL, null=True, blank=True, related_name="pending_restructurings")
+    kind = models.CharField(max_length=10, choices=KIND_CHOICES)
+    status = models.CharField(max_length=10, choices=STATUS_CHOICES, default="PENDING")
+    event_date = models.DateField()
+    family_name = models.CharField(max_length=255, blank=True, default="")
+    asset_name = models.CharField(max_length=255, blank=True, default="")
+    legs = models.JSONField(default=list)
+    source_key = models.CharField(max_length=64)
+    applied_transaction_ids = models.JSONField(default=list, blank=True)
+    notes = models.TextField(blank=True, default="")
+    reviewed_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name="reviewed_restructurings")
+    reviewed_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["event_date", "id"]
+        constraints = [
+            models.UniqueConstraint(fields=["family", "source_key"], name="unique_pending_restructuring_source"),
+        ]
+        indexes = [models.Index(fields=["family", "status"], name="pend_restruct_status_idx")]
+
+    def clean(self):
+        super().clean()
+        if not self.legs:
+            raise ValidationError("A restructuring needs at least one leg.")
+
+    def __str__(self):
+        return f"{self.kind} {self.event_date} {self.asset_name} ({self.status})"

@@ -291,3 +291,30 @@ safe default (dates, JSON) are reported and left for you. Check first that the
 other branch does not read `false` on a flag such as `navall_active` as
 "inactive" for the new rows this branch inserts. Undo with
 `ALTER TABLE ... ALTER COLUMN ... DROP DEFAULT`.
+
+
+## Mergers and demergers
+
+Upload rows typed `*Merger`, `*Merged`, `*DeMerger` and `*DeMerger (New)` are corporate actions, not transactions.
+The importer does not import them. Each group is stored as a pending review item (`PendingRestructuring`, migration
+`investments/0112`), and the rows show in the upload's failed list as "Held for review (not imported)". Uploading the
+same file again does not duplicate the item.
+
+```
+python manage.py review_restructurings                       # list, read-only
+python manage.py review_restructurings --approve 5           # preview and the cost to confirm
+python manage.py review_restructurings --approve 5 --cost 452000
+python manage.py review_restructurings --approve 6 --cost 586300 --split "Allcargo Terminals=0.10,Transindia Real Estate=0.20"
+python manage.py review_restructurings --reject 7
+```
+
+Approval creates only SELL and BUY transactions (source `OTHER`, dated on the event, noted with the review number):
+
+* Merger: SELL the old stock at its own cost and BUY the new stock at that same amount. Realized gain is zero, net cash
+  is zero, XIRR and P&L are unchanged, and the cost basis follows the shares.
+* Demerger: the parent is sold and bought back at its reduced cost; each new company is bought at its share of the cost.
+  The shares come from the company's cost-allocation notice, so `--split` is required and never guessed.
+
+`--cost` must match the cost the holding carries today (cross-check against the existing holding engine). If the stock is
+also held in another PMS or has later activity, the cost cannot be derived and you must pass it. `--force` skips the
+cost/quantity cross-check. Original purchase dates are not carried over; the new lots are dated at the event.

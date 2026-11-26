@@ -10,7 +10,7 @@ cd D:\PWMS\Personal_Wealth_Monitoring_System\backend
 python manage.py <command> --help
 ```
 
-The command inventory below covers the **46 PWMS-defined management commands**. Django and Django REST Framework also provide built-in commands; these are listed separately and are not counted as project-defined commands.
+The command inventory below covers the **47 PWMS-defined management commands**. Django and Django REST Framework also provide built-in commands; these are listed separately and are not counted as project-defined commands.
 
 ## Safety classifications
 
@@ -226,6 +226,7 @@ All background data jobs run in one framework started by the Django process (`co
 | --- | --- |
 | `report_fund_categories` | Lists mutual funds stored as BOND/STOCK/CASH that migration `investments.0111` would change to MUTUAL_FUND, and the ones it would leave alone (possible ETFs, duplicate ISINs). `--csv` also writes `data/reports/fund_category_repair.csv`. After 0111 has run, `--already-applied` lists the assets it most likely changed (inferred from the old importer rule and the asset creation date; 0111 kept no record); with `--csv` it writes `data/reports/fund_category_repair_applied.csv`. Changes nothing. |
 | `check_schema_drift` | Compares the database with this branch's models: extra columns (flags NOT NULL columns without a default that break inserts), missing columns, applied migrations not on this branch, unused tables. `--app <label>` limits it. Writes `data/reports/schema_drift.csv`. Read-only unless `--apply-safe-defaults` (PostgreSQL), which only sets column defaults (`''`, `false`, `0`); see [BACKGROUND_JOBS.md](./docs/operations/BACKGROUND_JOBS.md#database-columns-left-by-another-branch). |
+| `review_restructurings` | Lists mergers/demergers held from transaction uploads (`*Merger`, `*Merged`, `*DeMerger`, `*DeMerger (New)`). Listing is read-only. `--approve ID --cost AMOUNT [--split "New Co=0.10,..."] [--force]` creates the SELL/BUY transactions that carry cost to the new holding (no realized gain, net cash zero); `--reject ID` creates nothing. Nothing is ever created without `--approve`. See [BACKGROUND_JOBS.md](./docs/operations/BACKGROUND_JOBS.md#mergers-and-demergers). |
 | `audit_corporate_action_matching` | Fetches NSE corporate actions for held stocks (like the scan) and reports how many match holdings now, why the rest do not, and how many would match with `corporate_actions.nse_identity_matching=true`. Writes `data/reports/corporate_action_matching.csv`; changes no database row. Needs access to nseindia.com. |
 
 ## 8. Database reset commands — destructive

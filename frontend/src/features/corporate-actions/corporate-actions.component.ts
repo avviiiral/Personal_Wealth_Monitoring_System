@@ -10,6 +10,8 @@ import {
 import {
   POSITION_STATUS_LABELS,
   RECONCILIATION_STATUS_LABELS,
+  acceptedQuantitiesPayload,
+  announcementTermLines,
   apiErrorMessage,
   costAllocationLabel,
   describeTerms,
@@ -18,7 +20,11 @@ import {
   formatQuantity,
   ineligiblePositions,
   isRestructuring,
+  isTender,
+  percentToRatio,
   plannedEntryCount,
+  quantityPositions,
+  ratioToPercent,
   resultingSecurityLabel,
   termsPatch,
 } from './corporate-actions.utils';
@@ -52,6 +58,9 @@ export class CorporateActionsComponent implements OnInit {
   readonly resultingSecurityLabel=resultingSecurityLabel;
   readonly costAllocationLabel=costAllocationLabel;
   readonly isRestructuring=isRestructuring;
+  readonly isTender=isTender;
+  readonly quantityPositions=quantityPositions;
+  readonly announcementTermLines=announcementTermLines;
   readonly eligiblePositions=eligiblePositions;
   readonly ineligiblePositions=ineligiblePositions;
   readonly plannedEntryCount=plannedEntryCount;
@@ -60,6 +69,8 @@ export class CorporateActionsComponent implements OnInit {
   loading=false; error=''; message=''; busyId:number|null=null; selectedCandidates:Record<number,number>={};
   acceptingId:number|null=null; rejectingId:number|null=null; rejectReason='';
   termsId:number|null=null; termsForm:TermsForm={}; showIneligible:Record<number,boolean>={};
+  /** Buyback: shares accepted per holding (position id), entered when accepting. */
+  acceptedShares:Record<number,string>={};
 
   ngOnInit():void{this.load();}
   load():void{
@@ -128,11 +139,21 @@ export class CorporateActionsComponent implements OnInit {
   }
 
   // ---------------------------------------------------------------- accept
-  openAccept(item:CorporateActionInboxItem):void{this.closePanels();this.acceptingId=item.id;this.error='';this.message='';}
+  openAccept(item:CorporateActionInboxItem):void{
+    this.closePanels();this.acceptingId=item.id;this.error='';this.message='';this.acceptedShares={};
+  }
   confirmAccept(item:CorporateActionInboxItem):void{
     const fingerprint=item.reconciliation.proposal_fingerprint||'';
+    let request;
+    if(quantityPositions(item.reconciliation.positions).length){
+      const result=acceptedQuantitiesPayload(item.reconciliation.positions,this.acceptedShares);
+      if('error' in result){this.error=result.error;this.changeDetector.markForCheck();return;}
+      request=this.service.acceptReconciliation(item.reconciliation.id,fingerprint,result.quantities);
+    }else{
+      request=this.service.acceptReconciliation(item.reconciliation.id,fingerprint);
+    }
     this.busyId=item.id;this.error='';
-    this.service.acceptReconciliation(item.reconciliation.id,fingerprint).pipe(finalize(()=>this.busyId=null)).subscribe({
+    request.pipe(finalize(()=>this.busyId=null)).subscribe({
       next:r=>{
         const created=Array.isArray(r?.created_transaction_ids)?r.created_transaction_ids.length:0;
         this.done(`Accepted: ${created} ledger transaction(s) created. Holdings and portfolio positions were rebuilt.`);
@@ -143,7 +164,10 @@ export class CorporateActionsComponent implements OnInit {
   }
 
   // ---------------------------------------------------------------- reject
-  openReject(item:CorporateActionInboxItem):void{this.closePanels();this.rejectingId=item.id;this.error='';this.message='';}
+  openReject(item:CorporateActionInboxItem):void{
+    this.closePanels();this.rejectingId=item.id;this.error='';this.message='';
+    if(isTender(item.action.action_type))this.rejectReason='Did not tender';
+  }
   confirmReject(item:CorporateActionInboxItem):void{
     const reason=this.rejectReason.trim();
     if(reason.length<3){this.error='Enter a short reason for the rejection.';return;}
@@ -168,13 +192,24 @@ export class CorporateActionsComponent implements OnInit {
     this.closePanels();this.termsId=item.id;this.error='';this.message='';
     const action=item.action as unknown as Record<string,unknown>;
     this.termsForm=Object.fromEntries(TERM_FIELDS.map(field=>[field,action[field]==null?'':String(action[field])]));
+    // The cost split is entered as the published percentage, stored as a fraction.
+    this.termsForm['cost_allocation_percent']=ratioToPercent(item.action.cost_allocation_ratio);
   }
   saveTerms(item:CorporateActionInboxItem):void{
-    const patch=termsPatch(item.action as unknown as Record<string,unknown>,this.termsForm);
+    const {cost_allocation_percent:percent,...edited}=this.termsForm;
+    const ratio=percentToRatio(percent);
+    if(ratio===null){this.error='The cost split must be a percentage between 0 and 100.';return;}
+    edited['cost_allocation_ratio']=ratio;
+    const patch=termsPatch(item.action as unknown as Record<string,unknown>,edited);
     if(!Object.keys(patch).length){this.termsId=null;return;}
     this.busyId=item.id;this.error='';
     this.service.updateEventTerms(item.action.id,patch).pipe(finalize(()=>this.busyId=null)).subscribe({
-      next:()=>this.done('Event terms saved and the calculation refreshed. Nothing has been booked.'),
+      next:r=>{
+        const shared=Number(r?.shared_with_family_copies)||0;
+        this.done('Event terms saved and the calculation refreshed. Nothing has been booked.'
+          +(shared?` The same terms were filled in for ${shared} family member(s) holding this security.`:'')
+          +(r?.share_warning?` ${r.share_warning}`:''));
+      },
       error:e=>this.fail(e,'The event terms could not be saved.'),
     });
   }
@@ -187,7 +222,9 @@ export class CorporateActionsComponent implements OnInit {
     this.busyId=item.id;this.error='';this.message='';
     this.service.decideIdentity(item.reconciliation.id,decision,decision==='APPROVE'?assetId:undefined)
       .pipe(finalize(()=>this.busyId=null)).subscribe({
-        next:()=>this.done(decision==='APPROVE'?'Identity approved and the entitlement booked.':'Identity match rejected. Nothing was changed.'),
+        next:()=>this.done(decision==='REJECT'?'Identity match rejected. Nothing was changed.'
+          :isTender(item.action.action_type)?'Identity approved. Now enter the shares accepted in the buyback, or choose "Did not tender".'
+          :'Identity approved and the entitlement booked.'),
         error:e=>this.fail(e,'Identity decision could not be saved.'),
       });
   }
@@ -206,6 +243,12 @@ export class CorporateActionsComponent implements OnInit {
   }
   canEditTerms(item:CorporateActionInboxItem):boolean{
     return item.direct_exposure&&['PENDING','MANUAL_REVIEW'].includes(item.reconciliation.status);
+  }
+  needsTerms(item:CorporateActionInboxItem):boolean{
+    return !!item.action.missing_terms?.length&&item.direct_exposure&&this.canEditTerms(item);
+  }
+  acceptLabel(item:CorporateActionInboxItem):string{
+    return quantityPositions(item.reconciliation.positions).length?'Enter accepted shares…':'Accept…';
   }
   hasCashInLieu(item:CorporateActionInboxItem):boolean{
     return (item.reconciliation.positions||[]).some(position=>position.cash_in_lieu_pending);

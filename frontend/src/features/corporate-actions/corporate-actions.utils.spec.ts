@@ -1,4 +1,6 @@
 import {
+  acceptedQuantitiesPayload,
+  announcementTermLines,
   apiErrorMessage,
   costAllocationLabel,
   describeTerms,
@@ -6,7 +8,10 @@ import {
   formatAmount,
   formatQuantity,
   ineligiblePositions,
+  percentToRatio,
   plannedEntryCount,
+  quantityPositions,
+  ratioToPercent,
   resultingSecurityLabel,
   termsPatch,
 } from './corporate-actions.utils';
@@ -76,5 +81,50 @@ describe('corporate-actions utils', () => {
     expect(termsPatch(original, { new_units: '' })).toEqual({ new_units: null });
     expect(termsPatch(original, { resulting_isin: '' })).toEqual({ resulting_isin: '' });
     expect(termsPatch(original, { resulting_isin: ' ine000new033 ' })).toEqual({ resulting_isin: 'INE000NEW033' });
+  });
+
+  it('describes buyback terms, including an open-market buyback', () => {
+    expect(describeTerms(action({ action_type: 'BUYBACK', cash_per_unit: '1500' }))).toContain('Buyback at ₹1,500.00 per share');
+    expect(describeTerms(action({ action_type: 'BUYBACK', cash_per_unit: null }))).toBe('Buyback price not available');
+    expect(describeTerms(action({ action_type: 'BUYBACK', buyback_method: 'OPEN_MARKET' }))).toBe('Open-market buyback (no tender)');
+    expect(describeTerms(action({ action_type: 'TENDER_OFFER', cash_per_unit: '20' }))).toContain('Offer at');
+  });
+
+  it('converts the cost split between percent and fraction', () => {
+    expect(ratioToPercent('0.0468')).toBe('4.68');
+    expect(ratioToPercent(null)).toBe('');
+    expect(percentToRatio('4.68')).toBe('0.0468');
+    expect(percentToRatio(' ')).toBe('');
+    expect(percentToRatio('0')).toBeNull();
+    expect(percentToRatio('100')).toBeNull();
+    expect(percentToRatio('abc')).toBeNull();
+  });
+
+  it('lists terms read from announcements with their source', () => {
+    const lines = announcementTermLines(action({ terms_from_announcements: {
+      new_units: { value: '42', source: 'NSE announcement #12 (2025-03-01)' },
+      cost_allocation_ratio: { value: '0.0468', source: 'NSE announcement #12 (2025-03-01)' },
+    } }));
+    expect(lines).toEqual([
+      'new units: 42 (NSE announcement #12 (2025-03-01))',
+      'cost split: 4.68% to the new company (NSE announcement #12 (2025-03-01))',
+    ]);
+    expect(announcementTermLines(action())).toEqual([]);
+  });
+
+  it('validates accepted buyback quantities', () => {
+    const rows = [
+      { id: 1, status: 'PENDING', needs_accepted_quantity: true, eligible_quantity: '100', family_name: 'A', portfolio: 'P' },
+      { id: 2, status: 'PENDING', needs_accepted_quantity: true, eligible_quantity: '50', family_name: 'B', portfolio: 'P' },
+      { id: 3, status: 'ALREADY_RECORDED', needs_accepted_quantity: false, eligible_quantity: '10' },
+    ] as any;
+    expect(quantityPositions(rows).map(row => row.id)).toEqual([1, 2]);
+    expect(acceptedQuantitiesPayload(rows, { 1: '30', 2: '0' })).toEqual({ quantities: { 1: 30, 2: 0 } });
+    expect('error' in acceptedQuantitiesPayload(rows, { 1: '30' })).toBe(true);
+    expect('error' in acceptedQuantitiesPayload(rows, { 1: '101', 2: '0' })).toBe(true);
+    expect('error' in acceptedQuantitiesPayload(rows, { 1: '2.5', 2: '0' })).toBe(true);
+    expect('error' in acceptedQuantitiesPayload(rows, { 1: '-1', 2: '0' })).toBe(true);
+    expect('error' in acceptedQuantitiesPayload(rows, { 1: '0', 2: '0' })).toBe(true);
+    expect(acceptedQuantitiesPayload([], {})).toEqual({ quantities: {} });
   });
 });

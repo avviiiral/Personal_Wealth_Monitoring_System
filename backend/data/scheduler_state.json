@@ -24,30 +24,31 @@
       "slot_attempts": 1
     },
     "market_prices": {
-      "last_attempt": "2026-11-26T13:05:44.116341+05:30",
+      "last_attempt": "2026-11-26T15:27:52.314850+05:30",
       "last_counts": {
         "assets": 197,
         "current": 0,
         "failed": 3,
         "failing_deferred": 0,
-        "fetched": 191,
+        "fetched": 197,
         "mis_deferred": 0,
         "mis_failed": 1,
         "mis_references": 12,
         "mis_refreshed": 11,
         "records": 187,
-        "skipped": 1,
+        "skipped": 7,
         "timed_out": 0,
-        "unresolved_deferred": 6,
+        "unresolved": 6,
+        "unresolved_deferred": 0,
         "updated": 187
       },
-      "last_duration_seconds": 91.609,
+      "last_duration_seconds": 123.734,
       "last_error": "",
-      "last_finished": "2026-11-26T13:07:15.725341+05:30",
-      "last_reason": "interval",
+      "last_finished": "2026-11-26T15:29:56.048850+05:30",
+      "last_reason": "startup",
       "last_status": "success",
-      "last_success": "2026-11-26T13:05:44.116341+05:30",
-      "slot_attempts": 28
+      "last_success": "2026-11-26T15:27:52.314850+05:30",
+      "slot_attempts": 31
     },
     "mf_intelligence": {
       "last_attempt": "2026-11-26T09:38:06.744666+05:30",

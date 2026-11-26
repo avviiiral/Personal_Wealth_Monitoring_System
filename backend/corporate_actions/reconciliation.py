@@ -25,7 +25,13 @@ corporate-action row of the expected type for the same family scope, family
 member, asset class, subclass, asset name and security (underlying label,
 Asset or ISIN) inside the event window. The portfolio label decides between
 sibling positions; when it cannot, the position goes to manual review.
-Existing rows are never modified.
+Existing rows are never modified. For a buyback or tender offer the evidence
+is a SELL of the security at the buyback price (within 1%) in the event
+window; a buyback the user did not tender in is simply rejected.
+
+Buybacks. The number of shares a company accepts is not published, so a
+buyback proposal shows the eligible holding and asks for the accepted quantity
+when the user accepts; nothing is planned until then.
 """
 import hashlib
 import json
@@ -33,7 +39,7 @@ import logging
 from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import timedelta
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 
 from django.core.exceptions import ValidationError
 from django.db import transaction as db_transaction
@@ -44,11 +50,13 @@ from config.pwms_config import get as get_pwms_config
 from investments.models import Asset, PendingRestructuring, Transaction, TransactionSource, TransactionType
 from users.models import FamilyGroup, FamilyMembership
 
+from .announcement_terms import buyback_method, fill_terms_from_announcements
 from .entitlements import (
     ROLE_RESULT,
     ROLE_SOURCE,
     STATUS_MANUAL,
     STATUS_NOT_ELIGIBLE,
+    TENDER_TYPES,
     LegInput,
     Terms,
     calculate_entitlement,
@@ -84,7 +92,11 @@ EVIDENCE_TYPES = {
     # Mergers/demergers: a BUY of the resulting security in the same hierarchy.
     CorporateActionType.MERGER: (TransactionType.BUY,),
     CorporateActionType.DEMERGER: (TransactionType.BUY,),
+    # Buyback / tender offer: a SELL at the offer price (checked in _security_matches).
+    CorporateActionType.BUYBACK: (TransactionType.SELL,),
+    CorporateActionType.TENDER_OFFER: (TransactionType.SELL,),
 }
+TENDER_PRICE_TOLERANCE = Decimal("0.01")
 RESTRUCTURING_TYPES = {CorporateActionType.MERGER: ("MERGER", "FROM"), CorporateActionType.DEMERGER: ("DEMERGER", "PARENT")}
 QUANTITY_TYPES = (TransactionType.BUY, TransactionType.SIP, TransactionType.SELL, TransactionType.BONUS, TransactionType.SPLIT)
 
@@ -95,6 +107,11 @@ class ReconciliationError(ValidationError):
 
 class StaleProposalError(ReconciliationError):
     """The proposal changed after it was shown; the user must review it again."""
+
+
+def is_open_market_buyback(action):
+    """True for a buyback made on the exchange, which has no tender to reconcile."""
+    return action.action_type == CorporateActionType.BUYBACK and buyback_method(action) == "OPEN_MARKET"
 
 
 def _norm(value):
@@ -294,6 +311,9 @@ def event_window(action):
     start = min(ex_date, record_date)
     if action.action_type == CorporateActionType.CASH_DIVIDEND and not action.payment_date:
         grace = int(get_pwms_config("corporate_actions", "dividend_match_grace_days", 35))
+    elif action.action_type in TENDER_TYPES:
+        # The tender opens after the record date and settles weeks later.
+        grace = int(get_pwms_config("corporate_actions", "buyback_match_grace_days", 75))
     else:
         grace = int(get_pwms_config("corporate_actions", "uploaded_match_grace_days", 15))
     end = max(ex_date, record_date, payment_date) + timedelta(days=max(0, grace))
@@ -365,8 +385,23 @@ def _group_positions(transactions, families_by_id):
     return positions
 
 
+def _tender_price_matches(candidate, terms):
+    """A SELL counts as the buyback only at the buyback price (within 1%)."""
+    price = terms.cash_per_unit
+    if not price or price <= ZERO:
+        return False
+    actual = candidate.price_per_unit
+    if not actual and candidate.quantity:
+        actual = Decimal(candidate.amount) / Decimal(candidate.quantity)
+    if not actual or actual <= ZERO:
+        return False
+    return abs(Decimal(actual) - price) / price <= TENDER_PRICE_TOLERANCE
+
+
 def _security_matches(candidate, position, action, terms, identity_ids):
     labels = _labels(candidate)
+    if action.action_type in TENDER_TYPES and not _tender_price_matches(candidate, terms):
+        return False
     if action.action_type in (CorporateActionType.MERGER, CorporateActionType.DEMERGER):
         candidate_isin = _text(getattr(candidate.asset, "isin", "")).upper()
         if terms.resulting_isin and candidate_isin == terms.resulting_isin:
@@ -541,8 +576,13 @@ def _plan_transactions(plan, position):
     return planned
 
 
-def build_plan(action, owner, *, approved_asset=None):
-    """Read-only reconciliation proposal for ``owner``. Never writes anything."""
+def build_plan(action, owner, *, approved_asset=None, accepted_quantities=None):
+    """Read-only reconciliation proposal for ``owner``. Never writes anything.
+
+    ``accepted_quantities`` ({position_key: Decimal}) is used only when a buyback
+    or tender offer is accepted: the shares the company accepted per position.
+    A position given 0 was not tendered and is marked rejected.
+    """
     for attr in ("old_units", "new_units", "cash_per_unit", "cost_allocation_ratio", "cash_in_lieu_price"):
         setattr(action, attr, _to_decimal(getattr(action, attr, None)))
     for attr in ("ex_date", "record_date", "payment_date"):
@@ -601,12 +641,27 @@ def build_plan(action, owner, *, approved_asset=None):
             + "). Verify the official terms and update the event."
         )
 
+    open_market = is_open_market_buyback(action)
     for position in plan.positions:
         if position.status != PositionStatus.PENDING:
             continue
         legs = [LegInput(key=str(leg.asset.id), quantity=leg.eligible["quantity"], cost=leg.eligible["invested_value"])
                 for leg in position.legs]
-        position.result = calculate_entitlement(terms, legs)
+        if open_market and position.eligible_quantity > ZERO:
+            position.status = PositionStatus.NOT_ELIGIBLE
+            position.reason = (
+                "Open-market buyback: the company buys shares on the exchange, so there is no tender to record. "
+                "Any shares you sold appear as normal sales in your uploads."
+            )
+            continue
+        accepted = None
+        if accepted_quantities is not None and action.action_type in TENDER_TYPES:
+            accepted = accepted_quantities.get(position.key)
+            if accepted is not None and accepted == ZERO:
+                position.status = PositionStatus.REJECTED
+                position.reason = "Not tendered (you said these shares were not tendered or not accepted)."
+                continue
+        position.result = calculate_entitlement(terms, legs, accepted_quantity=accepted, event_date=action.ex_date)
         if position.result.status == STATUS_NOT_ELIGIBLE:
             position.status = PositionStatus.NOT_ELIGIBLE
             position.reason = position.result.reason
@@ -635,7 +690,7 @@ def build_plan(action, owner, *, approved_asset=None):
                 )
                 continue
         position.planned = _plan_transactions(plan, position)
-        if not position.planned:
+        if not position.planned and not position.result.needs_accepted_quantity:
             position.manual("The calculation produced no ledger entries.")
     return plan
 
@@ -665,6 +720,7 @@ def _position_defaults(plan, position):
         ),
         "explanation": result.explanation if result is not None else "",
         "cash_in_lieu_pending": bool(result and result.cash_in_lieu_pending),
+        "needs_accepted_quantity": bool(result and result.needs_accepted_quantity),
         "legs": [
             {"asset_id": leg.asset.id, "asset_name": leg.asset.name,
              "eligible_quantity": str(leg.eligible["quantity"]),
@@ -708,6 +764,11 @@ def _position_defaults(plan, position):
 
 def plan_status(plan, *, has_indirect=False):
     """(status, notes) for a non-terminal reconciliation."""
+    if is_open_market_buyback(plan.action) and not plan.actionable:
+        return ReconStatus.MANUAL_REVIEW, (
+            "Open-market buyback: there is no tender to record, so nothing will be booked. "
+            "Shares you sold on the exchange are normal sales in your uploads."
+        )
     if not plan.positions:
         if has_indirect:
             return ReconStatus.MANUAL_REVIEW, (
@@ -742,6 +803,8 @@ def plan_status(plan, *, has_indirect=False):
 
 
 def should_notify(plan, status, *, has_indirect=False):
+    if is_open_market_buyback(plan.action) and not plan.actionable:
+        return False
     if status != ReconStatus.MANUAL_REVIEW:
         return True
     if has_indirect:
@@ -780,12 +843,20 @@ def persist_plan(reconciliation, plan, *, has_indirect=False, set_status=True):
     return status
 
 
+def approved_identity(reconciliation, action):
+    """The holding the user approved for an event without an ISIN (buyback awaiting quantities)."""
+    if (action.isin or "").strip() or not reconciliation.selected_asset_id:
+        return None
+    return Asset.objects.filter(pk=reconciliation.selected_asset_id).first()
+
+
 def refresh_reconciliation(reconciliation):
     """Re-calculate a non-terminal reconciliation. Never writes ledger rows."""
     if is_terminal(reconciliation) or reconciliation.status == ReconStatus.PENDING_USER_APPROVAL:
         return reconciliation
     action = reconciliation.action
-    plan = build_plan(action, reconciliation.owner)
+    fill_terms_from_announcements(action)
+    plan = build_plan(action, reconciliation.owner, approved_asset=approved_identity(reconciliation, action))
     has_indirect = reconciliation.action.exposures.filter(
         owner=reconciliation.owner, exposure_type__in=("MUTUAL_FUND", "PMS")
     ).exists()
@@ -863,7 +934,8 @@ def _description(plan, planned):
     text = f"{planned.label} — {action.get_action_type_display()}"
     if plan.terms.ratio_text and action.action_type != CorporateActionType.CASH_DIVIDEND:
         text += f" {plan.terms.ratio_text}"
-    if action.action_type == CorporateActionType.CASH_DIVIDEND and plan.terms.cash_per_unit is not None:
+    if (action.action_type == CorporateActionType.CASH_DIVIDEND or action.action_type in TENDER_TYPES) \
+            and plan.terms.cash_per_unit is not None:
         text += f" @ {plan.terms.cash_per_unit.normalize():f}/share"
     text += f", ex-date {action.ex_date.isoformat()} ({action.security_name})"
     return text[:500]
@@ -964,20 +1036,61 @@ def _locked_reconciliation(owner, reconciliation_id):
     return reconciliation
 
 
-def accept_reconciliation(*, owner, reconciliation_id, fingerprint=None, notes=""):
+def accept_reconciliation(*, owner, reconciliation_id, fingerprint=None, notes="", accepted_quantities=None):
     """Book the accepted proposal into the ledger. Idempotent and concurrency-safe.
 
     When the proposal changed since it was shown, or nothing is bookable, the
     refreshed proposal is committed first and the error raised afterwards, so
     the user sees the new calculation; no ledger row is written in that case.
+    For a buyback or tender offer, ``accepted_quantities`` maps each pending
+    position's id to the number of shares the company accepted (0 = not tendered).
     """
-    outcome = _accept_under_lock(owner=owner, reconciliation_id=reconciliation_id, fingerprint=fingerprint, notes=notes)
+    outcome = _accept_under_lock(owner=owner, reconciliation_id=reconciliation_id, fingerprint=fingerprint,
+                                 notes=notes, accepted_quantities=accepted_quantities)
     if isinstance(outcome, ReconciliationError):
         raise outcome
     return outcome
 
 
-def _accept_under_lock(*, owner, reconciliation_id, fingerprint=None, notes=""):
+def _accepted_by_key(reconciliation, plan, accepted_quantities):
+    """Validate the accepted buyback quantities; returns {position_key: Decimal}."""
+    waiting = [p for p in plan.actionable if p.result is not None and p.result.needs_accepted_quantity]
+    if not waiting:
+        return {}
+    if not isinstance(accepted_quantities, dict) or not accepted_quantities:
+        raise ReconciliationError(
+            "Enter how many shares were accepted for each holding (0 if that holding did not tender)."
+        )
+    keys_by_id = {str(row_id): key for row_id, key in reconciliation.positions.values_list("id", "position_key")}
+    by_key = {}
+    for raw_id, raw_quantity in accepted_quantities.items():
+        key = keys_by_id.get(str(raw_id))
+        if key is None:
+            raise ReconciliationError(f"Holding #{raw_id} is not part of this corporate action.")
+        try:
+            quantity = Decimal(str(raw_quantity).strip())
+        except (InvalidOperation, ValueError):
+            raise ReconciliationError(f"Accepted quantity for holding #{raw_id} must be a number.") from None
+        if not quantity.is_finite() or quantity < ZERO or quantity != quantity.to_integral_value():
+            raise ReconciliationError(f"Accepted quantity for holding #{raw_id} must be a whole number, 0 or more.")
+        by_key[key] = quantity
+    for position in waiting:
+        if position.key not in by_key:
+            raise ReconciliationError(
+                f"Enter the accepted quantity for {position.family_name or 'each holding'} / "
+                f"{position.portfolio or '-'} (0 if not tendered)."
+            )
+        if by_key[position.key] > position.eligible_quantity:
+            raise ReconciliationError(
+                f"{position.family_name or 'This holding'} held {position.eligible_quantity.normalize():f} shares on the "
+                f"record date; the accepted quantity cannot be more than that."
+            )
+    if all(by_key[p.key] == ZERO for p in waiting):
+        raise ReconciliationError("Every quantity is 0. Choose \"Did not tender\" instead; nothing will be booked.")
+    return {key: value for key, value in by_key.items() if key in {p.key for p in waiting}}
+
+
+def _accept_under_lock(*, owner, reconciliation_id, fingerprint=None, notes="", accepted_quantities=None):
     """Locked, atomic acceptance. Returns (reconciliation, counters) or an error to raise after commit."""
     with db_transaction.atomic():
         reconciliation = _locked_reconciliation(owner, reconciliation_id)
@@ -990,9 +1103,10 @@ def _accept_under_lock(*, owner, reconciliation_id, fingerprint=None, notes=""):
         if reconciliation.status == ReconStatus.APPROVED:
             raise ReconciliationError("This corporate action has already been approved and booked.")
         action = CorporateAction.objects.get(pk=reconciliation.action_id)
-        plan = build_plan(action, owner)
+        approved = approved_identity(reconciliation, action)
+        plan = build_plan(action, owner, approved_asset=approved)
         _lock_scope(owner, plan)
-        plan = build_plan(action, owner)  # re-read under the scope lock
+        plan = build_plan(action, owner, approved_asset=approved)  # re-read under the scope lock
         has_indirect = action.exposures.filter(owner=owner, exposure_type__in=("MUTUAL_FUND", "PMS")).exists()
         if fingerprint and fingerprint != plan.fingerprint:
             persist_plan(reconciliation, plan, has_indirect=has_indirect)
@@ -1003,9 +1117,18 @@ def _accept_under_lock(*, owner, reconciliation_id, fingerprint=None, notes=""):
         if not plan.actionable:
             persist_plan(reconciliation, plan, has_indirect=has_indirect)
             return ReconciliationError("There is no eligible position to book for this corporate action.")
+        if action.action_type in TENDER_TYPES:
+            quantities = _accepted_by_key(reconciliation, plan, accepted_quantities)
+            if quantities:
+                plan = build_plan(action, owner, approved_asset=approved, accepted_quantities=quantities)
+                problems = [p.reason for p in plan.positions
+                            if p.key in quantities and p.status == PositionStatus.MANUAL_REVIEW]
+                if problems:
+                    raise ReconciliationError(" ".join(sorted(set(problems))))
         persist_plan(reconciliation, plan, has_indirect=has_indirect, set_status=False)
         counters = _apply_positions(plan, reconciliation, owner)
         manual = plan.count(PositionStatus.MANUAL_REVIEW)
+        not_tendered = plan.count(PositionStatus.REJECTED)
         reconciliation.status = ReconStatus.COMPLETED
         reconciliation.reviewed_at = timezone.now()
         reconciliation.reviewed_by = owner
@@ -1014,6 +1137,7 @@ def _accept_under_lock(*, owner, reconciliation_id, fingerprint=None, notes=""):
             f"Accepted: created {len(counters['created'])} ledger transaction(s)"
             + (f", reused {len(counters['reused'])} identical existing row(s)" if counters["reused"] else "")
             + (f", {len(counters['recorded'])} already-recorded row(s) left unchanged" if counters["recorded"] else "")
+            + (f"; {not_tendered} holding(s) not tendered" if not_tendered else "")
             + (f"; {manual} position(s) still need manual review and were not booked" if manual else "")
             + "."
         )
@@ -1056,12 +1180,18 @@ def apply_identity_approval(*, owner, reconciliation, asset):
     """Book an approved no-ISIN identity (existing identity-approval workflow).
 
     Called inside the caller's atomic block with the reconciliation locked.
-    Returns (matched_ids, created_count, skipped_count).
+    Returns (matched_ids, created_count, skipped_count), or None for a buyback /
+    tender offer, which becomes a normal proposal that asks for the accepted quantity.
     """
     action = reconciliation.action
     plan = build_plan(action, owner, approved_asset=asset)
     _lock_scope(owner, plan)
     plan = build_plan(action, owner, approved_asset=asset)
+    if action.action_type in TENDER_TYPES:
+        # A buyback still needs the accepted quantity: approving the identity only
+        # turns it into an ordinary proposal; nothing is booked here.
+        persist_plan(reconciliation, plan)
+        return None
     persist_plan(reconciliation, plan, set_status=False)
     actionable = plan.actionable
     recorded = [p for p in plan.positions if p.status == PositionStatus.ALREADY_RECORDED]

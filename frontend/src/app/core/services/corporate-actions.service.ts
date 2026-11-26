@@ -12,6 +12,12 @@ export interface CorporateActionRecord {
   resulting_isin?: string; resulting_symbol?: string; resulting_security_name?: string;
   cost_allocation_ratio?: Num; cash_in_lieu_price?: Num;
   source: string; source_reference: string; status: string; notes: string; quantity_factor: Num;
+  /** Terms still needed before quantities can be calculated (plain names). */
+  missing_terms?: string[];
+  /** Terms PWMS read from exchange announcements, with where each came from. */
+  terms_from_announcements?: Record<string, {value: string; source: string}>;
+  /** "TENDER", "OPEN_MARKET" or "" for a buyback. */
+  buyback_method?: string;
 }
 export interface CorporateActionCandidate {
   id: number; name: string; symbol: string; isin: string; exchange: string;
@@ -35,6 +41,8 @@ export interface CorporateActionPosition {
   created_transaction_ids: number[]; planned_entries: CorporateActionPlannedEntry[];
   explanation: string; eligibility_rule: string; cash_in_lieu_pending: boolean; reason: string;
   applied_at: string | null;
+  /** Buyback / tender offer: the accepted share count is asked for when accepting. */
+  needs_accepted_quantity?: boolean;
 }
 export interface CorporateActionSummary {
   status_counts: Record<string, number>;
@@ -87,10 +95,14 @@ export class CorporateActionsService {
   decideReconciliation(id:number,decision:'ALREADY_RECORDED'|'DISMISSED',notes=''):Observable<any>{
     return this.http.post(`${this.baseUrl}/reconciliations/${id}/decision/`,{decision,notes},{withCredentials:true});
   }
-  /** Book the proposal shown to the user; refused (409) if the calculation changed meanwhile. */
-  acceptReconciliation(id:number,proposalFingerprint:string,notes=''):Observable<any>{
-    return this.http.post(`${this.baseUrl}/reconciliations/${id}/accept/`,
-      {confirm:true,proposal_fingerprint:proposalFingerprint,notes},{withCredentials:true});
+  /**
+   * Book the proposal shown to the user; refused (409) if the calculation changed meanwhile.
+   * For a buyback, ``acceptedQuantities`` maps each holding (position id) to the shares accepted (0 = not tendered).
+   */
+  acceptReconciliation(id:number,proposalFingerprint:string,acceptedQuantities?:Record<number,number>,notes=''):Observable<any>{
+    const payload:Record<string,unknown>={confirm:true,proposal_fingerprint:proposalFingerprint,notes};
+    if(acceptedQuantities) payload['accepted_quantities']=acceptedQuantities;
+    return this.http.post(`${this.baseUrl}/reconciliations/${id}/accept/`,payload,{withCredentials:true});
   }
   rejectReconciliation(id:number,reason:string):Observable<any>{
     return this.http.post(`${this.baseUrl}/reconciliations/${id}/reject/`,{reason},{withCredentials:true});

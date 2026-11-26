@@ -41,9 +41,22 @@
         <div *ngIf="isRestructuring(item.action.action_type)"><span>Cost allocation</span><strong>{{costAllocationLabel(item.action)}}</strong></div>
         <div *ngIf="item.action.action_type==='MERGER'&&item.action.cash_per_unit"><span>Cash component</span><strong>{{formatAmount(item.action.cash_per_unit)}} per share</strong></div>
       </div>
+      <p class="auto-terms-note" *ngIf="announcementTermLines(item.action).length">
+        <b>Read automatically from announcements:</b>
+        <span *ngFor="let line of announcementTermLines(item.action)">{{line}}</span>
+      </p>
+      <section class="terms-needed" *ngIf="needsTerms(item)" role="status">
+        <div><strong>Terms needed: {{item.action.missing_terms!.join(', ')}}</strong>
+          <p>PWMS could not find these in the exchange announcements. Enter them once from the company's notice; they
+            are filled in for your family members who hold this security, and every holding's new quantity is then
+            calculated automatically. Nothing is booked until each person accepts.</p></div>
+        <button type="button" class="primary" (click)="openTerms(item)" [disabled]="busyId===item.id">Enter terms</button>
+      </section>
 
       <section class="identity-review" *ngIf="item.reconciliation.status==='PENDING_USER_APPROVAL'">
-        <div><strong>Confirm security identity</strong><p>The provider did not supply a verified ISIN. PWMS found exact {{item.reconciliation.identity_match_method|lowercase}} candidate matches. Approving a holding books the entitlement for it; nothing is created otherwise.</p></div>
+        <div><strong>Confirm security identity</strong><p>The provider did not supply a verified ISIN. PWMS found exact {{item.reconciliation.identity_match_method|lowercase}} candidate matches.
+          <ng-container *ngIf="!isTender(item.action.action_type)">Approving a holding books the entitlement for it; nothing is created otherwise.</ng-container>
+          <ng-container *ngIf="isTender(item.action.action_type)">Approving a holding turns this into a buyback request; you then enter the shares accepted. Nothing is booked on approval.</ng-container></p></div>
         <div class="candidate-list" *ngIf="item.reconciliation.candidate_assets.length;else noCandidates">
           <label *ngFor="let candidate of item.reconciliation.candidate_assets" class="candidate-option">
             <input type="radio" [name]="'candidate-'+item.id" [value]="candidate.id"
@@ -142,7 +155,23 @@
         Decision by {{item.reconciliation.reviewed_by}} on {{item.reconciliation.reviewed_at|date:'dd MMM yyyy, HH:mm'}}.
       </p>
 
-      <section class="decision-panel" *ngIf="acceptingId===item.id">
+      <section class="decision-panel" *ngIf="acceptingId===item.id&&quantityPositions(item.reconciliation.positions).length">
+        <strong>How many shares did the company accept?</strong>
+        <p>Take the number from your buyback acceptance letter or the broker's contract note. Enter 0 for a holding that
+          did not tender. Each accepted share is booked as a sale at {{formatAmount(item.action.cash_per_unit)}} and the holding is rebuilt.</p>
+        <div class="accepted-grid">
+          <label *ngFor="let position of quantityPositions(item.reconciliation.positions);trackBy:trackPosition">
+            <span>{{position.family_name||'—'}} · {{position.portfolio||'—'}}<small>held {{formatQuantity(position.eligible_quantity)}} on the record date</small></span>
+            <input type="number" min="0" step="1" [max]="position.eligible_quantity" inputmode="numeric"
+              [(ngModel)]="acceptedShares[position.id]" [attr.aria-label]="'Shares accepted for '+position.family_name">
+          </label>
+        </div>
+        <div class="identity-actions">
+          <button type="button" class="primary" (click)="confirmAccept(item)" [disabled]="busyId===item.id">Book accepted shares</button>
+          <button type="button" (click)="acceptingId=null" [disabled]="busyId===item.id">Cancel</button>
+        </div>
+      </section>
+      <section class="decision-panel" *ngIf="acceptingId===item.id&&!quantityPositions(item.reconciliation.positions).length">
         <strong>Accept and book this corporate action?</strong>
         <p>{{plannedEntryCount(item.reconciliation.positions)}} ledger transaction(s) will be created for
           {{item.reconciliation.summary?.status_counts?.['PENDING']||0}} position(s), dated as shown above, and the affected holdings and portfolio positions will be rebuilt.
@@ -158,17 +187,18 @@
           placeholder="e.g. Shares were sold before the record date"></textarea>
         <p>Rejecting changes no transaction or holding, and later scans will not reopen it.</p>
         <div class="identity-actions">
-          <button type="button" class="quiet-danger" (click)="confirmReject(item)" [disabled]="busyId===item.id">Reject action</button>
+          <button type="button" class="quiet-danger" (click)="confirmReject(item)" [disabled]="busyId===item.id">{{isTender(item.action.action_type)?'Confirm: did not tender':'Reject action'}}</button>
           <button type="button" (click)="rejectingId=null" [disabled]="busyId===item.id">Cancel</button>
         </div>
       </section>
       <section class="decision-panel terms-panel" *ngIf="termsId===item.id">
         <strong>Complete or correct the official event terms</strong>
-        <p>Enter values only from the company's or exchange's official notice. Saving recalculates the proposal; nothing is booked until you accept.</p>
+        <p>Enter values only from the company's or exchange's official notice. Saving recalculates the proposal and fills
+          the same blank terms for your family members who hold this security; nothing is booked until each person accepts.</p>
         <div class="terms-grid">
           <label>Old units<input type="text" inputmode="decimal" [(ngModel)]="termsForm['old_units']"></label>
           <label>New units<input type="text" inputmode="decimal" [(ngModel)]="termsForm['new_units']"></label>
-          <label>Cash / dividend per share<input type="text" inputmode="decimal" [(ngModel)]="termsForm['cash_per_unit']"></label>
+          <label>{{isTender(item.action.action_type)?'Buyback / offer price per share':'Cash / dividend per share'}}<input type="text" inputmode="decimal" [(ngModel)]="termsForm['cash_per_unit']"></label>
           <label>Record date<input type="date" [(ngModel)]="termsForm['record_date']"></label>
           <label>Payment date<input type="date" [(ngModel)]="termsForm['payment_date']"></label>
           <label>Cash-in-lieu price<input type="text" inputmode="decimal" [(ngModel)]="termsForm['cash_in_lieu_price']"></label>
@@ -176,7 +206,7 @@
             <label>Resulting ISIN<input type="text" maxlength="20" [(ngModel)]="termsForm['resulting_isin']"></label>
             <label>Resulting symbol<input type="text" maxlength="50" [(ngModel)]="termsForm['resulting_symbol']"></label>
             <label>Resulting company<input type="text" maxlength="255" [(ngModel)]="termsForm['resulting_security_name']"></label>
-            <label>Cost allocation ratio (0–1)<input type="text" inputmode="decimal" [(ngModel)]="termsForm['cost_allocation_ratio']"></label>
+            <label>Cost moving to the new company (%)<input type="text" inputmode="decimal" placeholder="e.g. 4.68" [(ngModel)]="termsForm['cost_allocation_percent']"></label>
           </ng-container>
         </div>
         <div class="identity-actions">
@@ -187,13 +217,13 @@
 
       <footer class="action-footer">
         <button type="button" class="primary" (click)="openAccept(item)" *ngIf="item.reconciliation.can_accept"
-          [disabled]="busyId===item.id">Accept…</button>
+          [disabled]="busyId===item.id">{{acceptLabel(item)}}</button>
         <button type="button" class="quiet-danger" (click)="openReject(item)"
           *ngIf="item.reconciliation.can_reject&&item.reconciliation.status!=='PENDING_USER_APPROVAL'"
-          [disabled]="busyId===item.id">Reject…</button>
+          [disabled]="busyId===item.id">{{isTender(item.action.action_type)?'Did not tender…':'Reject…'}}</button>
         <button type="button" class="secondary" (click)="refreshCalculation(item)" *ngIf="item.direct_exposure&&isOpenStatus(item)"
           [disabled]="busyId===item.id">Recalculate</button>
-        <button type="button" class="secondary" (click)="openTerms(item)" *ngIf="canEditTerms(item)"
+        <button type="button" class="secondary" (click)="openTerms(item)" *ngIf="canEditTerms(item)&&!needsTerms(item)"
           [disabled]="busyId===item.id">Complete event terms</button>
         <button type="button" class="secondary" (click)="verifyEvent(item)" *ngIf="item.action.status==='PENDING'&&isOpenStatus(item)"
           [disabled]="busyId===item.id">Mark terms verified</button>

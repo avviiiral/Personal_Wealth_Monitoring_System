@@ -294,7 +294,8 @@ class EmptyAndNullInputTests(SimpleTestCase):
 
 class OtherTypeTests(SimpleTestCase):
     def test_types_without_a_safe_automatic_treatment_go_to_manual_review(self):
-        for action_type in ("RIGHTS_ISSUE", "BUYBACK", "TENDER_OFFER", "WARRANT_CONVERSION", "DELISTING",
+        # Buyback and tender offer now have their own workflow (test_auto_terms_and_buyback).
+        for action_type in ("RIGHTS_ISSUE", "WARRANT_CONVERSION", "DELISTING",
                             "TICKER_CHANGE", "ISIN_CHANGE", "CASH_IN_LIEU", "MF_DISTRIBUTION", "MF_UNIT_ADJUSTMENT"):
             with self.subTest(action_type=action_type):
                 result = calculate_entitlement(Terms(action_type, old_units=D("1"), new_units=D("1")), [leg(10, 10)])

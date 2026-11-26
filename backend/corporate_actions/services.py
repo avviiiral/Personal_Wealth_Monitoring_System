@@ -22,6 +22,7 @@ from .models import (
     CorporateActionReconciliationStatus,
     RATIO_ACTIONS,
 )
+from .announcement_terms import fill_terms_from_announcements
 from .position_adjustment import ratio_quantity_factor
 from . import reconciliation as ledger_reconciliation
 
@@ -207,6 +208,10 @@ def _discover_without_isin(action, user):
     if reconciliation.status in {ReconStatus.REJECTED, ReconStatus.APPROVED} or ledger_reconciliation.is_terminal(reconciliation):
         # An explicit decision is terminal; later monitoring runs must not reopen it.
         return {"direct": 0, "mutual_fund": 0, "pms": 0, "notifications": 0, "status": reconciliation.status}
+    if reconciliation.selected_asset_id and reconciliation.status != ReconStatus.PENDING_USER_APPROVAL:
+        # Identity already approved (a buyback waiting for its accepted quantity): keep it, recalculate.
+        ledger_reconciliation.refresh_reconciliation(reconciliation)
+        return {"direct": 0, "mutual_fund": 0, "pms": 0, "notifications": 0, "status": reconciliation.status}
     reconciliation.status = ReconStatus.PENDING_USER_APPROVAL
     reconciliation.identity_match_method = method
     reconciliation.candidate_asset_ids = [asset.id for asset in candidates]
@@ -242,6 +247,8 @@ def discover_exposures_and_reconcile(action, *, persist_if_irrelevant=True):
     if existing is not None and ledger_reconciliation.is_terminal(existing):
         return {"direct": 0, "mutual_fund": 0, "pms": 0, "notifications": 0, "status": existing.status}
 
+    # Merger / demerger / buyback terms the feed did not give: read them from announcements.
+    fill_terms_from_announcements(action)
     plan = ledger_reconciliation.build_plan(action, user)
     mf_count, pms_count = _indirect_exposures(action, user, family_ids, persist=False)
     has_indirect = bool(mf_count or pms_count)
@@ -407,10 +414,20 @@ def decide_missing_isin_reconciliation(*, owner, reconciliation_id, decision, as
             if action.status == CorporateActionStatus.REJECTED:
                 raise ValidationError("This event is marked rejected/cancelled; nothing can be booked for it.")
             reconciliation.family_id_snapshot = asset.family_id
-            matched_ids, created_count, skipped_count = ledger_reconciliation.apply_identity_approval(
+            reconciliation.selected_asset = asset
+            outcome = ledger_reconciliation.apply_identity_approval(
                 owner=owner, reconciliation=reconciliation, asset=asset,
             )
-            reconciliation.selected_asset = asset
+            if outcome is None:
+                # Buyback / tender offer: now an ordinary proposal awaiting the accepted
+                # quantity (apply_identity_approval stored its status and positions).
+                reconciliation.notes = (notes or (
+                    "Identity approved. Enter how many shares the company accepted to book the sale, "
+                    "or choose \"Did not tender\". Nothing has been booked yet."
+                ))[:5000]
+                reconciliation.save(update_fields=["selected_asset", "family_id_snapshot", "notes", "updated_at"])
+                return reconciliation
+            matched_ids, created_count, skipped_count = outcome
             reconciliation.matched_transaction_ids = matched_ids
             reconciliation.status = ReconStatus.APPROVED
             if notes:

@@ -1,3 +1,5 @@
+import logging
+
 from django.core.exceptions import ValidationError
 from django.db import IntegrityError, transaction as db_transaction
 from django.db.models import Prefetch, Q
@@ -19,6 +21,7 @@ from .models import (
     CorporateActionReconciliation,
     CorporateActionReconciliationStatus,
 )
+from .announcement_terms import buyback_method, missing_terms, share_terms_with_family
 from .reconciliation import (
     ReconciliationError,
     StaleProposalError,
@@ -30,6 +33,7 @@ from .reconciliation import (
 from .services import resolve_corporate_action_candidates, update_notification_state, decide_missing_isin_reconciliation
 
 ReconStatus = CorporateActionReconciliationStatus
+logger = logging.getLogger(__name__)
 
 EDITABLE_FIELDS = {
     "action_type", "security_name", "isin", "symbol", "exchange", "ex_date",
@@ -60,6 +64,10 @@ def _serialize(action):
         "status": action.status, "notes": action.notes, "metadata": action.metadata,
         "created_at": action.created_at, "updated_at": action.updated_at,
         "quantity_factor": action.quantity_factor,
+        "missing_terms": missing_terms(action),
+        "terms_from_announcements": ((action.metadata or {}).get("announcement_terms") or {}).get("filled", {})
+        if isinstance(action.metadata, dict) else {},
+        "buyback_method": buyback_method(action),
     }
 
 
@@ -94,6 +102,7 @@ def _serialize_position(position):
         "explanation": calculation.get("explanation", ""),
         "eligibility_rule": calculation.get("eligibility_rule", ""),
         "cash_in_lieu_pending": bool(calculation.get("cash_in_lieu_pending")),
+        "needs_accepted_quantity": bool(calculation.get("needs_accepted_quantity")),
         "reason": position.reason,
         "applied_at": position.applied_at,
     }
@@ -187,12 +196,41 @@ def corporate_action_detail(request, action_id):
             for reconciliation in action.reconciliations.filter(owner=request.user):
                 if not is_terminal(reconciliation):
                     refresh_reconciliation(reconciliation)
+            shared, share_failed = _share_terms(action, request.user, FINANCIAL_TERM_FIELDS & set(changes))
     except ValidationError as exc:
         return Response({"detail": exc.message_dict if hasattr(exc, "message_dict") else exc.messages}, status=400)
     except IntegrityError:
         return Response({"detail": "An action with this security, type and ex-date already exists."}, status=409)
     action.refresh_from_db()
-    return Response(_serialize(action))
+    payload = _serialize(action)
+    payload["shared_with_family_copies"] = len(shared)
+    if share_failed:
+        payload["share_warning"] = (
+            "Your terms were saved, but they could not be copied to your family members' requests. "
+            "They can enter the terms themselves, or you can save them again later."
+        )
+    return Response(payload)
+
+
+def _share_terms(action, editor, field_names):
+    """Fill the same blank terms on family members' copies and recalculate them.
+
+    Terms are facts about the event, so entering them once is enough for the
+    family; nothing is booked until each person accepts. Runs in its own
+    savepoint: a failure here is logged and never undoes the editor's own save.
+    Returns (changed copies, failed).
+    """
+    try:
+        with db_transaction.atomic():
+            shared = share_terms_with_family(action, editor, field_names)
+            for copy in shared:
+                for reconciliation in copy.reconciliations.filter(owner_id=copy.owner_id):
+                    if not is_terminal(reconciliation):
+                        refresh_reconciliation(reconciliation)
+        return shared, False
+    except Exception:  # noqa: BLE001 - sharing must never block the editor's own change
+        logger.exception("Could not share corporate-action terms from action %s", action.id)
+        return [], True
 
 
 @api_view(["GET"])
@@ -396,12 +434,16 @@ def corporate_action_accept(request, reconciliation_id):
     """Accept a proposal: book the missing ledger rows and rebuild positions."""
     if request.data.get("confirm") is not True:
         return Response({"detail": "Set confirm=true to accept and book this corporate action."}, status=400)
+    accepted = request.data.get("accepted_quantities")
+    if accepted is not None and not isinstance(accepted, dict):
+        return Response({"detail": "accepted_quantities must map holding id to the accepted share count."}, status=400)
     try:
         reconciliation, counters = accept_reconciliation(
             owner=request.user,
             reconciliation_id=reconciliation_id,
             fingerprint=str(request.data.get("proposal_fingerprint") or "") or None,
             notes=str(request.data.get("notes", "")),
+            accepted_quantities=accepted,
         )
     except LookupError:
         return Response({"detail": "Reconciliation not found."}, status=404)

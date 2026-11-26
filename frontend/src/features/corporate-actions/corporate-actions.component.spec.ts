@@ -217,4 +217,61 @@ describe('CorporateActionsComponent', () => {
     fixture.detectChanges();
     expect(component.error).toContain('could not be loaded');
   });
+
+  it('asks once for missing merger terms and sends the cost split as a fraction', () => {
+    const item = inboxItem();
+    item.action = { ...item.action, action_type: 'DEMERGER', action_type_display: 'Demerger', old_units: null,
+      new_units: null, missing_terms: ['share ratio', 'new company ISIN', 'cost split (%)'] } as any;
+    item.reconciliation = { ...item.reconciliation, status: 'MANUAL_REVIEW', can_accept: false } as any;
+    service['updateEventTerms'].mockReturnValue(of({ shared_with_family_copies: 2 }));
+    reloadWith([item]);
+    expect(text()).toContain('Terms needed: share ratio, new company ISIN, cost split (%)');
+    const loaded = component.items[0];
+    component.openTerms(loaded);
+    Object.assign(component.termsForm, { old_units: '1', new_units: '1', resulting_isin: 'ine000xyz022',
+      cost_allocation_percent: '4.68' });
+    component.saveTerms(loaded);
+    expect(service['updateEventTerms']).toHaveBeenCalledWith(ACTION_ID, {
+      old_units: '1', new_units: '1', resulting_isin: 'INE000XYZ022', cost_allocation_ratio: '0.0468',
+    });
+    expect(component.message).toContain('2 family member(s)');
+  });
+
+  it('refuses a cost split that is not a percentage', () => {
+    const item = component.items[0];
+    component.openTerms(item);
+    component.termsForm['cost_allocation_percent'] = '140';
+    component.saveTerms(item);
+    expect(service['updateEventTerms']).not.toHaveBeenCalled();
+    expect(component.error).toContain('percentage');
+  });
+
+  it('books a buyback only with the accepted share count for each holding', () => {
+    const item = inboxItem();
+    item.action = { ...item.action, action_type: 'BUYBACK', action_type_display: 'Buyback', old_units: null,
+      new_units: null, cash_per_unit: '1500' } as any;
+    const position = { ...pendingPosition(), needs_accepted_quantity: true, planned_entries: [],
+      quantity_delta: null, resulting_quantity: null };
+    item.reconciliation = { ...item.reconciliation, positions: [position] } as any;
+    reloadWith([item]);
+    expect(buttonLabels()).toContain('Enter accepted shares…');
+    expect(buttonLabels()).toContain('Did not tender…');
+    const loaded = component.items[0];
+    component.openAccept(loaded);
+    component.confirmAccept(loaded);
+    expect(service['acceptReconciliation']).not.toHaveBeenCalled();
+    expect(component.error).toContain('Enter the shares accepted');
+    component.acceptedShares[position.id] = '30';
+    component.confirmAccept(loaded);
+    expect(service['acceptReconciliation']).toHaveBeenCalledWith(RECONCILIATION_ID, SHOWN_FINGERPRINT, { [position.id]: 30 });
+  });
+
+  it('prefills "Did not tender" as the reason for rejecting a buyback', () => {
+    const item = inboxItem();
+    item.action = { ...item.action, action_type: 'BUYBACK' } as any;
+    reloadWith([item]);
+    component.openReject(component.items[0]);
+    component.confirmReject(component.items[0]);
+    expect(service['rejectReconciliation']).toHaveBeenCalledWith(RECONCILIATION_ID, 'Did not tender');
+  });
 });

@@ -21,6 +21,10 @@ Ratio conventions (the existing ``CorporateAction`` fields):
   held; the original holding continues. ``cost_allocation_ratio`` is the
   official fraction of the original cost that moves to the new company.
 * CASH_DIVIDEND: ``cash_per_unit`` per entitled share. Quantity is unchanged.
+* BUYBACK / TENDER_OFFER: ``cash_per_unit`` is the buyback (offer) price. How
+  many shares the company accepted is not public, so the proposal asks for the
+  accepted quantity; the accepted shares are then booked as a SELL at that
+  price. Without an accepted quantity no entry is planned.
 
 Entitlements are calculated in whole shares on the total position. A
 fractional remainder is never dropped silently: bonus fractions are reported
@@ -46,11 +50,10 @@ ROLE_RESULT = "RESULT"   # successor / resulting security (merger, demerger)
 
 BONUS_TYPES = {"BONUS", "STOCK_DIVIDEND"}
 SPLIT_TYPES = {"STOCK_SPLIT", "REVERSE_SPLIT", "ADR_RATIO_CHANGE"}
+TENDER_TYPES = {"BUYBACK", "TENDER_OFFER"}
 
 MANUAL_ONLY_REASONS = {
     "RIGHTS_ISSUE": "A rights entitlement depends on your subscription decision; record any allotment manually.",
-    "BUYBACK": "Shares accepted in a buyback depend on your tender and the acceptance ratio; record the sale manually.",
-    "TENDER_OFFER": "Shares accepted in a tender offer depend on your tender and the acceptance ratio; record the sale manually.",
     "CASH_IN_LIEU": "Cash-in-lieu proceeds must be recorded from the actual payment received.",
     "WARRANT_CONVERSION": "Warrant conversion requires the conversion price and your exercise; record it manually.",
     "TICKER_CHANGE": "A ticker change has no accounting effect; no ledger transaction is required.",
@@ -138,6 +141,7 @@ class EntitlementResult:
     allocated_cost: Decimal | None = None
     entries: list = field(default_factory=list)
     explanation: str = ""
+    needs_accepted_quantity: bool = False
 
     @property
     def ok(self):
@@ -208,8 +212,12 @@ def _require_ratio(terms, legs):
     return None
 
 
-def calculate_entitlement(terms, legs):
-    """Calculate the accounting entries for one position. See module docstring."""
+def calculate_entitlement(terms, legs, *, accepted_quantity=None, event_date=None):
+    """Calculate the accounting entries for one position. See module docstring.
+
+    ``accepted_quantity`` (buyback / tender offer only) is the number of this
+    position's shares the company accepted; ``event_date`` selects the tax note.
+    """
     legs = [leg for leg in legs if leg.quantity is not None]
     eligible_legs = [leg for leg in legs if leg.quantity > ZERO]
     total_quantity = sum((leg.quantity for leg in eligible_legs), ZERO)
@@ -236,6 +244,8 @@ def calculate_entitlement(terms, legs):
         return _merger(terms, eligible_legs, total_quantity, total_cost)
     if action_type == "DEMERGER":
         return _demerger(terms, eligible_legs, total_quantity, total_cost)
+    if action_type in TENDER_TYPES:
+        return _tender(terms, eligible_legs, total_quantity, total_cost, accepted_quantity, event_date)
     return _manual(f"Corporate-action type {action_type or 'unknown'} has no automatic accounting treatment.", eligible_legs)
 
 
@@ -521,4 +531,75 @@ def _demerger(terms, legs, total_quantity, total_cost):
         fractional_entitlement=fraction, cash_amount=sale if fraction > ZERO else None,
         resulting_cost_basis=_money(total_cost) - moved_total, allocated_cost=moved_total,
         entries=entries, explanation=explanation,
+    )
+
+
+def _buyback_tax_note(event_date):
+    """One line on how Indian income tax treats the buyback, by its date."""
+    from datetime import date
+
+    if event_date is None:
+        return ""
+    if event_date < date(2024, 10, 1):
+        rule = "before 1 Oct 2024 the company paid the buyback tax and the proceeds were exempt for shareholders"
+    elif event_date <= date(2026, 3, 31):
+        rule = ("from 1 Oct 2024 to 31 Mar 2026 the whole amount is taxed as a deemed dividend and the shares' cost "
+                "becomes a capital loss")
+    else:
+        rule = "from 1 Apr 2026 the buyback is taxed as a capital gain (price received minus cost)"
+    return f" Tax note: {rule}. This ledger row records the sale itself; confirm the tax treatment with your adviser."
+
+
+def _tender(terms, legs, total_quantity, total_cost, accepted_quantity, event_date):
+    """Buyback / tender offer: ask for the accepted quantity, then sell it at the offer price."""
+    word = "buyback" if terms.action_type == "BUYBACK" else "tender offer"
+    if terms.cash_per_unit is None or terms.cash_per_unit <= ZERO:
+        return _manual(f"The {word} price per share is not available.", legs)
+    price = terms.cash_per_unit
+    if accepted_quantity is None:
+        explanation = (
+            f"You held {_format_decimal(total_quantity)} shares on the record date. {word.capitalize()} price "
+            f"{_format_decimal(price)} per share. How many shares the company accepted is not published: enter the "
+            "accepted quantity from your acceptance letter or contract note, or choose \"Did not tender\"."
+        )
+        return EntitlementResult(
+            status=STATUS_OK, eligible_quantity=total_quantity, cost_basis=total_cost,
+            resulting_quantity=None, entries=[], explanation=explanation, needs_accepted_quantity=True,
+        )
+    accepted = Decimal(accepted_quantity)
+    if accepted <= ZERO:
+        return _manual("The accepted quantity must be greater than zero.", legs)
+    if accepted != accepted.to_integral_value():
+        return _manual("The accepted quantity must be a whole number of shares.", legs)
+    if accepted > total_quantity:
+        return _manual(
+            f"The accepted quantity ({_format_decimal(accepted)}) is more than the {_format_decimal(total_quantity)} "
+            "shares held on the record date.", legs,
+        )
+    exact_by_leg = {leg.key: leg.quantity * accepted / total_quantity for leg in legs}
+    allocation = allocate_whole_shares(exact_by_leg, accepted)
+    if any(allocation[leg.key] > leg.quantity for leg in legs):
+        return _manual("The accepted shares cannot be split across this position's Asset records automatically.", legs)
+    label = "Buyback: shares accepted" if terms.action_type == "BUYBACK" else "Tender offer: shares accepted"
+    entries = []
+    proceeds = ZERO
+    for leg in legs:
+        quantity = allocation[leg.key]
+        if quantity <= ZERO:
+            continue
+        amount = _money(quantity * price)
+        proceeds += amount
+        entries.append(PlannedEntry(leg.key, ROLE_SOURCE, "SELL", quantity, _qty(price), amount, "payment_date", label))
+    released = _money(total_cost * accepted / total_quantity)
+    explanation = (
+        f"{_format_decimal(accepted)} of your {_format_decimal(total_quantity)} shares accepted in the {word} at "
+        f"{_format_decimal(price)} per share = {_format_decimal(proceeds)}. Holding {_format_decimal(total_quantity)} → "
+        f"{_format_decimal(total_quantity - accepted)}; about {_format_decimal(released)} of cost is released with the sold shares."
+    )
+    if terms.action_type == "BUYBACK":
+        explanation += _buyback_tax_note(event_date)
+    return EntitlementResult(
+        status=STATUS_OK, eligible_quantity=total_quantity, cost_basis=total_cost,
+        quantity_delta=-accepted, resulting_quantity=total_quantity - accepted, cash_amount=proceeds,
+        resulting_cost_basis=_money(total_cost) - released, entries=entries, explanation=explanation,
     )

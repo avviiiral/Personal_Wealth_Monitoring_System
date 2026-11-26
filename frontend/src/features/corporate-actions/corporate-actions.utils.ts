@@ -3,6 +3,7 @@ import { CorporateActionRecord, CorporateActionPosition } from '../../app/core/s
 type Num = string | number | null | undefined;
 
 export const RESTRUCTURING_TYPES = new Set(['MERGER', 'DEMERGER']);
+export const TENDER_TYPES = new Set(['BUYBACK', 'TENDER_OFFER']);
 const BONUS_TYPES = new Set(['BONUS', 'STOCK_DIVIDEND']);
 const SPLIT_TYPES = new Set(['STOCK_SPLIT', 'REVERSE_SPLIT', 'ADR_RATIO_CHANGE']);
 
@@ -60,6 +61,11 @@ export function describeTerms(action: CorporateActionRecord): string {
   if (type === 'CASH_DIVIDEND') {
     return toNumber(action.cash_per_unit) === null ? 'Dividend per share not available' : `${formatAmount(action.cash_per_unit)} per share`;
   }
+  if (TENDER_TYPES.has(type)) {
+    if (action.buyback_method === 'OPEN_MARKET') return 'Open-market buyback (no tender)';
+    const word = type === 'BUYBACK' ? 'Buyback' : 'Offer';
+    return toNumber(action.cash_per_unit) === null ? `${word} price not available` : `${word} at ${formatAmount(action.cash_per_unit)} per share`;
+  }
   if (!oldUnits || !newUnits) return 'Ratio not available — verify the source';
   if (BONUS_TYPES.has(type)) return `${newUnits} new share(s) for every ${oldUnits} held (${oldUnits}:${newUnits})`;
   if (SPLIT_TYPES.has(type)) return `${oldUnits} share(s) become ${newUnits} (${oldUnits}:${newUnits})`;
@@ -86,6 +92,74 @@ export function isRestructuring(actionType: string): boolean {
   return RESTRUCTURING_TYPES.has(actionType);
 }
 
+export function isTender(actionType: string): boolean {
+  return TENDER_TYPES.has(actionType);
+}
+
+const TERM_NAMES: Record<string, string> = {
+  old_units: 'old units', new_units: 'new units', cash_per_unit: 'price per share',
+  cost_allocation_ratio: 'cost split', resulting_security_name: 'new company',
+  resulting_isin: 'new company ISIN', resulting_symbol: 'new company symbol',
+};
+
+/** "new company: XYZ Ltd (NSE announcement #12 (2025-03-01))" lines for terms read automatically. */
+export function announcementTermLines(action: CorporateActionRecord): string[] {
+  const filled = action.terms_from_announcements || {};
+  return Object.entries(filled).map(([field, item]) => {
+    const value = field === 'cost_allocation_ratio' && toNumber(item?.value) !== null
+      ? `${ratioToPercent(item.value)}% to the new company` : String(item?.value ?? '');
+    return `${TERM_NAMES[field] || field}: ${value}${item?.source ? ` (${item.source})` : ''}`;
+  });
+}
+
+/** 0.0468 -> "4.68"; '' when blank. */
+export function ratioToPercent(value: Num): string {
+  const parsed = toNumber(value);
+  if (parsed === null) return '';
+  return String(Number((parsed * 100).toFixed(6)));
+}
+
+/** "4.68" -> "0.0468"; '' when blank; null when not a percentage between 0 and 100. */
+export function percentToRatio(value: string | null | undefined): string | null {
+  const text = String(value ?? '').trim();
+  if (!text) return '';
+  const parsed = Number(text);
+  if (!Number.isFinite(parsed) || parsed <= 0 || parsed >= 100) return null;
+  return String(Number((parsed / 100).toFixed(8)));
+}
+
+/** Positions that need the accepted share count before a buyback can be booked. */
+export function quantityPositions(positions: CorporateActionPosition[] | undefined): CorporateActionPosition[] {
+  return (positions || []).filter(position => position.status === 'PENDING' && position.needs_accepted_quantity);
+}
+
+/**
+ * Accepted buyback quantities for the API, or an error message.
+ * Every holding needs a whole number from 0 to its eligible quantity, and at least one must be above 0.
+ */
+export function acceptedQuantitiesPayload(
+  positions: CorporateActionPosition[] | undefined, entered: Record<number, string | number | null | undefined>,
+): {quantities: Record<number, number>} | {error: string} {
+  const rows = quantityPositions(positions);
+  const quantities: Record<number, number> = {};
+  for (const position of rows) {
+    const raw = entered[position.id];
+    const label = `${position.family_name || 'Holding'} / ${position.portfolio || '—'}`;
+    if (raw === undefined || raw === null || String(raw).trim() === '') {
+      return {error: `Enter the shares accepted for ${label} (0 if it did not tender).`};
+    }
+    const value = Number(String(raw).trim());
+    if (!Number.isInteger(value) || value < 0) return {error: `Shares accepted for ${label} must be a whole number.`};
+    const eligible = toNumber(position.eligible_quantity) ?? 0;
+    if (value > eligible) return {error: `${label} held ${formatQuantity(eligible)} shares; it cannot have more accepted.`};
+    quantities[position.id] = value;
+  }
+  if (rows.length && Object.values(quantities).every(value => value === 0)) {
+    return {error: 'Every quantity is 0. Use "Did not tender" instead; nothing will be booked.'};
+  }
+  return {quantities};
+}
+
 export function eligiblePositions(positions: CorporateActionPosition[] | undefined): CorporateActionPosition[] {
   return (positions || []).filter(position => position.status !== 'NOT_ELIGIBLE');
 }
@@ -94,11 +168,11 @@ export function ineligiblePositions(positions: CorporateActionPosition[] | undef
   return (positions || []).filter(position => position.status === 'NOT_ELIGIBLE');
 }
 
-/** Number of ledger rows an acceptance would create. */
+/** Number of ledger rows an acceptance would create (buyback holdings count once each). */
 export function plannedEntryCount(positions: CorporateActionPosition[] | undefined): number {
   return (positions || [])
     .filter(position => position.status === 'PENDING')
-    .reduce((total, position) => total + (position.planned_entries?.length || 0), 0);
+    .reduce((total, position) => total + (position.needs_accepted_quantity ? 1 : position.planned_entries?.length || 0), 0);
 }
 
 /** Readable message from a DRF error response. */

@@ -182,6 +182,8 @@ python manage.py generate_web_push_keys
 
 The corporate-action `--report-json` option is intentionally restricted to dry-run so that audit generation is read-only. Detection never changes holdings: a corporate action is booked only when the user accepts it on the Corporate Actions page, which creates the BONUS / SPLIT / DIVIDEND / SELL / BUY rows in the normal transaction ledger. An NSE event's ISIN is treated as verified by `reconcile_uploaded_corporate_actions` only when it equals the ISIN of the held asset whose symbol was queried; otherwise the event needs explicit identity approval. Feed-based ingestion requires an authorised feed URL in configuration.
 
+Merger, demerger and buyback terms that the exchange feed leaves out (share ratio, new company, demerger cost split, buyback price) are read from the stored exchange announcements for the security when an event is reconciled or recalculated. A term is used only when every announcement that states it agrees, and the new company becomes an ISIN only by an exact company-name match in the security master. Anything still missing is shown on the Corporate Actions page as "Terms needed"; terms entered there once are filled in for the family members who hold the same security. A buyback asks for the number of shares the company accepted (or "Did not tender"); an uploaded sale at the buyback price within the window (`corporate_actions.buyback_match_grace_days`, default 75 days) counts as already recorded, and an open-market buyback creates no request.
+
 ## 7. Scheduled refresh orchestration
 
 ### `run_scheduled_job`
